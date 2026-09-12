@@ -4,7 +4,7 @@ import type { WorkspaceScope } from '../../lib/workspaces';
 import { reasoningForModel, validateAutomationModelSelection } from './modelSelection';
 import type { Automation, AutomationDraft, AutomationRun, AutomationSchedule } from './types';
 
-export const WEEKDAYS = [
+export const WEEKDAYS: readonly string[] = [
   'Sunday',
   'Monday',
   'Tuesday',
@@ -12,7 +12,7 @@ export const WEEKDAYS = [
   'Thursday',
   'Friday',
   'Saturday',
-] as const;
+];
 
 export const AUTOMATION_AUTONOMY_OPTIONS = AUTONOMY_LEVELS.map((level) => ({
   value: level,
@@ -32,6 +32,8 @@ export function defaultAutomationDraft(
   return {
     title: '',
     prompt: '',
+    target: { kind: 'new-session' },
+    files: [],
     workspaceCwd,
     executionMode: workspaceCwd ? 'worktree' : 'local',
     enabled: true,
@@ -63,6 +65,8 @@ export function automationToDraft(automation: Automation): AutomationDraft {
   return {
     title: automation.title,
     prompt: automation.prompt,
+    target: automation.target,
+    files: automation.files,
     workspaceCwd: automation.workspaceCwd,
     executionMode: automation.executionMode,
     enabled: automation.enabled,
@@ -79,9 +83,18 @@ export function validateAutomationDraft(
   models: readonly ModelInfo[],
 ): string | null {
   if (!draft.title.trim()) return 'Add a title.';
-  if (!draft.prompt.trim()) return 'Describe what DROIDEX should do.';
-  const modelIssue = validateAutomationModelSelection(models, draft.modelId, draft.reasoningEffort);
-  if (modelIssue) return modelIssue;
+  if (!draft.prompt.trim() && draft.files.length === 0) return 'Describe what DROIDEX should do.';
+  if (draft.target.kind === 'existing-session') {
+    if (!draft.target.appSessionId.trim()) return 'Choose a session.';
+    if (draft.schedule.kind !== 'once') return 'Scheduled prompts are sent once.';
+  } else {
+    const modelIssue = validateAutomationModelSelection(
+      models,
+      draft.modelId,
+      draft.reasoningEffort,
+    );
+    if (modelIssue) return modelIssue;
+  }
   if (!isTimeZone(draft.timezone)) return 'Choose a valid timezone.';
   switch (draft.schedule.kind) {
     case 'once':
@@ -119,6 +132,7 @@ export function automationWorkspaceIssue(
   workspaceScopes: readonly WorkspaceScope[],
   workspaceScopesReady: boolean,
 ): string | null {
+  if (draft.target.kind === 'existing-session') return null;
   const cwd = draft.workspaceCwd;
   if (cwd === null) return null;
   if (!workspaceScopesReady) return 'Checking whether the selected workspace is available.';
@@ -132,7 +146,7 @@ const CRON_FIELDS = [
   { name: 'day of month', minimum: 1, maximum: 31 },
   { name: 'month', minimum: 1, maximum: 12 },
   { name: 'weekday', minimum: 0, maximum: 7 },
-] as const;
+];
 
 /**
  * Mirrors the scheduler's cron grammar (sidecar/src/automations/schedule.ts):
@@ -205,13 +219,16 @@ export function formatNextRun(
 
 export function latestRunsByAutomation(runs: AutomationRun[]): Map<string, AutomationRun> {
   const byAutomation = new Map<string, AutomationRun>();
-  for (const run of [...runs].sort((left, right) => right.requestedAt - left.requestedAt)) {
-    if (!byAutomation.has(run.automationId)) byAutomation.set(run.automationId, run);
+  for (const run of runs) {
+    const previous = byAutomation.get(run.automationId);
+    if (!previous || previous.requestedAt < run.requestedAt) {
+      byAutomation.set(run.automationId, run);
+    }
   }
   return byAutomation;
 }
 
-export function isAutomationRunActive(run: AutomationRun | undefined): boolean {
+export function isAutomationRunActive(run: Pick<AutomationRun, 'status'> | undefined): boolean {
   return run?.status === 'queued' || run?.status === 'starting' || run?.status === 'running';
 }
 
@@ -229,6 +246,9 @@ export function formatAutomationRunStatus(
       return `Running · ${formatDuration(now - (run.startedAt ?? now))}`;
     case 'completed': {
       const finished = run.finishedAt ?? run.requestedAt;
+      if (run.automation.target.kind === 'existing-session') {
+        return `Delivered ${formatRelativeTime(finished, now)}`;
+      }
       const duration =
         run.startedAt === null ? '' : ` · ${formatDuration(finished - run.startedAt)}`;
       return `Completed ${formatRelativeTime(finished, now)}${duration}`;

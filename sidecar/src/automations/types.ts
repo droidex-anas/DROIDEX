@@ -6,6 +6,10 @@ export type AutomationSchedule =
   | { kind: 'weekly'; weekday: number; time: string }
   | { kind: 'cron'; expression: string };
 
+export type AutomationTarget =
+  | { kind: 'new-session' }
+  | { kind: 'existing-session'; appSessionId: string };
+
 export type AutomationDeliveryReceipt =
   | { status: 'accepted'; settled: Promise<void> }
   | { status: 'busy' }
@@ -28,25 +32,38 @@ export type AutomationReasoningEffort =
   | 'dynamic';
 
 export interface AutomationInput {
+  target?: AutomationTarget | undefined;
+  files?: string[] | undefined;
   title: string;
   prompt: string;
-  workspaceCwd?: string | null;
-  executionMode?: AutomationExecutionMode;
-  enabled?: boolean;
+  workspaceCwd?: string | null | undefined;
+  executionMode?: AutomationExecutionMode | undefined;
+  enabled?: boolean | undefined;
   schedule: AutomationSchedule;
-  timezone?: string;
-  modelId?: string | null;
-  reasoningEffort?: AutomationReasoningEffort | null;
-  autonomy?: AutomationAutonomy;
+  timezone?: string | undefined;
+  modelId?: string | null | undefined;
+  reasoningEffort?: AutomationReasoningEffort | null | undefined;
+  autonomy?: AutomationAutonomy | undefined;
 }
 
-export interface Automation extends Required<
-  Omit<AutomationInput, 'workspaceCwd' | 'modelId' | 'reasoningEffort'>
-> {
-  id: string;
+/** A validated definition with every default resolved before storage. */
+export interface NormalizedAutomationInput {
+  target: AutomationTarget;
+  files: string[];
+  title: string;
+  prompt: string;
   workspaceCwd: string | null;
+  executionMode: AutomationExecutionMode;
+  enabled: boolean;
+  schedule: AutomationSchedule;
+  timezone: string;
   modelId: string | null;
   reasoningEffort: AutomationReasoningEffort | null;
+  autonomy: AutomationAutonomy;
+}
+
+export interface Automation extends NormalizedAutomationInput {
+  id: string;
   nextRunAt: number | null;
   lastRunAt: number | null;
   lastRunStatus: AutomationRunStatus | null;
@@ -58,29 +75,15 @@ export interface Automation extends Required<
   updatedAt: number;
 }
 
-export interface AutomationPatch {
-  title?: string;
-  prompt?: string;
-  workspaceCwd?: string | null;
-  executionMode?: AutomationExecutionMode;
-  enabled?: boolean;
-  schedule?: AutomationSchedule;
-  timezone?: string;
-  modelId?: string | null;
-  reasoningEffort?: AutomationReasoningEffort | null;
-  autonomy?: AutomationAutonomy;
-}
+export type AutomationPatch = {
+  [Key in keyof AutomationInput]?: AutomationInput[Key] | undefined;
+};
 
-export interface AutomationRunSnapshot {
+export interface AutomationRunSnapshot extends Omit<
+  NormalizedAutomationInput,
+  'enabled' | 'schedule'
+> {
   id: string;
-  title: string;
-  prompt: string;
-  workspaceCwd: string | null;
-  executionMode: AutomationExecutionMode;
-  timezone: string;
-  modelId: string | null;
-  reasoningEffort: AutomationReasoningEffort | null;
-  autonomy: AutomationAutonomy;
 }
 
 export interface AutomationRun {
@@ -108,11 +111,7 @@ export type AutomationProposalMissingField = 'modelId' | 'reasoningEffort';
 export interface AutomationProposal {
   id: string;
   sourceAppSessionId: string;
-  draft: Required<Omit<AutomationInput, 'workspaceCwd' | 'modelId' | 'reasoningEffort'>> & {
-    workspaceCwd: string | null;
-    modelId: string | null;
-    reasoningEffort: AutomationReasoningEffort | null;
-  };
+  draft: NormalizedAutomationInput;
   status: AutomationProposalStatus;
   missingFields: AutomationProposalMissingField[];
   automationId: string | null;
@@ -169,5 +168,5 @@ export type AutomationBridgeCommand =
       type: 'automations.confirmProposal';
       requestId: string;
       id: string;
-      input?: AutomationInput;
+      input?: AutomationInput | undefined;
     };

@@ -10,9 +10,15 @@ export type AutomationSchedule =
 
 type AutomationRunStatus = 'queued' | 'starting' | 'running' | 'completed' | 'failed';
 
+export type AutomationTarget =
+  | { kind: 'new-session' }
+  | { kind: 'existing-session'; appSessionId: string };
+
 export interface AutomationDraft {
   title: string;
   prompt: string;
+  target: AutomationTarget;
+  files: string[];
   workspaceCwd: string | null;
   executionMode: 'worktree' | 'local';
   enabled: boolean;
@@ -44,6 +50,8 @@ export interface AutomationRun {
     | 'id'
     | 'title'
     | 'prompt'
+    | 'target'
+    | 'files'
     | 'workspaceCwd'
     | 'executionMode'
     | 'timezone'

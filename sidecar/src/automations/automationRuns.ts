@@ -64,9 +64,9 @@ export interface AutomationRunsOptions {
   /** A settled run frees the schedule, so the next wake is recomputed. */
   rearmScheduler: () => void;
   /** Delay between launch retries. Tests shorten it. */
-  launchRetryMs?: number;
+  launchRetryMs?: number | undefined;
   /** Grace after streaming stops before the run completes. Tests shorten it. */
-  turnSettleGraceMs?: number;
+  turnSettleGraceMs?: number | undefined;
 }
 
 /**
@@ -147,10 +147,12 @@ export class AutomationRuns {
     return this.options.commit(async () => {
       const automation = this.automationFor(automationId);
       if (!automation) throw new Error('Automation not found.');
-      assertModelSelection(automation);
+      if (automation.target.kind === 'new-session') {
+        assertModelSelection(automation);
+        await this.options.validateSelection(automation.modelId, automation.reasoningEffort);
+      }
       const existing = this.openRunFor(automation.id);
       if (existing) return structuredClone(existing);
-      await this.options.validateSelection(automation.modelId, automation.reasoningEffort);
       const requestedAt = this.options.now();
       const run = newQueuedRun(automation, requestedAt, requestedAt, 'manual');
       this.runs.push(run);
@@ -256,12 +258,15 @@ export class AutomationRuns {
     );
   }
 
-  /** Drops the schedule-triggered runs waiting on a schedule that just changed. */
-  dropQueuedSchedules(automationId: string): void {
-    this.store.runs = this.runs.filter(
-      (run) =>
-        run.automationId !== automationId || run.status !== 'queued' || run.trigger !== 'schedule',
-    );
+  /** Existing-session cancellation also invalidates manual deliveries and async setup. */
+  dropPendingRunsForScheduleChange(automationId: string): void {
+    this.store.runs = this.runs.filter((run) => {
+      if (run.automationId !== automationId) return true;
+      if (run.automation.target.kind === 'existing-session') {
+        return run.status !== 'queued' && run.status !== 'starting';
+      }
+      return run.status !== 'queued' || run.trigger !== 'schedule';
+    });
   }
 
   /** One open run per automation: extra queued copies from an older process are dropped. */
@@ -291,7 +296,7 @@ export class AutomationRuns {
     automation.nextRunAt = null;
     automation.lastRunError = PAUSED_AFTER_FAILURES;
     automation.updatedAt = this.options.now();
-    this.dropQueuedSchedules(automationId);
+    this.dropPendingRunsForScheduleChange(automationId);
   }
 
   dropAllFor(automationId: string): void {
@@ -705,29 +710,26 @@ export class AutomationRuns {
   }
 
   private activeRun(): AutomationRun | undefined {
-    return this.runs.find((run) => isActiveRunStatus(run.status));
+    return this.runs.find(
+      (run) => run.automation.target.kind === 'new-session' && isActiveRunStatus(run.status),
+    );
   }
 
   private nextQueuedRun(): AutomationRun | undefined {
     let next: AutomationRun | undefined;
     for (const run of this.runs) {
-      if (run.status !== 'queued') continue;
+      if (run.status !== 'queued' || run.automation.target.kind !== 'new-session') continue;
       if (!next || run.requestedAt < next.requestedAt) next = run;
     }
     return next;
   }
 
-  /**
-   * The live run that owns a chat, if the chat belongs to one at all.
-   *
-   * `sessionOrigins` records that link when a run adopts its chat, so an event
-   * from an ordinary chat - the common case, and by far the most frequent event
-   * in DROIDEX - costs one lookup instead of a walk over the run history.
-   */
   private runOwningSession(appSessionId: string): AutomationRun | undefined {
     const origin = this.store.sessionOrigins[appSessionId];
     if (origin) return this.runById(origin.runId);
-    return this.runs.find((run) => run.appSessionId === appSessionId);
+    return this.runs.find(
+      (run) => run.automation.target.kind === 'new-session' && run.appSessionId === appSessionId,
+    );
   }
 
   /**

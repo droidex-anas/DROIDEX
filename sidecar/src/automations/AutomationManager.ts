@@ -1,3 +1,6 @@
+import { AutomationAttachments } from './automationAttachments.js';
+import { AutomationDeliveries, type DeliverAutomationMessage } from './automationDeliveries.js';
+import { automationCommandSchema } from './automationSchemas.js';
 import { join } from 'node:path';
 import type { ServerEvent } from '../protocol.js';
 import { AutomationCatalog } from './automationCatalog.js';
@@ -44,6 +47,7 @@ interface AutomationManagerOptions {
   dataDir: string;
   emit: (event: AutomationBridgeEvent) => void;
   launchSession: (command: SessionCreateCommand) => Promise<void>;
+  deliverMessage?: DeliverAutomationMessage;
   closeSession?: (appSessionId: string) => Promise<void>;
   prepareWorkspace?: AutomationWorkspacePreparer;
   createWorkspace?: AutomationWorkspaceCreator;
@@ -54,11 +58,8 @@ interface AutomationManagerOptions {
     reasoningEffort: AutomationReasoningEffort,
   ) => Promise<void>;
   now?: () => number;
-  /** How often the scheduler re-reads the clock while waiting. Tests shorten it. */
   schedulerRecheckMs?: number;
-  /** Delay between launch retries. Tests shorten it. */
   launchRetryMs?: number;
-  /** Grace after a turn stops streaming. Tests shorten it. */
   turnSettleGraceMs?: number;
 }
 
@@ -90,19 +91,7 @@ export async function isUnattendedAutomationSession(
   }
 }
 
-/**
- * The automations feature: one entry point for the bridge, the MCP tools, and
- * the session events that drive a run.
- *
- * The state itself belongs to four collaborators, each the single writer of its
- * part of the store: `AutomationCatalog` for the definitions,
- * `AutomationScheduler` for when they run next, `AutomationRuns` for the runs and
- * the summary they project onto an automation, and `AutomationProposals` for the
- * review cards in chat. This class holds the pieces they share - the persisted
- * store, the single writer that persists a mutation or restores it when the
- * write fails, the published snapshot, and the load and shutdown sequences - and
- * gates every public operation on the store being loaded.
- */
+/** Composes definition, schedule, launch, delivery, and proposal owners on one durable writer. */
 export class AutomationManager {
   private readonly storeFile: AutomationStoreFile;
   private readonly emit: (event: AutomationBridgeEvent) => void;
@@ -113,6 +102,8 @@ export class AutomationManager {
   private store: AutomationStore = emptyAutomationStore();
   private readonly sessionContexts = new SessionContextCache();
   private readonly runs: AutomationRuns;
+  private readonly deliveries: AutomationDeliveries;
+  private readonly attachments: AutomationAttachments;
   private readonly scheduler: AutomationScheduler;
   private readonly catalog: AutomationCatalog;
   private readonly proposals: AutomationProposals;
@@ -123,6 +114,7 @@ export class AutomationManager {
   private closed = false;
 
   constructor(options: AutomationManagerOptions) {
+    this.attachments = new AutomationAttachments(options.dataDir);
     this.storeFile = new AutomationStoreFile(join(options.dataDir, 'automations.json'));
     this.emit = options.emit;
     this.resolveSessionContext = options.resolveSessionContext ?? (() => Promise.resolve(null));
@@ -133,6 +125,7 @@ export class AutomationManager {
       now: () => this.now(),
       commit: <T>(apply: () => T | Promise<T>) => this.commit(apply),
       validateSelection,
+      attachments: this.attachments,
     };
     this.runs = new AutomationRuns({
       ...shared,
@@ -141,7 +134,6 @@ export class AutomationManager {
       launchSession: options.launchSession,
       closeSession: options.closeSession ?? (() => Promise.resolve()),
       prepareWorkspace: options.prepareWorkspace ?? resolveAutomationWorkspace,
-      // Tests inject a fake resolver and skip `git worktree add`.
       createWorkspace:
         options.createWorkspace ??
         (options.prepareWorkspace ? () => Promise.resolve() : createAutomationWorkspace),
@@ -151,6 +143,25 @@ export class AutomationManager {
       },
       launchRetryMs: options.launchRetryMs,
       turnSettleGraceMs: options.turnSettleGraceMs,
+    });
+    this.deliveries = new AutomationDeliveries({
+      ...shared,
+      collectAttachments: () => {
+        void this.runExclusive(() => this.attachments.collect(this.store)).catch(
+          (error: unknown) => {
+            console.error('Could not clean automation attachments', error);
+          },
+        );
+      },
+      isClosed: () => this.closed,
+      persist: (apply) => this.persistMutation(apply),
+      deliver:
+        options.deliverMessage ??
+        (() =>
+          Promise.resolve({
+            status: 'unavailable',
+            error: 'Scheduled session delivery is not available.',
+          })),
     });
     this.scheduler = new AutomationScheduler({
       store: shared.store,
@@ -174,6 +185,7 @@ export class AutomationManager {
     this.startup = this.ready.then(async () => {
       await this.runs.releaseRecovered();
       this.runs.startQueued();
+      this.deliveries.startQueued();
     });
     void this.startup.catch((error: unknown) => {
       console.error('Could not initialize DROIDEX automations', error);
@@ -189,7 +201,11 @@ export class AutomationManager {
     await this.ready;
   }
 
-  /** True when this chat was started by an automation run. */
+  async observeSessionAvailability(appSessionId: string): Promise<void> {
+    await this.ready;
+    if (!this.closed) this.deliveries.sessionAvailable(appSessionId);
+  }
+
   isRunSession(appSessionId: string): boolean {
     return storeHasRunSession(this.store, appSessionId);
   }
@@ -217,11 +233,6 @@ export class AutomationManager {
     return this.update(id, { enabled });
   }
 
-  /**
-   * Deletes an automation, its runs, and the link its proposals hold to it. The
-   * three collections settle in one write, so a card in chat can never point at
-   * an automation that is already gone.
-   */
   async remove(id: string): Promise<void> {
     await this.ready;
     await this.commit(() => {
@@ -252,14 +263,7 @@ export class AutomationManager {
     return this.proposals.confirm(id, input);
   }
 
-  /**
-   * Observe session lifecycle events. Callers fire these without awaiting;
-   * shutdown waits for tracked work instead of exiting mid-teardown.
-   *
-   * `event.appended` is the streaming hot path. An ordinary chat is one origin
-   * lookup and never enters the async observer. A chat a run is still adopting
-   * is queued so transcript tokens are not dropped before the origin exists.
-   */
+  /** Transcript tokens from ordinary chats never enter the async observer. */
   observeSessionEvent(event: ServerEvent): Promise<void> {
     if (this.closed) return Promise.resolve();
     if (event.type === 'session.created' && this.runs.hasStartingClientRef(event.clientRef)) {
@@ -276,8 +280,31 @@ export class AutomationManager {
   }
 
   async handleBridgeCommand(value: unknown): Promise<boolean> {
-    if (!isAutomationCommand(value)) return false;
-    const command = value;
+    if (
+      !value ||
+      typeof value !== 'object' ||
+      !('type' in value) ||
+      typeof value.type !== 'string' ||
+      !value.type.startsWith('automations.') ||
+      !('requestId' in value) ||
+      typeof value.requestId !== 'string'
+    )
+      return false;
+    const parsed = automationCommandSchema.safeParse(value);
+    if (!parsed.success) {
+      this.emit({
+        type: 'automations.result',
+        requestId: value.requestId,
+        ok: false,
+        error: parsed.error.issues.some(
+          (issue) => issue.path.length === 1 && issue.path[0] === 'type',
+        )
+          ? `Unknown automations command: ${value.type}`
+          : parsed.error.message,
+      });
+      return true;
+    }
+    const command = parsed.data;
     try {
       const runId = await this.runCommand(command);
       this.emit({
@@ -297,12 +324,7 @@ export class AutomationManager {
     return true;
   }
 
-  /**
-   * Stops scheduling and settles pending writes; live sessions keep running.
-   * Closing sessions emits lifecycle events whose observers settle runs and
-   * remove their isolated worktrees, so that work is awaited here: the process
-   * exits right after and would otherwise leave the worktree behind.
-   */
+  /** Stop scheduling and settle owned work; borrowed sessions are never closed here. */
   async shutdown(): Promise<void> {
     this.closed = true;
     await this.startup.catch(() => undefined);
@@ -335,10 +357,6 @@ export class AutomationManager {
       case 'automations.confirmProposal':
         await this.confirmProposal(command.id, command.input);
         return;
-      default: {
-        const type = (command as { type: string }).type;
-        throw new Error(`Unknown automations command: ${type}`);
-      }
     }
   }
 
@@ -349,16 +367,14 @@ export class AutomationManager {
       this.sessionContexts.observe(event.session);
     }
     await this.runs.applySessionEvent(event);
+    this.deliveries.observe(event);
   }
 
-  /**
-   * Waits for the observers and the run drain already in flight. Settling a run
-   * starts follow-up work (a store write, a worktree release), so the wait
-   * repeats; the pass limit keeps a misbehaving observer from blocking exit.
-   */
+  /** Repeat because settling work can enqueue another owned cleanup. */
   private async settleInFlightWork(): Promise<void> {
     for (let pass = 0; pass < 5; pass += 1) {
       await this.mutationTail;
+      await this.deliveries.pending();
       const pending = [...this.inFlight];
       const drain = this.runs.pending();
       if (drain) pending.push(drain);
@@ -375,31 +391,28 @@ export class AutomationManager {
     return tracked;
   }
 
-  /**
-   * Loads the store and repairs what the previous process left behind: an
-   * automation without a model selection stops being scheduled, and a run that
-   * was in flight is failed so the queue starts clean.
-   */
+  /** Recover interrupted launches and ambiguous deliveries before draining durable queues. */
   private async initialize(): Promise<void> {
     this.store = await this.storeFile.read(this.now());
     const now = this.now();
     for (const automation of this.store.automations) {
-      if (!automation.enabled || hasModelSelection(automation)) continue;
+      if (
+        !automation.enabled ||
+        automation.target.kind === 'existing-session' ||
+        hasModelSelection(automation)
+      )
+        continue;
       disableForMissingSelection(automation, now);
     }
     this.runs.failInterrupted(now);
     if (!this.closed) this.scheduler.processDue();
     trimAutomationStore(this.store);
     await this.storeFile.write(this.store);
+    await this.attachments.collect(this.store);
     if (this.closed) return;
     this.scheduler.arm();
   }
 
-  /**
-   * One writer for every store mutation. Commit, due flushes, and run persists
-   * take turns so a failed write cannot restore a snapshot that another writer
-   * has already replaced.
-   */
   private runExclusive<T>(work: () => Promise<T>): Promise<T> {
     const done = this.mutationTail.then(work, work);
     this.mutationTail = done.then(
@@ -409,11 +422,7 @@ export class AutomationManager {
     return done;
   }
 
-  /**
-   * Applies a store mutation and restores the whole store when the write fails.
-   * `processDue` can advance other automations and queue their runs in the same
-   * turn, so the caller's undo is not enough on its own.
-   */
+  /** Roll back the complete store, including schedule advances, if persistence fails. */
   private async commit<T>(apply: () => T | Promise<T>): Promise<T> {
     try {
       const result = await this.runExclusive(async () => {
@@ -428,9 +437,14 @@ export class AutomationManager {
           restoreAutomationStore(this.store, previous);
           this.emit({ type: 'automations.snapshot', snapshot: this.snapshotNow() });
           throw error;
+        } finally {
+          await this.attachments.collect(this.store).catch((error: unknown) => {
+            console.error('Could not clean automation attachments', error);
+          });
         }
       });
       this.runs.startQueued();
+      this.deliveries.startQueued();
       return result;
     } finally {
       if (!this.closed) this.scheduler.arm();
@@ -466,7 +480,10 @@ export class AutomationManager {
         throw error;
       }
     });
-    if (queued) this.runs.startQueued();
+    if (queued) {
+      this.runs.startQueued();
+      this.deliveries.startQueued();
+    }
   }
 
   private async persistAndPublish(): Promise<void> {
@@ -488,16 +505,6 @@ export class AutomationManager {
       activeRunId: this.runs.activeRunId(),
     });
   }
-}
-
-function isAutomationCommand(value: unknown): value is AutomationBridgeCommand {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
-  const candidate = value as { type?: unknown; requestId?: unknown };
-  return (
-    typeof candidate.type === 'string' &&
-    candidate.type.startsWith('automations.') &&
-    typeof candidate.requestId === 'string'
-  );
 }
 
 function errorMessage(error: unknown): string {

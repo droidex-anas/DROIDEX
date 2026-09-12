@@ -1,21 +1,15 @@
-import type { RequestPermissionRequestParams } from '@factory/droid-sdk';
-
 export type AutomationPermissionAutonomy = 'off' | 'low' | 'medium' | 'high';
 
 /** The single MCP server name DROIDEX registers for automation tools. */
 export const AUTOMATION_MCP_SERVER_NAME = 'droidex-automations';
 export const AUTOMATION_RUN_CLIENT_REF_PREFIX = 'automation:';
 
-export function isAutomationRunClientRef(clientRef: string | undefined): boolean {
-  return typeof clientRef === 'string' && clientRef.startsWith(AUTOMATION_RUN_CLIENT_REF_PREFIX);
-}
-
 /** Run chats must not receive automation tools on create (`automation:`) or resume. */
 export function shouldAttachAutomationMcp(
   clientRef: string | undefined,
   isRunSession: boolean,
 ): boolean {
-  return !isAutomationRunClientRef(clientRef) && !isRunSession;
+  return !clientRef?.startsWith(AUTOMATION_RUN_CLIENT_REF_PREFIX) && !isRunSession;
 }
 
 // The registration guard and this policy must agree on what counts as the
@@ -73,7 +67,7 @@ export function shouldAutoApproveAutomationTool(
  * True when the request changes saved automation state, so an auto-approved
  * mutation can still be surfaced instead of executing invisibly.
  */
-export function isAutomationMutationPermission(params: RequestPermissionRequestParams): boolean {
+export function isAutomationMutationPermission(params: unknown): boolean {
   const target = automationPermissionTarget(params);
   return target ? isAutomationMutationTool(target.serverName, target.toolName) : false;
 }
@@ -87,10 +81,11 @@ export function isAutomationMutationTool(serverName: string, toolName: string): 
 }
 
 export function automationPermissionTarget(
-  params: RequestPermissionRequestParams,
+  params: unknown,
 ): { serverName: string; toolName: string } | null {
-  const raw = params as unknown as Record<string, unknown>;
-  const toolUses = Array.isArray(raw.toolUses) ? (raw.toolUses as unknown[]) : [];
+  const raw = recordValue(params);
+  if (!raw) return null;
+  const toolUses: unknown[] = Array.isArray(raw.toolUses) ? raw.toolUses : [];
   const firstToolUse = recordValue(toolUses[0]);
   const details =
     (firstToolUse ? recordValue(firstToolUse.details) : null) ?? confirmationDetail(raw);
@@ -114,7 +109,7 @@ export function automationPermissionTarget(
  * The canonical automation tool name for a possibly namespaced tool name, or an
  * empty string when the value is not one of the automation tools.
  */
-export function automationToolName(value: string): string {
+function automationToolName(value: string): string {
   const tool = splitNamespacedTool(value.trim()).toolName.trim().toLowerCase();
   return AUTOMATION_TOOLS.has(tool) ? tool : '';
 }
@@ -146,11 +141,13 @@ function confirmationDetail(raw: Record<string, unknown>): Record<string, unknow
 }
 
 function recordValue(value: unknown): Record<string, unknown> | null {
-  return value && typeof value === 'object' && !Array.isArray(value)
-    ? (value as Record<string, unknown>)
-    : null;
+  return isRecord(value) ? value : null;
 }
 
 function stringValue(value: unknown): string {
   return typeof value === 'string' ? value : '';
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === 'object' && !Array.isArray(value);
 }

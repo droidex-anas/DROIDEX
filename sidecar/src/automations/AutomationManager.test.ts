@@ -1,9 +1,10 @@
+import { parseAutomationStore } from './automationStore.js';
 import assert from 'node:assert/strict';
 import { chmod, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
-import type { ClientCommand, ServerEvent } from '../protocol.js';
+import type { ClientCommand, SessionSummary } from '../protocol.js';
 import { AutomationManager } from './AutomationManager.js';
 import type { AutomationInput } from './types.js';
 
@@ -35,7 +36,7 @@ function task(overrides: Partial<AutomationInput> = {}): AutomationInput {
   };
 }
 
-test('a run that resumes during settle grace stays open until the next turn ends', async () => {
+test('a run that resumes during settle grace stays open until the next turn ends', async (context) => {
   const directory = await mkdtemp(join(tmpdir(), 'droidex-automations-'));
   const launches: SessionCreate[] = [];
   const manager = createManager(directory, {
@@ -53,16 +54,17 @@ test('a run that resumes during settle grace stays open until the next turn ends
     await manager.observeSessionEvent({
       type: 'session.created',
       clientRef: launch.clientRef,
-      session: { appSessionId: 'session-grace' },
-    } as ServerEvent);
+      session: summary({ appSessionId: 'session-grace' }),
+    });
     await manager.observeSessionEvent({
       type: 'session.updated',
-      session: { appSessionId: 'session-grace', streaming: true },
-    } as ServerEvent);
+      session: summary({ appSessionId: 'session-grace', streaming: true }),
+    });
+    context.mock.timers.enable({ apis: ['setTimeout'] });
     await manager.observeSessionEvent({
       type: 'session.updated',
-      session: { appSessionId: 'session-grace', streaming: false },
-    } as ServerEvent);
+      session: summary({ appSessionId: 'session-grace', streaming: false }),
+    });
     assert.equal((await manager.snapshot()).runs[0]?.status, 'running');
     await manager.observeSessionEvent({
       type: 'event.appended',
@@ -75,15 +77,19 @@ test('a run that resumes during settle grace stays open until the next turn ends
         kind: 'text',
         text: 'still working',
       },
-    } as ServerEvent);
-    await waitWhile(async () => (await manager.snapshot()).runs[0]?.status === 'running', 120);
+    });
+    context.mock.timers.tick(120);
+    assert.equal((await manager.snapshot()).runs[0]?.status, 'running');
     await manager.observeSessionEvent({
       type: 'session.updated',
-      session: { appSessionId: 'session-grace', streaming: false },
-    } as ServerEvent);
+      session: summary({ appSessionId: 'session-grace', streaming: false }),
+    });
+    context.mock.timers.tick(80);
+    context.mock.timers.reset();
     await waitFor(async () => (await manager.snapshot()).runs[0]?.status === 'completed');
     assert.equal((await manager.snapshot()).runs[0]?.status, 'completed');
   } finally {
+    context.mock.timers.reset();
     await manager.shutdown();
     await rm(directory, { recursive: true, force: true });
   }
@@ -108,8 +114,8 @@ test('a run still settles when turn events arrive during session adopt', async (
     const created = manager.observeSessionEvent({
       type: 'session.created',
       clientRef: launch.clientRef,
-      session: { appSessionId: 'session-race' },
-    } as ServerEvent);
+      session: summary({ appSessionId: 'session-race' }),
+    });
     const appended = manager.observeSessionEvent({
       type: 'event.appended',
       event: {
@@ -121,11 +127,11 @@ test('a run still settles when turn events arrive during session adopt', async (
         kind: 'text',
         text: 'working',
       },
-    } as ServerEvent);
+    });
     const settled = manager.observeSessionEvent({
       type: 'session.updated',
-      session: { appSessionId: 'session-race', streaming: false },
-    } as ServerEvent);
+      session: summary({ appSessionId: 'session-race', streaming: false }),
+    });
     await Promise.all([created, appended, settled]);
     await waitFor(async () => (await manager.snapshot()).runs[0]?.status === 'completed');
     assert.equal((await manager.snapshot()).runs[0]?.status, 'completed');
@@ -153,16 +159,16 @@ test('closing a chat while it is still streaming fails the run', async () => {
     await manager.observeSessionEvent({
       type: 'session.created',
       clientRef: launch.clientRef,
-      session: { appSessionId: 'session-mid-stream' },
-    } as ServerEvent);
+      session: summary({ appSessionId: 'session-mid-stream' }),
+    });
     await manager.observeSessionEvent({
       type: 'session.updated',
-      session: { appSessionId: 'session-mid-stream', streaming: true },
-    } as ServerEvent);
+      session: summary({ appSessionId: 'session-mid-stream', streaming: true }),
+    });
     await manager.observeSessionEvent({
       type: 'session.closed',
       appSessionId: 'session-mid-stream',
-    } as ServerEvent);
+    });
     await waitFor(async () => (await manager.snapshot()).runs[0]?.status === 'failed');
     assert.match(
       (await manager.snapshot()).runs[0]?.error ?? '',
@@ -199,14 +205,19 @@ test('one automation cannot stack a second open run', async () => {
     await manager.observeSessionEvent({
       type: 'session.created',
       clientRef: launch.clientRef,
-      session: { appSessionId: 'session-once' },
-    } as ServerEvent);
+      session: summary({ appSessionId: 'session-once' }),
+    });
     await manager.observeSessionEvent({
       type: 'session.updated',
-      session: { appSessionId: 'session-once', streaming: true },
-    } as ServerEvent);
+      session: summary({ appSessionId: 'session-once', streaming: true }),
+    });
     clock = dueAt + 1_000;
-    await new Promise((resolve) => setTimeout(resolve, 40));
+    await waitFor(async () => {
+      const snapshot = await manager.snapshot();
+      return (
+        snapshot.automations.find((entry) => entry.id === automation.id)?.completedAt === clock
+      );
+    });
     const snapshot = await manager.snapshot();
     assert.equal(launches.length, 1);
     assert.equal(snapshot.queuedRunCount, 0);
@@ -255,7 +266,7 @@ test('ordinary chat transcript appends do not persist an automation snapshot', a
         kind: 'text',
         text: 'streaming',
       },
-    } as ServerEvent);
+    });
     assert.deepEqual(published, []);
   } finally {
     await manager.shutdown();
@@ -287,8 +298,8 @@ test('a failed adoption write closes the unowned automation chat', async (contex
     await manager.observeSessionEvent({
       type: 'session.created',
       clientRef: launch.clientRef,
-      session: { appSessionId: 'session-orphan' },
-    } as ServerEvent);
+      session: summary({ appSessionId: 'session-orphan' }),
+    });
     assert.deepEqual(closed, ['session-orphan']);
     assert.equal((await manager.snapshot()).runs[0]?.status, 'starting');
     assert.equal((await manager.snapshot()).sessionOrigins['session-orphan'], undefined);
@@ -325,16 +336,16 @@ test('a completed run keeps its worktree until the review chat closes', async ()
     await manager.observeSessionEvent({
       type: 'session.created',
       clientRef: launch.clientRef,
-      session: { appSessionId: 'session-review' },
-    } as ServerEvent);
+      session: summary({ appSessionId: 'session-review' }),
+    });
     await manager.observeSessionEvent({
       type: 'session.updated',
-      session: { appSessionId: 'session-review', streaming: true },
-    } as ServerEvent);
+      session: summary({ appSessionId: 'session-review', streaming: true }),
+    });
     await manager.observeSessionEvent({
       type: 'session.updated',
-      session: { appSessionId: 'session-review', streaming: false },
-    } as ServerEvent);
+      session: summary({ appSessionId: 'session-review', streaming: false }),
+    });
     await waitFor(async () => (await manager.snapshot()).runs[0]?.status === 'completed');
     assert.equal(released.length, 0);
     assert.ok((await manager.snapshot()).sessionOrigins['session-review']);
@@ -342,7 +353,7 @@ test('a completed run keeps its worktree until the review chat closes', async ()
     await manager.observeSessionEvent({
       type: 'session.closed',
       appSessionId: 'session-review',
-    } as ServerEvent);
+    });
     await waitFor(() => released.includes(worktree));
     assert.deepEqual(released, [worktree]);
     assert.equal((await manager.snapshot()).sessionOrigins['session-review'], undefined);
@@ -381,21 +392,19 @@ test('review-chat close releases its worktree when the origin write fails', asyn
     await manager.observeSessionEvent({
       type: 'session.created',
       clientRef: launch.clientRef,
-      session: { appSessionId: 'session-review-write-failure' },
-    } as ServerEvent);
+      session: summary({ appSessionId: 'session-review-write-failure' }),
+    });
     await manager.observeSessionEvent({
       type: 'session.updated',
-      session: { appSessionId: 'session-review-write-failure', streaming: true },
-    } as ServerEvent);
+      session: summary({ appSessionId: 'session-review-write-failure', streaming: true }),
+    });
     await manager.observeSessionEvent({
       type: 'session.updated',
-      session: { appSessionId: 'session-review-write-failure', streaming: false },
-    } as ServerEvent);
+      session: summary({ appSessionId: 'session-review-write-failure', streaming: false }),
+    });
     const storePath = join(directory, 'automations.json');
     await waitFor(async () => {
-      const store = JSON.parse(await readFile(storePath, 'utf8')) as {
-        runs: Array<{ status: string }>;
-      };
+      const store = parseAutomationStore(JSON.parse(await readFile(storePath, 'utf8')), Date.now());
       return store.runs[0]?.status === 'completed';
     });
 
@@ -404,7 +413,7 @@ test('review-chat close releases its worktree when the origin write fails', asyn
       manager.observeSessionEvent({
         type: 'session.closed',
         appSessionId: 'session-review-write-failure',
-      } as ServerEvent),
+      }),
     );
     assert.deepEqual(released, [worktree]);
   } finally {
@@ -424,9 +433,10 @@ test('an isolated worktree is not created until its path is persisted', async ()
       return worktree;
     },
     createWorkspace: async () => {
-      const store = JSON.parse(await readFile(join(directory, 'automations.json'), 'utf8')) as {
-        runs: Array<{ resolvedCwd: string | null }>;
-      };
+      const store = parseAutomationStore(
+        JSON.parse(await readFile(join(directory, 'automations.json'), 'utf8')),
+        Date.now(),
+      );
       assert.equal(store.runs[0]?.resolvedCwd, worktree);
       events.push('create');
     },
@@ -561,25 +571,23 @@ test('a restarted sidecar releases a worktree after its review origin was droppe
       await first.observeSessionEvent({
         type: 'session.created',
         clientRef: launch.clientRef,
-        session: { appSessionId: 'session-review' },
-      } as ServerEvent);
+        session: summary({ appSessionId: 'session-review' }),
+      });
       await first.observeSessionEvent({
         type: 'session.updated',
-        session: { appSessionId: 'session-review', streaming: true },
-      } as ServerEvent);
+        session: summary({ appSessionId: 'session-review', streaming: true }),
+      });
       await first.observeSessionEvent({
         type: 'session.updated',
-        session: { appSessionId: 'session-review', streaming: false },
-      } as ServerEvent);
+        session: summary({ appSessionId: 'session-review', streaming: false }),
+      });
       await waitFor(async () => (await first.snapshot()).runs[0]?.status === 'completed');
     } finally {
       await first.shutdown();
     }
     assert.equal(released.length, 0);
     const storePath = join(directory, 'automations.json');
-    const store = JSON.parse(await readFile(storePath, 'utf8')) as {
-      sessionOrigins: Record<string, unknown>;
-    };
+    const store = parseAutomationStore(JSON.parse(await readFile(storePath, 'utf8')), Date.now());
     delete store.sessionOrigins['session-review'];
     await writeFile(storePath, JSON.stringify(store), 'utf8');
     const second = createManager(directory, {
@@ -822,8 +830,8 @@ test('an unattended run cannot create another automation', async () => {
     await manager.observeSessionEvent({
       type: 'session.created',
       clientRef: launch.clientRef,
-      session: { appSessionId: 'session-run', autonomy: 'high' },
-    } as ServerEvent);
+      session: summary({ appSessionId: 'session-run', autonomy: 'high' }),
+    });
     await assert.rejects(
       manager.createFromSession(task({ timezone: 'UTC' }), 'session-run'),
       /unattended/i,
@@ -934,8 +942,8 @@ test('shutdown waits for work started by a run-limit timer', async (context) => 
     await manager.observeSessionEvent({
       type: 'session.created',
       clientRef: launch.clientRef,
-      session: { appSessionId: 'session-timeout', streaming: true },
-    } as ServerEvent);
+      session: summary({ appSessionId: 'session-timeout', streaming: true }),
+    });
 
     context.mock.timers.tick(24 * 60 * 60 * 1_000);
     await started;
@@ -1021,13 +1029,22 @@ async function waitFor(
   }
 }
 
-async function waitWhile(
-  predicate: () => boolean | Promise<boolean>,
-  durationMs: number,
-): Promise<void> {
-  const startedAt = Date.now();
-  while (Date.now() - startedAt < durationMs) {
-    if (!(await predicate())) throw new Error('Condition failed while waiting.');
-    await new Promise((resolve) => setTimeout(resolve, 10));
-  }
+function summary(overrides: Partial<SessionSummary> & { appSessionId: string }): SessionSummary {
+  return {
+    sessionPurpose: 'chat',
+    interactionMode: 'auto',
+    role: 'primary',
+    title: 'Task',
+    goal: 'Do the task.',
+    cwd: '',
+    autonomy: 'low',
+    phase: 'running',
+    features: [],
+    tokensIn: 0,
+    tokensOut: 0,
+    contextTokens: 0,
+    createdAt: 1,
+    updatedAt: 1,
+    ...overrides,
+  };
 }

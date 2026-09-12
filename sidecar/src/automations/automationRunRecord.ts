@@ -1,3 +1,4 @@
+import { automationExecutionPrompt } from './automationAttachments.js';
 import { randomUUID } from 'node:crypto';
 import type { ClientCommand } from '../protocol.js';
 import { assertModelSelection, isReasoningEffort } from './automationInput.js';
@@ -37,6 +38,8 @@ export function newQueuedRun(
     id: randomUUID(),
     automationId: automation.id,
     automation: {
+      target: structuredClone(automation.target),
+      files: [...automation.files],
       id: automation.id,
       title: automation.title,
       prompt: automation.prompt,
@@ -75,7 +78,7 @@ export function sessionCommandForRun(run: AutomationRun): SessionCreateCommand {
     clientRef: run.clientRef,
     ...(run.resolvedCwd ? { cwd: run.resolvedCwd } : {}),
     title: run.automation.title,
-    goal: run.automation.prompt,
+    goal: automationExecutionPrompt(run.automation.prompt, run.automation.files),
     sessionPurpose: 'chat',
     interactionMode: 'auto',
     modelId: run.automation.modelId,
@@ -161,9 +164,13 @@ export function failInterruptedRuns(store: AutomationStore, now: number): Interr
     if (!isActiveRunStatus(run.status)) continue;
     run.status = 'failed';
     run.finishedAt = now;
-    run.error = 'DROIDEX restarted before this automation run finished.';
+    run.error =
+      run.automation.target.kind === 'existing-session'
+        ? 'Delivery outcome unknown; inspect conversation before retrying.'
+        : 'DROIDEX restarted before this automation run finished.';
     const automation = store.automations.find((candidate) => candidate.id === run.automationId);
     if (automation) projectSettledRun(automation, run, now);
+    if (run.automation.target.kind === 'existing-session') continue;
     // The chat from the previous process is no longer tracked by any run, so it
     // must not keep streaming on its own.
     if (run.appSessionId) cleanup.appSessionIds.push(run.appSessionId);
@@ -179,7 +186,8 @@ export function failInterruptedRuns(store: AutomationStore, now: number): Interr
   // A review chat that already closed may have persisted the origin deletion
   // before the worktree was removed. Releasing again is how that crash recovers.
   for (const run of store.runs) {
-    if (!isSettledRunStatus(run.status)) continue;
+    if (!isSettledRunStatus(run.status) || run.automation.target.kind === 'existing-session')
+      continue;
     if (run.automation.executionMode !== 'worktree' || !run.resolvedCwd?.trim()) continue;
     if (run.appSessionId && store.sessionOrigins[run.appSessionId]) continue;
     cleanup.workspaces.push({
