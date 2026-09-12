@@ -6,6 +6,11 @@ export type AutomationSchedule =
   | { kind: 'weekly'; weekday: number; time: string }
   | { kind: 'cron'; expression: string };
 
+export type AutomationDeliveryReceipt =
+  | { status: 'accepted'; settled: Promise<void> }
+  | { status: 'busy' }
+  | { status: 'unavailable'; error: string };
+
 export type AutomationExecutionMode = 'local' | 'worktree';
 export type AutomationAutonomy = 'off' | 'low' | 'medium' | 'high';
 export type AutomationRunStatus = 'queued' | 'starting' | 'running' | 'completed' | 'failed';
