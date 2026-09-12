@@ -87,7 +87,7 @@ export default tseslint.config(
   },
 
   {
-    files: ['**/*.test.{ts,tsx}', 'vite.config.ts'],
+    files: ['**/*.test.{ts,tsx}', 'tests/integration/automations.spec.ts', 'vite.config.ts'],
     extends: [tseslint.configs.recommended],
     languageOptions: {
       globals: {
@@ -100,6 +100,26 @@ export default tseslint.config(
   {
     files: ['packages/icons/**/*.mjs'],
     languageOptions: { globals: globals.node },
+  },
+
+  {
+    files: [
+      'src/features/automations/**/*.{ts,tsx}',
+      'sidecar/src/automations/**/*.ts',
+      'sidecar/src/sessionAutomationDelivery.ts',
+      'sidecar/src/SessionManager.scheduledDelivery.test.ts',
+      'src/components/PromptInput.{tsx,test.ts}',
+      'src/components/composer/ComposerSendButton.tsx',
+      'src/components/composer/PendingPromptPreview.tsx',
+      'src/components/composer/QueuedPrompts.tsx',
+      'src/components/composer/SelectionMenu.tsx',
+      'src/components/composer/useQueuedPromptDelivery.ts',
+      'src/lib/composePrompt.ts',
+      'tests/integration/automations.spec.ts',
+    ],
+    rules: {
+      '@typescript-eslint/consistent-type-assertions': ['error', { assertionStyle: 'never' }],
+    },
   },
 
   {
