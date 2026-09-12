@@ -25,6 +25,7 @@ export function AutomationsRoute({
       automationEditorRequest: current.automationEditorRequest,
       draftChat: current.draftChat,
       models: current.models,
+      sessions: current.sessions,
     }),
     shallowEqual,
   );
@@ -37,6 +38,7 @@ export function AutomationsRoute({
       workspaceScopes={workspaceScopes}
       workspaceScopesReady={workspaceScopesReady}
       models={state.models}
+      sessions={state.sessions}
       defaultModelId={
         activeSession?.modelId ??
         state.agentConfig.primary.modelId ??
