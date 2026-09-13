@@ -22,6 +22,10 @@ const CLIENT_INFO = {
   version: process.env.npm_package_version ?? '0.0.0',
 };
 
+// The app-server releases this build was written against. `experimentalApi`
+// exposes shapes that move between releases, so a CLI outside the range is
+// refused rather than half-supported.
+const SUPPORTED_VERSIONS = { prefix: '0.149.', label: '0.149.x' };
 const PROBE_TIMEOUT_MS = 25_000;
 const INSTALL_HINT = 'Codex CLI not found. Install it, then refresh.';
 const LOGIN_HINT = 'Run `codex login` in a terminal and sign in, then refresh.';
@@ -126,11 +130,18 @@ export class CodexProvider implements Provider {
       if (!account.account && account.requiresOpenaiAuth)
         return unavailable('unauthenticated', LOGIN_HINT);
       const version = codexVersion(userAgent);
+      if (!version) return unavailable('error', `Codex did not report a version (${userAgent}).`);
+      if (!version.startsWith(SUPPORTED_VERSIONS.prefix))
+        return unavailable(
+          'unsupported',
+          `Codex ${version} is installed; this build supports ${SUPPORTED_VERSIONS.label}.`,
+          version,
+        );
       const label = accountLabel(account.account);
       return {
         provider: 'codex',
         readiness: 'ready',
-        ...(version ? { version } : {}),
+        version,
         ...(label ? { accountLabel: label } : {}),
         models: await listModels(client),
       };
