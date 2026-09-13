@@ -145,7 +145,9 @@ export class SessionLifecycle {
       // any slow or fallible discovery work so a bad command always gets its own
       // diagnostic instead of failing mid-open.
       const autonomy = requireAutonomyForCommand(command);
-      const provider = requireProviderKind(command.provider);
+      // Resolved here so an unroutable provider fails before any resource starts.
+      const kind = requireProviderKind(command.provider);
+      const provider = d.provider(kind);
       const defaults = await d.getFactoryDefaults();
       const interactionMode = createInteractionModeForCommand(command, defaults);
       const defaultsMode = createDefaultsModeForCommand(command, interactionMode);
@@ -169,7 +171,7 @@ export class SessionLifecycle {
       this.requireOpenAdmission();
       const mcp = await d.startLocalMcpServers(ref, appCwd);
       pendingMcpServers = mcp.servers;
-      const providerSession = await d.provider(provider).create({
+      const providerSession = await provider.create({
         ...buildCreateRuntimeOptions({
           command,
           runtimeCwd,
@@ -206,7 +208,7 @@ export class SessionLifecycle {
         compactionModel,
         agents,
         autonomy,
-        provider,
+        provider: kind,
         ...(maxContextTokens !== undefined ? { maxContextTokens } : {}),
         ...(autoCompactionArmed ? { compactionTokenLimit } : {}),
         now: Date.now(),
@@ -281,6 +283,7 @@ export class SessionLifecycle {
       pendingMcpServers = mcp.servers;
       const providerSession = await provider.resume(providerSessionId, {
         appSessionId,
+        ...(historical?.resumeId ? { resumeId: historical.resumeId } : {}),
         interactions: d.interactionsFor(ref),
         cwd: historical?.cwd,
         mcpServers: mcp.configs,

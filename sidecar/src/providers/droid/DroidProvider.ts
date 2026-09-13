@@ -28,10 +28,12 @@ export class DroidProvider implements Provider {
 
   async resume(
     providerSessionId: string,
-    { appSessionId, interactions, ...handlers }: ProviderResumeInput,
+    { appSessionId, interactions, cwd, mcpServers }: ProviderResumeInput,
   ): Promise<ProviderSession> {
+    // Droid resumes by session id, so the generic resume handle is not needed.
     const session = await this.runtime.loadSession(providerSessionId, {
-      ...handlers,
+      cwd,
+      mcpServers,
       ...droidInteractionHandlers({ id: appSessionId }, interactions),
     });
     return new DroidProviderSession(appSessionId, session, this.runtime);
