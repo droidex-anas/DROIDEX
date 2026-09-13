@@ -91,6 +91,11 @@ export interface LiveSession extends LiveTurnState {
 }
 type LifecycleError = Omit<Extract<ServerEvent, { type: 'error' }>, 'type'>;
 
+// What a mid-turn send did: the provider took it into the running turn, the
+// turn was already ending so it waits on the queue, or the session has to be
+// interrupted and the prompt resent.
+type SteerOutcome = 'taken' | 'queued' | 'interrupt';
+
 export interface SessionLifecycleDependencies {
   provider: (kind: ProviderKind) => Provider;
   registry: SessionRegistry<LiveSession>;
@@ -136,7 +141,7 @@ export interface SessionLifecycleDependencies {
 export class SessionLifecycle {
   private readonly deferredCloses = new WeakMap<LiveSession, DeferredClose>();
   // One steer at a time per session; see steerTurn.
-  private readonly steering = new WeakMap<LiveSession, Promise<boolean>>();
+  private readonly steering = new WeakMap<LiveSession, Promise<SteerOutcome>>();
   private readonly resumeOperations = new Map<string, Promise<boolean>>();
 
   constructor(private readonly dependencies: SessionLifecycleDependencies) {}
@@ -415,10 +420,14 @@ export class SessionLifecycle {
       !liveSession.autoCompacting &&
       !liveSession.interrupting &&
       !liveSession.interruptingForSteer;
-    if (steerable && (await this.steerTurn(liveSession, text))) return;
+    const steered = steerable ? await this.steerTurn(liveSession, text) : 'interrupt';
+    if (steered === 'taken') return;
     liveSession.pendingSends.unshift(text);
     this.updateQueuedSends(liveSession);
-    if (liveSession.compacting || liveSession.autoCompacting) return;
+    // 'queued' means the turn this send meant to steer is already ending: the
+    // prompt travels on the queue and a second interrupt would only end the
+    // turn that the first one is about to redeliver it into.
+    if (steered === 'queued' || liveSession.compacting || liveSession.autoCompacting) return;
     liveSession.interruptingForSteer = true;
     this.dependencies.emitStatus(liveSession.summary.appSessionId, 'Steering now...');
     try {
@@ -433,23 +442,33 @@ export class SessionLifecycle {
     }
   }
 
-  // The provider's own steer, when it has one. False leaves the caller to
+  // The provider's own steer, when it has one. 'interrupt' leaves the caller to
   // interrupt and resend, which is how every other provider steers. Steers run
   // one at a time per session: two racing sends would both aim at the turn id
   // they read before the other landed, and the loser would fall back.
-  private steerTurn(liveSession: LiveSession, text: string): Promise<boolean> {
-    if (!liveSession.session.steer) return Promise.resolve(false);
-    const next = (this.steering.get(liveSession) ?? Promise.resolve()).then(() =>
-      this.steerOnce(liveSession, text),
-    );
+  private steerTurn(liveSession: LiveSession, text: string): Promise<SteerOutcome> {
+    if (!liveSession.session.steer) return Promise.resolve('interrupt');
+    const next = (
+      this.steering.get(liveSession) ?? Promise.resolve<SteerOutcome>('interrupt')
+    ).then(() => this.steerOnce(liveSession, text));
     this.steering.set(liveSession, next);
     return next;
   }
 
-  private async steerOnce(liveSession: LiveSession, text: string): Promise<boolean> {
+  private async steerOnce(liveSession: LiveSession, text: string): Promise<SteerOutcome> {
     const session = liveSession.session;
-    if (!session.steer) return false;
     const appSessionId = liveSession.summary.appSessionId;
+    if (!session.steer) return 'interrupt';
+    // Re-read after waiting for the steer ahead of this one: that steer may have
+    // failed and started the fallback interrupt, leaving no turn to take this
+    // prompt and nothing to gain from a second one.
+    if (
+      this.dependencies.registry.getLive(appSessionId) !== liveSession ||
+      !liveSession.streaming ||
+      liveSession.interrupting ||
+      liveSession.interruptingForSteer
+    )
+      return 'queued';
     try {
       await session.steer(text);
     } catch (error) {
@@ -458,13 +477,13 @@ export class SessionLifecycle {
         appSessionId,
         message: `Could not steer the running turn: ${errMsg(error)}`,
       });
-      return false;
+      return 'interrupt';
     }
     // The session may have been replaced while the steer was in flight; only
     // the one that took the prompt records it.
     if (this.dependencies.registry.getLive(appSessionId) === liveSession)
       this.dependencies.recordPrompt(appSessionId, text);
-    return true;
+    return 'taken';
   }
 
   async interrupt(requestedAppSessionId: string): Promise<void> {
