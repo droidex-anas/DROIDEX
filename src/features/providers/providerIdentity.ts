@@ -59,14 +59,16 @@ export function providerModelCatalog(
   return status?.models ?? NO_MODELS;
 }
 
-// A model chosen from another provider's catalog is not a selection here. The
-// picker offers only what this provider published, so anything else reads as
-// "no selection" and the provider's own default is used.
+// A model that is not in this provider's catalog is not a selection here — a
+// stale pick, or one belonging to another provider — so it reads as "no
+// selection" and the provider's own default is used instead. The stored
+// preference is left alone; only what is sent is narrowed. An empty catalog is
+// not a judgement: nothing has been published yet, so a preference stands
+// rather than being dropped on a slow start.
 export function providerModelSelection(
-  provider: ProviderKind,
   modelId: string | undefined,
   catalog: ModelInfo[],
 ): string | undefined {
-  if (provider === 'droid' || modelId === undefined) return modelId;
+  if (modelId === undefined || catalog.length === 0) return modelId;
   return catalog.some((model) => model.id === modelId) ? modelId : undefined;
 }

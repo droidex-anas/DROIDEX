@@ -809,7 +809,6 @@ export default function PromptInput({
   // for a chat on another provider: that chat starts on its provider's own
   // default rather than a model its runtime has never heard of.
   const primaryModelId = providerModelSelection(
-    composerProvider,
     chatScoped ? activeSession.modelId : state.agentConfig.primary.modelId,
     composerModels,
   );
@@ -818,7 +817,7 @@ export default function PromptInput({
   // published, and carrying reasoning only where a provider honours it.
   const draftModelSettings = droidComposer
     ? {
-        modelId: state.agentConfig.primary.modelId,
+        ...(primaryModelId ? { modelId: primaryModelId } : {}),
         reasoningEffort: state.agentConfig.primary.reasoning,
       }
     : primaryModelId

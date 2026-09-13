@@ -40,7 +40,8 @@ export function claudeCanUseTool(
 ): CanUseTool {
   return async (toolName, input, options): Promise<PermissionResult> => {
     // Plan approval is its own flow; auto-allowing it would let the model act on
-    // a plan the user has not seen.
+    // a plan the user has not seen. The tool is also disallowed at the query,
+    // which is what covers the modes that never consult this callback.
     if (toolName === 'ExitPlanMode')
       return deny('Stop here and wait for the user to review the plan.');
     const decision = await Promise.race([
