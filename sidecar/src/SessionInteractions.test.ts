@@ -36,9 +36,9 @@ function createHarness(options: HarnessOptions = {}) {
         (liveSession) =>
           liveSession.summary.appSessionId === id || liveSession.summary.providerSessionId === id,
       ),
-    exitSpecModeForRun: () => {
-      trace.push('provider:auto');
-      return options.rejectProviderUpdate
+    setProviderSpecMode: (_id, spec) => {
+      trace.push(spec ? 'provider:spec' : 'provider:auto');
+      return !spec && options.rejectProviderUpdate
         ? Promise.reject(new Error('provider rejected'))
         : Promise.resolve();
     },
@@ -302,6 +302,7 @@ test('Spec approval declines on a summary failure and settles the callback once'
   assert.deepEqual(harness.trace, [
     'provider:auto',
     'publish:auto',
+    'provider:spec',
     'error:spec.exit_failed',
     'callback',
   ]);

@@ -417,7 +417,7 @@ export class SessionManager {
       emit: (event) => {
         this.emit(event);
       },
-      exitSpecModeForRun: (appSessionId) => this.exitSpecModeForRun(appSessionId),
+      setProviderSpecMode: (appSessionId, spec) => this.setProviderSpecMode(appSessionId, spec),
       emitError: (error) => {
         this.emitError(error);
       },
@@ -1705,11 +1705,12 @@ export class SessionManager {
     }
   }
 
-  // An approved Spec plan runs in Auto. Only the provider switch lives here; the
+  // An approved Spec plan runs in Auto, and a plan whose approval could not be
+  // recorded goes back to planning. Only the provider switch lives here; the
   // interaction layer owns the summary update that goes with it.
-  private async exitSpecModeForRun(appSessionId: string): Promise<void> {
+  private async setProviderSpecMode(appSessionId: string, spec: boolean): Promise<void> {
     const session = this.registry.getLive(appSessionId)?.session;
-    await session?.setInteractionMode?.('auto');
+    await session?.setInteractionMode?.(spec ? 'spec' : 'auto');
   }
 
   // Spec-mode turns run on specModeModelId. Align it with the session's visible

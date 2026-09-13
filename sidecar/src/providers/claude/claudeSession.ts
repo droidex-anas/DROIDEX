@@ -142,7 +142,11 @@ export class ClaudeSession implements ProviderSession {
   ): Promise<void> {
     const applied = this.modeChanges.then(async () => {
       const { autonomy, planning } = next();
-      await this.query.setPermissionMode(planning ? 'plan' : claudePermissionMode(autonomy));
+      // While the session is planning the permission mode is already plan mode
+      // and stays it, so a new autonomy is only recorded here and takes effect
+      // when the session leaves Spec.
+      if (!planning || !this.planning)
+        await this.query.setPermissionMode(planning ? 'plan' : claudePermissionMode(autonomy));
       this.autonomy = autonomy;
       this.planning = planning;
     });
