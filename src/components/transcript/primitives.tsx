@@ -131,11 +131,16 @@ function CopyButton({ text }: { text: string }) {
   );
 }
 
-// A small red "error" pill beside the label of a failed tool's header row.
-export function ErrorTag() {
+// A small red "error" pill beside the label of a failed tool's header row;
+// `emphasis` is the row-level form an error line wears at its right edge.
+export function ErrorTag({ emphasis = false }: { emphasis?: boolean }) {
   return (
     <span
-      className="shrink-0 rounded-md px-1.5 py-px text-[11px] font-medium"
+      className={`shrink-0 rounded-md font-medium ${
+        emphasis
+          ? 'ml-auto px-2 py-0.5 text-[10px] uppercase tracking-[0.08em]'
+          : 'px-1.5 py-px text-[11px]'
+      }`}
       style={{
         backgroundColor: 'color-mix(in srgb, var(--droid-red) 15%, transparent)',
         color: RED,

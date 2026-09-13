@@ -179,9 +179,13 @@ export function summarizeTools(events: TranscriptEvent[]): string {
 
 // A standalone failed result (or a pure error event) rendered as a collapsible
 // row: a red "error" tag with the first line, expanding to the full message.
+// An error reads like the other turn rows ("Worked for 12s"): a disclosure
+// whose label names the error, with the tag at the row's right edge.
 export function ErrorLine({ text }: { text: string }) {
   const [open, setOpen] = useState(false);
   const body = stripAnsi(text).trim();
+  const head = firstLine(body);
+  const label = /^error\b/i.test(head) ? head : `Error: ${head}`;
   return (
     <div>
       <button
@@ -192,8 +196,8 @@ export function ErrorLine({ text }: { text: string }) {
         aria-expanded={open}
       >
         <Caret open={open} />
-        <span className="min-w-0 truncate text-droid-text-muted">{firstLine(body)}</span>
-        <ErrorTag />
+        <span className="min-w-0 truncate text-droid-text-secondary">{label}</span>
+        <ErrorTag emphasis />
       </button>
       <Expand open={open}>
         <div className="mt-1.5 pl-[18px]">
