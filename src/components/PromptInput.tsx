@@ -593,6 +593,12 @@ export default function PromptInput({
     if (!isLive) setSendHover(false);
   }, [isLive]);
 
+  // The provider chip turns into a plain mark once a session exists, so a menu
+  // left open by the activation must not keep the overlay flag raised.
+  useEffect(() => {
+    if (state.activeAppSessionId) setProviderOpen(false);
+  }, [state.activeAppSessionId]);
+
   useEffect(() => {
     if (
       turnStarting &&

@@ -33,7 +33,12 @@ test('rejects approval requests with unknown permission kinds', () => {
 });
 
 test('accepts provider statuses and rejects unknown providers or readiness', () => {
-  const model = { id: 'droid-core', displayName: 'Droid Core', isCustom: false };
+  const model = {
+    id: 'droid-core',
+    displayName: 'Droid Core',
+    isCustom: false,
+    supportedReasoningEfforts: ['low', 'high'],
+  };
   const status = { provider: 'droid', readiness: 'ready', message: 'ok', models: [model] };
   assert.notEqual(serverWireMessage(batch({ type: 'provider.status', statuses: [status] })), null);
   assert.equal(
@@ -52,7 +57,16 @@ test('accepts provider statuses and rejects unknown providers or readiness', () 
     serverWireMessage(
       batch({
         type: 'provider.status',
-        statuses: [{ ...status, models: [{ ...model, isCustom: 'no' }] }],
+        statuses: [{ ...status, models: [{ ...model, id: '' }] }],
+      }),
+    ),
+    null,
+  );
+  assert.equal(
+    serverWireMessage(
+      batch({
+        type: 'provider.status',
+        statuses: [{ ...status, models: [{ ...model, supportedReasoningEfforts: [7] }] }],
       }),
     ),
     null,

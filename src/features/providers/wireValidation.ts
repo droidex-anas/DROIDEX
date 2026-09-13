@@ -20,15 +20,26 @@ export function isProviderStatus(value: unknown): boolean {
   );
 }
 
-// The three fields the sidecar's catalog merge always fills; the rest are
-// optional hints a build may or may not know about.
+// The fields the sidecar's catalog merge always fills, plus the one optional
+// field consumers iterate. The remaining optional hints are read defensively
+// wherever they are used, so they are tolerated rather than policed here.
 export function isModelInfo(value: unknown): boolean {
   return (
     isRecord(value) &&
-    typeof value.id === 'string' &&
-    typeof value.displayName === 'string' &&
-    typeof value.isCustom === 'boolean'
+    nonEmptyString(value.id) &&
+    nonEmptyString(value.displayName) &&
+    typeof value.isCustom === 'boolean' &&
+    (value.supportedReasoningEfforts === undefined ||
+      isStringArray(value.supportedReasoningEfforts))
   );
+}
+
+function nonEmptyString(value: unknown): boolean {
+  return typeof value === 'string' && value.length > 0;
+}
+
+function isStringArray(value: unknown): boolean {
+  return Array.isArray(value) && value.every((entry) => typeof entry === 'string');
 }
 
 function optionalStrings(value: Record<string, unknown>, keys: readonly string[]): boolean {
