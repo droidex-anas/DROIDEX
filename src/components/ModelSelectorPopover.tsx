@@ -10,6 +10,7 @@ import {
   planChildModelUpdate,
   type ExactChildSettingsTarget,
 } from '../lib/exactChildSettings';
+import { providerModelCatalog } from '../features/providers/providerIdentity';
 import ModelCatalogList, { defaultModelOf, effortsFor, stepEffort } from './ModelCatalogList';
 
 export type { ExactChildSettingsTarget } from '../lib/exactChildSettings';
@@ -18,17 +19,19 @@ const ACCENT = 'var(--droid-accent)';
 const accentMix = (pct: number) =>
   `color-mix(in srgb, var(--droid-accent) ${String(pct)}%, transparent)`;
 
-type ModelCategory = 'core' | 'factory' | 'custom';
+type ModelCategory = 'core' | 'factory' | 'claude' | 'custom';
 
 const CATEGORY_LABEL: Record<ModelCategory, string> = {
   core: 'Droid core',
   factory: 'Factory',
+  claude: 'Claude',
   custom: 'Custom',
 };
 
 function categoryOf(model: ModelInfo): ModelCategory {
   if (model.isCustom || model.id.startsWith('custom:')) return 'custom';
   const provider = (model.provider ?? '').toLowerCase();
+  if (provider === 'anthropic') return 'claude';
   if (provider === 'droid-core' || model.displayName.toLowerCase().startsWith('droid core'))
     return 'core';
   return 'factory';
@@ -60,6 +63,10 @@ export default function ModelSelectorPopover({
       activeSessionModelId: activeSession?.modelId,
       activeSessionReasoning: activeSession?.reasoningEffort,
       agentConfig: current.agentConfig,
+      // The chat's provider owns the catalog: Droid's comes from the CLI,
+      // every other provider reports its own with its status.
+      provider: activeSession?.provider ?? current.draftProvider,
+      providerStatuses: current.providerStatuses,
       models: current.models,
     };
   }, shallowEqual);
@@ -91,16 +98,17 @@ export default function ModelSelectorPopover({
   effReasoningRef.current = effReasoning;
   const childReady = childTarget?.readiness === 'ready';
 
-  const hasRealModels = state.models.length > 0;
-  const source = state.models;
+  const source = providerModelCatalog(state.provider, state.models, state.providerStatuses);
+  const hasRealModels = source.length > 0;
+  const needsDroidCatalog = state.provider === 'droid' && !hasRealModels;
 
   // The catalog is Droid CLI's source of truth; if it hasn't arrived yet, fetch it.
   useEffect(() => {
-    if (!hasRealModels) listModels();
-  }, [hasRealModels]);
+    if (needsDroidCatalog) listModels();
+  }, [needsDroidCatalog]);
 
   const catCounts = useMemo(() => {
-    const counts: Record<ModelCategory, number> = { core: 0, factory: 0, custom: 0 };
+    const counts: Record<ModelCategory, number> = { core: 0, factory: 0, claude: 0, custom: 0 };
     source.forEach((m) => {
       counts[categoryOf(m)] += 1;
     });
@@ -391,6 +399,11 @@ export default function ModelSelectorPopover({
                         value: 'factory' as const,
                         label: CATEGORY_LABEL.factory,
                         count: catCounts.factory,
+                      },
+                      {
+                        value: 'claude' as const,
+                        label: CATEGORY_LABEL.claude,
+                        count: catCounts.claude,
                       },
                       {
                         value: 'custom' as const,

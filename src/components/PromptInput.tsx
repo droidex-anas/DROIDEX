@@ -101,6 +101,7 @@ import ComposerMenu, { type MenuItem, type SlashCommand } from './ComposerMenu';
 import ModelSelectorPopover from './ModelSelectorPopover';
 import ProviderPicker from '../features/providers/ProviderPicker';
 import { effectiveProvider } from '../features/providers/providerDraft';
+import { providerModelCatalog } from '../features/providers/providerIdentity';
 import AutonomySelector from './AutonomySelector';
 import { AUTONOMY_LABELS, missionStartAllowed } from '../lib/autonomy';
 import {
@@ -123,6 +124,9 @@ import { toast } from '../lib/toast';
 const ComposerEditor = lazy(() => import('./composer/ComposerEditor'));
 
 const ACCENT = 'var(--droid-accent)';
+// Slash entries that drive Droid's own subsystems, so they leave the menu with
+// the controls they belong to when the chat runs on another provider.
+const DROID_ONLY_COMMANDS = new Set(['/mission', '/compact', '/spec']);
 const accentMix = (pct: number) =>
   `color-mix(in srgb, var(--droid-accent) ${String(pct)}%, transparent)`;
 type SubmitMode = 'queue' | 'now';
@@ -391,11 +395,19 @@ export default function PromptInput({
     }
     return out;
   }, sameStrings);
+  // A stored pick this build cannot run falls back to Droid, and the chip shows
+  // the fallback rather than a selection the picker would render as disabled.
+  const draftProvider = effectiveProvider(state.draftProvider, state.providerStatuses);
+  // Spec mode, Mission Control and compaction are Droid's own subsystems. A chat
+  // on any other provider hides them instead of offering controls that cannot
+  // work there.
+  const composerProvider = activeSession?.provider ?? draftProvider;
+  const droidComposer = composerProvider === 'droid';
   // For an existing chat session the mode is whatever the session actually is
   // (so a chat reopened in spec mode shows Spec); only fall back to the global
   // compose flag while drafting a brand-new chat.
   const isSpecMode =
-    activeSession?.sessionPurpose !== 'mission-control'
+    droidComposer && activeSession?.sessionPurpose !== 'mission-control'
       ? activeSession?.interactionMode === 'spec' || (!activeSession && state.specMode)
       : false;
   const selectedChild = state.selectedChild;
@@ -568,7 +580,7 @@ export default function PromptInput({
         dispatch({ type: 'TOGGLE_SETTINGS' });
       },
     },
-  ];
+  ].filter((command) => droidComposer || !DROID_ONLY_COMMANDS.has(command.cmd));
 
   // Typing, and every edit that behaves like typing, leaves history recall.
   const editDraft = (text: string) => {
@@ -767,16 +779,13 @@ export default function PromptInput({
     editor.select(pos, pos);
   }, [input, editorReady]);
 
-  const missionPreview = activeSession
-    ? activeSession.sessionPurpose === 'mission-control'
-    : state.missionControlMode;
+  const missionPreview =
+    droidComposer &&
+    (activeSession ? activeSession.sessionPurpose === 'mission-control' : state.missionControlMode);
 
   // Autonomy snapshot for a session this composer would create: the draft
   // override when the user picked one, otherwise the persisted app default.
   const draftAutonomy = state.draftAutonomy ?? state.defaultAutonomy;
-  // A stored pick this build cannot run falls back to Droid, and the chip shows
-  // the fallback rather than a selection the picker would render as disabled.
-  const draftProvider = effectiveProvider(state.draftProvider, state.providerStatuses);
   const [missionAutonomyGateOpen, setMissionAutonomyGateOpen] = useState(false);
   // The gate's premise is gone once the draft is at High (e.g. raised through
   // the selector while the gate is showing).
@@ -789,8 +798,13 @@ export default function PromptInput({
   // default while composing a brand-new chat that has no session yet.
   const chatScoped = !missionPreview && !!activeSession;
   const primaryModelId = chatScoped ? activeSession.modelId : state.agentConfig.primary.modelId;
+  const composerModels = providerModelCatalog(
+    composerProvider,
+    state.models,
+    state.providerStatuses,
+  );
   const selectedModel = primaryModelId
-    ? state.models.find((m) => m.id === primaryModelId)
+    ? composerModels.find((m) => m.id === primaryModelId)
     : undefined;
   const selectedModelLabel = primaryModelId
     ? (selectedModel?.displayName ?? primaryModelId)
@@ -956,11 +970,13 @@ export default function PromptInput({
       return;
     }
 
-    const submitCommand = submitCommandFor(text, {
-      visualizeSelected,
-      skillCount: activeSkills.length,
-      fileCount: allFiles.length,
-    });
+    const submitCommand = droidComposer
+      ? submitCommandFor(text, {
+          visualizeSelected,
+          skillCount: activeSkills.length,
+          fileCount: allFiles.length,
+        })
+      : null;
     if (submitCommand === 'mission') {
       dispatch({ type: 'TOGGLE_MISSION_CONTROL' });
       clearAfterSubmit();
@@ -1770,16 +1786,18 @@ export default function PromptInput({
               </AnimatePresence>
             </div>
 
-            <button
-              onClick={toggleSpec}
-              className={`flex items-center gap-1.5 px-2 py-1 rounded-lg text-[11px] transition-colors shrink-0 ${
-                isSpecMode
-                  ? 'text-droid-accent bg-droid-accent/10 hover:bg-droid-accent/15'
-                  : 'text-droid-text-secondary hover:text-droid-text hover:bg-droid-bg/40'
-              }`}
-            >
-              <span>{isSpecMode ? 'Spec' : 'Chat'}</span>
-            </button>
+            {droidComposer && (
+              <button
+                onClick={toggleSpec}
+                className={`flex items-center gap-1.5 px-2 py-1 rounded-lg text-[11px] transition-colors shrink-0 ${
+                  isSpecMode
+                    ? 'text-droid-accent bg-droid-accent/10 hover:bg-droid-accent/15'
+                    : 'text-droid-text-secondary hover:text-droid-text hover:bg-droid-bg/40'
+                }`}
+              >
+                <span>{isSpecMode ? 'Spec' : 'Chat'}</span>
+              </button>
+            )}
 
             {activeSession && <RunningProcessesChip appSessionId={activeSession.appSessionId} />}
 

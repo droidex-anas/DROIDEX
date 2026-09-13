@@ -1,5 +1,10 @@
 import type { Provider } from '../../components/ModelIcon';
-import type { ProviderKind, ProviderReadiness, ProviderStatus } from '../../types/bridge';
+import type {
+  ModelInfo,
+  ProviderKind,
+  ProviderReadiness,
+  ProviderStatus,
+} from '../../types/bridge';
 
 export const PROVIDER_LABELS: Record<ProviderKind, string> = {
   droid: 'Droid',
@@ -32,4 +37,19 @@ export function providerUnavailableReason(status: ProviderStatus | undefined): s
   const message = status.message?.trim();
   if (message) return message;
   return READINESS_REASONS[status.readiness];
+}
+
+// Shared so a provider with no status yet keeps a stable identity across
+// renders and the popover's memos are not invalidated every frame.
+const NO_MODELS: ModelInfo[] = [];
+
+// The models a composer offers for a provider. Droid's are the CLI catalog the
+// sidecar publishes; every other provider carries its own on its status.
+export function providerModelCatalog(
+  provider: ProviderKind,
+  droidModels: ModelInfo[],
+  statuses: ProviderStatus[],
+): ModelInfo[] {
+  if (provider === 'droid') return droidModels;
+  return statuses.find((status) => status.provider === provider)?.models ?? NO_MODELS;
 }
