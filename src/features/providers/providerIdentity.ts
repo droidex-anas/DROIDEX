@@ -66,9 +66,14 @@ export function providerModelCatalog(
 // not a judgement: nothing has been published yet, so a preference stands
 // rather than being dropped on a slow start.
 export function providerModelSelection(
+  provider: ProviderKind,
   modelId: string | undefined,
   catalog: ModelInfo[],
 ): string | undefined {
-  if (modelId === undefined || catalog.length === 0) return modelId;
+  if (modelId === undefined) return undefined;
+  // Droid's catalog arrives after boot, so an empty one is not yet a verdict on
+  // a pinned model. The other providers publish their models with their
+  // readiness, so an empty catalog means the id is not theirs.
+  if (catalog.length === 0) return provider === 'droid' ? modelId : undefined;
   return catalog.some((model) => model.id === modelId) ? modelId : undefined;
 }
