@@ -231,9 +231,19 @@ export class SessionInteractions {
       return true;
     } catch (error) {
       // The provider already left planning; without a record of it the chat and
-      // its session disagree, so the provider is put back where the chat is.
-      await this.dependencies.setProviderSpecMode(appSessionId, true).catch(() => undefined);
+      // its session disagree, so the provider is put back where the chat is. If
+      // that fails too, the chat still reads as Spec while the session is not,
+      // and the user has to hear it.
       this.reportSpecExitFailure(appSessionId, error);
+      try {
+        await this.dependencies.setProviderSpecMode(appSessionId, true);
+      } catch (restoreError) {
+        this.dependencies.emitError({
+          code: 'spec.restore_failed',
+          appSessionId,
+          message: `The session left plan mode but could not be put back: ${errMsg(restoreError)}. Toggle Spec off and on to resync.`,
+        });
+      }
       return false;
     }
   }
