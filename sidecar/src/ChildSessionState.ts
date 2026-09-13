@@ -40,7 +40,9 @@ export interface ChildSpawnObservation {
 }
 export interface ChildParentLease {
   summary: SessionSummary;
-  session: FactorySession;
+  // Child sessions are a Droid feature: the parent's SDK session is what they
+  // inherit settings from and spawn under.
+  droid: FactorySession;
   mcpConfigs: McpServerConfig[];
   closeMode?: 'discard-pending' | 'preserve-pending';
 }

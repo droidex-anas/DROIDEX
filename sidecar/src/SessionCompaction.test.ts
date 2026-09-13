@@ -21,6 +21,7 @@ interface Harness {
   calls: RecordedCall[];
   compaction: SessionCompaction;
   patches: { appSessionId: string; patch: Partial<SessionSummary> }[];
+  runtime: FakeFactoryRuntime;
   setDefaultsReader(reader: () => Promise<FactoryDefaultSettings>): void;
 }
 
@@ -76,6 +77,7 @@ function createHarness(): Harness {
     calls,
     compaction,
     patches,
+    runtime,
     setDefaultsReader: (reader) => {
       readDefaults = reader;
     },
@@ -92,7 +94,7 @@ function primaryTarget(
   setCurrent(value: boolean): void;
 } {
   const session = new FakeFactorySession(`${id}-backend`, {}, h.calls);
-  const liveSession = createCompactionTestLiveSession(id, session);
+  const liveSession = createCompactionTestLiveSession(id, session, h.runtime);
   let current = true;
   const target: PrimaryCompactionTarget = {
     kind: 'primary',

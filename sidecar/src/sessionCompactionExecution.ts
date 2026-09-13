@@ -3,6 +3,7 @@ import type { FactoryRuntime, FactorySession } from './DroidRuntime.js';
 import type { ServerEvent } from './protocol.js';
 import type { AgentProcessMonitor } from './processes/AgentProcessMonitor.js';
 import { droidInteractionHandlers } from './providers/droid/droidInteractions.js';
+import { DroidProviderSession } from './providers/droid/DroidProviderSession.js';
 import type { ProviderInteractions } from './providers/interactions.js';
 import type { LiveOperationTarget, SessionContext, UsageOffset } from './SessionContext.js';
 import type { LiveSession } from './SessionLifecycle.js';
@@ -70,7 +71,7 @@ export class SessionCompactionExecution {
     liveSession.compacting = true;
     try {
       const outcome = await runCompaction(
-        liveSession.session,
+        liveSession.droid,
         {
           status: (text, compactType) => {
             if (!isCurrent()) return;
@@ -138,7 +139,7 @@ export class SessionCompactionExecution {
       mcpServers: liveSession.mcpConfigs,
     });
     const replacementPid = this.dependencies.runtime.processIdOf(replacement);
-    const rawOldPid = this.dependencies.runtime.processIdOf(oldSession);
+    const rawOldPid = oldSession.process?.pid;
     const oldPid = rawOldPid !== replacementPid ? rawOldPid : undefined;
     let installed = false;
     try {
@@ -165,7 +166,12 @@ export class SessionCompactionExecution {
       await oldSession.close();
       if (!target.isCurrent()) return;
       if (oldPid !== undefined) this.dependencies.agentProcesses.untrack(oldPid, appSessionId);
-      liveSession.session = replacement;
+      liveSession.session = new DroidProviderSession(
+        appSessionId,
+        replacement,
+        this.dependencies.runtime,
+      );
+      liveSession.droid = replacement;
       installed = true;
       if (replacementPid !== undefined)
         this.dependencies.agentProcesses.track(appSessionId, replacementPid, () =>

@@ -22,6 +22,7 @@ import type {
   RuntimeHandlers,
   RuntimeStatus,
 } from '../DroidRuntime.js';
+import { DroidProviderSession } from '../providers/droid/DroidProviderSession.js';
 
 export interface RecordedCall {
   target: 'runtime' | 'provider' | 'history' | 'browser' | 'cleanup' | 'protocol';
@@ -572,4 +573,17 @@ export function assistantTextDelta(text: string, messageId = 'message-1'): Droid
 
 function unsupportedSessionMethod(method: string): Promise<never> {
   return Promise.reject(new Error(`FakeFactorySession does not implement ${method}.`));
+}
+
+// A live session holds a ProviderSession; tests that build one by hand wrap
+// their fake Droid session the way the Droid provider does. No process is
+// reported, so nothing here is tracked by the process monitor.
+export function fakeProviderSession(
+  appSessionId: string,
+  session: FactorySession,
+): DroidProviderSession {
+  return new DroidProviderSession(appSessionId, session, {
+    processIdOf: () => undefined,
+    isProcessAlive: () => false,
+  });
 }

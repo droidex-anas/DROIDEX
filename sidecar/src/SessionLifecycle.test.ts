@@ -11,6 +11,7 @@ import type {
   ServerEvent,
   SessionSummary,
 } from './protocol.js';
+import { DroidProvider } from './providers/droid/DroidProvider.js';
 import type { ProviderQuestionAnswers } from './providers/interactions.js';
 import {
   SessionLifecycle,
@@ -130,7 +131,7 @@ function createHarness(ordinarySummaries: SessionSummary[] = []) {
     interactionMode: 'auto',
   };
   const lifecycle = new SessionLifecycle({
-    runtime,
+    provider: () => new DroidProvider(runtime),
     registry,
     ensureConnected: () => {
       calls.push({ target: 'runtime', method: 'ensureConnected', args: [] });
@@ -228,7 +229,7 @@ function createHarness(ordinarySummaries: SessionSummary[] = []) {
     applyPendingSettingsToSummary: (item) => ({ ...item, ...projection }),
     applyPendingSessionSettings: (appSessionId) => applyPending(appSessionId),
     runPrimaryTurn: async (live, prompt) => {
-      for await (const event of live.session.stream(prompt, { includePartialMessages: true })) {
+      for await (const event of live.session.stream(prompt)) {
         void event;
       }
     },

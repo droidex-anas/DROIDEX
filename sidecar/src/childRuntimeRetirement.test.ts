@@ -51,7 +51,7 @@ function parentOf(...children: ChildSessionState[]): ParentChildSessions {
     generation: 1,
     lease: {
       summary: {} as ParentChildSessions['lease']['summary'],
-      session: new FakeFactorySession('parent-provider', {}, []),
+      droid: new FakeFactorySession('parent-provider', {}, []),
       mcpConfigs: [],
     },
     children: new Map(children.map((child) => [child.identity.childSessionId, child])),
