@@ -17,18 +17,20 @@ import type { AgentProcessMonitor } from './processes/AgentProcessMonitor.js';
 import {
   buildCreatedSessionSummary,
   buildCreateRuntimeOptions,
+  buildResumedProviderSummary,
   buildResumedSession,
   createDefaultsModeForCommand,
   createInteractionModeForCommand,
   createMissionAgentDefaultsForMode,
-  createModelDefaultsForMode,
+  createModelDefaultsForProvider,
   errMsg,
   requireAutonomyForCommand,
   resumeHandle,
+  resumeSettings,
 } from './sessionHelpers.js';
 import type { ProviderInteractions } from './providers/interactions.js';
 import { requireProviderKind, type ProviderKind } from './providers/providerKind.js';
-import { requireDroidSession } from './providers/droid/DroidProviderSession.js';
+import { droidSessionOf } from './providers/droid/DroidProviderSession.js';
 import type { Provider, ProviderSession } from './providers/session.js';
 
 export type SessionCreateCommand = Extract<ClientCommand, { type: 'session.create' }>;
@@ -74,9 +76,10 @@ type SessionCloseMode = 'discard-pending' | 'preserve-pending';
 export interface LiveSession extends LiveTurnState {
   summary: SessionSummary;
   session: ProviderSession;
-  // The SDK session behind the provider session, for the parts of the session
-  // layer that still drive Droid directly.
-  droid: FactorySession;
+  // The SDK session behind the provider session, for the subsystems only Droid
+  // has: context stats, compaction, spec mode, rewind and child sessions.
+  // Absent on every other provider, and each of those subsystems is skipped.
+  droid?: FactorySession;
   closeMode?: SessionCloseMode;
   closePromise?: Promise<void>;
   mcpServers: LocalMcpResource[];
@@ -152,7 +155,7 @@ export class SessionLifecycle {
       const defaults = await d.getFactoryDefaults();
       const interactionMode = createInteractionModeForCommand(command, defaults);
       const defaultsMode = createDefaultsModeForCommand(command, interactionMode);
-      const primary = createModelDefaultsForMode(defaultsMode, command, defaults);
+      const primary = createModelDefaultsForProvider(kind, defaultsMode, command, defaults);
       const agents = createMissionAgentDefaultsForMode(defaultsMode, command, defaults);
       const compactionModel =
         command.compactionModel ?? defaults.compactionModel ?? 'current-model';
@@ -188,15 +191,17 @@ export class SessionLifecycle {
         interactions: d.interactionsFor(ref),
       });
       pendingSession = providerSession;
-      const droid = requireDroidSession(providerSession);
+      const droid = droidSessionOf(providerSession);
       this.requireOpenAdmission();
-      const autoCompactionArmed = await d.compaction.arm(
-        {
-          session: droid,
-          isCurrent: () => !d.isShutdownStarted() && pendingSession === providerSession,
-        },
-        compactionTokenLimit,
-      );
+      const autoCompactionArmed =
+        droid !== undefined &&
+        (await d.compaction.arm(
+          {
+            session: droid,
+            isCurrent: () => !d.isShutdownStarted() && pendingSession === providerSession,
+          },
+          compactionTokenLimit,
+        ));
       this.requireOpenAdmission();
 
       const appSessionId = providerSession.providerSessionId;
@@ -217,7 +222,7 @@ export class SessionLifecycle {
       ref.id = appSessionId;
       const liveSession = createLiveSession(summary, providerSession, droid, mcp);
       pendingLiveSession = liveSession;
-      d.compaction.subscribePrimary(this.primaryAutomaticCompactionTarget(liveSession));
+      this.subscribeAutomaticCompaction(liveSession);
       d.registry.register(liveSession);
       // Registered first, so the failed-open path that unregisters also releases it.
       d.openProviderTranscript(summary);
@@ -268,7 +273,7 @@ export class SessionLifecycle {
         clientRef: `resume:${appSessionId}`,
         session: projectedSummary,
       });
-      void d.context.refresh(this.primaryContextTarget(existing));
+      this.refreshContext(existing);
       return true;
     }
 
@@ -287,44 +292,22 @@ export class SessionLifecycle {
         ...resumeHandle(historical),
         interactions: d.interactionsFor(ref),
         cwd: historical?.cwd,
+        ...resumeSettings(historical),
         mcpServers: mcp.configs,
       });
       pendingSession = providerSession;
-      const session = requireDroidSession(providerSession);
-      const defaults = await d.getFactoryDefaults();
-      const resumed = buildResumedSession({
-        init: session.initResult,
+      const session = droidSessionOf(providerSession);
+      const summary = await this.resumedSummary(session, {
         historical,
         appSessionId,
         providerSessionId,
-        defaults,
-        maxContextTokensForModel: d.maxContextTokensForModel,
-        now: Date.now(),
+        isCurrent: () => !d.isShutdownStarted() && pendingSession === providerSession,
       });
-      const summary = resumed.summary;
-      const projectedModel = d.applyPendingSettingsToSummary({ ...summary }).modelId;
-      const limit = await d.compaction.resolveLimit({
-        modelId: projectedModel,
-        exposed: resumed.exposedCompaction,
-      });
-      this.requireOpenAdmission();
-      if (
-        await d.compaction.arm(
-          {
-            appSessionId,
-            session,
-            isCurrent: () => !d.isShutdownStarted() && pendingSession === providerSession,
-          },
-          limit,
-        )
-      ) {
-        summary.compactionTokenLimit = limit;
-      }
       this.requireOpenAdmission();
       const projectedSummary = d.applyPendingSettingsToSummary({ ...summary });
       const liveSession = createLiveSession(summary, providerSession, session, mcp);
       pendingLiveSession = liveSession;
-      d.compaction.subscribePrimary(this.primaryAutomaticCompactionTarget(liveSession));
+      this.subscribeAutomaticCompaction(liveSession);
       d.registry.register(liveSession);
       // Registered first, so the failed-open path that unregisters also releases it.
       d.openProviderTranscript(summary);
@@ -349,7 +332,7 @@ export class SessionLifecycle {
           features: projectedSummary.features,
         });
       }
-      void d.context.refresh(this.primaryContextTarget(liveSession));
+      this.refreshContext(liveSession);
       return true;
     } catch (error) {
       await this.cleanupFailedOpen(pendingMcpServers, pendingSession, pendingLiveSession);
@@ -357,6 +340,48 @@ export class SessionLifecycle {
         d.emitError({ appSessionId, providerSessionId, message: errMsg(error) });
       return false;
     }
+  }
+
+  // Droid reads its own resumed state back from the daemon and arms the
+  // auto-compaction the summary then advertises. Every other provider keeps no
+  // session file of its own, so the stored summary is its whole record.
+  private async resumedSummary(
+    session: FactorySession | undefined,
+    input: {
+      historical: SessionSummary | undefined;
+      appSessionId: string;
+      providerSessionId: string;
+      isCurrent: () => boolean;
+    },
+  ): Promise<SessionSummary> {
+    if (!session) return buildResumedProviderSummary(input.historical, input.appSessionId);
+    const d = this.dependencies;
+    const defaults = await d.getFactoryDefaults();
+    const resumed = buildResumedSession({
+      init: session.initResult,
+      historical: input.historical,
+      appSessionId: input.appSessionId,
+      providerSessionId: input.providerSessionId,
+      defaults,
+      maxContextTokensForModel: d.maxContextTokensForModel,
+      now: Date.now(),
+    });
+    const summary = resumed.summary;
+    const projectedModel = d.applyPendingSettingsToSummary({ ...summary }).modelId;
+    const limit = await d.compaction.resolveLimit({
+      modelId: projectedModel,
+      exposed: resumed.exposedCompaction,
+    });
+    this.requireOpenAdmission();
+    if (
+      await d.compaction.arm(
+        { appSessionId: input.appSessionId, session, isCurrent: input.isCurrent },
+        limit,
+      )
+    ) {
+      summary.compactionTokenLimit = limit;
+    }
+    return summary;
   }
 
   async send(requestedAppSessionId: string, text: string): Promise<void> {
@@ -409,6 +434,12 @@ export class SessionLifecycle {
     }
     const wasAutoCompacting = liveSession.autoCompacting;
     const compactionTarget = this.primaryAutomaticCompactionTarget(liveSession);
+    const session = liveSession.session;
+    const isCurrent = () =>
+      !this.dependencies.isShutdownStarted() &&
+      this.dependencies.registry.getLive(appSessionId) === liveSession &&
+      !liveSession.closeMode &&
+      liveSession.session === session;
     liveSession.interrupting = true;
     try {
       await liveSession.session.interrupt();
@@ -416,11 +447,11 @@ export class SessionLifecycle {
       liveSession.interrupting = false;
       throw error;
     }
-    if (!compactionTarget.isCurrent()) {
+    if (!isCurrent()) {
       liveSession.interrupting = false;
       return;
     }
-    if (wasAutoCompacting) {
+    if (wasAutoCompacting && compactionTarget) {
       this.dependencies.compaction.cancel(compactionTarget);
     }
     if (!liveSession.streaming) liveSession.interrupting = false;
@@ -536,7 +567,8 @@ export class SessionLifecycle {
       d.context.stopSession(liveSession);
     });
     await run(() => {
-      d.compaction.cancel(this.primaryAutomaticCompactionTarget(liveSession));
+      const compactionTarget = this.primaryAutomaticCompactionTarget(liveSession);
+      if (compactionTarget) d.compaction.cancel(compactionTarget);
     });
     await run(() => {
       d.compaction.forgetSession(liveSession.summary.appSessionId);
@@ -655,15 +687,19 @@ export class SessionLifecycle {
     if (this.dependencies.isShutdownStarted()) throw new OpenAdmissionClosedError();
   }
 
-  private primaryContextTarget(liveSession: LiveSession): LiveOperationTarget {
+  // Context stats and compaction are Droid's own; a session on any other
+  // provider has no target and every caller skips that work.
+  private primaryContextTarget(liveSession: LiveSession): LiveOperationTarget | undefined {
     const d = this.dependencies;
+    const droid = liveSession.droid;
+    if (!droid) return undefined;
     const appSessionId = liveSession.summary.appSessionId;
     const session = liveSession.session;
     return {
       appSessionId,
       providerSessionId: session.providerSessionId,
       sourceSessionId: appSessionId,
-      session: liveSession.droid,
+      session: droid,
       isCurrent: () =>
         !d.isShutdownStarted() &&
         d.registry.getLive(appSessionId) === liveSession &&
@@ -674,12 +710,19 @@ export class SessionLifecycle {
 
   private primaryAutomaticCompactionTarget(
     liveSession: LiveSession,
-  ): PrimaryAutomaticCompactionTarget {
-    return {
-      ...this.primaryContextTarget(liveSession),
-      kind: 'primary',
-      liveSession,
-    };
+  ): PrimaryAutomaticCompactionTarget | undefined {
+    const target = this.primaryContextTarget(liveSession);
+    return target ? { ...target, kind: 'primary', liveSession } : undefined;
+  }
+
+  private subscribeAutomaticCompaction(liveSession: LiveSession): void {
+    const target = this.primaryAutomaticCompactionTarget(liveSession);
+    if (target) this.dependencies.compaction.subscribePrimary(target);
+  }
+
+  private refreshContext(liveSession: LiveSession): void {
+    const target = this.primaryContextTarget(liveSession);
+    if (target) void this.dependencies.context.refresh(target);
   }
 
   private async prepareToSend(appSessionId: string): Promise<LiveSession | undefined> {
@@ -790,7 +833,8 @@ export class SessionLifecycle {
         const queued = liveSession.pendingSends.splice(0);
         if (queued.length > 0) void this.redeliverQueuedSends(stableAppSessionId, queued);
       } else if (liveSession.autoCompacting) {
-        d.compaction.afterTurn(this.primaryAutomaticCompactionTarget(liveSession));
+        const compactionTarget = this.primaryAutomaticCompactionTarget(liveSession);
+        if (compactionTarget) d.compaction.afterTurn(compactionTarget);
         this.publishTurnSettled(liveSession);
       } else {
         const next = liveSession.pendingSends.shift();
@@ -850,13 +894,13 @@ export class SessionLifecycle {
 function createLiveSession(
   summary: SessionSummary,
   session: ProviderSession,
-  droid: FactorySession,
+  droid: FactorySession | undefined,
   mcp: StartedLocalMcpResources,
 ): LiveSession {
   return {
     summary,
     session,
-    droid,
+    ...(droid ? { droid } : {}),
     streaming: false,
     pendingSends: [],
     mcpServers: mcp.servers,

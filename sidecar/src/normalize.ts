@@ -552,7 +552,7 @@ export function confirmationType(params: RequestPermissionRequestParams): string
 // Hashing keeps the signature bounded and keeps argument values (which may hold
 // secrets) out of the stored grant key. An empty result means the arguments
 // could not be serialized, so the request stays ineligible for always-allow.
-function toolArgumentDigest(input: Record<string, unknown>): string {
+export function toolArgumentDigest(input: Record<string, unknown>): string {
   let serialized: string;
   try {
     serialized = stableJson(input);

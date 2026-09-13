@@ -144,6 +144,7 @@ function createHarness(options: { adoptSucceeds?: boolean; adopt?: () => Promise
     interactionsFor: () => ({
       requestApproval: () => new Promise<PermissionOutcome>(() => undefined),
       requestQuestion: () => new Promise<ProviderQuestionAnswers>(() => undefined),
+      cancelPending: () => undefined,
     }),
     emitError: (error) => {
       errors.push(error);

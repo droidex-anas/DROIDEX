@@ -10,7 +10,8 @@ export interface PrimaryTurnDependencies {
   eventFlow: Pick<SessionEventFlow, 'beginTurn' | 'apply'>;
   context: Pick<SessionContext, 'beginTurn' | 'startPolling' | 'stopPolling' | 'refresh'>;
   timeline: Pick<SessionTimeline, 'recordPrompt' | 'settleStreaming' | 'appendStatus'>;
-  contextTarget: (liveSession: LiveSession) => LiveOperationTarget;
+  // Absent for a provider without Droid's context accounting.
+  contextTarget: (liveSession: LiveSession) => LiveOperationTarget | undefined;
   isCurrent: (liveSession: LiveSession) => boolean;
   applyDesignToolPolicy: (liveSession: LiveSession, design: boolean) => Promise<void>;
   updateSummary: (appSessionId: string, patch: Partial<SessionSummary>) => void;
@@ -23,17 +24,17 @@ export async function runPrimaryTurn(
   prompt: string,
 ): Promise<void> {
   const appSessionId = liveSession.summary.appSessionId;
-  const contextTarget = d.contextTarget(liveSession);
+  const context = turnContext(d, d.contextTarget(liveSession));
   if (!d.isCurrent(liveSession)) return;
   d.eventFlow.beginTurn(appSessionId, appSessionId);
   d.timeline.recordPrompt(appSessionId, prompt);
   d.context.beginTurn(appSessionId);
-  d.context.startPolling(contextTarget);
+  context.startPolling();
   let turnError: unknown;
   try {
     await d.applyDesignToolPolicy(liveSession, isDesignPrompt(prompt));
     if (!d.isCurrent(liveSession)) {
-      d.context.stopPolling(contextTarget);
+      context.stopPolling();
       return;
     }
     for await (const normalized of liveSession.session.stream(prompt)) {
@@ -49,7 +50,7 @@ export async function runPrimaryTurn(
   } catch (err) {
     turnError ??= err;
   } finally {
-    d.context.stopPolling(contextTarget);
+    context.stopPolling();
   }
   if (!d.isCurrent(liveSession)) return;
   if (turnError) {
@@ -68,5 +69,35 @@ export async function runPrimaryTurn(
   }
   // Keep streaming=true while the context refresh is in flight so concurrent
   // sends queue instead of racing a second lifecycle turn.
-  await d.context.refresh(contextTarget);
+  await context.refresh();
+}
+
+interface TurnContext {
+  startPolling(): void;
+  stopPolling(): void;
+  refresh(): Promise<void>;
+}
+
+// Context accounting is Droid's own. A session on any other provider has no
+// target, and the turn runs with every context call inert instead of carrying
+// the provider question through its body.
+function turnContext(
+  d: PrimaryTurnDependencies,
+  target: LiveOperationTarget | undefined,
+): TurnContext {
+  if (!target)
+    return {
+      startPolling: () => undefined,
+      stopPolling: () => undefined,
+      refresh: () => Promise.resolve(),
+    };
+  return {
+    startPolling: () => {
+      d.context.startPolling(target);
+    },
+    stopPolling: () => {
+      d.context.stopPolling(target);
+    },
+    refresh: () => d.context.refresh(target),
+  };
 }

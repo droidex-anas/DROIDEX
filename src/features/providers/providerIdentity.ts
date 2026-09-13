@@ -1,5 +1,10 @@
 import type { Provider } from '../../components/ModelIcon';
-import type { ProviderKind, ProviderReadiness, ProviderStatus } from '../../types/bridge';
+import type {
+  ModelInfo,
+  ProviderKind,
+  ProviderReadiness,
+  ProviderStatus,
+} from '../../types/bridge';
 
 export const PROVIDER_LABELS: Record<ProviderKind, string> = {
   droid: 'Droid',
@@ -32,4 +37,43 @@ export function providerUnavailableReason(status: ProviderStatus | undefined): s
   const message = status.message?.trim();
   if (message) return message;
   return READINESS_REASONS[status.readiness];
+}
+
+// Shared so a provider with no status yet keeps a stable identity across
+// renders and the popover's memos are not invalidated every frame.
+const NO_MODELS: ModelInfo[] = [];
+
+// The models a composer offers for a provider. Droid's are the CLI catalog the
+// sidecar publishes; every other provider carries its own on its status. A
+// provider that cannot run offers none, however fresh the cache is — the rule
+// providerStatus.ts already applies to a missing CLI. A provider with no status
+// yet has not been judged, so its catalog still shows.
+export function providerModelCatalog(
+  provider: ProviderKind,
+  droidModels: ModelInfo[],
+  statuses: ProviderStatus[],
+): ModelInfo[] {
+  const status = statuses.find((entry) => entry.provider === provider);
+  if (status && status.readiness !== 'ready') return NO_MODELS;
+  if (provider === 'droid') return droidModels;
+  return status?.models ?? NO_MODELS;
+}
+
+// A model that is not in this provider's catalog is not a selection here — a
+// stale pick, or one belonging to another provider — so it reads as "no
+// selection" and the provider's own default is used instead. The stored
+// preference is left alone; only what is sent is narrowed. An empty catalog is
+// not a judgement: nothing has been published yet, so a preference stands
+// rather than being dropped on a slow start.
+export function providerModelSelection(
+  provider: ProviderKind,
+  modelId: string | undefined,
+  catalog: ModelInfo[],
+): string | undefined {
+  if (modelId === undefined) return undefined;
+  // Droid's catalog arrives after boot, so an empty one is not yet a verdict on
+  // a pinned model. The other providers publish their models with their
+  // readiness, so an empty catalog means the id is not theirs.
+  if (catalog.length === 0) return provider === 'droid' ? modelId : undefined;
+  return catalog.some((model) => model.id === modelId) ? modelId : undefined;
 }

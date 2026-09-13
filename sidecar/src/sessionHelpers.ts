@@ -177,6 +177,18 @@ export function requireAutonomyForCommand(command: { autonomy?: Autonomy }): Aut
   return autonomy;
 }
 
+// Factory's defaults are the Droid CLI's own, so a session on another provider
+// starts on the model the command named, or on its provider's default.
+export function createModelDefaultsForProvider(
+  provider: ProviderKind,
+  mode: SessionInteractionMode,
+  command: { modelId?: string; reasoningEffort?: ReasoningEffort },
+  defaults: Parameters<typeof createModelDefaultsForMode>[2],
+): { modelId?: string; reasoningEffort?: ReasoningEffort } {
+  if (provider === DEFAULT_PROVIDER) return createModelDefaultsForMode(mode, command, defaults);
+  return command.modelId !== undefined ? { modelId: command.modelId } : {};
+}
+
 export function createModelDefaultsForMode(
   mode: SessionInteractionMode,
   command: { modelId?: string; reasoningEffort?: ReasoningEffort },
@@ -341,6 +353,26 @@ export function buildCreatedSessionSummary(input: {
   };
 }
 
+// A provider that keeps no session file of its own has no init result to read
+// its state back from: the stored summary is the session's own record. Without
+// one there is nothing to reopen, so the resume fails instead of quietly
+// starting a fresh conversation under the same identity.
+export function buildResumedProviderSummary(
+  historical: SessionSummary | undefined,
+  appSessionId: string,
+): SessionSummary {
+  if (!historical)
+    throw new Error(`Session ${appSessionId} has no stored transcript to reopen from.`);
+  return {
+    ...historical,
+    appSessionId,
+    providerSessionId: appSessionId,
+    phase: historical.phase === 'running' ? 'paused' : historical.phase,
+    streaming: false,
+    queuedSends: 0,
+  };
+}
+
 interface BuildResumedSessionInput {
   init: SessionInitResult;
   historical?: SessionSummary | undefined;
@@ -354,6 +386,13 @@ interface BuildResumedSessionInput {
 // The provider's own resume handle, when a stored summary carries one.
 export const resumeHandle = (summary: SessionSummary | undefined) =>
   summary?.resumeId ? { resumeId: summary.resumeId } : {};
+
+// The launch settings a provider that keeps no session file of its own cannot
+// read back, handed to it from the stored summary.
+export const resumeSettings = (summary: SessionSummary | undefined) => ({
+  ...(summary?.modelId !== undefined ? { modelId: summary.modelId } : {}),
+  ...(summary?.autonomy !== undefined ? { autonomy: summary.autonomy } : {}),
+});
 
 export function buildResumedSession(input: BuildResumedSessionInput): {
   summary: SessionSummary;

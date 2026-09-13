@@ -2,6 +2,7 @@ import type { McpServerConfig } from '@factory/droid-sdk';
 
 import type { CreateRuntimeSessionOptions } from '../DroidRuntime.js';
 import type { NormalizedEvent } from '../normalize.js';
+import type { Autonomy, ReasoningEffort } from '../protocol.js';
 import type { ProviderInteractions } from './interactions.js';
 import type { ProviderKind } from './providerKind.js';
 
@@ -22,7 +23,18 @@ export interface ProviderResumeInput {
   resumeId?: string;
   cwd?: string;
   mcpServers?: McpServerConfig[];
+  // The stored launch settings, for a provider that keeps no session file of
+  // its own and therefore cannot read them back. Droid reads its own.
+  modelId?: string;
+  autonomy?: Autonomy;
   interactions: ProviderInteractions;
+}
+
+export interface ProviderModelSettings {
+  // A string selects that model; null resets the session to the provider's own
+  // default; absent leaves the model alone.
+  modelId?: string | null;
+  reasoningEffort?: ReasoningEffort;
 }
 
 export interface ProviderSession {
@@ -34,6 +46,10 @@ export interface ProviderSession {
   // Returning means the turn settled; throwing means it failed. There is no
   // settlement event.
   stream(prompt: string): AsyncGenerator<NormalizedEvent, void, undefined>;
+  // The two things a live session can still change. Everything else about a
+  // session is fixed when it opens.
+  setAutonomy(autonomy: Autonomy): Promise<void>;
+  setModel(settings: ProviderModelSettings): Promise<void>;
   interrupt(): Promise<void>;
   close(): Promise<void>;
 }
