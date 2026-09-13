@@ -7,11 +7,11 @@ export const PROVIDER_LABELS: Record<ProviderKind, string> = {
   codex: 'Codex',
 };
 
-// Each provider is marked with the vendor logo the model chips already use, so
-// one runtime reads the same everywhere in the app.
+// Each provider carries the official mark of the harness it runs, monochrome
+// and at one size so the three read as one family.
 export const PROVIDER_MARKS: Record<ProviderKind, Provider> = {
   droid: 'factory',
-  claude: 'anthropic',
+  claude: 'claude',
   codex: 'openai',
 };
 
