@@ -17,6 +17,7 @@ import { CodexSession, type CodexSessionInput } from './codexSession.js';
 const PROBE_TIMEOUT_MS = 25_000;
 const INSTALL_HINT = 'Codex CLI not found. Install it, then refresh.';
 const LOGIN_HINT = 'Run `codex login` in a terminal and sign in, then refresh.';
+const PROBE_CANCELLED = 'Codex was not checked.';
 
 // Mirrors the Droid and Claude CLI resolution order (Environment.ts): an
 // explicit override first, then the locations the installers use, then PATH.
@@ -58,7 +59,7 @@ export class CodexProvider implements Provider {
 
   resume(
     providerSessionId: string,
-    { interactions, cwd, modelId, autonomy, resumeId }: ProviderResumeInput,
+    { interactions, cwd, modelId, reasoningEffort, autonomy, resumeId }: ProviderResumeInput,
   ): Promise<ProviderSession> {
     if (!resumeId)
       throw new Error('This Codex session has no stored thread and cannot be reopened.');
@@ -67,7 +68,10 @@ export class CodexProvider implements Provider {
         appSessionId: providerSessionId,
         cwd: cwd ?? tmpdir(),
         autonomy: autonomy ?? 'low',
-        model: { ...(modelId ? { modelId } : {}) },
+        model: {
+          ...(modelId ? { modelId } : {}),
+          ...(reasoningEffort ? { reasoningEffort } : {}),
+        },
         interactions,
       },
       resumeId,
@@ -80,6 +84,9 @@ export class CodexProvider implements Provider {
     const executable = resolveCodexPath();
     if (!executable)
       return { provider: 'codex', readiness: 'missing', message: INSTALL_HINT, models: [] };
+    // A refresh cancelled during shutdown must not leave a process behind.
+    if (signal.aborted)
+      return { provider: 'codex', readiness: 'error', message: PROBE_CANCELLED, models: [] };
 
     const client = new AppServerClient(executable, tmpdir());
     const deadline = { expired: false };
@@ -178,7 +185,11 @@ async function listModels(client: AppServerClient): Promise<ModelInfo[]> {
       'model/list',
       cursor ? { cursor } : {},
     );
-    for (const model of page.data) models.push(providerModel(model));
+    // A model with no id cannot be selected and one with no name cannot be
+    // shown, so neither belongs in the picker.
+    for (const model of page.data) {
+      if (model.id.trim() && model.displayName.trim()) models.push(providerModel(model));
+    }
     cursor = page.nextCursor;
   } while (cursor);
   return models;

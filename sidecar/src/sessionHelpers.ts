@@ -394,6 +394,7 @@ export const resumeHandle = (summary: SessionSummary | undefined) =>
 // read back, handed to it from the stored summary.
 export const resumeSettings = (summary: SessionSummary | undefined) => ({
   ...(summary?.modelId !== undefined ? { modelId: summary.modelId } : {}),
+  ...(summary?.reasoningEffort !== undefined ? { reasoningEffort: summary.reasoningEffort } : {}),
   ...(summary?.autonomy !== undefined ? { autonomy: summary.autonomy } : {}),
 });
 

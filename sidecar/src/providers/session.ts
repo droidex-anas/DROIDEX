@@ -26,6 +26,7 @@ export interface ProviderResumeInput {
   // The stored launch settings, for a provider that keeps no session file of
   // its own and therefore cannot read them back. Droid reads its own.
   modelId?: string;
+  reasoningEffort?: ReasoningEffort;
   autonomy?: Autonomy;
   interactions: ProviderInteractions;
 }
