@@ -1,6 +1,11 @@
 // What a Codex thread item is, and how it reads as a DROIDEX tool row. Only the
-// four kinds the transcript shows are modelled; every other item Codex reports
-// is one explicit no-op.
+// kinds the transcript shows are modelled; every other item Codex reports is one
+// explicit no-op.
+import { generatedImage, type GeneratedImage } from './codexImages.js';
+
+// The tool name the transcript renders as an image card. Shared with the
+// renderer by convention, the way every other tool row is matched by name.
+export const IMAGE_TOOL_NAME = 'image_generation';
 export interface FileUpdateChange {
   path: string;
   kind: { type: string };
@@ -29,13 +34,40 @@ export type ThreadItem =
       result: { content: unknown[] } | null;
       error: { message: string } | null;
     }
+  | ({ type: 'imageGeneration'; status: string; revisedPrompt?: string | null } & GeneratedImage)
   | { type: 'ignored' };
 
-const MAPPED_ITEMS = new Set(['agentMessage', 'commandExecution', 'fileChange', 'mcpToolCall']);
+const MAPPED_ITEMS = new Set([
+  'agentMessage',
+  'commandExecution',
+  'fileChange',
+  'mcpToolCall',
+  'imageGeneration',
+]);
 
 export function threadItem(params: unknown): ThreadItem {
   const { item } = params as { item?: ThreadItem };
-  return item && MAPPED_ITEMS.has(item.type) ? item : { type: 'ignored' };
+  if (!item || !MAPPED_ITEMS.has(item.type)) return { type: 'ignored' };
+  // An image item reaches the filesystem, so its fields are checked before it
+  // is admitted rather than trusted the way a text-only item can be.
+  if (item.type === 'imageGeneration' && !isGeneratedImage(item)) return { type: 'ignored' };
+  return item;
+}
+
+function isGeneratedImage(item: Extract<ThreadItem, { type: 'imageGeneration' }>): boolean {
+  return (
+    typeof item.id === 'string' &&
+    item.id !== '' &&
+    typeof item.status === 'string' &&
+    typeof item.result === 'string' &&
+    (item.savedPath === undefined ||
+      item.savedPath === null ||
+      typeof item.savedPath === 'string') &&
+    (item.revisedPrompt === undefined ||
+      item.revisedPrompt === null ||
+      typeof item.revisedPrompt === 'string') &&
+    (item.failure === undefined || item.failure === null || typeof item.failure.type === 'string')
+  );
 }
 
 export interface ToolCall {
@@ -69,6 +101,14 @@ export function toolCall(item: ThreadItem): ToolCall | undefined {
       },
       failed: item.status !== 'completed',
     };
+  if (item.type === 'imageGeneration')
+    return {
+      id: item.id,
+      name: IMAGE_TOOL_NAME,
+      detail: item.revisedPrompt ?? '',
+      args: { prompt: item.revisedPrompt ?? '' },
+      failed: item.status !== 'completed' || Boolean(item.failure),
+    };
   if (item.type === 'mcpToolCall')
     return {
       id: item.id,
@@ -82,8 +122,11 @@ export function toolCall(item: ThreadItem): ToolCall | undefined {
   return undefined;
 }
 
-export function toolOutput(item: ThreadItem, streamed: string): string {
+export function toolOutput(item: ThreadItem, streamed: string, appSessionId: string): string {
   if (item.type === 'commandExecution') return item.aggregatedOutput ?? streamed;
+  // The path of the saved image, which is what the card renders; anything else
+  // is the line shown in its place.
+  if (item.type === 'imageGeneration') return generatedImage(appSessionId, item);
   if (item.type === 'fileChange') return patchText(item.changes);
   if (item.type === 'mcpToolCall')
     return item.error ? item.error.message : mcpContent(item.result?.content ?? []);

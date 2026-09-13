@@ -293,6 +293,9 @@ function createHarness(ordinarySummaries: SessionSummary[] = []) {
     emitStatus: (appSessionId, text) => {
       calls.push({ target: 'protocol', method: 'status', args: [appSessionId, text] });
     },
+    recordPrompt: (appSessionId, text) => {
+      calls.push({ target: 'protocol', method: 'recordPrompt', args: [appSessionId, text] });
+    },
     emitSessionList: (closedProviderSessionId) => emitSessionList(closedProviderSessionId),
   });
 
@@ -746,7 +749,9 @@ test('queued sends stay FIFO while send-now prompts are newest first', async () 
   steerGate.resolve();
   await steerProvider.waitForPrompts(3);
   assert.deepEqual(steerProvider.prompts, ['first', 'steer two', 'steer one']);
-  assert.equal(interruptCount(steered), 2);
+  // The second send-now lands while the first interrupt is still in flight and
+  // rides the queue instead of interrupting the turn that redelivers it.
+  assert.equal(interruptCount(steered), 1);
 });
 
 test('send-now queues without interrupting compaction and reports interrupt rejection', async () => {

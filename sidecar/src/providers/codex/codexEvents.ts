@@ -189,7 +189,7 @@ export class CodexEventMapper {
       {
         transcript: this.transcript('tool_result', {
           toolName: call.name,
-          text: toolOutput(item, open?.output ?? ''),
+          text: toolOutput(item, open?.output ?? '', this.appSessionId),
           isError: call.failed,
           toolUseId: call.id,
         }),

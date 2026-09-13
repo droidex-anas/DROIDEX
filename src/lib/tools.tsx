@@ -216,6 +216,14 @@ export function isWebSearchTool(name?: string): boolean {
   return hasSearch && tokens.some((t) => WEB_WORDS.has(t));
 }
 
+// The image card renders exactly the call the Codex adapter emits. Matching a
+// family of names would capture a caption or description tool too and hide the
+// text it answered with; an MCP image tool can opt in explicitly when one needs
+// the card.
+export function isImageGenerationTool(name?: string): boolean {
+  return name === 'image_generation';
+}
+
 const FETCH_WORDS = ['fetch', 'scrape', 'crawl', 'browse'];
 const FETCH_VERBS = new Set([
   'open',
