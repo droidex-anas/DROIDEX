@@ -62,6 +62,45 @@ export interface CodexApproval {
   raw: unknown;
 }
 
+export interface CommandApproval {
+  itemId: string;
+  command?: string | null;
+  reason?: string | null;
+  commandActions?: { command: string }[] | null;
+}
+
+export interface FileChangeApproval {
+  itemId: string;
+  reason?: string | null;
+}
+
+// What the user is being asked to allow. A command request describes itself; a
+// file-change request carries no description at all, so the open item the event
+// mapper is tracking is the only thing that can name the files.
+export function commandApproval(params: CommandApproval): CodexApproval {
+  const command = params.command ?? params.commandActions?.map((a) => a.command).join('; ') ?? '';
+  return {
+    kind: 'exec',
+    title: 'Bash',
+    detail: params.reason ? `${command}\n\n${params.reason}` : command,
+    ...(command ? { signature: `exec::${command}` } : {}),
+    raw: params,
+  };
+}
+
+export function fileChangeApproval(
+  params: FileChangeApproval,
+  files: string | undefined,
+): CodexApproval {
+  return {
+    kind: 'edit',
+    title: 'Edit',
+    detail: params.reason ? `${files ?? ''}\n\n${params.reason}` : (files ?? 'File changes'),
+    ...(files ? { signature: `edit::${files}` } : {}),
+    raw: params,
+  };
+}
+
 export async function decideApproval(
   appSessionId: string,
   interactions: ProviderInteractions,

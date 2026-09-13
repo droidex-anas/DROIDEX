@@ -10,11 +10,17 @@ import {
   answerQuestions,
   codexAutonomy,
   codexSandboxPolicy,
+  commandApproval,
   decideApproval,
+  fileChangeApproval,
   type ApprovalDecision,
+  type CodexApproval,
+  type CommandApproval,
+  type FileChangeApproval,
   type RequestedQuestion,
 } from './codexApprovals.js';
 import { CodexEventMapper, MAPPED_NOTIFICATIONS } from './codexEvents.js';
+import { TurnStream } from './codexTurn.js';
 
 export interface CodexSessionInput {
   // DROIDEX's own identity for the session. Codex mints its thread id itself,
@@ -29,6 +35,8 @@ export interface CodexSessionInput {
 
 interface ThreadResponse {
   thread: { id: string };
+  // The model the thread actually resolved to, which is what a reset goes back to.
+  model: string;
 }
 
 interface TurnResponse {
@@ -50,8 +58,12 @@ export class CodexSession implements ProviderSession {
   private autonomy: Autonomy;
   private model: ProviderModelSettings;
   private threadId?: string;
+  private threadModel?: string;
   private turnId?: string;
   private turn?: TurnStream;
+  // Approval and question cards this session is still waiting on, so a turn
+  // that ends first can take them off the screen.
+  private openPrompts = 0;
 
   constructor(input: CodexSessionInput) {
     this.providerSessionId = input.appSessionId;
@@ -65,6 +77,9 @@ export class CodexSession implements ProviderSession {
     // before its handler exists. Requests left unregistered — the legacy exec
     // and patch callbacks, additional permissions, MCP elicitation — are
     // answered with method-not-found by the transport, never granted.
+    // `serverRequest/resolved` is not one of them: Codex sends it for the
+    // requests this client itself just answered, so acting on it would cancel
+    // live cards. It only matters when a second client shares the thread.
     this.registerHandlers();
   }
 
@@ -101,6 +116,7 @@ export class CodexSession implements ProviderSession {
         })
       : this.client.request<ThreadResponse>('thread/start', settings));
     this.threadId = response.thread.id;
+    this.threadModel = response.model;
   }
 
   async *stream(prompt: string): AsyncGenerator<NormalizedEvent, void, undefined> {
@@ -111,12 +127,15 @@ export class CodexSession implements ProviderSession {
     this.turn = turn;
     try {
       const { approvalPolicy, sandbox } = codexAutonomy(this.autonomy);
+      // A turn's overrides stick to the thread, so a cleared model has to name
+      // the thread's own model rather than leave the last override in place.
+      const model = this.model.modelId ?? this.threadModel;
       const started = await this.client.request<TurnResponse>('turn/start', {
         threadId,
         input: [{ type: 'text', text: prompt }],
         approvalPolicy,
         sandboxPolicy: codexSandboxPolicy(sandbox),
-        ...(this.model.modelId ? { model: this.model.modelId } : {}),
+        ...(model ? { model } : {}),
         ...(this.model.reasoningEffort ? { effort: this.model.reasoningEffort } : {}),
       });
       this.turnId = started.turn.id;
@@ -170,22 +189,27 @@ export class CodexSession implements ProviderSession {
     });
     this.client.onClose((error) => {
       this.turn?.fail(error);
+      this.settlePrompts();
     });
     this.client.onRequest('item/commandExecution/requestApproval', (params) =>
-      this.approveCommand(params as CommandApproval),
+      this.decide(commandApproval(params as CommandApproval)),
     );
-    this.client.onRequest('item/fileChange/requestApproval', (params) =>
-      this.approveFileChange(params as FileChangeApproval),
-    );
+    this.client.onRequest('item/fileChange/requestApproval', (params) => {
+      const request = params as FileChangeApproval;
+      return this.decide(fileChangeApproval(request, this.mapper.toolDetail(request.itemId)));
+    });
     this.client.onRequest('item/tool/requestUserInput', async (params) => ({
-      answers: await answerQuestions(
-        this.interactions,
-        (params as { questions: RequestedQuestion[] }).questions,
+      answers: await this.prompt(() =>
+        answerQuestions(
+          this.interactions,
+          (params as { questions: RequestedQuestion[] }).questions,
+        ),
       ),
     }));
   }
 
   private settle(turn: CompletedTurn['turn']): void {
+    this.settlePrompts();
     if (turn.status === 'failed') {
       this.turn?.fail(new Error(turn.error?.message ?? 'Codex ended the turn with an error.'));
       return;
@@ -195,92 +219,26 @@ export class CodexSession implements ProviderSession {
     this.turn?.finish();
   }
 
-  private async approveCommand(params: CommandApproval): Promise<{ decision: ApprovalDecision }> {
-    const command = params.command ?? params.commandActions?.map((a) => a.command).join('; ') ?? '';
-    return {
-      decision: await decideApproval(this.providerSessionId, this.interactions, {
-        kind: 'exec',
-        title: 'Bash',
-        detail: params.reason ? `${command}\n\n${params.reason}` : command,
-        ...(command ? { signature: `exec::${command}` } : {}),
-        raw: params,
-      }),
-    };
+  // The turn ended with a card still open: settling only Codex's side would
+  // leave the prompt and its waiter behind, under the next turn.
+  private settlePrompts(): void {
+    if (this.openPrompts > 0) this.interactions.cancelPending();
   }
 
-  // The request itself carries no description of the patch, so the open item
-  // the mapper is tracking is the only thing that can describe it.
-  private async approveFileChange(
-    params: FileChangeApproval,
-  ): Promise<{ decision: ApprovalDecision }> {
-    const files = this.mapper.toolDetail(params.itemId);
-    return {
-      decision: await decideApproval(this.providerSessionId, this.interactions, {
-        kind: 'edit',
-        title: 'Edit',
-        detail: params.reason ? `${files ?? ''}\n\n${params.reason}` : (files ?? 'File changes'),
-        ...(files ? { signature: `edit::${files}` } : {}),
-        raw: params,
-      }),
-    };
-  }
-}
-
-interface CommandApproval {
-  itemId: string;
-  command?: string | null;
-  reason?: string | null;
-  commandActions?: { command: string }[] | null;
-}
-
-interface FileChangeApproval {
-  itemId: string;
-  reason?: string | null;
-}
-
-// One turn's events, filled by the notification handlers and drained by the
-// turn that is streaming. Events that arrive outside a turn have no transcript
-// to land in and are dropped.
-class TurnStream {
-  private readonly queued: NormalizedEvent[] = [];
-  private waiting?: () => void;
-  private settlement?: Error | 'done';
-
-  push(events: NormalizedEvent[]): void {
-    this.queued.push(...events);
-    this.wake();
-  }
-
-  finish(): void {
-    this.settlement ??= 'done';
-    this.wake();
-  }
-
-  // First settlement wins: whichever of the failing error notification, the
-  // failed turn or the dead process arrives first is the turn's cause.
-  fail(error: Error): void {
-    this.settlement ??= error;
-    this.wake();
-  }
-
-  async *drain(): AsyncGenerator<NormalizedEvent, void, undefined> {
-    for (;;) {
-      const next = this.queued.shift();
-      if (next) {
-        yield next;
-        continue;
-      }
-      if (this.settlement === 'done') return;
-      if (this.settlement) throw this.settlement;
-      await new Promise<void>((resolve) => {
-        this.waiting = resolve;
-      });
+  private async prompt<T>(ask: () => Promise<T>): Promise<T> {
+    this.openPrompts += 1;
+    try {
+      return await ask();
+    } finally {
+      this.openPrompts -= 1;
     }
   }
 
-  private wake(): void {
-    const waiting = this.waiting;
-    this.waiting = undefined;
-    waiting?.();
+  private async decide(approval: CodexApproval): Promise<{ decision: ApprovalDecision }> {
+    return {
+      decision: await this.prompt(() =>
+        decideApproval(this.providerSessionId, this.interactions, approval),
+      ),
+    };
   }
 }
