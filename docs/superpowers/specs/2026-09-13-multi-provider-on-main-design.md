@@ -236,7 +236,7 @@ Add a compile-time exhaustiveness guard (`message satisfies never` in the `defau
 
 ### 3.8 Event mapping — Codex (`codex app-server`, local CLI 0.149.0)
 
-Transport: newline-delimited JSON, **not** JSON-RPC 2.0 (no `jsonrpc` field), CRLF-tolerant, monotonic numeric client ids from 1, pending-request registration **before** the serialized write, a 1 MiB max-line guard, fail-all-pending on exit, and a final unterminated-line flush at EOF. Our dispatch loop drains synchronously into the event flow — **do not** copy  32-item `Queue.sliding`, which silently drops older streaming deltas under backpressure.
+Transport: newline-delimited JSON, **not** JSON-RPC 2.0 (no `jsonrpc` field), CRLF-tolerant, monotonic numeric client ids from 1, pending-request registration **before** the serialized write, a 1 MiB max-line guard, fail-all-pending on exit, and a final unterminated-line flush at EOF. Our dispatch loop drains synchronously into the event flow — **do not** use a bounded sliding queue, which silently drops older streaming deltas under backpressure.
 
 Spawn `<binary> app-server` over stdio with `CODEX_HOME` **`~`-expanded before spawn** (`child_process.spawn` does not shell-expand env values; Codex errors out otherwise). Register every server-request and notification handler **before** sending `initialize`, then a bare `initialized` notification with no params. `initialize` params: `{clientInfo:{name:'droidex',title:'DROIDEX',version}, capabilities:{experimentalApi:true}}`. Extract the running version from `InitializeResponse.userAgent`.
 
@@ -414,7 +414,7 @@ Verify: approve/deny/cancel each behave distinctly (deny lets the agent continue
 
 ## 5. Provenance and attribution
 
-No source is copied from any third-party project, and nothing external is named in code, comments, commit messages or pull-request text. Because `acp/`, `cursor/` and `grok/` are out of scope, no notices file or third-party license obligation travels with this stack.
+No source is copied from any third-party project, and the stack's shipping code, comments, commit messages and pull-request text name no external client project. Because `acp/`, `cursor/` and `grok/` are out of scope, no notices file or third-party license obligation travels with this stack.
 
 Codex's framing, the autonomy→sandbox table and the notification subset are written from the local CLI's own `generate-json-schema` / `generate-ts` output, and the Claude mapping from the SDK's type definitions.
 
