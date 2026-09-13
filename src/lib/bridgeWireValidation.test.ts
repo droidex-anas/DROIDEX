@@ -32,6 +32,24 @@ test('rejects approval requests with unknown permission kinds', () => {
   );
 });
 
+test('accepts provider statuses and rejects unknown providers or readiness', () => {
+  const status = { provider: 'droid', readiness: 'ready', models: [] };
+  assert.notEqual(serverWireMessage(batch({ type: 'provider.status', statuses: [status] })), null);
+  assert.equal(
+    serverWireMessage(
+      batch({ type: 'provider.status', statuses: [{ ...status, provider: 'aider' }] }),
+    ),
+    null,
+  );
+  assert.equal(
+    serverWireMessage(
+      batch({ type: 'provider.status', statuses: [{ ...status, readiness: 'busy' }] }),
+    ),
+    null,
+  );
+  assert.equal(serverWireMessage(batch({ type: 'provider.status', statuses: {} })), null);
+});
+
 test('rejects search results that omit the indexing completeness flag', () => {
   assert.equal(
     serverWireMessage(

@@ -99,6 +99,7 @@ import type { ComposerHandle } from './composer/ComposerEditor';
 import { DraftSelections } from './composer/DraftSelections';
 import ComposerMenu, { type MenuItem, type SlashCommand } from './ComposerMenu';
 import ModelSelectorPopover from './ModelSelectorPopover';
+import ProviderPicker from '../features/providers/ProviderPicker';
 import AutonomySelector from './AutonomySelector';
 import { AUTONOMY_LABELS, missionStartAllowed } from '../lib/autonomy';
 import {
@@ -228,6 +229,7 @@ export default function PromptInput({
       defaultAutonomy: current.defaultAutonomy,
       draftAutonomy: current.draftAutonomy,
       draftChat: current.draftChat,
+      draftProvider: current.draftProvider,
       imagePasteQuality: current.imagePasteQuality,
       lastCreatedSessionRequest: current.lastCreatedSessionRequest,
       liveEnterBehavior: current.liveEnterBehavior,
@@ -1022,6 +1024,7 @@ export default function PromptInput({
           title,
           goal: composed,
           sessionPurpose: 'mission-control',
+          provider: state.draftProvider,
           interactionMode: 'agi',
           autonomy,
           modelId: primary.modelId,
@@ -1071,6 +1074,7 @@ export default function PromptInput({
           title,
           goal: composed,
           sessionPurpose: 'chat',
+          provider: state.draftProvider,
           interactionMode: isSpecMode ? 'spec' : 'auto',
           autonomy: draftAutonomy,
           modelId: primary.modelId,
@@ -1674,6 +1678,14 @@ export default function PromptInput({
               onToggleVisualize={() => {
                 setVisualizeSelected(!visualizeSelected);
                 editorRef.current?.focus();
+              }}
+            />
+
+            <ProviderPicker
+              value={activeSession ? activeSession.provider : state.draftProvider}
+              locked={activeSession !== null}
+              onSelect={(provider) => {
+                dispatch({ type: 'SET_DRAFT_PROVIDER', provider });
               }}
             />
 

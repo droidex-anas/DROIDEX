@@ -10,7 +10,7 @@ import type {
   StreamFidelity,
 } from '../types/bridge';
 import { isAutomationSnapshot } from '../features/automations/wireValidation';
-import { PROVIDER_KINDS } from '../types/bridge';
+import { PROVIDER_KINDS, PROVIDER_READINESS } from '../types/bridge';
 
 export function serverWireMessage(value: unknown): ServerWireMessage | null {
   if (!isRecord(value) || typeof value.type !== 'string') return null;
@@ -201,6 +201,8 @@ function isServerEvent(value: unknown): value is ServerEvent {
         (value.catalog === 'models' || value.catalog === 'tools' || value.catalog === 'skills') &&
         Array.isArray(value.items)
       );
+    case 'provider.status':
+      return Array.isArray(value.statuses) && value.statuses.every(isProviderStatus);
     case 'settings.defaults':
       return isRecord(value.defaults);
     case 'error':
@@ -279,6 +281,19 @@ function isServerEvent(value: unknown): value is ServerEvent {
   }
 }
 
+function isProviderStatus(value: unknown): boolean {
+  return (
+    isRecord(value) &&
+    isOneOf(PROVIDER_KINDS, value.provider) &&
+    isOneOf(PROVIDER_READINESS, value.readiness) &&
+    Array.isArray(value.models)
+  );
+}
+
+function isOneOf(allowed: readonly string[], value: unknown): boolean {
+  return typeof value === 'string' && allowed.includes(value);
+}
+
 function isSessionSummary(value: unknown): boolean {
   return (
     isRecord(value) &&
@@ -294,7 +309,7 @@ function isSessionSummary(value: unknown): boolean {
       'autonomy',
       'phase',
     ]) &&
-    (PROVIDER_KINDS as readonly string[]).includes(value.provider as string) &&
+    isOneOf(PROVIDER_KINDS, value.provider) &&
     Array.isArray(value.features) &&
     value.features.every(isBridgeFeature) &&
     hasNumbers(value, ['tokensIn', 'tokensOut', 'contextTokens', 'createdAt', 'updatedAt']) &&

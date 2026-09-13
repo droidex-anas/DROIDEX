@@ -108,6 +108,7 @@ import { loadFactoryMcpServers } from './FactoryMcpConfig.js';
 import { assertValidResponseFormat, formatAppPrompt } from './appPrompt.js';
 import { assertProviderUnchanged, DEFAULT_PROVIDER } from './providers/providerKind.js';
 import { ProviderTranscriptFile } from './providers/ProviderTranscriptFile.js';
+import { providerStatuses } from './providers/providerStatus.js';
 
 type Emit = (event: ServerEvent) => void;
 
@@ -595,6 +596,7 @@ export class SessionManager {
     void this.adoption.adopt();
     this.emit({ type: 'connection', status: 'connected' });
     this.emit({ type: 'runtime.updated', status: this.runtime.status() });
+    this.emitProviderStatus();
     const recovery = this.history.persistenceRecovery?.();
     if (recovery?.hadUnflushedWork) {
       this.emit({
@@ -674,9 +676,13 @@ export class SessionManager {
       case 'catalog.models': {
         const models = await this.getModels();
         this.emit({ type: 'catalog.updated', catalog: 'models', items: models });
+        this.emitProviderStatus();
         void this.refreshModelCatalog(true);
         return;
       }
+      case 'provider.refresh':
+        this.emitProviderStatus();
+        return;
       case 'catalog.tools':
         await this.emitToolCatalog(cmd.providerSessionId);
         return;
@@ -954,6 +960,7 @@ export class SessionManager {
         );
         this.cachedModels = models;
         if (emit) this.emit({ type: 'catalog.updated', catalog: 'models', items: models });
+        if (emit) this.emitProviderStatus();
         return models;
       } catch (err) {
         this.emitError({ message: `catalog.models failed: ${errMsg(err)}` });
@@ -963,6 +970,15 @@ export class SessionManager {
       }
     })();
     return this.modelRefresh;
+  }
+
+  // Droid's readiness follows the resolved CLI path and the catalog this
+  // manager already caches; the other providers are static placeholders.
+  private emitProviderStatus(): void {
+    this.emit({
+      type: 'provider.status',
+      statuses: providerStatuses(this.runtime.status().droidPath, this.cachedModels ?? []),
+    });
   }
 
   private async emitEnvironment(): Promise<void> {
