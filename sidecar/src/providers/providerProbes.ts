@@ -32,7 +32,9 @@ export class ProviderProbes {
     if (this.inFlight) return this.inFlight;
     const abort = new AbortController();
     this.abort = abort;
-    const round = Promise.all(
+    // Settled, not all: a provider whose probe rejects must not end the round
+    // for its siblings or clear `inFlight` while they are still running.
+    const round = Promise.allSettled(
       [...this.probes].map(async ([provider, probe]) => {
         this.latest.set(provider, await probe(abort.signal));
       }),

@@ -78,12 +78,16 @@ export interface FileChangeApproval {
 // file-change request carries no description at all, so the open item the event
 // mapper is tracking is the only thing that can name the files.
 export function commandApproval(params: CommandApproval): CodexApproval {
-  const command = params.command ?? params.commandActions?.map((a) => a.command).join('; ') ?? '';
+  const actions = params.commandActions ?? [];
+  const command = params.command ?? actions.map((action) => action.command).join('; ');
+  // The grant key is the exact action list, serialized: two different lists can
+  // join into the same string, and one grant must never cover the other.
+  const grant = params.command ?? (actions.length > 0 ? JSON.stringify(actions) : '');
   return {
     kind: 'exec',
     title: 'Bash',
     detail: params.reason ? `${command}\n\n${params.reason}` : command,
-    ...(command ? { signature: `exec::${command}` } : {}),
+    ...(grant ? { signature: `exec::${grant}` } : {}),
     raw: params,
   };
 }
