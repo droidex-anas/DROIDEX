@@ -53,7 +53,7 @@ export function buildDroidInvocation(args: string[]): { execPath: string; execAr
   return wrapDroidInvocation(resolveDroidPath(), args);
 }
 
-function resolveOnPathSync(command: string): string | undefined {
+export function resolveOnPathSync(command: string): string | undefined {
   const dirs = (process.env.PATH ?? '').split(delimiter).filter(Boolean);
   if (process.platform === 'win32') {
     const exts = windowsExecutableExtensions(process.env.PATHEXT);
@@ -156,7 +156,7 @@ async function resolveCliPath(): Promise<string | undefined> {
 // A path that exists but is not executable (broken/partial install) must not
 // be reported as a present CLI. On Windows X_OK is not meaningful, so fall
 // back to plain existence there.
-function isExecutable(path: string): boolean {
+export function isExecutable(path: string): boolean {
   if (!existsSync(path)) return false;
   if (process.platform === 'win32') return true;
   try {
