@@ -277,16 +277,19 @@ test('Spec approval publishes, attempts provider update, then settles the callba
   );
   const rejectedRequestId = latestApprovalRequest(rejected.emitted).requestId;
   await rejected.interactions.respondToApproval('app-spec', rejectedRequestId, 'proceed_once');
-  assert.equal(await rejectedPending, ToolConfirmationOutcome.ProceedOnce);
+  // The provider is still planning, so the plan is declined rather than
+  // approved into a session that never left Spec.
+  assert.equal(await rejectedPending, ToolConfirmationOutcome.Cancel);
   assert.deepEqual(rejected.trace, [
     'publish:auto',
     'provider:auto',
+    'publish:spec',
     'error:spec.exit_failed',
     'callback',
   ]);
 });
 
-test('Spec approval reports summary failure and still settles the callback once', async () => {
+test('Spec approval declines on a summary failure and settles the callback once', async () => {
   const harness = createHarness({ throwSummaryUpdate: true });
   harness.addLiveSession('app-spec');
   const handler = harness.permissionHandler({ id: 'app-spec' });
@@ -300,7 +303,7 @@ test('Spec approval reports summary failure and still settles the callback once'
 
   await harness.interactions.respondToApproval('app-spec', requestId, 'proceed_once');
 
-  assert.equal(await pending, ToolConfirmationOutcome.ProceedOnce);
+  assert.equal(await pending, ToolConfirmationOutcome.Cancel);
   assert.equal(settlements, 1);
   assert.deepEqual(harness.trace, ['publish:auto', 'error:spec.exit_failed', 'callback']);
   assert.equal(harness.errors[0]?.code, 'spec.exit_failed');

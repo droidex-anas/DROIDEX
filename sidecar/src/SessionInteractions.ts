@@ -166,8 +166,15 @@ export class SessionInteractions {
     if (pending.signature && isAlwaysOutcome(outcome)) {
       scope.permissionGrants.add(pending.signature);
     }
+    // An approved plan runs in Auto, so the provider has to leave planning
+    // first. If it refuses, the plan is declined instead of approved into a
+    // session that is still planning.
     if (pending.kind === 'spec' && isApprovalOutcome(normalized)) {
-      await this.prepareSpecExitForRun(liveSession.summary.appSessionId);
+      const left = await this.prepareSpecExitForRun(liveSession.summary.appSessionId);
+      if (!left) {
+        pending.resolve('cancel');
+        return;
+      }
     }
     pending.resolve(normalized);
   }
@@ -203,19 +210,25 @@ export class SessionInteractions {
     return created;
   }
 
-  private async prepareSpecExitForRun(appSessionId: string): Promise<void> {
+  private async prepareSpecExitForRun(appSessionId: string): Promise<boolean> {
+    let published = false;
     try {
       this.dependencies.updateSummary(appSessionId, {
         interactionMode: 'auto',
         phase: 'running',
       });
+      published = true;
       await this.dependencies.exitSpecModeForRun(appSessionId);
+      return true;
     } catch (error) {
+      // The chat never left Spec, so a summary that says otherwise is put back.
+      if (published) this.dependencies.updateSummary(appSessionId, { interactionMode: 'spec' });
       this.dependencies.emitError({
         code: 'spec.exit_failed',
         appSessionId,
         message: `Could not switch spec session to Auto before run: ${errMsg(error)}`,
       });
+      return false;
     }
   }
 }

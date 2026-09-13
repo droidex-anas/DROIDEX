@@ -5,7 +5,6 @@ import {
   query,
   type McpServerConfig,
   type Options,
-  type PermissionMode,
   type Query,
   type SDKUserMessage,
 } from '@anthropic-ai/claude-agent-sdk';
@@ -122,22 +121,22 @@ export class ClaudeSession implements ProviderSession {
     }
   }
 
+  // Both settings reach the CLI as the one permission mode, so each commits its
+  // half of it only once the CLI has accepted the mode: a refusal must leave the
+  // session reading the way the CLI is still running.
   async setAutonomy(autonomy: Autonomy): Promise<void> {
-    this.autonomy = autonomy;
     // Plan mode holds the permission mode while the session is in Spec; the new
-    // autonomy takes effect when it leaves.
-    if (!this.planning) await this.query.setPermissionMode(this.permissionMode());
+    // autonomy takes effect when it leaves, so there is nothing to accept yet.
+    if (!this.planning) await this.query.setPermissionMode(claudePermissionMode(autonomy));
+    this.autonomy = autonomy;
   }
 
   // Spec mode is plan mode: the model plans and reads, and its ExitPlanMode call
   // raises the plan for review rather than ending the mode itself.
   async setInteractionMode(mode: SessionInteractionMode): Promise<void> {
-    this.planning = mode === 'spec';
-    await this.query.setPermissionMode(this.permissionMode());
-  }
-
-  private permissionMode(): PermissionMode {
-    return this.planning ? 'plan' : claudePermissionMode(this.autonomy);
+    const planning = mode === 'spec';
+    await this.query.setPermissionMode(planning ? 'plan' : claudePermissionMode(this.autonomy));
+    this.planning = planning;
   }
 
   // Reasoning effort is not part of the model selection this build offers for

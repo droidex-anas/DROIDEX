@@ -1683,8 +1683,13 @@ export class SessionManager {
       if (liveSession.droid && mode === 'spec')
         await this.alignSpecModeModel(liveSession.droid, liveSession.summary);
       this.registry.updateSummary(stableAppSessionId, { interactionMode: mode });
+      // Compaction or a close can replace the session while the provider is
+      // answering; the mode belongs to the session that asked for it, not to
+      // whatever took its place.
+      if (!this.isCurrentPrimarySession(liveSession)) return;
       // The mode determines the default model when none is pinned, so the
       // auto-compaction threshold must be recomputed for the new mode.
+      if (!this.isCurrentPrimarySession(liveSession)) return;
       const compactionTarget = this.primaryCompactionTarget(liveSession);
       if (compactionTarget) await this.compaction.rearmPrimary(compactionTarget);
     } catch (err) {
