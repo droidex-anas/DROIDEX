@@ -68,7 +68,10 @@ export function providerDefaultModel(
   catalog: ModelInfo[],
   statuses: ProviderStatus[],
 ): ModelInfo | undefined {
-  const id = statuses.find((entry) => entry.provider === provider)?.defaultModelId;
+  const status = statuses.find((entry) => entry.provider === provider);
+  // A provider that cannot run offers no models, so it offers no default to
+  // start on either — the same rule its catalog follows.
+  const id = status && status.readiness !== 'ready' ? undefined : status?.defaultModelId;
   if (!id) return undefined;
   return catalog.find((model) => model.id === id) ?? { id, displayName: id, isCustom: false };
 }

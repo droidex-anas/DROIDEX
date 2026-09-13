@@ -75,6 +75,18 @@ test('accepts provider statuses and rejects unknown providers or readiness', () 
     serverWireMessage(batch({ type: 'provider.status', statuses: [{ ...status, message: 7 }] })),
     null,
   );
+  assert.notEqual(
+    serverWireMessage(
+      batch({ type: 'provider.status', statuses: [{ ...status, defaultModelId: 'droid-core' }] }),
+    ),
+    null,
+  );
+  assert.equal(
+    serverWireMessage(
+      batch({ type: 'provider.status', statuses: [{ ...status, defaultModelId: 7 }] }),
+    ),
+    null,
+  );
   assert.equal(serverWireMessage(batch({ type: 'provider.status', statuses: {} })), null);
 });
 

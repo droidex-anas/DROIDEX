@@ -166,7 +166,11 @@ interface ClaudeModel {
 // resolved back to the row the picker lists.
 function claudeDefaultModelId(models: ClaudeModel[]): string | undefined {
   const recommended = models.find((model) => model.value === RECOMMENDED);
-  const wanted = claudeSettingsModel() ?? recommended?.resolvedModel ?? recommended?.value;
+  const recommendation = recommended?.resolvedModel ?? recommended?.value;
+  // A setting of `default` is the CLI's own word for "whatever is recommended",
+  // not a model, so it resolves the same way an absent setting does.
+  const configured = claudeSettingsModel();
+  const wanted = configured === RECOMMENDED ? recommendation : (configured ?? recommendation);
   if (!wanted) return undefined;
   const row = models.find(
     (model) =>
@@ -183,7 +187,9 @@ function claudeSettingsModel(): string | undefined {
     const settings = JSON.parse(readFileSync(join(directory, 'settings.json'), 'utf8')) as {
       model?: unknown;
     };
-    return typeof settings.model === 'string' && settings.model.trim() ? settings.model : undefined;
+    return typeof settings.model === 'string' && settings.model.trim()
+      ? settings.model.trim()
+      : undefined;
   } catch {
     return undefined;
   }

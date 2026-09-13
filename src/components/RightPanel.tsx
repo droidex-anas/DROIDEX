@@ -326,7 +326,7 @@ function modelRowContent(
         ? resolveReasoningEffortDisplay(
             session.reasoningEffort,
             state.agentConfig.primary.reasoning,
-            pinned,
+            shown,
           )
         : session.reasoningEffort,
   };

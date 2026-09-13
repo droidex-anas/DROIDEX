@@ -255,4 +255,3 @@ function configFileModel(): string | undefined {
 function defaultModel(models: ModelInfo[]): string | undefined {
   return models.find((model) => model.isDefault)?.id;
 }
-
