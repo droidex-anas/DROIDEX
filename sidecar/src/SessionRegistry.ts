@@ -148,6 +148,19 @@ export class SessionRegistry<TLive extends RegisteredSession> {
     return updated;
   }
 
+  // A settings change on a chat nobody has open. The stored summary is what the
+  // sidebar shows and what a later resume launches with, so patching it in place
+  // is what makes the change outlive the run.
+  updateStoredSummary(id: string, patch: SessionSummaryPatch): SessionSummary | undefined {
+    const current = this.resolveCanonicalSummary(id);
+    if (!current || this.sessions.has(current.appSessionId)) return undefined;
+    const updated = this.withPatch(current, patch, false);
+    this.persist(updated);
+    this.cacheHistoricalSummary(updated);
+    this.publish(updated);
+    return updated;
+  }
+
   reanchorHistoricalCwd(fromCwd: string, toCwd: string): SessionSummary[] {
     if (!isAbsolute(fromCwd) || !isAbsolute(toCwd)) {
       throw new Error('Session cwd re-anchoring requires absolute paths.');

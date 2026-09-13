@@ -111,6 +111,7 @@ import { CodexProvider } from './providers/codex/CodexProvider.js';
 import { requireDroidSession } from './providers/droid/DroidProviderSession.js';
 import { ProviderProbes, type ProviderProbeMap } from './providers/providerProbes.js';
 import { ProviderTranscriptFile } from './providers/ProviderTranscriptFile.js';
+import { writeProviderSessionSettings } from './providers/providerSessionSettings.js';
 import { providerStatuses } from './providers/providerStatus.js';
 import type { Provider, ProviderModelSettings } from './providers/session.js';
 
@@ -1166,7 +1167,7 @@ export class SessionManager {
       if (cmd.appSessionId) {
         const patch = this.summaryPatchForAgent(cmd.agent, cmd);
         if (session && appSessionId) this.registry.updateSummary(appSessionId, patch);
-        else {
+        else if (!this.persistStoredSettings(cmd.appSessionId, cmd.agent, patch)) {
           const historical = this.registry.resolveSummary(cmd.appSessionId);
           if (historical)
             this.emit({
@@ -1195,6 +1196,26 @@ export class SessionManager {
         message: `Could not update agent settings: ${errMsg(err)}`,
       });
     }
+  }
+
+  // A model change on a chat that is not open. Droid's daemon owns that chat's
+  // settings and applies them at the next send; every other provider is read
+  // back from what DROIDEX stored, so the change has to reach both the stored
+  // summary the sidebar and a resume use and the transcript's settings file.
+  private persistStoredSettings(
+    appSessionId: string,
+    agent: ConfigurableSessionRole,
+    patch: Partial<SessionSummary>,
+  ): boolean {
+    if (agent !== 'primary' || this.sessionProvider(appSessionId) === DEFAULT_PROVIDER)
+      return false;
+    const stored = this.registry.updateStoredSummary(appSessionId, patch);
+    if (!stored) return false;
+    writeProviderSessionSettings(stored.appSessionId, {
+      modelId: stored.modelId ?? null,
+      ...(stored.reasoningEffort ? { reasoningEffort: stored.reasoningEffort } : {}),
+    });
+    return true;
   }
 
   private rememberPendingAgentSettings(
@@ -1789,11 +1810,8 @@ export class SessionManager {
   }
 
   // The model and reasoning a session generates with reach whatever holds it:
-  // the live provider session, or — for a stored Droid session — a loaded copy,
-  // so the daemon's own file records the change. A closed session on any other
-  // provider has nothing to write to: its stored settings live on the head line
-  // of an append-only transcript, and rewriting that is its own change. The
-  // selector only acts on the open chat, so this is unreachable from the UI.
+  // the live provider session, or — for a stored session — the file its provider
+  // is read back from, so a chat reopened after a restart keeps the change.
   private async pushModelSettings(
     appSessionId: string,
     liveSession: LiveSession | undefined,
@@ -1804,7 +1822,10 @@ export class SessionManager {
       await liveSession.session.setModel(model);
       return;
     }
-    if (this.sessionProvider(appSessionId) !== DEFAULT_PROVIDER) return;
+    if (this.sessionProvider(appSessionId) !== DEFAULT_PROVIDER) {
+      writeProviderSessionSettings(appSessionId, model);
+      return;
+    }
     await this.withSession(appSessionId, (session) => session.updateSettings(droidSettings));
   }
 
