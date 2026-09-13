@@ -40,6 +40,8 @@ export class ClaudeSession implements ProviderSession {
   private readonly mapper: ClaudeEventMapper;
   private readonly query: Query;
   private activeTurnId?: string;
+  // The turn the user stopped, so only that turn's own error result is excused.
+  private interruptedTurnId?: string;
 
   constructor(input: ClaudeSessionInput) {
     this.providerSessionId = input.appSessionId;
@@ -69,6 +71,10 @@ export class ClaudeSession implements ProviderSession {
         // A result left behind by an interrupted turn is only usage; this turn
         // ends on its own result.
         if (next.value.type === 'result' && answersTurn(next.value, turnId)) {
+          // A stopped turn settles quietly: the CLI still reports the
+          // interruption as an error result carrying an internal diagnostic.
+          if (next.value.subtype !== 'success' && this.interruptedTurnId !== turnId)
+            throw new Error(turnFailure(next.value.subtype, next.value.errors));
           yield { done: true };
           return;
         }
@@ -89,6 +95,7 @@ export class ClaudeSession implements ProviderSession {
   }
 
   async interrupt(): Promise<void> {
+    this.interruptedTurnId = this.activeTurnId;
     // Aborts the in-flight turn on the live process; the turn then settles with
     // its own result, so the next prompt does not pay for a restart.
     await this.query.interrupt();
@@ -119,6 +126,15 @@ function sessionOptions(input: ClaudeSessionInput): Options {
     // HOME is never overridden: on macOS it also relocates the login keychain,
     // and the CLI then reports the user as signed out.
   };
+}
+
+function turnFailure(subtype: string, errors: string[]): string {
+  // The CLI's own diagnostics are bracketed internals; the subtype is what a
+  // user can act on.
+  const detail = errors.filter((error) => !error.startsWith('[')).join('\n');
+  return detail
+    ? `Claude Code ended the turn (${subtype}): ${detail}`
+    : `Claude Code ended the turn (${subtype}).`;
 }
 
 function answersTurn(

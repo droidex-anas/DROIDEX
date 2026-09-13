@@ -203,13 +203,10 @@ export class ClaudeEventMapper {
         usage.inputTokens + usage.cacheReadInputTokens + usage.cacheCreationInputTokens;
       this.totals.tokensOut += usage.outputTokens;
     }
-    const errors = message.subtype === 'success' ? [] : message.errors;
-    // The turn's own settlement is the session's call: a result left behind by
-    // an interrupted turn contributes usage and nothing else.
-    return [
-      ...errors.map((text) => ({ transcript: this.transcript('error', { text, isError: true }) })),
-      this.usage(),
-    ];
+    // Settlement is the session's call: a result left behind by an interrupted
+    // turn contributes usage and nothing else, and a failed turn is reported by
+    // failing its stream rather than as a transcript row.
+    return [this.usage()];
   }
 
   private toolCall(tool: ToolBlock): NormalizedEvent {
