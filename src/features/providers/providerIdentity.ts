@@ -28,5 +28,8 @@ const READINESS_REASONS: Record<Exclude<ProviderReadiness, 'ready'>, string> = {
 export function providerUnavailableReason(status: ProviderStatus | undefined): string | null {
   if (!status) return 'Checking availability…';
   if (status.readiness === 'ready') return null;
-  return status.message ?? READINESS_REASONS[status.readiness];
+  // A provider that reports a blank message still needs a reason shown.
+  const message = status.message?.trim();
+  if (message) return message;
+  return READINESS_REASONS[status.readiness];
 }
