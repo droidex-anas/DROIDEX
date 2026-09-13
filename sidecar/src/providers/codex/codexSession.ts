@@ -7,20 +7,7 @@ import { errMsg } from '../../sessionHelpers.js';
 import type { ProviderInteractions } from '../interactions.js';
 import type { ProviderModelSettings, ProviderSession } from '../session.js';
 import type { AppServerClient } from './appServer.js';
-import {
-  answerQuestions,
-  codexAutonomy,
-  codexSandboxPolicy,
-  commandApproval,
-  decideApproval,
-  OpenPrompts,
-  fileChangeApproval,
-  type ApprovalDecision,
-  type CodexApproval,
-  type CommandApproval,
-  type FileChangeApproval,
-  type RequestedQuestion,
-} from './codexApprovals.js';
+import { codexAutonomy, OpenPrompts } from './codexApprovals.js';
 import {
   CodexEventMapper,
   errorOf,
@@ -28,7 +15,7 @@ import {
   MAPPED_NOTIFICATIONS,
   type CodexTurn,
 } from './codexEvents.js';
-import { TurnStream } from './codexTurn.js';
+import { TurnStream, turnStartParams } from './codexTurn.js';
 
 export interface CodexSessionInput {
   // DROIDEX's own identity for the session. Codex mints its thread id itself,
@@ -53,7 +40,6 @@ export class CodexSession implements ProviderSession {
 
   private readonly client: AppServerClient;
   private readonly mapper: CodexEventMapper;
-  private readonly interactions: ProviderInteractions;
   private readonly cwd: string;
   private autonomy: Autonomy;
   private model: ProviderModelSettings;
@@ -69,12 +55,11 @@ export class CodexSession implements ProviderSession {
   constructor(input: CodexSessionInput) {
     this.providerSessionId = input.appSessionId;
     this.client = input.client;
-    this.interactions = input.interactions;
     this.cwd = input.cwd;
     this.autonomy = input.autonomy;
     this.model = input.model;
     this.mapper = new CodexEventMapper(input.appSessionId);
-    this.prompts = new OpenPrompts(input.interactions);
+    this.prompts = new OpenPrompts(input.appSessionId, input.interactions);
     // Registered before `initialize`, so nothing the server sends can arrive
     // before its handler exists. Requests left unregistered — the legacy exec
     // and patch callbacks, additional permissions, MCP elicitation — are
@@ -128,18 +113,14 @@ export class CodexSession implements ProviderSession {
     this.turn = turn;
     this.pendingInterrupt = false;
     try {
-      const { approvalPolicy, sandbox } = codexAutonomy(this.autonomy);
-      // A turn's overrides stick to the thread, so a cleared model has to name
-      // the thread's own model rather than leave the last override in place.
-      const model = this.model.modelId ?? this.threadModel;
-      const started = await this.client.request<{ turn: CodexTurn }>('turn/start', {
-        threadId,
-        input: [{ type: 'text', text: prompt }],
-        approvalPolicy,
-        sandboxPolicy: codexSandboxPolicy(sandbox),
-        ...(model ? { model } : {}),
-        ...(this.model.reasoningEffort ? { effort: this.model.reasoningEffort } : {}),
-      });
+      const started = await this.client.request<{ turn: CodexTurn }>(
+        'turn/start',
+        turnStartParams(threadId, prompt, {
+          autonomy: this.autonomy,
+          model: this.model,
+          ...(this.threadModel ? { threadModel: this.threadModel } : {}),
+        }),
+      );
       this.adoptTurn(started.turn.id);
       yield* turn.drain();
     } finally {
@@ -167,6 +148,25 @@ export class CodexSession implements ProviderSession {
         : {}),
     };
     return Promise.resolve();
+  }
+
+  // Codex takes a prompt into the running turn instead of ending it. The turn
+  // id is the server's own precondition, so a steer aimed at a turn that has
+  // already settled is refused rather than applied to whatever runs now.
+  async steer(text: string): Promise<void> {
+    const threadId = this.threadId;
+    const turnId = this.turnId;
+    const turn = this.turn;
+    if (!threadId || !turnId || !turn)
+      throw new Error('This Codex session has no running turn to steer.');
+    const steered = await this.client.request<{ turnId: string }>('turn/steer', {
+      threadId,
+      expectedTurnId: turnId,
+      input: [{ type: 'text', text }],
+    });
+    // A queued prompt may have started its own turn while this was in flight.
+    // That turn owns its id, and Stop has to reach it rather than this one.
+    if (this.turn === turn && this.turnId === turnId) this.turnId = steered.turnId;
   }
 
   async interrupt(): Promise<void> {
@@ -210,19 +210,7 @@ export class CodexSession implements ProviderSession {
       this.turn?.fail(error);
       this.prompts.cancel();
     });
-    this.client.onRequest('item/commandExecution/requestApproval', (params) =>
-      this.decide(commandApproval(params as CommandApproval)),
-    );
-    this.client.onRequest('item/fileChange/requestApproval', (params) => {
-      const request = params as FileChangeApproval;
-      return this.decide(fileChangeApproval(request, this.mapper.toolDetail(request.itemId)));
-    });
-    this.client.onRequest('item/tool/requestUserInput', async (params) => {
-      const { questions } = params as { questions: RequestedQuestion[] };
-      return {
-        answers: await this.prompts.ask(() => answerQuestions(this.interactions, questions)),
-      };
-    });
+    this.prompts.register(this.client, (itemId: string) => this.mapper.toolDetail(itemId));
   }
 
   // The turn's id arrives either on `turn/started` or with the `turn/start`
@@ -252,13 +240,5 @@ export class CodexSession implements ProviderSession {
     // An interrupted turn settles quietly; the user asked for it.
     if (turn.status === 'completed') this.turn?.push([{ done: true }]);
     this.turn?.finish();
-  }
-
-  private async decide(approval: CodexApproval): Promise<{ decision: ApprovalDecision }> {
-    return {
-      decision: await this.prompts.ask(() =>
-        decideApproval(this.providerSessionId, this.interactions, approval),
-      ),
-    };
   }
 }
