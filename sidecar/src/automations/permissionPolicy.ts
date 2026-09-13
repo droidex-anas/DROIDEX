@@ -75,8 +75,14 @@ export function shouldAutoApproveAutomationTool(
  */
 export function isAutomationMutationPermission(params: RequestPermissionRequestParams): boolean {
   const target = automationPermissionTarget(params);
-  if (!target || !isAutomationServer(target.serverName)) return false;
-  const tool = automationToolName(target.toolName);
+  return target ? isAutomationMutationTool(target.serverName, target.toolName) : false;
+}
+
+// The name-level form, for a provider whose permission callback carries the
+// namespaced tool name instead of Droid's confirmation params.
+export function isAutomationMutationTool(serverName: string, toolName: string): boolean {
+  if (!isAutomationServer(serverName)) return false;
+  const tool = automationToolName(toolName);
   return Boolean(tool) && !ALWAYS_SAFE.has(tool);
 }
 
