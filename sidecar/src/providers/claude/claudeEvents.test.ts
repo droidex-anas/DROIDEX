@@ -142,3 +142,32 @@ test("a subagent's narration is dropped while its tool call is kept", () => {
     [['tool_call', 'Read', { file_path: 'a.ts' }]],
   );
 });
+
+test('the result reports only the denials that never reached the transcript', () => {
+  const events = transcripts([
+    message({
+      type: 'user',
+      message: {
+        content: [
+          { type: 'tool_result', tool_use_id: 'toolu_1', content: 'declined', is_error: true },
+        ],
+      },
+    }),
+    message({
+      type: 'result',
+      modelUsage: {},
+      permission_denials: [
+        { tool_name: 'Write', tool_use_id: 'toolu_1', tool_input: {} },
+        { tool_name: 'Bash', tool_use_id: 'toolu_2', tool_input: {} },
+      ],
+    }),
+  ]);
+
+  assert.deepEqual(
+    events.map((event) => [event.kind, event.toolUseId, event.text, event.isError]),
+    [
+      ['tool_result', 'toolu_1', 'declined', true],
+      ['tool_result', 'toolu_2', 'Bash was denied.', true],
+    ],
+  );
+});

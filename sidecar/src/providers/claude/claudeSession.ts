@@ -15,7 +15,7 @@ import type { NormalizedEvent } from '../../normalize.js';
 import type { Autonomy } from '../../protocol.js';
 import type { ProviderInteractions } from '../interactions.js';
 import type { ProviderModelSettings, ProviderSession } from '../session.js';
-import { ClaudeEventMapper } from './claudeEvents.js';
+import { ClaudeEventMapper, rateLimitRefusal } from './claudeEvents.js';
 import { claudeCanUseTool, claudePermissionMode } from './claudePermissions.js';
 
 export interface ClaudeSessionInput {
@@ -102,6 +102,12 @@ export class ClaudeSession implements ProviderSession {
     } finally {
       this.activeTurnId = undefined;
     }
+        // A refused usage window is answered with no result at all, so the turn
+        // has to end here instead of waiting for one that never comes.
+        if (next.value.type === 'rate_limit_event') {
+          const refusal = rateLimitRefusal(next.value.rate_limit_info);
+          if (refusal) throw new Error(refusal);
+        }
   }
 
   async setAutonomy(autonomy: Autonomy): Promise<void> {
