@@ -4,13 +4,13 @@
 // The one rule that keeps the transcript honest: `stream_event` deltas are the
 // only source of assistant text and thinking. The CLI also emits an `assistant`
 // snapshot for each block as it finishes, carrying that block's full text, so
-// re-emitting a snapshot's content would double every sentence in the chat. The
-// snapshot is a backfill for one case only: a message that streamed nothing at
-// all (an aborted or synthetic frame), which is visible nowhere else.
+// re-emitting a snapshot would double every sentence in the chat. The snapshot
+// backfills one case only: a message that streamed nothing at all (an aborted
+// or synthetic frame), which is visible nowhere else.
 import type { SDKMessage } from '@anthropic-ai/claude-agent-sdk';
 
 import type { NormalizedEvent } from '../../normalize.js';
-import type { SessionRole, TranscriptEvent } from '../../protocol.js';
+import type { TranscriptEvent } from '../../protocol.js';
 
 const TOOL_BLOCK_TYPES = new Set(['tool_use', 'server_tool_use', 'mcp_tool_use']);
 
@@ -26,11 +26,6 @@ interface BlockState {
   tool?: ToolBlock;
 }
 
-interface CallUsage {
-  input: number;
-  output: number;
-}
-
 let sequence = 0;
 // A distinct suffix from normalize.ts's ids so two providers can never mint the
 // same transcript id.
@@ -41,7 +36,7 @@ export class ClaudeEventMapper {
   // subagent's frames carry their own block indices under its tool_use id.
   private readonly blocks = new Map<string, Map<number, BlockState>>();
   private readonly totals = { tokensIn: 0, tokensOut: 0 };
-  private call: CallUsage = { input: 0, output: 0 };
+  private call = { input: 0, output: 0 };
 
   constructor(private readonly appSessionId: string) {}
 
@@ -66,8 +61,7 @@ export class ClaudeEventMapper {
       case 'conversation_reset':
         return [];
       default:
-        // Fails the build when the SDK adds a top-level message type, instead
-        // of dropping it silently.
+        // Fails the build when the SDK adds a top-level message type.
         message satisfies never;
         return [];
     }
@@ -79,11 +73,19 @@ export class ClaudeEventMapper {
   ): NormalizedEvent[] {
     const blocks = this.blocksFor(parentToolUseId);
     switch (event.type) {
-      case 'message_start':
+      case 'message_start': {
         blocks.clear();
         if (parentToolUseId) return [];
-        this.call = { input: contextTokens(event.message.usage), output: 0 };
+        const usage = event.message.usage;
+        this.call = {
+          input:
+            usage.input_tokens +
+            (usage.cache_read_input_tokens ?? 0) +
+            (usage.cache_creation_input_tokens ?? 0),
+          output: 0,
+        };
         return [this.usage()];
+      }
       case 'message_delta':
         if (parentToolUseId) return [];
         this.call.output = event.usage.output_tokens;
@@ -94,18 +96,15 @@ export class ClaudeEventMapper {
         blocks.clear();
         return [];
       case 'content_block_start': {
-        const block = event.content_block;
-        const tool = TOOL_BLOCK_TYPES.has(block.type)
-          ? (block as { id: string; name: string })
-          : undefined;
-        blocks.set(event.index, tool ? { tool: { id: tool.id, name: tool.name, json: '' } } : {});
+        const tool = toolBlock(event.content_block);
+        blocks.set(event.index, tool ? { tool: { ...tool, json: '' } } : {});
         return [];
       }
       case 'content_block_delta':
         return this.contentDelta(blocks, event.index, event.delta, parentToolUseId);
       case 'content_block_stop': {
         const tool = blocks.get(event.index)?.tool;
-        return tool ? [this.toolCall(tool)] : [];
+        return tool ? [this.toolCall(tool.id, tool.name, parseToolInput(tool.json))] : [];
       }
       default:
         return [];
@@ -140,26 +139,20 @@ export class ClaudeEventMapper {
     message: Extract<SDKMessage, { type: 'assistant' }>,
   ): NormalizedEvent[] {
     const blocks = this.blocksFor(message.parent_tool_use_id);
-    // The snapshot's content array is the block that just finished, not the
-    // message so far, so it cannot be matched positionally against the stream.
-    // Blocks that streamed are already in the transcript; a tool block is
-    // matched by its id, which is stable.
+    // The snapshot's content is the block that just finished, not the message so
+    // far, so it cannot be matched positionally against the stream. Blocks that
+    // streamed are already in the transcript, and a tool block is matched by its
+    // id, which is stable.
     const streamed = blocks.size > 0;
     const reported = new Set(
       [...blocks.values()].flatMap((block) => (block.tool ? [block.tool.id] : [])),
     );
     const events: NormalizedEvent[] = [];
     for (const block of message.message.content) {
-      if (TOOL_BLOCK_TYPES.has(block.type)) {
-        const tool = block as { id: string; name: string; input?: unknown };
+      const tool = toolBlock(block);
+      if (tool) {
         if (!reported.has(tool.id))
-          events.push({
-            transcript: this.transcript('tool_call', {
-              toolName: tool.name,
-              toolArgs: tool.input,
-              toolUseId: tool.id,
-            }),
-          });
+          events.push(this.toolCall(tool.id, tool.name, (block as { input?: unknown }).input));
         continue;
       }
       if (streamed || message.parent_tool_use_id) continue;
@@ -169,9 +162,7 @@ export class ClaudeEventMapper {
         events.push({ transcript: this.transcript('thinking', { text: block.thinking }) });
     }
     if (message.error)
-      events.push({
-        transcript: this.transcript('error', { text: message.error, isError: true }),
-      });
+      events.push({ transcript: this.transcript('error', { text: message.error, isError: true }) });
     return events;
   }
 
@@ -180,22 +171,21 @@ export class ClaudeEventMapper {
     if (typeof content === 'string') return [];
     return content.flatMap((block) =>
       block.type === 'tool_result'
-        ? [
-            {
-              transcript: this.transcript('tool_result', {
-                text: toolResultText(block.content),
-                isError: block.is_error === true,
-                toolUseId: block.tool_use_id,
-              }),
-            },
-          ]
+        ? {
+            transcript: this.transcript('tool_result', {
+              text: toolResultText(block.content),
+              isError: block.is_error === true,
+              toolUseId: block.tool_use_id,
+            }),
+          }
         : [],
     );
   }
 
+  // modelUsage covers the main loop, subagents and compaction, and is cumulative
+  // for the whole query(). Settlement itself is the session's call: a result left
+  // behind by an interrupted turn contributes usage and nothing else.
   private result(message: Extract<SDKMessage, { type: 'result' }>): NormalizedEvent[] {
-    // modelUsage covers the main loop, subagents and compaction; `usage` is the
-    // main loop only. Both are cumulative for the whole query().
     this.totals.tokensIn = 0;
     this.totals.tokensOut = 0;
     for (const usage of Object.values(message.modelUsage)) {
@@ -203,24 +193,17 @@ export class ClaudeEventMapper {
         usage.inputTokens + usage.cacheReadInputTokens + usage.cacheCreationInputTokens;
       this.totals.tokensOut += usage.outputTokens;
     }
-    // Settlement is the session's call: a result left behind by an interrupted
-    // turn contributes usage and nothing else, and a failed turn is reported by
-    // failing its stream rather than as a transcript row.
     return [this.usage()];
   }
 
-  private toolCall(tool: ToolBlock): NormalizedEvent {
+  private toolCall(id: string, name: string, input: unknown): NormalizedEvent {
     return {
-      transcript: this.transcript('tool_call', {
-        toolName: tool.name,
-        toolArgs: parseToolInput(tool.json),
-        toolUseId: tool.id,
-      }),
+      transcript: this.transcript('tool_call', { toolName: name, toolArgs: input, toolUseId: id }),
     };
   }
 
-  // The context reading is the current API call's own window occupancy, which
-  // is what the meter measures; the cumulative totals come from the result.
+  // The context reading is the current API call's own window occupancy, which is
+  // what the meter measures; the cumulative totals come from the result.
   private usage(): NormalizedEvent {
     return {
       tokens: {
@@ -244,12 +227,11 @@ export class ClaudeEventMapper {
     kind: TranscriptEvent['kind'],
     extra: Partial<TranscriptEvent>,
   ): TranscriptEvent {
-    const role: SessionRole = 'primary';
     return {
       id: nextId(),
       appSessionId: this.appSessionId,
       sourceSessionId: this.appSessionId,
-      role,
+      role: 'primary',
       ts: Date.now(),
       kind,
       ...extra,
@@ -257,21 +239,17 @@ export class ClaudeEventMapper {
   }
 }
 
-function contextTokens(usage: {
-  input_tokens?: number | null;
-  cache_read_input_tokens?: number | null;
-  cache_creation_input_tokens?: number | null;
-}): number {
-  return (
-    (usage.input_tokens ?? 0) +
-    (usage.cache_read_input_tokens ?? 0) +
-    (usage.cache_creation_input_tokens ?? 0)
-  );
+// The tool-use block shapes share id/name; the SDK's own union splits them by
+// server/mcp provenance, which the transcript does not distinguish.
+function toolBlock(block: { type: string }): { id: string; name: string } | undefined {
+  if (!TOOL_BLOCK_TYPES.has(block.type)) return undefined;
+  const { id, name } = block as unknown as { id: string; name: string };
+  return { id, name };
 }
 
-// A tool whose input never finished streaming (interrupt, or a block the model
-// left open) still deserves its row, so a partial payload reads as no arguments
-// rather than failing the turn.
+// A tool whose input never finished streaming (an interrupt, or a block the
+// model left open) still deserves its row, so a partial payload reads as no
+// arguments rather than failing the turn.
 function parseToolInput(json: string): unknown {
   if (!json) return {};
   try {
@@ -286,7 +264,7 @@ function toolResultText(content: unknown): string {
   if (!Array.isArray(content)) return content === undefined ? '' : JSON.stringify(content);
   return content
     .map((block: unknown) => {
-      const text = (block as { type?: string; text?: string }).text;
+      const text = (block as { text?: string }).text;
       return typeof text === 'string' ? text : JSON.stringify(block);
     })
     .join('\n');
