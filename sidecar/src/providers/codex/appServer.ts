@@ -138,6 +138,9 @@ export class AppServerClient {
     this.child.kill('SIGTERM');
     if (await this.exits()) return;
     this.child.kill('SIGKILL');
+    // Returning before the process is reaped would let a caller delete the
+    // working directory out from under it.
+    await this.exits();
   }
 
   private receive(chunk: string): void {
@@ -146,27 +149,40 @@ export class AppServerClient {
     while (newline >= 0) {
       const line = this.remainder.slice(0, newline).replace(/\r$/, '');
       this.remainder = this.remainder.slice(newline + 1);
+      if (this.tooLong(line)) return;
       if (line) this.dispatch(line);
       newline = this.remainder.indexOf('\n');
     }
-    if (Buffer.byteLength(this.remainder) > MAX_LINE_BYTES) {
-      this.fail(new Error('Codex sent a line larger than 1 MiB; the session was ended.'));
-      this.remainder = '';
-      this.child.kill('SIGKILL');
-    }
+    this.tooLong(this.remainder);
+  }
+
+  // Applies to a complete line as well as to the unterminated tail: either way
+  // it is a runaway payload, not a message.
+  private tooLong(text: string): boolean {
+    if (Buffer.byteLength(text) <= MAX_LINE_BYTES) return false;
+    this.remainder = '';
+    this.fail(new Error('Codex sent a line larger than 1 MiB; the session was ended.'));
+    this.child.kill('SIGKILL');
+    return true;
   }
 
   // Drained straight into the handlers: a queue between the process and the
   // transcript would drop streaming deltas the moment a turn outpaces it.
   private dispatch(line: string): void {
-    let message: WireMessage;
+    let parsed: unknown;
     try {
-      message = JSON.parse(line) as WireMessage;
+      parsed = JSON.parse(line);
     } catch {
-      this.fail(new Error('Codex sent a line that is not JSON; the session was ended.'));
+      parsed = undefined;
+    }
+    // `null`, a bare number and an array are all valid JSON and none of them is
+    // a message; reading a field off one would throw out of the stdout listener.
+    if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
+      this.fail(new Error('Codex sent a line that is not a message; the session was ended.'));
       this.child.kill('SIGKILL');
       return;
     }
+    const message = parsed as WireMessage;
     if (message.method !== undefined && message.id !== undefined) {
       void this.serve(message.id, message.method, message.params);
       return;
