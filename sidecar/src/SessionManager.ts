@@ -1700,36 +1700,40 @@ export class SessionManager {
       liveSession?.summary.appSessionId ?? historical?.appSessionId ?? requestedAppSessionId;
     const patch: Partial<SessionSummary> = {};
     const next: Record<string, unknown> = {};
+    const model: ProviderModelSettings = {};
     if (settings.modelId !== undefined) {
-      // A null model means "reset to Default". The daemon has no such notion,
-      // so resolve the actual default and push it; silently dropping the update
-      // would leave the daemon generating with the previously selected model.
-      // specModeModelId mirrors it because spec-mode turns run on that setting.
+      // A null model means "reset to Default". Droid's daemon has no such
+      // notion, so the Factory default is resolved and pushed — dropping the
+      // update would leave it generating with the previously selected model.
+      // Every other provider has a default of its own and is told to fall back
+      // to it instead of inheriting Droid's. specModeModelId mirrors the model
+      // because spec-mode turns run on that setting.
       const summaryForMode = liveSession?.summary ?? historical;
       const effectiveModelId =
-        settings.modelId ??
-        defaultModelForAgent(
-          'primary',
-          summaryForMode ? defaultsModeForSummary(summaryForMode) : 'auto',
-          await this.getFactoryDefaults(),
-        );
+        this.sessionProvider(appSessionId) === DEFAULT_PROVIDER
+          ? (settings.modelId ??
+            defaultModelForAgent(
+              'primary',
+              summaryForMode ? defaultsModeForSummary(summaryForMode) : 'auto',
+              await this.getFactoryDefaults(),
+            ))
+          : settings.modelId;
       if (effectiveModelId) {
         next.modelId = effectiveModelId;
         next.specModeModelId = effectiveModelId;
       }
+      model.modelId = effectiveModelId;
       patch.modelId = settings.modelId ?? undefined;
       patch.maxContextTokens = this.maxContextTokensForModel(settings.modelId ?? undefined);
     }
     if (settings.reasoningEffort) {
       next.reasoningEffort = settings.reasoningEffort;
       next.specModeReasoningEffort = settings.reasoningEffort;
+      model.reasoningEffort = settings.reasoningEffort;
       patch.reasoningEffort = settings.reasoningEffort;
     }
-    if (Object.keys(next).length === 0) return;
-    await this.pushModelSettings(appSessionId, liveSession, next, {
-      ...(typeof next.modelId === 'string' ? { modelId: next.modelId } : {}),
-      ...(settings.reasoningEffort ? { reasoningEffort: settings.reasoningEffort } : {}),
-    });
+    if (Object.keys(patch).length === 0) return;
+    await this.pushModelSettings(appSessionId, liveSession, next, model);
     const stillCurrent = () =>
       liveSession !== undefined &&
       !this.shutdownPromise &&
@@ -1753,9 +1757,13 @@ export class SessionManager {
     // bridge is the trusted boundary, so clamp here too before forwarding to
     // the harness.
     const safeTitle = title.trim().slice(0, 200);
-    await this.withSession(requestedAppSessionId, (session) =>
-      session.renameSession({ title: safeTitle }),
-    );
+    // Droid keeps the title in its own session file and has to be told; every
+    // other provider's title is DROIDEX's alone, so only the daemon call is
+    // skipped and the chat is still renamed.
+    if (this.sessionProvider(requestedAppSessionId) === DEFAULT_PROVIDER)
+      await this.withSession(requestedAppSessionId, (session) =>
+        session.renameSession({ title: safeTitle }),
+      );
     const appSessionId =
       this.registry.getLive(requestedAppSessionId)?.summary.appSessionId ??
       this.registry.resolveSummary(requestedAppSessionId)?.appSessionId;
@@ -1770,8 +1778,10 @@ export class SessionManager {
 
   // The model and reasoning a session generates with reach whatever holds it:
   // the live provider session, or — for a stored Droid session — a loaded copy,
-  // so the daemon's own file records the change. A stored session on any other
-  // provider keeps them in its summary until it next opens.
+  // so the daemon's own file records the change. A closed session on any other
+  // provider has nothing to write to: its stored settings live on the head line
+  // of an append-only transcript, and rewriting that is its own change. The
+  // selector only acts on the open chat, so this is unreachable from the UI.
   private async pushModelSettings(
     appSessionId: string,
     liveSession: LiveSession | undefined,
@@ -1830,7 +1840,21 @@ export class SessionManager {
     return { session, close: () => session.close() };
   }
 
+  // Tool and skill discovery is the Droid CLI's. A chat named here that runs on
+  // another provider gets an empty catalog rather than a list of tools it
+  // cannot invoke — and never starts a Droid daemon to build one.
+  private isDroidCatalogTarget(providerSessionId?: string): boolean {
+    return (
+      providerSessionId === undefined ||
+      this.sessionProvider(providerSessionId) === DEFAULT_PROVIDER
+    );
+  }
+
   private async emitToolCatalog(providerSessionId?: string): Promise<void> {
+    if (!this.isDroidCatalogTarget(providerSessionId)) {
+      this.emit({ type: 'catalog.updated', catalog: 'tools', items: [] });
+      return;
+    }
     const { session, close } = await this.catalogSession(providerSessionId);
     try {
       const result = await session.listTools();
@@ -1841,6 +1865,15 @@ export class SessionManager {
   }
 
   private async emitSkillCatalog(providerSessionId?: string): Promise<void> {
+    if (!this.isDroidCatalogTarget(providerSessionId)) {
+      this.emit({
+        type: 'catalog.updated',
+        catalog: 'skills',
+        items: [],
+        providerSessionId: providerSessionId ?? null,
+      });
+      return;
+    }
     const { session, close } = await this.catalogSession(providerSessionId);
     try {
       const result = await session.listSkills();
