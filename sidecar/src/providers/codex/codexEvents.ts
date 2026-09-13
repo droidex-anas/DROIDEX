@@ -61,6 +61,28 @@ interface DeltaParams {
   delta: string;
 }
 
+interface PatchParams {
+  itemId: string;
+  changes: FileUpdateChange[];
+}
+
+function deltaOf(params: Record<string, unknown>): DeltaParams | undefined {
+  const { itemId, delta } = params;
+  return typeof itemId === 'string' && typeof delta === 'string' ? { itemId, delta } : undefined;
+}
+
+function patchOf(params: Record<string, unknown>): PatchParams | undefined {
+  const { itemId, changes } = params;
+  if (typeof itemId !== 'string' || !Array.isArray(changes)) return undefined;
+  return { itemId, changes: changes as FileUpdateChange[] };
+}
+
+function tokenUsageOf(params: Record<string, unknown>): ThreadTokenUsage | undefined {
+  const usage = params.tokenUsage;
+  if (!isObject(usage) || !isObject(usage.total) || !isObject(usage.last)) return undefined;
+  return usage as unknown as ThreadTokenUsage;
+}
+
 // A tool call still running: what it is about, for an approval card that has to
 // describe it, and the output collected so far.
 interface OpenTool {
@@ -80,34 +102,29 @@ export class CodexEventMapper {
 
   constructor(private readonly appSessionId: string) {}
 
+  // Every payload is read through a reader that answers undefined for a shape
+  // this build does not recognize: a notification is not worth throwing out of
+  // the transport's synchronous stdout listener.
   map(method: string, params: unknown): NormalizedEvent[] {
-    // A notification without the payload below is a version difference, not a
-    // reason to throw.
-    if (typeof params !== 'object' || params === null) return [];
+    if (!isObject(params)) return [];
     switch (method) {
       case 'item/agentMessage/delta':
-        return this.delta('text', params as DeltaParams);
+        return this.delta('text', deltaOf(params));
       case 'item/reasoning/textDelta':
       case 'item/reasoning/summaryTextDelta':
-        return this.delta('thinking', params as DeltaParams);
+        return this.delta('thinking', deltaOf(params));
       case 'item/started':
         return this.started(threadItem(params));
       case 'item/completed':
         return this.completed(threadItem(params));
-      case 'item/commandExecution/outputDelta': {
-        const { itemId, delta } = params as DeltaParams;
-        const tool = this.tools.get(itemId);
-        if (tool) tool.output += delta;
-        return [];
+      case 'item/commandExecution/outputDelta':
+        return this.appendOutput(deltaOf(params));
+      case 'item/fileChange/patchUpdated':
+        return this.replacePatch(patchOf(params));
+      case 'thread/tokenUsage/updated': {
+        const usage = tokenUsageOf(params);
+        return usage ? [tokens(usage)] : [];
       }
-      case 'item/fileChange/patchUpdated': {
-        const { itemId, changes } = params as { itemId: string; changes: FileUpdateChange[] };
-        const tool = this.tools.get(itemId);
-        if (tool) tool.output = patchText(changes);
-        return [];
-      }
-      case 'thread/tokenUsage/updated':
-        return [tokens((params as { tokenUsage: ThreadTokenUsage }).tokenUsage)];
       default:
         return [];
     }
@@ -123,10 +140,24 @@ export class CodexEventMapper {
     return { transcript: this.transcript('error', { text: message, isError: true }) };
   }
 
-  private delta(kind: 'text' | 'thinking', { itemId, delta }: DeltaParams): NormalizedEvent[] {
-    if (!delta) return [];
-    if (kind === 'text') this.streamed.add(itemId);
-    return [{ transcript: this.transcript(kind, { text: delta }) }];
+  private delta(kind: 'text' | 'thinking', params: DeltaParams | undefined): NormalizedEvent[] {
+    if (!params?.delta) return [];
+    if (kind === 'text') this.streamed.add(params.itemId);
+    return [{ transcript: this.transcript(kind, { text: params.delta }) }];
+  }
+
+  private appendOutput(params: DeltaParams | undefined): NormalizedEvent[] {
+    if (!params) return [];
+    const tool = this.tools.get(params.itemId);
+    if (tool) tool.output += params.delta;
+    return [];
+  }
+
+  private replacePatch(params: PatchParams | undefined): NormalizedEvent[] {
+    if (!params) return [];
+    const tool = this.tools.get(params.itemId);
+    if (tool) tool.output = patchText(params.changes);
+    return [];
   }
 
   private started(item: ThreadItem): NormalizedEvent[] {
@@ -199,10 +230,16 @@ interface ThreadTokenUsage {
 function tokens(usage: ThreadTokenUsage): NormalizedEvent {
   return {
     tokens: {
-      tokensIn: usage.total.inputTokens,
-      tokensOut: usage.total.outputTokens,
-      contextTokens: usage.last.totalTokens,
+      tokensIn: count(usage.total.inputTokens),
+      tokensOut: count(usage.total.outputTokens),
+      contextTokens: count(usage.last.totalTokens),
       ...(usage.modelContextWindow ? { maxContextTokens: usage.modelContextWindow } : {}),
     },
   };
+}
+
+// A counter Codex did not send has not been spent; publishing NaN instead would
+// travel all the way into the stored summary.
+function count(value: number): number {
+  return typeof value === 'number' && Number.isFinite(value) ? value : 0;
 }

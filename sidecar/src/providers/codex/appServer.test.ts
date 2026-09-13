@@ -31,6 +31,8 @@ process.stdin.on('data', (chunk) => {
       write(JSON.stringify({ id: 'server-1', method: 'unknown/method', params: {} }) + '\\n');
     } else if (message.error) {
       write(JSON.stringify({ method: 'answered', params: { code: message.error.code } }) + '\\n');
+    } else if (message.method === 'bogus') {
+      write('{}\\n');
     } else if (message.method === 'quit') {
       write(JSON.stringify({ method: 'tail', params: {} }));
       process.exit(0);
@@ -66,6 +68,13 @@ test('answers an unimplemented server request with method-not-found', async () =
   });
   client.notify('ask');
   assert.deepEqual(await answered, { code: -32601 });
+});
+
+test('refuses a line that is not a request, notification or response', async () => {
+  const client = connect();
+  const pending = client.request('never/answered', {});
+  client.notify('bogus');
+  await assert.rejects(pending, /not a message/);
 });
 
 test('delivers an unterminated final line and fails pending requests on exit', async () => {

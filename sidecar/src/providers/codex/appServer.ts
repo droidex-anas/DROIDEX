@@ -228,14 +228,24 @@ export class AppServerClient {
   }
 }
 
-// `null`, a bare number and an array are all valid JSON and none of them is a
-// message; reading a field off one would throw out of the stdout listener.
+// The three envelopes this protocol has: a request (a method and an id), a
+// notification (a method and no id) and a response (an id and exactly one of
+// result or error). Anything else — `null`, a bare number, `{}`, a lone id —
+// is not a message, and reading protocol fields off one would either throw out
+// of the stdout listener or settle a pending request with nothing.
 function wireMessage(line: string): WireMessage | undefined {
+  let parsed: unknown;
   try {
-    const parsed: unknown = JSON.parse(line);
-    if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) return undefined;
-    return parsed;
+    parsed = JSON.parse(line);
   } catch {
     return undefined;
   }
+  if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) return undefined;
+  const message = parsed as WireMessage;
+  const identified = typeof message.id === 'string' || typeof message.id === 'number';
+  if (typeof message.method === 'string')
+    return 'id' in message && !identified ? undefined : message;
+  if (!identified) return undefined;
+  const answers = ('result' in message ? 1 : 0) + ('error' in message ? 1 : 0);
+  return answers === 1 ? message : undefined;
 }

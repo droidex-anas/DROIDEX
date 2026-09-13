@@ -231,10 +231,12 @@ export class CodexSession implements ProviderSession {
     this.turnId = turnId;
     if (!this.pendingInterrupt) return;
     this.pendingInterrupt = false;
-    // Nobody is waiting on this one, so a refused stop is reported in the turn.
-    void this.sendInterrupt(turnId).catch((error: unknown) =>
-      this.turn?.push([this.mapper.errorEvent(errMsg(error))]),
-    );
+    // Nobody is waiting on this one, so a refused stop is reported in the turn
+    // it belongs to — never in whichever turn happens to be open by then.
+    const turn = this.turn;
+    void this.sendInterrupt(turnId).catch((error: unknown) => {
+      if (this.turn === turn) turn?.push([this.mapper.errorEvent(errMsg(error))]);
+    });
   }
 
   private sendInterrupt(turnId: string): Promise<unknown> {

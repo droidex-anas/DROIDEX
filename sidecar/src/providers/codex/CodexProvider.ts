@@ -215,7 +215,7 @@ async function listModels(client: AppServerClient): Promise<ModelInfo[]> {
     // A model with no id cannot be selected and one with no name cannot be
     // shown, so neither belongs in the picker.
     for (const model of page.data) {
-      if (model.id.trim() && model.displayName.trim()) models.push(providerModel(model));
+      if (named(model.id) && named(model.displayName)) models.push(providerModel(model));
     }
     cursor = page.nextCursor;
   } while (cursor);
@@ -236,4 +236,8 @@ function providerModel(model: CodexModel): ModelInfo {
     ...(efforts.length > 0 ? { supportedReasoningEfforts: efforts } : {}),
     ...(fallback ? { defaultReasoningEffort: fallback } : {}),
   };
+}
+
+function named(value: unknown): boolean {
+  return typeof value === 'string' && value.trim() !== '';
 }
