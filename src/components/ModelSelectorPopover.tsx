@@ -105,10 +105,13 @@ export default function ModelSelectorPopover({
   const source = providerModelCatalog(state.provider, state.models, state.providerStatuses);
   const hasRealModels = source.length > 0;
   // A provider that publishes no reasoning efforts has nothing to offer per row:
-  // the stepper would be inert and the word beside it a Droid effort. A catalog
-  // that has not arrived yet is not that answer, so the control stays.
+  // the stepper would be inert and the word beside it a Droid effort. A ready
+  // provider whose catalog has not arrived has not answered yet, so the control
+  // stays; one that cannot run has no efforts to offer at all.
+  const status = state.providerStatuses.find((entry) => entry.provider === state.provider);
+  const catalogPending = !status || (status.readiness === 'ready' && !hasRealModels);
   const showsReasoning =
-    !hasRealModels ||
+    catalogPending ||
     source.some(
       (model) =>
         (model.supportedReasoningEfforts?.length ?? 0) > 0 ||

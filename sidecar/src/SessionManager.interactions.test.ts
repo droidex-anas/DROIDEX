@@ -334,8 +334,9 @@ test(
       const providerIndex = responseCalls.findIndex(
         (call) => call.target === 'provider' && call.method === 'updateSettings',
       );
-      assert.ok(publicationIndex >= 0);
-      assert.ok(providerIndex > publicationIndex);
+      assert.ok(providerIndex >= 0);
+      // The provider leaves spec mode before the summary says it did.
+      assert.ok(publicationIndex > providerIndex);
       assert.equal(await completed, ToolConfirmationOutcome.ProceedOnce);
       assert.equal(callbackObservedProviderUpdate, true);
       assert.deepEqual(

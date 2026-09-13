@@ -249,7 +249,7 @@ test('unknown, duplicate, late, and wrong-session approvals settle at most once'
   assert.equal(settlements, 1);
 });
 
-test('Spec approval publishes, attempts provider update, then settles the callback', async () => {
+test('Spec approval switches the provider, publishes, then settles the callback', async () => {
   const success = createHarness();
   const liveSession = success.addLiveSession('app-spec');
   liveSession.summary.interactionMode = 'spec';
@@ -263,7 +263,7 @@ test('Spec approval publishes, attempts provider update, then settles the callba
   await success.interactions.respondToApproval('app-spec', requestId, 'proceed_once');
 
   assert.equal(await pending, ToolConfirmationOutcome.ProceedOnce);
-  assert.deepEqual(success.trace, ['publish:auto', 'provider:auto', 'callback']);
+  assert.deepEqual(success.trace, ['provider:auto', 'publish:auto', 'callback']);
   assert.equal(liveSession.summary.phase, 'running');
 
   const rejected = createHarness({ rejectProviderUpdate: true });
@@ -280,13 +280,7 @@ test('Spec approval publishes, attempts provider update, then settles the callba
   // The provider is still planning, so the plan is declined rather than
   // approved into a session that never left Spec.
   assert.equal(await rejectedPending, ToolConfirmationOutcome.Cancel);
-  assert.deepEqual(rejected.trace, [
-    'publish:auto',
-    'provider:auto',
-    'publish:spec',
-    'error:spec.exit_failed',
-    'callback',
-  ]);
+  assert.deepEqual(rejected.trace, ['provider:auto', 'error:spec.exit_failed', 'callback']);
 });
 
 test('Spec approval declines on a summary failure and settles the callback once', async () => {
@@ -305,7 +299,12 @@ test('Spec approval declines on a summary failure and settles the callback once'
 
   assert.equal(await pending, ToolConfirmationOutcome.Cancel);
   assert.equal(settlements, 1);
-  assert.deepEqual(harness.trace, ['publish:auto', 'error:spec.exit_failed', 'callback']);
+  assert.deepEqual(harness.trace, [
+    'provider:auto',
+    'publish:auto',
+    'error:spec.exit_failed',
+    'callback',
+  ]);
   assert.equal(harness.errors[0]?.code, 'spec.exit_failed');
   assert.match(harness.errors[0]?.message ?? '', /summary persistence failed/);
 

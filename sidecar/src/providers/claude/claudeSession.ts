@@ -45,6 +45,8 @@ export class ClaudeSession implements ProviderSession {
   // Spec mode is Claude Code's plan mode, and both reach the CLI as the one
   // permission mode, so the session owns which of the two is in force.
   private planning: boolean;
+  // Serializes the permission-mode changes below, so two never race.
+  private modeChanges: Promise<void> = Promise.resolve();
   private activeTurnId?: string;
   // The turn the user stopped, so only that turn's own error result is excused.
   private interruptedTurnId?: string;
@@ -121,22 +123,32 @@ export class ClaudeSession implements ProviderSession {
     }
   }
 
-  // Both settings reach the CLI as the one permission mode, so each commits its
-  // half of it only once the CLI has accepted the mode: a refusal must leave the
-  // session reading the way the CLI is still running.
   async setAutonomy(autonomy: Autonomy): Promise<void> {
-    // Plan mode holds the permission mode while the session is in Spec; the new
-    // autonomy takes effect when it leaves, so there is nothing to accept yet.
-    if (!this.planning) await this.query.setPermissionMode(claudePermissionMode(autonomy));
-    this.autonomy = autonomy;
+    await this.changePermissionMode(() => ({ autonomy, planning: this.planning }));
   }
 
   // Spec mode is plan mode: the model plans and reads, and its ExitPlanMode call
   // raises the plan for review rather than ending the mode itself.
   async setInteractionMode(mode: SessionInteractionMode): Promise<void> {
-    const planning = mode === 'spec';
-    await this.query.setPermissionMode(planning ? 'plan' : claudePermissionMode(this.autonomy));
-    this.planning = planning;
+    await this.changePermissionMode(() => ({ autonomy: this.autonomy, planning: mode === 'spec' }));
+  }
+
+  // Autonomy and Spec reach the CLI as the one permission mode, so changes run
+  // one at a time and each reads the session as it is when its turn comes: two
+  // that overlap can no longer send a mode built from state the other replaced.
+  // The session commits only what the CLI accepted.
+  private changePermissionMode(
+    next: () => { autonomy: Autonomy; planning: boolean },
+  ): Promise<void> {
+    const applied = this.modeChanges.then(async () => {
+      const { autonomy, planning } = next();
+      await this.query.setPermissionMode(planning ? 'plan' : claudePermissionMode(autonomy));
+      this.autonomy = autonomy;
+      this.planning = planning;
+    });
+    // A refused change settles its own caller; the next one still gets its turn.
+    this.modeChanges = applied.catch(() => undefined);
+    return applied;
   }
 
   // Reasoning effort is not part of the model selection this build offers for

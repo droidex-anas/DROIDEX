@@ -170,7 +170,7 @@ export class SessionInteractions {
     // first. If it refuses, the plan is declined instead of approved into a
     // session that is still planning.
     if (pending.kind === 'spec' && isApprovalOutcome(normalized)) {
-      const left = await this.prepareSpecExitForRun(liveSession.summary.appSessionId);
+      const left = await this.prepareSpecExitForRun(liveSession);
       if (!left) {
         pending.resolve('cancel');
         return;
@@ -210,19 +210,20 @@ export class SessionInteractions {
     return created;
   }
 
-  private async prepareSpecExitForRun(appSessionId: string): Promise<boolean> {
-    let published = false;
+  // The provider leaves planning first and the summary follows it: a chat that
+  // reads as Auto while its session is still planning is the state this whole
+  // path exists to avoid. Either half failing declines the plan, which leaves
+  // the chat in Spec for another round.
+  private async prepareSpecExitForRun(liveSession: InteractionLiveSession): Promise<boolean> {
+    const appSessionId = liveSession.summary.appSessionId;
     try {
-      this.dependencies.updateSummary(appSessionId, {
-        interactionMode: 'auto',
-        phase: 'running',
-      });
-      published = true;
       await this.dependencies.exitSpecModeForRun(appSessionId);
+      // The session that asked is the only one published onto: a replacement
+      // keeps the mode it opened with, and the plan is declined.
+      if (this.dependencies.getLiveSession(appSessionId) !== liveSession) return false;
+      this.dependencies.updateSummary(appSessionId, { interactionMode: 'auto', phase: 'running' });
       return true;
     } catch (error) {
-      // The chat never left Spec, so a summary that says otherwise is put back.
-      if (published) this.dependencies.updateSummary(appSessionId, { interactionMode: 'spec' });
       this.dependencies.emitError({
         code: 'spec.exit_failed',
         appSessionId,
