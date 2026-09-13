@@ -529,6 +529,7 @@ type Action =
     }
   | { type: 'CLEAR_PERMISSION'; appSessionId: string }
   | { type: 'CLEAR_QUESTION'; appSessionId: string }
+  | { type: 'CLEAR_INTERACTION'; appSessionId: string; requestId: string }
 
   // UI
   | { type: 'SET_ACTIVE_SESSION'; id: string | null }
@@ -804,6 +805,20 @@ function closeActiveUtilityPanel(state: AppState): AppState {
   return panel === current
     ? state
     : { ...state, utilityPanels: { ...state.utilityPanels, [appSessionId]: panel } };
+}
+
+// Drops the open request a session was cancelled out of. Keyed on the request
+// id as well as the session so a card raised after the cancellation stays.
+function withoutCancelledRequest<T extends { requestId: string }>(
+  pending: Record<string, T>,
+  appSessionId: string,
+  requestId: string,
+): Record<string, T> {
+  return Object.fromEntries(
+    Object.entries(pending).filter(
+      ([id, request]) => id !== appSessionId || request.requestId !== requestId,
+    ),
+  );
 }
 
 export function reducer(state: AppState, action: Action): AppState {
@@ -1464,6 +1479,26 @@ function baseReducer(state: AppState, action: Action): AppState {
           Object.entries(state.pendingQuestions).filter(([id]) => id !== action.appSessionId),
         ),
       };
+    }
+
+    // The sidecar gave up on a request the user never answered. Matched on the
+    // request id so a late cancellation cannot clear a newer card.
+    case 'CLEAR_INTERACTION': {
+      const { appSessionId, requestId } = action;
+      const pendingPermissions = withoutCancelledRequest(
+        state.pendingPermissions,
+        appSessionId,
+        requestId,
+      );
+      const pendingQuestions = withoutCancelledRequest(
+        state.pendingQuestions,
+        appSessionId,
+        requestId,
+      );
+      const cleared =
+        Object.keys(pendingPermissions).length !== Object.keys(state.pendingPermissions).length ||
+        Object.keys(pendingQuestions).length !== Object.keys(state.pendingQuestions).length;
+      return cleared ? { ...state, pendingPermissions, pendingQuestions } : state;
     }
 
     case 'SET_ACTIVE_SESSION': {
@@ -2243,6 +2278,12 @@ export function adaptEvent(ev: ServerEvent): Action | null {
       return { type: 'SESSION_PERMISSION', request: ev.request };
     case 'question.requested':
       return { type: 'SESSION_QUESTION', question: ev.question };
+    case 'interaction.cancelled':
+      return {
+        type: 'CLEAR_INTERACTION',
+        appSessionId: ev.appSessionId,
+        requestId: ev.requestId,
+      };
     case 'error':
       if (isHistoryStatusError(ev)) return null;
       if (ev.code === 'bridge.resync_required' && !ev.recoverable) {

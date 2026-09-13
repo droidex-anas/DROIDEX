@@ -56,7 +56,30 @@ export class SessionInteractions {
     return {
       requestApproval: (approval) => this.decideApproval(ref.id, approval),
       requestQuestion: (questions) => this.askQuestion(ref.id, questions),
+      cancelPending: () => {
+        this.cancelPending(ref.id);
+      },
     };
+  }
+
+  // A turn settles whatever it was waiting on. Without this the provider's own
+  // callback gives up on an interrupt while the resolver and its card stay
+  // behind, so the next turn starts under a prompt nobody can answer.
+  cancelPending(sessionId: string): void {
+    const liveSession = this.dependencies.getLiveSession(sessionId);
+    const scope = liveSession ? this.scopes.get(liveSession.summary.appSessionId) : undefined;
+    if (!scope) return;
+    const appSessionId = liveSession?.summary.appSessionId ?? sessionId;
+    for (const [requestId, pending] of [...scope.pendingPermissions]) {
+      scope.pendingPermissions.delete(requestId);
+      pending.resolve('cancel');
+      this.dependencies.emit({ type: 'interaction.cancelled', appSessionId, requestId });
+    }
+    for (const [requestId, resolve] of [...scope.pendingQuestions]) {
+      scope.pendingQuestions.delete(requestId);
+      resolve({ cancelled: true, answers: [] });
+      this.dependencies.emit({ type: 'interaction.cancelled', appSessionId, requestId });
+    }
   }
 
   private async decideApproval(

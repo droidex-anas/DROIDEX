@@ -882,6 +882,9 @@ export type ServerEvent =
   | { type: 'event.appended'; event: TranscriptEvent }
   | { type: 'approval.requested'; request: PermissionRequest }
   | { type: 'question.requested'; question: SessionQuestion }
+  // An approval or question the session will never get an answer for, because
+  // the turn that raised it ended first.
+  | { type: 'interaction.cancelled'; appSessionId: string; requestId: string }
   | {
       type: 'context.updated';
       appSessionId: string;
