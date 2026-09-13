@@ -28,6 +28,7 @@ interface Harness {
   calls: RecordedCall[];
   compaction: SessionCompaction;
   generations: Map<string, number>;
+  runtime: FakeFactoryRuntime;
   targets: Map<string, AutomaticCompactionTarget>;
   children: Map<string, ChildTestState>;
   trace: string[];
@@ -124,7 +125,7 @@ function createHarness(
     },
     onPrimaryNotification: () => undefined,
   });
-  return { calls, compaction, generations, targets, children, trace };
+  return { calls, compaction, generations, runtime, targets, children, trace };
 }
 
 function addPrimary(
@@ -137,7 +138,7 @@ function addPrimary(
   setCurrent(value: boolean): void;
 } {
   const session = new FakeFactorySession(`${appSessionId}-backend`, {}, h.calls);
-  const live = createCompactionTestLiveSession(appSessionId, session);
+  const live = createCompactionTestLiveSession(appSessionId, session, h.runtime);
   let current = true;
   const target: PrimaryAutomaticCompactionTarget = {
     kind: 'primary',
@@ -146,7 +147,7 @@ function addPrimary(
     sourceSessionId: appSessionId,
     session,
     liveSession: live,
-    isCurrent: () => current && !live.closeMode && live.session === session,
+    isCurrent: () => current && !live.closeMode && live.droid === session,
   };
   h.targets.set(resourceId({ kind: 'primary', appSessionId }), target);
   return { live, session, target, setCurrent: (value) => (current = value) };
@@ -163,7 +164,7 @@ function addChild(
   setCurrent(value: boolean): void;
 } {
   const parentSession = new FakeFactorySession(`${parentAppSessionId}-backend`, {}, h.calls);
-  const parent = createCompactionTestLiveSession(parentAppSessionId, parentSession);
+  const parent = createCompactionTestLiveSession(parentAppSessionId, parentSession, h.runtime);
   const session = new FakeFactorySession(`${parentAppSessionId}-child-backend`, {}, h.calls);
   const child: ChildTestState = {
     session,

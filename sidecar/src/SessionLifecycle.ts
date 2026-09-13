@@ -1,7 +1,7 @@
 import { type McpServerConfig } from '@factory/droid-sdk';
 import { mkdir } from 'node:fs/promises';
 import { join } from 'node:path';
-import type { FactoryRuntime, FactorySession } from './DroidRuntime.js';
+import type { FactorySession } from './DroidRuntime.js';
 import { droidexUserDataDir } from './droidexPaths.js';
 import type {
   ClientCommand,
@@ -24,28 +24,17 @@ import {
   createModelDefaultsForMode,
   errMsg,
   requireAutonomyForCommand,
+  resumeHandle,
 } from './sessionHelpers.js';
-import { droidInteractionHandlers } from './providers/droid/droidInteractions.js';
 import type { ProviderInteractions } from './providers/interactions.js';
-import {
-  DEFAULT_PROVIDER,
-  requireProviderKind,
-  type ProviderKind,
-} from './providers/providerKind.js';
+import { requireProviderKind, type ProviderKind } from './providers/providerKind.js';
+import { requireDroidSession } from './providers/droid/DroidProviderSession.js';
+import type { Provider, ProviderSession } from './providers/session.js';
 
 export type SessionCreateCommand = Extract<ClientCommand, { type: 'session.create' }>;
 
-// The binding is recorded on every session, but only Droid has a runtime behind
-// it so far. Refusing the others here keeps a stamped session from silently
-// running on Droid until its provider is routed.
-function requireSupportedProvider(requested: unknown): ProviderKind {
-  const provider = requireProviderKind(requested);
-  if (provider !== DEFAULT_PROVIDER) {
-    throw new Error(`Sessions on the ${provider} provider are not available yet.`);
-  }
-  return provider;
-}
-
+// An unbound summary predates the binding, so it resumes on the default
+// provider; an unroutable one fails at the provider lookup.
 const boundProvider = (summary: SessionSummary | undefined) => summary?.provider;
 
 async function sessionRuntimeCwd(appCwd: string): Promise<string> {
@@ -84,7 +73,10 @@ interface LiveTurnState {
 type SessionCloseMode = 'discard-pending' | 'preserve-pending';
 export interface LiveSession extends LiveTurnState {
   summary: SessionSummary;
-  session: FactorySession;
+  session: ProviderSession;
+  // The SDK session behind the provider session, for the parts of the session
+  // layer that still drive Droid directly.
+  droid: FactorySession;
   closeMode?: SessionCloseMode;
   closePromise?: Promise<void>;
   mcpServers: LocalMcpResource[];
@@ -97,7 +89,7 @@ export interface LiveSession extends LiveTurnState {
 type LifecycleError = Omit<Extract<ServerEvent, { type: 'error' }>, 'type'>;
 
 export interface SessionLifecycleDependencies {
-  runtime: FactoryRuntime;
+  provider: (kind: ProviderKind) => Provider;
   registry: SessionRegistry<LiveSession>;
   ensureConnected: () => void;
   getFactoryDefaults: () => Promise<FactoryDefaultSettings>;
@@ -146,7 +138,7 @@ export class SessionLifecycle {
     const appCwd = command.cwd ?? '';
     const ref = { id: '', clientRef: command.clientRef };
     let pendingMcpServers: LocalMcpResource[] = [];
-    let pendingSession: FactorySession | undefined;
+    let pendingSession: ProviderSession | undefined;
     let pendingLiveSession: LiveSession | undefined;
 
     try {
@@ -154,7 +146,9 @@ export class SessionLifecycle {
       // any slow or fallible discovery work so a bad command always gets its own
       // diagnostic instead of failing mid-open.
       const autonomy = requireAutonomyForCommand(command);
-      const provider = requireSupportedProvider(command.provider);
+      // Resolved here so an unroutable provider fails before any resource starts.
+      const kind = requireProviderKind(command.provider);
+      const provider = d.provider(kind);
       const defaults = await d.getFactoryDefaults();
       const interactionMode = createInteractionModeForCommand(command, defaults);
       const defaultsMode = createDefaultsModeForCommand(command, interactionMode);
@@ -178,32 +172,34 @@ export class SessionLifecycle {
       this.requireOpenAdmission();
       const mcp = await d.startLocalMcpServers(ref, appCwd);
       pendingMcpServers = mcp.servers;
-      const runtimeOptions = buildCreateRuntimeOptions({
-        command,
-        runtimeCwd,
-        interactionMode,
-        primary,
-        agents,
-        defaults,
-        autonomy,
-        compactionModel,
-        compactionTokenLimit,
-        mcpServers: mcp.configs,
-        ...droidInteractionHandlers(ref, d.interactionsFor(ref)),
+      const providerSession = await provider.create({
+        ...buildCreateRuntimeOptions({
+          command,
+          runtimeCwd,
+          interactionMode,
+          primary,
+          agents,
+          defaults,
+          autonomy,
+          compactionModel,
+          compactionTokenLimit,
+          mcpServers: mcp.configs,
+        }),
+        interactions: d.interactionsFor(ref),
       });
-      const session = await d.runtime.createSession(runtimeOptions);
-      pendingSession = session;
+      pendingSession = providerSession;
+      const droid = requireDroidSession(providerSession);
       this.requireOpenAdmission();
       const autoCompactionArmed = await d.compaction.arm(
         {
-          session,
-          isCurrent: () => !d.isShutdownStarted() && pendingSession === session,
+          session: droid,
+          isCurrent: () => !d.isShutdownStarted() && pendingSession === providerSession,
         },
         compactionTokenLimit,
       );
       this.requireOpenAdmission();
 
-      const appSessionId = session.sessionId;
+      const appSessionId = providerSession.providerSessionId;
       const maxContextTokens = d.maxContextTokensForModel(primary.modelId);
       const summary = buildCreatedSessionSummary({
         command,
@@ -213,19 +209,19 @@ export class SessionLifecycle {
         compactionModel,
         agents,
         autonomy,
-        provider,
+        provider: kind,
         ...(maxContextTokens !== undefined ? { maxContextTokens } : {}),
         ...(autoCompactionArmed ? { compactionTokenLimit } : {}),
         now: Date.now(),
       });
       ref.id = appSessionId;
-      const liveSession = createLiveSession(summary, session, mcp);
+      const liveSession = createLiveSession(summary, providerSession, droid, mcp);
       pendingLiveSession = liveSession;
       d.compaction.subscribePrimary(this.primaryAutomaticCompactionTarget(liveSession));
       d.registry.register(liveSession);
       // Registered first, so the failed-open path that unregisters also releases it.
       d.openProviderTranscript(summary);
-      this.trackProviderProcess(appSessionId, session, mcp.configs);
+      this.trackProviderProcess(appSessionId, providerSession, mcp.configs);
       d.childSessions.attachParent(appSessionId);
       d.emit({ type: 'session.created', clientRef: command.clientRef, session: summary });
       this.driveInBackground(appSessionId, command.goal);
@@ -278,18 +274,23 @@ export class SessionLifecycle {
 
     const ref = { id: appSessionId };
     let pendingMcpServers: LocalMcpResource[] = [];
-    let pendingSession: FactorySession | undefined;
+    let pendingSession: ProviderSession | undefined;
     let pendingLiveSession: LiveSession | undefined;
     try {
-      requireSupportedProvider(boundProvider(historical));
+      // Resolved before any resource starts, so a session bound to a provider
+      // this build cannot route fails before it costs anything.
+      const provider = d.provider(requireProviderKind(boundProvider(historical)));
       const mcp = await d.startLocalMcpServers(ref, historical?.cwd);
       pendingMcpServers = mcp.servers;
-      const session = await d.runtime.loadSession(providerSessionId, {
-        ...droidInteractionHandlers(ref, d.interactionsFor(ref)),
+      const providerSession = await provider.resume(providerSessionId, {
+        appSessionId,
+        ...resumeHandle(historical),
+        interactions: d.interactionsFor(ref),
         cwd: historical?.cwd,
         mcpServers: mcp.configs,
       });
-      pendingSession = session;
+      pendingSession = providerSession;
+      const session = requireDroidSession(providerSession);
       const defaults = await d.getFactoryDefaults();
       const resumed = buildResumedSession({
         init: session.initResult,
@@ -312,7 +313,7 @@ export class SessionLifecycle {
           {
             appSessionId,
             session,
-            isCurrent: () => !d.isShutdownStarted() && pendingSession === session,
+            isCurrent: () => !d.isShutdownStarted() && pendingSession === providerSession,
           },
           limit,
         )
@@ -321,13 +322,13 @@ export class SessionLifecycle {
       }
       this.requireOpenAdmission();
       const projectedSummary = d.applyPendingSettingsToSummary({ ...summary });
-      const liveSession = createLiveSession(summary, session, mcp);
+      const liveSession = createLiveSession(summary, providerSession, session, mcp);
       pendingLiveSession = liveSession;
       d.compaction.subscribePrimary(this.primaryAutomaticCompactionTarget(liveSession));
       d.registry.register(liveSession);
       // Registered first, so the failed-open path that unregisters also releases it.
       d.openProviderTranscript(summary);
-      this.trackProviderProcess(appSessionId, session, mcp.configs);
+      this.trackProviderProcess(appSessionId, providerSession, mcp.configs);
       d.childSessions.attachParent(appSessionId);
       d.emit({
         type: 'session.created',
@@ -514,7 +515,7 @@ export class SessionLifecycle {
 
   private async closeSessionResources(liveSession: LiveSession): Promise<void> {
     const d = this.dependencies;
-    const closedProviderSessionId = liveSession.session.sessionId;
+    const closedProviderSessionId = liveSession.session.providerSessionId;
     let firstError: unknown;
     const run = async (action: () => void | Promise<void>): Promise<void> => {
       try {
@@ -546,10 +547,12 @@ export class SessionLifecycle {
     for (const server of liveSession.mcpServers) {
       await run(() => server.close());
     }
+    const untrack = this.untrackProviderProcess(
+      liveSession.summary.appSessionId,
+      liveSession.session,
+    );
     await run(() => liveSession.session.close());
-    const processId = d.runtime.processIdOf(liveSession.session);
-    if (processId !== undefined)
-      d.agentProcesses.untrack(processId, liveSession.summary.appSessionId);
+    untrack?.();
     await run(() => d.closeBrowserSession(liveSession.summary.appSessionId));
     await run(() => {
       d.context.forgetSession(liveSession);
@@ -625,15 +628,27 @@ export class SessionLifecycle {
   // monitor can find (and later kill) whatever that process spawns.
   private trackProviderProcess(
     appSessionId: string,
-    session: FactorySession,
+    session: ProviderSession,
     mcpConfigs: readonly McpServerConfig[],
   ): void {
     const d = this.dependencies;
     // Before the first scan, so a configured MCP server never reaches the chip.
     d.agentProcesses.setIgnoredCommands(appSessionId, stdioMcpCommandLines(mcpConfigs));
-    const processId = d.runtime.processIdOf(session);
-    if (processId !== undefined)
-      d.agentProcesses.track(appSessionId, processId, () => d.runtime.isProcessAlive(session));
+    const process = session.process;
+    if (process) d.agentProcesses.track(appSessionId, process.pid, () => process.isAlive());
+  }
+
+  // The pid has to be read while the session still holds it, but released only
+  // after it closes, so this hands back the release for the caller to run then.
+  private untrackProviderProcess(
+    appSessionId: string,
+    session: ProviderSession,
+  ): (() => void) | undefined {
+    const processId = session.process?.pid;
+    if (processId === undefined) return undefined;
+    return () => {
+      this.dependencies.agentProcesses.untrack(processId, appSessionId);
+    };
   }
 
   private requireOpenAdmission(): void {
@@ -646,9 +661,9 @@ export class SessionLifecycle {
     const session = liveSession.session;
     return {
       appSessionId,
-      providerSessionId: session.sessionId,
+      providerSessionId: session.providerSessionId,
       sourceSessionId: appSessionId,
-      session,
+      session: liveSession.droid,
       isCurrent: () =>
         !d.isShutdownStarted() &&
         d.registry.getLive(appSessionId) === liveSession &&
@@ -695,7 +710,7 @@ export class SessionLifecycle {
 
   private async cleanupFailedOpen(
     mcpServers: LocalMcpResource[],
-    session: FactorySession | undefined,
+    session: ProviderSession | undefined,
     liveSession: LiveSession | undefined,
   ): Promise<void> {
     if (
@@ -728,10 +743,11 @@ export class SessionLifecycle {
     if (liveSession) this.dependencies.compaction.forgetSession(liveSession.summary.appSessionId);
     await Promise.all(mcpServers.map((server) => runBestEffortAsync(() => server.close())));
     if (session) {
-      const processId = this.dependencies.runtime.processIdOf(session);
+      const untrack = liveSession
+        ? this.untrackProviderProcess(liveSession.summary.appSessionId, session)
+        : undefined;
       await runBestEffortAsync(() => session.close());
-      if (processId !== undefined && liveSession)
-        this.dependencies.agentProcesses.untrack(processId, liveSession.summary.appSessionId);
+      untrack?.();
     }
     if (
       liveSession &&
@@ -833,12 +849,14 @@ export class SessionLifecycle {
 }
 function createLiveSession(
   summary: SessionSummary,
-  session: FactorySession,
+  session: ProviderSession,
+  droid: FactorySession,
   mcp: StartedLocalMcpResources,
 ): LiveSession {
   return {
     summary,
     session,
+    droid,
     streaming: false,
     pendingSends: [],
     mcpServers: mcp.servers,

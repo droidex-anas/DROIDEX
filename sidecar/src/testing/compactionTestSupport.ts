@@ -1,11 +1,13 @@
 import { ReasoningEffort } from '@factory/droid-sdk';
 
-import type { FactorySession } from '../DroidRuntime.js';
+import type { FactoryRuntime, FactorySession } from '../DroidRuntime.js';
+import { DroidProviderSession } from '../providers/droid/DroidProviderSession.js';
 import type { LiveSession } from '../SessionLifecycle.js';
 
 export function createCompactionTestLiveSession(
   appSessionId: string,
   session: FactorySession,
+  runtime: Pick<FactoryRuntime, 'processIdOf' | 'isProcessAlive'>,
 ): LiveSession {
   return {
     summary: {
@@ -31,7 +33,8 @@ export function createCompactionTestLiveSession(
       createdAt: 1,
       updatedAt: 1,
     },
-    session,
+    session: new DroidProviderSession(appSessionId, session, runtime),
+    droid: session,
     streaming: false,
     autoCompacting: false,
     pendingSends: [],
