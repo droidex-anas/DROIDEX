@@ -128,6 +128,9 @@ export interface SessionLifecycleDependencies {
   emit: (event: ServerEvent) => void;
   emitError: (error: LifecycleError) => void;
   emitStatus: (appSessionId: string, text: string) => void;
+  // A steered prompt joins the durable transcript without a new turn to record
+  // it; the renderer already showed it from the send.
+  recordPrompt: (appSessionId: string, text: string) => void;
   emitSessionList: (closedProviderSessionId: string) => void | Promise<void>;
 }
 export class SessionLifecycle {
@@ -402,6 +405,10 @@ export class SessionLifecycle {
       await this.drive(liveSession.summary.appSessionId, text);
       return;
     }
+    // A provider that takes the prompt into the turn it is already running
+    // needs neither the queue nor an interrupt.
+    const steerable = !liveSession.compacting && !liveSession.autoCompacting;
+    if (steerable && (await this.steerTurn(liveSession, text))) return;
     liveSession.pendingSends.unshift(text);
     this.updateQueuedSends(liveSession);
     if (liveSession.compacting || liveSession.autoCompacting) return;
@@ -417,6 +424,29 @@ export class SessionLifecycle {
         message: `Could not interrupt session for steering: ${errMsg(error)}`,
       });
     }
+  }
+
+  // The provider's own steer, when it has one. False leaves the caller to
+  // interrupt and resend, which is how every other provider steers.
+  private async steerTurn(liveSession: LiveSession, text: string): Promise<boolean> {
+    const session = liveSession.session;
+    if (!session.steer) return false;
+    const appSessionId = liveSession.summary.appSessionId;
+    try {
+      await session.steer(text);
+    } catch (error) {
+      this.dependencies.emitError({
+        code: 'session.steer_failed',
+        appSessionId,
+        message: `Could not steer the running turn: ${errMsg(error)}`,
+      });
+      return false;
+    }
+    // The session may have been replaced while the steer was in flight; only
+    // the one that took the prompt records it.
+    if (this.dependencies.registry.getLive(appSessionId) === liveSession)
+      this.dependencies.recordPrompt(appSessionId, text);
+    return true;
   }
 
   async interrupt(requestedAppSessionId: string): Promise<void> {

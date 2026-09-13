@@ -3,6 +3,7 @@
 // for an approval request, and the answers sent back for a mid-turn question.
 import type { Autonomy, PermissionKind, PermissionOutcome } from '../../protocol.js';
 import { nextInteractionRequestId, type ProviderInteractions } from '../interactions.js';
+import type { AppServerClient } from './appServer.js';
 
 export type AskForApproval = 'untrusted' | 'on-request' | 'never';
 export type SandboxMode = 'read-only' | 'workspace-write' | 'danger-full-access';
@@ -159,24 +160,55 @@ export async function answerQuestions(
   return byId;
 }
 
-// The approval and question cards one session is waiting on. A turn that ends
-// first has to take them off the screen: settling only Codex's side would leave
-// the prompt and its waiter behind, under the next turn.
+// One session's prompt channel: the approval and question requests Codex sends,
+// and the cards they are waiting on. A turn that ends first has to take them off
+// the screen, since settling only Codex's side would leave the prompt and its
+// waiter behind, under the next turn.
 export class OpenPrompts {
   private open = 0;
 
-  constructor(private readonly interactions: ProviderInteractions) {}
+  constructor(
+    private readonly appSessionId: string,
+    private readonly interactions: ProviderInteractions,
+  ) {}
 
-  async ask<T>(request: () => Promise<T>): Promise<T> {
+  // A file-change request carries no description of its own, so `fileDetail`
+  // names the files from the item the event mapper is tracking.
+  register(
+    client: Pick<AppServerClient, 'onRequest'>,
+    fileDetail: (itemId: string) => string | undefined,
+  ): void {
+    client.onRequest('item/commandExecution/requestApproval', (params) =>
+      this.decide(commandApproval(params as CommandApproval)),
+    );
+    client.onRequest('item/fileChange/requestApproval', (params) => {
+      const request = params as FileChangeApproval;
+      return this.decide(fileChangeApproval(request, fileDetail(request.itemId)));
+    });
+    client.onRequest('item/tool/requestUserInput', async (params) => {
+      const { questions } = params as { questions: RequestedQuestion[] };
+      return { answers: await this.ask(() => answerQuestions(this.interactions, questions)) };
+    });
+  }
+
+  cancel(): void {
+    if (this.open > 0) this.interactions.cancelPending();
+  }
+
+  private async decide(approval: CodexApproval): Promise<{ decision: ApprovalDecision }> {
+    return {
+      decision: await this.ask(() =>
+        decideApproval(this.appSessionId, this.interactions, approval),
+      ),
+    };
+  }
+
+  private async ask<T>(request: () => Promise<T>): Promise<T> {
     this.open += 1;
     try {
       return await request();
     } finally {
       this.open -= 1;
     }
-  }
-
-  cancel(): void {
-    if (this.open > 0) this.interactions.cancelPending();
   }
 }

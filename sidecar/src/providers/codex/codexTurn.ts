@@ -1,4 +1,30 @@
 import type { NormalizedEvent } from '../../normalize.js';
+import type { Autonomy } from '../../protocol.js';
+import type { ProviderModelSettings } from '../session.js';
+import { codexAutonomy, codexSandboxPolicy } from './codexApprovals.js';
+
+export interface TurnSettings {
+  autonomy: Autonomy;
+  model: ProviderModelSettings;
+  // The model the thread resolved to, which is what a cleared model goes back
+  // to: a turn's overrides stick to the thread, so omitting the field would
+  // leave the last override in place instead.
+  threadModel?: string;
+}
+
+// What a turn is asked for: the prompt plus the settings the session holds.
+export function turnStartParams(threadId: string, prompt: string, settings: TurnSettings) {
+  const { approvalPolicy, sandbox } = codexAutonomy(settings.autonomy);
+  const model = settings.model.modelId ?? settings.threadModel;
+  return {
+    threadId,
+    input: [{ type: 'text', text: prompt }],
+    approvalPolicy,
+    sandboxPolicy: codexSandboxPolicy(sandbox),
+    ...(model ? { model } : {}),
+    ...(settings.model.reasoningEffort ? { effort: settings.model.reasoningEffort } : {}),
+  };
+}
 
 // One turn's events, filled by the notification handlers and drained by the
 // turn that is streaming. Events that arrive outside a turn have no transcript

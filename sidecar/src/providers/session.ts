@@ -50,6 +50,10 @@ export interface ProviderSession {
   // Returning means the turn settled; throwing means it failed. There is no
   // settlement event.
   stream(prompt: string): AsyncGenerator<NormalizedEvent, void, undefined>;
+  // Takes a prompt into the turn that is already running, so the turn keeps its
+  // work and continues with it. Absent on a provider that can only steer by
+  // interrupting and resending, which is what the session layer then does.
+  steer?(text: string): Promise<void>;
   // The two things a live session can still change. Everything else about a
   // session is fixed when it opens.
   setAutonomy(autonomy: Autonomy): Promise<void>;

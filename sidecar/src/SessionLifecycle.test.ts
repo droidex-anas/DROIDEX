@@ -293,6 +293,9 @@ function createHarness(ordinarySummaries: SessionSummary[] = []) {
     emitStatus: (appSessionId, text) => {
       calls.push({ target: 'protocol', method: 'status', args: [appSessionId, text] });
     },
+    recordPrompt: (appSessionId, text) => {
+      calls.push({ target: 'protocol', method: 'recordPrompt', args: [appSessionId, text] });
+    },
     emitSessionList: (closedProviderSessionId) => emitSessionList(closedProviderSessionId),
   });
 
