@@ -1,4 +1,4 @@
-import { DroidInteractionMode, type McpServerConfig } from '@factory/droid-sdk';
+import { type McpServerConfig } from '@factory/droid-sdk';
 import { randomUUID } from 'node:crypto';
 import { homedir, tmpdir } from 'node:os';
 import type {
@@ -1653,19 +1653,14 @@ export class SessionManager {
       return;
     }
     const stableAppSessionId = liveSession.summary.appSessionId;
-    const droid = liveSession.droid;
-    // Spec and AGI are Droid interaction modes; the composer hides them for
-    // every other provider.
-    if (!droid) return;
+    const session = liveSession.session;
+    // A provider without a planning mode of its own runs in Auto always, and
+    // the composer offers it no Spec toggle.
+    if (!session.setInteractionMode) return;
     try {
-      if (mode === 'spec') {
-        await droid.enterSpecMode();
-        await this.alignSpecModeModel(droid, liveSession.summary);
-      } else {
-        await droid.updateSettings({
-          interactionMode: mode === 'agi' ? DroidInteractionMode.AGI : DroidInteractionMode.Auto,
-        });
-      }
+      await session.setInteractionMode(mode);
+      if (liveSession.droid && mode === 'spec')
+        await this.alignSpecModeModel(liveSession.droid, liveSession.summary);
       this.registry.updateSummary(stableAppSessionId, { interactionMode: mode });
       // The mode determines the default model when none is pinned, so the
       // auto-compaction threshold must be recomputed for the new mode.
@@ -1682,9 +1677,8 @@ export class SessionManager {
   // An approved Spec plan runs in Auto. Only the provider switch lives here; the
   // interaction layer owns the summary update that goes with it.
   private async exitSpecModeForRun(appSessionId: string): Promise<void> {
-    const droid = this.registry.getLive(appSessionId)?.droid;
-    if (!droid) return;
-    await droid.updateSettings({ interactionMode: DroidInteractionMode.Auto });
+    const session = this.registry.getLive(appSessionId)?.session;
+    await session?.setInteractionMode?.('auto');
   }
 
   // Spec-mode turns run on specModeModelId. Align it with the session's visible

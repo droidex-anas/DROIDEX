@@ -254,7 +254,7 @@ export function createInitializeSessionParams(
   return params;
 }
 
-function mapInteractionMode(mode: SessionInteractionMode): DroidInteractionMode {
+export function mapInteractionMode(mode: SessionInteractionMode): DroidInteractionMode {
   if (mode === 'spec') return DroidInteractionMode.Spec;
   if (mode === 'agi') return DroidInteractionMode.AGI;
   return DroidInteractionMode.Auto;

@@ -5,6 +5,7 @@ import {
   query,
   type McpServerConfig,
   type Options,
+  type PermissionMode,
   type Query,
   type SDKUserMessage,
 } from '@anthropic-ai/claude-agent-sdk';
@@ -12,7 +13,7 @@ import { spawn, type ChildProcess } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 
 import type { NormalizedEvent } from '../../normalize.js';
-import type { Autonomy } from '../../protocol.js';
+import type { Autonomy, SessionInteractionMode } from '../../protocol.js';
 import type { ProviderInteractions } from '../interactions.js';
 import type { ProviderModelSettings, ProviderSession } from '../session.js';
 import { ClaudeEventMapper, rateLimitRefusal } from './claudeEvents.js';
@@ -25,6 +26,7 @@ export interface ClaudeSessionInput {
   executable: string;
   cwd: string;
   autonomy: Autonomy;
+  interactionMode: SessionInteractionMode;
   modelId?: string;
   mcpServers: Record<string, McpServerConfig>;
   interactions: ProviderInteractions;
@@ -40,18 +42,28 @@ export class ClaudeSession implements ProviderSession {
   private readonly mapper: ClaudeEventMapper;
   private readonly query: Query;
   private child?: ChildProcess;
+  private autonomy: Autonomy;
+  // Spec mode is Claude Code's plan mode, and both reach the CLI as the one
+  // permission mode, so the session owns which of the two is in force.
+  private planning: boolean;
   private activeTurnId?: string;
   // The turn the user stopped, so only that turn's own error result is excused.
   private interruptedTurnId?: string;
 
   constructor(input: ClaudeSessionInput) {
     this.providerSessionId = input.appSessionId;
+    this.autonomy = input.autonomy;
+    this.planning = input.interactionMode === 'spec';
     this.mapper = new ClaudeEventMapper(input.appSessionId);
     this.query = query({
       prompt: this.prompts,
-      options: sessionOptions(input, (process) => {
-        this.child = process;
-      }),
+      options: sessionOptions(
+        input,
+        () => this.planning,
+        (process) => {
+          this.child = process;
+        },
+      ),
     });
   }
 
@@ -90,6 +102,12 @@ export class ClaudeSession implements ProviderSession {
         // session the turn broke, instead of reading as a silent success.
         if (next.done) throw new Error('Claude Code exited before the turn finished.');
         for (const event of this.mapper.map(next.value)) yield event;
+        // A refused usage window is answered with no result at all, so the turn
+        // has to end here instead of waiting for one that never comes.
+        if (next.value.type === 'rate_limit_event') {
+          const refusal = rateLimitRefusal(next.value.rate_limit_info);
+          if (refusal) throw new Error(refusal);
+        }
         if (next.value.type === 'result' && answersTurn(next.value, turnId)) {
           // A stopped turn settles quietly: the CLI still reports the
           // interruption as an error result carrying an internal diagnostic.
@@ -102,16 +120,24 @@ export class ClaudeSession implements ProviderSession {
     } finally {
       this.activeTurnId = undefined;
     }
-        // A refused usage window is answered with no result at all, so the turn
-        // has to end here instead of waiting for one that never comes.
-        if (next.value.type === 'rate_limit_event') {
-          const refusal = rateLimitRefusal(next.value.rate_limit_info);
-          if (refusal) throw new Error(refusal);
-        }
   }
 
   async setAutonomy(autonomy: Autonomy): Promise<void> {
-    await this.query.setPermissionMode(claudePermissionMode(autonomy));
+    this.autonomy = autonomy;
+    // Plan mode holds the permission mode while the session is in Spec; the new
+    // autonomy takes effect when it leaves.
+    if (!this.planning) await this.query.setPermissionMode(this.permissionMode());
+  }
+
+  // Spec mode is plan mode: the model plans and reads, and its ExitPlanMode call
+  // raises the plan for review rather than ending the mode itself.
+  async setInteractionMode(mode: SessionInteractionMode): Promise<void> {
+    this.planning = mode === 'spec';
+    await this.query.setPermissionMode(this.permissionMode());
+  }
+
+  private permissionMode(): PermissionMode {
+    return this.planning ? 'plan' : claudePermissionMode(this.autonomy);
   }
 
   // Reasoning effort is not part of the model selection this build offers for
@@ -138,6 +164,7 @@ export class ClaudeSession implements ProviderSession {
 
 function sessionOptions(
   input: ClaudeSessionInput,
+  isPlanning: () => boolean,
   onSpawn: (process: ChildProcess) => void,
 ): Options {
   return {
@@ -150,17 +177,19 @@ function sessionOptions(
     settingSources: ['user', 'project', 'local'],
     includePartialMessages: true,
     mcpServers: input.mcpServers,
-    // Plan mode is the follow-up PR's, and at high autonomy bypassPermissions
-    // skips canUseTool altogether, so the callback's refusal would never run.
-    // Removing the tool from the model's context holds in every mode.
-    disallowedTools: ['EnterPlanMode', 'ExitPlanMode'],
-    permissionMode: claudePermissionMode(input.autonomy),
+    // The Spec toggle owns plan mode, so the model may not enter it on its own:
+    // at high autonomy bypassPermissions skips canUseTool altogether and a
+    // refusal there would never run. ExitPlanMode stays available because it is
+    // how the model hands its plan over, and plan mode always asks the callback.
+    disallowedTools: ['EnterPlanMode'],
+    permissionMode:
+      input.interactionMode === 'spec' ? 'plan' : claudePermissionMode(input.autonomy),
     // Consent to the bypass mode, not the mode itself: the CLI reads this flag
     // only as "this host may use bypassPermissions" and takes the mode from
     // permissionMode. Raising autonomy to high mid-session switches the mode
     // with setPermissionMode, which the CLI refuses without this.
     allowDangerouslySkipPermissions: true,
-    canUseTool: claudeCanUseTool(input.appSessionId, input.interactions),
+    canUseTool: claudeCanUseTool(input.appSessionId, input.interactions, isPlanning),
     // The SDK would otherwise own the subprocess privately; spawning it here is
     // what gives the session a pid for the agent-process monitor to track and
     // kill, the way it tracks Droid's.

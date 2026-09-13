@@ -2,7 +2,7 @@ import type { McpServerConfig } from '@factory/droid-sdk';
 
 import type { CreateRuntimeSessionOptions } from '../DroidRuntime.js';
 import type { NormalizedEvent } from '../normalize.js';
-import type { Autonomy, ReasoningEffort } from '../protocol.js';
+import type { Autonomy, ReasoningEffort, SessionInteractionMode } from '../protocol.js';
 import type { ProviderInteractions } from './interactions.js';
 import type { ProviderKind } from './providerKind.js';
 
@@ -54,6 +54,9 @@ export interface ProviderSession {
   // session is fixed when it opens.
   setAutonomy(autonomy: Autonomy): Promise<void>;
   setModel(settings: ProviderModelSettings): Promise<void>;
+  // Only for a provider that has a planning mode of its own. Absent means the
+  // session runs in Auto always, and the composer offers no Spec toggle for it.
+  setInteractionMode?(mode: SessionInteractionMode): Promise<void>;
   interrupt(): Promise<void>;
   close(): Promise<void>;
 }

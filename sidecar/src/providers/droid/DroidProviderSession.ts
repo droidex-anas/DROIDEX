@@ -1,11 +1,12 @@
 import {
   factoryReasoningEffort,
   mapAutonomy,
+  mapInteractionMode,
   type FactoryRuntime,
   type FactorySession,
 } from '../../DroidRuntime.js';
 import { normalizeStreamEvent, type NormalizedEvent } from '../../normalize.js';
-import type { Autonomy } from '../../protocol.js';
+import type { Autonomy, SessionInteractionMode } from '../../protocol.js';
 import { hotPathMetrics } from '../../telemetry/hotPathMetrics.js';
 import type { ProviderModelSettings, ProviderSession } from '../session.js';
 
@@ -63,6 +64,16 @@ export class DroidProviderSession implements ProviderSession {
         : {}),
     };
     if (Object.keys(next).length > 0) await this.droid.updateSettings(next);
+  }
+
+  // Spec has an entry point of its own; the daemon takes the other modes as a
+  // plain setting.
+  async setInteractionMode(mode: SessionInteractionMode): Promise<void> {
+    if (mode === 'spec') {
+      await this.droid.enterSpecMode();
+      return;
+    }
+    await this.droid.updateSettings({ interactionMode: mapInteractionMode(mode) });
   }
 
   async interrupt(): Promise<void> {

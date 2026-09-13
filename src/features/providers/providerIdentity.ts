@@ -20,6 +20,15 @@ export const PROVIDER_MARKS: Record<ProviderKind, Provider> = {
   codex: 'openai',
 };
 
+// A provider whose sessions can plan before they act, so the composer offers
+// the Spec toggle for a chat on it. Mission Control and compaction remain
+// Droid's own subsystems.
+const PLANNING_PROVIDERS = new Set<ProviderKind>(['droid', 'claude']);
+
+export function supportsSpecMode(provider: ProviderKind): boolean {
+  return PLANNING_PROVIDERS.has(provider);
+}
+
 const READINESS_REASONS: Record<Exclude<ProviderReadiness, 'ready'>, string> = {
   missing: 'Not installed',
   unauthenticated: 'Sign in required',

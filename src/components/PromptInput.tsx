@@ -104,6 +104,7 @@ import { effectiveProvider } from '../features/providers/providerDraft';
 import {
   providerModelCatalog,
   providerModelSelection,
+  supportsSpecMode,
 } from '../features/providers/providerIdentity';
 import AutonomySelector from './AutonomySelector';
 import { AUTONOMY_LABELS, missionStartAllowed } from '../lib/autonomy';
@@ -129,7 +130,7 @@ const ComposerEditor = lazy(() => import('./composer/ComposerEditor'));
 const ACCENT = 'var(--droid-accent)';
 // Slash entries that drive Droid's own subsystems, so they leave the menu with
 // the controls they belong to when the chat runs on another provider.
-const DROID_ONLY_COMMANDS = new Set(['/mission', '/compact', '/spec']);
+const DROID_ONLY_COMMANDS = new Set(['/mission', '/compact']);
 const accentMix = (pct: number) =>
   `color-mix(in srgb, var(--droid-accent) ${String(pct)}%, transparent)`;
 type SubmitMode = 'queue' | 'now';
@@ -401,16 +402,16 @@ export default function PromptInput({
   // A stored pick this build cannot run falls back to Droid, and the chip shows
   // the fallback rather than a selection the picker would render as disabled.
   const draftProvider = effectiveProvider(state.draftProvider, state.providerStatuses);
-  // Spec mode, Mission Control and compaction are Droid's own subsystems. A chat
-  // on any other provider hides them instead of offering controls that cannot
-  // work there.
+  // Mission Control and compaction are Droid's own subsystems, and only some
+  // providers can plan. A chat hides the controls its provider cannot work.
   const composerProvider = activeSession?.provider ?? draftProvider;
   const droidComposer = composerProvider === 'droid';
+  const specComposer = supportsSpecMode(composerProvider);
   // For an existing chat session the mode is whatever the session actually is
   // (so a chat reopened in spec mode shows Spec); only fall back to the global
   // compose flag while drafting a brand-new chat.
   const isSpecMode =
-    droidComposer && activeSession?.sessionPurpose !== 'mission-control'
+    specComposer && activeSession?.sessionPurpose !== 'mission-control'
       ? activeSession?.interactionMode === 'spec' || (!activeSession && state.specMode)
       : false;
   const selectedChild = state.selectedChild;
@@ -583,7 +584,9 @@ export default function PromptInput({
         dispatch({ type: 'TOGGLE_SETTINGS' });
       },
     },
-  ].filter((command) => droidComposer || !DROID_ONLY_COMMANDS.has(command.cmd));
+  ].filter((command) =>
+    command.cmd === '/spec' ? specComposer : droidComposer || !DROID_ONLY_COMMANDS.has(command.cmd),
+  );
 
   // Typing, and every edit that behaves like typing, leaves history recall.
   const editDraft = (text: string) => {
@@ -1808,7 +1811,7 @@ export default function PromptInput({
               </AnimatePresence>
             </div>
 
-            {droidComposer && (
+            {specComposer && (
               <button
                 onClick={toggleSpec}
                 className={`flex items-center gap-1.5 px-2 py-1 rounded-lg text-[11px] transition-colors shrink-0 ${
