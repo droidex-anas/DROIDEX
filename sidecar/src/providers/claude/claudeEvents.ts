@@ -2,10 +2,11 @@
 // already speaks (normalize.ts writes the same shapes from Droid's stream).
 //
 // The one rule that keeps the transcript honest: `stream_event` deltas are the
-// only source of assistant text and thinking. The later `assistant` snapshot
-// repeats the whole message, so it is used purely as the turn's completion
-// signal plus a positional backfill for blocks that never streamed a delta.
-// Re-emitting its content would double every sentence in the chat.
+// only source of assistant text and thinking. The CLI also emits an `assistant`
+// snapshot for each block as it finishes, carrying that block's full text, so
+// re-emitting a snapshot's content would double every sentence in the chat. The
+// snapshot is a backfill for one case only: a message that streamed nothing at
+// all (an aborted or synthetic frame), which is visible nowhere else.
 import type { SDKMessage } from '@anthropic-ai/claude-agent-sdk';
 
 import type { NormalizedEvent } from '../../normalize.js';
@@ -19,10 +20,9 @@ interface ToolBlock {
   json: string;
 }
 
+// One content block of the message currently streaming. Its presence is what
+// tells the assistant snapshot that this message already reached the transcript.
 interface BlockState {
-  // A delta (or, for a tool block, its start) was already reported, so the
-  // assistant snapshot must not report this block a second time.
-  reported: boolean;
   tool?: ToolBlock;
 }
 
@@ -88,17 +88,17 @@ export class ClaudeEventMapper {
         if (parentToolUseId) return [];
         this.call.output = event.usage.output_tokens;
         return [this.usage()];
+      // The message is over, so the next `assistant` frame that arrives with no
+      // stream events of its own is one this mapper has not reported yet.
+      case 'message_stop':
+        blocks.clear();
+        return [];
       case 'content_block_start': {
         const block = event.content_block;
-        if (!TOOL_BLOCK_TYPES.has(block.type)) {
-          blocks.set(event.index, { reported: false });
-          return [];
-        }
-        const tool = block as { id: string; name: string };
-        blocks.set(event.index, {
-          reported: true,
-          tool: { id: tool.id, name: tool.name, json: '' },
-        });
+        const tool = TOOL_BLOCK_TYPES.has(block.type)
+          ? (block as { id: string; name: string })
+          : undefined;
+        blocks.set(event.index, tool ? { tool: { id: tool.id, name: tool.name, json: '' } } : {});
         return [];
       }
       case 'content_block_delta':
@@ -126,14 +126,13 @@ export class ClaudeEventMapper {
     // A subagent narrates its own conversation; only the main thread's prose
     // belongs in this chat. Its tool calls above are kept.
     if (parentToolUseId) return [];
-    if (delta.type === 'text_delta' && delta.text) {
-      blocks.set(index, { reported: true });
+    // A start always comes first in practice; recording the block here keeps the
+    // snapshot rule right even if one is ever missed.
+    if (!blocks.has(index)) blocks.set(index, {});
+    if (delta.type === 'text_delta' && delta.text)
       return [{ transcript: this.transcript('text', { text: delta.text }) }];
-    }
-    if (delta.type === 'thinking_delta' && delta.thinking) {
-      blocks.set(index, { reported: true });
+    if (delta.type === 'thinking_delta' && delta.thinking)
       return [{ transcript: this.transcript('thinking', { text: delta.thinking }) }];
-    }
     return [];
   }
 
@@ -141,26 +140,34 @@ export class ClaudeEventMapper {
     message: Extract<SDKMessage, { type: 'assistant' }>,
   ): NormalizedEvent[] {
     const blocks = this.blocksFor(message.parent_tool_use_id);
+    // The snapshot's content array is the block that just finished, not the
+    // message so far, so it cannot be matched positionally against the stream.
+    // Blocks that streamed are already in the transcript; a tool block is
+    // matched by its id, which is stable.
+    const streamed = blocks.size > 0;
+    const reported = new Set(
+      [...blocks.values()].flatMap((block) => (block.tool ? [block.tool.id] : [])),
+    );
     const events: NormalizedEvent[] = [];
-    message.message.content.forEach((block, index) => {
-      if (blocks.get(index)?.reported) return;
+    for (const block of message.message.content) {
       if (TOOL_BLOCK_TYPES.has(block.type)) {
         const tool = block as { id: string; name: string; input?: unknown };
-        events.push({
-          transcript: this.transcript('tool_call', {
-            toolName: tool.name,
-            toolArgs: tool.input,
-            toolUseId: tool.id,
-          }),
-        });
-        return;
+        if (!reported.has(tool.id))
+          events.push({
+            transcript: this.transcript('tool_call', {
+              toolName: tool.name,
+              toolArgs: tool.input,
+              toolUseId: tool.id,
+            }),
+          });
+        continue;
       }
-      if (message.parent_tool_use_id) return;
+      if (streamed || message.parent_tool_use_id) continue;
       if (block.type === 'text' && block.text)
         events.push({ transcript: this.transcript('text', { text: block.text }) });
       if (block.type === 'thinking' && block.thinking)
         events.push({ transcript: this.transcript('thinking', { text: block.thinking }) });
-    });
+    }
     if (message.error)
       events.push({
         transcript: this.transcript('error', { text: message.error, isError: true }),

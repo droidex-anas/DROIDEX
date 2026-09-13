@@ -59,11 +59,16 @@ export class ClaudeSession implements ProviderSession {
       message: { role: 'user', content: prompt },
     });
     try {
-      for await (const message of this.query) {
-        for (const event of this.mapper.map(message)) yield event;
+      // Pulled one message at a time rather than with `for await`: leaving a
+      // `for await` calls return() on the query, which would end the whole
+      // session at the first turn that settles.
+      for (;;) {
+        const next = await this.query.next();
+        if (next.done) return;
+        for (const event of this.mapper.map(next.value)) yield event;
         // A result left behind by an interrupted turn is only usage; this turn
         // ends on its own result.
-        if (message.type === 'result' && answersTurn(message, turnId)) {
+        if (next.value.type === 'result' && answersTurn(next.value, turnId)) {
           yield { done: true };
           return;
         }
