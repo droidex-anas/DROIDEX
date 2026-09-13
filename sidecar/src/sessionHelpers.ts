@@ -177,6 +177,18 @@ export function requireAutonomyForCommand(command: { autonomy?: Autonomy }): Aut
   return autonomy;
 }
 
+// Factory's defaults are the Droid CLI's own, so a session on another provider
+// starts on the model the command named, or on its provider's default.
+export function createModelDefaultsForProvider(
+  provider: ProviderKind,
+  mode: SessionInteractionMode,
+  command: { modelId?: string; reasoningEffort?: ReasoningEffort },
+  defaults: Parameters<typeof createModelDefaultsForMode>[2],
+): { modelId?: string; reasoningEffort?: ReasoningEffort } {
+  if (provider === DEFAULT_PROVIDER) return createModelDefaultsForMode(mode, command, defaults);
+  return command.modelId !== undefined ? { modelId: command.modelId } : {};
+}
+
 export function createModelDefaultsForMode(
   mode: SessionInteractionMode,
   command: { modelId?: string; reasoningEffort?: ReasoningEffort },

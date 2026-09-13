@@ -53,3 +53,15 @@ export function providerModelCatalog(
   if (provider === 'droid') return droidModels;
   return statuses.find((status) => status.provider === provider)?.models ?? NO_MODELS;
 }
+
+// A model chosen from another provider's catalog is not a selection here. The
+// picker offers only what this provider published, so anything else reads as
+// "no selection" and the provider's own default is used.
+export function providerModelSelection(
+  provider: ProviderKind,
+  modelId: string | undefined,
+  catalog: ModelInfo[],
+): string | undefined {
+  if (provider === 'droid' || modelId === undefined) return modelId;
+  return catalog.some((model) => model.id === modelId) ? modelId : undefined;
+}

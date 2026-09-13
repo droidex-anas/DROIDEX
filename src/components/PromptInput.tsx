@@ -101,7 +101,10 @@ import ComposerMenu, { type MenuItem, type SlashCommand } from './ComposerMenu';
 import ModelSelectorPopover from './ModelSelectorPopover';
 import ProviderPicker from '../features/providers/ProviderPicker';
 import { effectiveProvider } from '../features/providers/providerDraft';
-import { providerModelCatalog } from '../features/providers/providerIdentity';
+import {
+  providerModelCatalog,
+  providerModelSelection,
+} from '../features/providers/providerIdentity';
 import AutonomySelector from './AutonomySelector';
 import { AUTONOMY_LABELS, missionStartAllowed } from '../lib/autonomy';
 import {
@@ -797,11 +800,18 @@ export default function PromptInput({
   // A single chat carries its own model/reasoning; only fall back to the global
   // default while composing a brand-new chat that has no session yet.
   const chatScoped = !missionPreview && !!activeSession;
-  const primaryModelId = chatScoped ? activeSession.modelId : state.agentConfig.primary.modelId;
   const composerModels = providerModelCatalog(
     composerProvider,
     state.models,
     state.providerStatuses,
+  );
+  // The global default belongs to the Droid catalog, so it is not a selection
+  // for a chat on another provider: that chat starts on its provider's own
+  // default rather than a model its runtime has never heard of.
+  const primaryModelId = providerModelSelection(
+    composerProvider,
+    chatScoped ? activeSession.modelId : state.agentConfig.primary.modelId,
+    composerModels,
   );
   const selectedModel = primaryModelId
     ? composerModels.find((m) => m.id === primaryModelId)
@@ -809,11 +819,15 @@ export default function PromptInput({
   const selectedModelLabel = primaryModelId
     ? (selectedModel?.displayName ?? primaryModelId)
     : 'Default model';
-  const primaryReasoning = resolveReasoningEffortDisplay(
-    chatScoped ? activeSession.reasoningEffort : undefined,
-    state.agentConfig.primary.reasoning,
-    selectedModel,
-  );
+  // The global reasoning default is Droid's too, and no other provider offers
+  // the control, so the chip shows nothing rather than a setting it ignores.
+  const primaryReasoning = droidComposer
+    ? resolveReasoningEffortDisplay(
+        chatScoped ? activeSession.reasoningEffort : undefined,
+        state.agentConfig.primary.reasoning,
+        selectedModel,
+      )
+    : undefined;
 
   const replaceTrigger = (replacement: string) => {
     if (!trigger) return;
@@ -1106,8 +1120,11 @@ export default function PromptInput({
           provider: draftProvider,
           interactionMode: isSpecMode ? 'spec' : 'auto',
           autonomy: draftAutonomy,
-          modelId: primary.modelId,
-          reasoningEffort: primary.reasoning,
+          ...(droidComposer
+            ? { modelId: primary.modelId, reasoningEffort: primary.reasoning }
+            : primaryModelId
+              ? { modelId: primaryModelId }
+              : {}),
           compactionModel:
             state.compactionModel === 'current-model' ? undefined : state.compactionModel,
           ...compactionSettingsSnapshot(compactionSettingsInput),

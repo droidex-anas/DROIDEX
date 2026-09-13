@@ -6,6 +6,7 @@ import { useSessionWorkingDirectory } from '../hooks/useSessionWorkingDirectory'
 import { usePullRequest } from '../hooks/usePullRequest';
 import { useGithubSetup } from '../hooks/useGithubSetup';
 import { resolveReasoningEffortDisplay } from '../lib/reasoningEffort';
+import { providerModelCatalog } from '../features/providers/providerIdentity';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Hash, ChevronRight, FileText } from 'lucide-react';
 import { ModelIcon, providerOf } from './ModelIcon';
@@ -14,6 +15,7 @@ import { SubagentsSection } from './SubagentsPanel';
 import { Row, SectionHeader, Divider } from './environment/primitives';
 import { EnvironmentSection } from './environment/EnvironmentSection';
 import type { DiffStatMode } from '../types/vcs';
+import type { ModelInfo, ProviderStatus, ReasoningEffort, SessionSummary } from '../types/bridge';
 import { diffModeToReviewScope } from '../lib/reviewScopes';
 import {
   childSessionIsLive,
@@ -35,6 +37,7 @@ export default function RightPanel() {
       childRuntime: current.childRuntime,
       childSessions: current.childSessions,
       models: current.models,
+      providerStatuses: current.providerStatuses,
       selectedChild: current.selectedChild,
       selectedFeatureId: current.selectedFeatureId,
       sessionSpecs: current.sessionSpecs,
@@ -92,22 +95,7 @@ export default function RightPanel() {
     ),
   );
 
-  const modelInfo = activeSession?.modelId
-    ? state.models.find((m) => m.id === activeSession.modelId)
-    : undefined;
-  const modelLabel = activeSession
-    ? (modelInfo?.displayName ?? activeSession.modelId ?? 'default')
-    : 'default';
-  // The pill next to the model carries the session's reasoning effort, resolved
-  // the same way as the composer badge: the session's own pinned effort, falling
-  // back to the global default. Models without reasoning support show no pill.
-  const reasoningEffort = activeSession
-    ? resolveReasoningEffortDisplay(
-        activeSession.reasoningEffort,
-        state.agentConfig.primary.reasoning,
-        modelInfo,
-      )
-    : undefined;
+  const { modelInfo, modelLabel, reasoningEffort } = modelRowContent(activeSession, state);
 
   // Folderless chats have no git environment to load — the panel skips the
   // Environment section so nothing spins forever. Subagents, spec, and notes
@@ -305,4 +293,34 @@ export default function RightPanel() {
       </div>
     </div>
   );
+}
+
+// The model row in the chat's own provider terms: its provider's catalog names
+// the model, and the global effort default is Droid's alone, so no other
+// provider's chat inherits it.
+function modelRowContent(
+  session: SessionSummary | null,
+  state: {
+    models: ModelInfo[];
+    providerStatuses: ProviderStatus[];
+    agentConfig: { primary: { reasoning?: ReasoningEffort } };
+  },
+): { modelInfo?: ModelInfo; modelLabel: string; reasoningEffort?: ReasoningEffort } {
+  if (!session) return { modelLabel: 'default' };
+  const catalog = providerModelCatalog(session.provider, state.models, state.providerStatuses);
+  const modelInfo = session.modelId
+    ? catalog.find((model) => model.id === session.modelId)
+    : undefined;
+  return {
+    ...(modelInfo ? { modelInfo } : {}),
+    modelLabel: modelInfo?.displayName ?? session.modelId ?? 'default',
+    reasoningEffort:
+      session.provider === 'droid'
+        ? resolveReasoningEffortDisplay(
+            session.reasoningEffort,
+            state.agentConfig.primary.reasoning,
+            modelInfo,
+          )
+        : session.reasoningEffort,
+  };
 }

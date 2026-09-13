@@ -22,7 +22,7 @@ import {
   createDefaultsModeForCommand,
   createInteractionModeForCommand,
   createMissionAgentDefaultsForMode,
-  createModelDefaultsForMode,
+  createModelDefaultsForProvider,
   errMsg,
   requireAutonomyForCommand,
   resumeHandle,
@@ -155,7 +155,7 @@ export class SessionLifecycle {
       const defaults = await d.getFactoryDefaults();
       const interactionMode = createInteractionModeForCommand(command, defaults);
       const defaultsMode = createDefaultsModeForCommand(command, interactionMode);
-      const primary = createModelDefaultsForMode(defaultsMode, command, defaults);
+      const primary = createModelDefaultsForProvider(kind, defaultsMode, command, defaults);
       const agents = createMissionAgentDefaultsForMode(defaultsMode, command, defaults);
       const compactionModel =
         command.compactionModel ?? defaults.compactionModel ?? 'current-model';
