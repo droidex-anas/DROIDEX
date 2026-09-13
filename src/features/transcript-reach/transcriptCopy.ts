@@ -38,6 +38,10 @@ export function copyTextForFeedItem(item: FeedItem): string {
       return joinCopyParts(item.events.map(copyTextForChildSession));
     case 'worked':
       return joinCopyParts(item.items.map(copyTextForFeedItem));
+    case 'generated_image':
+      // The file path, or the reason there is none; the prompt is already in the
+      // chat as the user's own message.
+      return item.result?.text ?? '';
     case 'turnChanges':
       return item.files.map((file) => file.path).join('\n');
   }
