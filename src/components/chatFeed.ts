@@ -120,6 +120,11 @@ export function sameFeedEvents(a: FeedItem, b: FeedItem): boolean {
   if (a.type === 'thinking' && b.type === 'thinking') {
     return a.event === b.event && a.durationMs === b.durationMs;
   }
+  // The result is what turns the generating card into the image, and it arrives
+  // while the item is still the live tail.
+  if (a.type === 'generated_image' && b.type === 'generated_image') {
+    return a.event === b.event && a.result === b.result;
+  }
   // message | status | error | diff | child session each carry one event.
   return (a as { event: TranscriptEvent }).event === (b as { event: TranscriptEvent }).event;
 }

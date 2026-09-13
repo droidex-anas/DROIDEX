@@ -241,21 +241,17 @@
     }
   }
 
-  .image-grid-dots,
-  .image-grid-mask {
-    --image-grid-dot: radial-gradient(circle at center, #000 1px, transparent 1.6px);
-    background-size: 9px 9px;
-  }
-
   .image-grid-dots {
     background-image: radial-gradient(
       circle at center,
       color-mix(in srgb, var(--droid-text) 12%, transparent) 1px,
       transparent 1.6px
     );
+    background-size: 9px 9px;
   }
 
   .image-grid-mask {
+    --image-grid-dot: radial-gradient(circle at center, #000 1px, transparent 1.6px);
     -webkit-mask-image: var(--image-grid-dot);
     mask-image: var(--image-grid-dot);
     -webkit-mask-size: 9px 9px;

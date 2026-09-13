@@ -216,15 +216,12 @@ export function isWebSearchTool(name?: string): boolean {
   return hasSearch && tokens.some((t) => WEB_WORDS.has(t));
 }
 
-// An image-generation tool call, identified by name the way the web tools are:
-// the Codex adapter sends `image_generation`, and an MCP server that generates
-// images names itself the same way.
+// The image card renders exactly the call the Codex adapter emits. Matching a
+// family of names would capture a caption or description tool too and hide the
+// text it answered with; an MCP image tool can opt in explicitly when one needs
+// the card.
 export function isImageGenerationTool(name?: string): boolean {
-  const tokens = toolNameTokens(name);
-  return (
-    tokens.some((t) => t === 'image' || t === 'images') &&
-    tokens.some((t) => t === 'generation' || t === 'generate' || t === 'gen')
-  );
+  return name === 'image_generation';
 }
 
 const FETCH_WORDS = ['fetch', 'scrape', 'crawl', 'browse'];
