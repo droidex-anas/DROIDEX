@@ -136,17 +136,15 @@ function CopyButton({ text }: { text: string }) {
 export function ErrorTag({ emphasis = false }: { emphasis?: boolean }) {
   return (
     <span
-      className={`shrink-0 rounded-md font-medium ${
-        emphasis
-          ? 'ml-auto px-2 py-0.5 text-[10px] uppercase tracking-[0.08em]'
-          : 'px-1.5 py-px text-[11px]'
+      className={`shrink-0 rounded-md text-[10px] font-medium uppercase tracking-[0.08em] ${
+        emphasis ? 'ml-auto px-2 py-0.5' : 'px-1.5 py-px'
       }`}
       style={{
         backgroundColor: 'color-mix(in srgb, var(--droid-red) 15%, transparent)',
         color: RED,
       }}
     >
-      error
+      ERROR
     </span>
   );
 }
