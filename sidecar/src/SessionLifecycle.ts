@@ -424,10 +424,18 @@ export class SessionLifecycle {
     if (steered === 'taken') return;
     liveSession.pendingSends.unshift(text);
     this.updateQueuedSends(liveSession);
-    // 'queued' means the turn this send meant to steer is already ending: the
-    // prompt travels on the queue and a second interrupt would only end the
-    // turn that the first one is about to redeliver it into.
-    if (steered === 'queued' || liveSession.compacting || liveSession.autoCompacting) return;
+    // 'queued' means the turn this send meant to steer is already ending, and an
+    // interrupt already in flight means the same: the prompt travels on the
+    // queue, and a second interrupt would only end the turn that the first one
+    // is about to redeliver it into.
+    if (
+      steered === 'queued' ||
+      liveSession.compacting ||
+      liveSession.autoCompacting ||
+      liveSession.interrupting ||
+      liveSession.interruptingForSteer
+    )
+      return;
     liveSession.interruptingForSteer = true;
     this.dependencies.emitStatus(liveSession.summary.appSessionId, 'Steering now...');
     try {
