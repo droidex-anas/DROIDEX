@@ -47,7 +47,27 @@ const MAPPED_ITEMS = new Set([
 
 export function threadItem(params: unknown): ThreadItem {
   const { item } = params as { item?: ThreadItem };
-  return item && MAPPED_ITEMS.has(item.type) ? item : { type: 'ignored' };
+  if (!item || !MAPPED_ITEMS.has(item.type)) return { type: 'ignored' };
+  // An image item reaches the filesystem, so its fields are checked before it
+  // is admitted rather than trusted the way a text-only item can be.
+  if (item.type === 'imageGeneration' && !isGeneratedImage(item)) return { type: 'ignored' };
+  return item;
+}
+
+function isGeneratedImage(item: Extract<ThreadItem, { type: 'imageGeneration' }>): boolean {
+  return (
+    typeof item.id === 'string' &&
+    item.id !== '' &&
+    typeof item.status === 'string' &&
+    typeof item.result === 'string' &&
+    (item.savedPath === undefined ||
+      item.savedPath === null ||
+      typeof item.savedPath === 'string') &&
+    (item.revisedPrompt === undefined ||
+      item.revisedPrompt === null ||
+      typeof item.revisedPrompt === 'string') &&
+    (item.failure === undefined || item.failure === null || typeof item.failure.type === 'string')
+  );
 }
 
 export interface ToolCall {

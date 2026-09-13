@@ -17,12 +17,15 @@ export interface GeneratedImage {
 
 const IMAGE_EXTENSIONS = new Set(['.png', '.jpg', '.jpeg', '.webp', '.gif']);
 // The first bytes of the formats Codex can return, so a `result` that is not an
-// image is reported instead of written out as a file nothing can open.
-const SIGNATURES: [string, number[]][] = [
-  ['.png', [0x89, 0x50, 0x4e, 0x47]],
-  ['.jpg', [0xff, 0xd8, 0xff]],
-  ['.gif', [0x47, 0x49, 0x46, 0x38]],
-  ['.webp', [0x52, 0x49, 0x46, 0x46]],
+// image is reported instead of written out as a file nothing can open. A RIFF
+// container is only WebP when it says so at offset 8; the same header fronts
+// WAV and AVI.
+const SIGNATURES: { extension: string; bytes: number[]; at?: number }[] = [
+  { extension: '.png', bytes: [0x89, 0x50, 0x4e, 0x47] },
+  { extension: '.jpg', bytes: [0xff, 0xd8, 0xff] },
+  { extension: '.gif', bytes: [0x47, 0x49, 0x46, 0x38] },
+  { extension: '.webp', bytes: [0x52, 0x49, 0x46, 0x46] },
+  { extension: '.webp', bytes: [0x57, 0x45, 0x42, 0x50], at: 8 },
 ];
 
 // The saved file's path, or the line to show in its place when there is no
@@ -51,13 +54,24 @@ function copied(appSessionId: string, savedPath: string, item: GeneratedImage): 
 
 function decoded(appSessionId: string, item: GeneratedImage): string {
   const bytes = Buffer.from(item.result, 'base64');
-  const extension = SIGNATURES.find(([, signature]) =>
-    signature.every((byte, index) => bytes[index] === byte),
-  )?.[0];
+  const extension = imageExtension(bytes);
   if (!extension) return 'Codex returned no image for this request.';
   const target = imagePath(appSessionId, item.id, extension);
   writeFileSync(target, bytes);
   return target;
+}
+
+// The extension the bytes themselves call for, or undefined when they are not
+// an image this build can show.
+function imageExtension(bytes: Buffer): string | undefined {
+  const matches = (signature: (typeof SIGNATURES)[number]) =>
+    signature.bytes.every((byte, index) => bytes[(signature.at ?? 0) + index] === byte);
+  const riff = SIGNATURES.find((signature) => signature.at === undefined && matches(signature));
+  if (riff?.extension !== '.webp') return riff?.extension;
+  // RIFF alone is a container, not a picture.
+  return SIGNATURES.some((signature) => signature.at === 8 && matches(signature))
+    ? '.webp'
+    : undefined;
 }
 
 function imagePath(appSessionId: string, itemId: string, extension: string): string {
