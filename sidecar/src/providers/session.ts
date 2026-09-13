@@ -31,7 +31,9 @@ export interface ProviderResumeInput {
 }
 
 export interface ProviderModelSettings {
-  modelId?: string;
+  // A string selects that model; null resets the session to the provider's own
+  // default; absent leaves the model alone.
+  modelId?: string | null;
   reasoningEffort?: ReasoningEffort;
 }
 
