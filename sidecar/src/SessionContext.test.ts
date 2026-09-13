@@ -12,6 +12,7 @@ import {
 import type { LiveSession } from './SessionLifecycle.js';
 import { SessionRegistry } from './SessionRegistry.js';
 import {
+  fakeProviderSession,
   FakeFactoryRuntime,
   FakeFactorySession,
   type RecordedCall,
@@ -64,7 +65,8 @@ function registerLive(
   const session = new FakeFactorySession(providerSessionId, {}, h.calls);
   const live: LiveSession = {
     summary: summary(appSessionId, providerSessionId),
-    session,
+    session: fakeProviderSession(appSessionId, session),
+    droid: session,
     streaming: false,
     autoCompacting: false,
     pendingSends: [],
@@ -113,16 +115,16 @@ function addChild(
 const childRuntimes = new WeakMap<LiveSession, Map<string, { session: FakeFactorySession }>>();
 
 function primaryTarget(h: Harness, live: LiveSession): LiveOperationTarget {
-  const session = live.session;
+  const providerSession = live.session;
   return {
     appSessionId: live.summary.appSessionId,
-    providerSessionId: session.sessionId,
+    providerSessionId: providerSession.providerSessionId,
     sourceSessionId: live.summary.appSessionId,
-    session,
+    session: live.droid,
     isCurrent: () =>
       !live.closeMode &&
       h.registry.getLive(live.summary.appSessionId) === live &&
-      live.session === session,
+      live.session === providerSession,
   };
 }
 

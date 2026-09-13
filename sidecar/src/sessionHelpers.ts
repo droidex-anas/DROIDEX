@@ -1,10 +1,4 @@
-import {
-  DecompSessionType,
-  type AskUserHandler,
-  type McpServerConfig,
-  type MissionFeature,
-  type PermissionHandler,
-} from '@factory/droid-sdk';
+import { DecompSessionType, type McpServerConfig, type MissionFeature } from '@factory/droid-sdk';
 import type { CreateRuntimeSessionOptions } from './DroidRuntime.js';
 import type {
   Autonomy,
@@ -266,9 +260,7 @@ export function buildCreateRuntimeOptions(input: {
   compactionModel: string;
   compactionTokenLimit: number;
   mcpServers: McpServerConfig[];
-  permissionHandler: PermissionHandler;
-  askUserHandler: AskUserHandler;
-}): CreateRuntimeSessionOptions {
+}): Omit<CreateRuntimeSessionOptions, 'permissionHandler' | 'askUserHandler'> {
   const usePrimaryForSpec =
     input.interactionMode === 'spec' ||
     Boolean(input.command.modelId) ||
@@ -295,8 +287,6 @@ export function buildCreateRuntimeOptions(input: {
     compactionTokenLimit: input.compactionTokenLimit,
     compactionThresholdCheckEnabled: true,
     mcpServers: input.mcpServers,
-    permissionHandler: input.permissionHandler,
-    askUserHandler: input.askUserHandler,
   };
 }
 
@@ -361,6 +351,10 @@ interface BuildResumedSessionInput {
   now: number;
 }
 
+// The provider's own resume handle, when a stored summary carries one.
+export const resumeHandle = (summary: SessionSummary | undefined) =>
+  summary?.resumeId ? { resumeId: summary.resumeId } : {};
+
 export function buildResumedSession(input: BuildResumedSessionInput): {
   summary: SessionSummary;
   exposedCompaction: CompactionTokenLimitPatch;
@@ -372,6 +366,7 @@ export function buildResumedSession(input: BuildResumedSessionInput): {
       providerSessionId: input.providerSessionId,
       compactedFromProviderSessionIds: input.historical?.compactedFromProviderSessionIds ?? [],
       provider: input.historical?.provider ?? DEFAULT_PROVIDER,
+      ...resumeHandle(input.historical),
       ...classification,
       ...resumedLocation(input),
       ...resumedModelSettings(input),

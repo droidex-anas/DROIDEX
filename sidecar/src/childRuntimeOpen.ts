@@ -278,7 +278,7 @@ async function bindLoadedChildRuntime(input: {
   const actual = childSettingsFromInit(loaded.initResult);
   const defaults = host.d.resolveDefaultSettings(
     parent.lease.summary,
-    parent.lease.session.initResult,
+    parent.lease.droid.initResult,
     child.role,
   );
   const settings = {

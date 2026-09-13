@@ -10,7 +10,7 @@ import {
   type SessionRetirementFacts,
   type SessionRuntimeRetirementDependencies,
 } from './sessionRuntimeRetirement.js';
-import { FakeFactorySession } from './testing/fakeFactoryRuntime.js';
+import { fakeProviderSession, FakeFactorySession } from './testing/fakeFactoryRuntime.js';
 
 const IDLE_MS = 1_800_000;
 
@@ -120,9 +120,11 @@ function liveSession(appSessionId: string, updatedAt: number): LiveSession {
     createdAt: 0,
     updatedAt,
   } satisfies SessionSummary;
+  const droid = new FakeFactorySession(appSessionId, {}, []);
   return {
     summary,
-    session: new FakeFactorySession(appSessionId, {}, []),
+    session: fakeProviderSession(appSessionId, droid),
+    droid,
     streaming: false,
     autoCompacting: false,
     pendingSends: [],

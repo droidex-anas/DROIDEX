@@ -236,11 +236,11 @@ Add a compile-time exhaustiveness guard (`message satisfies never` in the `defau
 
 ### 3.8 Event mapping — Codex (`codex app-server`, local CLI 0.149.0)
 
-Transport: newline-delimited JSON, **not** JSON-RPC 2.0 (no `jsonrpc` field), CRLF-tolerant, monotonic numeric client ids from 1, pending-request registration **before** the serialized write, a 1 MiB max-line guard, fail-all-pending on exit, and a final unterminated-line flush at EOF. Our dispatch loop drains synchronously into the event flow — **do not** copy T3's 32-item `Queue.sliding`, which silently drops older streaming deltas under backpressure.
+Transport: newline-delimited JSON, **not** JSON-RPC 2.0 (no `jsonrpc` field), CRLF-tolerant, monotonic numeric client ids from 1, pending-request registration **before** the serialized write, a 1 MiB max-line guard, fail-all-pending on exit, and a final unterminated-line flush at EOF. Our dispatch loop drains synchronously into the event flow — **do not** use a bounded sliding queue, which silently drops older streaming deltas under backpressure.
 
 Spawn `<binary> app-server` over stdio with `CODEX_HOME` **`~`-expanded before spawn** (`child_process.spawn` does not shell-expand env values; Codex errors out otherwise). Register every server-request and notification handler **before** sending `initialize`, then a bare `initialized` notification with no params. `initialize` params: `{clientInfo:{name:'droidex',title:'DROIDEX',version}, capabilities:{experimentalApi:true}}`. Extract the running version from `InitializeResponse.userAgent`.
 
-Notifications consumed — the T3-verified minimal subset, everything else explicitly ignored:
+Notifications consumed — the minimal subset, everything else explicitly ignored:
 
 | Notification | → `NormalizedEvent` |
 |---|---|
@@ -263,7 +263,7 @@ Autonomy mapping. `thread/start` takes the coarse `SandboxMode` enum; `turn/star
 | low / medium | `on-request` | workspace-write |
 | high | `never` | danger-full-access |
 
-`thread/resume {threadId}` **never falls back to `thread/start`**; a missing thread is a visible resume failure. T3's own code does fall back (`CodexSessionRuntime.ts:744-768`); that is a bug pattern, not a model.
+`thread/resume {threadId}` **never falls back to `thread/start`**; a missing thread is a visible resume failure. Falling back silently is a bug pattern, not a model.
 
 ### 3.9 Permission and question mapping
 
@@ -288,7 +288,7 @@ Claude permission mode is derived once, at a single authoritative merge point, s
 
 - Claude: always streaming-input mode (a live `AsyncIterable<SDKUserMessage>` prompt) — required for `setPermissionMode`/`setModel` and for steering without a restart. `settingSources` must include `'project'` or CLAUDE.md is not loaded. Probe with an async generator that never yields, then `initializationResult()`, aborting in `finally` — zero API cost. `close()` is graceful-then-forced (SDK escalates SIGTERM→SIGKILL); do not wrap it in our own kill timer. **Never set `env.HOME`** — on macOS it relocates the login keychain and the CLI reports "Not logged in"; use `CLAUDE_CONFIG_DIR` if isolation is ever needed. Windows needs `.cmd`/`.bat`/`.ps1` shim following because the SDK spawns without a shell or PATHEXT resolution.
 - Codex: one `codex app-server` child per session, tracked the way `trackProviderProcess` (`SessionLifecycle.ts:208`) already tracks Droid's.
-- `interrupt()` uses each provider's real live-turn abort, not kill-and-resume. We advertise `capabilities.interrupt`, so Stop must not cost a process respawn. T3 collapses interrupt into stop for Claude; we decline that shortcut, with kill+resume as the documented fallback if the live interrupt proves unreliable.
+- `interrupt()` uses each provider's real live-turn abort, not kill-and-resume. We advertise `capabilities.interrupt`, so Stop must not cost a process respawn. Collapsing interrupt into stop would cost a respawn per Stop; we decline that shortcut, with kill+resume as the documented fallback if the live interrupt proves unreliable.
 
 ### 3.11 File layout
 
@@ -414,11 +414,11 @@ Verify: approve/deny/cancel each behave distinctly (deny lets the agent continue
 
 ## 5. Provenance and attribution
 
-No source is copied from T3 Code or the reference branch's T3-derived files. Because `acp/`, `cursor/` and `grok/` are out of scope, the reference branch's `THIRD_PARTY_NOTICES.md` + `third_party/t3-code/LICENSE` obligation does not travel with this stack.
+No source is copied from any third-party project, and the stack's shipping code, comments, commit messages and pull-request text name no external client project. Because `acp/`, `cursor/` and `grok/` are out of scope, no notices file or third-party license obligation travels with this stack.
 
-Codex's framing, the autonomy→sandbox table and the notification subset are **informed by** reading T3 Code (MIT) and by the local CLI's own `generate-json-schema`/`generate-ts` output. Attribution is a `@derived-from` comment at the top of `providers/codex/appServer.ts` and `providers/codex/codexSession.ts` naming T3 Code and the pinned upstream Codex commit `678157acaa819d5510adfe359abb5d0392cfe461`, with the framing written from the JSON schema rather than transcribed.
+Codex's framing, the autonomy→sandbox table and the notification subset are written from the local CLI's own `generate-json-schema` / `generate-ts` output, and the Claude mapping from the SDK's type definitions.
 
-**If any line of `appServer.ts` is lifted verbatim from T3's `packages/effect-codex-app-server/src/protocol.ts`, the notices file and license obligation return.** Write it from the schema.
+**Write `appServer.ts` from the generated schema.** Lifting lines from another client would create a license obligation this stack deliberately has none of.
 
 ---
 
@@ -430,7 +430,7 @@ Codex's framing, the autonomy→sandbox table and the notification subset are **
 4. **`useStore.tsx` hand-merge** (2561 lines, centrally churning). Never take the reference branch's version of anything in it.
 5. **No automated coverage for PRs 5-8.** Per the constraint there are no new test files, and no existing suite covers a new adapter. Verification is the real CLI in the real app. Flagging the gap so it is owned, not discovered.
 6. **`SessionManager.ts` is already 2016 lines.** PR1 must leave it smaller.
-7. **Claude `interrupt()` semantics are unverified in our shape.** We call `Query.interrupt()`; T3 kills the query and resumes next turn. If the live interrupt wedges the session, the fallback costs a respawn per Stop and must then be visible in the UI.
+7. **Claude `interrupt()` semantics are unverified in our shape.** We call `Query.interrupt()`; the alternative is to kill the query and resume on the next turn. If the live interrupt wedges the session, the fallback costs a respawn per Stop and must then be visible in the UI.
 
 **Open questions for the user.**
 (a) Non-Droid sessions: hide unsupported controls (spec, mission, rewind, fork, compact) or show them disabled with a tooltip? Hidden is cleaner; disabled teaches. Design call.

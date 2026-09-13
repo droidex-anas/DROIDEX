@@ -420,9 +420,9 @@ export class SessionCompaction {
     return {
       kind: 'primary',
       appSessionId,
-      providerSessionId: session.sessionId,
+      providerSessionId: session.providerSessionId,
       sourceSessionId: appSessionId,
-      session,
+      session: liveSession.droid,
       liveSession,
       isCurrent: () =>
         !this.dependencies.isShutdownStarted() &&

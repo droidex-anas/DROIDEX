@@ -40,7 +40,7 @@ export class SessionEventFlow {
     const normalized = normalizeStreamEvent(appSessionId, sourceProviderSessionId, role, event);
     hotPathMetrics.recordNormalize(performance.now() - normalizeStartedAt);
     if (normalized) {
-      this.applyNormalized(appSessionId, sourceProviderSessionId, role, normalized, childSessionId);
+      this.apply(appSessionId, sourceProviderSessionId, role, normalized, childSessionId);
     }
   }
 
@@ -60,7 +60,7 @@ export class SessionEventFlow {
     );
     hotPathMetrics.recordNormalize(performance.now() - normalizeStartedAt);
     for (const normalized of notifications) {
-      this.applyNormalized(appSessionId, sourceProviderSessionId, role, normalized, childSessionId);
+      this.apply(appSessionId, sourceProviderSessionId, role, normalized, childSessionId);
     }
   }
 
@@ -68,7 +68,9 @@ export class SessionEventFlow {
     this.terminalSources.delete(appSessionId);
   }
 
-  private applyNormalized(
+  // A provider session streams already-normalized events; SDK-shaped callbacks
+  // reach the same path through applyStreamEvent / applyNotification.
+  apply(
     appSessionId: string,
     sourceProviderSessionId: string,
     role: SessionRole,

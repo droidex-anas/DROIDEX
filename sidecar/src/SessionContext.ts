@@ -264,7 +264,7 @@ export class SessionContext {
 
     if (!target.isCurrent()) return;
     const liveSession = this.dependencies.registry.getLive(target.appSessionId);
-    if (liveSession?.session !== target.session || !target.isCurrent()) return;
+    if (liveSession?.droid !== target.session || !target.isCurrent()) return;
     if (
       recordedGeneration !== undefined &&
       (liveSession.summary.autoCompactions ?? 0) > recordedGeneration
