@@ -829,12 +829,14 @@ export default function PromptInput({
     ? composerModels.find((m) => m.id === primaryModelId)
     : undefined;
   // With no model of its own a chat runs on its harness's configured default, so
-  // the chip names that model rather than the idea of one.
+  // the chip stands for that model rather than for the idea of one: it takes
+  // both its name and its vendor mark from the same entry.
   const providerDefault = providerDefaultModel(
     composerProvider,
     composerModels,
     state.providerStatuses,
   );
+  const chipModel = primaryModelId ? selectedModel : providerDefault;
   const selectedModelLabel = primaryModelId
     ? (selectedModel?.displayName ?? primaryModelId)
     : (providerDefault?.displayName ?? 'Default model');
@@ -1786,7 +1788,7 @@ export default function PromptInput({
                   </>
                 ) : (
                   <>
-                    <ModelIcon provider={providerOf(selectedModel, primaryModelId)} size={14} />
+                    <ModelIcon provider={providerOf(chipModel, primaryModelId)} size={14} />
                     <span className="truncate">{selectedModelLabel}</span>
                     {primaryReasoning && (
                       <span
