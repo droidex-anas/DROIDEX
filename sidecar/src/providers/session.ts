@@ -39,6 +39,9 @@ export interface ProviderSession {
   readonly provider: ProviderKind;
   // Native id of the session the provider holds open.
   readonly providerSessionId: string;
+  // The provider's own handle for reopening this conversation, when it differs
+  // from providerSessionId. Only Codex, which mints its own thread ids, has one.
+  readonly resumeId?: string;
   // The live agent process, when the provider runs one, so it can be tracked.
   readonly process?: { pid: number; isAlive(): boolean };
   // Returning means the turn settled; throwing means it failed. There is no
