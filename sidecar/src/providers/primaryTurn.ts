@@ -9,7 +9,7 @@ import { isReportedStreamingTranscriptError, type SessionTimeline } from '../Ses
 export interface PrimaryTurnDependencies {
   eventFlow: Pick<SessionEventFlow, 'beginTurn' | 'apply'>;
   context: Pick<SessionContext, 'beginTurn' | 'startPolling' | 'stopPolling' | 'refresh'>;
-  timeline: Pick<SessionTimeline, 'settleStreaming' | 'appendStatus'>;
+  timeline: Pick<SessionTimeline, 'recordPrompt' | 'settleStreaming' | 'appendStatus'>;
   contextTarget: (liveSession: LiveSession) => LiveOperationTarget;
   isCurrent: (liveSession: LiveSession) => boolean;
   applyDesignToolPolicy: (liveSession: LiveSession, design: boolean) => Promise<void>;
@@ -26,6 +26,7 @@ export async function runPrimaryTurn(
   const contextTarget = d.contextTarget(liveSession);
   if (!d.isCurrent(liveSession)) return;
   d.eventFlow.beginTurn(appSessionId, appSessionId);
+  d.timeline.recordPrompt(appSessionId, prompt);
   d.context.beginTurn(appSessionId);
   d.context.startPolling(contextTarget);
   let turnError: unknown;

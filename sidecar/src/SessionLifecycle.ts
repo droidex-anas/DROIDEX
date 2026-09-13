@@ -26,15 +26,15 @@ import {
   requireAutonomyForCommand,
 } from './sessionHelpers.js';
 import type { ProviderInteractions } from './providers/interactions.js';
-import {
-  DEFAULT_PROVIDER,
-  requireProviderKind,
-  type ProviderKind,
-} from './providers/providerKind.js';
+import { requireProviderKind, type ProviderKind } from './providers/providerKind.js';
 import { requireDroidSession } from './providers/droid/DroidProviderSession.js';
 import type { Provider, ProviderSession } from './providers/session.js';
 
 export type SessionCreateCommand = Extract<ClientCommand, { type: 'session.create' }>;
+
+// An unbound summary predates the binding, so it resumes on the default
+// provider; an unroutable one fails at the provider lookup.
+const boundProvider = (summary: SessionSummary | undefined) => summary?.provider;
 
 async function sessionRuntimeCwd(appCwd: string): Promise<string> {
   if (appCwd) return appCwd;
@@ -112,6 +112,10 @@ export interface SessionLifecycleDependencies {
   applyPendingSessionSettings: (appSessionId: string) => Promise<boolean>;
   runPrimaryTurn: (liveSession: LiveSession, prompt: string) => Promise<void>;
   context: Pick<SessionContext, 'refresh' | 'stopPolling' | 'stopSession' | 'forgetSession'>;
+  // Durable transcript for a provider that keeps no session file of its own.
+  // Opened with the live session, released when it closes.
+  openProviderTranscript: (summary: SessionSummary) => void;
+  forgetProviderTranscript: (appSessionId: string) => void;
   forgetInteractions: (appSessionId: string) => void;
   forgetEventFlow: (appSessionId: string) => void;
   forgetMissionControl: (appSessionId: string) => void;
@@ -212,6 +216,8 @@ export class SessionLifecycle {
       pendingLiveSession = liveSession;
       d.compaction.subscribePrimary(this.primaryAutomaticCompactionTarget(liveSession));
       d.registry.register(liveSession);
+      // Registered first, so the failed-open path that unregisters also releases it.
+      d.openProviderTranscript(summary);
       this.trackProviderProcess(appSessionId, providerSession, mcp.configs);
       d.childSessions.attachParent(appSessionId);
       d.emit({ type: 'session.created', clientRef: command.clientRef, session: summary });
@@ -268,10 +274,12 @@ export class SessionLifecycle {
     let pendingSession: ProviderSession | undefined;
     let pendingLiveSession: LiveSession | undefined;
     try {
+      // Resolved before any resource starts, so a session bound to a provider
+      // this build cannot route fails before it costs anything.
+      const provider = d.provider(requireProviderKind(boundProvider(historical)));
       const mcp = await d.startLocalMcpServers(ref, historical?.cwd);
       pendingMcpServers = mcp.servers;
-      const provider = historical?.provider ?? DEFAULT_PROVIDER;
-      const providerSession = await d.provider(provider).resume(providerSessionId, {
+      const providerSession = await provider.resume(providerSessionId, {
         appSessionId,
         interactions: d.interactionsFor(ref),
         cwd: historical?.cwd,
@@ -314,6 +322,8 @@ export class SessionLifecycle {
       pendingLiveSession = liveSession;
       d.compaction.subscribePrimary(this.primaryAutomaticCompactionTarget(liveSession));
       d.registry.register(liveSession);
+      // Registered first, so the failed-open path that unregisters also releases it.
+      d.openProviderTranscript(summary);
       this.trackProviderProcess(appSessionId, providerSession, mcp.configs);
       d.childSessions.attachParent(appSessionId);
       d.emit({
@@ -533,10 +543,12 @@ export class SessionLifecycle {
     for (const server of liveSession.mcpServers) {
       await run(() => server.close());
     }
-    const processId = liveSession.session.process?.pid;
+    const untrack = this.untrackProviderProcess(
+      liveSession.summary.appSessionId,
+      liveSession.session,
+    );
     await run(() => liveSession.session.close());
-    if (processId !== undefined)
-      d.agentProcesses.untrack(processId, liveSession.summary.appSessionId);
+    untrack?.();
     await run(() => d.closeBrowserSession(liveSession.summary.appSessionId));
     await run(() => {
       d.context.forgetSession(liveSession);
@@ -553,6 +565,11 @@ export class SessionLifecycle {
       });
       await run(() => {
         d.forgetPendingSettings(liveSession.summary.appSessionId);
+      });
+      // Flushes the open stored message, so the file is complete before the
+      // renderer hears the session closed.
+      await run(() => {
+        d.forgetProviderTranscript(liveSession.summary.appSessionId);
       });
       d.emit({ type: 'session.closed', appSessionId: liveSession.summary.appSessionId });
       await run(() => {
@@ -615,6 +632,19 @@ export class SessionLifecycle {
     d.agentProcesses.setIgnoredCommands(appSessionId, stdioMcpCommandLines(mcpConfigs));
     const process = session.process;
     if (process) d.agentProcesses.track(appSessionId, process.pid, () => process.isAlive());
+  }
+
+  // The pid has to be read while the session still holds it, but released only
+  // after it closes, so this hands back the release for the caller to run then.
+  private untrackProviderProcess(
+    appSessionId: string,
+    session: ProviderSession,
+  ): (() => void) | undefined {
+    const processId = session.process?.pid;
+    if (processId === undefined) return undefined;
+    return () => {
+      this.dependencies.agentProcesses.untrack(processId, appSessionId);
+    };
   }
 
   private requireOpenAdmission(): void {
@@ -709,10 +739,11 @@ export class SessionLifecycle {
     if (liveSession) this.dependencies.compaction.forgetSession(liveSession.summary.appSessionId);
     await Promise.all(mcpServers.map((server) => runBestEffortAsync(() => server.close())));
     if (session) {
-      const processId = session.process?.pid;
+      const untrack = liveSession
+        ? this.untrackProviderProcess(liveSession.summary.appSessionId, session)
+        : undefined;
       await runBestEffortAsync(() => session.close());
-      if (processId !== undefined && liveSession)
-        this.dependencies.agentProcesses.untrack(processId, liveSession.summary.appSessionId);
+      untrack?.();
     }
     if (
       liveSession &&
@@ -722,6 +753,7 @@ export class SessionLifecycle {
       if (this.dependencies.registry.unregister(liveSession.summary.appSessionId)) {
         this.dependencies.forgetInteractions(liveSession.summary.appSessionId);
         this.dependencies.forgetEventFlow(liveSession.summary.appSessionId);
+        this.dependencies.forgetProviderTranscript(liveSession.summary.appSessionId);
         this.dependencies.forgetMissionControl(liveSession.summary.appSessionId);
         this.dependencies.forgetPendingSettings(liveSession.summary.appSessionId);
       }

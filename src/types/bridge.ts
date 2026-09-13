@@ -18,7 +18,8 @@ export type {
 
 // Which agent runtime a session runs on. Bound once when the session is
 // created and never changed afterwards.
-export type ProviderKind = 'droid' | 'claude' | 'codex';
+export const PROVIDER_KINDS = ['droid', 'claude', 'codex'] as const;
+export type ProviderKind = (typeof PROVIDER_KINDS)[number];
 
 export type SessionPhase =
   | 'intake'
@@ -120,6 +121,9 @@ export interface SessionSummary {
   missionId?: string;
   // Agent runtime this session is bound to, fixed at creation.
   provider: ProviderKind;
+  // Provider-owned handle for resuming this conversation, when the provider
+  // does not let us pin its session id (Codex threads). Absent for Droid.
+  resumeId?: string;
   sessionPurpose: SessionPurpose;
   interactionMode: SessionInteractionMode;
   role: 'primary' | 'user';
