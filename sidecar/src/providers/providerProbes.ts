@@ -1,6 +1,16 @@
 import type { ProviderStatus } from '../protocol.js';
 import type { ProviderKind } from './providerKind.js';
 
+export type ProviderProbeMap = ReadonlyMap<
+  ProviderKind,
+  (signal: AbortSignal) => Promise<ProviderStatus>
+>;
+
+// A harness that pins $HOME to a temp directory probes nothing: a real probe
+// starts the provider's CLI, which writes under that directory and keeps
+// writing after the harness has removed it.
+export const NO_PROVIDER_PROBES: ProviderProbeMap = new Map();
+
 // Claude Code's and Codex's readiness each cost a CLI process to learn, so they
 // are probed on demand and remembered: provider status can then be emitted on
 // any event without spawning anything. One round of probes runs at a time; a
@@ -10,12 +20,7 @@ export class ProviderProbes {
   private inFlight?: Promise<void>;
   private abort?: AbortController;
 
-  constructor(
-    private readonly probes: ReadonlyMap<
-      ProviderKind,
-      (signal: AbortSignal) => Promise<ProviderStatus>
-    >,
-  ) {}
+  constructor(private readonly probes: ProviderProbeMap) {}
 
   // The last answer, or undefined while a provider has not been probed yet —
   // which the picker reads as "still checking".

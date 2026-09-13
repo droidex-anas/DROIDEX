@@ -109,7 +109,7 @@ import {
 import { ClaudeProvider } from './providers/claude/ClaudeProvider.js';
 import { CodexProvider } from './providers/codex/CodexProvider.js';
 import { requireDroidSession } from './providers/droid/DroidProviderSession.js';
-import { ProviderProbes } from './providers/providerProbes.js';
+import { ProviderProbes, type ProviderProbeMap } from './providers/providerProbes.js';
 import { ProviderTranscriptFile } from './providers/ProviderTranscriptFile.js';
 import { providerStatuses } from './providers/providerStatus.js';
 import type { Provider, ProviderModelSettings } from './providers/session.js';
@@ -179,6 +179,10 @@ export interface SessionManagerOptions {
   assetUrlFor?: (path: string) => string;
   dependencies?: SessionManagerDependencies;
   initialModels?: ModelInfo[];
+  // Injectable because a real probe starts the provider's CLI, which keeps
+  // writing under $HOME long after the answer arrives. A test that pins $HOME
+  // to a temp directory must pass its own probes — usually none at all.
+  providerProbes?: ProviderProbeMap;
 }
 
 export interface AgentSettingPatch {
@@ -263,17 +267,19 @@ export class SessionManager {
   private readonly droidProvider: DroidProvider;
   private readonly claudeProvider = new ClaudeProvider();
   private readonly codexProvider = new CodexProvider();
-  private readonly providerProbes = new ProviderProbes(
-    new Map([
-      [this.claudeProvider.kind, (signal: AbortSignal) => this.claudeProvider.probe(signal)],
-      [this.codexProvider.kind, (signal: AbortSignal) => this.codexProvider.probe(signal)],
-    ]),
-  );
+  private readonly providerProbes: ProviderProbes;
 
   constructor(
     private readonly emit: Emit,
     options: SessionManagerOptions = {},
   ) {
+    this.providerProbes = new ProviderProbes(
+      options.providerProbes ??
+        new Map([
+          [this.claudeProvider.kind, (signal: AbortSignal) => this.claudeProvider.probe(signal)],
+          [this.codexProvider.kind, (signal: AbortSignal) => this.codexProvider.probe(signal)],
+        ]),
+    );
     const limits = runtimeLimits(options.dependencies);
     let startWatcher: (
       options: SessionFileWatcherOptions,
