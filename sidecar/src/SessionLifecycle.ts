@@ -415,12 +415,10 @@ export class SessionLifecycle {
     // A provider that takes the prompt into the turn it is already running
     // needs neither the queue nor an interrupt. A session already interrupting
     // has no turn left to steer, so those sends keep the queued path.
-    const steerable =
-      !liveSession.compacting &&
-      !liveSession.autoCompacting &&
-      !liveSession.interrupting &&
-      !liveSession.interruptingForSteer;
-    const steered = steerable ? await this.steerTurn(liveSession, text) : 'interrupt';
+    const compacting = liveSession.compacting || liveSession.autoCompacting;
+    const interrupting = liveSession.interrupting || liveSession.interruptingForSteer;
+    const steered =
+      compacting || interrupting ? 'interrupt' : await this.steerTurn(liveSession, text);
     if (steered === 'taken') return;
     liveSession.pendingSends.unshift(text);
     this.updateQueuedSends(liveSession);
@@ -428,14 +426,7 @@ export class SessionLifecycle {
     // interrupt already in flight means the same: the prompt travels on the
     // queue, and a second interrupt would only end the turn that the first one
     // is about to redeliver it into.
-    if (
-      steered === 'queued' ||
-      liveSession.compacting ||
-      liveSession.autoCompacting ||
-      liveSession.interrupting ||
-      liveSession.interruptingForSteer
-    )
-      return;
+    if (steered === 'queued' || compacting || interrupting) return;
     liveSession.interruptingForSteer = true;
     this.dependencies.emitStatus(liveSession.summary.appSessionId, 'Steering now...');
     try {
