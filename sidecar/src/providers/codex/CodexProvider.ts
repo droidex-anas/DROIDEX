@@ -11,8 +11,16 @@ import type {
   ProviderResumeInput,
   ProviderSession,
 } from '../session.js';
-import { AppServerClient, initialize } from './appServer.js';
+import { AppServerClient } from './appServer.js';
 import { CodexSession, type CodexSessionInput } from './codexSession.js';
+
+// Codex only echoes this back in its user agent. The sidecar is not told the
+// app's version, so `0.0.0` stands for "unknown" outside a dev run.
+const CLIENT_INFO = {
+  name: 'droidex',
+  title: 'DROIDEX',
+  version: process.env.npm_package_version ?? '0.0.0',
+};
 
 const PROBE_TIMEOUT_MS = 25_000;
 const INSTALL_HINT = 'Codex CLI not found. Install it, then refresh.';
@@ -31,6 +39,22 @@ function resolveCodexPath(): string | undefined {
   const override = process.env.CODEX_PATH;
   if (override && isExecutable(override)) return override;
   return CLI_CANDIDATES.find((candidate) => isExecutable(candidate)) ?? resolveOnPathSync('codex');
+}
+
+export interface InitializeResponse {
+  userAgent: string;
+}
+
+// Every connection starts here, after its handlers are registered: the
+// capability opt-in that exposes the thread and turn API, then the bare
+// `initialized` notification Codex waits for before serving anything else.
+export async function initialize(client: AppServerClient): Promise<InitializeResponse> {
+  const response = await client.request<InitializeResponse>('initialize', {
+    clientInfo: CLIENT_INFO,
+    capabilities: { experimentalApi: true },
+  });
+  client.notify('initialized');
+  return response;
 }
 
 export class CodexProvider implements Provider {
@@ -134,8 +158,11 @@ export class CodexProvider implements Provider {
     const executable = resolveCodexPath();
     if (!executable) throw new Error(INSTALL_HINT);
     const client = new AppServerClient(executable, input.cwd);
+    // The session registers its handlers in its constructor, so the handshake
+    // that makes Codex start sending can only follow it.
     const session = new CodexSession({ ...input, client });
     try {
+      await initialize(client);
       await session.open(resumeId);
     } catch (error) {
       // A session that never opened must not leave its process behind.

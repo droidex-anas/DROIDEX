@@ -3,6 +3,8 @@
 // request correlation and the lifetime of the one process it speaks to.
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
 
+import { errMsg } from '../../sessionHelpers.js';
+
 // A line this long is a runaway payload rather than a message: fail the client
 // instead of buffering until the sidecar runs out of memory.
 const MAX_LINE_BYTES = 1_048_576;
@@ -12,14 +14,6 @@ const HANDLER_FAILED = -32603;
 const EXIT_GRACE_MS = 500;
 // Enough of the CLI's own diagnostics to explain why it exited.
 const STDERR_TAIL_CHARS = 2_000;
-
-// Codex only echoes this back in its user agent. The sidecar is not told the
-// app's version, so `0.0.0` stands for "unknown" outside a dev run.
-const CLIENT_INFO = {
-  name: 'droidex',
-  title: 'DROIDEX',
-  version: process.env.npm_package_version ?? '0.0.0',
-};
 
 type JsonRpcId = number | string;
 
@@ -34,22 +28,6 @@ interface WireMessage {
 interface PendingRequest {
   resolve: (result: unknown) => void;
   reject: (error: Error) => void;
-}
-
-export interface InitializeResponse {
-  userAgent: string;
-}
-
-// Every connection starts here, after its handlers are registered: the
-// capability opt-in that exposes the thread and turn API, then the bare
-// `initialized` notification Codex waits for before serving anything else.
-export async function initialize(client: AppServerClient): Promise<InitializeResponse> {
-  const response = await client.request<InitializeResponse>('initialize', {
-    clientInfo: CLIENT_INFO,
-    capabilities: { experimentalApi: true },
-  });
-  client.notify('initialized');
-  return response;
 }
 
 export class AppServerClient {
@@ -169,20 +147,12 @@ export class AppServerClient {
   // Drained straight into the handlers: a queue between the process and the
   // transcript would drop streaming deltas the moment a turn outpaces it.
   private dispatch(line: string): void {
-    let parsed: unknown;
-    try {
-      parsed = JSON.parse(line);
-    } catch {
-      parsed = undefined;
-    }
-    // `null`, a bare number and an array are all valid JSON and none of them is
-    // a message; reading a field off one would throw out of the stdout listener.
-    if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
+    const message = wireMessage(line);
+    if (!message) {
       this.fail(new Error('Codex sent a line that is not a message; the session was ended.'));
       this.child.kill('SIGKILL');
       return;
     }
-    const message = parsed as WireMessage;
     if (message.method !== undefined && message.id !== undefined) {
       void this.serve(message.id, message.method, message.params);
       return;
@@ -212,8 +182,7 @@ export class AppServerClient {
     try {
       this.write({ id, result: await handler(params) });
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      this.write({ id, error: { code: HANDLER_FAILED, message } });
+      this.write({ id, error: { code: HANDLER_FAILED, message: errMsg(error) } });
     }
   }
 
@@ -256,5 +225,17 @@ export class AppServerClient {
         resolve(true);
       });
     });
+  }
+}
+
+// `null`, a bare number and an array are all valid JSON and none of them is a
+// message; reading a field off one would throw out of the stdout listener.
+function wireMessage(line: string): WireMessage | undefined {
+  try {
+    const parsed: unknown = JSON.parse(line);
+    if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) return undefined;
+    return parsed;
+  } catch {
+    return undefined;
   }
 }

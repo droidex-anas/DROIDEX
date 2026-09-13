@@ -158,3 +158,25 @@ export async function answerQuestions(
   }
   return byId;
 }
+
+// The approval and question cards one session is waiting on. A turn that ends
+// first has to take them off the screen: settling only Codex's side would leave
+// the prompt and its waiter behind, under the next turn.
+export class OpenPrompts {
+  private open = 0;
+
+  constructor(private readonly interactions: ProviderInteractions) {}
+
+  async ask<T>(request: () => Promise<T>): Promise<T> {
+    this.open += 1;
+    try {
+      return await request();
+    } finally {
+      this.open -= 1;
+    }
+  }
+
+  cancel(): void {
+    if (this.open > 0) this.interactions.cancelPending();
+  }
+}

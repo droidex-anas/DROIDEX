@@ -16,6 +16,32 @@ import {
   type ThreadItem,
 } from './codexItems.js';
 
+// A notification payload is untrusted: every reader below returns undefined
+// rather than throwing, so an unknown shape cannot escape the transport's
+// stdout listener.
+export interface CodexTurn {
+  id: string;
+  status?: string;
+  error?: { message: string } | null;
+}
+
+export function isObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
+}
+
+export function turnOf(params: unknown): CodexTurn | undefined {
+  if (!isObject(params) || !isObject(params.turn)) return undefined;
+  const turn = params.turn as Partial<CodexTurn>;
+  return typeof turn.id === 'string' ? (turn as CodexTurn) : undefined;
+}
+
+export function errorOf(params: unknown): { message: string; willRetry: boolean } | undefined {
+  if (!isObject(params) || !isObject(params.error)) return undefined;
+  const message = (params.error as { message?: unknown }).message;
+  if (typeof message !== 'string') return undefined;
+  return { message, willRetry: params.willRetry === true };
+}
+
 // The notifications this mapper translates. The session owns the rest of the
 // turn's lifecycle (thread/started, turn/started, turn/completed, error) and
 // everything else Codex reports is ignored.
@@ -55,8 +81,8 @@ export class CodexEventMapper {
   constructor(private readonly appSessionId: string) {}
 
   map(method: string, params: unknown): NormalizedEvent[] {
-    // The payloads below are read by shape; a notification without one is a
-    // version difference, not a reason to throw out of the transport.
+    // A notification without the payload below is a version difference, not a
+    // reason to throw.
     if (typeof params !== 'object' || params === null) return [];
     switch (method) {
       case 'item/agentMessage/delta':
