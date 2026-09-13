@@ -25,12 +25,13 @@ export function providerStatuses(
 function droidStatus(droidPath: string, models: ModelInfo[]): ProviderStatus {
   // resolveDroidPath() returns an absolute executable when the CLI is installed
   // and the bare `droid` name when nothing was found, so the path is the signal.
+  // A provider that cannot run offers no models, however stale the cache is.
   if (!isAbsolute(droidPath)) {
     return {
       provider: 'droid',
       readiness: 'missing',
       message: 'Droid CLI not found on this machine.',
-      models,
+      models: [],
     };
   }
   return { provider: 'droid', readiness: 'ready', models };

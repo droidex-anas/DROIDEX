@@ -1018,6 +1018,8 @@ export class SessionManager {
     });
     this.emit({ type: 'cli.install.done', phase: 'install', ok: exitCode === 0, exitCode });
     this.emit({ type: 'runtime.updated', status: this.runtime.status() });
+    // The resolved droid path may have changed, and Droid's readiness follows it.
+    this.emitProviderStatus();
     await this.emitEnvironment();
   }
 
@@ -1034,6 +1036,8 @@ export class SessionManager {
     });
     this.emit({ type: 'cli.install.done', phase: 'update', ok: exitCode === 0, exitCode });
     this.emit({ type: 'runtime.updated', status: this.runtime.status() });
+    // The resolved droid path may have changed, and Droid's readiness follows it.
+    this.emitProviderStatus();
     await this.emitEnvironment();
   }
 

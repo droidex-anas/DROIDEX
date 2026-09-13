@@ -9,21 +9,12 @@ import {
 import { AnimatePresence, motion } from 'framer-motion';
 import { FolderOpen, Plus } from 'lucide-react';
 import { VisualizeIcon } from '../icons/VisualizeIcon';
+import { fitToWindow } from './popoverFit';
 
 const ACCENT = 'var(--droid-accent)';
 
-const WINDOW_MARGIN_PX = 12;
 const PREFERRED_WIDTH_PX = 340;
 const MIN_WIDTH_PX = 200;
-
-// The menu opens from the plus button's left edge. On a cramped window that edge
-// leaves too little room, so it narrows to what is left and then slides back from
-// the window edge, rather than putting a row out of reach.
-function fitToWindow(anchorLeft: number, windowWidth: number) {
-  const room = windowWidth - anchorLeft - WINDOW_MARGIN_PX;
-  const width = Math.min(PREFERRED_WIDTH_PX, Math.max(MIN_WIDTH_PX, room));
-  return { width, left: Math.min(0, room - width) };
-}
 
 // One row of the menu. A row with `checked` toggles what it names, so it
 // reports the state its Added marker shows; a row without it runs an action.
@@ -109,11 +100,17 @@ export default function AddMenu({
   const [fit, setFit] = useState<{ width: number; left: number }>();
   useLayoutEffect(() => {
     if (!open) return;
-    // Measured from the trigger, not the menu, so a menu already slid left does
-    // not feed its own offset back in.
     const refit = () => {
       const trigger = triggerRef.current;
-      if (trigger) setFit(fitToWindow(trigger.getBoundingClientRect().left, window.innerWidth));
+      if (!trigger) return;
+      setFit(
+        fitToWindow(
+          trigger.getBoundingClientRect().left,
+          window.innerWidth,
+          PREFERRED_WIDTH_PX,
+          MIN_WIDTH_PX,
+        ),
+      );
     };
     refit();
     window.addEventListener('resize', refit);

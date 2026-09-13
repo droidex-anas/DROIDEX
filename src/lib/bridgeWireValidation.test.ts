@@ -33,7 +33,13 @@ test('rejects approval requests with unknown permission kinds', () => {
 });
 
 test('accepts provider statuses and rejects unknown providers or readiness', () => {
-  const status = { provider: 'droid', readiness: 'ready', models: [] };
+  const model = {
+    id: 'droid-core',
+    displayName: 'Droid Core',
+    isCustom: false,
+    supportedReasoningEfforts: ['low', 'high'],
+  };
+  const status = { provider: 'droid', readiness: 'ready', message: 'ok', models: [model] };
   assert.notEqual(serverWireMessage(batch({ type: 'provider.status', statuses: [status] })), null);
   assert.equal(
     serverWireMessage(
@@ -45,6 +51,28 @@ test('accepts provider statuses and rejects unknown providers or readiness', () 
     serverWireMessage(
       batch({ type: 'provider.status', statuses: [{ ...status, readiness: 'busy' }] }),
     ),
+    null,
+  );
+  assert.equal(
+    serverWireMessage(
+      batch({
+        type: 'provider.status',
+        statuses: [{ ...status, models: [{ ...model, id: '' }] }],
+      }),
+    ),
+    null,
+  );
+  assert.equal(
+    serverWireMessage(
+      batch({
+        type: 'provider.status',
+        statuses: [{ ...status, models: [{ ...model, supportedReasoningEfforts: [7] }] }],
+      }),
+    ),
+    null,
+  );
+  assert.equal(
+    serverWireMessage(batch({ type: 'provider.status', statuses: [{ ...status, message: 7 }] })),
     null,
   );
   assert.equal(serverWireMessage(batch({ type: 'provider.status', statuses: {} })), null);
