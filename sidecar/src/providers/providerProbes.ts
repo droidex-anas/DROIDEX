@@ -1,37 +1,44 @@
 import type { ProviderStatus } from '../protocol.js';
+import type { ProviderKind } from './providerKind.js';
 
-// Claude Code's readiness costs a CLI process to learn, so it is probed on
-// demand and remembered: provider status can then be emitted on any event
-// without spawning anything. One probe runs at a time; a refresh that arrives
-// while one is in flight joins it instead of starting a second CLI.
+// Claude Code's and Codex's readiness each cost a CLI process to learn, so they
+// are probed on demand and remembered: provider status can then be emitted on
+// any event without spawning anything. One round of probes runs at a time; a
+// refresh that arrives while one is in flight joins it instead of starting more.
 export class ProviderProbes {
-  private latestClaude?: ProviderStatus;
-  private inFlight?: Promise<ProviderStatus>;
+  private readonly latest = new Map<ProviderKind, ProviderStatus>();
+  private inFlight?: Promise<void>;
   private abort?: AbortController;
 
-  constructor(private readonly probeClaude: (signal: AbortSignal) => Promise<ProviderStatus>) {}
+  constructor(
+    private readonly probes: ReadonlyMap<
+      ProviderKind,
+      (signal: AbortSignal) => Promise<ProviderStatus>
+    >,
+  ) {}
 
-  // The last answer, or undefined while nothing has been probed yet — which the
-  // picker reads as "still checking".
-  get claude(): ProviderStatus | undefined {
-    return this.latestClaude;
+  // The last answer, or undefined while a provider has not been probed yet —
+  // which the picker reads as "still checking".
+  status(provider: ProviderKind): ProviderStatus | undefined {
+    return this.latest.get(provider);
   }
 
-  refresh(): Promise<ProviderStatus> {
+  refresh(): Promise<void> {
     if (this.inFlight) return this.inFlight;
     const abort = new AbortController();
     this.abort = abort;
-    const probe = this.probeClaude(abort.signal)
-      .then((status) => {
-        this.latestClaude = status;
-        return status;
-      })
+    const round = Promise.all(
+      [...this.probes].map(async ([provider, probe]) => {
+        this.latest.set(provider, await probe(abort.signal));
+      }),
+    )
+      .then(() => undefined)
       .finally(() => {
-        if (this.inFlight === probe) this.inFlight = undefined;
+        if (this.inFlight === round) this.inFlight = undefined;
         if (this.abort === abort) this.abort = undefined;
       });
-    this.inFlight = probe;
-    return probe;
+    this.inFlight = round;
+    return round;
   }
 
   // Shutdown: a probe still waiting on a CLI must not hold the process open.

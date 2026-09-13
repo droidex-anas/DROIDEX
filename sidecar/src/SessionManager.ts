@@ -107,6 +107,7 @@ import {
   type ProviderKind,
 } from './providers/providerKind.js';
 import { ClaudeProvider } from './providers/claude/ClaudeProvider.js';
+import { CodexProvider } from './providers/codex/CodexProvider.js';
 import { requireDroidSession } from './providers/droid/DroidProviderSession.js';
 import { ProviderProbes } from './providers/providerProbes.js';
 import { ProviderTranscriptFile } from './providers/ProviderTranscriptFile.js';
@@ -261,8 +262,12 @@ export class SessionManager {
   private readonly nextChildSessionId: () => string;
   private readonly droidProvider: DroidProvider;
   private readonly claudeProvider = new ClaudeProvider();
-  private readonly providerProbes = new ProviderProbes((signal) =>
-    this.claudeProvider.probe(signal),
+  private readonly codexProvider = new CodexProvider();
+  private readonly providerProbes = new ProviderProbes(
+    new Map([
+      [this.claudeProvider.kind, (signal: AbortSignal) => this.claudeProvider.probe(signal)],
+      [this.codexProvider.kind, (signal: AbortSignal) => this.codexProvider.probe(signal)],
+    ]),
   );
 
   constructor(
@@ -986,20 +991,20 @@ export class SessionManager {
   }
 
   // Droid's readiness follows the resolved CLI path and the catalog this
-  // manager already caches; Claude's comes from its last probe.
+  // manager already caches; every other provider's comes from its last probe.
   private emitProviderStatus(): void {
     this.emit({
       type: 'provider.status',
       statuses: providerStatuses(
         this.runtime.status().droidPath,
         this.cachedModels ?? [],
-        this.providerProbes.claude,
+        (provider) => this.providerProbes.status(provider),
       ),
     });
   }
 
-  // Learns what Claude Code can do right now (one CLI process, no turn) and
-  // republishes. Concurrent refreshes share the one probe.
+  // Learns what the CLI-backed providers can do right now (one process each, no
+  // turn) and republishes. Concurrent refreshes share the one round.
   private async refreshProviderStatus(): Promise<void> {
     await this.providerProbes.refresh();
     if (this.shutdownPromise) return;
@@ -1762,10 +1767,17 @@ export class SessionManager {
     if (appSessionId) this.registry.updateSummary(appSessionId, { title: safeTitle });
   }
 
+  // Every provider this build knows is routed here, so a new kind fails the
+  // build rather than a session.
   private providerFor(kind: ProviderKind): Provider {
-    if (kind === this.droidProvider.kind) return this.droidProvider;
-    if (kind === this.claudeProvider.kind) return this.claudeProvider;
-    throw new Error(`Unsupported provider: ${kind}`);
+    switch (kind) {
+      case 'droid':
+        return this.droidProvider;
+      case 'claude':
+        return this.claudeProvider;
+      case 'codex':
+        return this.codexProvider;
+    }
   }
 
   // The model and reasoning a session generates with reach whatever holds it:

@@ -1,24 +1,22 @@
 import { isAbsolute } from 'node:path';
 import type { ModelInfo, ProviderStatus } from '../protocol.js';
-import { PROVIDER_KINDS } from './providerKind.js';
-
-const NOT_BUILT_YET = 'Not available in this build yet';
+import { PROVIDER_KINDS, type ProviderKind } from './providerKind.js';
 
 // What each provider can do for the user right now, ordered by PROVIDER_KINDS.
 // Pure over what the manager already knows so it can be emitted on any event
 // without probing: `droidPath` is DroidRuntime's resolved CLI path,
-// `droidModels` the catalog the manager publishes, and `claude` the last answer
-// from ProviderProbes. Claude is omitted until it has been probed once, which
-// the picker reads as "still checking".
+// `droidModels` the catalog the manager publishes, and `probed` the last answer
+// from ProviderProbes. A provider is omitted until it has been probed once,
+// which the picker reads as "still checking".
 export function providerStatuses(
   droidPath: string,
   droidModels: ModelInfo[],
-  claude: ProviderStatus | undefined,
+  probed: (provider: ProviderKind) => ProviderStatus | undefined,
 ): ProviderStatus[] {
   return PROVIDER_KINDS.flatMap((provider) => {
     if (provider === 'droid') return [droidStatus(droidPath, droidModels)];
-    if (provider === 'claude') return claude ? [claude] : [];
-    return [{ provider, readiness: 'missing', message: NOT_BUILT_YET, models: [] } as const];
+    const status = probed(provider);
+    return status ? [status] : [];
   });
 }
 
