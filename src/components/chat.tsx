@@ -352,7 +352,6 @@ export const FeedItemView = memo(function FeedItemView({
         <GeneratedImageCard
           event={item.event}
           output={item.result?.text}
-          error={item.result?.isError === true}
           running={live && !item.result}
         />
       );
