@@ -813,6 +813,17 @@ export default function PromptInput({
     chatScoped ? activeSession.modelId : state.agentConfig.primary.modelId,
     composerModels,
   );
+  // The one model selection a new chat is created with. Built from the
+  // validated id so no path can send a model the chat's provider never
+  // published, and carrying reasoning only where a provider honours it.
+  const draftModelSettings = droidComposer
+    ? {
+        modelId: state.agentConfig.primary.modelId,
+        reasoningEffort: state.agentConfig.primary.reasoning,
+      }
+    : primaryModelId
+      ? { modelId: primaryModelId }
+      : {};
   const selectedModel = primaryModelId
     ? composerModels.find((m) => m.id === primaryModelId)
     : undefined;
@@ -1041,7 +1052,7 @@ export default function PromptInput({
       const selectedDir = state.draftChat?.cwd ?? (await pickDirectory());
       if (!selectedDir) return;
       if (updateInterruptedSubmit()) return;
-      const { primary, worker, validator } = state.agentConfig;
+      const { worker, validator } = state.agentConfig;
       const clientRef = newClientRef();
       const title = (displayText || skillNames[0] || 'Mission').slice(0, 48);
       startTurnStarting(clientRef);
@@ -1070,8 +1081,7 @@ export default function PromptInput({
           provider: draftProvider,
           interactionMode: 'agi',
           autonomy,
-          modelId: primary.modelId,
-          reasoningEffort: primary.reasoning,
+          ...draftModelSettings,
           compactionModel:
             state.compactionModel === 'current-model' ? undefined : state.compactionModel,
           // Only user-configured limits may override the daemon's model default.
@@ -1093,7 +1103,6 @@ export default function PromptInput({
     // Draft/default chat: first message creates the session. No workspace is required.
     if (!activeSession) {
       const selectedDir = state.draftChat?.cwd ?? '';
-      const { primary } = state.agentConfig;
       const clientRef = newClientRef();
       const title = (displayText || skillNames[0] || 'Chat').slice(0, 48);
       startTurnStarting(clientRef);
@@ -1120,11 +1129,7 @@ export default function PromptInput({
           provider: draftProvider,
           interactionMode: isSpecMode ? 'spec' : 'auto',
           autonomy: draftAutonomy,
-          ...(droidComposer
-            ? { modelId: primary.modelId, reasoningEffort: primary.reasoning }
-            : primaryModelId
-              ? { modelId: primaryModelId }
-              : {}),
+          ...draftModelSettings,
           compactionModel:
             state.compactionModel === 'current-model' ? undefined : state.compactionModel,
           ...compactionSettingsSnapshot(compactionSettingsInput),

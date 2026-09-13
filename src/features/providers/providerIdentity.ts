@@ -44,14 +44,19 @@ export function providerUnavailableReason(status: ProviderStatus | undefined): s
 const NO_MODELS: ModelInfo[] = [];
 
 // The models a composer offers for a provider. Droid's are the CLI catalog the
-// sidecar publishes; every other provider carries its own on its status.
+// sidecar publishes; every other provider carries its own on its status. A
+// provider that cannot run offers none, however fresh the cache is — the rule
+// providerStatus.ts already applies to a missing CLI. A provider with no status
+// yet has not been judged, so its catalog still shows.
 export function providerModelCatalog(
   provider: ProviderKind,
   droidModels: ModelInfo[],
   statuses: ProviderStatus[],
 ): ModelInfo[] {
+  const status = statuses.find((entry) => entry.provider === provider);
+  if (status && status.readiness !== 'ready') return NO_MODELS;
   if (provider === 'droid') return droidModels;
-  return statuses.find((status) => status.provider === provider)?.models ?? NO_MODELS;
+  return status?.models ?? NO_MODELS;
 }
 
 // A model chosen from another provider's catalog is not a selection here. The
