@@ -1,7 +1,12 @@
 import { extractFileChange, type FileChange } from '../lib/diff';
 import { mergeChildSessionSpawn } from '../lib/childSessions';
 import { classifyEvent } from '../lib/transcript';
-import { hasTodoPayload, isChildSessionTool, isSubagentBookkeepingTool } from '../lib/tools';
+import {
+  hasTodoPayload,
+  isChildSessionTool,
+  isImageGenerationTool,
+  isSubagentBookkeepingTool,
+} from '../lib/tools';
 import type { TranscriptEvent } from '../types/bridge';
 import type { TurnChangesItem, TurnFile } from './TurnChangesPanel';
 
@@ -48,6 +53,9 @@ export type FeedItem =
   // One contiguous run of Task spawns (a turn's subagent wave); rendered as a
   // single subagents dock card scoped to just these spawns.
   | { type: 'child_sessions'; key: string; events: TranscriptEvent[] }
+  // An image the agent generated: its own card in the assistant's column, never
+  // folded into the tool run, so the generating state is visible while it runs.
+  | { type: 'generated_image'; key: string; event: TranscriptEvent; result?: TranscriptEvent }
   | { type: 'tools'; key: string; events: TranscriptEvent[] }
   | { type: 'worked'; key: string; items: FeedItem[]; durationMs: number }
   | TurnChangesItem;
@@ -177,6 +185,10 @@ export function buildFeed(
   // as an error instead. Pre-scanned so it works regardless of call/result order.
   const childSessionResultIds = new Set<string>();
   const planResultIds = new Set<string>();
+  // The image card speaks for its own result, success or failure alike; a stray
+  // row would repeat the path or the reason twice.
+  const imageResultIds = new Set<string>();
+  const imageResults = new Map<string, TranscriptEvent>();
   for (const e of events) {
     if (e.kind !== 'tool_call' || !e.toolUseId) continue;
     // Subagent polls (TaskOutput/TaskStop) belong to the wave card the same way a
@@ -187,20 +199,26 @@ export function buildFeed(
       childSessionResultIds.add(e.toolUseId);
     else if (groupChildSessions && isSubagentBookkeepingTool(e.toolName))
       childSessionResultIds.add(e.toolUseId);
+    else if (isImageGenerationTool(e.toolName)) imageResultIds.add(e.toolUseId);
     else if (classifyEvent(e) === 'plan_update') planResultIds.add(e.toolUseId);
   }
   const isCardResult = (e: TranscriptEvent) =>
     e.kind === 'tool_result' &&
     !!e.toolUseId &&
-    (childSessionResultIds.has(e.toolUseId) || planResultIds.has(e.toolUseId));
+    (childSessionResultIds.has(e.toolUseId) ||
+      planResultIds.has(e.toolUseId) ||
+      imageResultIds.has(e.toolUseId));
   // toolUseId → its successful result, so a tools group can reclaim a result that
   // a child session spawn split away from its call (the spawn breaks the group, so the
   // call is finalized before its result is reached). Pulled results are marked
   // claimed and skipped when iteration later reaches them, instead of rendering
   // as a detached raw "Tool result".
   const resultById = new Map<string, TranscriptEvent>();
-  for (const e of events)
-    if (e.kind === 'tool_result' && e.toolUseId && !e.isError) resultById.set(e.toolUseId, e);
+  for (const e of events) {
+    if (e.kind !== 'tool_result' || !e.toolUseId) continue;
+    if (imageResultIds.has(e.toolUseId)) imageResults.set(e.toolUseId, e);
+    if (!e.isError) resultById.set(e.toolUseId, e);
+  }
   const claimed = new Set<TranscriptEvent>();
   let i = 0;
   while (i < events.length) {
@@ -301,6 +319,20 @@ export function buildFeed(
         if (isResultFor(ev, events[i])) i++;
         continue;
       }
+      if (isImageGenerationTool(ev.toolName)) {
+        // A failed result is claimed too: isResultFor keeps failures visible for
+        // ordinary tools, but here the card is what shows the failure.
+        const result = ev.toolUseId ? imageResults.get(ev.toolUseId) : undefined;
+        if (result) claimed.add(result);
+        items.push({
+          type: 'generated_image',
+          key: ev.id,
+          event: ev,
+          ...(result ? { result } : {}),
+        });
+        i++;
+        continue;
+      }
       if (childSessionCards && isChildSessionTool(ev.toolName, ev.toolArgs)) {
         const key = ev.toolUseId ?? ev.id;
         const at = childSessionIndex.get(key);
@@ -369,6 +401,9 @@ export function buildFeed(
           i++;
           continue;
         }
+        // A generated image breaks the group for the same reason a spawn does:
+        // it is content with its own card, not a step in the run.
+        if (t.kind === 'tool_call' && isImageGenerationTool(t.toolName)) break;
         // A child session spawn must break the group so the outer loop can render it
         // as its own card instead of folding it into the generic tools group.
         if (

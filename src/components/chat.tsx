@@ -23,6 +23,7 @@ import { correlateResults, ErrorLine, ThinkingItem } from './transcript/rows';
 import { DiffGroup, ToolGroupItem, WorkedGroup } from './transcript/groups';
 import { UserBubble } from './transcript/UserBubble';
 import { ChildSessionLine, ChildSessionsWave } from './transcript/ChildSessionLine';
+import { GeneratedImageCard } from './media/GeneratedImageCard';
 
 export { StreamingCaret } from './StreamingCaret';
 // Row chrome and renderers live in the transcript modules; re-export the ones
@@ -344,6 +345,15 @@ export const FeedItemView = memo(function FeedItemView({
           onOpenDiff={onOpenDiff}
           onOpenReviewFile={onOpenReviewFile}
           inlineDiffs={inlineDiffs}
+        />
+      );
+    case 'generated_image':
+      return (
+        <GeneratedImageCard
+          event={item.event}
+          output={item.result?.text}
+          error={item.result?.isError === true}
+          running={live && !item.result}
         />
       );
     case 'tools':
