@@ -245,6 +245,19 @@ export interface ModelInfo {
   defaultReasoningEffort?: ReasoningEffort;
 }
 
+// What a provider can do for the user right now. Derived from what the sidecar
+// already knows about each runtime; see providers/providerStatus.ts.
+export type ProviderReadiness = 'ready' | 'missing' | 'unauthenticated' | 'unsupported' | 'error';
+
+export interface ProviderStatus {
+  provider: ProviderKind;
+  readiness: ProviderReadiness;
+  version?: string;
+  accountLabel?: string;
+  message?: string;
+  models: ModelInfo[];
+}
+
 export interface FactoryDefaultSettings {
   modelId?: string;
   reasoningEffort?: ReasoningEffort;
@@ -575,6 +588,7 @@ export type ClientCommand =
   | { type: 'cli.install'; channel: InstallChannel }
   | { type: 'cli.update'; channel?: InstallChannel }
   | { type: 'catalog.models' }
+  | { type: 'provider.refresh' }
   | { type: 'catalog.tools'; providerSessionId?: string }
   | { type: 'catalog.skills'; providerSessionId?: string }
   | { type: 'settings.defaults' }
@@ -857,6 +871,7 @@ export type ServerEvent =
       items: unknown[];
       providerSessionId?: string | null;
     }
+  | { type: 'provider.status'; statuses: ProviderStatus[] }
   | { type: 'settings.defaults'; defaults: FactoryDefaultSettings }
   | {
       type: 'error';

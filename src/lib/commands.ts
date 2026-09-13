@@ -82,6 +82,9 @@ export const requestRuntimeStatus = () => {
 export const listModels = () => {
   bridge.send({ type: 'catalog.models' });
 };
+export const refreshProviders = () => {
+  bridge.send({ type: 'provider.refresh' });
+};
 export const listSkills = (providerSessionId?: string) => {
   bridge.send({ type: 'catalog.skills', providerSessionId });
 };

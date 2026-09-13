@@ -64,6 +64,8 @@ import type {
   PermissionRequest,
   SessionQuestion,
   ModelInfo,
+  ProviderKind,
+  ProviderStatus,
   ChildSessionSummary,
   SkillInfo,
   ReasoningEffort,
@@ -75,6 +77,7 @@ import { addWorkspaceCwd, removeWorkspaceCwd } from '../lib/workspaces';
 import { createOrderedActionBatcher, type OrderedActionBatcher } from './orderedActionBatcher';
 import { isHistoryStatusError, applyHistoryServerEvent } from '../lib/historyHealth';
 import { loadDefaultAutonomy, saveDefaultAutonomy } from '../lib/autonomy';
+import { loadDraftProvider, saveDraftProvider } from '../features/providers/providerDraft';
 import { loadToolActivity, saveToolActivity, type ToolActivitySettings } from '../lib/toolActivity';
 import {
   applyFactoryCompactionDefaults,
@@ -339,6 +342,12 @@ export interface AppState {
   models: ModelInfo[];
   agentConfig: AgentConfig;
 
+  // What each provider can do for the user right now, as last reported by the
+  // sidecar, and the provider the next new session is created on. The draft
+  // pick is sticky: it survives session switches and restarts.
+  providerStatuses: ProviderStatus[];
+  draftProvider: ProviderKind;
+
   // Global compaction model applied to every session. 'current-model' = use
   // each session's active model; otherwise a specific model id.
   compactionModel: string;
@@ -602,6 +611,8 @@ type Action =
 
   // Models / per-agent config
   | { type: 'MODELS_LIST'; models: ModelInfo[] }
+  | { type: 'PROVIDER_STATUSES'; statuses: ProviderStatus[] }
+  | { type: 'SET_DRAFT_PROVIDER'; provider: ProviderKind }
   | {
       type: 'SKILLS_LIST';
       skills: SkillInfo[];
@@ -722,6 +733,8 @@ export const initialState: AppState = {
   selectedFeatureId: persistedUiState.selectedFeatureId ?? null,
   selectedChild: null,
   models: [],
+  providerStatuses: [],
+  draftProvider: loadDraftProvider(),
   compactionModel: loadCompactionModel(),
   compactionTokenLimit: loadCompactionTokenLimit(),
   compactionTokenLimitPerModel: loadCompactionTokenLimitPerModel(),
@@ -1981,6 +1994,13 @@ function baseReducer(state: AppState, action: Action): AppState {
         agentConfig: saveAgentConfig(sanitizeAgentConfig(state.agentConfig, action.models)),
       };
 
+    case 'PROVIDER_STATUSES':
+      return { ...state, providerStatuses: action.statuses };
+
+    case 'SET_DRAFT_PROVIDER':
+      saveDraftProvider(action.provider);
+      return { ...state, draftProvider: action.provider };
+
     case 'SKILLS_LIST':
       return {
         ...state,
@@ -2305,6 +2325,8 @@ export function adaptEvent(ev: ServerEvent): Action | null {
         };
       }
       return null;
+    case 'provider.status':
+      return { type: 'PROVIDER_STATUSES', statuses: ev.statuses };
     case 'settings.defaults':
       return { type: 'FACTORY_DEFAULTS', defaults: ev.defaults };
     case 'browser.updated':

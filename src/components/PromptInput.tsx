@@ -99,6 +99,8 @@ import type { ComposerHandle } from './composer/ComposerEditor';
 import { DraftSelections } from './composer/DraftSelections';
 import ComposerMenu, { type MenuItem, type SlashCommand } from './ComposerMenu';
 import ModelSelectorPopover from './ModelSelectorPopover';
+import ProviderPicker from '../features/providers/ProviderPicker';
+import { effectiveProvider } from '../features/providers/providerDraft';
 import AutonomySelector from './AutonomySelector';
 import { AUTONOMY_LABELS, missionStartAllowed } from '../lib/autonomy';
 import {
@@ -228,6 +230,8 @@ export default function PromptInput({
       defaultAutonomy: current.defaultAutonomy,
       draftAutonomy: current.draftAutonomy,
       draftChat: current.draftChat,
+      draftProvider: current.draftProvider,
+      providerStatuses: current.providerStatuses,
       imagePasteQuality: current.imagePasteQuality,
       lastCreatedSessionRequest: current.lastCreatedSessionRequest,
       liveEnterBehavior: current.liveEnterBehavior,
@@ -256,6 +260,7 @@ export default function PromptInput({
   const [historyIndex, setHistoryIndex] = useState<number | null>(null);
   const draftBeforeHistory = useRef('');
   const [modelsOpen, setModelsOpen] = useState(false);
+  const [providerOpen, setProviderOpen] = useState(false);
   const [menuIndex, setMenuIndex] = useState(0);
   const [files, setFiles] = useState<string[]>([]);
   const [filesCwd, setFilesCwd] = useState<string | null>(null);
@@ -577,6 +582,7 @@ export default function PromptInput({
   const overlayOpen = [
     trigger,
     modelsOpen,
+    providerOpen,
     addMenuOpen,
     feedbackReport,
     draftEditing.menu,
@@ -586,6 +592,12 @@ export default function PromptInput({
   useEffect(() => {
     if (!isLive) setSendHover(false);
   }, [isLive]);
+
+  // The provider chip turns into a plain mark once a session exists, so a menu
+  // left open by the activation must not keep the overlay flag raised.
+  useEffect(() => {
+    if (state.activeAppSessionId) setProviderOpen(false);
+  }, [state.activeAppSessionId]);
 
   useEffect(() => {
     if (
@@ -762,6 +774,9 @@ export default function PromptInput({
   // Autonomy snapshot for a session this composer would create: the draft
   // override when the user picked one, otherwise the persisted app default.
   const draftAutonomy = state.draftAutonomy ?? state.defaultAutonomy;
+  // A stored pick this build cannot run falls back to Droid, and the chip shows
+  // the fallback rather than a selection the picker would render as disabled.
+  const draftProvider = effectiveProvider(state.draftProvider, state.providerStatuses);
   const [missionAutonomyGateOpen, setMissionAutonomyGateOpen] = useState(false);
   // The gate's premise is gone once the draft is at High (e.g. raised through
   // the selector while the gate is showing).
@@ -1022,6 +1037,7 @@ export default function PromptInput({
           title,
           goal: composed,
           sessionPurpose: 'mission-control',
+          provider: draftProvider,
           interactionMode: 'agi',
           autonomy,
           modelId: primary.modelId,
@@ -1071,6 +1087,7 @@ export default function PromptInput({
           title,
           goal: composed,
           sessionPurpose: 'chat',
+          provider: draftProvider,
           interactionMode: isSpecMode ? 'spec' : 'auto',
           autonomy: draftAutonomy,
           modelId: primary.modelId,
@@ -1674,6 +1691,16 @@ export default function PromptInput({
               onToggleVisualize={() => {
                 setVisualizeSelected(!visualizeSelected);
                 editorRef.current?.focus();
+              }}
+            />
+
+            <ProviderPicker
+              value={activeSession ? activeSession.provider : draftProvider}
+              locked={activeSession !== null}
+              open={providerOpen}
+              onOpenChange={setProviderOpen}
+              onSelect={(provider) => {
+                dispatch({ type: 'SET_DRAFT_PROVIDER', provider });
               }}
             />
 
