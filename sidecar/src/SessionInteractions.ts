@@ -234,7 +234,6 @@ export class SessionInteractions {
       // its session disagree, so the provider is put back where the chat is. If
       // that fails too, the chat still reads as Spec while the session is not,
       // and the user has to hear it.
-      this.reportSpecExitFailure(appSessionId, error);
       try {
         await this.dependencies.setProviderSpecMode(appSessionId, true);
       } catch (restoreError) {
@@ -244,6 +243,7 @@ export class SessionInteractions {
           message: `The session left plan mode but could not be put back: ${errMsg(restoreError)}. Toggle Spec off and on to resync.`,
         });
       }
+      this.reportSpecExitFailure(appSessionId, error);
       return false;
     }
   }
