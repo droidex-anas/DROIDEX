@@ -24,6 +24,7 @@ import {
   createModelDefaultsForMode,
   errMsg,
   requireAutonomyForCommand,
+  resumeHandle,
 } from './sessionHelpers.js';
 import type { ProviderInteractions } from './providers/interactions.js';
 import { requireProviderKind, type ProviderKind } from './providers/providerKind.js';
@@ -35,9 +36,6 @@ export type SessionCreateCommand = Extract<ClientCommand, { type: 'session.creat
 // An unbound summary predates the binding, so it resumes on the default
 // provider; an unroutable one fails at the provider lookup.
 const boundProvider = (summary: SessionSummary | undefined) => summary?.provider;
-// The provider's own resume handle, when the stored summary carries one.
-const resumeHandle = (summary: SessionSummary | undefined) =>
-  summary?.resumeId ? { resumeId: summary.resumeId } : {};
 
 async function sessionRuntimeCwd(appCwd: string): Promise<string> {
   if (appCwd) return appCwd;

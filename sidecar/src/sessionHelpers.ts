@@ -351,6 +351,10 @@ interface BuildResumedSessionInput {
   now: number;
 }
 
+// The provider's own resume handle, when a stored summary carries one.
+export const resumeHandle = (summary: SessionSummary | undefined) =>
+  summary?.resumeId ? { resumeId: summary.resumeId } : {};
+
 export function buildResumedSession(input: BuildResumedSessionInput): {
   summary: SessionSummary;
   exposedCompaction: CompactionTokenLimitPatch;
@@ -362,7 +366,7 @@ export function buildResumedSession(input: BuildResumedSessionInput): {
       providerSessionId: input.providerSessionId,
       compactedFromProviderSessionIds: input.historical?.compactedFromProviderSessionIds ?? [],
       provider: input.historical?.provider ?? DEFAULT_PROVIDER,
-      ...(input.historical?.resumeId ? { resumeId: input.historical.resumeId } : {}),
+      ...resumeHandle(input.historical),
       ...classification,
       ...resumedLocation(input),
       ...resumedModelSettings(input),
