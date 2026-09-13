@@ -22,14 +22,7 @@ interface TimelineHistory {
   recordEvent(event: TranscriptEvent): void;
 }
 
-// Durable transcript for a session whose provider keeps no session file of its
-// own. Registered per live session by the manager, which owns the provider
-// decision; a Droid session has none and the timeline does nothing for it.
-interface TimelineTranscript {
-  appendPrompt(text: string): void;
-  append(event: TranscriptEvent): void;
-  flush(): void;
-}
+import { TimelineTranscripts, type TimelineTranscript } from './timelineTranscripts.js';
 type TimelineError = Omit<Extract<ServerEvent, { type: 'error' }>, 'type'>;
 
 export interface SessionTimelineLoaders {
@@ -127,7 +120,7 @@ export class SessionTimeline {
   private readonly loaders: SessionTimelineLoaders;
   private readonly streaming: StreamingDeltaCoalescer;
   private readonly streamingFlushFailures = new Map<string, StreamingTranscriptPersistenceError>();
-  private readonly transcripts = new Map<string, TimelineTranscript>();
+  private readonly transcripts = new TimelineTranscripts();
 
   constructor(private readonly dependencies: SessionTimelineDependencies) {
     this.loaders = dependencies.loaders ?? {
@@ -297,20 +290,17 @@ export class SessionTimeline {
   }
 
   useTranscript(appSessionId: string, transcript: TimelineTranscript): void {
-    this.transcripts.set(appSessionId, transcript);
+    this.transcripts.use(appSessionId, transcript);
   }
 
   releaseTranscript(appSessionId: string): void {
-    const transcript = this.transcripts.get(appSessionId);
-    if (!transcript) return;
-    this.transcripts.delete(appSessionId);
-    transcript.flush();
+    this.transcripts.release(appSessionId);
   }
 
   // A prompt joins the durable transcript without becoming a live event: the
   // renderer already rendered it from the send.
   recordPrompt(appSessionId: string, prompt: string): void {
-    this.transcripts.get(appSessionId)?.appendPrompt(prompt);
+    this.transcripts.recordPrompt(appSessionId, prompt);
   }
 
   append(event: TranscriptEvent): void {
@@ -340,7 +330,7 @@ export class SessionTimeline {
       this.streaming.endTurn(appSessionId, sourceSessionId);
       // The primary tail is recorded, so its open stored message is complete. A
       // child's turn settling must not split the parent's message in two.
-      if (sourceSessionId === appSessionId) this.transcripts.get(appSessionId)?.flush();
+      if (sourceSessionId === appSessionId) this.transcripts.flush(appSessionId);
     } catch (error) {
       flushError =
         error instanceof Error
@@ -401,8 +391,13 @@ export class SessionTimeline {
 
   private recordAndEmit(event: TranscriptEvent): void {
     this.dependencies.history.recordEvent(event);
-    // After coalescing, so one stored block is one settled run of output.
-    this.transcripts.get(event.appSessionId)?.append(event);
+    this.transcripts.append(event, (message) => {
+      this.dependencies.emitError({
+        appSessionId: event.appSessionId,
+        message: `Could not persist the session transcript: ${message}`,
+        recoverable: true,
+      });
+    });
     this.emitRecordedEvent(event);
   }
 
