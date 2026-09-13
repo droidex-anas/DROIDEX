@@ -1209,13 +1209,16 @@ export class SessionManager {
   ): boolean {
     if (agent !== 'primary' || this.sessionProvider(appSessionId) === DEFAULT_PROVIDER)
       return false;
-    const stored = this.registry.updateStoredSummary(appSessionId, patch);
-    if (!stored) return false;
-    writeProviderSessionSettings(stored.appSessionId, {
-      modelId: stored.modelId ?? null,
-      ...(stored.reasoningEffort ? { reasoningEffort: stored.reasoningEffort } : {}),
+    const current = this.registry.resolveSummary(appSessionId);
+    if (!current) return false;
+    // The file is written first: a summary published against settings that
+    // never reached disk would resume on a different model than it shows.
+    const next = { ...current, ...patch };
+    writeProviderSessionSettings(current.appSessionId, {
+      modelId: next.modelId ?? null,
+      ...(next.reasoningEffort ? { reasoningEffort: next.reasoningEffort } : {}),
     });
-    return true;
+    return this.registry.updateStoredSummary(appSessionId, patch) !== undefined;
   }
 
   private rememberPendingAgentSettings(
@@ -1680,16 +1683,16 @@ export class SessionManager {
     if (!session.setInteractionMode) return;
     try {
       await session.setInteractionMode(mode);
-      if (liveSession.droid && mode === 'spec')
-        await this.alignSpecModeModel(liveSession.droid, liveSession.summary);
-      this.registry.updateSummary(stableAppSessionId, { interactionMode: mode });
       // Compaction or a close can replace the session while the provider is
       // answering; the mode belongs to the session that asked for it, not to
       // whatever took its place.
       if (!this.isCurrentPrimarySession(liveSession)) return;
+      if (liveSession.droid && mode === 'spec')
+        await this.alignSpecModeModel(liveSession.droid, liveSession.summary);
+      if (!this.isCurrentPrimarySession(liveSession)) return;
+      this.registry.updateSummary(stableAppSessionId, { interactionMode: mode });
       // The mode determines the default model when none is pinned, so the
       // auto-compaction threshold must be recomputed for the new mode.
-      if (!this.isCurrentPrimarySession(liveSession)) return;
       const compactionTarget = this.primaryCompactionTarget(liveSession);
       if (compactionTarget) await this.compaction.rearmPrimary(compactionTarget);
     } catch (err) {

@@ -155,7 +155,9 @@ export class SessionRegistry<TLive extends RegisteredSession> {
     const current = this.resolveCanonicalSummary(id);
     if (!current || this.sessions.has(current.appSessionId)) return undefined;
     const updated = this.withPatch(current, patch, false);
-    this.persist(updated);
+    // Durable before it is published: a closed chat has no live session to
+    // republish it later, so an enqueued-only write must not read as stored.
+    this.persistStrict(updated);
     this.cacheHistoricalSummary(updated);
     this.publish(updated);
     return updated;

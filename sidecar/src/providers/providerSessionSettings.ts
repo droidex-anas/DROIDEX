@@ -6,6 +6,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { providerSessionsDir } from '../droidexPaths.js';
+import { objectValue } from '../values.js';
 import type { ProviderModelSettings } from './session.js';
 
 export function writeProviderSessionSettings(
@@ -18,10 +19,10 @@ export function writeProviderSessionSettings(
   if (!existsSync(join(directory, `${appSessionId}.jsonl`))) return;
   const path = join(directory, `${appSessionId}.settings.json`);
   const stored = readSettings(path);
-  // A null model is "back to the provider's own default", which is what the
-  // absence of the setting already means.
-  if (modelId === null) delete stored.modelId;
-  else if (modelId !== undefined) stored.modelId = modelId;
+  // Written even for "back to the provider's own default": a null here is the
+  // record that the chat has no model of its own, which dropping the key would
+  // leave to the transcript head's original one.
+  if (modelId !== undefined) stored.modelId = modelId;
   if (reasoningEffort) stored.reasoningEffort = reasoningEffort;
   mkdirSync(directory, { recursive: true });
   writeFileSync(path, JSON.stringify(stored));
@@ -29,7 +30,7 @@ export function writeProviderSessionSettings(
 
 function readSettings(path: string): Record<string, unknown> {
   try {
-    return JSON.parse(readFileSync(path, 'utf8')) as Record<string, unknown>;
+    return objectValue(JSON.parse(readFileSync(path, 'utf8'))) ?? {};
   } catch {
     return {};
   }
