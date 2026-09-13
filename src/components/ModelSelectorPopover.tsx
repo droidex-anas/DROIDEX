@@ -10,6 +10,7 @@ import {
   planChildModelUpdate,
   type ExactChildSettingsTarget,
 } from '../lib/exactChildSettings';
+import { effectiveProvider } from '../features/providers/providerDraft';
 import { providerModelCatalog } from '../features/providers/providerIdentity';
 import ModelCatalogList, { defaultModelOf, effortsFor, stepEffort } from './ModelCatalogList';
 
@@ -64,8 +65,11 @@ export default function ModelSelectorPopover({
       activeSessionReasoning: activeSession?.reasoningEffort,
       agentConfig: current.agentConfig,
       // The chat's provider owns the catalog: Droid's comes from the CLI,
-      // every other provider reports its own with its status.
-      provider: activeSession?.provider ?? current.draftProvider,
+      // every other provider reports its own with its status. A draft follows
+      // the same fallback the composer applies to an unrunnable stored pick.
+      provider:
+        activeSession?.provider ??
+        effectiveProvider(current.draftProvider, current.providerStatuses),
       providerStatuses: current.providerStatuses,
       models: current.models,
     };

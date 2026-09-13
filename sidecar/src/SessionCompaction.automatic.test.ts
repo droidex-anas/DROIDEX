@@ -97,6 +97,7 @@ function createHarness(
     interactionsFor: () => ({
       requestApproval: () => new Promise<PermissionOutcome>(() => undefined),
       requestQuestion: () => new Promise<ProviderQuestionAnswers>(() => undefined),
+      cancelPending: () => undefined,
     }),
     emitError: () => undefined,
     isShutdownStarted: () => false,

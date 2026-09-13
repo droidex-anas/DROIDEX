@@ -50,13 +50,14 @@ export class ClaudeEventMapper {
         return this.toolResults(message);
       case 'result':
         return this.result(message);
+      case 'rate_limit_event':
+        return this.rateLimit(message.rate_limit_info);
       // Session bookkeeping, hook/task/plugin notices and the other auxiliary
       // frames carry nothing the DROIDEX transcript shows.
       case 'system':
       case 'tool_progress':
       case 'tool_use_summary':
       case 'auth_status':
-      case 'rate_limit_event':
       case 'prompt_suggestion':
       case 'conversation_reset':
         return [];
@@ -194,6 +195,27 @@ export class ClaudeEventMapper {
       this.totals.tokensOut += usage.outputTokens;
     }
     return [this.usage()];
+  }
+
+  // A blocked usage window stops the turn producing anything, which otherwise
+  // reads as the model hanging. Only a refusal is worth a row; an allowed
+  // window is routine accounting.
+  private rateLimit(info: {
+    status: string;
+    overageStatus?: string;
+    resetsAt?: number;
+  }): NormalizedEvent[] {
+    if (info.status !== 'rejected' || info.overageStatus === 'allowed') return [];
+    const resumesAt = info.resetsAt ? new Date(info.resetsAt * 1000).toLocaleTimeString() : '';
+    return [
+      {
+        transcript: this.transcript('status', {
+          text: resumesAt
+            ? `Claude usage limit reached. It resets at ${resumesAt}.`
+            : 'Claude usage limit reached.',
+        }),
+      },
+    ];
   }
 
   private toolCall(id: string, name: string, input: unknown): NormalizedEvent {

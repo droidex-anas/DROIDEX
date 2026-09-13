@@ -198,6 +198,8 @@ function isServerEvent(value: unknown): value is ServerEvent {
       return isPermissionRequest(value.request);
     case 'question.requested':
       return isSessionQuestion(value.question);
+    case 'interaction.cancelled':
+      return hasStrings(value, ['appSessionId', 'requestId']);
     case 'context.updated':
       return hasStrings(value, ['appSessionId', 'sourceSessionId']) && isContextStats(value.stats);
     case 'catalog.updated':

@@ -4,6 +4,12 @@
 // the worker's whole deadline.
 import type { CanUseTool, PermissionMode, PermissionResult } from '@anthropic-ai/claude-agent-sdk';
 
+import {
+  AUTOMATION_MCP_SERVER_NAME,
+  isAutomationMutationTool,
+  normalizeMcpServerName,
+} from '../../automations/permissionPolicy.js';
+import { toolArgumentDigest } from '../../normalize.js';
 import type { Autonomy, PermissionKind } from '../../protocol.js';
 import { nextInteractionRequestId, type ProviderInteractions } from '../interactions.js';
 
@@ -24,45 +30,71 @@ const TOOL_KINDS: Record<string, PermissionKind> = {
   Write: 'create',
 };
 
+const INTERRUPTED = Symbol('interrupted');
+
+type CanUseToolOptions = Parameters<CanUseTool>[2];
+
 export function claudeCanUseTool(
   appSessionId: string,
   interactions: ProviderInteractions,
 ): CanUseTool {
   return async (toolName, input, options): Promise<PermissionResult> => {
-    if (toolName === 'AskUserQuestion') return await askUserQuestion(input, interactions);
     // Plan approval is its own flow; auto-allowing it would let the model act on
-    // a plan the user has not seen.
+    // a plan the user has not seen. The tool is also disallowed at the query,
+    // which is what covers the modes that never consult this callback.
     if (toolName === 'ExitPlanMode')
       return deny('Stop here and wait for the user to review the plan.');
-
-    const kind = permissionKind(toolName);
-    const signature = permissionSignature(toolName, kind, input);
-    const outcome = await Promise.race([
-      interactions.requestApproval({
-        request: {
-          appSessionId,
-          requestId: nextInteractionRequestId(),
-          kind,
-          title: options.displayName ?? toolName,
-          detail: options.title ?? options.description ?? describeInput(input),
-          raw: { toolName, input },
-        },
-        confirmationType: CONFIRMATION_TYPES[kind],
-        ...(signature ? { signature } : {}),
-      }),
-      // The turn was interrupted while the card was still open: the tool must
-      // settle, and the pending card is cleared with the session's turn.
-      abortedOutcome(options.signal),
+    const decision = await Promise.race([
+      toolName === 'AskUserQuestion'
+        ? askUserQuestion(input, interactions)
+        : approveTool(appSessionId, toolName, input, options, interactions),
+      interrupted(options.signal),
     ]);
-    if (outcome === 'cancel')
-      return { behavior: 'deny', message: 'The user stopped this tool.', interrupt: true };
-    if (!outcome.startsWith('proceed')) return deny('The user declined this tool.');
+    if (decision !== INTERRUPTED) return decision;
+    // The turn ended with the card still open. Settling only the SDK's side
+    // would leave the prompt and its waiter behind, under the next turn.
+    interactions.cancelPending();
     return {
-      behavior: 'allow',
-      ...(outcome === 'proceed_always' && options.suggestions
-        ? { updatedPermissions: options.suggestions }
-        : {}),
+      behavior: 'deny',
+      message: 'The turn was stopped before this was answered.',
+      interrupt: true,
     };
+  };
+}
+
+async function approveTool(
+  appSessionId: string,
+  toolName: string,
+  input: Record<string, unknown>,
+  options: CanUseToolOptions,
+  interactions: ProviderInteractions,
+): Promise<PermissionResult> {
+  const kind = permissionKind(toolName);
+  const mcp = kind === 'mcp' ? mcpTarget(toolName) : undefined;
+  const signature = permissionSignature(kind, mcp, input);
+  const outcome = await interactions.requestApproval({
+    request: {
+      appSessionId,
+      requestId: nextInteractionRequestId(),
+      kind,
+      title: options.displayName ?? toolName,
+      detail: options.title ?? options.description ?? describeInput(input),
+      raw: { toolName, input },
+    },
+    confirmationType: CONFIRMATION_TYPES[kind],
+    ...(signature ? { signature } : {}),
+    ...(mcp && normalizeMcpServerName(mcp.serverName) === AUTOMATION_MCP_SERVER_NAME
+      ? { automationTool: mcp }
+      : {}),
+  });
+  if (outcome === 'cancel')
+    return { behavior: 'deny', message: 'The user stopped this tool.', interrupt: true };
+  if (!outcome.startsWith('proceed')) return deny('The user declined this tool.');
+  return {
+    behavior: 'allow',
+    ...(outcome === 'proceed_always' && options.suggestions
+      ? { updatedPermissions: options.suggestions }
+      : {}),
   };
 }
 
@@ -77,7 +109,7 @@ async function askUserQuestion(
   if (asked.length === 0) return deny('No question was asked.');
   const { cancelled, answers } = await interactions.requestQuestion(asked);
   if (cancelled) return deny('The user dismissed the question.');
-  return deny(answers.map((a) => `${a.question}\n${a.answer}`).join('\n\n'));
+  return deny(answers.map((answer) => `${answer.question}\n${answer.answer}`).join('\n\n'));
 }
 
 interface AskedQuestion {
@@ -119,20 +151,32 @@ function permissionKind(toolName: string): PermissionKind {
   return TOOL_KINDS[toolName] ?? (toolName.startsWith('mcp__') ? 'mcp' : 'other');
 }
 
-// The key an "always allow" grant is stored under. Scoped the way Droid scopes
-// its own (normalize.ts): a command or a file path, never a bare tool name, so
-// one grant cannot silently cover an unrelated action. An empty result leaves
-// the request ineligible for always-allow.
+// An MCP tool reaches this callback namespaced as `mcp__<server>__<tool>`.
+function mcpTarget(toolName: string): { serverName: string; toolName: string } {
+  const match = /^mcp__([^_].*?)__([^_].*)$/i.exec(toolName);
+  return match ? { serverName: match[1], toolName: match[2] } : { serverName: '', toolName };
+}
+
+// The key an "always allow" grant is stored under, scoped exactly the way Droid
+// scopes its own (normalize.ts): a command, a file path, or an MCP server and
+// tool — and, for a DROIDEX automation mutation, the arguments too, so one
+// grant cannot authorize a later call that changes something else. An empty
+// result leaves the request ineligible for always-allow.
 function permissionSignature(
-  toolName: string,
   kind: PermissionKind,
+  mcp: { serverName: string; toolName: string } | undefined,
   input: Record<string, unknown>,
 ): string | undefined {
-  if (kind === 'mcp') return `mcp::${toolName}`;
   if (kind === 'exec') return text(input.command) && `exec::${String(input.command)}`;
-  if (kind !== 'edit' && kind !== 'create') return undefined;
-  const path = text(input.file_path) ?? text(input.notebook_path);
-  return path ? `${kind}::${path}` : undefined;
+  if (kind === 'edit' || kind === 'create') {
+    const path = text(input.file_path) ?? text(input.notebook_path);
+    return path ? `${kind}::${path}` : undefined;
+  }
+  if (!mcp) return undefined;
+  const key = `mcp::${mcp.serverName}::${mcp.toolName}`;
+  if (!isAutomationMutationTool(mcp.serverName, mcp.toolName)) return key;
+  const args = toolArgumentDigest(input);
+  return args ? `${key}::${args}` : undefined;
 }
 
 function describeInput(input: Record<string, unknown>): string {
@@ -149,14 +193,14 @@ function deny(message: string): PermissionResult {
   return { behavior: 'deny', message };
 }
 
-function abortedOutcome(signal: AbortSignal): Promise<'cancel'> {
+function interrupted(signal: AbortSignal): Promise<typeof INTERRUPTED> {
   return new Promise((resolve) => {
     if (signal.aborted) {
-      resolve('cancel');
+      resolve(INTERRUPTED);
       return;
     }
     signal.addEventListener('abort', () => {
-      resolve('cancel');
+      resolve(INTERRUPTED);
     });
   });
 }

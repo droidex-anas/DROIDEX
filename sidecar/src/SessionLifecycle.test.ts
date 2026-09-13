@@ -166,6 +166,7 @@ function createHarness(ordinarySummaries: SessionSummary[] = []) {
     interactionsFor: () => ({
       requestApproval: () => new Promise<PermissionOutcome>(() => undefined),
       requestQuestion: () => new Promise<ProviderQuestionAnswers>(() => undefined),
+      cancelPending: () => undefined,
     }),
     compaction: {
       resolveLimit: () => compactionLimit(),

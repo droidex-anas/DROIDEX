@@ -3,10 +3,12 @@
 // same process and the permission mode and model can change while it runs.
 import {
   query,
+  type McpServerConfig,
   type Options,
   type Query,
   type SDKUserMessage,
 } from '@anthropic-ai/claude-agent-sdk';
+import { spawn, type ChildProcess } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 
 import type { NormalizedEvent } from '../../normalize.js';
@@ -24,6 +26,7 @@ export interface ClaudeSessionInput {
   cwd: string;
   autonomy: Autonomy;
   modelId?: string;
+  mcpServers: Record<string, McpServerConfig>;
   interactions: ProviderInteractions;
   // Set when reopening a stored session instead of starting a new one.
   resume?: boolean;
@@ -32,13 +35,11 @@ export interface ClaudeSessionInput {
 export class ClaudeSession implements ProviderSession {
   readonly provider = 'claude' as const;
   readonly providerSessionId: string;
-  // The SDK owns the subprocess and does not expose its pid, so this session
-  // has no process for the agent-process monitor to track.
-  readonly process = undefined;
 
   private readonly prompts = new PromptQueue();
   private readonly mapper: ClaudeEventMapper;
   private readonly query: Query;
+  private child?: ChildProcess;
   private activeTurnId?: string;
   // The turn the user stopped, so only that turn's own error result is excused.
   private interruptedTurnId?: string;
@@ -46,7 +47,26 @@ export class ClaudeSession implements ProviderSession {
   constructor(input: ClaudeSessionInput) {
     this.providerSessionId = input.appSessionId;
     this.mapper = new ClaudeEventMapper(input.appSessionId);
-    this.query = query({ prompt: this.prompts, options: sessionOptions(input) });
+    this.query = query({
+      prompt: this.prompts,
+      options: sessionOptions(input, (process) => {
+        this.child = process;
+      }),
+    });
+  }
+
+  // Brings the CLI up before the session is handed to the lifecycle, so a
+  // process that cannot start fails the open and the one that does is tracked
+  // from its first moment.
+  async start(): Promise<void> {
+    await this.query.initializationResult();
+  }
+
+  get process(): { pid: number; isAlive(): boolean } | undefined {
+    const child = this.child;
+    const pid = child?.pid;
+    if (child === undefined || pid === undefined) return undefined;
+    return { pid, isAlive: () => child.exitCode === null && !child.killed };
   }
 
   async *stream(prompt: string): AsyncGenerator<NormalizedEvent, void, undefined> {
@@ -66,10 +86,10 @@ export class ClaudeSession implements ProviderSession {
       // session at the first turn that settles.
       for (;;) {
         const next = await this.query.next();
-        if (next.done) return;
+        // The CLI exited without answering. Failing here is what tells the
+        // session the turn broke, instead of reading as a silent success.
+        if (next.done) throw new Error('Claude Code exited before the turn finished.');
         for (const event of this.mapper.map(next.value)) yield event;
-        // A result left behind by an interrupted turn is only usage; this turn
-        // ends on its own result.
         if (next.value.type === 'result' && answersTurn(next.value, turnId)) {
           // A stopped turn settles quietly: the CLI still reports the
           // interruption as an error result carrying an internal diagnostic.
@@ -89,9 +109,10 @@ export class ClaudeSession implements ProviderSession {
   }
 
   // Reasoning effort is not part of the model selection this build offers for
-  // Claude, so the catalog advertises none and none arrives here.
+  // Claude, so the catalog advertises none and none arrives here. A null model
+  // is "back to the provider's own default", which is what an absent model is.
   async setModel({ modelId }: ProviderModelSettings): Promise<void> {
-    if (modelId) await this.query.setModel(modelId);
+    if (modelId !== undefined) await this.query.setModel(modelId ?? undefined);
   }
 
   async interrupt(): Promise<void> {
@@ -109,8 +130,10 @@ export class ClaudeSession implements ProviderSession {
   }
 }
 
-function sessionOptions(input: ClaudeSessionInput): Options {
-  const autonomy = claudePermissionMode(input.autonomy);
+function sessionOptions(
+  input: ClaudeSessionInput,
+  onSpawn: (process: ChildProcess) => void,
+): Options {
   return {
     cwd: input.cwd,
     pathToClaudeCodeExecutable: input.executable,
@@ -120,9 +143,35 @@ function sessionOptions(input: ClaudeSessionInput): Options {
     // 'project' is what loads the repository's CLAUDE.md.
     settingSources: ['user', 'project', 'local'],
     includePartialMessages: true,
-    permissionMode: autonomy,
-    ...(autonomy === 'bypassPermissions' ? { allowDangerouslySkipPermissions: true } : {}),
+    mcpServers: input.mcpServers,
+    // Plan mode is the follow-up PR's, and at high autonomy bypassPermissions
+    // skips canUseTool altogether, so the callback's refusal would never run.
+    // Removing the tool from the model's context holds in every mode.
+    disallowedTools: ['ExitPlanMode'],
+    permissionMode: claudePermissionMode(input.autonomy),
+    // Consent to the bypass mode, not the mode itself: the CLI reads this flag
+    // only as "this host may use bypassPermissions" and takes the mode from
+    // permissionMode. Raising autonomy to high mid-session switches the mode
+    // with setPermissionMode, which the CLI refuses without this.
+    allowDangerouslySkipPermissions: true,
     canUseTool: claudeCanUseTool(input.appSessionId, input.interactions),
+    // The SDK would otherwise own the subprocess privately; spawning it here is
+    // what gives the session a pid for the agent-process monitor to track and
+    // kill, the way it tracks Droid's.
+    spawnClaudeCodeProcess: ({ command, args, cwd, env, signal }) => {
+      const child = spawn(command, args, {
+        ...(cwd !== undefined ? { cwd } : {}),
+        env,
+        signal,
+        stdio: ['pipe', 'pipe', 'pipe'],
+        windowsHide: true,
+      });
+      // Nothing else reads stderr on this path, and a full pipe would stall the
+      // CLI mid-turn.
+      child.stderr.resume();
+      onSpawn(child);
+      return child;
+    },
     // HOME is never overridden: on macOS it also relocates the login keychain,
     // and the CLI then reports the user as signed out.
   };
@@ -141,9 +190,13 @@ function answersTurn(
   message: { user_message_uuid?: string; user_message_uuids?: string[] },
   turnId: string,
 ): boolean {
-  if (message.user_message_uuids?.includes(turnId)) return true;
+  // The plural list names every prompt the turn has consumed, so where it
+  // exists it is the whole answer: a result that omits this turn's uuid belongs
+  // to another turn, whatever the singular field says.
+  if (message.user_message_uuids) return message.user_message_uuids.includes(turnId);
+  if (message.user_message_uuid !== undefined) return message.user_message_uuid === turnId;
   // Older CLIs stamp neither field; their result can only be this turn's.
-  return message.user_message_uuid === undefined || message.user_message_uuid === turnId;
+  return true;
 }
 
 // The session's prompt channel. One iterator, consumed by whichever turn is
