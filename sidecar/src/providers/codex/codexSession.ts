@@ -156,14 +156,17 @@ export class CodexSession implements ProviderSession {
   async steer(text: string): Promise<void> {
     const threadId = this.threadId;
     const turnId = this.turnId;
-    if (!threadId || !turnId || !this.turn)
+    const turn = this.turn;
+    if (!threadId || !turnId || !turn)
       throw new Error('This Codex session has no running turn to steer.');
     const steered = await this.client.request<{ turnId: string }>('turn/steer', {
       threadId,
       expectedTurnId: turnId,
       input: [{ type: 'text', text }],
     });
-    this.turnId = steered.turnId;
+    // A queued prompt may have started its own turn while this was in flight.
+    // That turn owns its id, and Stop has to reach it rather than this one.
+    if (this.turn === turn && this.turnId === turnId) this.turnId = steered.turnId;
   }
 
   async interrupt(): Promise<void> {

@@ -135,6 +135,8 @@ export interface SessionLifecycleDependencies {
 }
 export class SessionLifecycle {
   private readonly deferredCloses = new WeakMap<LiveSession, DeferredClose>();
+  // One steer at a time per session; see steerTurn.
+  private readonly steering = new WeakMap<LiveSession, Promise<boolean>>();
   private readonly resumeOperations = new Map<string, Promise<boolean>>();
 
   constructor(private readonly dependencies: SessionLifecycleDependencies) {}
@@ -406,8 +408,13 @@ export class SessionLifecycle {
       return;
     }
     // A provider that takes the prompt into the turn it is already running
-    // needs neither the queue nor an interrupt.
-    const steerable = !liveSession.compacting && !liveSession.autoCompacting;
+    // needs neither the queue nor an interrupt. A session already interrupting
+    // has no turn left to steer, so those sends keep the queued path.
+    const steerable =
+      !liveSession.compacting &&
+      !liveSession.autoCompacting &&
+      !liveSession.interrupting &&
+      !liveSession.interruptingForSteer;
     if (steerable && (await this.steerTurn(liveSession, text))) return;
     liveSession.pendingSends.unshift(text);
     this.updateQueuedSends(liveSession);
@@ -427,8 +434,19 @@ export class SessionLifecycle {
   }
 
   // The provider's own steer, when it has one. False leaves the caller to
-  // interrupt and resend, which is how every other provider steers.
-  private async steerTurn(liveSession: LiveSession, text: string): Promise<boolean> {
+  // interrupt and resend, which is how every other provider steers. Steers run
+  // one at a time per session: two racing sends would both aim at the turn id
+  // they read before the other landed, and the loser would fall back.
+  private steerTurn(liveSession: LiveSession, text: string): Promise<boolean> {
+    if (!liveSession.session.steer) return Promise.resolve(false);
+    const next = (this.steering.get(liveSession) ?? Promise.resolve()).then(() =>
+      this.steerOnce(liveSession, text),
+    );
+    this.steering.set(liveSession, next);
+    return next;
+  }
+
+  private async steerOnce(liveSession: LiveSession, text: string): Promise<boolean> {
     const session = liveSession.session;
     if (!session.steer) return false;
     const appSessionId = liveSession.summary.appSessionId;
