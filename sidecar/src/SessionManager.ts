@@ -554,6 +554,9 @@ export class SessionManager {
       emitStatus: (appSessionId, text) => {
         this.timeline.appendStatus(appSessionId, text);
       },
+      recordPrompt: (appSessionId, text) => {
+        this.timeline.recordPrompt(appSessionId, text);
+      },
       emitSessionList: async (closedProviderSessionId) => {
         await this.sessionFiles.finalizeClosedProvider(closedProviderSessionId);
       },

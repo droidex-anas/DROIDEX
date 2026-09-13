@@ -246,6 +246,5 @@ function wireMessage(line: string): WireMessage | undefined {
   if (typeof message.method === 'string')
     return 'id' in message && !identified ? undefined : message;
   if (!identified) return undefined;
-  const answers = ('result' in message ? 1 : 0) + ('error' in message ? 1 : 0);
-  return answers === 1 ? message : undefined;
+  return 'result' in message !== 'error' in message ? message : undefined;
 }

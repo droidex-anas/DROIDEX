@@ -3,8 +3,7 @@ import { homedir, tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import { isExecutable, resolveOnPathSync } from '../../Environment.js';
-import { reasoningValue } from '../../modelCatalog.js';
-import type { ModelInfo, ProviderStatus, ReasoningEffort } from '../../protocol.js';
+import type { ProviderStatus } from '../../protocol.js';
 import type {
   Provider,
   ProviderOpenInput,
@@ -12,6 +11,7 @@ import type {
   ProviderSession,
 } from '../session.js';
 import { AppServerClient } from './appServer.js';
+import { listModels } from './codexModels.js';
 import { CodexSession, type CodexSessionInput } from './codexSession.js';
 
 // Codex only echoes this back in its user agent. The sidecar is not told the
@@ -22,6 +22,10 @@ const CLIENT_INFO = {
   version: process.env.npm_package_version ?? '0.0.0',
 };
 
+// The app-server releases this build was written against. `experimentalApi`
+// exposes shapes that move between releases, so a CLI outside the range is
+// refused rather than half-supported.
+const SUPPORTED_VERSIONS = { prefix: '0.149.', label: '0.149.x' };
 const PROBE_TIMEOUT_MS = 25_000;
 const INSTALL_HINT = 'Codex CLI not found. Install it, then refresh.';
 const LOGIN_HINT = 'Run `codex login` in a terminal and sign in, then refresh.';
@@ -106,11 +110,9 @@ export class CodexProvider implements Provider {
   // reports its version, its account and its models, and is then torn down.
   async probe(signal: AbortSignal): Promise<ProviderStatus> {
     const executable = resolveCodexPath();
-    if (!executable)
-      return { provider: 'codex', readiness: 'missing', message: INSTALL_HINT, models: [] };
+    if (!executable) return unavailable('missing', INSTALL_HINT);
     // A refresh cancelled during shutdown must not leave a process behind.
-    if (signal.aborted)
-      return { provider: 'codex', readiness: 'error', message: PROBE_CANCELLED, models: [] };
+    if (signal.aborted) return unavailable('error', PROBE_CANCELLED);
 
     const client = new AppServerClient(executable, tmpdir());
     const deadline = { expired: false };
@@ -123,27 +125,34 @@ export class CodexProvider implements Provider {
     }, PROBE_TIMEOUT_MS);
     signal.addEventListener('abort', stop);
     try {
+      // The gate comes first: an unsupported CLI is reported as such, not as
+      // whatever its account call happens to say about a protocol this build
+      // does not speak.
       const { userAgent } = await initialize(client);
+      const version = codexVersion(userAgent);
+      if (!version) return unavailable('error', `Codex did not report a version (${userAgent}).`);
+      if (!version.startsWith(SUPPORTED_VERSIONS.prefix))
+        return unavailable(
+          'unsupported',
+          `Codex ${version} is installed; this build supports ${SUPPORTED_VERSIONS.label}.`,
+          version,
+        );
       const account = await client.request<AccountResponse>('account/read', {});
       if (!account.account && account.requiresOpenaiAuth)
-        return {
-          provider: 'codex',
-          readiness: 'unauthenticated',
-          message: LOGIN_HINT,
-          models: [],
-        };
-      const version = codexVersion(userAgent);
+        return unavailable('unauthenticated', LOGIN_HINT);
       const label = accountLabel(account.account);
       return {
         provider: 'codex',
         readiness: 'ready',
-        ...(version ? { version } : {}),
+        version,
         ...(label ? { accountLabel: label } : {}),
         models: await listModels(client),
       };
     } catch (error) {
-      const message = deadline.expired ? 'Codex did not answer in time.' : errorMessage(error);
-      return { provider: 'codex', readiness: 'error', message, models: [] };
+      return unavailable(
+        'error',
+        deadline.expired ? 'Codex did not answer in time.' : errorMessage(error),
+      );
     } finally {
       clearTimeout(timer);
       signal.removeEventListener('abort', stop);
@@ -173,6 +182,15 @@ export class CodexProvider implements Provider {
   }
 }
 
+// A provider that cannot run offers no models, whatever the reason.
+function unavailable(
+  readiness: Exclude<ProviderStatus['readiness'], 'ready'>,
+  message: string,
+  version?: string,
+): ProviderStatus {
+  return { provider: 'codex', readiness, message, models: [], ...(version ? { version } : {}) };
+}
+
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
@@ -194,50 +212,4 @@ function accountLabel(account: CodexAccount): string | undefined {
 // the running CLI reports its own version.
 function codexVersion(userAgent: string): string | undefined {
   return /\/(\S+)/.exec(userAgent)?.[1];
-}
-
-interface CodexModel {
-  id: string;
-  displayName: string;
-  isDefault: boolean;
-  supportedReasoningEfforts: { reasoningEffort: string }[];
-  defaultReasoningEffort: string;
-}
-
-async function listModels(client: AppServerClient): Promise<ModelInfo[]> {
-  const models: ModelInfo[] = [];
-  let cursor: string | null = null;
-  do {
-    const page: { data: CodexModel[]; nextCursor: string | null } = await client.request(
-      'model/list',
-      cursor ? { cursor } : {},
-    );
-    // A model with no id cannot be selected and one with no name cannot be
-    // shown, so neither belongs in the picker.
-    for (const model of page.data) {
-      if (named(model.id) && named(model.displayName)) models.push(providerModel(model));
-    }
-    cursor = page.nextCursor;
-  } while (cursor);
-  return models;
-}
-
-function providerModel(model: CodexModel): ModelInfo {
-  const efforts = model.supportedReasoningEfforts
-    .map((option) => reasoningValue(option.reasoningEffort))
-    .filter((effort): effort is ReasoningEffort => effort !== undefined);
-  const fallback = reasoningValue(model.defaultReasoningEffort);
-  return {
-    id: model.id,
-    displayName: model.displayName,
-    provider: 'openai',
-    isCustom: false,
-    isDefault: model.isDefault,
-    ...(efforts.length > 0 ? { supportedReasoningEfforts: efforts } : {}),
-    ...(fallback ? { defaultReasoningEffort: fallback } : {}),
-  };
-}
-
-function named(value: unknown): boolean {
-  return typeof value === 'string' && value.trim() !== '';
 }
