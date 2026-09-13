@@ -3,7 +3,10 @@ import type { FactoryRuntime, FactorySession } from './DroidRuntime.js';
 import type { ServerEvent } from './protocol.js';
 import type { AgentProcessMonitor } from './processes/AgentProcessMonitor.js';
 import { droidInteractionHandlers } from './providers/droid/droidInteractions.js';
-import { DroidProviderSession } from './providers/droid/DroidProviderSession.js';
+import {
+  DroidProviderSession,
+  requireDroidSession,
+} from './providers/droid/DroidProviderSession.js';
 import type { ProviderInteractions } from './providers/interactions.js';
 import type { LiveOperationTarget, SessionContext, UsageOffset } from './SessionContext.js';
 import type { LiveSession } from './SessionLifecycle.js';
@@ -71,7 +74,7 @@ export class SessionCompactionExecution {
     liveSession.compacting = true;
     try {
       const outcome = await runCompaction(
-        liveSession.droid,
+        requireDroidSession(liveSession.session),
         {
           status: (text, compactType) => {
             if (!isCurrent()) return;

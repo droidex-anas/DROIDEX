@@ -9,6 +9,7 @@ import {
   POST_TURN_AUTO_COMPACTION_WATCHDOG_MS,
 } from './autoCompactionWatchdog.js';
 import { extractCompactionNotification } from './normalize.js';
+import { requireDroidSession } from './providers/droid/DroidProviderSession.js';
 import type {
   FactoryDefaultSettings,
   SessionInteractionMode,
@@ -422,7 +423,7 @@ export class SessionCompaction {
       appSessionId,
       providerSessionId: session.providerSessionId,
       sourceSessionId: appSessionId,
-      session: liveSession.droid,
+      session: requireDroidSession(liveSession.session),
       liveSession,
       isCurrent: () =>
         !this.dependencies.isShutdownStarted() &&

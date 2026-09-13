@@ -3,6 +3,7 @@ import test from 'node:test';
 import { ContextStatsAccuracy, ReasoningEffort } from '@factory/droid-sdk';
 
 import { DroidRuntime } from './DroidRuntime.js';
+import { requireDroidSession } from './providers/droid/DroidProviderSession.js';
 import type { ServerEvent, SessionSummary } from './protocol.js';
 import {
   SessionContext,
@@ -120,7 +121,7 @@ function primaryTarget(h: Harness, live: LiveSession): LiveOperationTarget {
     appSessionId: live.summary.appSessionId,
     providerSessionId: providerSession.providerSessionId,
     sourceSessionId: live.summary.appSessionId,
-    session: live.droid,
+    session: requireDroidSession(providerSession),
     isCurrent: () =>
       !live.closeMode &&
       h.registry.getLive(live.summary.appSessionId) === live &&

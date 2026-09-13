@@ -10,6 +10,7 @@ import {
   childHistoryProviderSessionIds,
   childIdentity,
   childSettingsFromInit,
+  parentDroidSession,
   type ChildIdentity,
   type ChildOpenAttempt,
   type ChildRuntimeState,
@@ -278,7 +279,7 @@ async function bindLoadedChildRuntime(input: {
   const actual = childSettingsFromInit(loaded.initResult);
   const defaults = host.d.resolveDefaultSettings(
     parent.lease.summary,
-    parent.lease.droid.initResult,
+    parentDroidSession(parent.lease).initResult,
     child.role,
   );
   const settings = {

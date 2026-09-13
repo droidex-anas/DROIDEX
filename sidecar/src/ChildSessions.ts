@@ -26,6 +26,7 @@ import {
   forgetPendingChildObservation,
   mergeChildObservations,
   newChildState,
+  parentDroidSession,
   persistedChild,
   rememberPendingChildObservation,
   restoredChildStatus,
@@ -866,7 +867,7 @@ export class ChildSessions {
       if (command.modelId === null)
         modelId = this.d.resolveDefaultSettings(
           parent.lease.summary,
-          parent.lease.droid.initResult,
+          parentDroidSession(parent.lease).initResult,
           child.role,
         ).modelId;
       if (!modelId) throw new Error(`No Factory default is available for ${child.role}.`);
@@ -931,7 +932,7 @@ export class ChildSessions {
       : {
           ...this.d.resolveDefaultSettings(
             parent.lease.summary,
-            parent.lease.droid.initResult,
+            parentDroidSession(parent.lease).initResult,
             role,
           ),
           ...launchSettings,

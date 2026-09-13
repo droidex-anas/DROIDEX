@@ -1,6 +1,7 @@
 import type { ChildSessions } from './ChildSessions.js';
 import {
   childSettingsFromInit,
+  parentDroidSession,
   type ChildParentLease,
   type ChildSettings,
 } from './ChildSessionState.js';
@@ -73,7 +74,7 @@ export class MissionControlPolicy {
   resolveDefaultSettings(parentAppSessionId: string, role: 'worker' | 'validator'): ChildSettings {
     const live = this.d.registry.getLive(parentAppSessionId);
     if (!live) throw new Error(`Mission Control parent ${parentAppSessionId} is not live.`);
-    const parent = childSettingsFromInit(live.droid.initResult);
+    const parent = childSettingsFromInit(parentDroidSession(live).initResult);
     const catalog = this.d.resolveCatalogDefaultSettings();
     const roleModelId =
       role === 'validator' ? live.summary.validatorModelId : live.summary.workerModelId;
