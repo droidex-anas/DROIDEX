@@ -51,7 +51,7 @@ function ModelCatalogList({
   disabled: boolean;
   reasoningLocked: boolean;
   showDefault?: boolean;
-  /** False where the provider publishes no efforts, so no row names one. */
+  /** False where the provider publishes no efforts, so no row offers one. */
   showReasoning?: boolean;
 }) {
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -238,48 +238,50 @@ const ModelRow = memo(function ModelRow({
       >
         {label}
       </span>
-      {arrow(-1)}
-      <span className="flex gap-[3px] shrink-0" title={lockTitle}>
-        {efforts.map((effort, i) => {
-          const filled = i <= current;
-          return (
-            <button
-              key={effort}
-              type="button"
-              tabIndex={-1}
-              aria-label={`${label}: ${effort}`}
-              disabled={disabled || reasoningLocked}
-              onClick={(e) => {
-                e.stopPropagation();
-                pick(id, effort);
-              }}
-              className={`w-[9px] h-[9px] rounded-[2px] ${
-                filled
-                  ? selected
-                    ? 'bg-droid-accent'
-                    : 'bg-droid-text-muted'
-                  : selected
-                    ? 'bg-[#333]'
-                    : 'bg-droid-active'
-              } ${disabled || reasoningLocked ? 'cursor-not-allowed' : ''}`}
-              style={{
-                transition: 'background .2s, transform .25s cubic-bezier(.34,1.56,.64,1)',
-                transitionDelay: `${String(i * 25)}ms`,
-                transform: filled && selected ? 'scale(1.08)' : undefined,
-              }}
-            />
-          );
-        })}
-      </span>
-      {arrow(1)}
       {showReasoning && (
-        <span
-          className={`w-[52px] shrink-0 text-[11.5px] capitalize truncate ${
-            selected ? 'text-droid-text' : 'text-droid-text-muted'
-          }`}
-        >
-          {shown}
-        </span>
+        <>
+          {arrow(-1)}
+          <span className="flex gap-[3px] shrink-0" title={lockTitle}>
+            {efforts.map((effort, i) => {
+              const filled = i <= current;
+              return (
+                <button
+                  key={effort}
+                  type="button"
+                  tabIndex={-1}
+                  aria-label={`${label}: ${effort}`}
+                  disabled={disabled || reasoningLocked}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    pick(id, effort);
+                  }}
+                  className={`w-[9px] h-[9px] rounded-[2px] ${
+                    filled
+                      ? selected
+                        ? 'bg-droid-accent'
+                        : 'bg-droid-text-muted'
+                      : selected
+                        ? 'bg-[#333]'
+                        : 'bg-droid-active'
+                  } ${disabled || reasoningLocked ? 'cursor-not-allowed' : ''}`}
+                  style={{
+                    transition: 'background .2s, transform .25s cubic-bezier(.34,1.56,.64,1)',
+                    transitionDelay: `${String(i * 25)}ms`,
+                    transform: filled && selected ? 'scale(1.08)' : undefined,
+                  }}
+                />
+              );
+            })}
+          </span>
+          {arrow(1)}
+          <span
+            className={`w-[52px] shrink-0 text-[11.5px] capitalize truncate ${
+              selected ? 'text-droid-text' : 'text-droid-text-muted'
+            }`}
+          >
+            {shown}
+          </span>
+        </>
       )}
     </div>
   );
