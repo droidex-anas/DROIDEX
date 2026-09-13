@@ -1577,13 +1577,16 @@ function readSessionModelSettings(start: StoredSessionStart, sessionPath: string
   const settings = objectValue(raw.settings) ?? objectValue(raw.sessionSettings) ?? {};
   const sidecarSettings = readAdjacentSessionSettings(sessionPath);
   return {
-    modelId:
-      stringValue(sidecarSettings.modelId) ||
-      stringValue(sidecarSettings.model) ||
-      stringValue(settings.modelId) ||
-      stringValue(settings.model) ||
-      stringValue(raw.modelId) ||
-      stringValue(raw.model),
+    // Once the sidecar names the model the head line is history, including when
+    // it names none: that is the record of a chat reset to its provider's own
+    // default, not an absent setting to fall back from.
+    modelId: Object.hasOwn(sidecarSettings, 'modelId')
+      ? stringValue(sidecarSettings.modelId)
+      : stringValue(sidecarSettings.model) ||
+        stringValue(settings.modelId) ||
+        stringValue(settings.model) ||
+        stringValue(raw.modelId) ||
+        stringValue(raw.model),
     reasoningEffort: mapReasoning(
       stringValue(sidecarSettings.reasoningEffort) ||
         stringValue(settings.reasoningEffort) ||
@@ -1613,7 +1616,7 @@ function readAdjacentSessionSettings(sessionPath: string): Record<string, unknow
   const settingsPath = sessionPath.replace(/\.jsonl$/, '.settings.json');
   if (!existsSync(settingsPath)) return {};
   try {
-    return readJson<Record<string, unknown>>(settingsPath);
+    return objectValue(readJson<unknown>(settingsPath)) ?? {};
   } catch {
     return {};
   }

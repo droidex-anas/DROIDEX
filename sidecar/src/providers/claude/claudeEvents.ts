@@ -14,6 +14,23 @@ import type { TranscriptEvent } from '../../protocol.js';
 
 const TOOL_BLOCK_TYPES = new Set(['tool_use', 'server_tool_use', 'mcp_tool_use']);
 
+interface RateLimitInfo {
+  status: string;
+  overageStatus?: string;
+  resetsAt?: number;
+}
+
+// Why a blocked usage window is worth telling the user about. A refusal stops
+// the turn producing anything, which otherwise reads as the model hanging; an
+// allowed window is routine accounting and says nothing.
+export function rateLimitRefusal(info: RateLimitInfo): string | undefined {
+  if (info.status !== 'rejected' || info.overageStatus === 'allowed') return undefined;
+  const resumesAt = info.resetsAt ? new Date(info.resetsAt * 1000).toLocaleTimeString() : '';
+  return resumesAt
+    ? `Claude usage limit reached. It resets at ${resumesAt}.`
+    : 'Claude usage limit reached.';
+}
+
 interface ToolBlock {
   id: string;
   name: string;
@@ -35,6 +52,9 @@ export class ClaudeEventMapper {
   // Content blocks of the message currently streaming, per conversation: a
   // subagent's frames carry their own block indices under its tool_use id.
   private readonly blocks = new Map<string, Map<number, BlockState>>();
+  // Tool results already in the transcript for this turn, so the result's
+  // authoritative denial list only has to cover the ones that never streamed.
+  private readonly reportedResults = new Set<string>();
   private readonly totals = { tokensIn: 0, tokensOut: 0 };
   private call = { input: 0, output: 0 };
 
@@ -170,17 +190,17 @@ export class ClaudeEventMapper {
   private toolResults(message: Extract<SDKMessage, { type: 'user' }>): NormalizedEvent[] {
     const content = message.message.content;
     if (typeof content === 'string') return [];
-    return content.flatMap((block) =>
-      block.type === 'tool_result'
-        ? {
-            transcript: this.transcript('tool_result', {
-              text: toolResultText(block.content),
-              isError: block.is_error === true,
-              toolUseId: block.tool_use_id,
-            }),
-          }
-        : [],
-    );
+    return content.flatMap((block) => {
+      if (block.type !== 'tool_result') return [];
+      this.reportedResults.add(block.tool_use_id);
+      return {
+        transcript: this.transcript('tool_result', {
+          text: toolResultText(block.content),
+          isError: block.is_error === true,
+          toolUseId: block.tool_use_id,
+        }),
+      };
+    });
   }
 
   // modelUsage covers the main loop, subagents and compaction, and is cumulative
@@ -194,28 +214,29 @@ export class ClaudeEventMapper {
         usage.inputTokens + usage.cacheReadInputTokens + usage.cacheCreationInputTokens;
       this.totals.tokensOut += usage.outputTokens;
     }
-    return [this.usage()];
+    // The denial list is the turn's authoritative record; a refusal usually
+    // reaches the model as a tool result too, and that row is the one the
+    // transcript keeps. What is left never streamed at all.
+    const missed = message.permission_denials.flatMap((denial) =>
+      this.reportedResults.has(denial.tool_use_id)
+        ? []
+        : [
+            {
+              transcript: this.transcript('tool_result', {
+                text: `${denial.tool_name} was denied.`,
+                isError: true,
+                toolUseId: denial.tool_use_id,
+              }),
+            },
+          ],
+    );
+    this.reportedResults.clear();
+    return [...missed, this.usage()];
   }
 
-  // A blocked usage window stops the turn producing anything, which otherwise
-  // reads as the model hanging. Only a refusal is worth a row; an allowed
-  // window is routine accounting.
-  private rateLimit(info: {
-    status: string;
-    overageStatus?: string;
-    resetsAt?: number;
-  }): NormalizedEvent[] {
-    if (info.status !== 'rejected' || info.overageStatus === 'allowed') return [];
-    const resumesAt = info.resetsAt ? new Date(info.resetsAt * 1000).toLocaleTimeString() : '';
-    return [
-      {
-        transcript: this.transcript('status', {
-          text: resumesAt
-            ? `Claude usage limit reached. It resets at ${resumesAt}.`
-            : 'Claude usage limit reached.',
-        }),
-      },
-    ];
+  private rateLimit(info: RateLimitInfo): NormalizedEvent[] {
+    const refusal = rateLimitRefusal(info);
+    return refusal ? [{ transcript: this.transcript('status', { text: refusal }) }] : [];
   }
 
   private toolCall(id: string, name: string, input: unknown): NormalizedEvent {

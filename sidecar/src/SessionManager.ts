@@ -1,4 +1,4 @@
-import { DroidInteractionMode, type McpServerConfig } from '@factory/droid-sdk';
+import { type McpServerConfig } from '@factory/droid-sdk';
 import { randomUUID } from 'node:crypto';
 import { homedir, tmpdir } from 'node:os';
 import type {
@@ -111,6 +111,7 @@ import { CodexProvider } from './providers/codex/CodexProvider.js';
 import { requireDroidSession } from './providers/droid/DroidProviderSession.js';
 import { ProviderProbes, type ProviderProbeMap } from './providers/providerProbes.js';
 import { ProviderTranscriptFile } from './providers/ProviderTranscriptFile.js';
+import { writeProviderSessionSettings } from './providers/providerSessionSettings.js';
 import { providerStatuses } from './providers/providerStatus.js';
 import type { Provider, ProviderModelSettings } from './providers/session.js';
 
@@ -416,7 +417,7 @@ export class SessionManager {
       emit: (event) => {
         this.emit(event);
       },
-      exitSpecModeForRun: (appSessionId) => this.exitSpecModeForRun(appSessionId),
+      setProviderSpecMode: (appSessionId, spec) => this.setProviderSpecMode(appSessionId, spec),
       emitError: (error) => {
         this.emitError(error);
       },
@@ -1169,7 +1170,7 @@ export class SessionManager {
       if (cmd.appSessionId) {
         const patch = this.summaryPatchForAgent(cmd.agent, cmd);
         if (session && appSessionId) this.registry.updateSummary(appSessionId, patch);
-        else {
+        else if (!this.persistStoredSettings(cmd.appSessionId, cmd.agent, patch)) {
           const historical = this.registry.resolveSummary(cmd.appSessionId);
           if (historical)
             this.emit({
@@ -1198,6 +1199,29 @@ export class SessionManager {
         message: `Could not update agent settings: ${errMsg(err)}`,
       });
     }
+  }
+
+  // A model change on a chat that is not open. Droid's daemon owns that chat's
+  // settings and applies them at the next send; every other provider is read
+  // back from what DROIDEX stored, so the change has to reach both the stored
+  // summary the sidebar and a resume use and the transcript's settings file.
+  private persistStoredSettings(
+    appSessionId: string,
+    agent: ConfigurableSessionRole,
+    patch: Partial<SessionSummary>,
+  ): boolean {
+    if (agent !== 'primary' || this.sessionProvider(appSessionId) === DEFAULT_PROVIDER)
+      return false;
+    const current = this.registry.resolveSummary(appSessionId);
+    if (!current) return false;
+    // The file is written first: a summary published against settings that
+    // never reached disk would resume on a different model than it shows.
+    const next = { ...current, ...patch };
+    writeProviderSessionSettings(current.appSessionId, {
+      modelId: next.modelId ?? null,
+      ...(next.reasoningEffort ? { reasoningEffort: next.reasoningEffort } : {}),
+    });
+    return this.registry.updateStoredSummary(appSessionId, patch) !== undefined;
   }
 
   private rememberPendingAgentSettings(
@@ -1656,19 +1680,21 @@ export class SessionManager {
       return;
     }
     const stableAppSessionId = liveSession.summary.appSessionId;
-    const droid = liveSession.droid;
-    // Spec and AGI are Droid interaction modes; the composer hides them for
-    // every other provider.
-    if (!droid) return;
+    const session = liveSession.session;
+    // A provider without a planning mode of its own runs in Auto always, and
+    // the composer offers it no Spec toggle.
+    if (!session.setInteractionMode) return;
+    // Compaction or a close can replace the session, or its provider session,
+    // while the provider is answering; the mode belongs to the session that
+    // asked for it, not to whatever took its place.
+    const stillThisSession = () =>
+      this.isCurrentPrimarySession(liveSession) && liveSession.session === session;
     try {
-      if (mode === 'spec') {
-        await droid.enterSpecMode();
-        await this.alignSpecModeModel(droid, liveSession.summary);
-      } else {
-        await droid.updateSettings({
-          interactionMode: mode === 'agi' ? DroidInteractionMode.AGI : DroidInteractionMode.Auto,
-        });
-      }
+      await session.setInteractionMode(mode);
+      if (!stillThisSession()) return;
+      if (liveSession.droid && mode === 'spec')
+        await this.alignSpecModeModel(liveSession.droid, liveSession.summary);
+      if (!stillThisSession()) return;
       this.registry.updateSummary(stableAppSessionId, { interactionMode: mode });
       // The mode determines the default model when none is pinned, so the
       // auto-compaction threshold must be recomputed for the new mode.
@@ -1682,12 +1708,12 @@ export class SessionManager {
     }
   }
 
-  // An approved Spec plan runs in Auto. Only the provider switch lives here; the
+  // An approved Spec plan runs in Auto, and a plan whose approval could not be
+  // recorded goes back to planning. Only the provider switch lives here; the
   // interaction layer owns the summary update that goes with it.
-  private async exitSpecModeForRun(appSessionId: string): Promise<void> {
-    const droid = this.registry.getLive(appSessionId)?.droid;
-    if (!droid) return;
-    await droid.updateSettings({ interactionMode: DroidInteractionMode.Auto });
+  private async setProviderSpecMode(appSessionId: string, spec: boolean): Promise<void> {
+    const session = this.registry.getLive(appSessionId)?.session;
+    await session?.setInteractionMode?.(spec ? 'spec' : 'auto');
   }
 
   // Spec-mode turns run on specModeModelId. Align it with the session's visible
@@ -1798,11 +1824,8 @@ export class SessionManager {
   }
 
   // The model and reasoning a session generates with reach whatever holds it:
-  // the live provider session, or — for a stored Droid session — a loaded copy,
-  // so the daemon's own file records the change. A closed session on any other
-  // provider has nothing to write to: its stored settings live on the head line
-  // of an append-only transcript, and rewriting that is its own change. The
-  // selector only acts on the open chat, so this is unreachable from the UI.
+  // the live provider session, or — for a stored session — the file its provider
+  // is read back from, so a chat reopened after a restart keeps the change.
   private async pushModelSettings(
     appSessionId: string,
     liveSession: LiveSession | undefined,
@@ -1813,7 +1836,10 @@ export class SessionManager {
       await liveSession.session.setModel(model);
       return;
     }
-    if (this.sessionProvider(appSessionId) !== DEFAULT_PROVIDER) return;
+    if (this.sessionProvider(appSessionId) !== DEFAULT_PROVIDER) {
+      writeProviderSessionSettings(appSessionId, model);
+      return;
+    }
     await this.withSession(appSessionId, (session) => session.updateSettings(droidSettings));
   }
 

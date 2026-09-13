@@ -41,8 +41,9 @@ type InteractionError = Omit<Extract<ServerEvent, { type: 'error' }>, 'type'>;
 export interface SessionInteractionsDependencies {
   getLiveSession: (id: string) => InteractionLiveSession | undefined;
   updateSummary: (id: string, patch: Partial<SessionSummary>) => void;
-  // Leaves spec mode on the provider so an approved plan runs in Auto.
-  exitSpecModeForRun: (appSessionId: string) => Promise<void>;
+  // Moves the provider in and out of planning. The summary that goes with it is
+  // this layer's own, which is why the provider call is all this does.
+  setProviderSpecMode: (appSessionId: string, spec: boolean) => Promise<void>;
   emit: (event: ServerEvent) => void;
   emitError: (error: InteractionError) => void;
 }
@@ -166,8 +167,15 @@ export class SessionInteractions {
     if (pending.signature && isAlwaysOutcome(outcome)) {
       scope.permissionGrants.add(pending.signature);
     }
+    // An approved plan runs in Auto, so the provider has to leave planning
+    // first. If it refuses, the plan is declined instead of approved into a
+    // session that is still planning.
     if (pending.kind === 'spec' && isApprovalOutcome(normalized)) {
-      await this.prepareSpecExitForRun(liveSession.summary.appSessionId);
+      const left = await this.prepareSpecExitForRun(liveSession);
+      if (!left) {
+        pending.resolve('cancel');
+        return;
+      }
     }
     pending.resolve(normalized);
   }
@@ -203,19 +211,48 @@ export class SessionInteractions {
     return created;
   }
 
-  private async prepareSpecExitForRun(appSessionId: string): Promise<void> {
+  // The provider leaves planning first and the summary follows it: a chat that
+  // reads as Auto while its session is still planning is the state this whole
+  // path exists to avoid. Whichever half fails, the session and the chat are put
+  // back into Spec together and the plan is declined for another round.
+  private async prepareSpecExitForRun(liveSession: InteractionLiveSession): Promise<boolean> {
+    const appSessionId = liveSession.summary.appSessionId;
     try {
-      this.dependencies.updateSummary(appSessionId, {
-        interactionMode: 'auto',
-        phase: 'running',
-      });
-      await this.dependencies.exitSpecModeForRun(appSessionId);
+      await this.dependencies.setProviderSpecMode(appSessionId, false);
     } catch (error) {
-      this.dependencies.emitError({
-        code: 'spec.exit_failed',
-        appSessionId,
-        message: `Could not switch spec session to Auto before run: ${errMsg(error)}`,
-      });
+      this.reportSpecExitFailure(appSessionId, error);
+      return false;
     }
+    // The session that asked is the only one published onto: a replacement keeps
+    // the mode it opened with, and the plan is declined.
+    if (this.dependencies.getLiveSession(appSessionId) !== liveSession) return false;
+    try {
+      this.dependencies.updateSummary(appSessionId, { interactionMode: 'auto', phase: 'running' });
+      return true;
+    } catch (error) {
+      // The provider already left planning; without a record of it the chat and
+      // its session disagree, so the provider is put back where the chat is. If
+      // that fails too, the chat still reads as Spec while the session is not,
+      // and the user has to hear it.
+      try {
+        await this.dependencies.setProviderSpecMode(appSessionId, true);
+      } catch (restoreError) {
+        this.dependencies.emitError({
+          code: 'spec.restore_failed',
+          appSessionId,
+          message: `The session left plan mode but could not be put back: ${errMsg(restoreError)}. Toggle Spec off and on to resync.`,
+        });
+      }
+      this.reportSpecExitFailure(appSessionId, error);
+      return false;
+    }
+  }
+
+  private reportSpecExitFailure(appSessionId: string, error: unknown): void {
+    this.dependencies.emitError({
+      code: 'spec.exit_failed',
+      appSessionId,
+      message: `Could not switch spec session to Auto before run: ${errMsg(error)}`,
+    });
   }
 }

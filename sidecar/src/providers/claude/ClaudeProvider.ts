@@ -28,6 +28,7 @@ export class ClaudeProvider implements Provider {
     cwd,
     modelId,
     autonomyLevel,
+    interactionMode,
     mcpServers,
   }: ProviderOpenInput): Promise<ProviderSession> {
     // Claude pins the id it is given, so the session mints DROIDEX's identity
@@ -36,6 +37,7 @@ export class ClaudeProvider implements Provider {
       appSessionId: randomUUID(),
       cwd: sessionCwd(cwd),
       autonomy: autonomyLevel ?? 'low',
+      interactionMode,
       ...(modelId ? { modelId } : {}),
       mcpServers: sdkMcpServers(mcpServers),
       interactions,
@@ -46,10 +48,13 @@ export class ClaudeProvider implements Provider {
     providerSessionId: string,
     { interactions, cwd, modelId, autonomy, mcpServers }: ProviderResumeInput,
   ): Promise<ProviderSession> {
+    // A stored chat carries no interaction mode of its own, so a reopened one
+    // starts in Chat the way the sidebar shows it.
     return await this.open({
       appSessionId: providerSessionId,
       cwd: sessionCwd(cwd),
       autonomy: autonomy ?? 'low',
+      interactionMode: 'auto',
       ...(modelId ? { modelId } : {}),
       mcpServers: sdkMcpServers(mcpServers),
       interactions,

@@ -32,22 +32,28 @@ const TOOL_KINDS: Record<string, PermissionKind> = {
 
 const INTERRUPTED = Symbol('interrupted');
 
+const WAIT_FOR_REVIEW = 'Stop here and wait for the user to review the plan.';
+
 type CanUseToolOptions = Parameters<CanUseTool>[2];
 
 export function claudeCanUseTool(
   appSessionId: string,
   interactions: ProviderInteractions,
+  isPlanning: () => boolean,
 ): CanUseTool {
-  return async (toolName, input, options): Promise<PermissionResult> => {
-    // Plan approval is its own flow; auto-allowing it would let the model act on
-    // a plan the user has not seen. The tool is also disallowed at the query,
-    // which is what covers the modes that never consult this callback.
+  const decide = (
+    toolName: string,
+    input: Record<string, unknown>,
+    options: CanUseToolOptions,
+  ): Promise<PermissionResult> => {
     if (toolName === 'ExitPlanMode')
-      return deny('Stop here and wait for the user to review the plan.');
+      return reviewPlan(appSessionId, input, interactions, isPlanning());
+    if (toolName === 'AskUserQuestion') return askUserQuestion(input, interactions);
+    return approveTool(appSessionId, toolName, input, options, interactions);
+  };
+  return async (toolName, input, options): Promise<PermissionResult> => {
     const decision = await Promise.race([
-      toolName === 'AskUserQuestion'
-        ? askUserQuestion(input, interactions)
-        : approveTool(appSessionId, toolName, input, options, interactions),
+      decide(toolName, input, options),
       interrupted(options.signal),
     ]);
     if (decision !== INTERRUPTED) return decision;
@@ -60,6 +66,36 @@ export function claudeCanUseTool(
       interrupt: true,
     };
   };
+}
+
+// The plan reaches the user as DROIDEX's own Spec card, so the call itself is
+// always denied: allowing it would let the model act on a plan nobody has read,
+// and the SDK offers no other way to hand the plan over. Approving switches the
+// session out of plan mode before this returns, so the refusal that carries the
+// verdict is also what starts the work.
+async function reviewPlan(
+  appSessionId: string,
+  input: Record<string, unknown>,
+  interactions: ProviderInteractions,
+  planning: boolean,
+): Promise<PermissionResult> {
+  const plan = text(input.plan);
+  // A plan submitted outside Spec is not a review the user asked for.
+  if (!planning || !plan) return deny(WAIT_FOR_REVIEW);
+  const outcome = await interactions.requestApproval({
+    request: {
+      appSessionId,
+      requestId: nextInteractionRequestId(),
+      kind: 'spec',
+      title: 'Plan ready for review',
+      detail: plan,
+      plan,
+      raw: { toolName: 'ExitPlanMode', input },
+    },
+    confirmationType: CONFIRMATION_TYPES.spec,
+  });
+  if (!outcome.startsWith('proceed')) return deny(WAIT_FOR_REVIEW);
+  return deny('The user approved the plan. Plan mode is off: start implementing it now.');
 }
 
 async function approveTool(

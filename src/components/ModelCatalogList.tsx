@@ -38,6 +38,7 @@ function ModelCatalogList({
   disabled,
   reasoningLocked,
   showDefault = true,
+  showReasoning = true,
 }: {
   models: ModelInfo[];
   defaultModel: ModelInfo | undefined;
@@ -50,6 +51,8 @@ function ModelCatalogList({
   disabled: boolean;
   reasoningLocked: boolean;
   showDefault?: boolean;
+  /** False where the provider publishes no efforts, so no row offers one. */
+  showReasoning?: boolean;
 }) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const rows = hasRealModels ? models : [];
@@ -85,7 +88,7 @@ function ModelCatalogList({
     if (effort) cur.onSelectReasoning(effort);
   }, []);
 
-  const rowProps = { pick, disabled, reasoningLocked };
+  const rowProps = { pick, disabled, reasoningLocked, showReasoning };
 
   return (
     <div ref={scrollRef} className="mt-2 max-h-[180px] overflow-y-auto -mx-1 px-1">
@@ -162,6 +165,7 @@ const ModelRow = memo(function ModelRow({
   pick,
   disabled,
   reasoningLocked,
+  showReasoning,
 }: {
   label: string;
   model?: ModelInfo;
@@ -172,6 +176,7 @@ const ModelRow = memo(function ModelRow({
   pick: Pick;
   disabled: boolean;
   reasoningLocked: boolean;
+  showReasoning: boolean;
 }) {
   const id = isDefaultRow ? undefined : model?.id;
   const fallback = model?.defaultReasoningEffort ?? reasoning ?? 'medium';
@@ -233,47 +238,51 @@ const ModelRow = memo(function ModelRow({
       >
         {label}
       </span>
-      {arrow(-1)}
-      <span className="flex gap-[3px] shrink-0" title={lockTitle}>
-        {efforts.map((effort, i) => {
-          const filled = i <= current;
-          return (
-            <button
-              key={effort}
-              type="button"
-              tabIndex={-1}
-              aria-label={`${label}: ${effort}`}
-              disabled={disabled || reasoningLocked}
-              onClick={(e) => {
-                e.stopPropagation();
-                pick(id, effort);
-              }}
-              className={`w-[9px] h-[9px] rounded-[2px] ${
-                filled
-                  ? selected
-                    ? 'bg-droid-accent'
-                    : 'bg-droid-text-muted'
-                  : selected
-                    ? 'bg-[#333]'
-                    : 'bg-droid-active'
-              } ${disabled || reasoningLocked ? 'cursor-not-allowed' : ''}`}
-              style={{
-                transition: 'background .2s, transform .25s cubic-bezier(.34,1.56,.64,1)',
-                transitionDelay: `${String(i * 25)}ms`,
-                transform: filled && selected ? 'scale(1.08)' : undefined,
-              }}
-            />
-          );
-        })}
-      </span>
-      {arrow(1)}
-      <span
-        className={`w-[52px] shrink-0 text-[11.5px] capitalize truncate ${
-          selected ? 'text-droid-text' : 'text-droid-text-muted'
-        }`}
-      >
-        {shown}
-      </span>
+      {showReasoning && (
+        <>
+          {arrow(-1)}
+          <span className="flex gap-[3px] shrink-0" title={lockTitle}>
+            {efforts.map((effort, i) => {
+              const filled = i <= current;
+              return (
+                <button
+                  key={effort}
+                  type="button"
+                  tabIndex={-1}
+                  aria-label={`${label}: ${effort}`}
+                  disabled={disabled || reasoningLocked}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    pick(id, effort);
+                  }}
+                  className={`w-[9px] h-[9px] rounded-[2px] ${
+                    filled
+                      ? selected
+                        ? 'bg-droid-accent'
+                        : 'bg-droid-text-muted'
+                      : selected
+                        ? 'bg-[#333]'
+                        : 'bg-droid-active'
+                  } ${disabled || reasoningLocked ? 'cursor-not-allowed' : ''}`}
+                  style={{
+                    transition: 'background .2s, transform .25s cubic-bezier(.34,1.56,.64,1)',
+                    transitionDelay: `${String(i * 25)}ms`,
+                    transform: filled && selected ? 'scale(1.08)' : undefined,
+                  }}
+                />
+              );
+            })}
+          </span>
+          {arrow(1)}
+          <span
+            className={`w-[52px] shrink-0 text-[11.5px] capitalize truncate ${
+              selected ? 'text-droid-text' : 'text-droid-text-muted'
+            }`}
+          >
+            {shown}
+          </span>
+        </>
+      )}
     </div>
   );
 });
