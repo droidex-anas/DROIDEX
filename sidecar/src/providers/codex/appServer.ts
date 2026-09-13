@@ -1,0 +1,244 @@
+// The `codex app-server` stdio transport: one JSON object per line, in
+// JSON-RPC's envelope shapes but without its `jsonrpc` field. Owns the framing,
+// request correlation and the lifetime of the one process it speaks to.
+import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
+
+// A line this long is a runaway payload rather than a message: fail the client
+// instead of buffering until the sidecar runs out of memory.
+const MAX_LINE_BYTES = 1_048_576;
+const METHOD_NOT_FOUND = -32601;
+const HANDLER_FAILED = -32603;
+// How long a closing process gets at each step before the next signal.
+const EXIT_GRACE_MS = 500;
+// Enough of the CLI's own diagnostics to explain why it exited.
+const STDERR_TAIL_CHARS = 2_000;
+
+// Codex only echoes this back in its user agent. The sidecar is not told the
+// app's version, so `0.0.0` stands for "unknown" outside a dev run.
+const CLIENT_INFO = {
+  name: 'droidex',
+  title: 'DROIDEX',
+  version: process.env.npm_package_version ?? '0.0.0',
+};
+
+type JsonRpcId = number | string;
+
+interface WireMessage {
+  id?: JsonRpcId;
+  method?: string;
+  params?: unknown;
+  result?: unknown;
+  error?: { code: number; message: string };
+}
+
+interface PendingRequest {
+  resolve: (result: unknown) => void;
+  reject: (error: Error) => void;
+}
+
+export interface InitializeResponse {
+  userAgent: string;
+}
+
+// Every connection starts here, after its handlers are registered: the
+// capability opt-in that exposes the thread and turn API, then the bare
+// `initialized` notification Codex waits for before serving anything else.
+export async function initialize(client: AppServerClient): Promise<InitializeResponse> {
+  const response = await client.request<InitializeResponse>('initialize', {
+    clientInfo: CLIENT_INFO,
+    capabilities: { experimentalApi: true },
+  });
+  client.notify('initialized');
+  return response;
+}
+
+export class AppServerClient {
+  private readonly child: ChildProcessWithoutNullStreams;
+  private readonly pending = new Map<number, PendingRequest>();
+  private readonly notificationHandlers = new Map<string, (params: unknown) => void>();
+  private readonly requestHandlers = new Map<string, (params: unknown) => Promise<unknown>>();
+  private closed?: (error: Error) => void;
+  private remainder = '';
+  private diagnostics = '';
+  private nextRequestId = 1;
+  private failure?: Error;
+
+  // The environment is inherited as-is: Codex reads its own home, login and
+  // config from it, and a relocated home would report the user as signed out.
+  constructor(executable: string, cwd: string) {
+    this.child = spawn(executable, ['app-server'], { cwd, stdio: ['pipe', 'pipe', 'pipe'] });
+    this.child.stdout.setEncoding('utf8');
+    this.child.stderr.setEncoding('utf8');
+    this.child.stdout.on('data', (chunk: string) => {
+      this.receive(chunk);
+    });
+    this.child.stderr.on('data', (chunk: string) => {
+      this.diagnostics = (this.diagnostics + chunk).slice(-STDERR_TAIL_CHARS);
+    });
+    // The last line may arrive without its terminator; deliver it before the
+    // exit that follows fails everything still pending.
+    this.child.stdout.on('end', () => {
+      this.receive('\n');
+    });
+    this.child.stdin.on('error', (error: Error) => {
+      this.fail(error);
+    });
+    this.child.on('error', (error: Error) => {
+      this.fail(error);
+    });
+    this.child.on('close', (code, signal) => {
+      this.fail(new Error(this.exitMessage(code, signal)));
+    });
+  }
+
+  get pid(): number | undefined {
+    return this.child.pid;
+  }
+
+  isAlive(): boolean {
+    return this.child.exitCode === null && this.child.signalCode === null;
+  }
+
+  // Handlers are registered before `initialize` so a server request or
+  // notification can never arrive before its dispatch entry exists.
+  onNotification(method: string, handler: (params: unknown) => void): void {
+    this.notificationHandlers.set(method, handler);
+  }
+
+  onRequest(method: string, handler: (params: unknown) => Promise<unknown>): void {
+    this.requestHandlers.set(method, handler);
+  }
+
+  // Called once when the process is gone, so a turn waiting on notifications
+  // fails instead of hanging. Fires immediately if it is already gone.
+  onClose(listener: (error: Error) => void): void {
+    this.closed = listener;
+    if (this.failure) this.settle(this.failure);
+  }
+
+  request<T>(method: string, params: unknown): Promise<T> {
+    if (this.failure) return Promise.reject(this.failure);
+    const id = this.nextRequestId++;
+    return new Promise<T>((resolve, reject) => {
+      // Registered before the write, so a response cannot arrive unclaimed.
+      this.pending.set(id, { resolve: resolve as (result: unknown) => void, reject });
+      this.write({ id, method, params });
+    });
+  }
+
+  notify(method: string, params?: unknown): void {
+    this.write(params === undefined ? { method } : { method, params });
+  }
+
+  async close(): Promise<void> {
+    this.fail(new Error('The Codex session was closed.'));
+    if (!this.isAlive()) return;
+    this.child.stdin.end();
+    if (await this.exits()) return;
+    this.child.kill('SIGTERM');
+    if (await this.exits()) return;
+    this.child.kill('SIGKILL');
+  }
+
+  private receive(chunk: string): void {
+    this.remainder += chunk;
+    let newline = this.remainder.indexOf('\n');
+    while (newline >= 0) {
+      const line = this.remainder.slice(0, newline).replace(/\r$/, '');
+      this.remainder = this.remainder.slice(newline + 1);
+      if (line) this.dispatch(line);
+      newline = this.remainder.indexOf('\n');
+    }
+    if (Buffer.byteLength(this.remainder) > MAX_LINE_BYTES) {
+      this.fail(new Error('Codex sent a line larger than 1 MiB; the session was ended.'));
+      this.remainder = '';
+      this.child.kill('SIGKILL');
+    }
+  }
+
+  // Drained straight into the handlers: a queue between the process and the
+  // transcript would drop streaming deltas the moment a turn outpaces it.
+  private dispatch(line: string): void {
+    let message: WireMessage;
+    try {
+      message = JSON.parse(line) as WireMessage;
+    } catch {
+      this.fail(new Error('Codex sent a line that is not JSON; the session was ended.'));
+      this.child.kill('SIGKILL');
+      return;
+    }
+    if (message.method !== undefined && message.id !== undefined) {
+      void this.serve(message.id, message.method, message.params);
+      return;
+    }
+    if (message.method !== undefined) {
+      // An unhandled notification is one of the many this adapter has no use
+      // for; the handled set is the mapper's own list.
+      this.notificationHandlers.get(message.method)?.(message.params);
+      return;
+    }
+    if (typeof message.id !== 'number') return;
+    const pending = this.pending.get(message.id);
+    if (!pending) return;
+    this.pending.delete(message.id);
+    if (message.error) pending.reject(new Error(message.error.message));
+    else pending.resolve(message.result);
+  }
+
+  // Fails closed: a request this build does not implement is answered with
+  // method-not-found, never with a grant.
+  private async serve(id: JsonRpcId, method: string, params: unknown): Promise<void> {
+    const handler = this.requestHandlers.get(method);
+    if (!handler) {
+      this.write({ id, error: { code: METHOD_NOT_FOUND, message: `Unsupported: ${method}` } });
+      return;
+    }
+    try {
+      this.write({ id, result: await handler(params) });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      this.write({ id, error: { code: HANDLER_FAILED, message } });
+    }
+  }
+
+  private write(message: WireMessage): void {
+    if (this.failure) return;
+    this.child.stdin.write(`${JSON.stringify(message)}\n`);
+  }
+
+  private fail(error: Error): void {
+    if (this.failure) return;
+    this.failure = error;
+    for (const pending of this.pending.values()) pending.reject(error);
+    this.pending.clear();
+    this.settle(error);
+  }
+
+  private settle(error: Error): void {
+    const listener = this.closed;
+    this.closed = undefined;
+    listener?.(error);
+  }
+
+  private exitMessage(code: number | null, signal: NodeJS.Signals | null): string {
+    const ended = signal ? `was killed (${signal})` : `exited with code ${String(code ?? 0)}`;
+    const detail = this.diagnostics.trim();
+    return detail ? `Codex ${ended}: ${detail}` : `Codex ${ended}.`;
+  }
+
+  private exits(): Promise<boolean> {
+    return new Promise((resolve) => {
+      if (!this.isAlive()) {
+        resolve(true);
+        return;
+      }
+      const timer = setTimeout(() => {
+        resolve(false);
+      }, EXIT_GRACE_MS);
+      this.child.once('close', () => {
+        clearTimeout(timer);
+        resolve(true);
+      });
+    });
+  }
+}
