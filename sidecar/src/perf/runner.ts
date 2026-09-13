@@ -20,6 +20,7 @@ import { evaluateBudgets } from './budgets.js';
 import { evaluateReplayGates } from './gates.js';
 import type { ReplayReport } from './report.js';
 import { acceptReplayWireMessage, messageText, type ReplayWireCursor } from './replayWire.js';
+import { NO_PROVIDER_PROBES } from '../providers/providerProbes.js';
 import {
   BRIDGE_PROTOCOL_VERSION,
   type ServerWireMessage,
@@ -134,6 +135,7 @@ export async function runReplay(options: ReplayRunOptions): Promise<ReplayReport
     },
     {
       dependencies,
+      providerProbes: NO_PROVIDER_PROBES,
       initialModels: [
         {
           id: 'model-default',

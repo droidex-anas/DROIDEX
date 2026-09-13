@@ -83,7 +83,14 @@ export interface NormalizedEvent {
     exitCode?: number;
   };
   childSession?: ChildSessionSignal;
-  tokens?: { tokensIn: number; tokensOut: number; contextTokens?: number };
+  tokens?: {
+    tokensIn: number;
+    tokensOut: number;
+    contextTokens?: number;
+    // The model's context window, for a provider that reports it with usage
+    // instead of in its model catalog.
+    maxContextTokens?: number;
+  };
   done?: boolean;
 }
 

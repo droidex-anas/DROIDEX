@@ -13,6 +13,7 @@ import {
   rebasedContextSnapshot,
 } from './contextSnapshots.js';
 import type { ContextStatsSnapshot, ServerEvent, SessionSummary } from './protocol.js';
+import type { NormalizedTokenUsage } from './SessionEventFlow.js';
 import type { SessionRegistry } from './SessionRegistry.js';
 import type { LiveSession } from './SessionLifecycle.js';
 
@@ -40,12 +41,6 @@ export interface ChildOperationTarget extends ProviderOperationTarget, ChildIden
 }
 
 export type ContextOperationTarget = LiveOperationTarget | ChildOperationTarget;
-
-export interface NormalizedTokenUsage {
-  tokensIn: number;
-  tokensOut: number;
-  contextTokens?: number;
-}
 
 export interface UsageOffset {
   tokensIn: number;
@@ -125,6 +120,13 @@ export class SessionContext {
       sourceSessionId === stableAppSessionId &&
       !this.pendingCompactionResets.has(primaryResourceKey(stableAppSessionId));
     const currentContextTokens = canPublishContext ? usage.contextTokens : undefined;
+
+    // A provider that reports its window with usage is the only source of it
+    // for models the Droid catalog does not carry. Recorded before the
+    // unchanged-usage return below, which a repeated reading takes, and only
+    // for the primary: a child's usage is measured on the child's own model.
+    if (canPublishContext && usage.maxContextTokens !== undefined && nextSummary.modelId)
+      this.dependencies.noteContextWindow(nextSummary.modelId, usage.maxContextTokens);
 
     // Providers repeat identical usage many times per turn. Re-publishing an
     // unchanged reading would persist and broadcast a no-op summary update, so

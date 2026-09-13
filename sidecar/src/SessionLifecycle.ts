@@ -215,6 +215,7 @@ export class SessionLifecycle {
         agents,
         autonomy,
         provider: kind,
+        ...(providerSession.resumeId ? { resumeId: providerSession.resumeId } : {}),
         ...(maxContextTokens !== undefined ? { maxContextTokens } : {}),
         ...(autoCompactionArmed ? { compactionTokenLimit } : {}),
         now: Date.now(),

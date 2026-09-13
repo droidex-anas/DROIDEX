@@ -351,6 +351,7 @@ Start from `.env.example` for local overrides.
   running beside the main app
 - `DROID_PATH`: explicit Droid CLI path
 - `CLAUDE_PATH`: explicit Claude Code CLI path
+- `CODEX_PATH`: explicit Codex CLI path
 - `FACTORY_API_KEY`: optional Factory key for Droid child processes
 
 ## Secrets
