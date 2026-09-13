@@ -415,8 +415,9 @@ export class SessionLifecycle {
     // A provider that takes the prompt into the turn it is already running
     // needs neither the queue nor an interrupt. A session already interrupting
     // has no turn left to steer, so those sends keep the queued path.
-    const compacting = liveSession.compacting || liveSession.autoCompacting;
-    const interrupting = liveSession.interrupting || liveSession.interruptingForSteer;
+    const compacting = Boolean(liveSession.compacting) || liveSession.autoCompacting;
+    const interrupting =
+      Boolean(liveSession.interrupting) || Boolean(liveSession.interruptingForSteer);
     const steered =
       compacting || interrupting ? 'interrupt' : await this.steerTurn(liveSession, text);
     if (steered === 'taken') return;
