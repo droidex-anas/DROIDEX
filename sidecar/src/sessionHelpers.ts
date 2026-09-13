@@ -362,6 +362,7 @@ export function buildResumedSession(input: BuildResumedSessionInput): {
       providerSessionId: input.providerSessionId,
       compactedFromProviderSessionIds: input.historical?.compactedFromProviderSessionIds ?? [],
       provider: input.historical?.provider ?? DEFAULT_PROVIDER,
+      ...(input.historical?.resumeId ? { resumeId: input.historical.resumeId } : {}),
       ...classification,
       ...resumedLocation(input),
       ...resumedModelSettings(input),
