@@ -34,8 +34,8 @@ export type ThreadItem =
 const MAPPED_ITEMS = new Set(['agentMessage', 'commandExecution', 'fileChange', 'mcpToolCall']);
 
 export function threadItem(params: unknown): ThreadItem {
-  const { item } = params as { item: ThreadItem };
-  return MAPPED_ITEMS.has(item.type) ? item : { type: 'ignored' };
+  const { item } = params as { item?: ThreadItem };
+  return item && MAPPED_ITEMS.has(item.type) ? item : { type: 'ignored' };
 }
 
 export interface ToolCall {
@@ -75,7 +75,9 @@ export function toolCall(item: ThreadItem): ToolCall | undefined {
       name: `mcp__${item.server}__${item.tool}`,
       detail: item.tool,
       args: item.arguments,
-      failed: item.status !== 'completed',
+      // Codex reports a tool that answered with an error as completed, so the
+      // error itself is what makes the row an error.
+      failed: item.status !== 'completed' || item.error !== null,
     };
   return undefined;
 }

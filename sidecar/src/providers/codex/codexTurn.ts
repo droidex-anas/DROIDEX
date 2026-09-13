@@ -13,6 +13,8 @@ export class TurnStream {
     this.wake();
   }
 
+  // The turn is over: it completed, or the session released it because the
+  // consumer stopped reading. Either way a waiter inside drain() must wake.
   finish(): void {
     this.settlement ??= 'done';
     this.wake();

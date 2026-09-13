@@ -55,6 +55,9 @@ export class CodexEventMapper {
   constructor(private readonly appSessionId: string) {}
 
   map(method: string, params: unknown): NormalizedEvent[] {
+    // The payloads below are read by shape; a notification without one is a
+    // version difference, not a reason to throw out of the transport.
+    if (typeof params !== 'object' || params === null) return [];
     switch (method) {
       case 'item/agentMessage/delta':
         return this.delta('text', params as DeltaParams);

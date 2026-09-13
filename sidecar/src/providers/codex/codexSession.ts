@@ -43,8 +43,31 @@ interface TurnResponse {
   turn: { id: string };
 }
 
-interface CompletedTurn {
-  turn: { id: string; status: string; error: { message: string } | null };
+interface CodexTurn {
+  id: string;
+  status?: string;
+  error?: { message: string } | null;
+}
+
+function isObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
+}
+
+function turnOf(params: unknown): CodexTurn | undefined {
+  if (!isObject(params) || !isObject(params.turn)) return undefined;
+  const turn = params.turn as Partial<CodexTurn>;
+  return typeof turn.id === 'string' ? (turn as CodexTurn) : undefined;
+}
+
+function errorOf(params: unknown): { message: string; willRetry: boolean } | undefined {
+  if (!isObject(params) || !isObject(params.error)) return undefined;
+  const message = (params.error as { message?: unknown }).message;
+  if (typeof message !== 'string') return undefined;
+  return { message, willRetry: params.willRetry === true };
+}
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
 }
 
 export class CodexSession implements ProviderSession {
@@ -61,6 +84,9 @@ export class CodexSession implements ProviderSession {
   private threadModel?: string;
   private turnId?: string;
   private turn?: TurnStream;
+  // Stop pressed before `turn/start` answered: there is a turn to end but no id
+  // to name it with yet.
+  private pendingInterrupt = false;
   // Approval and question cards this session is still waiting on, so a turn
   // that ends first can take them off the screen.
   private openPrompts = 0;
@@ -125,6 +151,7 @@ export class CodexSession implements ProviderSession {
     if (!threadId) throw new Error('This Codex session has no thread to run a turn on.');
     const turn = new TurnStream();
     this.turn = turn;
+    this.pendingInterrupt = false;
     try {
       const { approvalPolicy, sandbox } = codexAutonomy(this.autonomy);
       // A turn's overrides stick to the thread, so a cleared model has to name
@@ -138,11 +165,14 @@ export class CodexSession implements ProviderSession {
         ...(model ? { model } : {}),
         ...(this.model.reasoningEffort ? { effort: this.model.reasoningEffort } : {}),
       });
-      this.turnId = started.turn.id;
+      this.adoptTurn(started.turn.id);
       yield* turn.drain();
     } finally {
+      // Releases a waiter left parked when the consumer stops reading early.
+      turn.finish();
       this.turn = undefined;
       this.turnId = undefined;
+      this.pendingInterrupt = false;
     }
   }
 
@@ -153,16 +183,25 @@ export class CodexSession implements ProviderSession {
   }
 
   setModel(settings: ProviderModelSettings): Promise<void> {
-    this.model = settings;
+    // An omitted field keeps its value; only what the caller named changes.
+    this.model = {
+      ...this.model,
+      ...(settings.modelId !== undefined ? { modelId: settings.modelId } : {}),
+      ...(settings.reasoningEffort !== undefined
+        ? { reasoningEffort: settings.reasoningEffort }
+        : {}),
+    };
     return Promise.resolve();
   }
 
   async interrupt(): Promise<void> {
-    const threadId = this.threadId;
-    const turnId = this.turnId;
     // A stale pair would end a turn that already settled, or none at all.
-    if (!threadId || !turnId) return;
-    await this.client.request('turn/interrupt', { threadId, turnId });
+    if (!this.threadId || !this.turn) return;
+    if (!this.turnId) {
+      this.pendingInterrupt = true;
+      return;
+    }
+    await this.client.request('turn/interrupt', { threadId: this.threadId, turnId: this.turnId });
   }
 
   close(): Promise<void> {
@@ -175,17 +214,22 @@ export class CodexSession implements ProviderSession {
         this.turn?.push(this.mapper.map(method, params));
       });
     }
+    // Every payload is read through a guard: a notification this build does not
+    // recognize must not throw out of the transport's stdout listener.
     this.client.onNotification('turn/started', (params) => {
-      this.turnId = (params as TurnResponse).turn.id;
+      const turn = turnOf(params);
+      if (turn) this.adoptTurn(turn.id);
     });
     this.client.onNotification('turn/completed', (params) => {
-      this.settle((params as CompletedTurn).turn);
+      const turn = turnOf(params);
+      if (turn) this.settle(turn);
     });
     this.client.onNotification('error', (params) => {
-      const { error, willRetry } = params as { error: { message: string }; willRetry: boolean };
-      this.turn?.push([this.mapper.errorEvent(error.message)]);
+      const failure = errorOf(params);
+      if (!failure) return;
+      this.turn?.push([this.mapper.errorEvent(failure.message)]);
       // A retrying error is a hiccup the turn recovers from on its own.
-      if (!willRetry) this.turn?.fail(new Error(error.message));
+      if (!failure.willRetry) this.turn?.fail(new Error(failure.message));
     });
     this.client.onClose((error) => {
       this.turn?.fail(error);
@@ -208,7 +252,19 @@ export class CodexSession implements ProviderSession {
     }));
   }
 
-  private settle(turn: CompletedTurn['turn']): void {
+  // The turn's id arrives either on `turn/started` or with the `turn/start`
+  // response, whichever lands first; a Stop that beat both goes out now.
+  private adoptTurn(turnId: string): void {
+    this.turnId = turnId;
+    const threadId = this.threadId;
+    if (!this.pendingInterrupt || !threadId) return;
+    this.pendingInterrupt = false;
+    void this.client
+      .request('turn/interrupt', { threadId, turnId })
+      .catch((error: unknown) => this.turn?.push([this.mapper.errorEvent(errorMessage(error))]));
+  }
+
+  private settle(turn: CodexTurn): void {
     this.settlePrompts();
     if (turn.status === 'failed') {
       this.turn?.fail(new Error(turn.error?.message ?? 'Codex ended the turn with an error.'));
