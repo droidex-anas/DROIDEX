@@ -1010,7 +1010,9 @@ export class SessionManager {
       statuses: providerStatuses(
         this.runtime.status().droidPath,
         this.cachedModels ?? [],
-        defaults.modelId,
+        // A Factory default configured for Spec names its own model, and that is
+        // the mode a new chat opens in, so the same selection answers here.
+        modelDefaultForMode(defaults.interactionMode ?? 'auto', defaults),
         (provider) => this.providerProbes.status(provider),
       ),
     });
