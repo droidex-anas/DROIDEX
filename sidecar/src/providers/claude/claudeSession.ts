@@ -147,7 +147,7 @@ function sessionOptions(
     // Plan mode is the follow-up PR's, and at high autonomy bypassPermissions
     // skips canUseTool altogether, so the callback's refusal would never run.
     // Removing the tool from the model's context holds in every mode.
-    disallowedTools: ['ExitPlanMode'],
+    disallowedTools: ['EnterPlanMode', 'ExitPlanMode'],
     permissionMode: claudePermissionMode(input.autonomy),
     // Consent to the bypass mode, not the mode itself: the CLI reads this flag
     // only as "this host may use bypassPermissions" and takes the mode from

@@ -809,6 +809,7 @@ export default function PromptInput({
   // for a chat on another provider: that chat starts on its provider's own
   // default rather than a model its runtime has never heard of.
   const primaryModelId = providerModelSelection(
+    composerProvider,
     chatScoped ? activeSession.modelId : state.agentConfig.primary.modelId,
     composerModels,
   );
