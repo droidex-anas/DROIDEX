@@ -1004,6 +1004,7 @@ export class SessionManager {
       statuses: providerStatuses(
         this.runtime.status().droidPath,
         this.cachedModels ?? [],
+        this.droidDefaultModelId(),
         (provider) => this.providerProbes.status(provider),
       ),
     });
@@ -1050,6 +1051,13 @@ export class SessionManager {
     // The resolved droid path may have changed, and Droid's readiness follows it.
     this.emitProviderStatus();
     await this.emitEnvironment();
+  }
+
+  // The model a new Droid chat starts on: the Factory setting when it names one
+  // this build can run, otherwise the CLI catalog's own default — the rule the
+  // lifecycle already opens a session with.
+  private droidDefaultModelId(): string | undefined {
+    return validateFactoryDefaults(readFactoryDefaults(), this.cachedModels ?? []).modelId;
   }
 
   private async getFactoryDefaults(): Promise<FactoryDefaultSettings> {

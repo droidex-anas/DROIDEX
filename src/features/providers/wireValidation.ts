@@ -14,7 +14,7 @@ export function isProviderStatus(value: unknown): boolean {
     isRecord(value) &&
     isOneOf(PROVIDER_KINDS, value.provider) &&
     isOneOf(PROVIDER_READINESS, value.readiness) &&
-    optionalStrings(value, ['version', 'accountLabel', 'message']) &&
+    optionalStrings(value, ['version', 'accountLabel', 'message', 'defaultModelId']) &&
     Array.isArray(value.models) &&
     value.models.every(isModelInfo)
   );

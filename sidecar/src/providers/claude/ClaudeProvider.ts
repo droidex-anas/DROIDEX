@@ -5,8 +5,11 @@ import {
 } from '@anthropic-ai/claude-agent-sdk';
 import type { McpServerConfig } from '@factory/droid-sdk';
 import { randomUUID } from 'node:crypto';
-import { tmpdir } from 'node:os';
+import { readFileSync } from 'node:fs';
+import { homedir, tmpdir } from 'node:os';
+import { join } from 'node:path';
 
+import { nonEmptyEnv } from '../../droidexPaths.js';
 import type { ModelInfo, ProviderStatus } from '../../protocol.js';
 import type {
   Provider,
@@ -106,11 +109,17 @@ export class ClaudeProvider implements Provider {
           message: 'Run `claude` in a terminal and sign in, then refresh.',
           models: [],
         };
+      const catalog = await probe.supportedModels();
+      const defaultModelId = claudeDefaultModelId(catalog);
       return {
         provider: 'claude',
         readiness: 'ready',
         accountLabel: account,
-        models: (await probe.supportedModels()).flatMap(providerModel),
+        ...(defaultModelId ? { defaultModelId } : {}),
+        // The recommended row is the CLI's own name for "no model of your own",
+        // which is what DROIDEX's default row already means, so it is resolved
+        // above rather than listed as a model of its own.
+        models: catalog.filter((model) => model.value !== RECOMMENDED).flatMap(providerModel),
       };
     } catch (error) {
       return claudeProbeFailure(error);
@@ -139,6 +148,45 @@ function accountLabel(account: {
   return [account.email, account.organization, account.tokenSource, account.apiKeySource]
     .map((value) => value?.trim() ?? '')
     .find((value) => value !== '' && value.toLowerCase() !== 'none');
+}
+
+// The catalog row the CLI publishes for "whatever is recommended", rather than
+// for a model of its own.
+const RECOMMENDED = 'default';
+
+interface ClaudeModel {
+  value: string;
+  displayName: string;
+  resolvedModel?: string;
+}
+
+// The model a new Claude Code session starts on, named the way the catalog names
+// it: the CLI's own `model` setting when the user configured one, otherwise the
+// row it recommends. Either can name a model by alias or by wire id, so both are
+// resolved back to the row the picker lists.
+function claudeDefaultModelId(models: ClaudeModel[]): string | undefined {
+  const recommended = models.find((model) => model.value === RECOMMENDED);
+  const wanted = claudeSettingsModel() ?? recommended?.resolvedModel ?? recommended?.value;
+  if (!wanted) return undefined;
+  const row = models.find(
+    (model) =>
+      model.value !== RECOMMENDED && (model.value === wanted || model.resolvedModel === wanted),
+  );
+  return row?.value ?? wanted;
+}
+
+// The CLI keeps its own default under its config directory, which CLAUDE_CONFIG_DIR
+// relocates. A file that is missing or unreadable simply names no model.
+function claudeSettingsModel(): string | undefined {
+  const directory = nonEmptyEnv(process.env.CLAUDE_CONFIG_DIR, join(homedir(), '.claude'));
+  try {
+    const settings = JSON.parse(readFileSync(join(directory, 'settings.json'), 'utf8')) as {
+      model?: unknown;
+    };
+    return typeof settings.model === 'string' && settings.model.trim() ? settings.model : undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 // A catalog entry missing its id or label cannot be selected or shown, so it is

@@ -255,6 +255,10 @@ export interface ProviderStatus {
   version?: string;
   accountLabel?: string;
   message?: string;
+  // The model a new chat on this provider starts on when it pins none: what the
+  // harness itself is configured with, so the app can name it instead of
+  // calling it "Default". Absent when the harness reports none.
+  defaultModelId?: string;
   models: ModelInfo[];
 }
 

@@ -11,7 +11,7 @@ import {
   type ExactChildSettingsTarget,
 } from '../lib/exactChildSettings';
 import { effectiveProvider } from '../features/providers/providerDraft';
-import { providerModelCatalog } from '../features/providers/providerIdentity';
+import { providerDefaultModel, providerModelCatalog } from '../features/providers/providerIdentity';
 import ModelCatalogList, { defaultModelOf, effortsFor, stepEffort } from './ModelCatalogList';
 
 export type { ExactChildSettingsTarget } from '../lib/exactChildSettings';
@@ -159,12 +159,19 @@ export default function ModelSelectorPopover({
     };
   }, [onClose]);
 
+  // The row a chat with no model of its own runs on: the default its harness
+  // reports, and the catalog's own default row only where none is reported.
+  const defaultModel = useMemo(
+    () =>
+      providerDefaultModel(state.provider, source, state.providerStatuses) ??
+      defaultModelOf(source),
+    [state.provider, state.providerStatuses, source],
+  );
   const selectedLabel = (() => {
-    if (!effModelId) return 'Default';
+    if (!effModelId) return defaultModel?.displayName ?? 'Default';
     const m = source.find((x) => x.id === effModelId);
     return m?.displayName ?? effModelId;
   })();
-  const defaultModel = useMemo(() => defaultModelOf(source), [source]);
   const selectedConfigModel = effModelId ? source.find((x) => x.id === effModelId) : undefined;
   const selectedSupportedReasoning = selectedConfigModel?.supportedReasoningEfforts;
 

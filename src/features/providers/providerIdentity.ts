@@ -59,6 +59,20 @@ export function providerModelCatalog(
   return status?.models ?? NO_MODELS;
 }
 
+// The model a chat on this provider starts on when it pins none: the default its
+// harness reports, named by the provider's own catalog. An id the catalog does
+// not list still names itself, which is better than calling it "Default"; a
+// provider that reports no default has nothing to name.
+export function providerDefaultModel(
+  provider: ProviderKind,
+  catalog: ModelInfo[],
+  statuses: ProviderStatus[],
+): ModelInfo | undefined {
+  const id = statuses.find((entry) => entry.provider === provider)?.defaultModelId;
+  if (!id) return undefined;
+  return catalog.find((model) => model.id === id) ?? { id, displayName: id, isCustom: false };
+}
+
 // A model that is not in this provider's catalog is not a selection here — a
 // stale pick, or one belonging to another provider — so it reads as "no
 // selection" and the provider's own default is used instead. The stored

@@ -102,6 +102,7 @@ import ModelSelectorPopover from './ModelSelectorPopover';
 import ProviderPicker from '../features/providers/ProviderPicker';
 import { effectiveProvider } from '../features/providers/providerDraft';
 import {
+  providerDefaultModel,
   providerModelCatalog,
   providerModelSelection,
 } from '../features/providers/providerIdentity';
@@ -827,9 +828,16 @@ export default function PromptInput({
   const selectedModel = primaryModelId
     ? composerModels.find((m) => m.id === primaryModelId)
     : undefined;
+  // With no model of its own a chat runs on its harness's configured default, so
+  // the chip names that model rather than the idea of one.
+  const providerDefault = providerDefaultModel(
+    composerProvider,
+    composerModels,
+    state.providerStatuses,
+  );
   const selectedModelLabel = primaryModelId
     ? (selectedModel?.displayName ?? primaryModelId)
-    : 'Default model';
+    : (providerDefault?.displayName ?? 'Default model');
   // The global reasoning default is Droid's too, and no other provider offers
   // the control, so the chip shows nothing rather than a setting it ignores.
   const primaryReasoning = droidComposer

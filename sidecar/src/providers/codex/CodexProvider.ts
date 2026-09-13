@@ -1,7 +1,9 @@
 import { randomUUID } from 'node:crypto';
+import { readFileSync } from 'node:fs';
 import { homedir, tmpdir } from 'node:os';
 import { join } from 'node:path';
 
+import { nonEmptyEnv } from '../../droidexPaths.js';
 import { isExecutable, resolveOnPathSync } from '../../Environment.js';
 import { reasoningValue } from '../../modelCatalog.js';
 import type { ModelInfo, ProviderStatus, ReasoningEffort } from '../../protocol.js';
@@ -134,12 +136,15 @@ export class CodexProvider implements Provider {
         };
       const version = codexVersion(userAgent);
       const label = accountLabel(account.account);
+      const models = await listModels(client);
+      const defaultModelId = (await configuredModel(client)) ?? defaultModel(models);
       return {
         provider: 'codex',
         readiness: 'ready',
         ...(version ? { version } : {}),
         ...(label ? { accountLabel: label } : {}),
-        models: await listModels(client),
+        ...(defaultModelId ? { defaultModelId } : {}),
+        models,
       };
     } catch (error) {
       const message = deadline.expired ? 'Codex did not answer in time.' : errorMessage(error);
@@ -220,6 +225,44 @@ async function listModels(client: AppServerClient): Promise<ModelInfo[]> {
     cursor = page.nextCursor;
   } while (cursor);
   return models;
+}
+
+// The model a new thread starts on, in the order the CLI resolves it: the
+// effective config the app server serves, then the `model` key of config.toml
+// for a server that will not serve it — one that cannot parse the whole config
+// refuses the request, and the file still names the setting the CLI reads.
+async function configuredModel(client: AppServerClient): Promise<string | undefined> {
+  try {
+    const { config } = await client.request<{ config: { model?: string | null } }>(
+      'config/read',
+      {},
+    );
+    if (named(config.model)) return String(config.model);
+  } catch {
+    // The file below is the same setting, read without the server's help.
+  }
+  return configFileModel();
+}
+
+// The top-level `model` key, read only until the first table header so a model
+// named inside a profile or a provider table is never mistaken for the default.
+function configFileModel(): string | undefined {
+  const home = nonEmptyEnv(process.env.CODEX_HOME, join(homedir(), '.codex'));
+  try {
+    for (const line of readFileSync(join(home, 'config.toml'), 'utf8').split(/\r?\n/)) {
+      const text = line.trim();
+      if (text.startsWith('[')) return undefined;
+      const match = /^model\s*=\s*["']([^"']+)["']/.exec(text);
+      if (match) return match[1];
+    }
+  } catch {
+    return undefined;
+  }
+  return undefined;
+}
+
+function defaultModel(models: ModelInfo[]): string | undefined {
+  return models.find((model) => model.isDefault)?.id;
 }
 
 function providerModel(model: CodexModel): ModelInfo {

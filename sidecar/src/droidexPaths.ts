@@ -1,7 +1,9 @@
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 
-function nonEmptyEnv(value: string | undefined, fallback: string): string {
+// Blank and whitespace-only values are treated as unset: .env.example documents
+// empty assignments, and a CLI's own home override reaches us the same way.
+export function nonEmptyEnv(value: string | undefined, fallback: string): string {
   if (!value?.trim()) return fallback;
   return value;
 }
