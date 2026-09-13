@@ -125,10 +125,10 @@ export class CodexProvider implements Provider {
     }, PROBE_TIMEOUT_MS);
     signal.addEventListener('abort', stop);
     try {
+      // The gate comes first: an unsupported CLI is reported as such, not as
+      // whatever its account call happens to say about a protocol this build
+      // does not speak.
       const { userAgent } = await initialize(client);
-      const account = await client.request<AccountResponse>('account/read', {});
-      if (!account.account && account.requiresOpenaiAuth)
-        return unavailable('unauthenticated', LOGIN_HINT);
       const version = codexVersion(userAgent);
       if (!version) return unavailable('error', `Codex did not report a version (${userAgent}).`);
       if (!version.startsWith(SUPPORTED_VERSIONS.prefix))
@@ -137,6 +137,9 @@ export class CodexProvider implements Provider {
           `Codex ${version} is installed; this build supports ${SUPPORTED_VERSIONS.label}.`,
           version,
         );
+      const account = await client.request<AccountResponse>('account/read', {});
+      if (!account.account && account.requiresOpenaiAuth)
+        return unavailable('unauthenticated', LOGIN_HINT);
       const label = accountLabel(account.account);
       return {
         provider: 'codex',
