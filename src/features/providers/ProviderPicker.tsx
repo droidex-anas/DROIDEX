@@ -1,46 +1,77 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { ChevronDown } from 'lucide-react';
 
 import { ModelIcon } from '../../components/ModelIcon';
+import { fitToWindow } from '../../components/composer/popoverFit';
 import { useStoreSelector } from '../../hooks/useStore';
 import { refreshProviders } from '../../lib/commands';
 import { PROVIDER_KINDS, type ProviderKind } from '../../types/bridge';
 import { PROVIDER_LABELS, PROVIDER_MARKS, providerUnavailableReason } from './providerIdentity';
 
+const PREFERRED_WIDTH_PX = 280;
+const MIN_WIDTH_PX = 200;
+
 // The provider chip in the composer toolbar, beside the model chip it scopes.
 // A session's provider is bound when it is created, so an open session shows
-// its binding as a plain mark instead of a control.
+// its binding as a plain mark instead of a control. Open state is owned by the
+// composer, which hides the native browser view while a popover is up.
 export default function ProviderPicker({
   value,
   locked,
+  open,
+  onOpenChange,
   onSelect,
 }: {
   value: ProviderKind;
   locked: boolean;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
   onSelect: (provider: ProviderKind) => void;
 }) {
   const statuses = useStoreSelector((state) => state.providerStatuses);
-  const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
   const buttonRef = useRef<HTMLButtonElement>(null);
+  const [fit, setFit] = useState<{ width: number; left: number }>();
 
-  // Statuses arrive with the sidecar's initial snapshot; ask again if this
-  // composer opened before one did.
-  const missingStatuses = statuses.length === 0;
+  // Readiness is derived from what the sidecar already knows, so asking on
+  // every open costs nothing and keeps a stale CLI from looking available.
   useEffect(() => {
-    if (open && missingStatuses) refreshProviders();
-  }, [open, missingStatuses]);
+    if (open) refreshProviders();
+  }, [open]);
+
+  useLayoutEffect(() => {
+    if (!open) return;
+    const refit = () => {
+      const trigger = buttonRef.current;
+      if (!trigger) return;
+      setFit(
+        fitToWindow(
+          trigger.getBoundingClientRect().left,
+          window.innerWidth,
+          PREFERRED_WIDTH_PX,
+          MIN_WIDTH_PX,
+        ),
+      );
+    };
+    refit();
+    window.addEventListener('resize', refit);
+    return () => {
+      window.removeEventListener('resize', refit);
+    };
+  }, [open]);
 
   useEffect(() => {
     if (!open) return;
-    const onKey = (e: KeyboardEvent) => {
+    const onKey = (e: globalThis.KeyboardEvent) => {
       if (e.key !== 'Escape') return;
-      setOpen(false);
+      onOpenChange(false);
+      // Closing via Escape must return keyboard focus to the chip.
       buttonRef.current?.focus();
     };
     const onDown = (e: MouseEvent) => {
-      if (rootRef.current && !rootRef.current.contains(e.target as Node)) setOpen(false);
+      if (rootRef.current && !rootRef.current.contains(e.target as Node)) onOpenChange(false);
     };
     window.addEventListener('keydown', onKey);
     window.addEventListener('mousedown', onDown);
@@ -48,7 +79,27 @@ export default function ProviderPicker({
       window.removeEventListener('keydown', onKey);
       window.removeEventListener('mousedown', onDown);
     };
-  }, [open]);
+  }, [open, onOpenChange]);
+
+  // Arrow keys walk the rows, as they do in a menu. Unavailable providers are
+  // disabled and therefore unfocusable, so they are skipped rather than trapped.
+  const moveFocus = (e: KeyboardEvent<HTMLDivElement>) => {
+    const rows = Array.from(
+      menuRef.current?.querySelectorAll<HTMLButtonElement>(
+        '[role="menuitemradio"]:not(:disabled)',
+      ) ?? [],
+    );
+    if (rows.length === 0) return;
+    const current = rows.findIndex((row) => row === document.activeElement);
+    let next: number;
+    if (e.key === 'Home') next = 0;
+    else if (e.key === 'End') next = rows.length - 1;
+    else if (e.key === 'ArrowDown') next = (current + 1) % rows.length;
+    else if (e.key === 'ArrowUp') next = (current - 1 + rows.length) % rows.length;
+    else return;
+    e.preventDefault();
+    rows.at(next)?.focus();
+  };
 
   if (locked) {
     return (
@@ -68,7 +119,7 @@ export default function ProviderPicker({
         ref={buttonRef}
         type="button"
         onClick={() => {
-          setOpen((v) => !v);
+          onOpenChange(!open);
         }}
         aria-haspopup="menu"
         aria-expanded={open}
@@ -93,11 +144,14 @@ export default function ProviderPicker({
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: 8, scale: 0.98 }}
             transition={{ duration: 0.16, ease: [0.16, 1, 0.3, 1] }}
-            className="absolute z-50 w-[280px] bottom-full mb-2 left-0"
+            style={fit}
+            className="absolute bottom-full left-0 z-50 mb-2 w-[280px]"
           >
             <div
+              ref={menuRef}
               role="menu"
               aria-label="Provider"
+              onKeyDown={moveFocus}
               className="rounded-2xl border border-droid-border bg-droid-elevated shadow-2xl shadow-black/50 overflow-hidden"
             >
               <div className="flex items-center justify-between px-4 pt-3 pb-2">
@@ -117,7 +171,8 @@ export default function ProviderPicker({
                     )}
                     onSelect={() => {
                       if (provider !== value) onSelect(provider);
-                      setOpen(false);
+                      onOpenChange(false);
+                      buttonRef.current?.focus();
                     }}
                   />
                 ))}

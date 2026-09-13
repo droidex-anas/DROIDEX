@@ -266,6 +266,8 @@ export const SessionRow = memo(function SessionRow({
           >
             {providerMark && (
               <span
+                role="img"
+                aria-label={`${PROVIDER_LABELS[session.provider]} chat`}
                 className="flex justify-center group-hover:invisible group-focus-within:invisible"
                 title={PROVIDER_LABELS[session.provider]}
               >
