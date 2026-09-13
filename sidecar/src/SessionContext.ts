@@ -13,6 +13,7 @@ import {
   rebasedContextSnapshot,
 } from './contextSnapshots.js';
 import type { ContextStatsSnapshot, ServerEvent, SessionSummary } from './protocol.js';
+import type { NormalizedTokenUsage } from './SessionEventFlow.js';
 import type { SessionRegistry } from './SessionRegistry.js';
 import type { LiveSession } from './SessionLifecycle.js';
 
@@ -40,12 +41,6 @@ export interface ChildOperationTarget extends ProviderOperationTarget, ChildIden
 }
 
 export type ContextOperationTarget = LiveOperationTarget | ChildOperationTarget;
-
-export interface NormalizedTokenUsage {
-  tokensIn: number;
-  tokensOut: number;
-  contextTokens?: number;
-}
 
 export interface UsageOffset {
   tokensIn: number;
@@ -141,6 +136,11 @@ export class SessionContext {
       contextUnchanged
     )
       return;
+
+    // A provider that reports its window with usage is the only source of it
+    // for models the Droid catalog does not carry.
+    if (usage.maxContextTokens !== undefined && nextSummary.modelId)
+      this.dependencies.noteContextWindow(nextSummary.modelId, usage.maxContextTokens);
 
     if (currentContextTokens !== undefined) {
       nextSummary.contextTokens = currentContextTokens;
