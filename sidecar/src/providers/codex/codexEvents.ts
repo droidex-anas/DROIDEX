@@ -146,6 +146,8 @@ export class CodexEventMapper {
     return [{ transcript: this.transcript(kind, { text: params.delta }) }];
   }
 
+  // Match normalize.ts: output belongs to the completed tool_result. Emitting
+  // one before completion would make the transcript stop showing the tool as running.
   private appendOutput(params: DeltaParams | undefined): NormalizedEvent[] {
     if (!params) return [];
     const tool = this.tools.get(params.itemId);
