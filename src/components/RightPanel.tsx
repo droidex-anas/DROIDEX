@@ -124,7 +124,7 @@ export default function RightPanel() {
       title={modelLabel}
       trailing={
         reasoningEffort ? (
-          <span className="shrink-0 rounded-md border border-droid-border/70 bg-droid-elevated px-1.5 py-0.5 text-[11px] font-medium capitalize leading-none text-droid-text-secondary">
+          <span className="shrink-0 text-[12px] capitalize leading-none text-droid-text-muted">
             {reasoningEffort}
           </span>
         ) : undefined
@@ -135,13 +135,13 @@ export default function RightPanel() {
   return (
     <div
       data-testid="right-context-panel"
-      className="shrink-0 w-[300px] pt-11 pb-3 pr-3 h-full flex items-start"
+      className="pointer-events-none shrink-0 w-[300px] pt-11 pb-3 pr-3 h-full flex items-start"
     >
       {/* The card hugs its content (capped at the available height). The rows
           that used to arrive late and grow it — PR detection, notes pad,
           subagent list — now share fixed slots or start collapsed, so the one
           remaining height change is the environment rows landing after mount. */}
-      <div className="droid-card w-full max-h-full">
+      <div className="droid-card pointer-events-auto w-full max-h-full">
         {/* Header (no close button — the top toolbar button toggles this panel) */}
         <div className="flex h-11 shrink-0 items-center justify-between border-b border-droid-border/70 pl-4 pr-3">
           <span className="text-[13px] font-semibold tracking-[-0.01em] text-droid-text">

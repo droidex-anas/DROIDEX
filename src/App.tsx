@@ -875,7 +875,7 @@ export default function App() {
               animate={{ opacity: 1, x: 0 }}
               exit={{ opacity: 0, x: 12 }}
               transition={{ duration: 0.2, ease: [0.16, 1, 0.3, 1] }}
-              className="absolute top-0 right-0 h-full w-[312px] z-30"
+              className="pointer-events-none absolute top-0 right-0 h-full w-[312px] z-30"
             >
               <RightPanel />
             </motion.div>

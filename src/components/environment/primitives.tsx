@@ -58,7 +58,7 @@ export function Row({
         {label}
       </span>
       {meta && (
-        <span className="shrink-0 rounded-md bg-droid-elevated px-1.5 py-0.5 text-[11px] font-medium capitalize leading-none text-droid-text-secondary tabular-nums">
+        <span className="shrink-0 text-[12px] capitalize leading-none text-droid-text-muted tabular-nums">
           {meta}
         </span>
       )}
