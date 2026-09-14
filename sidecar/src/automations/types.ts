@@ -19,6 +19,7 @@ export type AutomationReasoningEffort =
   | 'high'
   | 'xhigh'
   | 'max'
+  | 'ultra'
   | 'dynamic';
 
 export interface AutomationInput {

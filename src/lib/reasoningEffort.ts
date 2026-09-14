@@ -9,6 +9,7 @@ const REASONING_EFFORTS: Readonly<Record<ReasoningEffort, true>> = {
   high: true,
   xhigh: true,
   max: true,
+  ultra: true,
   dynamic: true,
 };
 

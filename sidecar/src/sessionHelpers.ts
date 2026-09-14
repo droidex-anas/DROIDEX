@@ -79,6 +79,7 @@ export function reasoningValue(value?: string): ReasoningEffort | undefined {
     value === 'high' ||
     value === 'xhigh' ||
     value === 'max' ||
+    value === 'ultra' ||
     value === 'dynamic'
   ) {
     return value;

@@ -42,6 +42,8 @@ export type ReasoningEffort =
   | 'high'
   | 'xhigh'
   | 'max'
+  // Codex's top level: maximum reasoning with automatic task delegation.
+  | 'ultra'
   | 'dynamic';
 
 export interface BridgeFeature {

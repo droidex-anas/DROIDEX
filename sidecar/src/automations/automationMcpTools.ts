@@ -14,6 +14,7 @@ const reasoningSchema = z.enum([
   'high',
   'xhigh',
   'max',
+  'ultra',
   'dynamic',
 ]);
 
