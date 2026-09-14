@@ -143,8 +143,9 @@ export class CodexProvider implements Provider {
       if (!account.account && account.requiresOpenaiAuth)
         return unavailable('unauthenticated', LOGIN_HINT);
       const label = accountLabel(account.account);
-      const models = await listModels(client);
-      const defaultModelId = (await configuredModel(client)) ?? defaultModel(models);
+      const configured = await configuredModel(client);
+      const models = await listModels(client, configured);
+      const defaultModelId = publishedDefault(models, configured);
       return {
         provider: 'codex',
         readiness: 'ready',
@@ -252,6 +253,13 @@ function configFileModel(): string | undefined {
   return undefined;
 }
 
-function defaultModel(models: ModelInfo[]): string | undefined {
-  return models.find((model) => model.isDefault)?.id;
+// The default row has to name a model the catalog publishes, or it would offer
+// no reasoning efforts to pick from. A configured model Codex no longer knows
+// is not one it can run either, so the catalog's own default stands in.
+function publishedDefault(
+  models: ModelInfo[],
+  configuredId: string | undefined,
+): string | undefined {
+  const configured = models.find((model) => model.id === configuredId);
+  return (configured ?? models.find((model) => model.isDefault))?.id;
 }
