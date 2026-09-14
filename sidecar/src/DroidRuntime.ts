@@ -285,6 +285,11 @@ export function factoryReasoningEffort(reasoning: ReasoningEffort): SdkReasoning
       return SdkReasoningEffort.ExtraHigh;
     case 'max':
       return SdkReasoningEffort.Max;
+    case 'ultra':
+      // Codex's top level; Droid's SDK has nothing to map it to. Silently
+      // running at Medium would diverge from the persisted intent, so this
+      // is rejected instead of coerced.
+      throw new Error("Droid does not support the 'ultra' reasoning effort.");
     case 'medium':
     default:
       return SdkReasoningEffort.Medium;
