@@ -1,6 +1,7 @@
 import { useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
-import { Activity, Check, ChevronRight, Folder, GitPullRequest, ListFilter } from 'lucide-react';
+import { Check, ChevronRight, Folder, GitPullRequest, ListFilter } from 'lucide-react';
 import { Popover } from './environment/Popover';
+import { ActivityStatusGlyph } from './ActivityStatusGlyph';
 import {
   DEFAULT_SIDEBAR_PREFERENCES,
   type SidebarActivityPreferences,
@@ -22,7 +23,7 @@ interface Option<T> {
 const ICON = 'h-4 w-4';
 const VIEWS: Option<SidebarActivityPreferences['view']>[] = [
   { value: 'workspaces', label: 'Workspace', icon: <Folder className={ICON} strokeWidth={1.5} /> },
-  { value: 'activity', label: 'Activity', icon: <Activity className={ICON} strokeWidth={1.5} /> },
+  { value: 'activity', label: 'Activity', icon: <ActivityStatusGlyph status="review" /> },
   {
     value: 'pull-requests',
     label: 'Pull request',

@@ -218,9 +218,7 @@ export const SessionRow = memo(function SessionRow({
           ) : inbox ? (
             <ActivityStatusGlyph
               status={activityStatus}
-              className={
-                onToggleSettled ? 'group-hover:opacity-0 group-focus-within:opacity-0' : ''
-              }
+              className={onToggleSettled ? 'inbox-mark' : ''}
             />
           ) : (
             dot && <span className={`h-1.5 w-1.5 rounded-full ${dot}`} aria-hidden="true" />
@@ -298,7 +296,7 @@ export const SessionRow = memo(function SessionRow({
             e.stopPropagation();
             onToggleSettled(session);
           }}
-          className={`${HOVER_ACTION} left-[7px] ${detail ? 'top-2 translate-y-0' : ''} ${
+          className={`${HOVER_ACTION} inbox-mark-control left-[7px] ${detail ? 'top-2 translate-y-0' : ''} ${
             settled ? 'hover:text-droid-text' : 'hover:text-droid-green'
           }`}
         >

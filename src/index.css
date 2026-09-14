@@ -2,6 +2,58 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Motion tokens (transitions.dev scale). Usage decides the token, not the
+   number: position change and open/close on --ease-smooth-out, icon and text
+   swaps on --ease-in-out. */
+:root {
+  --duration-quick: 150ms;
+  --duration-fast: 250ms;
+  --ease-smooth-out: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-in-out: ease-in-out;
+  --blur-small: 2px;
+  --icon-swap-dur: var(--duration-fast);
+  --icon-swap-blur: var(--blur-small);
+  --icon-swap-start-scale: 0.25;
+  --icon-swap-ease: var(--ease-in-out);
+}
+
+/* Icon swap in the inbox row's mark slot: the status mark and the settle
+   control share one cell; hovering the row cross-fades them with blur and
+   scale (transitions.dev icon swap, hover-driven). The control's own hidden
+   state comes from the shared hover-action class. */
+.inbox-mark,
+.inbox-mark-control {
+  transition:
+    opacity var(--icon-swap-dur) var(--icon-swap-ease),
+    filter var(--icon-swap-dur) var(--icon-swap-ease),
+    transform var(--icon-swap-dur) var(--icon-swap-ease);
+  will-change: opacity, filter, transform;
+}
+.inbox-mark-control {
+  filter: blur(var(--icon-swap-blur));
+  /* Keep the utility classes' own translate (row-centred or top-aligned). */
+  transform: translate(var(--tw-translate-x, 0), var(--tw-translate-y, 0))
+    scale(var(--icon-swap-start-scale));
+}
+.group:hover .inbox-mark,
+.group:focus-within .inbox-mark {
+  opacity: 0;
+  filter: blur(var(--icon-swap-blur));
+  transform: scale(var(--icon-swap-start-scale));
+}
+.group:hover .inbox-mark-control,
+.group:focus-within .inbox-mark-control,
+.inbox-mark-control:focus-visible {
+  filter: blur(0);
+  transform: translate(var(--tw-translate-x, 0), var(--tw-translate-y, 0)) scale(1);
+}
+@media (prefers-reduced-motion: reduce) {
+  .inbox-mark,
+  .inbox-mark-control {
+    transition: none !important;
+  }
+}
+
 @layer base {
   :root {
     --droid-bg: #0a0a0a;
