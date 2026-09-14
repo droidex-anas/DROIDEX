@@ -24,10 +24,11 @@ const CLIENT_INFO = {
   version: process.env.npm_package_version ?? '0.0.0',
 };
 
-// The app-server releases this build was written against. `experimentalApi`
-// exposes shapes that move between releases, so a CLI outside the range is
-// refused rather than half-supported.
-const SUPPORTED_VERSIONS = { prefix: '0.149.', label: '0.149.x' };
+// The oldest app-server this build was written against. `experimentalApi`
+// exposes shapes that settled in this release (v2 threads, `turn/steer`,
+// reasoning summaries), so an older CLI is refused rather than half-supported;
+// newer releases keep the protocol and are accepted.
+const MINIMUM_VERSION = '0.149.0';
 const PROBE_TIMEOUT_MS = 25_000;
 const INSTALL_HINT = 'Codex CLI not found. Install it, then refresh.';
 const LOGIN_HINT = 'Run `codex login` in a terminal and sign in, then refresh.';
@@ -133,10 +134,10 @@ export class CodexProvider implements Provider {
       const { userAgent } = await initialize(client);
       const version = codexVersion(userAgent);
       if (!version) return unavailable('error', `Codex did not report a version (${userAgent}).`);
-      if (!version.startsWith(SUPPORTED_VERSIONS.prefix))
+      if (!atLeast(version, MINIMUM_VERSION))
         return unavailable(
           'unsupported',
-          `Codex ${version} is installed; this build supports ${SUPPORTED_VERSIONS.label}.`,
+          `Codex ${version} is installed; this build needs ${MINIMUM_VERSION} or newer.`,
           version,
         );
       const account = await client.request<AccountResponse>('account/read', {});
@@ -217,6 +218,18 @@ function accountLabel(account: CodexAccount): string | undefined {
 // the running CLI reports its own version.
 function codexVersion(userAgent: string): string | undefined {
   return /\/(\S+)/.exec(userAgent)?.[1];
+}
+
+// Dot-separated numeric comparison; anything after the digits of a part
+// (a pre-release tag) does not count.
+function atLeast(version: string, minimum: string): boolean {
+  const parts = (value: string) => value.split('.').map((part) => Number.parseInt(part, 10) || 0);
+  const [have, need] = [parts(version), parts(minimum)];
+  for (let index = 0; index < need.length; index += 1) {
+    const [a, b] = [have[index] ?? 0, need[index] ?? 0];
+    if (a !== b) return a > b;
+  }
+  return true;
 }
 // The model a new thread starts on, in the order the CLI resolves it: the
 // effective config the app server serves, then the `model` key of config.toml
