@@ -156,12 +156,6 @@ export function SidebarCustomize({ preferences, unreadCount, onChange, onMarkAll
   const [open, setOpen] = useState(false);
   const [submenu, setSubmenu] = useState<Submenu | null>(null);
   const trigger = useRef<HTMLButtonElement>(null);
-  const close = () => {
-    setOpen(false);
-    setSubmenu(null);
-  };
-  // Pointer intent for the cascade. The last horizontal movement says whether
-  // the pointer is heading for the open flyout (rightward) or browsing rows.
   const lastX = useRef(0);
   const movingRight = useRef(false);
   const switchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -173,6 +167,13 @@ export function SidebarCustomize({ preferences, unreadCount, onChange, onMarkAll
     closeTimer.current = null;
   };
   useEffect(() => clearTimers, []);
+  const close = () => {
+    clearTimers();
+    setOpen(false);
+    setSubmenu(null);
+  };
+  // Pointer intent for the cascade. The last horizontal movement says whether
+  // the pointer is heading for the open flyout (rightward) or browsing rows.
   const hoverRow = (id: Submenu) => {
     if (closeTimer.current) clearTimeout(closeTimer.current);
     closeTimer.current = null;

@@ -1,4 +1,8 @@
-import { ACTIVITY_LABELS, canSettleSession } from '../lib/sidebarActivity';
+import {
+  ACTIVITY_LABELS,
+  canSettleSession,
+  type SessionActivityStatus,
+} from '../lib/sidebarActivity';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AnimatePresence } from 'framer-motion';
 import { shallowEqual, useStoreDispatch, useStoreSelector } from '../hooks/useStore';
@@ -220,13 +224,21 @@ export default function Sidebar({
     handleCopyMarkdown,
   } = rowActions;
 
-  const toggleSettled = useCallback(
-    (m: SessionSummary) => {
-      if (statusFor(m) === 'settled') activity.reopen(m);
-      else activity.settle(m);
-    },
-    [activity, statusFor],
-  );
+  // Read through a ref so the callback identity never changes and the row
+  // memo keeps skipping unrelated store updates.
+  const activityRef = useRef(activity);
+  activityRef.current = activity;
+  const toggleSettled = useCallback((m: SessionSummary) => {
+    const current = activityRef.current;
+    if (current.statusFor(m) === 'settled') current.reopen(m);
+    else current.settle(m);
+  }, []);
+  // A settled row offers "reopen" only when a manual settle is what holds it
+  // there; a chat settled because its PRs closed has nothing to reopen.
+  const canToggleSettled = (m: SessionSummary, status: SessionActivityStatus) =>
+    status === 'settled'
+      ? Object.hasOwn(preferences.settled, m.appSessionId)
+      : canSettleSession(status);
   const rowPr = (link: ChatPullRequest | undefined) =>
     link ? { kind: prKind(link), checks: link.checks ?? null } : undefined;
   const renderRow = (m: SessionSummary) => {
@@ -255,7 +267,7 @@ export default function Sidebar({
         onMenu={handleRowMenu}
         onRenameCommit={handleRenameCommit}
         onRenameCancel={handleRenameCancel}
-        {...(inbox && canSettleSession(status) ? { onToggleSettled: toggleSettled } : {})}
+        {...(inbox && canToggleSettled(m, status) ? { onToggleSettled: toggleSettled } : {})}
       />
     );
   };

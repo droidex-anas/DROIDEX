@@ -99,7 +99,7 @@ const PR_STATES: Record<PrKind, { icon: OcticonName; label: string; color: strin
 // A ring in the canvas colour keeps the dot separate from the glyph.
 const CHECK_DOTS: Record<PrChecksRollup, { color: string; label: string }> = {
   fail: { color: 'var(--diff-del-fg)', label: 'checks failing' },
-  pending: { color: '#d29922', label: 'checks running' },
+  pending: { color: 'var(--droid-orange)', label: 'checks running' },
   pass: { color: 'var(--diff-add-fg)', label: 'checks passing' },
 };
 

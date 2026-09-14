@@ -1,4 +1,4 @@
-import type { SessionActivityStatus } from '../lib/sidebarActivity';
+import { ACTIVITY_LABELS, type SessionActivityStatus } from '../lib/sidebarActivity';
 
 // The inbox marks each chat with the kind of state it is in, the way a
 // ticket queue does: a dashed ring for nothing pending, a half ring for a
@@ -18,10 +18,10 @@ const TONE: Record<SessionActivityStatus, string> = {
   settled: 'text-droid-green',
 };
 
-type Shape = 'open' | 'half' | 'clock' | 'failed' | 'paused' | 'done';
+type Shape = 'open' | 'active' | 'half' | 'clock' | 'failed' | 'paused' | 'done';
 
 const SHAPE: Record<SessionActivityStatus, Shape> = {
-  working: 'open',
+  working: 'active',
   approval: 'clock',
   input: 'clock',
   plan: 'clock',
@@ -38,6 +38,13 @@ function ShapePath({ shape }: { shape: Shape }) {
   switch (shape) {
     case 'open':
       return <circle cx="8" cy="8" r="6" strokeDasharray="2.6 2.4" />;
+    case 'active':
+      return (
+        <>
+          <circle cx="8" cy="8" r="6" />
+          <circle cx="8" cy="8" r="2" fill="currentColor" stroke="none" />
+        </>
+      );
     case 'half':
       return (
         <>
@@ -93,7 +100,8 @@ export function ActivityStatusGlyph({
       strokeWidth="1.5"
       strokeLinecap="round"
       strokeLinejoin="round"
-      aria-hidden="true"
+      role="img"
+      aria-label={ACTIVITY_LABELS[status]}
       className={`shrink-0 ${TONE[status]} ${className}`}
     >
       <ShapePath shape={SHAPE[status]} />

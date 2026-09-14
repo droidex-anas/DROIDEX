@@ -128,7 +128,14 @@ function rollupChecks(value) {
       pending = true;
       continue;
     }
-    if (outcome === 'PENDING' || outcome === 'EXPECTED' || outcome === 'QUEUED') {
+    // A stale run's verdict is out of date and needs a re-run: not clear,
+    // not broken, so it holds the rollup at pending like a queued one.
+    if (
+      outcome === 'PENDING' ||
+      outcome === 'EXPECTED' ||
+      outcome === 'QUEUED' ||
+      outcome === 'STALE'
+    ) {
       pending = true;
       continue;
     }

@@ -27,7 +27,6 @@
     opacity var(--icon-swap-dur) var(--icon-swap-ease),
     filter var(--icon-swap-dur) var(--icon-swap-ease),
     transform var(--icon-swap-dur) var(--icon-swap-ease);
-  will-change: opacity, filter, transform;
 }
 .inbox-mark-control {
   filter: blur(var(--icon-swap-blur));
