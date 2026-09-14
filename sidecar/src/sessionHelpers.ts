@@ -1,5 +1,5 @@
 import { DecompSessionType, type McpServerConfig, type MissionFeature } from '@factory/droid-sdk';
-import type { CreateRuntimeSessionOptions } from './DroidRuntime.js';
+import { factoryReasoningEffort, type CreateRuntimeSessionOptions } from './DroidRuntime.js';
 import type {
   Autonomy,
   ClientCommand,
@@ -79,6 +79,7 @@ export function reasoningValue(value?: string): ReasoningEffort | undefined {
     value === 'high' ||
     value === 'xhigh' ||
     value === 'max' ||
+    value === 'ultra' ||
     value === 'dynamic'
   ) {
     return value;
@@ -177,8 +178,30 @@ export function requireAutonomyForCommand(command: { autonomy?: Autonomy }): Aut
   return autonomy;
 }
 
+// session.create must never reach the Droid runtime with a reasoning level
+// its SDK cannot represent (Codex's 'ultra', for instance): checked here,
+// before any process or transport opens, the same way autonomy is required
+// up front instead of failing deep inside session creation.
+export function requireDroidReasoningSupported(
+  provider: ProviderKind,
+  command: {
+    reasoningEffort?: ReasoningEffort;
+    workerReasoning?: ReasoningEffort;
+    validatorReasoning?: ReasoningEffort;
+  },
+): void {
+  if (provider !== DEFAULT_PROVIDER) return;
+  for (const effort of [
+    command.reasoningEffort,
+    command.workerReasoning,
+    command.validatorReasoning,
+  ])
+    if (effort !== undefined) factoryReasoningEffort(effort);
+}
+
 // Factory's defaults are the Droid CLI's own, so a session on another provider
-// starts on the model the command named, or on its provider's default.
+// starts on the model and reasoning effort the command named, or on whatever
+// its own harness is configured with.
 export function createModelDefaultsForProvider(
   provider: ProviderKind,
   mode: SessionInteractionMode,
@@ -186,7 +209,10 @@ export function createModelDefaultsForProvider(
   defaults: Parameters<typeof createModelDefaultsForMode>[2],
 ): { modelId?: string; reasoningEffort?: ReasoningEffort } {
   if (provider === DEFAULT_PROVIDER) return createModelDefaultsForMode(mode, command, defaults);
-  return command.modelId !== undefined ? { modelId: command.modelId } : {};
+  return {
+    ...(command.modelId !== undefined ? { modelId: command.modelId } : {}),
+    ...(command.reasoningEffort !== undefined ? { reasoningEffort: command.reasoningEffort } : {}),
+  };
 }
 
 export function createModelDefaultsForMode(

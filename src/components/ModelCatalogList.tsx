@@ -1,5 +1,6 @@
 import { memo, useCallback, useEffect, useRef } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
+import { offersReasoningEffort } from '../lib/reasoningEffort';
 import type { ModelInfo, ReasoningEffort } from '../types/bridge';
 import { ModelIcon, providerOf } from './ModelIcon';
 
@@ -179,6 +180,9 @@ const ModelRow = memo(function ModelRow({
   showReasoning: boolean;
 }) {
   const id = isDefaultRow ? undefined : model?.id;
+  // A model whose harness offers no effort for it gets no stepper, the way the
+  // composer badge and the context panel already drop the pill for it.
+  const offersReasoning = showReasoning && offersReasoningEffort(model);
   const fallback = model?.defaultReasoningEffort ?? reasoning ?? 'medium';
   const efforts = effortsFor(model, fallback);
   const shown = reasoning ?? model?.defaultReasoningEffort ?? efforts[efforts.length - 1];
@@ -238,7 +242,7 @@ const ModelRow = memo(function ModelRow({
       >
         {label}
       </span>
-      {showReasoning && (
+      {offersReasoning && (
         <>
           {arrow(-1)}
           <span className="flex gap-[3px] shrink-0" title={lockTitle}>

@@ -149,9 +149,11 @@ export class DroidRuntime implements FactoryRuntime {
 
   async createSession(options: CreateRuntimeSessionOptions): Promise<DroidSession> {
     const { client, transport } = await this.createClient(options.cwd, options);
-    const params = createInitializeSessionParams(options);
 
+    // Built inside the try: a level the SDK cannot represent throws here, and
+    // the process that just started must go with it.
     try {
+      const params = createInitializeSessionParams(options);
       const init = await withTimeout(
         client.initializeSession(params),
         SESSION_INIT_TIMEOUT_MS,
@@ -285,6 +287,11 @@ export function factoryReasoningEffort(reasoning: ReasoningEffort): SdkReasoning
       return SdkReasoningEffort.ExtraHigh;
     case 'max':
       return SdkReasoningEffort.Max;
+    case 'ultra':
+      // Codex's top level; Droid's SDK has nothing to map it to. Silently
+      // running at Medium would diverge from the persisted intent, so this
+      // is rejected instead of coerced.
+      throw new Error("Droid does not support the 'ultra' reasoning effort.");
     case 'medium':
     default:
       return SdkReasoningEffort.Medium;

@@ -1,5 +1,6 @@
 import {
   query,
+  type EffortLevel,
   type McpServerConfig as SdkMcpServerConfig,
   type SDKUserMessage,
 } from '@anthropic-ai/claude-agent-sdk';
@@ -10,7 +11,8 @@ import { homedir, tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import { nonEmptyEnv } from '../../droidexPaths.js';
-import type { ModelInfo, ProviderStatus } from '../../protocol.js';
+import { reasoningValue } from '../../modelCatalog.js';
+import type { ModelInfo, ProviderStatus, ReasoningEffort } from '../../protocol.js';
 import type {
   Provider,
   ProviderOpenInput,
@@ -30,6 +32,7 @@ export class ClaudeProvider implements Provider {
     interactions,
     cwd,
     modelId,
+    reasoningEffort,
     autonomyLevel,
     interactionMode,
     mcpServers,
@@ -42,6 +45,7 @@ export class ClaudeProvider implements Provider {
       autonomy: autonomyLevel ?? 'low',
       interactionMode,
       ...(modelId ? { modelId } : {}),
+      ...(reasoningEffort ? { reasoningEffort } : {}),
       mcpServers: sdkMcpServers(mcpServers),
       interactions,
     });
@@ -49,7 +53,7 @@ export class ClaudeProvider implements Provider {
 
   async resume(
     providerSessionId: string,
-    { interactions, cwd, modelId, autonomy, mcpServers }: ProviderResumeInput,
+    { interactions, cwd, modelId, reasoningEffort, autonomy, mcpServers }: ProviderResumeInput,
   ): Promise<ProviderSession> {
     // A stored chat carries no interaction mode of its own, so a reopened one
     // starts in Chat the way the sidebar shows it.
@@ -59,6 +63,7 @@ export class ClaudeProvider implements Provider {
       autonomy: autonomy ?? 'low',
       interactionMode: 'auto',
       ...(modelId ? { modelId } : {}),
+      ...(reasoningEffort ? { reasoningEffort } : {}),
       mcpServers: sdkMcpServers(mcpServers),
       interactions,
       resume: true,
@@ -115,7 +120,8 @@ export class ClaudeProvider implements Provider {
           models: [],
         };
       const catalog = await probe.supportedModels();
-      const defaultModelId = claudeDefaultModelId(catalog);
+      const settings = claudeSettings();
+      const defaultModelId = claudeDefaultModelId(catalog, settings.model);
       return {
         provider: 'claude',
         readiness: 'ready',
@@ -124,7 +130,9 @@ export class ClaudeProvider implements Provider {
         // The recommended row is the CLI's own name for "no model of your own",
         // which is what DROIDEX's default row already means, so it is resolved
         // above rather than listed as a model of its own.
-        models: catalog.filter((model) => model.value !== RECOMMENDED).flatMap(providerModel),
+        models: catalog
+          .filter((model) => model.value !== RECOMMENDED)
+          .flatMap((model) => providerModel(model, settings.effortLevel)),
       };
     } catch (error) {
       return claudeProbeFailure(error);
@@ -163,18 +171,21 @@ interface ClaudeModel {
   value: string;
   displayName: string;
   resolvedModel?: string;
+  supportedEffortLevels?: EffortLevel[];
 }
 
 // The model a new Claude Code session starts on, named the way the catalog names
 // it: the CLI's own `model` setting when the user configured one, otherwise the
 // row it recommends. Either can name a model by alias or by wire id, so both are
 // resolved back to the row the picker lists.
-function claudeDefaultModelId(models: ClaudeModel[]): string | undefined {
+function claudeDefaultModelId(
+  models: ClaudeModel[],
+  configured: string | undefined,
+): string | undefined {
   const recommended = models.find((model) => model.value === RECOMMENDED);
   const recommendation = recommended?.resolvedModel ?? recommended?.value;
   // A setting of `default` is the CLI's own word for "whatever is recommended",
   // not a model, so it resolves the same way an absent setting does.
-  const configured = claudeSettingsModel();
   const wanted = configured === RECOMMENDED ? recommendation : (configured ?? recommendation);
   if (!wanted) return undefined;
   const row = models.find(
@@ -184,29 +195,59 @@ function claudeDefaultModelId(models: ClaudeModel[]): string | undefined {
   return row?.value ?? wanted;
 }
 
-// The CLI keeps its own default under its config directory, which CLAUDE_CONFIG_DIR
-// relocates. A file that is missing or unreadable simply names no model.
-function claudeSettingsModel(): string | undefined {
+// The CLI keeps its own defaults under its config directory, which
+// CLAUDE_CONFIG_DIR relocates. A file that is missing or unreadable simply
+// names neither a model nor an effort.
+function claudeSettings(): { model?: string; effortLevel?: ReasoningEffort } {
   const directory = nonEmptyEnv(process.env.CLAUDE_CONFIG_DIR, join(homedir(), '.claude'));
   try {
     const settings = JSON.parse(readFileSync(join(directory, 'settings.json'), 'utf8')) as {
       model?: unknown;
+      effortLevel?: unknown;
     };
-    return typeof settings.model === 'string' && settings.model.trim()
-      ? settings.model.trim()
-      : undefined;
+    const model = typeof settings.model === 'string' ? settings.model.trim() : '';
+    const effortLevel = reasoningValue(settings.effortLevel);
+    return { ...(model ? { model } : {}), ...(effortLevel ? { effortLevel } : {}) };
   } catch {
-    return undefined;
+    return {};
   }
 }
 
 // A catalog entry missing its id or label cannot be selected or shown, so it is
-// dropped rather than published as a blank row.
-function providerModel(model: { value: string; displayName: string }): ModelInfo[] {
+// dropped rather than published as a blank row. A model the CLI gives no effort
+// levels for — Haiku — offers none here either, and its rows show no stepper.
+function providerModel(model: ClaudeModel, configured: ReasoningEffort | undefined): ModelInfo[] {
   const id = model.value.trim();
   const displayName = model.displayName.trim();
   if (!id || !displayName) return [];
-  return [{ id, displayName, provider: 'anthropic', isCustom: false }];
+  const efforts = (model.supportedEffortLevels ?? []).flatMap((level) => {
+    const effort = reasoningValue(level);
+    return effort ? [effort] : [];
+  });
+  return [
+    {
+      id,
+      displayName,
+      provider: 'anthropic',
+      isCustom: false,
+      ...(efforts.length > 0
+        ? {
+            supportedReasoningEfforts: efforts,
+            defaultReasoningEffort: defaultEffort(efforts, configured),
+          }
+        : {}),
+    },
+  ];
+}
+
+// The level a chat on this model starts on: the CLI's own configured effort
+// where the model supports it, otherwise the SDK's documented model default.
+function defaultEffort(
+  efforts: ReasoningEffort[],
+  configured: ReasoningEffort | undefined,
+): ReasoningEffort {
+  if (configured && efforts.includes(configured)) return configured;
+  return efforts.includes('high') ? 'high' : efforts[efforts.length - 1];
 }
 
 // Claude Code runs in the directory the chat is anchored to; a folderless chat

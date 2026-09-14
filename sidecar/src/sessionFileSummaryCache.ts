@@ -19,6 +19,7 @@ export const SESSION_FILE_REASONING_EFFORTS: Record<ReasoningEffort, true> = {
   high: true,
   xhigh: true,
   max: true,
+  ultra: true,
   dynamic: true,
 };
 

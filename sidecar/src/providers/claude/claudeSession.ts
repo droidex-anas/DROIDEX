@@ -3,6 +3,7 @@
 // same process and the permission mode and model can change while it runs.
 import {
   query,
+  type EffortLevel,
   type McpServerConfig,
   type Options,
   type Query,
@@ -13,7 +14,7 @@ import { spawn, type ChildProcess } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 
 import type { NormalizedEvent } from '../../normalize.js';
-import type { Autonomy, SessionInteractionMode } from '../../protocol.js';
+import type { Autonomy, ReasoningEffort, SessionInteractionMode } from '../../protocol.js';
 import { errMsg } from '../../sessionHelpers.js';
 import type { ProviderInteractions } from '../interactions.js';
 import type { ProviderModelSettings, ProviderSession } from '../session.js';
@@ -33,6 +34,7 @@ export interface ClaudeSessionInput {
   autonomy: Autonomy;
   interactionMode: SessionInteractionMode;
   modelId?: string;
+  reasoningEffort?: ReasoningEffort;
   mcpServers: Record<string, McpServerConfig>;
   interactions: ProviderInteractions;
   // Set when reopening a stored session instead of starting a new one.
@@ -208,13 +210,15 @@ export class ClaudeSession implements ProviderSession {
     return applied;
   }
 
-  // Reasoning effort is not part of the model selection this build offers for
-  // Claude, so the catalog advertises none and none arrives here. A null model
-  // is "back to the provider's own default", which is what an absent model is.
-  async setModel({ modelId }: ProviderModelSettings): Promise<void> {
-    if (modelId === undefined) return;
+  // A null model is "back to the provider's own default", which is what an
+  // absent model is. The effort rides the same call because the picker changes
+  // both together; the CLI keeps it for the session without writing it to the
+  // user's settings files.
+  async setModel({ modelId, reasoningEffort }: ProviderModelSettings): Promise<void> {
     await this.initialized;
-    await this.query.setModel(modelId ?? undefined);
+    if (modelId !== undefined) await this.query.setModel(modelId ?? undefined);
+    const effort = claudeEffort(reasoningEffort);
+    if (effort) await this.query.applyFlagSettings({ effortLevel: effort });
   }
 
   async interrupt(): Promise<void> {
@@ -238,10 +242,12 @@ function sessionOptions(
   isPlanning: () => boolean,
   onSpawn: (process: ChildProcess) => void,
 ): Options {
+  const effort = claudeEffort(input.reasoningEffort);
   return {
     cwd: input.cwd,
     pathToClaudeCodeExecutable: input.executable,
     ...(input.modelId ? { model: input.modelId } : {}),
+    ...(effort ? { effort } : {}),
     ...(input.resume ? { resume: input.appSessionId } : { sessionId: input.appSessionId }),
     systemPrompt: { type: 'preset', preset: 'claude_code' },
     // 'project' is what loads the repository's CLAUDE.md.
@@ -281,6 +287,15 @@ function sessionOptions(
     // HOME is never overridden: on macOS it also relocates the login keychain,
     // and the CLI then reports the user as signed out.
   };
+}
+
+// DROIDEX's effort vocabulary is the union of every harness's; Claude Code
+// takes the five levels it publishes and nothing else, so a level from another
+// harness leaves the session on its own default rather than being coerced.
+const CLAUDE_EFFORTS: readonly EffortLevel[] = ['low', 'medium', 'high', 'xhigh', 'max'];
+
+function claudeEffort(effort: ReasoningEffort | undefined): EffortLevel | undefined {
+  return CLAUDE_EFFORTS.find((level) => level === effort);
 }
 
 function turnFailure(subtype: string, errors: string[]): string {
