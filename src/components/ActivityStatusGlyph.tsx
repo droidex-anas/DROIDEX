@@ -86,9 +86,12 @@ function ShapePath({ shape }: { shape: Shape }) {
 export function ActivityStatusGlyph({
   status,
   className = '',
+  decorative = false,
 }: {
   status: SessionActivityStatus;
   className?: string;
+  // The menu's view icon stands for the view, not a status: no announcement.
+  decorative?: boolean;
 }) {
   return (
     <svg
@@ -100,8 +103,9 @@ export function ActivityStatusGlyph({
       strokeWidth="1.5"
       strokeLinecap="round"
       strokeLinejoin="round"
-      role="img"
-      aria-label={ACTIVITY_LABELS[status]}
+      role={decorative ? undefined : 'img'}
+      aria-hidden={decorative || undefined}
+      aria-label={decorative ? undefined : ACTIVITY_LABELS[status]}
       className={`shrink-0 ${TONE[status]} ${className}`}
     >
       <ShapePath shape={SHAPE[status]} />

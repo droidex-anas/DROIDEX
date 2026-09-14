@@ -258,7 +258,15 @@ export default function ModelSelectorPopover({
         if (childTarget && !childReady) return;
         const ids: (string | undefined)[] = [undefined, ...models.map((m) => m.id)];
         const idx = ids.indexOf(effModelId);
-        const next = Math.min(ids.length - 1, Math.max(0, idx + (e.key === 'ArrowDown' ? 1 : -1)));
+        const down = e.key === 'ArrowDown';
+        // A model the filter hides is nowhere in the list: step onto its first
+        // or last visible entry instead of off the end into Default.
+        const next =
+          idx === -1
+            ? down
+              ? Math.min(1, ids.length - 1)
+              : ids.length - 1
+            : Math.min(ids.length - 1, Math.max(0, idx + (down ? 1 : -1)));
         if (next !== idx) updateModel(ids[next]);
         return;
       }

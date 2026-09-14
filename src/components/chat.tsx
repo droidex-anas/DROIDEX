@@ -177,7 +177,9 @@ const AssistantMessage = memo(function AssistantMessage({
 }) {
   const appOwnsLiveStatus = live && hasAppBlock(text);
   const typing = useStreamingActivity(text, live && !appOwnsLiveStatus);
-  if (isSpecEcho(text, specContent)) return null;
+  // Only a settled echo yields to the pinned spec card; collapsing a row
+  // mid-stream would jolt the virtualized feed.
+  if (!live && isSpecEcho(text, specContent)) return null;
   return (
     // min-w-0 so a wide table or a long unbroken URL scrolls inside the message
     // rather than widening the row past the transcript.

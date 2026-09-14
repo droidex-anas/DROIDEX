@@ -456,8 +456,12 @@ export function applyTheme(theme: ThemeSettings) {
     // the Default canvas collapses to 2.9:1 on a tinted one, so the ramp is
     // derived from the contrast it must keep instead — AAA for secondary body
     // text, AA for muted meta and placeholders.
-    root.style.setProperty('--droid-text-secondary', mixToContrast(theme.fg, theme.bg, 7));
-    root.style.setProperty('--droid-text-muted', mixToContrast(theme.fg, theme.bg, 4.5));
+    // Muted labels also sit on elevated surfaces, so the ramp is derived
+    // against whichever of the canvas and the elevated tone is harder.
+    const elevated = elevatedSurfaceColor(theme);
+    const ground = colorLuminance(elevated) < colorLuminance(theme.bg) ? elevated : theme.bg;
+    root.style.setProperty('--droid-text-secondary', mixToContrast(theme.fg, ground, 7));
+    root.style.setProperty('--droid-text-muted', mixToContrast(theme.fg, ground, 4.5));
   }
   root.style.setProperty('--droid-accent', theme.accent);
   root.style.setProperty('--droid-skill', bgIsDark ? SKILL_COLORS.dark : SKILL_COLORS.light);

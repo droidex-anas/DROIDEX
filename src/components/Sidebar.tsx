@@ -438,7 +438,7 @@ export default function Sidebar({
           y={rowMenu.y}
           settled={rowMenuSession ? statusFor(rowMenuSession) === 'settled' : false}
           onToggleSettled={
-            rowMenuSession && canSettleSession(statusFor(rowMenuSession))
+            rowMenuSession && canToggleSettled(rowMenuSession, statusFor(rowMenuSession))
               ? () => {
                   if (statusFor(rowMenuSession) === 'settled') activity.reopen(rowMenuSession);
                   else activity.settle(rowMenuSession);

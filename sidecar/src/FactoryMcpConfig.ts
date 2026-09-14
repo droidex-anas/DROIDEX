@@ -36,9 +36,14 @@ function projectConfigDirs(cwd: string): string[] {
   }
 }
 
-export function loadFactoryMcpServers(cwd: string, userHome = homedir()): McpServerConfig[] {
+// Without a workspace there is no project scope: a throwaway session must not
+// inherit whatever .factory/mcp.json lies above the temp directory.
+export function loadFactoryMcpServers(
+  cwd: string | undefined,
+  userHome = homedir(),
+): McpServerConfig[] {
   const effective = new Map<string, FactoryServerConfig>();
-  for (const dir of projectConfigDirs(cwd)) {
+  for (const dir of cwd === undefined ? [] : projectConfigDirs(cwd)) {
     for (const [name, config] of Object.entries(
       readConfig(path.join(dir, '.factory', 'mcp.json')),
     )) {

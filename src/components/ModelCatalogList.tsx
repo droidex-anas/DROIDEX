@@ -261,9 +261,7 @@ const ModelRow = memo(function ModelRow({
                   ? selected
                     ? 'bg-droid-accent'
                     : 'bg-droid-text-muted'
-                  : selected
-                    ? 'bg-droid-active'
-                    : 'bg-droid-active'
+                  : 'bg-droid-text-muted/30'
               } ${disabled || reasoningLocked ? 'cursor-not-allowed' : ''}`}
               style={{
                 transition: 'background .2s, transform .25s cubic-bezier(.34,1.56,.64,1)',

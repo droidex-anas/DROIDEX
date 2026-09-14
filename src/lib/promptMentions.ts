@@ -13,8 +13,11 @@ function looksLikeAttachmentPath(mention: string): boolean {
   // bare file name ("Meeting Notes.pdf") has no directory to start from, so
   // only its extension says it is a file.
   const first = mention.split(' ')[0];
+  const endsAsFile = /\.[A-Za-z0-9]{1,8}$/.test(mention);
+  // "/tmp/a.png please review" starts as a path but ends as prose.
+  if (first !== mention && !endsAsFile) return false;
   if (mention.includes('/')) return first === mention || /[/.]/.test(first);
-  return /\.[A-Za-z0-9]{1,8}$/.test(mention);
+  return endsAsFile;
 }
 
 /**

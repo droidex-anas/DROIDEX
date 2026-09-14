@@ -150,7 +150,7 @@ export interface SessionManagerDependencies {
   createLocalMcpResource: (appSessionId: () => string) => StartableLocalMcpResource;
   createAutomationMcpResource?: (appSessionId: () => string) => StartableLocalMcpResource;
   mcpConfiguration: McpConfiguration;
-  loadConfiguredMcpServers: (cwd: string) => McpServerConfig[];
+  loadConfiguredMcpServers: (cwd: string | undefined) => McpServerConfig[];
   getFactoryDefaults?: () => Promise<FactoryDefaultSettings>;
   nextChildSessionId?: () => string;
   // Injectable so tests can capture the republish callback instead of
@@ -329,9 +329,9 @@ export class SessionManager {
           cwd: mcpSettingsCwd(cwd),
           interactionMode: 'auto',
           autonomyLevel: 'low',
-          mcpServers: this.loadConfiguredMcpServers(mcpSettingsCwd(cwd)),
+          mcpServers: this.loadConfiguredMcpServers(cwd),
         }),
-      (cwd) => this.loadConfiguredMcpServers(mcpSettingsCwd(cwd)),
+      (cwd) => this.loadConfiguredMcpServers(cwd),
       this.mcpConfiguration,
       (event) => {
         this.emit(event);

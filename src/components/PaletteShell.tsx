@@ -1,5 +1,6 @@
 import { useEffect, useRef, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
+import { NativeSurfaceObscurer } from '../hooks/useObscuresNativeSurfaces';
 import { motion } from 'framer-motion';
 import { Search, X } from 'lucide-react';
 import { pushEscapeLayer } from './environment/usePopover';
@@ -77,6 +78,7 @@ export default function PaletteShell({
       className="fixed inset-0 z-50 flex items-start justify-center pt-[15vh] bg-black/40 backdrop-blur-sm"
       onClick={onClose}
     >
+      <NativeSurfaceObscurer />
       <motion.div
         ref={panelRef}
         onKeyDown={trapTab}

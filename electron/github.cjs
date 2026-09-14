@@ -119,9 +119,19 @@ const PR_FIELDS = [
 // Check runs report status + conclusion; legacy commit statuses report state.
 function rollupChecks(value) {
   if (!Array.isArray(value) || value.length === 0) return null;
+  // A re-run leaves the earlier attempt in the rollup; only the latest run of
+  // each check counts, so a superseded cancelled run cannot paint a green PR.
+  const latest = new Map();
+  for (const item of value) {
+    const key = `${item?.workflowName || item?.context || ''}/${item?.name || item?.context || ''}`;
+    const prior = latest.get(key);
+    if (!prior || String(item?.startedAt || '') >= String(prior?.startedAt || '')) {
+      latest.set(key, item);
+    }
+  }
   let pending = false;
   let counted = 0;
-  for (const item of value) {
+  for (const item of latest.values()) {
     const status = String(item?.status || '').toUpperCase();
     const outcome = String(item?.conclusion || item?.state || '').toUpperCase();
     if (status && status !== 'COMPLETED') {
@@ -134,7 +144,8 @@ function rollupChecks(value) {
       outcome === 'PENDING' ||
       outcome === 'EXPECTED' ||
       outcome === 'QUEUED' ||
-      outcome === 'STALE'
+      outcome === 'STALE' ||
+      outcome === 'CANCELLED'
     ) {
       pending = true;
       continue;
@@ -143,7 +154,6 @@ function rollupChecks(value) {
       outcome === 'FAILURE' ||
       outcome === 'ERROR' ||
       outcome === 'TIMED_OUT' ||
-      outcome === 'CANCELLED' ||
       outcome === 'ACTION_REQUIRED' ||
       outcome === 'STARTUP_FAILURE'
     ) {

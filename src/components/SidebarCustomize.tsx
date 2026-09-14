@@ -23,7 +23,11 @@ interface Option<T> {
 const ICON = 'h-4 w-4';
 const VIEWS: Option<SidebarActivityPreferences['view']>[] = [
   { value: 'workspaces', label: 'Workspace', icon: <Folder className={ICON} strokeWidth={1.5} /> },
-  { value: 'activity', label: 'Activity', icon: <ActivityStatusGlyph status="review" /> },
+  {
+    value: 'activity',
+    label: 'Activity',
+    icon: <ActivityStatusGlyph status="review" decorative />,
+  },
   {
     value: 'pull-requests',
     label: 'Pull request',

@@ -136,7 +136,7 @@ function countToolCall(counts: ActivityCounts, e: TranscriptEvent): void {
     counts.file++;
     // A lone read is named only when it read a file; a directory listing
     // (LS, list_directory) is still "1 file", never "Explored src".
-    if (!isListingTool(e.toolName)) counts.readFile = detail;
+    if (!isListingTool(e.toolName) && !detail.endsWith('/')) counts.readFile = detail;
   } else if (cat === 'search') counts.search++;
   else if (cat === 'exec') counts.command++;
   else if (cat === 'web') counts.page++;

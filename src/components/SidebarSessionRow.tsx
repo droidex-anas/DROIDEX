@@ -227,7 +227,8 @@ export const SessionRow = memo(function SessionRow({
             dot && <span className={`h-1.5 w-1.5 rounded-full ${dot}`} aria-hidden="true" />
           )}
         </span>
-        {dot && <span className="sr-only">{ACTIVITY_LABELS[activityStatus]}:</span>}
+        {/* Inbox rows are announced by the mark itself. */}
+        {dot && !inbox && <span className="sr-only">{ACTIVITY_LABELS[activityStatus]}:</span>}
         {unread && <span className="sr-only">Unread:</span>}
         {attention && !detail && (
           <span className="sr-only">
