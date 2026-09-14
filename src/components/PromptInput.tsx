@@ -832,19 +832,20 @@ export default function PromptInput({
   const selectedModelLabel = primaryModelId
     ? (selectedModel?.displayName ?? primaryModelId)
     : (providerDefault?.displayName ?? 'Default model');
-  // The model the chat will run on decides whether its harness offers reasoning
-  // at all, whichever provider it belongs to: one that publishes no efforts
-  // shows none on the chip and is created with none.
+  // The pinned model decides whether its harness offers reasoning at all,
+  // whichever provider it belongs to: one that publishes no efforts shows none
+  // on the chip and is created with none. A chat that pins nothing keeps the
+  // control, the way an unpublished model does.
   const draftReasoning = resolveReasoningEffortDisplay(
     undefined,
     state.agentConfig.primary.reasoning,
-    chipModel,
+    selectedModel,
   );
   const primaryReasoning = chatScoped
     ? resolveReasoningEffortDisplay(
         activeSession.reasoningEffort,
         state.agentConfig.primary.reasoning,
-        chipModel,
+        selectedModel,
       )
     : draftReasoning;
   // The one model selection a new chat is created with. Built from the
