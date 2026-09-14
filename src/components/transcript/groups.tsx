@@ -15,7 +15,7 @@ import { formatDuration } from '../../lib/tools';
 import type { FeedItem } from '../chatFeed';
 import { DiffCard } from '../DiffView';
 import { Caret, Expand } from './primitives';
-import { renderToolEvents, summarizeTools } from './rows';
+import { hasPendingCall, renderToolEvents, summarizeTools } from './rows';
 
 /* ── One run of tool calls at the configured density. Compact folds the run to
    a single aggregate line ("Explored 4 files, 1 search") that expands to the
@@ -37,7 +37,11 @@ export function ToolGroupItem({
   onOpenReviewFile?: OpenReviewFileHandler;
 }) {
   const [open, setOpen] = useState(false);
-  const summary = useMemo(() => summarizeTools(events, active), [events, active]);
+  // The header shimmers and speaks progressively while a call is in flight,
+  // even once later prose has taken the tail from this group.
+  const inFlight = useMemo(() => hasPendingCall(events, sessionLive), [events, sessionLive]);
+  const busy = active || inFlight;
+  const summary = useMemo(() => summarizeTools(events, busy), [events, busy]);
   // While the group is live each new row enters with motion (see index.css);
   // a settled group is history and renders still.
   const rows = `space-y-2.5${active ? ' tool-rows-live' : ''}`;
@@ -59,7 +63,7 @@ export function ToolGroupItem({
         className="group flex items-center gap-1.5 text-left"
       >
         <Caret open={open} />
-        {active ? (
+        {busy ? (
           <span className="shimmer-text text-[13px] font-medium">{summary}</span>
         ) : (
           <span className="text-[13px] text-droid-text-muted group-hover:text-droid-text-secondary transition-colors">

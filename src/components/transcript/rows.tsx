@@ -177,8 +177,17 @@ function formatCounts(counts: ActivityCounts, live: boolean): string {
 }
 
 /* ── Condensed tool group: "Explored 4 files, 1 search" ── */
-// `live` while the group still runs: the summary then speaks in the same
-// progressive voice as the rows it folds ("Running 2 commands").
+// True while a call in the group still awaits its result during a live
+// session: the group's work is genuinely in flight, whether or not it is the
+// feed's tail.
+export function hasPendingCall(events: TranscriptEvent[], sessionLive: boolean): boolean {
+  if (!sessionLive) return false;
+  const { resultByCall } = correlateResults(events);
+  return events.some((e) => e.kind === 'tool_call' && !resultByCall.has(e));
+}
+
+// `live` while the group's work is in flight: the summary then speaks in the
+// same progressive voice as the rows it folds ("Running 2 commands").
 export function summarizeTools(events: TranscriptEvent[], live = false): string {
   const counts = emptyCounts();
   for (const e of events) {
