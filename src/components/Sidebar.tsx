@@ -23,13 +23,15 @@ import {
   chatDisplayTitle,
   isChatHidden,
   isChatPinned,
-  linkedPrKind,
+  linkedPr,
+  type ChatPullRequest,
   pinnedChats,
 } from '../lib/chatMetadata';
 import { useSidebarRowActions } from '../hooks/useSidebarRowActions';
 import { SessionContextMenu } from './SessionContextMenu';
 import { SessionRow } from './SidebarSessionRow';
 import { sessionIsLive, sessionIsUnread } from '../lib/sessions';
+import { prKind } from '../lib/github';
 import { sessionAttention } from '../lib/sessionAttention';
 import type { SessionSummary } from '../types/bridge';
 import { SidebarAppUpdateButton } from './SidebarAppUpdateButton';
@@ -225,6 +227,8 @@ export default function Sidebar({
     },
     [activity, statusFor],
   );
+  const rowPr = (link: ChatPullRequest | undefined) =>
+    link ? { kind: prKind(link), checks: link.checks ?? null } : undefined;
   const renderRow = (m: SessionSummary) => {
     const status = statusFor(m);
     const inbox = view === 'activity';
@@ -239,7 +243,7 @@ export default function Sidebar({
         activityStatus={status}
         detail={inbox ? reasonFor(m, status) || ACTIVITY_LABELS[status] : undefined}
         // The PR view already names the PR in its group header.
-        pr={view === 'pull-requests' ? undefined : linkedPrKind(chatMetadata[m.appSessionId])}
+        pr={view === 'pull-requests' ? undefined : rowPr(linkedPr(chatMetadata[m.appSessionId]))}
         attention={sessionAttention(
           m.appSessionId,
           state.pendingPermissions,

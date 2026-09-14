@@ -197,7 +197,7 @@ export function PrDetail({
       <div data-electron-drag-region className="flex items-center gap-2 px-8 pt-4 pb-2">
         {headerPr ? (
           <span className="shrink-0">
-            <PrStateIcon kind={prKind(headerPr)} size={16} />
+            <PrStateIcon kind={prKind(headerPr)} size={16} checks={headerPr.checks} />
           </span>
         ) : null}
         <div

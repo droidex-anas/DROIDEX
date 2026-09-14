@@ -10,6 +10,7 @@ import { SessionAttentionBadge } from './SessionAttentionBadge';
 import { ActivityStatusGlyph, ActivityToggleGlyph } from './ActivityStatusGlyph';
 import { PrStateIcon } from './environment/GithubIcons';
 import type { PrKind } from '../lib/github';
+import type { PrChecksRollup } from '../types/vcs';
 
 const AutomationSessionBadge = lazy(async () => {
   const module = await import('../features/automations/AutomationSessionBadge');
@@ -44,8 +45,9 @@ export interface SessionRowProps {
   // Activity view only: a second line saying why the chat is listed. When set
   // the row is two lines and the attention pill gives way to the time.
   detail?: string;
-  // Linked pull request state, shown as a small icon before the time.
-  pr?: PrKind;
+  // Linked pull request state, shown as a small icon before the time, with
+  // its check rollup as the icon's dot.
+  pr?: { kind: PrKind; checks?: PrChecksRollup | null };
   renaming: boolean;
   now: number;
   onSelect: (appSessionId: string) => void;
@@ -68,7 +70,8 @@ export function areSessionRowPropsEqual(prev: SessionRowProps, next: SessionRowP
     prev.attention === next.attention &&
     prev.activityStatus === next.activityStatus &&
     prev.detail === next.detail &&
-    prev.pr === next.pr &&
+    prev.pr?.kind === next.pr?.kind &&
+    prev.pr?.checks === next.pr?.checks &&
     prev.renaming === next.renaming &&
     prev.now === next.now &&
     prev.onSelect === next.onSelect &&
@@ -274,7 +277,9 @@ export const SessionRow = memo(function SessionRow({
           <span
             className={`ml-2 grid shrink-0 grid-cols-[16px_34px] items-center gap-x-2.5 ${side}`}
           >
-            <span className="flex justify-center">{pr && <PrStateIcon kind={pr} size={14} />}</span>
+            <span className="flex justify-center">
+              {pr && <PrStateIcon kind={pr.kind} size={14} checks={pr.checks} />}
+            </span>
             <span
               className={`text-right text-[12px] tabular-nums group-hover:invisible group-focus-within:invisible ${
                 unread ? 'text-droid-text font-medium' : 'text-droid-text-muted'

@@ -142,7 +142,7 @@ export function GitActionsBar({
           or closed detection leaves the create action available. */}
       {githubReady && hasPr && pr ? (
         <Row
-          icon={<PrStateIcon kind={prKind(pr)} size={16} />}
+          icon={<PrStateIcon kind={prKind(pr)} size={16} checks={pr.checks} />}
           label={`#${String(pr.number)} ${pr.title}`}
           title={`${pr.title} — view checks and comments`}
           onClick={onOpenPr}

@@ -77,7 +77,7 @@ export function SidebarPullRequests({
                 className={`h-3 w-3 shrink-0 ${open ? 'rotate-90' : ''}`}
                 strokeWidth={1.5}
               />
-              <PrStateIcon kind={kind} size={14} />
+              <PrStateIcon kind={kind} size={14} checks={pr.checks} />
               <span className="min-w-0 flex-1 truncate">
                 #{pr.number} {pr.title}
               </span>

@@ -110,7 +110,43 @@ const PR_FIELDS = [
   'author',
   'reviewRequests',
   'reviews',
+  'statusCheckRollup',
 ].join(',');
+
+// One state for the whole rollup, the way GitHub's own list marks a PR: any
+// failure is red, otherwise anything still running is pending, otherwise a
+// finished rollup is a pass. Skipped and neutral runs do not count against it.
+// Check runs report status + conclusion; legacy commit statuses report state.
+function rollupChecks(value) {
+  if (!Array.isArray(value) || value.length === 0) return null;
+  let pending = false;
+  let counted = 0;
+  for (const item of value) {
+    const status = String(item?.status || '').toUpperCase();
+    const outcome = String(item?.conclusion || item?.state || '').toUpperCase();
+    if (status && status !== 'COMPLETED') {
+      pending = true;
+      continue;
+    }
+    if (outcome === 'PENDING' || outcome === 'EXPECTED' || outcome === 'QUEUED') {
+      pending = true;
+      continue;
+    }
+    if (
+      outcome === 'FAILURE' ||
+      outcome === 'ERROR' ||
+      outcome === 'TIMED_OUT' ||
+      outcome === 'CANCELLED' ||
+      outcome === 'ACTION_REQUIRED' ||
+      outcome === 'STARTUP_FAILURE'
+    ) {
+      return 'fail';
+    }
+    if (outcome === 'SUCCESS') counted += 1;
+  }
+  if (pending) return 'pending';
+  return counted > 0 ? 'pass' : null;
+}
 
 function loginOf(value) {
   if (!value) return null;
@@ -171,6 +207,7 @@ function normalizePr(pr) {
     author: loginOf(pr.author),
     reviewRequests: normalizeReviewRequests(pr.reviewRequests),
     reviews: normalizeReviews(pr.reviews),
+    checks: rollupChecks(pr.statusCheckRollup),
   };
 }
 
