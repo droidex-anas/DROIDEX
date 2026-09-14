@@ -126,7 +126,9 @@ function rollupChecks(value) {
     const key = `${item?.workflowName || item?.context || ''}/${item?.name || item?.context || ''}`;
     const prior = latest.get(key);
     // A queued re-run has no timestamp yet; it is still the newer attempt.
-    const running = String(item?.status || '').toUpperCase() !== 'COMPLETED';
+    // Only a check run says so: a legacy commit status has no `status` field.
+    const status = String(item?.status || '').toUpperCase();
+    const running = status !== '' && status !== 'COMPLETED';
     if (!prior || running || String(item?.startedAt || '') >= String(prior?.startedAt || '')) {
       latest.set(key, item);
     }

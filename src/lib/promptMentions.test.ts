@@ -37,6 +37,14 @@ test('splitTrailingMentions keeps a file name followed by prose as prose', () =>
   });
 });
 
+test('splitTrailingMentions recovers a file whose first word looks like an extension', () => {
+  const composed = composePrompt('open', [], ['/tmp/v2.5 final.png']);
+  assert.deepEqual(splitTrailingMentions(composed), {
+    text: 'open',
+    files: ['/tmp/v2.5 final.png'],
+  });
+});
+
 test('splitTrailingMentions recovers an extensionless path with spaces', () => {
   const composed = composePrompt('open', [], ['Reports/Quarterly Q3']);
   assert.deepEqual(splitTrailingMentions(composed), {

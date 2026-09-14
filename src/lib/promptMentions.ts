@@ -15,8 +15,9 @@ function looksLikeAttachmentPath(mention: string): boolean {
   const first = mention.split(' ')[0];
   const ext = /\.[A-Za-z0-9]{1,8}$/;
   if (first !== mention) {
-    // "/tmp/a.png please review": a complete file name followed by words.
-    if (ext.test(first)) return false;
+    // "/tmp/a.png please review": a complete file name followed by words;
+    // "v2.5 final.png" still ends as a file and stays one.
+    if (ext.test(first) && !ext.test(mention)) return false;
     // "team please review src/a.ts": a word, then a path.
     if (mention.includes('/') && !/[/.]/.test(first)) return false;
   }
