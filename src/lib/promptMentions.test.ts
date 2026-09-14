@@ -30,6 +30,21 @@ test('splitTrailingMentions recovers a repo-root file that has no directory', ()
   });
 });
 
+test('splitTrailingMentions keeps a file name followed by prose as prose', () => {
+  assert.deepEqual(splitTrailingMentions('look\n\n@/tmp/a.png please review'), {
+    text: 'look\n\n@/tmp/a.png please review',
+    files: [],
+  });
+});
+
+test('splitTrailingMentions recovers an extensionless path with spaces', () => {
+  const composed = composePrompt('open', [], ['Reports/Quarterly Q3']);
+  assert.deepEqual(splitTrailingMentions(composed), {
+    text: 'open',
+    files: ['Reports/Quarterly Q3'],
+  });
+});
+
 test('splitTrailingMentions recovers a bare file name that contains spaces', () => {
   const composed = composePrompt('summarise', [], ['Meeting Notes.pdf']);
   assert.deepEqual(splitTrailingMentions(composed), {

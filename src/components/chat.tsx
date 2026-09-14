@@ -176,10 +176,13 @@ const AssistantMessage = memo(function AssistantMessage({
   specContent?: string;
 }) {
   const appOwnsLiveStatus = live && hasAppBlock(text);
-  const typing = useStreamingActivity(text, live && !appOwnsLiveStatus);
+  // A live echo of the pinned spec shows no caret of its own: the feed's
+  // Working cue speaks for it, so there is never more than one live cue.
+  const echo = isSpecEcho(text, specContent);
+  const typing = useStreamingActivity(text, live && !appOwnsLiveStatus && !echo);
   // Only a settled echo yields to the pinned spec card; collapsing a row
   // mid-stream would jolt the virtualized feed.
-  if (!live && isSpecEcho(text, specContent)) return null;
+  if (!live && echo) return null;
   return (
     // min-w-0 so a wide table or a long unbroken URL scrolls inside the message
     // rather than widening the row past the transcript.

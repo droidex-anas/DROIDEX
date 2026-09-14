@@ -125,7 +125,9 @@ function rollupChecks(value) {
   for (const item of value) {
     const key = `${item?.workflowName || item?.context || ''}/${item?.name || item?.context || ''}`;
     const prior = latest.get(key);
-    if (!prior || String(item?.startedAt || '') >= String(prior?.startedAt || '')) {
+    // A queued re-run has no timestamp yet; it is still the newer attempt.
+    const running = String(item?.status || '').toUpperCase() !== 'COMPLETED';
+    if (!prior || running || String(item?.startedAt || '') >= String(prior?.startedAt || '')) {
       latest.set(key, item);
     }
   }

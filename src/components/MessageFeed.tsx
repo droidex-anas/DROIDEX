@@ -310,8 +310,8 @@ export function MessageFeed({
   );
   // Mirrors the tail message's own caret timing (same text, same idle window),
   // so the hand-off from caret to Working is seamless.
-  // A tail that only echoes the pinned spec renders nothing, so it cannot
-  // carry the live cue either.
+  // A tail that only echoes the pinned spec shows no caret of its own, so the
+  // Working cue speaks for it.
   const tailTyping = useStreamingActivity(
     tailText,
     pending &&

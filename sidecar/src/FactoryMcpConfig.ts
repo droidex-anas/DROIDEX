@@ -43,7 +43,7 @@ export function loadFactoryMcpServers(
   userHome = homedir(),
 ): McpServerConfig[] {
   const effective = new Map<string, FactoryServerConfig>();
-  for (const dir of cwd === undefined ? [] : projectConfigDirs(cwd)) {
+  for (const dir of cwd ? projectConfigDirs(cwd) : []) {
     for (const [name, config] of Object.entries(
       readConfig(path.join(dir, '.factory', 'mcp.json')),
     )) {
