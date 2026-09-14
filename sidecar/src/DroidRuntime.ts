@@ -149,9 +149,11 @@ export class DroidRuntime implements FactoryRuntime {
 
   async createSession(options: CreateRuntimeSessionOptions): Promise<DroidSession> {
     const { client, transport } = await this.createClient(options.cwd, options);
-    const params = createInitializeSessionParams(options);
 
+    // Built inside the try: a level the SDK cannot represent throws here, and
+    // the process that just started must go with it.
     try {
+      const params = createInitializeSessionParams(options);
       const init = await withTimeout(
         client.initializeSession(params),
         SESSION_INIT_TIMEOUT_MS,
