@@ -296,8 +296,8 @@ export default function RightPanel() {
 }
 
 // The model row in the chat's own provider terms: its provider's catalog names
-// the model, and the global effort default is Droid's alone, so no other
-// provider's chat inherits it.
+// the model, and the model itself says whether its harness offers a reasoning
+// effort to show.
 function modelRowContent(
   session: SessionSummary | null,
   state: {
@@ -321,13 +321,10 @@ function modelRowContent(
   return {
     ...(shown ? { modelInfo: shown } : {}),
     modelLabel: shown?.displayName ?? session.modelId ?? 'default',
-    reasoningEffort:
-      session.provider === 'droid'
-        ? resolveReasoningEffortDisplay(
-            session.reasoningEffort,
-            state.agentConfig.primary.reasoning,
-            shown,
-          )
-        : session.reasoningEffort,
+    reasoningEffort: resolveReasoningEffortDisplay(
+      session.reasoningEffort,
+      state.agentConfig.primary.reasoning,
+      shown,
+    ),
   };
 }

@@ -817,17 +817,6 @@ export default function PromptInput({
     chatScoped ? activeSession.modelId : state.agentConfig.primary.modelId,
     composerModels,
   );
-  // The one model selection a new chat is created with. Built from the
-  // validated id so no path can send a model the chat's provider never
-  // published, and carrying reasoning only where a provider honours it.
-  const draftModelSettings = droidComposer
-    ? {
-        ...(primaryModelId ? { modelId: primaryModelId } : {}),
-        reasoningEffort: state.agentConfig.primary.reasoning,
-      }
-    : primaryModelId
-      ? { modelId: primaryModelId }
-      : {};
   const selectedModel = primaryModelId
     ? composerModels.find((m) => m.id === primaryModelId)
     : undefined;
@@ -843,15 +832,28 @@ export default function PromptInput({
   const selectedModelLabel = primaryModelId
     ? (selectedModel?.displayName ?? primaryModelId)
     : (providerDefault?.displayName ?? 'Default model');
-  // The global reasoning default is Droid's too, and no other provider offers
-  // the control, so the chip shows nothing rather than a setting it ignores.
-  const primaryReasoning = droidComposer
+  // The model the chat will run on decides whether its harness offers reasoning
+  // at all, whichever provider it belongs to: one that publishes no efforts
+  // shows none on the chip and is created with none.
+  const draftReasoning = resolveReasoningEffortDisplay(
+    undefined,
+    state.agentConfig.primary.reasoning,
+    chipModel,
+  );
+  const primaryReasoning = chatScoped
     ? resolveReasoningEffortDisplay(
-        chatScoped ? activeSession.reasoningEffort : undefined,
+        activeSession.reasoningEffort,
         state.agentConfig.primary.reasoning,
-        selectedModel,
+        chipModel,
       )
-    : undefined;
+    : draftReasoning;
+  // The one model selection a new chat is created with. Built from the
+  // validated id so no path can send a model the chat's provider never
+  // published.
+  const draftModelSettings = {
+    ...(primaryModelId ? { modelId: primaryModelId } : {}),
+    ...(draftReasoning ? { reasoningEffort: draftReasoning } : {}),
+  };
 
   const replaceTrigger = (replacement: string) => {
     if (!trigger) return;
