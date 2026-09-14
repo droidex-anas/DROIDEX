@@ -1199,9 +1199,9 @@ async function launchProjectTarget(editor, pathToOpen, root, target) {
     await openTerminal(root);
     return;
   }
-  if (id === 'vscode') return openApp('Visual Studio Code', 'code', pathToOpen);
-  if (id === 'cursor') return openApp('Cursor', 'cursor', pathToOpen);
-  if (id === 'xcode') return openApp('Xcode', 'xed', pathToOpen);
+  if (id === 'vscode') return openApp('vscode', 'Visual Studio Code', 'code', pathToOpen);
+  if (id === 'cursor') return openApp('cursor', 'Cursor', 'cursor', pathToOpen);
+  if (id === 'xcode') return openApp('xcode', 'Xcode', 'xed', pathToOpen);
 }
 
 async function openPathOrThrow(targetPath) {
@@ -1213,8 +1213,14 @@ function normalizeEditor(value) {
   return ['vscode', 'cursor', 'finder', 'terminal', 'xcode'].includes(value) ? value : 'vscode';
 }
 
-function openApp(macAppName, command, targetPath) {
-  if (process.platform === 'darwin') return spawnDetached('open', ['-a', macAppName, targetPath]);
+// On macOS the target is the bundle the picker found (so a VSCodium-only
+// machine opens VSCodium under the vscode entry), falling back to the app name
+// when detection has nothing to say.
+function openApp(editor, macAppName, command, targetPath) {
+  if (process.platform === 'darwin') {
+    const bundle = editorApps.macBundlePath(editor) ?? macAppName;
+    return spawnDetached('open', ['-a', bundle, targetPath]);
+  }
   return spawnDetached(command, [targetPath]);
 }
 

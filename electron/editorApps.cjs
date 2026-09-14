@@ -97,4 +97,4 @@ function editorIcon(editor) {
   return pending;
 }
 
-module.exports = { listEditors, editorIcon };
+module.exports = { listEditors, editorIcon, macBundlePath };
