@@ -25,6 +25,7 @@ import {
   createModelDefaultsForProvider,
   errMsg,
   requireAutonomyForCommand,
+  requireDroidReasoningSupported,
   resumeHandle,
   resumeSettings,
 } from './sessionHelpers.js';
@@ -161,6 +162,7 @@ export class SessionLifecycle {
       const autonomy = requireAutonomyForCommand(command);
       // Resolved here so an unroutable provider fails before any resource starts.
       const kind = requireProviderKind(command.provider);
+      requireDroidReasoningSupported(kind, command);
       const provider = d.provider(kind);
       const defaults = await d.getFactoryDefaults();
       const interactionMode = createInteractionModeForCommand(command, defaults);

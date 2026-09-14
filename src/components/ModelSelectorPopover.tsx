@@ -184,16 +184,17 @@ export default function ModelSelectorPopover({
       defaultModelOf(source),
     [state.provider, state.providerStatuses, source],
   );
-  const selectedLabel = (() => {
-    // A model this provider never published is not a selection here, so the
-    // search line names the default the chat would start on instead of an id
-    // belonging to another provider.
-    const id = providerModelSelection(state.provider, effModelId, source);
-    if (!id) return defaultModel?.displayName ?? 'Default';
-    return source.find((model) => model.id === id)?.displayName ?? id;
-  })();
-  const selectedConfigModel = effModelId ? source.find((x) => x.id === effModelId) : undefined;
-  const selectedSupportedReasoning = selectedConfigModel?.supportedReasoningEfforts;
+  // A model this provider never published is not a selection here — a stale
+  // pick, or one belonging to another provider — so both the search line and
+  // the reasoning row fall back to the default the chat would start on.
+  const resolvedModelId = providerModelSelection(state.provider, effModelId, source);
+  const selectedLabel = resolvedModelId
+    ? (source.find((model) => model.id === resolvedModelId)?.displayName ?? resolvedModelId)
+    : (defaultModel?.displayName ?? 'Default');
+  // The row the effort applies to: the pinned model, or the model behind the
+  // default row when the chat pins none or its pick isn't this provider's.
+  const activeModel = resolvedModelId ? source.find((x) => x.id === resolvedModelId) : defaultModel;
+  const activeSupportedReasoning = activeModel?.supportedReasoningEfforts;
 
   const updateReasoning = useCallback(
     (reasoning: ReasoningEffort) => {
@@ -236,7 +237,7 @@ export default function ModelSelectorPopover({
       });
 
       // Snap reasoning to a value the new model actually supports.
-      const next = modelId ? source.find((x) => x.id === modelId) : undefined;
+      const next = modelId ? source.find((x) => x.id === modelId) : defaultModel;
       const supported = next?.supportedReasoningEfforts;
       if (supported?.length && !supported.includes(currentReasoning)) {
         updateReasoning(next?.defaultReasoningEffort ?? supported[supported.length - 1]);
@@ -251,6 +252,7 @@ export default function ModelSelectorPopover({
     [
       agent,
       childTarget,
+      defaultModel,
       dispatch,
       scopedAppSessionId,
       source,
@@ -263,24 +265,22 @@ export default function ModelSelectorPopover({
   // (e.g. real catalog arrives after a mock placeholder was selected).
   useEffect(() => {
     if (childMode) return;
-    const supported = selectedSupportedReasoning;
+    const supported = activeSupportedReasoning;
     if (supported?.length && !supported.includes(effReasoning)) {
-      updateReasoning(
-        selectedConfigModel?.defaultReasoningEffort ?? supported[supported.length - 1],
-      );
+      updateReasoning(activeModel?.defaultReasoningEffort ?? supported[supported.length - 1]);
     } else if (
       !supported?.length &&
-      selectedConfigModel?.defaultReasoningEffort &&
-      effReasoning !== selectedConfigModel.defaultReasoningEffort
+      activeModel?.defaultReasoningEffort &&
+      effReasoning !== activeModel.defaultReasoningEffort
     ) {
-      updateReasoning(selectedConfigModel.defaultReasoningEffort);
+      updateReasoning(activeModel.defaultReasoningEffort);
     }
   }, [
+    activeModel?.defaultReasoningEffort,
+    activeModel?.id,
+    activeSupportedReasoning,
     childMode,
     effReasoning,
-    selectedConfigModel?.defaultReasoningEffort,
-    selectedConfigModel?.id,
-    selectedSupportedReasoning,
     updateReasoning,
   ]);
 
@@ -301,7 +301,7 @@ export default function ModelSelectorPopover({
         if (next !== idx) updateModel(ids[next]);
         return;
       }
-      const efforts = effortsFor(selectedConfigModel ?? defaultModel, effReasoning);
+      const efforts = effortsFor(activeModel, effReasoning);
       const next = stepEffort(efforts, effReasoning, e.key === 'ArrowRight' ? 1 : -1);
       if (next !== effReasoning) updateReasoning(next);
     };
@@ -310,14 +310,13 @@ export default function ModelSelectorPopover({
       window.removeEventListener('keydown', onKey);
     };
   }, [
+    activeModel,
     childReady,
     childTarget,
-    defaultModel,
     effModelId,
     effReasoning,
     filterOpen,
     models,
-    selectedConfigModel,
     updateModel,
     updateReasoning,
   ]);
