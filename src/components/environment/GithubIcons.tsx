@@ -113,8 +113,12 @@ export function PrStateIcon({
   checks?: PrChecksRollup | null;
 }) {
   const { icon, label, color } = PR_STATES[kind];
-  const dot = checks ? CHECK_DOTS[checks] : null;
-  const dotSize = Math.round(size * 0.4);
+  // A merged or closed PR's checks no longer matter; only a live one wears
+  // the dot. Small icons (sidebar rows) get a smaller dot so it reads as a
+  // marker on the glyph, not a second icon.
+  const live = kind === 'open' || kind === 'draft';
+  const dot = live && checks ? CHECK_DOTS[checks] : null;
+  const dotSize = size <= 14 ? 5 : Math.round(size * 0.4);
   return (
     <span
       style={{ color }}
