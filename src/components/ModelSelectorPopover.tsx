@@ -184,17 +184,16 @@ export default function ModelSelectorPopover({
       defaultModelOf(source),
     [state.provider, state.providerStatuses, source],
   );
-  const selectedLabel = (() => {
-    // A model this provider never published is not a selection here, so the
-    // search line names the default the chat would start on instead of an id
-    // belonging to another provider.
-    const id = providerModelSelection(state.provider, effModelId, source);
-    if (!id) return defaultModel?.displayName ?? 'Default';
-    return source.find((model) => model.id === id)?.displayName ?? id;
-  })();
+  // A model this provider never published is not a selection here — a stale
+  // pick, or one belonging to another provider — so both the search line and
+  // the reasoning row fall back to the default the chat would start on.
+  const resolvedModelId = providerModelSelection(state.provider, effModelId, source);
+  const selectedLabel = resolvedModelId
+    ? (source.find((model) => model.id === resolvedModelId)?.displayName ?? resolvedModelId)
+    : (defaultModel?.displayName ?? 'Default');
   // The row the effort applies to: the pinned model, or the model behind the
-  // default row when the chat pins none.
-  const activeModel = effModelId ? source.find((x) => x.id === effModelId) : defaultModel;
+  // default row when the chat pins none or its pick isn't this provider's.
+  const activeModel = resolvedModelId ? source.find((x) => x.id === resolvedModelId) : defaultModel;
   const activeSupportedReasoning = activeModel?.supportedReasoningEfforts;
 
   const updateReasoning = useCallback(
