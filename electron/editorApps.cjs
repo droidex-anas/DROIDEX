@@ -25,7 +25,9 @@ function userInstalled(...bundleNames) {
 
 // Where each launch target lives on macOS, most preferred bundle first.
 const MAC_BUNDLES = {
-  vscode: userInstalled('Visual Studio Code.app'),
+  // VSCodium opens through the same target, as it did before the picker
+  // learned real icons; a VSCodium-only machine then wears its icon.
+  vscode: userInstalled('Visual Studio Code.app', 'VSCodium.app'),
   cursor: userInstalled('Cursor.app'),
   finder: ['/System/Library/CoreServices/Finder.app'],
   terminal: ['/System/Applications/Utilities/Terminal.app', '/Applications/Utilities/Terminal.app'],
