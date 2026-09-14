@@ -11,16 +11,23 @@ import { PROVIDER_KINDS, type ProviderKind } from './providerKind.js';
 export function providerStatuses(
   droidPath: string,
   droidModels: ModelInfo[],
+  droidDefaultModelId: string | undefined,
   probed: (provider: ProviderKind) => ProviderStatus | undefined,
 ): ProviderStatus[] {
   return PROVIDER_KINDS.flatMap((provider) => {
-    if (provider === 'droid') return [droidStatus(droidPath, droidModels)];
+    if (provider === 'droid') return [droidStatus(droidPath, droidModels, droidDefaultModelId)];
     const status = probed(provider);
     return status ? [status] : [];
   });
 }
 
-function droidStatus(droidPath: string, models: ModelInfo[]): ProviderStatus {
+// Droid's default is the Factory setting the manager already resolves; every
+// other provider reports its own with its probe.
+function droidStatus(
+  droidPath: string,
+  models: ModelInfo[],
+  defaultModelId: string | undefined,
+): ProviderStatus {
   // resolveDroidPath() returns an absolute executable when the CLI is installed
   // and the bare `droid` name when nothing was found, so the path is the signal.
   // A provider that cannot run offers no models, however stale the cache is.
@@ -32,5 +39,10 @@ function droidStatus(droidPath: string, models: ModelInfo[]): ProviderStatus {
       models: [],
     };
   }
-  return { provider: 'droid', readiness: 'ready', models };
+  return {
+    provider: 'droid',
+    readiness: 'ready',
+    ...(defaultModelId ? { defaultModelId } : {}),
+    models,
+  };
 }

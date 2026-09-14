@@ -6,7 +6,7 @@ import { useSessionWorkingDirectory } from '../hooks/useSessionWorkingDirectory'
 import { usePullRequest } from '../hooks/usePullRequest';
 import { useGithubSetup } from '../hooks/useGithubSetup';
 import { resolveReasoningEffortDisplay } from '../lib/reasoningEffort';
-import { providerModelCatalog } from '../features/providers/providerIdentity';
+import { providerDefaultModel, providerModelCatalog } from '../features/providers/providerIdentity';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Hash, ChevronRight, FileText } from 'lucide-react';
 import { ModelIcon, providerOf } from './ModelIcon';
@@ -308,18 +308,25 @@ function modelRowContent(
 ): { modelInfo?: ModelInfo; modelLabel: string; reasoningEffort?: ReasoningEffort } {
   if (!session) return { modelLabel: 'default' };
   const catalog = providerModelCatalog(session.provider, state.models, state.providerStatuses);
-  const modelInfo = session.modelId
+  const pinned = session.modelId
     ? catalog.find((model) => model.id === session.modelId)
     : undefined;
+  // A chat with no model of its own runs on its harness's configured default, so
+  // the row names that model instead of the word "default".
+  const shown =
+    pinned ??
+    (session.modelId
+      ? undefined
+      : providerDefaultModel(session.provider, catalog, state.providerStatuses));
   return {
-    ...(modelInfo ? { modelInfo } : {}),
-    modelLabel: modelInfo?.displayName ?? session.modelId ?? 'default',
+    ...(shown ? { modelInfo: shown } : {}),
+    modelLabel: shown?.displayName ?? session.modelId ?? 'default',
     reasoningEffort:
       session.provider === 'droid'
         ? resolveReasoningEffortDisplay(
             session.reasoningEffort,
             state.agentConfig.primary.reasoning,
-            modelInfo,
+            shown,
           )
         : session.reasoningEffort,
   };

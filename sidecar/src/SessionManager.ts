@@ -620,7 +620,7 @@ export class SessionManager {
     void this.adoption.adopt();
     this.emit({ type: 'connection', status: 'connected' });
     this.emit({ type: 'runtime.updated', status: this.runtime.status() });
-    this.emitProviderStatus();
+    void this.emitProviderStatus();
     void this.refreshProviderStatus();
     const recovery = this.history.persistenceRecovery?.();
     if (recovery?.hadUnflushedWork) {
@@ -701,12 +701,12 @@ export class SessionManager {
       case 'catalog.models': {
         const models = await this.getModels();
         this.emit({ type: 'catalog.updated', catalog: 'models', items: models });
-        this.emitProviderStatus();
+        await this.emitProviderStatus();
         void this.refreshModelCatalog(true);
         return;
       }
       case 'provider.refresh':
-        this.emitProviderStatus();
+        await this.emitProviderStatus();
         await this.refreshProviderStatus();
         return;
       case 'catalog.tools':
@@ -987,7 +987,7 @@ export class SessionManager {
         this.cachedModels = models;
         if (emit) {
           this.emit({ type: 'catalog.updated', catalog: 'models', items: models });
-          this.emitProviderStatus();
+          await this.emitProviderStatus();
         }
         return models;
       } catch (err) {
@@ -1002,12 +1002,28 @@ export class SessionManager {
 
   // Droid's readiness follows the resolved CLI path and the catalog this
   // manager already caches; every other provider's comes from its last probe.
-  private emitProviderStatus(): void {
+  // The default model is the one a new chat would open with, resolved through
+  // the very defaults the lifecycle uses, so the two can never disagree.
+  private async emitProviderStatus(): Promise<void> {
+    // Publication is fired detached from connect, so a defaults failure (a
+    // malformed settings file) is reported here and the status still goes out
+    // without a Droid default rather than surfacing as an unhandled rejection.
+    let defaultModelId: string | undefined;
+    try {
+      const defaults = await this.getFactoryDefaults();
+      // A Factory default configured for Spec names its own model, and that is
+      // the mode a new chat opens in, so the same selection answers here.
+      defaultModelId = modelDefaultForMode(defaults.interactionMode ?? 'auto', defaults);
+    } catch (error) {
+      this.emitError({ message: `Could not read the Droid defaults: ${errMsg(error)}` });
+    }
+    if (this.shutdownPromise) return;
     this.emit({
       type: 'provider.status',
       statuses: providerStatuses(
         this.runtime.status().droidPath,
         this.cachedModels ?? [],
+        defaultModelId,
         (provider) => this.providerProbes.status(provider),
       ),
     });
@@ -1018,7 +1034,7 @@ export class SessionManager {
   private async refreshProviderStatus(): Promise<void> {
     await this.providerProbes.refresh();
     if (this.shutdownPromise) return;
-    this.emitProviderStatus();
+    await this.emitProviderStatus();
   }
 
   private async emitEnvironment(): Promise<void> {
@@ -1034,7 +1050,7 @@ export class SessionManager {
     this.emit({ type: 'cli.install.done', phase: 'install', ok: exitCode === 0, exitCode });
     this.emit({ type: 'runtime.updated', status: this.runtime.status() });
     // The resolved droid path may have changed, and Droid's readiness follows it.
-    this.emitProviderStatus();
+    await this.emitProviderStatus();
     await this.emitEnvironment();
   }
 
@@ -1052,7 +1068,7 @@ export class SessionManager {
     this.emit({ type: 'cli.install.done', phase: 'update', ok: exitCode === 0, exitCode });
     this.emit({ type: 'runtime.updated', status: this.runtime.status() });
     // The resolved droid path may have changed, and Droid's readiness follows it.
-    this.emitProviderStatus();
+    await this.emitProviderStatus();
     await this.emitEnvironment();
   }
 
