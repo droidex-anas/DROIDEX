@@ -183,7 +183,18 @@ function formatCounts(counts: ActivityCounts, live: boolean): string {
 export function hasPendingCall(events: TranscriptEvent[], sessionLive: boolean): boolean {
   if (!sessionLive) return false;
   const { resultByCall } = correlateResults(events);
-  return events.some((e) => e.kind === 'tool_call' && !resultByCall.has(e));
+  // A plan update's result is consumed by its checklist rather than mapped to
+  // the call, so it is looked up by id; one without an id cannot be paired
+  // and counts as settled rather than pending forever.
+  const resultIds = new Set(
+    events.flatMap((e) => (e.kind === 'tool_result' && e.toolUseId ? [e.toolUseId] : [])),
+  );
+  return events.some((e) => {
+    if (e.kind !== 'tool_call') return false;
+    if (classifyEvent(e) === 'plan_update')
+      return Boolean(e.toolUseId) && !resultIds.has(e.toolUseId ?? '');
+    return !resultByCall.has(e);
+  });
 }
 
 // `live` while the group's work is in flight: the summary then speaks in the
