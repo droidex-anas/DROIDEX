@@ -1,5 +1,5 @@
 import { DecompSessionType, type McpServerConfig, type MissionFeature } from '@factory/droid-sdk';
-import type { CreateRuntimeSessionOptions } from './DroidRuntime.js';
+import { factoryReasoningEffort, type CreateRuntimeSessionOptions } from './DroidRuntime.js';
 import type {
   Autonomy,
   ClientCommand,
@@ -176,6 +176,27 @@ export function requireAutonomyForCommand(command: { autonomy?: Autonomy }): Aut
     );
   }
   return autonomy;
+}
+
+// session.create must never reach the Droid runtime with a reasoning level
+// its SDK cannot represent (Codex's 'ultra', for instance): checked here,
+// before any process or transport opens, the same way autonomy is required
+// up front instead of failing deep inside session creation.
+export function requireDroidReasoningSupported(
+  provider: ProviderKind,
+  command: {
+    reasoningEffort?: ReasoningEffort;
+    workerReasoning?: ReasoningEffort;
+    validatorReasoning?: ReasoningEffort;
+  },
+): void {
+  if (provider !== DEFAULT_PROVIDER) return;
+  for (const effort of [
+    command.reasoningEffort,
+    command.workerReasoning,
+    command.validatorReasoning,
+  ])
+    if (effort !== undefined) factoryReasoningEffort(effort);
 }
 
 // Factory's defaults are the Droid CLI's own, so a session on another provider
