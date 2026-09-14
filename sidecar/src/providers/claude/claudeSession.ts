@@ -44,7 +44,11 @@ export interface ClaudeSessionInput {
 export class ClaudeSession implements ProviderSession {
   readonly provider = 'claude' as const;
   readonly providerSessionId: string;
+  readonly closed: Promise<Error | undefined>;
 
+  private readonly abort = new AbortController();
+  private resolveClosed: (error?: Error) => void = () => undefined;
+  private initializationError?: Error;
   private readonly prompts = new PromptQueue();
   private readonly mapper: ClaudeEventMapper;
   private readonly query: Query;
@@ -73,36 +77,46 @@ export class ClaudeSession implements ProviderSession {
     this.autonomy = input.autonomy;
     this.planning = input.interactionMode === 'spec';
     this.mapper = new ClaudeEventMapper(input.appSessionId);
+    this.closed = new Promise((resolve) => {
+      this.resolveClosed = resolve;
+    });
     let markSpawned = (): void => undefined;
-    const spawned = new Promise<void>((resolve) => {
+    let rejectSpawn = (error: Error): void => {
+      void error;
+    };
+    const spawned = new Promise<void>((resolve, reject) => {
       markSpawned = resolve;
+      rejectSpawn = reject;
     });
     this.query = query({
       prompt: this.prompts,
       options: sessionOptions(
         input,
+        this.abort,
         () => this.planning,
         (process) => {
           this.child = process;
-          markSpawned();
+          process.once('spawn', markSpawned);
+          process.once('error', rejectSpawn);
         },
       ),
     });
     this.initialized = this.query.initializationResult().then(
       () => {
+        this.abort.signal.throwIfAborted();
         this.initializing = false;
       },
       (error: unknown) => {
+        this.abort.signal.throwIfAborted();
         this.initializing = false;
-        // A CLI that never came up can serve no turn: the process goes now, so
-        // the failure the turn reports leaves nothing running behind it.
-        void this.close();
-        throw new Error(errMsg(error));
+        const failure = new Error(errMsg(error));
+        this.initializationError = failure;
+        this.finish(failure);
+        throw failure;
       },
     );
-    // The turn that is streaming is what reports a broken start; nothing else
-    // observes this promise, and an unhandled rejection would take the sidecar
-    // down with it.
+    // Startup can fail before a turn observes it. The turn or the lifecycle's
+    // closure observer reports the failure without an unhandled rejection.
     void this.initialized.catch(() => undefined);
     // A CLI that fails before it reaches spawn still settles initialization,
     // which is what releases the open instead of leaving it hanging.
@@ -126,14 +140,15 @@ export class ClaudeSession implements ProviderSession {
     if (this.activeTurnId) throw new Error('This Claude session is already running a turn.');
     const turnId = randomUUID();
     this.activeTurnId = turnId;
-    this.prompts.push({
-      type: 'user',
-      uuid: turnId,
-      session_id: this.providerSessionId,
-      parent_tool_use_id: null,
-      message: { role: 'user', content: prompt },
-    });
     try {
+      this.requireOpen();
+      this.prompts.push({
+        type: 'user',
+        uuid: turnId,
+        session_id: this.providerSessionId,
+        parent_tool_use_id: null,
+        message: { role: 'user', content: prompt },
+      });
       // Only ever the first turn: by the second the CLI is up and its startup
       // is not what the chat is waiting for.
       if (this.initializing) yield this.mapper.statusEvent(STARTING);
@@ -163,18 +178,19 @@ export class ClaudeSession implements ProviderSession {
       }
     } finally {
       this.activeTurnId = undefined;
+      this.initializationError = undefined;
     }
   }
 
-  // A CLI that fails to boot can end without ever sending a message, so while
-  // initialization is pending the turn waits on it too and fails with its error.
+  // The failure survives a delayed first prompt, even after the query closes.
   private async nextMessage(): Promise<IteratorResult<SDKMessage>> {
+    this.requireOpen();
     const next = this.query.next();
-    if (!this.initializing) return await next;
-    // Abandoned if initialization loses the race; the query is closed by then.
-    void next.catch(() => undefined);
-    await Promise.race([this.initialized, next]);
-    return await next;
+    // Observe both promises even when closing the query settles its iterator first.
+    if (this.initializing) await Promise.race([this.initialized, next]);
+    const message = await next;
+    this.requireOpen();
+    return message;
   }
 
   async setAutonomy(autonomy: Autonomy): Promise<void> {
@@ -195,13 +211,14 @@ export class ClaudeSession implements ProviderSession {
     next: () => { autonomy: Autonomy; planning: boolean },
   ): Promise<void> {
     const applied = this.modeChanges.then(async () => {
-      await this.initialized;
+      await this.waitUntilInitialized();
       const { autonomy, planning } = next();
       // While the session is planning the permission mode is already plan mode
       // and stays it, so a new autonomy is only recorded here and takes effect
       // when the session leaves Spec.
       if (!planning || !this.planning)
         await this.query.setPermissionMode(planning ? 'plan' : claudePermissionMode(autonomy));
+      this.abort.signal.throwIfAborted();
       this.autonomy = autonomy;
       this.planning = planning;
     });
@@ -215,35 +232,61 @@ export class ClaudeSession implements ProviderSession {
   // both together; the CLI keeps it for the session without writing it to the
   // user's settings files.
   async setModel({ modelId, reasoningEffort }: ProviderModelSettings): Promise<void> {
-    await this.initialized;
+    await this.waitUntilInitialized();
     if (modelId !== undefined) await this.query.setModel(modelId ?? undefined);
+    this.abort.signal.throwIfAborted();
     const effort = claudeEffort(reasoningEffort);
     if (effort) await this.query.applyFlagSettings({ effortLevel: effort });
   }
 
+  private requireOpen(): void {
+    if (this.initializationError) throw this.initializationError;
+    this.abort.signal.throwIfAborted();
+  }
+
+  private async waitUntilInitialized(): Promise<void> {
+    this.requireOpen();
+    await this.initialized;
+    this.requireOpen();
+  }
+
   async interrupt(): Promise<void> {
     this.interruptedTurnId = this.activeTurnId;
-    await this.initialized;
+    // There is no initialized control channel to interrupt yet. Closing also
+    // releases initialization waiters and prevents a late startup from reviving it.
+    if (this.initializing || this.abort.signal.aborted) {
+      await this.close();
+      return;
+    }
     // Aborts the in-flight turn on the live process; the turn then settles with
     // its own result, so the next prompt does not pay for a restart.
     await this.query.interrupt();
   }
 
   close(): Promise<void> {
+    this.finish();
+    return Promise.resolve();
+  }
+
+  private finish(error?: Error): void {
+    if (this.abort.signal.aborted) return;
+    this.abort.abort();
     this.prompts.close();
     // The SDK closes stdin and escalates SIGTERM to SIGKILL itself.
     this.query.close();
-    return Promise.resolve();
+    this.resolveClosed(error);
   }
 }
 
 function sessionOptions(
   input: ClaudeSessionInput,
+  abortController: AbortController,
   isPlanning: () => boolean,
   onSpawn: (process: ChildProcess) => void,
 ): Options {
   const effort = claudeEffort(input.reasoningEffort);
   return {
+    abortController,
     cwd: input.cwd,
     pathToClaudeCodeExecutable: input.executable,
     ...(input.modelId ? { model: input.modelId } : {}),
