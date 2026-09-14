@@ -218,6 +218,13 @@ export default function Sidebar({
     handleCopyMarkdown,
   } = rowActions;
 
+  const toggleSettled = useCallback(
+    (m: SessionSummary) => {
+      if (statusFor(m) === 'settled') activity.reopen(m);
+      else activity.settle(m);
+    },
+    [activity, statusFor],
+  );
   const renderRow = (m: SessionSummary) => {
     const status = statusFor(m);
     const inbox = view === 'activity';
@@ -244,6 +251,7 @@ export default function Sidebar({
         onMenu={handleRowMenu}
         onRenameCommit={handleRenameCommit}
         onRenameCancel={handleRenameCancel}
+        {...(inbox && canSettleSession(status) ? { onToggleSettled: toggleSettled } : {})}
       />
     );
   };
