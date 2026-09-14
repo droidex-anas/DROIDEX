@@ -24,11 +24,15 @@ import { renderToolEvents, summarizeTools } from './rows';
 export function ToolGroupItem({
   events,
   active = false,
+  sessionLive = active,
   density = 'balanced',
   onOpenReviewFile,
 }: {
   events: TranscriptEvent[];
   active?: boolean;
+  // A call without its result is in flight while the session runs, even once
+  // a later item (prose, thinking) has become the tail and `active` is off.
+  sessionLive?: boolean;
   density?: ToolActivityDensity;
   onOpenReviewFile?: OpenReviewFileHandler;
 }) {
@@ -40,7 +44,7 @@ export function ToolGroupItem({
   if (density !== 'compact') {
     return (
       <div className={rows}>
-        {renderToolEvents(events, active, density === 'detailed', onOpenReviewFile)}
+        {renderToolEvents(events, sessionLive, density === 'detailed', onOpenReviewFile)}
       </div>
     );
   }
@@ -65,7 +69,7 @@ export function ToolGroupItem({
       </button>
       <Expand open={open}>
         <div className={`mt-2 pl-[18px] ${rows}`}>
-          {renderToolEvents(events, active, false, onOpenReviewFile)}
+          {renderToolEvents(events, sessionLive, false, onOpenReviewFile)}
         </div>
       </Expand>
     </div>

@@ -57,11 +57,13 @@ export function splitAutomationProposals(events: TranscriptEvent[]): {
 function AutomationToolGroup({
   events,
   active,
+  sessionLive,
   density,
   onOpenReviewFile,
 }: {
   events: TranscriptEvent[];
   active: boolean;
+  sessionLive: boolean;
   density: ToolActivityDensity;
   onOpenReviewFile?: OpenReviewFileHandler;
 }) {
@@ -70,6 +72,7 @@ function AutomationToolGroup({
     <ToolGroupItem
       events={groupEvents}
       active={active}
+      sessionLive={sessionLive}
       density={density}
       onOpenReviewFile={onOpenReviewFile}
     />
@@ -360,6 +363,7 @@ export const FeedItemView = memo(function FeedItemView({
         <AutomationToolGroup
           events={item.events}
           active={live}
+          sessionLive={sessionLive ?? live}
           density={density}
           onOpenReviewFile={onOpenReviewFile}
         />

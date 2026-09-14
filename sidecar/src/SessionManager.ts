@@ -1,6 +1,6 @@
 import { DroidInteractionMode, type McpServerConfig } from '@factory/droid-sdk';
 import { randomUUID } from 'node:crypto';
-import { homedir, tmpdir } from 'node:os';
+import { tmpdir } from 'node:os';
 import type {
   Autonomy,
   BridgeRuntimeSnapshot,
@@ -1013,9 +1013,11 @@ export class SessionManager {
     if (shouldAttachAutomationMcp(ref.clientRef, await isUnattendedAutomationSession(ref.id))) {
       servers.push(this.createAutomationMcpResource(() => ref.id));
     }
-    const configuredCwd = cwd?.trim();
+    // A folderless session has no project scope: user-level config only, the
+    // same rule the MCP settings flows follow.
+    const workspace = cwd?.trim();
     const configured = this.loadConfiguredMcpServers(
-      configuredCwd === undefined || configuredCwd.length === 0 ? homedir() : configuredCwd,
+      workspace !== undefined && workspace.length > 0 ? workspace : undefined,
     );
     const configs: StartedLocalMcpResources['configs'] = [...configured];
     try {
