@@ -149,7 +149,7 @@ function isListingTool(name: string | undefined): boolean {
   return /(^|[^a-z])(ls|list|dir)([^a-z]|$)/i.test(name ?? '');
 }
 
-function formatCounts(counts: ActivityCounts): string {
+function formatCounts(counts: ActivityCounts, live: boolean): string {
   const parts: string[] = [];
   const add = (n: number, s: string, p: string) => {
     if (n > 0) parts.push(`${String(n)} ${n === 1 ? s : p}`);
@@ -162,19 +162,31 @@ function formatCounts(counts: ActivityCounts): string {
   add(counts.task, 'task', 'tasks');
   add(counts.step, 'step', 'steps');
   add(counts.plan, 'plan update', 'plan updates');
-  const verb = counts.onlyExec ? 'Ran' : counts.onlyWeb ? 'Fetched' : 'Explored';
+  const verb = counts.onlyExec
+    ? live
+      ? 'Running'
+      : 'Ran'
+    : counts.onlyWeb
+      ? live
+        ? 'Fetching'
+        : 'Fetched'
+      : live
+        ? 'Exploring'
+        : 'Explored';
   return `${verb} ${parts.join(', ')}`;
 }
 
 /* ── Condensed tool group: "Explored 4 files, 1 search" ── */
-export function summarizeTools(events: TranscriptEvent[]): string {
+// `live` while the group still runs: the summary then speaks in the same
+// progressive voice as the rows it folds ("Running 2 commands").
+export function summarizeTools(events: TranscriptEvent[], live = false): string {
   const counts = emptyCounts();
   for (const e of events) {
     if (e.kind === 'tool_call') countToolCall(counts, e);
   }
   if (!counts.sawCall) return 'Tool result';
-  if (counts.onlyPlan) return 'Updated plan';
-  return formatCounts(counts);
+  if (counts.onlyPlan) return live ? 'Updating plan' : 'Updated plan';
+  return formatCounts(counts, live);
 }
 
 // A standalone failed result (or a pure error event) rendered as a collapsible

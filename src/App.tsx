@@ -317,6 +317,9 @@ export default function App() {
   }, [dispatch, state.rightPanelOpen]);
 
   const toggleUtilityPane = useCallback(() => {
+    // Closing the pane also ends a full-width browser expansion, so reopening
+    // it later brings the pane back at its normal width beside the chat.
+    if (utilityPanel.open) setExpandedBrowserAppSessionId(null);
     dispatch({ type: 'SET_UTILITY_PANEL_OPEN', open: !utilityPanel.open });
   }, [dispatch, utilityPanel.open]);
 

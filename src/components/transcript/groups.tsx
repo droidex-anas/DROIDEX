@@ -37,7 +37,7 @@ export function ToolGroupItem({
   onOpenReviewFile?: OpenReviewFileHandler;
 }) {
   const [open, setOpen] = useState(false);
-  const summary = useMemo(() => summarizeTools(events), [events]);
+  const summary = useMemo(() => summarizeTools(events, active), [events, active]);
   // While the group is live each new row enters with motion (see index.css);
   // a settled group is history and renders still.
   const rows = `space-y-2.5${active ? ' tool-rows-live' : ''}`;
