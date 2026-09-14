@@ -942,13 +942,17 @@ export class SessionLifecycle {
       if (liveSession.providerClosePromise) {
         if (d.registry.getLive(stableAppSessionId) === liveSession)
           this.publishTurnSettled(liveSession);
-        await liveSession.providerClosePromise;
+        // The closure observer reports cleanup failures; keep queued sends here
+        // until the runtime can actually be released.
+        await liveSession.providerClosePromise.catch(() => undefined);
       }
       if (d.isShutdownStarted() || this.shouldDiscardPendingSends(liveSession)) {
         liveSession.pendingSends = [];
       } else if (d.registry.getLive(stableAppSessionId) !== liveSession) {
         const queued = liveSession.pendingSends.splice(0);
         if (queued.length > 0) void this.redeliverQueuedSends(stableAppSessionId, queued);
+      } else if (liveSession.providerClosePromise) {
+        this.publishTurnSettled(liveSession);
       } else if (liveSession.autoCompacting) {
         const compactionTarget = this.primaryAutomaticCompactionTarget(liveSession);
         if (compactionTarget) d.compaction.afterTurn(compactionTarget);
