@@ -6,6 +6,7 @@ import {
   type McpServerConfig,
   type Options,
   type Query,
+  type SDKMessage,
   type SDKUserMessage,
 } from '@anthropic-ai/claude-agent-sdk';
 import { spawn, type ChildProcess } from 'node:child_process';
@@ -13,10 +14,15 @@ import { randomUUID } from 'node:crypto';
 
 import type { NormalizedEvent } from '../../normalize.js';
 import type { Autonomy, SessionInteractionMode } from '../../protocol.js';
+import { errMsg } from '../../sessionHelpers.js';
 import type { ProviderInteractions } from '../interactions.js';
 import type { ProviderModelSettings, ProviderSession } from '../session.js';
 import { ClaudeEventMapper, rateLimitRefusal } from './claudeEvents.js';
 import { claudeCanUseTool, claudePermissionMode } from './claudePermissions.js';
+
+// Booting the CLI takes seconds, and the first turn streams while it happens, so
+// the chat says what it is waiting for instead of sitting empty.
+const STARTING = 'Starting Claude Code…';
 
 export interface ClaudeSessionInput {
   // Claude pins the session id it is given, so DROIDEX's own identity is also
@@ -40,6 +46,15 @@ export class ClaudeSession implements ProviderSession {
   private readonly prompts = new PromptQueue();
   private readonly mapper: ClaudeEventMapper;
   private readonly query: Query;
+  // Settles when the CLI has finished booting. Turns stream against a CLI that
+  // is still coming up; control requests wait for it, because the SDK writes
+  // them to stdin the moment they are made and the CLI has not answered its own
+  // `initialize` yet (node_modules/@anthropic-ai/claude-agent-sdk/sdk.mjs,
+  // Query.request: no queue, no gate).
+  private readonly initialized: Promise<void>;
+  // Resolves once the CLI process exists, which is all an open has to wait for.
+  private readonly spawned: Promise<void>;
+  private initializing = true;
   private child?: ChildProcess;
   private autonomy: Autonomy;
   // Spec mode is Claude Code's plan mode, and both reach the CLI as the one
@@ -56,6 +71,10 @@ export class ClaudeSession implements ProviderSession {
     this.autonomy = input.autonomy;
     this.planning = input.interactionMode === 'spec';
     this.mapper = new ClaudeEventMapper(input.appSessionId);
+    let markSpawned = (): void => undefined;
+    const spawned = new Promise<void>((resolve) => {
+      markSpawned = resolve;
+    });
     this.query = query({
       prompt: this.prompts,
       options: sessionOptions(
@@ -63,16 +82,35 @@ export class ClaudeSession implements ProviderSession {
         () => this.planning,
         (process) => {
           this.child = process;
+          markSpawned();
         },
       ),
     });
+    this.initialized = this.query.initializationResult().then(
+      () => {
+        this.initializing = false;
+      },
+      (error: unknown) => {
+        this.initializing = false;
+        // A CLI that never came up can serve no turn: the process goes now, so
+        // the failure the turn reports leaves nothing running behind it.
+        void this.close();
+        throw new Error(errMsg(error));
+      },
+    );
+    // The turn that is streaming is what reports a broken start; nothing else
+    // observes this promise, and an unhandled rejection would take the sidecar
+    // down with it.
+    void this.initialized.catch(() => undefined);
+    // A CLI that fails before it reaches spawn still settles initialization,
+    // which is what releases the open instead of leaving it hanging.
+    this.spawned = Promise.race([spawned, this.initialized]);
   }
 
-  // Brings the CLI up before the session is handed to the lifecycle, so a
-  // process that cannot start fails the open and the one that does is tracked
-  // from its first moment.
+  // Returns as soon as the CLI process exists, so the session reaches the
+  // lifecycle with a pid to track while the CLI is still booting behind it.
   async start(): Promise<void> {
-    await this.query.initializationResult();
+    await this.spawned;
   }
 
   get process(): { pid: number; isAlive(): boolean } | undefined {
@@ -94,11 +132,14 @@ export class ClaudeSession implements ProviderSession {
       message: { role: 'user', content: prompt },
     });
     try {
+      // Only ever the first turn: by the second the CLI is up and its startup
+      // is not what the chat is waiting for.
+      if (this.initializing) yield this.mapper.statusEvent(STARTING);
       // Pulled one message at a time rather than with `for await`: leaving a
       // `for await` calls return() on the query, which would end the whole
       // session at the first turn that settles.
       for (;;) {
-        const next = await this.query.next();
+        const next = await this.nextMessage();
         // The CLI exited without answering. Failing here is what tells the
         // session the turn broke, instead of reading as a silent success.
         if (next.done) throw new Error('Claude Code exited before the turn finished.');
@@ -123,6 +164,17 @@ export class ClaudeSession implements ProviderSession {
     }
   }
 
+  // A CLI that fails to boot can end without ever sending a message, so while
+  // initialization is pending the turn waits on it too and fails with its error.
+  private async nextMessage(): Promise<IteratorResult<SDKMessage>> {
+    const next = this.query.next();
+    if (!this.initializing) return await next;
+    // Abandoned if initialization loses the race; the query is closed by then.
+    void next.catch(() => undefined);
+    await Promise.race([this.initialized, next]);
+    return await next;
+  }
+
   async setAutonomy(autonomy: Autonomy): Promise<void> {
     await this.changePermissionMode(() => ({ autonomy, planning: this.planning }));
   }
@@ -141,6 +193,7 @@ export class ClaudeSession implements ProviderSession {
     next: () => { autonomy: Autonomy; planning: boolean },
   ): Promise<void> {
     const applied = this.modeChanges.then(async () => {
+      await this.initialized;
       const { autonomy, planning } = next();
       // While the session is planning the permission mode is already plan mode
       // and stays it, so a new autonomy is only recorded here and takes effect
@@ -159,11 +212,14 @@ export class ClaudeSession implements ProviderSession {
   // Claude, so the catalog advertises none and none arrives here. A null model
   // is "back to the provider's own default", which is what an absent model is.
   async setModel({ modelId }: ProviderModelSettings): Promise<void> {
-    if (modelId !== undefined) await this.query.setModel(modelId ?? undefined);
+    if (modelId === undefined) return;
+    await this.initialized;
+    await this.query.setModel(modelId ?? undefined);
   }
 
   async interrupt(): Promise<void> {
     this.interruptedTurnId = this.activeTurnId;
+    await this.initialized;
     // Aborts the in-flight turn on the live process; the turn then settles with
     // its own result, so the next prompt does not pay for a restart.
     await this.query.interrupt();
