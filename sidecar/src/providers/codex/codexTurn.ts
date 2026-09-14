@@ -23,6 +23,10 @@ export function turnStartParams(threadId: string, prompt: string, settings: Turn
     sandboxPolicy: codexSandboxPolicy(sandbox),
     ...(model ? { model } : {}),
     ...(settings.model.reasoningEffort ? { effort: settings.model.reasoningEffort } : {}),
+    // Codex reports no reasoning at all until a turn asks for a summary: the
+    // reasoning item arrives empty and no delta ever follows. Without this the
+    // whole thinking phase is blank in the transcript, whatever the effort.
+    summary: 'auto',
   };
 }
 
