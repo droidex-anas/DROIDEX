@@ -1,14 +1,14 @@
 name: Capture draft checks
-
 on:
   push:
     branches: [feat/capture-studio-draft]
-
+    paths:
+      - '.github/workflows/capture-draft-check.yml'
+      - 'tools/apply-capture-draft.cjs'
 permissions:
   contents: read
-
 jobs:
-  toolchain:
+  capture:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -20,11 +20,5 @@ jobs:
       - run: npm ci --ignore-scripts
         env:
           HUSKY: '0'
-      - run: npm ci --prefix sidecar --ignore-scripts
-      - name: Package isolated validation dependencies
-        run: tar -czf capture-toolchain.tar.gz node_modules sidecar/node_modules
-      - uses: actions/upload-artifact@v4
-        with:
-          name: capture-toolchain
-          path: capture-toolchain.tar.gz
-          retention-days: 1
+      - run: npm run typecheck
+      - run: node --check electron/capture/service.cjs && node --check electron/capture/store.cjs && node --check electron/capture/native.cjs
