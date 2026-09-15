@@ -12,7 +12,6 @@ import {
 import { StyleControls } from './StyleControls';
 import { attachRecentCapture } from './composerDestination';
 import CaptureDialog from './CaptureDialog';
-import './capture.css';
 
 function RecentThumbnail({ record, onOpen }: { record: CaptureRecord; onOpen(): void }) {
   const [source, setSource] = useState<string | null>(null);
@@ -76,8 +75,8 @@ export function CaptureSettings({ onClose }: { onClose(): void }) {
           setRecords(list);
         }
       })
-      .catch((reason) => {
-        if (alive.current) setError(String(reason.message || reason));
+      .catch((reason: unknown) => {
+        if (alive.current) setError(reason instanceof Error ? reason.message : String(reason));
       });
     return () => {
       alive.current = false;
@@ -128,7 +127,9 @@ export function CaptureSettings({ onClose }: { onClose(): void }) {
             <StyleControls
               value={draft.style}
               disabled={busy}
-              onChange={(style) => setDraft({ ...draft, style })}
+              onChange={(style) => {
+                setDraft({ ...draft, style });
+              }}
             />
             <p className="capture-note">
               Used for every new capture until you change it. Editing a recent screenshot does not
@@ -145,7 +146,9 @@ export function CaptureSettings({ onClose }: { onClose(): void }) {
                 label="Intelligent selection assistance"
                 checked={draft.smartSelection}
                 disabled={busy}
-                onChange={(smartSelection) => setDraft({ ...draft, smartSelection })}
+                onChange={(smartSelection) => {
+                  setDraft({ ...draft, smartSelection });
+                }}
               />
             </SettingRow>
             <SettingRow
@@ -156,7 +159,9 @@ export function CaptureSettings({ onClose }: { onClose(): void }) {
                 label="Calm capture click"
                 checked={draft.sound}
                 disabled={busy}
-                onChange={(sound) => setDraft({ ...draft, sound })}
+                onChange={(sound) => {
+                  setDraft({ ...draft, sound });
+                }}
               />
             </SettingRow>
             <SettingRow
@@ -172,7 +177,9 @@ export function CaptureSettings({ onClose }: { onClose(): void }) {
                   { value: 'CommandOrControl+Shift+6', label: '⌘/Ctrl + Shift + 6' },
                   { value: 'CommandOrControl+Shift+9', label: '⌘/Ctrl + Shift + 9' },
                 ]}
-                onChange={(shortcut) => setDraft({ ...draft, shortcut })}
+                onChange={(shortcut) => {
+                  setDraft({ ...draft, shortcut });
+                }}
               />
             </SettingRow>
           </div>
@@ -213,7 +220,9 @@ export function CaptureSettings({ onClose }: { onClose(): void }) {
           type="button"
           className="capture-button"
           disabled={!status || busy}
-          onClick={() => setEditor('new')}
+          onClick={() => {
+            setEditor('new');
+          }}
         >
           <Plus size={15} />
           Capture
@@ -232,7 +241,12 @@ export function CaptureSettings({ onClose }: { onClose(): void }) {
         <div className="capture-recents">
           {records.map((record) => (
             <article key={record.id} className="capture-recent-card">
-              <RecentThumbnail record={record} onOpen={() => setEditor(record.id)} />
+              <RecentThumbnail
+                record={record}
+                onOpen={() => {
+                  setEditor(record.id);
+                }}
+              />
               <div className="capture-recent-details">
                 <strong title={record.title}>{record.title}</strong>
                 <span>
@@ -243,7 +257,9 @@ export function CaptureSettings({ onClose }: { onClose(): void }) {
                   <button
                     type="button"
                     className="capture-button"
-                    onClick={() => setEditor(record.id)}
+                    onClick={() => {
+                      setEditor(record.id);
+                    }}
                   >
                     Edit
                   </button>
@@ -315,11 +331,15 @@ export function CaptureSettings({ onClose }: { onClose(): void }) {
           captureId={editor === 'new' ? undefined : editor}
           onClose={() => {
             setEditor(null);
-            void refresh().catch((reason) => setError(String(reason.message || reason)));
+            void refresh().catch((reason: unknown) => {
+              setError(reason instanceof Error ? reason.message : String(reason));
+            });
           }}
           onAttach={editor === 'new' ? undefined : attach}
           onSaved={() => {
-            void refresh().catch((reason) => setError(String(reason.message || reason)));
+            void refresh().catch((reason: unknown) => {
+              setError(reason instanceof Error ? reason.message : String(reason));
+            });
           }}
         />
       )}

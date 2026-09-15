@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { createCaptureGeneration } from './composerDestination';
 import { Copy, Crop, Download, Redo2, Undo2 } from 'lucide-react';
 import { captureApi, type CaptureDocument, type CaptureRecipe, type CaptureRecord } from './types';
 import { drawCapture, exportCapture, loadCaptureImage } from './render';
@@ -17,9 +18,9 @@ export function CaptureEditor({
 }: {
   document: CaptureDocument;
   smart: boolean;
-  onClose(): void;
-  onAttach?(id: string): Promise<void>;
-  onSaved?(): void;
+  onClose: () => void;
+  onAttach?: (id: string) => Promise<void>;
+  onSaved?: () => void;
 }) {
   const [image, setImage] = useState<HTMLImageElement | null>(null);
   const [recipe, setRecipe] = useState(original.recipe);
@@ -31,23 +32,23 @@ export function CaptureEditor({
   const [busy, setBusy] = useState(false);
   const busyRef = useRef(false);
   const record = useRef<CaptureRecord>(original);
-  const alive = useRef(true);
+  const [lifetime] = useState(createCaptureGeneration);
   const preview = useRef<HTMLCanvasElement>(null);
   useEffect(() => {
-    alive.current = true;
+    lifetime.invalidate();
     let cancelled = false;
     void loadCaptureImage(original.source)
       .then((value) => {
         if (!cancelled) setImage(value);
       })
-      .catch((reason) => {
-        if (!cancelled) setError(String(reason.message || reason));
+      .catch((reason: unknown) => {
+        if (!cancelled) setError(reason instanceof Error ? reason.message : String(reason));
       });
     return () => {
       cancelled = true;
-      alive.current = false;
+      lifetime.invalidate();
     };
-  }, [original.source]);
+  }, [original.source, lifetime]);
   useEffect(() => {
     if (!image || cropping) return;
     const frame = requestAnimationFrame(() => {
@@ -58,7 +59,9 @@ export function CaptureEditor({
         setError(reason instanceof Error ? reason.message : 'Could not render preview');
       }
     });
-    return () => cancelAnimationFrame(frame);
+    return () => {
+      cancelAnimationFrame(frame);
+    };
   }, [image, recipe, cropping]);
   const change = (next: CaptureRecipe) => {
     setUndo((previous) => [...previous.slice(-29), recipe]);
@@ -81,56 +84,59 @@ export function CaptureEditor({
   };
   async function perform(action: 'save' | 'copy' | 'export' | 'attach') {
     if (!image || busyRef.current) return;
+    const stamp = lifetime.stamp();
     busyRef.current = true;
     setBusy(true);
     setError('');
     try {
       const output = await exportCapture(image, recipe);
-      if (!alive.current) return;
+      if (!lifetime.isCurrent(stamp)) return;
       record.current = await captureApi().save(
         original.id,
         record.current.revision,
         recipe,
         output,
       );
-      if (!alive.current) return;
+      if (!lifetime.isCurrent(stamp)) return;
       onSaved?.();
       if (action === 'copy') {
         await captureApi().copy(original.id);
-        if (alive.current) toast.success('Full-resolution capture copied');
+        if (lifetime.isCurrent(stamp)) toast.success('Full-resolution capture copied');
       } else if (action === 'export') await captureApi().export(original.id);
       else if (action === 'attach' && onAttach) {
         await onAttach(original.id);
-        if (alive.current) onClose();
+        if (lifetime.isCurrent(stamp)) onClose();
       } else toast.success('Capture saved to Recents');
     } catch (reason) {
-      if (alive.current)
+      if (lifetime.isCurrent(stamp))
         setError(reason instanceof Error ? reason.message : 'Could not save capture');
     } finally {
       busyRef.current = false;
-      if (alive.current) setBusy(false);
+      if (lifetime.isCurrent(stamp)) setBusy(false);
     }
   }
   async function saveDefault() {
     if (busyRef.current) return;
+    const stamp = lifetime.stamp();
     busyRef.current = true;
     setBusy(true);
     try {
       const current = await captureApi().preferences();
       await captureApi().setPreferences({ ...current.preferences, style: recipe.style });
-      if (alive.current) toast.success('Background saved as your default for future captures');
+      if (lifetime.isCurrent(stamp))
+        toast.success('Background saved as your default for future captures');
     } catch (reason) {
-      if (alive.current)
+      if (lifetime.isCurrent(stamp))
         setError(reason instanceof Error ? reason.message : 'Could not save default');
     } finally {
       busyRef.current = false;
-      if (alive.current) setBusy(false);
+      if (lifetime.isCurrent(stamp)) setBusy(false);
     }
   }
   let dimensions = '';
   try {
     const size = outputSize(recipe.crop, recipe.style.padding);
-    dimensions = `${size.width} × ${size.height} px · PNG`;
+    dimensions = `${String(size.width)} × ${String(size.height)} px · PNG`;
   } catch {
     dimensions = 'Composition exceeds the pixel limit';
   }
@@ -147,7 +153,9 @@ export function CaptureEditor({
           change({ ...recipe, crop });
           setCropping(false);
         }}
-        onCancel={() => setCropping(false)}
+        onCancel={() => {
+          setCropping(false);
+        }}
       />
     );
   return (
@@ -213,7 +221,9 @@ export function CaptureEditor({
           <StyleControls
             value={recipe.style}
             disabled={busy}
-            onChange={(style) => change({ ...recipe, style })}
+            onChange={(style) => {
+              change({ ...recipe, style });
+            }}
           />
           <button
             type="button"

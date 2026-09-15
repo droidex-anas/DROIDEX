@@ -1,7 +1,6 @@
 import { motion, useReducedMotion } from 'framer-motion';
 import { Scan, X } from 'lucide-react';
 import type { CaptureMetadata } from './types';
-import './capture.css';
 
 export function CaptureAttachmentCard({
   preview,
@@ -11,8 +10,8 @@ export function CaptureAttachmentCard({
 }: {
   preview: string;
   capture: CaptureMetadata;
-  onOpen(): void;
-  onRemove(): void;
+  onOpen: () => void;
+  onRemove: () => void;
 }) {
   const reducedMotion = useReducedMotion();
   return (

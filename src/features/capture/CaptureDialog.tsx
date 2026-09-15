@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { createCaptureGeneration } from './composerDestination';
 import { AppWindow, Scan, Monitor, Upload, MousePointer2 } from 'lucide-react';
 import { CaptureFrame } from './CaptureFrame';
 import { CaptureEditor } from './CaptureEditor';
@@ -31,7 +32,9 @@ async function playCaptureClick(): Promise<void> {
     tone.connect(gain);
     gain.connect(audio.destination);
     await new Promise<void>((resolve) => {
-      tone.onended = () => resolve();
+      tone.onended = () => {
+        resolve();
+      };
       tone.start();
       tone.stop(audio.currentTime + 0.1);
     });
@@ -42,7 +45,11 @@ async function playCaptureClick(): Promise<void> {
 }
 const afterPaint = () =>
   new Promise<void>((resolve) =>
-    requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
+    requestAnimationFrame(() =>
+      requestAnimationFrame(() => {
+        resolve();
+      }),
+    ),
   );
 
 export default function CaptureDialog({
@@ -52,9 +59,9 @@ export default function CaptureDialog({
   onSaved,
 }: {
   captureId?: string;
-  onClose(): void;
-  onAttach?(id: string): Promise<void>;
-  onSaved?(): void;
+  onClose: () => void;
+  onAttach?: (id: string) => Promise<void>;
+  onSaved?: () => void;
 }) {
   const [status, setStatus] = useState<CaptureStatus | null>(null);
   const [phase, setPhase] = useState<'choose' | 'component' | 'hidden' | 'working' | 'editing'>(
@@ -63,20 +70,20 @@ export default function CaptureDialog({
   const [document, setDocument] = useState<CaptureDocument | null>(null);
   const [error, setError] = useState('');
   const [editFirst, setEditFirst] = useState(!onAttach);
-  const alive = useRef(true);
+  const [lifetime] = useState(createCaptureGeneration);
   const busy = useRef(false);
   const request = useRef<string | null>(null);
   const input = useRef<HTMLInputElement>(null);
   useEffect(() => {
-    alive.current = true;
+    lifetime.invalidate();
     let cancelled = false;
     void captureApi()
       .preferences()
       .then((value) => {
         if (!cancelled) setStatus(value);
       })
-      .catch((reason) => {
-        if (!cancelled) setError(String(reason.message || reason));
+      .catch((reason: unknown) => {
+        if (!cancelled) setError(reason instanceof Error ? reason.message : String(reason));
       });
     if (captureId)
       void captureApi()
@@ -87,60 +94,61 @@ export default function CaptureDialog({
             setPhase('editing');
           }
         })
-        .catch((reason) => {
+        .catch((reason: unknown) => {
           if (!cancelled) {
-            setError(String(reason.message || reason));
+            setError(reason instanceof Error ? reason.message : String(reason));
             setPhase('choose');
           }
         });
     return () => {
       cancelled = true;
-      alive.current = false;
+      lifetime.invalidate();
       if (request.current)
         void captureApi()
           .cancel(request.current)
           .catch(() => undefined);
     };
-  }, [captureId]);
-  async function accept(original: CaptureDocument, openEditor: boolean) {
-    if (!alive.current) return;
+  }, [captureId, lifetime]);
+  async function accept(original: CaptureDocument, openEditor: boolean, stamp: number) {
+    if (!lifetime.isCurrent(stamp)) return;
     setDocument(original);
     if (openEditor || !onAttach) {
       setPhase('editing');
       return;
     }
     const image = await loadCaptureImage(original.source);
-    if (!alive.current) return;
+    if (!lifetime.isCurrent(stamp)) return;
     const output = await exportCapture(image, original.recipe);
-    if (!alive.current) return;
+    if (!lifetime.isCurrent(stamp)) return;
     await captureApi().save(original.id, original.revision, original.recipe, output);
-    if (!alive.current) return;
+    if (!lifetime.isCurrent(stamp)) return;
     onSaved?.();
     await onAttach(original.id);
-    if (alive.current) onClose();
+    if (lifetime.isCurrent(stamp)) onClose();
   }
   async function take(mode: CaptureMode, rect?: CaptureRect, title?: string) {
     if (busy.current || !status) return;
+    const stamp = lifetime.stamp();
     busy.current = true;
     setError('');
     setPhase(mode === 'component' ? 'hidden' : 'working');
     try {
       await afterPaint();
-      if (!alive.current) return;
+      if (!lifetime.isCurrent(stamp)) return;
       const requestId = crypto.randomUUID();
       request.current = requestId;
       const original = await captureApi().take({ requestId, mode, rect, title });
       request.current = null;
-      if (!alive.current) return;
+      if (!lifetime.isCurrent(stamp)) return;
       if (!original) {
         onClose();
         return;
       }
       if (status.preferences.sound) void playCaptureClick().catch(() => undefined);
       setPhase('working');
-      await accept(original, editFirst);
+      await accept(original, editFirst, stamp);
     } catch (reason) {
-      if (alive.current) {
+      if (lifetime.isCurrent(stamp)) {
         setError(reason instanceof Error ? reason.message : 'Capture failed');
         setPhase('choose');
       }
@@ -150,16 +158,17 @@ export default function CaptureDialog({
   }
   async function importFile(file: File) {
     if (busy.current) return;
+    const stamp = lifetime.stamp();
     busy.current = true;
     setPhase('working');
     setError('');
     try {
       const source = await importCaptureFile(file);
-      if (!alive.current) return;
+      if (!lifetime.isCurrent(stamp)) return;
       const original = await captureApi().import(source, file.name.replace(/\.[^.]+$/, ''));
-      await accept(original, true);
+      await accept(original, true, stamp);
     } catch (reason) {
-      if (alive.current) {
+      if (lifetime.isCurrent(stamp)) {
         setError(reason instanceof Error ? reason.message : 'Import failed');
         setPhase('choose');
       }
@@ -178,7 +187,9 @@ export default function CaptureDialog({
   return (
     <CaptureFrame
       title={
-        phase === 'editing' ? document?.title || 'Edit capture' : 'Capture something worth sharing'
+        phase === 'editing'
+          ? (document?.title ?? 'Edit capture')
+          : 'Capture something worth sharing'
       }
       onClose={onClose}
     >
@@ -236,7 +247,13 @@ export default function CaptureDialog({
               <strong>Full screen</strong>
               <span>Primary display · original pixels</span>
             </button>
-            <button type="button" disabled={!status} onClick={() => setPhase('component')}>
+            <button
+              type="button"
+              disabled={!status}
+              onClick={() => {
+                setPhase('component');
+              }}
+            >
               <MousePointer2 />
               <strong>Droidex component</strong>
               <span>Point, step into a section, click</span>
@@ -274,7 +291,9 @@ export default function CaptureDialog({
               <input
                 type="checkbox"
                 checked={editFirst}
-                onChange={(event) => setEditFirst(event.target.checked)}
+                onChange={(event) => {
+                  setEditFirst(event.target.checked);
+                }}
               />
               Refine before attaching
             </label>

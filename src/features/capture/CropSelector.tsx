@@ -19,8 +19,8 @@ export function CropSelector({
   initial: CaptureRect;
   candidates: RegionCandidate[];
   smart: boolean;
-  onApply(rect: CaptureRect): void;
-  onCancel(): void;
+  onApply: (rect: CaptureRect) => void;
+  onCancel: () => void;
 }) {
   const [crop, setCrop] = useState(initial);
   const [snapped, setSnapped] = useState(false);
@@ -131,10 +131,10 @@ export function CropSelector({
           <div
             className="capture-selection"
             style={{
-              left: `${(crop.x / width) * 100}%`,
-              top: `${(crop.y / height) * 100}%`,
-              width: `${(crop.width / width) * 100}%`,
-              height: `${(crop.height / height) * 100}%`,
+              left: `${String((crop.x / width) * 100)}%`,
+              top: `${String((crop.y / height) * 100)}%`,
+              width: `${String((crop.width / width) * 100)}%`,
+              height: `${String((crop.height / height) * 100)}%`,
             }}
           >
             <span>
@@ -162,14 +162,24 @@ export function CropSelector({
         ))}
       </div>
       <footer className="capture-actions">
-        <button className="capture-button" onClick={() => setCrop({ x: 0, y: 0, width, height })}>
+        <button
+          className="capture-button"
+          onClick={() => {
+            setCrop({ x: 0, y: 0, width, height });
+          }}
+        >
           Reset to original
         </button>
         <span className="capture-spacer" />
         <button className="capture-button" onClick={onCancel}>
           Back
         </button>
-        <button className="capture-button capture-primary" onClick={() => onApply(crop)}>
+        <button
+          className="capture-button capture-primary"
+          onClick={() => {
+            onApply(crop);
+          }}
+        >
           Use selection
         </button>
       </footer>

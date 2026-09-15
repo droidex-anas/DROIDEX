@@ -2,14 +2,13 @@ import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useObscuresNativeSurfaces } from '../../hooks/useObscuresNativeSurfaces';
 import type { CaptureRect } from './types';
-import './capture.css';
 
 interface ComponentRegion {
   element: HTMLElement;
   label: string;
   rect: CaptureRect;
 }
-export function regionsAtPoint(x: number, y: number): ComponentRegion[] {
+function regionsAtPoint(x: number, y: number): ComponentRegion[] {
   const target = document
     .elementsFromPoint(x, y)
     .find((node) => node instanceof HTMLElement && !node.closest('[data-capture-overlay]'));
@@ -36,14 +35,14 @@ export function regionsAtPoint(x: number, y: number): ComponentRegion[] {
         height: Math.floor(bottom) - Math.ceil(top),
       };
       const previous = regions.at(-1);
-      if (!previous || previous.rect.width !== rect.width || previous.rect.height !== rect.height)
+      if (previous?.rect.width !== rect.width || previous.rect.height !== rect.height)
         regions.push({
           element,
           rect,
           label:
-            element.dataset.captureLabel ||
-            element.getAttribute('aria-label')?.slice(0, 60) ||
-            element.getAttribute('role') ||
+            element.dataset.captureLabel ??
+            element.getAttribute('aria-label')?.slice(0, 60) ??
+            element.getAttribute('role') ??
             (element.tagName === 'ASIDE'
               ? 'Sidebar'
               : element.tagName === 'NAV'
@@ -61,8 +60,8 @@ export function ComponentPicker({
   onSelected,
   onCancel,
 }: {
-  onSelected(rect: CaptureRect, label: string): void;
-  onCancel(): void;
+  onSelected: (rect: CaptureRect, label: string) => void;
+  onCancel: () => void;
 }) {
   useObscuresNativeSurfaces();
   const [regions, setRegions] = useState<ComponentRegion[]>([]);
@@ -73,12 +72,12 @@ export function ComponentPicker({
     const move = (event: MouseEvent) => {
       if ((event.target as Element).closest('[data-capture-overlay]')) return;
       const next = regionsAtPoint(event.clientX, event.clientY);
-      if (next[0]?.element === latest.current.regions[0]?.element) return;
+      if (next.at(0)?.element === latest.current.regions.at(0)?.element) return;
       setRegions(next);
       setIndex(0);
     };
     const choose = () => {
-      const region = latest.current.regions[latest.current.index];
+      const region = latest.current.regions.at(latest.current.index);
       if (region?.element.isConnected) latest.current.onSelected(region.rect, region.label);
     };
     const click = (event: MouseEvent) => {
@@ -121,7 +120,7 @@ export function ComponentPicker({
       window.removeEventListener('keydown', key, true);
     };
   }, []);
-  const active = regions[index];
+  const active = regions.at(index);
   return createPortal(
     <div data-capture-overlay className="capture-component-overlay">
       {active && (
@@ -145,7 +144,9 @@ export function ComponentPicker({
               key={i}
               className="capture-button"
               aria-pressed={i === index}
-              onClick={() => setIndex(i)}
+              onClick={() => {
+                setIndex(i);
+              }}
             >
               {region.label}
             </button>
@@ -158,7 +159,9 @@ export function ComponentPicker({
           <button
             type="button"
             className="capture-button capture-primary"
-            onClick={() => onSelected(active.rect, active.label)}
+            onClick={() => {
+              onSelected(active.rect, active.label);
+            }}
           >
             Capture {active.label}
           </button>

@@ -34,7 +34,9 @@ export function useCaptureComposer(
   }, [generation]);
   useLayoutEffect(() => {
     invalidate();
-    return () => generation.invalidate();
+    return () => {
+      generation.invalidate();
+    };
   }, [targetKey, generation, invalidate]);
   function open() {
     if (!window.droidCapture) {
@@ -71,7 +73,9 @@ export function useCaptureComposer(
   useEffect(
     () =>
       bindCaptureDestination({
-        open: () => latest.current.open(),
+        open: () => {
+          latest.current.open();
+        },
         attach: (id) => latest.current.attach(id),
       }),
     [],
@@ -92,6 +96,7 @@ export function useCaptureComposer(
         }
       >
         <CaptureDialog
+          key={selection.generation}
           captureId={selection.captureId}
           onClose={invalidate}
           onAttach={(id) => attach(id, selection.generation, selection.replaceImageId)}

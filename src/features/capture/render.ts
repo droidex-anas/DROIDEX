@@ -12,7 +12,9 @@ export function loadCaptureImage(source: string): Promise<HTMLImageElement> {
       }
       resolve(image);
     };
-    image.onerror = () => reject(new Error('This image could not be decoded'));
+    image.onerror = () => {
+      reject(new Error('This image could not be decoded'));
+    };
     image.src = source;
   });
 }
@@ -99,7 +101,7 @@ export function drawCapture(
     ctx.rect(0, 0, width, height);
     ctx.roundRect(padding, padding, crop.width, crop.height, radius);
     ctx.clip('evenodd');
-    ctx.shadowColor = `rgba(0,0,0,${style.shadow / 160})`;
+    ctx.shadowColor = `rgba(0,0,0,${String(style.shadow / 160)})`;
     ctx.shadowBlur = style.shadow;
     ctx.shadowOffsetY = style.shadow * 0.3;
     ctx.fillStyle = '#000';
@@ -134,12 +136,11 @@ export async function exportCapture(
   const canvas = document.createElement('canvas');
   try {
     drawCapture(canvas, image, recipe);
-    const blob = await new Promise<Blob>((resolve, reject) =>
-      canvas.toBlob(
-        (value) => (value ? resolve(value) : reject(new Error('Could not encode capture'))),
-        'image/png',
-      ),
-    );
+    const blob = await new Promise<Blob>((resolve, reject) => {
+      canvas.toBlob((value) => {
+        value ? resolve(value) : reject(new Error('Could not encode capture'));
+      }, 'image/png');
+    });
     if (blob.size > 40 * 1024 * 1024)
       throw new Error(
         'PNG exceeds 40 MiB. Crop a smaller area; the original has not been changed.',
@@ -153,11 +154,14 @@ export async function exportCapture(
 export function blobDataUrl(blob: Blob): Promise<string> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
-    reader.onload = () =>
+    reader.onload = () => {
       typeof reader.result === 'string'
         ? resolve(reader.result)
         : reject(new Error('Could not read image'));
-    reader.onerror = () => reject(new Error('Could not read image'));
+    };
+    reader.onerror = () => {
+      reject(new Error('Could not read image'));
+    };
     reader.readAsDataURL(blob);
   });
 }

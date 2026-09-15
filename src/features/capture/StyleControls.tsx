@@ -7,7 +7,7 @@ export function StyleControls({
   disabled = false,
 }: {
   value: CaptureStyle;
-  onChange(style: CaptureStyle): void;
+  onChange: (style: CaptureStyle) => void;
   disabled?: boolean;
 }) {
   const colors = value.colors ?? backgroundFor(value.preset).colors;
@@ -20,7 +20,9 @@ export function StyleControls({
             type="button"
             key={preset.id}
             aria-pressed={value.preset === preset.id}
-            onClick={() => onChange({ ...value, preset: preset.id, colors: undefined })}
+            onClick={() => {
+              onChange({ ...value, preset: preset.id, colors: undefined });
+            }}
             className="capture-preset"
           >
             <span style={{ background: preset.swatch }} />
@@ -34,7 +36,7 @@ export function StyleControls({
             Color {index + 1}
             <input
               type="color"
-              aria-label={'Gradient color ' + (index + 1)}
+              aria-label={'Gradient color ' + String(index + 1)}
               value={color}
               disabled={value.preset === 'transparent'}
               onChange={(event) => {
@@ -59,8 +61,8 @@ export function StyleControls({
             {label}
             <output>
               {key === 'texture'
-                ? `${Math.round(value[key] * 100)}%`
-                : `${value[key]}${key === 'padding' || key === 'radius' ? ' px' : ''}`}
+                ? `${String(Math.round(value[key] * 100))}%`
+                : `${String(value[key])}${key === 'padding' || key === 'radius' ? ' px' : ''}`}
             </output>
           </span>
           <input
@@ -70,7 +72,9 @@ export function StyleControls({
             max={max}
             step={step}
             value={value[key]}
-            onChange={(event) => onChange({ ...value, [key]: Number(event.target.value) })}
+            onChange={(event) => {
+              onChange({ ...value, [key]: Number(event.target.value) });
+            }}
           />
         </label>
       ))}

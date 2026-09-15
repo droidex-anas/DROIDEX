@@ -66,8 +66,8 @@ export function detectSurfaceRegions(
   const scaleY = sourceHeight / raster.height;
   function split(box: CaptureRect, depth: number) {
     if (depth >= 4 || box.width < 28 || box.height < 28 || candidates.length >= 24) return;
-    const vertical = seams(raster, box, true)[0];
-    const horizontal = seams(raster, box, false)[0];
+    const vertical = seams(raster, box, true).at(0);
+    const horizontal = seams(raster, box, false).at(0);
     const useVertical = !!vertical && (!horizontal || vertical.strength >= horizontal.strength);
     const seam = useVertical ? vertical : horizontal;
     if (!seam) return;

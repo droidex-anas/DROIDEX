@@ -2,7 +2,6 @@ import { useEffect, useRef, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { X } from 'lucide-react';
 import { useObscuresNativeSurfaces } from '../../hooks/useObscuresNativeSurfaces';
-import './capture.css';
 
 export function CaptureFrame({
   title,
@@ -11,7 +10,7 @@ export function CaptureFrame({
 }: {
   title: string;
   children: ReactNode;
-  onClose(): void;
+  onClose: () => void;
 }) {
   const ref = useRef<HTMLDivElement>(null);
   useObscuresNativeSurfaces();

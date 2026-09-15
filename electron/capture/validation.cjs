@@ -115,13 +115,16 @@ function decodePng(value) {
   return { buffer, ...png(buffer) };
 }
 function title(value) {
-  return typeof value === 'string'
-    ? value
-        .replace(/[\x00-\x1f\x7f]/g, '')
-        .slice(0, 120)
-        .trim() || 'Screenshot'
-    : 'Screenshot';
+  if (typeof value !== 'string') return 'Screenshot';
+  return (
+    Array.from(value.slice(0, 240))
+      .filter((character) => character.charCodeAt(0) >= 32 && character.charCodeAt(0) !== 127)
+      .join('')
+      .slice(0, 120)
+      .trim() || 'Screenshot'
+  );
 }
+
 module.exports = {
   PRESETS,
   SHORTCUTS,
