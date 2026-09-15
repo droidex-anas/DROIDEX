@@ -148,13 +148,16 @@ test('closing a picker during screen sampling cannot show it again or deliver a 
   t.mock.timers.enable({ apis: ['setTimeout'] });
   const f = fixture();
   let release;
+  const started = Promise.withResolvers();
   f.electron.desktopCapturer.getSources = () =>
     new Promise((resolve) => {
       release = resolve;
+      started.resolve();
     });
   const pending = f.request('choose', { mode: 'smart' });
   t.mock.timers.tick(160);
-  await Promise.resolve();
+  // Wait for sampling itself, not a version-dependent number of microtasks.
+  await started.promise;
   f.controller.abort();
   assert.equal(await f.result, null);
   release([{ display_id: '42', thumbnail: { isEmpty: () => false, toPNG: () => f.buffer } }]);
