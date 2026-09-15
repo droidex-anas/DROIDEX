@@ -138,7 +138,8 @@ export async function exportCapture(
     drawCapture(canvas, image, recipe);
     const blob = await new Promise<Blob>((resolve, reject) => {
       canvas.toBlob((value) => {
-        value ? resolve(value) : reject(new Error('Could not encode capture'));
+        if (value) resolve(value);
+        else reject(new Error('Could not encode capture'));
       }, 'image/png');
     });
     if (blob.size > 40 * 1024 * 1024)
@@ -155,9 +156,8 @@ export function blobDataUrl(blob: Blob): Promise<string> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onload = () => {
-      typeof reader.result === 'string'
-        ? resolve(reader.result)
-        : reject(new Error('Could not read image'));
+      if (typeof reader.result === 'string') resolve(reader.result);
+      else reject(new Error('Could not read image'));
     };
     reader.onerror = () => {
       reject(new Error('Could not read image'));
