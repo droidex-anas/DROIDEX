@@ -1,12 +1,12 @@
 import { useEffect, useRef, useState } from 'react';
-import { Activity, Globe, Square } from '@droidex/icons';
-import { Popover } from '../environment/Popover';
-import { useStoreDispatch, useStoreSelector } from '../../hooks/useStore';
-import { openBrowser, stopAgentProcess } from '../../lib/commands';
-import type { AgentProcess } from '../../types/bridge';
+import { Globe, Square } from '@droidex/icons';
+import { Popover } from './environment/Popover';
+import { useStoreDispatch, useStoreSelector } from '../hooks/useStore';
+import { openBrowser, stopAgentProcess } from '../lib/commands';
+import type { AgentProcess } from '../types/bridge';
 
 // Stable identity for the common empty case, so an idle session never
-// re-renders the composer on an unrelated store change.
+// re-renders the header on an unrelated store change.
 const NONE: AgentProcess[] = [];
 
 function elapsed(startedAt: number, now: number): string {
@@ -18,10 +18,11 @@ function elapsed(startedAt: number, now: number): string {
 }
 
 /**
- * Live dev servers and other processes the agent started, as one toolbar chip
- * that opens a list. Absent entirely while nothing is running.
+ * Live dev servers and other processes the agent started, as one button beside
+ * the chat title that opens the list. Absent entirely while nothing is
+ * running.
  */
-export function RunningProcessesChip({ appSessionId }: { appSessionId: string }) {
+export function RunningProcessesMenu({ appSessionId }: { appSessionId: string }) {
   const processes = useStoreSelector((state) => state.agentProcesses[appSessionId] ?? NONE);
   const dispatch = useStoreDispatch();
   const [open, setOpen] = useState(false);
@@ -42,13 +43,12 @@ export function RunningProcessesChip({ appSessionId }: { appSessionId: string })
     };
   }, [open]);
 
-  // Stopping the last process takes the chip away, so the list goes with it.
+  // Stopping the last process takes the button away, so the list goes with it.
   useEffect(() => {
     if (count === 0) setOpen(false);
   }, [count]);
 
   if (count === 0) return null;
-  const label = count === 1 ? processes[0].name : `${String(count)} running`;
 
   const openInBrowser = (port: number) => {
     dispatch({ type: 'OPEN_UTILITY_TOOL', tool: 'browser' });
@@ -65,15 +65,15 @@ export function RunningProcessesChip({ appSessionId }: { appSessionId: string })
           setOpen((v) => !v);
         }}
         aria-expanded={open}
-        title="Processes started by the agent"
-        className={`flex shrink-0 items-center gap-1.5 rounded-lg px-2 py-1 text-[11px] transition-colors ${
+        title={`${String(count)} running ${count === 1 ? 'process' : 'processes'} started by the agent`}
+        className={`flex shrink-0 items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-[11px] tabular-nums transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-droid-accent/60 ${
           open
-            ? 'bg-droid-bg/60 text-droid-text'
-            : 'text-droid-text-secondary hover:bg-droid-bg/40 hover:text-droid-text'
+            ? 'bg-droid-elevated text-droid-text'
+            : 'bg-droid-elevated/60 text-droid-text-muted hover:bg-droid-elevated hover:text-droid-text'
         }`}
       >
-        <Activity className="process-live-indicator h-3 w-3 shrink-0" />
-        <span className="max-w-[140px] truncate">{label}</span>
+        <Globe className="h-3.5 w-3.5" />
+        {count}
       </button>
 
       <Popover
@@ -84,7 +84,7 @@ export function RunningProcessesChip({ appSessionId }: { appSessionId: string })
         anchorRef={buttonRef}
         label="Running processes"
         align="left"
-        width={300}
+        width={260}
       >
         <div className="max-h-[min(70vh,400px)] overflow-y-auto p-1">
           {processes.map((process) => {
@@ -94,7 +94,6 @@ export function RunningProcessesChip({ appSessionId }: { appSessionId: string })
                 key={process.pid}
                 className="group flex h-8 items-center gap-2 rounded-lg px-2 text-[12px] transition-colors hover:bg-droid-elevated/60"
               >
-                <Activity className="process-live-indicator h-3 w-3 shrink-0 text-droid-text-muted" />
                 <span className="min-w-0 flex-1 truncate text-droid-text" title={process.command}>
                   {process.name}
                 </span>
