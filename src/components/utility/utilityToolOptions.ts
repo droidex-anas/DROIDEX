@@ -1,4 +1,4 @@
-import { Files, GitCompareArrows, Globe, SquareTerminal, type IconComponent } from '@droidex/icons';
+import { ChangesIcon, Files, Globe, SquareTerminal, type IconComponent } from '@droidex/icons';
 import type { UtilityTool } from '../../lib/utilityPanel';
 
 export interface UtilityToolOption {
@@ -9,7 +9,7 @@ export interface UtilityToolOption {
 }
 
 export const UTILITY_TOOL_OPTIONS: UtilityToolOption[] = [
-  { tool: 'review', label: 'Review', icon: GitCompareArrows, shortcut: '⌘⇧R' },
+  { tool: 'review', label: 'Review', icon: ChangesIcon, shortcut: '⌘⇧R' },
   { tool: 'terminal', label: 'Terminal', icon: SquareTerminal, shortcut: '⌃`' },
   { tool: 'browser', label: 'Browser', icon: Globe, shortcut: '⌘⇧B' },
   { tool: 'files', label: 'Files', icon: Files, shortcut: '⌘⇧F' },
