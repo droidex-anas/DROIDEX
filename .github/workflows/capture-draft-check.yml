@@ -3,26 +3,28 @@ name: Capture draft checks
 on:
   push:
     branches: [feat/capture-studio-draft]
-  pull_request:
-    paths:
-      - 'src/features/capture/**'
-      - 'electron/capture/**'
-      - '.github/workflows/capture-draft-check.yml'
 
 permissions:
   contents: read
 
 jobs:
-  source:
+  toolchain:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
         with:
           persist-credentials: false
-      - name: Archive reproducible source snapshot
-        run: git archive --format=tar.gz --output=capture-draft-source.tar.gz HEAD
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: npm ci --ignore-scripts
+        env:
+          HUSKY: '0'
+      - run: npm ci --prefix sidecar --ignore-scripts
+      - name: Package isolated validation dependencies
+        run: tar -czf capture-toolchain.tar.gz node_modules sidecar/node_modules
       - uses: actions/upload-artifact@v4
         with:
-          name: capture-draft-source
-          path: capture-draft-source.tar.gz
+          name: capture-toolchain
+          path: capture-toolchain.tar.gz
           retention-days: 1
