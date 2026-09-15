@@ -17,13 +17,17 @@ function createCaptureStore(root) {
   async function directory() {
     await fs.mkdir(root, { recursive: true, mode: 0o700 });
     const stat = await fs.lstat(root);
-    if (!stat.isDirectory() || stat.isSymbolicLink()) throw new Error('Capture storage is not a private directory');
+    if (!stat.isDirectory() || stat.isSymbolicLink())
+      throw new Error('Capture storage is not a private directory');
     await fs.chmod(root, 0o700);
   }
-  function file(id, suffix) { return path.join(root, `${validate.id(id)}.${suffix}`); }
+  function file(id, suffix) {
+    return path.join(root, `${validate.id(id)}.${suffix}`);
+  }
   async function readFile(target) {
     const stat = await fs.lstat(target);
-    if (!stat.isFile() || stat.isSymbolicLink() || stat.size > validate.MAX_IMAGE_BYTES) throw new Error('Unsafe capture file');
+    if (!stat.isFile() || stat.isSymbolicLink() || stat.size > validate.MAX_IMAGE_BYTES)
+      throw new Error('Unsafe capture file');
     return fs.readFile(target);
   }
   async function atomic(target, contents) {
@@ -31,23 +35,52 @@ function createCaptureStore(root) {
     try {
       await fs.writeFile(temp, contents, { flag: 'wx', mode: 0o600 });
       await fs.rename(temp, target);
-    } finally { await fs.rm(temp, { force: true }); }
+    } finally {
+      await fs.rm(temp, { force: true });
+    }
   }
   async function record(id) {
     const raw = JSON.parse((await readFile(file(id, 'json'))).toString('utf8'));
-    if (raw.id !== id || !Number.isFinite(raw.createdAt) || !Number.isSafeInteger(raw.revision) || raw.revision < 0 || !Number.isSafeInteger(raw.width) || !Number.isSafeInteger(raw.height) || raw.width < 1 || raw.height < 1 || raw.width * raw.height > validate.MAX_PIXELS) throw new Error('Invalid capture record');
-    return { id, createdAt: raw.createdAt, revision: raw.revision, width: raw.width, height: raw.height, title: validate.title(raw.title), recipe: validate.recipe(raw.recipe, raw.width, raw.height), hasExport: raw.hasExport === true };
+    if (
+      raw.id !== id ||
+      !Number.isFinite(raw.createdAt) ||
+      !Number.isSafeInteger(raw.revision) ||
+      raw.revision < 0 ||
+      !Number.isSafeInteger(raw.width) ||
+      !Number.isSafeInteger(raw.height) ||
+      raw.width < 1 ||
+      raw.height < 1 ||
+      raw.width * raw.height > validate.MAX_PIXELS
+    )
+      throw new Error('Invalid capture record');
+    return {
+      id,
+      createdAt: raw.createdAt,
+      revision: raw.revision,
+      width: raw.width,
+      height: raw.height,
+      title: validate.title(raw.title),
+      recipe: validate.recipe(raw.recipe, raw.width, raw.height),
+      hasExport: raw.hasExport === true,
+    };
   }
   async function remove(id) {
-    await Promise.all(['json', 'source.png', 'output.png', 'thumb.png'].map(suffix => fs.rm(file(id, suffix), { force: true })));
+    await Promise.all(
+      ['json', 'source.png', 'output.png', 'thumb.png'].map((suffix) =>
+        fs.rm(file(id, suffix), { force: true }),
+      ),
+    );
   }
   async function records() {
-    const names = (await fs.readdir(root)).filter(name => /^[0-9a-f-]{36}\.json$/i.test(name));
+    const names = (await fs.readdir(root)).filter((name) => /^[0-9a-f-]{36}\.json$/i.test(name));
     const result = [];
     for (const name of names) {
       const id = name.slice(0, -5);
-      try { result.push(await record(id)); }
-      catch (error) { console.warn('Capture record unavailable:', id, error.message); }
+      try {
+        result.push(await record(id));
+      } catch (error) {
+        console.warn('Capture record unavailable:', id, error.message);
+      }
     }
     return result.sort((a, b) => b.createdAt - a.createdAt);
   }
@@ -57,7 +90,10 @@ function createCaptureStore(root) {
     const sizes = new Map();
     for (const name of await fs.readdir(root)) {
       const stat = await fs.lstat(path.join(root, name));
-      if (name.startsWith('.write-') && Date.now() - stat.mtimeMs > 60_000) { await fs.rm(path.join(root, name), { force: true }); continue; }
+      if (name.startsWith('.write-') && Date.now() - stat.mtimeMs > 60_000) {
+        await fs.rm(path.join(root, name), { force: true });
+        continue;
+      }
       bytes += stat.size;
       const id = name.slice(0, 36);
       sizes.set(id, (sizes.get(id) || 0) + stat.size);
@@ -65,72 +101,138 @@ function createCaptureStore(root) {
     let count = list.length;
     for (const item of list.slice().reverse()) {
       if (item.id === protectedId) continue;
-      if (count <= MAX_RECORDS && bytes + incomingBytes <= MAX_STORE_BYTES && Date.now() - item.createdAt <= MAX_AGE_MS) continue;
-      await remove(item.id); count -= 1; bytes -= sizes.get(item.id) || 0;
+      if (
+        count <= MAX_RECORDS &&
+        bytes + incomingBytes <= MAX_STORE_BYTES &&
+        Date.now() - item.createdAt <= MAX_AGE_MS
+      )
+        continue;
+      await remove(item.id);
+      count -= 1;
+      bytes -= sizes.get(item.id) || 0;
     }
-    if (bytes + incomingBytes > MAX_STORE_BYTES) throw new Error('Capture history is full. Delete older captures and retry.');
+    if (bytes + incomingBytes > MAX_STORE_BYTES)
+      throw new Error('Capture history is full. Delete older captures and retry.');
   }
   async function getPreferences() {
-    try { return validate.preferences(JSON.parse((await readFile(path.join(root, 'preferences.json'))).toString('utf8'))); }
-    catch (error) {
-      if (error.code !== 'ENOENT') throw new Error('Capture preferences could not be read. Restore the preferences file before saving.', { cause: error });
+    try {
+      return validate.preferences(
+        JSON.parse((await readFile(path.join(root, 'preferences.json'))).toString('utf8')),
+      );
+    } catch (error) {
+      if (error.code !== 'ENOENT')
+        throw new Error(
+          'Capture preferences could not be read. Restore the preferences file before saving.',
+          { cause: error },
+        );
       return structuredClone(validate.DEFAULT_PREFERENCES);
     }
   }
   return {
-    preferences: () => serial(async () => { await directory(); return getPreferences(); }),
-    setPreferences: value => serial(async () => {
-      await directory(); const next = validate.preferences(value);
-      await atomic(path.join(root, 'preferences.json'), JSON.stringify(next)); return next;
-    }),
-    create: (buffer, title) => serial(async () => {
-      await directory(); const size = validate.png(buffer); const prefs = await getPreferences();
-      await prune(null, buffer.length + 4096);
-      const id = randomUUID();
-      const item = { id, title: validate.title(title), ...size, createdAt: Date.now(), revision: 0, recipe: { version: 1, crop: { x: 0, y: 0, ...size }, style: prefs.style }, hasExport: false };
-      try {
-        await fs.writeFile(file(id, 'source.png'), buffer, { flag: 'wx', mode: 0o600 });
-        await atomic(file(id, 'json'), JSON.stringify(item));
-        await prune(id);
-      } catch (error) { await remove(id); throw error; }
-      return item;
-    }),
-    list: () => serial(async () => { await directory(); await prune(null); return records(); }),
-    read: id => serial(async () => {
-      await directory(); const item = await record(validate.id(id));
-      const buffer = await readFile(file(id, 'source.png')); validate.png(buffer);
-      return { ...item, source: `data:image/png;base64,${buffer.toString('base64')}` };
-    }),
-    thumbnail: id => serial(async () => {
-      await directory(); await record(validate.id(id));
-      try { return `data:image/png;base64,${(await readFile(file(id, 'thumb.png'))).toString('base64')}`; }
-      catch (error) { if (error.code === 'ENOENT') return null; throw error; }
-    }),
-    save: (id, expectedRevision, recipe, output, thumbnail) => serial(async () => {
-      await directory(); const item = await record(validate.id(id));
-      if (item.revision !== expectedRevision) throw new Error('This capture changed in another editor. Reopen it before saving.');
-      const nextRecipe = validate.recipe(recipe, item.width, item.height);
-      const size = validate.png(output); validate.png(thumbnail);
-      const padding = Math.round(nextRecipe.style.padding);
-      if (size.width !== nextRecipe.crop.width + padding * 2 || size.height !== nextRecipe.crop.height + padding * 2) throw new Error('Export dimensions do not match the original-pixel recipe');
-      await prune(id, output.length + thumbnail.length + 4096);
-      const next = { ...item, recipe: nextRecipe, revision: item.revision + 1, hasExport: true };
-      // Invalidate the previous export before replacing it. An interrupted write
-      // must never pair a new recipe with an old image after restart.
-      await atomic(file(id, 'json'), JSON.stringify({ ...item, hasExport: false }));
-      await atomic(file(id, 'output.png'), output);
-      await atomic(file(id, 'thumb.png'), thumbnail);
-      await atomic(file(id, 'json'), JSON.stringify(next));
-      return next;
-    }),
-    output: id => serial(async () => {
-      await directory(); const item = await record(validate.id(id));
-      if (!item.hasExport) throw new Error('Open and save this capture before copying or attaching it');
-      const buffer = await readFile(file(id, 'output.png')); const size = validate.png(buffer);
-      const preview = `data:image/png;base64,${(await readFile(file(id, 'thumb.png'))).toString('base64')}`;
-      return { item, buffer, preview, ...size };
-    }),
-    delete: id => serial(async () => { await directory(); await remove(validate.id(id)); }),
+    preferences: () =>
+      serial(async () => {
+        await directory();
+        return getPreferences();
+      }),
+    setPreferences: (value) =>
+      serial(async () => {
+        await directory();
+        const next = validate.preferences(value);
+        await atomic(path.join(root, 'preferences.json'), JSON.stringify(next));
+        return next;
+      }),
+    create: (buffer, title) =>
+      serial(async () => {
+        await directory();
+        const size = validate.png(buffer);
+        const prefs = await getPreferences();
+        await prune(null, buffer.length + 4096);
+        const id = randomUUID();
+        const item = {
+          id,
+          title: validate.title(title),
+          ...size,
+          createdAt: Date.now(),
+          revision: 0,
+          recipe: { version: 1, crop: { x: 0, y: 0, ...size }, style: prefs.style },
+          hasExport: false,
+        };
+        try {
+          await fs.writeFile(file(id, 'source.png'), buffer, { flag: 'wx', mode: 0o600 });
+          await atomic(file(id, 'json'), JSON.stringify(item));
+          await prune(id);
+        } catch (error) {
+          await remove(id);
+          throw error;
+        }
+        return item;
+      }),
+    list: () =>
+      serial(async () => {
+        await directory();
+        await prune(null);
+        return records();
+      }),
+    read: (id) =>
+      serial(async () => {
+        await directory();
+        const item = await record(validate.id(id));
+        const buffer = await readFile(file(id, 'source.png'));
+        validate.png(buffer);
+        return { ...item, source: `data:image/png;base64,${buffer.toString('base64')}` };
+      }),
+    thumbnail: (id) =>
+      serial(async () => {
+        await directory();
+        await record(validate.id(id));
+        try {
+          return `data:image/png;base64,${(await readFile(file(id, 'thumb.png'))).toString('base64')}`;
+        } catch (error) {
+          if (error.code === 'ENOENT') return null;
+          throw error;
+        }
+      }),
+    save: (id, expectedRevision, recipe, output, thumbnail) =>
+      serial(async () => {
+        await directory();
+        const item = await record(validate.id(id));
+        if (item.revision !== expectedRevision)
+          throw new Error('This capture changed in another editor. Reopen it before saving.');
+        const nextRecipe = validate.recipe(recipe, item.width, item.height);
+        const size = validate.png(output);
+        validate.png(thumbnail);
+        const padding = Math.round(nextRecipe.style.padding);
+        if (
+          size.width !== nextRecipe.crop.width + padding * 2 ||
+          size.height !== nextRecipe.crop.height + padding * 2
+        )
+          throw new Error('Export dimensions do not match the original-pixel recipe');
+        await prune(id, output.length + thumbnail.length + 4096);
+        const next = { ...item, recipe: nextRecipe, revision: item.revision + 1, hasExport: true };
+        // Invalidate the previous export before replacing it. An interrupted write
+        // must never pair a new recipe with an old image after restart.
+        await atomic(file(id, 'json'), JSON.stringify({ ...item, hasExport: false }));
+        await atomic(file(id, 'output.png'), output);
+        await atomic(file(id, 'thumb.png'), thumbnail);
+        await atomic(file(id, 'json'), JSON.stringify(next));
+        return next;
+      }),
+    output: (id) =>
+      serial(async () => {
+        await directory();
+        const item = await record(validate.id(id));
+        if (!item.hasExport)
+          throw new Error('Open and save this capture before copying or attaching it');
+        const buffer = await readFile(file(id, 'output.png'));
+        const size = validate.png(buffer);
+        const preview = `data:image/png;base64,${(await readFile(file(id, 'thumb.png'))).toString('base64')}`;
+        return { item, buffer, preview, ...size };
+      }),
+    delete: (id) =>
+      serial(async () => {
+        await directory();
+        await remove(validate.id(id));
+      }),
   };
 }
 module.exports = { createCaptureStore, MAX_RECORDS, MAX_STORE_BYTES };

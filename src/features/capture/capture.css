@@ -1,23 +1,436 @@
-.capture-backdrop{position:fixed;inset:0;z-index:150;display:flex;align-items:center;justify-content:center;padding:24px;background:color-mix(in srgb,var(--droid-bg) 72%,transparent);backdrop-filter:blur(8px)}
-.capture-dialog{width:min(1060px,100%);max-height:calc(100vh - 48px);overflow:auto;border:1px solid var(--droid-border);border-radius:22px;background:var(--droid-surface);color:var(--droid-text);box-shadow:0 24px 100px #0006;outline:none;font-family:inherit;animation:capture-arrive .2s ease-out}
-.capture-header{display:flex;align-items:center;justify-content:space-between;padding:20px 24px;border-bottom:1px solid var(--droid-border);gap:16px}
-.capture-header h2{font-size:18px;font-weight:550;letter-spacing:-.025em;margin:3px 0 0}.capture-eyebrow{font-size:10px;letter-spacing:.14em;color:var(--droid-text-muted)}
-.capture-button,.capture-icon{display:inline-flex;align-items:center;justify-content:center;gap:7px;border:1px solid var(--droid-border);background:var(--droid-elevated);color:var(--droid-text-secondary);border-radius:9px;padding:7px 11px;font:inherit;font-size:12px;line-height:1.4;transition:background .15s,color .15s;cursor:pointer;white-space:nowrap}
-.capture-icon{padding:7px;border-color:transparent;background:transparent}.capture-button:hover,.capture-icon:hover{color:var(--droid-text);background:var(--droid-active)}.capture-button:disabled,.capture-icon:disabled{opacity:.4;cursor:not-allowed}.capture-button:focus-visible,.capture-icon:focus-visible,.capture-preset:focus-visible{outline:2px solid var(--droid-accent);outline-offset:3px}
-.capture-primary{background:var(--droid-accent);color:var(--droid-bg);border-color:transparent}.capture-primary:hover{background:var(--droid-accent);color:var(--droid-bg);filter:brightness(1.07)}.capture-spacer{flex:1}
-.capture-picker-content{padding:24px}.capture-note{font-size:12px;line-height:1.6;color:var(--droid-text-muted)}.capture-note strong{font-weight:500;color:var(--droid-text-secondary)}
-.capture-modes{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin:22px 0}
-.capture-modes>button{display:flex;flex-direction:column;align-items:flex-start;text-align:left;padding:22px 16px;gap:10px;border:1px solid var(--droid-border);border-radius:15px;background:var(--droid-elevated);transition:border-color .15s,transform .15s}
-.capture-modes>button:hover:not(:disabled){border-color:var(--droid-accent);transform:translateY(-2px)}.capture-modes>button:disabled{opacity:.4;cursor:not-allowed}.capture-modes strong{font-size:13px;font-weight:500}.capture-modes span{font-size:11px;color:var(--droid-text-muted);line-height:1.5}.capture-modes svg{width:21px;height:21px;margin-bottom:8px;color:var(--droid-text-secondary)}
-.capture-picker-footer,.capture-actions,.capture-editor-toolbar{display:flex;align-items:center;gap:9px;flex-wrap:wrap}.capture-picker-footer{margin:12px 0 20px}.capture-actions{padding:16px 20px;border-top:1px solid var(--droid-border)}.capture-editor-toolbar{padding:12px 20px}.capture-check{display:flex;align-items:center;gap:8px;font-size:12px;color:var(--droid-text-secondary)}.capture-check input{accent-color:var(--droid-accent)}
-.capture-editor-grid{display:grid;grid-template-columns:minmax(0,1fr) 250px;min-height:350px}.capture-stage{display:flex;align-items:center;justify-content:center;overflow:hidden;padding:28px;background:var(--droid-bg);border-top:1px solid var(--droid-border)}.capture-stage canvas{max-width:100%;max-height:52vh;width:auto;height:auto;border-radius:4px}.capture-inspector{padding:18px;border-left:1px solid var(--droid-border);border-top:1px solid var(--droid-border);max-height:62vh;overflow:auto}
-.capture-style-controls{border:0;padding:0;min-width:0}.capture-section-label{font-size:12px;font-weight:500;margin-bottom:12px;color:var(--droid-text-secondary)}.capture-swatches{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:9px;margin-bottom:20px}.capture-preset{display:flex;flex-direction:column;gap:6px;padding:4px;border:1px solid transparent;border-radius:9px;text-align:left;min-width:0;color:var(--droid-text-muted);font-size:10px}.capture-preset>span:first-child{display:block;aspect-ratio:1.8;width:100%;border-radius:6px;border:1px solid var(--droid-border)}.capture-preset[aria-pressed=true]{border-color:var(--droid-accent);color:var(--droid-text)}
-.capture-slider{display:block;margin-bottom:17px}.capture-slider>span{display:flex;justify-content:space-between;gap:10px;font-size:12px;color:var(--droid-text-secondary);margin-bottom:8px}.capture-slider output{color:var(--droid-text-muted);font-variant-numeric:tabular-nums}.capture-slider input{width:100%;accent-color:var(--droid-accent);height:4px;display:block}.capture-default{width:100%;margin:6px 0 12px}.capture-error{padding:10px 20px;color:var(--droid-text);border-left:3px solid var(--droid-accent);font-size:12px;background:var(--droid-elevated);margin:12px 20px;border-radius:4px}
-.capture-working{padding:60px 24px;display:flex;flex-direction:column;align-items:center;text-align:center;gap:12px}.capture-working h3{font-size:16px;font-weight:500}.capture-working p{max-width:400px;font-size:12px;color:var(--droid-text-muted);line-height:1.6}.capture-pulse{width:8px;height:8px;border-radius:50%;background:var(--droid-accent);animation:capture-pulse 1.4s ease-in-out infinite}
-.capture-crop-help{padding:12px 20px}.capture-crop-help strong{font-size:13px;font-weight:500}.capture-crop-help p{font-size:11px;line-height:1.6;color:var(--droid-text-muted);margin-top:4px}.capture-crop-scroll{overflow:auto;max-height:48vh;margin:8px 20px;background:var(--droid-bg);border-radius:8px}.capture-crop-image{position:relative;overflow:hidden;cursor:crosshair;touch-action:none;user-select:none}.capture-crop-image>img{width:100%;height:auto;display:block;pointer-events:none}.capture-selection{position:absolute;pointer-events:none;border:1px solid var(--droid-accent);box-shadow:0 0 0 20000px #0007}.capture-selection>span{position:absolute;top:3px;left:3px;padding:3px 6px;font-size:10px;background:var(--droid-accent);color:var(--droid-bg);border-radius:4px;white-space:nowrap}.capture-crop-values{display:flex;gap:12px;padding:12px 20px}.capture-crop-values label{font-size:11px;color:var(--droid-text-muted);display:flex;flex-direction:column;gap:5px;flex:1}.capture-crop-values input{width:100%;min-width:0;border:1px solid var(--droid-border);border-radius:7px;padding:7px 9px;background:var(--droid-elevated);color:var(--droid-text);font-size:12px}
-.capture-component-overlay{position:fixed;inset:0;z-index:160;pointer-events:none}.capture-component-outline{position:absolute;border:1.5px solid var(--droid-accent);box-shadow:0 0 0 20000px #0004;border-radius:5px}.capture-component-hud{position:absolute;bottom:25px;left:50%;transform:translateX(-50%);pointer-events:auto;max-width:calc(100vw - 48px);display:flex;align-items:center;justify-content:center;gap:10px;flex-wrap:wrap;border:1px solid var(--droid-border);border-radius:16px;padding:16px 20px;background:var(--droid-surface);color:var(--droid-text);box-shadow:0 15px 65px #0005}.capture-component-hud strong{font-size:13px}.capture-component-hud>span{font-size:11px;color:var(--droid-text-muted)}.capture-component-hud>div{display:flex;gap:5px;max-width:100%;overflow:auto}.capture-component-hud [aria-pressed=true]{border-color:var(--droid-accent)}
-.capture-attachment{position:relative;width:248px;max-width:100%;overflow:hidden;border:1px solid var(--droid-border);border-radius:13px;background:var(--droid-surface)}.capture-attachment-open{display:block;width:100%;text-align:left;padding:7px}.capture-attachment-open>img{width:100%;height:136px;object-fit:contain;background:var(--droid-bg);border-radius:8px}.capture-attachment-title{display:flex;align-items:center;gap:7px;font-size:12px;color:var(--droid-text);padding:10px 4px 3px}.capture-attachment-title>span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.capture-attachment-meta{display:block;font-size:10px;color:var(--droid-text-muted);padding:0 4px 5px}.capture-attachment-remove{position:absolute;right:10px;top:10px;display:grid;place-items:center;padding:4px;border-radius:50%;background:var(--droid-surface);color:var(--droid-text-secondary);border:1px solid var(--droid-border)}
-.capture-settings .capture-swatches{grid-template-columns:repeat(3,minmax(0,1fr))}.capture-settings .capture-preset{font-size:11px}.capture-settings .capture-slider{display:inline-block;width:calc(50% - 12px);margin:8px 24px 16px 0}.capture-settings .capture-slider:nth-of-type(even){margin-right:0}.capture-settings-save{display:flex;justify-content:flex-end;margin-bottom:36px}.capture-recent-heading{display:flex;align-items:center;gap:18px;margin-top:24px;margin-bottom:18px}.capture-recents{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px}.capture-recent-card{overflow:hidden;border:1px solid var(--droid-border);border-radius:14px;background:var(--droid-surface)}.capture-recent-thumbnail{display:block;width:100%;aspect-ratio:1.8;background:var(--droid-bg);padding:12px}.capture-recent-thumbnail img{width:100%;height:100%;object-fit:contain}.capture-recent-thumbnail>span{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;color:var(--droid-text-muted);font-size:11px}.capture-recent-details{padding:12px}.capture-recent-details>strong{display:block;font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--droid-text);font-weight:500}.capture-recent-details>span{display:block;font-size:10px;color:var(--droid-text-muted);line-height:1.5;margin-top:4px}.capture-recent-actions{display:flex;align-items:center;gap:5px;margin-top:10px}.capture-empty{display:flex;flex-direction:column;align-items:center;text-align:center;gap:12px;border:1px dashed var(--droid-border);border-radius:16px;padding:40px 22px;color:var(--droid-text-muted)}.capture-empty h3{font-size:14px;color:var(--droid-text);font-weight:500}.capture-empty p{max-width:380px;font-size:12px;line-height:1.6}
-@keyframes capture-arrive{from{opacity:0;transform:translateY(8px) scale(.985)}to{opacity:1;transform:none}}@keyframes capture-pulse{50%{opacity:.35}}
-@media(max-width:720px){.capture-modes{grid-template-columns:repeat(2,minmax(0,1fr))}.capture-editor-grid{grid-template-columns:1fr}.capture-inspector{border-left:0;max-height:none}.capture-inspector .capture-swatches{grid-template-columns:repeat(3,minmax(0,1fr))}.capture-recents{grid-template-columns:1fr}.capture-dialog{max-height:95vh}.capture-backdrop{padding:10px}}
-@media(prefers-reduced-motion:reduce){.capture-dialog,.capture-pulse{animation:none}.capture-modes>button{transition:none}.capture-modes>button:hover:not(:disabled){transform:none}}
+@import './captureSelection.css';
+@import './captureSettings.css';
+.capture-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 150;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: color-mix(in srgb, var(--droid-bg) 72%, transparent);
+  backdrop-filter: blur(8px);
+}
+.capture-dialog {
+  width: min(1060px, 100%);
+  max-height: calc(100vh - 48px);
+  overflow: auto;
+  border: 1px solid var(--droid-border);
+  border-radius: 22px;
+  background: var(--droid-surface);
+  color: var(--droid-text);
+  box-shadow: 0 24px 100px #0006;
+  outline: none;
+  font-family: inherit;
+  animation: capture-arrive 0.2s ease-out;
+}
+.capture-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 20px 24px;
+  border-bottom: 1px solid var(--droid-border);
+  gap: 16px;
+}
+.capture-header h2 {
+  font-size: 18px;
+  font-weight: 550;
+  letter-spacing: -0.025em;
+  margin: 3px 0 0;
+}
+.capture-eyebrow {
+  font-size: 10px;
+  letter-spacing: 0.14em;
+  color: var(--droid-text-muted);
+}
+.capture-button,
+.capture-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  border: 1px solid var(--droid-border);
+  background: var(--droid-elevated);
+  color: var(--droid-text-secondary);
+  border-radius: 9px;
+  padding: 7px 11px;
+  font: inherit;
+  font-size: 12px;
+  line-height: 1.4;
+  transition:
+    background 0.15s,
+    color 0.15s;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.capture-icon {
+  padding: 7px;
+  border-color: transparent;
+  background: transparent;
+}
+.capture-button:hover,
+.capture-icon:hover {
+  color: var(--droid-text);
+  background: var(--droid-active);
+}
+.capture-button:disabled,
+.capture-icon:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+.capture-button:focus-visible,
+.capture-icon:focus-visible,
+.capture-preset:focus-visible {
+  outline: 2px solid var(--droid-accent);
+  outline-offset: 3px;
+}
+.capture-primary {
+  background: var(--droid-accent);
+  color: var(--droid-bg);
+  border-color: transparent;
+}
+.capture-primary:hover {
+  background: var(--droid-accent);
+  color: var(--droid-bg);
+  filter: brightness(1.07);
+}
+.capture-spacer {
+  flex: 1;
+}
+.capture-picker-content {
+  padding: 24px;
+}
+.capture-note {
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--droid-text-muted);
+}
+.capture-note strong {
+  font-weight: 500;
+  color: var(--droid-text-secondary);
+}
+.capture-modes {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+  margin: 22px 0;
+}
+.capture-modes > button {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  text-align: left;
+  padding: 22px 16px;
+  gap: 10px;
+  border: 1px solid var(--droid-border);
+  border-radius: 15px;
+  background: var(--droid-elevated);
+  transition:
+    border-color 0.15s,
+    transform 0.15s;
+}
+.capture-modes > button:hover:not(:disabled) {
+  border-color: var(--droid-accent);
+  transform: translateY(-2px);
+}
+.capture-modes > button:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+.capture-modes strong {
+  font-size: 13px;
+  font-weight: 500;
+}
+.capture-modes span {
+  font-size: 11px;
+  color: var(--droid-text-muted);
+  line-height: 1.5;
+}
+.capture-modes svg {
+  width: 21px;
+  height: 21px;
+  margin-bottom: 8px;
+  color: var(--droid-text-secondary);
+}
+.capture-picker-footer,
+.capture-actions,
+.capture-editor-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  flex-wrap: wrap;
+}
+.capture-picker-footer {
+  margin: 12px 0 20px;
+}
+.capture-actions {
+  padding: 16px 20px;
+  border-top: 1px solid var(--droid-border);
+}
+.capture-editor-toolbar {
+  padding: 12px 20px;
+}
+.capture-check {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--droid-text-secondary);
+}
+.capture-check input {
+  accent-color: var(--droid-accent);
+}
+.capture-editor-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 250px;
+  min-height: 350px;
+}
+.capture-stage {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  padding: 28px;
+  background: var(--droid-bg);
+  border-top: 1px solid var(--droid-border);
+}
+.capture-stage canvas {
+  max-width: 100%;
+  max-height: 52vh;
+  width: auto;
+  height: auto;
+  border-radius: 4px;
+}
+.capture-inspector {
+  padding: 18px;
+  border-left: 1px solid var(--droid-border);
+  border-top: 1px solid var(--droid-border);
+  max-height: 62vh;
+  overflow: auto;
+}
+.capture-style-controls {
+  border: 0;
+  padding: 0;
+  min-width: 0;
+}
+.capture-section-label {
+  font-size: 12px;
+  font-weight: 500;
+  margin-bottom: 12px;
+  color: var(--droid-text-secondary);
+}
+.capture-swatches {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 9px;
+  margin-bottom: 20px;
+}
+.capture-preset {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 4px;
+  border: 1px solid transparent;
+  border-radius: 9px;
+  text-align: left;
+  min-width: 0;
+  color: var(--droid-text-muted);
+  font-size: 10px;
+}
+.capture-preset > span:first-child {
+  display: block;
+  aspect-ratio: 1.8;
+  width: 100%;
+  border-radius: 6px;
+  border: 1px solid var(--droid-border);
+}
+.capture-preset[aria-pressed='true'] {
+  border-color: var(--droid-accent);
+  color: var(--droid-text);
+}
+.capture-slider {
+  display: block;
+  margin-bottom: 17px;
+}
+.capture-slider > span {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  font-size: 12px;
+  color: var(--droid-text-secondary);
+  margin-bottom: 8px;
+}
+.capture-slider output {
+  color: var(--droid-text-muted);
+  font-variant-numeric: tabular-nums;
+}
+.capture-slider input {
+  width: 100%;
+  accent-color: var(--droid-accent);
+  height: 4px;
+  display: block;
+}
+.capture-default {
+  width: 100%;
+  margin: 6px 0 12px;
+}
+.capture-error {
+  padding: 10px 20px;
+  color: var(--droid-text);
+  border-left: 3px solid var(--droid-accent);
+  font-size: 12px;
+  background: var(--droid-elevated);
+  margin: 12px 20px;
+  border-radius: 4px;
+}
+.capture-working {
+  padding: 60px 24px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: 12px;
+}
+.capture-working h3 {
+  font-size: 16px;
+  font-weight: 500;
+}
+.capture-working p {
+  max-width: 400px;
+  font-size: 12px;
+  color: var(--droid-text-muted);
+  line-height: 1.6;
+}
+.capture-pulse {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--droid-accent);
+  animation: capture-pulse 1.4s ease-in-out infinite;
+}
+.capture-attachment {
+  position: relative;
+  width: 248px;
+  max-width: 100%;
+  overflow: hidden;
+  border: 1px solid var(--droid-border);
+  border-radius: 13px;
+  background: var(--droid-surface);
+}
+.capture-attachment-open {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 7px;
+}
+.capture-attachment-open > img {
+  width: 100%;
+  height: 136px;
+  object-fit: contain;
+  background: var(--droid-bg);
+  border-radius: 8px;
+}
+.capture-attachment-title {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 12px;
+  color: var(--droid-text);
+  padding: 10px 4px 3px;
+}
+.capture-attachment-title > span {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.capture-attachment-meta {
+  display: block;
+  font-size: 10px;
+  color: var(--droid-text-muted);
+  padding: 0 4px 5px;
+}
+.capture-attachment-remove {
+  position: absolute;
+  right: 10px;
+  top: 10px;
+  display: grid;
+  place-items: center;
+  padding: 4px;
+  border-radius: 50%;
+  background: var(--droid-surface);
+  color: var(--droid-text-secondary);
+  border: 1px solid var(--droid-border);
+}
+@keyframes capture-arrive {
+  from {
+    opacity: 0;
+    transform: translateY(8px) scale(0.985);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@keyframes capture-pulse {
+  50% {
+    opacity: 0.35;
+  }
+}
+@media (max-width: 720px) {
+  .capture-modes {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .capture-editor-grid {
+    grid-template-columns: 1fr;
+  }
+  .capture-inspector {
+    border-left: 0;
+    max-height: none;
+  }
+  .capture-inspector .capture-swatches {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+  .capture-recents {
+    grid-template-columns: 1fr;
+  }
+  .capture-dialog {
+    max-height: 95vh;
+  }
+  .capture-backdrop {
+    padding: 10px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .capture-dialog,
+  .capture-pulse {
+    animation: none;
+  }
+  .capture-modes > button {
+    transition: none;
+  }
+  .capture-modes > button:hover:not(:disabled) {
+    transform: none;
+  }
+}
+
+.capture-colors {
+  display: flex;
+  gap: 10px;
+  margin-bottom: 20px;
+}
+.capture-colors label {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 10px;
+  color: var(--droid-text-muted);
+}
+.capture-colors input {
+  width: 100%;
+  height: 26px;
+  border: 1px solid var(--droid-border);
+  border-radius: 6px;
+  background: transparent;
+  padding: 2px;
+}

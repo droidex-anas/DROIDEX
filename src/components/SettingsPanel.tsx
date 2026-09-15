@@ -33,6 +33,7 @@ import {
   type SettingsSearchHit,
 } from '../lib/settingsSearch';
 import { ToolActivitySettings } from './ToolActivitySettings';
+import { CaptureSettings } from '../features/capture/CaptureSettings';
 
 interface NavItem {
   label: string;
@@ -45,6 +46,7 @@ const NAV: { group: string; items: NavItem[] }[] = [
       { label: 'Setup & updates' },
       { label: 'Profile' },
       { label: 'Appearance' },
+      { label: 'Screenshots' },
       { label: 'Notifications' },
       { label: 'Configuration' },
       { label: 'Personalization' },
@@ -849,6 +851,9 @@ export default function SettingsPanel() {
   switch (active) {
     case 'Appearance':
       content = <AppearanceSection />;
+      break;
+    case 'Screenshots':
+      content = <CaptureSettings onClose={close} />;
       break;
     case 'General':
       content = <GeneralSection />;
