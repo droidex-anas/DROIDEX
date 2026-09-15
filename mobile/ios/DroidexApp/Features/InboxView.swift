@@ -4,13 +4,21 @@ import SwiftUI
 private enum InboxFilter: String, CaseIterable, Identifiable {
     case all = "All sessions", attention = "Needs you", working = "Working", ready = "Ready"
     var id: Self { self }
+
     var symbol: String {
-        switch self { case .all: "square.stack.3d.up"; case .attention: "hand.raised"; case .working: "circle.dotted.circle"; case .ready: "checkmark.circle" }
+        switch self {
+        case .all: "square.stack.3d.up"
+        case .attention: "hand.raised"
+        case .working: "circle.dotted.circle"
+        case .ready: "checkmark.circle"
+        }
     }
+
     func contains(_ session: AgentSession) -> Bool {
         switch self {
         case .all: true
-        case .attention: if case .failed = session.phase { true } else { session.phase.approval != nil }
+        case .attention:
+            if case .failed = session.phase { true } else { session.phase.approval != nil || session.phase.question != nil }
         case .working: session.phase.isRunning
         case .ready: session.phase == .completed
         }
@@ -40,12 +48,20 @@ struct InboxView: View {
         List(selection: $selection) {
             Section {
                 VStack(alignment: .leading, spacing: 16) {
-                    Text("LOCAL PREVIEW").font(.caption2.weight(.semibold)).tracking(1.8).foregroundStyle(DroidTheme.secondary)
-                    LazyVGrid(columns: columns, spacing: 10) { ForEach(InboxFilter.allCases) { filterTile($0) } }
+                    Text(store.isRemote ? (store.isConnected ? "CONNECTED · " + store.computerName : "COMPUTER DISCONNECTED") : "LOCAL PREVIEW")
+                        .font(.caption2.weight(.semibold))
+                        .tracking(1.8)
+                        .foregroundStyle(DroidTheme.secondary)
+                    LazyVGrid(columns: columns, spacing: 10) {
+                        ForEach(InboxFilter.allCases) { option in
+                            filterTile(option)
+                        }
+                    }
                 }
                 .padding(.vertical, 10)
             }
-            .listRowSeparator(.hidden).listRowBackground(Color.clear)
+            .listRowSeparator(.hidden)
+            .listRowBackground(Color.clear)
 
             Section {
                 if visibleSessions.isEmpty {
@@ -59,20 +75,28 @@ struct InboxView: View {
                     .listRowBackground(Color.clear)
                 }
                 ForEach(visibleSessions) { session in
-                    NavigationLink(value: session.appSessionId) { SessionRow(session: session) }
-                        .listRowBackground(Color.clear)
-                        .listRowSeparatorTint(DroidTheme.separator)
-                        .swipeActions(edge: .trailing) {
-                            Button("Delete", role: .destructive) { deletingSession = session; confirmDelete = true }
+                    NavigationLink(value: session.appSessionId) {
+                        SessionRow(session: session)
+                    }
+                    .listRowBackground(Color.clear)
+                    .listRowSeparatorTint(DroidTheme.separator)
+                    .swipeActions(edge: .trailing) {
+                        Button(store.isRemote ? "Close" : "Delete", role: .destructive) {
+                            deletingSession = session
+                            confirmDelete = true
                         }
+                    }
                 }
             } header: {
                 HStack {
-                    Label("droid-maxxing", systemImage: "folder")
+                    Label(store.workspaceName, systemImage: "folder")
                     Spacer()
                     Text("\(visibleSessions.count)").monospacedDigit()
                 }
-                .textCase(nil).font(.subheadline).foregroundStyle(DroidTheme.secondary).padding(.vertical, 8)
+                .textCase(nil)
+                .font(.subheadline)
+                .foregroundStyle(DroidTheme.secondary)
+                .padding(.vertical, 8)
             }
         }
         .listStyle(.plain)
@@ -104,20 +128,29 @@ struct InboxView: View {
                     Spacer(minLength: 0)
                     Image(systemName: "square.and.pencil")
                 }
-                .font(.body).padding(.horizontal, 18).frame(minHeight: 56)
+                .font(.body)
+                .padding(.horizontal, 18)
+                .frame(minHeight: 56)
                 .modifier(GlassChrome(interactive: true))
             }
-            .buttonStyle(.plain).accessibilityLabel("New session").accessibilityIdentifier("inbox.compose")
-            .padding(.horizontal, 16).padding(.bottom, 8)
+            .buttonStyle(.plain)
+            .accessibilityLabel("New session")
+            .accessibilityIdentifier("inbox.compose")
+            .padding(.horizontal, 16)
+            .padding(.bottom, 8)
         }
         .sensoryFeedback(.selection, trigger: filter) { _, _ in hapticsEnabled }
         .sensoryFeedback(.selection, trigger: selection) { _, value in hapticsEnabled && value != nil }
-        .sheet(isPresented: $newSession) { NewSessionView { selection = $0 } }
-        .sheet(isPresented: $settings) { SettingsView { selection = nil } }
-        .confirmationDialog("Delete this local session?", isPresented: $confirmDelete, titleVisibility: .visible, presenting: deletingSession) { session in
-            Button("Delete session", role: .destructive) { store.delete(session.appSessionId) }
+        .sheet(isPresented: $newSession) {
+            NewSessionView { selection = $0 }
+        }
+        .sheet(isPresented: $settings) {
+            SettingsView { selection = nil }
+        }
+        .confirmationDialog(store.isRemote ? "Close this session on your computer?" : "Delete this local session?", isPresented: $confirmDelete, titleVisibility: .visible, presenting: deletingSession) { session in
+            Button(store.isRemote ? "Close remote session" : "Delete session", role: .destructive) { store.delete(session.appSessionId) }
         } message: { session in
-            Text("“\(session.title)” will be removed from this device. Your repository is not affected.")
+            Text(store.isRemote ? "Running work will stop. Edits are not undone, and desktop history is retained." : "“\(session.title)” will be removed from this device. Your repository is not affected.")
         }
     }
 
@@ -129,31 +162,47 @@ struct InboxView: View {
         Button { filter = option } label: {
             VStack(alignment: .leading, spacing: 14) {
                 HStack {
-                    Image(systemName: option.symbol).font(.body).foregroundStyle(option == .attention ? DroidTheme.warning : DroidTheme.secondary)
+                    Image(systemName: option.symbol).font(.body)
+                        .foregroundStyle(option == .attention ? DroidTheme.warning : DroidTheme.secondary)
                     Spacer()
-                    Text("\(store.sessions.filter { option.contains($0) }.count)").font(.title3.weight(.medium)).monospacedDigit()
+                    Text("\(store.sessions.filter { option.contains($0) }.count)")
+                        .font(.title3.weight(.medium)).monospacedDigit()
                 }
-                Text(option.rawValue).font(.subheadline.weight(.medium)).fixedSize(horizontal: false, vertical: true)
+                Text(option.rawValue).font(.subheadline.weight(.medium))
+                    .fixedSize(horizontal: false, vertical: true)
             }
-            .padding(14).frame(maxWidth: .infinity, alignment: .leading)
+            .padding(14)
+            .frame(maxWidth: .infinity, alignment: .leading)
             .background(filter == option ? DroidTheme.elevated : DroidTheme.surface, in: RoundedRectangle(cornerRadius: 16))
             .overlay(RoundedRectangle(cornerRadius: 16).strokeBorder(filter == option ? DroidTheme.separator : .clear))
         }
-        .buttonStyle(.plain).accessibilityAddTraits(filter == option ? .isSelected : [])
+        .buttonStyle(.plain)
+        .accessibilityAddTraits(filter == option ? .isSelected : [])
     }
 }
 
 private struct SessionRow: View {
     let session: AgentSession
+
     var body: some View {
         VStack(alignment: .leading, spacing: 9) {
-            Text(session.title).font(.body.weight(.medium)).lineLimit(2)
+            Text(session.title)
+                .font(.body.weight(.medium))
+                .lineLimit(2)
             ViewThatFits(in: .horizontal) {
-                HStack(spacing: 10) { PhaseLabel(phase: session.phase); Spacer(minLength: 0); trailingDetail }
-                VStack(alignment: .leading, spacing: 6) { PhaseLabel(phase: session.phase); trailingDetail }
+                HStack(spacing: 10) {
+                    PhaseLabel(phase: session.phase)
+                    Spacer(minLength: 0)
+                    trailingDetail
+                }
+                VStack(alignment: .leading, spacing: 6) {
+                    PhaseLabel(phase: session.phase)
+                    trailingDetail
+                }
             }
         }
-        .padding(.vertical, 12).accessibilityElement(children: .combine)
+        .padding(.vertical, 12)
+        .accessibilityElement(children: .combine)
     }
 
     @ViewBuilder private var trailingDetail: some View {

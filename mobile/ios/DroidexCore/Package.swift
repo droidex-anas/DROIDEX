@@ -7,6 +7,6 @@ let package = Package(
     products: [.library(name: "DroidexCore", targets: ["DroidexCore"])],
     targets: [
         .target(name: "DroidexCore"),
-        .testTarget(name: "DroidexCoreTests", dependencies: ["DroidexCore"])
+        .testTarget(name: "DroidexCoreTests", dependencies: ["DroidexCore"], resources: [.copy("Fixtures")])
     ]
 )

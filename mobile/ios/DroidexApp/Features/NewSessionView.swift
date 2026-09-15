@@ -7,79 +7,58 @@ struct NewSessionView: View {
     @FocusState private var focused: Bool
     @State private var prompt = ""
     @State private var configuration = SessionConfiguration()
-    @State private var showsReasoning = false
     let onCreate: (UUID) -> Void
 
     private var trimmedPrompt: String { prompt.trimmingCharacters(in: .whitespacesAndNewlines) }
-    private var canStart: Bool { !trimmedPrompt.isEmpty && trimmedPrompt.count <= SessionStore.promptLimit }
+    private var canStart: Bool {
+        store.canSend && !trimmedPrompt.isEmpty && trimmedPrompt.count <= SessionStore.promptLimit
+            && (!store.isRemote || configuration.remoteModelID != nil)
+    }
 
     var body: some View {
         NavigationStack {
             Form {
                 Section {
-                    Label("droid-maxxing", systemImage: "folder")
-                        .foregroundStyle(DroidTheme.secondary)
+                    Text(store.workspaceName).font(.subheadline).foregroundStyle(DroidTheme.secondary)
                     TextField("Plan, ask, build…", text: $prompt, axis: .vertical)
-                        .font(.body)
-                        .lineLimit(4...10)
-                        .focused($focused)
-                        .accessibilityLabel("New session message")
-                        .accessibilityIdentifier("new-session.prompt")
+                        .font(.body).lineLimit(4...10).focused($focused)
+                        .accessibilityLabel("New session message").accessibilityIdentifier("new-session.prompt")
                 } footer: {
                     if trimmedPrompt.count > SessionStore.promptLimit {
                         Text("Keep your message under \(SessionStore.promptLimit.formatted()) characters.")
                             .foregroundStyle(DroidTheme.danger)
                     }
                 }
-
                 Section("Configuration") {
-                    Picker("Harness", selection: $configuration.harness) {
-                        ForEach(Harness.allCases, id: \.self) { Text($0.rawValue).tag($0) }
-                    }
-                    .onChange(of: configuration.harness) { _, harness in
-                        let options = ModelChoice.options(for: harness)
-                        if !options.contains(configuration.model) { configuration.model = options[0] }
-                    }
-
-                    Picker("Model", selection: $configuration.model) {
-                        ForEach(ModelChoice.options(for: configuration.harness), id: \.self) {
-                            Text($0.rawValue).tag($0)
-                        }
-                    }
-
-                    Button { showsReasoning = true } label: {
-                        HStack {
-                            Text("Reasoning")
-                            Spacer()
-                            Text(configuration.reasoning.title)
-                                .foregroundStyle(DroidTheme.secondary)
-                            Image(systemName: "chevron.right")
-                                .font(.caption2.weight(.semibold))
-                                .foregroundStyle(DroidTheme.secondary)
-                        }
-                    }
-                    .buttonStyle(.plain)
-                    .popover(isPresented: $showsReasoning, arrowEdge: .bottom) {
-                        ReasoningPicker(configuration: $configuration)
-                            .presentationCompactAdaptation(.popover)
-                    }
-
+                    LabeledContent("Harness") { HarnessControl(configuration: $configuration) }
+                    LabeledContent("Model") { ModelControl(configuration: $configuration) }
+                    LabeledContent("Reasoning") { EffortControl(configuration: $configuration) }
                     Picker("Mode", selection: $configuration.interactionMode) {
                         ForEach(InteractionMode.allCases, id: \.self) { Text($0.title).tag($0) }
                     }
                 }
-
-                Section {
-                    Text("Runs entirely on this device")
-                        .font(.subheadline)
-                } footer: {
-                    Text("This MVP uses scripted responses and sample diffs so you can try the interface without an account. Harness and model choices are previews, not live connections. Build demonstrates approvals; Plan stops at a reviewable proposal.")
+                if store.isRemote {
+                    Section {
+                        Text(store.computerName).font(.subheadline)
+                        Text(store.isConnected ? "Connected on your private network" : "Computer disconnected")
+                            .foregroundStyle(DroidTheme.secondary)
+                        if store.models.isEmpty {
+                            Text("No models are available yet. Log in to Droid on the computer, then refresh the connection.")
+                            Button("Refresh models") { Task { await store.reconnect() } }
+                        }
+                    } footer: {
+                        Text("Uses your computer’s provider account and quota. Approvals stay enabled. Any command or edit you approve runs on that computer.")
+                    }
+                } else {
+                    Section {
+                        Text("Offline preview")
+                    } footer: {
+                        Text("Scripted responses and sample diffs. Model and harness choices here are demonstrations, not live connections.")
+                    }
                 }
             }
-            .scrollContentBackground(.hidden)
-            .background(DroidTheme.background)
-            .navigationTitle("New session")
-            .navigationBarTitleDisplayMode(.inline)
+            .scrollContentBackground(.hidden).background(DroidTheme.background)
+            .navigationTitle("New session").navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
                 ToolbarItem(placement: .confirmationAction) {
@@ -89,12 +68,13 @@ struct NewSessionView: View {
                         onCreate(id)
                         dismiss()
                     }
-                    .fontWeight(.semibold)
-                    .disabled(!canStart)
-                    .accessibilityIdentifier("new-session.start")
+                    .fontWeight(.semibold).disabled(!canStart).accessibilityIdentifier("new-session.start")
                 }
             }
-            .task { focused = true }
+            .task { configuration = store.defaultConfiguration; focused = true }
+            .onChange(of: store.models) { _, _ in
+                if configuration.remoteModelID == nil { configuration = store.defaultConfiguration }
+            }
         }
         .interactiveDismissDisabled(!prompt.isEmpty)
     }

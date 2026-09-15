@@ -49,6 +49,7 @@ extension SessionPhase {
         case .ready: "Ready to start"
         case .running: "Working"
         case .needsApproval: "Needs your approval"
+        case .needsAnswer: "Needs your answer"
         case .completed: "Ready"
         case .stopped: "Stopped"
         case .failed: "Needs attention"
@@ -59,7 +60,7 @@ extension SessionPhase {
         switch self {
         case .ready: "circle.dotted"
         case .running: "circle.dotted.circle"
-        case .needsApproval: "hand.raised"
+        case .needsApproval, .needsAnswer: "hand.raised"
         case .completed: "checkmark.circle"
         case .stopped: "stop.circle"
         case .failed: "exclamationmark.circle"
@@ -69,7 +70,7 @@ extension SessionPhase {
     var color: Color {
         switch self {
         case .completed: DroidTheme.success
-        case .needsApproval: DroidTheme.warning
+        case .needsApproval, .needsAnswer: DroidTheme.warning
         case .failed: DroidTheme.danger
         default: DroidTheme.secondary
         }

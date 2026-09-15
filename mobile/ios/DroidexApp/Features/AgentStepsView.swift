@@ -1,17 +1,18 @@
 import SwiftUI
 
 struct AgentStepsView: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     let steps: [String]
     let isRunning: Bool
     @State private var expanded = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            Button { withAnimation(.snappy(duration: 0.24)) { expanded.toggle() } } label: {
+            Button { withAnimation(reduceMotion ? nil : .snappy(duration: 0.24)) { expanded.toggle() } } label: {
                 HStack(spacing: 9) {
                     activityMark
                     VStack(alignment: .leading, spacing: 2) {
-                        Text(isRunning ? "Working" : "Worked through")
+                        Text(isRunning ? "Working" : "Agent activity")
                             .font(.footnote.weight(.medium))
                             .foregroundStyle(DroidTheme.text)
                         Text(summary)
@@ -56,7 +57,7 @@ struct AgentStepsView: View {
                 }
                 .padding(.leading, 5)
                 .padding(.top, 4)
-                .transition(.opacity.combined(with: .move(edge: .top)))
+                .transition(.opacity)
             }
         }
         .padding(.horizontal, 12)
@@ -75,9 +76,7 @@ struct AgentStepsView: View {
         if isRunning {
             ProgressView().controlSize(.mini).frame(width: 15, height: 15)
         } else {
-            Image(systemName: "checkmark.circle.fill")
-                .font(.system(size: 15))
-                .foregroundStyle(DroidTheme.secondary)
+            Circle().strokeBorder(DroidTheme.secondary, lineWidth: 1).frame(width: 12, height: 12)
         }
     }
 }

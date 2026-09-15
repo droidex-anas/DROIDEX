@@ -15,7 +15,7 @@ struct ReviewView: View {
                     VStack(alignment: .leading, spacing: 24) {
                         VStack(alignment: .leading, spacing: 12) {
                             Text("A closer look.").font(.title.weight(.semibold))
-                            Text("This is a bundled sample patch, not a diff fetched from your repository.")
+                            Text(store.isRemote ? (session.diffNote ?? "Working-tree changes from your computer.") : "This is a bundled sample patch, not a diff fetched from your repository.")
                                 .font(.callout).foregroundStyle(DroidTheme.secondary)
                             HStack {
                                 Text("\(session.changes.count) files").font(.subheadline)
@@ -60,7 +60,7 @@ struct ReviewView: View {
                     ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() } }
                     ToolbarItem(placement: .topBarLeading) {
                         ShareLink(item: exportPatch(session.changes)) {
-                            Label("Share sample patch", systemImage: "square.and.arrow.up")
+                            Label(store.isRemote ? "Share working-tree review" : "Share sample patch", systemImage: "square.and.arrow.up")
                         }
                     }
                 }
@@ -74,7 +74,7 @@ struct ReviewView: View {
     }
 
     private func exportPatch(_ changes: [FileChange]) -> String {
-        "DROIDEX illustrative patch. Not an actual repository diff.\n\n" + changes.map { change in
+        (store.isRemote ? "DROIDEX working-tree review. May include existing edits. This is a readable excerpt, not an apply-ready patch.\n\n" : "DROIDEX illustrative patch. Not an actual repository diff.\n\n") + changes.map { change in
             change.path + "\n" + change.lines.map { $0.prefix + $0.text }.joined(separator: "\n")
         }.joined(separator: "\n\n")
     }
@@ -103,11 +103,12 @@ private struct DiffContent: View {
             }
             .fixedSize(horizontal: true, vertical: false)
         }
-        .accessibilityLabel("Sample code diff. Scroll horizontally for long lines.")
+        .accessibilityLabel("Code diff. Scroll horizontally for long lines.")
     }
 }
 
 struct ApprovalCard: View {
+    @Environment(SessionStore.self) private var store
     let approval: Approval
     let respond: (Bool) -> Void
 
@@ -116,7 +117,7 @@ struct ApprovalCard: View {
             Label(approval.title, systemImage: "hand.raised")
                 .font(.subheadline.weight(.semibold))
                 .foregroundStyle(DroidTheme.warning)
-            Text(approval.detail).font(.callout).foregroundStyle(DroidTheme.secondary)
+            Text(approval.detail).textSelection(.enabled).font(.callout).foregroundStyle(DroidTheme.secondary)
             ViewThatFits(in: .horizontal) {
                 HStack(spacing: 10) { decline; approve }.fixedSize(horizontal: true, vertical: false)
                 VStack(alignment: .leading, spacing: 10) { approve; decline }
@@ -126,6 +127,7 @@ struct ApprovalCard: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(DroidTheme.surface, in: RoundedRectangle(cornerRadius: 18))
         .overlay(RoundedRectangle(cornerRadius: 18).strokeBorder(DroidTheme.warning.opacity(0.25)))
+        .disabled(!store.canSend)
     }
 
     private var decline: some View {
@@ -136,7 +138,7 @@ struct ApprovalCard: View {
     }
 
     private var approve: some View {
-        Button("Approve preview") { respond(true) }
+        Button(store.isRemote ? "Approve once" : "Approve preview") { respond(true) }
             .buttonStyle(.borderedProminent)
             .tint(DroidTheme.text)
             .foregroundStyle(DroidTheme.background)

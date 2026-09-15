@@ -19,20 +19,23 @@ struct ConversationView: View {
             conversation(session)
                 .background(DroidTheme.background)
                 .navigationBarTitleDisplayMode(.inline)
+                .toolbar(.visible, for: .navigationBar)
                 .toolbar {
                     ToolbarItem(placement: .principal) {
                         VStack(spacing: 2) {
                             Text(session.title).font(.headline).lineLimit(1)
-                            Text("\(session.configuration.model.rawValue) · \(session.configuration.reasoning.title)")
+                            Text("\(store.modelName(session.configuration)) · \(store.effortName(session.configuration))")
                                 .font(.caption2).foregroundStyle(DroidTheme.secondary)
                         }
                         .accessibilityElement(children: .combine)
                     }
                     ToolbarItem(placement: .topBarTrailing) {
                         Menu {
-                            Button("Rename", systemImage: "pencil") { title = session.title; renaming = true }
+                            if !store.isRemote {
+                                Button("Rename", systemImage: "pencil") { title = session.title; renaming = true }
+                            }
                             ShareLink(item: exportedConversation(session)) { Label("Share conversation", systemImage: "square.and.arrow.up") }
-                            Button("Delete session", systemImage: "trash", role: .destructive) { deleting = true }
+                            Button(store.isRemote ? "Close remote session" : "Delete session", systemImage: "trash", role: .destructive) { deleting = true }
                         } label: { Label("Session actions", systemImage: "ellipsis") }
                     }
                 }
@@ -52,7 +55,7 @@ struct ConversationView: View {
                     guard hapticsEnabled, scenePhase == .active else { return nil }
                     switch phase {
                     case .running: return .impact(weight: .light, intensity: 0.6)
-                    case .needsApproval: return .warning
+                    case .needsApproval, .needsAnswer: return .warning
                     case .completed: return .success
                     case .failed: return .error
                     case .stopped: return .selection
@@ -65,8 +68,10 @@ struct ConversationView: View {
                     Button("Cancel", role: .cancel) {}
                     Button("Save") { store.rename(sessionID, to: title) }
                 }
-                .confirmationDialog("Delete this local session?", isPresented: $deleting, titleVisibility: .visible) {
-                    Button("Delete session", role: .destructive) { store.delete(sessionID) }
+                .confirmationDialog(store.isRemote ? "Close this session on your computer?" : "Delete this local session?", isPresented: $deleting, titleVisibility: .visible) {
+                    Button(store.isRemote ? "Close remote session" : "Delete session", role: .destructive) { store.delete(sessionID) }
+                } message: {
+                    Text(store.isRemote ? "Running work will stop. Edits already made are not undone. Desktop history is retained." : "This removes the local preview conversation.")
                 }
         } else {
             ContentUnavailableView("Session removed", systemImage: "tray")
@@ -77,11 +82,11 @@ struct ConversationView: View {
         ScrollViewReader { proxy in
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 28) {
-                    if session.messages.isEmpty {
+                    if session.messages.isEmpty && !session.phase.isRunning {
                         ContentUnavailableView {
                             Label("A fresh session", systemImage: "text.bubble")
                         } description: {
-                            Text("Describe what to build, review, or explore. Responses in this build are scripted.")
+                            Text(store.isRemote ? "Describe what to build, review, or explore on your computer." : "Describe what to build, review, or explore. Responses in preview mode are scripted.")
                         }
                         .frame(maxWidth: .infinity).padding(.top, 56)
                     }
@@ -91,7 +96,7 @@ struct ConversationView: View {
                     if session.phase.isRunning, session.messages.last?.steps.isEmpty != false {
                         HStack(spacing: 10) {
                             ProgressView().controlSize(.small)
-                            Text("Starting \(session.configuration.model.rawValue)…").font(.footnote)
+                            Text("Starting \(store.modelName(session.configuration))…").font(.footnote)
                         }
                         .foregroundStyle(DroidTheme.secondary)
                     } else if !session.phase.isRunning {
@@ -101,8 +106,14 @@ struct ConversationView: View {
                         Label(error, systemImage: "exclamationmark.triangle").font(.callout).foregroundStyle(DroidTheme.danger)
                     }
                     if !session.changes.isEmpty { changesButton(session) }
+                    else if let note = session.diffNote, !note.isEmpty {
+                        Text(note).font(.footnote).foregroundStyle(DroidTheme.secondary)
+                    }
                     if let approval = session.phase.approval {
                         ApprovalCard(approval: approval) { allow in store.respond(to: approval.id, in: sessionID, allow: allow) }
+                    }
+                    if let question = session.phase.question {
+                        QuestionCard(question: question, sessionID: sessionID).id(question.id)
                     }
                     Color.clear.frame(height: 1).id(bottomID)
                 }
@@ -116,7 +127,8 @@ struct ConversationView: View {
                 geometry.visibleRect.maxY >= geometry.contentSize.height - 80
             } action: { _, value in isAtBottom = value }
             .onChange(of: session.messages.last?.text) { _, _ in if isAtBottom { proxy.scrollTo(bottomID, anchor: .bottom) } }
-            .onChange(of: session.messages.count) { _, _ in proxy.scrollTo(bottomID, anchor: .bottom) }
+            .onChange(of: session.messages.count) { _, _ in if isAtBottom { proxy.scrollTo(bottomID, anchor: .bottom) } }
+            .onChange(of: session.phase) { _, _ in if isAtBottom { proxy.scrollTo(bottomID, anchor: .bottom) } }
             .overlay(alignment: .bottomTrailing) {
                 if !isAtBottom {
                     Button {
@@ -137,13 +149,13 @@ struct ConversationView: View {
                 Label("Review changes", systemImage: "doc.text").font(.subheadline.weight(.medium))
                 ViewThatFits(in: .horizontal) {
                     HStack(spacing: 12) {
-                        Text("\(session.changes.count) illustrative files")
+                        Text("\(session.changes.count) \(store.isRemote ? "working-tree files" : "illustrative files")")
                         Spacer(minLength: 4)
                         DiffCounts(additions: session.additions, deletions: session.deletions)
                         Image(systemName: "chevron.right")
                     }
                     VStack(alignment: .leading, spacing: 8) {
-                        Text("\(session.changes.count) illustrative files")
+                        Text("\(session.changes.count) \(store.isRemote ? "working-tree files" : "illustrative files")")
                         DiffCounts(additions: session.additions, deletions: session.deletions)
                     }
                 }
@@ -155,7 +167,7 @@ struct ConversationView: View {
     }
 
     private func exportedConversation(_ session: AgentSession) -> String {
-        "DROIDEX · Local preview\n\(session.title)\n\n" + session.messages.map { "\($0.role == .user ? "You" : "DROIDEX")\n\($0.text)" }.joined(separator: "\n\n")
+        "DROIDEX · \(store.isRemote ? "Remote session" : "Local preview")\n\(session.title)\n\n" + session.messages.map { "\($0.role == .user ? "You" : "DROIDEX")\n\($0.text)" }.joined(separator: "\n\n")
     }
 }
 
@@ -180,12 +192,9 @@ private struct MessageRow: View {
                     if isRunning { Circle().fill(DroidTheme.text).frame(width: 4, height: 4) }
                 }
                 .foregroundStyle(DroidTheme.secondary)
-                if !message.steps.isEmpty {
-                    AgentStepsView(steps: message.steps, isRunning: isRunning)
-                }
+                if !message.steps.isEmpty { AgentStepsView(steps: message.steps, isRunning: isRunning) }
                 if !message.text.isEmpty {
-                    Text(message.text)
-                        .font(.body).lineSpacing(5).textSelection(.enabled)
+                    Text(message.text).font(.body).lineSpacing(5).textSelection(.enabled)
                         .fixedSize(horizontal: false, vertical: true)
                 }
             }

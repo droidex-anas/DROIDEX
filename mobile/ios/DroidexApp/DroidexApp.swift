@@ -3,27 +3,29 @@ import SwiftUI
 
 @main
 struct DroidexApp: App {
-    @State private var store: SessionStore
+    @State private var connection = AppConnection()
     @AppStorage("appearance") private var appearance = "system"
-
-    init() {
-        let testing = ProcessInfo.processInfo.arguments.contains("--ui-testing")
-        let archiveURL = testing ? nil : URL.applicationSupportDirectory.appending(path: "DROIDEX/sessions.json")
-        _store = State(initialValue: SessionStore(archiveURL: archiveURL))
-    }
 
     var body: some Scene {
         WindowGroup {
-            AppRoot()
-                .environment(store)
-                .tint(DroidTheme.text)
-                .preferredColorScheme(appearance == "system" ? nil : appearance == "dark" ? .dark : .light)
+            Group {
+                if let store = connection.store {
+                    AppRoot().environment(store).id(ObjectIdentifier(store))
+                } else {
+                    OnboardingView()
+                }
+            }
+            .environment(connection)
+            .tint(DroidTheme.text)
+            .preferredColorScheme(appearance == "system" ? nil : appearance == "dark" ? .dark : .light)
+            .task { connection.restore() }
         }
     }
 }
 
 struct AppRoot: View {
     @Environment(SessionStore.self) private var store
+    @Environment(AppConnection.self) private var connection
     @Environment(\.scenePhase) private var scenePhase
     @State private var selection: UUID?
     @State private var columnVisibility: NavigationSplitViewVisibility = .automatic
@@ -38,12 +40,16 @@ struct AppRoot: View {
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             case .failed(let message):
                 ContentUnavailableView {
-                    Label("Can't open saved sessions", systemImage: "externaldrive.badge.exclamationmark")
+                    Label(store.isRemote ? "Computer unavailable" : "Can't open saved sessions", systemImage: "externaldrive.badge.exclamationmark")
                 } description: {
-                    Text(message + " Your existing file has not been replaced.")
+                    Text(store.isRemote ? message : message + " Your existing file has not been replaced.")
                 } actions: {
                     Button("Try again") { Task { await store.load() } }
-                    Button("Reset local preview", role: .destructive) { resetting = true }
+                    if store.isRemote {
+                        Button("Pair a computer again") { Task { await connection.forget() } }
+                    } else {
+                        Button("Reset local preview", role: .destructive) { resetting = true }
+                    }
                 }
             case .ready:
                 NavigationSplitView(columnVisibility: $columnVisibility, preferredCompactColumn: $compactColumn) {
@@ -75,6 +81,16 @@ struct AppRoot: View {
         .foregroundStyle(DroidTheme.text)
         .background(DroidTheme.background)
         .safeAreaInset(edge: .top, spacing: 0) {
+            if store.isRemote, store.loadState == .ready, !store.isConnected || store.connectionError != nil {
+                Button { Task { await store.reconnect() } } label: {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(store.isConnected ? "Connection needs attention" : "Computer disconnected").fontWeight(.medium)
+                        Text((store.connectionError ?? "Reconnect to restore live progress. Work continues on your computer.") + " Tap to reconnect.")
+                    }
+                    .font(.footnote).frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(12).background(DroidTheme.surface)
+                }.buttonStyle(.plain).foregroundStyle(DroidTheme.warning)
+            }
             if let error = store.storageError {
                 Button {
                     Task { await store.flush() }
@@ -92,6 +108,7 @@ struct AppRoot: View {
         .task { await store.load() }
         .onChange(of: scenePhase) { _, phase in
             if phase == .background { Task { await store.suspend() } }
+            else if phase == .active, store.isRemote { Task { await store.load() } }
         }
         .confirmationDialog("Replace the saved preview conversations?", isPresented: $resetting, titleVisibility: .visible) {
             Button("Reset local preview", role: .destructive) {
@@ -102,11 +119,11 @@ struct AppRoot: View {
 }
 
 #Preview("Dark · iPhone") {
-    AppRoot().environment(SessionStore()).preferredColorScheme(.dark)
+    AppRoot().environment(SessionStore()).environment(AppConnection()).preferredColorScheme(.dark)
 }
 
 #Preview("Light · large text") {
-    AppRoot().environment(SessionStore())
+    AppRoot().environment(SessionStore()).environment(AppConnection())
         .preferredColorScheme(.light)
         .environment(\.dynamicTypeSize, .accessibility2)
 }
