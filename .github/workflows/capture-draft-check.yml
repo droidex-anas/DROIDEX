@@ -48,6 +48,22 @@ jobs:
       - name: Formatting and file-size budgets
         if: ${{ !cancelled() && steps.install.outcome == 'success' }}
         run: npx prettier --check src/features/capture electron/capture docs/capture.md && npm run quality:file-size
+  browser:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: npm ci --ignore-scripts
+        env:
+          HUSKY: '0'
+      - run: npx playwright install --with-deps chromium
+      - name: Capture UI and PNG fidelity
+        run: node tools/capture-ui-smoke.mjs
   mac-unit:
     runs-on: macos-14
     timeout-minutes: 5
