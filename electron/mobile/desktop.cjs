@@ -1,5 +1,5 @@
 const { app, BrowserWindow, dialog, ipcMain, clipboard } = require('electron');
-const { readFile } = require('node:fs/promises');
+const { readFile, copyFile } = require('node:fs/promises');
 const path = require('node:path');
 
 let window = null;
@@ -59,6 +59,16 @@ function installHandler() {
         const state = await request('status');
         if (!state.code || Date.now() >= state.expiresAt) throw new Error('Generate a new pairing code.');
         clipboard.writeText(state.code);
+        return true;
+      }
+      case 'save-guide': {
+        const result = await dialog.showSaveDialog(window, {
+          title: 'Save DROIDEX pairing guide',
+          defaultPath: 'DROIDEX-Remote-Guide.svg',
+          filters: [{ name: 'SVG image', extensions: ['svg'] }],
+        });
+        if (result.canceled || !result.filePath) return false;
+        await copyFile(path.join(__dirname, 'RemoteArtwork', 'guide.svg'), result.filePath);
         return true;
       }
       default: throw new Error('Unsupported mobile operation.');

@@ -5,6 +5,22 @@ let state = {};
 let busy = false;
 let alive = true;
 let polling;
+let artworkVisible = false;
+
+function updateArtwork() {
+  element('remote-artwork').contentWindow?.postMessage({
+    type: 'droidex.remote-artwork',
+    active: artworkVisible && !document.hidden,
+    step: state.pending ? 2 : state.device ? 3 : null,
+  }, '*');
+}
+const artworkObserver = new IntersectionObserver(([entry]) => {
+  artworkVisible = entry.isIntersecting;
+  updateArtwork();
+});
+artworkObserver.observe(element('remote-artwork'));
+element('remote-artwork').addEventListener('load', updateArtwork);
+document.addEventListener('visibilitychange', updateArtwork);
 
 function showError(error) {
   element('error').textContent = error.message || String(error);
@@ -35,7 +51,8 @@ function render() {
   element('request-name').textContent = state.pending ? `${state.pending.name} wants to connect` : '';
   element('instruction').hidden = !!state.device || !!state.pending;
   element('detail').textContent = state.device ? `${state.models || 0} models available. Keep this computer awake and DROIDEX running.` : 'The code is single-use and includes this computer’s certificate fingerprint. Expired? Disable access, then enable again.';
-  for (const id of ['approve', 'deny', 'disable']) element(id).disabled = busy;
+  for (const id of ['approve', 'deny', 'disable', 'share-guide']) element(id).disabled = busy;
+  updateArtwork();
 }
 async function perform(action) {
   if (busy) return;
@@ -50,10 +67,23 @@ element('copy').onclick = () => perform(async () => { await window.mobile.copy()
 element('approve').onclick = () => perform(() => window.mobile.approve(state.pending.id, true));
 element('deny').onclick = () => perform(() => window.mobile.approve(state.pending.id, false));
 element('disable').onclick = () => perform(async () => { await window.mobile.disable(); element('copy').textContent = 'Copy pairing code'; });
+element('share-guide').onclick = async () => {
+  const button = element('share-guide');
+  button.disabled = true;
+  try {
+    const saved = await window.mobile.saveGuide();
+    button.textContent = saved ? 'SVG guide saved' : 'Save SVG pairing guide';
+  } catch (error) { showError(error); }
+  finally { button.disabled = false; }
+};
 async function poll() {
   if (!alive) return;
   try { if (!busy) await refresh(); } catch (error) { showError(error); }
   if (alive) polling = setTimeout(poll, 1000);
 }
-window.addEventListener('beforeunload', () => { alive = false; clearTimeout(polling); });
+window.addEventListener('beforeunload', () => {
+  alive = false;
+  artworkObserver.disconnect();
+  clearTimeout(polling);
+});
 void poll();

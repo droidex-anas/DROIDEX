@@ -18,7 +18,7 @@ struct OnboardingView: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 28) {
                     BrandMark().frame(width: 110, height: 16).padding(.top, 24)
-                    Spacer(minLength: 28)
+                    Spacer(minLength: 12)
                     VStack(alignment: .leading, spacing: 16) {
                         Text(waiting ? "One last step.\nApprove on your computer." : "Your workspace.\nWherever you sit.")
                             .font(.system(.largeTitle, design: .default).weight(.semibold))
@@ -29,12 +29,7 @@ struct OnboardingView: View {
                              : "Connect your computer and use its agents from your phone. Real sessions, live progress, and changes you can review.")
                             .font(.body).lineSpacing(4).foregroundStyle(DroidTheme.secondary)
                     }
-                    VStack(alignment: .leading, spacing: 22) {
-                        instruction("01", "Open DROIDEX on your computer", "Choose File → Connect phone, then select a workspace.")
-                        instruction("02", "Keep both devices on the same Wi-Fi", "Enable mobile access and copy the pairing code. This first build uses your private local network.")
-                        instruction("03", "Pair, then approve", "Paste the code here. Confirm this phone on the computer before it can start working.")
-                    }
-                    .padding(.vertical, 12)
+                    RemoteOnboardingArtwork(step: waiting ? 2 : nil)
                     if showsCode && !waiting {
                         VStack(alignment: .leading, spacing: 12) {
                             HStack {
@@ -100,16 +95,6 @@ struct OnboardingView: View {
             .scrollDismissesKeyboard(.interactively)
             .sensoryFeedback(.success, trigger: feedback) { _, _ in hapticsEnabled }
             .onDisappear { pairing?.cancel() }
-        }
-    }
-
-    private func instruction(_ number: String, _ title: String, _ detail: String) -> some View {
-        HStack(alignment: .top, spacing: 16) {
-            Text(number).font(.caption.weight(.medium)).foregroundStyle(DroidTheme.secondary).padding(.top, 4)
-            VStack(alignment: .leading, spacing: 5) {
-                Text(title).font(.subheadline.weight(.medium))
-                Text(detail).font(.subheadline).foregroundStyle(DroidTheme.secondary).fixedSize(horizontal: false, vertical: true)
-            }
         }
     }
 

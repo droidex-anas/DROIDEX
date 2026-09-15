@@ -114,3 +114,23 @@ header span {
   display:none}
 }
 
+.artwork-banner {
+  margin: 0 0 24px;
+  border: 1px solid #272e39;
+  border-radius: 18px;
+  overflow: hidden;
+  background: #090b0f;
+}
+.artwork-banner iframe {
+  display: block;
+  width: 100%;
+  height: 208px;
+  border: 0;
+}
+button.guide-action {
+  color: #aeb8c6;
+  background: transparent;
+  border-top: 1px solid #272e39;
+  border-radius: 0;
+  font-size: 12px;
+}
