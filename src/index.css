@@ -279,7 +279,7 @@
     animation: agent-pixel-shimmer 1.4s ease-in-out infinite;
   }
 
-  /* Slow breath on the live dot next to an agent-started process. */
+  /* Slow breath on the live indicator next to an agent-started process. */
   @keyframes process-breathe {
     0%,
     100% {
@@ -290,7 +290,7 @@
     }
   }
 
-  .process-live-dot {
+  .process-live-indicator {
     animation: process-breathe 2.4s ease-in-out infinite;
   }
 
@@ -299,7 +299,7 @@
     .caret-blink,
     .shimmer-text,
     .agent-avatar-pixel,
-    .process-live-dot {
+    .process-live-indicator {
       animation: none;
     }
   }
