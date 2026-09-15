@@ -30,6 +30,37 @@ test('splitTrailingMentions recovers a repo-root file that has no directory', ()
   });
 });
 
+test('splitTrailingMentions keeps a file name followed by prose as prose', () => {
+  assert.deepEqual(splitTrailingMentions('look\n\n@/tmp/a.png please review'), {
+    text: 'look\n\n@/tmp/a.png please review',
+    files: [],
+  });
+});
+
+test('splitTrailingMentions recovers a file whose first word looks like an extension', () => {
+  const composed = composePrompt('open', [], ['/tmp/v2.5 final.png']);
+  assert.deepEqual(splitTrailingMentions(composed), {
+    text: 'open',
+    files: ['/tmp/v2.5 final.png'],
+  });
+});
+
+test('splitTrailingMentions recovers an extensionless path with spaces', () => {
+  const composed = composePrompt('open', [], ['Reports/Quarterly Q3']);
+  assert.deepEqual(splitTrailingMentions(composed), {
+    text: 'open',
+    files: ['Reports/Quarterly Q3'],
+  });
+});
+
+test('splitTrailingMentions recovers a bare file name that contains spaces', () => {
+  const composed = composePrompt('summarise', [], ['Meeting Notes.pdf']);
+  assert.deepEqual(splitTrailingMentions(composed), {
+    text: 'summarise',
+    files: ['Meeting Notes.pdf'],
+  });
+});
+
 test('splitTrailingMentions leaves a trailing paragraph of @words that are not paths', () => {
   const text = 'thanks\n\n@anas @cubic';
   assert.deepEqual(splitTrailingMentions(text), { text, files: [] });

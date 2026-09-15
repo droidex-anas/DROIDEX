@@ -1,6 +1,6 @@
 import { DroidInteractionMode, type McpServerConfig } from '@factory/droid-sdk';
 import { randomUUID } from 'node:crypto';
-import { homedir, tmpdir } from 'node:os';
+import { tmpdir } from 'node:os';
 import type {
   Autonomy,
   BridgeRuntimeSnapshot,
@@ -150,7 +150,7 @@ export interface SessionManagerDependencies {
   createLocalMcpResource: (appSessionId: () => string) => StartableLocalMcpResource;
   createAutomationMcpResource?: (appSessionId: () => string) => StartableLocalMcpResource;
   mcpConfiguration: McpConfiguration;
-  loadConfiguredMcpServers: (cwd: string) => McpServerConfig[];
+  loadConfiguredMcpServers: (cwd: string | undefined) => McpServerConfig[];
   getFactoryDefaults?: () => Promise<FactoryDefaultSettings>;
   nextChildSessionId?: () => string;
   // Injectable so tests can capture the republish callback instead of
@@ -211,6 +211,10 @@ function runtimeLimits(dependencies: SessionManagerDependencies | undefined) {
 const ignoreError = (): undefined => undefined;
 
 const nextChildSessionId = () => `child-${randomUUID()}`;
+
+// MCP settings commands run in a throwaway session; without a workspace they
+// still need a directory to read user-level configuration from.
+const mcpSettingsCwd = (cwd?: string): string => cwd ?? tmpdir();
 
 export class SessionManager {
   private ready = false;
@@ -320,15 +324,14 @@ export class SessionManager {
       },
     });
     this.mcpSettings = new McpSettings(
-      (cwd) => {
-        const sessionCwd = cwd ?? tmpdir();
-        return this.runtime.createSession({
-          cwd: sessionCwd,
+      (cwd) =>
+        this.runtime.createSession({
+          cwd: mcpSettingsCwd(cwd),
           interactionMode: 'auto',
           autonomyLevel: 'low',
-          mcpServers: this.loadConfiguredMcpServers(sessionCwd),
-        });
-      },
+          mcpServers: this.loadConfiguredMcpServers(cwd),
+        }),
+      (cwd) => this.loadConfiguredMcpServers(cwd),
       this.mcpConfiguration,
       (event) => {
         this.emit(event);
@@ -1010,9 +1013,11 @@ export class SessionManager {
     if (shouldAttachAutomationMcp(ref.clientRef, await isUnattendedAutomationSession(ref.id))) {
       servers.push(this.createAutomationMcpResource(() => ref.id));
     }
-    const configuredCwd = cwd?.trim();
+    // A folderless session has no project scope: user-level config only, the
+    // same rule the MCP settings flows follow.
+    const workspace = cwd?.trim();
     const configured = this.loadConfiguredMcpServers(
-      configuredCwd === undefined || configuredCwd.length === 0 ? homedir() : configuredCwd,
+      workspace !== undefined && workspace.length > 0 ? workspace : undefined,
     );
     const configs: StartedLocalMcpResources['configs'] = [...configured];
     try {
