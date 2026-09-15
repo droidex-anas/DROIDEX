@@ -1,4 +1,4 @@
-import type { CapturePreset, CaptureStyle } from './types';
+import type { CapturePreset } from './types';
 export interface BackgroundPreset {
   id: CapturePreset;
   name: string;
@@ -53,13 +53,6 @@ export const BACKGROUNDS: readonly BackgroundPreset[] = [
     texture: 'grain',
   },
 ];
-export const DEFAULT_CAPTURE_STYLE: CaptureStyle = {
-  preset: 'ember',
-  padding: 64,
-  radius: 18,
-  shadow: 32,
-  texture: 0.12,
-};
 export function backgroundFor(id: CapturePreset): BackgroundPreset {
   return BACKGROUNDS.find((item) => item.id === id) ?? BACKGROUNDS[0];
 }

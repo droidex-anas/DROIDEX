@@ -1,7 +1,16 @@
 const fs = require('node:fs/promises');
 const path = require('node:path');
 const { randomUUID } = require('node:crypto');
-const validate = require('./validation.cjs');
+const {
+  DEFAULT_PREFERENCES,
+  MAX_IMAGE_BYTES,
+  MAX_PIXELS,
+  id: validateId,
+  png: validatePng,
+  preferences: validatePreferences,
+  recipe: validateRecipe,
+  title: sanitizeTitle,
+} = require('./validation.cjs');
 
 const MAX_RECORDS = 30;
 const MAX_STORE_BYTES = 512 * 1024 * 1024;
@@ -22,11 +31,11 @@ function createCaptureStore(root) {
     await fs.chmod(root, 0o700);
   }
   function file(id, suffix) {
-    return path.join(root, `${validate.id(id)}.${suffix}`);
+    return path.join(root, `${validateId(id)}.${suffix}`);
   }
   async function readFile(target) {
     const stat = await fs.lstat(target);
-    if (!stat.isFile() || stat.isSymbolicLink() || stat.size > validate.MAX_IMAGE_BYTES)
+    if (!stat.isFile() || stat.isSymbolicLink() || stat.size > MAX_IMAGE_BYTES)
       throw new Error('Unsafe capture file');
     return fs.readFile(target);
   }
@@ -50,7 +59,7 @@ function createCaptureStore(root) {
       !Number.isSafeInteger(raw.height) ||
       raw.width < 1 ||
       raw.height < 1 ||
-      raw.width * raw.height > validate.MAX_PIXELS
+      raw.width * raw.height > MAX_PIXELS
     )
       throw new Error('Invalid capture record');
     return {
@@ -59,8 +68,8 @@ function createCaptureStore(root) {
       revision: raw.revision,
       width: raw.width,
       height: raw.height,
-      title: validate.title(raw.title),
-      recipe: validate.recipe(raw.recipe, raw.width, raw.height),
+      title: sanitizeTitle(raw.title),
+      recipe: validateRecipe(raw.recipe, raw.width, raw.height),
       hasExport: raw.hasExport === true,
     };
   }
@@ -116,7 +125,7 @@ function createCaptureStore(root) {
   }
   async function getPreferences() {
     try {
-      return validate.preferences(
+      return validatePreferences(
         JSON.parse((await readFile(path.join(root, 'preferences.json'))).toString('utf8')),
       );
     } catch (error) {
@@ -125,7 +134,7 @@ function createCaptureStore(root) {
           'Capture preferences could not be read. Restore the preferences file before saving.',
           { cause: error },
         );
-      return structuredClone(validate.DEFAULT_PREFERENCES);
+      return structuredClone(DEFAULT_PREFERENCES);
     }
   }
   return {
@@ -137,20 +146,20 @@ function createCaptureStore(root) {
     setPreferences: (value) =>
       serial(async () => {
         await directory();
-        const next = validate.preferences(value);
+        const next = validatePreferences(value);
         await atomic(path.join(root, 'preferences.json'), JSON.stringify(next));
         return next;
       }),
     create: (buffer, title) =>
       serial(async () => {
         await directory();
-        const size = validate.png(buffer);
+        const size = validatePng(buffer);
         const prefs = await getPreferences();
         await prune(null, buffer.length + 4096);
         const id = randomUUID();
         const item = {
           id,
-          title: validate.title(title),
+          title: sanitizeTitle(title),
           ...size,
           createdAt: Date.now(),
           revision: 0,
@@ -176,15 +185,15 @@ function createCaptureStore(root) {
     read: (id) =>
       serial(async () => {
         await directory();
-        const item = await record(validate.id(id));
+        const item = await record(validateId(id));
         const buffer = await readFile(file(id, 'source.png'));
-        validate.png(buffer);
+        validatePng(buffer);
         return { ...item, source: `data:image/png;base64,${buffer.toString('base64')}` };
       }),
     thumbnail: (id) =>
       serial(async () => {
         await directory();
-        await record(validate.id(id));
+        await record(validateId(id));
         try {
           return `data:image/png;base64,${(await readFile(file(id, 'thumb.png'))).toString('base64')}`;
         } catch (error) {
@@ -195,12 +204,12 @@ function createCaptureStore(root) {
     save: (id, expectedRevision, recipe, output, thumbnail) =>
       serial(async () => {
         await directory();
-        const item = await record(validate.id(id));
+        const item = await record(validateId(id));
         if (item.revision !== expectedRevision)
           throw new Error('This capture changed in another editor. Reopen it before saving.');
-        const nextRecipe = validate.recipe(recipe, item.width, item.height);
-        const size = validate.png(output);
-        validate.png(thumbnail);
+        const nextRecipe = validateRecipe(recipe, item.width, item.height);
+        const size = validatePng(output);
+        validatePng(thumbnail);
         const padding = Math.round(nextRecipe.style.padding);
         if (
           size.width !== nextRecipe.crop.width + padding * 2 ||
@@ -220,19 +229,19 @@ function createCaptureStore(root) {
     output: (id) =>
       serial(async () => {
         await directory();
-        const item = await record(validate.id(id));
+        const item = await record(validateId(id));
         if (!item.hasExport)
           throw new Error('Open and save this capture before copying or attaching it');
         const buffer = await readFile(file(id, 'output.png'));
-        const size = validate.png(buffer);
+        const size = validatePng(buffer);
         const preview = `data:image/png;base64,${(await readFile(file(id, 'thumb.png'))).toString('base64')}`;
         return { item, buffer, preview, ...size };
       }),
     delete: (id) =>
       serial(async () => {
         await directory();
-        await remove(validate.id(id));
+        await remove(validateId(id));
       }),
   };
 }
-module.exports = { createCaptureStore, MAX_RECORDS, MAX_STORE_BYTES };
+module.exports = { createCaptureStore, MAX_RECORDS };

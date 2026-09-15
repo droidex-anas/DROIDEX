@@ -1,3 +1,4 @@
+import './capture.css';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Copy, Download, Plus, Scan, Trash2 } from 'lucide-react';
 import { Dropdown, GroupLabel, SectionTitle, SettingRow } from '../../components/settingsKit';

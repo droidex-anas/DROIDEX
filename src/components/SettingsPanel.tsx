@@ -7,7 +7,7 @@ import {
 import type { DiffStyle } from '../hooks/persistedThemePreferences';
 import type { DiffViewMode, LiveEnterBehavior } from '../hooks/persistedUiPreferences';
 import { ChevronLeft, ChevronDown, Search, Check, X, Plus } from 'lucide-react';
-import { useEffect, useRef, useState } from 'react';
+import { lazy, Suspense, useEffect, useRef, useState } from 'react';
 import AutonomySelector from './AutonomySelector';
 import { ModelIcon, providerOf } from './ModelIcon';
 import type { ModelInfo } from '../types/bridge';
@@ -33,7 +33,11 @@ import {
   type SettingsSearchHit,
 } from '../lib/settingsSearch';
 import { ToolActivitySettings } from './ToolActivitySettings';
-import { CaptureSettings } from '../features/capture/CaptureSettings';
+const CaptureSettings = lazy(() =>
+  import('../features/capture/CaptureSettings').then((module) => ({
+    default: module.CaptureSettings,
+  })),
+);
 
 interface NavItem {
   label: string;
@@ -853,7 +857,17 @@ export default function SettingsPanel() {
       content = <AppearanceSection />;
       break;
     case 'Screenshots':
-      content = <CaptureSettings onClose={close} />;
+      content = (
+        <Suspense
+          fallback={
+            <p className="text-sm text-droid-text-muted" role="status">
+              Loading screenshot settings…
+            </p>
+          }
+        >
+          <CaptureSettings onClose={close} />
+        </Suspense>
+      );
       break;
     case 'General':
       content = <GeneralSection />;

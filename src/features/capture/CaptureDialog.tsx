@@ -1,3 +1,4 @@
+import './capture.css';
 import { useEffect, useRef, useState } from 'react';
 import { createCaptureGeneration } from './composerDestination';
 import { AppWindow, Scan, Monitor, Upload, MousePointer2 } from 'lucide-react';

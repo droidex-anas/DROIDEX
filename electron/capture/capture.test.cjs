@@ -5,7 +5,15 @@ const os = require('node:os');
 const path = require('node:path');
 const { randomUUID } = require('node:crypto');
 const { createCaptureStore, MAX_RECORDS } = require('./store.cjs');
-const v = require('./validation.cjs');
+const {
+  DEFAULT_PREFERENCES,
+  decodePng,
+  id: validateId,
+  png: validatePng,
+  preferences: validatePreferences,
+  rect: validateRect,
+  style: validateStyle,
+} = require('./validation.cjs');
 const { captureArguments, runCapture, captureComponent } = require('./native.cjs');
 const { assertCaptureSender } = require('./service.cjs');
 
@@ -20,16 +28,16 @@ async function fixture(t) {
   return { dir, store: createCaptureStore(path.join(dir, 'captures')) };
 }
 test('PNG intake rejects unsupported MIME, malformed geometry and decompression-sized images', () => {
-  assert.deepEqual(v.png(PNG), { width: 1, height: 1 });
-  assert.throws(() => v.decodePng('data:image/jpeg;base64,AA=='));
-  assert.throws(() => v.rect({ x: -1, y: 0, width: 1, height: 1 }, 5, 5));
-  assert.throws(() => v.rect({ x: 4, y: 0, width: 2, height: 1 }, 5, 5));
-  assert.throws(() => v.rect({ x: NaN, y: 0, width: 1, height: 1 }, 5, 5));
+  assert.deepEqual(validatePng(PNG), { width: 1, height: 1 });
+  assert.throws(() => decodePng('data:image/jpeg;base64,AA=='));
+  assert.throws(() => validateRect({ x: -1, y: 0, width: 1, height: 1 }, 5, 5));
+  assert.throws(() => validateRect({ x: 4, y: 0, width: 2, height: 1 }, 5, 5));
+  assert.throws(() => validateRect({ x: NaN, y: 0, width: 1, height: 1 }, 5, 5));
   const bomb = Buffer.from(PNG);
   bomb.writeUInt32BE(100000, 16);
-  assert.throws(() => v.png(bomb), /limit/);
-  assert.throws(() => v.id('../outside'));
-  assert.throws(() => v.style({ ...bare, padding: Infinity }));
+  assert.throws(() => validatePng(bomb), /limit/);
+  assert.throws(() => validateId('../outside'));
+  assert.throws(() => validateStyle({ ...bare, padding: Infinity }));
 });
 test('original bytes survive multiple edits and later default changes', async (t) => {
   const { store } = await fixture(t);
@@ -158,6 +166,6 @@ test('component capture converts CSS bounds through zoom and exports the highest
   );
 });
 test('preference schema rejects unrecognized shortcuts and IDs never become paths', () => {
-  assert.throws(() => v.preferences({ ...v.DEFAULT_PREFERENCES, shortcut: 'Command+Q;rm' }));
-  assert.equal(v.id(randomUUID()).length, 36);
+  assert.throws(() => validatePreferences({ ...DEFAULT_PREFERENCES, shortcut: 'Command+Q;rm' }));
+  assert.equal(validateId(randomUUID()).length, 36);
 });

@@ -308,59 +308,6 @@
   background: var(--droid-accent);
   animation: capture-pulse 1.4s ease-in-out infinite;
 }
-.capture-attachment {
-  position: relative;
-  width: 248px;
-  max-width: 100%;
-  overflow: hidden;
-  border: 1px solid var(--droid-border);
-  border-radius: 13px;
-  background: var(--droid-surface);
-}
-.capture-attachment-open {
-  display: block;
-  width: 100%;
-  text-align: left;
-  padding: 7px;
-}
-.capture-attachment-open > img {
-  width: 100%;
-  height: 136px;
-  object-fit: contain;
-  background: var(--droid-bg);
-  border-radius: 8px;
-}
-.capture-attachment-title {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  font-size: 12px;
-  color: var(--droid-text);
-  padding: 10px 4px 3px;
-}
-.capture-attachment-title > span {
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.capture-attachment-meta {
-  display: block;
-  font-size: 10px;
-  color: var(--droid-text-muted);
-  padding: 0 4px 5px;
-}
-.capture-attachment-remove {
-  position: absolute;
-  right: 10px;
-  top: 10px;
-  display: grid;
-  place-items: center;
-  padding: 4px;
-  border-radius: 50%;
-  background: var(--droid-surface);
-  color: var(--droid-text-secondary);
-  border: 1px solid var(--droid-border);
-}
 @keyframes capture-arrive {
   from {
     opacity: 0;

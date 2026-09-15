@@ -152,7 +152,7 @@ export async function exportCapture(
     canvas.height = 0;
   }
 }
-export function blobDataUrl(blob: Blob): Promise<string> {
+function blobDataUrl(blob: Blob): Promise<string> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onload = () => {

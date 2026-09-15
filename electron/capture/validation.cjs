@@ -126,9 +126,6 @@ function title(value) {
 }
 
 module.exports = {
-  PRESETS,
-  SHORTCUTS,
-  DEFAULT_STYLE,
   DEFAULT_PREFERENCES,
   MAX_IMAGE_BYTES,
   MAX_PIXELS,

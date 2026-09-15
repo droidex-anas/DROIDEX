@@ -2,7 +2,7 @@ const path = require('node:path');
 const fs = require('node:fs/promises');
 const { createCaptureStore } = require('./store.cjs');
 const { captureNative, captureComponent } = require('./native.cjs');
-const validate = require('./validation.cjs');
+const { decodePng, id: validateId } = require('./validation.cjs');
 
 function assertCaptureSender(event, window) {
   if (
@@ -47,7 +47,7 @@ function installCaptureService({ electron, app, getMainWindow, saveImage }) {
     const mode = request?.mode;
     if (!['area', 'window', 'screen', 'component'].includes(mode))
       throw new Error('Unknown capture mode');
-    const requestId = validate.id(request.requestId);
+    const requestId = validateId(request.requestId);
     const window = getMainWindow();
     const controller = new AbortController();
     const job = { requestId, controller, sender: event.sender };
@@ -128,7 +128,7 @@ function installCaptureService({ electron, app, getMainWindow, saveImage }) {
           active.controller.abort();
         return;
       case 'import': {
-        const { buffer } = validate.decodePng(request.source);
+        const { buffer } = decodePng(request.source);
         if (nativeImage.createFromBuffer(buffer).isEmpty())
           throw new Error('The imported image could not be decoded');
         const item = await store.create(buffer, request.title);
@@ -143,7 +143,7 @@ function installCaptureService({ electron, app, getMainWindow, saveImage }) {
       case 'delete':
         return store.delete(request.id);
       case 'save': {
-        const { buffer } = validate.decodePng(request.output);
+        const { buffer } = decodePng(request.output);
         const image = nativeImage.createFromBuffer(buffer);
         if (image.isEmpty()) throw new Error('The capture export could not be decoded');
         const thumbnail = image

@@ -252,4 +252,5 @@ contextBridge.exposeInMainWorld('droidControl', {
   onNativeBrowserAgentResult: (handler) => on('native-browser-agent-result', handler),
 });
 
-require('./capture/preload.cjs').installCapturePreload({ contextBridge, ipcRenderer });
+const { installCapturePreload } = require('./capture/preload.cjs');
+installCapturePreload({ contextBridge, ipcRenderer });
