@@ -41,13 +41,34 @@ jobs:
         run: npx eslint src/features/capture electron/capture src/hooks/useImageAttachments.ts src/components/composer/AddMenu.tsx
       - name: Production build
         if: ${{ !cancelled() && steps.install.outcome == 'success' }}
-        run: npm run build
+        run: |
+          if npm run build > capture-build.log 2>&1; then
+            tail -n 12 capture-build.log
+          else
+            tail -n 100 capture-build.log
+            exit 1
+          fi
       - name: Full renderer and Electron test suite
         if: ${{ !cancelled() && steps.install.outcome == 'success' }}
-        run: npm run test
+        run: |
+          if npm run test > capture-tests.log 2>&1; then
+            grep -E 'tests |pass |fail |duration_ms ' capture-tests.log | tail -n 20
+          else
+            tail -n 100 capture-tests.log
+            exit 1
+          fi
       - name: Formatting and file-size budgets
         if: ${{ !cancelled() && steps.install.outcome == 'success' }}
         run: npx prettier --check src/features/capture electron/capture docs/capture.md && npm run quality:file-size
+      - name: Retain diagnostic logs
+        if: ${{ failure() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: capture-diagnostic-logs
+          path: |
+            capture-build.log
+            capture-tests.log
+          retention-days: 3
   browser:
     runs-on: ubuntu-latest
     timeout-minutes: 10
