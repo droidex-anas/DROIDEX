@@ -7,6 +7,7 @@ struct NewSessionView: View {
     @FocusState private var focused: Bool
     @State private var prompt = ""
     @State private var configuration = SessionConfiguration()
+    @State private var showsReasoning = false
     let onCreate: (UUID) -> Void
 
     private var trimmedPrompt: String { prompt.trimmingCharacters(in: .whitespacesAndNewlines) }
@@ -30,19 +31,49 @@ struct NewSessionView: View {
                             .foregroundStyle(DroidTheme.danger)
                     }
                 }
-                Section("Preview configuration") {
+
+                Section("Configuration") {
                     Picker("Harness", selection: $configuration.harness) {
                         ForEach(Harness.allCases, id: \.self) { Text($0.rawValue).tag($0) }
                     }
+                    .onChange(of: configuration.harness) { _, harness in
+                        let options = ModelChoice.options(for: harness)
+                        if !options.contains(configuration.model) { configuration.model = options[0] }
+                    }
+
+                    Picker("Model", selection: $configuration.model) {
+                        ForEach(ModelChoice.options(for: configuration.harness), id: \.self) {
+                            Text($0.rawValue).tag($0)
+                        }
+                    }
+
+                    Button { showsReasoning = true } label: {
+                        HStack {
+                            Text("Reasoning")
+                            Spacer()
+                            Text(configuration.reasoning.title)
+                                .foregroundStyle(DroidTheme.secondary)
+                            Image(systemName: "chevron.right")
+                                .font(.caption2.weight(.semibold))
+                                .foregroundStyle(DroidTheme.secondary)
+                        }
+                    }
+                    .buttonStyle(.plain)
+                    .popover(isPresented: $showsReasoning, arrowEdge: .bottom) {
+                        ReasoningPicker(configuration: $configuration)
+                            .presentationCompactAdaptation(.popover)
+                    }
+
                     Picker("Mode", selection: $configuration.interactionMode) {
                         ForEach(InteractionMode.allCases, id: \.self) { Text($0.title).tag($0) }
                     }
                 }
+
                 Section {
-                    Label("Runs entirely on this device", systemImage: "iphone")
+                    Text("Runs entirely on this device")
                         .font(.subheadline)
                 } footer: {
-                    Text("This MVP uses scripted responses and sample diffs so you can try the interface without an account. Harness choices are previews, not live connections. Build demonstrates approvals; Plan stops at a reviewable proposal.")
+                    Text("This MVP uses scripted responses and sample diffs so you can try the interface without an account. Harness and model choices are previews, not live connections. Build demonstrates approvals; Plan stops at a reviewable proposal.")
                 }
             }
             .scrollContentBackground(.hidden)
