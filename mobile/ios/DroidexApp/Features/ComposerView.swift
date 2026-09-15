@@ -28,7 +28,7 @@ struct ComposerView: View {
                     .accessibilityLabel("Message")
                     .accessibilityIdentifier("composer.input")
 
-                HStack(spacing: 4) {
+                HStack(spacing: 2) {
                     Menu {
                         ForEach(Harness.allCases, id: \.self) { harness in
                             Button {
@@ -36,33 +36,23 @@ struct ComposerView: View {
                                 let options = ModelChoice.options(for: harness)
                                 if !options.contains(configuration.model) { configuration.model = options[0] }
                             } label: {
-                                if configuration.harness == harness {
-                                    Label(harness.rawValue, systemImage: "checkmark")
-                                } else {
-                                    Text(harness.rawValue)
-                                }
+                                if configuration.harness == harness { Label(harness.rawValue, systemImage: "checkmark") }
+                                else { Text(harness.rawValue) }
                             }
                         }
-                    } label: {
-                        ConfigLabel(configuration.harness.rawValue, icon: "terminal")
-                    }
+                    } label: { TextConfigLabel(configuration.harness.rawValue) }
 
                     Menu {
                         ForEach(ModelChoice.options(for: configuration.harness), id: \.self) { model in
                             Button { configuration.model = model } label: {
-                                if configuration.model == model {
-                                    Label(model.rawValue, systemImage: "checkmark")
-                                } else {
-                                    Text(model.rawValue)
-                                }
+                                if configuration.model == model { Label(model.rawValue, systemImage: "checkmark") }
+                                else { Text(model.rawValue) }
                             }
                         }
-                    } label: {
-                        ConfigLabel(configuration.model.rawValue, icon: "cpu")
-                    }
+                    } label: { TextConfigLabel(configuration.model.rawValue) }
 
                     Button { showsReasoning = true } label: {
-                        ConfigLabel(configuration.reasoning.title, icon: "sparkles")
+                        TextConfigLabel(configuration.reasoning.title)
                     }
                     .buttonStyle(.plain)
                     .popover(isPresented: $showsReasoning, arrowEdge: .bottom) {
@@ -70,7 +60,7 @@ struct ComposerView: View {
                             .presentationCompactAdaptation(.popover)
                     }
 
-                    Spacer(minLength: 4)
+                    Spacer(minLength: 2)
 
                     Button {
                         if phase.isRunning { stop() } else { send() }
@@ -94,14 +84,10 @@ struct ComposerView: View {
                     .pickerStyle(.segmented)
                     .frame(maxWidth: 180)
                     Spacer()
-                    Text("Preview")
-                        .font(.caption2.weight(.medium))
-                        .foregroundStyle(DroidTheme.secondary)
+                    Text("Preview").font(.caption2.weight(.medium)).foregroundStyle(DroidTheme.secondary)
                 }
             }
-            .padding(.horizontal, 14)
-            .padding(.top, 12)
-            .padding(.bottom, 10)
+            .padding(.horizontal, 14).padding(.top, 12).padding(.bottom, 10)
             .modifier(GlassChrome())
 
             if text.count > SessionStore.promptLimit {
@@ -116,78 +102,71 @@ struct ComposerView: View {
     }
 }
 
-private struct ConfigLabel: View {
+struct TextConfigLabel: View {
     let title: String
-    let icon: String
-
-    init(_ title: String, icon: String) {
-        self.title = title
-        self.icon = icon
-    }
+    init(_ title: String) { self.title = title }
 
     var body: some View {
-        HStack(spacing: 5) {
-            Image(systemName: icon).font(.caption2)
+        HStack(spacing: 4) {
             Text(title).lineLimit(1)
             Image(systemName: "chevron.down").font(.system(size: 8, weight: .semibold))
         }
         .font(.caption.weight(.medium))
         .foregroundStyle(DroidTheme.text)
-        .padding(.horizontal, 8)
+        .padding(.horizontal, 7)
         .frame(height: 36)
         .contentShape(Rectangle())
     }
 }
 
-private struct ReasoningPicker: View {
+struct ReasoningPicker: View {
     @Binding var configuration: SessionConfiguration
 
-    private var effort: Binding<Double> {
-        Binding(
-            get: { Double(configuration.reasoning.rawValue) },
-            set: { configuration.reasoning = ReasoningEffort(rawValue: Int($0.rounded())) ?? .high }
-        )
-    }
+    private let levels = ReasoningEffort.allCases
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 18) {
-            VStack(alignment: .leading, spacing: 4) {
-                Text("Reasoning")
-                    .font(.headline)
-                Text(configuration.reasoning.title)
-                    .font(.subheadline)
-                    .foregroundStyle(DroidTheme.secondary)
-            }
+        VStack(alignment: .leading, spacing: 16) {
+            Text("Reasoning effort")
+                .font(.headline)
 
-            Slider(value: effort, in: 0...3, step: 1)
-                .tint(DroidTheme.text)
-                .accessibilityLabel("Reasoning effort")
-                .accessibilityValue(configuration.reasoning.title)
+            HStack(spacing: 0) {
+                ForEach(Array(levels.enumerated()), id: \.element) { index, level in
+                    Button {
+                        configuration.reasoning = level
+                    } label: {
+                        VStack(spacing: 9) {
+                            ZStack {
+                                if index < levels.count - 1 {
+                                    Rectangle()
+                                        .fill(index < configuration.reasoning.rawValue ? DroidTheme.text : DroidTheme.border)
+                                        .frame(height: 2)
+                                        .offset(x: 28)
+                                }
+                                Circle()
+                                    .fill(level.rawValue <= configuration.reasoning.rawValue ? DroidTheme.text : DroidTheme.surface)
+                                    .overlay(Circle().stroke(DroidTheme.text.opacity(level == configuration.reasoning ? 1 : 0.35), lineWidth: level == configuration.reasoning ? 2 : 1))
+                                    .frame(width: level == configuration.reasoning ? 16 : 10, height: level == configuration.reasoning ? 16 : 10)
+                            }
+                            .frame(height: 18)
 
-            HStack {
-                Text("Faster")
-                Spacer()
-                Text("Smarter")
-            }
-            .font(.caption)
-            .foregroundStyle(DroidTheme.secondary)
-
-            Divider().overlay(DroidTheme.border)
-
-            HStack(spacing: 10) {
-                Image(systemName: "cpu")
-                    .foregroundStyle(DroidTheme.secondary)
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(configuration.model.rawValue)
-                        .font(.subheadline.weight(.medium))
-                    Text("Reasoning is saved with this session")
-                        .font(.caption)
-                        .foregroundStyle(DroidTheme.secondary)
+                            Text(level.title)
+                                .font(.caption2.weight(level == configuration.reasoning ? .semibold : .regular))
+                                .foregroundStyle(level == configuration.reasoning ? DroidTheme.text : DroidTheme.secondary)
+                        }
+                        .frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel(level.title)
+                    .accessibilityAddTraits(level == configuration.reasoning ? .isSelected : [])
                 }
             }
+
+            Text("Choose how much reasoning the model uses before responding.")
+                .font(.caption)
+                .foregroundStyle(DroidTheme.secondary)
         }
         .padding(20)
-        .frame(width: 300)
+        .frame(width: 320)
         .presentationBackground(.regularMaterial)
     }
 }
