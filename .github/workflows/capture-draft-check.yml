@@ -1,50 +1,62 @@
-name: Capture draft integration
+name: Capture draft checks
 on:
   push:
     branches: [feat/capture-studio-draft]
+  pull_request:
     paths:
+      - 'src/features/capture/**'
+      - 'electron/capture/**'
+      - 'src/components/PromptInput.tsx'
+      - 'src/components/SettingsPanel.tsx'
+      - 'src/hooks/useImageAttachments.ts'
+      - 'tools/capture-*'
       - '.github/workflows/capture-draft-check.yml'
-      - 'tools/apply-capture-draft.cjs'
 permissions:
-  contents: write
+  contents: read
 concurrency:
-  group: capture-draft-integration
-  cancel-in-progress: false
+  group: capture-checks-${{ github.ref }}
+  cancel-in-progress: true
 jobs:
-  integrate:
-    if: github.ref == 'refs/heads/feat/capture-studio-draft'
+  capture:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: feat/capture-studio-draft
+          persist-credentials: false
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
-      - run: npm ci --ignore-scripts
+      - id: install
+        run: npm ci --ignore-scripts && npm ci --prefix sidecar --ignore-scripts
         env:
           HUSKY: '0'
-      - name: Apply bounded integration edits
-        run: |
-          test -f tools/apply-capture-draft.cjs
-          node <<'NODE'
-          const fs = require('node:fs');
-          const file = 'tools/apply-capture-draft.cjs';
-          const script = fs.readFileSync(file, 'utf8')
-            .replaceAll("import ImageChip from './composer/ImageChip';", "import { ImageChip } from './composer/ImageChip';")
-            .replaceAll('              <AddMenu', '            <AddMenu');
-          fs.writeFileSync(file, script);
-          NODE
-          node tools/apply-capture-draft.cjs
-      - name: Commit application changes to the feature branch only
-        env:
-          HUSKY: '0'
-        run: |
-          git diff --check
-          git add src electron package.json docs/capture.md tools/apply-capture-draft.cjs
-          git config user.name 'github-actions[bot]'
-          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git -c core.hooksPath=/dev/null commit -m 'feat(capture): integrate composer, Settings and native capture flow'
-          git push origin HEAD:refs/heads/feat/capture-studio-draft
-      - run: npm run typecheck
-      - run: npm run test:capture
+      - name: Typecheck renderer and sidecar
+        run: npm run typecheck && npm run sidecar:typecheck
+      - name: Check Electron syntax and capture regression tests
+        if: ${{ !cancelled() && steps.install.outcome == 'success' }}
+        run: npm run electron:check && npm run test:capture
+      - name: Lint capture and integration seams
+        if: ${{ !cancelled() && steps.install.outcome == 'success' }}
+        run: npx eslint src/features/capture electron/capture src/hooks/useImageAttachments.ts src/components/composer/AddMenu.tsx
+      - name: Production build
+        if: ${{ !cancelled() && steps.install.outcome == 'success' }}
+        run: npm run build
+      - name: Full renderer and Electron test suite
+        if: ${{ !cancelled() && steps.install.outcome == 'success' }}
+        run: npm run test
+      - name: Formatting and file-size budgets
+        if: ${{ !cancelled() && steps.install.outcome == 'success' }}
+        run: npx prettier --check src/features/capture electron/capture docs/capture.md && npm run quality:file-size
+  mac-unit:
+    runs-on: macos-14
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Native executable and host unit tests
+        run: test -x /usr/sbin/screencapture && node --test electron/capture/*.test.cjs
