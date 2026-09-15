@@ -2,6 +2,7 @@ const path = require('node:path');
 const fs = require('node:fs/promises');
 const { createCaptureStore } = require('./store.cjs');
 const { captureNative, captureComponent } = require('./native.cjs');
+const { captureDesktop } = require('./desktopPicker.cjs');
 const { decodePng, id: validateId } = require('./validation.cjs');
 
 function assertCaptureSender(event, window) {
@@ -29,9 +30,10 @@ function installCaptureService({ electron, app, getMainWindow, saveImage }) {
     shortcutRegistered = globalShortcut.register(shortcut, () => {
       const window = getMainWindow();
       if (!window || window.isDestroyed()) return;
-      if (window.isMinimized()) window.restore();
-      window.show();
-      window.focus();
+      if (active) {
+        active.controller.abort();
+        return;
+      }
       window.webContents.send('capture:shortcut');
     });
   }
@@ -45,19 +47,36 @@ function installCaptureService({ electron, app, getMainWindow, saveImage }) {
   async function take(event, request) {
     if (active) throw new Error('A capture is already open');
     const mode = request?.mode;
-    if (!['area', 'window', 'screen', 'component'].includes(mode))
+    if (!['area', 'window', 'screen', 'component', 'desktop'].includes(mode))
       throw new Error('Unknown capture mode');
     const requestId = validateId(request.requestId);
     const window = getMainWindow();
     const controller = new AbortController();
-    const job = { requestId, controller, sender: event.sender };
+    const job = { requestId, controller, sender: event.sender, mode };
+    let completed = false;
     active = job;
     const cancel = () => controller.abort();
     event.sender.once('destroyed', cancel);
     event.sender.once('did-start-loading', cancel);
     try {
       let buffer;
-      if (mode === 'component') {
+      let title = request.title;
+      if (mode === 'desktop') {
+        if (process.platform !== 'darwin')
+          throw new Error('The desktop capture toolbar currently requires macOS.');
+        const preferences = await store.preferences();
+        if (controller.signal.aborted || disposed) return null;
+        const result = await captureDesktop({
+          electron,
+          app,
+          signal: controller.signal,
+          theme: request.theme,
+          smartSelection: preferences.smartSelection,
+        });
+        if (!result || controller.signal.aborted || disposed) return null;
+        buffer = result.buffer;
+        title = result.title;
+      } else if (mode === 'component') {
         buffer = await captureComponent(event.sender, request.rect);
       } else {
         if (process.platform !== 'darwin')
@@ -81,20 +100,25 @@ function installCaptureService({ electron, app, getMainWindow, saveImage }) {
       if (!buffer || controller.signal.aborted || disposed) return null;
       const item = await store.create(
         buffer,
-        request.title ||
+        title ||
           `${mode === 'screen' ? 'Display' : mode === 'component' ? 'Component' : mode === 'window' ? 'Window' : 'Area'} capture`,
       );
-      return await store.read(item.id);
+      const document = await store.read(item.id);
+      if (controller.signal.aborted || disposed) return null;
+      completed = true;
+      return document;
     } finally {
       event.sender.removeListener('destroyed', cancel);
       event.sender.removeListener('did-start-loading', cancel);
       if (active === job) active = null;
       if (
         !disposed &&
+        (mode !== 'desktop' || completed) &&
         window === getMainWindow() &&
         !window.isDestroyed() &&
         !event.sender.isDestroyed()
       ) {
+        if (window.isMinimized()) window.restore();
         window.show();
         window.focus();
       }

@@ -1,5 +1,5 @@
 interface Destination {
-  open(): void;
+  open(origin?: 'composer' | 'desktop'): void;
   attach(id: string): Promise<void>;
 }
 let destination: Destination | null = null;
@@ -10,9 +10,9 @@ export function bindCaptureDestination(next: Destination): () => void {
     if (destination === next) destination = null;
   };
 }
-export function openComposerCapture(): void {
+export function openComposerCapture(origin: 'composer' | 'desktop' = 'composer'): void {
   if (!destination) throw new Error('Open a chat before capturing an attachment');
-  destination.open();
+  destination.open(origin);
 }
 export async function attachRecentCapture(id: string): Promise<void> {
   if (!destination) throw new Error('Open a chat before attaching a recent capture');

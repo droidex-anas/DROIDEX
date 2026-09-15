@@ -54,7 +54,7 @@ export interface CaptureAttachment {
   preview: string;
   capture: CaptureMetadata;
 }
-export type CaptureMode = 'area' | 'window' | 'screen' | 'component';
+export type CaptureMode = 'area' | 'window' | 'screen' | 'component' | 'desktop';
 export interface CaptureApi {
   preferences(): Promise<CaptureStatus>;
   setPreferences(value: CapturePreferences): Promise<CaptureStatus>;
@@ -63,6 +63,7 @@ export interface CaptureApi {
     mode: CaptureMode;
     rect?: CaptureRect;
     title?: string;
+    theme?: Record<string, string>;
   }): Promise<CaptureDocument | null>;
   cancel(requestId: string): Promise<void>;
   import(source: string, title: string): Promise<CaptureDocument>;

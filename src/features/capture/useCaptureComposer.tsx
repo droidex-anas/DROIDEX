@@ -6,7 +6,9 @@ import { bindCaptureDestination, createCaptureGeneration } from './composerDesti
 import { captureApi, type CaptureAttachment } from './types';
 
 const CaptureDialog = lazy(() => import('./CaptureDialog'));
+const DesktopCaptureFlow = lazy(() => import('./DesktopCaptureFlow'));
 interface Selection {
+  origin?: 'composer' | 'desktop';
   captureId?: string;
   replaceImageId?: string;
   generation: number;
@@ -38,14 +40,15 @@ export function useCaptureComposer(
       generation.invalidate();
     };
   }, [targetKey, generation, invalidate]);
-  function open() {
+  function open(origin: 'composer' | 'desktop' = 'composer') {
     if (!window.droidCapture) {
       toast.error('Capture needs the DROIDEX desktop app');
       return;
     }
     generation.invalidate();
-    if (store.getState().settingsOpen) dispatch({ type: 'TOGGLE_SETTINGS' });
-    setSelection({ generation: generation.stamp() });
+    if (origin === 'composer' && store.getState().settingsOpen)
+      dispatch({ type: 'TOGGLE_SETTINGS' });
+    setSelection({ origin, generation: generation.stamp() });
   }
   function edit(captureId: string, replaceImageId: string) {
     generation.invalidate();
@@ -73,8 +76,8 @@ export function useCaptureComposer(
   useEffect(
     () =>
       bindCaptureDestination({
-        open: () => {
-          latest.current.open();
+        open: (origin) => {
+          latest.current.open(origin);
         },
         attach: (id) => latest.current.attach(id),
       }),
@@ -84,24 +87,33 @@ export function useCaptureComposer(
     open,
     edit,
     invalidate,
-    surface: selection ? (
-      <Suspense
-        fallback={
-          <div
-            className="fixed bottom-6 right-6 z-[150] rounded-xl bg-droid-elevated px-4 py-3 text-sm text-droid-text"
-            role="status"
-          >
-            Opening Capture…
-          </div>
-        }
-      >
-        <CaptureDialog
-          key={selection.generation}
-          captureId={selection.captureId}
-          onClose={invalidate}
-          onAttach={(id) => attach(id, selection.generation, selection.replaceImageId)}
-        />
-      </Suspense>
-    ) : null,
+    surface:
+      selection?.origin === 'desktop' ? (
+        <Suspense fallback={null}>
+          <DesktopCaptureFlow
+            key={selection.generation}
+            onClose={invalidate}
+            onAttach={(id) => attach(id, selection.generation)}
+          />
+        </Suspense>
+      ) : selection ? (
+        <Suspense
+          fallback={
+            <div
+              className="fixed bottom-6 right-6 z-[150] rounded-xl bg-droid-elevated px-4 py-3 text-sm text-droid-text"
+              role="status"
+            >
+              Opening Capture…
+            </div>
+          }
+        >
+          <CaptureDialog
+            key={selection.generation}
+            captureId={selection.captureId}
+            onClose={invalidate}
+            onAttach={(id) => attach(id, selection.generation, selection.replaceImageId)}
+          />
+        </Suspense>
+      ) : null,
   };
 }

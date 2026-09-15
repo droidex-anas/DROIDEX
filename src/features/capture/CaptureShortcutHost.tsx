@@ -8,7 +8,7 @@ export function CaptureShortcutHost(): null {
     () =>
       window.droidCapture?.onShortcut(() => {
         try {
-          openComposerCapture();
+          openComposerCapture('desktop');
         } catch (error) {
           toast.info(
             error instanceof Error ? error.message : 'Open a chat to capture an attachment',

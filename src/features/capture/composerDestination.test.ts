@@ -37,3 +37,20 @@ test('an unmounted old composer cannot unbind its newer replacement', async () =
   assert.throws(openComposerCapture, /Open a chat/);
   await assert.rejects(attachRecentCapture('two'), /Open a chat/);
 });
+
+test('desktop and composer entry points stay distinct when routed to the active draft', () => {
+  const seen: unknown[] = [];
+  const release = bindCaptureDestination({
+    open: (origin) => {
+      seen.push(origin);
+    },
+    attach: async () => {},
+  });
+  try {
+    openComposerCapture('desktop');
+    openComposerCapture();
+    assert.deepEqual(seen, ['desktop', 'composer']);
+  } finally {
+    release();
+  }
+});

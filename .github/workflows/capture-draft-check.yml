@@ -10,6 +10,8 @@ on:
       - 'src/components/SettingsPanel.tsx'
       - 'src/hooks/useImageAttachments.ts'
       - 'tools/capture-*'
+      - 'capture.html'
+      - 'vite.config.ts'
       - '.github/workflows/capture-draft-check.yml'
 permissions:
   contents: read
@@ -90,7 +92,9 @@ jobs:
           HUSKY: '0'
       - run: npx playwright install --with-deps chromium
       - name: Capture UI and PNG fidelity
-        run: node tools/capture-ui-smoke.mjs
+        run: |
+          node tools/capture-ui-smoke.mjs
+          node tools/capture-desktop-smoke.mjs
   mac-unit:
     runs-on: macos-14
     timeout-minutes: 5
