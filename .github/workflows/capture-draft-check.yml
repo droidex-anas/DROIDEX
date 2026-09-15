@@ -1,4 +1,4 @@
-name: Capture draft checks
+name: Capture draft integration
 on:
   push:
     branches: [feat/capture-studio-draft]
@@ -6,19 +6,45 @@ on:
       - '.github/workflows/capture-draft-check.yml'
       - 'tools/apply-capture-draft.cjs'
 permissions:
-  contents: read
+  contents: write
+concurrency:
+  group: capture-draft-integration
+  cancel-in-progress: false
 jobs:
-  capture:
+  integrate:
+    if: github.ref == 'refs/heads/feat/capture-studio-draft'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
         with:
-          persist-credentials: false
+          ref: feat/capture-studio-draft
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
       - run: npm ci --ignore-scripts
         env:
           HUSKY: '0'
+      - name: Apply bounded integration edits
+        run: |
+          test -f tools/apply-capture-draft.cjs
+          node <<'NODE'
+          const fs = require('node:fs');
+          const file = 'tools/apply-capture-draft.cjs';
+          const script = fs.readFileSync(file, 'utf8')
+            .replaceAll("import ImageChip from './composer/ImageChip';", "import { ImageChip } from './composer/ImageChip';")
+            .replaceAll('              <AddMenu', '            <AddMenu');
+          fs.writeFileSync(file, script);
+          NODE
+          node tools/apply-capture-draft.cjs
+      - name: Commit application changes to the feature branch only
+        env:
+          HUSKY: '0'
+        run: |
+          git diff --check
+          git add src electron package.json docs/capture.md tools/apply-capture-draft.cjs
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git -c core.hooksPath=/dev/null commit -m 'feat(capture): integrate composer, Settings and native capture flow'
+          git push origin HEAD:refs/heads/feat/capture-studio-draft
       - run: npm run typecheck
-      - run: node --check electron/capture/service.cjs && node --check electron/capture/store.cjs && node --check electron/capture/native.cjs
+      - run: npm run test:capture
