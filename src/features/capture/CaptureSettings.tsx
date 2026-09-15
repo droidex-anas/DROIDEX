@@ -13,7 +13,7 @@ import { StyleControls } from './StyleControls';
 import { attachRecentCapture } from './composerDestination';
 import CaptureDialog from './CaptureDialog';
 
-function RecentThumbnail({ record, onOpen }: { record: CaptureRecord; onOpen(): void }) {
+function RecentThumbnail({ record, onOpen }: { record: CaptureRecord; onOpen: () => void }) {
   const [source, setSource] = useState<string | null>(null);
   useEffect(() => {
     let cancelled = false;
@@ -47,7 +47,7 @@ function RecentThumbnail({ record, onOpen }: { record: CaptureRecord; onOpen(): 
     </button>
   );
 }
-export function CaptureSettings({ onClose }: { onClose(): void }) {
+export function CaptureSettings({ onClose }: { onClose: () => void }) {
   const [status, setStatus] = useState<CaptureStatus | null>(null);
   const [draft, setDraft] = useState<CapturePreferences | null>(null);
   const [records, setRecords] = useState<CaptureRecord[]>([]);
