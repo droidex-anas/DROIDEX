@@ -185,13 +185,12 @@ export class CodexSession implements ProviderSession {
 
   setModel(settings: ProviderModelSettings): Promise<void> {
     // An omitted field keeps its value; only what the caller named changes.
-    this.model = {
-      ...this.model,
-      ...(settings.modelId !== undefined ? { modelId: settings.modelId } : {}),
-      ...(settings.reasoningEffort !== undefined
-        ? { reasoningEffort: settings.reasoningEffort }
-        : {}),
-    };
+    // A cleared effort leaves `turn/start` to the model's own.
+    const model = { ...this.model };
+    if (settings.modelId !== undefined) model.modelId = settings.modelId;
+    if (settings.reasoningEffort === null) delete model.reasoningEffort;
+    else if (settings.reasoningEffort) model.reasoningEffort = settings.reasoningEffort;
+    this.model = model;
     this.mapper.setModel({ ...this.model, modelId: this.model.modelId ?? this.threadModel });
     return Promise.resolve();
   }

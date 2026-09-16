@@ -332,9 +332,12 @@ export class ClaudeSession implements ProviderSession {
       this.mapper.setModel(this.modelId);
     }
     this.abort.signal.throwIfAborted();
-    const effort = claudeEffort(reasoningEffort);
     // Leaving ultra clears the flag instead of writing `false`, which is what
-    // turns ultracode off while keeping the level chosen alongside it.
+    // turns ultracode off while keeping the level chosen alongside it. A model
+    // without levels clears both, so the previous model's do not follow it.
+    if (reasoningEffort === null)
+      await this.query.applyFlagSettings({ effortLevel: null, ultracode: null });
+    const effort = claudeEffort(reasoningEffort ?? undefined);
     if (effort)
       await this.query.applyFlagSettings({
         effortLevel: effort.effortLevel,

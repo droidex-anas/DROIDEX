@@ -51,6 +51,20 @@ export function compatibleReasoningForModel(
   return undefined;
 }
 
+// The effort a model switch carries: a level the new model can run, null when
+// it offers no level and one is set (so the previous model's does not follow
+// it), undefined when the current one stands.
+export function reasoningForModelSwitch(
+  model: ModelInfo | undefined,
+  currentReasoning: ReasoningEffort | undefined,
+): ReasoningEffort | null | undefined {
+  const compatible = compatibleReasoningForModel(model, currentReasoning);
+  if (compatible !== undefined) return compatible;
+  const offersNone =
+    model && !model.supportedReasoningEfforts?.length && !model.defaultReasoningEffort;
+  return offersNone && currentReasoning !== undefined ? null : undefined;
+}
+
 // The top rung is the same idea on both harnesses but not the same word: Claude
 // Code calls it ultracode, Codex calls it Ultra. Every surface that names a
 // level goes through here, so the chip, the picker rows, and the context panel

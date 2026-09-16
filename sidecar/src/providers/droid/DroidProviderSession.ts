@@ -63,9 +63,11 @@ export class DroidProviderSession implements ProviderSession {
   async setModel({ modelId, reasoningEffort }: ProviderModelSettings): Promise<void> {
     // Spec-mode turns run on specModeModelId, so it stays in lockstep with the
     // chat's single visible model.
+    // Every Droid model publishes its levels, so a cleared effort never
+    // arrives here in practice; Droid keeps its own when it does.
     const next = {
       ...(modelId ? { modelId, specModeModelId: modelId } : {}),
-      ...(reasoningEffort !== undefined
+      ...(reasoningEffort
         ? {
             reasoningEffort: factoryReasoningEffort(reasoningEffort),
             specModeReasoningEffort: factoryReasoningEffort(reasoningEffort),
