@@ -10,6 +10,7 @@ import {
   type StartableLocalMcpResource,
 } from '../SessionManager.js';
 import { HistoryIndex } from '../history.js';
+import { NO_PROVIDER_PROBES } from '../providers/providerProbes.js';
 import type * as Protocol from '../protocol.js';
 import type { SessionFileChange } from '../sessionFileCache.js';
 import { FakeBrowserSessionManager } from './browserCharacterizationSupport.js';
@@ -168,7 +169,11 @@ export function createSessionManagerTestContext(
   let sessionFileRevision = 0;
   let manager: SessionManager;
   try {
-    manager = new SessionManager(recordEvent, { dependencies, initialModels: INITIAL_MODELS });
+    manager = new SessionManager(recordEvent, {
+      dependencies,
+      initialModels: INITIAL_MODELS,
+      providerProbes: NO_PROVIDER_PROBES,
+    });
   } catch (error) {
     sessionFileMirror.close();
     unpinTestHome();
@@ -293,7 +298,10 @@ export function createNativeBrowserTestContext(): NativeBrowserTestContext {
   }
   let manager: SessionManager;
   try {
-    manager = new SessionManager(recordEvent, { initialModels: INITIAL_MODELS });
+    manager = new SessionManager(recordEvent, {
+      initialModels: INITIAL_MODELS,
+      providerProbes: NO_PROVIDER_PROBES,
+    });
   } catch (error) {
     unpinTestHome();
     rmSync(home, { recursive: true, force: true });

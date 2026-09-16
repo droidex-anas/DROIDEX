@@ -10,6 +10,12 @@ import {
   planChildModelUpdate,
   type ExactChildSettingsTarget,
 } from '../lib/exactChildSettings';
+import { effectiveProvider } from '../features/providers/providerDraft';
+import {
+  providerDefaultModel,
+  providerModelCatalog,
+  providerModelSelection,
+} from '../features/providers/providerIdentity';
 import ModelCatalogList, { defaultModelOf, effortsFor, stepEffort } from './ModelCatalogList';
 
 export type { ExactChildSettingsTarget } from '../lib/exactChildSettings';
@@ -18,17 +24,19 @@ const ACCENT = 'var(--droid-accent)';
 const accentMix = (pct: number) =>
   `color-mix(in srgb, var(--droid-accent) ${String(pct)}%, transparent)`;
 
-type ModelCategory = 'core' | 'factory' | 'custom';
+type ModelCategory = 'core' | 'factory' | 'claude' | 'custom';
 
 const CATEGORY_LABEL: Record<ModelCategory, string> = {
   core: 'Droid core',
   factory: 'Factory',
+  claude: 'Claude',
   custom: 'Custom',
 };
 
 function categoryOf(model: ModelInfo): ModelCategory {
   if (model.isCustom || model.id.startsWith('custom:')) return 'custom';
   const provider = (model.provider ?? '').toLowerCase();
+  if (provider === 'anthropic') return 'claude';
   if (provider === 'droid-core' || model.displayName.toLowerCase().startsWith('droid core'))
     return 'core';
   return 'factory';
@@ -60,6 +68,13 @@ export default function ModelSelectorPopover({
       activeSessionModelId: activeSession?.modelId,
       activeSessionReasoning: activeSession?.reasoningEffort,
       agentConfig: current.agentConfig,
+      // The chat's provider owns the catalog: Droid's comes from the CLI,
+      // every other provider reports its own with its status. A draft follows
+      // the same fallback the composer applies to an unrunnable stored pick.
+      provider:
+        activeSession?.provider ??
+        effectiveProvider(current.draftProvider, current.providerStatuses),
+      providerStatuses: current.providerStatuses,
       models: current.models,
     };
   }, shallowEqual);
@@ -91,16 +106,30 @@ export default function ModelSelectorPopover({
   effReasoningRef.current = effReasoning;
   const childReady = childTarget?.readiness === 'ready';
 
-  const hasRealModels = state.models.length > 0;
-  const source = state.models;
+  const source = providerModelCatalog(state.provider, state.models, state.providerStatuses);
+  const hasRealModels = source.length > 0;
+  // A provider that publishes no reasoning efforts has nothing to offer per row:
+  // the stepper would be inert and the word beside it a Droid effort. A ready
+  // provider whose catalog has not arrived has not answered yet, so the control
+  // stays; one that cannot run has no efforts to offer at all.
+  const status = state.providerStatuses.find((entry) => entry.provider === state.provider);
+  const catalogPending = !status || (status.readiness === 'ready' && !hasRealModels);
+  const showsReasoning =
+    catalogPending ||
+    source.some(
+      (model) =>
+        (model.supportedReasoningEfforts?.length ?? 0) > 0 ||
+        model.defaultReasoningEffort !== undefined,
+    );
+  const needsDroidCatalog = state.provider === 'droid' && !hasRealModels;
 
   // The catalog is Droid CLI's source of truth; if it hasn't arrived yet, fetch it.
   useEffect(() => {
-    if (!hasRealModels) listModels();
-  }, [hasRealModels]);
+    if (needsDroidCatalog) listModels();
+  }, [needsDroidCatalog]);
 
   const catCounts = useMemo(() => {
-    const counts: Record<ModelCategory, number> = { core: 0, factory: 0, custom: 0 };
+    const counts: Record<ModelCategory, number> = { core: 0, factory: 0, claude: 0, custom: 0 };
     source.forEach((m) => {
       counts[categoryOf(m)] += 1;
     });
@@ -147,14 +176,25 @@ export default function ModelSelectorPopover({
     };
   }, [onClose]);
 
-  const selectedLabel = (() => {
-    if (!effModelId) return 'Default';
-    const m = source.find((x) => x.id === effModelId);
-    return m?.displayName ?? effModelId;
-  })();
-  const defaultModel = useMemo(() => defaultModelOf(source), [source]);
-  const selectedConfigModel = effModelId ? source.find((x) => x.id === effModelId) : undefined;
-  const selectedSupportedReasoning = selectedConfigModel?.supportedReasoningEfforts;
+  // The row a chat with no model of its own runs on: the default its harness
+  // reports, and the catalog's own default row only where none is reported.
+  const defaultModel = useMemo(
+    () =>
+      providerDefaultModel(state.provider, source, state.providerStatuses) ??
+      defaultModelOf(source),
+    [state.provider, state.providerStatuses, source],
+  );
+  // A model this provider never published is not a selection here — a stale
+  // pick, or one belonging to another provider — so both the search line and
+  // the reasoning row fall back to the default the chat would start on.
+  const resolvedModelId = providerModelSelection(state.provider, effModelId, source);
+  const selectedLabel = resolvedModelId
+    ? (source.find((model) => model.id === resolvedModelId)?.displayName ?? resolvedModelId)
+    : (defaultModel?.displayName ?? 'Default');
+  // The row the effort applies to: the pinned model, or the model behind the
+  // default row when the chat pins none or its pick isn't this provider's.
+  const activeModel = resolvedModelId ? source.find((x) => x.id === resolvedModelId) : defaultModel;
+  const activeSupportedReasoning = activeModel?.supportedReasoningEfforts;
 
   const updateReasoning = useCallback(
     (reasoning: ReasoningEffort) => {
@@ -197,7 +237,7 @@ export default function ModelSelectorPopover({
       });
 
       // Snap reasoning to a value the new model actually supports.
-      const next = modelId ? source.find((x) => x.id === modelId) : undefined;
+      const next = modelId ? source.find((x) => x.id === modelId) : defaultModel;
       const supported = next?.supportedReasoningEfforts;
       if (supported?.length && !supported.includes(currentReasoning)) {
         updateReasoning(next?.defaultReasoningEffort ?? supported[supported.length - 1]);
@@ -212,6 +252,7 @@ export default function ModelSelectorPopover({
     [
       agent,
       childTarget,
+      defaultModel,
       dispatch,
       scopedAppSessionId,
       source,
@@ -224,24 +265,22 @@ export default function ModelSelectorPopover({
   // (e.g. real catalog arrives after a mock placeholder was selected).
   useEffect(() => {
     if (childMode) return;
-    const supported = selectedSupportedReasoning;
+    const supported = activeSupportedReasoning;
     if (supported?.length && !supported.includes(effReasoning)) {
-      updateReasoning(
-        selectedConfigModel?.defaultReasoningEffort ?? supported[supported.length - 1],
-      );
+      updateReasoning(activeModel?.defaultReasoningEffort ?? supported[supported.length - 1]);
     } else if (
       !supported?.length &&
-      selectedConfigModel?.defaultReasoningEffort &&
-      effReasoning !== selectedConfigModel.defaultReasoningEffort
+      activeModel?.defaultReasoningEffort &&
+      effReasoning !== activeModel.defaultReasoningEffort
     ) {
-      updateReasoning(selectedConfigModel.defaultReasoningEffort);
+      updateReasoning(activeModel.defaultReasoningEffort);
     }
   }, [
+    activeModel?.defaultReasoningEffort,
+    activeModel?.id,
+    activeSupportedReasoning,
     childMode,
     effReasoning,
-    selectedConfigModel?.defaultReasoningEffort,
-    selectedConfigModel?.id,
-    selectedSupportedReasoning,
     updateReasoning,
   ]);
 
@@ -270,7 +309,7 @@ export default function ModelSelectorPopover({
         if (next !== idx) updateModel(ids[next]);
         return;
       }
-      const efforts = effortsFor(selectedConfigModel ?? defaultModel, effReasoning);
+      const efforts = effortsFor(activeModel, effReasoning);
       const next = stepEffort(efforts, effReasoning, e.key === 'ArrowRight' ? 1 : -1);
       if (next !== effReasoning) updateReasoning(next);
     };
@@ -279,14 +318,13 @@ export default function ModelSelectorPopover({
       window.removeEventListener('keydown', onKey);
     };
   }, [
+    activeModel,
     childReady,
     childTarget,
-    defaultModel,
     effModelId,
     effReasoning,
     filterOpen,
     models,
-    selectedConfigModel,
     updateModel,
     updateReasoning,
   ]);
@@ -406,6 +444,11 @@ export default function ModelSelectorPopover({
                         count: catCounts.factory,
                       },
                       {
+                        value: 'claude' as const,
+                        label: CATEGORY_LABEL.claude,
+                        count: catCounts.claude,
+                      },
+                      {
                         value: 'custom' as const,
                         label: CATEGORY_LABEL.custom,
                         count: catCounts.custom,
@@ -448,6 +491,7 @@ export default function ModelSelectorPopover({
             models={models}
             defaultModel={defaultModel}
             hasRealModels={hasRealModels}
+            provider={state.provider}
             selectedModelId={effModelId}
             reasoning={effReasoning}
             query={query}
@@ -455,6 +499,7 @@ export default function ModelSelectorPopover({
             onSelectReasoning={updateReasoning}
             disabled={Boolean(childTarget && !childReady)}
             reasoningLocked={childMode}
+            showReasoning={showsReasoning}
           />
         </div>
       </div>

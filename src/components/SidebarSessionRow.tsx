@@ -9,6 +9,8 @@ import { ACTIVITY_LABELS, type SessionActivityStatus } from '../lib/sidebarActiv
 import { SessionAttentionBadge } from './SessionAttentionBadge';
 import { ActivityStatusGlyph, ActivityToggleGlyph } from './ActivityStatusGlyph';
 import { PrStateIcon } from './environment/GithubIcons';
+import { ModelIcon } from './ModelIcon';
+import { PROVIDER_LABELS, PROVIDER_MARKS } from '../features/providers/providerIdentity';
 import type { PrKind } from '../lib/github';
 import type { PrChecksRollup } from '../types/vcs';
 
@@ -118,6 +120,8 @@ export const SessionRow = memo(function SessionRow({
   // On two-line rows the side slots are boxes the height of the title line, so
   // the dot and the time sit on the first line rather than between the two.
   const side = detail ? 'h-5' : '';
+  // Droid is the default runtime, so only the other providers are marked.
+  const providerMark = session.provider === 'droid' ? null : PROVIDER_MARKS[session.provider];
 
   // Return focus to the row when the inline editor closes, unless the user
   // already moved focus elsewhere (e.g. clicked another row).
@@ -274,10 +278,21 @@ export const SessionRow = memo(function SessionRow({
         {attention && !detail ? (
           <SessionAttentionBadge kind={attention} />
         ) : (
-          /* Fixed columns so PR icons and times line up down the list. */
+          /* Fixed columns so provider marks, PR icons and times line up down
+             the list. The trailing slots give way to the "..." on hover. */
           <span
-            className={`ml-2 grid shrink-0 grid-cols-[16px_34px] items-center gap-x-2.5 ${side}`}
+            className={`ml-2 grid shrink-0 ${providerMark ? 'grid-cols-[16px_16px_34px]' : 'grid-cols-[16px_34px]'} items-center gap-x-2.5 ${side}`}
           >
+            {providerMark && (
+              <span
+                role="img"
+                aria-label={`${PROVIDER_LABELS[session.provider]} chat`}
+                className="flex justify-center group-hover:invisible group-focus-within:invisible"
+                title={PROVIDER_LABELS[session.provider]}
+              >
+                <ModelIcon provider={providerMark} size={14} />
+              </span>
+            )}
             <span className="flex justify-center">
               {pr && <PrStateIcon kind={pr.kind} size={14} checks={pr.checks} />}
             </span>

@@ -3,14 +3,16 @@ import { mkdtemp, rm, stat } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
-import {
-  ReasoningEffort,
-  type AskUserResult,
-  type McpServerConfig,
-  type RequestPermissionHandlerResult,
-} from '@factory/droid-sdk';
+import { ReasoningEffort, type McpServerConfig } from '@factory/droid-sdk';
 import type { HistoricalSession } from './history.js';
-import type { FactoryDefaultSettings, ServerEvent, SessionSummary } from './protocol.js';
+import type {
+  FactoryDefaultSettings,
+  PermissionOutcome,
+  ServerEvent,
+  SessionSummary,
+} from './protocol.js';
+import { DroidProvider } from './providers/droid/DroidProvider.js';
+import type { ProviderQuestionAnswers } from './providers/interactions.js';
 import {
   SessionLifecycle,
   type LiveSession,
@@ -129,7 +131,7 @@ function createHarness(ordinarySummaries: SessionSummary[] = []) {
     interactionMode: 'auto',
   };
   const lifecycle = new SessionLifecycle({
-    runtime,
+    provider: () => new DroidProvider(runtime),
     registry,
     ensureConnected: () => {
       calls.push({ target: 'runtime', method: 'ensureConnected', args: [] });
@@ -161,8 +163,11 @@ function createHarness(ordinarySummaries: SessionSummary[] = []) {
         configs: mcpConfigs,
       });
     },
-    makePermissionHandler: () => () => new Promise<RequestPermissionHandlerResult>(() => undefined),
-    makeAskUserHandler: () => () => new Promise<AskUserResult>(() => undefined),
+    interactionsFor: () => ({
+      requestApproval: () => new Promise<PermissionOutcome>(() => undefined),
+      requestQuestion: () => new Promise<ProviderQuestionAnswers>(() => undefined),
+      cancelPending: () => undefined,
+    }),
     compaction: {
       resolveLimit: () => compactionLimit(),
       arm: async (target, limit) => {
@@ -225,7 +230,7 @@ function createHarness(ordinarySummaries: SessionSummary[] = []) {
     applyPendingSettingsToSummary: (item) => ({ ...item, ...projection }),
     applyPendingSessionSettings: (appSessionId) => applyPending(appSessionId),
     runPrimaryTurn: async (live, prompt) => {
-      for await (const event of live.session.stream(prompt, { includePartialMessages: true })) {
+      for await (const event of live.session.stream(prompt)) {
         void event;
       }
     },
@@ -262,6 +267,8 @@ function createHarness(ordinarySummaries: SessionSummary[] = []) {
         });
       },
     },
+    openProviderTranscript: () => {},
+    forgetProviderTranscript: () => {},
     forgetInteractions: (appSessionId) => {
       forgettingAfterUnregister.push(registry.getLive(appSessionId) === undefined);
       calls.push({ target: 'cleanup', method: 'interactions.forget', args: [appSessionId] });
@@ -285,6 +292,9 @@ function createHarness(ordinarySummaries: SessionSummary[] = []) {
     emitError: (error) => recordEvent({ type: 'error', ...error }),
     emitStatus: (appSessionId, text) => {
       calls.push({ target: 'protocol', method: 'status', args: [appSessionId, text] });
+    },
+    recordPrompt: (appSessionId, text) => {
+      calls.push({ target: 'protocol', method: 'recordPrompt', args: [appSessionId, text] });
     },
     emitSessionList: (closedProviderSessionId) => emitSessionList(closedProviderSessionId),
   });
@@ -343,6 +353,7 @@ function summary(
   return {
     appSessionId,
     providerSessionId,
+    provider: 'droid',
     sessionPurpose: 'chat',
     interactionMode: 'auto',
     role: 'user',
@@ -738,7 +749,9 @@ test('queued sends stay FIFO while send-now prompts are newest first', async () 
   steerGate.resolve();
   await steerProvider.waitForPrompts(3);
   assert.deepEqual(steerProvider.prompts, ['first', 'steer two', 'steer one']);
-  assert.equal(interruptCount(steered), 2);
+  // The second send-now lands while the first interrupt is still in flight and
+  // rides the queue instead of interrupting the turn that redelivers it.
+  assert.equal(interruptCount(steered), 1);
 });
 
 test('send-now queues without interrupting compaction and reports interrupt rejection', async () => {

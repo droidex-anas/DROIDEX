@@ -67,6 +67,8 @@ import type {
   PermissionRequest,
   SessionQuestion,
   ModelInfo,
+  ProviderKind,
+  ProviderStatus,
   ChildSessionSummary,
   SkillInfo,
   ReasoningEffort,
@@ -78,6 +80,7 @@ import { addWorkspaceCwd, removeWorkspaceCwd } from '../lib/workspaces';
 import { createOrderedActionBatcher, type OrderedActionBatcher } from './orderedActionBatcher';
 import { isHistoryStatusError, applyHistoryServerEvent } from '../lib/historyHealth';
 import { loadDefaultAutonomy, saveDefaultAutonomy } from '../lib/autonomy';
+import { loadDraftProvider, saveDraftProvider } from '../features/providers/providerDraft';
 import { loadToolActivity, saveToolActivity, type ToolActivitySettings } from '../lib/toolActivity';
 import {
   applyFactoryCompactionDefaults,
@@ -342,6 +345,12 @@ export interface AppState {
   models: ModelInfo[];
   agentConfig: AgentConfig;
 
+  // What each provider can do for the user right now, as last reported by the
+  // sidecar, and the provider the next new session is created on. The draft
+  // pick is sticky: it survives session switches and restarts.
+  providerStatuses: ProviderStatus[];
+  draftProvider: ProviderKind;
+
   // Global compaction model applied to every session. 'current-model' = use
   // each session's active model; otherwise a specific model id.
   compactionModel: string;
@@ -525,6 +534,7 @@ type Action =
     }
   | { type: 'CLEAR_PERMISSION'; appSessionId: string }
   | { type: 'CLEAR_QUESTION'; appSessionId: string }
+  | { type: 'CLEAR_INTERACTION'; appSessionId: string; requestId: string }
 
   // UI
   | { type: 'SET_ACTIVE_SESSION'; id: string | null }
@@ -607,6 +617,8 @@ type Action =
 
   // Models / per-agent config
   | { type: 'MODELS_LIST'; models: ModelInfo[] }
+  | { type: 'PROVIDER_STATUSES'; statuses: ProviderStatus[] }
+  | { type: 'SET_DRAFT_PROVIDER'; provider: ProviderKind }
   | {
       type: 'SKILLS_LIST';
       skills: SkillInfo[];
@@ -728,6 +740,8 @@ export const initialState: AppState = {
   selectedFeatureId: persistedUiState.selectedFeatureId ?? null,
   selectedChild: null,
   models: [],
+  providerStatuses: [],
+  draftProvider: loadDraftProvider(),
   compactionModel: loadCompactionModel(),
   compactionTokenLimit: loadCompactionTokenLimit(),
   compactionTokenLimitPerModel: loadCompactionTokenLimitPerModel(),
@@ -798,6 +812,20 @@ function closeActiveUtilityPanel(state: AppState): AppState {
   return panel === current
     ? state
     : { ...state, utilityPanels: { ...state.utilityPanels, [appSessionId]: panel } };
+}
+
+// Drops the open request a session was cancelled out of. Keyed on the request
+// id as well as the session so a card raised after the cancellation stays.
+function withoutCancelledRequest<T extends { requestId: string }>(
+  pending: Record<string, T>,
+  appSessionId: string,
+  requestId: string,
+): Record<string, T> {
+  return Object.fromEntries(
+    Object.entries(pending).filter(
+      ([id, request]) => id !== appSessionId || request.requestId !== requestId,
+    ),
+  );
 }
 
 export function reducer(state: AppState, action: Action): AppState {
@@ -1460,6 +1488,26 @@ function baseReducer(state: AppState, action: Action): AppState {
       };
     }
 
+    // The sidecar gave up on a request the user never answered. Matched on the
+    // request id so a late cancellation cannot clear a newer card.
+    case 'CLEAR_INTERACTION': {
+      const { appSessionId, requestId } = action;
+      const pendingPermissions = withoutCancelledRequest(
+        state.pendingPermissions,
+        appSessionId,
+        requestId,
+      );
+      const pendingQuestions = withoutCancelledRequest(
+        state.pendingQuestions,
+        appSessionId,
+        requestId,
+      );
+      const cleared =
+        Object.keys(pendingPermissions).length !== Object.keys(state.pendingPermissions).length ||
+        Object.keys(pendingQuestions).length !== Object.keys(state.pendingQuestions).length;
+      return cleared ? { ...state, pendingPermissions, pendingQuestions } : state;
+    }
+
     case 'SET_ACTIVE_SESSION': {
       // Stamp "seen now" on both the session being left (so responses received
       // while it was open count as read) and the one being opened (clears its
@@ -1988,6 +2036,13 @@ function baseReducer(state: AppState, action: Action): AppState {
         agentConfig: saveAgentConfig(sanitizeAgentConfig(state.agentConfig, action.models)),
       };
 
+    case 'PROVIDER_STATUSES':
+      return { ...state, providerStatuses: action.statuses };
+
+    case 'SET_DRAFT_PROVIDER':
+      saveDraftProvider(action.provider);
+      return { ...state, draftProvider: action.provider };
+
     case 'SKILLS_LIST':
       return {
         ...state,
@@ -2238,6 +2293,12 @@ export function adaptEvent(ev: ServerEvent): Action | null {
       return { type: 'SESSION_PERMISSION', request: ev.request };
     case 'question.requested':
       return { type: 'SESSION_QUESTION', question: ev.question };
+    case 'interaction.cancelled':
+      return {
+        type: 'CLEAR_INTERACTION',
+        appSessionId: ev.appSessionId,
+        requestId: ev.requestId,
+      };
     case 'error':
       if (isHistoryStatusError(ev)) return null;
       if (ev.code === 'bridge.resync_required' && !ev.recoverable) {
@@ -2320,6 +2381,8 @@ export function adaptEvent(ev: ServerEvent): Action | null {
         };
       }
       return null;
+    case 'provider.status':
+      return { type: 'PROVIDER_STATUSES', statuses: ev.statuses };
     case 'settings.defaults':
       return { type: 'FACTORY_DEFAULTS', defaults: ev.defaults };
     case 'browser.updated':

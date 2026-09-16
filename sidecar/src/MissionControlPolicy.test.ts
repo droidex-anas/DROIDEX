@@ -33,7 +33,7 @@ function createHarness(
   const summary = missionSummary(sessionPurpose, interactionMode);
   const live: ChildParentLease = {
     summary,
-    session: new FakeFactorySession('parent-provider', {}, calls, {
+    droid: new FakeFactorySession('parent-provider', {}, calls, {
       settings: {
         modelId: 'accepted-parent-model',
         reasoningEffort: ReasoningEffort.Medium,
@@ -303,6 +303,7 @@ function missionSummary(
     appSessionId: 'parent-app',
     providerSessionId: 'parent-provider',
     missionId: 'mission-1',
+    provider: 'droid',
     sessionPurpose,
     interactionMode,
     role: 'primary',

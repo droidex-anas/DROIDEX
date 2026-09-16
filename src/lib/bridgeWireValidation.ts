@@ -10,6 +10,11 @@ import type {
   StreamFidelity,
 } from '../types/bridge';
 import { isAutomationSnapshot } from '../features/automations/wireValidation';
+import {
+  isModelInfo,
+  isProviderKind,
+  isProviderStatus,
+} from '../features/providers/wireValidation';
 
 export function serverWireMessage(value: unknown): ServerWireMessage | null {
   if (!isRecord(value) || typeof value.type !== 'string') return null;
@@ -193,13 +198,16 @@ function isServerEvent(value: unknown): value is ServerEvent {
       return isPermissionRequest(value.request);
     case 'question.requested':
       return isSessionQuestion(value.question);
+    case 'interaction.cancelled':
+      return hasStrings(value, ['appSessionId', 'requestId']);
     case 'context.updated':
       return hasStrings(value, ['appSessionId', 'sourceSessionId']) && isContextStats(value.stats);
     case 'catalog.updated':
-      return (
-        (value.catalog === 'models' || value.catalog === 'tools' || value.catalog === 'skills') &&
-        Array.isArray(value.items)
-      );
+      if (!Array.isArray(value.items)) return false;
+      if (value.catalog === 'models') return value.items.every(isModelInfo);
+      return value.catalog === 'tools' || value.catalog === 'skills';
+    case 'provider.status':
+      return Array.isArray(value.statuses) && value.statuses.every(isProviderStatus);
     case 'settings.defaults':
       return isRecord(value.defaults);
     case 'error':
@@ -283,6 +291,7 @@ function isSessionSummary(value: unknown): boolean {
     isRecord(value) &&
     hasStrings(value, [
       'appSessionId',
+      'provider',
       'sessionPurpose',
       'interactionMode',
       'role',
@@ -292,10 +301,12 @@ function isSessionSummary(value: unknown): boolean {
       'autonomy',
       'phase',
     ]) &&
+    isProviderKind(value.provider) &&
     Array.isArray(value.features) &&
     value.features.every(isBridgeFeature) &&
     hasNumbers(value, ['tokensIn', 'tokensOut', 'contextTokens', 'createdAt', 'updatedAt']) &&
-    (value.interruptReason === undefined || typeof value.interruptReason === 'string')
+    (value.interruptReason === undefined || typeof value.interruptReason === 'string') &&
+    (value.resumeId === undefined || typeof value.resumeId === 'string')
   );
 }
 

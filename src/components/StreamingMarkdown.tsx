@@ -99,18 +99,21 @@ function PendingFence({
 
 function PendingMarkdown({
   source,
+  live,
   kind,
   fenceInfo,
   specMode,
   flags,
 }: {
   source: string;
+  live: boolean;
   kind: StreamingDocument['pendingKind'];
   fenceInfo?: string;
   specMode: boolean;
   flags: MarkdownFenceFlags;
 }) {
-  if (kind === 'fence') {
+  // Settlement makes EOF final, including a closing fence without a trailing newline.
+  if (live && kind === 'fence') {
     return (
       <PendingFence
         {...(fenceInfo !== undefined ? { info: fenceInfo } : {})}
@@ -184,6 +187,7 @@ function LiveStreamingMarkdown({
       {document.pendingSource ? (
         <PendingMarkdown
           source={document.pendingSource}
+          live={live}
           kind={document.pendingKind}
           {...(document.pendingFenceInfo !== undefined
             ? { fenceInfo: document.pendingFenceInfo }

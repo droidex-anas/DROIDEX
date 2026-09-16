@@ -1,6 +1,7 @@
 import type { FactorySession } from './DroidRuntime.js';
 import type { PersistedChildSession } from './history.js';
 import type { ServerEvent } from './protocol.js';
+import { droidInteractionHandlers } from './providers/droid/droidInteractions.js';
 import { errMsg } from './sessionHelpers.js';
 import type { ChildAutomaticCompactionTarget } from './SessionCompaction.js';
 import type { ChildOperationTarget } from './SessionContext.js';
@@ -9,6 +10,7 @@ import {
   childHistoryProviderSessionIds,
   childIdentity,
   childSettingsFromInit,
+  parentDroidSession,
   type ChildIdentity,
   type ChildOpenAttempt,
   type ChildRuntimeState,
@@ -228,8 +230,7 @@ export async function installChildRuntime(input: {
     if (!isCurrentAttempt()) return;
     const ref = { id: identity.parentAppSessionId };
     const load = host.d.runtime.loadSession(providerSessionId, {
-      permissionHandler: host.d.interactions.makePermissionHandler(ref),
-      askUserHandler: host.d.interactions.makeAskUserHandler(ref),
+      ...droidInteractionHandlers(ref, host.d.interactions.interactionsFor(ref)),
       cwd: parent.lease.summary.cwd,
       mcpServers: parent.lease.mcpConfigs,
     });
@@ -278,7 +279,7 @@ async function bindLoadedChildRuntime(input: {
   const actual = childSettingsFromInit(loaded.initResult);
   const defaults = host.d.resolveDefaultSettings(
     parent.lease.summary,
-    parent.lease.session.initResult,
+    parentDroidSession(parent.lease).initResult,
     child.role,
   );
   const settings = {

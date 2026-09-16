@@ -5,7 +5,8 @@ import { useGitEnvironment } from '../hooks/useGitEnvironment';
 import { useSessionWorkingDirectory } from '../hooks/useSessionWorkingDirectory';
 import { usePullRequest } from '../hooks/usePullRequest';
 import { useGithubSetup } from '../hooks/useGithubSetup';
-import { resolveReasoningEffortDisplay } from '../lib/reasoningEffort';
+import { reasoningEffortLabel, resolveReasoningEffortDisplay } from '../lib/reasoningEffort';
+import { providerDefaultModel, providerModelCatalog } from '../features/providers/providerIdentity';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Hash, ChevronRight, FileText } from 'lucide-react';
 import { ModelIcon, providerOf } from './ModelIcon';
@@ -14,6 +15,7 @@ import { SubagentsSection } from './SubagentsPanel';
 import { Row, SectionHeader, Divider } from './environment/primitives';
 import { EnvironmentSection } from './environment/EnvironmentSection';
 import type { DiffStatMode } from '../types/vcs';
+import type { ModelInfo, ProviderStatus, ReasoningEffort, SessionSummary } from '../types/bridge';
 import { diffModeToReviewScope } from '../lib/reviewScopes';
 import {
   childSessionIsLive,
@@ -35,6 +37,7 @@ export default function RightPanel() {
       childRuntime: current.childRuntime,
       childSessions: current.childSessions,
       models: current.models,
+      providerStatuses: current.providerStatuses,
       selectedChild: current.selectedChild,
       selectedFeatureId: current.selectedFeatureId,
       sessionSpecs: current.sessionSpecs,
@@ -93,22 +96,7 @@ export default function RightPanel() {
     ),
   );
 
-  const modelInfo = activeSession?.modelId
-    ? state.models.find((m) => m.id === activeSession.modelId)
-    : undefined;
-  const modelLabel = activeSession
-    ? (modelInfo?.displayName ?? activeSession.modelId ?? 'default')
-    : 'default';
-  // The pill next to the model carries the session's reasoning effort, resolved
-  // the same way as the composer badge: the session's own pinned effort, falling
-  // back to the global default. Models without reasoning support show no pill.
-  const reasoningEffort = activeSession
-    ? resolveReasoningEffortDisplay(
-        activeSession.reasoningEffort,
-        state.agentConfig.primary.reasoning,
-        modelInfo,
-      )
-    : undefined;
+  const { modelInfo, modelLabel, reasoningEffort } = modelRowContent(activeSession, state);
 
   // Folderless chats have no git environment to load — the panel skips the
   // Environment section so nothing spins forever. Subagents, spec, and notes
@@ -124,8 +112,12 @@ export default function RightPanel() {
       title={modelLabel}
       trailing={
         reasoningEffort ? (
-          <span className="shrink-0 text-[12px] capitalize leading-none text-droid-text-muted">
-            {reasoningEffort}
+          <span
+            className={`shrink-0 text-[12px] capitalize leading-none ${
+              reasoningEffort === 'ultra' ? 'text-droid-ultra' : 'text-droid-text-muted'
+            }`}
+          >
+            {reasoningEffortLabel(reasoningEffort, activeSession.provider)}
           </span>
         ) : undefined
       }
@@ -309,4 +301,38 @@ export default function RightPanel() {
       </div>
     </div>
   );
+}
+
+// The model row in the chat's own provider terms: its provider's catalog names
+// the model, and the model itself says whether its harness offers a reasoning
+// effort to show.
+function modelRowContent(
+  session: SessionSummary | null,
+  state: {
+    models: ModelInfo[];
+    providerStatuses: ProviderStatus[];
+    agentConfig: { primary: { reasoning?: ReasoningEffort } };
+  },
+): { modelInfo?: ModelInfo; modelLabel: string; reasoningEffort?: ReasoningEffort } {
+  if (!session) return { modelLabel: 'default' };
+  const catalog = providerModelCatalog(session.provider, state.models, state.providerStatuses);
+  const pinned = session.modelId
+    ? catalog.find((model) => model.id === session.modelId)
+    : undefined;
+  // A chat with no model of its own runs on its harness's configured default, so
+  // the row names that model instead of the word "default".
+  const shown =
+    pinned ??
+    (session.modelId
+      ? undefined
+      : providerDefaultModel(session.provider, catalog, state.providerStatuses));
+  return {
+    ...(shown ? { modelInfo: shown } : {}),
+    modelLabel: shown?.displayName ?? session.modelId ?? 'default',
+    reasoningEffort: resolveReasoningEffortDisplay(
+      session.reasoningEffort,
+      state.agentConfig.primary.reasoning,
+      shown,
+    ),
+  };
 }

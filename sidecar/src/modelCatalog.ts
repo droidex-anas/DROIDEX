@@ -2,7 +2,7 @@ import type { ModelInfo, ReasoningEffort } from './protocol.js';
 
 type ModelRecord = Record<string, unknown>;
 
-export function mergeModelCatalog(sdkModels: Array<ModelRecord | ModelInfo>): ModelInfo[] {
+export function mergeModelCatalog(sdkModels: (ModelRecord | ModelInfo)[]): ModelInfo[] {
   const merged = new Map<string, ModelInfo>();
   const add = (model: ModelInfo) => {
     if (!model.id) return;
@@ -23,11 +23,11 @@ export function mergeModelCatalog(sdkModels: Array<ModelRecord | ModelInfo>): Mo
 
 function fromSdkModel(model: ModelRecord | ModelInfo): ModelInfo {
   const raw = model as ModelRecord;
-  const id = stringValue(raw.id) || stringValue(raw.modelId) || stringValue(raw.model) || '';
+  const id = stringValue(raw.id) ?? stringValue(raw.modelId) ?? stringValue(raw.model) ?? '';
   return {
     id,
-    displayName: stringValue(raw.displayName) || stringValue(raw.shortDisplayName) || id,
-    provider: stringValue(raw.modelProvider) || stringValue(raw.provider),
+    displayName: stringValue(raw.displayName) ?? stringValue(raw.shortDisplayName) ?? id,
+    provider: stringValue(raw.modelProvider) ?? stringValue(raw.provider),
     isCustom: Boolean(raw.isCustom) || id.startsWith('custom:'),
     isDefault: Boolean(raw.isDefault),
     maxContextTokens: numberValue(raw.maxContextLimit) ?? numberValue(raw.maxContextTokens),
@@ -51,7 +51,8 @@ function reasoningArray(value: unknown): ReasoningEffort[] | undefined {
   return efforts.length > 0 ? efforts : undefined;
 }
 
-function reasoningValue(value: unknown): ReasoningEffort | undefined {
+// Shared with the Codex adapter, whose catalog names efforts the same way.
+export function reasoningValue(value: unknown): ReasoningEffort | undefined {
   if (
     value === 'off' ||
     value === 'none' ||
@@ -61,6 +62,7 @@ function reasoningValue(value: unknown): ReasoningEffort | undefined {
     value === 'high' ||
     value === 'xhigh' ||
     value === 'max' ||
+    value === 'ultra' ||
     value === 'dynamic'
   ) {
     return value;
