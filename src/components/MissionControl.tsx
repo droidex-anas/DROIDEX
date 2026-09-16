@@ -55,6 +55,7 @@ import { MessageFeed } from './MessageFeed';
 import EditorOpenMenu, { openCodebase, openCurrentDiff } from './EditorOpenMenu';
 import PromptInput from './PromptInput';
 import AutonomySelector from './AutonomySelector';
+import { RunningProcessesMenu } from './RunningProcessesMenu';
 import { createIncrementalTranscriptFilter } from '../lib/incrementalTranscriptFilter';
 
 const ACCENT = 'var(--droid-accent)';
@@ -1102,6 +1103,7 @@ export default function MissionControl() {
           >
             <h1 className="text-[14px] font-medium text-droid-text truncate">{mission.title}</h1>
             <div className="flex items-center gap-2 shrink-0">
+              <RunningProcessesMenu appSessionId={mission.appSessionId} />
               {visibleIsLive ? (
                 <>
                   <span className="shimmer-text text-[12px] font-medium leading-none">

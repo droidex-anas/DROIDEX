@@ -8,6 +8,7 @@ benchmark-runs/
 reports/
 playwright-report/
 test-results/
+.playwright-cli/
 
 .DS_Store
 *.log
