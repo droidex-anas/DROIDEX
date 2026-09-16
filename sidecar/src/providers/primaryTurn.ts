@@ -57,36 +57,45 @@ export async function runPrimaryTurn(
     context.stopPolling();
   }
   if (!d.isCurrent(liveSession)) return;
-  if (turnError) {
-    if (liveSession.interruptingForSteer && isUserCancellation(turnError)) {
-      d.timeline.appendStatus(appSessionId, 'Current turn interrupted for steering.');
-    } else if (liveSession.interrupting && isUserCancellation(turnError)) {
-      // The user pressed Stop; interrupt() already set the paused phase, so
-      // settle quietly without surfacing an error.
-      d.updateSummary(appSessionId, { phase: 'paused' });
-    } else {
-      if (!isReportedStreamingTranscriptError(turnError)) {
-        const message = errMsg(turnError);
-        if (!reportedError) {
-          d.timeline.append({
-            id: randomUUID(),
-            appSessionId,
-            sourceSessionId: appSessionId,
-            role: 'primary',
-            ts: Date.now(),
-            kind: 'error',
-            text: message,
-            isError: true,
-          });
-        }
-        d.emitError({ appSessionId, message });
-      }
-      d.updateSummary(appSessionId, { phase: 'failed' });
-    }
-  }
+  if (turnError) settleTurnFailure(d, liveSession, turnError, reportedError);
   // Keep streaming=true while the context refresh is in flight so concurrent
   // sends queue instead of racing a second lifecycle turn.
   await context.refresh();
+}
+
+function settleTurnFailure(
+  d: PrimaryTurnDependencies,
+  liveSession: LiveSession,
+  error: unknown,
+  reportedError: boolean,
+): void {
+  const appSessionId = liveSession.summary.appSessionId;
+  if (liveSession.interruptingForSteer && isUserCancellation(error)) {
+    d.timeline.appendStatus(appSessionId, 'Current turn interrupted for steering.');
+    return;
+  }
+  if (liveSession.interrupting && isUserCancellation(error)) {
+    // Stop already set the paused phase; its cancellation is not a failure.
+    d.updateSummary(appSessionId, { phase: 'paused' });
+    return;
+  }
+  if (!isReportedStreamingTranscriptError(error)) {
+    const message = errMsg(error);
+    if (!reportedError) {
+      d.timeline.append({
+        id: randomUUID(),
+        appSessionId,
+        sourceSessionId: appSessionId,
+        role: 'primary',
+        ts: Date.now(),
+        kind: 'error',
+        text: message,
+        isError: true,
+      });
+    }
+    d.emitError({ appSessionId, message });
+  }
+  d.updateSummary(appSessionId, { phase: 'failed' });
 }
 
 interface TurnContext {
