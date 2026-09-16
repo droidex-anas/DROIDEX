@@ -6,6 +6,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { initialState, StaticStoreProvider, type AppState } from '../hooks/useStore.js';
 import type { ModelInfo, ReasoningEffort, SessionSummary } from '../types/bridge.js';
 import RightPanel from './RightPanel.js';
+import { AgentPaneProvider } from './agents/AgentPane.js';
 import { EnvironmentSection } from './environment/EnvironmentSection.js';
 import type { GithubAvailability, GitEnvironment } from '../types/vcs.js';
 
@@ -58,7 +59,7 @@ function renderPanel(
     createElement(
       StaticStoreProvider,
       { state, dispatch: () => undefined },
-      createElement(RightPanel),
+      createElement(AgentPaneProvider, null, createElement(RightPanel)),
     ),
   );
 }
@@ -108,9 +109,10 @@ test('folderless chats skip the git rows and never show a loading state', () => 
   assert.doesNotMatch(html, /No folder/);
   // Notes are session-scoped, not folder-scoped — the section stays.
   assert.match(html, /Notes/);
-  // The model row is a readout, not a control: the Notes disclosure is the
-  // only button in the folderless panel.
-  assert.equal(html.match(/<button/g)?.length ?? 0, 1);
+  // The model row is a readout, not a control: the Context tab and the Notes
+  // disclosure are the only buttons in a folderless panel with no agents.
+  assert.equal(html.match(/<button/g)?.length ?? 0, 2);
+  assert.doesNotMatch(html, />Subagents</);
 });
 
 test('PR detection and Context setup share authenticated GitHub readiness', () => {

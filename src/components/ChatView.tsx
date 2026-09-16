@@ -9,7 +9,7 @@ import { useSessionLive } from '../hooks/useSessionLive';
 import { AnimatePresence, motion } from 'framer-motion';
 import { MessageFeed } from './MessageFeed';
 import { LiveProcessesContext } from './transcript/liveProcessesContext';
-import type { AgentProcess } from '../types/bridge';
+import type { AgentProcess, ChildSessionSummary } from '../types/bridge';
 import { WorkingIndicator, UserBubble, ChatSkeleton, TranscriptSkeleton } from './chat';
 import { readFile } from '../lib/desktop';
 import { interruptChild, loadChildHistory, loadSessionHistory } from '../lib/commands';
@@ -23,6 +23,7 @@ import {
   shouldRequestReleasedChildHistory,
   visibleSessionTarget,
 } from '../lib/childSessions';
+import { useAgentPane } from './agents/AgentPane';
 import { ConversationTimeline } from './ConversationTimeline';
 import { WelcomeScreen } from './WelcomeScreen';
 import { isChatWorktreePath } from '../lib/chatWorkspace';
@@ -213,6 +214,7 @@ export default function ChatView({
   isObscured?: boolean;
 }) {
   const dispatch = useStoreDispatch();
+  const agentPane = useAgentPane();
   const equalChatState = useCallback(
     (previous: ChatViewState, next: ChatViewState) =>
       isObscured || equalVisibleChatState(previous, next),
@@ -305,6 +307,15 @@ export default function ChatView({
     [childSessions, dispatch],
   );
 
+  // A monitor row opens the agent beside the chat instead of navigating to it.
+  const openAgent = agentPane.openAgent;
+  const openAgentTab = useCallback(
+    (child: ChildSessionSummary) => {
+      openAgent(child.childSessionId);
+    },
+    [openAgent],
+  );
+
   const openReviewFile = useCallback<OpenReviewFileHandler>(
     (path, change) => {
       dispatch(openReviewAt(path, change));
@@ -337,10 +348,15 @@ export default function ChatView({
     allTranscript,
     activeSession?.interruptReason,
   );
-  const subagentsDock = useMemo(() => {
+  const agentMonitor = useMemo(() => {
     if (viewingChildSession) return undefined;
-    return { sessions: childSessions, models: state.models, snapshots: streamSnapshots };
-  }, [viewingChildSession, childSessions, state.models, streamSnapshots]);
+    return {
+      sessions: childSessions,
+      models: state.models,
+      snapshots: streamSnapshots,
+      ...(activeSession ? { provider: activeSession.provider } : {}),
+    };
+  }, [viewingChildSession, childSessions, state.models, streamSnapshots, activeSession]);
 
   // Primary and logical-child transcripts each own their persisted cursor even
   // though live child events share the parent's in-memory event array.
@@ -600,7 +616,7 @@ export default function ChatView({
       current.activeAppSessionId ? current.agentProcesses[current.activeAppSessionId] : undefined,
     ) ?? NO_LIVE_PROCESSES;
   const messageFeedCwd = activeSession?.cwd;
-  const messageFeedSubagentsDock = subagentsDock;
+  const messageFeedAgentMonitor = agentMonitor;
   let conversationContent: ReactNode;
   if (activeSession && transcript.length > 0) {
     conversationContent = (
@@ -630,8 +646,9 @@ export default function ChatView({
             onOpenReviewFile={canOpenFiles ? openReviewFile : undefined}
             onOpenChildSession={openChildSession}
             childSessionActivity={childSessionActivity}
-            {...(messageFeedSubagentsDock !== undefined
-              ? { subagentsDock: messageFeedSubagentsDock }
+            onOpenAgent={openAgentTab}
+            {...(messageFeedAgentMonitor !== undefined
+              ? { agentMonitor: messageFeedAgentMonitor }
               : {})}
             specContent={specContent}
             density={toolActivity.density}

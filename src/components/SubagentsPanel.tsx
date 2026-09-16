@@ -24,6 +24,7 @@ const STATUS_LABEL: Record<ChildStatus, string> = {
   pending: 'Awaiting status',
   paused: 'Idle',
   completed: 'Done',
+  failed: 'Failed',
 };
 
 function RowStatus({ status, queued }: { status: ChildStatus; queued?: boolean }) {

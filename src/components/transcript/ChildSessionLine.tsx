@@ -1,16 +1,13 @@
-import { memo, useMemo, useState } from 'react';
+import { useState } from 'react';
 import { ChevronRight } from 'lucide-react';
 import type { TranscriptEvent } from '../../types/bridge';
 import { childSessionInfo, formatDuration } from '../../lib/tools';
 import {
   childSessionLatest,
   childSessionTargetFromEvent,
-  resolveWaveSessions,
   type ChildSessionActivity,
   type ChildSessionTarget,
 } from '../../lib/childSessions';
-import { SubagentsDock, type SubagentsDockData } from '../SubagentsDock';
-import { sameFeedEvents, type FeedItem } from '../chatFeed';
 import { Caret, Expand, useElapsed } from './primitives';
 
 /* ── Per-agent name color: deterministic pick so each droid keeps one hue ── */
@@ -124,45 +121,3 @@ export function ChildSessionLine({
 export function childSessionLineIsRunning(activity?: ChildSessionActivity): boolean {
   return activity?.status === 'running';
 }
-
-// The feed rebuilds item objects on every streamed token, but an untouched
-// wave's events keep their identity, so settled waves bail out of per-token
-// re-renders. Live waves still update: the dock object changes identity when
-// the store's child sessions or models change.
-export const ChildSessionsWave = memo(
-  function ChildSessionsWave({
-    item,
-    dock,
-    live,
-    onOpen,
-    activity,
-  }: {
-    item: Extract<FeedItem, { type: 'child_sessions' }>;
-    dock: SubagentsDockData;
-    live?: boolean;
-    onOpen?: (target: ChildSessionTarget) => void;
-    activity?: (target: ChildSessionTarget) => ChildSessionActivity | undefined;
-  }) {
-    // Wave-scoped: resolve only this run's spawns so the card shows this
-    // turn's agents, not the session's cumulative list.
-    const sessions = useMemo(
-      () => resolveWaveSessions(item.events, dock.sessions),
-      [item.events, dock.sessions],
-    );
-    return (
-      <SubagentsDock
-        sessions={sessions}
-        models={dock.models}
-        live={live}
-        onOpen={onOpen}
-        activity={activity}
-      />
-    );
-  },
-  (prev, next) =>
-    prev.dock === next.dock &&
-    prev.live === next.live &&
-    prev.onOpen === next.onOpen &&
-    prev.activity === next.activity &&
-    sameFeedEvents(prev.item, next.item),
-);

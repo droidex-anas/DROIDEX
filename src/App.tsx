@@ -26,6 +26,7 @@ import Sidebar from './components/Sidebar';
 import ChatView from './components/ChatView';
 import PromptInput from './components/PromptInput';
 import RightPanel from './components/RightPanel';
+import { AgentPaneProvider } from './components/agents/AgentPane';
 import EditorOpenMenu from './components/EditorOpenMenu';
 import Toaster from './components/Toaster';
 import { useRepoStatus } from './hooks/useRepoStatus';
@@ -647,244 +648,253 @@ export default function App() {
         )}
         <RuntimeStatusBanner />
       </div>
-      <div className="flex-1 flex min-h-0 relative">
-        {/* Sidebar with collapse animation */}
-        <AnimatePresence initial={false}>
-          {!state.sidebarCollapsed && (
-            <motion.div
-              key="sidebar"
-              initial={{ width: 0, opacity: 0 }}
-              animate={{ width: 280, opacity: 1 }}
-              exit={{ width: 0, opacity: 0 }}
-              transition={{ duration: 0.18, ease: [0.16, 1, 0.3, 1] }}
-              className="shrink-0 overflow-hidden h-full"
-            >
-              <Sidebar
-                workspaceScopes={workspaceScopes}
-                onShowEarlierSessions={showEarlierSessions}
-              />
-            </motion.div>
-          )}
-        </AnimatePresence>
+      {/* Which agent the context panel is pointed at is chat view state: the
+          rows that open one sit in the transcript and above the composer, the
+          pane itself is in the panel. Keyed by session so a switch starts on
+          the Context tab. */}
+      <AgentPaneProvider key={state.activeSession?.appSessionId ?? 'none'}>
+        <div className="flex-1 flex min-h-0 relative">
+          {/* Sidebar with collapse animation */}
+          <AnimatePresence initial={false}>
+            {!state.sidebarCollapsed && (
+              <motion.div
+                key="sidebar"
+                initial={{ width: 0, opacity: 0 }}
+                animate={{ width: 280, opacity: 1 }}
+                exit={{ width: 0, opacity: 0 }}
+                transition={{ duration: 0.18, ease: [0.16, 1, 0.3, 1] }}
+                className="shrink-0 overflow-hidden h-full"
+              >
+                <Sidebar
+                  workspaceScopes={workspaceScopes}
+                  onShowEarlierSessions={showEarlierSessions}
+                />
+              </motion.div>
+            )}
+          </AnimatePresence>
 
-        {/* Every view under `main` owns a drag row as its top row, so a view
+          {/* Every view under `main` owns a drag row as its top row, so a view
             never shifts when the sidebar collapses. Collapsing only moves the
             window controls and the floating sidebar toggle into that row; the
             chat header reads the collapsed state and leaves them room. */}
-        <main className="relative flex-1 min-w-0 flex flex-col min-h-0 overflow-hidden bg-droid-bg">
-          <div ref={contentRowRef} className="relative flex min-h-0 min-w-0 flex-1 overflow-hidden">
-            <section
-              aria-hidden={browserExpanded}
-              className={`relative flex min-w-0 flex-1 flex-col overflow-hidden ${
-                browserExpanded ? 'pointer-events-none' : ''
-              }`}
+          <main className="relative flex-1 min-w-0 flex flex-col min-h-0 overflow-hidden bg-droid-bg">
+            <div
+              ref={contentRowRef}
+              className="relative flex min-h-0 min-w-0 flex-1 overflow-hidden"
             >
-              {!embedded && state.mainView === 'pull-requests' ? (
-                <Suspense fallback={<PullRequestsSkeleton />}>
-                  <LazyPullRequestsView />
-                </Suspense>
-              ) : !embedded && state.mainView === 'automations' ? (
-                <Suspense fallback={<PanelSkeleton title="automations" />}>
-                  <LazyAutomationsRoute
-                    workspaceScopes={workspaceScopes}
-                    workspaceScopesReady={workspaceScopesReady}
-                  />
-                </Suspense>
-              ) : isMissionControlView ? (
-                <motion.div
-                  key="mission-control"
-                  className="flex-1 min-h-0 min-w-0 flex flex-col overflow-hidden"
-                  initial={{ clipPath: 'inset(0 100% 0 0)', opacity: 0.4 }}
-                  animate={{ clipPath: 'inset(0 0% 0 0)', opacity: 1 }}
-                  transition={{ duration: 0.6, ease: [0.16, 1, 0.3, 1] }}
-                >
-                  <Suspense fallback={<MissionControlSkeleton />}>
-                    <LazyMissionControl />
+              <section
+                aria-hidden={browserExpanded}
+                className={`relative flex min-w-0 flex-1 flex-col overflow-hidden ${
+                  browserExpanded ? 'pointer-events-none' : ''
+                }`}
+              >
+                {!embedded && state.mainView === 'pull-requests' ? (
+                  <Suspense fallback={<PullRequestsSkeleton />}>
+                    <LazyPullRequestsView />
                   </Suspense>
-                </motion.div>
-              ) : (
-                <>
-                  <ChatView rightInset={rightPanelVisible} isObscured={browserExpanded} />
-                  <PromptInput rightInset={rightPanelVisible} />
-                </>
-              )}
-            </section>
+                ) : !embedded && state.mainView === 'automations' ? (
+                  <Suspense fallback={<PanelSkeleton title="automations" />}>
+                    <LazyAutomationsRoute
+                      workspaceScopes={workspaceScopes}
+                      workspaceScopesReady={workspaceScopesReady}
+                    />
+                  </Suspense>
+                ) : isMissionControlView ? (
+                  <motion.div
+                    key="mission-control"
+                    className="flex-1 min-h-0 min-w-0 flex flex-col overflow-hidden"
+                    initial={{ clipPath: 'inset(0 100% 0 0)', opacity: 0.4 }}
+                    animate={{ clipPath: 'inset(0 0% 0 0)', opacity: 1 }}
+                    transition={{ duration: 0.6, ease: [0.16, 1, 0.3, 1] }}
+                  >
+                    <Suspense fallback={<MissionControlSkeleton />}>
+                      <LazyMissionControl />
+                    </Suspense>
+                  </motion.div>
+                ) : (
+                  <>
+                    <ChatView rightInset={rightPanelVisible} isObscured={browserExpanded} />
+                    <PromptInput rightInset={rightPanelVisible} />
+                  </>
+                )}
+              </section>
 
-            <AnimatePresence initial={false}>
-              {showUtilityPane && (
-                <motion.div
-                  key="utility-pane"
-                  initial={{ width: 0, opacity: 0 }}
-                  animate={{
-                    width:
-                      browserExpanded && contentRowWidth > 0 ? contentRowWidth : utilityPaneWidth,
-                    opacity: 1,
-                  }}
-                  exit={{ width: 0, opacity: 0 }}
-                  transition={{ duration: 0.18, ease: [0.16, 1, 0.3, 1] }}
-                  className="h-full min-w-0 shrink-0 overflow-hidden"
-                >
-                  <UtilityPane
-                    panel={utilityPanel}
-                    expanded={browserExpanded}
-                    width={utilityPaneWidth}
-                    minWidth={UTILITY_PANE_MIN}
-                    maxWidth={utilityPaneMax}
-                    onResize={setUtilityPaneWidth}
-                    onResizeEnd={(width) => {
-                      const next = clampUtilityPane(width, contentRowWidth || undefined);
-                      setUtilityPaneWidth(next);
-                      try {
-                        localStorage.setItem(UTILITY_PANE_WIDTH_STORAGE_KEY, String(next));
-                      } catch {
-                        /* ignore */
-                      }
+              <AnimatePresence initial={false}>
+                {showUtilityPane && (
+                  <motion.div
+                    key="utility-pane"
+                    initial={{ width: 0, opacity: 0 }}
+                    animate={{
+                      width:
+                        browserExpanded && contentRowWidth > 0 ? contentRowWidth : utilityPaneWidth,
+                      opacity: 1,
                     }}
-                    onOpenTool={openUtilityTool}
-                    onActivateTab={(tabId) => {
-                      const nextTab = utilityPanel.tabs.find((tab) => tab.id === tabId);
-                      if (nextTab?.tool !== 'browser') setExpandedBrowserAppSessionId(null);
-                      dispatch({ type: 'ACTIVATE_UTILITY_TAB', tabId });
-                    }}
-                    onCloseTab={(tab) => {
-                      if (tab.tool === 'terminal') {
-                        const status = peekTerminalInstance(tab.id)?.getState().status;
-                        if (!tab.terminalId || status !== 'running') {
-                          closeTerminalTab(tab);
-                          return;
+                    exit={{ width: 0, opacity: 0 }}
+                    transition={{ duration: 0.18, ease: [0.16, 1, 0.3, 1] }}
+                    className="h-full min-w-0 shrink-0 overflow-hidden"
+                  >
+                    <UtilityPane
+                      panel={utilityPanel}
+                      expanded={browserExpanded}
+                      width={utilityPaneWidth}
+                      minWidth={UTILITY_PANE_MIN}
+                      maxWidth={utilityPaneMax}
+                      onResize={setUtilityPaneWidth}
+                      onResizeEnd={(width) => {
+                        const next = clampUtilityPane(width, contentRowWidth || undefined);
+                        setUtilityPaneWidth(next);
+                        try {
+                          localStorage.setItem(UTILITY_PANE_WIDTH_STORAGE_KEY, String(next));
+                        } catch {
+                          /* ignore */
                         }
-                        const armCloseConfirm = () => {
-                          // The check may resolve after the user switched
-                          // sessions or closed the pane; only arm the
-                          // confirmation if this tab is still on screen.
-                          const panel = visibleUtilityPanelRef.current;
-                          if (!panel?.tabs.some((current) => current.id === tab.id)) {
+                      }}
+                      onOpenTool={openUtilityTool}
+                      onActivateTab={(tabId) => {
+                        const nextTab = utilityPanel.tabs.find((tab) => tab.id === tabId);
+                        if (nextTab?.tool !== 'browser') setExpandedBrowserAppSessionId(null);
+                        dispatch({ type: 'ACTIVATE_UTILITY_TAB', tabId });
+                      }}
+                      onCloseTab={(tab) => {
+                        if (tab.tool === 'terminal') {
+                          const status = peekTerminalInstance(tab.id)?.getState().status;
+                          if (!tab.terminalId || status !== 'running') {
+                            closeTerminalTab(tab);
                             return;
                           }
-                          // Only the active tab's TerminalWorkspace is
-                          // mounted, so the confirmation has nowhere to
-                          // render unless this tab is brought forward first
-                          // — mirror onActivateTab's browser-expanded reset.
-                          if (tab.id !== panel.activeTabId) {
-                            setExpandedBrowserAppSessionId(null);
-                            dispatch({ type: 'ACTIVATE_UTILITY_TAB', tabId: tab.id });
-                          }
-                          setConfirmCloseTabId(tab.id);
-                        };
-                        void terminalHasChildren(tab.terminalId)
-                          .then((busy) => {
-                            if (!busy) {
-                              closeTerminalTab(tab);
+                          const armCloseConfirm = () => {
+                            // The check may resolve after the user switched
+                            // sessions or closed the pane; only arm the
+                            // confirmation if this tab is still on screen.
+                            const panel = visibleUtilityPanelRef.current;
+                            if (!panel?.tabs.some((current) => current.id === tab.id)) {
                               return;
                             }
-                            armCloseConfirm();
-                          })
-                          .catch(() => {
-                            // Unverifiable shell state: fall back to asking
-                            // rather than silently doing nothing.
-                            armCloseConfirm();
-                          });
-                        return;
-                      }
-                      if (tab.tool === 'browser') setExpandedBrowserAppSessionId(null);
-                      dispatch({ type: 'CLOSE_UTILITY_TAB', tabId: tab.id });
-                    }}
-                    onClosePane={() => {
-                      setExpandedBrowserAppSessionId(null);
-                      dispatch({ type: 'SET_UTILITY_PANEL_OPEN', open: false });
-                    }}
-                    renderTab={(tab, { overlayOpen }) => {
-                      if (tab.tool === 'review') {
-                        return (
-                          <Suspense fallback={utilityToolFallback('review')}>
-                            <LazyReviewPanel cwd={workingDirectory} />
-                          </Suspense>
-                        );
-                      }
-                      if (tab.tool === 'browser') {
-                        return (
-                          <Suspense fallback={utilityToolFallback('browser')}>
-                            <LazyBrowserFocusWorkspace
-                              expanded={browserExpanded}
-                              externalObscured={overlayOpen}
-                              onToggleExpanded={() => {
-                                setExpandedBrowserAppSessionId(
-                                  browserExpanded ? null : activeSession.appSessionId,
-                                );
-                              }}
-                            />
-                          </Suspense>
-                        );
-                      }
-                      if (tab.tool === 'terminal') {
-                        return (
-                          <Suspense fallback={utilityToolFallback('terminal')}>
-                            <LazyTerminalWorkspace
-                              tabId={tab.id}
-                              terminalId={tab.terminalId}
-                              appSessionId={activeSession.appSessionId}
-                              cwd={tab.cwd ?? workingDirectory}
-                              confirmClose={tab.id === confirmingTab?.id}
-                              onKeepOpen={() => {
-                                setConfirmCloseTabId(null);
-                              }}
-                              onStopAndClose={() => {
+                            // Only the active tab's TerminalWorkspace is
+                            // mounted, so the confirmation has nowhere to
+                            // render unless this tab is brought forward first
+                            // — mirror onActivateTab's browser-expanded reset.
+                            if (tab.id !== panel.activeTabId) {
+                              setExpandedBrowserAppSessionId(null);
+                              dispatch({ type: 'ACTIVATE_UTILITY_TAB', tabId: tab.id });
+                            }
+                            setConfirmCloseTabId(tab.id);
+                          };
+                          void terminalHasChildren(tab.terminalId)
+                            .then((busy) => {
+                              if (!busy) {
                                 closeTerminalTab(tab);
-                              }}
-                              onCreated={(terminalId, label) => {
+                                return;
+                              }
+                              armCloseConfirm();
+                            })
+                            .catch(() => {
+                              // Unverifiable shell state: fall back to asking
+                              // rather than silently doing nothing.
+                              armCloseConfirm();
+                            });
+                          return;
+                        }
+                        if (tab.tool === 'browser') setExpandedBrowserAppSessionId(null);
+                        dispatch({ type: 'CLOSE_UTILITY_TAB', tabId: tab.id });
+                      }}
+                      onClosePane={() => {
+                        setExpandedBrowserAppSessionId(null);
+                        dispatch({ type: 'SET_UTILITY_PANEL_OPEN', open: false });
+                      }}
+                      renderTab={(tab, { overlayOpen }) => {
+                        if (tab.tool === 'review') {
+                          return (
+                            <Suspense fallback={utilityToolFallback('review')}>
+                              <LazyReviewPanel cwd={workingDirectory} />
+                            </Suspense>
+                          );
+                        }
+                        if (tab.tool === 'browser') {
+                          return (
+                            <Suspense fallback={utilityToolFallback('browser')}>
+                              <LazyBrowserFocusWorkspace
+                                expanded={browserExpanded}
+                                externalObscured={overlayOpen}
+                                onToggleExpanded={() => {
+                                  setExpandedBrowserAppSessionId(
+                                    browserExpanded ? null : activeSession.appSessionId,
+                                  );
+                                }}
+                              />
+                            </Suspense>
+                          );
+                        }
+                        if (tab.tool === 'terminal') {
+                          return (
+                            <Suspense fallback={utilityToolFallback('terminal')}>
+                              <LazyTerminalWorkspace
+                                tabId={tab.id}
+                                terminalId={tab.terminalId}
+                                appSessionId={activeSession.appSessionId}
+                                cwd={tab.cwd ?? workingDirectory}
+                                confirmClose={tab.id === confirmingTab?.id}
+                                onKeepOpen={() => {
+                                  setConfirmCloseTabId(null);
+                                }}
+                                onStopAndClose={() => {
+                                  closeTerminalTab(tab);
+                                }}
+                                onCreated={(terminalId, label) => {
+                                  dispatch({
+                                    type: 'UPDATE_UTILITY_TAB',
+                                    tabId: tab.id,
+                                    appSessionId: activeSession.appSessionId,
+                                    terminalId,
+                                    label,
+                                  });
+                                }}
+                              />
+                            </Suspense>
+                          );
+                        }
+                        return (
+                          <Suspense fallback={utilityToolFallback('files')}>
+                            <LazyFilesWorkspace
+                              root={workingDirectory}
+                              selectedPath={tab.filePath}
+                              onSelectPath={(filePath) => {
                                 dispatch({
                                   type: 'UPDATE_UTILITY_TAB',
                                   tabId: tab.id,
                                   appSessionId: activeSession.appSessionId,
-                                  terminalId,
-                                  label,
+                                  filePath,
                                 });
                               }}
                             />
                           </Suspense>
                         );
-                      }
-                      return (
-                        <Suspense fallback={utilityToolFallback('files')}>
-                          <LazyFilesWorkspace
-                            root={workingDirectory}
-                            selectedPath={tab.filePath}
-                            onSelectPath={(filePath) => {
-                              dispatch({
-                                type: 'UPDATE_UTILITY_TAB',
-                                tabId: tab.id,
-                                appSessionId: activeSession.appSessionId,
-                                filePath,
-                              });
-                            }}
-                          />
-                        </Suspense>
-                      );
-                    }}
-                  />
-                </motion.div>
-              )}
-            </AnimatePresence>
-          </div>
-        </main>
+                      }}
+                    />
+                  </motion.div>
+                )}
+              </AnimatePresence>
+            </div>
+          </main>
 
-        {/* Floating overlay — does not take flex space, so `main` keeps full
+          {/* Floating overlay — does not take flex space, so `main` keeps full
             width and its scrollbar stays at the window's right edge. */}
-        <AnimatePresence initial={false}>
-          {rightPanelVisible && (
-            <motion.div
-              key="right-panel"
-              initial={{ opacity: 0, x: 12 }}
-              animate={{ opacity: 1, x: 0 }}
-              exit={{ opacity: 0, x: 12 }}
-              transition={{ duration: 0.2, ease: [0.16, 1, 0.3, 1] }}
-              className="pointer-events-none absolute top-0 right-0 h-full w-[312px] z-30"
-            >
-              <RightPanel />
-            </motion.div>
-          )}
-        </AnimatePresence>
-      </div>
+          <AnimatePresence initial={false}>
+            {rightPanelVisible && (
+              <motion.div
+                key="right-panel"
+                initial={{ opacity: 0, x: 12 }}
+                animate={{ opacity: 1, x: 0 }}
+                exit={{ opacity: 0, x: 12 }}
+                transition={{ duration: 0.2, ease: [0.16, 1, 0.3, 1] }}
+                className="pointer-events-none absolute top-0 right-0 h-full w-[312px] z-30"
+              >
+                <RightPanel />
+              </motion.div>
+            )}
+          </AnimatePresence>
+        </div>
+      </AgentPaneProvider>
 
       {/* Floating window controls — rendered LAST so their `no-drag` regions are
           accumulated after the full-width header drag regions (sidebar/chat/

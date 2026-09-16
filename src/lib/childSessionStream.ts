@@ -67,6 +67,7 @@ export function childStreamPhase(input: {
 }): ChildStreamPhase {
   if (input.queued) return 'queued';
   const failed = input.isError === true || input.latestKind === 'error';
+  if (input.status === 'failed') return 'failed';
   if (input.status === 'completed') {
     if (failed) return 'failed';
     if (input.interruptReason) return 'interrupted';
@@ -135,14 +136,6 @@ function optionalText(value: string | undefined): string {
   return value ?? '';
 }
 
-function childStreamStatus(
-  child: ChildSessionSummary,
-  activity: ChildSessionActivity | undefined,
-): ChildStatus {
-  if (child.queued) return child.status;
-  return activity?.status ?? child.status;
-}
-
 function childStreamRawPreview(
   latest: ChildSessionActivity['latest'],
   polledPreview: string,
@@ -209,7 +202,10 @@ export function childStreamSnapshot(
   const fidelity = child.streamFidelity;
   const phase = childStreamPhase({
     queued: child.queued,
-    status: childStreamStatus(child, activity),
+    // The child's own state-only status is authoritative. Activity derived from
+    // the spawning tool must never settle a row: a Task call returning is the
+    // launch acknowledging, not the agent finishing.
+    status: child.status,
     latestKind: latest?.kind,
     isError: latest?.isError,
     hasOutput: childStreamHasOutput(

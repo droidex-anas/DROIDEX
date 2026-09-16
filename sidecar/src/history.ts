@@ -105,7 +105,7 @@ export interface HistoryPage {
 }
 
 export type PersistedChildRole = 'worker' | 'validator';
-export type PersistedChildStatus = 'pending' | 'running' | 'paused' | 'completed';
+export type PersistedChildStatus = 'pending' | 'running' | 'paused' | 'completed' | 'failed';
 
 export interface PersistedChildSpawnLink {
   kind: 'tool-use' | 'spawn';
@@ -725,7 +725,13 @@ function persistedChildRole(value: unknown): PersistedChildRole {
 
 function persistedChildStatus(value: unknown): PersistedChildStatus {
   const status = stringValue(value);
-  if (status === 'pending' || status === 'running' || status === 'paused' || status === 'completed')
+  if (
+    status === 'pending' ||
+    status === 'running' ||
+    status === 'paused' ||
+    status === 'completed' ||
+    status === 'failed'
+  )
     return status;
   throw new Error(historySchemaRecovery());
 }

@@ -75,7 +75,9 @@ export interface ProgressEntry {
 }
 
 export type ChildRole = 'worker' | 'validator';
-export type ChildStatus = 'pending' | 'running' | 'paused' | 'completed';
+// 'failed' is terminal like 'completed': the agent stopped, but it did not
+// deliver. Never fold the two together in a count, a label, or a tint.
+export type ChildStatus = 'pending' | 'running' | 'paused' | 'completed' | 'failed';
 export type StreamFidelity = 'token' | 'tool' | 'state';
 
 export interface ChildSpawnLink {
@@ -105,6 +107,10 @@ export interface ChildSessionSummary {
   // never-opened children; never inherited from the parent.
   autonomy?: Autonomy;
   spawnLink?: ChildSpawnLink;
+  // Workflow this child belongs to, and the workflow phase its row groups under.
+  // Both absent for a plain subagent wave.
+  group?: string;
+  phase?: string;
   transcriptAvailable: boolean;
   startedAt?: number;
   // Provider-declared: how live output actually arrives. Orthogonal to phase.

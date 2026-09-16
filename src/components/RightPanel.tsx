@@ -10,18 +10,30 @@ import { providerDefaultModel, providerModelCatalog } from '../features/provider
 import { motion, AnimatePresence } from 'framer-motion';
 import { Hash, ChevronRight, FileText } from 'lucide-react';
 import { ModelIcon, providerOf } from './ModelIcon';
+import { useAgentPane } from './agents/AgentPane';
+import { AgentPaneBody } from './agents/AgentPaneBody';
+import { AgentPaneTabs } from './agents/AgentPaneTabs';
 import NotesSection from './NotesSection';
 import { SubagentsSection } from './SubagentsPanel';
 import { Row, SectionHeader, Divider } from './environment/primitives';
 import { EnvironmentSection } from './environment/EnvironmentSection';
 import type { DiffStatMode } from '../types/vcs';
-import type { ModelInfo, ProviderStatus, ReasoningEffort, SessionSummary } from '../types/bridge';
+import type {
+  ModelInfo,
+  ProviderStatus,
+  ReasoningEffort,
+  SessionSummary,
+  TranscriptEvent,
+} from '../types/bridge';
 import { diffModeToReviewScope } from '../lib/reviewScopes';
 import {
   childSessionIsLive,
   spawnedChildSessions,
   visibleSessionTarget,
 } from '../lib/childSessions';
+import { useChildStreamSnapshots } from '../hooks/useChildStreamSnapshots';
+
+const EMPTY_TRANSCRIPT: TranscriptEvent[] = [];
 
 export default function RightPanel() {
   const dispatch = useStoreDispatch();
@@ -96,6 +108,17 @@ export default function RightPanel() {
     ),
   );
 
+  // The Subagents tab exists only while the session has agents, and it is one
+  // tab holding the whole list — never a tab per agent.
+  const agentPane = useAgentPane();
+  const hasAgents = childSessions.length > 0;
+  const showAgentTab = hasAgents && agentPane.tab === 'subagents';
+  const streamSnapshots = useChildStreamSnapshots(
+    childSessions,
+    transcript ?? EMPTY_TRANSCRIPT,
+    activeSession?.interruptReason,
+  );
+
   const { modelInfo, modelLabel, reasoningEffort } = modelRowContent(activeSession, state);
 
   // Folderless chats have no git environment to load — the panel skips the
@@ -135,169 +158,195 @@ export default function RightPanel() {
           remaining height change is the environment rows landing after mount. */}
       <div className="droid-card pointer-events-auto w-full max-h-full">
         {/* Header (no close button — the top toolbar button toggles this panel) */}
-        <div className="flex h-11 shrink-0 items-center justify-between border-b border-droid-border/70 pl-4 pr-3">
-          <span className="text-[13px] font-semibold tracking-[-0.01em] text-droid-text">
-            Context
-          </span>
-          {working && <span className="shimmer-text text-[11px] font-medium">Working</span>}
-        </div>
+        <AgentPaneTabs
+          tab={showAgentTab ? 'subagents' : 'context'}
+          hasAgents={hasAgents}
+          agentCount={childSessions.length}
+          onSelect={agentPane.showTab}
+          trailing={
+            working ? <span className="shimmer-text text-[11px] font-medium">Working</span> : null
+          }
+        />
 
-        <div className="flex-1 min-h-0 overflow-y-auto px-1.5 pb-2">
-          {/* Environment — git-backed rows only exist for folder-backed chats */}
-          {activeSession && hasFolder && (
-            <div>
-              <SectionHeader label="Environment" />
-              <EnvironmentSection
-                cwd={cwd}
-                env={git.env}
-                branches={git.branches}
-                worktrees={git.worktrees}
-                diffStat={git.diffStat}
-                diffMode={diffMode}
-                onDiffModeChange={setDiffMode}
-                refresh={git.refresh}
-                live={working || childSessionsRunning}
-                githubAvailability={githubSetup.availability}
-                githubAction={githubSetup.action}
-                githubError={githubSetup.error}
-                githubManualGuideOpened={githubSetup.manualGuideOpened}
-                githubAuthCode={githubSetup.authCode}
-                githubAuthPopoverOpen={githubSetup.isAuthPopoverOpen}
-                githubReady={githubSetup.isReady}
-                onGithubSetupAction={githubSetup.runPrimaryAction}
-                onShowGithubAuthPrompt={githubSetup.showAuthPrompt}
-                onCloseGithubAuthPrompt={githubSetup.closeAuthPrompt}
-                onCancelGithubAuthentication={githubSetup.cancelAuthentication}
-                pr={pr.pr}
-                onOpenPr={() => {
-                  dispatch({
-                    type: 'OPEN_PULL_REQUESTS',
-                    cwd,
-                    number: pr.pr?.number ?? null,
-                  });
-                }}
-                onOpenReview={() => {
-                  dispatch({ type: 'SET_REVIEW_SCOPE', scope: diffModeToReviewScope(diffMode) });
-                  dispatch({ type: 'SET_REVIEW_OPEN', open: true });
-                }}
-                onPrCreated={pr.refresh}
-              />
-              {modelRow}
-            </div>
-          )}
+        {showAgentTab ? (
+          <AgentPaneBody
+            childSessions={childSessions}
+            models={state.models}
+            snapshots={streamSnapshots}
+            transcript={transcript ?? EMPTY_TRANSCRIPT}
+            live={working || childSessionsRunning}
+            openAgentId={agentPane.openAgentId}
+            onOpenAgent={agentPane.openAgent}
+            onBack={agentPane.closeAgent}
+            onOpenTranscript={(child) => {
+              dispatch({
+                type: 'SELECT_CHILD',
+                selection: {
+                  parentAppSessionId: child.parentAppSessionId,
+                  childSessionId: child.childSessionId,
+                },
+              });
+            }}
+            {...(activeSession ? { provider: activeSession.provider } : {})}
+          />
+        ) : (
+          <div className="flex-1 min-h-0 overflow-y-auto px-1.5 pb-2">
+            {/* Environment — git-backed rows only exist for folder-backed chats */}
+            {activeSession && hasFolder && (
+              <div>
+                <SectionHeader label="Environment" />
+                <EnvironmentSection
+                  cwd={cwd}
+                  env={git.env}
+                  branches={git.branches}
+                  worktrees={git.worktrees}
+                  diffStat={git.diffStat}
+                  diffMode={diffMode}
+                  onDiffModeChange={setDiffMode}
+                  refresh={git.refresh}
+                  live={working || childSessionsRunning}
+                  githubAvailability={githubSetup.availability}
+                  githubAction={githubSetup.action}
+                  githubError={githubSetup.error}
+                  githubManualGuideOpened={githubSetup.manualGuideOpened}
+                  githubAuthCode={githubSetup.authCode}
+                  githubAuthPopoverOpen={githubSetup.isAuthPopoverOpen}
+                  githubReady={githubSetup.isReady}
+                  onGithubSetupAction={githubSetup.runPrimaryAction}
+                  onShowGithubAuthPrompt={githubSetup.showAuthPrompt}
+                  onCloseGithubAuthPrompt={githubSetup.closeAuthPrompt}
+                  onCancelGithubAuthentication={githubSetup.cancelAuthentication}
+                  pr={pr.pr}
+                  onOpenPr={() => {
+                    dispatch({
+                      type: 'OPEN_PULL_REQUESTS',
+                      cwd,
+                      number: pr.pr?.number ?? null,
+                    });
+                  }}
+                  onOpenReview={() => {
+                    dispatch({ type: 'SET_REVIEW_SCOPE', scope: diffModeToReviewScope(diffMode) });
+                    dispatch({ type: 'SET_REVIEW_OPEN', open: true });
+                  }}
+                  onPrCreated={pr.refresh}
+                />
+                {modelRow}
+              </div>
+            )}
 
-          {/* Folderless chats skip the git rows entirely — no perpetual
+            {/* Folderless chats skip the git rows entirely — no perpetual
               "Loading environment…" for a folder that doesn't exist. */}
-          {activeSession && !hasFolder && (
-            <div>
-              <SectionHeader label="Model" />
-              {modelRow}
-            </div>
-          )}
+            {activeSession && !hasFolder && (
+              <div>
+                <SectionHeader label="Model" />
+                {modelRow}
+              </div>
+            )}
 
-          {/* Subagents — keyed by session so the popover's open state resets
+            {/* Subagents — keyed by session so the popover's open state resets
               on a session switch instead of leaking into the next session. */}
-          {activeSession && childSessions.length > 0 && (
-            <div>
-              <Divider />
-              <SubagentsSection
-                key={activeSession.appSessionId}
-                childSessions={childSessions}
-                models={state.models}
-                selectedChildSessionId={selectedAgent}
-                onSelect={(child) => {
-                  dispatch({
-                    type: 'SELECT_CHILD',
-                    selection:
-                      selectedAgent === child.childSessionId
-                        ? null
-                        : {
-                            parentAppSessionId: child.parentAppSessionId,
-                            childSessionId: child.childSessionId,
-                          },
-                  });
-                }}
-              />
-            </div>
-          )}
+            {activeSession && childSessions.length > 0 && (
+              <div>
+                <Divider />
+                <SubagentsSection
+                  key={activeSession.appSessionId}
+                  childSessions={childSessions}
+                  models={state.models}
+                  selectedChildSessionId={selectedAgent}
+                  onSelect={(child) => {
+                    dispatch({
+                      type: 'SELECT_CHILD',
+                      selection:
+                        selectedAgent === child.childSessionId
+                          ? null
+                          : {
+                              parentAppSessionId: child.parentAppSessionId,
+                              childSessionId: child.childSessionId,
+                            },
+                    });
+                  }}
+                />
+              </div>
+            )}
 
-          {/* Spec — opens the full wiki reader for sessions that produced one */}
-          {activeSession && activeSpec && (
-            <div>
-              <Divider />
-              <SectionHeader label="Spec" />
-              <Row
-                icon={<FileText className="h-4 w-4" />}
-                label={specTitle || 'Open spec'}
-                title={specTitle || undefined}
-                onClick={() => {
-                  dispatch({ type: 'SPEC_OPEN_WIKI', appSessionId: activeSession.appSessionId });
-                }}
-                trailing={
-                  <ChevronRight className="h-3.5 w-3.5 text-droid-text-muted/60 transition-colors group-hover:text-droid-text-secondary" />
-                }
-              />
-            </div>
-          )}
+            {/* Spec — opens the full wiki reader for sessions that produced one */}
+            {activeSession && activeSpec && (
+              <div>
+                <Divider />
+                <SectionHeader label="Spec" />
+                <Row
+                  icon={<FileText className="h-4 w-4" />}
+                  label={specTitle || 'Open spec'}
+                  title={specTitle || undefined}
+                  onClick={() => {
+                    dispatch({ type: 'SPEC_OPEN_WIKI', appSessionId: activeSession.appSessionId });
+                  }}
+                  trailing={
+                    <ChevronRight className="h-3.5 w-3.5 text-droid-text-muted/60 transition-colors group-hover:text-droid-text-secondary" />
+                  }
+                />
+              </div>
+            )}
 
-          {/* Notes — scratch reminders that hand their text to the composer.
+            {/* Notes — scratch reminders that hand their text to the composer.
               Keyed by session so the pad's draft and chipped tag reset on a
               session switch instead of leaking into the next session. */}
-          {activeSession && (
-            <div>
-              <Divider />
-              <NotesSection
-                key={activeSession.appSessionId}
-                appSessionId={activeSession.appSessionId}
-              />
-            </div>
-          )}
+            {activeSession && (
+              <div>
+                <Divider />
+                <NotesSection
+                  key={activeSession.appSessionId}
+                  appSessionId={activeSession.appSessionId}
+                />
+              </div>
+            )}
 
-          {/* Selected step detail */}
-          <AnimatePresence>
-            {activeSession &&
-              state.selectedFeatureId &&
-              (() => {
-                const f = activeSession.features.find((x) => x.id === state.selectedFeatureId);
-                if (!f) return null;
-                return (
-                  <motion.div
-                    key={f.id}
-                    initial={{ opacity: 0, height: 0 }}
-                    animate={{ opacity: 1, height: 'auto' }}
-                    exit={{ opacity: 0, height: 0 }}
-                    className="overflow-hidden"
-                  >
-                    <div className="mx-3 my-1.5 rounded-xl bg-droid-elevated/50 px-3 py-2.5 space-y-2">
-                      <div className="text-[13px] text-droid-text leading-relaxed">
-                        {f.description}
+            {/* Selected step detail */}
+            <AnimatePresence>
+              {activeSession &&
+                state.selectedFeatureId &&
+                (() => {
+                  const f = activeSession.features.find((x) => x.id === state.selectedFeatureId);
+                  if (!f) return null;
+                  return (
+                    <motion.div
+                      key={f.id}
+                      initial={{ opacity: 0, height: 0 }}
+                      animate={{ opacity: 1, height: 'auto' }}
+                      exit={{ opacity: 0, height: 0 }}
+                      className="overflow-hidden"
+                    >
+                      <div className="mx-3 my-1.5 rounded-xl bg-droid-elevated/50 px-3 py-2.5 space-y-2">
+                        <div className="text-[13px] text-droid-text leading-relaxed">
+                          {f.description}
+                        </div>
+                        {f.skillName && (
+                          <div className="flex items-center gap-2">
+                            <Hash className="w-3.5 h-3.5 text-droid-text-muted" />
+                            <span className="text-[11px] font-medium text-droid-text-secondary">
+                              {f.skillName}
+                            </span>
+                          </div>
+                        )}
+                        {f.preconditions.length > 0 && (
+                          <div className="space-y-1">
+                            {f.preconditions.map((p, i) => (
+                              <div
+                                key={i}
+                                className="text-[12px] text-droid-text-muted pl-3 border-l-2 border-droid-border"
+                              >
+                                {p}
+                              </div>
+                            ))}
+                          </div>
+                        )}
                       </div>
-                      {f.skillName && (
-                        <div className="flex items-center gap-2">
-                          <Hash className="w-3.5 h-3.5 text-droid-text-muted" />
-                          <span className="text-[11px] font-medium text-droid-text-secondary">
-                            {f.skillName}
-                          </span>
-                        </div>
-                      )}
-                      {f.preconditions.length > 0 && (
-                        <div className="space-y-1">
-                          {f.preconditions.map((p, i) => (
-                            <div
-                              key={i}
-                              className="text-[12px] text-droid-text-muted pl-3 border-l-2 border-droid-border"
-                            >
-                              {p}
-                            </div>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                  </motion.div>
-                );
-              })()}
-          </AnimatePresence>
-        </div>
+                    </motion.div>
+                  );
+                })()}
+            </AnimatePresence>
+          </div>
+        )}
       </div>
     </div>
   );

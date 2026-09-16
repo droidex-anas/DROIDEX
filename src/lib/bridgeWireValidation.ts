@@ -305,8 +305,8 @@ function isSessionSummary(value: unknown): boolean {
     Array.isArray(value.features) &&
     value.features.every(isBridgeFeature) &&
     hasNumbers(value, ['tokensIn', 'tokensOut', 'contextTokens', 'createdAt', 'updatedAt']) &&
-    (value.interruptReason === undefined || typeof value.interruptReason === 'string') &&
-    (value.resumeId === undefined || typeof value.resumeId === 'string')
+    isOptionalString(value.interruptReason) &&
+    isOptionalString(value.resumeId)
   );
 }
 
@@ -319,7 +319,9 @@ function isChildSessionSummary(value: unknown): boolean {
     isRecord(value) &&
     hasStrings(value, ['parentAppSessionId', 'childSessionId', 'role', 'status', 'modelId']) &&
     typeof value.transcriptAvailable === 'boolean' &&
-    isStreamFidelity(value.streamFidelity)
+    isStreamFidelity(value.streamFidelity) &&
+    isOptionalString(value.group) &&
+    isOptionalString(value.phase)
   );
 }
 
@@ -447,6 +449,10 @@ function isBrowserNativeRequest(value: unknown): boolean {
 
 function hasStrings(value: Record<string, unknown>, keys: readonly string[]): boolean {
   return keys.every((key) => typeof value[key] === 'string');
+}
+
+function isOptionalString(value: unknown): boolean {
+  return value === undefined || typeof value === 'string';
 }
 
 function hasNumbers(value: Record<string, unknown>, keys: readonly string[]): boolean {

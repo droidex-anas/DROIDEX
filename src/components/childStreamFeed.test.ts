@@ -134,14 +134,14 @@ test('feedItemPropsEqual isolates a child_sessions card from sibling feed rows',
   const userEvent = user('user-1', 1);
   const wave = childItem('child-sessions-t1', [spawnEvent]);
   const dock = { sessions: [] as ChildSessionSummary[], models: [] };
-  const previousWave = viewProps(wave, { subagentsDock: dock });
-  const nextWave = viewProps(wave, { subagentsDock: dock });
+  const previousWave = viewProps(wave, { agentMonitor: dock });
+  const nextWave = viewProps(wave, { agentMonitor: dock });
   assert.equal(sameFeedEvents(wave, wave), true);
   assert.equal(feedItemPropsEqual(previousWave, nextWave), true);
 
   const nextDock = { sessions: [] as ChildSessionSummary[], models: [] };
   assert.equal(
-    feedItemPropsEqual(previousWave, viewProps(wave, { subagentsDock: nextDock })),
+    feedItemPropsEqual(previousWave, viewProps(wave, { agentMonitor: nextDock })),
     false,
   );
 
@@ -151,8 +151,8 @@ test('feedItemPropsEqual isolates a child_sessions card from sibling feed rows',
 
   assert.equal(
     feedItemPropsEqual(
-      viewProps(messageItem(userEvent), { subagentsDock: dock }),
-      viewProps(messageItem(userEvent), { subagentsDock: nextDock }),
+      viewProps(messageItem(userEvent), { agentMonitor: dock }),
+      viewProps(messageItem(userEvent), { agentMonitor: nextDock }),
     ),
     true,
   );
@@ -167,19 +167,16 @@ test('feedItemPropsEqual rerenders a worked fold when nested dock data changes',
     items: [wave],
   };
   const dock = { sessions: [] as ChildSessionSummary[], models: [] };
-  const previous = viewProps(worked, { subagentsDock: dock });
-  assert.equal(feedItemPropsEqual(previous, viewProps(worked, { subagentsDock: dock })), true);
+  const previous = viewProps(worked, { agentMonitor: dock });
+  assert.equal(feedItemPropsEqual(previous, viewProps(worked, { agentMonitor: dock })), true);
   assert.equal(
-    feedItemPropsEqual(
-      previous,
-      viewProps(worked, { subagentsDock: { sessions: [], models: [] } }),
-    ),
+    feedItemPropsEqual(previous, viewProps(worked, { agentMonitor: { sessions: [], models: [] } })),
     false,
   );
   assert.equal(
     feedItemPropsEqual(
-      viewProps(worked, { subagentsDock: dock, sessionLive: false }),
-      viewProps(worked, { subagentsDock: dock, sessionLive: true }),
+      viewProps(worked, { agentMonitor: dock, sessionLive: false }),
+      viewProps(worked, { agentMonitor: dock, sessionLive: true }),
     ),
     false,
   );
