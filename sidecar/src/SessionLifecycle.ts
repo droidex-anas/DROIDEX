@@ -55,7 +55,7 @@ interface DeferredClose {
   resolve: () => void;
   reject: (error: unknown) => void;
   started: boolean;
-  retryFailedOpen?: boolean;
+  retryOnFailure?: boolean;
   retryTimer?: ReturnType<typeof setTimeout>;
 }
 interface CloseOperation {
@@ -605,9 +605,8 @@ export class SessionLifecycle {
       deferred.resolve();
     } catch (error) {
       if (this.dependencies.registry.getLive(liveSession.summary.appSessionId) === liveSession) {
-        if (deferred.retryFailedOpen && !this.dependencies.isShutdownStarted()) {
-          if (!deferred.retryTimer)
-            console.warn(`Failed-open provider cleanup deferred: ${errMsg(error)}`);
+        if (deferred.retryOnFailure && !this.dependencies.isShutdownStarted()) {
+          if (!deferred.retryTimer) console.warn(`Session cleanup deferred: ${errMsg(error)}`);
           deferred.started = false;
           deferred.retryTimer = setTimeout(() => {
             void this.finishClose(liveSession);
@@ -816,12 +815,18 @@ export class SessionLifecycle {
       if (turn) await turn.catch(() => undefined);
       if (!isCurrent()) return;
       if (error && !turn) d.emitError({ appSessionId, message: error.message });
-      await this.close(appSessionId, 'preserve-pending');
+      const { deferred } = this.beginClose(liveSession, 'preserve-pending');
+      // Keep ownership until cleanup succeeds; sends must not reuse a dead runtime.
+      deferred.retryOnFailure = true;
+      await this.finishClose(liveSession);
+      await deferred.promise;
     };
     void session.closed
       ?.then((error) => {
         if (!isCurrent()) return;
-        liveSession.providerClosePromise = closeAfterTurn(error);
+        liveSession.providerClosePromise = closeAfterTurn(error).finally(() => {
+          liveSession.providerClosePromise = undefined;
+        });
         return liveSession.providerClosePromise;
       })
       .catch((error: unknown) => {
@@ -871,7 +876,7 @@ export class SessionLifecycle {
       this.dependencies.registry.getLive(liveSession.summary.appSessionId) === liveSession
     ) {
       const { deferred } = this.beginClose(liveSession, 'discard-pending');
-      deferred.retryFailedOpen = true;
+      deferred.retryOnFailure = true;
       void deferred.promise.catch((error: unknown) => {
         console.warn(`Failed-open provider cleanup failed: ${errMsg(error)}`);
       });

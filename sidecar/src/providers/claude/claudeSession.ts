@@ -48,7 +48,7 @@ export class ClaudeSession implements ProviderSession {
 
   private readonly abort = new AbortController();
   private resolveClosed: (error?: Error) => void = () => undefined;
-  private initializationError?: Error;
+  private failure?: Error;
   private readonly prompts = new PromptQueue();
   private readonly mapper: ClaudeEventMapper;
   private readonly query: Query;
@@ -97,7 +97,19 @@ export class ClaudeSession implements ProviderSession {
         (process) => {
           this.child = process;
           process.once('spawn', markSpawned);
-          process.once('error', rejectSpawn);
+          process.once('error', (error) => {
+            rejectSpawn(error);
+            this.childClosed(error);
+          });
+          const onExit = (code: number | null, signal: NodeJS.Signals | null): void => {
+            let error: Error | undefined;
+            if (signal) error = new Error(`Session process was killed (${signal}).`);
+            else if (code !== 0)
+              error = new Error(`Session process exited with code ${String(code)}.`);
+            this.childClosed(error);
+          };
+          process.once('exit', onExit);
+          process.once('close', onExit);
         },
       ),
     });
@@ -110,7 +122,6 @@ export class ClaudeSession implements ProviderSession {
         this.abort.signal.throwIfAborted();
         this.initializing = false;
         const failure = new Error(errMsg(error));
-        this.initializationError = failure;
         this.finish(failure);
         throw failure;
       },
@@ -178,14 +189,17 @@ export class ClaudeSession implements ProviderSession {
       }
     } finally {
       this.activeTurnId = undefined;
-      this.initializationError = undefined;
     }
   }
 
   // The failure survives a delayed first prompt, even after the query closes.
   private async nextMessage(): Promise<IteratorResult<SDKMessage>> {
     this.requireOpen();
-    const next = this.query.next();
+    const next = this.query.next().catch((error: unknown) => {
+      // Closing the iterator may race the initialization failure that caused it.
+      this.requireOpen();
+      throw error;
+    });
     // Observe both promises even when closing the query settles its iterator first.
     if (this.initializing) await Promise.race([this.initialized, next]);
     const message = await next;
@@ -240,7 +254,7 @@ export class ClaudeSession implements ProviderSession {
   }
 
   private requireOpen(): void {
-    if (this.initializationError) throw this.initializationError;
+    if (this.failure) throw this.failure;
     this.abort.signal.throwIfAborted();
   }
 
@@ -268,13 +282,32 @@ export class ClaudeSession implements ProviderSession {
     return Promise.resolve();
   }
 
+  private childClosed(error?: Error): void {
+    if (this.abort.signal.aborted) return;
+    if (!this.initializing) {
+      this.finish(error);
+      return;
+    }
+    // Initialization owns the startup diagnostic, even if exit arrives first.
+    void this.initialized.then(
+      () => {
+        this.finish(error);
+      },
+      () => undefined,
+    );
+  }
+
   private finish(error?: Error): void {
     if (this.abort.signal.aborted) return;
+    this.failure = error;
     this.abort.abort();
     this.prompts.close();
     // The SDK closes stdin and escalates SIGTERM to SIGKILL itself.
-    this.query.close();
-    this.resolveClosed(error);
+    try {
+      this.query.close();
+    } finally {
+      this.resolveClosed(error);
+    }
   }
 }
 

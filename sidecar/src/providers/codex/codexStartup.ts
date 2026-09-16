@@ -12,8 +12,10 @@ interface ServerStatus {
 
 function serverStatusOf(params: unknown): ServerStatus | undefined {
   if (!isObject(params)) return undefined;
-  const { name, status } = params;
-  return typeof name === 'string' && typeof status === 'string' ? { name, status } : undefined;
+  const { server, status } = params;
+  return typeof server === 'string' && typeof status === 'string'
+    ? { name: server, status }
+    : undefined;
 }
 
 export class CodexStartup {
@@ -44,6 +46,14 @@ export class CodexStartup {
   // waiting on.
   itemArrived(): void {
     this.answering = true;
+  }
+
+  get hasPendingNotices(): boolean {
+    return (
+      !this.answering &&
+      ((!this.announcedServers && this.starting.size > 0) ||
+        (!this.announcedHooks && this.openHooks > 0))
+    );
   }
 
   // At most one line per kind for the life of the session. The transcript has no
