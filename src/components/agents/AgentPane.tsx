@@ -1,9 +1,10 @@
 import { createContext, useCallback, useContext, useMemo, useState, type ReactNode } from 'react';
+import { useStoreSelector } from '../../hooks/useStore';
 
 /* Where the context panel is pointed. Rows in the transcript and above the
    composer open an agent there, and the panel itself renders it, so the three
-   share this one owner. View state only: the provider is keyed by the active
-   session, so switching sessions returns the panel to Context. */
+   share this one owner. View state only: an agent belongs to the session that
+   was showing, so a session switch returns the panel to Context. */
 
 export type AgentPaneTab = 'context' | 'subagents';
 
@@ -16,26 +17,37 @@ interface AgentPaneValue {
   closeAgent: () => void;
 }
 
+interface AgentPaneState {
+  tab: AgentPaneTab;
+  openAgentId: string | null;
+}
+
+const CONTEXT_PANE: AgentPaneState = { tab: 'context', openAgentId: null };
+
 const AgentPaneContext = createContext<AgentPaneValue | null>(null);
 
 export function AgentPaneProvider({ children }: { children: ReactNode }) {
-  const [tab, setTab] = useState<AgentPaneTab>('context');
-  const [openAgentId, setOpenAgentId] = useState<string | null>(null);
+  const appSessionId = useStoreSelector((state) => state.activeAppSessionId);
+  const [pane, setPane] = useState<AgentPaneState>(CONTEXT_PANE);
+  const [paneSession, setPaneSession] = useState(appSessionId);
+  if (paneSession !== appSessionId) {
+    setPaneSession(appSessionId);
+    setPane(CONTEXT_PANE);
+  }
 
-  const showTab = useCallback((next: AgentPaneTab) => {
-    setTab(next);
+  const showTab = useCallback((tab: AgentPaneTab) => {
+    setPane((current) => ({ ...current, tab }));
   }, []);
   const openAgent = useCallback((childSessionId: string) => {
-    setTab('subagents');
-    setOpenAgentId(childSessionId);
+    setPane({ tab: 'subagents', openAgentId: childSessionId });
   }, []);
   const closeAgent = useCallback(() => {
-    setOpenAgentId(null);
+    setPane((current) => ({ ...current, openAgentId: null }));
   }, []);
 
   const value = useMemo<AgentPaneValue>(
-    () => ({ tab, openAgentId, showTab, openAgent, closeAgent }),
-    [tab, openAgentId, showTab, openAgent, closeAgent],
+    () => ({ ...pane, showTab, openAgent, closeAgent }),
+    [pane, showTab, openAgent, closeAgent],
   );
   return <AgentPaneContext.Provider value={value}>{children}</AgentPaneContext.Provider>;
 }
