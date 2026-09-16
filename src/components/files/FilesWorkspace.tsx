@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { AnimatePresence, motion } from 'framer-motion';
+import { motion } from 'framer-motion';
 import {
   ChevronRight,
   ExternalLink,
@@ -17,9 +17,12 @@ import {
   type FilesEntry,
   type FilesListing,
 } from '../../lib/desktop';
+import { pathFileName } from '../../lib/pathDisplay';
 import { toast } from '../../lib/toast';
 import { FileTypeIcon } from '../FileTypeIcon';
 import { FilePreviewPane } from './FilePreviewPane';
+
+const FILE_TREE_ID = 'files-workspace-tree';
 
 interface VisibleEntry extends FilesEntry {
   relative: string;
@@ -34,13 +37,9 @@ function joinRelative(parent: string, name: string): string {
   return normalizeRelative(parent ? `${parent}/${name}` : name);
 }
 
-function baseName(path: string): string {
-  return path.replace(/\\/g, '/').replace(/\/+$/g, '').split('/').pop() ?? path;
-}
-
 // Display-only join: unlike joinRelative, the root keeps its absolute form
 // (leading slash, drive prefix) instead of being normalized away.
-function displayPath(root: string, relative: string): string {
+function fullDisplayPath(root: string, relative: string): string {
   return `${root.replace(/\\/g, '/').replace(/\/+$/g, '')}/${relative}`;
 }
 
@@ -154,8 +153,9 @@ export function FilesWorkspace({
   };
 
   const relative = selectedPath ?? '';
-  const fileName = relative ? baseName(relative) : '';
-  const rootName = baseName(root);
+  const fileName = relative ? pathFileName(relative) : '';
+  // A bare `/` or drive-letter root has no file name; show the root itself.
+  const rootName = pathFileName(root) || root;
   const crumbs = relative ? [rootName, ...relative.split('/')] : rootName ? [rootName] : [];
 
   const handleOpenExternal = useCallback(() => {
@@ -176,65 +176,69 @@ export function FilesWorkspace({
 
   return (
     <div className="files-workspace flex h-full min-h-0 bg-droid-bg">
-      <AnimatePresence initial={false}>
-        {!treeCollapsed && (
-          <motion.section
-            key="file-tree"
-            initial={{ width: 0, minWidth: 0, opacity: 0 }}
-            animate={{ width: '34%', minWidth: 150, opacity: 1 }}
-            exit={{ width: 0, minWidth: 0, opacity: 0 }}
-            transition={{ duration: 0.2, ease: [0.16, 1, 0.3, 1] }}
-            className="flex h-full shrink-0 flex-col overflow-hidden border-r border-droid-border bg-droid-surface/25"
+      {/* Always mounted so the collapse animation can run: while collapsed the
+          tree is inert and hidden from assistive technology immediately, not
+          only after the exit finishes. */}
+      <motion.section
+        id={FILE_TREE_ID}
+        initial={false}
+        animate={
+          treeCollapsed
+            ? { width: 0, minWidth: 0, opacity: 0 }
+            : { width: '34%', minWidth: 150, opacity: 1 }
+        }
+        transition={{ duration: 0.2, ease: [0.16, 1, 0.3, 1] }}
+        inert={treeCollapsed}
+        aria-hidden={treeCollapsed}
+        className="flex h-full shrink-0 flex-col overflow-hidden border-r border-droid-border bg-droid-surface/25"
+      >
+        <header className="flex h-9 shrink-0 items-center gap-1.5 border-b border-droid-border pl-2.5 pr-1.5">
+          <FileTypeIcon filename={root} isDirectory expanded className="h-3.5 w-3.5" />
+          <span
+            className="min-w-0 flex-1 truncate text-[12px] font-medium text-droid-text-secondary"
+            title={root}
           >
-            <header className="flex h-9 shrink-0 items-center gap-1.5 border-b border-droid-border pl-2.5 pr-1.5">
-              <FileTypeIcon filename={root} isDirectory expanded className="h-3.5 w-3.5" />
-              <span
-                className="min-w-0 flex-1 truncate text-[12px] font-medium text-droid-text-secondary"
-                title={root}
-              >
-                {rootName}
-              </span>
-              <HeaderButton title="Refresh files" onClick={() => void load('', true)}>
-                <RefreshCw className="h-3.5 w-3.5" />
-              </HeaderButton>
-            </header>
-            <div
-              className="min-h-0 flex-1 overflow-auto px-1 py-1"
-              role="tree"
-              aria-label="Session files"
-            >
-              {!rootListing && !errors[''] && (
-                <div className="flex items-center gap-2 px-2 py-3 text-xs text-droid-text-muted">
-                  <Spinner className="h-3.5 w-3.5 motion-safe:animate-spin-slow" />
-                  Loading files…
-                </div>
-              )}
-              {errors[''] && (
-                <p className="px-2 py-3 text-xs leading-relaxed text-red-300">{errors['']}</p>
-              )}
-              {visible.map((entry) => (
-                <FileTreeRow
-                  key={entry.relative}
-                  entry={entry}
-                  selected={entry.relative === relative}
-                  expanded={expanded.has(entry.relative)}
-                  loading={loading.has(entry.relative)}
-                  error={errors[entry.relative]}
-                  onClick={() => {
-                    if (entry.kind === 'directory') toggleDirectory(entry.relative);
-                    else onSelectPath(entry.relative);
-                  }}
-                />
-              ))}
-              {rootListing?.capped && (
-                <p className="px-2 py-2 text-[11px] text-amber-300">
-                  Showing {rootListing.entries.length} of {rootListing.totalSeen} entries.
-                </p>
-              )}
+            {rootName}
+          </span>
+          <HeaderButton title="Refresh files" onClick={() => void load('', true)}>
+            <RefreshCw className="h-3.5 w-3.5" />
+          </HeaderButton>
+        </header>
+        <div
+          className="min-h-0 flex-1 overflow-auto px-1 py-1"
+          role="tree"
+          aria-label="Session files"
+        >
+          {!rootListing && !errors[''] && (
+            <div className="flex items-center gap-2 px-2 py-3 text-xs text-droid-text-muted">
+              <Spinner className="h-3.5 w-3.5 motion-safe:animate-spin-slow" />
+              Loading files…
             </div>
-          </motion.section>
-        )}
-      </AnimatePresence>
+          )}
+          {errors[''] && (
+            <p className="px-2 py-3 text-xs leading-relaxed text-red-300">{errors['']}</p>
+          )}
+          {visible.map((entry) => (
+            <FileTreeRow
+              key={entry.relative}
+              entry={entry}
+              selected={entry.relative === relative}
+              expanded={expanded.has(entry.relative)}
+              loading={loading.has(entry.relative)}
+              error={errors[entry.relative]}
+              onClick={() => {
+                if (entry.kind === 'directory') toggleDirectory(entry.relative);
+                else onSelectPath(entry.relative);
+              }}
+            />
+          ))}
+          {rootListing?.capped && (
+            <p className="px-2 py-2 text-[11px] text-amber-300">
+              Showing {rootListing.entries.length} of {rootListing.totalSeen} entries.
+            </p>
+          )}
+        </div>
+      </motion.section>
 
       <section className="flex min-w-0 flex-1 flex-col">
         <header className="flex h-9 shrink-0 items-center gap-1 border-b border-droid-border pl-2 pr-1.5">
@@ -271,7 +275,7 @@ export function FilesWorkspace({
           <nav
             className="flex min-w-0 flex-1 items-center gap-1 overflow-hidden text-[11px]"
             aria-label="File path"
-            title={relative ? displayPath(root, relative) : root}
+            title={relative ? fullDisplayPath(root, relative) : root}
           >
             {crumbs.map((segment, index) => {
               const isLast = index === crumbs.length - 1;
@@ -298,7 +302,8 @@ export function FilesWorkspace({
             type="button"
             title={treeCollapsed ? 'Show file tree' : 'Hide file tree'}
             aria-label={treeCollapsed ? 'Show file tree' : 'Hide file tree'}
-            aria-pressed={treeCollapsed}
+            aria-expanded={!treeCollapsed}
+            aria-controls={FILE_TREE_ID}
             onClick={() => {
               setTreeCollapsed((current) => !current);
             }}
