@@ -15,7 +15,10 @@ import {
   MAPPED_NOTIFICATIONS,
   type CodexTurn,
 } from './codexEvents.js';
+import { CodexStartup } from './codexStartup.js';
 import { TurnStream, turnStartParams } from './codexTurn.js';
+
+const STARTUP_QUIET_MS = 40;
 
 export interface CodexSessionInput {
   // DROIDEX's own identity for the session. Codex mints its thread id itself,
@@ -37,7 +40,11 @@ interface ThreadResponse {
 export class CodexSession implements ProviderSession {
   readonly provider = 'codex' as const;
   readonly providerSessionId: string;
+  readonly closed: Promise<Error | undefined>;
 
+  private resolveClosed: (error?: Error) => void = () => undefined;
+  private hasClosed = false;
+  private closePromise?: Promise<void>;
   private readonly client: AppServerClient;
   private readonly mapper: CodexEventMapper;
   private readonly cwd: string;
@@ -51,9 +58,17 @@ export class CodexSession implements ProviderSession {
   // to name it with yet.
   private pendingInterrupt = false;
   private readonly prompts: OpenPrompts;
+  private readonly startup = new CodexStartup();
+  private startupNoticeTimer?: ReturnType<typeof setTimeout>;
 
   constructor(input: CodexSessionInput) {
     this.providerSessionId = input.appSessionId;
+    this.closed = new Promise((resolve) => {
+      this.resolveClosed = (error) => {
+        this.hasClosed = true;
+        resolve(error);
+      };
+    });
     this.client = input.client;
     this.cwd = input.cwd;
     this.autonomy = input.autonomy;
@@ -73,6 +88,10 @@ export class CodexSession implements ProviderSession {
   // Codex owns its thread ids, so this is the handle a restart resumes from.
   get resumeId(): string | undefined {
     return this.threadId;
+  }
+
+  get isClosed(): boolean {
+    return this.hasClosed;
   }
 
   get process(): { pid: number; isAlive(): boolean } | undefined {
@@ -113,6 +132,9 @@ export class CodexSession implements ProviderSession {
     this.turn = turn;
     this.pendingInterrupt = false;
     try {
+      // The thread's own startup may still be running behind this turn; what is
+      // left of it is announced now rather than leaving the chat silent.
+      this.announceStartup();
       const started = await this.client.request<{ turn: CodexTurn }>(
         'turn/start',
         turnStartParams(threadId, prompt, {
@@ -125,6 +147,7 @@ export class CodexSession implements ProviderSession {
       yield* turn.drain();
     } finally {
       // Releases a waiter left parked when the consumer stops reading early.
+      this.cancelStartupNotice();
       turn.finish();
       this.turn = undefined;
       this.turnId = undefined;
@@ -180,15 +203,34 @@ export class CodexSession implements ProviderSession {
   }
 
   close(): Promise<void> {
-    return this.client.close();
+    this.resolveClosed();
+    this.cancelStartupNotice();
+    return (this.closePromise ??= this.client.close());
   }
 
   private registerHandlers(): void {
     for (const method of MAPPED_NOTIFICATIONS) {
       this.client.onNotification(method, (params) => {
-        this.turn?.push(this.mapper.map(method, params));
+        const events = this.mapper.map(method, params);
+        // Only mapped output counts as an answer, not unknown items or accounting.
+        if (method.startsWith('item/') && events.length > 0) {
+          this.startup.itemArrived();
+          this.cancelStartupNotice();
+        }
+        this.turn?.push(events);
       });
     }
+    this.client.onNotification('mcpServer/startupStatus/updated', (params) => {
+      this.startup.serverStatus(params);
+      this.announceStartup();
+    });
+    this.client.onNotification('hook/started', () => {
+      this.startup.hookStarted();
+      this.announceStartup();
+    });
+    this.client.onNotification('hook/completed', () => {
+      this.startup.hookCompleted();
+    });
     // Every payload is read through a guard: a notification this build does not
     // recognize must not throw out of the transport's stdout listener.
     this.client.onNotification('turn/started', (params) => {
@@ -207,8 +249,10 @@ export class CodexSession implements ProviderSession {
       if (!failure.willRetry) this.turn?.fail(new Error(failure.message));
     });
     this.client.onClose((error) => {
+      this.cancelStartupNotice();
       this.turn?.fail(error);
       this.prompts.cancel();
+      this.resolveClosed(error);
     });
     this.prompts.register(this.client, (itemId: string) => this.mapper.toolDetail(itemId));
   }
@@ -225,6 +269,31 @@ export class CodexSession implements ProviderSession {
     void this.sendInterrupt(turnId).catch((error: unknown) => {
       if (this.turn === turn) turn?.push([this.mapper.errorEvent(errMsg(error))]);
     });
+  }
+
+  // Nothing to say outside a turn: there is no transcript for it to land in, and
+  // holding the notice keeps it for the turn that is actually waiting.
+  private announceStartup(): void {
+    if (!this.turn || !this.startup.hasPendingNotices) return;
+    // A microtask only sees one stdout chunk. Keep the burst open across chunks;
+    // downstream bridge batching cannot amend a transcript row already emitted.
+    if (this.startupNoticeTimer) {
+      this.startupNoticeTimer.refresh();
+      return;
+    }
+    this.startupNoticeTimer = setTimeout(() => {
+      this.startupNoticeTimer = undefined;
+      const turn = this.turn;
+      if (!turn) return;
+      const notices = this.startup.notices();
+      if (notices.length > 0) turn.push(notices.map((text) => this.mapper.statusEvent(text)));
+    }, STARTUP_QUIET_MS);
+    this.startupNoticeTimer.unref();
+  }
+
+  private cancelStartupNotice(): void {
+    clearTimeout(this.startupNoticeTimer);
+    this.startupNoticeTimer = undefined;
   }
 
   private sendInterrupt(turnId: string): Promise<unknown> {
