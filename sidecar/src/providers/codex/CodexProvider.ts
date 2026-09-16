@@ -134,9 +134,6 @@ export class CodexProvider implements Provider {
       stop();
     }, PROBE_TIMEOUT_MS);
     signal.addEventListener('abort', stop);
-    client.onClose(() => {
-      signal.removeEventListener('abort', stop);
-    });
     let status: ProviderStatus;
     try {
       status = await readiness(client);
@@ -149,6 +146,7 @@ export class CodexProvider implements Provider {
       clearTimeout(timer);
     }
     if (status.readiness !== 'ready') {
+      signal.removeEventListener('abort', stop);
       await client.close();
       return status;
     }
@@ -157,6 +155,11 @@ export class CodexProvider implements Provider {
     // published as it lands and the process ends with the last one.
     const catalog = new CodexCatalog(client, [tmpdir()]);
     catalog.onUpdated(publishItems);
+    client.onClose(() => {
+      signal.removeEventListener('abort', stop);
+      // Requests the close rejected are not failed sources.
+      catalog.close();
+    });
     const release = setTimeout(stop, CATALOG_TIMEOUT_MS);
     void catalog.catalogItems().then(() => {
       clearTimeout(release);
