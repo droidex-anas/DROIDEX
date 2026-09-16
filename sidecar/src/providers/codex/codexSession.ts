@@ -43,6 +43,7 @@ export class CodexSession implements ProviderSession {
   readonly closed: Promise<Error | undefined>;
 
   private resolveClosed: (error?: Error) => void = () => undefined;
+  private hasClosed = false;
   private closePromise?: Promise<void>;
   private readonly client: AppServerClient;
   private readonly mapper: CodexEventMapper;
@@ -63,7 +64,10 @@ export class CodexSession implements ProviderSession {
   constructor(input: CodexSessionInput) {
     this.providerSessionId = input.appSessionId;
     this.closed = new Promise((resolve) => {
-      this.resolveClosed = resolve;
+      this.resolveClosed = (error) => {
+        this.hasClosed = true;
+        resolve(error);
+      };
     });
     this.client = input.client;
     this.cwd = input.cwd;
@@ -84,6 +88,10 @@ export class CodexSession implements ProviderSession {
   // Codex owns its thread ids, so this is the handle a restart resumes from.
   get resumeId(): string | undefined {
     return this.threadId;
+  }
+
+  get isClosed(): boolean {
+    return this.hasClosed;
   }
 
   get process(): { pid: number; isAlive(): boolean } | undefined {

@@ -944,6 +944,8 @@ export class SessionLifecycle {
       liveSession.interruptingForSteer = false;
       liveSession.interrupting = false;
       liveSession.streaming = false;
+      // Let the closure observer claim cleanup before advancing the queue.
+      if (liveSession.session.isClosed) await liveSession.session.closed;
       if (liveSession.providerClosePromise) {
         if (d.registry.getLive(stableAppSessionId) === liveSession)
           this.publishTurnSettled(liveSession);
@@ -956,8 +958,6 @@ export class SessionLifecycle {
       } else if (d.registry.getLive(stableAppSessionId) !== liveSession) {
         const queued = liveSession.pendingSends.splice(0);
         if (queued.length > 0) void this.redeliverQueuedSends(stableAppSessionId, queued);
-      } else if (liveSession.providerClosePromise) {
-        this.publishTurnSettled(liveSession);
       } else if (liveSession.autoCompacting) {
         const compactionTarget = this.primaryAutomaticCompactionTarget(liveSession);
         if (compactionTarget) d.compaction.afterTurn(compactionTarget);

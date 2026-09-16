@@ -140,6 +140,10 @@ export class ClaudeSession implements ProviderSession {
     await this.spawned;
   }
 
+  get isClosed(): boolean {
+    return this.abort.signal.aborted;
+  }
+
   get process(): { pid: number; isAlive(): boolean } | undefined {
     const child = this.child;
     const pid = child?.pid;
@@ -265,13 +269,21 @@ export class ClaudeSession implements ProviderSession {
   }
 
   async interrupt(): Promise<void> {
-    this.interruptedTurnId = this.activeTurnId;
-    // There is no initialized control channel to interrupt yet. Closing also
-    // releases initialization waiters and prevents a late startup from reviving it.
-    if (this.initializing || this.abort.signal.aborted) {
+    const turnId = this.activeTurnId;
+    if (!turnId) return;
+    // A second Stop during boot releases a CLI that never initializes.
+    if (this.initializing && this.interruptedTurnId === turnId) {
       await this.close();
       return;
     }
+    this.interruptedTurnId = turnId;
+    try {
+      await this.initialized;
+    } catch {
+      // The turn or closure observer owns startup failure diagnostics.
+      return;
+    }
+    if (this.abort.signal.aborted || this.activeTurnId !== turnId) return;
     // Aborts the in-flight turn on the live process; the turn then settles with
     // its own result, so the next prompt does not pay for a restart.
     await this.query.interrupt();
