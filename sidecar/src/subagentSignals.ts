@@ -5,12 +5,12 @@
 // stream protocol, so they live here — one cohesive responsibility with its own
 // tests — instead of inside the generic event normalizer.
 
-import type { ChildActivity } from './protocol.js';
+import type { ChildActivity, ChildRole, ChildStatus, ReasoningEffort } from './protocol.js';
 import { trimmedString as str } from './values.js';
 
 // What a single event tells us about one child session. Fields are all optional
 // because different events carry different fragments; the child session store
-// merges them.
+// merges them. Provider task/thread ids identify state-only children.
 export interface ChildSessionSignal {
   providerSessionId?: string;
   toolUseId?: string;
@@ -18,6 +18,15 @@ export interface ChildSessionSignal {
   prompt?: string;
   done?: boolean;
   activity?: ChildActivity;
+  // Explicit settings bypass the provider-file launch-settings lookup.
+  modelId?: string;
+  reasoningEffort?: ReasoningEffort;
+  role?: ChildRole;
+  status?: ChildStatus;
+  group?: string;
+  phase?: string;
+  // False for state-only feeds with no child-transcript view.
+  transcriptAvailable?: boolean;
 }
 
 export function taskPrompt(input: Record<string, unknown>): string | undefined {

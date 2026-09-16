@@ -36,6 +36,10 @@ import {
   type TranscriptWindowCursor,
 } from './sessionTranscript.js';
 import { decodeProviderSessionIdList } from './historyProviderIds.js';
+import {
+  CHILD_SESSIONS_TABLE_SCHEMA,
+  migrateChildSessionsToV3,
+} from './historyChildSchemaMigration.js';
 import { DEFAULT_PROVIDER, providerKind } from './providers/providerKind.js';
 import { readSessionFileHead, readSessionStart } from './sessionFileHead.js';
 import { droidexHistoryDir, providerSessionsDir } from './droidexPaths.js';
@@ -105,7 +109,7 @@ export interface HistoryPage {
 }
 
 export type PersistedChildRole = 'worker' | 'validator';
-export type PersistedChildStatus = 'pending' | 'running' | 'paused' | 'completed';
+export type PersistedChildStatus = 'pending' | 'running' | 'paused' | 'completed' | 'failed';
 
 export interface PersistedChildSpawnLink {
   kind: 'tool-use' | 'spawn';
@@ -120,6 +124,8 @@ export interface PersistedChildSession {
   role: PersistedChildRole;
   label?: string;
   prompt?: string;
+  group?: string;
+  phase?: string;
   status: PersistedChildStatus;
   modelId: string;
   reasoningEffort?: ReasoningEffort;
@@ -150,7 +156,7 @@ const DEFAULT_HISTORY_WINDOW = 400;
 // (1<<27)/256 = 524,288 lines per segment — multi-GB at the multi-KB lines
 // real sessions store, far beyond any observed file.
 const SEQ_SEGMENT_STRIDE = 1 << 27;
-const HISTORY_SCHEMA_VERSION = 2;
+const HISTORY_SCHEMA_VERSION = 3;
 export const SESSION_INDEX_FILENAME = 'session-index.sqlite';
 export const SESSION_SEARCH_INDEX_FILENAME = 'session-search.sqlite';
 function historySchemaRecovery(): string {
@@ -324,28 +330,13 @@ export class HistoryIndex {
       HistoryIndex.createSchema(db);
       return;
     }
-    if (version === 1 && hasCanonicalVersionOneHistorySchema(db)) {
-      HistoryIndex.migrateVersionOneHistorySchema(db);
-      if (!hasCanonicalChildSchema(db)) throw new Error(historySchemaRecovery());
-      return;
-    }
-    if (version !== HISTORY_SCHEMA_VERSION || !hasCanonicalChildSchema(db))
+    if (version === 1 || version === 2) {
+      if (!hasCanonicalHistorySchema(db, version)) throw new Error(historySchemaRecovery());
+      migrateChildSessionsToV3(db, version);
+    } else if (version !== HISTORY_SCHEMA_VERSION) {
       throw new Error(historySchemaRecovery());
-  }
-
-  private static migrateVersionOneHistorySchema(db: DatabaseSync): void {
-    // DROIDEX v1.1.0 shipped schema v1, so direct app updates must preserve that
-    // index. The canonical v2 child model needs this column and cannot derive
-    // replacement chains from the old rows. This is the only supported legacy
-    // state. Remove after direct upgrades from v1.1.0 are no longer supported;
-    // PR #103 tracks that release boundary.
-    db.exec(`
-      BEGIN IMMEDIATE;
-      ALTER TABLE child_sessions
-        ADD COLUMN previous_provider_session_ids TEXT NOT NULL DEFAULT '[]';
-      PRAGMA user_version = ${String(HISTORY_SCHEMA_VERSION)};
-      COMMIT;
-    `);
+    }
+    if (!hasCanonicalHistorySchema(db)) throw new Error(historySchemaRecovery());
   }
 
   private static createSchema(db: DatabaseSync): void {
@@ -378,34 +369,10 @@ export class HistoryIndex {
         max_context_tokens INTEGER,
         auto_compactions INTEGER
       );
-      CREATE TABLE IF NOT EXISTS child_sessions (
-        parent_app_session_id TEXT NOT NULL,
-        child_session_id TEXT NOT NULL,
-        provider_session_id TEXT,
-        previous_provider_session_ids TEXT NOT NULL DEFAULT '[]',
-        role TEXT NOT NULL CHECK (role IN ('worker', 'validator')),
-        label TEXT,
-        prompt TEXT,
-        status TEXT NOT NULL CHECK (status IN ('pending', 'running', 'paused', 'completed')),
-        model_id TEXT NOT NULL,
-        reasoning_effort TEXT,
-        spawn_link_kind TEXT CHECK (spawn_link_kind IN ('tool-use', 'spawn')),
-        spawn_link_id TEXT,
-        transcript_available INTEGER NOT NULL CHECK (transcript_available IN (0, 1)),
-        started_at INTEGER,
-        updated_at INTEGER NOT NULL,
-        CHECK (
-          (spawn_link_kind IS NULL AND spawn_link_id IS NULL) OR
-          (spawn_link_kind IS NOT NULL AND spawn_link_id IS NOT NULL)
-        ),
-        PRIMARY KEY (parent_app_session_id, child_session_id)
-      );
+      CREATE TABLE IF NOT EXISTS child_sessions ${CHILD_SESSIONS_TABLE_SCHEMA};
       CREATE UNIQUE INDEX child_sessions_provider_identity
         ON child_sessions (parent_app_session_id, provider_session_id)
         WHERE provider_session_id IS NOT NULL;
-      CREATE UNIQUE INDEX child_sessions_spawn_identity
-        ON child_sessions (parent_app_session_id, spawn_link_kind, spawn_link_id)
-        WHERE spawn_link_id IS NOT NULL;
       CREATE TABLE IF NOT EXISTS events (
         id TEXT PRIMARY KEY,
         source_session_id TEXT NOT NULL,
@@ -532,6 +499,8 @@ const CANONICAL_TABLE_COLUMNS = {
     'role',
     'label',
     'prompt',
+    'group_name',
+    'phase',
     'status',
     'model_id',
     'reasoning_effort',
@@ -550,13 +519,19 @@ const CANONICAL_TABLE_COLUMNS = {
   catalog_cache: ['catalog', 'value_json', 'updated_at'],
 } as const;
 
-const VERSION_ONE_CHILD_SESSION_COLUMNS = CANONICAL_TABLE_COLUMNS.child_sessions.filter(
-  (column) => column !== 'previous_provider_session_ids',
-);
+const CHILD_SESSION_COLUMNS_BY_VERSION = {
+  1: CANONICAL_TABLE_COLUMNS.child_sessions.filter(
+    (column) =>
+      column !== 'previous_provider_session_ids' && column !== 'group_name' && column !== 'phase',
+  ),
+  2: CANONICAL_TABLE_COLUMNS.child_sessions.filter(
+    (column) => column !== 'group_name' && column !== 'phase',
+  ),
+  3: CANONICAL_TABLE_COLUMNS.child_sessions,
+};
 
 const CHILD_SCHEMA_CHECKS = [
   "check (role in ('worker', 'validator'))",
-  "check (status in ('pending', 'running', 'paused', 'completed'))",
   "check (spawn_link_kind in ('tool-use', 'spawn'))",
   'check (transcript_available in (0, 1))',
   '(spawn_link_kind is null and spawn_link_id is null)',
@@ -575,20 +550,13 @@ const CANONICAL_PRIMARY_KEYS = {
   catalog_cache: ['catalog'],
 } as const;
 
-function hasCanonicalChildSchema(db: DatabaseSync): boolean {
-  return hasCanonicalHistorySchema(db, CANONICAL_TABLE_COLUMNS.child_sessions);
-}
-
-function hasCanonicalVersionOneHistorySchema(db: DatabaseSync): boolean {
-  return hasCanonicalHistorySchema(db, VERSION_ONE_CHILD_SESSION_COLUMNS);
-}
-
 function hasCanonicalHistorySchema(
   db: DatabaseSync,
-  expectedChildColumns: readonly string[],
+  version: 1 | 2 | 3 = HISTORY_SCHEMA_VERSION,
 ): boolean {
   for (const [table, expected] of Object.entries(CANONICAL_TABLE_COLUMNS)) {
-    const expectedColumns = table === 'child_sessions' ? expectedChildColumns : expected;
+    const expectedColumns =
+      table === 'child_sessions' ? CHILD_SESSION_COLUMNS_BY_VERSION[version] : expected;
     if (
       !hasExactColumns(db, table, expectedColumns) ||
       !hasPrimaryKey(
@@ -606,13 +574,14 @@ function hasCanonicalHistorySchema(
       ['parent_app_session_id', 'provider_session_id'],
       'provider_session_id is not null',
     ) &&
-    hasPartialUniqueIndex(
-      db,
-      'child_sessions_spawn_identity',
-      ['parent_app_session_id', 'spawn_link_kind', 'spawn_link_id'],
-      'spawn_link_id is not null',
-    ) &&
-    childSchemaHasChecks(db)
+    (version === 3 ||
+      hasPartialUniqueIndex(
+        db,
+        'child_sessions_spawn_identity',
+        ['parent_app_session_id', 'spawn_link_kind', 'spawn_link_id'],
+        'spawn_link_id is not null',
+      )) &&
+    childSchemaHasChecks(db, version)
   );
 }
 
@@ -668,19 +637,25 @@ function hasPartialUniqueIndex(
   );
 }
 
-function childSchemaHasChecks(db: DatabaseSync): boolean {
+function childSchemaHasChecks(db: DatabaseSync, version: 1 | 2 | 3): boolean {
   const row = db
     .prepare("SELECT sql FROM sqlite_schema WHERE type = 'table' AND name = 'child_sessions'")
     .get() as Record<string, unknown> | undefined;
   const sql = stringValue(row?.sql)?.toLowerCase().replace(/\s+/g, ' ');
-  return Boolean(sql && CHILD_SCHEMA_CHECKS.every((check) => sql.includes(check)));
+  const statusCheck =
+    version === 3
+      ? "check (status in ('pending', 'running', 'paused', 'completed', 'failed'))"
+      : "check (status in ('pending', 'running', 'paused', 'completed'))";
+  return Boolean(
+    sql && sql.includes(statusCheck) && CHILD_SCHEMA_CHECKS.every((check) => sql.includes(check)),
+  );
 }
 
 function assertCanonicalHistorySchema(db: DatabaseSync): void {
   const row = db.prepare('PRAGMA user_version').get() as Record<string, unknown> | undefined;
   if (
     (numberValue(row?.user_version) ?? 0) !== HISTORY_SCHEMA_VERSION ||
-    !hasCanonicalChildSchema(db)
+    !hasCanonicalHistorySchema(db)
   )
     throw new Error(historySchemaRecovery());
 }
@@ -707,6 +682,8 @@ function persistedChildSessionFromRow(row: Record<string, unknown>): PersistedCh
     role,
     ...whenString(row.label, (label) => ({ label })),
     ...whenString(row.prompt, (prompt) => ({ prompt })),
+    ...whenString(row.group_name, (group) => ({ group })),
+    ...whenString(row.phase, (phase) => ({ phase })),
     status,
     modelId,
     ...whenReasoning(row.reasoning_effort),
@@ -725,7 +702,13 @@ function persistedChildRole(value: unknown): PersistedChildRole {
 
 function persistedChildStatus(value: unknown): PersistedChildStatus {
   const status = stringValue(value);
-  if (status === 'pending' || status === 'running' || status === 'paused' || status === 'completed')
+  if (
+    status === 'pending' ||
+    status === 'running' ||
+    status === 'paused' ||
+    status === 'completed' ||
+    status === 'failed'
+  )
     return status;
   throw new Error(historySchemaRecovery());
 }

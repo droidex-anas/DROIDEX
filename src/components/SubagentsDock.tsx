@@ -51,12 +51,24 @@ function resolveSubagentStatus(
 }
 
 function countSubagentStatuses(statuses: readonly ChildStatus[]): Record<ChildStatus, number> {
-  const counts: Record<ChildStatus, number> = { pending: 0, running: 0, paused: 0, completed: 0 };
+  const counts: Record<ChildStatus, number> = {
+    pending: 0,
+    running: 0,
+    paused: 0,
+    completed: 0,
+    failed: 0,
+  };
   for (const status of statuses) counts[status] += 1;
   return counts;
 }
 
-const STATUS_ORDER: readonly ChildStatus[] = ['running', 'paused', 'pending', 'completed'];
+const STATUS_ORDER: readonly ChildStatus[] = [
+  'running',
+  'paused',
+  'pending',
+  'completed',
+  'failed',
+];
 
 const STATUS_META: Record<ChildStatus, { label: string; className: string }> = {
   running: { label: 'Running', className: 'bg-droid-green/15 text-droid-green' },
@@ -66,6 +78,7 @@ const STATUS_META: Record<ChildStatus, { label: string; className: string }> = {
     label: 'Done',
     className: 'border border-droid-border text-droid-text-muted',
   },
+  failed: { label: 'Failed', className: 'bg-droid-red/15 text-droid-red' },
 };
 
 const SEGMENT_TINT: Record<ChildStatus, string> = {
@@ -73,6 +86,7 @@ const SEGMENT_TINT: Record<ChildStatus, string> = {
   paused: 'bg-droid-orange/40',
   pending: 'bg-droid-border/50',
   completed: 'bg-droid-green',
+  failed: 'bg-droid-red',
 };
 
 interface DockRow {

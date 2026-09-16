@@ -65,6 +65,7 @@ export function childStreamPhase(input: {
   hasOutput?: boolean;
   interruptReason?: string;
 }): ChildStreamPhase {
+  if (input.status === 'failed') return 'failed';
   if (input.queued) return 'queued';
   const failed = input.isError === true || input.latestKind === 'error';
   if (input.status === 'completed') {
@@ -139,7 +140,7 @@ function childStreamStatus(
   child: ChildSessionSummary,
   activity: ChildSessionActivity | undefined,
 ): ChildStatus {
-  if (child.queued) return child.status;
+  if (child.queued || child.streamFidelity === 'state') return child.status;
   return activity?.status ?? child.status;
 }
 
