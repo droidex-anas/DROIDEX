@@ -56,7 +56,8 @@ export class HistoryDurabilityPolicy {
     const needsDurability = wasPending || crossesBoundary;
     if (needsDurability) this.pendingChildren.add(key);
     this.children.set(key, childState(child));
-    const terminal = child.status === 'paused' || child.status === 'completed';
+    const terminal =
+      child.status === 'paused' || child.status === 'completed' || child.status === 'failed';
     return {
       needsDurability,
       holdWhileBlocked: crossesBoundary || (wasPending && terminal),
@@ -136,7 +137,8 @@ function childNeedsDurability(
     (previous.providerSessionId !== next.providerSessionId ||
       previous.previousProviderSessionIds !== next.previousProviderSessionIds);
   if (identityChanged) return true;
-  if (next.status !== 'paused' && next.status !== 'completed') return false;
+  if (next.status !== 'paused' && next.status !== 'completed' && next.status !== 'failed')
+    return false;
   return previous?.status !== next.status;
 }
 

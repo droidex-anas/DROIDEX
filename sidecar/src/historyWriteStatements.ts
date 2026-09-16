@@ -85,6 +85,8 @@ export class HistoryWriteStatements {
         role,
         label,
         prompt,
+        group_name,
+        phase,
         status,
         model_id,
         reasoning_effort,
@@ -94,13 +96,15 @@ export class HistoryWriteStatements {
         started_at,
         updated_at
       )
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(parent_app_session_id, child_session_id) DO UPDATE SET
         provider_session_id = excluded.provider_session_id,
         previous_provider_session_ids = excluded.previous_provider_session_ids,
         role = excluded.role,
         label = excluded.label,
         prompt = excluded.prompt,
+        group_name = excluded.group_name,
+        phase = excluded.phase,
         status = excluded.status,
         model_id = excluded.model_id,
         reasoning_effort = excluded.reasoning_effort,
@@ -188,6 +192,8 @@ export class HistoryWriteStatements {
       child.role,
       sqlValue(child.label),
       sqlValue(child.prompt),
+      sqlValue(child.group),
+      sqlValue(child.phase),
       child.status,
       child.modelId,
       sqlValue(child.reasoningEffort),

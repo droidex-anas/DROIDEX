@@ -59,6 +59,7 @@ export class CodexSession implements ProviderSession {
   private pendingInterrupt = false;
   private readonly prompts: OpenPrompts;
   private readonly startup = new CodexStartup();
+  private readonly backgroundListeners = new Set<(event: NormalizedEvent) => void>();
   private startupNoticeTimer?: ReturnType<typeof setTimeout>;
 
   constructor(input: CodexSessionInput) {
@@ -73,7 +74,7 @@ export class CodexSession implements ProviderSession {
     this.cwd = input.cwd;
     this.autonomy = input.autonomy;
     this.model = input.model;
-    this.mapper = new CodexEventMapper(input.appSessionId);
+    this.mapper = new CodexEventMapper(input.appSessionId, input.model);
     this.prompts = new OpenPrompts(input.appSessionId, input.interactions);
     // Registered before `initialize`, so nothing the server sends can arrive
     // before its handler exists. Requests left unregistered — the legacy exec
@@ -122,6 +123,7 @@ export class CodexSession implements ProviderSession {
       : this.client.request<ThreadResponse>('thread/start', settings));
     this.threadId = response.thread.id;
     this.threadModel = response.model;
+    this.mapper.setModel({ ...this.model, modelId: this.model.modelId ?? this.threadModel });
   }
 
   async *stream(prompt: string): AsyncGenerator<NormalizedEvent, void, undefined> {
@@ -170,6 +172,7 @@ export class CodexSession implements ProviderSession {
         ? { reasoningEffort: settings.reasoningEffort }
         : {}),
     };
+    this.mapper.setModel({ ...this.model, modelId: this.model.modelId ?? this.threadModel });
     return Promise.resolve();
   }
 
@@ -225,7 +228,25 @@ export class CodexSession implements ProviderSession {
     return typeof threadId === 'string' && threadId !== this.threadId;
   }
 
+  onBackgroundEvent(listener: (event: NormalizedEvent) => void): () => void {
+    this.backgroundListeners.add(listener);
+    return () => {
+      this.backgroundListeners.delete(listener);
+    };
+  }
+
+  private deliver(events: NormalizedEvent[]): void {
+    for (const event of events) {
+      if (event.childSession) {
+        for (const listener of this.backgroundListeners) listener(event);
+      } else this.turn?.push([event]);
+    }
+  }
+
   private registerHandlers(): void {
+    this.client.onNotification('thread/started', (params) => {
+      this.deliver(this.mapper.childThreadStarted(params, this.threadId));
+    });
     for (const method of MAPPED_NOTIFICATIONS) {
       this.onThreadNotification(method, (params) => {
         const events = this.mapper.map(method, params);
@@ -234,7 +255,7 @@ export class CodexSession implements ProviderSession {
           this.startup.itemArrived();
           this.cancelStartupNotice();
         }
-        this.turn?.push(events);
+        this.deliver(events);
       });
     }
     this.onThreadNotification('mcpServer/startupStatus/updated', (params) => {

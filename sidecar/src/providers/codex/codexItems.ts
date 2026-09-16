@@ -1,6 +1,9 @@
 // What a Codex thread item is, and how it reads as a DROIDEX tool row. Only the
 // kinds the transcript shows are modelled; every other item Codex reports is one
 // explicit no-op.
+import { objectValue } from '../../values.js';
+import { reasoningValue } from '../../sessionHelpers.js';
+import type { ChildSessionSignal } from '../../subagentSignals.js';
 import { generatedImage, type GeneratedImage } from './codexImages.js';
 
 // The tool name the transcript renders as an image card. Shared with the
@@ -35,6 +38,20 @@ export type ThreadItem =
       error: { message: string } | null;
     }
   | ({ type: 'imageGeneration'; status: string; revisedPrompt?: string | null } & GeneratedImage)
+  | {
+      type: 'collabAgentToolCall';
+      id: string;
+      tool: string;
+      status: string;
+      senderThreadId: string;
+      receiverThreadIds: string[];
+      prompt: string | null;
+      model: string | null;
+      reasoningEffort: string | null;
+      // Last known status per receiver thread id (CollabAgentStatus).
+      agentsStates: Partial<Record<string, { status: string; message: string | null }>>;
+    }
+  | { type: 'subAgentActivity'; id: string; kind: string; agentThreadId: string; agentPath: string }
   | { type: 'ignored' };
 
 const MAPPED_ITEMS = new Set([
@@ -43,6 +60,8 @@ const MAPPED_ITEMS = new Set([
   'fileChange',
   'mcpToolCall',
   'imageGeneration',
+  'collabAgentToolCall',
+  'subAgentActivity',
 ]);
 
 export function threadItem(params: unknown): ThreadItem {
@@ -51,7 +70,48 @@ export function threadItem(params: unknown): ThreadItem {
   // An image item reaches the filesystem, so its fields are checked before it
   // is admitted rather than trusted the way a text-only item can be.
   if (item.type === 'imageGeneration' && !isGeneratedImage(item)) return { type: 'ignored' };
+  // Thread ids become a child session's stable identity; a malformed payload
+  // must not reach admission as one.
+  if (item.type === 'collabAgentToolCall' && !isCollabAgentToolCall(item))
+    return { type: 'ignored' };
+  if (item.type === 'subAgentActivity' && !isSubAgentActivity(item)) return { type: 'ignored' };
   return item;
+}
+
+function isCollabAgentToolCall(
+  item: Extract<ThreadItem, { type: 'collabAgentToolCall' }>,
+): boolean {
+  const states = objectValue(item.agentsStates);
+  return (
+    typeof item.id === 'string' &&
+    item.id !== '' &&
+    typeof item.tool === 'string' &&
+    typeof item.status === 'string' &&
+    Array.isArray(item.receiverThreadIds) &&
+    item.receiverThreadIds.every((id) => typeof id === 'string' && id !== '') &&
+    [item.prompt, item.model, item.reasoningEffort].every(
+      (value) => value == null || typeof value === 'string',
+    ) &&
+    states !== undefined &&
+    Object.values(states).every((value) => {
+      const state = objectValue(value);
+      return (
+        state !== undefined &&
+        typeof state.status === 'string' &&
+        (state.message == null || typeof state.message === 'string')
+      );
+    })
+  );
+}
+
+function isSubAgentActivity(item: Extract<ThreadItem, { type: 'subAgentActivity' }>): boolean {
+  return (
+    typeof item.id === 'string' &&
+    typeof item.kind === 'string' &&
+    typeof item.agentThreadId === 'string' &&
+    item.agentThreadId !== '' &&
+    typeof item.agentPath === 'string'
+  );
 }
 
 function isGeneratedImage(item: Extract<ThreadItem, { type: 'imageGeneration' }>): boolean {
@@ -119,6 +179,15 @@ export function toolCall(item: ThreadItem): ToolCall | undefined {
       // error itself is what makes the row an error.
       failed: item.status !== 'completed' || item.error !== null,
     };
+  // Only the spawn anchors a transcript row; later calls update its children.
+  if (item.type === 'collabAgentToolCall' && item.tool === 'spawnAgent')
+    return {
+      id: item.id,
+      name: 'Subagent',
+      detail: item.prompt ?? '',
+      args: { prompt: item.prompt ?? undefined },
+      failed: item.status === 'failed' || item.status === 'interrupted',
+    };
   return undefined;
 }
 
@@ -128,6 +197,10 @@ export function toolOutput(item: ThreadItem, streamed: string, appSessionId: str
   // is the line shown in its place.
   if (item.type === 'imageGeneration') return generatedImage(appSessionId, item);
   if (item.type === 'fileChange') return patchText(item.changes);
+  if (item.type === 'collabAgentToolCall')
+    return item.status === 'failed' || item.status === 'interrupted'
+      ? 'Subagent spawn failed.'
+      : '';
   if (item.type === 'mcpToolCall')
     return item.error ? item.error.message : mcpContent(item.result?.content ?? []);
   return streamed;
@@ -144,4 +217,55 @@ function mcpContent(content: unknown[]): string {
       return typeof text === 'string' ? text : JSON.stringify(block);
     })
     .join('\n');
+}
+
+function childStatus(status: string | undefined): ChildSessionSignal['status'] {
+  switch (status) {
+    case 'pendingInit':
+      return 'pending';
+    case 'running':
+      return 'running';
+    case 'completed':
+    case 'shutdown':
+      return 'completed';
+    case 'interrupted':
+      return 'paused';
+    case 'errored':
+    case 'notFound':
+      return 'failed';
+    default:
+      return undefined;
+  }
+}
+
+export function collabChildSignals(
+  item: ThreadItem,
+  fallback: { modelId?: string | null; reasoningEffort?: string | null },
+): ChildSessionSignal[] {
+  if (item.type === 'subAgentActivity') {
+    let status: ChildSessionSignal['status'] = 'running';
+    if (item.kind === 'completed') status = 'completed';
+    else if (item.kind === 'interrupted') status = 'paused';
+    return [{ providerSessionId: item.agentThreadId, status, transcriptAvailable: false }];
+  }
+  if (item.type !== 'collabAgentToolCall') return [];
+  const isSpawn = item.tool === 'spawnAgent';
+  const modelId = item.model ?? fallback.modelId;
+  const reasoningEffort = reasoningValue(
+    item.reasoningEffort ?? fallback.reasoningEffort ?? undefined,
+  );
+  return item.receiverThreadIds.map((threadId): ChildSessionSignal => {
+    const state = item.agentsStates[threadId];
+    const status = childStatus(state?.status);
+    return {
+      providerSessionId: threadId,
+      ...(isSpawn ? { toolUseId: item.id, status: status ?? 'running' } : {}),
+      ...(isSpawn && item.prompt ? { prompt: item.prompt, label: item.prompt } : {}),
+      ...(isSpawn && modelId ? { modelId } : {}),
+      ...(isSpawn && reasoningEffort ? { reasoningEffort } : {}),
+      ...(state?.message ? { activity: { preview: state.message } } : {}),
+      ...(status ? { status } : {}),
+      transcriptAvailable: false,
+    };
+  });
 }

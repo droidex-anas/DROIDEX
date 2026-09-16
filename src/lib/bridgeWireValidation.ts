@@ -318,8 +318,12 @@ function isChildSessionSummary(value: unknown): boolean {
   return (
     isRecord(value) &&
     hasStrings(value, ['parentAppSessionId', 'childSessionId', 'role', 'status', 'modelId']) &&
+    (value.role === 'worker' || value.role === 'validator') &&
+    ['pending', 'running', 'paused', 'completed', 'failed'].includes(value.status as string) &&
     typeof value.transcriptAvailable === 'boolean' &&
-    isStreamFidelity(value.streamFidelity)
+    isStreamFidelity(value.streamFidelity) &&
+    (value.group === undefined || typeof value.group === 'string') &&
+    (value.phase === undefined || typeof value.phase === 'string')
   );
 }
 

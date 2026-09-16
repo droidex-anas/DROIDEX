@@ -55,6 +55,8 @@ export interface ProviderSession {
   // Returning means the turn settled; throwing means it failed. There is no
   // settlement event.
   stream(prompt: string): AsyncGenerator<NormalizedEvent, void, undefined>;
+  // Events delivered between turns, never duplicated by stream().
+  onBackgroundEvent?(listener: (event: NormalizedEvent) => void): () => void;
   // Takes a prompt into the turn that is already running, so the turn keeps its
   // work and continues with it. Absent on a provider that can only steer by
   // interrupting and resending, which is what the session layer then does.

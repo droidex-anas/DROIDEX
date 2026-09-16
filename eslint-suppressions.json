@@ -14,6 +14,9 @@
     },
     "@typescript-eslint/prefer-nullish-coalescing": {
       "count": 31
+    },
+    "@typescript-eslint/restrict-template-expressions": {
+      "count": 4
     }
   },
   "src/components/chatFeed.ts": {

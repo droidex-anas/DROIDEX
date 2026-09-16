@@ -131,6 +131,7 @@ function createHarness(ordinarySummaries: SessionSummary[] = []) {
     interactionMode: 'auto',
   };
   const lifecycle = new SessionLifecycle({
+    eventFlow: { apply: () => undefined },
     provider: () => new DroidProvider(runtime),
     registry,
     ensureConnected: () => {
