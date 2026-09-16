@@ -112,7 +112,7 @@ export function GitActionsBar({
             disabled={pushing || !!env.detached}
             title={pushLabel}
             aria-label={pushLabel}
-            className="mr-1.5 flex shrink-0 items-center gap-1 rounded-md border border-droid-border/70 bg-droid-surface px-1.5 py-0.5 text-[10.5px] font-medium tabular-nums text-droid-text-secondary transition-colors hover:bg-droid-elevated hover:text-droid-text disabled:cursor-not-allowed disabled:opacity-40"
+            className="mr-1.5 flex shrink-0 items-center gap-1 rounded-md border border-droid-border/70 bg-droid-surface px-1.5 py-0.5 text-[11px] font-medium tabular-nums text-droid-text-secondary transition-colors hover:bg-droid-elevated hover:text-droid-text disabled:cursor-not-allowed disabled:opacity-40"
           >
             {pushing ? (
               <Spinner className="h-3 w-3 motion-safe:animate-spin-slow" />
@@ -142,7 +142,7 @@ export function GitActionsBar({
           or closed detection leaves the create action available. */}
       {githubReady && hasPr && pr ? (
         <Row
-          icon={<PrStateIcon kind={prKind(pr)} size={16} />}
+          icon={<PrStateIcon kind={prKind(pr)} size={16} checks={pr.checks} />}
           label={`#${String(pr.number)} ${pr.title}`}
           title={`${pr.title} — view checks and comments`}
           onClick={onOpenPr}

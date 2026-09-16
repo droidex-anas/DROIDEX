@@ -7,10 +7,12 @@ import type { SessionSummary } from '../types/bridge';
 import type { SessionAttentionKind } from '../lib/sessionAttention';
 import { ACTIVITY_LABELS, type SessionActivityStatus } from '../lib/sidebarActivity';
 import { SessionAttentionBadge } from './SessionAttentionBadge';
+import { ActivityStatusGlyph, ActivityToggleGlyph } from './ActivityStatusGlyph';
 import { PrStateIcon } from './environment/GithubIcons';
 import { ModelIcon } from './ModelIcon';
 import { PROVIDER_LABELS, PROVIDER_MARKS } from '../features/providers/providerIdentity';
 import type { PrKind } from '../lib/github';
+import type { PrChecksRollup } from '../types/vcs';
 
 const AutomationSessionBadge = lazy(async () => {
   const module = await import('../features/automations/AutomationSessionBadge');
@@ -18,7 +20,7 @@ const AutomationSessionBadge = lazy(async () => {
 });
 
 const HOVER_ACTION =
-  'absolute top-1/2 -translate-y-1/2 flex w-6 h-6 items-center justify-center rounded-md text-droid-text-muted opacity-0 pointer-events-none transition-opacity hover:bg-droid-elevated hover:text-droid-text group-hover:pointer-events-auto group-hover:opacity-100 group-focus-within:pointer-events-auto group-focus-within:opacity-100 focus-visible:pointer-events-auto focus-visible:opacity-100 focus-visible:outline-none';
+  'absolute top-1/2 -translate-y-1/2 flex w-6 h-6 items-center justify-center rounded-md text-droid-text-muted opacity-0 pointer-events-none transition-opacity hover:bg-droid-elevated hover:text-droid-text group-hover:pointer-events-auto group-hover:opacity-100 group-focus-within:pointer-events-auto group-focus-within:opacity-100 focus-visible:pointer-events-auto focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-droid-accent/60';
 
 // Left-edge dot: red when something broke, accent for unseen output, amber for
 // anything else waiting on the user.
@@ -45,14 +47,18 @@ export interface SessionRowProps {
   // Activity view only: a second line saying why the chat is listed. When set
   // the row is two lines and the attention pill gives way to the time.
   detail?: string;
-  // Linked pull request state, shown as a small icon before the time.
-  pr?: PrKind;
+  // Linked pull request state, shown as a small icon before the time, with
+  // its check rollup as the icon's dot.
+  pr?: { kind: PrKind; checks?: PrChecksRollup | null };
   renaming: boolean;
   now: number;
   onSelect: (appSessionId: string) => void;
   onMenu: (appSessionId: string, position: { x: number; y: number }) => void;
   onRenameCommit: (appSessionId: string, title: string) => void;
   onRenameCancel: () => void;
+  // Activity view only: the status mark doubles as a control that settles the
+  // chat, or reopens a settled one. Absent when the chat cannot be settled.
+  onToggleSettled?: (session: SessionSummary) => void;
 }
 
 export function areSessionRowPropsEqual(prev: SessionRowProps, next: SessionRowProps): boolean {
@@ -66,13 +72,15 @@ export function areSessionRowPropsEqual(prev: SessionRowProps, next: SessionRowP
     prev.attention === next.attention &&
     prev.activityStatus === next.activityStatus &&
     prev.detail === next.detail &&
-    prev.pr === next.pr &&
+    prev.pr?.kind === next.pr?.kind &&
+    prev.pr?.checks === next.pr?.checks &&
     prev.renaming === next.renaming &&
     prev.now === next.now &&
     prev.onSelect === next.onSelect &&
     prev.onMenu === next.onMenu &&
     prev.onRenameCommit === next.onRenameCommit &&
-    prev.onRenameCancel === next.onRenameCancel
+    prev.onRenameCancel === next.onRenameCancel &&
+    prev.onToggleSettled === next.onToggleSettled
   );
 }
 
@@ -93,6 +101,7 @@ export const SessionRow = memo(function SessionRow({
   onMenu,
   onRenameCommit,
   onRenameCancel,
+  onToggleSettled,
 }: SessionRowProps) {
   // Set once Enter/Escape settles the edit so the blur that follows the
   // input's unmount does not commit (or commit twice). Reset on every focus.
@@ -104,6 +113,10 @@ export const SessionRow = memo(function SessionRow({
   const timeLabel = formatRelativeTime(session.updatedAt, now);
   // Outside the Activity view the pill already announces approvals/questions.
   const dot = detail || !attention ? STATUS_DOT[activityStatus] : undefined;
+  // The inbox marks every row with its state; the mark yields to the settle
+  // control on hover when the chat can be settled.
+  const inbox = Boolean(detail);
+  const settled = activityStatus === 'settled';
   // On two-line rows the side slots are boxes the height of the title line, so
   // the dot and the time sit on the first line rather than between the two.
   const side = detail ? 'h-5' : '';
@@ -202,18 +215,24 @@ export const SessionRow = memo(function SessionRow({
         }`}
       >
         <span
-          className={`w-3 flex items-center justify-center shrink-0 ${side} ${active ? 'text-droid-text' : 'text-droid-text-secondary group-hover:text-droid-text'}`}
+          className={`flex shrink-0 items-center justify-center ${inbox ? 'w-3.5' : 'w-3'} ${side} ${active ? 'text-droid-text' : 'text-droid-text-secondary group-hover:text-droid-text'}`}
         >
           {running && !attention ? (
             <span
               className="w-3 h-3 rounded-full border-[1.5px] border-droid-text border-r-transparent motion-safe:animate-spin-slow"
               aria-label="working"
             />
+          ) : inbox ? (
+            <ActivityStatusGlyph
+              status={activityStatus}
+              className={onToggleSettled ? 'inbox-mark' : ''}
+            />
           ) : (
             dot && <span className={`h-1.5 w-1.5 rounded-full ${dot}`} aria-hidden="true" />
           )}
         </span>
-        {dot && <span className="sr-only">{ACTIVITY_LABELS[activityStatus]}:</span>}
+        {/* Inbox rows are announced by the mark itself. */}
+        {dot && !inbox && <span className="sr-only">{ACTIVITY_LABELS[activityStatus]}:</span>}
         {unread && <span className="sr-only">Unread:</span>}
         {attention && !detail && (
           <span className="sr-only">
@@ -248,7 +267,7 @@ export const SessionRow = memo(function SessionRow({
             </span>
           </span>
           {detail && (
-            <span className="mt-0.5 block truncate text-[11.5px] leading-4 text-droid-text-muted">
+            <span className="mt-0.5 block truncate text-[12px] leading-4 text-droid-text-muted">
               {detail}
             </span>
           )}
@@ -274,9 +293,11 @@ export const SessionRow = memo(function SessionRow({
                 <ModelIcon provider={providerMark} size={14} />
               </span>
             )}
-            <span className="flex justify-center">{pr && <PrStateIcon kind={pr} size={14} />}</span>
+            <span className="flex justify-center">
+              {pr && <PrStateIcon kind={pr.kind} size={14} checks={pr.checks} />}
+            </span>
             <span
-              className={`text-right text-[11.5px] tabular-nums group-hover:invisible group-focus-within:invisible ${
+              className={`text-right text-[12px] tabular-nums group-hover:invisible group-focus-within:invisible ${
                 unread ? 'text-droid-text font-medium' : 'text-droid-text-muted'
               }`}
             >
@@ -285,6 +306,24 @@ export const SessionRow = memo(function SessionRow({
           </span>
         )}
       </button>
+      {/* In the inbox the status mark becomes the settle control on hover: one
+          click closes a task without the menu; on a settled row it reopens. */}
+      {onToggleSettled && !(running && !attention) && (
+        <button
+          type="button"
+          aria-label={settled ? `Reopen ${title}` : `Mark ${title} as settled`}
+          title={settled ? 'Reopen task' : 'Mark as settled'}
+          onClick={(e) => {
+            e.stopPropagation();
+            onToggleSettled(session);
+          }}
+          className={`${HOVER_ACTION} inbox-mark-control left-[7px] ${detail ? 'top-2 translate-y-0' : ''} ${
+            settled ? 'hover:text-droid-text' : 'hover:text-droid-green'
+          }`}
+        >
+          <ActivityToggleGlyph settled={settled} />
+        </button>
+      )}
       {/* On hover the timestamp becomes the "..." menu trigger (rename, pin,
           archive). It stays tabbable while hidden so keyboard users can reach
           it; opacity (not display) keeps it in the tab order. */}

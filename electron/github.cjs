@@ -110,7 +110,64 @@ const PR_FIELDS = [
   'author',
   'reviewRequests',
   'reviews',
+  'statusCheckRollup',
 ].join(',');
+
+// One state for the whole rollup, the way GitHub's own list marks a PR: any
+// failure is red, otherwise anything still running is pending, otherwise a
+// finished rollup is a pass. Skipped and neutral runs do not count against it.
+// Check runs report status + conclusion; legacy commit statuses report state.
+function rollupChecks(value) {
+  if (!Array.isArray(value) || value.length === 0) return null;
+  // A re-run leaves the earlier attempt in the rollup; only the latest run of
+  // each check counts, so a superseded cancelled run cannot paint a green PR.
+  const latest = new Map();
+  for (const item of value) {
+    const key = `${item?.workflowName || item?.context || ''}/${item?.name || item?.context || ''}`;
+    const prior = latest.get(key);
+    // A queued re-run has no timestamp yet; it is still the newer attempt.
+    // Only a check run says so: a legacy commit status has no `status` field.
+    const status = String(item?.status || '').toUpperCase();
+    const running = status !== '' && status !== 'COMPLETED';
+    if (!prior || running || String(item?.startedAt || '') >= String(prior?.startedAt || '')) {
+      latest.set(key, item);
+    }
+  }
+  let pending = false;
+  let counted = 0;
+  for (const item of latest.values()) {
+    const status = String(item?.status || '').toUpperCase();
+    const outcome = String(item?.conclusion || item?.state || '').toUpperCase();
+    if (status && status !== 'COMPLETED') {
+      pending = true;
+      continue;
+    }
+    // A stale run's verdict is out of date and needs a re-run: not clear,
+    // not broken, so it holds the rollup at pending like a queued one.
+    if (
+      outcome === 'PENDING' ||
+      outcome === 'EXPECTED' ||
+      outcome === 'QUEUED' ||
+      outcome === 'STALE' ||
+      outcome === 'CANCELLED'
+    ) {
+      pending = true;
+      continue;
+    }
+    if (
+      outcome === 'FAILURE' ||
+      outcome === 'ERROR' ||
+      outcome === 'TIMED_OUT' ||
+      outcome === 'ACTION_REQUIRED' ||
+      outcome === 'STARTUP_FAILURE'
+    ) {
+      return 'fail';
+    }
+    if (outcome === 'SUCCESS') counted += 1;
+  }
+  if (pending) return 'pending';
+  return counted > 0 ? 'pass' : null;
+}
 
 function loginOf(value) {
   if (!value) return null;
@@ -171,6 +228,7 @@ function normalizePr(pr) {
     author: loginOf(pr.author),
     reviewRequests: normalizeReviewRequests(pr.reviewRequests),
     reviews: normalizeReviews(pr.reviews),
+    checks: rollupChecks(pr.statusCheckRollup),
   };
 }
 

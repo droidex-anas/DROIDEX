@@ -1,6 +1,7 @@
-import { useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
-import { Activity, Check, ChevronRight, Folder, GitPullRequest, ListFilter } from 'lucide-react';
+import { useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
+import { Check, ChevronRight, Folder, GitPullRequest, ListFilter } from 'lucide-react';
 import { Popover } from './environment/Popover';
+import { ActivityStatusGlyph } from './ActivityStatusGlyph';
 import {
   DEFAULT_SIDEBAR_PREFERENCES,
   type SidebarActivityPreferences,
@@ -22,7 +23,11 @@ interface Option<T> {
 const ICON = 'h-4 w-4';
 const VIEWS: Option<SidebarActivityPreferences['view']>[] = [
   { value: 'workspaces', label: 'Workspace', icon: <Folder className={ICON} strokeWidth={1.5} /> },
-  { value: 'activity', label: 'Activity', icon: <Activity className={ICON} strokeWidth={1.5} /> },
+  {
+    value: 'activity',
+    label: 'Activity',
+    icon: <ActivityStatusGlyph status="review" decorative />,
+  },
   {
     value: 'pull-requests',
     label: 'Pull request',
@@ -53,6 +58,14 @@ const ROW =
 
 type Submenu = 'view' | 'order' | 'limit' | 'filter';
 
+// Hover intent for the cascade (transitions.dev tokens by usage): a short
+// pause before a neighbouring row takes over, so a diagonal move toward the
+// open flyout is not read as a change of mind, and a short grace before the
+// menu closes behind a pointer that briefly stepped outside it.
+const SWITCH_DELAY_MS = 80; // --duration-micro
+const TOWARD_FLYOUT_DELAY_MS = 250; // --duration-fast
+const CLOSE_GRACE_MS = 150; // --duration-quick
+
 // A menu row that flies its choices out to the right, macOS style. The row
 // shows the current value; the flyout marks it with a check.
 function FlyoutRow<T extends string | number>({
@@ -62,6 +75,8 @@ function FlyoutRow<T extends string | number>({
   options,
   open,
   onOpen,
+  onHover,
+  onSettle,
   onChange,
   showValue = true,
   marked = false,
@@ -72,6 +87,10 @@ function FlyoutRow<T extends string | number>({
   options: readonly Option<T>[];
   open: Submenu | null;
   onOpen: (id: Submenu) => void;
+  // Pointer intent: hovering a row asks for its flyout; reaching a flyout
+  // settles the cascade on it.
+  onHover: (id: Submenu) => void;
+  onSettle: () => void;
   onChange: (value: T) => void;
   showValue?: boolean;
   marked?: boolean;
@@ -83,7 +102,7 @@ function FlyoutRow<T extends string | number>({
       className="relative"
       data-submenu={id}
       onMouseEnter={() => {
-        onOpen(id);
+        onHover(id);
       }}
     >
       <button
@@ -100,33 +119,37 @@ function FlyoutRow<T extends string | number>({
         <ChevronRight className="h-4 w-4 text-droid-text-muted" strokeWidth={1.5} />
       </button>
       {isOpen && (
-        <div
-          role="menu"
-          aria-label={label}
-          className="absolute -top-1.5 left-full ml-1.5 w-[220px] rounded-xl border border-droid-border bg-droid-surface py-1.5 shadow-2xl shadow-black/50"
-        >
-          {options.map((option) => {
-            const selected = option.value === value;
-            return (
-              <button
-                key={option.value}
-                role="menuitemradio"
-                aria-checked={selected}
-                className={ROW}
-                onClick={() => {
-                  onChange(option.value);
-                }}
-              >
-                {option.icon && (
-                  <span className="flex w-4 shrink-0 justify-center text-droid-text-secondary">
-                    {option.icon}
-                  </span>
-                )}
-                <span className="flex-1">{option.label}</span>
-                {selected && <Check className="h-4 w-4" strokeWidth={2} />}
-              </button>
-            );
-          })}
+        // The gap to the flyout is padding on a wrapper, not a margin, so the
+        // pointer never leaves the menu while crossing it.
+        <div className="absolute -top-1.5 left-full pl-1.5" onMouseEnter={onSettle}>
+          <div
+            role="menu"
+            aria-label={label}
+            className="w-[220px] rounded-xl border border-droid-border bg-droid-surface py-1.5 shadow-droid"
+          >
+            {options.map((option) => {
+              const selected = option.value === value;
+              return (
+                <button
+                  key={option.value}
+                  role="menuitemradio"
+                  aria-checked={selected}
+                  className={ROW}
+                  onClick={() => {
+                    onChange(option.value);
+                  }}
+                >
+                  {option.icon && (
+                    <span className="flex w-4 shrink-0 justify-center text-droid-text-secondary">
+                      {option.icon}
+                    </span>
+                  )}
+                  <span className="flex-1">{option.label}</span>
+                  {selected && <Check className="h-4 w-4" strokeWidth={2} />}
+                </button>
+              );
+            })}
+          </div>
         </div>
       )}
     </div>
@@ -137,9 +160,44 @@ export function SidebarCustomize({ preferences, unreadCount, onChange, onMarkAll
   const [open, setOpen] = useState(false);
   const [submenu, setSubmenu] = useState<Submenu | null>(null);
   const trigger = useRef<HTMLButtonElement>(null);
+  const lastX = useRef(0);
+  const movingRight = useRef(false);
+  const switchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const closeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const clearTimers = () => {
+    if (switchTimer.current) clearTimeout(switchTimer.current);
+    if (closeTimer.current) clearTimeout(closeTimer.current);
+    switchTimer.current = null;
+    closeTimer.current = null;
+  };
+  useEffect(() => clearTimers, []);
   const close = () => {
+    clearTimers();
     setOpen(false);
     setSubmenu(null);
+  };
+  // Pointer intent for the cascade. The last horizontal movement says whether
+  // the pointer is heading for the open flyout (rightward) or browsing rows.
+  const hoverRow = (id: Submenu) => {
+    if (closeTimer.current) clearTimeout(closeTimer.current);
+    closeTimer.current = null;
+    if (switchTimer.current) clearTimeout(switchTimer.current);
+    if (submenu === null || submenu === id) {
+      switchTimer.current = null;
+      setSubmenu(id);
+      return;
+    }
+    const delay = movingRight.current ? TOWARD_FLYOUT_DELAY_MS : SWITCH_DELAY_MS;
+    switchTimer.current = setTimeout(() => {
+      switchTimer.current = null;
+      setSubmenu(id);
+    }, delay);
+  };
+  const settleOnFlyout = () => {
+    if (switchTimer.current) clearTimeout(switchTimer.current);
+    switchTimer.current = null;
+    if (closeTimer.current) clearTimeout(closeTimer.current);
+    closeTimer.current = null;
   };
   const filtered = preferences.filter !== DEFAULT_SIDEBAR_PREFERENCES.filter;
   const customized =
@@ -181,7 +239,7 @@ export function SidebarCustomize({ preferences, unreadCount, onChange, onMarkAll
   };
 
   return (
-    <div className="mx-3 mb-1 flex items-center justify-between">
+    <div className="mx-4 mb-1 flex items-center justify-between">
       <span className="text-[11px] font-medium text-droid-text-muted">
         {VIEWS.find((view) => view.value === preferences.view)?.label}
       </span>
@@ -213,8 +271,21 @@ export function SidebarCustomize({ preferences, unreadCount, onChange, onMarkAll
         <div
           className="py-1.5"
           onKeyDown={onKeyDown}
+          onMouseMove={(event) => {
+            movingRight.current = event.clientX > lastX.current;
+            lastX.current = event.clientX;
+          }}
+          onMouseEnter={() => {
+            if (closeTimer.current) clearTimeout(closeTimer.current);
+            closeTimer.current = null;
+          }}
           onMouseLeave={() => {
-            setSubmenu(null);
+            if (switchTimer.current) clearTimeout(switchTimer.current);
+            switchTimer.current = null;
+            closeTimer.current = setTimeout(() => {
+              closeTimer.current = null;
+              setSubmenu(null);
+            }, CLOSE_GRACE_MS);
           }}
         >
           <FlyoutRow
@@ -224,6 +295,8 @@ export function SidebarCustomize({ preferences, unreadCount, onChange, onMarkAll
             options={VIEWS}
             open={submenu}
             onOpen={setSubmenu}
+            onHover={hoverRow}
+            onSettle={settleOnFlyout}
             onChange={(view) => {
               set('view', view);
             }}
@@ -235,6 +308,8 @@ export function SidebarCustomize({ preferences, unreadCount, onChange, onMarkAll
             options={ORDER}
             open={submenu}
             onOpen={setSubmenu}
+            onHover={hoverRow}
+            onSettle={settleOnFlyout}
             onChange={(order) => {
               set('order', order);
             }}
@@ -246,6 +321,8 @@ export function SidebarCustomize({ preferences, unreadCount, onChange, onMarkAll
             options={LIMIT}
             open={submenu}
             onOpen={setSubmenu}
+            onHover={hoverRow}
+            onSettle={settleOnFlyout}
             showValue={false}
             onChange={(limit) => {
               set('limit', limit);
@@ -276,6 +353,8 @@ export function SidebarCustomize({ preferences, unreadCount, onChange, onMarkAll
             options={STATUS}
             open={submenu}
             onOpen={setSubmenu}
+            onHover={hoverRow}
+            onSettle={settleOnFlyout}
             showValue={false}
             marked={filtered}
             onChange={(filter) => {

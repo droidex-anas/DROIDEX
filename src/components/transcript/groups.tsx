@@ -15,7 +15,7 @@ import { formatDuration } from '../../lib/tools';
 import type { FeedItem } from '../chatFeed';
 import { DiffCard } from '../DiffView';
 import { Caret, Expand } from './primitives';
-import { renderToolEvents, summarizeTools } from './rows';
+import { hasPendingCall, renderToolEvents, summarizeTools } from './rows';
 
 /* ── One run of tool calls at the configured density. Compact folds the run to
    a single aggregate line ("Explored 4 files, 1 search") that expands to the
@@ -24,19 +24,33 @@ import { renderToolEvents, summarizeTools } from './rows';
 export function ToolGroupItem({
   events,
   active = false,
+  sessionLive = active,
   density = 'balanced',
+  onOpenReviewFile,
 }: {
   events: TranscriptEvent[];
   active?: boolean;
+  // A call without its result is in flight while the session runs, even once
+  // a later item (prose, thinking) has become the tail and `active` is off.
+  sessionLive?: boolean;
   density?: ToolActivityDensity;
+  onOpenReviewFile?: OpenReviewFileHandler;
 }) {
   const [open, setOpen] = useState(false);
-  const summary = useMemo(() => summarizeTools(events), [events]);
+  // The header shimmers and speaks progressively while a call is in flight,
+  // even once later prose has taken the tail from this group.
+  const inFlight = useMemo(() => hasPendingCall(events, sessionLive), [events, sessionLive]);
+  const busy = active || inFlight;
+  const summary = useMemo(() => summarizeTools(events, busy), [events, busy]);
   // While the group is live each new row enters with motion (see index.css);
   // a settled group is history and renders still.
   const rows = `space-y-2.5${active ? ' tool-rows-live' : ''}`;
   if (density !== 'compact') {
-    return <div className={rows}>{renderToolEvents(events, active, density === 'detailed')}</div>;
+    return (
+      <div className={rows}>
+        {renderToolEvents(events, sessionLive, density === 'detailed', onOpenReviewFile)}
+      </div>
+    );
   }
   return (
     <div>
@@ -49,7 +63,7 @@ export function ToolGroupItem({
         className="group flex items-center gap-1.5 text-left"
       >
         <Caret open={open} />
-        {active ? (
+        {busy ? (
           <span className="shimmer-text text-[13px] font-medium">{summary}</span>
         ) : (
           <span className="text-[13px] text-droid-text-muted group-hover:text-droid-text-secondary transition-colors">
@@ -58,7 +72,9 @@ export function ToolGroupItem({
         )}
       </button>
       <Expand open={open}>
-        <div className={`mt-2 pl-[18px] ${rows}`}>{renderToolEvents(events, active, false)}</div>
+        <div className={`mt-2 pl-[18px] ${rows}`}>
+          {renderToolEvents(events, sessionLive, false, onOpenReviewFile)}
+        </div>
       </Expand>
     </div>
   );
@@ -92,7 +108,7 @@ export function WorkedGroup({
         </span>
       </button>
       <Expand open={open}>
-        <div className="mt-3 space-y-4 border-l border-droid-border pl-4">{children}</div>
+        <div className="mt-3 space-y-2.5 border-l border-droid-border pl-[17px]">{children}</div>
       </Expand>
     </div>
   );
@@ -159,18 +175,15 @@ export function DiffGroup({
         <span className="min-w-0 truncate text-[13px] font-medium text-droid-text-muted group-hover:text-droid-text-secondary">
           {label}
         </span>
-        <span
-          className="ml-auto text-[11px] tabular-nums shrink-0"
-          style={{ color: 'var(--diff-add-fg)' }}
-        >
+        <span className="shrink-0 text-[12px] tabular-nums" style={{ color: 'var(--diff-add-fg)' }}>
           +{added}
         </span>
-        <span className="text-[11px] tabular-nums shrink-0" style={{ color: 'var(--diff-del-fg)' }}>
+        <span className="shrink-0 text-[12px] tabular-nums" style={{ color: 'var(--diff-del-fg)' }}>
           −{removed}
         </span>
       </button>
       <Expand open={open}>
-        <div className="mt-2 space-y-2 border-l border-droid-border pl-3">
+        <div className="mt-2 space-y-2.5 border-l border-droid-border pl-[17px]">
           {shown.map((c) => (
             <DiffCard
               key={c.event.id}
@@ -195,7 +208,7 @@ export function DiffGroup({
               onClick={() => {
                 setDisclosure((current) => revealNextDiffCards(current, changes.length));
               }}
-              className="text-[11px] text-droid-text-muted/70 transition-colors hover:text-droid-text-secondary"
+              className="rounded-md px-1.5 py-0.5 text-[12px] text-droid-text-muted transition-colors hover:bg-droid-elevated/60 hover:text-droid-text-secondary focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-droid-accent/60"
             >
               Show next {revealCount} {revealCount === 1 ? 'edit' : 'edits'} ({hiddenCount}{' '}
               remaining)
