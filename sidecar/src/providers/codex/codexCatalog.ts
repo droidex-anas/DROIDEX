@@ -3,34 +3,79 @@ import { isAbsolute } from 'node:path';
 import type { SkillInfo, SkillLocation } from '../catalog.js';
 import type { AppServerClient } from './appServer.js';
 
-interface CatalogResult {
-  items: SkillInfo[];
-  diagnostics: string[];
+type CatalogSource = 'skills' | 'plugins' | 'apps';
+// Publication order, whichever order the sources answer in.
+const SOURCES: readonly CatalogSource[] = ['skills', 'plugins', 'apps'];
+
+// Skills answer in milliseconds, installed plugins in a second or two, and the
+// first app listing in tens of seconds while Codex discovers its connectors.
+// Each source is published as it lands, so nothing waits for the slowest.
+export class CodexCatalog {
+  private readonly listeners = new Set<(items: SkillInfo[]) => void>();
+  private readonly loaded = new Map<CatalogSource, SkillInfo[]>();
+  private readonly initial: Promise<void>;
+  private refresh?: Promise<void>;
+  private closed = false;
+
+  constructor(
+    private readonly client: AppServerClient,
+    private readonly cwds: string[],
+  ) {
+    this.initial = Promise.all([
+      this.load('skills', () => loadCodexSkills(client, cwds)),
+      this.load('plugins', () => loadCodexPlugins(client, cwds)),
+      this.load('apps', () => loadCodexApps(client)),
+    ]).then(() => undefined);
+  }
+
+  // The whole catalog: every source settled, plus any skill refresh in flight.
+  async catalogItems(): Promise<SkillInfo[]> {
+    await (this.refresh ?? this.initial);
+    return this.items();
+  }
+
+  onUpdated(listener: (items: SkillInfo[]) => void): () => void {
+    this.listeners.add(listener);
+    return () => {
+      this.listeners.delete(listener);
+    };
+  }
+
+  // Codex announces `skills/changed`; plugins and apps have no such signal.
+  refreshSkills(): void {
+    if (this.closed) return;
+    const pending = (this.refresh ?? this.initial).then(() =>
+      this.load('skills', () => loadCodexSkills(this.client, this.cwds)),
+    );
+    this.refresh = pending;
+    void pending.then(() => {
+      if (this.refresh === pending) this.refresh = undefined;
+    });
+  }
+
+  close(): void {
+    this.closed = true;
+    this.listeners.clear();
+  }
+
+  private async load(source: CatalogSource, fetch: () => Promise<SkillInfo[]>): Promise<void> {
+    try {
+      const items = await fetch();
+      if (this.closed) return;
+      this.loaded.set(source, items);
+      for (const listener of this.listeners) listener(this.items());
+    } catch (error) {
+      // One failed source costs its rows, not the catalog.
+      if (!this.closed) console.warn(`Codex catalog (${source}):`, errorMessage(error));
+    }
+  }
+
+  private items(): SkillInfo[] {
+    return SOURCES.flatMap((source) => this.loaded.get(source) ?? []);
+  }
 }
 
-export async function loadCodexCatalog(
-  client: AppServerClient,
-  cwds: string[],
-): Promise<CatalogResult> {
-  const requests = await Promise.allSettled([
-    loadCodexSkills(client, cwds),
-    loadCodexPlugins(client, cwds),
-    loadCodexApps(client),
-  ]);
-  const labels = ['skills/list', 'plugin/installed', 'app/list'];
-  const items: SkillInfo[] = [];
-  const diagnostics: string[] = [];
-  requests.forEach((result, index) => {
-    if (result.status === 'fulfilled') items.push(...result.value);
-    else diagnostics.push(`${labels[index]}: ${errorMessage(result.reason)}`);
-  });
-  return { items, diagnostics };
-}
-
-export async function loadCodexSkills(
-  client: AppServerClient,
-  cwds: string[],
-): Promise<SkillInfo[]> {
+async function loadCodexSkills(client: AppServerClient, cwds: string[]): Promise<SkillInfo[]> {
   const response = await client.request<unknown>('skills/list', { cwds });
   if (!isRecord(response) || !Array.isArray(response.data))
     throw new Error('Codex returned an invalid skills catalog.');
