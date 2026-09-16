@@ -1,3 +1,5 @@
+import { randomUUID } from 'node:crypto';
+
 import { isDesignPrompt } from '../browser/designPromptPacks.js';
 import type { ServerEvent, SessionSummary } from '../protocol.js';
 import type { LiveOperationTarget, SessionContext } from '../SessionContext.js';
@@ -9,7 +11,7 @@ import { isReportedStreamingTranscriptError, type SessionTimeline } from '../Ses
 export interface PrimaryTurnDependencies {
   eventFlow: Pick<SessionEventFlow, 'beginTurn' | 'apply'>;
   context: Pick<SessionContext, 'beginTurn' | 'startPolling' | 'stopPolling' | 'refresh'>;
-  timeline: Pick<SessionTimeline, 'recordPrompt' | 'settleStreaming' | 'appendStatus'>;
+  timeline: Pick<SessionTimeline, 'recordPrompt' | 'settleStreaming' | 'appendStatus' | 'append'>;
   // Absent for a provider without Droid's context accounting.
   contextTarget: (liveSession: LiveSession) => LiveOperationTarget | undefined;
   isCurrent: (liveSession: LiveSession) => boolean;
@@ -31,6 +33,7 @@ export async function runPrimaryTurn(
   d.context.beginTurn(appSessionId);
   context.startPolling();
   let turnError: unknown;
+  let reportedError = false;
   try {
     await d.applyDesignToolPolicy(liveSession, isDesignPrompt(prompt));
     if (!d.isCurrent(liveSession)) {
@@ -40,6 +43,7 @@ export async function runPrimaryTurn(
     for await (const normalized of liveSession.session.stream(prompt)) {
       if (!d.isCurrent(liveSession)) break;
       d.eventFlow.apply(appSessionId, appSessionId, 'primary', normalized);
+      if (normalized.transcript?.kind === 'error') reportedError = true;
     }
   } catch (err) {
     turnError = err;
@@ -53,23 +57,45 @@ export async function runPrimaryTurn(
     context.stopPolling();
   }
   if (!d.isCurrent(liveSession)) return;
-  if (turnError) {
-    if (liveSession.interruptingForSteer) {
-      d.timeline.appendStatus(appSessionId, 'Current turn interrupted for steering.');
-    } else if (liveSession.interrupting && isUserCancellation(turnError)) {
-      // The user pressed Stop; interrupt() already set the paused phase, so
-      // settle quietly without surfacing an error.
-      d.updateSummary(appSessionId, { phase: 'paused' });
-    } else {
-      if (!isReportedStreamingTranscriptError(turnError)) {
-        d.emitError({ appSessionId, message: errMsg(turnError) });
-      }
-      d.updateSummary(appSessionId, { phase: 'failed' });
-    }
-  }
+  if (turnError) settleTurnFailure(d, liveSession, turnError, reportedError);
   // Keep streaming=true while the context refresh is in flight so concurrent
   // sends queue instead of racing a second lifecycle turn.
   await context.refresh();
+}
+
+function settleTurnFailure(
+  d: PrimaryTurnDependencies,
+  liveSession: LiveSession,
+  error: unknown,
+  reportedError: boolean,
+): void {
+  const appSessionId = liveSession.summary.appSessionId;
+  if (liveSession.interruptingForSteer && isUserCancellation(error)) {
+    d.timeline.appendStatus(appSessionId, 'Current turn interrupted for steering.');
+    return;
+  }
+  if (liveSession.interrupting && isUserCancellation(error)) {
+    // Stop already set the paused phase; its cancellation is not a failure.
+    d.updateSummary(appSessionId, { phase: 'paused' });
+    return;
+  }
+  if (!isReportedStreamingTranscriptError(error)) {
+    const message = errMsg(error);
+    if (!reportedError) {
+      d.timeline.append({
+        id: randomUUID(),
+        appSessionId,
+        sourceSessionId: appSessionId,
+        role: 'primary',
+        ts: Date.now(),
+        kind: 'error',
+        text: message,
+        isError: true,
+      });
+    }
+    d.emitError({ appSessionId, message });
+  }
+  d.updateSummary(appSessionId, { phase: 'failed' });
 }
 
 interface TurnContext {

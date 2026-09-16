@@ -63,6 +63,7 @@ export class ClaudeSession implements ProviderSession {
   private initializing = true;
   private child?: ChildProcess;
   private autonomy: Autonomy;
+  private modelId: string | undefined;
   // Spec mode is Claude Code's plan mode, and both reach the CLI as the one
   // permission mode, so the session owns which of the two is in force.
   private planning: boolean;
@@ -75,6 +76,7 @@ export class ClaudeSession implements ProviderSession {
   constructor(input: ClaudeSessionInput) {
     this.providerSessionId = input.appSessionId;
     this.autonomy = input.autonomy;
+    this.modelId = input.modelId;
     this.planning = input.interactionMode === 'spec';
     this.mapper = new ClaudeEventMapper(input.appSessionId);
     this.closed = new Promise((resolve) => {
@@ -155,6 +157,7 @@ export class ClaudeSession implements ProviderSession {
     if (this.activeTurnId) throw new Error('This Claude session is already running a turn.');
     const turnId = randomUUID();
     this.activeTurnId = turnId;
+    let reportedPlanningModel = false;
     try {
       this.requireOpen();
       this.prompts.push({
@@ -175,18 +178,26 @@ export class ClaudeSession implements ProviderSession {
         // The CLI exited without answering. Failing here is what tells the
         // session the turn broke, instead of reading as a silent success.
         if (next.done) throw new Error('Claude Code exited before the turn finished.');
-        for (const event of this.mapper.map(next.value)) yield event;
+        const message = next.value;
+        if (message.type === 'assistant' && !reportedPlanningModel) {
+          const notice = this.planningModelNotice(message);
+          if (notice) {
+            reportedPlanningModel = true;
+            yield this.mapper.statusEvent(notice);
+          }
+        }
+        for (const event of this.mapper.map(message)) yield event;
         // A refused usage window is answered with no result at all, so the turn
         // has to end here instead of waiting for one that never comes.
-        if (next.value.type === 'rate_limit_event') {
-          const refusal = rateLimitRefusal(next.value.rate_limit_info);
+        if (message.type === 'rate_limit_event') {
+          const refusal = rateLimitRefusal(message.rate_limit_info);
           if (refusal) throw new Error(refusal);
         }
-        if (next.value.type === 'result' && answersTurn(next.value, turnId)) {
+        if (message.type === 'result' && answersTurn(message, turnId)) {
           // A stopped turn settles quietly: the CLI still reports the
           // interruption as an error result carrying an internal diagnostic.
-          if (next.value.subtype !== 'success' && this.interruptedTurnId !== turnId)
-            throw new Error(turnFailure(next.value.subtype, next.value.errors));
+          if (message.subtype !== 'success' && this.interruptedTurnId !== turnId)
+            throw new Error(turnFailure(message.subtype, message.errors));
           yield { done: true };
           return;
         }
@@ -194,6 +205,22 @@ export class ClaudeSession implements ProviderSession {
     } finally {
       this.activeTurnId = undefined;
     }
+  }
+
+  private planningModelNotice(
+    message: Extract<SDKMessage, { type: 'assistant' }>,
+  ): string | undefined {
+    const model = message.message.model;
+    if (
+      !this.planning ||
+      !this.modelId ||
+      message.parent_tool_use_id ||
+      model === '<synthetic>' ||
+      matchesModel(this.modelId, model)
+    )
+      return undefined;
+    // Plan mode can override the pin inside the CLI; report its choice without changing it.
+    return `Planning on ${model}, Claude Code's plan-mode model.`;
   }
 
   // The failure survives a delayed first prompt, even after the query closes.
@@ -251,7 +278,11 @@ export class ClaudeSession implements ProviderSession {
   // user's settings files.
   async setModel({ modelId, reasoningEffort }: ProviderModelSettings): Promise<void> {
     await this.waitUntilInitialized();
-    if (modelId !== undefined) await this.query.setModel(modelId ?? undefined);
+    if (modelId !== undefined) {
+      await this.query.setModel(modelId ?? undefined);
+      this.requireOpen();
+      this.modelId = modelId ?? undefined;
+    }
     this.abort.signal.throwIfAborted();
     const effort = claudeEffort(reasoningEffort);
     if (effort) await this.query.applyFlagSettings({ effortLevel: effort });
@@ -384,6 +415,13 @@ const CLAUDE_EFFORTS: readonly EffortLevel[] = ['low', 'medium', 'high', 'xhigh'
 
 function claudeEffort(effort: ReasoningEffort | undefined): EffortLevel | undefined {
   return CLAUDE_EFFORTS.find((level) => level === effort);
+}
+
+function matchesModel(selected: string, actual: string): boolean {
+  const model = selected.replace(/\[1m\]$/i, '');
+  if (model === actual) return true;
+  // The picker also publishes CLI aliases, while assistant frames carry wire ids.
+  return !model.startsWith('claude-') && actual.startsWith(`claude-${model}-`);
 }
 
 function turnFailure(subtype: string, errors: string[]): string {
