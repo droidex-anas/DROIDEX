@@ -7,7 +7,10 @@
 // completed item backfills one case, a message that streamed nothing at all.
 import type { NormalizedEvent } from '../../normalize.js';
 import type { TranscriptEvent } from '../../protocol.js';
+import type { ChildSessionSignal } from '../../subagentSignals.js';
+import type { ProviderModelSettings } from '../session.js';
 import {
+  collabChildSignals,
   patchText,
   threadItem,
   toolCall,
@@ -99,8 +102,16 @@ export class CodexEventMapper {
   private readonly tools = new Map<string, OpenTool>();
   // Message items that have already reached the transcript through their deltas.
   private readonly streamed = new Set<string>();
+  private readonly children = new Map<string, ChildSessionSignal>();
 
-  constructor(private readonly appSessionId: string) {}
+  constructor(
+    private readonly appSessionId: string,
+    private model: ProviderModelSettings = {},
+  ) {}
+
+  setModel(model: ProviderModelSettings): void {
+    this.model = model;
+  }
 
   // Every payload is read through a reader that answers undefined for a shape
   // this build does not recognize: a notification is not worth throwing out of
@@ -113,10 +124,14 @@ export class CodexEventMapper {
       case 'item/reasoning/textDelta':
       case 'item/reasoning/summaryTextDelta':
         return this.delta('thinking', deltaOf(params));
-      case 'item/started':
-        return this.started(threadItem(params));
-      case 'item/completed':
-        return this.completed(threadItem(params));
+      case 'item/started': {
+        const item = threadItem(params);
+        return [...this.started(item), ...this.childEvents(item)];
+      }
+      case 'item/completed': {
+        const item = threadItem(params);
+        return [...this.completed(item), ...this.childEvents(item)];
+      }
       case 'item/commandExecution/outputDelta':
         return this.appendOutput(deltaOf(params));
       case 'item/fileChange/patchUpdated':
@@ -128,6 +143,38 @@ export class CodexEventMapper {
       default:
         return [];
     }
+  }
+
+  childThreadStarted(params: unknown, parentThreadId: string | undefined): NormalizedEvent[] {
+    if (!parentThreadId || !isObject(params) || !isObject(params.thread)) return [];
+    const { id, parentThreadId: parent, agentNickname, agentRole } = params.thread;
+    if (parent !== parentThreadId || typeof id !== 'string' || !id) return [];
+    const label = [agentRole, agentNickname]
+      .filter((value) => typeof value === 'string' && value)
+      .join(': ');
+    return this.updateChild({
+      providerSessionId: id,
+      role: agentRole === 'validator' ? 'validator' : 'worker',
+      ...(label ? { label } : {}),
+      transcriptAvailable: false,
+    });
+  }
+
+  private childEvents(item: ThreadItem): NormalizedEvent[] {
+    return collabChildSignals(item, this.model).flatMap((signal) => this.updateChild(signal));
+  }
+
+  private updateChild(signal: ChildSessionSignal): NormalizedEvent[] {
+    const id = signal.providerSessionId;
+    if (!id) return [];
+    const previous = this.children.get(id);
+    const child = { ...previous, ...signal };
+    // Thread metadata may precede the spawn, and is more useful than its prompt.
+    if (previous?.label && previous.label !== previous.prompt) child.label = previous.label;
+    // Closing a failed thread is not a successful run. A new running state can resume it.
+    if (previous?.status === 'failed' && child.status === 'completed') child.status = 'failed';
+    this.children.set(id, child);
+    return [{ childSession: child }];
   }
 
   // What a pending approval is about. A file-change approval carries no detail

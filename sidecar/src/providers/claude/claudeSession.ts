@@ -19,6 +19,7 @@ import { errMsg } from '../../sessionHelpers.js';
 import type { ProviderInteractions } from '../interactions.js';
 import type { ProviderModelSettings, ProviderSession } from '../session.js';
 import { ClaudeEventMapper, rateLimitRefusal } from './claudeEvents.js';
+import { MessageQueue } from './claudeMessages.js';
 import { claudeCanUseTool, claudePermissionMode } from './claudePermissions.js';
 
 // Booting the CLI takes seconds, and the first turn streams while it happens, so
@@ -49,7 +50,7 @@ export class ClaudeSession implements ProviderSession {
   private readonly abort = new AbortController();
   private resolveClosed: (error?: Error) => void = () => undefined;
   private failure?: Error;
-  private readonly prompts = new PromptQueue();
+  private readonly prompts = new MessageQueue<SDKUserMessage>();
   private readonly mapper: ClaudeEventMapper;
   private readonly query: Query;
   // Settles when the CLI has finished booting. Turns stream against a CLI that
@@ -72,13 +73,15 @@ export class ClaudeSession implements ProviderSession {
   private activeTurnId?: string;
   // The turn the user stopped, so only that turn's own error result is excused.
   private interruptedTurnId?: string;
+  private turnQueue?: MessageQueue<{ message: SDKMessage; events: NormalizedEvent[] }>;
+  private readonly backgroundListeners = new Set<(event: NormalizedEvent) => void>();
 
   constructor(input: ClaudeSessionInput) {
     this.providerSessionId = input.appSessionId;
     this.autonomy = input.autonomy;
     this.modelId = input.modelId;
     this.planning = input.interactionMode === 'spec';
-    this.mapper = new ClaudeEventMapper(input.appSessionId);
+    this.mapper = new ClaudeEventMapper(input.appSessionId, input.modelId);
     this.closed = new Promise((resolve) => {
       this.resolveClosed = resolve;
     });
@@ -134,12 +137,25 @@ export class ClaudeSession implements ProviderSession {
     // A CLI that fails before it reaches spawn still settles initialization,
     // which is what releases the open instead of leaving it hanging.
     this.spawned = Promise.race([spawned, this.initialized]);
+    // Runs for the session's whole life, not just while a turn is streaming:
+    // a backgrounded subagent can settle between turns, and its dock update
+    // must not wait for the next prompt to pull it off the wire.
+    void this.pump();
   }
 
   // Returns as soon as the CLI process exists, so the session reaches the
   // lifecycle with a pid to track while the CLI is still booting behind it.
   async start(): Promise<void> {
     await this.spawned;
+  }
+
+  // Delivers a normalized background-task event (a subagent's dock update)
+  // the instant the pump reads it, whether or not a turn is streaming.
+  onBackgroundEvent(listener: (event: NormalizedEvent) => void): () => void {
+    this.backgroundListeners.add(listener);
+    return () => {
+      this.backgroundListeners.delete(listener);
+    };
   }
 
   get isClosed(): boolean {
@@ -157,6 +173,11 @@ export class ClaudeSession implements ProviderSession {
     if (this.activeTurnId) throw new Error('This Claude session is already running a turn.');
     const turnId = randomUUID();
     this.activeTurnId = turnId;
+    this.mapper.beginTurn();
+    const turnQueue = (this.turnQueue = new MessageQueue<{
+      message: SDKMessage;
+      events: NormalizedEvent[];
+    }>());
     let reportedPlanningModel = false;
     try {
       this.requireOpen();
@@ -170,15 +191,13 @@ export class ClaudeSession implements ProviderSession {
       // Only ever the first turn: by the second the CLI is up and its startup
       // is not what the chat is waiting for.
       if (this.initializing) yield this.mapper.statusEvent(STARTING);
-      // Pulled one message at a time rather than with `for await`: leaving a
-      // `for await` calls return() on the query, which would end the whole
-      // session at the first turn that settles.
       for (;;) {
-        const next = await this.nextMessage();
-        // The CLI exited without answering. Failing here is what tells the
-        // session the turn broke, instead of reading as a silent success.
+        const next = await turnQueue.next();
+        // The pump exhausted the CLI's own stream without answering. Failing
+        // here is what tells the session the turn broke, instead of reading
+        // as a silent success.
         if (next.done) throw new Error('Claude Code exited before the turn finished.');
-        const message = next.value;
+        const { message, events } = next.value;
         if (message.type === 'assistant' && !reportedPlanningModel) {
           const notice = this.planningModelNotice(message);
           if (notice) {
@@ -186,7 +205,7 @@ export class ClaudeSession implements ProviderSession {
             yield this.mapper.statusEvent(notice);
           }
         }
-        for (const event of this.mapper.map(message)) yield event;
+        yield* events;
         // A refused usage window is answered with no result at all, so the turn
         // has to end here instead of waiting for one that never comes.
         if (message.type === 'rate_limit_event') {
@@ -204,6 +223,7 @@ export class ClaudeSession implements ProviderSession {
       }
     } finally {
       this.activeTurnId = undefined;
+      if (this.turnQueue === turnQueue) this.turnQueue = undefined;
     }
   }
 
@@ -223,19 +243,41 @@ export class ClaudeSession implements ProviderSession {
     return `Planning on ${model}, Claude Code's plan-mode model.`;
   }
 
-  // The failure survives a delayed first prompt, even after the query closes.
-  private async nextMessage(): Promise<IteratorResult<SDKMessage>> {
-    this.requireOpen();
-    const next = this.query.next().catch((error: unknown) => {
-      // Closing the iterator may race the initialization failure that caused it.
-      this.requireOpen();
-      throw error;
-    });
-    // Observe both promises even when closing the query settles its iterator first.
-    if (this.initializing) await Promise.race([this.initialized, next]);
-    const message = await next;
-    this.requireOpen();
-    return message;
+  // Keep reading between turns so background children can settle immediately.
+  private async pump(): Promise<void> {
+    try {
+      for (;;) {
+        this.requireOpen();
+        const next = this.query.next().catch((error: unknown) => {
+          // Closing the iterator may race the initialization failure that caused it.
+          this.requireOpen();
+          throw error;
+        });
+        // Observe both promises even when closing the query settles its
+        // iterator first, so a boot failure surfaces instead of hanging here.
+        if (this.initializing) await Promise.race([this.initialized, next]);
+        const result = await next;
+        this.requireOpen();
+        if (result.done) {
+          throw new Error('Claude Code exited before the turn finished.');
+        }
+        this.dispatch(result.value);
+      }
+    } catch (error) {
+      this.finish(error instanceof Error ? error : new Error(errMsg(error)));
+    }
+  }
+
+  private dispatch(message: SDKMessage): void {
+    // Mapping stays in wire order, including model and spawn-link observations.
+    const events = this.mapper.map(message);
+    const turnEvents: NormalizedEvent[] = [];
+    for (const event of events) {
+      if (event.childSession) {
+        for (const listener of this.backgroundListeners) listener(event);
+      } else turnEvents.push(event);
+    }
+    this.turnQueue?.push({ message, events: turnEvents });
   }
 
   async setAutonomy(autonomy: Autonomy): Promise<void> {
@@ -282,6 +324,7 @@ export class ClaudeSession implements ProviderSession {
       await this.query.setModel(modelId ?? undefined);
       this.requireOpen();
       this.modelId = modelId ?? undefined;
+      this.mapper.setModel(this.modelId);
     }
     this.abort.signal.throwIfAborted();
     const effort = claudeEffort(reasoningEffort);
@@ -345,6 +388,8 @@ export class ClaudeSession implements ProviderSession {
     this.failure = error;
     this.abort.abort();
     this.prompts.close();
+    this.turnQueue?.close(error);
+    this.backgroundListeners.clear();
     // The SDK closes stdin and escalates SIGTERM to SIGKILL itself.
     try {
       this.query.close();
@@ -444,41 +489,4 @@ function answersTurn(
   if (message.user_message_uuid !== undefined) return message.user_message_uuid === turnId;
   // Older CLIs stamp neither field; their result can only be this turn's.
   return true;
-}
-
-// The session's prompt channel. One iterator, consumed by whichever turn is
-// streaming, so the process stays warm between turns.
-class PromptQueue implements AsyncIterable<SDKUserMessage> {
-  private readonly queued: SDKUserMessage[] = [];
-  private waiting?: (result: IteratorResult<SDKUserMessage>) => void;
-  private closed = false;
-
-  push(message: SDKUserMessage): void {
-    const waiting = this.waiting;
-    if (waiting) {
-      this.waiting = undefined;
-      waiting({ value: message, done: false });
-      return;
-    }
-    this.queued.push(message);
-  }
-
-  close(): void {
-    this.closed = true;
-    this.waiting?.({ value: undefined, done: true });
-    this.waiting = undefined;
-  }
-
-  [Symbol.asyncIterator](): AsyncIterator<SDKUserMessage> {
-    return {
-      next: async (): Promise<IteratorResult<SDKUserMessage>> => {
-        const queued = this.queued.shift();
-        if (queued) return { value: queued, done: false };
-        if (this.closed) return { value: undefined, done: true };
-        return await new Promise<IteratorResult<SDKUserMessage>>((resolve) => {
-          this.waiting = resolve;
-        });
-      },
-    };
-  }
 }

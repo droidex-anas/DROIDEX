@@ -529,6 +529,7 @@ export class SessionManager {
       applyPendingSettingsToSummary: (summary) => this.applyPendingSettingsToSummary(summary),
       applyPendingSessionSettings: (appSessionId) => this.applyPendingSessionSettings(appSessionId),
       runPrimaryTurn: (liveSession, prompt) => this.runPrimaryTurn(liveSession, prompt),
+      eventFlow: this.eventFlow,
       context: this.context,
       forgetInteractions: (appSessionId) => {
         this.interactions.forgetSession(appSessionId);
