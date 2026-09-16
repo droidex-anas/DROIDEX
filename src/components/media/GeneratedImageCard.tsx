@@ -31,7 +31,8 @@ export function GeneratedImageCard({
   const src = running ? null : imageSrc(text);
   const label = prompt || 'Generated image';
 
-  if (src === null || failedSrc === src) {
+  const unreadable = src !== null && failedSrc === src;
+  if (src === null || unreadable) {
     return (
       <div
         className="my-1.5 flex aspect-square w-[360px] max-w-full items-center justify-center overflow-hidden rounded-2xl bg-droid-elevated"
@@ -44,7 +45,7 @@ export function GeneratedImageCard({
           <GeneratingGrid />
         ) : (
           <span className="px-6 text-center text-[12.5px] text-droid-text-muted">
-            {failureText(text, failedSrc === src)}
+            {failureText(text, unreadable)}
           </span>
         )}
       </div>
