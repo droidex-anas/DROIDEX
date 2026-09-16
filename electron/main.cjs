@@ -359,7 +359,7 @@ function registerFaviconProtocol() {
   });
   session.defaultSession.protocol.handle(favicons.FAVICON_SCHEME, async (request) => {
     try {
-      const icon = await store.load(favicons.faviconRequestHost(request.url));
+      const icon = await store.load(favicons.faviconRequestTarget(request.url));
       if (!icon) return new Response('No icon', { status: 404 });
       // The same inert-body headers as local images: a third-party SVG stays an
       // image even if something navigates to it directly.
@@ -371,8 +371,8 @@ function registerFaviconProtocol() {
           'x-content-type-options': 'nosniff',
         },
       });
-    } catch (error) {
-      console.warn('Could not serve favicon %s:', request.url, error);
+    } catch {
+      console.warn('Could not serve icon: invalid request or unavailable image');
       return new Response('Icon unavailable', { status: 404 });
     }
   });

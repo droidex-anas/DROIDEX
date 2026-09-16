@@ -10,9 +10,12 @@ const commands: SlashCommand[] = [
   { cmd: '/review', desc: 'Review the working tree', replacement: '/review ' },
 ];
 
-const skill = (name: string, description?: string): SkillInfo => ({
+const skill = (name: string, description = ''): SkillInfo => ({
+  provider: 'droid',
+  kind: 'skill',
   name,
   description,
+  execution: 'harness',
   location: 'personal',
   filePath: `/skills/${name}/SKILL.md`,
 });

@@ -20,6 +20,7 @@ import type {
   ProviderSession,
 } from '../session.js';
 import { resolveClaudePath } from './claudeExecutable.js';
+import { claudeCatalogItems } from './claudeCatalog.js';
 import { ClaudeSession, type ClaudeSessionInput } from './claudeSession.js';
 
 const PROBE_TIMEOUT_MS = 25_000;
@@ -106,7 +107,8 @@ export class ClaudeProvider implements Provider {
         allowedTools: [],
         mcpServers: {},
         strictMcpConfig: true,
-        settingSources: [],
+        settingSources: ['user'],
+        settings: { disableAllHooks: true },
       },
     });
     try {
@@ -119,7 +121,10 @@ export class ClaudeProvider implements Provider {
           message: 'Run `claude` in a terminal and sign in, then refresh.',
           models: [],
         };
-      const catalog = await probe.supportedModels();
+      const [catalog, commands] = await Promise.all([
+        probe.supportedModels(),
+        probe.supportedCommands(),
+      ]);
       const settings = claudeSettings();
       const defaultModelId = claudeDefaultModelId(catalog, settings.model);
       return {
@@ -133,6 +138,7 @@ export class ClaudeProvider implements Provider {
         models: catalog
           .filter((model) => model.value !== RECOMMENDED)
           .flatMap((model) => providerModel(model, settings.effortLevel)),
+        items: claudeCatalogItems(commands),
       };
     } catch (error) {
       return claudeProbeFailure(error);

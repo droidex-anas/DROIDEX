@@ -39,7 +39,7 @@ import {
   type FinalResponseKeyState,
   type FreshAppResponseState,
 } from './messageFeedState';
-import { buildFeed, isCompactingStatus, type FeedItem } from './chatFeed';
+import { buildFeed, isCompactingStatus, isSettingsStatus, type FeedItem } from './chatFeed';
 import { groupTurns, tailTimestamp, trailingSubagentPoll } from './chatFeedTurns';
 import { FeedItemView, feedItemPropsEqual, isSpecEcho } from './chat';
 import { WorkingIndicator } from './transcript/primitives';
@@ -307,7 +307,7 @@ export function MessageFeed({
     (last.type === 'thinking' ||
       // An App tail shows its own "Building interactive app" progress.
       (tailIsReply && hasAppBlock(tailText)) ||
-      last.type === 'status' ||
+      (last.type === 'status' && !isSettingsStatus(last.event)) ||
       (last.type === 'child_session' && lastChildSessionRunning) ||
       (last.type === 'child_sessions' && lastDockRunning));
   // While the parent polls its subagents nothing in the feed represents that

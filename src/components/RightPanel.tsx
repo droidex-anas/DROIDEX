@@ -44,7 +44,6 @@ export default function RightPanel() {
     return {
       activeSession,
       activeTranscript: activeSession ? current.transcripts[activeSession.appSessionId] : undefined,
-      agentConfig: current.agentConfig,
       childAccess: current.childAccess,
       childRuntime: current.childRuntime,
       childSessions: current.childSessions,
@@ -360,7 +359,6 @@ function modelRowContent(
   state: {
     models: ModelInfo[];
     providerStatuses: ProviderStatus[];
-    agentConfig: { primary: { reasoning?: ReasoningEffort } };
   },
 ): { modelInfo?: ModelInfo; modelLabel: string; reasoningEffort?: ReasoningEffort } {
   if (!session) return { modelLabel: 'default' };
@@ -378,10 +376,6 @@ function modelRowContent(
   return {
     ...(shown ? { modelInfo: shown } : {}),
     modelLabel: shown?.displayName ?? session.modelId ?? 'default',
-    reasoningEffort: resolveReasoningEffortDisplay(
-      session.reasoningEffort,
-      state.agentConfig.primary.reasoning,
-      shown,
-    ),
+    reasoningEffort: resolveReasoningEffortDisplay(session.reasoningEffort, shown),
   };
 }

@@ -12,6 +12,7 @@ import type {
   McpServerInput,
   PermissionOutcome,
   ProviderKind,
+  ProviderMention,
   ReasoningEffort,
   ResponseFormat,
   SessionInteractionMode,
@@ -116,12 +117,14 @@ export const sendToSession = (
   appSessionId: string,
   text: string,
   responseFormat?: ResponseFormat,
+  mentions?: ProviderMention[],
 ) => {
   requireAgentWorkAvailable();
   bridge.send({
     type: 'session.send',
     appSessionId,
     text,
+    ...(mentions?.length ? { mentions } : {}),
     ...(responseFormat ? { responseFormat } : {}),
   });
 };
@@ -130,12 +133,14 @@ export const sendToSessionNow = (
   appSessionId: string,
   text: string,
   responseFormat?: ResponseFormat,
+  mentions?: ProviderMention[],
 ) => {
   requireAgentWorkAvailable();
   bridge.send({
     type: 'session.sendNow',
     appSessionId,
     text,
+    ...(mentions?.length ? { mentions } : {}),
     ...(responseFormat ? { responseFormat } : {}),
   });
 };

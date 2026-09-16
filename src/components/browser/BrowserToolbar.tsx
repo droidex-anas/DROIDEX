@@ -3,14 +3,14 @@ import {
   ArrowLeft,
   ArrowRight,
   CornerDownLeft,
-  Globe2,
-  Maximize2,
-  Minimize2,
-  MousePointer2,
+  Globe,
+  Maximize,
+  Minimize,
+  MousePointer,
   PenLine,
   RefreshCw,
-} from 'lucide-react';
-import { Spinner } from '@droidex/icons';
+  Spinner,
+} from '@droidex/icons';
 import { HoverTooltip } from '../HoverTooltip';
 
 interface BrowserToolbarProps {
@@ -53,20 +53,20 @@ export function BrowserToolbar({
   onToggleExpanded,
 }: BrowserToolbarProps) {
   return (
-    <header className="flex h-9 shrink-0 items-center gap-1 border-b border-droid-border bg-droid-bg px-2.5">
+    <header className="flex h-9 shrink-0 items-center gap-1 border-b border-droid-border bg-droid-bg pl-2 pr-1.5">
       <IconButton
         title="Back: return to the previous page (⌘[)"
         disabled={!canGoBack || loading}
         onClick={onGoBack}
       >
-        <ArrowLeft className="h-3.5 w-3.5" />
+        <ArrowLeft className="h-4 w-4" />
       </IconButton>
       <IconButton
         title="Forward: go to the next page in history (⌘])"
         disabled={!canGoForward || loading}
         onClick={onGoForward}
       >
-        <ArrowRight className="h-3.5 w-3.5" />
+        <ArrowRight className="h-4 w-4" />
       </IconButton>
       <form
         className="group flex h-7 min-w-0 flex-1 items-center rounded-lg border border-droid-border bg-droid-surface px-2 transition-colors focus-within:border-droid-border-hover"
@@ -75,7 +75,7 @@ export function BrowserToolbar({
           onOpen();
         }}
       >
-        <Globe2 className="mr-2 h-3.5 w-3.5 shrink-0 text-droid-text-muted/75" />
+        <Globe className="mr-2 h-3.5 w-3.5 shrink-0 text-droid-text-muted/75" />
         <input
           ref={urlInputRef}
           value={urlInput}
@@ -90,7 +90,7 @@ export function BrowserToolbar({
           <button
             type="submit"
             aria-label="Open address"
-            className="ml-1 flex h-5 w-5 shrink-0 items-center justify-center rounded-md text-droid-text-muted transition-colors hover:bg-droid-elevated hover:text-droid-text focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-droid-accent/60"
+            className="ml-1 flex h-5 w-5 shrink-0 items-center justify-center rounded-md text-droid-text-muted transition-colors hover:bg-droid-elevated/60 hover:text-droid-text focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-droid-accent/60"
           >
             <CornerDownLeft className="h-3.5 w-3.5" />
           </button>
@@ -102,9 +102,9 @@ export function BrowserToolbar({
         onClick={onReload}
       >
         {loading ? (
-          <Spinner className="h-3.5 w-3.5 motion-safe:animate-spin-slow" />
+          <Spinner className="h-4 w-4 motion-safe:animate-spin-slow" />
         ) : (
-          <RefreshCw className="h-3.5 w-3.5" />
+          <RefreshCw className="h-4 w-4" />
         )}
       </IconButton>
 
@@ -119,11 +119,7 @@ export function BrowserToolbar({
             active={expanded}
             onClick={onToggleExpanded}
           >
-            {expanded ? (
-              <Minimize2 className="h-3.5 w-3.5" />
-            ) : (
-              <Maximize2 className="h-3.5 w-3.5" />
-            )}
+            {expanded ? <Minimize className="h-4 w-4" /> : <Maximize className="h-4 w-4" />}
           </IconButton>
         )}
         <IconButton
@@ -136,7 +132,7 @@ export function BrowserToolbar({
           disabled={designModeDisabled}
           onClick={onToggleDesignMode}
         >
-          <MousePointer2 className="h-3.5 w-3.5" />
+          <MousePointer className="h-4 w-4" />
         </IconButton>
         <IconButton
           title="Annotate: sketch a region or mark up the page for Droid"
@@ -144,7 +140,7 @@ export function BrowserToolbar({
           disabled={!designMode}
           onClick={onTogglePencilMode}
         >
-          <PenLine className="h-3.5 w-3.5" />
+          <PenLine className="h-4 w-4" />
         </IconButton>
       </div>
     </header>
@@ -172,10 +168,10 @@ function IconButton({
         aria-pressed={active}
         disabled={disabled}
         onClick={onClick}
-        className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-lg transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-droid-accent/60 disabled:cursor-not-allowed disabled:opacity-35 ${
+        className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-md transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-droid-accent/60 disabled:cursor-not-allowed disabled:opacity-35 ${
           active
             ? 'bg-droid-active text-droid-text'
-            : 'text-droid-text-muted hover:bg-droid-elevated hover:text-droid-text'
+            : 'text-droid-text-muted hover:bg-droid-elevated/60 hover:text-droid-text'
         }`}
       >
         {children}

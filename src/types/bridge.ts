@@ -6,6 +6,8 @@ import type {
   AutomationBridgeEvent,
 } from '../features/automations/protocol';
 import type { McpClientCommand, McpServerEvent } from './mcp.js';
+import type { ProviderMention, SkillInfo } from './catalog.js';
+export type { ProviderMention, SkillInfo, SkillLocation } from './catalog.js';
 export type {
   McpServerInfo,
   McpServerInput,
@@ -100,6 +102,9 @@ export interface ChildSessionSummary {
   status: ChildStatus;
   label?: string;
   prompt?: string;
+  // Orchestration name and phase title, when reported by the provider.
+  group?: string;
+  phase?: string;
   modelId: string;
   reasoningEffort?: ReasoningEffort;
   // Confirmed effective autonomy, runtime-scoped: present only while the child
@@ -107,10 +112,6 @@ export interface ChildSessionSummary {
   // never-opened children; never inherited from the parent.
   autonomy?: Autonomy;
   spawnLink?: ChildSpawnLink;
-  // Workflow this child belongs to, and the workflow phase its row groups under.
-  // Both absent for a plain subagent wave.
-  group?: string;
-  phase?: string;
   transcriptAvailable: boolean;
   startedAt?: number;
   // Provider-declared: how live output actually arrives. Orthogonal to phase.
@@ -208,6 +209,9 @@ export interface TranscriptEvent {
   browserRefs?: BrowserTranscriptReference[];
   steered?: boolean;
   compactType?: 'auto' | 'manual';
+  modelSwitch?: { from: string; to: string };
+  errorKind?: 'usage_limit';
+  resetsAt?: number;
 }
 
 export type BrowserTranscriptReferenceKind = 'element' | 'region' | 'text';
@@ -249,18 +253,6 @@ export interface SessionQuestion {
   questions: { index: number; question: string; options: string[] }[];
 }
 
-export type SkillLocation = 'project' | 'personal' | 'builtin';
-
-export interface SkillInfo {
-  name: string;
-  description?: string;
-  location: SkillLocation;
-  filePath: string;
-  enabled?: boolean;
-  userInvocable?: boolean;
-  version?: string;
-}
-
 export interface ModelInfo {
   id: string;
   displayName: string;
@@ -294,6 +286,7 @@ export interface ProviderStatus {
   // calling it "Default". Absent when the harness reports none.
   defaultModelId?: string;
   models: ModelInfo[];
+  items?: SkillInfo[];
 }
 
 export interface FactoryDefaultSettings {
@@ -653,8 +646,20 @@ export type ClientCommand =
       validatorReasoning?: ReasoningEffort;
       responseFormat?: ResponseFormat;
     }
-  | { type: 'session.send'; appSessionId: string; text: string; responseFormat?: ResponseFormat }
-  | { type: 'session.sendNow'; appSessionId: string; text: string; responseFormat?: ResponseFormat }
+  | {
+      type: 'session.send';
+      appSessionId: string;
+      text: string;
+      mentions?: ProviderMention[];
+      responseFormat?: ResponseFormat;
+    }
+  | {
+      type: 'session.sendNow';
+      appSessionId: string;
+      text: string;
+      mentions?: ProviderMention[];
+      responseFormat?: ResponseFormat;
+    }
   | { type: 'session.resume'; appSessionId: string }
   | { type: 'session.interrupt'; appSessionId: string }
   | {

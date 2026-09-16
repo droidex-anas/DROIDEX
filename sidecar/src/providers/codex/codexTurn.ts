@@ -1,5 +1,8 @@
+import { isAbsolute } from 'node:path';
+
 import type { NormalizedEvent } from '../../normalize.js';
 import type { Autonomy } from '../../protocol.js';
+import type { ProviderMention } from '../catalog.js';
 import type { ProviderModelSettings } from '../session.js';
 import { codexAutonomy, codexSandboxPolicy } from './codexApprovals.js';
 
@@ -13,12 +16,17 @@ export interface TurnSettings {
 }
 
 // What a turn is asked for: the prompt plus the settings the session holds.
-export function turnStartParams(threadId: string, prompt: string, settings: TurnSettings) {
+export function turnStartParams(
+  threadId: string,
+  prompt: string,
+  mentions: ProviderMention[] | undefined,
+  settings: TurnSettings,
+) {
   const { approvalPolicy, sandbox } = codexAutonomy(settings.autonomy);
   const model = settings.model.modelId ?? settings.threadModel;
   return {
     threadId,
-    input: [{ type: 'text', text: prompt }],
+    input: turnInput(prompt, mentions),
     approvalPolicy,
     sandboxPolicy: codexSandboxPolicy(sandbox),
     ...(model ? { model } : {}),
@@ -28,6 +36,25 @@ export function turnStartParams(threadId: string, prompt: string, settings: Turn
     // whole thinking phase is blank in the transcript, whatever the effort.
     summary: 'auto',
   };
+}
+
+export function turnInput(prompt: string, mentions: ProviderMention[] = []) {
+  return [
+    { type: 'text' as const, text: prompt },
+    ...mentions.map((mention) => {
+      const path = mention.path;
+      if (!path) throw new Error(`${mention.kind} mention ${mention.name} has no invocation path.`);
+      if (mention.kind === 'skill') {
+        if (!isAbsolute(path))
+          throw new Error(`Skill mention ${mention.name} does not have an absolute skill path.`);
+        return { type: 'skill' as const, name: mention.name, path };
+      }
+      const prefix = `${mention.kind}://`;
+      if (!path.startsWith(prefix) || path.length === prefix.length)
+        throw new Error(`${mention.kind} mention ${mention.name} has an invalid invocation path.`);
+      return { type: 'mention' as const, name: mention.name, path };
+    }),
+  ];
 }
 
 // One turn's events, filled by the notification handlers and drained by the

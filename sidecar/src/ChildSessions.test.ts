@@ -410,6 +410,21 @@ test('provider conflict preserves both exact child memberships', () => {
   assert.equal(identity, undefined);
   assert.deepEqual(h.owner.list(h.parentId), before);
   assert.equal(mutationCount(h), 0);
+
+  h.owner.admitChildObservation({
+    parentAppSessionId: h.parentId,
+    providerSessionId: 'provider-second',
+    role: 'worker',
+    spawnLink: first.spawnLink,
+    transcriptAvailable: false,
+    status: 'failed',
+    group: 'review',
+  });
+  assert.deepEqual(
+    h.owner.list(h.parentId).map((child) => child.status),
+    ['paused', 'failed'],
+  );
+  assert.equal(h.owner.list(h.parentId)[1]?.group, 'review');
 });
 
 test('completion requires provider and spawn to resolve the same exact child', () => {

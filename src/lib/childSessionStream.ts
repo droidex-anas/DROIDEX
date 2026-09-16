@@ -65,9 +65,9 @@ export function childStreamPhase(input: {
   hasOutput?: boolean;
   interruptReason?: string;
 }): ChildStreamPhase {
+  if (input.status === 'failed') return 'failed';
   if (input.queued) return 'queued';
   const failed = input.isError === true || input.latestKind === 'error';
-  if (input.status === 'failed') return 'failed';
   if (input.status === 'completed') {
     if (failed) return 'failed';
     if (input.interruptReason) return 'interrupted';

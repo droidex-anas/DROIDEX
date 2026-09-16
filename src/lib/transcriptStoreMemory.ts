@@ -357,7 +357,6 @@ export function pruneRemovedSessionState(
     browsers: pruneSessionRecord(state.browsers, retainedSessionIds),
     browserErrors: pruneSessionRecord(state.browserErrors, retainedSessionIds),
     designModes: pruneSessionRecord(state.designModes, retainedSessionIds),
-    sessionSettingOverrides: pruneSessionRecord(state.sessionSettingOverrides, retainedSessionIds),
     pendingPermissions: pruneSessionRecord(state.pendingPermissions, retainedSessionIds),
     pendingQuestions: pruneSessionRecord(state.pendingQuestions, retainedSessionIds),
   };

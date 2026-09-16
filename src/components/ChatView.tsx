@@ -8,6 +8,7 @@ import type { SessionRestore } from '../hooks/storeChildSession';
 import { useSessionLive } from '../hooks/useSessionLive';
 import { AnimatePresence, motion } from 'framer-motion';
 import { MessageFeed } from './MessageFeed';
+import { RunningProcessesMenu } from './RunningProcessesMenu';
 import { LiveProcessesContext } from './transcript/liveProcessesContext';
 import type { AgentProcess, ChildSessionSummary } from '../types/bridge';
 import { WorkingIndicator, UserBubble, ChatSkeleton, TranscriptSkeleton } from './chat';
@@ -145,6 +146,7 @@ function ChatHeader({
   live,
   sub,
   leadPx,
+  appSessionId,
 }: {
   title: string;
   live: boolean;
@@ -152,6 +154,7 @@ function ChatHeader({
   // Room left at the row's start for the window controls and the sidebar
   // toggle while the sidebar is collapsed.
   leadPx: number;
+  appSessionId: string;
 }) {
   return (
     <div
@@ -191,6 +194,7 @@ function ChatHeader({
           </>
         )}
       </div>
+      <RunningProcessesMenu appSessionId={appSessionId} />
       {sub?.onStop && (
         <button
           type="button"
@@ -724,6 +728,7 @@ export default function ChatView({
           title={chatDisplayTitle(activeSession, state.chatMetadata[activeSession.appSessionId])}
           live={live}
           leadPx={sidebarCollapsed ? WINDOW_CONTROLS_LEAD_PX : 16}
+          appSessionId={activeSession.appSessionId}
           {...(chatHeaderSub !== undefined ? { sub: chatHeaderSub } : {})}
         />
       ) : (

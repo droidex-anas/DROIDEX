@@ -14,6 +14,7 @@ import {
   isModelInfo,
   isProviderKind,
   isProviderStatus,
+  isSkillInfo,
 } from '../features/providers/wireValidation';
 
 export function serverWireMessage(value: unknown): ServerWireMessage | null {
@@ -205,7 +206,8 @@ function isServerEvent(value: unknown): value is ServerEvent {
     case 'catalog.updated':
       if (!Array.isArray(value.items)) return false;
       if (value.catalog === 'models') return value.items.every(isModelInfo);
-      return value.catalog === 'tools' || value.catalog === 'skills';
+      if (value.catalog === 'skills') return value.items.every(isSkillInfo);
+      return value.catalog === 'tools';
     case 'provider.status':
       return Array.isArray(value.statuses) && value.statuses.every(isProviderStatus);
     case 'settings.defaults':
@@ -318,6 +320,8 @@ function isChildSessionSummary(value: unknown): boolean {
   return (
     isRecord(value) &&
     hasStrings(value, ['parentAppSessionId', 'childSessionId', 'role', 'status', 'modelId']) &&
+    (value.role === 'worker' || value.role === 'validator') &&
+    ['pending', 'running', 'paused', 'completed', 'failed'].includes(value.status as string) &&
     typeof value.transcriptAvailable === 'boolean' &&
     isStreamFidelity(value.streamFidelity) &&
     isOptionalString(value.group) &&
@@ -326,10 +330,15 @@ function isChildSessionSummary(value: unknown): boolean {
 }
 
 function isTranscriptEvent(value: unknown): boolean {
+  if (!isRecord(value)) return false;
+  const switched = value.modelSwitch;
+  if (switched !== undefined && (!isRecord(switched) || !hasStrings(switched, ['from', 'to'])))
+    return false;
   return (
-    isRecord(value) &&
     hasStrings(value, ['id', 'appSessionId', 'sourceSessionId', 'role', 'kind']) &&
-    typeof value.ts === 'number'
+    typeof value.ts === 'number' &&
+    (value.errorKind === undefined || value.errorKind === 'usage_limit') &&
+    (value.resetsAt === undefined || nonNegativeSafeInteger(value.resetsAt))
   );
 }
 

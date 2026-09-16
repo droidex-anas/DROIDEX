@@ -3,11 +3,12 @@
 // which Codex applies to that turn and the ones after it.
 import type { NormalizedEvent } from '../../normalize.js';
 import type { Autonomy } from '../../protocol.js';
-import { errMsg } from '../../sessionHelpers.js';
+import type { ProviderMention, SkillInfo } from '../catalog.js';
 import type { ProviderInteractions } from '../interactions.js';
 import type { ProviderModelSettings, ProviderSession } from '../session.js';
 import type { AppServerClient } from './appServer.js';
 import { codexAutonomy, OpenPrompts } from './codexApprovals.js';
+import { CodexCatalog } from './codexCatalog.js';
 import {
   CodexEventMapper,
   errorOf,
@@ -17,7 +18,7 @@ import {
   type CodexTurn,
 } from './codexEvents.js';
 import { CodexStartup } from './codexStartup.js';
-import { TurnStream, turnStartParams } from './codexTurn.js';
+import { TurnStream, turnInput, turnStartParams } from './codexTurn.js';
 
 const STARTUP_QUIET_MS = 40;
 
@@ -60,7 +61,9 @@ export class CodexSession implements ProviderSession {
   private pendingInterrupt = false;
   private readonly prompts: OpenPrompts;
   private readonly startup = new CodexStartup();
+  private readonly backgroundListeners = new Set<(event: NormalizedEvent) => void>();
   private startupNoticeTimer?: ReturnType<typeof setTimeout>;
+  private catalog?: CodexCatalog;
 
   constructor(input: CodexSessionInput) {
     this.providerSessionId = input.appSessionId;
@@ -74,7 +77,7 @@ export class CodexSession implements ProviderSession {
     this.cwd = input.cwd;
     this.autonomy = input.autonomy;
     this.model = input.model;
-    this.mapper = new CodexEventMapper(input.appSessionId);
+    this.mapper = new CodexEventMapper(input.appSessionId, input.model);
     this.prompts = new OpenPrompts(input.appSessionId, input.interactions);
     // Registered before `initialize`, so nothing the server sends can arrive
     // before its handler exists. Requests left unregistered — the legacy exec
@@ -123,9 +126,27 @@ export class CodexSession implements ProviderSession {
       : this.client.request<ThreadResponse>('thread/start', settings));
     this.threadId = response.thread.id;
     this.threadModel = response.model;
+    this.mapper.setModel({ ...this.model, modelId: this.model.modelId ?? this.threadModel });
+    this.catalog ??= new CodexCatalog(this.client, [this.cwd]);
   }
 
-  async *stream(prompt: string): AsyncGenerator<NormalizedEvent, void, undefined> {
+  catalogItems(): Promise<SkillInfo[]> {
+    return this.requireCatalog().catalogItems();
+  }
+
+  onCatalogUpdated(listener: (items: SkillInfo[]) => void): () => void {
+    return this.requireCatalog().onUpdated(listener);
+  }
+
+  private requireCatalog(): CodexCatalog {
+    if (!this.catalog) throw new Error('This Codex session is not open.');
+    return this.catalog;
+  }
+
+  async *stream(
+    prompt: string,
+    mentions?: ProviderMention[],
+  ): AsyncGenerator<NormalizedEvent, void, undefined> {
     if (this.turn) throw new Error('This Codex session is already running a turn.');
     const threadId = this.threadId;
     if (!threadId) throw new Error('This Codex session has no thread to run a turn on.');
@@ -138,7 +159,7 @@ export class CodexSession implements ProviderSession {
       this.announceStartup();
       const started = await this.client.request<{ turn: CodexTurn }>(
         'turn/start',
-        turnStartParams(threadId, prompt, {
+        turnStartParams(threadId, prompt, mentions, {
           autonomy: this.autonomy,
           model: this.model,
           ...(this.threadModel ? { threadModel: this.threadModel } : {}),
@@ -171,13 +192,14 @@ export class CodexSession implements ProviderSession {
         ? { reasoningEffort: settings.reasoningEffort }
         : {}),
     };
+    this.mapper.setModel({ ...this.model, modelId: this.model.modelId ?? this.threadModel });
     return Promise.resolve();
   }
 
   // Codex takes a prompt into the running turn instead of ending it. The turn
   // id is the server's own precondition, so a steer aimed at a turn that has
   // already settled is refused rather than applied to whatever runs now.
-  async steer(text: string): Promise<void> {
+  async steer(text: string, mentions?: ProviderMention[]): Promise<void> {
     const threadId = this.threadId;
     const turnId = this.turnId;
     const turn = this.turn;
@@ -186,7 +208,7 @@ export class CodexSession implements ProviderSession {
     const steered = await this.client.request<{ turnId: string }>('turn/steer', {
       threadId,
       expectedTurnId: turnId,
-      input: [{ type: 'text', text }],
+      input: turnInput(text, mentions),
     });
     // A queued prompt may have started its own turn while this was in flight.
     // That turn owns its id, and Stop has to reach it rather than this one.
@@ -205,6 +227,7 @@ export class CodexSession implements ProviderSession {
 
   close(): Promise<void> {
     this.resolveClosed();
+    this.catalog?.close();
     this.cancelStartupNotice();
     return (this.closePromise ??= this.client.close());
   }
@@ -226,7 +249,25 @@ export class CodexSession implements ProviderSession {
     return typeof threadId === 'string' && threadId !== this.threadId;
   }
 
+  onBackgroundEvent(listener: (event: NormalizedEvent) => void): () => void {
+    this.backgroundListeners.add(listener);
+    return () => {
+      this.backgroundListeners.delete(listener);
+    };
+  }
+
+  private deliver(events: NormalizedEvent[]): void {
+    for (const event of events) {
+      if (event.childSession) {
+        for (const listener of this.backgroundListeners) listener(event);
+      } else this.turn?.push([event]);
+    }
+  }
+
   private registerHandlers(): void {
+    this.client.onNotification('thread/started', (params) => {
+      this.deliver(this.mapper.childThreadStarted(params, this.threadId));
+    });
     for (const method of MAPPED_NOTIFICATIONS) {
       this.onThreadNotification(method, (params) => {
         const events = this.mapper.map(method, params);
@@ -235,9 +276,12 @@ export class CodexSession implements ProviderSession {
           this.startup.itemArrived();
           this.cancelStartupNotice();
         }
-        this.turn?.push(events);
+        this.deliver(events);
       });
     }
+    this.client.onNotification('skills/changed', () => {
+      this.catalog?.refreshSkills();
+    });
     this.onThreadNotification('mcpServer/startupStatus/updated', (params) => {
       this.startup.serverStatus(params);
       this.announceStartup();
@@ -260,12 +304,13 @@ export class CodexSession implements ProviderSession {
     this.onThreadNotification('error', (params) => {
       const failure = errorOf(params);
       if (!failure) return;
-      this.turn?.push([this.mapper.errorEvent(failure.message)]);
+      this.turn?.push([this.mapper.errorEvent(failure.error)]);
       // A retrying error is a hiccup the turn recovers from on its own.
-      if (!failure.willRetry) this.turn?.fail(new Error(failure.message));
+      if (!failure.willRetry) this.turn?.fail(failure.error);
     });
     this.client.onClose((error) => {
       this.cancelStartupNotice();
+      this.catalog?.close();
       this.turn?.fail(error);
       this.prompts.cancel();
       this.resolveClosed(error);
@@ -283,7 +328,7 @@ export class CodexSession implements ProviderSession {
     // it belongs to — never in whichever turn happens to be open by then.
     const turn = this.turn;
     void this.sendInterrupt(turnId).catch((error: unknown) => {
-      if (this.turn === turn) turn?.push([this.mapper.errorEvent(errMsg(error))]);
+      if (this.turn === turn) turn?.push([this.mapper.errorEvent(error)]);
     });
   }
 
@@ -319,7 +364,7 @@ export class CodexSession implements ProviderSession {
   private settle(turn: CodexTurn): void {
     this.prompts.cancel();
     if (turn.status === 'failed') {
-      this.turn?.fail(new Error(turn.error?.message ?? 'Codex ended the turn with an error.'));
+      this.turn?.fail(turn.error ?? new Error('Codex ended the turn with an error.'));
       return;
     }
     // An interrupted turn settles quietly; the user asked for it.

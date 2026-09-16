@@ -3,6 +3,7 @@ import type { McpServerConfig } from '@factory/droid-sdk';
 import type { CreateRuntimeSessionOptions } from '../DroidRuntime.js';
 import type { NormalizedEvent } from '../normalize.js';
 import type { Autonomy, ReasoningEffort, SessionInteractionMode } from '../protocol.js';
+import type { ProviderMention, SkillInfo } from './catalog.js';
 import type { ProviderInteractions } from './interactions.js';
 import type { ProviderKind } from './providerKind.js';
 
@@ -54,11 +55,19 @@ export interface ProviderSession {
   readonly isClosed?: boolean;
   // Returning means the turn settled; throwing means it failed. There is no
   // settlement event.
-  stream(prompt: string): AsyncGenerator<NormalizedEvent, void, undefined>;
+  stream(
+    prompt: string,
+    mentions?: ProviderMention[],
+  ): AsyncGenerator<NormalizedEvent, void, undefined>;
+  // Events delivered between turns, never duplicated by stream().
+  onBackgroundEvent?(listener: (event: NormalizedEvent) => void): () => void;
   // Takes a prompt into the turn that is already running, so the turn keeps its
   // work and continues with it. Absent on a provider that can only steer by
   // interrupting and resending, which is what the session layer then does.
-  steer?(text: string): Promise<void>;
+  steer?(text: string, mentions?: ProviderMention[]): Promise<void>;
+  // Provider-native command/skill/app/plugin rows, cached for this live runtime.
+  catalogItems?(): Promise<SkillInfo[]>;
+  onCatalogUpdated?(listener: (items: SkillInfo[]) => void): () => void;
   // The two things a live session can still change. Everything else about a
   // session is fixed when it opens.
   setAutonomy(autonomy: Autonomy): Promise<void>;
