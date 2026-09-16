@@ -107,8 +107,7 @@ import {
   DEFAULT_PROVIDER,
   type ProviderKind,
 } from './providers/providerKind.js';
-import { ClaudeProvider } from './providers/claude/ClaudeProvider.js';
-import { CodexProvider } from './providers/codex/CodexProvider.js';
+import { LazyProvider } from './providers/lazyProvider.js';
 import { requireDroidSession } from './providers/droid/DroidProviderSession.js';
 import {
   ProviderProbes,
@@ -267,8 +266,15 @@ export class SessionManager {
   private readonly factoryDefaultsOverride: SessionManagerDependencies['getFactoryDefaults'];
   private readonly nextChildSessionId: () => string;
   private readonly droidProvider: DroidProvider;
-  private readonly claudeProvider = new ClaudeProvider();
-  private readonly codexProvider = new CodexProvider();
+  // Loaded with their first probe or session, after the sidecar is ready.
+  private readonly claudeProvider = new LazyProvider('claude', async () => {
+    const { ClaudeProvider } = await import('./providers/claude/ClaudeProvider.js');
+    return new ClaudeProvider();
+  });
+  private readonly codexProvider = new LazyProvider('codex', async () => {
+    const { CodexProvider } = await import('./providers/codex/CodexProvider.js');
+    return new CodexProvider();
+  });
   private readonly providerProbes: ProviderProbes;
 
   constructor(
@@ -278,7 +284,10 @@ export class SessionManager {
     this.providerProbes = new ProviderProbes(
       options.providerProbes ??
         new Map<ProviderKind, ProviderProbe>([
-          [this.claudeProvider.kind, (signal) => this.claudeProvider.probe(signal)],
+          [
+            this.claudeProvider.kind,
+            (signal, publish) => this.claudeProvider.probe(signal, publish),
+          ],
           [this.codexProvider.kind, (signal, publish) => this.codexProvider.probe(signal, publish)],
         ]),
       () => {

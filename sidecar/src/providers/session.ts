@@ -6,6 +6,7 @@ import type { Autonomy, ReasoningEffort, SessionInteractionMode } from '../proto
 import type { ProviderMention, SkillInfo } from './catalog.js';
 import type { ProviderInteractions } from './interactions.js';
 import type { ProviderKind } from './providerKind.js';
+import type { ProviderProbe } from './providerProbes.js';
 
 // The option shape the lifecycle already builds. A provider ignores the fields
 // its runtime does not support; Droid's handler pair is replaced by the neutral
@@ -83,4 +84,10 @@ export interface Provider {
   readonly kind: ProviderKind;
   create(input: ProviderOpenInput): Promise<ProviderSession>;
   resume(providerSessionId: string, input: ProviderResumeInput): Promise<ProviderSession>;
+}
+
+// A provider backed by a CLI learns what it can do by probing that CLI; Droid's
+// runtime reports its own status instead.
+export interface ProbedProvider extends Provider {
+  probe: ProviderProbe;
 }
