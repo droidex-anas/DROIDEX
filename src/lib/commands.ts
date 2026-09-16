@@ -60,7 +60,7 @@ export const createSession = (input: {
 export const updateSessionSettings = (input: {
   appSessionId: string;
   modelId?: string | null;
-  reasoningEffort?: ReasoningEffort;
+  reasoningEffort?: ReasoningEffort | null;
   autonomy?: Autonomy;
   interactionMode?: SessionInteractionMode;
 }) => {
@@ -365,7 +365,7 @@ export const updateAgentSettings = (input: {
   appSessionId?: string;
   agent: ConfigurableSessionRole;
   modelId?: string | null;
-  reasoningEffort?: ReasoningEffort;
+  reasoningEffort?: ReasoningEffort | null;
 }) => {
   bridge.send({ type: 'settings.agent.update', ...input });
 };

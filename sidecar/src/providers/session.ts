@@ -36,7 +36,9 @@ export interface ProviderModelSettings {
   // A string selects that model; null resets the session to the provider's own
   // default; absent leaves the model alone.
   modelId?: string | null;
-  reasoningEffort?: ReasoningEffort;
+  // A level selects it; null clears the level a previous model carried, for a
+  // model that offers none; absent leaves it alone.
+  reasoningEffort?: ReasoningEffort | null;
 }
 
 export interface ProviderSession {

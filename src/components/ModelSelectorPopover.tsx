@@ -4,7 +4,7 @@ import { Search, Check, SlidersHorizontal } from 'lucide-react';
 import { shallowEqual, useStoreDispatch, useStoreSelector } from '../hooks/useStore';
 import type { AgentKind } from '../hooks/persistedUiPreferences';
 import type { ReasoningEffort, ModelInfo } from '../types/bridge';
-import { compatibleReasoningForModel } from '../lib/reasoningEffort';
+import { reasoningForModelSwitch } from '../lib/reasoningEffort';
 import {
   updateAgentSettings,
   updateChildSettings,
@@ -228,7 +228,7 @@ export default function ModelSelectorPopover({
 
       // Snap only an explicit effort, as part of the same user-requested update.
       const next = modelId ? source.find((x) => x.id === modelId) : defaultModel;
-      const reasoningEffort = compatibleReasoningForModel(next, effReasoning);
+      const reasoningEffort = reasoningForModelSwitch(next, effReasoning);
       const settings = {
         modelId: modelId ?? null,
         ...(reasoningEffort === undefined ? {} : { reasoningEffort }),
@@ -239,7 +239,11 @@ export default function ModelSelectorPopover({
       }
       dispatch({ type: 'SET_AGENT_MODEL', agent, modelId });
       if (reasoningEffort !== undefined)
-        dispatch({ type: 'SET_AGENT_REASONING', agent, reasoning: reasoningEffort });
+        dispatch({
+          type: 'SET_AGENT_REASONING',
+          agent,
+          reasoning: reasoningEffort ?? undefined,
+        });
       updateAgentSettings({ appSessionId: state.activeSessionAppSessionId, agent, ...settings });
     },
     [

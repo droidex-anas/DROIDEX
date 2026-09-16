@@ -325,20 +325,20 @@ export class SessionModelSettings {
     settings: ProviderModelSettings,
   ): Partial<SessionSummary> {
     const patch: Partial<SessionSummary> = {};
+    // A cleared effort is stored as none.
+    const effort = settings.reasoningEffort ?? undefined;
     if (agent === 'primary') {
       if (settings.modelId !== undefined) {
         patch.modelId = settings.modelId ?? undefined;
         patch.maxContextTokens = this.d.maxContextTokensForModel(settings.modelId ?? undefined);
       }
-      if (settings.reasoningEffort !== undefined) patch.reasoningEffort = settings.reasoningEffort;
+      if (settings.reasoningEffort !== undefined) patch.reasoningEffort = effort;
     } else if (agent === 'worker') {
       if (settings.modelId !== undefined) patch.workerModelId = settings.modelId ?? undefined;
-      if (settings.reasoningEffort !== undefined)
-        patch.workerReasoningEffort = settings.reasoningEffort;
+      if (settings.reasoningEffort !== undefined) patch.workerReasoningEffort = effort;
     } else {
       if (settings.modelId !== undefined) patch.validatorModelId = settings.modelId ?? undefined;
-      if (settings.reasoningEffort !== undefined)
-        patch.validatorReasoningEffort = settings.reasoningEffort;
+      if (settings.reasoningEffort !== undefined) patch.validatorReasoningEffort = effort;
     }
     return patch;
   }
@@ -348,10 +348,11 @@ export function createSessionSettingsForAgent(
   agent: ConfigurableSessionRole,
   settings: ProviderModelSettings,
 ): Record<string, unknown> {
-  const effort =
-    settings.reasoningEffort === undefined
-      ? undefined
-      : factoryReasoningEffort(settings.reasoningEffort);
+  // Every Droid model publishes its levels, so a cleared effort never reaches
+  // here in practice; Droid keeps its own when it does.
+  const effort = settings.reasoningEffort
+    ? factoryReasoningEffort(settings.reasoningEffort)
+    : undefined;
   if (agent === 'primary') {
     return {
       ...(settings.modelId ? { modelId: settings.modelId, specModeModelId: settings.modelId } : {}),
