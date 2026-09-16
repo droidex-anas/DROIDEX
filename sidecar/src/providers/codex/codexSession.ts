@@ -11,8 +11,9 @@ import { codexAutonomy, OpenPrompts } from './codexApprovals.js';
 import {
   CodexEventMapper,
   errorOf,
-  turnOf,
+  isObject,
   MAPPED_NOTIFICATIONS,
+  turnOf,
   type CodexTurn,
 } from './codexEvents.js';
 import { CodexStartup } from './codexStartup.js';
@@ -208,9 +209,26 @@ export class CodexSession implements ProviderSession {
     return (this.closePromise ??= this.client.close());
   }
 
+  // Every notification is read through a guard: a payload this build does not
+  // recognize must not throw out of the transport's stdout listener, and one
+  // addressed to another thread (a sub-agent Codex spawned for this one) is
+  // not this session's to render or to adopt as its turn.
+  private onThreadNotification(method: string, handler: (params: unknown) => void): void {
+    this.client.onNotification(method, (params) => {
+      if (this.isForAnotherThread(params)) return;
+      handler(params);
+    });
+  }
+
+  private isForAnotherThread(params: unknown): boolean {
+    if (!this.threadId || !isObject(params)) return false;
+    const { threadId } = params as { threadId?: unknown };
+    return typeof threadId === 'string' && threadId !== this.threadId;
+  }
+
   private registerHandlers(): void {
     for (const method of MAPPED_NOTIFICATIONS) {
-      this.client.onNotification(method, (params) => {
+      this.onThreadNotification(method, (params) => {
         const events = this.mapper.map(method, params);
         // Only mapped output counts as an answer, not unknown items or accounting.
         if (method.startsWith('item/') && events.length > 0) {
@@ -220,28 +238,26 @@ export class CodexSession implements ProviderSession {
         this.turn?.push(events);
       });
     }
-    this.client.onNotification('mcpServer/startupStatus/updated', (params) => {
+    this.onThreadNotification('mcpServer/startupStatus/updated', (params) => {
       this.startup.serverStatus(params);
       this.announceStartup();
     });
-    this.client.onNotification('hook/started', () => {
+    this.onThreadNotification('hook/started', () => {
       this.startup.hookStarted();
       this.announceStartup();
     });
-    this.client.onNotification('hook/completed', () => {
+    this.onThreadNotification('hook/completed', () => {
       this.startup.hookCompleted();
     });
-    // Every payload is read through a guard: a notification this build does not
-    // recognize must not throw out of the transport's stdout listener.
-    this.client.onNotification('turn/started', (params) => {
+    this.onThreadNotification('turn/started', (params) => {
       const turn = turnOf(params);
       if (turn) this.adoptTurn(turn.id);
     });
-    this.client.onNotification('turn/completed', (params) => {
+    this.onThreadNotification('turn/completed', (params) => {
       const turn = turnOf(params);
       if (turn) this.settle(turn);
     });
-    this.client.onNotification('error', (params) => {
+    this.onThreadNotification('error', (params) => {
       const failure = errorOf(params);
       if (!failure) return;
       this.turn?.push([this.mapper.errorEvent(failure.message)]);
