@@ -6,7 +6,7 @@ import { formatDuration } from '../../lib/tools';
 import { openExternal } from '../../lib/onboarding';
 import { useStoreSelector } from '../../hooks/useStore';
 import { providerModelCatalog } from '../../features/providers/providerIdentity';
-import type { TranscriptEvent } from '../../types/bridge';
+import type { ModelInfo, TranscriptEvent } from '../../types/bridge';
 
 const ACCENT = 'var(--droid-accent)';
 export const RED = 'var(--droid-red)';
@@ -271,6 +271,19 @@ export function CompactingIndicator() {
   );
 }
 
+// The switch record stores the ids the session ran on; a Claude Code session can
+// carry the dated wire id while the catalog lists the CLI's alias, so an alias
+// matches the wire id that begins with it. The id itself is the last resort.
+function catalogModelName(models: readonly ModelInfo[] | undefined, id: string): string {
+  const match = models?.find(
+    (model) =>
+      model.id === id ||
+      id.startsWith(`claude-${model.id}-`) ||
+      model.id.startsWith(`claude-${id}-`),
+  );
+  return match?.displayName ?? id;
+}
+
 export function TranscriptNotice({ event }: { event: TranscriptEvent }) {
   const models = useStoreSelector((state) =>
     event.modelSwitch
@@ -281,7 +294,7 @@ export function TranscriptNotice({ event }: { event: TranscriptEvent }) {
         )
       : undefined,
   );
-  const name = (id: string) => models?.find((model) => model.id === id)?.displayName ?? id;
+  const name = (id: string) => catalogModelName(models, id);
   let text: string;
   if (event.modelSwitch) {
     text = `Model switched: ${name(event.modelSwitch.from)} → ${name(event.modelSwitch.to)}`;

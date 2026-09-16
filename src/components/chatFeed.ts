@@ -26,7 +26,7 @@ export function isCompactionCompleteStatus(text?: string): boolean {
 }
 
 export function isSettingsStatus(event: TranscriptEvent): boolean {
-  return event.modelSwitch !== undefined || event.text?.startsWith('Reasoning effort: ') === true;
+  return event.modelSwitch !== undefined;
 }
 
 // Whether `next` is the tool_result produced by the `call` event. Result events

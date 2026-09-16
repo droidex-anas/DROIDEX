@@ -6,7 +6,6 @@ import type {
   ConfigurableSessionRole,
   FactoryDefaultSettings,
   ServerEvent,
-  ReasoningEffort,
   SessionSummary,
 } from './protocol.js';
 import { defaultsModeForSummary, errMsg, modelDefaultForMode } from './sessionHelpers.js';
@@ -26,7 +25,6 @@ interface Dependencies {
   isShutdownStarted: () => boolean;
   refreshPrimary: (live: LiveSession, modelChanged: boolean) => Promise<void>;
   onPrimaryModelChanged: (summary: SessionSummary, from: string, to: string) => void;
-  onPrimaryEffortChanged: (summary: SessionSummary, effort: ReasoningEffort) => void;
   onSettled: () => void;
   emitError: (error: SettingsError) => void;
 }
@@ -115,12 +113,8 @@ export class SessionModelSettings {
         if (!isCurrent()) return;
         this.persistAccepted(summary, live, agent, selection);
         if (agent !== 'primary') return;
+        // Only a model change earns a row; a new effort shows on the chip.
         if (change) this.d.onPrimaryModelChanged(next, change.from, change.to);
-        else if (
-          settings.reasoningEffort !== undefined &&
-          settings.reasoningEffort !== summary.reasoningEffort
-        )
-          this.d.onPrimaryEffortChanged(next, settings.reasoningEffort);
         if (live) await this.d.refreshPrimary(live, selected.modelId !== undefined);
       },
       undefined,

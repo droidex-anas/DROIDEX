@@ -521,9 +521,6 @@ export class SessionManager {
       onPrimaryModelChanged: (summary, from, to) => {
         this.appendSettingsStatus(summary, `Model switched: ${from} → ${to}`, { from, to });
       },
-      onPrimaryEffortChanged: (summary, effort) => {
-        this.appendSettingsStatus(summary, `Reasoning effort: ${effort}`);
-      },
       onSettled: () => {
         this.runtimeRetirement.arm();
       },
