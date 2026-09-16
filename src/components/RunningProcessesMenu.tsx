@@ -50,6 +50,10 @@ export function RunningProcessesMenu({ appSessionId }: { appSessionId: string })
 
   if (count === 0) return null;
 
+  // The compact trigger shows only a number, so the accessible name must
+  // carry the meaning.
+  const label = `${String(count)} running ${count === 1 ? 'process' : 'processes'} started by the agent`;
+
   const openInBrowser = (port: number) => {
     dispatch({ type: 'OPEN_UTILITY_TOOL', tool: 'browser' });
     openBrowser({ appSessionId, url: `http://localhost:${String(port)}` });
@@ -65,7 +69,8 @@ export function RunningProcessesMenu({ appSessionId }: { appSessionId: string })
           setOpen((v) => !v);
         }}
         aria-expanded={open}
-        title={`${String(count)} running ${count === 1 ? 'process' : 'processes'} started by the agent`}
+        aria-label={label}
+        title={label}
         className={`flex shrink-0 items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-[11px] tabular-nums transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-droid-accent/60 ${
           open
             ? 'bg-droid-elevated text-droid-text'
