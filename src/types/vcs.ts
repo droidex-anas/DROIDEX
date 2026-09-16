@@ -156,6 +156,10 @@ export interface PullRequestReviewRef {
   state: string;
 }
 
+// The pull request's check rollup folded to one state; null when it has no
+// checks (or the list did not report them).
+export type PrChecksRollup = 'pass' | 'fail' | 'pending';
+
 export interface PullRequest {
   number: number;
   title: string;
@@ -174,6 +178,7 @@ export interface PullRequest {
   author: string | null;
   reviewRequests: string[];
   reviews: PullRequestReviewRef[];
+  checks?: PrChecksRollup | null;
 }
 
 export interface PullRequestListResult {

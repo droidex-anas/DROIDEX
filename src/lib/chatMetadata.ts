@@ -16,13 +16,13 @@
 import type { SessionSummary } from '../types/bridge';
 import { markdownToPlainText } from './markdownText';
 import { toast } from './toast';
-import type { PullRequest } from '../types/vcs';
 import { prKind, type PrKind } from './github';
+import type { PrChecksRollup, PullRequest } from '../types/vcs';
 
 export type ChatPullRequest = Pick<
   PullRequest,
   'number' | 'url' | 'title' | 'state' | 'isDraft' | 'headRefName'
->;
+> & { checks?: PrChecksRollup | null };
 
 export interface ChatMetadata {
   displayTitle?: string;
@@ -318,7 +318,12 @@ function sanitizePullRequest(value: unknown): ChatPullRequest | null {
     state: value.state.slice(0, 32),
     isDraft: value.isDraft,
     headRefName: value.headRefName?.slice(0, 256) ?? null,
+    ...('checks' in value && isChecksRollup(value.checks) ? { checks: value.checks } : {}),
   };
+}
+
+function isChecksRollup(value: unknown): value is PrChecksRollup {
+  return value === 'pass' || value === 'fail' || value === 'pending';
 }
 
 // Keep previous PR links when a worktree changes branches. A fresh detection
@@ -390,6 +395,17 @@ export function pullRequestMatchesQuery(pr: ChatPullRequest, query: string): boo
 // The state a row badges when a chat has linked pull requests: the live one
 // wins, otherwise the most recently linked outcome.
 export function linkedPrKind(metadata: ChatMetadata | undefined): PrKind | undefined {
-  const kinds = (metadata?.pullRequests ?? []).map(prKind);
-  return kinds.find((kind) => kind === 'open' || kind === 'draft') ?? kinds[0];
+  const pr = linkedPr(metadata);
+  return pr ? prKind(pr) : undefined;
+}
+
+// The PR a chat row represents: the first still-open link, else the first.
+export function linkedPr(metadata: ChatMetadata | undefined): ChatPullRequest | undefined {
+  const links = metadata?.pullRequests ?? [];
+  return (
+    links.find((link) => {
+      const kind = prKind(link);
+      return kind === 'open' || kind === 'draft';
+    }) ?? links[0]
+  );
 }

@@ -8,7 +8,20 @@ import { composePrompt } from './composePrompt';
  */
 function looksLikeAttachmentPath(mention: string): boolean {
   if (mention.includes('\n')) return false;
-  return mention.includes('/') || /\.[A-Za-z0-9]{1,8}$/.test(mention);
+  // A path with spaces still starts as a path ("~/My Docs/a.md"); prose that
+  // merely ends in one ("team please review src/a.ts") starts with a word. A
+  // bare file name ("Meeting Notes.pdf") has no directory to start from, so
+  // only its extension says it is a file.
+  const first = mention.split(' ')[0];
+  const ext = /\.[A-Za-z0-9]{1,8}$/;
+  if (first !== mention) {
+    // "/tmp/a.png please review": a complete file name followed by words;
+    // "v2.5 final.png" still ends as a file and stays one.
+    if (ext.test(first) && !ext.test(mention)) return false;
+    // "team please review src/a.ts": a word, then a path.
+    if (mention.includes('/') && !/[/.]/.test(first)) return false;
+  }
+  return mention.includes('/') || ext.test(mention);
 }
 
 /**

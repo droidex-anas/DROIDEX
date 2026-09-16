@@ -1,3 +1,4 @@
+import type { PrChecksRollup } from '../../types/vcs';
 import type { CheckStatus, PrKind } from '../../lib/github';
 
 // Icon geometry copied from @primer/octicons 19.15.5 (MIT), 16px variants, so
@@ -93,11 +94,51 @@ const PR_STATES: Record<PrKind, { icon: OcticonName; label: string; color: strin
   closed: { icon: 'git-pull-request-closed', label: 'Closed', color: 'var(--diff-del-fg)' },
 };
 
-export function PrStateIcon({ kind, size = 16 }: { kind: PrKind; size?: number }) {
+// The check rollup as a dot on the icon's corner, so a list of PRs scans by
+// colour first: red needs attention, amber is still running, green is clear.
+// A ring in the canvas colour keeps the dot separate from the glyph.
+const CHECK_DOTS: Record<PrChecksRollup, { color: string; label: string }> = {
+  fail: { color: 'var(--diff-del-fg)', label: 'checks failing' },
+  pending: { color: 'var(--droid-orange)', label: 'checks running' },
+  pass: { color: 'var(--diff-add-fg)', label: 'checks passing' },
+};
+
+export function PrStateIcon({
+  kind,
+  size = 16,
+  checks,
+}: {
+  kind: PrKind;
+  size?: number;
+  checks?: PrChecksRollup | null;
+}) {
   const { icon, label, color } = PR_STATES[kind];
+  // A merged or closed PR's checks no longer matter; only a live one wears
+  // the dot. Small icons (sidebar rows) get a smaller dot so it reads as a
+  // marker on the glyph, not a second icon.
+  const live = kind === 'open' || kind === 'draft';
+  const dot = live && checks ? CHECK_DOTS[checks] : null;
+  const dotSize = size <= 14 ? 5 : Math.round(size * 0.4);
   return (
-    <span style={{ color }} title={label} className="inline-flex">
-      <Octicon name={icon} size={size} label={label} />
+    <span
+      style={{ color }}
+      title={dot ? `${label} · ${dot.label}` : label}
+      className="relative inline-flex"
+    >
+      <Octicon name={icon} size={size} label={dot ? `${label}, ${dot.label}` : label} />
+      {dot && (
+        <span
+          aria-hidden="true"
+          className="absolute rounded-full ring-[1.5px] ring-droid-bg"
+          style={{
+            width: dotSize,
+            height: dotSize,
+            right: -1,
+            bottom: -1,
+            backgroundColor: dot.color,
+          }}
+        />
+      )}
     </span>
   );
 }
