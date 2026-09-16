@@ -149,6 +149,11 @@ test('a transcript DROIDEX writes for a non-Droid session is enumerated and repl
   transcript.append(
     transcriptEvent(appSessionId, 'tool_result', { toolUseId: 'toolu_1', text: 'AGENTS.md' }),
   );
+  transcript.append(transcriptEvent(appSessionId, 'thinking', { text: 'Found' }));
+  transcript.append(transcriptEvent(appSessionId, 'thinking', { text: ' the file.' }));
+  transcript.append(transcriptEvent(appSessionId, 'text', { text: 'The file is' }));
+  transcript.append(transcriptEvent(appSessionId, 'text', { text: ' ' }));
+  transcript.append(transcriptEvent(appSessionId, 'text', { text: 'AGENTS.md.' }));
   transcript.flush();
 
   const listed = loadHistoricalSessions().find((row) => row.summary.appSessionId === appSessionId);
@@ -172,6 +177,8 @@ test('a transcript DROIDEX writes for a non-Droid session is enumerated and repl
       ['tool_call', undefined, 'toolu_1'],
       // The call's id survives, so the renderer pairs the result with its call.
       ['tool_result', 'AGENTS.md', 'toolu_1'],
+      ['thinking', 'Found the file.', undefined],
+      ['text', 'The file is AGENTS.md.', undefined],
     ],
   );
 });
