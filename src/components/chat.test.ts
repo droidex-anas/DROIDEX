@@ -875,6 +875,25 @@ test('#19 a todo reconciliation with its own id-less result still merges the ans
   assert.ok(!grouped.some((it) => it.type === 'tools' || it.type === 'worked'));
 });
 
+test('a harness nudge reply after the final answer does not fold the answer away', () => {
+  // The harness can re-invoke the model right after it finishes, on a system
+  // message the transcript parser drops. The reply lands immediately after the
+  // real answer with nothing between; it must not become "the answer" while
+  // the real one disappears into the Worked fold.
+  const events = [userMsg('q'), grep(), asst('The real answer.'), asst('Plan is up-to-date.')];
+  const grouped = groupTurns(buildFeed(events), false);
+  assert.deepEqual(topLevelAnswers(grouped), ['The real answer.\n\nPlan is up-to-date.']);
+  const folded = workedChildren(grouped);
+  assert.ok(
+    folded.some((it) => it.type === 'tools'),
+    'work still folds',
+  );
+  assert.ok(
+    !folded.some((it) => it.type === 'message'),
+    'no assistant message is folded into Worked',
+  );
+});
+
 // ── #14: spec mode must not capture normal chat responses ──
 
 test('#14 a normal assistant response still renders in chat while a spec exists', () => {
