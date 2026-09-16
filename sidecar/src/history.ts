@@ -39,6 +39,7 @@ import { decodeProviderSessionIdList } from './historyProviderIds.js';
 import { DEFAULT_PROVIDER, providerKind } from './providers/providerKind.js';
 import { readSessionFileHead, readSessionStart } from './sessionFileHead.js';
 import { droidexHistoryDir, providerSessionsDir } from './droidexPaths.js';
+import { removeSessionNotices, sessionNoticesRevision } from './sessionNotices.js';
 
 interface StoredMissionState {
   missionId?: string;
@@ -1009,7 +1010,8 @@ function transcriptReaderFor(
     cached?.mtimeMs === stat.mtimeMs &&
     cached.sizeBytes === stat.size &&
     cached.appSessionId === appSessionId &&
-    cached.role === role
+    cached.role === role &&
+    cached.reader.noticesRevision === sessionNoticesRevision(providerSessionId)
   ) {
     transcriptReaders.delete(path);
     transcriptReaders.set(path, cached);
@@ -1050,9 +1052,16 @@ function parseTranscriptCursor(
     if (parts[2] === 'end' && parts.length === 3) return { ci };
     const line = Number(parts[2]);
     const skip = Number(parts[3]);
-    if (parts.length !== 4 || !Number.isInteger(line) || !Number.isInteger(skip)) return null;
-    if (line < 0 || skip < 0) return null;
-    return { ci, from: { line, skip } };
+    const notice = parts.length === 5 ? Number(parts[4]) : undefined;
+    if (
+      (parts.length !== 4 && parts.length !== 5) ||
+      !Number.isInteger(line) ||
+      !Number.isInteger(skip)
+    )
+      return null;
+    if (notice !== undefined && (!Number.isInteger(notice) || notice < -1)) return null;
+    if (line < (notice === undefined ? 0 : -1) || skip < 0) return null;
+    return { ci, from: { line, skip, ...(notice !== undefined ? { notice } : {}) } };
   }
   const ci = Number(parts[0]);
   if (parts.length === 2 && parts[1] === 'end' && Number.isInteger(ci) && ci >= 0) return { ci };
@@ -1096,11 +1105,12 @@ export function loadSessionTranscriptWindow(
     );
     picked.unshift(...window.events);
     if (window.older) {
-      olderCursor = `v2:${ci}:${window.older.line}:${window.older.skip}`;
+      const notice = window.older.notice;
+      olderCursor = `v2:${String(ci)}:${String(window.older.line)}:${String(window.older.skip)}${notice !== undefined ? `:${String(notice)}` : ''}`;
       break;
     }
     if (picked.length >= limit) {
-      if (ci > 0) olderCursor = `v2:${ci - 1}:end`;
+      if (ci > 0) olderCursor = `v2:${String(ci - 1)}:end`;
       break;
     }
   }
@@ -1448,6 +1458,7 @@ function updateSessionIndex(result: SessionFileReconciliation, files: SessionFil
   sessionIndexMemo ??= files.pathIndex();
   for (const providerSessionId of result.removedProviderSessionIds) {
     sessionIndexMemo.delete(providerSessionId);
+    removeSessionNotices(providerSessionId);
   }
   for (const entry of result.upserts) {
     sessionIndexMemo.set(entry.providerSessionId, entry.path);

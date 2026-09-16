@@ -53,10 +53,20 @@ test('streamed text reaches the transcript once, not again from the snapshot', (
 });
 
 test('a message that streamed nothing is reported from its snapshot', () => {
-  const events = transcripts([assistant([{ type: 'text', text: 'Recovered' }])]);
+  const events = transcripts([
+    message({
+      type: 'assistant',
+      message: { content: [{ type: 'text', text: 'Usage limit reached' }] },
+      parent_tool_use_id: null,
+      error: 'rate_limit',
+    }),
+  ]);
   assert.deepEqual(
-    events.map((event) => [event.kind, event.text]),
-    [['text', 'Recovered']],
+    events.map((event) => [event.kind, event.text, event.errorKind]),
+    [
+      ['text', 'Usage limit reached', undefined],
+      ['error', 'rate_limit', 'usage_limit'],
+    ],
   );
 });
 

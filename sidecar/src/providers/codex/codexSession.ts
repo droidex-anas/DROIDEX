@@ -3,7 +3,6 @@
 // which Codex applies to that turn and the ones after it.
 import type { NormalizedEvent } from '../../normalize.js';
 import type { Autonomy } from '../../protocol.js';
-import { errMsg } from '../../sessionHelpers.js';
 import type { ProviderInteractions } from '../interactions.js';
 import type { ProviderModelSettings, ProviderSession } from '../session.js';
 import type { AppServerClient } from './appServer.js';
@@ -260,9 +259,9 @@ export class CodexSession implements ProviderSession {
     this.onThreadNotification('error', (params) => {
       const failure = errorOf(params);
       if (!failure) return;
-      this.turn?.push([this.mapper.errorEvent(failure.message)]);
+      this.turn?.push([this.mapper.errorEvent(failure.error)]);
       // A retrying error is a hiccup the turn recovers from on its own.
-      if (!failure.willRetry) this.turn?.fail(new Error(failure.message));
+      if (!failure.willRetry) this.turn?.fail(failure.error);
     });
     this.client.onClose((error) => {
       this.cancelStartupNotice();
@@ -283,7 +282,7 @@ export class CodexSession implements ProviderSession {
     // it belongs to — never in whichever turn happens to be open by then.
     const turn = this.turn;
     void this.sendInterrupt(turnId).catch((error: unknown) => {
-      if (this.turn === turn) turn?.push([this.mapper.errorEvent(errMsg(error))]);
+      if (this.turn === turn) turn?.push([this.mapper.errorEvent(error)]);
     });
   }
 
@@ -319,7 +318,7 @@ export class CodexSession implements ProviderSession {
   private settle(turn: CodexTurn): void {
     this.prompts.cancel();
     if (turn.status === 'failed') {
-      this.turn?.fail(new Error(turn.error?.message ?? 'Codex ended the turn with an error.'));
+      this.turn?.fail(turn.error ?? new Error('Codex ended the turn with an error.'));
       return;
     }
     // An interrupted turn settles quietly; the user asked for it.

@@ -15,6 +15,7 @@ import {
   type StoredSessionStart,
 } from './sessionTranscriptParser.js';
 import type { SessionRole, TranscriptEvent } from './protocol.js';
+import { readSessionNotices, sessionNoticesRevision } from './sessionNotices.js';
 
 // Stored-row shapes are owned by the parser module but re-exported here so
 // the history path's import stays stable.
@@ -44,6 +45,7 @@ const MAX_MEMOIZED_LINES = 4_096;
 export interface TranscriptWindowCursor {
   line: number;
   skip: number;
+  notice?: number;
 }
 
 // One shared, lazily-opened file descriptor per backward walk.
@@ -105,7 +107,10 @@ export function parseFullSessionTranscript(
       /* skip partial/corrupt JSONL rows */
     }
   }
-  return events;
+  const notices = readSessionNotices(appSessionId, providerSessionId, role);
+  return notices.length
+    ? [...events, ...notices].sort((left, right) => left.ts - right.ts)
+    : events;
 }
 
 // Byte offset of every line start in the file, bounded to `size` so bytes
@@ -148,6 +153,8 @@ function scanLineStarts(path: string, size: number): number[] {
 export class SessionTranscriptReader {
   readonly mtimeMs: number;
   readonly sizeBytes: number;
+  readonly noticesRevision: string;
+  private readonly notices: TranscriptEvent[];
   private readonly lineStarts: number[];
   private readonly parsedLines = new Map<number, TranscriptEvent[]>();
 
@@ -161,6 +168,10 @@ export class SessionTranscriptReader {
     this.mtimeMs = stat.mtimeMs;
     this.sizeBytes = stat.size;
     this.lineStarts = scanLineStarts(path, stat.size);
+    this.noticesRevision = sessionNoticesRevision(providerSessionId);
+    this.notices = this.noticesRevision
+      ? readSessionNotices(appSessionId, providerSessionId, role)
+      : [];
   }
 
   // Serve up to `limit` events ending at `from` (or the segment tail),
@@ -172,7 +183,7 @@ export class SessionTranscriptReader {
     seqBase: number,
     from?: TranscriptWindowCursor,
   ): { events: TranscriptEvent[]; older?: TranscriptWindowCursor } {
-    if (this.lineStarts.length === 0) return { events: [] };
+    if (this.lineStarts.length === 0 && this.notices.length === 0) return { events: [] };
     // The fd opens lazily on the first memo miss and is shared across the
     // walk, so a fully-memoized repeat page never touches the file.
     const file: LazyFile = { fd: null };
@@ -200,22 +211,38 @@ export class SessionTranscriptReader {
     const collected: TranscriptEvent[] = []; // newest first
     let line = from ? from.line : this.lineStarts.length - 1;
     let skip = from?.skip ?? 0;
-    while (line >= 0 && collected.length < limit) {
-      const events = this.parseLine(file, line); // forward order within the line
-      const available = events.length - skip;
-      const take = Math.min(available, limit - collected.length);
-      for (let i = available - 1; i >= available - take; i--) collected.push(events[i]);
-      if (take < available) {
-        return { collected, older: { line, skip: skip + take } };
+    let notice = from ? (from.notice ?? -1) : this.notices.length - 1;
+    while ((line >= 0 || notice >= 0) && collected.length < limit) {
+      const events = line >= 0 ? this.parseLine(file, line) : [];
+      const candidate = events.at(-skip - 1);
+      if (line >= 0 && !candidate) {
+        line -= 1;
+        skip = 0;
+        continue;
       }
-      line -= 1;
-      skip = 0;
+      const nextNotice = notice >= 0 ? this.notices.at(notice) : undefined;
+      if (nextNotice && (!candidate || nextNotice.ts >= candidate.ts)) {
+        // Notices sit after their preceding provider event, without changing
+        // that event's stable line-based ordering or splitting its seq band.
+        collected.push({
+          ...nextNotice,
+          seq: (candidate?.seq ?? 0) + (notice + 1) / (this.notices.length + 1),
+        });
+        notice -= 1;
+      } else if (candidate) {
+        collected.push(candidate);
+        skip += 1;
+        if (skip === events.length) {
+          line -= 1;
+          skip = 0;
+        }
+      }
     }
     return {
       collected,
-      // When the limit landed exactly on a line boundary, unserved events
-      // remain below `line`.
-      ...(line >= 0 ? { older: { line, skip: 0 } } : {}),
+      ...(line >= 0 || notice >= 0
+        ? { older: { line, skip, ...(this.notices.length ? { notice } : {}) } }
+        : {}),
     };
   }
 

@@ -1,9 +1,9 @@
-import type { TranscriptEvent } from './protocol.js';
+import type { SessionSummary, TranscriptEvent } from './protocol.js';
+import { appendSessionNotice } from './sessionNotices.js';
 import { errMsg } from './sessionHelpers.js';
 
-// Durable transcript for a session whose provider keeps no session file of its
-// own. Registered per live session by the manager, which owns the provider
-// decision; a Droid session has none, and every call here is a no-op for it.
+// Native providers store the full transcript; Droid stores only app notices
+// separately from its harness-owned session file.
 export interface TimelineTranscript {
   appendPrompt(text: string): void;
   append(event: TranscriptEvent): void;
@@ -12,6 +12,8 @@ export interface TimelineTranscript {
 
 export class TimelineTranscripts {
   private readonly byId = new Map<string, TimelineTranscript>();
+
+  constructor(private readonly summary: (appSessionId: string) => SessionSummary | undefined) {}
 
   use(appSessionId: string, transcript: TimelineTranscript): void {
     this.byId.set(appSessionId, transcript);
@@ -34,9 +36,16 @@ export class TimelineTranscripts {
   // failure is reported and never blocks the live event.
   append(event: TranscriptEvent, onError: (message: string) => void): void {
     const transcript = this.byId.get(event.appSessionId);
-    if (!transcript) return;
     try {
-      transcript.append(event);
+      if (transcript) transcript.append(event);
+      else if (
+        event.role === 'primary' &&
+        (event.modelSwitch || event.errorKind === 'usage_limit')
+      ) {
+        const summary = this.summary(event.appSessionId);
+        if (summary?.provider === 'droid')
+          appendSessionNotice(summary.providerSessionId ?? event.appSessionId, event);
+      }
     } catch (error) {
       onError(errMsg(error));
     }

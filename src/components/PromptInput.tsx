@@ -805,14 +805,10 @@ export default function PromptInput({
     state.models,
     state.providerStatuses,
   );
-  // The global default belongs to the Droid catalog, so it is not a selection
-  // for a chat on another provider: that chat starts on its provider's own
-  // default rather than a model its runtime has never heard of.
-  const primaryModelId = providerModelSelection(
-    composerProvider,
-    chatScoped ? activeSession.modelId : state.agentConfig.primary.modelId,
-    composerModels,
-  );
+  // Catalog validation applies to draft preferences, never to saved chat settings.
+  const primaryModelId = chatScoped
+    ? activeSession.modelId
+    : providerModelSelection(composerProvider, state.agentConfig.primary.modelId, composerModels);
   const selectedModel = primaryModelId
     ? composerModels.find((m) => m.id === primaryModelId)
     : undefined;
@@ -833,16 +829,11 @@ export default function PromptInput({
   // on the chip and is created with none. That is the provider default when
   // nothing is pinned, the same model the chip's icon and label already use.
   const draftReasoning = resolveReasoningEffortDisplay(
-    undefined,
     state.agentConfig.primary.reasoning,
     chipModel,
   );
   const primaryReasoning = chatScoped
-    ? resolveReasoningEffortDisplay(
-        activeSession.reasoningEffort,
-        state.agentConfig.primary.reasoning,
-        chipModel,
-      )
+    ? resolveReasoningEffortDisplay(activeSession.reasoningEffort, chipModel)
     : draftReasoning;
   // The one model selection a new chat is created with. Built from the
   // validated id so no path can send a model the chat's provider never

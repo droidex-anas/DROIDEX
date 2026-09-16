@@ -13,13 +13,19 @@ export function defaultModelOf(models: ModelInfo[]) {
 }
 
 /** Effort choices a row exposes: the model's supported set, or its single fixed default. */
-export function effortsFor(model: ModelInfo | undefined, fallback: ReasoningEffort) {
+export function effortsFor(model: ModelInfo | undefined, fallback?: ReasoningEffort) {
   const supported = model?.supportedReasoningEfforts;
   if (supported?.length) return supported;
-  return [model?.defaultReasoningEffort ?? fallback];
+  const effort = model?.defaultReasoningEffort ?? fallback;
+  return effort === undefined ? [] : [effort];
 }
 
-export function stepEffort(efforts: ReasoningEffort[], current: ReasoningEffort, delta: number) {
+export function stepEffort(
+  efforts: ReasoningEffort[],
+  current: ReasoningEffort | undefined,
+  delta: number,
+): ReasoningEffort | undefined {
+  if (current === undefined) return delta > 0 ? efforts[0] : efforts.at(-1);
   const idx = efforts.indexOf(current);
   const base = idx === -1 ? efforts.length - 1 : idx;
   return efforts[Math.min(efforts.length - 1, Math.max(0, base + delta))];
@@ -48,7 +54,7 @@ function ModelCatalogList({
   /** The harness these rows belong to; it names the top effort level. */
   provider: ProviderKind;
   selectedModelId: string | undefined;
-  reasoning: ReasoningEffort;
+  reasoning: ReasoningEffort | undefined;
   query: string;
   onSelectModel: (modelId?: string) => void;
   onSelectReasoning: (reasoning: ReasoningEffort) => void;
@@ -188,10 +194,9 @@ const ModelRow = memo(function ModelRow({
   // A model whose harness offers no effort for it gets no stepper, the way the
   // composer badge and the context panel already drop the pill for it.
   const offersReasoning = showReasoning && offersReasoningEffort(model);
-  const fallback = model?.defaultReasoningEffort ?? reasoning ?? 'medium';
-  const efforts = effortsFor(model, fallback);
-  const shown = reasoning ?? model?.defaultReasoningEffort ?? efforts[efforts.length - 1];
-  const current = efforts.indexOf(shown);
+  const efforts = effortsFor(model, reasoning);
+  const shown = selected ? reasoning : (model?.defaultReasoningEffort ?? efforts.at(-1));
+  const current = shown === undefined ? -1 : efforts.indexOf(shown);
   const canStep = efforts.length > 1 && !reasoningLocked;
   // The one level with a state of its own: the active row's dots and word go
   // purple and the dots pick up the shimmer.
@@ -293,7 +298,7 @@ const ModelRow = memo(function ModelRow({
           <span
             className={`w-[62px] shrink-0 text-[12px] capitalize truncate ${effortWordTone(selected, ultra)}`}
           >
-            {reasoningEffortLabel(shown, provider)}
+            {shown === undefined ? 'Default' : reasoningEffortLabel(shown, provider)}
           </span>
         </>
       )}
