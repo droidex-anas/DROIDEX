@@ -26,7 +26,17 @@ interface ProviderSessionStart extends StoredSessionStart {
   autonomyLevel?: string;
 }
 
-type ContentBlock = Record<string, unknown>;
+type ContentBlock =
+  | { type: 'text'; text: string }
+  | { type: 'thinking'; thinking: string }
+  | { type: 'tool_use'; id?: string; name: string; input: unknown }
+  | {
+      type: 'tool_result';
+      tool_use_id?: string;
+      name?: string;
+      content: string;
+      is_error?: boolean;
+    };
 
 interface PendingMessage {
   id: string;
@@ -67,7 +77,15 @@ export class ProviderTranscriptFile {
     const block = assistantBlock(event);
     if (block) {
       this.pending ??= { id: event.id, ts: event.ts, blocks: [] };
-      this.pending.blocks.push(block);
+      const previous = this.pending.blocks.at(-1);
+      // Adjacent stream deltas must replay as one text or thinking row.
+      if (block.type === 'text' && previous?.type === 'text') {
+        previous.text += block.text;
+      } else if (block.type === 'thinking' && previous?.type === 'thinking') {
+        previous.thinking += block.thinking;
+      } else {
+        this.pending.blocks.push(block);
+      }
       return;
     }
     const result = toolResultBlock(event);
