@@ -5,7 +5,7 @@ import { useGitEnvironment } from '../hooks/useGitEnvironment';
 import { useSessionWorkingDirectory } from '../hooks/useSessionWorkingDirectory';
 import { usePullRequest } from '../hooks/usePullRequest';
 import { useGithubSetup } from '../hooks/useGithubSetup';
-import { resolveReasoningEffortDisplay } from '../lib/reasoningEffort';
+import { reasoningEffortLabel, resolveReasoningEffortDisplay } from '../lib/reasoningEffort';
 import { providerDefaultModel, providerModelCatalog } from '../features/providers/providerIdentity';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Hash, ChevronRight, FileText } from 'lucide-react';
@@ -112,8 +112,12 @@ export default function RightPanel() {
       title={modelLabel}
       trailing={
         reasoningEffort ? (
-          <span className="shrink-0 text-[12px] capitalize leading-none text-droid-text-muted">
-            {reasoningEffort}
+          <span
+            className={`shrink-0 text-[12px] capitalize leading-none ${
+              reasoningEffort === 'ultra' ? 'text-droid-ultra' : 'text-droid-text-muted'
+            }`}
+          >
+            {reasoningEffortLabel(reasoningEffort, activeSession.provider)}
           </span>
         ) : undefined
       }

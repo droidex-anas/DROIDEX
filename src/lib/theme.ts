@@ -362,6 +362,15 @@ export const SKILL_COLORS = {
   light: '#1d4ed8',
 } as const;
 
+// The top reasoning level reads by hue on every theme, the way skills and links
+// do: the neutral accent cannot say "this one is different" when it is the same
+// tone the rest of the chrome already uses. Each scheme carries the shade that
+// keeps AA for 12px label text on its composer surface (--droid-elevated).
+export const ULTRA_COLORS = {
+  dark: '#bba6ff',
+  light: '#6d28d9',
+} as const;
+
 // Hyperlinks read by hue, like skills and status do. The neutral accent governs
 // chrome and is near-white in dark themes, which left links looking like plain
 // underlined text everywhere they appeared.
@@ -466,6 +475,7 @@ export function applyTheme(theme: ThemeSettings) {
   root.style.setProperty('--droid-accent', theme.accent);
   root.style.setProperty('--droid-skill', bgIsDark ? SKILL_COLORS.dark : SKILL_COLORS.light);
   root.style.setProperty('--droid-link', bgIsDark ? LINK_COLORS.dark : LINK_COLORS.light);
+  root.style.setProperty('--droid-ultra', bgIsDark ? ULTRA_COLORS.dark : ULTRA_COLORS.light);
   // Floating-card shadow: strong and near-black on dark where it separates
   // surfaces, soft and diffuse on light so cards lift without looking dirty.
   // Light themes pair the diffuse cast with a tight contact shadow, because a

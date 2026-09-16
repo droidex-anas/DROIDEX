@@ -491,6 +491,7 @@ export default function ModelSelectorPopover({
             models={models}
             defaultModel={defaultModel}
             hasRealModels={hasRealModels}
+            provider={state.provider}
             selectedModelId={effModelId}
             reasoning={effReasoning}
             query={query}

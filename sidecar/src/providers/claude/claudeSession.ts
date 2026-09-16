@@ -285,7 +285,13 @@ export class ClaudeSession implements ProviderSession {
     }
     this.abort.signal.throwIfAborted();
     const effort = claudeEffort(reasoningEffort);
-    if (effort) await this.query.applyFlagSettings({ effortLevel: effort });
+    // Leaving ultra clears the flag instead of writing `false`, which is what
+    // turns ultracode off while keeping the level chosen alongside it.
+    if (effort)
+      await this.query.applyFlagSettings({
+        effortLevel: effort.effortLevel,
+        ultracode: effort.ultracode ? true : null,
+      });
   }
 
   private requireOpen(): void {
@@ -366,7 +372,9 @@ function sessionOptions(
     cwd: input.cwd,
     pathToClaudeCodeExecutable: input.executable,
     ...(input.modelId ? { model: input.modelId } : {}),
-    ...(effort ? { effort } : {}),
+    // The flag is written both ways: a settings file may carry ultracode too,
+    // and the level the chip shows is the one the session must run at.
+    ...(effort ? { effort: effort.effortLevel, settings: { ultracode: effort.ultracode } } : {}),
     ...(input.resume ? { resume: input.appSessionId } : { sessionId: input.appSessionId }),
     systemPrompt: { type: 'preset', preset: 'claude_code' },
     // 'project' is what loads the repository's CLAUDE.md.
@@ -413,8 +421,17 @@ function sessionOptions(
 // harness leaves the session on its own default rather than being coerced.
 const CLAUDE_EFFORTS: readonly EffortLevel[] = ['low', 'medium', 'high', 'xhigh', 'max'];
 
-function claudeEffort(effort: ReasoningEffort | undefined): EffortLevel | undefined {
-  return CLAUDE_EFFORTS.find((level) => level === effort);
+// Ultra is the CLI's ultracode: xhigh effort plus standing workflow
+// orchestration, carried as a session setting rather than a sixth level.
+interface ClaudeEffort {
+  effortLevel: EffortLevel;
+  ultracode: boolean;
+}
+
+function claudeEffort(effort: ReasoningEffort | undefined): ClaudeEffort | undefined {
+  if (effort === 'ultra') return { effortLevel: 'xhigh', ultracode: true };
+  const level = CLAUDE_EFFORTS.find((candidate) => candidate === effort);
+  return level ? { effortLevel: level, ultracode: false } : undefined;
 }
 
 function matchesModel(selected: string, actual: string): boolean {

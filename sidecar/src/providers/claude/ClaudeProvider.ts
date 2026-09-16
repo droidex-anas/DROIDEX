@@ -220,10 +220,17 @@ function providerModel(model: ClaudeModel, configured: ReasoningEffort | undefin
   const id = model.value.trim();
   const displayName = model.displayName.trim();
   if (!id || !displayName) return [];
-  const efforts = (model.supportedEffortLevels ?? []).flatMap((level) => {
+  const cliEfforts = (model.supportedEffortLevels ?? []).flatMap((level) => {
     const effort = reasoningValue(level);
     return effort ? [effort] : [];
   });
+  // Ultracode is not one of the CLI's levels: it is xhigh plus standing workflow
+  // orchestration, so it rides above the published set on the models that can
+  // reach xhigh and is absent everywhere else. It is never a starting level, so
+  // the default still comes from what the CLI itself publishes.
+  const efforts: ReasoningEffort[] = cliEfforts.includes('xhigh')
+    ? [...cliEfforts, 'ultra']
+    : cliEfforts;
   return [
     {
       id,
@@ -233,7 +240,7 @@ function providerModel(model: ClaudeModel, configured: ReasoningEffort | undefin
       ...(efforts.length > 0
         ? {
             supportedReasoningEfforts: efforts,
-            defaultReasoningEffort: defaultEffort(efforts, configured),
+            defaultReasoningEffort: defaultEffort(cliEfforts, configured),
           }
         : {}),
     },

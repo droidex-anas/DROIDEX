@@ -1,4 +1,4 @@
-import type { ModelInfo, ReasoningEffort } from '../types/bridge';
+import type { ModelInfo, ProviderKind, ReasoningEffort } from '../types/bridge';
 
 const REASONING_EFFORTS: Readonly<Record<ReasoningEffort, true>> = {
   off: true,
@@ -37,4 +37,16 @@ export function resolveReasoningEffortDisplay(
 ): ReasoningEffort | undefined {
   if (!offersReasoningEffort(model)) return undefined;
   return sessionEffort ?? globalDefault;
+}
+
+// The top rung is the same idea on both harnesses but not the same word: Claude
+// Code calls it ultracode, Codex calls it Ultra. Every surface that names a
+// level goes through here, so the chip, the picker rows, and the context panel
+// always speak the harness's own vocabulary. Callers capitalize for display.
+export function reasoningEffortLabel(
+  effort: ReasoningEffort,
+  provider: ProviderKind | undefined,
+): string {
+  if (effort !== 'ultra') return effort;
+  return provider === 'claude' ? 'ultracode' : 'ultra';
 }

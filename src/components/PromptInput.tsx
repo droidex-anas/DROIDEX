@@ -74,7 +74,7 @@ import {
   VISUALIZE_COMMAND,
 } from '../lib/composePrompt';
 import { hasCompleteAppBlock } from './appBlockRuntime';
-import { resolveReasoningEffortDisplay } from '../lib/reasoningEffort';
+import { reasoningEffortLabel, resolveReasoningEffortDisplay } from '../lib/reasoningEffort';
 import { compactionSettingsSnapshot } from '../lib/compactionSettings';
 import { composerTextAfterSeed, resetComposerAfterSubmit } from '../lib/composerReset';
 import { chipRemovedByBackspace } from '../lib/composerChips';
@@ -1804,10 +1804,14 @@ export default function PromptInput({
                     <span className="truncate">{selectedModelLabel}</span>
                     {primaryReasoning && (
                       <span
-                        className="shrink-0 text-droid-text-muted capitalize"
-                        title={`Reasoning: ${primaryReasoning}`}
+                        className={`shrink-0 capitalize ${
+                          primaryReasoning === 'ultra'
+                            ? 'text-droid-ultra'
+                            : 'text-droid-text-muted'
+                        }`}
+                        title={`Reasoning: ${reasoningEffortLabel(primaryReasoning, composerProvider)}`}
                       >
-                        {primaryReasoning}
+                        {reasoningEffortLabel(primaryReasoning, composerProvider)}
                       </span>
                     )}
                   </>
