@@ -53,11 +53,8 @@ export class ClaudeSession implements ProviderSession {
   private readonly prompts = new MessageQueue<SDKUserMessage>();
   private readonly mapper: ClaudeEventMapper;
   private readonly query: Query;
-  // Settles when the CLI has finished booting. Turns stream against a CLI that
-  // is still coming up; control requests wait for it, because the SDK writes
-  // them to stdin the moment they are made and the CLI has not answered its own
-  // `initialize` yet (node_modules/@anthropic-ai/claude-agent-sdk/sdk.mjs,
-  // Query.request: no queue, no gate).
+  // Turns can stream during boot, but control requests must wait: the SDK
+  // writes them immediately, before the CLI has answered initialize.
   private readonly initialized: Promise<void>;
   // Resolves once the CLI process exists, which is all an open has to wait for.
   private readonly spawned: Promise<void>;
@@ -137,9 +134,6 @@ export class ClaudeSession implements ProviderSession {
     // A CLI that fails before it reaches spawn still settles initialization,
     // which is what releases the open instead of leaving it hanging.
     this.spawned = Promise.race([spawned, this.initialized]);
-    // Runs for the session's whole life, not just while a turn is streaming:
-    // a backgrounded subagent can settle between turns, and its dock update
-    // must not wait for the next prompt to pull it off the wire.
     void this.pump();
   }
 
@@ -149,8 +143,6 @@ export class ClaudeSession implements ProviderSession {
     await this.spawned;
   }
 
-  // Delivers a normalized background-task event (a subagent's dock update)
-  // the instant the pump reads it, whether or not a turn is streaming.
   onBackgroundEvent(listener: (event: NormalizedEvent) => void): () => void {
     this.backgroundListeners.add(listener);
     return () => {
@@ -193,9 +185,7 @@ export class ClaudeSession implements ProviderSession {
       if (this.initializing) yield this.mapper.statusEvent(STARTING);
       for (;;) {
         const next = await turnQueue.next();
-        // The pump exhausted the CLI's own stream without answering. Failing
-        // here is what tells the session the turn broke, instead of reading
-        // as a silent success.
+        // An exhausted stream is a failure, not a silent success.
         if (next.done) throw new Error('Claude Code exited before the turn finished.');
         const { message, events } = next.value;
         if (message.type === 'assistant' && !reportedPlanningModel) {
@@ -328,7 +318,13 @@ export class ClaudeSession implements ProviderSession {
     }
     this.abort.signal.throwIfAborted();
     const effort = claudeEffort(reasoningEffort);
-    if (effort) await this.query.applyFlagSettings({ effortLevel: effort });
+    // Leaving ultra clears the flag instead of writing `false`, which is what
+    // turns ultracode off while keeping the level chosen alongside it.
+    if (effort)
+      await this.query.applyFlagSettings({
+        effortLevel: effort.effortLevel,
+        ultracode: effort.ultracode ? true : null,
+      });
   }
 
   private requireOpen(): void {
@@ -411,7 +407,9 @@ function sessionOptions(
     cwd: input.cwd,
     pathToClaudeCodeExecutable: input.executable,
     ...(input.modelId ? { model: input.modelId } : {}),
-    ...(effort ? { effort } : {}),
+    // The flag is written both ways: a settings file may carry ultracode too,
+    // and the level the chip shows is the one the session must run at.
+    ...(effort ? { effort: effort.effortLevel, settings: { ultracode: effort.ultracode } } : {}),
     ...(input.resume ? { resume: input.appSessionId } : { sessionId: input.appSessionId }),
     systemPrompt: { type: 'preset', preset: 'claude_code' },
     // 'project' is what loads the repository's CLAUDE.md.
@@ -458,8 +456,17 @@ function sessionOptions(
 // harness leaves the session on its own default rather than being coerced.
 const CLAUDE_EFFORTS: readonly EffortLevel[] = ['low', 'medium', 'high', 'xhigh', 'max'];
 
-function claudeEffort(effort: ReasoningEffort | undefined): EffortLevel | undefined {
-  return CLAUDE_EFFORTS.find((level) => level === effort);
+// Ultra is the CLI's ultracode: xhigh effort plus standing workflow
+// orchestration, carried as a session setting rather than a sixth level.
+interface ClaudeEffort {
+  effortLevel: EffortLevel;
+  ultracode: boolean;
+}
+
+function claudeEffort(effort: ReasoningEffort | undefined): ClaudeEffort | undefined {
+  if (effort === 'ultra') return { effortLevel: 'xhigh', ultracode: true };
+  const level = CLAUDE_EFFORTS.find((candidate) => candidate === effort);
+  return level ? { effortLevel: level, ultracode: false } : undefined;
 }
 
 function matchesModel(selected: string, actual: string): boolean {

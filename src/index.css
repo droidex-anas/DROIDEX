@@ -79,6 +79,9 @@
     /* Links stay blue for the same reason skills do: the neutral accent is
        near-white in dark themes, so accent-coloured links read as body text. */
     --droid-link: #7cb2ff;
+    /* The top reasoning level reads by hue for the same reason; applyTheme
+       selects the accessible light-theme shade. */
+    --droid-ultra: #bba6ff;
     /* Fixed semantic status colors: success green, warning amber, and danger red
        stay vivid across every theme (including monochrome) so diffs, status, and
        callouts always read by hue. The neutral accent governs UI chrome only and
@@ -277,6 +280,30 @@
 
   .agent-avatar-pixel {
     animation: agent-pixel-shimmer 1.4s ease-in-out infinite;
+  }
+
+  /* The top reasoning level: a slow band of brightness travelling along the
+     effort dots, so the level reads as its own state and not just a brighter
+     one. Per-dot animation-delay (set inline) moves the band along the row. */
+  @keyframes effort-ultra-shimmer {
+    0%,
+    62%,
+    100% {
+      opacity: 0.68;
+    }
+    16% {
+      opacity: 1;
+    }
+  }
+
+  .effort-dot-ultra {
+    animation: effort-ultra-shimmer 2.8s ease-in-out infinite;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .effort-dot-ultra {
+      animation: none;
+    }
   }
 
   /* A generated image before it arrives: a fine dot grid on the card, with a

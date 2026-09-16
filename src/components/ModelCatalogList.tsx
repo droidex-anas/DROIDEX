@@ -1,7 +1,7 @@
 import { memo, useCallback, useEffect, useRef } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
-import { offersReasoningEffort } from '../lib/reasoningEffort';
-import type { ModelInfo, ReasoningEffort } from '../types/bridge';
+import { offersReasoningEffort, reasoningEffortLabel } from '../lib/reasoningEffort';
+import type { ModelInfo, ProviderKind, ReasoningEffort } from '../types/bridge';
 import { ModelIcon, providerOf } from './ModelIcon';
 
 const ROW_H = 36;
@@ -31,6 +31,7 @@ function ModelCatalogList({
   models,
   defaultModel,
   hasRealModels,
+  provider,
   selectedModelId,
   reasoning,
   query,
@@ -44,6 +45,8 @@ function ModelCatalogList({
   models: ModelInfo[];
   defaultModel: ModelInfo | undefined;
   hasRealModels: boolean;
+  /** The harness these rows belong to; it names the top effort level. */
+  provider: ProviderKind;
   selectedModelId: string | undefined;
   reasoning: ReasoningEffort;
   query: string;
@@ -89,7 +92,7 @@ function ModelCatalogList({
     if (effort) cur.onSelectReasoning(effort);
   }, []);
 
-  const rowProps = { pick, disabled, reasoningLocked, showReasoning };
+  const rowProps = { pick, provider, disabled, reasoningLocked, showReasoning };
 
   return (
     <div ref={scrollRef} className="mt-2 max-h-[180px] overflow-y-auto -mx-1 px-1">
@@ -164,6 +167,7 @@ const ModelRow = memo(function ModelRow({
   selected,
   reasoning,
   pick,
+  provider,
   disabled,
   reasoningLocked,
   showReasoning,
@@ -175,6 +179,7 @@ const ModelRow = memo(function ModelRow({
   /** Only set on the selected row; other rows show their model's default. */
   reasoning?: ReasoningEffort;
   pick: Pick;
+  provider: ProviderKind;
   disabled: boolean;
   reasoningLocked: boolean;
   showReasoning: boolean;
@@ -188,6 +193,9 @@ const ModelRow = memo(function ModelRow({
   const shown = reasoning ?? model?.defaultReasoningEffort ?? efforts[efforts.length - 1];
   const current = efforts.indexOf(shown);
   const canStep = efforts.length > 1 && !reasoningLocked;
+  // The one level with a state of its own: the active row's dots and word go
+  // purple and the dots pick up the shimmer.
+  const ultra = selected && shown === 'ultra';
   const lockTitle = reasoningLocked ? 'Change the child model to adjust reasoning.' : undefined;
 
   const arrow = (delta: -1 | 1) => (
@@ -267,17 +275,15 @@ const ModelRow = memo(function ModelRow({
                     e.stopPropagation();
                     pick(id, effort);
                   }}
-                  className={`w-[9px] h-[9px] rounded-[2px] ${
-                    filled
-                      ? selected
-                        ? 'bg-droid-accent'
-                        : 'bg-droid-text-muted'
-                      : 'bg-droid-text-muted/30'
-                  } ${disabled || reasoningLocked ? 'cursor-not-allowed' : ''}`}
+                  className={`w-[9px] h-[9px] rounded-[2px] ${dotFill(filled, selected, ultra)} ${
+                    disabled || reasoningLocked ? 'cursor-not-allowed' : ''
+                  }`}
                   style={{
                     transition: 'background .2s, transform .25s cubic-bezier(.34,1.56,.64,1)',
                     transitionDelay: `${String(i * 25)}ms`,
                     transform: filled && selected ? 'scale(1.08)' : undefined,
+                    // Staggering the shared cycle is what makes the band travel.
+                    ...(ultra ? { animationDelay: `${String(i * 130)}ms` } : {}),
                   }}
                 />
               );
@@ -285,14 +291,23 @@ const ModelRow = memo(function ModelRow({
           </span>
           {arrow(1)}
           <span
-            className={`w-[52px] shrink-0 text-[12px] capitalize truncate ${
-              selected ? 'text-droid-text' : 'text-droid-text-muted'
-            }`}
+            className={`w-[62px] shrink-0 text-[12px] capitalize truncate ${effortWordTone(selected, ultra)}`}
           >
-            {shown}
+            {reasoningEffortLabel(shown, provider)}
           </span>
         </>
       )}
     </div>
   );
 });
+
+function dotFill(filled: boolean, selected: boolean, ultra: boolean): string {
+  if (!filled) return 'bg-droid-text-muted/30';
+  if (!selected) return 'bg-droid-text-muted';
+  return ultra ? 'bg-droid-ultra effort-dot-ultra' : 'bg-droid-accent';
+}
+
+function effortWordTone(selected: boolean, ultra: boolean): string {
+  if (ultra) return 'text-droid-ultra';
+  return selected ? 'text-droid-text' : 'text-droid-text-muted';
+}
