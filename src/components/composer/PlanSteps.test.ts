@@ -5,8 +5,18 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { PlanStepsPanel } from './PlanSteps';
 import type { TodoItem } from '../../lib/tools';
 
-const render = (steps: TodoItem[], isRunning = true) =>
-  renderToStaticMarkup(createElement(PlanStepsPanel, { steps, isRunning, resetKey: 's' }));
+// The composer dock owns the disclosure, so a rendered panel is always told
+// whether it is open.
+const render = (steps: TodoItem[], isRunning = true, expanded = false) =>
+  renderToStaticMarkup(
+    createElement(PlanStepsPanel, {
+      steps,
+      isRunning,
+      resetKey: 's',
+      expanded,
+      onExpandedChange: () => undefined,
+    }),
+  );
 
 test('renders nothing without a plan', () => {
   assert.equal(render([]), '');
