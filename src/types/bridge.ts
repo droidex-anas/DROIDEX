@@ -6,6 +6,8 @@ import type {
   AutomationBridgeEvent,
 } from '../features/automations/protocol';
 import type { McpClientCommand, McpServerEvent } from './mcp.js';
+import type { ProviderMention, SkillInfo } from './catalog.js';
+export type { ProviderMention, SkillInfo, SkillLocation } from './catalog.js';
 export type {
   McpServerInfo,
   McpServerInput,
@@ -249,18 +251,6 @@ export interface SessionQuestion {
   questions: { index: number; question: string; options: string[] }[];
 }
 
-export type SkillLocation = 'project' | 'personal' | 'builtin';
-
-export interface SkillInfo {
-  name: string;
-  description?: string;
-  location: SkillLocation;
-  filePath: string;
-  enabled?: boolean;
-  userInvocable?: boolean;
-  version?: string;
-}
-
 export interface ModelInfo {
   id: string;
   displayName: string;
@@ -294,6 +284,7 @@ export interface ProviderStatus {
   // calling it "Default". Absent when the harness reports none.
   defaultModelId?: string;
   models: ModelInfo[];
+  items?: SkillInfo[];
 }
 
 export interface FactoryDefaultSettings {
@@ -653,8 +644,20 @@ export type ClientCommand =
       validatorReasoning?: ReasoningEffort;
       responseFormat?: ResponseFormat;
     }
-  | { type: 'session.send'; appSessionId: string; text: string; responseFormat?: ResponseFormat }
-  | { type: 'session.sendNow'; appSessionId: string; text: string; responseFormat?: ResponseFormat }
+  | {
+      type: 'session.send';
+      appSessionId: string;
+      text: string;
+      mentions?: ProviderMention[];
+      responseFormat?: ResponseFormat;
+    }
+  | {
+      type: 'session.sendNow';
+      appSessionId: string;
+      text: string;
+      mentions?: ProviderMention[];
+      responseFormat?: ResponseFormat;
+    }
   | { type: 'session.resume'; appSessionId: string }
   | { type: 'session.interrupt'; appSessionId: string }
   | {

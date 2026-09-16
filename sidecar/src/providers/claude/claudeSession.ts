@@ -16,8 +16,10 @@ import { randomUUID } from 'node:crypto';
 import type { NormalizedEvent } from '../../normalize.js';
 import type { Autonomy, ReasoningEffort, SessionInteractionMode } from '../../protocol.js';
 import { errMsg } from '../../sessionHelpers.js';
+import type { SkillInfo } from '../catalog.js';
 import type { ProviderInteractions } from '../interactions.js';
 import type { ProviderModelSettings, ProviderSession } from '../session.js';
+import { ClaudeCatalog } from './claudeCatalog.js';
 import { ClaudeEventMapper, rateLimitRefusal } from './claudeEvents.js';
 import { MessageQueue } from './claudeMessages.js';
 import { claudeCanUseTool, claudePermissionMode } from './claudePermissions.js';
@@ -56,6 +58,7 @@ export class ClaudeSession implements ProviderSession {
   // Turns can stream during boot, but control requests must wait: the SDK
   // writes them immediately, before the CLI has answered initialize.
   private readonly initialized: Promise<void>;
+  private readonly catalog: ClaudeCatalog;
   // Resolves once the CLI process exists, which is all an open has to wait for.
   private readonly spawned: Promise<void>;
   private initializing = true;
@@ -129,6 +132,7 @@ export class ClaudeSession implements ProviderSession {
     // Startup can fail before a turn observes it. The turn or the lifecycle's
     // closure observer reports the failure without an unhandled rejection.
     void this.initialized.catch(() => undefined);
+    this.catalog = new ClaudeCatalog(this.query, this.initialized);
     // A CLI that fails before it reaches spawn still settles initialization,
     // which is what releases the open instead of leaving it hanging.
     this.spawned = Promise.race([spawned, this.initialized]);
@@ -157,6 +161,14 @@ export class ClaudeSession implements ProviderSession {
     const pid = child?.pid;
     if (child === undefined || pid === undefined) return undefined;
     return { pid, isAlive: () => child.exitCode === null && !child.killed };
+  }
+
+  catalogItems(): Promise<SkillInfo[]> {
+    return this.catalog.catalogItems();
+  }
+
+  onCatalogUpdated(listener: (items: SkillInfo[]) => void): () => void {
+    return this.catalog.onUpdated(listener);
   }
 
   async *stream(prompt: string): AsyncGenerator<NormalizedEvent, void, undefined> {
@@ -194,6 +206,12 @@ export class ClaudeSession implements ProviderSession {
           }
         }
         yield* events;
+        // A local slash command bypasses the model loop and publishes this one
+        // terminal frame instead of a result for the ordinary turn path.
+        if (message.type === 'system' && message.subtype === 'local_command_output') {
+          yield { done: true };
+          return;
+        }
         // A refused usage window is answered with no result at all, so the turn
         // has to end here instead of waiting for one that never comes.
         if (message.type === 'rate_limit_event') {
@@ -257,6 +275,7 @@ export class ClaudeSession implements ProviderSession {
   }
 
   private dispatch(message: SDKMessage): void {
+    this.catalog.observe(message);
     // Mapping stays in wire order, including model and spawn-link observations.
     const events = this.mapper.map(message);
     const turnEvents: NormalizedEvent[] = [];
@@ -379,6 +398,7 @@ export class ClaudeSession implements ProviderSession {
     if (this.abort.signal.aborted) return;
     this.failure = error;
     this.abort.abort();
+    this.catalog.close();
     this.prompts.close();
     this.turnQueue?.close(error);
     this.backgroundListeners.clear();

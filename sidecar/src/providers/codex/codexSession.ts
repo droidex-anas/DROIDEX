@@ -3,10 +3,13 @@
 // which Codex applies to that turn and the ones after it.
 import type { NormalizedEvent } from '../../normalize.js';
 import type { Autonomy } from '../../protocol.js';
+import { errMsg } from '../../sessionHelpers.js';
+import type { ProviderMention, SkillInfo } from '../catalog.js';
 import type { ProviderInteractions } from '../interactions.js';
 import type { ProviderModelSettings, ProviderSession } from '../session.js';
 import type { AppServerClient } from './appServer.js';
 import { codexAutonomy, OpenPrompts } from './codexApprovals.js';
+import { loadCodexCatalog, loadCodexSkills } from './codexCatalog.js';
 import {
   CodexEventMapper,
   errorOf,
@@ -16,7 +19,7 @@ import {
   type CodexTurn,
 } from './codexEvents.js';
 import { CodexStartup } from './codexStartup.js';
-import { TurnStream, turnStartParams } from './codexTurn.js';
+import { TurnStream, turnInput, turnStartParams } from './codexTurn.js';
 
 const STARTUP_QUIET_MS = 40;
 
@@ -61,6 +64,10 @@ export class CodexSession implements ProviderSession {
   private readonly startup = new CodexStartup();
   private readonly backgroundListeners = new Set<(event: NormalizedEvent) => void>();
   private startupNoticeTimer?: ReturnType<typeof setTimeout>;
+  private readonly catalogListeners = new Set<(items: SkillInfo[]) => void>();
+  private catalog?: Promise<SkillInfo[]>;
+  private catalogCache: SkillInfo[] = [];
+  private catalogRefresh?: Promise<void>;
 
   constructor(input: CodexSessionInput) {
     this.providerSessionId = input.appSessionId;
@@ -124,9 +131,32 @@ export class CodexSession implements ProviderSession {
     this.threadId = response.thread.id;
     this.threadModel = response.model;
     this.mapper.setModel({ ...this.model, modelId: this.model.modelId ?? this.threadModel });
+    this.catalog ??= loadCodexCatalog(this.client, [this.cwd]).then((catalog) => {
+      if (this.hasClosed) return [];
+      if (catalog.diagnostics.length)
+        console.warn('Codex catalog:', catalog.diagnostics.join('; '));
+      this.catalogCache = catalog.items;
+      return catalog.items;
+    });
   }
 
-  async *stream(prompt: string): AsyncGenerator<NormalizedEvent, void, undefined> {
+  async catalogItems(): Promise<SkillInfo[]> {
+    if (!this.catalog) throw new Error('This Codex session is not open.');
+    await (this.catalogRefresh ?? this.catalog);
+    return this.catalogCache;
+  }
+
+  onCatalogUpdated(listener: (items: SkillInfo[]) => void): () => void {
+    this.catalogListeners.add(listener);
+    return () => {
+      this.catalogListeners.delete(listener);
+    };
+  }
+
+  async *stream(
+    prompt: string,
+    mentions?: ProviderMention[],
+  ): AsyncGenerator<NormalizedEvent, void, undefined> {
     if (this.turn) throw new Error('This Codex session is already running a turn.');
     const threadId = this.threadId;
     if (!threadId) throw new Error('This Codex session has no thread to run a turn on.');
@@ -139,7 +169,7 @@ export class CodexSession implements ProviderSession {
       this.announceStartup();
       const started = await this.client.request<{ turn: CodexTurn }>(
         'turn/start',
-        turnStartParams(threadId, prompt, {
+        turnStartParams(threadId, prompt, mentions, {
           autonomy: this.autonomy,
           model: this.model,
           ...(this.threadModel ? { threadModel: this.threadModel } : {}),
@@ -179,7 +209,7 @@ export class CodexSession implements ProviderSession {
   // Codex takes a prompt into the running turn instead of ending it. The turn
   // id is the server's own precondition, so a steer aimed at a turn that has
   // already settled is refused rather than applied to whatever runs now.
-  async steer(text: string): Promise<void> {
+  async steer(text: string, mentions?: ProviderMention[]): Promise<void> {
     const threadId = this.threadId;
     const turnId = this.turnId;
     const turn = this.turn;
@@ -188,7 +218,7 @@ export class CodexSession implements ProviderSession {
     const steered = await this.client.request<{ turnId: string }>('turn/steer', {
       threadId,
       expectedTurnId: turnId,
-      input: [{ type: 'text', text }],
+      input: turnInput(text, mentions),
     });
     // A queued prompt may have started its own turn while this was in flight.
     // That turn owns its id, and Stop has to reach it rather than this one.
@@ -207,6 +237,7 @@ export class CodexSession implements ProviderSession {
 
   close(): Promise<void> {
     this.resolveClosed();
+    this.catalogListeners.clear();
     this.cancelStartupNotice();
     return (this.closePromise ??= this.client.close());
   }
@@ -258,6 +289,9 @@ export class CodexSession implements ProviderSession {
         this.deliver(events);
       });
     }
+    this.client.onNotification('skills/changed', () => {
+      this.refreshSkills();
+    });
     this.onThreadNotification('mcpServer/startupStatus/updated', (params) => {
       this.startup.serverStatus(params);
       this.announceStartup();
@@ -286,11 +320,34 @@ export class CodexSession implements ProviderSession {
     });
     this.client.onClose((error) => {
       this.cancelStartupNotice();
+      this.catalogListeners.clear();
       this.turn?.fail(error);
       this.prompts.cancel();
       this.resolveClosed(error);
     });
     this.prompts.register(this.client, (itemId: string) => this.mapper.toolDetail(itemId));
+  }
+
+  private refreshSkills(): void {
+    if (!this.catalog || this.hasClosed) return;
+    const pending = (this.catalogRefresh ?? this.catalog)
+      .then(async () => {
+        if (this.isClosed) return;
+        const skills = await loadCodexSkills(this.client, [this.cwd]);
+        if (this.hasClosed) return;
+        this.catalogCache = [
+          ...skills,
+          ...this.catalogCache.filter((item) => item.kind !== 'skill'),
+        ];
+        for (const listener of this.catalogListeners) listener(this.catalogCache);
+      })
+      .catch((error: unknown) => {
+        if (!this.hasClosed) console.warn('Codex skill refresh failed:', errMsg(error));
+      });
+    this.catalogRefresh = pending;
+    void pending.then(() => {
+      if (this.catalogRefresh === pending) this.catalogRefresh = undefined;
+    });
   }
 
   // The turn's id arrives either on `turn/started` or with the `turn/start`

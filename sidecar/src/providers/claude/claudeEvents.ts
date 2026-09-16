@@ -89,7 +89,7 @@ export class ClaudeEventMapper {
       case 'rate_limit_event':
         return this.rateLimit(message.rate_limit_info);
       case 'system':
-        return this.subagents.map(message, this.modelId ?? this.observedModelId);
+        return this.system(message);
       // Hook/plugin notices and the other auxiliary frames carry nothing the
       // DROIDEX transcript shows.
       case 'tool_progress':
@@ -103,6 +103,13 @@ export class ClaudeEventMapper {
         message satisfies never;
         return [];
     }
+  }
+
+  private system(message: Extract<SDKMessage, { type: 'system' }>): NormalizedEvent[] {
+    // A local slash command answers through this frame instead of the model loop.
+    if (message.subtype === 'local_command_output')
+      return message.content ? [{ transcript: this.transcript('text', { text: message.content }) }] : [];
+    return this.subagents.map(message, this.modelId ?? this.observedModelId);
   }
 
   private streamEvent(

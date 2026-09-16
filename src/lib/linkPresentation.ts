@@ -1,3 +1,6 @@
+import type { SkillInfo } from '../types/bridge';
+import { imageSrc, localImageFilePath } from './localImage';
+
 // How a link in a message is presented: the site it points at, and a compact
 // label for the links whose URL says more than it shows.
 
@@ -15,8 +18,16 @@ export interface LinkPresentation {
 // caches the icon in the main process.
 const FAVICON_SCHEME = 'droidex-favicon';
 
-export function faviconUrl(host: string): string {
-  return `${FAVICON_SCHEME}://${host}/`;
+export function faviconUrl(source: string): string;
+export function faviconUrl(source: NonNullable<SkillInfo['icon']>): string | null;
+export function faviconUrl(source: string | NonNullable<SkillInfo['icon']>): string | null {
+  if (typeof source === 'string') return `${FAVICON_SCHEME}://${source}/`;
+  if ('path' in source) {
+    const path = localImageFilePath(source.path);
+    return path === null ? null : imageSrc(path);
+  }
+  if ('host' in source) return `${FAVICON_SCHEME}://${source.host}/`;
+  return `${FAVICON_SCHEME}://icon/?url=${encodeURIComponent(source.url)}`;
 }
 
 function gitHubLabel(path: string): string | null {

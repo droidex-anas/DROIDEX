@@ -13,6 +13,7 @@ import type {
   ProviderSession,
 } from '../session.js';
 import { AppServerClient } from './appServer.js';
+import { loadCodexCatalog } from './codexCatalog.js';
 import { listModels } from './codexModels.js';
 import { CodexSession, type CodexSessionInput } from './codexSession.js';
 
@@ -145,7 +146,10 @@ export class CodexProvider implements Provider {
         return unavailable('unauthenticated', LOGIN_HINT);
       const label = accountLabel(account.account);
       const configured = await configuredModel(client);
-      const models = await listModels(client, configured);
+      const [models, catalog] = await Promise.all([
+        listModels(client, configured),
+        loadCodexCatalog(client, [tmpdir()]),
+      ]);
       const defaultModelId = publishedDefault(models, configured);
       return {
         provider: 'codex',
@@ -153,7 +157,11 @@ export class CodexProvider implements Provider {
         version,
         ...(label ? { accountLabel: label } : {}),
         ...(defaultModelId ? { defaultModelId } : {}),
+        ...(catalog.diagnostics.length > 0
+          ? { message: `Some Codex catalog sources failed: ${catalog.diagnostics.join('; ')}` }
+          : {}),
         models,
+        items: catalog.items,
       };
     } catch (error) {
       return unavailable(
