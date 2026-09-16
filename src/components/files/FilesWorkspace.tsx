@@ -38,6 +38,12 @@ function baseName(path: string): string {
   return path.replace(/\\/g, '/').replace(/\/+$/g, '').split('/').pop() ?? path;
 }
 
+// Display-only join: unlike joinRelative, the root keeps its absolute form
+// (leading slash, drive prefix) instead of being normalized away.
+function displayPath(root: string, relative: string): string {
+  return `${root.replace(/\\/g, '/').replace(/\/+$/g, '')}/${relative}`;
+}
+
 export function FilesWorkspace({
   root,
   selectedPath,
@@ -265,7 +271,7 @@ export function FilesWorkspace({
           <nav
             className="flex min-w-0 flex-1 items-center gap-1 overflow-hidden text-[11px]"
             aria-label="File path"
-            title={relative ? joinRelative(root, relative) : root}
+            title={relative ? displayPath(root, relative) : root}
           >
             {crumbs.map((segment, index) => {
               const isLast = index === crumbs.length - 1;
