@@ -110,7 +110,7 @@ function AgentListRow({
         onOpen(row.child.childSessionId);
       }}
       title={row.agentName}
-      className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left transition-colors hover:bg-droid-elevated/60 disabled:cursor-default disabled:hover:bg-transparent"
+      className="group flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-left transition-colors hover:bg-droid-elevated/50 disabled:cursor-default disabled:hover:bg-transparent"
     >
       <ModelIcon provider={row.provider} size={16} />
       <span className="flex min-w-0 flex-1 flex-col">

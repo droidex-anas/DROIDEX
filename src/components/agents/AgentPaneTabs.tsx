@@ -62,10 +62,10 @@ function PaneTab({
       role="tab"
       aria-selected={selected}
       onClick={onSelect}
-      className={`flex shrink-0 items-center gap-1.5 rounded-lg px-2 py-1 text-[13px] font-semibold tracking-[-0.01em] transition-colors ${
+      className={`flex h-7 shrink-0 items-center gap-1.5 rounded-lg px-2 text-[13px] font-semibold tracking-[-0.01em] transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-droid-accent/60 ${
         selected
-          ? 'bg-droid-elevated text-droid-text'
-          : 'text-droid-text-muted hover:text-droid-text-secondary'
+          ? 'bg-droid-active text-droid-text'
+          : 'text-droid-text-muted hover:bg-droid-elevated/45 hover:text-droid-text'
       }`}
     >
       {label}

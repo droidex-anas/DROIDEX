@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { ArrowLeft, ChevronRight } from 'lucide-react';
+import { ArrowLeft, ChevronRight } from '@droidex/icons';
 import type { ModelInfo, ProviderKind, TranscriptEvent } from '../../types/bridge';
 import { scopeTranscriptToAgent } from '../../lib/transcript';
 import { buildFeed } from '../chatFeed';
