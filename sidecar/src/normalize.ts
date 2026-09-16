@@ -83,7 +83,14 @@ export interface NormalizedEvent {
     exitCode?: number;
   };
   childSession?: ChildSessionSignal;
-  tokens?: { tokensIn: number; tokensOut: number; contextTokens?: number };
+  tokens?: {
+    tokensIn: number;
+    tokensOut: number;
+    contextTokens?: number;
+    // The model's context window, for a provider that reports it with usage
+    // instead of in its model catalog.
+    maxContextTokens?: number;
+  };
   done?: boolean;
 }
 
@@ -552,7 +559,7 @@ export function confirmationType(params: RequestPermissionRequestParams): string
 // Hashing keeps the signature bounded and keeps argument values (which may hold
 // secrets) out of the stored grant key. An empty result means the arguments
 // could not be serialized, so the request stays ineligible for always-allow.
-function toolArgumentDigest(input: Record<string, unknown>): string {
+export function toolArgumentDigest(input: Record<string, unknown>): string {
   let serialized: string;
   try {
     serialized = stableJson(input);

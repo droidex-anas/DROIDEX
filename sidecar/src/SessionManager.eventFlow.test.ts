@@ -160,6 +160,11 @@ test('a buffered streaming tail is emitted before failed turn settlement', async
     const failedIndex = context.events.findIndex(
       (event) => event.type === 'session.updated' && event.session.phase === 'failed',
     );
+    const errorRows = context.events.flatMap((event) =>
+      event.type === 'event.appended' && event.event.kind === 'error' ? [event.event] : [],
+    );
+    assert.equal(errorRows.length, 1);
+    assert.equal(errorRows[0]?.text, 'provider failed');
     assert.ok(appendedIndex >= 0);
     assert.ok(errorIndex > appendedIndex);
     assert.ok(failedIndex > errorIndex);

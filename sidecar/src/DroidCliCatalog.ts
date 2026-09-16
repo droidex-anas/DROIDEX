@@ -4,6 +4,7 @@ import { homedir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { promisify } from 'node:util';
 import { wrapDroidInvocation } from './Environment.js';
+import { reasoningValue } from './modelCatalog.js';
 import type { ModelInfo, ReasoningEffort } from './protocol.js';
 
 const execFileAsync = promisify(execFile);
@@ -99,7 +100,7 @@ export function parseDroidExecHelp(help: string): ModelInfo[] {
 }
 
 function parseModelLine(line: string, isCustom: boolean): ModelInfo | null {
-  const match = line.match(/^\s{2,}(\S+)\s{2,}(.+?)\s*$/);
+  const match = /^\s{2,}(\S+)\s{2,}(.+?)\s*$/.exec(line);
   if (!match) return null;
   const id = match[1];
   const isDefault = /\s+\(default\)$/.test(match[2]);
@@ -116,39 +117,23 @@ function parseModelLine(line: string, isCustom: boolean): ModelInfo | null {
 function parseDetailLine(
   line: string,
 ): Pick<ModelInfo, 'displayName' | 'supportedReasoningEfforts' | 'defaultReasoningEffort'> | null {
-  const match = line.match(
-    /^-\s+(.+?):\s+supports reasoning:\s+\w+;\s+supported:\s+\[([^\]]*)\];\s+default:\s+(\S+)/,
-  );
+  const match =
+    /^-\s+(.+?):\s+supports reasoning:\s+\w+;\s+supported:\s+\[([^\]]*)\];\s+default:\s+(\S+)/.exec(
+      line,
+    );
   if (!match) return null;
   return {
     displayName: match[1].trim(),
     supportedReasoningEfforts: match[2]
       .split(',')
-      .map((value) => parseReasoning(value.trim()))
+      .map((value) => reasoningValue(value.trim()))
       .filter((value): value is ReasoningEffort => Boolean(value)),
-    defaultReasoningEffort: parseReasoning(match[3]),
+    defaultReasoningEffort: reasoningValue(match[3]),
   };
 }
 
 function stripDefaultSuffix(value: string): string {
   return value.replace(/\s+\(default\)$/, '').trim();
-}
-
-function parseReasoning(value: string): ReasoningEffort | undefined {
-  if (
-    value === 'off' ||
-    value === 'none' ||
-    value === 'minimal' ||
-    value === 'low' ||
-    value === 'medium' ||
-    value === 'high' ||
-    value === 'xhigh' ||
-    value === 'max' ||
-    value === 'dynamic'
-  ) {
-    return value;
-  }
-  return undefined;
 }
 
 function modelInfoValue(value: unknown): ModelInfo | undefined {
@@ -159,8 +144,8 @@ function modelInfoValue(value: unknown): ModelInfo | undefined {
   if (!id || !displayName) return undefined;
   const supportedReasoningEfforts = Array.isArray(raw.supportedReasoningEfforts)
     ? raw.supportedReasoningEfforts
-        .map((item) => parseReasoning(String(item)))
-        .filter((item): item is ReasoningEffort => Boolean(item))
+        .map((item) => reasoningValue(item))
+        .filter((item): item is ReasoningEffort => item !== undefined)
     : undefined;
   return {
     id,
@@ -172,9 +157,7 @@ function modelInfoValue(value: unknown): ModelInfo | undefined {
     supportedReasoningEfforts: supportedReasoningEfforts?.length
       ? supportedReasoningEfforts
       : undefined,
-    defaultReasoningEffort: raw.defaultReasoningEffort
-      ? parseReasoning(String(raw.defaultReasoningEffort))
-      : undefined,
+    defaultReasoningEffort: reasoningValue(raw.defaultReasoningEffort),
   };
 }
 

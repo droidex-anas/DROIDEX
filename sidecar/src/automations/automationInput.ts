@@ -135,6 +135,7 @@ export function isReasoningEffort(value: unknown): value is AutomationReasoningE
     value === 'high' ||
     value === 'xhigh' ||
     value === 'max' ||
+    value === 'ultra' ||
     value === 'dynamic' ||
     value === null
   );

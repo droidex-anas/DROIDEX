@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {
   BUILT_IN_THEMES,
   SKILL_COLORS,
+  ULTRA_COLORS,
   contrastRatio,
   CUSTOM_THEME_ID,
   DEFAULT_THEME,
@@ -196,14 +197,18 @@ describe('surfaceStep', () => {
   });
 });
 
-describe('SKILL_COLORS', () => {
-  it('keeps skill labels blue and WCAG AA readable on every built-in user bubble', () => {
+describe('fixed label colors', () => {
+  it('keeps skill and ultra labels WCAG AA readable on every built-in raised surface', () => {
     for (const preset of BUILT_IN_THEMES) {
       for (const scheme of ['light', 'dark'] as const) {
-        const variant = preset[scheme];
+        const elevated = elevatedSurfaceColor(preset[scheme]);
         assert.ok(
-          contrastRatio(SKILL_COLORS[scheme], elevatedSurfaceColor(variant)) >= 4.5,
+          contrastRatio(SKILL_COLORS[scheme], elevated) >= 4.5,
           `${preset.id} ${scheme} skill label should reach 4.5:1`,
+        );
+        assert.ok(
+          contrastRatio(ULTRA_COLORS[scheme], elevated) >= 4.5,
+          `${preset.id} ${scheme} ultra label should reach 4.5:1`,
         );
       }
     }

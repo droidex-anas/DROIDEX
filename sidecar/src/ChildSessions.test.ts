@@ -1,10 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import {
-  ReasoningEffort,
-  type AskUserResult,
-  type RequestPermissionHandlerResult,
-} from '@factory/droid-sdk';
+import { ReasoningEffort } from '@factory/droid-sdk';
 
 import { ChildSessions } from './ChildSessions.js';
 import type { ChildSessionsDependencies } from './ChildSessionsTypes.js';
@@ -15,7 +11,8 @@ import type {
   AutoCompactionSettlement,
   ChildAutomaticCompactionTarget,
 } from './SessionCompaction.js';
-import type { ServerEvent, SessionSummary } from './protocol.js';
+import type { PermissionOutcome, ServerEvent, SessionSummary } from './protocol.js';
+import type { ProviderQuestionAnswers } from './providers/interactions.js';
 import {
   FakeFactoryRuntime,
   FakeFactorySession,
@@ -139,9 +136,11 @@ function createHarness(
       applyStreamEvent: () => undefined,
     },
     interactions: {
-      makePermissionHandler: () => () =>
-        new Promise<RequestPermissionHandlerResult>(() => undefined),
-      makeAskUserHandler: () => () => new Promise<AskUserResult>(() => undefined),
+      interactionsFor: () => ({
+        requestApproval: () => new Promise<PermissionOutcome>(() => undefined),
+        requestQuestion: () => new Promise<ProviderQuestionAnswers>(() => undefined),
+        cancelPending: () => undefined,
+      }),
     },
     context: {
       forgetChild: (identity) => {
@@ -249,7 +248,7 @@ function createHarness(
 function parentLease(appSessionId: string, calls: RecordedCall[]): ChildParentLease {
   return {
     summary: summary(appSessionId),
-    session: new FakeFactorySession(`${appSessionId}-provider`, {}, calls),
+    droid: new FakeFactorySession(`${appSessionId}-provider`, {}, calls),
     mcpConfigs: [],
   };
 }
@@ -258,6 +257,7 @@ function summary(appSessionId: string): SessionSummary {
   return {
     appSessionId,
     providerSessionId: `${appSessionId}-provider`,
+    provider: 'droid',
     sessionPurpose: 'chat',
     interactionMode: 'auto',
     role: 'user',

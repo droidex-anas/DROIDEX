@@ -1,4 +1,4 @@
-import { DroidInteractionMode, type McpServerConfig } from '@factory/droid-sdk';
+import { type McpServerConfig } from '@factory/droid-sdk';
 import { randomUUID } from 'node:crypto';
 import { tmpdir } from 'node:os';
 import type {
@@ -21,19 +21,13 @@ import type {
 import {
   defaultsModeForSummary,
   errMsg,
-  isUserCancellation,
   modelDefaultForMode,
   normalizeAutonomy,
   reasoningValue,
   type SessionInitResult,
 } from './sessionHelpers.js';
 import { boundedInt } from './values.js';
-import {
-  DroidRuntime,
-  mapAutonomy,
-  type FactoryRuntime,
-  type FactorySession,
-} from './DroidRuntime.js';
+import { DroidRuntime, type FactoryRuntime, type FactorySession } from './DroidRuntime.js';
 import { detectEnvironment } from './Environment.js';
 import { buildInstallCommand, buildUpdateCommand, runStreaming } from './CliInstaller.js';
 import {
@@ -72,11 +66,10 @@ import {
   shouldAttachAutomationMcp,
 } from './automations/permissionPolicy.js';
 import { createBrowserMcpServer } from './browser/browserMcpServer.js';
-import { isDesignPrompt } from './browser/designPromptPacks.js';
 import { SessionRegistry } from './SessionRegistry.js';
 import { SessionEventFlow, type NormalizedSideEffects } from './SessionEventFlow.js';
 import { SessionInteractions } from './SessionInteractions.js';
-import { isReportedStreamingTranscriptError, SessionTimeline } from './SessionTimeline.js';
+import { SessionTimeline } from './SessionTimeline.js';
 import { SessionContext, type LiveOperationTarget } from './SessionContext.js';
 import {
   SessionCompaction,
@@ -106,6 +99,21 @@ import { DroidMcpConfiguration, type McpConfiguration } from './DroidMcpConfigur
 import { McpSettings } from './McpSettings.js';
 import { loadFactoryMcpServers } from './FactoryMcpConfig.js';
 import { assertValidResponseFormat, formatAppPrompt } from './appPrompt.js';
+import { DroidProvider } from './providers/droid/DroidProvider.js';
+import { runPrimaryTurn } from './providers/primaryTurn.js';
+import {
+  assertProviderUnchanged,
+  DEFAULT_PROVIDER,
+  type ProviderKind,
+} from './providers/providerKind.js';
+import { ClaudeProvider } from './providers/claude/ClaudeProvider.js';
+import { CodexProvider } from './providers/codex/CodexProvider.js';
+import { requireDroidSession } from './providers/droid/DroidProviderSession.js';
+import { ProviderProbes, type ProviderProbeMap } from './providers/providerProbes.js';
+import { ProviderTranscriptFile } from './providers/ProviderTranscriptFile.js';
+import { writeProviderSessionSettings } from './providers/providerSessionSettings.js';
+import { providerStatuses } from './providers/providerStatus.js';
+import type { Provider, ProviderModelSettings } from './providers/session.js';
 
 type Emit = (event: ServerEvent) => void;
 
@@ -172,6 +180,10 @@ export interface SessionManagerOptions {
   assetUrlFor?: (path: string) => string;
   dependencies?: SessionManagerDependencies;
   initialModels?: ModelInfo[];
+  // Injectable because a real probe starts the provider's CLI, which keeps
+  // writing under $HOME long after the answer arrives. A test that pins $HOME
+  // to a temp directory must pass its own probes — usually none at all.
+  providerProbes?: ProviderProbeMap;
 }
 
 export interface AgentSettingPatch {
@@ -257,11 +269,22 @@ export class SessionManager {
   private readonly mcpSettings: McpSettings;
   private readonly factoryDefaultsOverride: SessionManagerDependencies['getFactoryDefaults'];
   private readonly nextChildSessionId: () => string;
+  private readonly droidProvider: DroidProvider;
+  private readonly claudeProvider = new ClaudeProvider();
+  private readonly codexProvider = new CodexProvider();
+  private readonly providerProbes: ProviderProbes;
 
   constructor(
     private readonly emit: Emit,
     options: SessionManagerOptions = {},
   ) {
+    this.providerProbes = new ProviderProbes(
+      options.providerProbes ??
+        new Map([
+          [this.claudeProvider.kind, (signal: AbortSignal) => this.claudeProvider.probe(signal)],
+          [this.codexProvider.kind, (signal: AbortSignal) => this.codexProvider.probe(signal)],
+        ]),
+    );
     const limits = runtimeLimits(options.dependencies);
     let startWatcher: (
       options: SessionFileWatcherOptions,
@@ -388,6 +411,7 @@ export class SessionManager {
         ? { streamingCoalesceMs: options.dependencies.streamingCoalesceMs }
         : {}),
     });
+    this.droidProvider = new DroidProvider(this.runtime);
     this.interactions = new SessionInteractions({
       getLiveSession: (id) => this.registry.getLive(id),
       updateSummary: (id, patch) => {
@@ -396,6 +420,7 @@ export class SessionManager {
       emit: (event) => {
         this.emit(event);
       },
+      setProviderSpecMode: (appSessionId, spec) => this.setProviderSpecMode(appSessionId, spec),
       emitError: (error) => {
         this.emitError(error);
       },
@@ -406,8 +431,7 @@ export class SessionManager {
       timeline: this.timeline,
       runtime: this.runtime,
       agentProcesses: this.agentProcesses,
-      makePermissionHandler: (ref) => this.interactions.makePermissionHandler(ref),
-      makeAskUserHandler: (ref) => this.interactions.makeAskUserHandler(ref),
+      interactionsFor: (ref) => this.interactions.interactionsFor(ref),
       emitError: (error) => {
         this.emitError(error);
       },
@@ -489,7 +513,7 @@ export class SessionManager {
       },
     });
     this.lifecycle = new SessionLifecycle({
-      runtime: this.runtime,
+      provider: (kind) => this.providerFor(kind),
       registry: this.registry,
       ensureConnected: () => {
         if (!this.ready) this.connect();
@@ -497,8 +521,7 @@ export class SessionManager {
       getFactoryDefaults: () => this.getFactoryDefaults(),
       maxContextTokensForModel: (modelId) => this.maxContextTokensForModel(modelId),
       startLocalMcpServers: (ref, cwd) => this.startLocalMcpServers(ref, cwd),
-      makePermissionHandler: (ref) => this.interactions.makePermissionHandler(ref),
-      makeAskUserHandler: (ref) => this.interactions.makeAskUserHandler(ref),
+      interactionsFor: (ref) => this.interactions.interactionsFor(ref),
       compaction: this.compaction,
       isShutdownStarted: () => this.shutdownPromise !== undefined,
       childSessions: this.childSessions,
@@ -512,6 +535,12 @@ export class SessionManager {
       },
       forgetEventFlow: (appSessionId) => {
         this.eventFlow.forgetSession(appSessionId);
+      },
+      openProviderTranscript: (summary) => {
+        this.openProviderTranscript(summary);
+      },
+      forgetProviderTranscript: (appSessionId) => {
+        this.timeline.releaseTranscript(appSessionId);
       },
       forgetMissionControl: (appSessionId) => {
         this.missionControlPolicy.forget(appSessionId);
@@ -528,6 +557,9 @@ export class SessionManager {
       },
       emitStatus: (appSessionId, text) => {
         this.timeline.appendStatus(appSessionId, text);
+      },
+      recordPrompt: (appSessionId, text) => {
+        this.timeline.recordPrompt(appSessionId, text);
       },
       emitSessionList: async (closedProviderSessionId) => {
         await this.sessionFiles.finalizeClosedProvider(closedProviderSessionId);
@@ -591,6 +623,8 @@ export class SessionManager {
     void this.adoption.adopt();
     this.emit({ type: 'connection', status: 'connected' });
     this.emit({ type: 'runtime.updated', status: this.runtime.status() });
+    void this.emitProviderStatus();
+    void this.refreshProviderStatus();
     const recovery = this.history.persistenceRecovery?.();
     if (recovery?.hadUnflushedWork) {
       this.emit({
@@ -670,9 +704,14 @@ export class SessionManager {
       case 'catalog.models': {
         const models = await this.getModels();
         this.emit({ type: 'catalog.updated', catalog: 'models', items: models });
+        await this.emitProviderStatus();
         void this.refreshModelCatalog(true);
         return;
       }
+      case 'provider.refresh':
+        await this.emitProviderStatus();
+        await this.refreshProviderStatus();
+        return;
       case 'catalog.tools':
         await this.emitToolCatalog(cmd.providerSessionId);
         return;
@@ -742,6 +781,7 @@ export class SessionManager {
         await this.childSessions.updateSettings(cmd);
         return;
       case 'session.updateSettings':
+        assertProviderUnchanged(cmd);
         await this.updateSessionSettings(cmd.appSessionId, cmd);
         if (cmd.autonomy !== undefined) {
           await this.setAutonomy(cmd.appSessionId, cmd.autonomy);
@@ -828,6 +868,7 @@ export class SessionManager {
         return;
       }
       case 'settings.agent.update':
+        assertProviderUnchanged(cmd);
         await this.updateAgentSettings(cmd);
         return;
       case 'settings.compaction.update':
@@ -947,7 +988,10 @@ export class SessionManager {
           await readDroidCliModelCatalog(this.runtime.status().droidPath),
         );
         this.cachedModels = models;
-        if (emit) this.emit({ type: 'catalog.updated', catalog: 'models', items: models });
+        if (emit) {
+          this.emit({ type: 'catalog.updated', catalog: 'models', items: models });
+          await this.emitProviderStatus();
+        }
         return models;
       } catch (err) {
         this.emitError({ message: `catalog.models failed: ${errMsg(err)}` });
@@ -957,6 +1001,43 @@ export class SessionManager {
       }
     })();
     return this.modelRefresh;
+  }
+
+  // Droid's readiness follows the resolved CLI path and the catalog this
+  // manager already caches; every other provider's comes from its last probe.
+  // The default model is the one a new chat would open with, resolved through
+  // the very defaults the lifecycle uses, so the two can never disagree.
+  private async emitProviderStatus(): Promise<void> {
+    // Publication is fired detached from connect, so a defaults failure (a
+    // malformed settings file) is reported here and the status still goes out
+    // without a Droid default rather than surfacing as an unhandled rejection.
+    let defaultModelId: string | undefined;
+    try {
+      const defaults = await this.getFactoryDefaults();
+      // A Factory default configured for Spec names its own model, and that is
+      // the mode a new chat opens in, so the same selection answers here.
+      defaultModelId = modelDefaultForMode(defaults.interactionMode ?? 'auto', defaults);
+    } catch (error) {
+      this.emitError({ message: `Could not read the Droid defaults: ${errMsg(error)}` });
+    }
+    if (this.shutdownPromise) return;
+    this.emit({
+      type: 'provider.status',
+      statuses: providerStatuses(
+        this.runtime.status().droidPath,
+        this.cachedModels ?? [],
+        defaultModelId,
+        (provider) => this.providerProbes.status(provider),
+      ),
+    });
+  }
+
+  // Learns what the CLI-backed providers can do right now (one process each, no
+  // turn) and republishes. Concurrent refreshes share the one round.
+  private async refreshProviderStatus(): Promise<void> {
+    await this.providerProbes.refresh();
+    if (this.shutdownPromise) return;
+    await this.emitProviderStatus();
   }
 
   private async emitEnvironment(): Promise<void> {
@@ -971,6 +1052,8 @@ export class SessionManager {
     });
     this.emit({ type: 'cli.install.done', phase: 'install', ok: exitCode === 0, exitCode });
     this.emit({ type: 'runtime.updated', status: this.runtime.status() });
+    // The resolved droid path may have changed, and Droid's readiness follows it.
+    await this.emitProviderStatus();
     await this.emitEnvironment();
   }
 
@@ -987,6 +1070,8 @@ export class SessionManager {
     });
     this.emit({ type: 'cli.install.done', phase: 'update', ok: exitCode === 0, exitCode });
     this.emit({ type: 'runtime.updated', status: this.runtime.status() });
+    // The resolved droid path may have changed, and Droid's readiness follows it.
+    await this.emitProviderStatus();
     await this.emitEnvironment();
   }
 
@@ -1106,7 +1191,7 @@ export class SessionManager {
       if (cmd.appSessionId) {
         const patch = this.summaryPatchForAgent(cmd.agent, cmd);
         if (session && appSessionId) this.registry.updateSummary(appSessionId, patch);
-        else {
+        else if (!this.persistStoredSettings(cmd.appSessionId, cmd.agent, patch)) {
           const historical = this.registry.resolveSummary(cmd.appSessionId);
           if (historical)
             this.emit({
@@ -1122,9 +1207,11 @@ export class SessionManager {
             !this.shutdownPromise &&
             this.registry.getLive(appSessionId) === session &&
             !hasSessionCloseStarted(session);
-          if (cmd.modelId !== undefined)
-            await this.compaction.rearmPrimary(this.primaryCompactionTarget(session));
-          if (stillCurrent()) await this.context.refresh(this.primaryContextTarget(session));
+          const compactionTarget = this.primaryCompactionTarget(session);
+          if (cmd.modelId !== undefined && compactionTarget)
+            await this.compaction.rearmPrimary(compactionTarget);
+          const contextTarget = stillCurrent() ? this.primaryContextTarget(session) : undefined;
+          if (contextTarget) await this.context.refresh(contextTarget);
         }
       }
     } catch (err) {
@@ -1133,6 +1220,29 @@ export class SessionManager {
         message: `Could not update agent settings: ${errMsg(err)}`,
       });
     }
+  }
+
+  // A model change on a chat that is not open. Droid's daemon owns that chat's
+  // settings and applies them at the next send; every other provider is read
+  // back from what DROIDEX stored, so the change has to reach both the stored
+  // summary the sidebar and a resume use and the transcript's settings file.
+  private persistStoredSettings(
+    appSessionId: string,
+    agent: ConfigurableSessionRole,
+    patch: Partial<SessionSummary>,
+  ): boolean {
+    if (agent !== 'primary' || this.sessionProvider(appSessionId) === DEFAULT_PROVIDER)
+      return false;
+    const current = this.registry.resolveSummary(appSessionId);
+    if (!current) return false;
+    // The file is written first: a summary published against settings that
+    // never reached disk would resume on a different model than it shows.
+    const next = { ...current, ...patch };
+    writeProviderSessionSettings(current.appSessionId, {
+      modelId: next.modelId ?? null,
+      ...(next.reasoningEffort ? { reasoningEffort: next.reasoningEffort } : {}),
+    });
+    return this.registry.updateStoredSummary(appSessionId, patch) !== undefined;
   }
 
   private rememberPendingAgentSettings(
@@ -1187,14 +1297,26 @@ export class SessionManager {
     agent: ConfigurableSessionRole,
     settings: AgentSettingPatch,
   ): Promise<void> {
+    if (agent === 'primary') {
+      await liveSession.session.setModel({
+        ...(settings.modelId ? { modelId: settings.modelId } : {}),
+        ...(settings.reasoningEffort !== undefined
+          ? { reasoningEffort: settings.reasoningEffort }
+          : {}),
+      });
+      return;
+    }
+    // Worker and validator are Droid's mission agents.
+    const droid = liveSession.droid;
     const next = createSessionSettingsForAgent(agent, settings);
-    if (Object.keys(next).length > 0) await liveSession.session.updateSettings(next);
+    if (droid && Object.keys(next).length > 0) await droid.updateSettings(next);
   }
 
   private compactionRetuneTargets(): CompactionRetuneTarget[] {
     const targets: CompactionRetuneTarget[] = [...this.childSessions.compactionRetuneTargets()];
     for (const liveSession of this.registry.liveSessionsSnapshot()) {
-      targets.push(this.primaryCompactionTarget(liveSession));
+      const target = this.primaryCompactionTarget(liveSession);
+      if (target) targets.push(target);
     }
     return targets;
   }
@@ -1234,10 +1356,11 @@ export class SessionManager {
       }
       if (!stillCurrent()) return false;
       this.registry.updateSummary(appSessionId, patch);
-      if (pending.primary?.modelId !== undefined) {
+      const compactionTarget = this.primaryCompactionTarget(liveSession);
+      if (pending.primary?.modelId !== undefined && compactionTarget) {
         // A pending primary model applied before send changes the
         // auto-compaction threshold; recompute it to match the new model.
-        await this.compaction.rearmPrimary(this.primaryCompactionTarget(liveSession));
+        await this.compaction.rearmPrimary(compactionTarget);
       }
       return stillCurrent();
     } catch (err) {
@@ -1250,54 +1373,40 @@ export class SessionManager {
     }
   }
 
+  // Droid keeps its own session file under ~/.factory/sessions; a session on any
+  // other provider is invisible in the sidebar and empty after a restart unless
+  // DROIDEX writes one for it.
+  private openProviderTranscript(summary: SessionSummary): void {
+    if (summary.provider === DEFAULT_PROVIDER) return;
+    const appSessionId = summary.appSessionId;
+    this.timeline.useTranscript(
+      appSessionId,
+      new ProviderTranscriptFile(
+        appSessionId,
+        () => this.registry.getLive(appSessionId)?.summary ?? summary,
+      ),
+    );
+  }
+
   private async runPrimaryTurn(liveSession: LiveSession, prompt: string): Promise<void> {
-    const appSessionId = liveSession.summary.appSessionId;
-    const contextTarget = this.primaryContextTarget(liveSession);
-    if (!this.isCurrentPrimarySession(liveSession)) return;
-    this.eventFlow.beginTurn(appSessionId, appSessionId);
-    this.context.beginTurn(appSessionId);
-    this.context.startPolling(contextTarget);
-    let turnError: unknown;
-    try {
-      await this.applyDesignToolPolicy(liveSession, isDesignPrompt(prompt));
-      if (!this.isCurrentPrimarySession(liveSession)) {
-        this.context.stopPolling(contextTarget);
-        return;
-      }
-      const stream = liveSession.session.stream(prompt, { includePartialMessages: true });
-      for await (const ev of stream) {
-        if (!this.isCurrentPrimarySession(liveSession)) break;
-        this.eventFlow.applyStreamEvent(appSessionId, appSessionId, 'primary', ev);
-      }
-    } catch (err) {
-      turnError = err;
-    }
-    try {
-      // Deliver any buffered streaming tail before the turn reads as settled.
-      this.timeline.settleStreaming(appSessionId, appSessionId);
-    } catch (err) {
-      turnError ??= err;
-    } finally {
-      this.context.stopPolling(contextTarget);
-    }
-    if (!this.isCurrentPrimarySession(liveSession)) return;
-    if (turnError) {
-      if (liveSession.interruptingForSteer) {
-        this.timeline.appendStatus(appSessionId, 'Current turn interrupted for steering.');
-      } else if (liveSession.interrupting && isUserCancellation(turnError)) {
-        // The user pressed Stop; interrupt() already set the paused phase, so
-        // settle quietly without surfacing an error.
-        this.registry.updateSummary(appSessionId, { phase: 'paused' });
-      } else {
-        if (!isReportedStreamingTranscriptError(turnError)) {
-          this.emitError({ appSessionId, message: errMsg(turnError) });
-        }
-        this.registry.updateSummary(appSessionId, { phase: 'failed' });
-      }
-    }
-    // Keep streaming=true while the context refresh is in flight so concurrent
-    // sends queue instead of racing a second lifecycle turn.
-    await this.context.refresh(contextTarget);
+    await runPrimaryTurn(
+      {
+        eventFlow: this.eventFlow,
+        context: this.context,
+        timeline: this.timeline,
+        contextTarget: (target) => this.primaryContextTarget(target),
+        isCurrent: (target) => this.isCurrentPrimarySession(target),
+        applyDesignToolPolicy: (target, design) => this.applyDesignToolPolicy(target, design),
+        updateSummary: (appSessionId, patch) => {
+          this.registry.updateSummary(appSessionId, patch);
+        },
+        emitError: (error) => {
+          this.emitError(error);
+        },
+      },
+      liveSession,
+      prompt,
+    );
   }
 
   private isCurrentPrimarySession(liveSession: LiveSession): boolean {
@@ -1308,29 +1417,31 @@ export class SessionManager {
     );
   }
 
-  private primaryContextTarget(liveSession: LiveSession): LiveOperationTarget {
+  // Context stats and compaction are Droid's own; a session on any other
+  // provider has no target and every caller skips that work.
+  private primaryContextTarget(liveSession: LiveSession): LiveOperationTarget | undefined {
+    const droid = liveSession.droid;
+    if (!droid) return undefined;
     const session = liveSession.session;
     return {
       appSessionId: liveSession.summary.appSessionId,
-      providerSessionId: session.sessionId,
+      providerSessionId: session.providerSessionId,
       sourceSessionId: liveSession.summary.appSessionId,
-      session,
+      session: droid,
       isCurrent: () => this.isCurrentPrimarySession(liveSession) && liveSession.session === session,
     };
   }
 
   private primaryAutomaticCompactionTarget(
     liveSession: LiveSession,
-  ): PrimaryAutomaticCompactionTarget {
-    return {
-      ...this.primaryContextTarget(liveSession),
-      kind: 'primary',
-      liveSession,
-    };
+  ): PrimaryAutomaticCompactionTarget | undefined {
+    const target = this.primaryContextTarget(liveSession);
+    return target ? { ...target, kind: 'primary', liveSession } : undefined;
   }
 
-  private primaryCompactionTarget(liveSession: LiveSession): PrimaryCompactionTarget {
+  private primaryCompactionTarget(liveSession: LiveSession): PrimaryCompactionTarget | undefined {
     const target = this.primaryAutomaticCompactionTarget(liveSession);
+    if (!target) return undefined;
     const configuredModelId = liveSession.summary.modelId;
     const defaultsMode = defaultsModeForSummary(liveSession.summary);
     return {
@@ -1352,6 +1463,10 @@ export class SessionManager {
     // When the in-memory flag is unset (cold start / page reload) we don't
     // know the session's current disabledToolIds, so always call updateSettings
     // to synchronize. Once the flag is set we skip redundant calls.
+    const droid = liveSession.droid;
+    // The design tool policy is a Droid setting; other providers run design
+    // turns with their own tool set.
+    if (!droid) return;
     if (
       liveSession.todoDisabledForDesign !== undefined &&
       liveSession.todoDisabledForDesign === design
@@ -1359,7 +1474,7 @@ export class SessionManager {
       return;
     if (!this.isCurrentPrimarySession(liveSession)) return;
     try {
-      await liveSession.session.updateSettings({ disabledToolIds: design ? ['TodoWrite'] : [] });
+      await droid.updateSettings({ disabledToolIds: design ? ['TodoWrite'] : [] });
       if (!this.isCurrentPrimarySession(liveSession)) return;
       liveSession.todoDisabledForDesign = design;
     } catch (err) {
@@ -1465,7 +1580,7 @@ export class SessionManager {
         if (closeFailure) {
           this.emitError({
             appSessionId: result.appSessionId,
-            providerSessionId: previousLiveSession?.session.sessionId,
+            providerSessionId: previousLiveSession?.session.providerSessionId,
             message: `Could not fully close the compacted session: ${errMsg(closeFailure.error)}`,
             recoverable: true,
           });
@@ -1531,7 +1646,7 @@ export class SessionManager {
     if (liveSession.summary.autonomy === nextAutonomy) return;
     const session = liveSession.session;
     try {
-      await session.updateSettings({ autonomyLevel: mapAutonomy(nextAutonomy) });
+      await session.setAutonomy(nextAutonomy);
     } catch (err) {
       this.emitError({
         code: 'session.autonomy_update_failed',
@@ -1586,19 +1701,26 @@ export class SessionManager {
       return;
     }
     const stableAppSessionId = liveSession.summary.appSessionId;
+    const session = liveSession.session;
+    // A provider without a planning mode of its own runs in Auto always, and
+    // the composer offers it no Spec toggle.
+    if (!session.setInteractionMode) return;
+    // Compaction or a close can replace the session, or its provider session,
+    // while the provider is answering; the mode belongs to the session that
+    // asked for it, not to whatever took its place.
+    const stillThisSession = () =>
+      this.isCurrentPrimarySession(liveSession) && liveSession.session === session;
     try {
-      if (mode === 'spec') {
-        await liveSession.session.enterSpecMode();
-        await this.alignSpecModeModel(liveSession);
-      } else {
-        await liveSession.session.updateSettings({
-          interactionMode: mode === 'agi' ? DroidInteractionMode.AGI : DroidInteractionMode.Auto,
-        });
-      }
+      await session.setInteractionMode(mode);
+      if (!stillThisSession()) return;
+      if (liveSession.droid && mode === 'spec')
+        await this.alignSpecModeModel(liveSession.droid, liveSession.summary);
+      if (!stillThisSession()) return;
       this.registry.updateSummary(stableAppSessionId, { interactionMode: mode });
       // The mode determines the default model when none is pinned, so the
       // auto-compaction threshold must be recomputed for the new mode.
-      await this.compaction.rearmPrimary(this.primaryCompactionTarget(liveSession));
+      const compactionTarget = this.primaryCompactionTarget(liveSession);
+      if (compactionTarget) await this.compaction.rearmPrimary(compactionTarget);
     } catch (err) {
       this.emitError({
         appSessionId: stableAppSessionId,
@@ -1607,14 +1729,22 @@ export class SessionManager {
     }
   }
 
+  // An approved Spec plan runs in Auto, and a plan whose approval could not be
+  // recorded goes back to planning. Only the provider switch lives here; the
+  // interaction layer owns the summary update that goes with it.
+  private async setProviderSpecMode(appSessionId: string, spec: boolean): Promise<void> {
+    const session = this.registry.getLive(appSessionId)?.session;
+    await session?.setInteractionMode?.(spec ? 'spec' : 'auto');
+  }
+
   // Spec-mode turns run on specModeModelId. Align it with the session's visible
   // model so toggling into spec never switches models silently.
-  private async alignSpecModeModel(liveSession: LiveSession): Promise<void> {
-    const { modelId, reasoningEffort } = liveSession.summary;
+  private async alignSpecModeModel(droid: FactorySession, summary: SessionSummary): Promise<void> {
+    const { modelId, reasoningEffort } = summary;
     if (!modelId) return;
     const specSettings: Record<string, unknown> = { specModeModelId: modelId };
     if (reasoningEffort) specSettings.specModeReasoningEffort = reasoningEffort;
-    await liveSession.session.updateSettings(specSettings);
+    await droid.updateSettings(specSettings);
   }
 
   // eslint-disable-next-line complexity -- Session-setting policy is preserved as-is in this extraction.
@@ -1631,36 +1761,40 @@ export class SessionManager {
       liveSession?.summary.appSessionId ?? historical?.appSessionId ?? requestedAppSessionId;
     const patch: Partial<SessionSummary> = {};
     const next: Record<string, unknown> = {};
+    const model: ProviderModelSettings = {};
     if (settings.modelId !== undefined) {
-      // A null model means "reset to Default". The daemon has no such notion,
-      // so resolve the actual default and push it; silently dropping the update
-      // would leave the daemon generating with the previously selected model.
-      // specModeModelId mirrors it because spec-mode turns run on that setting.
+      // A null model means "reset to Default". Droid's daemon has no such
+      // notion, so the Factory default is resolved and pushed — dropping the
+      // update would leave it generating with the previously selected model.
+      // Every other provider has a default of its own and is told to fall back
+      // to it instead of inheriting Droid's. specModeModelId mirrors the model
+      // because spec-mode turns run on that setting.
       const summaryForMode = liveSession?.summary ?? historical;
       const effectiveModelId =
-        settings.modelId ??
-        defaultModelForAgent(
-          'primary',
-          summaryForMode ? defaultsModeForSummary(summaryForMode) : 'auto',
-          await this.getFactoryDefaults(),
-        );
+        this.sessionProvider(appSessionId) === DEFAULT_PROVIDER
+          ? (settings.modelId ??
+            defaultModelForAgent(
+              'primary',
+              summaryForMode ? defaultsModeForSummary(summaryForMode) : 'auto',
+              await this.getFactoryDefaults(),
+            ))
+          : settings.modelId;
       if (effectiveModelId) {
         next.modelId = effectiveModelId;
         next.specModeModelId = effectiveModelId;
       }
+      model.modelId = effectiveModelId;
       patch.modelId = settings.modelId ?? undefined;
       patch.maxContextTokens = this.maxContextTokensForModel(settings.modelId ?? undefined);
     }
     if (settings.reasoningEffort) {
       next.reasoningEffort = settings.reasoningEffort;
       next.specModeReasoningEffort = settings.reasoningEffort;
+      model.reasoningEffort = settings.reasoningEffort;
       patch.reasoningEffort = settings.reasoningEffort;
     }
-    if (Object.keys(next).length === 0) return;
-    const session = await this.withSession(appSessionId, async (activeSession) => {
-      await activeSession.updateSettings(next);
-      return activeSession;
-    });
+    if (Object.keys(patch).length === 0) return;
+    await this.pushModelSettings(appSessionId, liveSession, next, model);
     const stillCurrent = () =>
       liveSession !== undefined &&
       !this.shutdownPromise &&
@@ -1668,13 +1802,15 @@ export class SessionManager {
       !hasSessionCloseStarted(liveSession);
     if (liveSession && !stillCurrent()) return;
     if (liveSession) this.registry.updateSummary(appSessionId, patch);
-    if (liveSession && settings.modelId !== undefined) {
+    const compactionTarget = liveSession ? this.primaryCompactionTarget(liveSession) : undefined;
+    if (settings.modelId !== undefined && compactionTarget) {
       // The model drives the auto-compaction threshold; recompute it so the
       // daemon doesn't keep compacting against the old model's limit.
-      await this.compaction.rearmPrimary(this.primaryCompactionTarget(liveSession));
+      await this.compaction.rearmPrimary(compactionTarget);
     }
-    if (liveSession && session && stillCurrent())
-      await this.context.refresh(this.primaryContextTarget(liveSession));
+    const contextTarget =
+      liveSession && stillCurrent() ? this.primaryContextTarget(liveSession) : undefined;
+    if (contextTarget) await this.context.refresh(contextTarget);
   }
 
   private async renameSession(requestedAppSessionId: string, title: string): Promise<void> {
@@ -1682,22 +1818,72 @@ export class SessionManager {
     // bridge is the trusted boundary, so clamp here too before forwarding to
     // the harness.
     const safeTitle = title.trim().slice(0, 200);
-    await this.withSession(requestedAppSessionId, (session) =>
-      session.renameSession({ title: safeTitle }),
-    );
+    // Droid keeps the title in its own session file and has to be told; every
+    // other provider's title is DROIDEX's alone, so only the daemon call is
+    // skipped and the chat is still renamed.
+    if (this.sessionProvider(requestedAppSessionId) === DEFAULT_PROVIDER)
+      await this.withSession(requestedAppSessionId, (session) =>
+        session.renameSession({ title: safeTitle }),
+      );
     const appSessionId =
       this.registry.getLive(requestedAppSessionId)?.summary.appSessionId ??
       this.registry.resolveSummary(requestedAppSessionId)?.appSessionId;
     if (appSessionId) this.registry.updateSummary(appSessionId, { title: safeTitle });
   }
 
+  // Every provider this build knows is routed here, so a new kind fails the
+  // build rather than a session.
+  private providerFor(kind: ProviderKind): Provider {
+    switch (kind) {
+      case 'droid':
+        return this.droidProvider;
+      case 'claude':
+        return this.claudeProvider;
+      case 'codex':
+        return this.codexProvider;
+    }
+  }
+
+  // The model and reasoning a session generates with reach whatever holds it:
+  // the live provider session, or — for a stored session — the file its provider
+  // is read back from, so a chat reopened after a restart keeps the change.
+  private async pushModelSettings(
+    appSessionId: string,
+    liveSession: LiveSession | undefined,
+    droidSettings: Record<string, unknown>,
+    model: ProviderModelSettings,
+  ): Promise<void> {
+    if (liveSession) {
+      await liveSession.session.setModel(model);
+      return;
+    }
+    if (this.sessionProvider(appSessionId) !== DEFAULT_PROVIDER) {
+      writeProviderSessionSettings(appSessionId, model);
+      return;
+    }
+    await this.withSession(appSessionId, (session) => session.updateSettings(droidSettings));
+  }
+
+  private sessionProvider(appSessionId: string): ProviderKind {
+    return (
+      this.registry.getLive(appSessionId)?.summary.provider ??
+      this.registry.resolveSummary(appSessionId)?.provider ??
+      DEFAULT_PROVIDER
+    );
+  }
+
+  // Runs a Droid-only operation against the session's daemon: the live one, or
+  // a loaded copy when the session is closed. A session on another provider has
+  // no daemon behind it, so the operation is refused with its reason.
   private async withSession<T>(
     appSessionId: string,
     fn: (session: FactorySession) => Promise<T>,
   ): Promise<T | undefined> {
     const liveSession = this.registry.getLive(appSessionId);
-    const live = liveSession?.session;
-    if (live) return fn(live);
+    if (liveSession) return fn(requireDroidSession(liveSession.session));
+    const provider = this.sessionProvider(appSessionId);
+    if (provider !== DEFAULT_PROVIDER)
+      throw new Error(`This is not supported for sessions on the ${provider} provider.`);
     const providerSessionId =
       this.registry.resolveSummary(appSessionId)?.providerSessionId ?? appSessionId;
     const session = await this.runtime.loadSession(providerSessionId);
@@ -1712,9 +1898,7 @@ export class SessionManager {
     providerSessionId?: string,
   ): Promise<{ session: FactorySession; close: () => Promise<void> }> {
     const first = this.registry.liveSessionsSnapshot().at(0);
-    const live = providerSessionId
-      ? this.registry.getLive(providerSessionId)?.session
-      : first?.session;
+    const live = providerSessionId ? this.registry.getLive(providerSessionId)?.droid : first?.droid;
     if (live) return { session: live, close: () => Promise.resolve() };
     const session = await this.runtime.createSession({
       cwd: tmpdir(),
@@ -1724,7 +1908,21 @@ export class SessionManager {
     return { session, close: () => session.close() };
   }
 
+  // Tool and skill discovery is the Droid CLI's. A chat named here that runs on
+  // another provider gets an empty catalog rather than a list of tools it
+  // cannot invoke — and never starts a Droid daemon to build one.
+  private isDroidCatalogTarget(providerSessionId?: string): boolean {
+    return (
+      providerSessionId === undefined ||
+      this.sessionProvider(providerSessionId) === DEFAULT_PROVIDER
+    );
+  }
+
   private async emitToolCatalog(providerSessionId?: string): Promise<void> {
+    if (!this.isDroidCatalogTarget(providerSessionId)) {
+      this.emit({ type: 'catalog.updated', catalog: 'tools', items: [] });
+      return;
+    }
     const { session, close } = await this.catalogSession(providerSessionId);
     try {
       const result = await session.listTools();
@@ -1735,6 +1933,15 @@ export class SessionManager {
   }
 
   private async emitSkillCatalog(providerSessionId?: string): Promise<void> {
+    if (!this.isDroidCatalogTarget(providerSessionId)) {
+      this.emit({
+        type: 'catalog.updated',
+        catalog: 'skills',
+        items: [],
+        providerSessionId: providerSessionId ?? null,
+      });
+      return;
+    }
     const { session, close } = await this.catalogSession(providerSessionId);
     try {
       const result = await session.listSkills();
@@ -1769,6 +1976,7 @@ export class SessionManager {
   private async performShutdown(): Promise<void> {
     this.historyQueries.forget();
     this.runtimeRetirement.stop();
+    this.providerProbes.cancel();
     let firstError: unknown;
     const run = async (action: () => void | Promise<void>): Promise<void> => {
       try {

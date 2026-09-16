@@ -40,9 +40,18 @@ export interface ChildSpawnObservation {
 }
 export interface ChildParentLease {
   summary: SessionSummary;
-  session: FactorySession;
+  // Child sessions are a Droid feature: the parent's SDK session is what they
+  // inherit settings from and spawn under. Absent on every other provider,
+  // where no child can be opened in the first place.
+  droid?: FactorySession;
   mcpConfigs: McpServerConfig[];
   closeMode?: 'discard-pending' | 'preserve-pending';
+}
+
+export function parentDroidSession(lease: ChildParentLease): FactorySession {
+  if (!lease.droid)
+    throw new Error(`Child sessions are not supported for the ${lease.summary.provider} provider.`);
+  return lease.droid;
 }
 export interface ChildRuntimeState {
   session: FactorySession;

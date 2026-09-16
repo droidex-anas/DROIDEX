@@ -256,6 +256,7 @@ export function AutomationModelPicker({
                 models={filteredModels}
                 defaultModel={undefined}
                 hasRealModels={models.length > 0}
+                provider="droid"
                 selectedModelId={modelId ?? undefined}
                 reasoning={selectedReasoning}
                 query={query}

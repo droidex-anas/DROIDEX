@@ -73,7 +73,7 @@ import {
   VISUALIZE_COMMAND,
 } from '../lib/composePrompt';
 import { hasCompleteAppBlock } from './appBlockRuntime';
-import { resolveReasoningEffortDisplay } from '../lib/reasoningEffort';
+import { reasoningEffortLabel, resolveReasoningEffortDisplay } from '../lib/reasoningEffort';
 import { compactionSettingsSnapshot } from '../lib/compactionSettings';
 import { composerTextAfterSeed, resetComposerAfterSubmit } from '../lib/composerReset';
 import { chipRemovedByBackspace } from '../lib/composerChips';
@@ -98,6 +98,14 @@ import type { ComposerHandle } from './composer/ComposerEditor';
 import { DraftSelections } from './composer/DraftSelections';
 import ComposerMenu, { type MenuItem, type SlashCommand } from './ComposerMenu';
 import ModelSelectorPopover from './ModelSelectorPopover';
+import ProviderPicker from '../features/providers/ProviderPicker';
+import { effectiveProvider } from '../features/providers/providerDraft';
+import {
+  providerDefaultModel,
+  providerModelCatalog,
+  providerModelSelection,
+  supportsSpecMode,
+} from '../features/providers/providerIdentity';
 import AutonomySelector from './AutonomySelector';
 import { AUTONOMY_LABELS, missionStartAllowed } from '../lib/autonomy';
 import {
@@ -120,6 +128,9 @@ import { toast } from '../lib/toast';
 const ComposerEditor = lazy(() => import('./composer/ComposerEditor'));
 
 const ACCENT = 'var(--droid-accent)';
+// Slash entries that drive Droid's own subsystems, so they leave the menu with
+// the controls they belong to when the chat runs on another provider.
+const DROID_ONLY_COMMANDS = new Set(['/mission', '/compact']);
 const accentMix = (pct: number) =>
   `color-mix(in srgb, var(--droid-accent) ${String(pct)}%, transparent)`;
 type SubmitMode = 'queue' | 'now';
@@ -227,6 +238,8 @@ export default function PromptInput({
       defaultAutonomy: current.defaultAutonomy,
       draftAutonomy: current.draftAutonomy,
       draftChat: current.draftChat,
+      draftProvider: current.draftProvider,
+      providerStatuses: current.providerStatuses,
       imagePasteQuality: current.imagePasteQuality,
       lastCreatedSessionRequest: current.lastCreatedSessionRequest,
       liveEnterBehavior: current.liveEnterBehavior,
@@ -255,6 +268,7 @@ export default function PromptInput({
   const [historyIndex, setHistoryIndex] = useState<number | null>(null);
   const draftBeforeHistory = useRef('');
   const [modelsOpen, setModelsOpen] = useState(false);
+  const [providerOpen, setProviderOpen] = useState(false);
   const [menuIndex, setMenuIndex] = useState(0);
   const [files, setFiles] = useState<string[]>([]);
   const [filesCwd, setFilesCwd] = useState<string | null>(null);
@@ -385,11 +399,19 @@ export default function PromptInput({
     }
     return out;
   }, sameStrings);
+  // A stored pick this build cannot run falls back to Droid, and the chip shows
+  // the fallback rather than a selection the picker would render as disabled.
+  const draftProvider = effectiveProvider(state.draftProvider, state.providerStatuses);
+  // Mission Control and compaction are Droid's own subsystems, and only some
+  // providers can plan. A chat hides the controls its provider cannot work.
+  const composerProvider = activeSession?.provider ?? draftProvider;
+  const droidComposer = composerProvider === 'droid';
+  const specComposer = supportsSpecMode(composerProvider);
   // For an existing chat session the mode is whatever the session actually is
   // (so a chat reopened in spec mode shows Spec); only fall back to the global
   // compose flag while drafting a brand-new chat.
   const isSpecMode =
-    activeSession?.sessionPurpose !== 'mission-control'
+    specComposer && activeSession?.sessionPurpose !== 'mission-control'
       ? activeSession?.interactionMode === 'spec' || (!activeSession && state.specMode)
       : false;
   const selectedChild = state.selectedChild;
@@ -562,7 +584,9 @@ export default function PromptInput({
         dispatch({ type: 'TOGGLE_SETTINGS' });
       },
     },
-  ];
+  ].filter((command) =>
+    command.cmd === '/spec' ? specComposer : droidComposer || !DROID_ONLY_COMMANDS.has(command.cmd),
+  );
 
   // Typing, and every edit that behaves like typing, leaves history recall.
   const editDraft = (text: string) => {
@@ -576,11 +600,18 @@ export default function PromptInput({
   const overlayOpen = [
     trigger,
     modelsOpen,
+    providerOpen,
     addMenuOpen,
     feedbackReport,
     draftEditing.menu,
     isLive && sendHintOpen,
   ].some(Boolean);
+
+  // The provider chip turns into a plain mark once a session exists, so a menu
+  // left open by the activation must not keep the overlay flag raised.
+  useEffect(() => {
+    if (state.activeAppSessionId) setProviderOpen(false);
+  }, [state.activeAppSessionId]);
 
   useEffect(() => {
     if (
@@ -750,9 +781,9 @@ export default function PromptInput({
     editor.select(pos, pos);
   }, [input, editorReady]);
 
-  const missionPreview = activeSession
-    ? activeSession.sessionPurpose === 'mission-control'
-    : state.missionControlMode;
+  const missionPreview =
+    droidComposer &&
+    (activeSession ? activeSession.sessionPurpose === 'mission-control' : state.missionControlMode);
 
   // Autonomy snapshot for a session this composer would create: the draft
   // override when the user picked one, otherwise the persisted app default.
@@ -768,18 +799,57 @@ export default function PromptInput({
   // A single chat carries its own model/reasoning; only fall back to the global
   // default while composing a brand-new chat that has no session yet.
   const chatScoped = !missionPreview && !!activeSession;
-  const primaryModelId = chatScoped ? activeSession.modelId : state.agentConfig.primary.modelId;
+  const composerModels = providerModelCatalog(
+    composerProvider,
+    state.models,
+    state.providerStatuses,
+  );
+  // The global default belongs to the Droid catalog, so it is not a selection
+  // for a chat on another provider: that chat starts on its provider's own
+  // default rather than a model its runtime has never heard of.
+  const primaryModelId = providerModelSelection(
+    composerProvider,
+    chatScoped ? activeSession.modelId : state.agentConfig.primary.modelId,
+    composerModels,
+  );
   const selectedModel = primaryModelId
-    ? state.models.find((m) => m.id === primaryModelId)
+    ? composerModels.find((m) => m.id === primaryModelId)
     : undefined;
+  // With no model of its own a chat runs on its harness's configured default, so
+  // the chip stands for that model rather than for the idea of one: it takes
+  // both its name and its vendor mark from the same entry.
+  const providerDefault = providerDefaultModel(
+    composerProvider,
+    composerModels,
+    state.providerStatuses,
+  );
+  const chipModel = primaryModelId ? selectedModel : providerDefault;
   const selectedModelLabel = primaryModelId
     ? (selectedModel?.displayName ?? primaryModelId)
-    : 'Default model';
-  const primaryReasoning = resolveReasoningEffortDisplay(
-    chatScoped ? activeSession.reasoningEffort : undefined,
+    : (providerDefault?.displayName ?? 'Default model');
+  // The chip's own model decides whether its harness offers reasoning at all,
+  // whichever provider it belongs to: one that publishes no efforts shows none
+  // on the chip and is created with none. That is the provider default when
+  // nothing is pinned, the same model the chip's icon and label already use.
+  const draftReasoning = resolveReasoningEffortDisplay(
+    undefined,
     state.agentConfig.primary.reasoning,
-    selectedModel,
+    chipModel,
   );
+  const primaryReasoning = chatScoped
+    ? resolveReasoningEffortDisplay(
+        activeSession.reasoningEffort,
+        state.agentConfig.primary.reasoning,
+        chipModel,
+      )
+    : draftReasoning;
+  // The one model selection a new chat is created with. Built from the
+  // validated id so no path can send a model the chat's provider never
+  // published.
+  const draftModelSettings = {
+    ...(primaryModelId ? { modelId: primaryModelId } : {}),
+    ...(draftReasoning ? { reasoningEffort: draftReasoning } : {}),
+  };
 
   const replaceTrigger = (replacement: string) => {
     if (!trigger) return;
@@ -936,11 +1006,13 @@ export default function PromptInput({
       return;
     }
 
-    const submitCommand = submitCommandFor(text, {
-      visualizeSelected,
-      skillCount: activeSkills.length,
-      fileCount: allFiles.length,
-    });
+    const submitCommand = droidComposer
+      ? submitCommandFor(text, {
+          visualizeSelected,
+          skillCount: activeSkills.length,
+          fileCount: allFiles.length,
+        })
+      : null;
     if (submitCommand === 'mission') {
       dispatch({ type: 'TOGGLE_MISSION_CONTROL' });
       clearAfterSubmit();
@@ -991,7 +1063,7 @@ export default function PromptInput({
       const selectedDir = state.draftChat?.cwd ?? (await pickDirectory());
       if (!selectedDir) return;
       if (updateInterruptedSubmit()) return;
-      const { primary, worker, validator } = state.agentConfig;
+      const { worker, validator } = state.agentConfig;
       const clientRef = newClientRef();
       const title = (displayText || skillNames[0] || 'Mission').slice(0, 48);
       startTurnStarting(clientRef);
@@ -1017,10 +1089,10 @@ export default function PromptInput({
           title,
           goal: composed,
           sessionPurpose: 'mission-control',
+          provider: draftProvider,
           interactionMode: 'agi',
           autonomy,
-          modelId: primary.modelId,
-          reasoningEffort: primary.reasoning,
+          ...draftModelSettings,
           compactionModel:
             state.compactionModel === 'current-model' ? undefined : state.compactionModel,
           // Only user-configured limits may override the daemon's model default.
@@ -1042,7 +1114,6 @@ export default function PromptInput({
     // Draft/default chat: first message creates the session. No workspace is required.
     if (!activeSession) {
       const selectedDir = state.draftChat?.cwd ?? '';
-      const { primary } = state.agentConfig;
       const clientRef = newClientRef();
       const title = (displayText || skillNames[0] || 'Chat').slice(0, 48);
       startTurnStarting(clientRef);
@@ -1066,10 +1137,10 @@ export default function PromptInput({
           title,
           goal: composed,
           sessionPurpose: 'chat',
+          provider: draftProvider,
           interactionMode: isSpecMode ? 'spec' : 'auto',
           autonomy: draftAutonomy,
-          modelId: primary.modelId,
-          reasoningEffort: primary.reasoning,
+          ...draftModelSettings,
           compactionModel:
             state.compactionModel === 'current-model' ? undefined : state.compactionModel,
           ...compactionSettingsSnapshot(compactionSettingsInput),
@@ -1682,6 +1753,16 @@ export default function PromptInput({
               }}
             />
 
+            <ProviderPicker
+              value={activeSession ? activeSession.provider : draftProvider}
+              locked={activeSession !== null}
+              open={providerOpen}
+              onOpenChange={setProviderOpen}
+              onSelect={(provider) => {
+                dispatch({ type: 'SET_DRAFT_PROVIDER', provider });
+              }}
+            />
+
             <div className="relative shrink-0">
               <button
                 onClick={() => {
@@ -1718,14 +1799,18 @@ export default function PromptInput({
                   </>
                 ) : (
                   <>
-                    <ModelIcon provider={providerOf(selectedModel, primaryModelId)} size={14} />
+                    <ModelIcon provider={providerOf(chipModel, primaryModelId)} size={14} />
                     <span className="truncate">{selectedModelLabel}</span>
                     {primaryReasoning && (
                       <span
-                        className="shrink-0 text-droid-text-muted capitalize"
-                        title={`Reasoning: ${primaryReasoning}`}
+                        className={`shrink-0 capitalize ${
+                          primaryReasoning === 'ultra'
+                            ? 'text-droid-ultra'
+                            : 'text-droid-text-muted'
+                        }`}
+                        title={`Reasoning: ${reasoningEffortLabel(primaryReasoning, composerProvider)}`}
                       >
-                        {primaryReasoning}
+                        {reasoningEffortLabel(primaryReasoning, composerProvider)}
                       </span>
                     )}
                   </>
@@ -1748,16 +1833,18 @@ export default function PromptInput({
               </AnimatePresence>
             </div>
 
-            <button
-              onClick={toggleSpec}
-              className={`flex items-center gap-1.5 px-2 py-1 rounded-lg text-[11px] transition-colors shrink-0 ${
-                isSpecMode
-                  ? 'text-droid-accent bg-droid-accent/10 hover:bg-droid-accent/15'
-                  : 'text-droid-text-secondary hover:text-droid-text hover:bg-droid-bg/40'
-              }`}
-            >
-              <span>{isSpecMode ? 'Spec' : 'Chat'}</span>
-            </button>
+            {specComposer && (
+              <button
+                onClick={toggleSpec}
+                className={`flex items-center gap-1.5 px-2 py-1 rounded-lg text-[11px] transition-colors shrink-0 ${
+                  isSpecMode
+                    ? 'text-droid-accent bg-droid-accent/10 hover:bg-droid-accent/15'
+                    : 'text-droid-text-secondary hover:text-droid-text hover:bg-droid-bg/40'
+                }`}
+              >
+                <span>{isSpecMode ? 'Spec' : 'Chat'}</span>
+              </button>
+            )}
 
             {/* Trailing cluster. It wraps to its own row as one unit on
                 narrow windows, and justify-end keeps the send button on the

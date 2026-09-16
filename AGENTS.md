@@ -350,6 +350,12 @@ Start from `.env.example` for local overrides.
 - `DROIDEX_HISTORY_DIR`: explicit history state directory for a bare sidecar
   running beside the main app
 - `DROID_PATH`: explicit Droid CLI path
+- `CLAUDE_PATH`: explicit Claude Code CLI path
+- `CLAUDE_CONFIG_DIR`: Claude Code's own config directory, read for the default
+  model a new Claude chat starts on
+- `CODEX_PATH`: explicit Codex CLI path
+- `CODEX_HOME`: Codex's own home, read for the default model a new Codex chat
+  starts on
 - `FACTORY_API_KEY`: optional Factory key for Droid child processes
 
 ## Secrets

@@ -1,9 +1,13 @@
-import type { AskUserHandler, PermissionHandler } from '@factory/droid-sdk';
-
 import { runCompaction } from './compaction.js';
 import type { FactoryRuntime, FactorySession } from './DroidRuntime.js';
 import type { ServerEvent } from './protocol.js';
 import type { AgentProcessMonitor } from './processes/AgentProcessMonitor.js';
+import { droidInteractionHandlers } from './providers/droid/droidInteractions.js';
+import {
+  DroidProviderSession,
+  requireDroidSession,
+} from './providers/droid/DroidProviderSession.js';
+import type { ProviderInteractions } from './providers/interactions.js';
 import type { LiveOperationTarget, SessionContext, UsageOffset } from './SessionContext.js';
 import type { LiveSession } from './SessionLifecycle.js';
 import type { SessionRegistry } from './SessionRegistry.js';
@@ -29,8 +33,7 @@ export interface SessionCompactionExecutionDependencies {
   timeline: Pick<SessionTimeline, 'appendCompaction' | 'appendStatus'>;
   runtime: Pick<FactoryRuntime, 'loadSession' | 'processIdOf' | 'isProcessAlive'>;
   agentProcesses: Pick<AgentProcessMonitor, 'track' | 'untrack' | 'adoptDescendantsAsRoots'>;
-  makePermissionHandler(ref: { id: string }): PermissionHandler;
-  makeAskUserHandler(ref: { id: string }): AskUserHandler;
+  interactionsFor(ref: { id: string }): ProviderInteractions;
   emitError(error: Omit<Extract<ServerEvent, { type: 'error' }>, 'type'>): void;
 }
 
@@ -71,7 +74,7 @@ export class SessionCompactionExecution {
     liveSession.compacting = true;
     try {
       const outcome = await runCompaction(
-        liveSession.session,
+        requireDroidSession(liveSession.session),
         {
           status: (text, compactType) => {
             if (!isCurrent()) return;
@@ -134,13 +137,12 @@ export class SessionCompactionExecution {
     const oldSession = liveSession.session;
     const target = this.effects.primaryTarget(liveSession);
     const replacement = await this.dependencies.runtime.loadSession(providerSessionId, {
-      permissionHandler: this.dependencies.makePermissionHandler(ref),
-      askUserHandler: this.dependencies.makeAskUserHandler(ref),
+      ...droidInteractionHandlers(ref, this.dependencies.interactionsFor(ref)),
       cwd: liveSession.summary.cwd,
       mcpServers: liveSession.mcpConfigs,
     });
     const replacementPid = this.dependencies.runtime.processIdOf(replacement);
-    const rawOldPid = this.dependencies.runtime.processIdOf(oldSession);
+    const rawOldPid = oldSession.process?.pid;
     const oldPid = rawOldPid !== replacementPid ? rawOldPid : undefined;
     let installed = false;
     try {
@@ -167,7 +169,12 @@ export class SessionCompactionExecution {
       await oldSession.close();
       if (!target.isCurrent()) return;
       if (oldPid !== undefined) this.dependencies.agentProcesses.untrack(oldPid, appSessionId);
-      liveSession.session = replacement;
+      liveSession.session = new DroidProviderSession(
+        appSessionId,
+        replacement,
+        this.dependencies.runtime,
+      );
+      liveSession.droid = replacement;
       installed = true;
       if (replacementPid !== undefined)
         this.dependencies.agentProcesses.track(appSessionId, replacementPid, () =>

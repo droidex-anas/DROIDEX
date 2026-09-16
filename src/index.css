@@ -79,6 +79,9 @@
     /* Links stay blue for the same reason skills do: the neutral accent is
        near-white in dark themes, so accent-coloured links read as body text. */
     --droid-link: #7cb2ff;
+    /* The top reasoning level reads by hue for the same reason; applyTheme
+       selects the accessible light-theme shade. */
+    --droid-ultra: #bba6ff;
     /* Fixed semantic status colors: success green, warning amber, and danger red
        stay vivid across every theme (including monochrome) so diffs, status, and
        callouts always read by hue. The neutral accent governs UI chrome only and
@@ -279,12 +282,82 @@
     animation: agent-pixel-shimmer 1.4s ease-in-out infinite;
   }
 
+  /* The top reasoning level: a slow band of brightness travelling along the
+     effort dots, so the level reads as its own state and not just a brighter
+     one. Per-dot animation-delay (set inline) moves the band along the row. */
+  @keyframes effort-ultra-shimmer {
+    0%,
+    62%,
+    100% {
+      opacity: 0.68;
+    }
+    16% {
+      opacity: 1;
+    }
+  }
+
+  .effort-dot-ultra {
+    animation: effort-ultra-shimmer 2.8s ease-in-out infinite;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .effort-dot-ultra {
+      animation: none;
+    }
+  }
+
+  /* A generated image before it arrives: a fine dot grid on the card, with a
+     diagonal band drifting behind the same grid used as a mask, so the dots
+     brighten in a slow sweep. Transform-only, so it stays compositor-only
+     beside a streaming transcript. */
+  @keyframes image-grid-sweep {
+    0% {
+      transform: translate3d(-18%, -18%, 0);
+    }
+    100% {
+      transform: translate3d(18%, 18%, 0);
+    }
+  }
+
+  .image-grid-dots {
+    background-image: radial-gradient(
+      circle at center,
+      color-mix(in srgb, var(--droid-text) 12%, transparent) 1px,
+      transparent 1.6px
+    );
+    background-size: 9px 9px;
+  }
+
+  .image-grid-mask {
+    --image-grid-dot: radial-gradient(circle at center, #000 1px, transparent 1.6px);
+    -webkit-mask-image: var(--image-grid-dot);
+    mask-image: var(--image-grid-dot);
+    -webkit-mask-size: 9px 9px;
+    mask-size: 9px 9px;
+  }
+
+  .image-grid-sweep {
+    background: linear-gradient(
+      135deg,
+      transparent 34%,
+      color-mix(in srgb, var(--droid-text) 55%, transparent) 50%,
+      transparent 66%
+    );
+    animation: image-grid-sweep 5.5s ease-in-out infinite alternate;
+  }
+
   /* Infinite status indicators must respect reduced-motion preferences. */
   @media (prefers-reduced-motion: reduce) {
     .caret-blink,
     .shimmer-text,
     .agent-avatar-pixel {
       animation: none;
+    }
+
+    /* The grid stays, lit across the middle of the card instead of drifting. */
+    .image-grid-sweep {
+      animation: none;
+      transform: translate3d(0, 0, 0);
     }
   }
 

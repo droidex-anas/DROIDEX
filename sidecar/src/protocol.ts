@@ -3,6 +3,7 @@
 
 import type { AutomationBridgeCommand, AutomationBridgeEvent } from './automations/types.js';
 import type { McpClientCommand, McpServerEvent } from './mcpProtocol.js';
+import type { ProviderKind } from './providers/providerKind.js';
 export type {
   McpServerInfo,
   McpServerInput,
@@ -41,6 +42,8 @@ export type ReasoningEffort =
   | 'high'
   | 'xhigh'
   | 'max'
+  // Codex's top level: maximum reasoning with automatic task delegation.
+  | 'ultra'
   | 'dynamic';
 
 export interface BridgeFeature {
@@ -111,6 +114,11 @@ export interface SessionSummary {
   providerSessionId?: string;
   compactedFromProviderSessionIds?: string[];
   missionId?: string;
+  // Agent runtime this session is bound to, fixed at creation.
+  provider: ProviderKind;
+  // Provider-owned handle for resuming this conversation, when the provider
+  // does not let us pin its session id (Codex threads). Absent for Droid.
+  resumeId?: string;
   sessionPurpose: SessionPurpose;
   interactionMode: SessionInteractionMode;
   role: 'primary' | 'user';
@@ -237,6 +245,23 @@ export interface ModelInfo {
   maxContextTokens?: number;
   supportedReasoningEfforts?: ReasoningEffort[];
   defaultReasoningEffort?: ReasoningEffort;
+}
+
+// What a provider can do for the user right now. Derived from what the sidecar
+// already knows about each runtime; see providers/providerStatus.ts.
+export type ProviderReadiness = 'ready' | 'missing' | 'unauthenticated' | 'unsupported' | 'error';
+
+export interface ProviderStatus {
+  provider: ProviderKind;
+  readiness: ProviderReadiness;
+  version?: string;
+  accountLabel?: string;
+  message?: string;
+  // The model a new chat on this provider starts on when it pins none: what the
+  // harness itself is configured with, so the app can name it instead of
+  // calling it "Default". Absent when the harness reports none.
+  defaultModelId?: string;
+  models: ModelInfo[];
 }
 
 export interface FactoryDefaultSettings {
@@ -569,6 +594,7 @@ export type ClientCommand =
   | { type: 'cli.install'; channel: InstallChannel }
   | { type: 'cli.update'; channel?: InstallChannel }
   | { type: 'catalog.models' }
+  | { type: 'provider.refresh' }
   | { type: 'catalog.tools'; providerSessionId?: string }
   | { type: 'catalog.skills'; providerSessionId?: string }
   | { type: 'settings.defaults' }
@@ -579,6 +605,8 @@ export type ClientCommand =
       title: string;
       goal: string;
       sessionPurpose: SessionPurpose;
+      // Omitted means the default provider.
+      provider?: ProviderKind;
       interactionMode?: SessionInteractionMode;
       modelId?: string;
       reasoningEffort?: ReasoningEffort;
@@ -834,6 +862,9 @@ export type ServerEvent =
   | { type: 'event.appended'; event: TranscriptEvent }
   | { type: 'approval.requested'; request: PermissionRequest }
   | { type: 'question.requested'; question: SessionQuestion }
+  // An approval or question the session will never get an answer for, because
+  // the turn that raised it ended first.
+  | { type: 'interaction.cancelled'; appSessionId: string; requestId: string }
   | {
       type: 'context.updated';
       appSessionId: string;
@@ -849,6 +880,7 @@ export type ServerEvent =
       items: unknown[];
       providerSessionId?: string | null;
     }
+  | { type: 'provider.status'; statuses: ProviderStatus[] }
   | { type: 'settings.defaults'; defaults: FactoryDefaultSettings }
   | {
       type: 'error';

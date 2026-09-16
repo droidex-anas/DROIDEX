@@ -3,6 +3,7 @@ import test from 'node:test';
 import { ContextStatsAccuracy, ReasoningEffort } from '@factory/droid-sdk';
 
 import { DroidRuntime } from './DroidRuntime.js';
+import { requireDroidSession } from './providers/droid/DroidProviderSession.js';
 import type { ServerEvent, SessionSummary } from './protocol.js';
 import {
   SessionContext,
@@ -12,6 +13,7 @@ import {
 import type { LiveSession } from './SessionLifecycle.js';
 import { SessionRegistry } from './SessionRegistry.js';
 import {
+  fakeProviderSession,
   FakeFactoryRuntime,
   FakeFactorySession,
   type RecordedCall,
@@ -64,7 +66,8 @@ function registerLive(
   const session = new FakeFactorySession(providerSessionId, {}, h.calls);
   const live: LiveSession = {
     summary: summary(appSessionId, providerSessionId),
-    session,
+    session: fakeProviderSession(appSessionId, session),
+    droid: session,
     streaming: false,
     autoCompacting: false,
     pendingSends: [],
@@ -113,16 +116,16 @@ function addChild(
 const childRuntimes = new WeakMap<LiveSession, Map<string, { session: FakeFactorySession }>>();
 
 function primaryTarget(h: Harness, live: LiveSession): LiveOperationTarget {
-  const session = live.session;
+  const providerSession = live.session;
   return {
     appSessionId: live.summary.appSessionId,
-    providerSessionId: session.sessionId,
+    providerSessionId: providerSession.providerSessionId,
     sourceSessionId: live.summary.appSessionId,
-    session,
+    session: requireDroidSession(providerSession),
     isCurrent: () =>
       !live.closeMode &&
       h.registry.getLive(live.summary.appSessionId) === live &&
-      live.session === session,
+      live.session === providerSession,
   };
 }
 
@@ -877,6 +880,7 @@ function summary(appSessionId: string, providerSessionId: string): SessionSummar
   return {
     appSessionId,
     providerSessionId,
+    provider: 'droid',
     sessionPurpose: 'chat',
     interactionMode: 'auto',
     role: 'user',

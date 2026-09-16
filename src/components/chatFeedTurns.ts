@@ -290,6 +290,10 @@ function collapseRun(run: FeedItem[], specContent?: string): FeedItem[] {
     } else if (it.type === 'tools' && it.events.some(isAutomationProposalCall)) {
       // Proposals are review surfaces, not hidden execution detail.
       survivors.push(it);
+    } else if (it.type === 'generated_image') {
+      // The image is what the turn produced, not a step along the way: folding
+      // it would hide the thing that was asked for.
+      survivors.push(it);
     } else if (isCompactionMarker(it)) {
       // Provisional: the marker moves into the fold when the run has real work.
       markers.push({ index: i, item: it });
