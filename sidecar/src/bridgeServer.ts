@@ -9,6 +9,7 @@ import { createServer, type IncomingMessage, type ServerResponse } from 'node:ht
 import { pipeline } from 'node:stream/promises';
 
 import { assertValidResponseFormat } from './appPrompt.js';
+import { assertValidMentions } from './providers/catalog.js';
 import { BridgeEventBatcher, type BridgeEventBatchMetadata } from './bridgeEventBatcher.js';
 import { BridgeReplayBuffer, type SerializedEventBatch } from './bridgeReplayBuffer.js';
 import { resolveBrowserAssetPath } from './browser/browserPaths.js';
@@ -248,6 +249,9 @@ export function startBridgeServer(options: {
     try {
       if (typeof parsed === 'object' && parsed !== null && 'responseFormat' in parsed) {
         assertValidResponseFormat(parsed.responseFormat);
+      }
+      if (typeof parsed === 'object' && parsed !== null && 'mentions' in parsed) {
+        assertValidMentions(parsed);
       }
       await options.onCommand(parsed as ClientCommand);
     } catch (err) {

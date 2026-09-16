@@ -3,7 +3,9 @@
 
 import type { AutomationBridgeCommand, AutomationBridgeEvent } from './automations/types.js';
 import type { McpClientCommand, McpServerEvent } from './mcpProtocol.js';
+import type { ProviderMention, SkillInfo } from './providers/catalog.js';
 import type { ProviderKind } from './providers/providerKind.js';
+export type { ProviderMention, SkillInfo } from './providers/catalog.js';
 export type {
   McpServerInfo,
   McpServerInput,
@@ -262,6 +264,7 @@ export interface ProviderStatus {
   // calling it "Default". Absent when the harness reports none.
   defaultModelId?: string;
   models: ModelInfo[];
+  items?: SkillInfo[];
 }
 
 export interface FactoryDefaultSettings {
@@ -621,8 +624,20 @@ export type ClientCommand =
       validatorReasoning?: ReasoningEffort;
       responseFormat?: ResponseFormat;
     }
-  | { type: 'session.send'; appSessionId: string; text: string; responseFormat?: ResponseFormat }
-  | { type: 'session.sendNow'; appSessionId: string; text: string; responseFormat?: ResponseFormat }
+  | {
+      type: 'session.send';
+      appSessionId: string;
+      text: string;
+      mentions?: ProviderMention[];
+      responseFormat?: ResponseFormat;
+    }
+  | {
+      type: 'session.sendNow';
+      appSessionId: string;
+      text: string;
+      mentions?: ProviderMention[];
+      responseFormat?: ResponseFormat;
+    }
   | { type: 'session.resume'; appSessionId: string }
   | { type: 'session.interrupt'; appSessionId: string }
   | {

@@ -8,7 +8,6 @@ import {
   type Options,
   type Query,
   type SDKMessage,
-  type SDKUserMessage,
 } from '@anthropic-ai/claude-agent-sdk';
 import { spawn, type ChildProcess } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
@@ -16,8 +15,11 @@ import { randomUUID } from 'node:crypto';
 import type { NormalizedEvent } from '../../normalize.js';
 import type { Autonomy, ReasoningEffort, SessionInteractionMode } from '../../protocol.js';
 import { errMsg } from '../../sessionHelpers.js';
+import type { SkillInfo } from '../catalog.js';
 import type { ProviderInteractions } from '../interactions.js';
 import type { ProviderModelSettings, ProviderSession } from '../session.js';
+import { ClaudeCatalog } from './claudeCatalog.js';
+import { ClaudeMessages, PromptQueue } from './claudeMessages.js';
 import { ClaudeEventMapper, rateLimitRefusal } from './claudeEvents.js';
 import { claudeCanUseTool, claudePermissionMode } from './claudePermissions.js';
 
@@ -50,6 +52,7 @@ export class ClaudeSession implements ProviderSession {
   private resolveClosed: (error?: Error) => void = () => undefined;
   private failure?: Error;
   private readonly prompts = new PromptQueue();
+  private readonly messages = new ClaudeMessages();
   private readonly mapper: ClaudeEventMapper;
   private readonly query: Query;
   // Settles when the CLI has finished booting. Turns stream against a CLI that
@@ -58,6 +61,7 @@ export class ClaudeSession implements ProviderSession {
   // `initialize` yet (node_modules/@anthropic-ai/claude-agent-sdk/sdk.mjs,
   // Query.request: no queue, no gate).
   private readonly initialized: Promise<void>;
+  private readonly catalog: ClaudeCatalog;
   // Resolves once the CLI process exists, which is all an open has to wait for.
   private readonly spawned: Promise<void>;
   private initializing = true;
@@ -131,6 +135,18 @@ export class ClaudeSession implements ProviderSession {
     // Startup can fail before a turn observes it. The turn or the lifecycle's
     // closure observer reports the failure without an unhandled rejection.
     void this.initialized.catch(() => undefined);
+    this.catalog = new ClaudeCatalog(this.query, this.initialized);
+    void this.messages
+      .consume(
+        this.query,
+        (message) => {
+          this.catalog.observe(message);
+        },
+        () => !!this.activeTurnId,
+      )
+      .catch((error: unknown) => {
+        if (!this.isClosed) this.finish(new Error(errMsg(error)));
+      });
     // A CLI that fails before it reaches spawn still settles initialization,
     // which is what releases the open instead of leaving it hanging.
     this.spawned = Promise.race([spawned, this.initialized]);
@@ -151,6 +167,14 @@ export class ClaudeSession implements ProviderSession {
     const pid = child?.pid;
     if (child === undefined || pid === undefined) return undefined;
     return { pid, isAlive: () => child.exitCode === null && !child.killed };
+  }
+
+  catalogItems(): Promise<SkillInfo[]> {
+    return this.catalog.catalogItems();
+  }
+
+  onCatalogUpdated(listener: (items: SkillInfo[]) => void): () => void {
+    return this.catalog.onUpdated(listener);
   }
 
   async *stream(prompt: string): AsyncGenerator<NormalizedEvent, void, undefined> {
@@ -187,6 +211,12 @@ export class ClaudeSession implements ProviderSession {
           }
         }
         for (const event of this.mapper.map(message)) yield event;
+        // A local slash command bypasses the model loop and publishes this one
+        // terminal frame instead of a result for the ordinary turn path.
+        if (message.type === 'system' && message.subtype === 'local_command_output') {
+          yield { done: true };
+          return;
+        }
         // A refused usage window is answered with no result at all, so the turn
         // has to end here instead of waiting for one that never comes.
         if (message.type === 'rate_limit_event') {
@@ -226,7 +256,7 @@ export class ClaudeSession implements ProviderSession {
   // The failure survives a delayed first prompt, even after the query closes.
   private async nextMessage(): Promise<IteratorResult<SDKMessage>> {
     this.requireOpen();
-    const next = this.query.next().catch((error: unknown) => {
+    const next = this.messages.next().catch((error: unknown) => {
       // Closing the iterator may race the initialization failure that caused it.
       this.requireOpen();
       throw error;
@@ -350,6 +380,8 @@ export class ClaudeSession implements ProviderSession {
     if (this.abort.signal.aborted) return;
     this.failure = error;
     this.abort.abort();
+    this.catalog.close();
+    this.messages.close();
     this.prompts.close();
     // The SDK closes stdin and escalates SIGTERM to SIGKILL itself.
     try {
@@ -461,41 +493,4 @@ function answersTurn(
   if (message.user_message_uuid !== undefined) return message.user_message_uuid === turnId;
   // Older CLIs stamp neither field; their result can only be this turn's.
   return true;
-}
-
-// The session's prompt channel. One iterator, consumed by whichever turn is
-// streaming, so the process stays warm between turns.
-class PromptQueue implements AsyncIterable<SDKUserMessage> {
-  private readonly queued: SDKUserMessage[] = [];
-  private waiting?: (result: IteratorResult<SDKUserMessage>) => void;
-  private closed = false;
-
-  push(message: SDKUserMessage): void {
-    const waiting = this.waiting;
-    if (waiting) {
-      this.waiting = undefined;
-      waiting({ value: message, done: false });
-      return;
-    }
-    this.queued.push(message);
-  }
-
-  close(): void {
-    this.closed = true;
-    this.waiting?.({ value: undefined, done: true });
-    this.waiting = undefined;
-  }
-
-  [Symbol.asyncIterator](): AsyncIterator<SDKUserMessage> {
-    return {
-      next: async (): Promise<IteratorResult<SDKUserMessage>> => {
-        const queued = this.queued.shift();
-        if (queued) return { value: queued, done: false };
-        if (this.closed) return { value: undefined, done: true };
-        return await new Promise<IteratorResult<SDKUserMessage>>((resolve) => {
-          this.waiting = resolve;
-        });
-      },
-    };
-  }
 }

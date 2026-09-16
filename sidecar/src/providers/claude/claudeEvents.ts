@@ -72,9 +72,10 @@ export class ClaudeEventMapper {
         return this.result(message);
       case 'rate_limit_event':
         return this.rateLimit(message.rate_limit_info);
+      case 'system':
+        return this.system(message);
       // Session bookkeeping, hook/task/plugin notices and the other auxiliary
       // frames carry nothing the DROIDEX transcript shows.
-      case 'system':
       case 'tool_progress':
       case 'tool_use_summary':
       case 'auth_status':
@@ -86,6 +87,11 @@ export class ClaudeEventMapper {
         message satisfies never;
         return [];
     }
+  }
+
+  private system(message: Extract<SDKMessage, { type: 'system' }>): NormalizedEvent[] {
+    if (message.subtype !== 'local_command_output' || !message.content) return [];
+    return [{ transcript: this.transcript('text', { text: message.content }) }];
   }
 
   private streamEvent(

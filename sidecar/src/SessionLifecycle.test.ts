@@ -296,6 +296,7 @@ function createHarness(ordinarySummaries: SessionSummary[] = []) {
     recordPrompt: (appSessionId, text) => {
       calls.push({ target: 'protocol', method: 'recordPrompt', args: [appSessionId, text] });
     },
+    catalogUpdated: () => undefined,
     emitSessionList: (closedProviderSessionId) => emitSessionList(closedProviderSessionId),
   });
 
@@ -766,7 +767,10 @@ test('send-now queues without interrupting compaction and reports interrupt reje
   live.compacting = false;
   live.autoCompacting = true;
   await compacting.lifecycle.sendNow('compacting', 'automatic');
-  assert.deepEqual(live.pendingSends, ['automatic', 'manual']);
+  assert.deepEqual(
+    live.pendingSends.map((prompt) => prompt.text),
+    ['automatic', 'manual'],
+  );
   assert.equal(interruptCount(compacting), 0);
   const rejected = createHarness();
   const rejectingProvider = new RejectingInterruptSession('rejected', {}, rejected.calls);
@@ -775,7 +779,10 @@ test('send-now queues without interrupting compaction and reports interrupt reje
   await rejected.lifecycle.create(createCommand());
   await rejectingProvider.waitForPrompts(1);
   await rejected.lifecycle.sendNow('rejected', 'keep queued');
-  assert.deepEqual(requireLive(rejected, 'rejected').pendingSends, ['keep queued']);
+  assert.deepEqual(
+    requireLive(rejected, 'rejected').pendingSends.map((prompt) => prompt.text),
+    ['keep queued'],
+  );
   assert.equal(requireLive(rejected, 'rejected').interruptingForSteer, false);
   assert.equal(
     rejected.events.some(
@@ -848,7 +855,7 @@ test('interrupt handles idle, streaming, manual compaction, and auto-compaction 
   live.streaming = false;
   live.interrupting = false;
   live.compacting = true;
-  live.pendingSends = ['drop'];
+  live.pendingSends = [{ text: 'drop' }];
   await harness.lifecycle.interrupt('stop');
   assert.equal(interruptCount(harness), 2);
   assert.deepEqual(live.pendingSends, []);
@@ -1245,7 +1252,7 @@ test('concurrent close waits for cleanup and discard overrides queue preservatio
   await provider.waitForPrompts(1);
   await new Promise<void>((resolve) => setImmediate(resolve));
   const live = requireLive(harness, 'concurrent-close');
-  live.pendingSends = ['preserve unless user closes'];
+  live.pendingSends = [{ text: 'preserve unless user closes' }];
 
   const preserving = harness.lifecycle.close('concurrent-close', 'preserve-pending');
   await new Promise<void>((resolve) => setImmediate(resolve));

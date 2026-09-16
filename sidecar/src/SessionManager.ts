@@ -10,6 +10,7 @@ import type {
   InstallChannel,
   HistorySearchReply,
   PersistenceRecovery,
+  ProviderMention,
   SessionSummary,
   ModelInfo,
   ReasoningEffort,
@@ -99,6 +100,7 @@ import { DroidMcpConfiguration, type McpConfiguration } from './DroidMcpConfigur
 import { McpSettings } from './McpSettings.js';
 import { loadFactoryMcpServers } from './FactoryMcpConfig.js';
 import { assertValidResponseFormat, formatAppPrompt } from './appPrompt.js';
+import { droidCatalogItems } from './providers/catalog.js';
 import { DroidProvider } from './providers/droid/DroidProvider.js';
 import { runPrimaryTurn } from './providers/primaryTurn.js';
 import {
@@ -528,7 +530,8 @@ export class SessionManager {
       agentProcesses: this.agentProcesses,
       applyPendingSettingsToSummary: (summary) => this.applyPendingSettingsToSummary(summary),
       applyPendingSessionSettings: (appSessionId) => this.applyPendingSessionSettings(appSessionId),
-      runPrimaryTurn: (liveSession, prompt) => this.runPrimaryTurn(liveSession, prompt),
+      runPrimaryTurn: (liveSession, prompt, mentions) =>
+        this.runPrimaryTurn(liveSession, prompt, mentions),
       context: this.context,
       forgetInteractions: (appSessionId) => {
         this.interactions.forgetSession(appSessionId);
@@ -560,6 +563,15 @@ export class SessionManager {
       },
       recordPrompt: (appSessionId, text) => {
         this.timeline.recordPrompt(appSessionId, text);
+      },
+      catalogUpdated: (liveSession, items) => {
+        if (this.registry.getLive(liveSession.summary.appSessionId) !== liveSession) return;
+        this.emit({
+          type: 'catalog.updated',
+          catalog: 'skills',
+          items,
+          providerSessionId: liveSession.session.providerSessionId,
+        });
       },
       emitSessionList: async (closedProviderSessionId) => {
         await this.sessionFiles.finalizeClosedProvider(closedProviderSessionId);
@@ -739,12 +751,14 @@ export class SessionManager {
         await this.lifecycle.send(
           cmd.appSessionId,
           formatResponsePrompt(cmd.text, cmd.responseFormat),
+          cmd.mentions,
         );
         return;
       case 'session.sendNow':
         await this.lifecycle.sendNow(
           cmd.appSessionId,
           formatResponsePrompt(cmd.text, cmd.responseFormat),
+          cmd.mentions,
         );
         return;
       case 'approval.respond':
@@ -1388,7 +1402,11 @@ export class SessionManager {
     );
   }
 
-  private async runPrimaryTurn(liveSession: LiveSession, prompt: string): Promise<void> {
+  private async runPrimaryTurn(
+    liveSession: LiveSession,
+    prompt: string,
+    mentions?: ProviderMention[],
+  ): Promise<void> {
     await runPrimaryTurn(
       {
         eventFlow: this.eventFlow,
@@ -1406,6 +1424,7 @@ export class SessionManager {
       },
       liveSession,
       prompt,
+      mentions,
     );
   }
 
@@ -1908,9 +1927,9 @@ export class SessionManager {
     return { session, close: () => session.close() };
   }
 
-  // Tool and skill discovery is the Droid CLI's. A chat named here that runs on
-  // another provider gets an empty catalog rather than a list of tools it
-  // cannot invoke — and never starts a Droid daemon to build one.
+  // Tool discovery remains Droid-only. Skill-style catalogs belong to the
+  // provider session named by the request, while an unbound draft keeps Droid's
+  // existing discovery path.
   private isDroidCatalogTarget(providerSessionId?: string): boolean {
     return (
       providerSessionId === undefined ||
@@ -1933,11 +1952,23 @@ export class SessionManager {
   }
 
   private async emitSkillCatalog(providerSessionId?: string): Promise<void> {
-    if (!this.isDroidCatalogTarget(providerSessionId)) {
+    const liveSession = providerSessionId ? this.registry.getLive(providerSessionId) : undefined;
+    const provider = providerSessionId ? this.sessionProvider(providerSessionId) : DEFAULT_PROVIDER;
+    if (provider !== DEFAULT_PROVIDER) {
+      const session = liveSession?.session;
+      const items = session?.catalogItems
+        ? await session.catalogItems()
+        : (this.providerProbes.status(provider)?.items ?? []);
+      if (
+        liveSession &&
+        (this.registry.getLive(liveSession.summary.appSessionId) !== liveSession ||
+          liveSession.session !== session)
+      )
+        return;
       this.emit({
         type: 'catalog.updated',
         catalog: 'skills',
-        items: [],
+        items,
         providerSessionId: providerSessionId ?? null,
       });
       return;
@@ -1948,7 +1979,7 @@ export class SessionManager {
       this.emit({
         type: 'catalog.updated',
         catalog: 'skills',
-        items: arrayItems(result, 'skills'),
+        items: droidCatalogItems(arrayItems(result, 'skills')),
         providerSessionId: providerSessionId ?? null,
       });
     } finally {

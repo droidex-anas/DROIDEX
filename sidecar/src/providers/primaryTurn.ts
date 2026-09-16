@@ -5,6 +5,7 @@ import type { ServerEvent, SessionSummary } from '../protocol.js';
 import type { LiveOperationTarget, SessionContext } from '../SessionContext.js';
 import type { SessionEventFlow } from '../SessionEventFlow.js';
 import { errMsg, isUserCancellation } from '../sessionHelpers.js';
+import type { ProviderMention } from './catalog.js';
 import type { LiveSession } from '../SessionLifecycle.js';
 import { isReportedStreamingTranscriptError, type SessionTimeline } from '../SessionTimeline.js';
 
@@ -24,6 +25,7 @@ export async function runPrimaryTurn(
   d: PrimaryTurnDependencies,
   liveSession: LiveSession,
   prompt: string,
+  mentions?: ProviderMention[],
 ): Promise<void> {
   const appSessionId = liveSession.summary.appSessionId;
   const context = turnContext(d, d.contextTarget(liveSession));
@@ -40,7 +42,7 @@ export async function runPrimaryTurn(
       context.stopPolling();
       return;
     }
-    for await (const normalized of liveSession.session.stream(prompt)) {
+    for await (const normalized of liveSession.session.stream(prompt, mentions)) {
       if (!d.isCurrent(liveSession)) break;
       d.eventFlow.apply(appSessionId, appSessionId, 'primary', normalized);
       if (normalized.transcript?.kind === 'error') reportedError = true;
