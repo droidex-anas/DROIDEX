@@ -101,7 +101,9 @@ test('developer tools stay available only in development builds', () => {
 test('installer wires native dependencies and logs failed system actions', async () => {
   const calls = [];
   let installedMenu;
+  let remoteInstalled = 0;
   installApplicationMenu({
+    installRemoteSettings() { remoteInstalled += 1; },
     appName: 'DROIDEX',
     platform: 'darwin',
     app: { isPackaged: true },
@@ -132,6 +134,7 @@ test('installer wires native dependencies and logs failed system actions', async
       },
     },
   });
+  assert.equal(remoteInstalled, 1);
 
   submenu(installedMenu, 'DROIDEX')
     .find(({ label }) => label === 'Check for Updates…')

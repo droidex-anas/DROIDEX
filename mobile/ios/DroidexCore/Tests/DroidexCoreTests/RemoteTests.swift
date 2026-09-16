@@ -5,10 +5,11 @@ import Testing
 private let computerID = UUID(uuidString: "55555555-5555-4555-8555-555555555555")!
 
 @MainActor
-private func fixture(id: UUID? = nil, revision: Int = 2, phase: String = "completed", text: String = "The workspace is ready.") throws -> RemoteSession {
+private func fixture(id: UUID? = nil, revision: Int = 2, phase: String = "completed", text: String = "The workspace is ready.", requestID: UUID? = nil) throws -> RemoteSession {
     let url = Bundle.module.url(forResource: "session", withExtension: "json", subdirectory: "Fixtures")!
     var object = try JSONSerialization.jsonObject(with: Data(contentsOf: url)) as! [String: Any]
     if let id { object["id"] = id.uuidString }
+    if let requestID { object["lastRequestId"] = requestID.uuidString }
     object["revision"] = revision
     object["phase"] = phase
     var messages = object["messages"] as! [[String: Any]]
@@ -25,7 +26,14 @@ private func fixture(id: UUID? = nil, revision: Int = 2, phase: String = "comple
 
 @MainActor
 private final class Desktop: DesktopService {
+    func changes() async throws -> ReviewSnapshot { throw RemoteFailure("Not configured for this test") }
+    func pullRequests() async throws -> [RemotePullRequest] { throw RemoteFailure("Not configured for this test") }
+    func pullRequest(_ number: Int) async throws -> PullRequestReview { throw RemoteFailure("Not configured for this test") }
+
     var sessions: [RemoteSession] = []
+    var models: [[String: Any]] = [["id": "test-model", "name": "Installed model", "efforts": ["low", "high"], "defaultEffort": "high"]]
+    var refreshes = 0
+    var historyRequests: [UUID] = []
     var sent: [RemoteTurn] = []
     var stops: [UUID] = []
     var approvals: [(UUID, UUID, Bool)] = []
@@ -34,12 +42,13 @@ private final class Desktop: DesktopService {
     var continuations: [AsyncThrowingStream<RemoteEvent, Error>.Continuation] = []
     var bootstrapError: Error?
     var sendError: Error?
+    var beforeSendReturns: ((RemoteTurn) async throws -> Void)?
 
     func bootstrap() async throws -> RemoteBootstrap {
         if let bootstrapError { throw bootstrapError }
         let data = try JSONSerialization.data(withJSONObject: [
-            "version": 1, "computerId": computerID.uuidString, "computerName": "Test computer", "workspace": "workspace",
-            "models": [["id": "test-model", "name": "Installed model", "efforts": ["low", "high"], "defaultEffort": "high"]],
+            "version": 3, "computerId": computerID.uuidString, "computerName": "Test computer", "workspace": "workspace",
+            "models": models,
             "sessions": try JSONSerialization.jsonObject(with: JSONEncoder().encode(sessions)),
         ])
         return try JSONDecoder().decode(RemoteBootstrap.self, from: data)
@@ -50,11 +59,17 @@ private final class Desktop: DesktopService {
             continuation.yield(.snapshot(sessions))
         }
     }
-    func send(_ turn: RemoteTurn) async throws { sent.append(turn); if let sendError { throw sendError } }
+    func send(_ turn: RemoteTurn) async throws { sent.append(turn); try await beforeSendReturns?(turn); if let sendError { throw sendError } }
     func stop(_ id: UUID) async throws { stops.append(id) }
     func approve(_ approvalID: UUID, in sessionID: UUID, allow: Bool) async throws { approvals.append((approvalID, sessionID, allow)) }
     func answer(_ questionID: UUID, in sessionID: UUID, answers: [String]) async throws { self.answers.append((questionID, sessionID, answers)) }
     func remove(_ id: UUID) async throws { removed.append(id) }
+    func refresh() async throws { refreshes += 1 }
+    func loadHistory(_ id: UUID) async throws { historyRequests.append(id) }
+    func files(path: String, cursor: String?) async throws -> RemoteFilePage {
+        try JSONDecoder().decode(RemoteFilePage.self, from: Data(#"{"path":"","entries":[]}"#.utf8))
+    }
+    func file(path: String) async throws -> RemoteFileContent { throw RemoteFailure("No fixture for this file") }
     func emit(_ event: RemoteEvent) { continuations.last?.yield(event) }
 }
 
@@ -230,5 +245,147 @@ struct RemoteTests {
         for value in ["http://192.168.1.2:44111", "https://example.com:443", "https://8.8.8.8:443", "https://user@192.168.1.2:443", "https://10.0.bad.0.1:443", "https://192.168.1.2:443/path"] {
             #expect(throws: (any Error).self) { try PairingCode.parse(code(value)) }
         }
+    }
+}
+
+
+@Suite @MainActor
+struct RemoteRefinementTests {
+    @Test func catalogDoesNotInventEffortAndChoosesReportedDefault() async throws {
+        let desktop = Desktop()
+        desktop.models = [
+            ["id": "no-effort", "name": "Plain model", "efforts": []],
+            ["id": "reasoner", "name": "Reasoner", "efforts": ["medium", "xhigh"], "defaultEffort": "xhigh", "isDefault": true],
+        ]
+        let store = SessionStore(desktop: desktop)
+        await store.load(); await drain()
+        #expect(store.defaultConfiguration.remoteModelID == "reasoner")
+        #expect(store.defaultConfiguration.remoteEffort == "xhigh")
+        var plain = store.defaultConfiguration
+        plain.remoteModelID = "no-effort"
+        plain.remoteEffort = nil
+        #expect(store.models.first { $0.id == "no-effort" }?.efforts.isEmpty == true)
+        let id = try #require(store.createSession(configuration: plain))
+        await store.send("Inspect only", to: id)?.value
+        #expect(desktop.sent.last?.effort == nil)
+        await store.suspend()
+    }
+
+    @Test func idleDesktopConfigurationUpdatesUnlessUserHasAnUnsentChoice() async throws {
+        let desktop = Desktop()
+        let original = try fixture()
+        desktop.sessions = [original]
+        let store = SessionStore(desktop: desktop)
+        await store.load(); await drain()
+        var object = try JSONSerialization.jsonObject(with: JSONEncoder().encode(original)) as! [String: Any]
+        object["effort"] = "low"
+        object["revision"] = 3
+        let updated = try JSONDecoder().decode(RemoteSession.self, from: JSONSerialization.data(withJSONObject: object))
+        desktop.emit(.session(updated)); await drain()
+        #expect(store.session(original.id)?.configuration.remoteEffort == "low")
+        var draft = try #require(store.session(original.id)?.configuration)
+        draft.remoteEffort = "high"
+        store.configure(original.id, with: draft)
+        object["revision"] = 4
+        desktop.emit(.session(try JSONDecoder().decode(RemoteSession.self, from: JSONSerialization.data(withJSONObject: object))))
+        await drain()
+        #expect(store.session(original.id)?.configuration.remoteEffort == "high")
+        await store.suspend()
+    }
+
+    @Test func waitingStateBlocksSendingAndSyncProgressRemainsTruthful() async throws {
+        let desktop = Desktop()
+        let waiting = try fixture(phase: "waiting")
+        desktop.sessions = [waiting]
+        let store = SessionStore(desktop: desktop)
+        await store.load(); await drain()
+        #expect(store.session(waiting.id)?.phase == .waiting)
+        #expect(store.send("Should not send", to: waiting.id) == nil)
+        desktop.emit(.sync(.init(state: "error", message: "Recent sessions could not load")))
+        await drain()
+        #expect(store.sync.state == "error")
+        await store.refreshRemote()
+        #expect(desktop.refreshes == 1)
+        #expect(desktop.sent.isEmpty)
+        await store.suspend()
+    }
+
+    @Test func recentHistoryLoadsOnlyOnRequest() async throws {
+        let desktop = Desktop()
+        var recent = try fixture()
+        recent.historyState = "unloaded"
+        desktop.sessions = [recent]
+        let store = SessionStore(desktop: desktop)
+        await store.load(); await drain()
+        #expect(desktop.historyRequests.isEmpty)
+        store.loadRemoteHistory(recent.id)
+        await drain()
+        #expect(desktop.historyRequests == [recent.id])
+        #expect(store.session(recent.id)?.historyState == "unloaded")
+        await store.suspend()
+    }
+}
+
+@Suite @MainActor
+struct CompositionTests {
+    @Test func rejectedCreationLeavesNoEmptySession() async throws {
+        let desktop = Desktop()
+        let store = SessionStore(desktop: desktop)
+        await store.load(); await drain()
+        #expect(throws: RemoteFailure.self) { try store.startSession(prompt: "  ", configuration: store.defaultConfiguration) }
+        var missing = store.defaultConfiguration
+        missing.remoteModelID = "missing"
+        #expect(throws: RemoteFailure.self) { try store.startSession(prompt: "Inspect", configuration: missing) }
+        #expect(store.sessions.isEmpty && desktop.sent.isEmpty)
+        await store.suspend()
+    }
+
+    @Test func explicitRejectionKeepsDraftAndDoesNotMisreportDisconnection() async throws {
+        let desktop = Desktop()
+        desktop.sendError = RemoteFailure("Model no longer available", statusCode: 400)
+        let store = SessionStore(desktop: desktop)
+        await store.load(); await drain()
+        let id = try store.startSession(prompt: "Inspect the project", configuration: store.defaultConfiguration)
+        await drain()
+        #expect(store.isConnected)
+        #expect(store.pendingDeliveries[id] == nil)
+        #expect(store.session(id)?.draft == "Inspect the project")
+        #expect(store.actionErrors[id] == "Model no longer available")
+        await store.suspend()
+    }
+
+    @Test func authoritativeReceiptWinsOverLostHttpResponse() async throws {
+        let desktop = Desktop()
+        let store = SessionStore(desktop: desktop)
+        await store.load(); await drain()
+        desktop.sendError = RemoteFailure("HTTP connection closed")
+        desktop.beforeSendReturns = { turn in
+            desktop.emit(.session(try fixture(id: turn.id, revision: 3, phase: "running", text: "Real output", requestID: turn.requestId)))
+            await drain()
+        }
+        let id = try store.startSession(prompt: "  Inspect  ", configuration: store.defaultConfiguration)
+        await drain()
+        #expect(store.isConnected)
+        #expect(store.pendingDeliveries[id] == nil)
+        #expect(store.session(id)?.draft == "")
+        #expect(store.session(id)?.messages.last?.text == "Real output")
+        #expect(desktop.sent.count == 1)
+        await store.suspend()
+    }
+
+    @Test func pendingSendBlocksDoubleSubmissionAndPlanChoiceReachesDesktop() async throws {
+        let desktop = Desktop()
+        let store = SessionStore(desktop: desktop)
+        await store.load(); await drain()
+        var configuration = store.defaultConfiguration
+        configuration.interactionMode = .spec
+        let id = try store.startSession(prompt: "Plan a change", configuration: configuration)
+        #expect(store.send("Duplicate", to: id) == nil)
+        await drain()
+        #expect(desktop.sent.count == 1)
+        #expect(desktop.sent[0].mode == .spec)
+        #expect(store.pendingDeliveries[id]?.state == .accepted)
+        #expect(store.session(id)?.phase == .waiting)
+        await store.suspend()
     }
 }

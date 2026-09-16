@@ -10,6 +10,10 @@ final class AppConnection {
     private var restored = false
 
     init() {
+        if ProcessInfo.processInfo.arguments.contains("--pairing-ui-testing") {
+            restored = true
+            return
+        }
         if ProcessInfo.processInfo.arguments.contains("--ui-testing") {
             store = SessionStore()
             restored = true

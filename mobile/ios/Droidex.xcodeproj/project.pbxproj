@@ -9,7 +9,6 @@
 			"isa" = "PBXGroup";
 			"children" = (
 				"87E3E78C7F81AE38A20E58D7",
-				"AE3F04D280C764A091682FA1",
 				"A021CDA4A32CF62F1D690B94",
 				"CC90CECCB6BEAAC532405CA8",
 			);
@@ -54,17 +53,6 @@
 			"name" = "Products";
 			"sourceTree" = "<group>";
 		};
-		"AE3F04D280C764A091682FA1" = {
-			"isa" = "PBXFileReference";
-			"lastKnownFileType" = "folder";
-			"name" = "RemoteArtwork";
-			"path" = "../../electron/mobile/RemoteArtwork";
-			"sourceTree" = "<group>";
-		};
-		"AE3F04D280C764A091682FA2" = {
-			"isa" = "PBXBuildFile";
-			"fileRef" = "AE3F04D280C764A091682FA1";
-		};
 		"B2BBA9616B93ACBA25816E14" = {
 			"isa" = "XCLocalSwiftPackageReference";
 			"relativePath" = "DroidexCore";
@@ -97,7 +85,6 @@
 			"isa" = "PBXResourcesBuildPhase";
 			"buildActionMask" = 2147483647;
 			"files" = (
-				"AE3F04D280C764A091682FA2",
 			);
 			"runOnlyForDeploymentPostprocessing" = 0;
 		};

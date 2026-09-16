@@ -4,116 +4,204 @@ import UIKit
 
 struct OnboardingView: View {
     @Environment(AppConnection.self) private var connection
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @AppStorage("hapticsEnabled") private var hapticsEnabled = true
-    @State private var showsCode = false
-    @State private var code = ""
-    @State private var waiting = false
-    @State private var error: String?
-    @State private var pairing: Task<Void, Never>?
-    @State private var feedback = 0
+    @State private var showPairing: Bool
+    @State private var showGuide = false
+    let allowsPreview: Bool
+
+    init(startAtPairing: Bool = false, allowsPreview: Bool = true) {
+        _showPairing = State(initialValue: startAtPairing)
+        self.allowsPreview = allowsPreview
+    }
 
     var body: some View {
         NavigationStack {
             ScrollView {
-                VStack(alignment: .leading, spacing: 28) {
-                    BrandMark().frame(width: 110, height: 16).padding(.top, 24)
-                    Spacer(minLength: 12)
-                    VStack(alignment: .leading, spacing: 16) {
-                        Text(waiting ? "One last step.\nApprove on your computer." : "Your workspace.\nWherever you sit.")
-                            .font(.system(.largeTitle, design: .default).weight(.semibold))
-                            .tracking(-1)
+                VStack(alignment: .leading, spacing: 24) {
+                    BrandMark().frame(width: 110, height: 16).padding(.top, 22)
+                    PairingArtwork(phase: .intro).frame(height: 190).allowsHitTesting(false)
+                    VStack(alignment: .leading, spacing: 14) {
+                        Text("Pick up where\nyou left off.")
+                            .font(.largeTitle.weight(.semibold)).tracking(-1.1)
                             .fixedSize(horizontal: false, vertical: true)
-                        Text(waiting
-                             ? "DROIDEX is waiting for you to confirm this phone on the desktop. No account password or API key is needed here."
-                             : "Connect your computer and use its agents from your phone. Real sessions, live progress, and changes you can review.")
+                        Text("The same projects. The same agents.\nNow from your phone.")
                             .font(.body).lineSpacing(4).foregroundStyle(DroidTheme.secondary)
                     }
-                    RemoteOnboardingArtwork(step: waiting ? 2 : nil)
-                    if showsCode && !waiting {
-                        VStack(alignment: .leading, spacing: 12) {
-                            HStack {
-                                Text("Pairing code").font(.subheadline.weight(.medium))
-                                Spacer()
-                                PasteButton(payloadType: String.self) { values in
-                                    if let value = values.first { code = value }
-                                }
-                                .buttonBorderShape(.capsule)
-                            }
-                            TextField("DX1.…", text: $code, axis: .vertical)
-                                .lineLimit(2...4)
-                                .textInputAutocapitalization(.never)
-                                .autocorrectionDisabled()
-                                .padding(16)
-                                .background(DroidTheme.surface, in: RoundedRectangle(cornerRadius: 16))
-                                .accessibilityIdentifier("pairing.code")
-                                .privacySensitive()
-                            Text("The single-use code pins this computer’s encrypted connection. Share it only with your own phone.")
-                                .font(.footnote).foregroundStyle(DroidTheme.secondary)
+                    Divider().overlay(DroidTheme.separator)
+                    HStack(alignment: .top, spacing: 14) {
+                        Text("01").font(.caption).monospacedDigit().foregroundStyle(DroidTheme.secondary).padding(.top, 4)
+                        VStack(alignment: .leading, spacing: 7) {
+                            Text("Start on your computer").font(.subheadline.weight(.semibold))
+                            Text("Open DROIDEX → Settings → Remote. Share a project, then scan its QR here.")
+                                .font(.subheadline).foregroundStyle(DroidTheme.secondary).fixedSize(horizontal: false, vertical: true)
                         }
                     }
-                    if let message = error ?? connection.error {
-                        Text(message).font(.callout).foregroundStyle(DroidTheme.danger)
-                            .accessibilityIdentifier("pairing.error")
-                    }
-                    if waiting {
-                        HStack(spacing: 12) {
-                            ProgressView()
-                            Text("Waiting for desktop approval").font(.subheadline)
-                        }
-                        Button("Cancel pairing") {
-                            pairing?.cancel()
-                            waiting = false
-                            error = "Pairing cancelled. Generate a new code on the computer before trying again."
-                        }.buttonStyle(.plain).frame(minHeight: 44)
-                    } else {
-                        Button(showsCode ? "Connect to computer" : "Add computer") {
-                            if showsCode { pair() }
-                            else { withAnimation(reduceMotion ? nil : .easeOut(duration: 0.2)) { showsCode = true } }
-                        }
-                        .font(.body.weight(.semibold))
-                        .frame(maxWidth: .infinity, minHeight: 52)
-                        .foregroundStyle(DroidTheme.background)
-                        .background(DroidTheme.text, in: Capsule())
-                        .buttonStyle(.plain)
-                        .disabled(showsCode && code.isEmpty)
-                        .accessibilityIdentifier("pairing.connect")
-                        Button("Explore the offline preview") { connection.preview() }
-                            .font(.subheadline).foregroundStyle(DroidTheme.secondary)
-                            .frame(maxWidth: .infinity, minHeight: 44)
-                    }
-                    Text("Your computer does the work and must remain awake. Closing the phone does not stop a connected run.")
+                    Button("See the pairing guide") { showGuide = true }.font(.subheadline).frame(minHeight: 44)
+                    Text("Same trusted Wi-Fi. Your computer stays awake and keeps your provider credentials.")
                         .font(.footnote).foregroundStyle(DroidTheme.secondary)
-                        .padding(.bottom, 24)
+                    if let error = connection.error { Text(error).font(.callout).foregroundStyle(DroidTheme.danger) }
                 }
-                .frame(maxWidth: 520)
-                .padding(.horizontal, 28)
-                .frame(maxWidth: .infinity)
+                .frame(maxWidth: 520).padding(.horizontal, 28).padding(.bottom, 24).frame(maxWidth: .infinity)
             }
             .background(DroidTheme.background)
-            .foregroundStyle(DroidTheme.text)
-            .scrollDismissesKeyboard(.interactively)
-            .sensoryFeedback(.success, trigger: feedback) { _, _ in hapticsEnabled }
-            .onDisappear { pairing?.cancel() }
+            .safeAreaInset(edge: .bottom) {
+                VStack(spacing: 6) {
+                    Button { showPairing = true } label: {
+                        Text("Add computer").font(.body.weight(.semibold))
+                            .frame(maxWidth: .infinity, minHeight: 54)
+                            .foregroundStyle(DroidTheme.background).background(DroidTheme.text, in: Capsule())
+                            .contentShape(Capsule())
+                    }
+                    .buttonStyle(.plain).accessibilityIdentifier("pairing.add-computer")
+                    if allowsPreview {
+                        Button("Explore offline preview") { connection.preview() }
+                            .font(.footnote).foregroundStyle(DroidTheme.secondary).frame(minHeight: 44)
+                    }
+                }.frame(maxWidth: 520).padding(.horizontal, 28).padding(.top, 12).padding(.bottom, 6)
+                    .frame(maxWidth: .infinity).background(DroidTheme.background)
+            }
+            .navigationDestination(isPresented: $showPairing) { PairComputerView() }
+            .sheet(isPresented: $showGuide) { PairingGuideView() }
         }
+        .tint(DroidTheme.text)
+        .foregroundStyle(DroidTheme.text)
+    }
+}
+
+private struct PairComputerView: View {
+    @Environment(AppConnection.self) private var connection
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @AppStorage("hapticsEnabled") private var hapticsEnabled = true
+    @State private var code = ""
+    @State private var scanner = false
+    @State private var scannedCode: String?
+    @State private var progress: String?
+    @State private var error: String?
+    @State private var task: Task<Void, Never>?
+    @State private var generation = 0
+    @State private var contacted = false
+    @FocusState private var codeFocused: Bool
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 24) {
+                PairingArtwork(phase: error != nil ? .error : progress == nil ? .scan : contacted ? .approval : .verifying)
+                    .frame(height: 210)
+                    .allowsHitTesting(false)
+                Text(progress == nil ? "Connect your computer" : contacted ? "Confirm on your computer" : "Connecting securely")
+                    .font(.title.weight(.semibold)).tracking(-0.6)
+                Text("Open Settings → Remote in DROIDEX on your computer. Scan the QR or copy its pairing code.")
+                    .font(.body).foregroundStyle(DroidTheme.secondary)
+                if let progress {
+                    HStack(alignment: .top, spacing: 14) {
+                        ProgressView().padding(.top, 3)
+                        VStack(alignment: .leading, spacing: 6) {
+                            Text(progress).font(.headline)
+                            Text(contacted ? "Choose Approve phone on the computer. Your sessions will appear next." : "Checking the computer and its certificate. No credentials are sent to a third party.")
+                                .font(.subheadline).foregroundStyle(DroidTheme.secondary)
+                        }
+                    }
+                    .padding(20).frame(maxWidth: .infinity, alignment: .leading)
+                    .background(DroidTheme.surface, in: RoundedRectangle(cornerRadius: 20))
+                    Button("Cancel pairing") { cancel() }
+                        .frame(minHeight: 44).buttonStyle(.plain)
+                } else {
+                    Button { codeFocused = false; scanner = true } label: {
+                        Text("Scan QR code")
+                            .font(.body.weight(.semibold))
+                            .frame(maxWidth: .infinity, minHeight: 54)
+                            .foregroundStyle(DroidTheme.background)
+                            .background(DroidTheme.text, in: Capsule())
+                            .contentShape(Capsule())
+                    }
+                    .buttonStyle(.plain).accessibilityIdentifier("pairing.scan")
+                    HStack {
+                        Text("Or use a pairing code").font(.subheadline.weight(.medium))
+                        Spacer()
+                        PasteButton(payloadType: String.self) { values in
+                            guard let value = values.first else { return }
+                            code = value
+                            pair()
+                        }
+                        .labelStyle(.titleOnly)
+                        .accessibilityIdentifier("pairing.paste")
+                    }
+                    TextField("Paste the code from your computer", text: $code, axis: .vertical)
+                        .lineLimit(2...4).textInputAutocapitalization(.never).autocorrectionDisabled()
+                        .font(.subheadline).focused($codeFocused).privacySensitive()
+                        .padding(16).background(DroidTheme.surface, in: RoundedRectangle(cornerRadius: 16))
+                        .accessibilityIdentifier("pairing.code")
+                    Button { pair() } label: {
+                        Text("Connect with code").font(.body.weight(.medium))
+                            .frame(maxWidth: .infinity, minHeight: 50)
+                            .background(DroidTheme.elevated, in: Capsule()).contentShape(Capsule())
+                    }
+                    .buttonStyle(.plain).disabled(code.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                    .accessibilityIdentifier("pairing.connect")
+                }
+                if let error {
+                    Text(error).font(.callout).foregroundStyle(DroidTheme.danger)
+                        .accessibilityIdentifier("pairing.error")
+                }
+                Text("The QR expires after three minutes. Choose New code on the desktop when needed. The same code works for scanning and pasting.")
+                    .font(.footnote).foregroundStyle(DroidTheme.secondary)
+            }
+            .padding(24).frame(maxWidth: 540).frame(maxWidth: .infinity)
+        }
+        .background(DroidTheme.background)
+        .navigationTitle("Add computer").navigationBarTitleDisplayMode(.inline)
+        .scrollDismissesKeyboard(.interactively)
+        .sheet(isPresented: $scanner, onDismiss: {
+            guard let scannedCode else { return }
+            self.scannedCode = nil
+            code = scannedCode
+            pair()
+        }) {
+            PairingScanner { result in
+                switch result {
+                case .success(let value): scannedCode = value
+                case .failure(let failure): error = failure.localizedDescription
+                }
+                scanner = false
+            }
+        }
+        .sensoryFeedback(.selection, trigger: contacted) { _, value in hapticsEnabled && value }
+        .onDisappear { task?.cancel() }
+    }
+
+    private func cancel() {
+        generation += 1
+        task?.cancel()
+        progress = nil
+        contacted = false
+        error = "Pairing cancelled. Choose New code on your computer to try again."
     }
 
     private func pair() {
+        guard progress == nil else { return }
         error = nil
         do {
             let parsed = try PairingCode.parse(code)
-            waiting = true
-            pairing = Task {
+            codeFocused = false
+            generation += 1
+            let current = generation
+            contacted = false
+            withAnimation(reduceMotion ? nil : .easeOut(duration: 0.2)) { progress = "Contacting your computer…" }
+            task = Task {
                 do {
-                    let credential = try await DesktopConnection.pair(code: parsed, name: UIDevice.current.name)
+                    let credential = try await DesktopConnection.pair(code: parsed, name: UIDevice.current.name) { name in
+                        guard current == generation, !Task.isCancelled else { return }
+                        contacted = true
+                        progress = "Waiting for approval on \(name)"
+                    }
                     try Task.checkCancellation()
+                    guard current == generation else { return }
+                    progress = "Connected. Opening your workspace…"
                     try connection.connect(credential)
-                    feedback += 1
                 } catch {
-                    guard !Task.isCancelled else { return }
-                    self.error = error.localizedDescription + (error is RemoteFailure ? "" : " Check local-network permission, the firewall, and that both devices are on the same Wi-Fi.")
+                    guard !Task.isCancelled, current == generation else { return }
+                    self.error = error.localizedDescription + (error is RemoteFailure ? "" : " Check Wi-Fi, local-network permission, and the computer’s firewall.")
+                    progress = nil
                 }
-                waiting = false
             }
         } catch { self.error = error.localizedDescription }
     }

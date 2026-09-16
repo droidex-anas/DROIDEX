@@ -28,12 +28,18 @@ private enum InboxFilter: String, CaseIterable, Identifiable {
 struct InboxView: View {
     @Environment(SessionStore.self) private var store
     @Environment(\.dynamicTypeSize) private var dynamicType
+    @Environment(\.horizontalSizeClass) private var sizeClass
     @AppStorage("hapticsEnabled") private var hapticsEnabled = true
     @Binding var selection: UUID?
     @State private var filter: InboxFilter = .all
     @State private var search = ""
     @State private var newSession = false
+    @State private var pendingSelection: UUID?
+    @State private var changes = false
+    @State private var pullRequests = false
     @State private var settings = false
+    @State private var files = false
+    @State private var activity = false
     @State private var deletingSession: AgentSession?
     @State private var confirmDelete = false
 
@@ -45,13 +51,33 @@ struct InboxView: View {
     }
 
     var body: some View {
-        List(selection: $selection) {
+        List(selection: sizeClass == .compact ? .constant(nil) : $selection) {
             Section {
                 VStack(alignment: .leading, spacing: 16) {
                     Text(store.isRemote ? (store.isConnected ? "CONNECTED · " + store.computerName : "COMPUTER DISCONNECTED") : "LOCAL PREVIEW")
                         .font(.caption2.weight(.semibold))
                         .tracking(1.8)
                         .foregroundStyle(DroidTheme.secondary)
+                    if store.isRemote {
+                        HStack {
+                            Text(store.workspaceName).font(.subheadline.weight(.medium)).lineLimit(1)
+                            Spacer()
+                        }
+                        ScrollView(.horizontal, showsIndicators: false) {
+                            HStack(spacing: 20) {
+                                Button("Files") { files = true }
+                                Button("Changes") { changes = true }
+                                Button("Pull requests") { pullRequests = true }
+                                Button("Activity") { activity = true }
+                            }.frame(minHeight: 44)
+                        }
+                        .font(.subheadline)
+                        if store.sync.state == "loading" {
+                            ProgressView(store.sync.message).font(.footnote)
+                        } else if store.sync.state == "error" {
+                            Text(store.sync.message).font(.footnote).foregroundStyle(DroidTheme.warning)
+                        }
+                    }
                     LazyVGrid(columns: columns, spacing: 10) {
                         ForEach(InboxFilter.allCases) { option in
                             filterTile(option)
@@ -100,6 +126,7 @@ struct InboxView: View {
             }
         }
         .listStyle(.plain)
+        .buttonStyle(.borderless)
         .scrollContentBackground(.hidden)
         .background(DroidTheme.background)
         .searchable(text: $search, prompt: "Search sessions")
@@ -124,13 +151,14 @@ struct InboxView: View {
             Button { newSession = true } label: {
                 HStack(spacing: 12) {
                     Image(systemName: "plus").font(.body.weight(.medium))
-                    Text("Plan, ask, build…").foregroundStyle(DroidTheme.secondary)
+                    Text("New session").foregroundStyle(DroidTheme.secondary)
                     Spacer(minLength: 0)
                     Image(systemName: "square.and.pencil")
                 }
                 .font(.body)
                 .padding(.horizontal, 18)
                 .frame(minHeight: 56)
+                .contentShape(Rectangle())
                 .modifier(GlassChrome(interactive: true))
             }
             .buttonStyle(.plain)
@@ -141,9 +169,14 @@ struct InboxView: View {
         }
         .sensoryFeedback(.selection, trigger: filter) { _, _ in hapticsEnabled }
         .sensoryFeedback(.selection, trigger: selection) { _, value in hapticsEnabled && value != nil }
-        .sheet(isPresented: $newSession) {
-            NewSessionView { selection = $0 }
+        .sheet(isPresented: $newSession, onDismiss: openPendingSession) {
+            NewSessionView { pendingSelection = $0 }
         }
+        .refreshable { if store.isRemote { await store.refreshRemote() } }
+        .sheet(isPresented: $files) { ProjectFilesView() }
+        .sheet(isPresented: $activity, onDismiss: openPendingSession) { RemoteActivityView { pendingSelection = $0 } }
+        .sheet(isPresented: $changes) { ReviewView() }
+        .sheet(isPresented: $pullRequests) { PullRequestsView() }
         .sheet(isPresented: $settings) {
             SettingsView { selection = nil }
         }
@@ -152,6 +185,12 @@ struct InboxView: View {
         } message: { session in
             Text(store.isRemote ? "Running work will stop. Edits are not undone, and desktop history is retained." : "“\(session.title)” will be removed from this device. Your repository is not affected.")
         }
+    }
+
+    private func openPendingSession() {
+        guard let id = pendingSelection else { return }
+        pendingSelection = nil
+        if store.session(id) != nil { selection = id }
     }
 
     private var columns: [GridItem] {

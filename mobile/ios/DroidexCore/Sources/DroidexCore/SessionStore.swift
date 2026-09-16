@@ -16,14 +16,19 @@ public final class SessionStore {
     public private(set) var workspaceName = "droid-maxxing"
     public private(set) var isConnected = false
     public private(set) var connectionError: String?
+    public private(set) var sync = RemoteSync(state: "loading", message: "Loading recent sessions")
     public var isRemote: Bool { desktop != nil }
-    public var canSend: Bool { !isRemote || isConnected }
+    public var canSend: Bool { loadState == .ready && (!isRemote || isConnected) }
+    public private(set) var pendingDeliveries: [UUID: PendingDelivery] = [:]
+    public private(set) var actionErrors: [UUID: String] = [:]
+    public private(set) var pendingActions: Set<UUID> = []
 
-    @ObservationIgnored private let desktop: (any DesktopService)?
+    @ObservationIgnored let desktop: (any DesktopService)?
     @ObservationIgnored private var subscription: Task<Void, Never>?
     @ObservationIgnored private var remoteGeneration = 0
     @ObservationIgnored private var remoteRevisions: [UUID: Int] = [:]
     @ObservationIgnored private var knownRemoteIDs: Set<UUID> = []
+    @ObservationIgnored private var configurationDrafts: Set<UUID> = []
     @ObservationIgnored private let client: (any AgentClient)?
     @ObservationIgnored private let archive: SessionArchive?
     @ObservationIgnored private var runs: [UUID: Task<Void, Never>] = [:]
@@ -66,7 +71,7 @@ public final class SessionStore {
 
     @discardableResult
     public func createSession(title: String = "New session", configuration: SessionConfiguration = .init()) -> UUID? {
-        guard loadState == .ready else { return nil }
+        guard canSend else { return nil }
         let trimmedTitle = title.trimmingCharacters(in: .whitespacesAndNewlines)
         let session = AgentSession(
             title: trimmedTitle.isEmpty ? "New session" : String(trimmedTitle.prefix(80)),
@@ -86,6 +91,7 @@ public final class SessionStore {
     public func configure(_ id: UUID, with configuration: SessionConfiguration) {
         guard let index = index(of: id), sessions[index].phase.canSend else { return }
         sessions[index].configuration = configuration
+        if isRemote { configurationDrafts.insert(id) }
         scheduleSave()
     }
 
@@ -99,8 +105,8 @@ public final class SessionStore {
     public func delete(_ id: UUID) {
         if let desktop {
             if knownRemoteIDs.contains(id) {
-                performRemote { try await desktop.remove(id) }
-            } else if session(id)?.phase.isRunning == true {
+                performRemote(in: id) { try await desktop.remove(id) }
+            } else if pendingDeliveries[id] != nil || session(id)?.phase.isRunning == true {
                 connectionError = "Wait for the computer to acknowledge this session, or reconnect before closing it."
             } else { sessions.removeAll { $0.id == id } }
             return
@@ -151,7 +157,7 @@ public final class SessionStore {
 
     public func stop(_ id: UUID) {
         if let desktop {
-            performRemote { try await desktop.stop(id) }
+            performRemote(in: id) { try await desktop.stop(id) }
             return
         }
         guard let index = index(of: id), sessions[index].phase.isRunning else { return }
@@ -168,7 +174,7 @@ public final class SessionStore {
 
     public func respond(to approvalID: UUID, in id: UUID, allow: Bool) {
         if let desktop {
-            performRemote { try await desktop.approve(approvalID, in: id, allow: allow) }
+            performRemote(in: id) { try await desktop.approve(approvalID, in: id, allow: allow) }
             return
         }
         guard let index = index(of: id), sessions[index].phase.approval?.id == approvalID else { return }
@@ -183,6 +189,7 @@ public final class SessionStore {
 
     public func suspend() async {
         if isRemote {
+            for id in pendingDeliveries.keys { pendingDeliveries[id]?.state = .uncertain }
             remoteGeneration += 1
             subscription?.cancel()
             subscription = nil
@@ -261,32 +268,9 @@ public final class SessionStore {
             }
         }
     }
-    public var defaultConfiguration: SessionConfiguration {
-        var result = SessionConfiguration()
-        if let model = models.first {
-            result.remoteModelID = model.id
-            result.remoteEffort = model.defaultEffort ?? model.efforts.first
-        }
-        return result
-    }
-
-    public func modelName(_ configuration: SessionConfiguration) -> String {
-        guard isRemote else { return configuration.model.rawValue }
-        return models.first { $0.id == configuration.remoteModelID }?.name ?? configuration.remoteModelID ?? "Choose model"
-    }
-
-    public func effortName(_ configuration: SessionConfiguration) -> String {
-        guard isRemote else { return configuration.reasoning.title }
-        return configuration.remoteEffort.map(Self.effortTitle) ?? "Provider default"
-    }
-
-    public static func effortTitle(_ value: String) -> String {
-        value == "xhigh" ? "Extra high" : value.capitalized
-    }
-
     public func answer(_ questionID: UUID, in sessionID: UUID, answers: [String]) {
         guard let desktop else { return }
-        performRemote { try await desktop.answer(questionID, in: sessionID, answers: answers) }
+        performRemote(in: sessionID) { try await desktop.answer(questionID, in: sessionID, answers: answers) }
     }
 
     public func reconnect() async {
@@ -301,10 +285,11 @@ public final class SessionStore {
         do {
             let bootstrap = try await desktop.bootstrap()
             guard remoteGeneration == generation, !Task.isCancelled else { return }
-            guard bootstrap.version == 1 else { throw RemoteFailure("Update both DROIDEX apps to the same remote protocol version.") }
+            guard bootstrap.version == 3 else { throw RemoteFailure("Update both DROIDEX apps to the same remote protocol version.") }
             computerName = bootstrap.computerName
             workspaceName = bootstrap.workspace
             models = bootstrap.models
+            sync = bootstrap.sync ?? RemoteSync(state: "loading", message: "Loading recent desktop sessions")
             replaceRemote(bootstrap.sessions)
             loadState = .ready
             subscription = Task { [weak self] in
@@ -337,10 +322,15 @@ public final class SessionStore {
             connectionError = nil
         case .session(let value): applyRemote(value)
         case .removed(let id):
+            configurationDrafts.remove(id)
+            pendingDeliveries.removeValue(forKey: id)
+            actionErrors.removeValue(forKey: id)
+            pendingActions.remove(id)
             sessions.removeAll { $0.id == id }
             remoteRevisions.removeValue(forKey: id)
             knownRemoteIDs.remove(id)
         case .catalog(let values): models = values
+        case .sync(let value): sync = value
         case .heartbeat: break
         }
     }
@@ -356,10 +346,17 @@ public final class SessionStore {
     private func applyRemote(_ value: RemoteSession, authoritative: Bool = false) {
         if let previous = remoteRevisions[value.id],
            previous > value.revision || (previous == value.revision && !authoritative) { return }
+        if let pending = pendingDeliveries[value.id], value.lastRequestId == pending.request.requestId {
+            pendingDeliveries.removeValue(forKey: value.id)
+            actionErrors.removeValue(forKey: value.id)
+            if let index = index(of: value.id), sessions[index].draft.trimmingCharacters(in: .whitespacesAndNewlines) == pending.request.prompt {
+                sessions[index].draft = ""
+            }
+        }
         let existing = session(value.id)
         var replacement = value.localSession(draft: existing?.draft ?? "")
         // Idle diff refreshes must not erase the user's choice for their next turn.
-        if let existing, existing.phase.canSend, replacement.phase.canSend {
+        if let existing, configurationDrafts.contains(value.id), existing.phase.canSend, replacement.phase.canSend {
             replacement.configuration = existing.configuration
         }
         if let index = index(of: value.id) { sessions[index] = replacement }
@@ -369,48 +366,84 @@ public final class SessionStore {
     }
 
     private func sendRemote(_ text: String, to id: UUID) -> Task<Void, Never>? {
-        let text = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard let desktop, isConnected, !text.isEmpty, text.count <= Self.promptLimit,
-              let index = index(of: id), sessions[index].phase.canSend else { return nil }
+        guard let desktop, let index = index(of: id), sessions[index].phase.canSend,
+              pendingDeliveries[id] == nil else { return nil }
+        let prompt = text.trimmingCharacters(in: .whitespacesAndNewlines)
         let configuration = sessions[index].configuration
-        guard let modelID = configuration.remoteModelID,
-              let model = models.first(where: { $0.id == modelID }),
-              model.efforts.isEmpty || model.efforts.contains(configuration.remoteEffort ?? "") else {
-            connectionError = "Choose a model and effort from your computer's current catalog."
+        if let error = submissionError(prompt, configuration: configuration) {
+            actionErrors[id] = error
             return nil
         }
-        let request = RemoteTurn(id: id, prompt: text, modelId: modelID,
+        guard let modelID = configuration.remoteModelID,
+              let model = models.first(where: { $0.id == modelID }) else { return nil }
+        let request = RemoteTurn(id: id, prompt: prompt, modelId: modelID,
                                  effort: model.efforts.isEmpty ? nil : configuration.remoteEffort,
                                  mode: configuration.interactionMode)
-        let pending = UUID()
-        sessions[index].phase = .running(pending)
+        configurationDrafts.remove(id)
+        actionErrors.removeValue(forKey: id)
+        pendingDeliveries[id] = PendingDelivery(request: request, state: .sending)
+        sessions[index].phase = .waiting
+        if sessions[index].title == "New session" { sessions[index].title = String(prompt.prefix(60)) }
         let generation = remoteGeneration
         return Task { [weak self] in
             do {
                 try await desktop.send(request)
-                guard let self, self.remoteGeneration == generation, let index = self.index(of: id) else { return }
-                if self.sessions[index].draft == text { self.sessions[index].draft = "" }
+                guard let self, self.remoteGeneration == generation,
+                      self.pendingDeliveries[id]?.request.requestId == request.requestId else { return }
+                self.pendingDeliveries[id]?.state = .accepted
             } catch {
-                guard let self, self.remoteGeneration == generation else { return }
-                if let index = self.index(of: id), self.sessions[index].phase == .running(pending) {
-                    self.sessions[index].phase = .failed("Delivery was not confirmed. Reconnect before retrying; the computer may already be working.")
+                guard let self, self.remoteGeneration == generation,
+                      self.pendingDeliveries[id]?.request.requestId == request.requestId else { return }
+                if let failure = error as? RemoteFailure, failure.wasRejected {
+                    self.pendingDeliveries.removeValue(forKey: id)
+                    self.actionErrors[id] = failure.localizedDescription
+                    if let index = self.index(of: id), self.sessions[index].phase == .waiting {
+                        self.sessions[index].phase = .ready
+                    }
+                    if failure.statusCode == 401 || failure.statusCode == 403 {
+                        self.isConnected = false
+                        self.connectionError = "Pair with this computer again to continue."
+                    }
+                } else {
+                    self.pendingDeliveries[id]?.state = .uncertain
+                    self.isConnected = false
+                    self.connectionError = "Delivery is unconfirmed. Reconnect and check the conversation before retrying. Your message was not automatically resent."
                 }
-                self.isConnected = false
-                self.connectionError = error.localizedDescription + " Reconnect before retrying. The message has not been automatically sent again."
             }
         }
     }
 
-    private func performRemote(_ action: @escaping @MainActor () async throws -> Void) {
-        guard isConnected else { connectionError = "Reconnect to your computer before taking this action."; return }
+    public func discardUnconfirmedDelivery(_ id: UUID) {
+        guard pendingDeliveries[id]?.state == .uncertain else { return }
+        pendingDeliveries.removeValue(forKey: id)
+        if let index = index(of: id), sessions[index].phase == .waiting { sessions[index].phase = .ready }
+    }
+
+    public func refreshRemote() async {
+        guard let desktop, isConnected else { await reconnect(); return }
+        let generation = remoteGeneration
+        do { try await desktop.refresh() }
+        catch { if remoteGeneration == generation { connectionError = error.localizedDescription } }
+    }
+
+    public func loadRemoteHistory(_ id: UUID) {
+        guard let desktop, isConnected else { return }
+        performRemote(in: id) { try await desktop.loadHistory(id) }
+    }
+
+    private func performRemote(in id: UUID, _ action: @escaping @MainActor () async throws -> Void) {
+        guard isConnected else { actionErrors[id] = "Reconnect to your computer before taking this action."; return }
+        guard !pendingActions.contains(id) else { return }
+        actionErrors.removeValue(forKey: id)
+        pendingActions.insert(id)
         let generation = remoteGeneration
         Task { [weak self] in
+            defer { self?.pendingActions.remove(id) }
             do { try await action() }
             catch {
                 guard let self, self.remoteGeneration == generation else { return }
-                self.connectionError = error.localizedDescription
+                self.actionErrors[id] = error.localizedDescription
             }
         }
     }
-
 }

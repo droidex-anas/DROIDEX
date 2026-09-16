@@ -63,10 +63,21 @@ final class DesktopConnection: DesktopService {
         session = Self.makeSession(credential.code)
     }
 
-    static func pair(code: PairingCode, name: String) async throws -> DesktopCredential {
+    static func pair(code: PairingCode, name: String, onContact: @MainActor (String) -> Void) async throws -> DesktopCredential {
         try code.validate()
         let session = makeSession(code)
         defer { session.invalidateAndCancel() }
+        var checkRequest = URLRequest(url: code.address.appendingPathComponent("pair/check"))
+        checkRequest.httpMethod = "POST"
+        checkRequest.timeoutInterval = 8
+        checkRequest.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        checkRequest.httpBody = try JSONEncoder().encode(["ticket": code.ticket])
+        let (checkData, checkResponse) = try await session.data(for: checkRequest)
+        try check(checkResponse, data: checkData)
+        struct Computer: Decodable { let computerName: String }
+        let computer = try JSONDecoder().decode(Computer.self, from: checkData)
+        try Task.checkCancellation()
+        onContact(computer.computerName)
         var request = URLRequest(url: code.address.appendingPathComponent("pair"))
         request.httpMethod = "POST"
         request.timeoutInterval = 105
@@ -138,6 +149,33 @@ final class DesktopConnection: DesktopService {
         _ = try await data(path: route(sessionID, "answer"), body: JSONEncoder().encode(Body(id: questionID.uuidString.lowercased(), answers: answers)))
     }
 
+    func refresh() async throws { _ = try await data(path: "refresh", body: Data("{}".utf8)) }
+    func loadHistory(_ id: UUID) async throws { _ = try await data(path: route(id, "history"), body: Data("{}".utf8)) }
+    func files(path: String, cursor: String?) async throws -> RemoteFilePage {
+        var query = [URLQueryItem(name: "path", value: path)]
+        if let cursor { query.append(URLQueryItem(name: "cursor", value: cursor)) }
+        return try JSONDecoder().decode(RemoteFilePage.self, from: await data(path: "files", query: query))
+    }
+    func file(path: String) async throws -> RemoteFileContent {
+        try JSONDecoder().decode(RemoteFileContent.self, from: await data(path: "file", query: [URLQueryItem(name: "path", value: path)]))
+    }
+
+    func changes() async throws -> ReviewSnapshot {
+        try await decode(ReviewSnapshot.self, path: "changes")
+    }
+    func pullRequests() async throws -> [RemotePullRequest] {
+        try await decode([RemotePullRequest].self, path: "pull-requests")
+    }
+    func pullRequest(_ number: Int) async throws -> PullRequestReview {
+        guard number > 0 else { throw RemoteFailure("Choose a valid pull request.") }
+        return try await decode(PullRequestReview.self, path: "pull-requests/\(number)")
+    }
+
+    private func decode<T: Decodable & Sendable>(_ type: T.Type, path: String) async throws -> T {
+        let bytes = try await data(path: path)
+        return try await Task.detached { try JSONDecoder().decode(type, from: bytes) }.value
+    }
+
     private func route(_ id: UUID, _ operation: String) -> String { "sessions/\(id.uuidString.lowercased())/\(operation)" }
 
     private func request(path: String, timeout: TimeInterval = 30) -> URLRequest {
@@ -148,8 +186,13 @@ final class DesktopConnection: DesktopService {
         return request
     }
 
-    private func data(path: String, body: Data? = nil) async throws -> Data {
+    private func data(path: String, body: Data? = nil, query: [URLQueryItem] = []) async throws -> Data {
         var request = request(path: path)
+        if !query.isEmpty, var components = URLComponents(url: credential.code.address.appendingPathComponent(path), resolvingAgainstBaseURL: false) {
+            components.queryItems = query
+            guard let url = components.url else { throw RemoteFailure("The project path is invalid.") }
+            request.url = url
+        }
         request.httpBody = body
         request.httpMethod = body == nil ? "GET" : "POST"
         let (data, response) = try await session.data(for: request)
@@ -163,7 +206,7 @@ final class DesktopConnection: DesktopService {
         guard (200...299).contains(http.statusCode) else {
             struct Failure: Decodable { let error: String }
             let detail = (try? JSONDecoder().decode(Failure.self, from: data))?.error
-            throw RemoteFailure(detail ?? "The computer refused the connection (\(http.statusCode)). Reconnect or pair again.")
+            throw RemoteFailure(detail ?? "The computer refused the request (\(http.statusCode)).", statusCode: http.statusCode)
         }
     }
 

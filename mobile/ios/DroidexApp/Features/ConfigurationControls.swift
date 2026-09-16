@@ -35,7 +35,7 @@ struct ModelControl: View {
                     Button(model.name) {
                         configuration.remoteModelID = model.id
                         if !model.efforts.contains(configuration.remoteEffort ?? "") {
-                            configuration.remoteEffort = model.defaultEffort ?? model.efforts.first
+                            configuration.remoteEffort = model.defaultEffort.flatMap { model.efforts.contains($0) ? $0 : nil } ?? model.efforts.first
                         }
                     }
                 }
@@ -63,6 +63,7 @@ struct EffortControl: View {
     }
 
     var body: some View {
+        if !available.isEmpty {
         Button { presented = true } label: { TextConfigLabel(store.effortName(configuration)) }
             .buttonStyle(.plain)
             .disabled(available.isEmpty)
@@ -73,6 +74,7 @@ struct EffortControl: View {
                 EffortPicker(configuration: $configuration, levels: available)
                     .presentationCompactAdaptation(.popover)
             }
+        }
     }
 }
 
@@ -81,13 +83,10 @@ struct TextConfigLabel: View {
     init(_ title: String) { self.title = title }
 
     var body: some View {
-        HStack(spacing: 5) {
-            Text(title).lineLimit(1)
-            Image(systemName: "chevron.down").font(.system(size: 8, weight: .semibold))
-        }
+        Text(title).lineLimit(2)
         .font(.caption.weight(.medium))
         .foregroundStyle(DroidTheme.text)
-        .padding(.horizontal, 4)
+        .padding(.horizontal, 7)
         .frame(minHeight: 44)
         .contentShape(Rectangle())
     }

@@ -21,6 +21,8 @@ class Runtime implements RemoteRuntime {
   rejectCreate = false;
   private finishSend?: () => void;
 
+  announcePrompt(_appSessionId: string, _requestId: string, _prompt: string): void {}
+
   async handle(command: ClientCommand): Promise<void> {
     this.commands.push(command);
     switch (command.type) {
@@ -103,7 +105,7 @@ test('repeated request IDs never duplicate work; changed payloads and unsupporte
   const { host, runtime, turn } = await setup();
   host.turn(turn); host.turn(turn); await tick();
   assert.equal(runtime.commands.filter((item) => item.type === 'session.create').length, 1);
-  assert.throws(() => host.turn({ ...turn, prompt: 'Different instruction' }), /already been used/);
+  assert.throws(() => host.turn({ ...turn, prompt: 'Different instruction' }), /already used/);
   assert.throws(() => host.turn({ ...turn, id: randomUUID(), modelId: 'invented' }), /current catalog/);
   assert.throws(() => host.turn({ ...turn, id: randomUUID(), effort: 'ultra' }), /supported/);
   assert.throws(() => host.turn({ ...turn, id: randomUUID(), modelId: 'fast-model' }), /does not expose/);
@@ -184,7 +186,7 @@ test('follow-up settings do not release the busy guard before sending; no duplic
   let release!: () => void;
   runtime.settingsGate = new Promise<void>((resolve) => { release = resolve; });
   host.turn({ ...turn, requestId: randomUUID(), modelId: 'fast-model', effort: undefined });
-  assert.throws(() => host.turn({ ...turn, requestId: randomUUID() }), /still working/);
+  assert.throws(() => host.turn({ ...turn, requestId: randomUUID() }), /is working/);
   release(); await tick();
   assert.equal(runtime.commands.filter((item) => item.type === 'session.send').length, 1);
   runtime.finish(); await tick();

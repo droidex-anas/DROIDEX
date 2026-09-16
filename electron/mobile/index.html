@@ -3,43 +3,43 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
-  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'none'; img-src 'none'; frame-src 'self'; form-action 'none'; base-uri 'none'">
-  <title>Connect your phone · DROIDEX</title>
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'none'; img-src data:; frame-src 'self'; form-action 'none'; base-uri 'none'">
+  <title>Remote · DROIDEX</title>
   <link rel="stylesheet" href="style.css">
   <script src="window.js" defer></script>
 </head>
 <body>
-  <header>DROIDEX <span>REMOTE / LOCAL TEST</span></header>
+  <header><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 4385 625" class="wordmark" role="img" aria-label="DROIDEX"><title>DROIDEX</title><path fill="currentColor" fill-rule="evenodd" d="M375 625 L375 500 L500 500 L500 125 L375 125 L375 0 L0 0 L0 625 Z M125 125 L370 125 L370 500 L125 500 Z M835 625 L835 375 L960 375 L960 500 L1085 500 L1085 625 L1210 625 L1210 500 L1085 500 L1085 250 L1210 250 L1210 125 L1085 125 L1085 0 L710 0 L710 625 Z M835 125 L1080 125 L1080 250 L835 250 Z M1795 625 L1795 500 L1920 500 L1920 125 L1795 125 L1795 0 L1545 0 L1545 125 L1420 125 L1420 500 L1545 500 L1545 625 Z M1545 130 L1795 130 L1795 495 L1545 495 Z M2255 625 L2255 0 L2130 0 L2130 625 Z M2840 625 L2840 500 L2965 500 L2965 125 L2840 125 L2840 0 L2465 0 L2465 625 Z M2590 125 L2835 125 L2835 500 L2590 500 Z M3550 625 L3550 500 L3300 500 L3300 375 L3550 375 L3550 250 L3300 250 L3300 125 L3550 125 L3550 0 L3175 0 L3175 625 Z M4385 625 L4385 500 L4260 500 L4260 375 L4135 375 L4135 250 L4010 250 L4010 125 L3885 125 L3885 0 L3760 0 L3760 125 L3885 125 L3885 250 L4010 250 L4010 375 L4135 375 L4135 500 L4260 500 L4260 625 Z M3885 625 L3885 500 L3760 500 L3760 625 Z M4010 500 L4010 375 L3885 375 L3885 500 Z M4260 250 L4260 125 L4385 125 L4385 0 L4260 0 L4260 125 L4135 125 L4135 250 Z"/></svg> <span>REMOTE</span></header>
   <main>
-    <h1>Your workspace.<br>Your phone.</h1>
-    <p class="intro">Keep DROIDEX open here. Start sessions, follow the work, and review changes from your iPhone.</p>
-    <div class="artwork-banner">
-      <iframe id="remote-artwork" src="RemoteArtwork/banner.html" title="Illustrated guide to pairing DROIDEX" loading="lazy"></iframe>
-      <button id="share-guide" class="guide-action">Save SVG pairing guide</button>
-    </div>
+    <h1>Your computer.<br>Your next move.</h1>
+    <p class="intro">Scan once. Continue the same sessions from your phone.</p>
+    <iframe id="artwork" src="artwork/droidex-artwork.html" title="DROIDEX remote illustration" aria-hidden="true" tabindex="-1" sandbox="allow-scripts"></iframe>
     <div id="error" role="alert" hidden></div>
     <section id="setup">
-      <label for="network">Local network</label>
-      <select id="network" aria-label="Computer network address"></select>
-      <label for="folder">Workspace</label>
-      <button id="folder" class="secondary">Choose a folder…</button>
-      <p class="fine">Use the same trusted Wi-Fi on both devices. Your provider accounts stay on this computer.</p>
-      <button id="enable">Enable mobile access</button>
+      <label for="folder">Project to share</label>
+      <button id="folder" class="secondary">Choose a project…</button>
+      <details><summary>Network options</summary><select id="network" aria-label="Computer network address"></select></details>
+      <p class="fine">Keep both devices on the same trusted Wi-Fi. Provider credentials stay on this computer.</p>
+      <button id="enable">Create pairing QR</button>
     </section>
     <section id="connection" hidden>
-      <div class="status"><span id="state">Ready to pair</span><span id="expiry"></span></div>
+      <div class="status" role="status" aria-live="polite"><span id="state">Ready to pair</span><span id="expiry"></span></div>
       <p id="workspace" class="path"></p>
-      <p id="instruction">On your iPhone, open DROIDEX, choose Add computer, and paste this pairing code.</p>
-      <button id="copy">Copy pairing code</button>
+      <div id="pairing">
+        <img id="qr" alt="Single-use DROIDEX pairing QR" width="260" height="260" hidden>
+        <p id="instruction">On your phone, choose Add computer → Scan QR code. Or copy the code and use Paste.</p>
+        <div class="actions"><button id="copy">Copy pairing code</button><button id="renew" class="secondary">New code</button></div>
+      </div>
       <div id="pending" hidden>
         <h2 id="request-name"></h2>
-        <p>Approve only if you just entered the code on this phone.</p>
+        <p>Approve only if you just scanned or pasted the code on this phone.</p>
         <div class="actions"><button id="deny" class="secondary">Decline</button><button id="approve">Approve phone</button></div>
       </div>
-      <p class="fine" id="detail"></p>
-      <button id="disable" class="secondary">Disable and revoke access</button>
+      <p class="fine" id="detail" role="status"></p>
+      <button id="disable" class="secondary">Stop sharing</button>
     </section>
-    <footer>Local testing only. No cloud relay. Disabling access closes sessions started by this connection; it does not undo edits.</footer>
+    <p><a class="guide-link" href="artwork/droidex-pairing-guide.svg" download="DROIDEX-pairing-guide.svg">Download SVG pairing guide</a></p>
+    <footer>Also available in Settings → Remote. Only the shared project and its recent sessions are exposed. Keep pairing codes out of public recordings.</footer>
   </main>
 </body>
 </html>

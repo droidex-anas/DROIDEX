@@ -64,6 +64,8 @@ public struct Approval: Codable, Equatable, Sendable, Identifiable {
     public let id: UUID
     public let title: String
     public let detail: String
+    public var kind: String? = nil
+    public var isPlan: Bool { kind == "spec" || kind == "mission_plan" }
 
     public init(id: UUID = UUID(), title: String, detail: String) {
         self.id = id
@@ -74,6 +76,7 @@ public struct Approval: Codable, Equatable, Sendable, Identifiable {
 
 public enum SessionPhase: Codable, Equatable, Sendable {
     case ready
+    case waiting
     case running(UUID)
     case needsApproval(Approval)
     case needsAnswer(RemoteQuestion)
@@ -96,7 +99,7 @@ public enum SessionPhase: Codable, Equatable, Sendable {
         return nil
     }
 
-    public var canSend: Bool { !isRunning && approval == nil && question == nil }
+    public var canSend: Bool { self != .waiting && !isRunning && approval == nil && question == nil }
 }
 
 public struct ChatMessage: Codable, Equatable, Sendable, Identifiable {
@@ -106,6 +109,7 @@ public struct ChatMessage: Codable, Equatable, Sendable, Identifiable {
     public let role: Role
     public var text: String
     public var steps: [String]
+    public var activity: [AgentActivity]? = nil
 
     public init(id: UUID = UUID(), role: Role, text: String, steps: [String] = []) {
         self.id = id
@@ -116,9 +120,11 @@ public struct ChatMessage: Codable, Equatable, Sendable, Identifiable {
 }
 
 public struct DiffLine: Codable, Equatable, Sendable {
-    public enum Kind: String, Codable, Sendable { case context, addition, deletion }
+    public enum Kind: String, Codable, Sendable { case context, addition, deletion, hunk }
     public let kind: Kind
     public let text: String
+    public var oldLine: Int? = nil
+    public var newLine: Int? = nil
 
     public init(_ kind: Kind, _ text: String) {
         self.kind = kind
@@ -127,6 +133,7 @@ public struct DiffLine: Codable, Equatable, Sendable {
 
     public var prefix: String {
         switch kind {
+        case .hunk: ""
         case .context: " "
         case .addition: "+"
         case .deletion: "−"
@@ -137,6 +144,8 @@ public struct DiffLine: Codable, Equatable, Sendable {
 public struct FileChange: Codable, Equatable, Sendable, Identifiable {
     public let path: String
     public let lines: [DiffLine]
+    public var status: String? = nil
+    public var note: String? = nil
     public var id: String { path }
     public var additions: Int { lines.filter { $0.kind == .addition }.count }
     public var deletions: Int { lines.filter { $0.kind == .deletion }.count }
@@ -158,6 +167,8 @@ public struct AgentSession: Codable, Equatable, Sendable, Identifiable {
     public var draft: String
     public var updatedAt: Date
     public var diffNote: String?
+    public var historyState: String? = nil
+    public var historyNote: String? = nil
     public var id: UUID { appSessionId }
     public var additions: Int { changes.reduce(0) { $0 + $1.additions } }
     public var deletions: Int { changes.reduce(0) { $0 + $1.deletions } }

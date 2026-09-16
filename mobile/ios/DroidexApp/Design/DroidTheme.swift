@@ -47,6 +47,7 @@ extension SessionPhase {
     var title: String {
         switch self {
         case .ready: "Ready to start"
+        case .waiting: "Waiting on computer"
         case .running: "Working"
         case .needsApproval: "Needs your approval"
         case .needsAnswer: "Needs your answer"
@@ -59,6 +60,7 @@ extension SessionPhase {
     var symbol: String {
         switch self {
         case .ready: "circle.dotted"
+        case .waiting: "pause.circle"
         case .running: "circle.dotted.circle"
         case .needsApproval, .needsAnswer: "hand.raised"
         case .completed: "checkmark.circle"
@@ -81,7 +83,10 @@ struct PhaseLabel: View {
     let phase: SessionPhase
 
     var body: some View {
-        Label(phase.title, systemImage: phase.symbol)
+        HStack(spacing: 7) {
+            if phase.isRunning { ActivityPulse() }
+            Text(phase.title)
+        }
             .font(.caption)
             .foregroundStyle(phase.color)
             .accessibilityIdentifier("session.phase")

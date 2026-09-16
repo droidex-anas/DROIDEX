@@ -7,75 +7,103 @@ struct NewSessionView: View {
     @FocusState private var focused: Bool
     @State private var prompt = ""
     @State private var configuration = SessionConfiguration()
+    @State private var initialized = false
+    @State private var submitted = false
+    @State private var error: String?
     let onCreate: (UUID) -> Void
 
-    private var trimmedPrompt: String { prompt.trimmingCharacters(in: .whitespacesAndNewlines) }
-    private var canStart: Bool {
-        store.canSend && !trimmedPrompt.isEmpty && trimmedPrompt.count <= SessionStore.promptLimit
-            && (!store.isRemote || configuration.remoteModelID != nil)
-    }
+    private var issue: String? { store.submissionError(prompt, configuration: configuration) }
 
     var body: some View {
         NavigationStack {
-            Form {
-                Section {
-                    Text(store.workspaceName).font(.subheadline).foregroundStyle(DroidTheme.secondary)
-                    TextField("Plan, ask, build…", text: $prompt, axis: .vertical)
-                        .font(.body).lineLimit(4...10).focused($focused)
-                        .accessibilityLabel("New session message").accessibilityIdentifier("new-session.prompt")
-                } footer: {
-                    if trimmedPrompt.count > SessionStore.promptLimit {
-                        Text("Keep your message under \(SessionStore.promptLimit.formatted()) characters.")
-                            .foregroundStyle(DroidTheme.danger)
+            ScrollView {
+                VStack(alignment: .leading, spacing: 28) {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text(store.workspaceName).font(.subheadline.weight(.medium)).foregroundStyle(DroidTheme.secondary)
+                        Text(configuration.interactionMode == .spec ? "Think it through." : "What are we building?")
+                            .font(.title2.weight(.semibold)).tracking(-0.6)
+                        Text(configuration.interactionMode == .spec ? "Start with a plan. Review it before approving the next step." : "Give your computer a task. Follow the work here.")
+                            .font(.subheadline).foregroundStyle(DroidTheme.secondary)
                     }
-                }
-                Section("Configuration") {
-                    LabeledContent("Harness") { HarnessControl(configuration: $configuration) }
-                    LabeledContent("Model") { ModelControl(configuration: $configuration) }
-                    LabeledContent("Reasoning") { EffortControl(configuration: $configuration) }
-                    Picker("Mode", selection: $configuration.interactionMode) {
-                        ForEach(InteractionMode.allCases, id: \.self) { Text($0.title).tag($0) }
-                    }
-                }
-                if store.isRemote {
-                    Section {
-                        Text(store.computerName).font(.subheadline)
-                        Text(store.isConnected ? "Connected on your private network" : "Computer disconnected")
-                            .foregroundStyle(DroidTheme.secondary)
-                        if store.models.isEmpty {
-                            Text("No models are available yet. Log in to Droid on the computer, then refresh the connection.")
-                            Button("Refresh models") { Task { await store.reconnect() } }
+                    VStack(alignment: .leading, spacing: 16) {
+                        TextField("Describe a task…", text: $prompt, axis: .vertical)
+                            .lineLimit(4...10).focused($focused).font(.body)
+                            .textInputAutocapitalization(.sentences)
+                            .accessibilityLabel("New session message").accessibilityIdentifier("new-session.prompt")
+                        Divider().overlay(DroidTheme.separator)
+                        ViewThatFits(in: .horizontal) {
+                            HStack(spacing: 16) { modelControls }.fixedSize()
+                            VStack(alignment: .leading, spacing: 4) { modelControls }
                         }
-                    } footer: {
-                        Text("Uses your computer’s provider account and quota. Approvals stay enabled. Any command or edit you approve runs on that computer.")
+                        HStack {
+                            HarnessControl(configuration: $configuration)
+                            Spacer()
+                            Picker("Mode", selection: $configuration.interactionMode) {
+                                ForEach(InteractionMode.allCases, id: \.self) { Text($0.title).tag($0) }
+                            }
+                            .pickerStyle(.segmented).frame(maxWidth: 170)
+                        }
                     }
-                } else {
-                    Section {
-                        Text("Offline preview")
-                    } footer: {
-                        Text("Scripted responses and sample diffs. Model and harness choices here are demonstrations, not live connections.")
+                    .padding(18).background(DroidTheme.surface, in: RoundedRectangle(cornerRadius: 20))
+                    if let message = error ?? (prompt.isEmpty ? nil : issue) {
+                        Text(message).font(.footnote).foregroundStyle(DroidTheme.danger).accessibilityIdentifier("new-session.error")
+                    }
+                    if store.isRemote {
+                        Text(store.isConnected ? "Runs on \(store.computerName). Your provider account and approvals stay on the computer." : "Computer disconnected. Reconnect before starting a session.")
+                            .font(.footnote).foregroundStyle(DroidTheme.secondary)
+                        if store.models.isEmpty || !store.isConnected {
+                            Button("Reconnect and refresh models") { Task { await store.reconnect() } }
+                                .frame(minHeight: 44)
+                        }
+                    } else {
+                        Text("Offline preview · Responses and changes are illustrative.").font(.footnote).foregroundStyle(DroidTheme.secondary)
                     }
                 }
+                .frame(maxWidth: 640).padding(24).frame(maxWidth: .infinity)
             }
-            .scrollContentBackground(.hidden).background(DroidTheme.background)
+            .background(DroidTheme.background).scrollDismissesKeyboard(.interactively)
             .navigationTitle("New session").navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
-                ToolbarItem(placement: .confirmationAction) {
-                    Button("Start") {
-                        guard canStart, let id = store.createSession(configuration: configuration) else { return }
-                        store.send(trimmedPrompt, to: id)
-                        onCreate(id)
-                        dismiss()
-                    }
-                    .fontWeight(.semibold).disabled(!canStart).accessibilityIdentifier("new-session.start")
+            .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } } }
+            .safeAreaInset(edge: .bottom) {
+                Button(action: start) {
+                    Text(submitted ? "Opening session…" : configuration.interactionMode == .spec ? "Start planning" : "Start session")
+                        .font(.body.weight(.semibold)).frame(maxWidth: .infinity, minHeight: 52)
+                        .foregroundStyle(DroidTheme.background).background(DroidTheme.text, in: Capsule())
+                        .contentShape(Capsule())
                 }
+                .buttonStyle(.plain).disabled(issue != nil || submitted).opacity(issue == nil ? 1 : 0.45)
+                .accessibilityIdentifier("new-session.start").padding(.horizontal, 24).padding(.vertical, 12)
+                .background(DroidTheme.background)
             }
-            .task { configuration = store.defaultConfiguration; focused = true }
-            .onChange(of: store.models) { _, _ in
-                if configuration.remoteModelID == nil { configuration = store.defaultConfiguration }
+            .onAppear {
+                guard !initialized else { return }
+                initialized = true
+                configuration = store.defaultConfiguration
+                focused = true
+            }
+            .onChange(of: store.models) { _, models in
+                guard store.isRemote, !models.contains(where: { $0.id == configuration.remoteModelID }) else { return }
+                let mode = configuration.interactionMode
+                configuration = store.defaultConfiguration
+                configuration.interactionMode = mode
             }
         }
-        .interactiveDismissDisabled(!prompt.isEmpty)
+        .interactiveDismissDisabled(!prompt.isEmpty && !submitted)
+    }
+
+    @ViewBuilder private var modelControls: some View {
+        ModelControl(configuration: $configuration)
+        EffortControl(configuration: $configuration)
+    }
+
+    private func start() {
+        guard !submitted else { return }
+        do {
+            let id = try store.startSession(prompt: prompt, configuration: configuration)
+            submitted = true
+            focused = false
+            onCreate(id)
+            dismiss()
+        } catch { self.error = error.localizedDescription }
     }
 }

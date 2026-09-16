@@ -1,109 +1,202 @@
-# DROIDEX for iOS 27
+# DROIDEX iOS companion — connected local MVP
 
-A native SwiftUI companion with two **explicitly separate** modes:
+Native SwiftUI companion for iOS/iPadOS 27. Desktop and phone must run this branch;
+remote protocol 3 is not compatible with an older desktop release. The explicit
+**Explore offline preview** route is a separate demo; live errors never substitute
+scripted output.
 
-- **Connect a computer:** live Droid sessions through the desktop's existing SessionManager, actual model/effort catalog, streaming progress, permission approvals, questions, stop, and working-tree review.
-- **Explore the offline preview:** the original scripted examples, clearly labelled. Connected mode never falls back to these examples.
+## Pair with QR or copy/paste
 
-The live path is a **local-network testing MVP**, not a public remote-access service. Both desktop and phone must use this PR's code. The installed release DMG will not have this feature until rebuilt.
-
-## Try the connected build
-
-### 1. Start this branch on your computer
-
-From the repository root:
+On the computer, from the repository root:
 
 ```sh
 git fetch origin
 git switch feat/droidex-ios27-mvp
 git pull --ff-only
-# Only when dependencies are not installed:
 npm ci
 npm --prefix sidecar ci
 npm run electron:dev
 ```
 
-Use the normal DROIDEX desktop login first. The phone reuses that computer's Droid account and quota; it does not ask for an API key.
+Sign in through the desktop's usual Droid setup. Open **Settings → Remote**.
+The current project is preselected when available; otherwise choose a project.
+Select **Create pairing QR**, review the native consent, then scan the QR on the
+phone. A private LAN address is selected by default. Network selection remains
+available for multiple interfaces. Use `127.0.0.1` only for the iOS simulator on
+that same Mac, not a physical phone.
 
-**Prerequisites:** Git for working-tree diffs, and OpenSSL for a temporary local HTTPS certificate. macOS commonly provides `/usr/bin/openssl`; verify with `openssl version`. On Windows, make OpenSSL available on the process PATH, or set `DROIDEX_OPENSSL_PATH` to its executable before starting the desktop. No package is silently installed.
-
-### 2. Enable mobile access in the desktop app
-
-Choose **File → Connect phone…**. Select a workspace and the computer's private Wi-Fi/LAN IPv4 address. The `127.0.0.1` option is only for an iOS simulator on that same Mac; a physical iPhone must use the computer's LAN address.
-
-Choose **Enable mobile access**, review the native permission warning, and copy the one-time pairing code. The workspace is a starting directory, **not an OS-level sandbox**. An approved agent command can access whatever the desktop account can access.
-
-The code expires after three minutes. If it expires, is declined, or is cancelled, disable access and enable again to generate a fresh code. Keep it private.
-
-### 3. Run the iOS app
+On the Mac, generate the bundled artwork, then open the checked-in project:
 
 ```sh
+node packages/remote-artwork/generate.mjs
 open mobile/ios/Droidex.xcodeproj
 ```
 
-Use Xcode 27 and an iOS 27 simulator or iPhone. Select the **Droidex** scheme. For a physical phone, configure your own signing team. Run with Command-R.
+The desktop dev/build scripts generate these assets automatically. For iOS-only
+work, run the generator before opening Xcode. Node is a development-time
+requirement only; the bundled artwork makes no network requests.
 
-Choose **Add computer**, paste the code, and accept local-network access when iOS asks. Confirm **Approve phone** in the desktop pairing window. Then create a session, select a real model and its supported effort, and send a small prompt.
+Use Xcode 27, select **Droidex**, and run on an iOS 27 simulator or signed physical
+iPhone. Choose **Add computer → Scan QR code**. Alternatively, click **Copy pairing
+code** on the desktop and **Paste** on the phone, or paste into the field and press
+**Connect with code**. Scanning and pasting use the same authenticated payload.
+Approve the identified phone on the computer. Both devices show their actual
+connection state; the mobile inbox appears before model/history discovery ends.
 
-The first live harness is **Droid/Factory**, because that is the working runtime on this branch. Claude Code and Codex are not advertised as connected providers. Model names and supported effort levels come from the desktop catalog, not the preview enum.
+The QR lasts three minutes. **New code** renews an unused/expired ticket without
+restarting the listener. A paired device must be disconnected before replacing
+it. **File → Connect phone…** remains an alternative desktop QR window. On mobile,
+**Settings → Remote** provides pairing, reconnect, and forget-computer controls.
 
-## A useful first test
+Both devices need the same trusted private network. Allow the iOS local-network
+prompt and camera permission for scanning. The simulator/unsupported devices have
+paste fallback. Git is needed for diff review. Temporary TLS certificates still
+require OpenSSL on the desktop PATH, or `DROIDEX_OPENSSL_PATH` pointing to it; this
+build does not install prerequisites silently.
 
-Use a throwaway Git repository with an initial commit. Start with a read-only prompt such as “List the top-level files and explain what this project contains.” Then request a small file edit. Review the actual permission request on the phone; **Approve once** forwards a single-use provider approval. It does not create a pretend success message.
+## What is real, and what is intentionally bounded
 
-Switch models on a follow-up and verify the actual desktop session settings. Start a longer turn, lock the phone, and reopen it. The computer continues working; foreground reconnection restores an authoritative snapshot and does **not** resubmit the prompt. **Stop** is a separate explicit action.
+- One explicitly shared project per connection. The initial inbox imports its
+  five most recent desktop chat sessions, with canonical state and original
+  backend identities. New sessions and live updates are mirrored. This is not an
+  all-computer project catalog or a complete historical archive.
+- Session summaries arrive before transcripts. Opening a session requests its
+  recent 200-event history; concurrent live updates cannot be overwritten by an
+  older response. A partial-history notice identifies omitted scrollback.
+- **Files** opens directories on demand (100 entries per page); text previews are
+  limited to 64 KiB. Binary files, symlinks, common credentials and dependency/Git
+  internals are omitted. It is read-only browsing, not a remote file editor.
+- **Activity** shows real timestamps, phases and reported operations. Motion is
+  reserved for actual running work and respects Reduce Motion / backgrounding.
+- Live models and exact supported reasoning levels come from the desktop catalog.
+  Unsupported levels are rejected server-side. Models without reported effort
+  controls have no slider. Existing session settings follow the desktop unless
+  the phone has an explicit unsent configuration draft.
+- The live harness is **Droid/Factory**. Claude Code and Codex are not connected
+  runtimes in this build. Provider credentials and execution remain on desktop.
+- Sending to an existing conversation resumes/sends to that original session,
+  never a duplicate. Follow-up prompts are echoed to the normal desktop bridge
+  before generation. New sessions use the desktop's existing opening-prompt
+  event. Mobile sends do not steal focus from another desktop conversation.
+- Real approvals, provider questions, Stop, follow-ups and working-tree diffs are
+  supported. Diffs can include pre-existing edits, not only this turn's changes.
+- Locking the phone detaches its stream, not the desktop agent. Reopening restores
+  authoritative state. Uncertain sends are not automatically replayed.
 
-The diff viewer retains the existing design. It now shows Git working-tree changes, including staged, unstaged, and supported untracked text files. It may include edits that existed before this conversation. This is a read-only review, not an apply-ready patch and not a claim of per-turn attribution. Large/binary/unsupported files are reported as omitted. Files are capped at 30, lines at 4,000, and Git output at 256 KiB.
+## Security and lifecycle
 
-## Connection and security boundaries
+The normal desktop bridge stays loopback-only. The LAN HTTPS listener starts only
+after explicit native consent. Pairing uses a single-use 256-bit ticket, manual
+desktop approval, and exact certificate fingerprint pinning. QR encoding is local;
+no external QR service receives the ticket. Redirects are rejected. A separate
+bearer credential is stored in device-only Keychain; provider secrets never leave
+the computer. The desktop Settings IPC accepts only the trusted main renderer.
 
-The normal desktop WebSocket bridge remains loopback-only. A separate, narrow HTTPS endpoint starts **only after explicit desktop consent**. It supports pairing, catalog/bootstrap, session streaming, create/follow-up, stop, approvals, questions, and close. It does not forward arbitrary bridge commands, change the workspace from the phone, install software, expose unrelated sessions, or grant blanket approval.
+Autonomy is explicitly `off`; approving an action can still modify real files,
+execute commands, or consume paid quota. The shared folder is a starting directory,
+not an OS sandbox. Test on a throwaway Git repository first. File preview exclusions
+are not a guarantee that arbitrary project files contain no sensitive information.
 
-A 256-bit single-use ticket is exchanged only after desktop confirmation. The phone pins the exact SHA-256 certificate fingerprint in the pairing code; redirects and other hosts are rejected. Requests then use a separate random bearer credential. Provider credentials stay on the computer. The phone's credential is stored in Keychain with device-only, unlocked-device access, not UserDefaults or the conversation archive.
+Disable Remote to revoke access and close sessions created by the phone. Sessions
+originally created on desktop remain running. Explicitly closing a session from the
+phone is a separate confirmed action. Neither operation undoes edits. Forgetting a
+computer deletes the phone credential only. Restarting the desktop requires pairing
+again. No public relay, port forwarding, background iOS service, push notifications,
+or multi-computer switching is included.
 
-The desktop's localhost-only control capability is stored with mode 0600 in its profile. Pairing material is not logged. The local certificate/key are temporary; restart or disabling access revokes the connection and requires re-pairing. **Do not port-forward this service or expose it to the public internet.** Use only a trusted private network. One phone/computer connection is supported in this MVP.
+## Validation
 
-Closing the pairing window does not disable access. **Disable and revoke access** closes the listener, revokes the phone token and requests closure of remote-owned sessions. If a provider cannot be closed, the desktop reports the failure; inspect it locally. It does not undo edits. **Forget computer** on the phone only deletes its credential; revoke access on the desktop as well.
-
-## Known MVP limits
-
-- No internet relay, QR camera scanning, account-based device discovery, push notifications, background iOS streaming, or multi-computer switcher.
-- Only sessions created through this connection sync to the phone, not the complete historical desktop inbox. Desktop restart requires pairing again. Unsent live drafts remain in phone memory, not a durable remote archive.
-- Six sessions per connection, up to 50 turns per session and a bounded transcript budget. Start a fresh session or connection when the app reports a limit.
-- Primary-agent activity is shown. Full child-agent panes, rich tool output, attachments, desktop browser control, and remote rename are outside this pass.
-- Build/Plan and provider-supported effort are forwarded to the real session. Runtime permissions remain enabled with autonomy `off`. This is not unrestricted remote shell access, but approved agent actions are real and can incur provider costs.
-- A network failure during Send is treated as uncertain delivery: reconnect before retrying. The app never automatically repeats a potentially accepted prompt.
-
-## Validation and honest build status
-
-Implemented and checked in this environment:
-
-- **21 Swift core tests passed**, including the original archive/session tests and new connected-store tests for catalog selection, streaming projection, approval/question forwarding, stale revisions, uncertain delivery, and background/reconnect behavior.
-- **13 desktop-side tests passed**, including real loopback HTTPS pairing and NDJSON streaming/reconnection. These tests use a **simulated provider runtime**, not an authenticated Factory account.
-- Swift app syntax parsing and desktop JavaScript syntax checks passed. Project/plist files were inspected.
-
-The container has **no Xcode, Apple SDK, iOS simulator, or logged-in desktop provider**. The native app has not been compiled/launched here, TLS/Keychain/local-network behavior has not been exercised on iOS, and a live paid-model request has not been run. SwiftUI syntax parsing is not typechecking. Keep the PR draft until the manual checks below pass on your Mac and phone.
-
-Run on a fully installed checkout:
+From the repository root, with dependencies installed:
 
 ```sh
+npm run remote:assets
+node packages/remote-artwork/generate.mjs --check
+node --test packages/remote-artwork/artwork.test.mjs
 npm run sidecar:typecheck
-npm --prefix sidecar run test
-node --check electron/mobile/desktop.cjs
-node --check electron/mobile/preload.cjs
-node --check electron/mobile/window.js
+npm run sidecar:build
+node --import tsx --test sidecar/src/remote/*.test.ts
+node --test electron/applicationMenu.test.cjs electron/mobile/remoteSettings.test.cjs
 swift test --package-path mobile/ios/DroidexCore
+xcodebuild -project mobile/ios/Droidex.xcodeproj -scheme Droidex \
+  -destination 'generic/platform=iOS Simulator' CODE_SIGNING_ALLOWED=NO build
 ```
 
-The Linux Swift toolchain used here required `-Xlinker --allow-shlib-undefined` for its Observation runtime; that workaround is **not** added to the app's build settings. Node tests were transpiled with the available TypeScript compiler and run with `node --test`, because the complete repository dependency installation was unavailable here. This is not a claim that the entire desktop repository build passed.
+Run the `DroidexUITests` target on an available iOS 27 simulator in Xcode. The new
+Add-computer test launches `--pairing-ui-testing`, which deliberately ignores saved
+Keychain credentials. `--ui-testing` runs the explicit offline example suite. Six authored UI
+checks cover New Session/Plan navigation, stop, review/approval, nested activity,
+Add computer hit testing, invalid-code errors, and Settings → Remote → pairing. They do not automate camera authorization or a live
+provider account.
 
-Before promoting this PR, check: iPhone/iPad compilation, local-network permission denied/allowed, certificate-pin mismatch, expired/declined pairing, live login failure, actual model switching and billing, approval/decline, question answers, Stop during startup, foreground reconnect without duplicate work, and revocation while a turn is running. Also verify Dynamic Type, landscape, keyboard avoidance, VoiceOver and haptics on a physical iPhone.
+In the implementation environment: **33 Swift core tests, 31 sidecar remote tests,
+seven Electron/menu tests, and eight artwork tests passed**. The sidecar tests use the real HTTPS
+listener and transport with a simulated provider runtime. Swift app syntax parsing,
+JavaScript syntax and resource-format checks passed.
 
-## Code map
+Environment qualification: Linux Swift's installed Observation runtime required
+`-Xlinker --allow-shlib-undefined` for tests; that diagnostic flag is not in the
+project settings. Sidecar test files were transpiled with the available TypeScript
+compiler and executed with Node 22 because repository dependencies could not be
+installed here. This is not a full TypeScript typecheck or desktop build.
 
-- `sidecar/src/remote`: opt-in server, pairing/authentication, owned-session projection and read-only Git diff extraction.
-- `electron/mobile`: isolated desktop pairing window, explicit native consent/folder selection and narrow preload.
-- `DroidexCore/RemoteProtocol.swift`: versioned wire DTOs, validated pairing-code parser and desktop-service boundary.
-- `DroidexCore/SessionStore.swift`: one UI state owner, with distinct preview and connected paths.
-- `DroidexApp/Remote`: pinned URLSession transport, Keychain storage and onboarding.
-- `DroidexApp/Features/ConfigurationControls.swift`: shared live model/effort selectors used before and during a session. Text-first controls, no decorative model/harness/effort icons.
+**No native iOS compilation, simulator launch, UI-test execution, physical-camera
+scan, or authenticated model run was performed in this environment.** Validate the
+complete desktop build and Xcode build before promoting the draft PR.
+
+Manual checks: camera denied/unavailable, direct Paste, Add computer's full hit area,
+expired QR and New code, desktop decline/approve, incorrect certificate, foreground
+reconnect, actual models/efforts, five real sessions, opening history during a run,
+follow-up echo on desktop, concurrent approvals, Stop, desktop-originated turns,
+revocation while creating a session, and project-file traversal/symlink rejection.
+Check compact iPhone/landscape/iPad, Dynamic Type, VoiceOver and device haptics.
+
+## Conversation and review behavior
+
+The app wordmark uses the exact Silkscreen Regular outlines, including the desktop
+tracking, as a fixed vector mark. No font download is required. The interface
+still uses the system text font; monospace is reserved for code.
+
+Messages render a deliberately bounded Markdown subset: headings, paragraphs,
+quotes, ordered/unordered/task lists, fenced code (including an unfinished
+streaming fence), and pipe tables, with native inline emphasis/code/links. This is
+not a complete CommonMark/GFM parser or a syntax highlighter. Remote images and
+HTML are not fetched/executed. Block parsing runs in a shared worker actor,
+unchanged blocks keep stable identities, and token bursts are coalesced.
+
+New Session validates configuration before inserting a session, then shows
+Sending / Accepted until an authoritative desktop receipt with the same request
+ID arrives. Rejected sends retain the draft. A transport failure after a stream
+receipt does not falsely fail the turn. An unconfirmed send is never repeated
+automatically. Check the desktop before choosing to retry it.
+
+Scrolling follows the bottom while you are there, stops following when you drag
+into history, and offers Jump to latest. It does not issue a scroll command for
+every token. Activity disclosures show the reported thinking, tool arguments,
+results and state. Shimmer is local to active labels, capped at 30 frames/second,
+and disabled in the background and with Reduce Motion. These implementation
+limits are not a measured frame-rate or memory guarantee on an iPhone.
+
+**Changes** is always available in the inbox and conversation toolbar. It reads
+the shared project's working tree independently of turn completion; previous
+changes are retained during the next turn. File sections have actual hunk headers
+and old/new line numbers. Large reviews are bounded and marked partial, and
+private paths excluded by the file browser are excluded here too. This view
+neither applies edits nor attributes all existing edits to the current turn.
+
+**Pull requests** is read-only. It requires GitHub CLI (`gh`) already installed and
+authenticated on the computer for this repository. It lists up to 20 open PRs and
+loads a selected PR's body, branches and diff. It never checks out, merges, posts a
+review, or changes authentication. Missing CLI/authentication and unavailable
+diffs are explicit errors, not synthetic content. PR response/diff sizes are
+bounded; omitted sections require review on GitHub.
+
+Spec/Plan approval renders the provider's plan as Markdown and offers the full
+plan before **Approve plan & build**. That control sends the original permission
+request to the desktop; the normal desktop runtime owns the transition to Build.
+It is not a local mode toggle or an approval bypass.
+
+Before releasing this refinement, run the native build and UI tests above; check
+New Session with the keyboard open, back navigation on iPhone and iPad, streaming
+while scrolled into history, nested disclosures, complete permission details,
+PR auth errors, large diffs, and a real Plan → approval → Build turn. Component
+tests with a simulated provider are not an authenticated end-to-end app test.

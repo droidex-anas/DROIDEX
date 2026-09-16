@@ -5,6 +5,7 @@ export interface RemoteModel {
   name: string;
   efforts: ReasoningEffort[];
   defaultEffort?: ReasoningEffort;
+  isDefault?: boolean;
 }
 
 export interface RemoteSelection {
@@ -13,24 +14,32 @@ export interface RemoteSelection {
   mode: 'auto' | 'spec';
 }
 
+export interface RemoteActivity {
+  id: string;
+  kind: 'thinking' | 'tool' | 'status';
+  title: string;
+  detail?: string;
+  status: 'running' | 'completed' | 'failed' | 'interrupted';
+  startedAt?: number;
+  endedAt?: number;
+}
+
 export interface RemoteMessage {
   id: string;
   role: 'user' | 'assistant';
   text: string;
   steps: string[];
+  activity?: RemoteActivity[];
 }
 
 export interface RemoteChange {
   path: string;
-  lines: { kind: 'context' | 'addition' | 'deletion'; text: string }[];
+  lines: { kind: 'context' | 'addition' | 'deletion' | 'hunk'; text: string; oldLine?: number; newLine?: number }[];
+  status?: string;
+  note?: string;
 }
 
-export interface RemoteApproval {
-  id: string;
-  title: string;
-  detail: string;
-}
-
+export interface RemoteApproval { id: string; title: string; detail: string; kind?: string }
 export interface RemoteQuestion {
   id: string;
   questions: { index: number; question: string; options: string[] }[];
@@ -40,16 +49,24 @@ export interface RemoteSession extends RemoteSelection {
   id: string;
   runId: string;
   revision: number;
+  lastRequestId?: string;
   title: string;
   workspace: string;
-  phase: 'running' | 'approval' | 'question' | 'completed' | 'stopped' | 'failed';
+  phase: 'ready' | 'running' | 'waiting' | 'approval' | 'question' | 'completed' | 'stopped' | 'failed';
   messages: RemoteMessage[];
   changes: RemoteChange[];
   diffNote: string;
+  historyState?: 'unloaded' | 'loading' | 'ready' | 'live' | 'error';
+  historyNote?: string;
   approval?: RemoteApproval;
   question?: RemoteQuestion;
   error?: string;
   updatedAt: number;
+}
+
+export interface RemoteSync {
+  state: 'loading' | 'ready' | 'error';
+  message: string;
 }
 
 export type RemoteEvent =
@@ -57,10 +74,12 @@ export type RemoteEvent =
   | { type: 'session'; session: RemoteSession }
   | { type: 'removed'; id: string }
   | { type: 'catalog'; models: RemoteModel[] }
+  | { type: 'sync'; sync: RemoteSync }
   | { type: 'heartbeat' };
 
 export interface RemoteRuntime {
   handle(command: ClientCommand): Promise<void>;
+  announcePrompt(appSessionId: string, requestId: string, prompt: string): void;
 }
 
 export class RemoteError extends Error {
@@ -71,9 +90,7 @@ export class RemoteError extends Error {
 }
 
 export function record(value: unknown): Record<string, unknown> {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) {
-    throw new RemoteError(400, 'Expected a JSON object.');
-  }
+  if (!value || typeof value !== 'object' || Array.isArray(value)) throw new RemoteError(400, 'Expected a JSON object.');
   return value as Record<string, unknown>;
 }
 

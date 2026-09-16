@@ -98,6 +98,8 @@ function createApplicationMenuTemplate(options) {
 }
 
 function installApplicationMenu(options) {
+  const installRemote = options.installRemoteSettings || (() => require('./mobile/desktop.cjs').installRemoteSettings());
+  installRemote();
   const template = createApplicationMenuTemplate({
     appName: options.appName,
     platform: options.platform || process.platform,

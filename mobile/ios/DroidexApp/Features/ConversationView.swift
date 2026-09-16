@@ -11,8 +11,10 @@ struct ConversationView: View {
     @State private var renaming = false
     @State private var title = ""
     @State private var deleting = false
-    @State private var isAtBottom = true
-    private let bottomID = "conversation-bottom"
+    @State private var confirmRetry = false
+    @State private var atBottom = true
+    @State private var followsLatest = true
+    @State private var scrollPosition = ScrollPosition(edge: .bottom)
 
     var body: some View {
         if let session = store.session(sessionID) {
@@ -24,18 +26,17 @@ struct ConversationView: View {
                     ToolbarItem(placement: .principal) {
                         VStack(spacing: 2) {
                             Text(session.title).font(.headline).lineLimit(1)
-                            Text("\(store.modelName(session.configuration)) · \(store.effortName(session.configuration))")
-                                .font(.caption2).foregroundStyle(DroidTheme.secondary)
-                        }
-                        .accessibilityElement(children: .combine)
+                            Text(store.modelName(session.configuration)).font(.caption2).foregroundStyle(DroidTheme.secondary).lineLimit(1)
+                        }.accessibilityElement(children: .combine)
+                    }
+                    ToolbarItem(placement: .topBarTrailing) {
+                        Button("Changes") { showReview = true }.font(.subheadline).accessibilityIdentifier("review.open")
                     }
                     ToolbarItem(placement: .topBarTrailing) {
                         Menu {
-                            if !store.isRemote {
-                                Button("Rename", systemImage: "pencil") { title = session.title; renaming = true }
-                            }
-                            ShareLink(item: exportedConversation(session)) { Label("Share conversation", systemImage: "square.and.arrow.up") }
-                            Button(store.isRemote ? "Close remote session" : "Delete session", systemImage: "trash", role: .destructive) { deleting = true }
+                            if !store.isRemote { Button("Rename") { title = session.title; renaming = true } }
+                            ShareLink("Share conversation", item: exportedConversation(session))
+                            Button(store.isRemote ? "Close remote session" : "Delete session", role: .destructive) { deleting = true }
                         } label: { Label("Session actions", systemImage: "ellipsis") }
                     }
                 }
@@ -43,24 +44,28 @@ struct ConversationView: View {
                     ComposerView(
                         text: Binding(get: { store.session(sessionID)?.draft ?? "" }, set: { store.setDraft($0, for: sessionID) }),
                         configuration: Binding(get: { store.session(sessionID)?.configuration ?? .init() }, set: { store.configure(sessionID, with: $0) }),
-                        phase: session.phase,
-                        send: { store.send(store.session(sessionID)?.draft ?? "", to: sessionID) },
+                        phase: store.pendingDeliveries[sessionID] == nil ? session.phase : .waiting,
+                        send: {
+                            if store.send(store.session(sessionID)?.draft ?? "", to: sessionID) != nil { jumpToLatest() }
+                        },
                         stop: { store.stop(sessionID) }
                     )
-                    .frame(maxWidth: 720)
-                    .padding(.horizontal, 16).padding(.top, 8).padding(.bottom, 8)
+                    .disabled(store.pendingActions.contains(sessionID))
+                    .frame(maxWidth: 720).padding(.horizontal, 16).padding(.vertical, 8)
                     .frame(maxWidth: .infinity)
                 }
                 .sensoryFeedback(trigger: session.phase) { _, phase in
                     guard hapticsEnabled, scenePhase == .active else { return nil }
                     switch phase {
-                    case .running: return .impact(weight: .light, intensity: 0.6)
                     case .needsApproval, .needsAnswer: return .warning
                     case .completed: return .success
                     case .failed: return .error
                     case .stopped: return .selection
-                    case .ready: return nil
+                    default: return nil
                     }
+                }
+                .task(id: sessionID) {
+                    if store.isRemote, session.historyState == "unloaded" { store.loadRemoteHistory(sessionID) }
                 }
                 .sheet(isPresented: $showReview) { ReviewView(sessionID: sessionID) }
                 .alert("Rename session", isPresented: $renaming) {
@@ -68,137 +73,134 @@ struct ConversationView: View {
                     Button("Cancel", role: .cancel) {}
                     Button("Save") { store.rename(sessionID, to: title) }
                 }
-                .confirmationDialog(store.isRemote ? "Close this session on your computer?" : "Delete this local session?", isPresented: $deleting, titleVisibility: .visible) {
-                    Button(store.isRemote ? "Close remote session" : "Delete session", role: .destructive) { store.delete(sessionID) }
+                .confirmationDialog("Close this session?", isPresented: $deleting, titleVisibility: .visible) {
+                    Button("Close session", role: .destructive) { store.delete(sessionID) }
                 } message: {
-                    Text(store.isRemote ? "Running work will stop. Edits already made are not undone. Desktop history is retained." : "This removes the local preview conversation.")
+                    Text(store.isRemote ? "Running work will stop. Edits are not undone and desktop history is retained." : "The local preview conversation will be removed.")
                 }
+                .confirmationDialog("Did you check the desktop?", isPresented: $confirmRetry, titleVisibility: .visible) {
+                    Button("I checked — keep my draft") { store.discardUnconfirmedDelivery(sessionID) }
+                } message: { Text("Your earlier message may have reached the computer. Retrying without checking can duplicate the work.") }
         } else {
-            ContentUnavailableView("Session removed", systemImage: "tray")
+            ContentUnavailableView("Session closed", systemImage: "tray")
         }
     }
 
     private func conversation(_ session: AgentSession) -> some View {
-        ScrollViewReader { proxy in
-            ScrollView {
-                LazyVStack(alignment: .leading, spacing: 28) {
-                    if session.messages.isEmpty && !session.phase.isRunning {
-                        ContentUnavailableView {
-                            Label("A fresh session", systemImage: "text.bubble")
-                        } description: {
-                            Text(store.isRemote ? "Describe what to build, review, or explore on your computer." : "Describe what to build, review, or explore. Responses in preview mode are scripted.")
-                        }
-                        .frame(maxWidth: .infinity).padding(.top, 56)
-                    }
-                    ForEach(session.messages) { message in
-                        MessageRow(message: message, isRunning: session.phase.isRunning && message.id == session.messages.last?.id)
-                    }
-                    if session.phase.isRunning, session.messages.last?.steps.isEmpty != false {
-                        HStack(spacing: 10) {
-                            ProgressView().controlSize(.small)
-                            Text("Starting \(store.modelName(session.configuration))…").font(.footnote)
-                        }
-                        .foregroundStyle(DroidTheme.secondary)
-                    } else if !session.phase.isRunning {
-                        PhaseLabel(phase: session.phase)
-                    }
-                    if case .failed(let error) = session.phase {
-                        Label(error, systemImage: "exclamationmark.triangle").font(.callout).foregroundStyle(DroidTheme.danger)
-                    }
-                    if !session.changes.isEmpty { changesButton(session) }
-                    else if let note = session.diffNote, !note.isEmpty {
-                        Text(note).font(.footnote).foregroundStyle(DroidTheme.secondary)
-                    }
-                    if let approval = session.phase.approval {
-                        ApprovalCard(approval: approval) { allow in store.respond(to: approval.id, in: sessionID, allow: allow) }
-                    }
-                    if let question = session.phase.question {
-                        QuestionCard(question: question, sessionID: sessionID).id(question.id)
-                    }
-                    Color.clear.frame(height: 1).id(bottomID)
+        ScrollView {
+            LazyVStack(alignment: .leading, spacing: 26) {
+                historyStatus(session)
+                ForEach(session.messages) { message in
+                    ConversationMessage(message: message, isRunning: session.phase.isRunning && message.id == session.messages.last?.id)
+                        .equatable().id(message.id)
                 }
-                .frame(maxWidth: 680)
-                .padding(.horizontal, 22).padding(.vertical, 24)
-                .frame(maxWidth: .infinity)
+                if let pending = store.pendingDeliveries[sessionID] {
+                    VStack(alignment: .trailing, spacing: 8) {
+                        Text(pending.request.prompt).font(.body).textSelection(.enabled)
+                            .padding(.horizontal, 16).padding(.vertical, 12)
+                            .background(DroidTheme.elevated, in: RoundedRectangle(cornerRadius: 20))
+                        WorkingLabel(text: pending.state == .sending ? "Sending to computer…" : pending.state == .accepted ? "Accepted · opening turn…" : "Delivery unconfirmed", active: pending.state != .uncertain && store.isConnected)
+                            .font(.footnote).foregroundStyle(DroidTheme.secondary)
+                        if pending.state == .uncertain { Button("Review before retrying") { confirmRetry = true }.font(.footnote).frame(minHeight: 44) }
+                    }.frame(maxWidth: .infinity, alignment: .trailing)
+                } else if session.messages.isEmpty && session.phase.canSend {
+                    Text("Ask about this project, or give your computer a task.")
+                        .font(.callout).foregroundStyle(DroidTheme.secondary).padding(.top, 24)
+                }
+                if session.phase.isRunning, session.messages.last?.text.isEmpty != false,
+                   session.messages.last?.activity?.isEmpty != false, session.messages.last?.steps.isEmpty != false {
+                    HStack(spacing: 10) {
+                        ActivityPulse()
+                        WorkingLabel(text: "Waiting for \(store.modelName(session.configuration))", active: true)
+                    }.font(.footnote).foregroundStyle(DroidTheme.secondary)
+                }
+                if !session.phase.isRunning && store.pendingDeliveries[sessionID] == nil { PhaseLabel(phase: session.phase) }
+                if let error = store.actionErrors[sessionID] { Text(error).font(.callout).foregroundStyle(DroidTheme.danger) }
+                if case .failed(let error) = session.phase { Text(error).font(.callout).foregroundStyle(DroidTheme.danger) }
+                if !session.changes.isEmpty {
+                    Button { showReview = true } label: {
+                        HStack {
+                            VStack(alignment: .leading, spacing: 6) {
+                                Text("Review changes").font(.subheadline.weight(.medium))
+                                Text("\(session.changes.count) files · \(store.isRemote ? "Working tree" : "Illustrative")").font(.caption).foregroundStyle(DroidTheme.secondary)
+                            }
+                            Spacer(minLength: 8)
+                            DiffCounts(additions: session.additions, deletions: session.deletions)
+                            Image(systemName: "chevron.right").font(.caption2)
+                        }.padding(16).background(DroidTheme.surface, in: RoundedRectangle(cornerRadius: 14))
+                    }.buttonStyle(.plain)
+                }
+                if let approval = session.phase.approval {
+                    ApprovalCard(approval: approval, busy: store.pendingActions.contains(sessionID)) { store.respond(to: approval.id, in: sessionID, allow: $0) }
+                        .id(approval.id)
+                }
+                if let question = session.phase.question {
+                    QuestionCard(question: question, sessionID: sessionID).id(question.id).disabled(store.pendingActions.contains(sessionID))
+                }
             }
-            .defaultScrollAnchor(.bottom)
-            .scrollDismissesKeyboard(.interactively)
-            .onScrollGeometryChange(for: Bool.self) { geometry in
-                geometry.visibleRect.maxY >= geometry.contentSize.height - 80
-            } action: { _, value in isAtBottom = value }
-            .onChange(of: session.messages.last?.text) { _, _ in if isAtBottom { proxy.scrollTo(bottomID, anchor: .bottom) } }
-            .onChange(of: session.messages.count) { _, _ in if isAtBottom { proxy.scrollTo(bottomID, anchor: .bottom) } }
-            .onChange(of: session.phase) { _, _ in if isAtBottom { proxy.scrollTo(bottomID, anchor: .bottom) } }
-            .overlay(alignment: .bottomTrailing) {
-                if !isAtBottom {
-                    Button {
-                        withAnimation(reduceMotion ? nil : .easeOut(duration: 0.2)) { proxy.scrollTo(bottomID, anchor: .bottom) }
-                    } label: {
-                        Image(systemName: "arrow.down").font(.body.weight(.semibold)).frame(width: 44, height: 44)
-                            .modifier(GlassChrome(cornerRadius: 22, interactive: true))
-                    }
-                    .buttonStyle(.plain).accessibilityLabel("Jump to latest message").padding(16)
-                }
+            .frame(maxWidth: 680).padding(.horizontal, 22).padding(.vertical, 24).frame(maxWidth: .infinity)
+        }
+        .scrollPosition($scrollPosition)
+        .defaultScrollAnchor(.bottom, for: .initialOffset)
+        .defaultScrollAnchor(.top, for: .alignment)
+        .defaultScrollAnchor(followsLatest ? .bottom : nil, for: .sizeChanges)
+        .scrollDismissesKeyboard(.interactively)
+        .onScrollGeometryChange(for: Bool.self) { geometry in
+            geometry.visibleRect.maxY >= geometry.contentSize.height - 64
+        } action: { _, value in atBottom = value }
+        .onScrollPhaseChange { _, phase in
+            if phase == .tracking || phase == .interacting { followsLatest = false }
+            if phase == .idle { followsLatest = atBottom }
+        }
+        .overlay(alignment: .bottomTrailing) {
+            if !atBottom {
+                Button(action: jumpToLatest) {
+                    Image(systemName: "arrow.down").font(.body.weight(.semibold)).frame(width: 44, height: 44)
+                        .modifier(GlassChrome(cornerRadius: 22, interactive: true))
+                }.buttonStyle(.plain).accessibilityLabel("Jump to latest message").padding(16)
             }
         }
     }
 
-    private func changesButton(_ session: AgentSession) -> some View {
-        Button { showReview = true } label: {
-            VStack(alignment: .leading, spacing: 10) {
-                Label("Review changes", systemImage: "doc.text").font(.subheadline.weight(.medium))
-                ViewThatFits(in: .horizontal) {
-                    HStack(spacing: 12) {
-                        Text("\(session.changes.count) \(store.isRemote ? "working-tree files" : "illustrative files")")
-                        Spacer(minLength: 4)
-                        DiffCounts(additions: session.additions, deletions: session.deletions)
-                        Image(systemName: "chevron.right")
-                    }
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text("\(session.changes.count) \(store.isRemote ? "working-tree files" : "illustrative files")")
-                        DiffCounts(additions: session.additions, deletions: session.deletions)
-                    }
-                }
-                .font(.caption).foregroundStyle(DroidTheme.secondary)
+    @ViewBuilder private func historyStatus(_ session: AgentSession) -> some View {
+        if store.isRemote, let state = session.historyState {
+            if state == "loading" { ProgressView("Loading recent messages…").font(.footnote) }
+            if let note = session.historyNote { Text(note).font(.footnote).foregroundStyle(DroidTheme.secondary) }
+            if state != "ready" && state != "loading" && !session.phase.isRunning {
+                Button("Load recent messages") { store.loadRemoteHistory(sessionID) }.font(.footnote).frame(minHeight: 44)
+                    .disabled(store.pendingActions.contains(sessionID))
             }
-            .padding(16).background(DroidTheme.surface, in: RoundedRectangle(cornerRadius: 16))
         }
-        .buttonStyle(.plain).accessibilityIdentifier("review.open")
+    }
+
+    private func jumpToLatest() {
+        followsLatest = true
+        withAnimation(reduceMotion ? nil : .easeOut(duration: 0.2)) { scrollPosition.scrollTo(edge: .bottom) }
     }
 
     private func exportedConversation(_ session: AgentSession) -> String {
-        "DROIDEX · \(store.isRemote ? "Remote session" : "Local preview")\n\(session.title)\n\n" + session.messages.map { "\($0.role == .user ? "You" : "DROIDEX")\n\($0.text)" }.joined(separator: "\n\n")
+        "# \(session.title)\n\n" + session.messages.map { "## \($0.role == .user ? "You" : "DROIDEX")\n\n\($0.text)" }.joined(separator: "\n\n")
     }
 }
 
-private struct MessageRow: View {
+private struct ConversationMessage: View, Equatable {
     let message: ChatMessage
     let isRunning: Bool
 
     var body: some View {
         if message.role == .user {
-            HStack {
-                Spacer(minLength: 32)
-                Text(message.text)
-                    .font(.body).textSelection(.enabled)
-                    .padding(.horizontal, 16).padding(.vertical, 12)
-                    .background(DroidTheme.elevated, in: RoundedRectangle(cornerRadius: 22))
-            }
-            .accessibilityLabel("You: \(message.text)")
+            Text(message.text).font(.body).textSelection(.enabled)
+                .padding(.horizontal, 16).padding(.vertical, 12)
+                .background(DroidTheme.elevated, in: RoundedRectangle(cornerRadius: 20))
+                .frame(maxWidth: .infinity, alignment: .trailing).padding(.leading, 32)
         } else {
-            VStack(alignment: .leading, spacing: 14) {
-                HStack(spacing: 7) {
-                    Text("DROIDEX").font(.caption2.weight(.semibold)).tracking(1.5)
-                    if isRunning { Circle().fill(DroidTheme.text).frame(width: 4, height: 4) }
+            VStack(alignment: .leading, spacing: 12) {
+                BrandMark().frame(width: 68, height: 10).foregroundStyle(DroidTheme.secondary)
+                if !message.steps.isEmpty || message.activity?.isEmpty == false {
+                    AgentStepsView(steps: message.steps, activity: message.activity ?? [], isRunning: isRunning)
                 }
-                .foregroundStyle(DroidTheme.secondary)
-                if !message.steps.isEmpty { AgentStepsView(steps: message.steps, isRunning: isRunning) }
-                if !message.text.isEmpty {
-                    Text(message.text).font(.body).lineSpacing(5).textSelection(.enabled)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
+                if !message.text.isEmpty { MarkdownContent(source: message.text) }
+            }.frame(maxWidth: .infinity, alignment: .leading)
         }
     }
 }

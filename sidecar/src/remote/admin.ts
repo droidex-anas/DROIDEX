@@ -3,9 +3,10 @@ import { createServer } from 'node:http';
 import { mkdir, readFile, realpath, rename, rm, stat, writeFile } from 'node:fs/promises';
 import { networkInterfaces } from 'node:os';
 import { join } from 'node:path';
-import type { ServerEvent } from '../protocol.js';
+import type { ClientCommand, ServerEvent } from '../protocol.js';
 import { authorize, digest, failure, json, readJSON } from './http.js';
 import { RemoteServer } from './server.js';
+import { RemoteSessionIndex } from './sessionIndex.js';
 import { RemoteError, record, text, type RemoteRuntime } from './types.js';
 
 export function localAddresses(): string[] {
@@ -18,9 +19,7 @@ export function localAddresses(): string[] {
   return [...addresses, '127.0.0.1'];
 }
 
-// Only a loopback, random-token admin capability is published to the desktop profile.
-// Nothing listens on the LAN until the user explicitly enables it in the app menu.
-export async function startRemoteAdmin(dataDirectory: string, runtime: RemoteRuntime) {
+export async function startRemoteAdmin(dataDirectory: string, runtime: RemoteRuntime, index = new RemoteSessionIndex()) {
   const capabilityPath = join(dataDirectory, 'mobile-control.json');
   const token = randomBytes(32).toString('hex');
   const tokenHash = digest(`Bearer ${token}`);
@@ -35,16 +34,16 @@ export async function startRemoteAdmin(dataDirectory: string, runtime: RemoteRun
       if (route === 'GET /status') {
         json(response, 200, { ...(remote?.status() || { enabled: false }), addresses: localAddresses(), enabling });
       } else if (route === 'POST /enable') {
-        if (closed || enabling || remote) throw new RemoteError(409, 'Disable the existing connection before pairing again.');
+        if (closed || enabling || remote) throw new RemoteError(409, 'Stop sharing before selecting a different project.');
         enabling = true;
         try {
           const body = record(await readJSON(request));
           const address = text(body.address, 'Network address', 64);
           if (!localAddresses().includes(address)) throw new RemoteError(400, 'Choose a local network interface.');
           const workspace = await realpath(text(body.workspace, 'Workspace path', 4_096));
-          if (!(await stat(workspace)).isDirectory()) throw new RemoteError(400, 'Choose a workspace folder.');
+          if (!(await stat(workspace)).isDirectory()) throw new RemoteError(400, 'Choose a project folder.');
           if (closed) throw new RemoteError(410, 'Setup was cancelled.');
-          const candidate = new RemoteServer(workspace, runtime);
+          const candidate = new RemoteServer(workspace, runtime, undefined, index);
           remote = candidate;
           try {
             await candidate.start(address);
@@ -62,6 +61,10 @@ export async function startRemoteAdmin(dataDirectory: string, runtime: RemoteRun
         if (!remote || typeof body.allow !== 'boolean') throw new RemoteError(409, 'No pairing is waiting.');
         remote.approve(text(body.id, 'Request ID', 36), body.allow);
         json(response, 200, remote.status());
+      } else if (route === 'POST /renew') {
+        if (!remote) throw new RemoteError(409, 'Share a project before generating a QR.');
+        remote.renewPairing();
+        json(response, 200, remote.status());
       } else if (route === 'POST /disable') {
         const previous = remote;
         remote = undefined;
@@ -70,7 +73,7 @@ export async function startRemoteAdmin(dataDirectory: string, runtime: RemoteRun
           await previous.close();
         }
         json(response, 200, { enabled: false });
-      } else throw new RemoteError(404, 'Unknown mobile control operation.');
+      } else throw new RemoteError(404, 'Unknown remote control operation.');
     })().catch((error: unknown) => failure(response, error));
   });
   admin.requestTimeout = 20_000;
@@ -81,7 +84,7 @@ export async function startRemoteAdmin(dataDirectory: string, runtime: RemoteRun
     admin.listen(0, '127.0.0.1', resolve);
   });
   const address = admin.address();
-  if (!address || typeof address === 'string') throw new Error('Could not start mobile administration.');
+  if (!address || typeof address === 'string') throw new Error('Could not start remote administration.');
   await mkdir(dataDirectory, { recursive: true });
   const temporary = capabilityPath + `.${process.pid}.tmp`;
   try {
@@ -91,12 +94,13 @@ export async function startRemoteAdmin(dataDirectory: string, runtime: RemoteRun
   return {
     observe(event: ServerEvent) {
       remote?.observe(event);
-      // A disabled host must still close a provider whose creation finished late.
       for (const previous of retired) {
         previous.observe(event);
         if (!previous.host.hasPendingCreates) retired.delete(previous);
       }
     },
+    commandReceived(command: ClientCommand) { remote?.commandReceived(command); },
+    commandCompleted(command: ClientCommand) { remote?.commandCompleted(command); },
     async close() {
       closed = true;
       const previous = remote;
@@ -111,7 +115,7 @@ export async function startRemoteAdmin(dataDirectory: string, runtime: RemoteRun
         const current = JSON.parse(await readFile(capabilityPath, 'utf8')) as { token?: string };
         if (current.token === token) await rm(capabilityPath, { force: true });
       } catch (error) {
-        if ((error as NodeJS.ErrnoException).code !== 'ENOENT') console.error('Could not remove the mobile control capability file.');
+        if ((error as NodeJS.ErrnoException).code !== 'ENOENT') console.error('Could not remove the remote control capability file.');
       }
       const rejected = results.find((result) => result.status === 'rejected');
       if (rejected?.status === 'rejected') throw rejected.reason;
