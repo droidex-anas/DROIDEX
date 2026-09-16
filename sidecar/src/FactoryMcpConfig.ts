@@ -26,10 +26,31 @@ const FactoryConfigSchema = z
 
 type FactoryServerConfig = z.infer<typeof FactoryConfigSchema>['mcpServers'][string];
 
-export function loadFactoryMcpServers(cwd: string, userHome = homedir()): McpServerConfig[] {
-  const project = readConfig(path.join(cwd, '.factory', 'mcp.json'));
+// Droid CLI reads `.factory/mcp.json` from every ancestor of the working
+// directory, nearer folders overriding farther ones, then the user's own.
+function projectConfigDirs(cwd: string): string[] {
+  const dirs: string[] = [];
+  for (let dir = path.resolve(cwd); ; dir = path.dirname(dir)) {
+    dirs.unshift(dir);
+    if (path.dirname(dir) === dir) return dirs;
+  }
+}
+
+// Without a workspace there is no project scope: a throwaway session must not
+// inherit whatever .factory/mcp.json lies above the temp directory.
+export function loadFactoryMcpServers(
+  cwd: string | undefined,
+  userHome = homedir(),
+): McpServerConfig[] {
+  const effective = new Map<string, FactoryServerConfig>();
+  for (const dir of cwd ? projectConfigDirs(cwd) : []) {
+    for (const [name, config] of Object.entries(
+      readConfig(path.join(dir, '.factory', 'mcp.json')),
+    )) {
+      effective.set(name, config);
+    }
+  }
   const user = readConfig(path.join(userHome, '.factory', 'mcp.json'));
-  const effective = new Map(Object.entries(project));
   for (const [name, config] of Object.entries(user)) {
     const inherited = effective.get(name);
     effective.set(name, inherited && !hasConnection(config) ? { ...inherited, ...config } : config);

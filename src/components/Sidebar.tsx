@@ -1,4 +1,8 @@
-import { ACTIVITY_LABELS, canSettleSession } from '../lib/sidebarActivity';
+import {
+  ACTIVITY_LABELS,
+  canSettleSession,
+  type SessionActivityStatus,
+} from '../lib/sidebarActivity';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AnimatePresence } from 'framer-motion';
 import { shallowEqual, useStoreDispatch, useStoreSelector } from '../hooks/useStore';
@@ -23,13 +27,15 @@ import {
   chatDisplayTitle,
   isChatHidden,
   isChatPinned,
-  linkedPrKind,
+  linkedPr,
+  type ChatPullRequest,
   pinnedChats,
 } from '../lib/chatMetadata';
 import { useSidebarRowActions } from '../hooks/useSidebarRowActions';
 import { SessionContextMenu } from './SessionContextMenu';
 import { SessionRow } from './SidebarSessionRow';
 import { sessionIsLive, sessionIsUnread } from '../lib/sessions';
+import { prKind } from '../lib/github';
 import { sessionAttention } from '../lib/sessionAttention';
 import type { SessionSummary } from '../types/bridge';
 import { SidebarAppUpdateButton } from './SidebarAppUpdateButton';
@@ -218,6 +224,23 @@ export default function Sidebar({
     handleCopyMarkdown,
   } = rowActions;
 
+  // Read through a ref so the callback identity never changes and the row
+  // memo keeps skipping unrelated store updates.
+  const activityRef = useRef(activity);
+  activityRef.current = activity;
+  const toggleSettled = useCallback((m: SessionSummary) => {
+    const current = activityRef.current;
+    if (current.statusFor(m) === 'settled') current.reopen(m);
+    else current.settle(m);
+  }, []);
+  // A settled row offers "reopen" only when a manual settle is what holds it
+  // there; a chat settled because its PRs closed has nothing to reopen.
+  const canToggleSettled = (m: SessionSummary, status: SessionActivityStatus) =>
+    status === 'settled'
+      ? Object.hasOwn(preferences.settled, m.appSessionId)
+      : canSettleSession(status);
+  const rowPr = (link: ChatPullRequest | undefined) =>
+    link ? { kind: prKind(link), checks: link.checks ?? null } : undefined;
   const renderRow = (m: SessionSummary) => {
     const status = statusFor(m);
     const inbox = view === 'activity';
@@ -232,7 +255,7 @@ export default function Sidebar({
         activityStatus={status}
         detail={inbox ? reasonFor(m, status) || ACTIVITY_LABELS[status] : undefined}
         // The PR view already names the PR in its group header.
-        pr={view === 'pull-requests' ? undefined : linkedPrKind(chatMetadata[m.appSessionId])}
+        pr={view === 'pull-requests' ? undefined : rowPr(linkedPr(chatMetadata[m.appSessionId]))}
         attention={sessionAttention(
           m.appSessionId,
           state.pendingPermissions,
@@ -244,6 +267,7 @@ export default function Sidebar({
         onMenu={handleRowMenu}
         onRenameCommit={handleRenameCommit}
         onRenameCancel={handleRenameCancel}
+        {...(inbox && canToggleSettled(m, status) ? { onToggleSettled: toggleSettled } : {})}
       />
     );
   };
@@ -414,7 +438,7 @@ export default function Sidebar({
           y={rowMenu.y}
           settled={rowMenuSession ? statusFor(rowMenuSession) === 'settled' : false}
           onToggleSettled={
-            rowMenuSession && canSettleSession(statusFor(rowMenuSession))
+            rowMenuSession && canToggleSettled(rowMenuSession, statusFor(rowMenuSession))
               ? () => {
                   if (statusFor(rowMenuSession) === 'settled') activity.reopen(rowMenuSession);
                   else activity.settle(rowMenuSession);
