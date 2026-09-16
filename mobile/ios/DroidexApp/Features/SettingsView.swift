@@ -6,15 +6,13 @@ struct SettingsView: View {
     @Environment(\.dismiss) private var dismiss
     @AppStorage("appearance") private var appearance = "system"
     @AppStorage("hapticsEnabled") private var hapticsEnabled = true
-    @State private var confirmReset = false
-    let onReset: () -> Void
 
     var body: some View {
         NavigationStack {
             Form {
                 Section {
                     BrandMark().frame(width: 146, height: 20).padding(.vertical, 12)
-                    LabeledContent("Build", value: store.isRemote ? "Connected MVP · 0.3" : "Offline preview · 0.3")
+                    LabeledContent("Build", value: "Remote checkpoint · 0.4")
                 }
                 Section {
                     Picker("Theme", selection: $appearance) {
@@ -35,19 +33,12 @@ struct SettingsView: View {
                         HStack {
                             Text("Remote")
                             Spacer()
-                            Text(store.isRemote ? (store.isConnected ? "Connected" : "Disconnected") : "Add computer")
+                            Text(store.isConnected ? "Connected" : "Offline")
                                 .foregroundStyle(DroidTheme.secondary)
                         }
                         .frame(minHeight: 44)
                     }
                     .accessibilityIdentifier("settings.remote")
-                }
-                if !store.isRemote {
-                    Section {
-                        Button("Reset offline preview", role: .destructive) { confirmReset = true }
-                    } footer: {
-                        Text("Only the saved demonstration conversations are replaced.")
-                    }
                 }
             }
             .scrollContentBackground(.hidden)
@@ -56,15 +47,6 @@ struct SettingsView: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() } }
-            }
-            .confirmationDialog("Replace all local preview conversations?", isPresented: $confirmReset, titleVisibility: .visible) {
-                Button("Reset local preview", role: .destructive) {
-                    Task {
-                        await store.resetPreview()
-                        onReset()
-                        dismiss()
-                    }
-                }
             }
         }
     }

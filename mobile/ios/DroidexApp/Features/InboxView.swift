@@ -33,7 +33,6 @@ struct InboxView: View {
     @Binding var selection: UUID?
     @State private var filter: InboxFilter = .all
     @State private var search = ""
-    @State private var newSession = false
     @State private var pendingSelection: UUID?
     @State private var changes = false
     @State private var pullRequests = false
@@ -54,11 +53,11 @@ struct InboxView: View {
         List(selection: sizeClass == .compact ? .constant(nil) : $selection) {
             Section {
                 VStack(alignment: .leading, spacing: 16) {
-                    Text(store.isRemote ? (store.isConnected ? "CONNECTED · " + store.computerName : "COMPUTER DISCONNECTED") : "LOCAL PREVIEW")
+                    Text(store.isConnected ? "CONNECTED · " + store.computerName : "SAVED CONVERSATIONS")
                         .font(.caption2.weight(.semibold))
                         .tracking(1.8)
                         .foregroundStyle(DroidTheme.secondary)
-                    if store.isRemote {
+                    Group {
                         HStack {
                             Text(store.workspaceName).font(.subheadline.weight(.medium)).lineLimit(1)
                             Spacer()
@@ -72,7 +71,7 @@ struct InboxView: View {
                             }.frame(minHeight: 44)
                         }
                         .font(.subheadline)
-                        if store.sync.state == "loading" {
+                        if store.isConnected && store.sync.state == "loading" {
                             ProgressView(store.sync.message).font(.footnote)
                         } else if store.sync.state == "error" {
                             Text(store.sync.message).font(.footnote).foregroundStyle(DroidTheme.warning)
@@ -107,7 +106,7 @@ struct InboxView: View {
                     .listRowBackground(Color.clear)
                     .listRowSeparatorTint(DroidTheme.separator)
                     .swipeActions(edge: .trailing) {
-                        Button(store.isRemote ? "Close" : "Delete", role: .destructive) {
+                        Button("Close", role: .destructive) {
                             deletingSession = session
                             confirmDelete = true
                         }
@@ -140,7 +139,7 @@ struct InboxView: View {
                         .font(.body.weight(.medium))
                         .frame(width: 44, height: 44)
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(DroidPressStyle())
                 .accessibilityLabel("Settings")
             }
             .padding(.horizontal, 18)
@@ -148,7 +147,7 @@ struct InboxView: View {
             .background(DroidTheme.background.opacity(0.96))
         }
         .safeAreaInset(edge: .bottom) {
-            Button { newSession = true } label: {
+            Button { selection = store.createSession(configuration: store.defaultConfiguration) } label: {
                 HStack(spacing: 12) {
                     Image(systemName: "plus").font(.body.weight(.medium))
                     Text("New session").foregroundStyle(DroidTheme.secondary)
@@ -161,7 +160,7 @@ struct InboxView: View {
                 .contentShape(Rectangle())
                 .modifier(GlassChrome(interactive: true))
             }
-            .buttonStyle(.plain)
+            .buttonStyle(DroidPressStyle())
             .accessibilityLabel("New session")
             .accessibilityIdentifier("inbox.compose")
             .padding(.horizontal, 16)
@@ -169,21 +168,18 @@ struct InboxView: View {
         }
         .sensoryFeedback(.selection, trigger: filter) { _, _ in hapticsEnabled }
         .sensoryFeedback(.selection, trigger: selection) { _, value in hapticsEnabled && value != nil }
-        .sheet(isPresented: $newSession, onDismiss: openPendingSession) {
-            NewSessionView { pendingSelection = $0 }
-        }
-        .refreshable { if store.isRemote { await store.refreshRemote() } }
+        .refreshable { await store.refreshRemote() }
         .sheet(isPresented: $files) { ProjectFilesView() }
         .sheet(isPresented: $activity, onDismiss: openPendingSession) { RemoteActivityView { pendingSelection = $0 } }
         .sheet(isPresented: $changes) { ReviewView() }
         .sheet(isPresented: $pullRequests) { PullRequestsView() }
         .sheet(isPresented: $settings) {
-            SettingsView { selection = nil }
+            SettingsView()
         }
-        .confirmationDialog(store.isRemote ? "Close this session on your computer?" : "Delete this local session?", isPresented: $confirmDelete, titleVisibility: .visible, presenting: deletingSession) { session in
-            Button(store.isRemote ? "Close remote session" : "Delete session", role: .destructive) { store.delete(session.appSessionId) }
+        .confirmationDialog("Close this session on your computer?", isPresented: $confirmDelete, titleVisibility: .visible, presenting: deletingSession) { session in
+            Button("Close remote session", role: .destructive) { store.delete(session.appSessionId) }
         } message: { session in
-            Text(store.isRemote ? "Running work will stop. Edits are not undone, and desktop history is retained." : "“\(session.title)” will be removed from this device. Your repository is not affected.")
+            Text("Running work will stop. Edits are not undone, and desktop history is retained.")
         }
     }
 
@@ -215,7 +211,7 @@ struct InboxView: View {
             .background(filter == option ? DroidTheme.elevated : DroidTheme.surface, in: RoundedRectangle(cornerRadius: 16))
             .overlay(RoundedRectangle(cornerRadius: 16).strokeBorder(filter == option ? DroidTheme.separator : .clear))
         }
-        .buttonStyle(.plain)
+        .buttonStyle(DroidPressStyle())
         .accessibilityAddTraits(filter == option ? .isSelected : [])
     }
 }

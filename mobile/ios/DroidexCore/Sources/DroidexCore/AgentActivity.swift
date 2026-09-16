@@ -18,7 +18,7 @@ public struct ReviewSnapshot: Codable, Equatable, Sendable {
     public init(changes: [FileChange], note: String) { self.changes = changes; self.note = note }
 }
 
-public struct RemotePullRequest: Decodable, Equatable, Identifiable, Sendable {
+public struct RemotePullRequest: Codable, Equatable, Identifiable, Sendable {
     public let number: Int
     public let title: String
     public let state: String
@@ -30,7 +30,7 @@ public struct RemotePullRequest: Decodable, Equatable, Identifiable, Sendable {
     public var id: Int { number }
 }
 
-public struct PullRequestReview: Decodable, Sendable {
+public struct PullRequestReview: Codable, Sendable {
     public let pullRequest: RemotePullRequest
     public let body: String
     public let review: ReviewSnapshot

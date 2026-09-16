@@ -80,12 +80,13 @@ extension SessionPhase {
 }
 
 struct PhaseLabel: View {
+    @Environment(SessionStore.self) private var store
     let phase: SessionPhase
 
     var body: some View {
         HStack(spacing: 7) {
-            if phase.isRunning { ActivityPulse() }
-            Text(phase.title)
+            if store.isConnected && phase.isRunning { ActivityPulse() }
+            Text(store.isConnected ? phase.title : "Last known: " + phase.title)
         }
             .font(.caption)
             .foregroundStyle(phase.color)
@@ -106,5 +107,16 @@ struct DiffCounts: View {
         .monospacedDigit()
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("\(additions) additions, \(deletions) deletions")
+    }
+}
+
+struct DroidPressStyle: ButtonStyle {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .opacity(configuration.isPressed ? 0.78 : 1)
+            .scaleEffect(configuration.isPressed && !reduceMotion ? 0.985 : 1)
+            .animation(reduceMotion ? nil : .easeOut(duration: 0.12), value: configuration.isPressed)
     }
 }

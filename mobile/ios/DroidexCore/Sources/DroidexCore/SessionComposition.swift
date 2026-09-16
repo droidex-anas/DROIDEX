@@ -1,7 +1,7 @@
 import Foundation
 
-public struct PendingDelivery: Equatable, Sendable {
-    public enum State: Sendable { case sending, accepted, uncertain }
+public struct PendingDelivery: Codable, Equatable, Sendable {
+    public enum State: String, Codable, Sendable { case sending, accepted, uncertain }
     public let request: RemoteTurn
     public var state: State
     public static func == (lhs: Self, rhs: Self) -> Bool {
@@ -20,12 +20,10 @@ extension SessionStore {
     }
 
     public func modelName(_ configuration: SessionConfiguration) -> String {
-        guard isRemote else { return configuration.model.rawValue }
         return models.first { $0.id == configuration.remoteModelID }?.name ?? configuration.remoteModelID.flatMap { $0.isEmpty ? nil : $0 } ?? "Choose model"
     }
 
     public func effortName(_ configuration: SessionConfiguration) -> String {
-        guard isRemote else { return configuration.reasoning.title }
         guard let model = models.first(where: { $0.id == configuration.remoteModelID }) else { return "Choose model" }
         guard !model.efforts.isEmpty else { return "No effort control" }
         guard let effort = configuration.remoteEffort, model.efforts.contains(effort) else { return "Choose effort" }
@@ -38,11 +36,10 @@ extension SessionStore {
 
 
     public func submissionError(_ prompt: String, configuration: SessionConfiguration) -> String? {
-        guard canSend else { return isRemote ? "Reconnect to your computer to send a message." : "Sessions are still loading." }
+        guard canSend else { return "Reconnect to your computer to send a message." }
         let text = prompt.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty else { return "Write a message to start." }
         guard text.count <= Self.promptLimit else { return "Keep your message under \(Self.promptLimit.formatted()) characters." }
-        guard isRemote else { return nil }
         guard let model = models.first(where: { $0.id == configuration.remoteModelID }) else {
             return "Choose an available model from your computer."
         }
@@ -66,28 +63,53 @@ extension SessionStore {
     }
 
     public func remoteFiles(path: String, cursor: String? = nil) async throws -> RemoteFilePage {
-        guard let desktop, isConnected else { throw RemoteFailure("Reconnect to browse this project.") }
+        guard isConnected else { throw RemoteFailure("Reconnect to browse this project.") }
         return try await desktop.files(path: path, cursor: cursor)
     }
 
     public func remoteFile(path: String) async throws -> RemoteFileContent {
-        guard let desktop, isConnected else { throw RemoteFailure("Reconnect to open this file.") }
+        guard isConnected else { throw RemoteFailure("Reconnect to open this file.") }
         return try await desktop.file(path: path)
     }
 
 
     public func workspaceChanges() async throws -> ReviewSnapshot {
-        guard let desktop, isConnected else { throw RemoteFailure("Reconnect to review changes on your computer.") }
-        return try await desktop.changes()
+        guard isConnected else {
+            if let cachedChanges { return cachedChanges }
+            throw RemoteFailure("No changes have been downloaded yet. Connect the computer to load them.")
+        }
+        let generation = remoteGeneration
+        let result = try await desktop.changes()
+        guard generation == remoteGeneration, !Task.isCancelled else { throw CancellationError() }
+        cachedChanges = result
+        changesSyncedAt = .now
+        scheduleSave()
+        return result
     }
 
     public func pullRequests() async throws -> [RemotePullRequest] {
-        guard let desktop, isConnected else { throw RemoteFailure("Reconnect to load pull requests.") }
-        return try await desktop.pullRequests()
+        guard isConnected else {
+            if let cachedPullRequests { return cachedPullRequests }
+            throw RemoteFailure("No pull requests have been downloaded yet. Connect the computer to load them.")
+        }
+        let generation = remoteGeneration
+        let result = try await desktop.pullRequests()
+        guard generation == remoteGeneration, !Task.isCancelled else { throw CancellationError() }
+        cachedPullRequests = result
+        scheduleSave()
+        return result
     }
 
     public func pullRequest(_ number: Int) async throws -> PullRequestReview {
-        guard let desktop, isConnected else { throw RemoteFailure("Reconnect to review this pull request.") }
-        return try await desktop.pullRequest(number)
+        guard isConnected else {
+            if let saved = cachedPullRequestReviews[number] { return saved }
+            throw RemoteFailure("This pull request has not been downloaded. Connect the computer to open it.")
+        }
+        let generation = remoteGeneration
+        let result = try await desktop.pullRequest(number)
+        guard generation == remoteGeneration, !Task.isCancelled else { throw CancellationError() }
+        cachedPullRequestReviews[number] = result
+        scheduleSave()
+        return result
     }
 }

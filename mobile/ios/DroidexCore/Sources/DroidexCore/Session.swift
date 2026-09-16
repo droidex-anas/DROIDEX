@@ -1,31 +1,5 @@
 import Foundation
 
-public enum Harness: String, Codable, CaseIterable, Sendable {
-    case droid = "Droid"
-    case claude = "Claude Code"
-    case codex = "Codex"
-}
-
-public enum ModelChoice: String, Codable, CaseIterable, Sendable {
-    case astra = "GPT-6 Astra"
-    case fable = "Fable 5.1"
-    case fableMax = "Fable 5.1 Max"
-    case codex = "GPT-5.6 Codex"
-
-    public static func options(for harness: Harness) -> [ModelChoice] {
-        switch harness {
-        case .droid: [.astra, .fable, .fableMax, .codex]
-        case .claude: [.fable, .fableMax]
-        case .codex: [.astra, .codex]
-        }
-    }
-}
-
-public enum ReasoningEffort: Int, Codable, CaseIterable, Sendable {
-    case low, medium, high, ultra
-    public var title: String { ["Low", "Medium", "High", "Ultra"][rawValue] }
-}
-
 public enum InteractionMode: String, Codable, CaseIterable, Sendable {
     case auto, spec
 
@@ -33,30 +7,14 @@ public enum InteractionMode: String, Codable, CaseIterable, Sendable {
 }
 
 public struct SessionConfiguration: Codable, Equatable, Sendable {
-    public var harness: Harness
-    public var model: ModelChoice
-    public var reasoning: ReasoningEffort
     public var interactionMode: InteractionMode
     public var remoteModelID: String?
     public var remoteEffort: String?
 
-    public init(harness: Harness = .droid, model: ModelChoice = .astra, reasoning: ReasoningEffort = .high, interactionMode: InteractionMode = .auto) {
-        self.harness = harness
-        self.model = ModelChoice.options(for: harness).contains(model) ? model : ModelChoice.options(for: harness)[0]
-        self.reasoning = reasoning
+    public init(interactionMode: InteractionMode = .auto, remoteModelID: String? = nil, remoteEffort: String? = nil) {
         self.interactionMode = interactionMode
-    }
-
-    private enum CodingKeys: String, CodingKey { case harness, model, reasoning, interactionMode, remoteModelID, remoteEffort }
-    public init(from decoder: Decoder) throws {
-        let values = try decoder.container(keyedBy: CodingKeys.self)
-        harness = try values.decodeIfPresent(Harness.self, forKey: .harness) ?? .droid
-        model = try values.decodeIfPresent(ModelChoice.self, forKey: .model) ?? .astra
-        reasoning = try values.decodeIfPresent(ReasoningEffort.self, forKey: .reasoning) ?? .high
-        interactionMode = try values.decodeIfPresent(InteractionMode.self, forKey: .interactionMode) ?? .auto
-        remoteModelID = try values.decodeIfPresent(String.self, forKey: .remoteModelID)
-        remoteEffort = try values.decodeIfPresent(String.self, forKey: .remoteEffort)
-        if !ModelChoice.options(for: harness).contains(model) { model = ModelChoice.options(for: harness)[0] }
+        self.remoteModelID = remoteModelID
+        self.remoteEffort = remoteEffort
     }
 }
 
@@ -190,23 +148,4 @@ public struct AgentSession: Codable, Equatable, Sendable, Identifiable {
         self.updatedAt = updatedAt
         self.diffNote = diffNote
     }
-}
-
-public struct TurnRequest: Sendable {
-    public let appSessionId: UUID
-    public let text: String
-    public let configuration: SessionConfiguration
-}
-
-public enum AgentEvent: Sendable {
-    case step(String)
-    case text(String)
-    case changes([FileChange])
-    case approval(Approval)
-    case completed
-}
-
-@MainActor
-public protocol AgentClient {
-    func events(for request: TurnRequest) -> AsyncThrowingStream<AgentEvent, Error>
 }

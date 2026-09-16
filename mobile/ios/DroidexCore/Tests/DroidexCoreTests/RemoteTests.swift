@@ -2,10 +2,10 @@ import Foundation
 import Testing
 @testable import DroidexCore
 
-private let computerID = UUID(uuidString: "55555555-5555-4555-8555-555555555555")!
+let computerID = UUID(uuidString: "55555555-5555-4555-8555-555555555555")!
 
 @MainActor
-private func fixture(id: UUID? = nil, revision: Int = 2, phase: String = "completed", text: String = "The workspace is ready.", requestID: UUID? = nil) throws -> RemoteSession {
+func fixture(id: UUID? = nil, revision: Int = 2, phase: String = "completed", text: String = "The workspace is ready.", requestID: UUID? = nil) throws -> RemoteSession {
     let url = Bundle.module.url(forResource: "session", withExtension: "json", subdirectory: "Fixtures")!
     var object = try JSONSerialization.jsonObject(with: Data(contentsOf: url)) as! [String: Any]
     if let id { object["id"] = id.uuidString }
@@ -25,8 +25,14 @@ private func fixture(id: UUID? = nil, revision: Int = 2, phase: String = "comple
 }
 
 @MainActor
-private final class Desktop: DesktopService {
-    func changes() async throws -> ReviewSnapshot { throw RemoteFailure("Not configured for this test") }
+final class Desktop: DesktopService {
+    var review: ReviewSnapshot?
+    var bootstrapCount = 0
+    var automaticSnapshot = true
+    func changes() async throws -> ReviewSnapshot {
+        guard let review else { throw RemoteFailure("Not configured for this test") }
+        return review
+    }
     func pullRequests() async throws -> [RemotePullRequest] { throw RemoteFailure("Not configured for this test") }
     func pullRequest(_ number: Int) async throws -> PullRequestReview { throw RemoteFailure("Not configured for this test") }
 
@@ -45,6 +51,7 @@ private final class Desktop: DesktopService {
     var beforeSendReturns: ((RemoteTurn) async throws -> Void)?
 
     func bootstrap() async throws -> RemoteBootstrap {
+        bootstrapCount += 1
         if let bootstrapError { throw bootstrapError }
         let data = try JSONSerialization.data(withJSONObject: [
             "version": 3, "computerId": computerID.uuidString, "computerName": "Test computer", "workspace": "workspace",
@@ -56,7 +63,7 @@ private final class Desktop: DesktopService {
     func updates() -> AsyncThrowingStream<RemoteEvent, Error> {
         AsyncThrowingStream { continuation in
             continuations.append(continuation)
-            continuation.yield(.snapshot(sessions))
+            if automaticSnapshot { continuation.yield(.snapshot(sessions)) }
         }
     }
     func send(_ turn: RemoteTurn) async throws { sent.append(turn); try await beforeSendReturns?(turn); if let sendError { throw sendError } }
@@ -74,7 +81,7 @@ private final class Desktop: DesktopService {
 }
 
 @MainActor
-private func drain() async { for _ in 0..<40 { await Task.yield() } }
+func drain() async { for _ in 0..<40 { await Task.yield() } }
 
 @Suite @MainActor
 struct RemoteTests {
@@ -82,11 +89,10 @@ struct RemoteTests {
         let desktop = Desktop()
         let store = SessionStore(desktop: desktop)
         await store.load(); await drain()
-        #expect(store.isRemote && store.isConnected)
+        #expect(store.isConnected)
         #expect(store.sessions.isEmpty)
         #expect(store.defaultConfiguration.remoteModelID == "test-model")
         #expect(store.defaultConfiguration.remoteEffort == "high")
-        await store.resetPreview()
         #expect(store.sessions.isEmpty)
         await store.suspend()
     }
@@ -219,7 +225,7 @@ struct RemoteTests {
         desktop.bootstrapError = RemoteFailure("Computer is asleep")
         let store = SessionStore(desktop: desktop)
         await store.load()
-        #expect(store.loadState == .failed("Computer is asleep"))
+        #expect(store.loadState == .ready)
         #expect(store.sessions.isEmpty)
         #expect(!store.isConnected)
     }

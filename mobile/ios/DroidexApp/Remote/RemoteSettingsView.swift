@@ -8,23 +8,14 @@ struct RemoteSettingsView: View {
     @State private var showGuide = false
     @State private var confirmForget = false
 
-    private var artworkPhase: PairingArtworkPhase {
-        guard store.isRemote else { return .intro }
-        guard store.isConnected else { return .offline }
-        if store.sync.state == "loading" { return .syncing }
-        return store.sessions.contains { $0.phase.isRunning } ? .running : .connected
-    }
-
     var body: some View {
         Form {
             Section {
-                PairingArtwork(phase: artworkPhase)
-                    .frame(height: 210).allowsHitTesting(false)
-                Text(store.isRemote ? store.computerName : "Connect your computer")
+                Text(store.computerName)
                     .font(.title2.weight(.semibold)).padding(.vertical, 6)
-                Text(store.isRemote ? "Your projects and agent sessions, connected over your private network." : "Scan the QR in desktop Settings → Remote, or paste its pairing code.")
+                Text("Conversations already received stay available when your computer is offline.")
                     .foregroundStyle(DroidTheme.secondary)
-                if store.isRemote {
+                Group {
                     LabeledContent("Connection", value: store.isConnected ? "Connected" : "Disconnected")
                     LabeledContent("Shared project", value: store.workspaceName)
                     LabeledContent("Recent sessions", value: "\(store.sessions.count)")
@@ -32,7 +23,7 @@ struct RemoteSettingsView: View {
                     Button("Refresh connection") { Task { await store.reconnect() } }
                 }
                 Button { pairing = true } label: {
-                    Text(store.isRemote ? "Pair again" : "Add computer")
+                    Text("Pair again")
                         .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
                         .contentShape(Rectangle())
                 }
@@ -47,18 +38,18 @@ struct RemoteSettingsView: View {
             if let error = store.connectionError ?? connection.error {
                 Section { Text(error).foregroundStyle(DroidTheme.danger) }
             }
-            if store.isRemote {
+            Group {
                 Section {
                     Button("Forget this computer", role: .destructive) { confirmForget = true }
                 } footer: {
-                    Text("Forgetting removes this phone’s credential. Disable Remote on the computer to revoke access. Existing desktop sessions are not closed by revoking phone access.")
+                    Text("Forgetting removes this phone’s credential and its saved conversations, drafts, and reviews. Disable Remote on the computer to revoke access. Existing desktop sessions are not closed by revoking phone access.")
                 }
             }
         }
         .scrollContentBackground(.hidden).background(DroidTheme.background)
         .navigationTitle("Remote").navigationBarTitleDisplayMode(.inline)
         .sheet(isPresented: $pairing) {
-            OnboardingView(startAtPairing: true, allowsPreview: false)
+            OnboardingView(startAtPairing: true)
                 .environment(connection)
         }
         .sheet(isPresented: $showGuide) { PairingGuideView() }

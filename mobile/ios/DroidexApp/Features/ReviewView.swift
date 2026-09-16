@@ -15,8 +15,11 @@ struct ReviewView: View {
                 LazyVStack(alignment: .leading, spacing: 22) {
                     VStack(alignment: .leading, spacing: 8) {
                         Text(store.workspaceName).font(.title2.weight(.semibold)).tracking(-0.5)
-                        Text(store.isRemote ? "Working-tree changes" : "Illustrative changes")
+                        Text(store.isConnected ? "Working-tree changes" : "Saved working-tree changes")
                             .font(.subheadline).foregroundStyle(DroidTheme.secondary)
+                        if let date = store.changesSyncedAt {
+                            Text("Received \(date.formatted(date: .abbreviated, time: .shortened))").font(.caption).foregroundStyle(DroidTheme.secondary)
+                        }
                         if loading { ProgressView("Reading changes…").font(.footnote) }
                         if let error { Text(error).font(.footnote).foregroundStyle(DroidTheme.danger) }
                     }
@@ -43,14 +46,17 @@ struct ReviewView: View {
 
     private func load() async {
         guard !loading else { return }
+        if snapshot == nil {
+            snapshot = store.cachedChanges
+            if snapshot == nil, let sessionID, let session = store.session(sessionID), !session.changes.isEmpty {
+                snapshot = ReviewSnapshot(changes: session.changes, note: session.diffNote ?? "Previously received changes.")
+            }
+        }
         loading = true
         error = nil
         defer { loading = false }
         do {
-            if store.isRemote { snapshot = try await store.workspaceChanges() }
-            else if let sessionID, let session = store.session(sessionID) {
-                snapshot = ReviewSnapshot(changes: session.changes, note: "Bundled sample. This review does not change a repository.")
-            }
+            snapshot = try await store.workspaceChanges()
         } catch is CancellationError { return }
         catch { self.error = error.localizedDescription }
     }

@@ -103,7 +103,7 @@ public enum RemoteEvent: Decodable, Sendable {
     }
 }
 
-public struct RemoteTurn: Encodable, Sendable {
+public struct RemoteTurn: Codable, Sendable {
     public let id: UUID
     public let requestId: UUID
     public let prompt: String

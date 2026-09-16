@@ -12,7 +12,7 @@ struct PullRequestsView: View {
         NavigationStack {
             List {
                 Section {
-                    Text("Open pull requests for \(store.workspaceName). Read-only review using GitHub sign-in on your computer.")
+                    Text(store.isConnected ? "Open pull requests for \(store.workspaceName). Read-only review using GitHub sign-in on your computer." : "Saved pull requests. Status and diffs are the last downloaded copy, not live GitHub data.")
                         .font(.footnote).foregroundStyle(DroidTheme.secondary).listRowBackground(Color.clear)
                 }
                 if let error {

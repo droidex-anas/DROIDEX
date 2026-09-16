@@ -21,37 +21,37 @@ struct ComposerView: View {
                 TextField("Follow up…", text: $text, axis: .vertical)
                     .font(.body).lineLimit(1...5).frame(minHeight: 44)
                     .textInputAutocapitalization(.sentences)
-                    .disabled(phase.approval != nil || phase.question != nil)
+                    .disabled(store.isConnected && (phase.approval != nil || phase.question != nil))
                     .accessibilityLabel("Message").accessibilityIdentifier("composer.input")
                 HStack(alignment: .bottom, spacing: 10) {
                     ViewThatFits(in: .horizontal) {
                         HStack(spacing: 12) { model; effort }.fixedSize(horizontal: true, vertical: false)
                         VStack(alignment: .leading, spacing: 0) { model; effort }
                     }
-                    .disabled(!phase.canSend || !store.canSend)
+                    .disabled(store.isConnected && !phase.canSend)
                     Spacer(minLength: 0)
                     Button { if phase.isRunning { stop() } else { send() } } label: {
-                        Image(systemName: phase.isRunning ? "stop.fill" : "arrow.up")
+                        Image(systemName: phase.isRunning && store.isConnected ? "stop.fill" : "arrow.up")
                             .font(.body.weight(.semibold))
                             .frame(width: 44, height: 44)
                             .foregroundStyle(DroidTheme.background)
                             .background(canSubmit || phase.isRunning ? DroidTheme.text : DroidTheme.secondary, in: Circle())
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(DroidPressStyle())
                     .disabled(!store.canSend || (!phase.isRunning && !canSubmit))
                     .accessibilityLabel(phase.isRunning ? "Stop response" : "Send message")
                     .accessibilityIdentifier(phase.isRunning ? "composer.stop" : "composer.send")
                     .keyboardShortcut(.return, modifiers: .command)
                 }
                 HStack(spacing: 10) {
-                    HarnessControl(configuration: $configuration)
+                    HarnessControl()
                     Picker("Mode", selection: $configuration.interactionMode) {
                         ForEach(InteractionMode.allCases, id: \.self) { Text($0.title).tag($0) }
                     }
                     .pickerStyle(.segmented).frame(maxWidth: 165)
-                    .disabled(!phase.canSend || !store.canSend)
+                    .disabled(store.isConnected && !phase.canSend)
                     Spacer(minLength: 0)
-                    Text(store.isRemote ? "Remote" : "Preview").font(.caption2).foregroundStyle(DroidTheme.secondary)
+                    Text(store.isConnected ? "Remote" : "Draft · offline").font(.caption2).foregroundStyle(DroidTheme.secondary)
                 }
             }
             .padding(.horizontal, 14).padding(.top, 12).padding(.bottom, 10)

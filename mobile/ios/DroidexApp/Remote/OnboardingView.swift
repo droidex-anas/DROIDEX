@@ -6,11 +6,9 @@ struct OnboardingView: View {
     @Environment(AppConnection.self) private var connection
     @State private var showPairing: Bool
     @State private var showGuide = false
-    let allowsPreview: Bool
 
-    init(startAtPairing: Bool = false, allowsPreview: Bool = true) {
+    init(startAtPairing: Bool = false) {
         _showPairing = State(initialValue: startAtPairing)
-        self.allowsPreview = allowsPreview
     }
 
     var body: some View {
@@ -18,12 +16,12 @@ struct OnboardingView: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 24) {
                     BrandMark().frame(width: 110, height: 16).padding(.top, 22)
-                    PairingArtwork(phase: .intro).frame(height: 190).allowsHitTesting(false)
+                    RemoteSetupDiagram().padding(.vertical, 22)
                     VStack(alignment: .leading, spacing: 14) {
-                        Text("Pick up where\nyou left off.")
+                        Text("Your computer.\nNow in reach.")
                             .font(.largeTitle.weight(.semibold)).tracking(-1.1)
                             .fixedSize(horizontal: false, vertical: true)
-                        Text("The same projects. The same agents.\nNow from your phone.")
+                        Text("Send a task, follow your agent, and review its changes. Saved conversations stay with you offline.")
                             .font(.body).lineSpacing(4).foregroundStyle(DroidTheme.secondary)
                     }
                     Divider().overlay(DroidTheme.separator)
@@ -51,11 +49,7 @@ struct OnboardingView: View {
                             .foregroundStyle(DroidTheme.background).background(DroidTheme.text, in: Capsule())
                             .contentShape(Capsule())
                     }
-                    .buttonStyle(.plain).accessibilityIdentifier("pairing.add-computer")
-                    if allowsPreview {
-                        Button("Explore offline preview") { connection.preview() }
-                            .font(.footnote).foregroundStyle(DroidTheme.secondary).frame(minHeight: 44)
-                    }
+                    .buttonStyle(DroidPressStyle()).accessibilityIdentifier("pairing.add-computer")
                 }.frame(maxWidth: 520).padding(.horizontal, 28).padding(.top, 12).padding(.bottom, 6)
                     .frame(maxWidth: .infinity).background(DroidTheme.background)
             }
@@ -84,9 +78,6 @@ private struct PairComputerView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 24) {
-                PairingArtwork(phase: error != nil ? .error : progress == nil ? .scan : contacted ? .approval : .verifying)
-                    .frame(height: 210)
-                    .allowsHitTesting(false)
                 Text(progress == nil ? "Connect your computer" : contacted ? "Confirm on your computer" : "Connecting securely")
                     .font(.title.weight(.semibold)).tracking(-0.6)
                 Text("Open Settings → Remote in DROIDEX on your computer. Scan the QR or copy its pairing code.")
@@ -103,7 +94,7 @@ private struct PairComputerView: View {
                     .padding(20).frame(maxWidth: .infinity, alignment: .leading)
                     .background(DroidTheme.surface, in: RoundedRectangle(cornerRadius: 20))
                     Button("Cancel pairing") { cancel() }
-                        .frame(minHeight: 44).buttonStyle(.plain)
+                        .frame(minHeight: 44).buttonStyle(DroidPressStyle())
                 } else {
                     Button { codeFocused = false; scanner = true } label: {
                         Text("Scan QR code")
@@ -113,7 +104,7 @@ private struct PairComputerView: View {
                             .background(DroidTheme.text, in: Capsule())
                             .contentShape(Capsule())
                     }
-                    .buttonStyle(.plain).accessibilityIdentifier("pairing.scan")
+                    .buttonStyle(DroidPressStyle()).accessibilityIdentifier("pairing.scan")
                     HStack {
                         Text("Or use a pairing code").font(.subheadline.weight(.medium))
                         Spacer()
@@ -135,7 +126,7 @@ private struct PairComputerView: View {
                             .frame(maxWidth: .infinity, minHeight: 50)
                             .background(DroidTheme.elevated, in: Capsule()).contentShape(Capsule())
                     }
-                    .buttonStyle(.plain).disabled(code.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                    .buttonStyle(DroidPressStyle()).disabled(code.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                     .accessibilityIdentifier("pairing.connect")
                 }
                 if let error {
@@ -196,7 +187,7 @@ private struct PairComputerView: View {
                     try Task.checkCancellation()
                     guard current == generation else { return }
                     progress = "Connected. Opening your workspace…"
-                    try connection.connect(credential)
+                    try await connection.connect(credential)
                 } catch {
                     guard !Task.isCancelled, current == generation else { return }
                     self.error = error.localizedDescription + (error is RemoteFailure ? "" : " Check Wi-Fi, local-network permission, and the computer’s firewall.")

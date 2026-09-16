@@ -8,8 +8,6 @@ struct ConversationView: View {
     @AppStorage("hapticsEnabled") private var hapticsEnabled = true
     let sessionID: UUID
     @State private var showReview = false
-    @State private var renaming = false
-    @State private var title = ""
     @State private var deleting = false
     @State private var confirmRetry = false
     @State private var atBottom = true
@@ -34,9 +32,8 @@ struct ConversationView: View {
                     }
                     ToolbarItem(placement: .topBarTrailing) {
                         Menu {
-                            if !store.isRemote { Button("Rename") { title = session.title; renaming = true } }
                             ShareLink("Share conversation", item: exportedConversation(session))
-                            Button(store.isRemote ? "Close remote session" : "Delete session", role: .destructive) { deleting = true }
+                            Button("Close remote session", role: .destructive) { deleting = true }
                         } label: { Label("Session actions", systemImage: "ellipsis") }
                     }
                 }
@@ -50,7 +47,6 @@ struct ConversationView: View {
                         },
                         stop: { store.stop(sessionID) }
                     )
-                    .disabled(store.pendingActions.contains(sessionID))
                     .frame(maxWidth: 720).padding(.horizontal, 16).padding(.vertical, 8)
                     .frame(maxWidth: .infinity)
                 }
@@ -65,18 +61,13 @@ struct ConversationView: View {
                     }
                 }
                 .task(id: sessionID) {
-                    if store.isRemote, session.historyState == "unloaded" { store.loadRemoteHistory(sessionID) }
+                    if session.historyState == "unloaded" { store.loadRemoteHistory(sessionID) }
                 }
                 .sheet(isPresented: $showReview) { ReviewView(sessionID: sessionID) }
-                .alert("Rename session", isPresented: $renaming) {
-                    TextField("Title", text: $title)
-                    Button("Cancel", role: .cancel) {}
-                    Button("Save") { store.rename(sessionID, to: title) }
-                }
                 .confirmationDialog("Close this session?", isPresented: $deleting, titleVisibility: .visible) {
                     Button("Close session", role: .destructive) { store.delete(sessionID) }
                 } message: {
-                    Text(store.isRemote ? "Running work will stop. Edits are not undone and desktop history is retained." : "The local preview conversation will be removed.")
+                    Text("Running work will stop. Edits are not undone and desktop history is retained.")
                 }
                 .confirmationDialog("Did you check the desktop?", isPresented: $confirmRetry, titleVisibility: .visible) {
                     Button("I checked — keep my draft") { store.discardUnconfirmedDelivery(sessionID) }
@@ -91,7 +82,7 @@ struct ConversationView: View {
             LazyVStack(alignment: .leading, spacing: 26) {
                 historyStatus(session)
                 ForEach(session.messages) { message in
-                    ConversationMessage(message: message, isRunning: session.phase.isRunning && message.id == session.messages.last?.id)
+                    ConversationMessage(message: message, isRunning: store.isConnected && session.phase.isRunning && message.id == session.messages.last?.id)
                         .equatable().id(message.id)
                 }
                 if let pending = store.pendingDeliveries[sessionID] {
@@ -107,14 +98,14 @@ struct ConversationView: View {
                     Text("Ask about this project, or give your computer a task.")
                         .font(.callout).foregroundStyle(DroidTheme.secondary).padding(.top, 24)
                 }
-                if session.phase.isRunning, session.messages.last?.text.isEmpty != false,
+                if store.isConnected, session.phase.isRunning, session.messages.last?.text.isEmpty != false,
                    session.messages.last?.activity?.isEmpty != false, session.messages.last?.steps.isEmpty != false {
                     HStack(spacing: 10) {
                         ActivityPulse()
                         WorkingLabel(text: "Waiting for \(store.modelName(session.configuration))", active: true)
                     }.font(.footnote).foregroundStyle(DroidTheme.secondary)
                 }
-                if !session.phase.isRunning && store.pendingDeliveries[sessionID] == nil { PhaseLabel(phase: session.phase) }
+                if (!store.isConnected || !session.phase.isRunning) && store.pendingDeliveries[sessionID] == nil { PhaseLabel(phase: session.phase) }
                 if let error = store.actionErrors[sessionID] { Text(error).font(.callout).foregroundStyle(DroidTheme.danger) }
                 if case .failed(let error) = session.phase { Text(error).font(.callout).foregroundStyle(DroidTheme.danger) }
                 if !session.changes.isEmpty {
@@ -122,7 +113,7 @@ struct ConversationView: View {
                         HStack {
                             VStack(alignment: .leading, spacing: 6) {
                                 Text("Review changes").font(.subheadline.weight(.medium))
-                                Text("\(session.changes.count) files · \(store.isRemote ? "Working tree" : "Illustrative")").font(.caption).foregroundStyle(DroidTheme.secondary)
+                                Text("\(session.changes.count) files · Working tree").font(.caption).foregroundStyle(DroidTheme.secondary)
                             }
                             Spacer(minLength: 8)
                             DiffCounts(additions: session.additions, deletions: session.deletions)
@@ -135,7 +126,7 @@ struct ConversationView: View {
                         .id(approval.id)
                 }
                 if let question = session.phase.question {
-                    QuestionCard(question: question, sessionID: sessionID).id(question.id).disabled(store.pendingActions.contains(sessionID))
+                    QuestionCard(question: question, sessionID: sessionID).id(question.id).disabled(!store.isConnected || store.pendingActions.contains(sessionID))
                 }
             }
             .frame(maxWidth: 680).padding(.horizontal, 22).padding(.vertical, 24).frame(maxWidth: .infinity)
@@ -163,12 +154,11 @@ struct ConversationView: View {
     }
 
     @ViewBuilder private func historyStatus(_ session: AgentSession) -> some View {
-        if store.isRemote, let state = session.historyState {
-            if state == "loading" { ProgressView("Loading recent messages…").font(.footnote) }
+        if let state = session.historyState {
+            if store.isConnected && state == "loading" { ProgressView("Loading recent messages…").font(.footnote) }
             if let note = session.historyNote { Text(note).font(.footnote).foregroundStyle(DroidTheme.secondary) }
             if state != "ready" && state != "loading" && !session.phase.isRunning {
                 Button("Load recent messages") { store.loadRemoteHistory(sessionID) }.font(.footnote).frame(minHeight: 44)
-                    .disabled(store.pendingActions.contains(sessionID))
             }
         }
     }

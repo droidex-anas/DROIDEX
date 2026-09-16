@@ -2,25 +2,9 @@ import DroidexCore
 import SwiftUI
 
 struct HarnessControl: View {
-    @Environment(SessionStore.self) private var store
-    @Binding var configuration: SessionConfiguration
-
     var body: some View {
-        if store.isRemote {
-            Text("Droid").font(.caption.weight(.medium))
-                .accessibilityLabel("Harness: Droid. Other harnesses are not connected in this build.")
-        } else {
-            Menu {
-                ForEach(Harness.allCases, id: \.self) { harness in
-                    Button(harness.rawValue) {
-                        configuration.harness = harness
-                        if !ModelChoice.options(for: harness).contains(configuration.model) {
-                            configuration.model = ModelChoice.options(for: harness)[0]
-                        }
-                    }
-                }
-            } label: { TextConfigLabel(configuration.harness.rawValue) }
-        }
+        Text("Droid").font(.caption.weight(.medium))
+            .accessibilityLabel("Harness: Droid")
     }
 }
 
@@ -30,22 +14,18 @@ struct ModelControl: View {
 
     var body: some View {
         Menu {
-            if store.isRemote {
-                ForEach(store.models) { model in
-                    Button(model.name) {
-                        configuration.remoteModelID = model.id
-                        if !model.efforts.contains(configuration.remoteEffort ?? "") {
-                            configuration.remoteEffort = model.defaultEffort.flatMap { model.efforts.contains($0) ? $0 : nil } ?? model.efforts.first
-                        }
+            ForEach(store.models) { model in
+                Button(model.name) {
+                    configuration.remoteModelID = model.id
+                    if !model.efforts.contains(configuration.remoteEffort ?? "") {
+                        configuration.remoteEffort = model.defaultEffort.flatMap {
+                            model.efforts.contains($0) ? $0 : nil
+                        } ?? model.efforts.first
                     }
-                }
-            } else {
-                ForEach(ModelChoice.options(for: configuration.harness), id: \.self) { model in
-                    Button(model.rawValue) { configuration.model = model }
                 }
             }
         } label: { TextConfigLabel(store.modelName(configuration)) }
-        .disabled(store.isRemote && store.models.isEmpty)
+        .disabled(store.models.isEmpty)
         .accessibilityLabel("Model")
         .accessibilityValue(store.modelName(configuration))
         .accessibilityIdentifier("configuration.model")
@@ -58,8 +38,7 @@ struct EffortControl: View {
     @State private var presented = false
 
     private var available: [String] {
-        store.isRemote ? store.models.first { $0.id == configuration.remoteModelID }?.efforts ?? []
-            : ReasoningEffort.allCases.map { String($0.rawValue) }
+        store.models.first { $0.id == configuration.remoteModelID }?.efforts ?? []
     }
 
     var body: some View {
@@ -99,9 +78,9 @@ private struct EffortPicker: View {
     @Binding var configuration: SessionConfiguration
     let levels: [String]
 
-    private var selected: String { store.isRemote ? configuration.remoteEffort ?? "" : String(configuration.reasoning.rawValue) }
+    private var selected: String { configuration.remoteEffort ?? "" }
     private func title(_ level: String) -> String {
-        store.isRemote ? SessionStore.effortTitle(level) : ReasoningEffort(rawValue: Int(level) ?? 0)?.title ?? level
+        SessionStore.effortTitle(level)
     }
 
     var body: some View {
@@ -155,7 +134,7 @@ private struct EffortPicker: View {
                         .accessibilityAddTraits(level == selected ? .isSelected : [])
                 }
             }
-            Text(store.isRemote ? "Levels supported by this model on your computer." : "Preview configuration. No provider is connected.")
+            Text("Levels reported by this model on your computer.")
                 .font(.caption).foregroundStyle(DroidTheme.secondary)
         }
         .padding(20)
@@ -167,8 +146,7 @@ private struct EffortPicker: View {
     private func choose(_ level: String) {
         guard level != selected else { return }
         withAnimation(reduceMotion ? nil : .easeOut(duration: 0.12)) {
-            if store.isRemote { configuration.remoteEffort = level }
-            else if let value = Int(level), let effort = ReasoningEffort(rawValue: value) { configuration.reasoning = effort }
+            configuration.remoteEffort = level
         }
     }
 }

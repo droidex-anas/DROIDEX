@@ -26,7 +26,7 @@ struct ApprovalCard: View {
                     .foregroundStyle(DroidTheme.secondary).lineLimit(12)
                 Button("Read full request") { fullPlan = true }.font(.subheadline).frame(minHeight: 44)
             }
-            Text(store.isRemote ? "Approval runs on your computer and can change real files." : "Preview only. No command is executed.")
+            Text("Approval runs on your computer and can change real files.")
                 .font(.footnote).foregroundStyle(DroidTheme.secondary)
             ViewThatFits(in: .horizontal) {
                 HStack(spacing: 10) { actions }.fixedSize(horizontal: true, vertical: false)
@@ -48,7 +48,7 @@ struct ApprovalCard: View {
     }
 
     @ViewBuilder private var actions: some View {
-        Button(store.isRemote ? (approval.isPlan ? "Approve plan & build" : "Approve once") : "Approve preview") { respond(true) }
+        Button(approval.isPlan ? "Approve plan & build" : "Approve once") { respond(true) }
             .buttonStyle(.borderedProminent).tint(DroidTheme.text).foregroundStyle(DroidTheme.background)
             .controlSize(.large).disabled(!store.canSend || busy).accessibilityIdentifier("approval.allow")
         Button(approval.isPlan ? "Decline plan" : "Decline") { respond(false) }

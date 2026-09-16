@@ -3,7 +3,7 @@ import WebKit
 
 struct PairingGuideView: View {
     @Environment(\.dismiss) private var dismiss
-    private let guideURL = RemoteArtworkResources.url("droidex-pairing-guide", extension: "svg")
+    private let guideURL = Bundle.main.url(forResource: "droidex-pairing-guide", withExtension: "svg") ?? Bundle.main.url(forResource: "droidex-pairing-guide", withExtension: "svg", subdirectory: "RemoteArtwork") ?? Bundle.main.url(forResource: "droidex-pairing-guide", withExtension: "svg", subdirectory: "Resources/RemoteArtwork")
 
     var body: some View {
         NavigationStack {

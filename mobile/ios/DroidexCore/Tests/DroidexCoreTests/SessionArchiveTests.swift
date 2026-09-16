@@ -2,53 +2,111 @@ import Foundation
 import Testing
 @testable import DroidexCore
 
+@Suite @MainActor
 struct SessionArchiveTests {
-    @Test func latestRevisionWinsAndInterruptedRunsRestoreStopped() async throws {
-        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-        defer { try? FileManager.default.removeItem(at: directory) }
-        let archive = SessionArchive(url: directory.appendingPathComponent("sessions.json"))
-        let session = AgentSession(
-            title: "Keep this", configuration: .init(harness: .claude, interactionMode: .spec),
-            phase: .running(UUID()), draft: "Unsent work"
-        )
-        try await archive.save([session], revision: 2)
-        try await archive.save([], revision: 1)
-        let restored = try #require(try await archive.load()?.first)
-        #expect(restored.appSessionId == session.appSessionId)
-        #expect(restored.configuration == session.configuration)
-        #expect(restored.draft == "Unsent work")
-        #expect(restored.phase == .stopped)
-        #expect(restored.messages.last?.text.contains("interrupted") == true)
+    private func location() -> URL {
+        FileManager.default.temporaryDirectory.appending(path: "DROIDEX-tests/\(UUID().uuidString)/cache.json")
     }
 
-    @Test @MainActor func damagedArchiveIsNotOverwrittenByLoadOrFlush() async throws {
-        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-        defer { try? FileManager.default.removeItem(at: directory) }
-        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-        let url = directory.appendingPathComponent("sessions.json")
+    @Test func realChatsDiffsDraftsAndPendingReceiptsSurviveOfflineRelaunch() async throws {
+        let url = location()
+        defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+        let desktop = Desktop()
+        let original = try fixture(phase: "running", text: "Actual received partial response")
+        desktop.sessions = [original]
+        desktop.review = ReviewSnapshot(changes: original.changes, note: "Received working tree")
+        let store = SessionStore(desktop: desktop, archiveURL: url)
+        await store.load(); await drain()
+        store.setDraft("Keep writing while offline", for: original.id)
+        _ = try await store.workspaceChanges()
+        let pendingID = try #require(store.createSession(configuration: store.defaultConfiguration))
+        await store.send("Delivery may be in flight", to: pendingID)?.value
+        await store.suspend()
+
+        let offline = Desktop()
+        offline.bootstrapError = RemoteFailure("Computer is off")
+        let reopened = SessionStore(desktop: offline, archiveURL: url)
+        await reopened.load()
+        #expect(reopened.loadState == .ready && !reopened.isConnected)
+        #expect(reopened.session(original.id)?.messages == original.messages)
+        #expect(reopened.session(original.id)?.phase.isRunning == true)
+        #expect(reopened.session(original.id)?.draft == "Keep writing while offline")
+        #expect(try await reopened.workspaceChanges() == desktop.review)
+        #expect(reopened.pendingDeliveries[pendingID]?.state == .uncertain)
+        #expect(reopened.send("Never automatically replay", to: pendingID) == nil)
+        reopened.stop(original.id)
+        #expect(offline.sent.isEmpty && offline.stops.isEmpty)
+        await reopened.suspend()
+    }
+
+    @Test func unreadableCacheIsPreservedRatherThanSilentlyReset() async throws {
+        let url = location()
+        defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+        try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
         let original = Data("not valid JSON".utf8)
         try original.write(to: url)
-        let store = SessionStore(archiveURL: url)
+        let desktop = Desktop()
+        desktop.bootstrapError = RemoteFailure("Offline")
+        let store = SessionStore(desktop: desktop, archiveURL: url)
         await store.load()
-        guard case .failed = store.loadState else { Issue.record("Expected a load failure"); return }
-        #expect(store.createSession() == nil)
+        #expect(store.storageError != nil)
+        #expect(store.loadState == .ready)
         await store.flush()
         #expect(try Data(contentsOf: url) == original)
     }
 
-    @Test @MainActor func draftsAndRenamesSurviveAStoreRelaunch() async throws {
-        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-        defer { try? FileManager.default.removeItem(at: directory) }
-        let url = directory.appendingPathComponent("sessions.json")
-        let store = SessionStore(archiveURL: url)
+    @Test func emptyRecentSnapshotDoesNotEraseCachedConversations() async throws {
+        let url = location()
+        defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+        let desktop = Desktop()
+        let original = try fixture()
+        desktop.sessions = [original]
+        let store = SessionStore(desktop: desktop, archiveURL: url)
+        await store.load(); await drain(); await store.suspend()
+        let next = Desktop()
+        let reopened = SessionStore(desktop: next, archiveURL: url)
+        await reopened.load(); await drain()
+        #expect(reopened.session(original.id)?.messages == original.messages)
+        var summary = try JSONSerialization.jsonObject(with: JSONEncoder().encode(original)) as! [String: Any]
+        summary["revision"] = 1
+        summary["historyState"] = "unloaded"
+        summary["messages"] = []
+        summary["changes"] = []
+        let unloaded = try JSONDecoder().decode(RemoteSession.self, from: JSONSerialization.data(withJSONObject: summary))
+        next.emit(.snapshot([unloaded])); await drain()
+        #expect(reopened.session(original.id)?.messages == original.messages)
+        #expect(reopened.session(original.id)?.changes == original.changes)
+        next.emit(.removed(original.id)); await drain()
+        #expect(reopened.session(original.id) == nil)
+        await reopened.suspend()
+    }
+
+    @Test func cacheCannotCrossComputerIdentity() async throws {
+        let url = location()
+        defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+        let desktop = Desktop()
+        desktop.sessions = [try fixture()]
+        let store = SessionStore(desktop: desktop, archiveURL: url, computerID: computerID)
+        await store.load(); await drain(); await store.suspend()
+        let offline = Desktop()
+        offline.bootstrapError = RemoteFailure("Offline")
+        let wrong = SessionStore(desktop: offline, archiveURL: url, computerID: UUID())
+        await wrong.load()
+        #expect(wrong.sessions.isEmpty && wrong.storageError != nil)
+    }
+
+    @Test func repeatedForegroundEventsDoNotOpenTwoStreams() async throws {
+        let desktop = Desktop()
+        desktop.automaticSnapshot = false
+        let store = SessionStore(desktop: desktop)
         await store.load()
-        let id = try #require(store.createSession())
-        store.setDraft("An unfinished thought", for: id)
-        store.rename(id, to: "Mobile polish")
-        await store.flush()
-        let relaunched = SessionStore(archiveURL: url)
-        await relaunched.load()
-        #expect(relaunched.session(id)?.draft == "An unfinished thought")
-        #expect(relaunched.session(id)?.title == "Mobile polish")
+        await drain()
+        #expect(store.isConnecting)
+        await store.load()
+        await drain()
+        #expect(desktop.bootstrapCount == 1 && desktop.continuations.count == 1)
+        desktop.emit(.snapshot([])); await drain()
+        #expect(store.isConnected && !store.isConnecting)
+        await store.suspend()
     }
 }
