@@ -11,6 +11,7 @@ import {
   isAutomationMutationPermission,
 } from './automations/permissionPolicy.js';
 import { bridgeFeature } from './missionFeatures.js';
+import { droidErrorDetails } from './providers/droid/droidErrors.js';
 import type {
   SessionRole,
   BridgeFeature,
@@ -238,19 +239,16 @@ export function normalizeStreamEvent(
         // A non-spawn result that merely *references* a subagent (a TaskOutput
         // poll) keeps its transcript: it carries the child's status signal, and
         // the feed, not the bridge, decides whether the body is worth showing.
-        if (!isTask) return { ...signal, transcript: resultTranscript() };
-        if (!ev.isError) return signal;
-        return { ...signal, transcript: resultTranscript() };
+        return isTask && !ev.isError ? signal : { ...signal, transcript: resultTranscript() };
       }
       return { transcript: resultTranscript() };
     }
-    case 'error':
+    case 'error': {
+      const details = droidErrorDetails(ev.message);
       return {
-        transcript: transcript(appSessionId, sourceProviderSessionId, role, 'error', {
-          text: ev.message,
-          isError: true,
-        }),
+        transcript: transcript(appSessionId, sourceProviderSessionId, role, 'error', details),
       };
+    }
     case 'mission_features_changed':
       return { features: ev.features.map(bridgeFeature) };
     case 'mission_progress_entry':

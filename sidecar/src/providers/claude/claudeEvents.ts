@@ -7,29 +7,28 @@
 // re-emitting a snapshot would double every sentence in the chat. The snapshot
 // backfills one case only: a message that streamed nothing at all (an aborted
 // or synthetic frame), which is visible nowhere else.
-import type { SDKMessage } from '@anthropic-ai/claude-agent-sdk';
+import type { SDKMessage, SDKRateLimitInfo } from '@anthropic-ai/claude-agent-sdk';
 
 import type { NormalizedEvent } from '../../normalize.js';
 import type { TranscriptEvent } from '../../protocol.js';
 import { ClaudeSubagents } from './claudeSubagents.js';
+import { resetAtMillis, UsageLimitError, usageLimitDetails } from '../usageLimit.js';
 
 const TOOL_BLOCK_TYPES = new Set(['tool_use', 'server_tool_use', 'mcp_tool_use']);
 
-interface RateLimitInfo {
-  status: string;
-  overageStatus?: string;
-  resetsAt?: number;
-}
-
-// Why a blocked usage window is worth telling the user about. A refusal stops
-// the turn producing anything, which otherwise reads as the model hanging; an
-// allowed window is routine accounting and says nothing.
-export function rateLimitRefusal(info: RateLimitInfo): string | undefined {
-  if (info.status !== 'rejected' || info.overageStatus === 'allowed') return undefined;
-  const resumesAt = info.resetsAt ? new Date(info.resetsAt * 1000).toLocaleTimeString() : '';
-  return resumesAt
+export function rateLimitRefusal(info: SDKRateLimitInfo): UsageLimitError | undefined {
+  if (
+    info.status !== 'rejected' ||
+    info.overageStatus === 'allowed' ||
+    info.overageStatus === 'allowed_warning'
+  )
+    return undefined;
+  const resetsAt = resetAtMillis(info.resetsAt);
+  const resumesAt = resetsAt === undefined ? '' : new Date(resetsAt).toLocaleTimeString();
+  const message = resumesAt
     ? `Claude usage limit reached. It resets at ${resumesAt}.`
     : 'Claude usage limit reached.';
+  return new UsageLimitError(message, resetsAt);
 }
 
 interface ToolBlock {
@@ -214,7 +213,13 @@ export class ClaudeEventMapper {
         events.push({ transcript: this.transcript('thinking', { text: block.thinking }) });
     }
     if (message.error)
-      events.push({ transcript: this.transcript('error', { text: message.error, isError: true }) });
+      events.push({
+        transcript: this.transcript('error', {
+          text: message.error,
+          isError: true,
+          ...(message.error === 'rate_limit' ? { errorKind: 'usage_limit' } : {}),
+        }),
+      });
     return events;
   }
 
@@ -271,9 +276,18 @@ export class ClaudeEventMapper {
     return { transcript: this.transcript('status', { text }) };
   }
 
-  private rateLimit(info: RateLimitInfo): NormalizedEvent[] {
+  private rateLimit(info: SDKRateLimitInfo): NormalizedEvent[] {
     const refusal = rateLimitRefusal(info);
-    return refusal ? [this.statusEvent(refusal)] : [];
+    if (!refusal) return [];
+    return [
+      {
+        transcript: this.transcript('error', {
+          text: refusal.message,
+          isError: true,
+          ...usageLimitDetails(refusal),
+        }),
+      },
+    ];
   }
 
   private toolCall(

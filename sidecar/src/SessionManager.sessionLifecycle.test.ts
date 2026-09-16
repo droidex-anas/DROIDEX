@@ -418,7 +418,11 @@ test(
         appSessionId: providerSessionId,
         agent: 'primary',
         modelId: 'model-default',
+        reasoningEffort: 'high',
       });
+      const stored = h.history.summaryPatchesAndHidden().patches.get('app-pending-alias');
+      assert.equal(stored?.modelId, 'model-default', 'closed settings must be durable before send');
+      assert.equal(stored?.reasoningEffort, 'high');
       const provider = new FakeFactorySession(providerSessionId, {}, h.calls, {
         settings: { modelId: 'model-old' },
       });

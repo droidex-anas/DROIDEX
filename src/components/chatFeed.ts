@@ -25,6 +25,10 @@ export function isCompactionCompleteStatus(text?: string): boolean {
   return /compact/i.test(t) && /complete/i.test(t);
 }
 
+export function isSettingsStatus(event: TranscriptEvent): boolean {
+  return event.modelSwitch !== undefined;
+}
+
 // Whether `next` is the tool_result produced by the `call` event. Result events
 // carry no usable `toolName` (the live SDK emits "" and history reads the empty
 // result name), so classification cannot identify them; correlate by toolUseId

@@ -7,12 +7,13 @@ import { extname, join } from 'node:path';
 
 import { providerSessionsDir } from '../../droidexPaths.js';
 import { errMsg } from '../../sessionHelpers.js';
+import { resetAtMillis, UsageLimitError } from '../usageLimit.js';
 
 export interface GeneratedImage {
   id: string;
   result: string;
   savedPath?: string | null;
-  failure?: { type: string } | null;
+  failure?: { type: string; resetsAt?: number | null } | null;
 }
 
 const IMAGE_EXTENSIONS = new Set(['.png', '.jpg', '.jpeg', '.webp', '.gif']);
@@ -84,6 +85,11 @@ function imagePath(appSessionId: string, itemId: string, extension: string): str
 // than allowed to walk out of the directory.
 function safe(value: string): string {
   return value.replace(/[^A-Za-z0-9_-]/g, '_').slice(0, 64);
+}
+
+export function imageUsageLimit(failure: GeneratedImage['failure']): UsageLimitError | undefined {
+  if (failure?.type !== 'usageLimitExceeded') return undefined;
+  return new UsageLimitError(failureText(failure.type), resetAtMillis(failure.resetsAt));
 }
 
 function failureText(type: string): string {

@@ -83,9 +83,7 @@ export class ClaudeSession implements ProviderSession {
       this.resolveClosed = resolve;
     });
     let markSpawned = (): void => undefined;
-    let rejectSpawn = (error: Error): void => {
-      void error;
-    };
+    let rejectSpawn: (error: Error) => void = () => undefined;
     const spawned = new Promise<void>((resolve, reject) => {
       markSpawned = resolve;
       rejectSpawn = reject;
@@ -200,7 +198,7 @@ export class ClaudeSession implements ProviderSession {
         // has to end here instead of waiting for one that never comes.
         if (message.type === 'rate_limit_event') {
           const refusal = rateLimitRefusal(message.rate_limit_info);
-          if (refusal) throw new Error(refusal);
+          if (refusal) throw refusal;
         }
         if (message.type === 'result' && answersTurn(message, turnId)) {
           // A stopped turn settles quietly: the CLI still reports the
@@ -304,13 +302,11 @@ export class ClaudeSession implements ProviderSession {
     return applied;
   }
 
-  // A null model is "back to the provider's own default", which is what an
-  // absent model is. The effort rides the same call because the picker changes
-  // both together; the CLI keeps it for the session without writing it to the
-  // user's settings files.
+  // Model and effort stay on this process, never in the user's settings files.
+  // Replaying an already-applied model needs no API validation request.
   async setModel({ modelId, reasoningEffort }: ProviderModelSettings): Promise<void> {
     await this.waitUntilInitialized();
-    if (modelId !== undefined) {
+    if (modelId !== undefined && (modelId ?? undefined) !== this.modelId) {
       await this.query.setModel(modelId ?? undefined);
       this.requireOpen();
       this.modelId = modelId ?? undefined;

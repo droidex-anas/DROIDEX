@@ -72,13 +72,14 @@ test('model row shows the session-pinned reasoning effort, never autonomy', () =
   assert.doesNotMatch(html, />medium</);
 });
 
-test('model row falls back to the global default effort', () => {
+test('model row leaves unset effort provider-managed instead of using the global default', () => {
   const html = renderPanel(
     { modelId: 'm1' },
-    [model({ supportedReasoningEfforts: ['max'] })],
+    [model({ supportedReasoningEfforts: ['max'], defaultReasoningEffort: 'max' })],
     'max',
   );
-  assert.match(html, />max</);
+  assert.match(html, /Model Alpha/);
+  assert.doesNotMatch(html, />max</);
 });
 
 test('model row hides the pill for a known model without reasoning support', () => {
@@ -91,6 +92,7 @@ test('model row hides the pill for a known model without reasoning support', () 
 
 test('model row keeps the pill while the model list has not loaded', () => {
   const html = renderPanel({ reasoningEffort: 'xhigh', modelId: 'unlisted' }, []);
+  assert.match(html, />unlisted</);
   assert.match(html, />xhigh</);
 });
 

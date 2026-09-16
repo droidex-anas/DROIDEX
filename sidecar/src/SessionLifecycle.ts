@@ -102,6 +102,7 @@ type SteerOutcome = 'taken' | 'queued' | 'interrupt';
 
 export interface SessionLifecycleDependencies {
   provider: (kind: ProviderKind) => Provider;
+  providerDefaultModelId?: (kind: ProviderKind) => string | undefined;
   registry: SessionRegistry<LiveSession>;
   ensureConnected: () => void;
   getFactoryDefaults: () => Promise<FactoryDefaultSettings>;
@@ -123,6 +124,7 @@ export interface SessionLifecycleDependencies {
   >;
   applyPendingSettingsToSummary: (summary: SessionSummary) => SessionSummary;
   applyPendingSessionSettings: (appSessionId: string) => Promise<boolean>;
+  waitForSettingsMutations?: (appSessionId: string) => Promise<void>;
   runPrimaryTurn: (liveSession: LiveSession, prompt: string) => Promise<void>;
   eventFlow: Pick<SessionEventFlow, 'apply'>;
   context: Pick<SessionContext, 'refresh' | 'stopPolling' | 'stopSession' | 'forgetSession'>;
@@ -204,6 +206,9 @@ export class SessionLifecycle {
           compactionTokenLimit,
           mcpServers: mcp.configs,
         }),
+        ...(kind !== 'droid' && !primary.modelId
+          ? { modelId: d.providerDefaultModelId?.(kind) }
+          : {}),
         interactions: d.interactionsFor(ref),
       });
       pendingSession = providerSession;
@@ -309,7 +314,8 @@ export class SessionLifecycle {
     try {
       // Resolved before any resource starts, so a session bound to a provider
       // this build cannot route fails before it costs anything.
-      const provider = d.provider(requireProviderKind(boundProvider(historical)));
+      const kind = requireProviderKind(boundProvider(historical));
+      const provider = d.provider(kind);
       const mcp = await d.startLocalMcpServers(ref, historical?.cwd);
       pendingMcpServers = mcp.servers;
       const providerSession = await provider.resume(providerSessionId, {
@@ -318,6 +324,9 @@ export class SessionLifecycle {
         interactions: d.interactionsFor(ref),
         cwd: historical?.cwd,
         ...resumeSettings(historical),
+        ...(kind !== 'droid' && !historical?.modelId
+          ? { modelId: d.providerDefaultModelId?.(kind) }
+          : {}),
         mcpServers: mcp.configs,
       });
       pendingSession = providerSession;
@@ -328,16 +337,18 @@ export class SessionLifecycle {
         providerSessionId,
         isCurrent: () => !d.isShutdownStarted() && pendingSession === providerSession,
       });
+      // A closed settings write must settle before registration changes its target.
+      await d.waitForSettingsMutations?.(appSessionId);
       this.requireOpenAdmission();
       const projectedSummary = d.applyPendingSettingsToSummary({ ...summary });
-      const liveSession = createLiveSession(summary, providerSession, session, mcp);
+      const liveSession = createLiveSession(projectedSummary, providerSession, session, mcp);
       pendingLiveSession = liveSession;
       this.subscribeAutomaticCompaction(liveSession);
       this.subscribeBackgroundEvents(liveSession);
       d.registry.register(liveSession);
       this.observeProviderClosure(liveSession);
       // Registered first, so the failed-open path that unregisters also releases it.
-      d.openProviderTranscript(summary);
+      d.openProviderTranscript(projectedSummary);
       this.trackProviderProcess(appSessionId, providerSession, mcp.configs);
       d.childSessions.attachParent(appSessionId);
       d.emit({

@@ -120,7 +120,9 @@ export class SessionTimeline {
   private readonly loaders: SessionTimelineLoaders;
   private readonly streaming: StreamingDeltaCoalescer;
   private readonly streamingFlushFailures = new Map<string, StreamingTranscriptPersistenceError>();
-  private readonly transcripts = new TimelineTranscripts();
+  private readonly transcripts = new TimelineTranscripts((id) =>
+    this.dependencies.registry.resolveSummary(id),
+  );
 
   constructor(private readonly dependencies: SessionTimelineDependencies) {
     this.loaders = dependencies.loaders ?? {
@@ -297,8 +299,7 @@ export class SessionTimeline {
     this.transcripts.release(appSessionId);
   }
 
-  // A prompt joins the durable transcript without becoming a live event: the
-  // renderer already rendered it from the send.
+  // The renderer already showed the prompt; only persist it here.
   recordPrompt(appSessionId: string, prompt: string): void {
     this.transcripts.recordPrompt(appSessionId, prompt);
   }

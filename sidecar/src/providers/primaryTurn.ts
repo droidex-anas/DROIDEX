@@ -7,6 +7,7 @@ import type { SessionEventFlow } from '../SessionEventFlow.js';
 import { errMsg, isUserCancellation } from '../sessionHelpers.js';
 import type { LiveSession } from '../SessionLifecycle.js';
 import { isReportedStreamingTranscriptError, type SessionTimeline } from '../SessionTimeline.js';
+import { usageLimitDetails } from './usageLimit.js';
 
 export interface PrimaryTurnDependencies {
   eventFlow: Pick<SessionEventFlow, 'beginTurn' | 'apply'>;
@@ -34,6 +35,7 @@ export async function runPrimaryTurn(
   context.startPolling();
   let turnError: unknown;
   let reportedError = false;
+  let reportedUsageLimit = false;
   try {
     await d.applyDesignToolPolicy(liveSession, isDesignPrompt(prompt));
     if (!d.isCurrent(liveSession)) {
@@ -43,7 +45,10 @@ export async function runPrimaryTurn(
     for await (const normalized of liveSession.session.stream(prompt)) {
       if (!d.isCurrent(liveSession)) break;
       d.eventFlow.apply(appSessionId, appSessionId, 'primary', normalized);
-      if (normalized.transcript?.kind === 'error') reportedError = true;
+      if (normalized.transcript?.kind === 'error') {
+        reportedError = true;
+        reportedUsageLimit ||= normalized.transcript.errorKind === 'usage_limit';
+      }
     }
   } catch (err) {
     turnError = err;
@@ -57,7 +62,7 @@ export async function runPrimaryTurn(
     context.stopPolling();
   }
   if (!d.isCurrent(liveSession)) return;
-  if (turnError) settleTurnFailure(d, liveSession, turnError, reportedError);
+  if (turnError) settleTurnFailure(d, liveSession, turnError, reportedError, reportedUsageLimit);
   // Keep streaming=true while the context refresh is in flight so concurrent
   // sends queue instead of racing a second lifecycle turn.
   await context.refresh();
@@ -68,6 +73,7 @@ function settleTurnFailure(
   liveSession: LiveSession,
   error: unknown,
   reportedError: boolean,
+  reportedUsageLimit: boolean,
 ): void {
   const appSessionId = liveSession.summary.appSessionId;
   if (liveSession.interruptingForSteer && isUserCancellation(error)) {
@@ -81,7 +87,8 @@ function settleTurnFailure(
   }
   if (!isReportedStreamingTranscriptError(error)) {
     const message = errMsg(error);
-    if (!reportedError) {
+    const usageLimit = usageLimitDetails(error);
+    if (!reportedError || (usageLimit.errorKind && !reportedUsageLimit)) {
       d.timeline.append({
         id: randomUUID(),
         appSessionId,
@@ -91,6 +98,7 @@ function settleTurnFailure(
         kind: 'error',
         text: message,
         isError: true,
+        ...usageLimit,
       });
     }
     d.emitError({ appSessionId, message });
