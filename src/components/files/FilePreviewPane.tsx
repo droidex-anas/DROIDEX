@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import type { PDFDocumentLoadingTask, PDFDocumentProxy, RenderTask } from 'pdfjs-dist';
 import {
   AlertTriangle,
@@ -6,16 +6,10 @@ import {
   ChevronRight,
   ExternalLink,
   FolderSearch,
-  X,
-} from 'lucide-react';
-import { Spinner } from '@droidex/icons';
+  Spinner,
+} from '@droidex/icons';
 import { Highlight, type PrismTheme } from 'prism-react-renderer';
-import {
-  openFileDefault,
-  readFilePreview,
-  revealFile,
-  type FilePreviewPayload,
-} from '../../lib/desktop';
+import { readFilePreview, type FilePreviewPayload } from '../../lib/desktop';
 import {
   createSanitizedDocxElementFactory,
   DOCX_PREVIEW_OPTIONS,
@@ -24,8 +18,6 @@ import {
   sanitizeDocxPreview,
 } from '../../lib/filePreview';
 import { Markdown } from '../Markdown';
-import { toast } from '../../lib/toast';
-import { FileTypeIcon } from '../FileTypeIcon';
 import { resolveFilePresentation } from '../../lib/filePresentation';
 
 const TEXT_CHAR_LIMIT = 250_000;
@@ -37,7 +29,8 @@ const PDF_RENDER_SCALE = 1.4;
 interface FilePreviewPaneProps {
   accessToken: string;
   relative: string;
-  onClear?: () => void;
+  onOpenExternal: () => void;
+  onReveal: () => void;
 }
 
 type PreviewState =
@@ -99,28 +92,12 @@ const CODE_THEME: PrismTheme = {
   ],
 };
 
-function ToolbarButton({
-  title,
-  onClick,
-  children,
-}: {
-  title: string;
-  onClick: () => void;
-  children: React.ReactNode;
-}) {
-  return (
-    <button
-      type="button"
-      title={title}
-      onClick={onClick}
-      className="flex h-7 w-7 items-center justify-center rounded-lg text-droid-text-muted transition-colors hover:bg-droid-elevated hover:text-droid-text"
-    >
-      {children}
-    </button>
-  );
-}
-
-export function FilePreviewPane({ accessToken, relative, onClear }: FilePreviewPaneProps) {
+export function FilePreviewPane({
+  accessToken,
+  relative,
+  onOpenExternal,
+  onReveal,
+}: FilePreviewPaneProps) {
   const [state, setState] = useState<PreviewState>({ kind: 'idle' });
 
   useEffect(() => {
@@ -147,49 +124,10 @@ export function FilePreviewPane({ accessToken, relative, onClear }: FilePreviewP
     };
   }, [accessToken, relative]);
 
-  const handleOpenExternal = useCallback(() => {
-    if (!accessToken || !relative) return;
-    void openFileDefault(accessToken, relative).catch((reason: unknown) =>
-      toast.error(reason instanceof Error ? reason.message : String(reason)),
-    );
-  }, [accessToken, relative]);
-
-  const handleReveal = useCallback(() => {
-    if (!accessToken || !relative) return;
-    void revealFile(accessToken, relative).catch((reason: unknown) =>
-      toast.error(reason instanceof Error ? reason.message : String(reason)),
-    );
-  }, [accessToken, relative]);
-
   const fileName = useMemo(() => relative.split(/[\\/]/).pop() ?? relative, [relative]);
 
   return (
     <section className="flex min-h-0 min-w-0 flex-1 flex-col bg-droid-bg">
-      <header className="flex h-9 shrink-0 items-center gap-2 border-b border-droid-border px-2.5">
-        <FileTypeIcon filename={fileName} className="h-3.5 w-3.5" />
-        <span
-          className="min-w-0 flex-1 truncate text-[12px] text-droid-text-secondary"
-          title={relative}
-        >
-          {relative || 'Preview'}
-        </span>
-        {relative && (
-          <div className="flex shrink-0 items-center gap-0.5">
-            <ToolbarButton title="Open externally" onClick={handleOpenExternal}>
-              <ExternalLink className="h-3.5 w-3.5" />
-            </ToolbarButton>
-            <ToolbarButton title="Reveal in Finder / Explorer" onClick={handleReveal}>
-              <FolderSearch className="h-3.5 w-3.5" />
-            </ToolbarButton>
-            {onClear && (
-              <ToolbarButton title="Clear selection" onClick={onClear}>
-                <X className="h-3.5 w-3.5" />
-              </ToolbarButton>
-            )}
-          </div>
-        )}
-      </header>
-
       <div className="min-h-0 flex-1 overflow-hidden">
         {state.kind === 'idle' && (
           <div className="flex h-full items-center justify-center px-6 text-center text-[12px] text-droid-text-muted">
@@ -210,8 +148,8 @@ export function FilePreviewPane({ accessToken, relative, onClear }: FilePreviewP
             </p>
             <button
               type="button"
-              onClick={handleOpenExternal}
-              className="mt-1 flex items-center gap-1.5 rounded-md border border-droid-border px-2.5 py-1 text-[11px] text-droid-text-secondary transition-colors hover:border-droid-border-hover hover:text-droid-text"
+              onClick={onOpenExternal}
+              className="mt-1 flex items-center gap-1.5 rounded-md border border-droid-border bg-droid-surface px-2.5 py-1 text-[11px] text-droid-text-secondary transition-colors hover:bg-droid-elevated/60 hover:text-droid-text"
             >
               <ExternalLink className="h-3 w-3" />
               Open externally
@@ -222,8 +160,8 @@ export function FilePreviewPane({ accessToken, relative, onClear }: FilePreviewP
           <PreviewBody
             payload={state.payload}
             fileName={fileName}
-            onOpenExternal={handleOpenExternal}
-            onReveal={handleReveal}
+            onOpenExternal={onOpenExternal}
+            onReveal={onReveal}
           />
         )}
       </div>
@@ -288,7 +226,7 @@ function FallbackNotice({
           <p className="max-w-sm text-[12px] leading-relaxed text-droid-text-muted">{reason}</p>
         )}
         {payload.totalSize > 0 && (
-          <p className="font-mono text-[11px] text-droid-text-muted">
+          <p className="text-[11px] text-droid-text-muted">
             {formatBytes(payload.totalSize)} · cap {formatBytes(payload.sizeCapBytes)}
           </p>
         )}
@@ -297,7 +235,7 @@ function FallbackNotice({
         <button
           type="button"
           onClick={onOpenExternal}
-          className="flex items-center gap-1.5 rounded-md border border-droid-border bg-droid-elevated px-3 py-1.5 text-[12px] text-droid-text transition-colors hover:border-droid-border-hover"
+          className="flex items-center gap-1.5 rounded-md border border-droid-border bg-droid-surface px-3 py-1.5 text-[12px] text-droid-text transition-colors hover:bg-droid-elevated/60"
         >
           <ExternalLink className="h-3.5 w-3.5" />
           Open externally
@@ -305,7 +243,7 @@ function FallbackNotice({
         <button
           type="button"
           onClick={onReveal}
-          className="flex items-center gap-1.5 rounded-md border border-droid-border px-3 py-1.5 text-[12px] text-droid-text-secondary transition-colors hover:border-droid-border-hover hover:text-droid-text"
+          className="flex items-center gap-1.5 rounded-md border border-droid-border px-3 py-1.5 text-[12px] text-droid-text-secondary transition-colors hover:bg-droid-elevated/60 hover:text-droid-text"
         >
           <FolderSearch className="h-3.5 w-3.5" />
           Reveal
@@ -634,11 +572,11 @@ function PdfPreview({ data }: { data?: Uint8Array }) {
             onClick={() => {
               setPage((p) => Math.max(1, p - 1));
             }}
-            className="flex h-6 w-6 items-center justify-center rounded text-droid-text-muted transition-colors enabled:hover:text-droid-text disabled:opacity-30"
+            className="flex h-6 w-6 items-center justify-center rounded-md text-droid-text-muted transition-colors enabled:hover:bg-droid-elevated/60 enabled:hover:text-droid-text disabled:opacity-30"
           >
             <ChevronLeft className="h-3.5 w-3.5" />
           </button>
-          <span className="font-mono text-[11px] text-droid-text-secondary">
+          <span className="text-[11px] tabular-nums text-droid-text-secondary">
             {page} / {numPages}
           </span>
           <button
@@ -647,7 +585,7 @@ function PdfPreview({ data }: { data?: Uint8Array }) {
             onClick={() => {
               setPage((p) => Math.min(numPages, p + 1));
             }}
-            className="flex h-6 w-6 items-center justify-center rounded text-droid-text-muted transition-colors enabled:hover:text-droid-text disabled:opacity-30"
+            className="flex h-6 w-6 items-center justify-center rounded-md text-droid-text-muted transition-colors enabled:hover:bg-droid-elevated/60 enabled:hover:text-droid-text disabled:opacity-30"
           >
             <ChevronRight className="h-3.5 w-3.5" />
           </button>
@@ -824,10 +762,10 @@ function XlsxPreview({ data }: { data?: Uint8Array }) {
               onClick={() => {
                 setActiveSheet(idx);
               }}
-              className={`shrink-0 rounded px-2 py-0.5 text-[11px] transition-colors ${
+              className={`shrink-0 rounded-md px-2 py-0.5 text-[11px] transition-colors ${
                 idx === activeSheet
                   ? 'bg-droid-accent/15 text-droid-text'
-                  : 'text-droid-text-muted hover:bg-droid-elevated hover:text-droid-text'
+                  : 'text-droid-text-muted hover:bg-droid-elevated/60 hover:text-droid-text'
               }`}
             >
               {s.sheet}

@@ -34,9 +34,22 @@ import { join } from 'node:path';
 // initialCssBytes raised from 95_000 to 97_000 for the transcript polish: the
 // scroll-position edge fade on wide tables and code, hover-only scrollbars, and
 // the tightened typography and inline-code pill added ~0.9KB of CSS.
+//
+// Raised from 1_350_000 to 1_365_000 for landing the provider-neutral UI stack
+// (#258-#265, #274) beside the providers work: the files pane with its tree and
+// preview, the running-processes menu, the update pill, and the utility pane
+// rework measure ~2.6KB on top of main's entry. Main itself stood ~3.5KB over
+// the old line after the ultra-effort level and the generated-image card landed
+// without a bump, so most of the raise is catching up to what already shipped.
+// Headroom above the merged ~1_356_100 is ~9KB.
+//
+// initialCssBytes raised from 97_000 to 100_000 on the same landing: main's
+// generated-image grid and ultra-effort dots already measured ~1.2KB over the
+// old line, and the stack adds ~0.8KB for the files pane chrome. The merged
+// ~98_980 leaves ~1KB of headroom, in line with past CSS raises.
 const BUDGETS = {
-  initialRendererJsBytes: 1_350_000,
-  initialCssBytes: 97_000,
+  initialRendererJsBytes: 1_365_000,
+  initialCssBytes: 100_000,
   largestLazyChunkBytes: 700_000,
   duplicatePackageMaxBytes: 120_000,
 };

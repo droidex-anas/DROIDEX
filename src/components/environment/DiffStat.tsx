@@ -1,6 +1,6 @@
 import { useRef, useState } from 'react';
 import { Check } from 'lucide-react';
-import { ChangesIcon } from '../icons/ChangesIcon';
+import { ChangesIcon } from '@droidex/icons';
 import { Popover } from './Popover';
 import { RowCaret } from './primitives';
 import { DIFF_MODES, diffModeLabel } from '../../lib/git';

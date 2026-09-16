@@ -100,7 +100,7 @@ export function parseDroidExecHelp(help: string): ModelInfo[] {
 }
 
 function parseModelLine(line: string, isCustom: boolean): ModelInfo | null {
-  const match = line.match(/^\s{2,}(\S+)\s{2,}(.+?)\s*$/);
+  const match = /^\s{2,}(\S+)\s{2,}(.+?)\s*$/.exec(line);
   if (!match) return null;
   const id = match[1];
   const isDefault = /\s+\(default\)$/.test(match[2]);
@@ -117,9 +117,10 @@ function parseModelLine(line: string, isCustom: boolean): ModelInfo | null {
 function parseDetailLine(
   line: string,
 ): Pick<ModelInfo, 'displayName' | 'supportedReasoningEfforts' | 'defaultReasoningEffort'> | null {
-  const match = line.match(
-    /^-\s+(.+?):\s+supports reasoning:\s+\w+;\s+supported:\s+\[([^\]]*)\];\s+default:\s+(\S+)/,
-  );
+  const match =
+    /^-\s+(.+?):\s+supports reasoning:\s+\w+;\s+supported:\s+\[([^\]]*)\];\s+default:\s+(\S+)/.exec(
+      line,
+    );
   if (!match) return null;
   return {
     displayName: match[1].trim(),

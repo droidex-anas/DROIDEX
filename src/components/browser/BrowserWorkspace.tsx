@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { X } from '@droidex/icons';
 import { isDesignModeOpen } from '../../hooks/designModeState';
 import { useNativeSurfacesObscured } from '../../hooks/useObscuresNativeSurfaces';
 import { shallowEqual, useStoreDispatch, useStoreSelector } from '../../hooks/useStore';
@@ -466,7 +467,7 @@ export default function BrowserWorkspace({
           </span>
           <button
             type="button"
-            className="shrink-0 rounded border border-droid-border px-2 py-0.5 text-[11px] text-droid-text-muted hover:text-droid-text"
+            className="shrink-0 rounded-md border border-droid-border bg-droid-surface px-2 py-0.5 text-[11px] text-droid-text-muted transition-colors hover:bg-droid-elevated/60 hover:text-droid-text"
             onClick={() => {
               setLoadFailure(null);
               startLoading();
@@ -478,13 +479,13 @@ export default function BrowserWorkspace({
           </button>
           <button
             type="button"
-            className="shrink-0 rounded px-1 text-[11px] text-droid-text-muted hover:text-droid-text"
+            className="flex h-5 w-5 shrink-0 items-center justify-center rounded-md text-droid-text-muted transition-colors hover:bg-droid-elevated/60 hover:text-droid-text"
             onClick={() => {
               setLoadFailure(null);
             }}
             aria-label="Dismiss"
           >
-            x
+            <X className="h-3 w-3" />
           </button>
         </div>
       )}
