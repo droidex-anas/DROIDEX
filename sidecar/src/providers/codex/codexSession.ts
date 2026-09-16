@@ -3,13 +3,12 @@
 // which Codex applies to that turn and the ones after it.
 import type { NormalizedEvent } from '../../normalize.js';
 import type { Autonomy } from '../../protocol.js';
-import { errMsg } from '../../sessionHelpers.js';
 import type { ProviderMention, SkillInfo } from '../catalog.js';
 import type { ProviderInteractions } from '../interactions.js';
 import type { ProviderModelSettings, ProviderSession } from '../session.js';
 import type { AppServerClient } from './appServer.js';
 import { codexAutonomy, OpenPrompts } from './codexApprovals.js';
-import { loadCodexCatalog, loadCodexSkills } from './codexCatalog.js';
+import { CodexCatalog } from './codexCatalog.js';
 import {
   CodexEventMapper,
   errorOf,
@@ -64,10 +63,7 @@ export class CodexSession implements ProviderSession {
   private readonly startup = new CodexStartup();
   private readonly backgroundListeners = new Set<(event: NormalizedEvent) => void>();
   private startupNoticeTimer?: ReturnType<typeof setTimeout>;
-  private readonly catalogListeners = new Set<(items: SkillInfo[]) => void>();
-  private catalog?: Promise<SkillInfo[]>;
-  private catalogCache: SkillInfo[] = [];
-  private catalogRefresh?: Promise<void>;
+  private catalog?: CodexCatalog;
 
   constructor(input: CodexSessionInput) {
     this.providerSessionId = input.appSessionId;
@@ -131,26 +127,20 @@ export class CodexSession implements ProviderSession {
     this.threadId = response.thread.id;
     this.threadModel = response.model;
     this.mapper.setModel({ ...this.model, modelId: this.model.modelId ?? this.threadModel });
-    this.catalog ??= loadCodexCatalog(this.client, [this.cwd]).then((catalog) => {
-      if (this.hasClosed) return [];
-      if (catalog.diagnostics.length)
-        console.warn('Codex catalog:', catalog.diagnostics.join('; '));
-      this.catalogCache = catalog.items;
-      return catalog.items;
-    });
+    this.catalog ??= new CodexCatalog(this.client, [this.cwd]);
   }
 
-  async catalogItems(): Promise<SkillInfo[]> {
-    if (!this.catalog) throw new Error('This Codex session is not open.');
-    await (this.catalogRefresh ?? this.catalog);
-    return this.catalogCache;
+  catalogItems(): Promise<SkillInfo[]> {
+    return this.requireCatalog().catalogItems();
   }
 
   onCatalogUpdated(listener: (items: SkillInfo[]) => void): () => void {
-    this.catalogListeners.add(listener);
-    return () => {
-      this.catalogListeners.delete(listener);
-    };
+    return this.requireCatalog().onUpdated(listener);
+  }
+
+  private requireCatalog(): CodexCatalog {
+    if (!this.catalog) throw new Error('This Codex session is not open.');
+    return this.catalog;
   }
 
   async *stream(
@@ -237,7 +227,7 @@ export class CodexSession implements ProviderSession {
 
   close(): Promise<void> {
     this.resolveClosed();
-    this.catalogListeners.clear();
+    this.catalog?.close();
     this.cancelStartupNotice();
     return (this.closePromise ??= this.client.close());
   }
@@ -290,7 +280,7 @@ export class CodexSession implements ProviderSession {
       });
     }
     this.client.onNotification('skills/changed', () => {
-      this.refreshSkills();
+      this.catalog?.refreshSkills();
     });
     this.onThreadNotification('mcpServer/startupStatus/updated', (params) => {
       this.startup.serverStatus(params);
@@ -320,34 +310,12 @@ export class CodexSession implements ProviderSession {
     });
     this.client.onClose((error) => {
       this.cancelStartupNotice();
-      this.catalogListeners.clear();
+      this.catalog?.close();
       this.turn?.fail(error);
       this.prompts.cancel();
       this.resolveClosed(error);
     });
     this.prompts.register(this.client, (itemId: string) => this.mapper.toolDetail(itemId));
-  }
-
-  private refreshSkills(): void {
-    if (!this.catalog || this.hasClosed) return;
-    const pending = (this.catalogRefresh ?? this.catalog)
-      .then(async () => {
-        if (this.isClosed) return;
-        const skills = await loadCodexSkills(this.client, [this.cwd]);
-        if (this.hasClosed) return;
-        this.catalogCache = [
-          ...skills,
-          ...this.catalogCache.filter((item) => item.kind !== 'skill'),
-        ];
-        for (const listener of this.catalogListeners) listener(this.catalogCache);
-      })
-      .catch((error: unknown) => {
-        if (!this.hasClosed) console.warn('Codex skill refresh failed:', errMsg(error));
-      });
-    this.catalogRefresh = pending;
-    void pending.then(() => {
-      if (this.catalogRefresh === pending) this.catalogRefresh = undefined;
-    });
   }
 
   // The turn's id arrives either on `turn/started` or with the `turn/start`

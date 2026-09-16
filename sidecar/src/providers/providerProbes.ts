@@ -1,10 +1,14 @@
-import type { ProviderStatus } from '../protocol.js';
+import type { ProviderStatus, SkillInfo } from '../protocol.js';
 import type { ProviderKind } from './providerKind.js';
 
-export type ProviderProbeMap = ReadonlyMap<
-  ProviderKind,
-  (signal: AbortSignal) => Promise<ProviderStatus>
->;
+// Readiness comes back as soon as the CLI answers. A catalog that takes longer
+// follows through `publishItems` from the same process, each call carrying
+// every row known so far.
+export type ProviderProbe = (
+  signal: AbortSignal,
+  publishItems: (items: SkillInfo[]) => void,
+) => Promise<ProviderStatus>;
+export type ProviderProbeMap = ReadonlyMap<ProviderKind, ProviderProbe>;
 
 // A harness that pins $HOME to a temp directory probes nothing: a real probe
 // starts the provider's CLI, which writes under that directory and keeps
@@ -20,7 +24,11 @@ export class ProviderProbes {
   private inFlight?: Promise<void>;
   private abort?: AbortController;
 
-  constructor(private readonly probes: ProviderProbeMap) {}
+  constructor(
+    private readonly probes: ProviderProbeMap,
+    // Called when rows arrive for a status already handed out.
+    private readonly onItems: (provider: ProviderKind) => void = () => undefined,
+  ) {}
 
   // The last answer, or undefined while a provider has not been probed yet —
   // which the picker reads as "still checking".
@@ -36,7 +44,20 @@ export class ProviderProbes {
     // for its siblings or clear `inFlight` while they are still running.
     const round = Promise.allSettled(
       [...this.probes].map(async ([provider, probe]) => {
-        this.latest.set(provider, await probe(abort.signal));
+        let status: ProviderStatus | undefined;
+        let items: SkillInfo[] | undefined;
+        const publishItems = (rows: SkillInfo[]): void => {
+          items = rows;
+          // Rows that beat the status ride on it when it lands; rows for a
+          // status a newer round has replaced are stale.
+          if (!status || this.latest.get(provider) !== status) return;
+          status = { ...status, items: rows };
+          this.latest.set(provider, status);
+          this.onItems(provider);
+        };
+        const answered = await probe(abort.signal, publishItems);
+        status = items ? { ...answered, items } : answered;
+        this.latest.set(provider, status);
       }),
     )
       .then(() => undefined)
