@@ -6,8 +6,10 @@ import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
 import { errMsg } from '../../sessionHelpers.js';
 
 // A line this long is a runaway payload rather than a message: fail the client
-// instead of buffering until the sidecar runs out of memory.
-const MAX_LINE_BYTES = 1_048_576;
+// instead of buffering until the sidecar runs out of memory. The bound has to
+// clear a generated image, which Codex sends base64-encoded inside its
+// completion item (a 1.4 MB photo arrives as a 1.8 MB line).
+const MAX_LINE_BYTES = 64 * 1024 * 1024;
 const METHOD_NOT_FOUND = -32601;
 const HANDLER_FAILED = -32603;
 // How long a closing process gets at each step before the next signal.
@@ -139,7 +141,7 @@ export class AppServerClient {
   private tooLong(text: string): boolean {
     if (Buffer.byteLength(text) <= MAX_LINE_BYTES) return false;
     this.remainder = '';
-    this.fail(new Error('Codex sent a line larger than 1 MiB; the session was ended.'));
+    this.fail(new Error('Codex sent a line larger than 64 MiB; the session was ended.'));
     this.child.kill('SIGKILL');
     return true;
   }
