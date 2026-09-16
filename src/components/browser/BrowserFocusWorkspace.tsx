@@ -5,6 +5,7 @@ import { useStoreSelector } from '../../hooks/useStore';
 import { useSessionLive } from '../../hooks/useSessionLive';
 import type { TranscriptEvent } from '../../types/bridge';
 import PromptInput from '../PromptInput';
+import { RunningProcessesMenu } from '../RunningProcessesMenu';
 import BrowserWorkspace from './BrowserWorkspace';
 
 const RECENT_ACTIVITY_LIMIT = 3;
@@ -59,65 +60,70 @@ export function BrowserFocusWorkspace({
             className="relative z-10 shrink-0 overflow-hidden bg-gradient-to-t from-droid-bg via-droid-bg/98 to-droid-bg/92 pt-2"
           >
             <div className="px-3">
-              <div className="mx-auto max-w-4xl overflow-hidden rounded-xl border border-droid-border bg-droid-elevated/95 shadow-[0_-12px_36px_rgba(0,0,0,0.24)] backdrop-blur">
-                <button
-                  type="button"
-                  aria-expanded={activityOpen}
-                  onClick={() => {
-                    setActivityOpen((open) => !open);
-                  }}
-                  className="flex h-9 w-full items-center gap-2 px-3 text-[11px] font-medium text-droid-text-muted transition-colors hover:bg-droid-surface/40 hover:text-droid-text"
-                >
-                  <span
-                    className={`h-1.5 w-1.5 rounded-full ${live ? 'bg-droid-green' : 'bg-droid-text-muted/40'}`}
-                  />
-                  <span className="flex-1 text-left">Recent activity</span>
-                  <span className="text-[11px] font-normal tabular-nums text-droid-text-muted/60">
-                    {live ? 'Working' : `${String(recent.length)} recent`}
-                  </span>
-                  {activityOpen ? (
-                    <ChevronDown className="h-3.5 w-3.5" />
-                  ) : (
-                    <ChevronUp className="h-3.5 w-3.5" />
-                  )}
-                </button>
-                <AnimatePresence initial={false}>
-                  {activityOpen && (
-                    <motion.div
-                      key="recent-activity"
-                      initial={{ height: 0, opacity: 0 }}
-                      animate={{ height: 'auto', opacity: 1 }}
-                      exit={{ height: 0, opacity: 0 }}
-                      transition={{ duration: 0.2, ease: [0.16, 1, 0.3, 1] }}
-                      className="overflow-hidden"
-                    >
-                      <div className="border-t border-droid-border/70 px-2 py-1">
-                        {recent.length > 0 ? (
-                          recent.map((event) => {
-                            const text = activityText(event);
-                            return (
-                              <div
-                                key={event.id}
-                                className="flex h-7 min-w-0 items-center gap-2 rounded-lg px-2 text-[11px] hover:bg-droid-surface/35"
-                              >
-                                <span className="w-12 shrink-0 text-[11px] font-medium text-droid-text-muted/60">
-                                  {activityAuthor(event)}
-                                </span>
-                                <span title={text} className="truncate text-droid-text-muted">
-                                  {text}
-                                </span>
-                              </div>
-                            );
-                          })
-                        ) : (
-                          <div className="flex h-7 items-center px-2 text-[11px] text-droid-text-muted/60">
-                            Activity will appear here while Droid works.
-                          </div>
-                        )}
-                      </div>
-                    </motion.div>
-                  )}
-                </AnimatePresence>
+              <div className="mx-auto flex max-w-4xl items-center gap-2">
+                {activeSession && (
+                  <RunningProcessesMenu appSessionId={activeSession.appSessionId} />
+                )}
+                <div className="min-w-0 flex-1 overflow-hidden rounded-xl border border-droid-border bg-droid-elevated/95 shadow-[0_-12px_36px_rgba(0,0,0,0.24)] backdrop-blur">
+                  <button
+                    type="button"
+                    aria-expanded={activityOpen}
+                    onClick={() => {
+                      setActivityOpen((open) => !open);
+                    }}
+                    className="flex h-9 w-full items-center gap-2 px-3 text-[11px] font-medium text-droid-text-muted transition-colors hover:bg-droid-surface/40 hover:text-droid-text"
+                  >
+                    <span
+                      className={`h-1.5 w-1.5 rounded-full ${live ? 'bg-droid-green' : 'bg-droid-text-muted/40'}`}
+                    />
+                    <span className="flex-1 text-left">Recent activity</span>
+                    <span className="text-[11px] font-normal tabular-nums text-droid-text-muted/60">
+                      {live ? 'Working' : `${String(recent.length)} recent`}
+                    </span>
+                    {activityOpen ? (
+                      <ChevronDown className="h-3.5 w-3.5" />
+                    ) : (
+                      <ChevronUp className="h-3.5 w-3.5" />
+                    )}
+                  </button>
+                  <AnimatePresence initial={false}>
+                    {activityOpen && (
+                      <motion.div
+                        key="recent-activity"
+                        initial={{ height: 0, opacity: 0 }}
+                        animate={{ height: 'auto', opacity: 1 }}
+                        exit={{ height: 0, opacity: 0 }}
+                        transition={{ duration: 0.2, ease: [0.16, 1, 0.3, 1] }}
+                        className="overflow-hidden"
+                      >
+                        <div className="border-t border-droid-border/70 px-2 py-1">
+                          {recent.length > 0 ? (
+                            recent.map((event) => {
+                              const text = activityText(event);
+                              return (
+                                <div
+                                  key={event.id}
+                                  className="flex h-7 min-w-0 items-center gap-2 rounded-lg px-2 text-[11px] hover:bg-droid-surface/35"
+                                >
+                                  <span className="w-12 shrink-0 text-[11px] font-medium text-droid-text-muted/60">
+                                    {activityAuthor(event)}
+                                  </span>
+                                  <span title={text} className="truncate text-droid-text-muted">
+                                    {text}
+                                  </span>
+                                </div>
+                              );
+                            })
+                          ) : (
+                            <div className="flex h-7 items-center px-2 text-[11px] text-droid-text-muted/60">
+                              Activity will appear here while Droid works.
+                            </div>
+                          )}
+                        </div>
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
+                </div>
               </div>
             </div>
             <PromptInput compact onOverlayChange={setPromptOverlayOpen} />
