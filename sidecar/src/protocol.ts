@@ -195,6 +195,9 @@ export interface TranscriptEvent {
   browserRefs?: BrowserTranscriptReference[];
   steered?: boolean;
   compactType?: 'auto' | 'manual';
+  modelSwitch?: { from: string; to: string };
+  errorKind?: 'usage_limit';
+  resetsAt?: number;
 }
 
 export type BrowserTranscriptReferenceKind = 'element' | 'region' | 'text';

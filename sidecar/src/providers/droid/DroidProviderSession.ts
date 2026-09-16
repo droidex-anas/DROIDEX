@@ -7,8 +7,11 @@ import {
 } from '../../DroidRuntime.js';
 import { normalizeStreamEvent, type NormalizedEvent } from '../../normalize.js';
 import type { Autonomy, SessionInteractionMode } from '../../protocol.js';
+import { errMsg } from '../../sessionHelpers.js';
 import { hotPathMetrics } from '../../telemetry/hotPathMetrics.js';
 import type { ProviderModelSettings, ProviderSession } from '../session.js';
+import { UsageLimitError } from '../usageLimit.js';
+import { droidErrorDetails } from './droidErrors.js';
 
 type DroidProcessRuntime = Pick<FactoryRuntime, 'processIdOf' | 'isProcessAlive'>;
 
@@ -34,16 +37,22 @@ export class DroidProviderSession implements ProviderSession {
   }
 
   async *stream(prompt: string): AsyncGenerator<NormalizedEvent, void, undefined> {
-    for await (const event of this.droid.stream(prompt, { includePartialMessages: true })) {
-      const normalizeStartedAt = performance.now();
-      const normalized = normalizeStreamEvent(
-        this.appSessionId,
-        this.appSessionId,
-        'primary',
-        event,
-      );
-      hotPathMetrics.recordNormalize(performance.now() - normalizeStartedAt);
-      if (normalized) yield normalized;
+    try {
+      for await (const event of this.droid.stream(prompt, { includePartialMessages: true })) {
+        const normalizeStartedAt = performance.now();
+        const normalized = normalizeStreamEvent(
+          this.appSessionId,
+          this.appSessionId,
+          'primary',
+          event,
+        );
+        hotPathMetrics.recordNormalize(performance.now() - normalizeStartedAt);
+        if (normalized) yield normalized;
+      }
+    } catch (error) {
+      const details = droidErrorDetails(errMsg(error));
+      if (details.errorKind) throw new UsageLimitError(details.text);
+      throw error;
     }
   }
 

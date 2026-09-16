@@ -16,8 +16,18 @@ import { MessageBody } from './MessageBody';
 import { DiffCard } from './DiffView';
 import type { SubagentsDockData } from './SubagentsDock';
 import TurnChangesPanel from './TurnChangesPanel';
-import { isCompactionCompleteStatus, sameFeedEvents, type FeedItem } from './chatFeed';
-import { CompactingIndicator, CompactionDivider, MessageActions } from './transcript/primitives';
+import {
+  isCompactionCompleteStatus,
+  isSettingsStatus,
+  sameFeedEvents,
+  type FeedItem,
+} from './chatFeed';
+import {
+  CompactingIndicator,
+  CompactionDivider,
+  MessageActions,
+  TranscriptNotice,
+} from './transcript/primitives';
 import { correlateResults, ErrorLine, ThinkingItem } from './transcript/rows';
 import { DiffGroup, ToolGroupItem, WorkedGroup } from './transcript/groups';
 import { UserBubble } from './transcript/UserBubble';
@@ -326,12 +336,13 @@ export const FeedItemView = memo(function FeedItemView({
       );
     }
     case 'status': {
+      if (item.event.modelSwitch) return <TranscriptNotice event={item.event} />;
       const text = item.event.text ?? '';
       if (item.event.kind === 'compaction') return <CompactionDivider compactType="auto" />;
       if (compacting) return <CompactingIndicator />;
       if (isCompactionCompleteStatus(text))
         return <CompactionDivider compactType={item.event.compactType} />;
-      return live ? (
+      return live && !isSettingsStatus(item.event) ? (
         <span className="shimmer-text text-[13px] font-medium">{text}</span>
       ) : (
         <span className="block text-[13px] text-droid-text-muted leading-relaxed break-words">
@@ -340,7 +351,11 @@ export const FeedItemView = memo(function FeedItemView({
       );
     }
     case 'error':
-      return <ErrorLine text={item.event.text ?? ''} />;
+      return item.event.errorKind === 'usage_limit' ? (
+        <TranscriptNotice event={item.event} />
+      ) : (
+        <ErrorLine text={item.event.text ?? ''} />
+      );
     case 'diff':
       return (
         <DiffCard

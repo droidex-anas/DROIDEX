@@ -1,9 +1,12 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
-import { Check, ChevronRight, FoldVertical } from 'lucide-react';
+import { Check, ChevronRight, FoldVertical, Info } from 'lucide-react';
 import { Copy } from '@droidex/icons';
 import { useDocumentVisible } from '../../hooks/useDocumentVisible';
 import { formatDuration } from '../../lib/tools';
 import { openExternal } from '../../lib/onboarding';
+import { useStoreSelector } from '../../hooks/useStore';
+import { providerModelCatalog } from '../../features/providers/providerIdentity';
+import type { TranscriptEvent } from '../../types/bridge';
 
 const ACCENT = 'var(--droid-accent)';
 export const RED = 'var(--droid-red)';
@@ -264,6 +267,42 @@ export function CompactingIndicator() {
       <span className="shimmer-text text-[16px] font-semibold tracking-tight" aria-live="polite">
         Compacting…
       </span>
+    </div>
+  );
+}
+
+export function TranscriptNotice({ event }: { event: TranscriptEvent }) {
+  const models = useStoreSelector((state) =>
+    event.modelSwitch
+      ? providerModelCatalog(
+          state.sessions[event.appSessionId].provider,
+          state.models,
+          state.providerStatuses,
+        )
+      : undefined,
+  );
+  const name = (id: string) => models?.find((model) => model.id === id)?.displayName ?? id;
+  let text: string;
+  if (event.modelSwitch) {
+    text = `Model switched: ${name(event.modelSwitch.from)} → ${name(event.modelSwitch.to)}`;
+  } else {
+    const reset = event.resetsAt !== undefined ? new Date(event.resetsAt) : undefined;
+    const when =
+      reset && Number.isFinite(reset.getTime())
+        ? new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' }).format(
+            reset,
+          )
+        : undefined;
+    text = "You've hit your usage limit. Upgrade your plan or add credits to continue";
+    text += when ? `, or try again at ${when}.` : '.';
+  }
+  return (
+    <div
+      role="status"
+      className="flex items-center justify-center gap-2 py-1 text-center text-[12px] leading-relaxed text-droid-text-muted"
+    >
+      <Info aria-hidden="true" className="h-3.5 w-3.5 shrink-0" strokeWidth={1.5} />
+      <span>{text}</span>
     </div>
   );
 }

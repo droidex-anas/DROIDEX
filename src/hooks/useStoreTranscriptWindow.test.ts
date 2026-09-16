@@ -638,7 +638,7 @@ test('authoritative session removal releases orphaned per-session state', () => 
     historyCursor: { gone: 'cursor' },
     utilityPanels: { gone: initialState.utilityPanels.gone },
     browserOpenKeys: { gone: true },
-    sessionSettingOverrides: { gone: { modelId: 'model' } },
+    sessions: { gone: { ...session('gone'), modelId: 'model', reasoningEffort: 'high' } },
   });
 
   const next = reducer(state, { type: 'SESSION_LIST', sessions: [] });
@@ -650,7 +650,7 @@ test('authoritative session removal releases orphaned per-session state', () => 
   assert.equal(next.childSessions.gone, undefined);
   assert.equal(next.historyCursor.gone, undefined);
   assert.equal(next.browserOpenKeys.gone, undefined);
-  assert.equal(next.sessionSettingOverrides.gone, undefined);
+  assert.equal(next.sessions.gone, undefined);
 });
 
 test('memory pressure releases inactive transcripts and never drops a live turn', () => {

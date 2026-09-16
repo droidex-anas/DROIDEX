@@ -1,11 +1,8 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import {
-  createSessionSettingsForAgent,
-  startupFactoryDefaults,
-  validateFactoryDefaults,
-} from './SessionManager.js';
+import { startupFactoryDefaults, validateFactoryDefaults } from './SessionManager.js';
+import { createSessionSettingsForAgent } from './SessionModelSettings.js';
 import type { ModelInfo } from './protocol.js';
 
 const models: ModelInfo[] = [

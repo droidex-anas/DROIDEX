@@ -324,10 +324,15 @@ function isChildSessionSummary(value: unknown): boolean {
 }
 
 function isTranscriptEvent(value: unknown): boolean {
+  if (!isRecord(value)) return false;
+  const switched = value.modelSwitch;
+  if (switched !== undefined && (!isRecord(switched) || !hasStrings(switched, ['from', 'to'])))
+    return false;
   return (
-    isRecord(value) &&
     hasStrings(value, ['id', 'appSessionId', 'sourceSessionId', 'role', 'kind']) &&
-    typeof value.ts === 'number'
+    typeof value.ts === 'number' &&
+    (value.errorKind === undefined || value.errorKind === 'usage_limit') &&
+    (value.resetsAt === undefined || nonNegativeSafeInteger(value.resetsAt))
   );
 }
 

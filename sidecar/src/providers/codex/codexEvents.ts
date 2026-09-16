@@ -7,6 +7,9 @@
 // completed item backfills one case, a message that streamed nothing at all.
 import type { NormalizedEvent } from '../../normalize.js';
 import type { TranscriptEvent } from '../../protocol.js';
+import { errMsg } from '../../sessionHelpers.js';
+import { UsageLimitError, usageLimitDetails } from '../usageLimit.js';
+import { imageUsageLimit } from './codexImages.js';
 import {
   patchText,
   threadItem,
@@ -22,7 +25,7 @@ import {
 export interface CodexTurn {
   id: string;
   status?: string;
-  error?: { message: string } | null;
+  error?: Error;
 }
 
 export function isObject(value: unknown): value is Record<string, unknown> {
@@ -31,15 +34,28 @@ export function isObject(value: unknown): value is Record<string, unknown> {
 
 export function turnOf(params: unknown): CodexTurn | undefined {
   if (!isObject(params) || !isObject(params.turn)) return undefined;
-  const turn = params.turn as Partial<CodexTurn>;
-  return typeof turn.id === 'string' ? (turn as CodexTurn) : undefined;
+  const { id, status } = params.turn;
+  if (typeof id !== 'string') return undefined;
+  const error = turnError(params.turn.error);
+  return {
+    id,
+    ...(typeof status === 'string' ? { status } : {}),
+    ...(error ? { error } : {}),
+  };
 }
 
-export function errorOf(params: unknown): { message: string; willRetry: boolean } | undefined {
-  if (!isObject(params) || !isObject(params.error)) return undefined;
-  const message = (params.error as { message?: unknown }).message;
-  if (typeof message !== 'string') return undefined;
-  return { message, willRetry: params.willRetry === true };
+export function errorOf(params: unknown): { error: Error; willRetry: boolean } | undefined {
+  if (!isObject(params)) return undefined;
+  const error = turnError(params.error);
+  return error ? { error, willRetry: params.willRetry === true } : undefined;
+}
+
+function turnError(value: unknown): Error | undefined {
+  if (!isObject(value) || typeof value.message !== 'string') return undefined;
+  return value.codexErrorInfo === 'usageLimitExceeded' ||
+    value.codexErrorInfo === 'rateLimitExceeded'
+    ? new UsageLimitError(value.message)
+    : new Error(value.message);
 }
 
 // The notifications this mapper translates. The session owns the rest of the
@@ -136,8 +152,14 @@ export class CodexEventMapper {
     return this.tools.get(itemId)?.detail;
   }
 
-  errorEvent(message: string): NormalizedEvent {
-    return { transcript: this.transcript('error', { text: message, isError: true }) };
+  errorEvent(error: unknown): NormalizedEvent {
+    return {
+      transcript: this.transcript('error', {
+        text: errMsg(error),
+        isError: true,
+        ...usageLimitDetails(error),
+      }),
+    };
   }
 
   // A line the session itself has to say: what the thread is doing before it can
@@ -191,7 +213,7 @@ export class CodexEventMapper {
     if (!call) return [];
     const open = this.tools.get(call.id);
     this.tools.delete(call.id);
-    return [
+    const events: NormalizedEvent[] = [
       {
         transcript: this.transcript('tool_result', {
           toolName: call.name,
@@ -201,6 +223,9 @@ export class CodexEventMapper {
         }),
       },
     ];
+    const limit = item.type === 'imageGeneration' ? imageUsageLimit(item.failure) : undefined;
+    if (limit) events.push(this.errorEvent(limit));
+    return events;
   }
 
   private transcript(
