@@ -2,11 +2,11 @@ import { motion } from 'framer-motion';
 import { INLINE_CARD_EASE } from '../inlineCardMotion';
 import type { ChildSessionSummary, ProviderKind } from '../../types/bridge';
 import { AgentRow } from './AgentRow';
-import { agentListSections, type AgentRow as AgentRowModel } from './agentMonitorModel';
+import { agentPhaseSections, type AgentRow as AgentRowModel } from './agentMonitorModel';
 
-/* The expanded rows of the card and its docked line. They carry the same
-   grouping as the agent pane — a workflow's own phases, or Active and Done —
-   so a run reads the same wherever it is opened.
+/* The expanded rows of the card and its docked line. The card is read in the
+   order the turn spawned its agents, so it never reorders them: a workflow
+   labels each run of rows with its phase, and a plain wave has no labels at all.
 
    Expanding a large wave reveals the first rows behind a "Show N more agents"
    fold, so paging older history into a long-running session never dumps dozens
@@ -79,14 +79,16 @@ export function AgentRowList({
 
   return (
     <>
-      {agentListSections(rows).map((section) => (
+      {agentPhaseSections(rows).map((section) => (
         <div key={section.key}>
-          <div
-            data-testid="agent-section-label"
-            className="px-4 pb-1 pt-2 text-[11px] uppercase tracking-[0.06em] text-droid-text-muted"
-          >
-            {section.label}
-          </div>
+          {section.label ? (
+            <div
+              data-testid="agent-section-label"
+              className="px-4 pb-1 pt-2 text-[11px] uppercase tracking-[0.06em] text-droid-text-muted"
+            >
+              {section.label}
+            </div>
+          ) : null}
           <motion.ul
             initial={reduceMotion ? false : 'hidden'}
             animate="show"

@@ -149,41 +149,38 @@ export function agentMonitorTitle(rows: readonly AgentRow[]): string {
   return rows.find((row) => row.child.group)?.child.group ?? 'Agents';
 }
 
-interface AgentPhaseSection {
-  phase?: string;
+export interface AgentListSection {
+  key: string;
+  // Absent for a run with nothing to label: the card then reads as the flat list
+  // of rows it is, in the order the turn spawned them.
+  label?: string;
   rows: AgentRow[];
 }
 
-// Workflow rows group under their phase, in the order the phases first appear.
-// A wave with no phases stays one unlabelled section.
-function agentPhaseSections(rows: readonly AgentRow[]): AgentPhaseSection[] {
-  if (!rows.some((row) => row.phase)) return [{ rows: [...rows] }];
-  const sections: AgentPhaseSection[] = [];
+// The card's own grouping, and the only one it has: a workflow labels each run
+// of rows with the phase they declared, in the order the phases first appear. A
+// plain wave is one unlabelled section, so its rows keep their spawn order.
+export function agentPhaseSections(rows: readonly AgentRow[]): AgentListSection[] {
+  if (!rows.some((row) => row.phase)) return [{ key: 'agents', rows: [...rows] }];
+  const sections: AgentListSection[] = [];
   for (const row of rows) {
     const last = sections.at(-1);
-    if (last && last.phase === row.phase) last.rows.push(row);
-    else sections.push({ ...(row.phase !== undefined ? { phase: row.phase } : {}), rows: [row] });
+    if (last && last.label === row.phase) last.rows.push(row);
+    else
+      sections.push({
+        key: row.phase ?? 'agents',
+        ...(row.phase !== undefined ? { label: row.phase } : {}),
+        rows: [row],
+      });
   }
   return sections;
 }
 
-export interface AgentListSection {
-  key: string;
-  label: string;
-  rows: AgentRow[];
-}
-
-// One structure per run, never a third: a workflow groups by the phases it
-// named, and everything else — a plain wave, a delegation — splits into what is
-// working and what has finished.
+// The agent pane's list, which is scanned rather than read in order: a workflow
+// keeps its phases, and everything else — a plain wave, a delegation — splits
+// into what is working and what has finished.
 export function agentListSections(rows: readonly AgentRow[]): AgentListSection[] {
-  if (rows.some((row) => row.phase)) {
-    return agentPhaseSections(rows).map((section) => ({
-      key: section.phase ?? 'agents',
-      label: section.phase ?? 'Agents',
-      rows: section.rows,
-    }));
-  }
+  if (rows.some((row) => row.phase)) return agentPhaseSections(rows);
   const active = rows.filter((row) => !isSettledAgentStatus(row.status));
   const done = rows.filter((row) => isSettledAgentStatus(row.status));
   return [

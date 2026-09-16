@@ -642,30 +642,28 @@ test('dock session status suppresses the global cue without an activity callback
   assert.equal(textOf(html).includes('Working'), false);
 });
 
-test('a workflow groups by its phases; every other run groups by active and done', () => {
-  const workflow = textOf(
-    renderToStaticMarkup(
-      createElement(AgentMonitorCard, {
-        sessions: [
-          { ...childSession('explorer', 't1', 'running'), group: 'Repair work', phase: 'Read' },
-          { ...childSession('worker', 't2', 'completed'), group: 'Repair work', phase: 'Fix' },
-        ],
-        models: [],
-        live: true,
-      }),
-    ),
+test('a workflow labels its phases; a plain wave keeps its rows in spawn order', () => {
+  const workflow = renderToStaticMarkup(
+    createElement(AgentMonitorCard, {
+      sessions: [
+        { ...childSession('explorer', 't1', 'running'), group: 'Repair work', phase: 'Read' },
+        { ...childSession('worker', 't2', 'completed'), group: 'Repair work', phase: 'Fix' },
+      ],
+      models: [],
+      live: true,
+    }),
   );
   // The workflow names the card, and its own phases are the groups.
-  assert.ok(workflow.includes('Repair work'));
-  assert.ok(workflow.includes('Read'));
-  assert.ok(workflow.includes('Fix'));
-  assert.equal(workflow.includes('Active'), false);
+  assert.ok(textOf(workflow).includes('Repair work'));
+  assert.ok(textOf(workflow).includes('Read'));
+  assert.ok(textOf(workflow).includes('Fix'));
 
-  const plain = textOf(
-    renderToStaticMarkup(createElement(AgentMonitorCard, { ...monitorData, live: true })),
+  // A plain wave has nothing to label, so the card is the flat list of rows the
+  // turn spawned — never regrouped into active and finished under its own heads.
+  const plain = renderToStaticMarkup(
+    createElement(AgentMonitorCard, { ...monitorData, live: true }),
   );
-  assert.ok(plain.includes('Active'));
-  assert.ok(plain.includes('Done'));
+  assert.equal(plain.includes('agent-section-label'), false);
 });
 
 test('the transcript states a wave lifecycle in one folded sentence', () => {

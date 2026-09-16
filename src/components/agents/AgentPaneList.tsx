@@ -42,12 +42,14 @@ export function AgentPaneList({
           const hidden = section.rows.length - visible.length;
           return (
             <div key={section.key}>
-              <motion.div
-                layout={!reduceMotion}
-                className="px-3 pb-1 pt-4 text-[12px] font-medium text-droid-text-muted"
-              >
-                {section.label} · {section.rows.length}
-              </motion.div>
+              {section.label ? (
+                <motion.div
+                  layout={!reduceMotion}
+                  className="px-3 pb-1 pt-4 text-[12px] font-medium text-droid-text-muted"
+                >
+                  {section.label} · {section.rows.length}
+                </motion.div>
+              ) : null}
               {visible.map((row) => (
                 <AgentListRow
                   key={row.key}
