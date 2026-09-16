@@ -1,6 +1,6 @@
 import { useCallback, useMemo, useState } from 'react';
 import { AnimatePresence } from 'framer-motion';
-import { shallowEqual, useStoreSelector } from '../../hooks/useStore';
+import { shallowEqual, useStoreSelector, type AppState } from '../../hooks/useStore';
 import { currentAgentRun } from '../agents/agentMonitorModel';
 import { useAgentPane } from '../agents/AgentPane';
 import { AgentDockLine } from './AgentDockLine';
@@ -56,22 +56,25 @@ function nextOpenDock(
   return current === line ? null : current;
 }
 
-// The docked line is derived from the session's registered children alone: the
-// composer re-renders on every streamed token, and reading the transcript here
-// would put a scan of it on that path.
+/** The docked line is derived from the session's registered children alone: the
+    composer re-renders on every streamed token, and reading the transcript here
+    would put a scan of it on that path. Exported so that contract stays
+    checkable: appending a transcript event must leave this shallow-equal. */
+export function selectDockedAgents(state: AppState) {
+  const session = state.activeAppSessionId ? state.sessions[state.activeAppSessionId] : null;
+  // Keyed renderer maps are typed as always-present; Partial keeps the lookup
+  // honest without changing runtime behavior.
+  const childrenByParent: Partial<typeof state.childSessions> = state.childSessions;
+  return {
+    children: session ? childrenByParent[session.appSessionId] : undefined,
+    models: state.models,
+    provider: session?.provider,
+    missionControl: session?.sessionPurpose === 'mission-control',
+  };
+}
+
 function useDockedAgents() {
-  const source = useStoreSelector((state) => {
-    const session = state.activeAppSessionId ? state.sessions[state.activeAppSessionId] : null;
-    // Keyed renderer maps are typed as always-present; Partial keeps the lookup
-    // honest without changing runtime behavior.
-    const childrenByParent: Partial<typeof state.childSessions> = state.childSessions;
-    return {
-      children: session ? childrenByParent[session.appSessionId] : undefined,
-      models: state.models,
-      provider: session?.provider,
-      missionControl: session?.sessionPurpose === 'mission-control',
-    };
-  }, shallowEqual);
+  const source = useStoreSelector(selectDockedAgents, shallowEqual);
 
   return useMemo(() => {
     if (!source.children || source.missionControl) return null;

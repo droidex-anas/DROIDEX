@@ -10,6 +10,8 @@ import { getRendererPerfSnapshot, resetRendererPerfForTest } from '../lib/render
 import type { TranscriptMutation } from '../lib/transcriptMutation';
 import type { ChildSessionSummary } from '../types/bridge';
 import { childStreamSnapshot } from '../lib/childSessionStream';
+import { initialState, shallowEqual, type AppState } from '../hooks/useStore';
+import { selectDockedAgents } from './composer/ComposerDock';
 
 function event(id: string, overrides: Partial<TranscriptEvent> = {}): TranscriptEvent {
   return {
@@ -266,4 +268,35 @@ test('childStreamSnapshot identity is what feed isolation compares through the d
   });
   assert.equal(first.preview === same.preview, true);
   assert.equal(first.preview === grown.preview, false);
+});
+
+test('the docked agent line reads no transcript, so a streamed token cannot re-render it', () => {
+  // The composer sits on the per-token path. The docked line's source must stay
+  // identical across a transcript append, or every token would rebuild its rows.
+  const child: ChildSessionSummary = {
+    parentAppSessionId: 'session-a',
+    childSessionId: 'child-a',
+    role: 'worker',
+    status: 'running',
+    modelId: 'droid-core',
+    transcriptAvailable: true,
+    startedAt: 1,
+    streamFidelity: 'token',
+  };
+  const base: AppState = {
+    ...initialState,
+    activeAppSessionId: 'session-a',
+    sessions: { 'session-a': { appSessionId: 'session-a' } as AppState['sessions'][string] },
+    childSessions: { 'session-a': { 'child-a': child } },
+    transcripts: { 'session-a': [event('a')] },
+  };
+  const streamed: AppState = { ...base, transcripts: { 'session-a': [event('a'), event('b')] } };
+  assert.equal(shallowEqual(selectDockedAgents(base), selectDockedAgents(streamed)), true);
+
+  // A child that actually changed does reach it.
+  const settled: AppState = {
+    ...base,
+    childSessions: { 'session-a': { 'child-a': { ...child, status: 'completed' } } },
+  };
+  assert.equal(shallowEqual(selectDockedAgents(base), selectDockedAgents(settled)), false);
 });

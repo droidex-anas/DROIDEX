@@ -21,7 +21,7 @@ export function foldedAgentRows<T>(rows: readonly T[], showAll: boolean): T[] {
 // The body opens a touch slower than the app's standard disclosure, because the
 // count pills have to travel to their rows inside it; each row then lands one
 // stagger apart behind them.
-export const AGENT_BODY_DURATION_S = 0.28;
+const AGENT_BODY_DURATION_S = 0.28;
 const AGENT_ROW_STAGGER_S = 0.04;
 
 /** Motion for the card's disclosure. Reduced motion drops the height travel and
