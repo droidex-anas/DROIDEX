@@ -22,6 +22,7 @@ export default {
           'text-muted': v('--droid-text-muted'),
           accent: v('--droid-accent'),
           skill: v('--droid-skill'),
+          ultra: v('--droid-ultra'),
           green: v('--droid-green'),
           orange: v('--droid-orange'),
           red: v('--droid-red'),
