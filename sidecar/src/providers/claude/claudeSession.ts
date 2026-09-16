@@ -372,8 +372,9 @@ function sessionOptions(
     cwd: input.cwd,
     pathToClaudeCodeExecutable: input.executable,
     ...(input.modelId ? { model: input.modelId } : {}),
-    ...(effort ? { effort: effort.effortLevel } : {}),
-    ...(effort?.ultracode ? { settings: { ultracode: true } } : {}),
+    // The flag is written both ways: a settings file may carry ultracode too,
+    // and the level the chip shows is the one the session must run at.
+    ...(effort ? { effort: effort.effortLevel, settings: { ultracode: effort.ultracode } } : {}),
     ...(input.resume ? { resume: input.appSessionId } : { sessionId: input.appSessionId }),
     systemPrompt: { type: 'preset', preset: 'claude_code' },
     // 'project' is what loads the repository's CLAUDE.md.
