@@ -16,6 +16,7 @@ import { join } from 'node:path';
 import { providerSessionsDir } from '../droidexPaths.js';
 import type { SessionSummary, TranscriptEvent } from '../protocol.js';
 import type { StoredMessageLine, StoredSessionStart } from '../sessionTranscriptParser.js';
+import { storedNoticeLine } from '../sessionNotices.js';
 
 // The head line: a StoredSessionStart plus the settings readSessionModelSettings
 // reads off the same record. Without modelId the restored session has no launch
@@ -74,6 +75,12 @@ export class ProviderTranscriptFile {
   append(event: TranscriptEvent): void {
     // Child sessions keep their own transcripts; this file is one conversation.
     if (event.role !== 'primary') return;
+    const notice = storedNoticeLine(event);
+    if (notice) {
+      this.flush();
+      this.writeLine(notice);
+      return;
+    }
     const block = assistantBlock(event);
     if (block) {
       this.pending ??= { id: event.id, ts: event.ts, blocks: [] };

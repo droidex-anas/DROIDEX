@@ -7,7 +7,13 @@
 // completed item backfills one case, a message that streamed nothing at all.
 import type { NormalizedEvent } from '../../normalize.js';
 import type { TranscriptEvent } from '../../protocol.js';
+import type { ChildSessionSignal } from '../../subagentSignals.js';
+import type { ProviderModelSettings } from '../session.js';
+import { errMsg } from '../../sessionHelpers.js';
+import { UsageLimitError, usageLimitDetails } from '../usageLimit.js';
+import { imageUsageLimit } from './codexImages.js';
 import {
+  collabChildSignals,
   patchText,
   threadItem,
   toolCall,
@@ -22,7 +28,7 @@ import {
 export interface CodexTurn {
   id: string;
   status?: string;
-  error?: { message: string } | null;
+  error?: Error;
 }
 
 export function isObject(value: unknown): value is Record<string, unknown> {
@@ -31,15 +37,28 @@ export function isObject(value: unknown): value is Record<string, unknown> {
 
 export function turnOf(params: unknown): CodexTurn | undefined {
   if (!isObject(params) || !isObject(params.turn)) return undefined;
-  const turn = params.turn as Partial<CodexTurn>;
-  return typeof turn.id === 'string' ? (turn as CodexTurn) : undefined;
+  const { id, status } = params.turn;
+  if (typeof id !== 'string') return undefined;
+  const error = turnError(params.turn.error);
+  return {
+    id,
+    ...(typeof status === 'string' ? { status } : {}),
+    ...(error ? { error } : {}),
+  };
 }
 
-export function errorOf(params: unknown): { message: string; willRetry: boolean } | undefined {
-  if (!isObject(params) || !isObject(params.error)) return undefined;
-  const message = (params.error as { message?: unknown }).message;
-  if (typeof message !== 'string') return undefined;
-  return { message, willRetry: params.willRetry === true };
+export function errorOf(params: unknown): { error: Error; willRetry: boolean } | undefined {
+  if (!isObject(params)) return undefined;
+  const error = turnError(params.error);
+  return error ? { error, willRetry: params.willRetry === true } : undefined;
+}
+
+function turnError(value: unknown): Error | undefined {
+  if (!isObject(value) || typeof value.message !== 'string') return undefined;
+  return value.codexErrorInfo === 'usageLimitExceeded' ||
+    value.codexErrorInfo === 'rateLimitExceeded'
+    ? new UsageLimitError(value.message)
+    : new Error(value.message);
 }
 
 // The notifications this mapper translates. The session owns the rest of the
@@ -99,8 +118,16 @@ export class CodexEventMapper {
   private readonly tools = new Map<string, OpenTool>();
   // Message items that have already reached the transcript through their deltas.
   private readonly streamed = new Set<string>();
+  private readonly children = new Map<string, ChildSessionSignal>();
 
-  constructor(private readonly appSessionId: string) {}
+  constructor(
+    private readonly appSessionId: string,
+    private model: ProviderModelSettings = {},
+  ) {}
+
+  setModel(model: ProviderModelSettings): void {
+    this.model = model;
+  }
 
   // Every payload is read through a reader that answers undefined for a shape
   // this build does not recognize: a notification is not worth throwing out of
@@ -113,10 +140,14 @@ export class CodexEventMapper {
       case 'item/reasoning/textDelta':
       case 'item/reasoning/summaryTextDelta':
         return this.delta('thinking', deltaOf(params));
-      case 'item/started':
-        return this.started(threadItem(params));
-      case 'item/completed':
-        return this.completed(threadItem(params));
+      case 'item/started': {
+        const item = threadItem(params);
+        return [...this.started(item), ...this.childEvents(item)];
+      }
+      case 'item/completed': {
+        const item = threadItem(params);
+        return [...this.completed(item), ...this.childEvents(item)];
+      }
       case 'item/commandExecution/outputDelta':
         return this.appendOutput(deltaOf(params));
       case 'item/fileChange/patchUpdated':
@@ -130,14 +161,52 @@ export class CodexEventMapper {
     }
   }
 
+  childThreadStarted(params: unknown, parentThreadId: string | undefined): NormalizedEvent[] {
+    if (!parentThreadId || !isObject(params) || !isObject(params.thread)) return [];
+    const { id, parentThreadId: parent, agentNickname, agentRole } = params.thread;
+    if (parent !== parentThreadId || typeof id !== 'string' || !id) return [];
+    const label = [agentRole, agentNickname]
+      .filter((value) => typeof value === 'string' && value)
+      .join(': ');
+    return this.updateChild({
+      providerSessionId: id,
+      role: agentRole === 'validator' ? 'validator' : 'worker',
+      ...(label ? { label } : {}),
+      transcriptAvailable: false,
+    });
+  }
+
+  private childEvents(item: ThreadItem): NormalizedEvent[] {
+    return collabChildSignals(item, this.model).flatMap((signal) => this.updateChild(signal));
+  }
+
+  private updateChild(signal: ChildSessionSignal): NormalizedEvent[] {
+    const id = signal.providerSessionId;
+    if (!id) return [];
+    const previous = this.children.get(id);
+    const child = { ...previous, ...signal };
+    // Thread metadata may precede the spawn, and is more useful than its prompt.
+    if (previous?.label && previous.label !== previous.prompt) child.label = previous.label;
+    // Closing a failed thread is not a successful run. A new running state can resume it.
+    if (previous?.status === 'failed' && child.status === 'completed') child.status = 'failed';
+    this.children.set(id, child);
+    return [{ childSession: child }];
+  }
+
   // What a pending approval is about. A file-change approval carries no detail
   // of its own, so the open item it belongs to is the only description there is.
   toolDetail(itemId: string): string | undefined {
     return this.tools.get(itemId)?.detail;
   }
 
-  errorEvent(message: string): NormalizedEvent {
-    return { transcript: this.transcript('error', { text: message, isError: true }) };
+  errorEvent(error: unknown): NormalizedEvent {
+    return {
+      transcript: this.transcript('error', {
+        text: errMsg(error),
+        isError: true,
+        ...usageLimitDetails(error),
+      }),
+    };
   }
 
   // A line the session itself has to say: what the thread is doing before it can
@@ -191,7 +260,7 @@ export class CodexEventMapper {
     if (!call) return [];
     const open = this.tools.get(call.id);
     this.tools.delete(call.id);
-    return [
+    const events: NormalizedEvent[] = [
       {
         transcript: this.transcript('tool_result', {
           toolName: call.name,
@@ -201,6 +270,9 @@ export class CodexEventMapper {
         }),
       },
     ];
+    const limit = item.type === 'imageGeneration' ? imageUsageLimit(item.failure) : undefined;
+    if (limit) events.push(this.errorEvent(limit));
+    return events;
   }
 
   private transcript(

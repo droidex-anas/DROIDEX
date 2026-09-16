@@ -38,6 +38,7 @@ function activityForChild(
   return (
     childSessionActivityForTarget(children, transcript, {
       toolUseId: child.spawnLink.id,
+      childSessionId: child.childSessionId,
       ...(child.label !== undefined ? { label: child.label } : {}),
     }) ?? { status: child.status, startedAt: child.startedAt }
   );

@@ -67,6 +67,7 @@ test('childStreamPhase maps each supervision state distinctly', () => {
   assert.equal(childStreamPhase({ status: 'running', hasOutput: true }), 'streaming');
   assert.equal(childStreamPhase({ status: 'paused' }), 'awaiting_approval');
   assert.equal(childStreamPhase({ status: 'completed' }), 'settled');
+  assert.equal(childStreamPhase({ status: 'failed' }), 'failed');
   assert.equal(childStreamPhase({ status: 'completed', isError: true }), 'failed');
   assert.equal(
     childStreamPhase({ status: 'paused', interruptReason: 'could not reconnect' }),
@@ -159,6 +160,11 @@ test('a polled child cannot reach a typewriter presentation', () => {
   assert.equal(childStreamPresentation(withText), 'working');
   assert.equal(childStreamPresentation(withOutputOnly), 'working');
   assert.notEqual(withText.previewKind, 'markdown');
+  assert.equal(childStreamSnapshot(polled, { status: 'completed' }).live, true);
+  assert.equal(
+    childStreamSnapshot({ ...polled, status: 'failed' }, { status: 'running' }).phase,
+    'failed',
+  );
 });
 
 test('projectChildStreamSnapshots reuses unchanged sibling identities', () => {
@@ -186,11 +192,11 @@ test('projectChildStreamSnapshots reuses unchanged sibling identities', () => {
     first,
   );
 
-  assert.equal(second.get('tool-a') === first.get('tool-a'), false);
-  assert.equal(second.get('tool-b'), first.get('tool-b'));
-  assert.equal(second.get('tool-c'), first.get('tool-c'));
-  assert.equal(second.get('tool-d'), first.get('tool-d'));
-  assert.equal(sameChildStreamSnapshot(first.get('tool-b'), second.get('tool-b')!), true);
+  assert.equal(second.get('a') === first.get('a'), false);
+  assert.equal(second.get('b'), first.get('b'));
+  assert.equal(second.get('c'), first.get('c'));
+  assert.equal(second.get('d'), first.get('d'));
+  assert.equal(sameChildStreamSnapshot(first.get('b'), second.get('b')!), true);
   assert.equal(reuseChildStreamSnapshotMap(first, first), first);
 });
 
@@ -214,10 +220,10 @@ test('four concurrent streaming children do not rewrite settled snapshots', () =
       undefined,
       previous,
     );
-    assert.equal(next.get('tool-w1'), previous.get('tool-w1'));
-    assert.equal(next.get('tool-w3'), previous.get('tool-w3'));
-    assert.equal(next.get('tool-w4'), previous.get('tool-w4'));
-    assert.notEqual(next.get('tool-w2'), previous.get('tool-w2'));
+    assert.equal(next.get('w1'), previous.get('w1'));
+    assert.equal(next.get('w3'), previous.get('w3'));
+    assert.equal(next.get('w4'), previous.get('w4'));
+    assert.notEqual(next.get('w2'), previous.get('w2'));
     reused += 3;
     rewritten += 1;
     previous = next;

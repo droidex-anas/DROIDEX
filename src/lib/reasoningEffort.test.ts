@@ -3,33 +3,30 @@ import test from 'node:test';
 
 import { resolveReasoningEffortDisplay } from './reasoningEffort';
 
-test('session-pinned effort wins over the global default', () => {
+test('displays the selected effort for a model with reasoning support', () => {
   assert.equal(
-    resolveReasoningEffortDisplay('low', 'high', { supportedReasoningEfforts: ['low', 'high'] }),
+    resolveReasoningEffortDisplay('low', { supportedReasoningEfforts: ['low', 'high'] }),
     'low',
   );
 });
 
-test('falls back to the global default when the session pins no effort', () => {
+test('keeps an unset effort provider-managed instead of inventing a selection', () => {
   assert.equal(
-    resolveReasoningEffortDisplay(undefined, 'high', { supportedReasoningEfforts: ['high'] }),
-    'high',
+    resolveReasoningEffortDisplay(undefined, { supportedReasoningEfforts: ['high'] }),
+    undefined,
   );
 });
 
 test('hides the indicator for a known model without supported reasoning efforts', () => {
-  assert.equal(
-    resolveReasoningEffortDisplay('high', 'low', { supportedReasoningEfforts: [] }),
-    undefined,
-  );
+  assert.equal(resolveReasoningEffortDisplay('high', { supportedReasoningEfforts: [] }), undefined);
   // A known model whose capability list is absent counts as no support.
-  assert.equal(resolveReasoningEffortDisplay(undefined, 'high', {}), undefined);
+  assert.equal(resolveReasoningEffortDisplay('high', {}), undefined);
 });
 
 test('keeps the indicator while the model is unknown (list still loading)', () => {
-  assert.equal(resolveReasoningEffortDisplay('low', 'high', undefined), 'low');
+  assert.equal(resolveReasoningEffortDisplay('low', undefined), 'low');
 });
 
-test('hides the indicator when neither session nor global effort exists', () => {
-  assert.equal(resolveReasoningEffortDisplay(undefined, undefined, undefined), undefined);
+test('keeps an unset effort while the model is unknown', () => {
+  assert.equal(resolveReasoningEffortDisplay(undefined, undefined), undefined);
 });

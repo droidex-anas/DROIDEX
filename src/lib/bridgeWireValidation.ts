@@ -320,16 +320,25 @@ function isChildSessionSummary(value: unknown): boolean {
   return (
     isRecord(value) &&
     hasStrings(value, ['parentAppSessionId', 'childSessionId', 'role', 'status', 'modelId']) &&
+    (value.role === 'worker' || value.role === 'validator') &&
+    ['pending', 'running', 'paused', 'completed', 'failed'].includes(value.status as string) &&
     typeof value.transcriptAvailable === 'boolean' &&
-    isStreamFidelity(value.streamFidelity)
+    isStreamFidelity(value.streamFidelity) &&
+    (value.group === undefined || typeof value.group === 'string') &&
+    (value.phase === undefined || typeof value.phase === 'string')
   );
 }
 
 function isTranscriptEvent(value: unknown): boolean {
+  if (!isRecord(value)) return false;
+  const switched = value.modelSwitch;
+  if (switched !== undefined && (!isRecord(switched) || !hasStrings(switched, ['from', 'to'])))
+    return false;
   return (
-    isRecord(value) &&
     hasStrings(value, ['id', 'appSessionId', 'sourceSessionId', 'role', 'kind']) &&
-    typeof value.ts === 'number'
+    typeof value.ts === 'number' &&
+    (value.errorKind === undefined || value.errorKind === 'usage_limit') &&
+    (value.resetsAt === undefined || nonNegativeSafeInteger(value.resetsAt))
   );
 }
 

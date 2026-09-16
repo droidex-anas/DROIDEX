@@ -7,28 +7,28 @@
 // re-emitting a snapshot would double every sentence in the chat. The snapshot
 // backfills one case only: a message that streamed nothing at all (an aborted
 // or synthetic frame), which is visible nowhere else.
-import type { SDKMessage } from '@anthropic-ai/claude-agent-sdk';
+import type { SDKMessage, SDKRateLimitInfo } from '@anthropic-ai/claude-agent-sdk';
 
 import type { NormalizedEvent } from '../../normalize.js';
 import type { TranscriptEvent } from '../../protocol.js';
+import { ClaudeSubagents } from './claudeSubagents.js';
+import { resetAtMillis, UsageLimitError, usageLimitDetails } from '../usageLimit.js';
 
 const TOOL_BLOCK_TYPES = new Set(['tool_use', 'server_tool_use', 'mcp_tool_use']);
 
-interface RateLimitInfo {
-  status: string;
-  overageStatus?: string;
-  resetsAt?: number;
-}
-
-// Why a blocked usage window is worth telling the user about. A refusal stops
-// the turn producing anything, which otherwise reads as the model hanging; an
-// allowed window is routine accounting and says nothing.
-export function rateLimitRefusal(info: RateLimitInfo): string | undefined {
-  if (info.status !== 'rejected' || info.overageStatus === 'allowed') return undefined;
-  const resumesAt = info.resetsAt ? new Date(info.resetsAt * 1000).toLocaleTimeString() : '';
-  return resumesAt
+export function rateLimitRefusal(info: SDKRateLimitInfo): UsageLimitError | undefined {
+  if (
+    info.status !== 'rejected' ||
+    info.overageStatus === 'allowed' ||
+    info.overageStatus === 'allowed_warning'
+  )
+    return undefined;
+  const resetsAt = resetAtMillis(info.resetsAt);
+  const resumesAt = resetsAt === undefined ? '' : new Date(resetsAt).toLocaleTimeString();
+  const message = resumesAt
     ? `Claude usage limit reached. It resets at ${resumesAt}.`
     : 'Claude usage limit reached.';
+  return new UsageLimitError(message, resetsAt);
 }
 
 interface ToolBlock {
@@ -57,8 +57,24 @@ export class ClaudeEventMapper {
   private readonly reportedResults = new Set<string>();
   private readonly totals = { tokensIn: 0, tokensOut: 0 };
   private call = { input: 0, output: 0 };
+  private readonly subagents = new ClaudeSubagents();
+  // Unpinned sessions learn their model from the main conversation.
+  private observedModelId?: string;
 
-  constructor(private readonly appSessionId: string) {}
+  constructor(
+    private readonly appSessionId: string,
+    private modelId?: string,
+  ) {}
+
+  setModel(modelId: string | undefined): void {
+    this.modelId = modelId;
+  }
+
+  // Resets state scoped to the turn that is starting, not the long-lived
+  // background task identity the session may still be tracking across turns.
+  beginTurn(): void {
+    this.subagents.beginTurn();
+  }
 
   map(message: SDKMessage): NormalizedEvent[] {
     switch (message.type) {
@@ -74,8 +90,8 @@ export class ClaudeEventMapper {
         return this.rateLimit(message.rate_limit_info);
       case 'system':
         return this.system(message);
-      // Session bookkeeping, hook/task/plugin notices and the other auxiliary
-      // frames carry nothing the DROIDEX transcript shows.
+      // Hook/plugin notices and the other auxiliary frames carry nothing the
+      // DROIDEX transcript shows.
       case 'tool_progress':
       case 'tool_use_summary':
       case 'auth_status':
@@ -90,8 +106,10 @@ export class ClaudeEventMapper {
   }
 
   private system(message: Extract<SDKMessage, { type: 'system' }>): NormalizedEvent[] {
-    if (message.subtype !== 'local_command_output' || !message.content) return [];
-    return [{ transcript: this.transcript('text', { text: message.content }) }];
+    // A local slash command answers through this frame instead of the model loop.
+    if (message.subtype === 'local_command_output')
+      return message.content ? [{ transcript: this.transcript('text', { text: message.content }) }] : [];
+    return this.subagents.map(message, this.modelId ?? this.observedModelId);
   }
 
   private streamEvent(
@@ -103,6 +121,7 @@ export class ClaudeEventMapper {
       case 'message_start': {
         blocks.clear();
         if (parentToolUseId) return [];
+        if (event.message.model) this.observedModelId = event.message.model;
         const usage = event.message.usage;
         this.call = {
           input:
@@ -131,7 +150,9 @@ export class ClaudeEventMapper {
         return this.contentDelta(blocks, event.index, event.delta, parentToolUseId);
       case 'content_block_stop': {
         const tool = blocks.get(event.index)?.tool;
-        return tool ? [this.toolCall(tool.id, tool.name, parseToolInput(tool.json))] : [];
+        return tool
+          ? [this.toolCall(tool.id, tool.name, parseToolInput(tool.json), parentToolUseId)]
+          : [];
       }
       default:
         return [];
@@ -165,6 +186,9 @@ export class ClaudeEventMapper {
   private assistantSnapshot(
     message: Extract<SDKMessage, { type: 'assistant' }>,
   ): NormalizedEvent[] {
+    const model = message.message.model;
+    if (!message.parent_tool_use_id && model && model !== '<synthetic>')
+      this.observedModelId = model;
     const blocks = this.blocksFor(message.parent_tool_use_id);
     // The snapshot's content is the block that just finished, not the message so
     // far, so it cannot be matched positionally against the stream. Blocks that
@@ -179,7 +203,14 @@ export class ClaudeEventMapper {
       const tool = toolBlock(block);
       if (tool) {
         if (!reported.has(tool.id))
-          events.push(this.toolCall(tool.id, tool.name, (block as { input?: unknown }).input));
+          events.push(
+            this.toolCall(
+              tool.id,
+              tool.name,
+              (block as { input?: unknown }).input,
+              message.parent_tool_use_id,
+            ),
+          );
         continue;
       }
       if (streamed || message.parent_tool_use_id) continue;
@@ -189,7 +220,13 @@ export class ClaudeEventMapper {
         events.push({ transcript: this.transcript('thinking', { text: block.thinking }) });
     }
     if (message.error)
-      events.push({ transcript: this.transcript('error', { text: message.error, isError: true }) });
+      events.push({
+        transcript: this.transcript('error', {
+          text: message.error,
+          isError: true,
+          ...(message.error === 'rate_limit' ? { errorKind: 'usage_limit' } : {}),
+        }),
+      });
     return events;
   }
 
@@ -246,12 +283,28 @@ export class ClaudeEventMapper {
     return { transcript: this.transcript('status', { text }) };
   }
 
-  private rateLimit(info: RateLimitInfo): NormalizedEvent[] {
+  private rateLimit(info: SDKRateLimitInfo): NormalizedEvent[] {
     const refusal = rateLimitRefusal(info);
-    return refusal ? [this.statusEvent(refusal)] : [];
+    if (!refusal) return [];
+    return [
+      {
+        transcript: this.transcript('error', {
+          text: refusal.message,
+          isError: true,
+          ...usageLimitDetails(refusal),
+        }),
+      },
+    ];
   }
 
-  private toolCall(id: string, name: string, input: unknown): NormalizedEvent {
+  private toolCall(
+    id: string,
+    name: string,
+    input: unknown,
+    parentToolUseId: string | null,
+  ): NormalizedEvent {
+    // Nested tool calls must not change the parent's spawn correlation.
+    if (!parentToolUseId) this.subagents.noteToolUse(name, id);
     return {
       transcript: this.transcript('tool_call', { toolName: name, toolArgs: input, toolUseId: id }),
     };

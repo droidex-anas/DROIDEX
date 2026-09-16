@@ -13,6 +13,7 @@ import type {
 } from './protocol.js';
 import type { SessionRegistry } from './SessionRegistry.js';
 import type { PrimaryAutomaticCompactionTarget, SessionCompaction } from './SessionCompaction.js';
+import type { SessionEventFlow } from './SessionEventFlow.js';
 import type { LiveOperationTarget, SessionContext } from './SessionContext.js';
 import type { ChildSessions } from './ChildSessions.js';
 import type { AgentProcessMonitor } from './processes/AgentProcessMonitor.js';
@@ -97,7 +98,7 @@ export interface LiveSession extends LiveTurnState {
   mcpConfigs: McpServerConfig[];
   todoDisabledForDesign?: boolean;
   compacting?: boolean; // Manual-compaction overlap guard; auto-compaction is separate.
-  unsubscribe?: () => void; // Primary Droid notification subscription, replaced on swap.
+  unsubscribe?: () => void; // Primary provider notification subscription, replaced on swap.
   catalogUnsubscribe?: () => void;
 }
 type LifecycleError = Omit<Extract<ServerEvent, { type: 'error' }>, 'type'>;
@@ -109,6 +110,7 @@ type SteerOutcome = 'taken' | 'queued' | 'interrupt';
 
 export interface SessionLifecycleDependencies {
   provider: (kind: ProviderKind) => Provider;
+  providerDefaultModelId?: (kind: ProviderKind) => string | undefined;
   registry: SessionRegistry<LiveSession>;
   ensureConnected: () => void;
   getFactoryDefaults: () => Promise<FactoryDefaultSettings>;
@@ -130,11 +132,13 @@ export interface SessionLifecycleDependencies {
   >;
   applyPendingSettingsToSummary: (summary: SessionSummary) => SessionSummary;
   applyPendingSessionSettings: (appSessionId: string) => Promise<boolean>;
+  waitForSettingsMutations?: (appSessionId: string) => Promise<void>;
   runPrimaryTurn: (
     liveSession: LiveSession,
     prompt: string,
     mentions?: ProviderMention[],
   ) => Promise<void>;
+  eventFlow: Pick<SessionEventFlow, 'apply'>;
   context: Pick<SessionContext, 'refresh' | 'stopPolling' | 'stopSession' | 'forgetSession'>;
   // Durable transcript for a provider that keeps no session file of its own.
   // Opened with the live session, released when it closes.
@@ -215,6 +219,9 @@ export class SessionLifecycle {
           compactionTokenLimit,
           mcpServers: mcp.configs,
         }),
+        ...(kind !== 'droid' && !primary.modelId
+          ? { modelId: d.providerDefaultModelId?.(kind) }
+          : {}),
         interactions: d.interactionsFor(ref),
       });
       pendingSession = providerSession;
@@ -251,6 +258,7 @@ export class SessionLifecycle {
       const liveSession = createLiveSession(summary, providerSession, droid, mcp);
       pendingLiveSession = liveSession;
       this.subscribeAutomaticCompaction(liveSession);
+      this.subscribeBackgroundEvents(liveSession);
       d.registry.register(liveSession);
       this.subscribeCatalog(liveSession);
       this.observeProviderClosure(liveSession);
@@ -320,7 +328,8 @@ export class SessionLifecycle {
     try {
       // Resolved before any resource starts, so a session bound to a provider
       // this build cannot route fails before it costs anything.
-      const provider = d.provider(requireProviderKind(boundProvider(historical)));
+      const kind = requireProviderKind(boundProvider(historical));
+      const provider = d.provider(kind);
       const mcp = await d.startLocalMcpServers(ref, historical?.cwd);
       pendingMcpServers = mcp.servers;
       const providerSession = await provider.resume(providerSessionId, {
@@ -329,6 +338,9 @@ export class SessionLifecycle {
         interactions: d.interactionsFor(ref),
         cwd: historical?.cwd,
         ...resumeSettings(historical),
+        ...(kind !== 'droid' && !historical?.modelId
+          ? { modelId: d.providerDefaultModelId?.(kind) }
+          : {}),
         mcpServers: mcp.configs,
       });
       pendingSession = providerSession;
@@ -339,16 +351,19 @@ export class SessionLifecycle {
         providerSessionId,
         isCurrent: () => !d.isShutdownStarted() && pendingSession === providerSession,
       });
+      // A closed settings write must settle before registration changes its target.
+      await d.waitForSettingsMutations?.(appSessionId);
       this.requireOpenAdmission();
       const projectedSummary = d.applyPendingSettingsToSummary({ ...summary });
-      const liveSession = createLiveSession(summary, providerSession, session, mcp);
+      const liveSession = createLiveSession(projectedSummary, providerSession, session, mcp);
       pendingLiveSession = liveSession;
       this.subscribeAutomaticCompaction(liveSession);
+      this.subscribeBackgroundEvents(liveSession);
       d.registry.register(liveSession);
       this.subscribeCatalog(liveSession);
       this.observeProviderClosure(liveSession);
       // Registered first, so the failed-open path that unregisters also releases it.
-      d.openProviderTranscript(summary);
+      d.openProviderTranscript(projectedSummary);
       this.trackProviderProcess(appSessionId, providerSession, mcp.configs);
       d.childSessions.attachParent(appSessionId);
       d.emit({
@@ -847,6 +862,20 @@ export class SessionLifecycle {
   private subscribeAutomaticCompaction(liveSession: LiveSession): void {
     const target = this.primaryAutomaticCompactionTarget(liveSession);
     if (target) this.dependencies.compaction.subscribePrimary(target);
+  }
+
+  private subscribeBackgroundEvents(liveSession: LiveSession): void {
+    const appSessionId = liveSession.summary.appSessionId;
+    const unsubscribe = liveSession.session.onBackgroundEvent?.((normalized) => {
+      if (
+        this.dependencies.isShutdownStarted() ||
+        liveSession.closeMode ||
+        this.dependencies.registry.getLive(appSessionId) !== liveSession
+      )
+        return;
+      this.dependencies.eventFlow.apply(appSessionId, appSessionId, 'primary', normalized);
+    });
+    if (unsubscribe) liveSession.unsubscribe = unsubscribe;
   }
 
   private observeProviderClosure(liveSession: LiveSession): void {

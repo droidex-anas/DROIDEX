@@ -187,6 +187,13 @@ export class CodexProvider implements Provider {
     const session = new CodexSession({ ...input, client });
     try {
       await initialize(client);
+      if (!input.model.modelId) {
+        // Resuming without an override otherwise inherits the thread's last
+        // model, not the provider default the picker advertises.
+        const configured = await configuredModel(client);
+        const modelId = publishedDefault(await listModels(client, configured), configured);
+        if (modelId) await session.setModel({ modelId });
+      }
       await session.open(resumeId);
     } catch (error) {
       // A session that never opened must not leave its process behind.

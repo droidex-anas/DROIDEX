@@ -77,7 +77,7 @@ export interface ProgressEntry {
 }
 
 export type ChildRole = 'worker' | 'validator';
-export type ChildStatus = 'pending' | 'running' | 'paused' | 'completed';
+export type ChildStatus = 'pending' | 'running' | 'paused' | 'completed' | 'failed';
 export type StreamFidelity = 'token' | 'tool' | 'state';
 
 export interface ChildSpawnLink {
@@ -100,6 +100,9 @@ export interface ChildSessionSummary {
   status: ChildStatus;
   label?: string;
   prompt?: string;
+  // Orchestration name and phase title, when reported by the provider.
+  group?: string;
+  phase?: string;
   modelId: string;
   reasoningEffort?: ReasoningEffort;
   // Confirmed effective autonomy, runtime-scoped: present only while the child
@@ -204,6 +207,9 @@ export interface TranscriptEvent {
   browserRefs?: BrowserTranscriptReference[];
   steered?: boolean;
   compactType?: 'auto' | 'manual';
+  modelSwitch?: { from: string; to: string };
+  errorKind?: 'usage_limit';
+  resetsAt?: number;
 }
 
 export type BrowserTranscriptReferenceKind = 'element' | 'region' | 'text';

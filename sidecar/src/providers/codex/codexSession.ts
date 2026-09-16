@@ -62,6 +62,7 @@ export class CodexSession implements ProviderSession {
   private pendingInterrupt = false;
   private readonly prompts: OpenPrompts;
   private readonly startup = new CodexStartup();
+  private readonly backgroundListeners = new Set<(event: NormalizedEvent) => void>();
   private startupNoticeTimer?: ReturnType<typeof setTimeout>;
   private readonly catalogListeners = new Set<(items: SkillInfo[]) => void>();
   private catalog?: Promise<SkillInfo[]>;
@@ -80,7 +81,7 @@ export class CodexSession implements ProviderSession {
     this.cwd = input.cwd;
     this.autonomy = input.autonomy;
     this.model = input.model;
-    this.mapper = new CodexEventMapper(input.appSessionId);
+    this.mapper = new CodexEventMapper(input.appSessionId, input.model);
     this.prompts = new OpenPrompts(input.appSessionId, input.interactions);
     // Registered before `initialize`, so nothing the server sends can arrive
     // before its handler exists. Requests left unregistered — the legacy exec
@@ -129,6 +130,7 @@ export class CodexSession implements ProviderSession {
       : this.client.request<ThreadResponse>('thread/start', settings));
     this.threadId = response.thread.id;
     this.threadModel = response.model;
+    this.mapper.setModel({ ...this.model, modelId: this.model.modelId ?? this.threadModel });
     this.catalog ??= loadCodexCatalog(this.client, [this.cwd]).then((catalog) => {
       if (this.hasClosed) return [];
       if (catalog.diagnostics.length)
@@ -200,6 +202,7 @@ export class CodexSession implements ProviderSession {
         ? { reasoningEffort: settings.reasoningEffort }
         : {}),
     };
+    this.mapper.setModel({ ...this.model, modelId: this.model.modelId ?? this.threadModel });
     return Promise.resolve();
   }
 
@@ -256,7 +259,25 @@ export class CodexSession implements ProviderSession {
     return typeof threadId === 'string' && threadId !== this.threadId;
   }
 
+  onBackgroundEvent(listener: (event: NormalizedEvent) => void): () => void {
+    this.backgroundListeners.add(listener);
+    return () => {
+      this.backgroundListeners.delete(listener);
+    };
+  }
+
+  private deliver(events: NormalizedEvent[]): void {
+    for (const event of events) {
+      if (event.childSession) {
+        for (const listener of this.backgroundListeners) listener(event);
+      } else this.turn?.push([event]);
+    }
+  }
+
   private registerHandlers(): void {
+    this.client.onNotification('thread/started', (params) => {
+      this.deliver(this.mapper.childThreadStarted(params, this.threadId));
+    });
     for (const method of MAPPED_NOTIFICATIONS) {
       this.onThreadNotification(method, (params) => {
         const events = this.mapper.map(method, params);
@@ -265,7 +286,7 @@ export class CodexSession implements ProviderSession {
           this.startup.itemArrived();
           this.cancelStartupNotice();
         }
-        this.turn?.push(events);
+        this.deliver(events);
       });
     }
     this.client.onNotification('skills/changed', () => {
@@ -293,9 +314,9 @@ export class CodexSession implements ProviderSession {
     this.onThreadNotification('error', (params) => {
       const failure = errorOf(params);
       if (!failure) return;
-      this.turn?.push([this.mapper.errorEvent(failure.message)]);
+      this.turn?.push([this.mapper.errorEvent(failure.error)]);
       // A retrying error is a hiccup the turn recovers from on its own.
-      if (!failure.willRetry) this.turn?.fail(new Error(failure.message));
+      if (!failure.willRetry) this.turn?.fail(failure.error);
     });
     this.client.onClose((error) => {
       this.cancelStartupNotice();
@@ -339,7 +360,7 @@ export class CodexSession implements ProviderSession {
     // it belongs to — never in whichever turn happens to be open by then.
     const turn = this.turn;
     void this.sendInterrupt(turnId).catch((error: unknown) => {
-      if (this.turn === turn) turn?.push([this.mapper.errorEvent(errMsg(error))]);
+      if (this.turn === turn) turn?.push([this.mapper.errorEvent(error)]);
     });
   }
 
@@ -375,7 +396,7 @@ export class CodexSession implements ProviderSession {
   private settle(turn: CodexTurn): void {
     this.prompts.cancel();
     if (turn.status === 'failed') {
-      this.turn?.fail(new Error(turn.error?.message ?? 'Codex ended the turn with an error.'));
+      this.turn?.fail(turn.error ?? new Error('Codex ended the turn with an error.'));
       return;
     }
     // An interrupted turn settles quietly; the user asked for it.

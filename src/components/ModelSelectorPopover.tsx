@@ -4,7 +4,13 @@ import { Search, Check, SlidersHorizontal } from 'lucide-react';
 import { shallowEqual, useStoreDispatch, useStoreSelector } from '../hooks/useStore';
 import type { AgentKind } from '../hooks/persistedUiPreferences';
 import type { ReasoningEffort, ModelInfo } from '../types/bridge';
-import { updateAgentSettings, updateChildSettings, listModels } from '../lib/commands';
+import { compatibleReasoningForModel } from '../lib/reasoningEffort';
+import {
+  updateAgentSettings,
+  updateChildSettings,
+  updateSessionSettings,
+  listModels,
+} from '../lib/commands';
 import {
   childSettingsReadinessLabel,
   planChildModelUpdate,
@@ -63,7 +69,6 @@ export default function ModelSelectorPopover({
       ? current.sessions[current.activeAppSessionId]
       : undefined;
     return {
-      activeAppSessionId: current.activeAppSessionId,
       activeSessionAppSessionId: activeSession?.appSessionId,
       activeSessionModelId: activeSession?.modelId,
       activeSessionReasoning: activeSession?.reasoningEffort,
@@ -96,14 +101,16 @@ export default function ModelSelectorPopover({
 
   // For a single chat, the model/reasoning belong to that session, not the global default.
   const scopedAppSessionId = singleAgent ? state.activeSessionAppSessionId : undefined;
-  const effModelId =
-    childTarget?.modelId ?? (scopedAppSessionId ? state.activeSessionModelId : cfg.modelId);
-  const effReasoning =
-    childTarget?.reasoningEffort ??
-    (scopedAppSessionId ? state.activeSessionReasoning : undefined) ??
-    cfg.reasoning;
-  const effReasoningRef = useRef(effReasoning);
-  effReasoningRef.current = effReasoning;
+  let effModelId = cfg.modelId;
+  let effReasoning: ReasoningEffort | undefined = cfg.reasoning;
+  if (scopedAppSessionId) {
+    effModelId = state.activeSessionModelId;
+    effReasoning = state.activeSessionReasoning;
+  }
+  if (childTarget) {
+    effModelId = childTarget.modelId;
+    effReasoning = childTarget.reasoningEffort;
+  }
   const childReady = childTarget?.readiness === 'ready';
 
   const source = providerModelCatalog(state.provider, state.models, state.providerStatuses);
@@ -184,105 +191,68 @@ export default function ModelSelectorPopover({
       defaultModelOf(source),
     [state.provider, state.providerStatuses, source],
   );
-  // A model this provider never published is not a selection here — a stale
-  // pick, or one belonging to another provider — so both the search line and
-  // the reasoning row fall back to the default the chat would start on.
-  const resolvedModelId = providerModelSelection(state.provider, effModelId, source);
+  // Saved ids remain authoritative even while the catalog omits their row.
+  const resolvedModelId =
+    childTarget || scopedAppSessionId
+      ? effModelId
+      : providerModelSelection(state.provider, effModelId, source);
   const selectedLabel = resolvedModelId
     ? (source.find((model) => model.id === resolvedModelId)?.displayName ?? resolvedModelId)
     : (defaultModel?.displayName ?? 'Default');
-  // The row the effort applies to: the pinned model, or the model behind the
-  // default row when the chat pins none or its pick isn't this provider's.
   const activeModel = resolvedModelId ? source.find((x) => x.id === resolvedModelId) : defaultModel;
-  const activeSupportedReasoning = activeModel?.supportedReasoningEfforts;
 
   const updateReasoning = useCallback(
     (reasoning: ReasoningEffort) => {
       if (childTarget) return;
-      if (scopedAppSessionId)
-        dispatch({
-          type: 'SESSION_SET_REASONING',
-          appSessionId: scopedAppSessionId,
-          reasoning,
-        });
-      else dispatch({ type: 'SET_AGENT_REASONING', agent, reasoning });
+      if (scopedAppSessionId) {
+        updateSessionSettings({ appSessionId: scopedAppSessionId, reasoningEffort: reasoning });
+        return;
+      }
+      dispatch({ type: 'SET_AGENT_REASONING', agent, reasoning });
       updateAgentSettings({
-        appSessionId: state.activeAppSessionId ?? undefined,
+        appSessionId: state.activeSessionAppSessionId,
         agent,
         reasoningEffort: reasoning,
       });
     },
-    [agent, childTarget, dispatch, scopedAppSessionId, state.activeAppSessionId],
+    [agent, childTarget, dispatch, scopedAppSessionId, state.activeSessionAppSessionId],
   );
 
   const updateModel = useCallback(
     (modelId?: string) => {
-      const currentReasoning = effReasoningRef.current;
       if (childTarget) {
-        const update = planChildModelUpdate(childTarget, modelId, currentReasoning, source);
+        const update = planChildModelUpdate(childTarget, modelId, effReasoning, source);
         if (update) updateChildSettings(update);
         return;
       }
-      if (scopedAppSessionId)
-        dispatch({
-          type: 'SESSION_SET_MODEL',
-          appSessionId: scopedAppSessionId,
-          modelId,
-        });
-      else dispatch({ type: 'SET_AGENT_MODEL', agent, modelId });
-      updateAgentSettings({
-        appSessionId: state.activeAppSessionId ?? undefined,
-        agent,
-        modelId: modelId ?? null,
-      });
 
-      // Snap reasoning to a value the new model actually supports.
+      // Snap only an explicit effort, as part of the same user-requested update.
       const next = modelId ? source.find((x) => x.id === modelId) : defaultModel;
-      const supported = next?.supportedReasoningEfforts;
-      if (supported?.length && !supported.includes(currentReasoning)) {
-        updateReasoning(next?.defaultReasoningEffort ?? supported[supported.length - 1]);
-      } else if (
-        !supported?.length &&
-        next?.defaultReasoningEffort &&
-        currentReasoning !== next.defaultReasoningEffort
-      ) {
-        updateReasoning(next.defaultReasoningEffort);
+      const reasoningEffort = compatibleReasoningForModel(next, effReasoning);
+      const settings = {
+        modelId: modelId ?? null,
+        ...(reasoningEffort === undefined ? {} : { reasoningEffort }),
+      };
+      if (scopedAppSessionId) {
+        updateSessionSettings({ appSessionId: scopedAppSessionId, ...settings });
+        return;
       }
+      dispatch({ type: 'SET_AGENT_MODEL', agent, modelId });
+      if (reasoningEffort !== undefined)
+        dispatch({ type: 'SET_AGENT_REASONING', agent, reasoning: reasoningEffort });
+      updateAgentSettings({ appSessionId: state.activeSessionAppSessionId, agent, ...settings });
     },
     [
       agent,
       childTarget,
       defaultModel,
       dispatch,
+      effReasoning,
       scopedAppSessionId,
       source,
-      state.activeAppSessionId,
-      updateReasoning,
+      state.activeSessionAppSessionId,
     ],
   );
-
-  // Keep the displayed reasoning valid if the model's supported set changes
-  // (e.g. real catalog arrives after a mock placeholder was selected).
-  useEffect(() => {
-    if (childMode) return;
-    const supported = activeSupportedReasoning;
-    if (supported?.length && !supported.includes(effReasoning)) {
-      updateReasoning(activeModel?.defaultReasoningEffort ?? supported[supported.length - 1]);
-    } else if (
-      !supported?.length &&
-      activeModel?.defaultReasoningEffort &&
-      effReasoning !== activeModel.defaultReasoningEffort
-    ) {
-      updateReasoning(activeModel.defaultReasoningEffort);
-    }
-  }, [
-    activeModel?.defaultReasoningEffort,
-    activeModel?.id,
-    activeSupportedReasoning,
-    childMode,
-    effReasoning,
-    updateReasoning,
-  ]);
 
   // Arrow keys: ↑/↓ walk the filtered list, ←/→ step the selected model's effort.
   useEffect(() => {
@@ -296,7 +266,7 @@ export default function ModelSelectorPopover({
       if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
         if (childTarget && !childReady) return;
         const ids: (string | undefined)[] = [undefined, ...models.map((m) => m.id)];
-        const idx = ids.indexOf(effModelId);
+        const idx = ids.indexOf(resolvedModelId);
         const down = e.key === 'ArrowDown';
         // A model the filter hides is nowhere in the list: step onto its first
         // or last visible entry instead of off the end into Default.
@@ -311,7 +281,7 @@ export default function ModelSelectorPopover({
       }
       const efforts = effortsFor(activeModel, effReasoning);
       const next = stepEffort(efforts, effReasoning, e.key === 'ArrowRight' ? 1 : -1);
-      if (next !== effReasoning) updateReasoning(next);
+      if (next !== undefined && next !== effReasoning) updateReasoning(next);
     };
     window.addEventListener('keydown', onKey);
     return () => {
@@ -321,7 +291,7 @@ export default function ModelSelectorPopover({
     activeModel,
     childReady,
     childTarget,
-    effModelId,
+    resolvedModelId,
     effReasoning,
     filterOpen,
     models,
@@ -492,7 +462,7 @@ export default function ModelSelectorPopover({
             defaultModel={defaultModel}
             hasRealModels={hasRealModels}
             provider={state.provider}
-            selectedModelId={effModelId}
+            selectedModelId={resolvedModelId}
             reasoning={effReasoning}
             query={query}
             onSelectModel={updateModel}

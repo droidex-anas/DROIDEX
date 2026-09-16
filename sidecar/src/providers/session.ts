@@ -59,6 +59,8 @@ export interface ProviderSession {
     prompt: string,
     mentions?: ProviderMention[],
   ): AsyncGenerator<NormalizedEvent, void, undefined>;
+  // Events delivered between turns, never duplicated by stream().
+  onBackgroundEvent?(listener: (event: NormalizedEvent) => void): () => void;
   // Takes a prompt into the turn that is already running, so the turn keeps its
   // work and continues with it. Absent on a provider that can only steer by
   // interrupting and resending, which is what the session layer then does.

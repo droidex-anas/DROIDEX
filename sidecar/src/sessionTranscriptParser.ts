@@ -11,6 +11,7 @@ import { designPromptDisplayFromText } from './browser/designPromptDisplay.js';
 import { appPromptDisplayFromText, hasAppFence } from './appPrompt.js';
 import { parseSkillActivation } from './skillSignals.js';
 import type { SessionRole, TranscriptEvent } from './protocol.js';
+import { parseStoredNotice } from './sessionNotices.js';
 
 // Replayed text is capped so one enormous message cannot dominate a history
 // page. An App answer is the exception: it is a document that only runs when
@@ -165,6 +166,8 @@ export function parseSessionLineEvents(
   role: SessionRole,
   line: StoredMessageLine | StoredSessionStart,
 ): TranscriptEvent[] {
+  const notice = parseStoredNotice(appSessionId, providerSessionId, role, line);
+  if (notice) return [notice];
   // In-place daemon auto-compaction appends a compaction_state marker to the
   // SAME session file, so a mid-file record marks a summarize-away boundary
   // that must replay as a divider (a leading record replays the same way when

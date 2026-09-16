@@ -131,6 +131,7 @@ function createHarness(ordinarySummaries: SessionSummary[] = []) {
     interactionMode: 'auto',
   };
   const lifecycle = new SessionLifecycle({
+    eventFlow: { apply: () => undefined },
     provider: () => new DroidProvider(runtime),
     registry,
     ensureConnected: () => {
@@ -1270,7 +1271,7 @@ test('concurrent close waits for cleanup and discard overrides queue preservatio
   assert.equal(harness.registry.getLive('concurrent-close'), undefined);
 });
 
-test('pending settings stay projected until successful first-send application', async () => {
+test('accepted settings stay durable through resume and precede first-send application', async () => {
   const saved = summary('app-pending', 'provider-pending', {
     modelId: 'model-saved',
     reasoningEffort: ReasoningEffort.Low,
@@ -1286,17 +1287,17 @@ test('pending settings stay projected until successful first-send application', 
   };
   harness.setProjection(pending);
   await harness.lifecycle.resume('app-pending');
-  assert.equal(harness.registry.getCanonicalSummary('app-pending')?.modelId, 'model-saved');
+  assert.equal(harness.registry.getCanonicalSummary('app-pending')?.modelId, 'model-pending');
   assert.equal(harness.registry.resolveSummary('app-pending')?.modelId, 'model-pending');
   assert.equal(harness.registry.listSummaries().sessions[0]?.reasoningEffort, ReasoningEffort.High);
-  assert.equal(harness.history.persisted.at(-1)?.modelId, 'model-saved');
+  assert.equal(harness.history.persisted.at(-1)?.modelId, 'model-pending');
   assert.equal(
     harness.events.find((event) => event.type === 'session.created')?.session.modelId,
     'model-pending',
   );
   const replaced = harness.registry.replaceProvider('app-pending', 'provider-next');
-  assert.equal(replaced?.modelId, 'model-saved');
-  assert.equal(harness.history.persisted.at(-1)?.modelId, 'model-saved');
+  assert.equal(replaced?.modelId, 'model-pending');
+  assert.equal(harness.history.persisted.at(-1)?.modelId, 'model-pending');
   harness.setPendingApply(async (appSessionId) => {
     await provider.updateSettings(pending);
     harness.registry.updateSummary(appSessionId, pending);
@@ -1323,7 +1324,7 @@ test('pending settings stay projected until successful first-send application', 
   failed.setPendingApply(() => Promise.resolve(false));
   await failed.lifecycle.send('app-pending', 'must not stream');
   assert.deepEqual(failedProvider.prompts, []);
-  assert.equal(failed.registry.getCanonicalSummary('app-pending')?.modelId, 'model-saved');
+  assert.equal(failed.registry.getCanonicalSummary('app-pending')?.modelId, 'model-pending');
   assert.equal(failed.registry.resolveSummary('app-pending')?.modelId, 'model-pending');
 });
 
