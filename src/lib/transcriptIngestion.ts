@@ -29,9 +29,9 @@ interface TranscriptIndexes {
   firstUserIndex: number | undefined;
   latestActivityBySource: ReadonlyMap<string, TranscriptEvent>;
   childSpawns: ReadonlyMap<string, TranscriptEvent>;
-  // toolUseId → position of the one stable event a streamed call coalesces
-  // into, so interleaved snapshots of parallel calls merge instead of
-  // duplicating.
+  // sourceSessionId + toolUseId → position of the one stable event a streamed
+  // call coalesces into, so interleaved snapshots of parallel calls merge
+  // instead of duplicating. Provider ids are only unique within one session.
   toolCallIndexByUseId: ReadonlyMap<string, number>;
 }
 
@@ -298,7 +298,7 @@ function appendIndexes(
   let toolCallIndexByUseId = indexes.toolCallIndexByUseId;
   if (event.kind === 'tool_call' && event.toolUseId) {
     const updated = new Map(toolCallIndexByUseId);
-    updated.set(event.toolUseId, eventIndex);
+    updated.set(toolCallIndexKey(event.sourceSessionId, event.toolUseId), eventIndex);
     toolCallIndexByUseId = updated;
   }
   return {
@@ -391,6 +391,12 @@ function childSpawnKey(event: TranscriptEvent): string {
   return event.toolUseId ?? event.id;
 }
 
+// Scoped by source session: two sessions streaming calls that reuse the same
+// provider id must never steal each other's merge target.
+function toolCallIndexKey(sourceSessionId: string, toolUseId: string): string {
+  return `${sourceSessionId}\n${toolUseId}`;
+}
+
 function emptyEventIdIndex(): EventIdIndex {
   return { buckets: new Array<ReadonlySet<string> | undefined>(EVENT_ID_BUCKET_COUNT) };
 }
@@ -462,15 +468,17 @@ function getTextDeltaRun(
 }
 
 // The one earlier snapshot of a streamed call, wherever it landed. The index
-// and the sequence are maintained together; a stale or cross-source hit is
-// treated as no match so the event appends instead of merging into a stranger.
+// and the sequence are maintained together; a stale hit is treated as no
+// match so the event appends instead of merging into a stranger.
 function toolCallMergeTarget(
   events: readonly TranscriptEvent[],
   indexes: TranscriptIndexes,
   next: TranscriptEvent,
 ): { index: number; existing: TranscriptEvent } | undefined {
   if (next.author || next.kind !== 'tool_call' || !next.toolUseId) return undefined;
-  const index = indexes.toolCallIndexByUseId.get(next.toolUseId);
+  const index = indexes.toolCallIndexByUseId.get(
+    toolCallIndexKey(next.sourceSessionId, next.toolUseId),
+  );
   if (index === undefined) return undefined;
   const existing = events.at(index);
   if (existing?.kind !== 'tool_call') return undefined;
