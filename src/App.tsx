@@ -40,7 +40,6 @@ import { WINDOW_CONTROLS_INSET_PX } from './lib/windowChrome';
 import RuntimeStatusBanner from './components/RuntimeStatusBanner';
 import { checkForAppUpdateAutomatically, startAutomaticAppUpdateChecks } from './lib/appUpdate';
 import { toast } from './lib/toast';
-import { AgentsWorkspace } from './components/agents/AgentsWorkspace';
 import { UtilityPane } from './components/utility/UtilityPane';
 import { peekTerminalInstance, releaseTerminalInstancesExcept } from './lib/terminalInstances';
 import {
@@ -81,6 +80,7 @@ import {
   LazyAutomationsRoute,
   LazyBrowserFocusWorkspace,
   LazyCommandPalette,
+  LazyAgentsWorkspace,
   LazyFilesWorkspace,
   LazyMissionControl,
   LazyPullRequestsView,
@@ -803,15 +803,17 @@ export default function App() {
                     renderTab={(tab, { overlayOpen }) => {
                       if (tab.tool === 'agents') {
                         return (
-                          <AgentsWorkspace
-                            tab={tab}
-                            expanded={paneExpanded}
-                            onToggleExpanded={() => {
-                              setExpandedPaneAppSessionId(
-                                paneExpanded ? null : activeSession.appSessionId,
-                              );
-                            }}
-                          />
+                          <Suspense fallback={utilityToolFallback('agents')}>
+                            <LazyAgentsWorkspace
+                              tab={tab}
+                              expanded={paneExpanded}
+                              onToggleExpanded={() => {
+                                setExpandedPaneAppSessionId(
+                                  paneExpanded ? null : activeSession.appSessionId,
+                                );
+                              }}
+                            />
+                          </Suspense>
                         );
                       }
                       if (tab.tool === 'review') {

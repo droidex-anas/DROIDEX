@@ -16,6 +16,7 @@ const IDLE_SURFACES: LazySurface[] = [
   'terminal',
   'review',
   'browser',
+  'agents',
 ];
 
 function loaderFor(surface: LazySurface): () => Promise<unknown> {

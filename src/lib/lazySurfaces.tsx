@@ -32,6 +32,10 @@ export const LAZY_SURFACE_LOADERS = {
     const module = await import('../components/files/FilesWorkspace');
     return { default: module.FilesWorkspace };
   },
+  agents: async () => {
+    const module = await import('../components/agents/AgentsWorkspace');
+    return { default: module.AgentsWorkspace };
+  },
 };
 
 export type LazySurface = keyof typeof LAZY_SURFACE_LOADERS;
@@ -47,6 +51,7 @@ export const LazyReviewPanel = lazy(LAZY_SURFACE_LOADERS.review);
 export const LazyBrowserFocusWorkspace = lazy(LAZY_SURFACE_LOADERS.browser);
 export const LazyTerminalWorkspace = lazy(LAZY_SURFACE_LOADERS.terminal);
 export const LazyFilesWorkspace = lazy(LAZY_SURFACE_LOADERS.files);
+export const LazyAgentsWorkspace = lazy(LAZY_SURFACE_LOADERS.agents);
 
 export function utilityToolFallback(tool: UtilityTool) {
   switch (tool) {
