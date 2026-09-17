@@ -666,7 +666,8 @@ export type ClientCommand =
       type: 'session.updateSettings';
       appSessionId: string;
       modelId?: string | null;
-      reasoningEffort?: ReasoningEffort;
+      // null clears the effort: the model chosen offers none.
+      reasoningEffort?: ReasoningEffort | null;
       autonomy?: Autonomy;
       interactionMode?: SessionInteractionMode;
     }
@@ -756,7 +757,7 @@ export type ClientCommand =
       appSessionId?: string;
       agent: ConfigurableSessionRole;
       modelId?: string | null;
-      reasoningEffort?: ReasoningEffort;
+      reasoningEffort?: ReasoningEffort | null;
     }
   | {
       // Snapshot of the app's explicitly configured compaction limits. A null
