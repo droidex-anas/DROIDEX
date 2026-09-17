@@ -71,13 +71,16 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
+// The commands that carry a prompt, and so may carry the rows staged with it.
+const MENTION_COMMANDS = new Set(['session.send', 'session.sendNow', 'session.create']);
+
 export function assertValidMentions(command: object & { mentions?: unknown }): void {
   if (
     !('type' in command) ||
-    (command.type !== 'session.send' && command.type !== 'session.sendNow') ||
+    !MENTION_COMMANDS.has(String(command.type)) ||
     !Array.isArray(command.mentions)
   )
-    throw new Error('Mentions are only valid on session sends.');
+    throw new Error('Mentions are only valid on a prompt: a session send or a new session.');
   for (const mention of command.mentions) {
     if (
       !isRecord(mention) ||
