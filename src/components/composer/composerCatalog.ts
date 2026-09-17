@@ -45,7 +45,7 @@ const MENTION_PROVIDERS = new Set<ProviderKind>(['codex']);
  * protocol has one, otherwise as part of the prompt text. A row whose catalog
  * path cannot be invoked stays in the text rather than failing the send.
  */
-export function mentionForRow(provider: ProviderKind, row: SkillInfo): ProviderMention | null {
+function mentionForRow(provider: ProviderKind, row: SkillInfo): ProviderMention | null {
   if (!MENTION_PROVIDERS.has(provider) || row.kind === 'command') return null;
   // The sidecar rejects a mention whose path the harness cannot resolve: an
   // absolute file for a skill, the catalog's own scheme for an app or plugin.

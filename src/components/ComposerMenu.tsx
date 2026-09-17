@@ -136,7 +136,10 @@ function RowBody({ item, staged }: { item: MenuItem; staged: boolean }) {
         <span className="shrink-0 text-[12px] text-droid-text-muted/60">{row.argumentHint}</span>
       )}
       <Detail>{row.description}</Detail>
-      <Scope>{rowScope(row)}</Scope>
+      {/* Where a command or skill comes from is worth saying; an app or a
+          plugin is already named by the section it sits in, and its
+          marketplace would only crowd the row. */}
+      {(row.kind === 'command' || row.kind === 'skill') && <Scope>{rowScope(row)}</Scope>}
     </>
   );
 }
