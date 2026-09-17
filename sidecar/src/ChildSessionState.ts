@@ -201,6 +201,15 @@ export function newChildState(input: {
   });
 }
 
+/** The one door every child status change goes through, so a finished child
+    remembers when it finished and one that runs again forgets. The first stamp
+    wins: a settled child observed as settled again keeps the moment it stopped. */
+export function setChildStatus(child: ChildSessionState, status: ChildStatus, now: number): void {
+  child.status = status;
+  if (status === 'completed' || status === 'failed') child.settledAt ??= now;
+  else child.settledAt = undefined;
+}
+
 export function applyObservedChild(
   child: ChildSessionState,
   observed: ChildSpawnObservation,
@@ -236,15 +245,6 @@ export function applyObservedChild(
   child.transcriptAvailable = observed.transcriptAvailable ?? true;
   child.startedAt ??= now;
   return { previousPrompt };
-}
-
-/** The one door every child status change goes through, so a finished child
-    remembers when it finished and one that runs again forgets. The first stamp
-    wins: a settled child re-observed as settled kept that moment. */
-export function setChildStatus(child: ChildSessionState, status: ChildStatus, now: number): void {
-  child.status = status;
-  if (status === 'completed' || status === 'failed') child.settledAt ??= now;
-  else child.settledAt = undefined;
 }
 
 export function applyChildLaunchSettings(child: ChildSessionState, settings: ChildSettings): void {
