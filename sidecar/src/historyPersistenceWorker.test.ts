@@ -70,6 +70,7 @@ function createSchema(path: string): void {
       spawn_link_id TEXT,
       transcript_available INTEGER NOT NULL CHECK (transcript_available IN (0, 1)),
       started_at INTEGER,
+      settled_at INTEGER,
       updated_at INTEGER NOT NULL,
       PRIMARY KEY (parent_app_session_id, child_session_id)
     );

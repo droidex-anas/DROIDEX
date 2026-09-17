@@ -207,7 +207,7 @@ test('fresh history index uses only the canonical child schema', () => {
   ).map(({ name }) => name);
   db.close();
 
-  assert.equal(version.user_version, 3);
+  assert.equal(version.user_version, 4);
   assert.ok(tables.includes('child_sessions'));
   assert.ok(!tables.includes('child_session_links'));
   assert.ok(!tables.includes('linked_child_sessions'));
@@ -228,6 +228,7 @@ test('fresh history index uses only the canonical child schema', () => {
     'spawn_link_id',
     'transcript_available',
     'started_at',
+    'settled_at',
     'updated_at',
   ]);
 });
@@ -320,14 +321,14 @@ for (const releasedVersion of [1, 2]) {
         `);
       }
       const originalChild = released.prepare('SELECT * FROM child_sessions').get();
-      released.exec('CREATE TABLE child_sessions_v3 (reserved INTEGER);');
+      released.exec('CREATE TABLE child_sessions_v4 (reserved INTEGER);');
       assert.throws(
         () => HistoryIndex.initializeOrValidateHistorySchema(released),
         /already exists/,
       );
       assert.equal(released.prepare('PRAGMA user_version').get()?.user_version, releasedVersion);
       assert.deepEqual(released.prepare('SELECT * FROM child_sessions').get(), originalChild);
-      released.exec('BEGIN; DROP TABLE child_sessions_v3; COMMIT;');
+      released.exec('BEGIN; DROP TABLE child_sessions_v4; COMMIT;');
       released.close();
 
       const upgraded = new HistoryIndex();
@@ -348,7 +349,7 @@ for (const releasedVersion of [1, 2]) {
         .get('existing-chat', 'existing-child') as { previous_provider_session_ids: string };
       verified.close();
 
-      assert.equal(version.user_version, 3);
+      assert.equal(version.user_version, 4);
       assert.equal(summary.title, 'Existing chat');
       assert.equal(summary.provider_session_id, 'existing-provider');
       assert.equal(
@@ -468,6 +469,7 @@ test('current index missing the canonical spawn-kind check uses hard-cut recover
         spawn_link_id TEXT,
         transcript_available INTEGER NOT NULL CHECK (transcript_available IN (0, 1)),
         started_at INTEGER,
+        settled_at INTEGER,
         updated_at INTEGER NOT NULL,
         CHECK (
           (spawn_link_kind IS NULL AND spawn_link_id IS NULL) OR

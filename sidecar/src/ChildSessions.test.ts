@@ -490,6 +490,7 @@ test('result-only completion admits the exact pending spawn as historical', () =
       spawnLink: { kind: 'tool-use', id: 'tool-current' },
       transcriptAvailable: true,
       startedAt: 100,
+      settledAt: 100,
       streamFidelity: 'state',
     },
   ]);
@@ -544,6 +545,7 @@ test('missing Task settings defer exact admission and preserve provider-only com
       spawnLink: { kind: 'tool-use', id: 'tool-deferred' },
       transcriptAvailable: true,
       startedAt: 100,
+      settledAt: 100,
       streamFidelity: 'state',
     },
   ]);
