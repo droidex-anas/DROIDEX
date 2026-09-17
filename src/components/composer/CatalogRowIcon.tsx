@@ -55,12 +55,14 @@ export function CatalogRowIcon({
         draggable={false}
         loading="lazy"
         decoding="async"
-        className={`rounded-[4px] object-contain ${className}`}
+        className={`rounded object-contain ${className}`}
+        // The brand colour is the harness's own data, in whatever notation it
+        // chose, so the tint is mixed rather than built by appending alpha hex.
         style={
           item.brandColor
             ? {
-                background: `${item.brandColor}1f`,
-                boxShadow: `inset 0 0 0 1px ${item.brandColor}59`,
+                background: `color-mix(in srgb, ${item.brandColor} 12%, transparent)`,
+                boxShadow: `inset 0 0 0 1px color-mix(in srgb, ${item.brandColor} 35%, transparent)`,
               }
             : undefined
         }

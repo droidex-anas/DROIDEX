@@ -1,6 +1,6 @@
 import type { ProviderKind } from './bridge';
 
-export type SkillLocation = 'project' | 'personal' | 'builtin';
+type SkillLocation = 'project' | 'personal' | 'builtin';
 type CatalogItemKind = 'skill' | 'command' | 'app' | 'plugin';
 type CatalogExecution = 'client' | 'harness';
 type CatalogIcon = { url: string } | { path: string } | { host: string };

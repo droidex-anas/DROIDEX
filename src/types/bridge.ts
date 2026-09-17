@@ -7,7 +7,7 @@ import type {
 } from '../features/automations/protocol';
 import type { McpClientCommand, McpServerEvent } from './mcp.js';
 import type { ProviderMention, SkillInfo } from './catalog.js';
-export type { ProviderMention, SkillInfo, SkillLocation } from './catalog.js';
+export type { ProviderMention, SkillInfo } from './catalog.js';
 export type {
   McpServerInfo,
   McpServerInput,
