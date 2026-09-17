@@ -1031,6 +1031,7 @@ async function waitFor(
 
 function summary(overrides: Partial<SessionSummary> & { appSessionId: string }): SessionSummary {
   return {
+    provider: 'droid',
     sessionPurpose: 'chat',
     interactionMode: 'auto',
     role: 'primary',

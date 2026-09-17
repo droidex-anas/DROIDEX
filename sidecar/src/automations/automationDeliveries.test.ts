@@ -175,6 +175,7 @@ test(
       assert.equal(attempts, 1);
       const session: SessionSummary = {
         appSessionId: 'busy',
+        provider: 'droid',
         sessionPurpose: 'chat',
         interactionMode: 'auto',
         role: 'primary',

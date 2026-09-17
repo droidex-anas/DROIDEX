@@ -55,7 +55,7 @@ export default function ScheduledPrompts({ appSessionId }: { appSessionId: strin
 
   return (
     <section aria-label="Scheduled prompts" className="mb-2 flex flex-col gap-1.5">
-      <div className="flex items-center gap-1.5 px-1 text-[10px] font-medium tracking-wide text-droid-text-muted">
+      <div className="flex items-center gap-1.5 px-1 text-[11px] font-medium tracking-wide text-droid-text-muted">
         <Clock className="h-3 w-3" />
         Scheduled · sends to this conversation
       </div>
@@ -73,7 +73,7 @@ export default function ScheduledPrompts({ appSessionId }: { appSessionId: strin
           >
             <Clock className="mt-0.5 h-3.5 w-3.5 shrink-0 text-droid-text-muted/60" />
             <PendingPromptPreview text={automation.prompt} files={automation.files}>
-              <span aria-live="polite" className="mt-1 block text-[10px] text-droid-text-muted">
+              <span aria-live="polite" className="mt-1 block text-[11px] text-droid-text-muted">
                 {hint}
               </span>
             </PendingPromptPreview>
@@ -118,7 +118,7 @@ export default function ScheduledPrompts({ appSessionId }: { appSessionId: strin
           onClick={() => {
             dispatch({ type: 'OPEN_AUTOMATIONS' });
           }}
-          className="rounded px-1 text-left text-[10px] text-droid-text-muted hover:text-droid-text focus-visible:outline focus-visible:outline-droid-border-hover"
+          className="rounded px-1 text-left text-[11px] text-droid-text-muted hover:text-droid-text focus-visible:outline focus-visible:outline-droid-border-hover"
         >
           {prompts.length - VISIBLE_PROMPTS} more in Automations
         </button>

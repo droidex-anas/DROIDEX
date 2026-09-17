@@ -19,7 +19,11 @@ interface DeliveryOptions {
   collectAttachments: () => void;
 }
 
-/** Existing chats are borrowed, never owned. Two resumes at a time, one attempt per target. */
+// Scheduled turns share the app with whatever the user is doing, so only two
+// run at once, and never two against the same conversation.
+const MAX_ACTIVE_SCHEDULED_TURNS = 2;
+
+/** Existing chats are borrowed, never owned. One attempt per target at a time. */
 export class AutomationDeliveries {
   private readonly inFlightAttempts = new Map<string, Promise<void>>();
   private readonly unsettledTurns = new Set<string>();
@@ -30,34 +34,33 @@ export class AutomationDeliveries {
 
   startQueued(): void {
     if (this.options.isClosed()) return;
+    const queued = this.options
+      .store()
+      .runs.filter((run) => run.status === 'queued')
+      .sort((left, right) => left.requestedAt - right.requestedAt);
     const queuedTargets = new Set(
-      this.options
-        .store()
-        .runs.flatMap((run) =>
-          run.status === 'queued' && run.automation.target.kind === 'existing-session'
-            ? [run.automation.target.appSessionId]
-            : [],
-        ),
+      queued.flatMap((run) =>
+        run.automation.target.kind === 'existing-session'
+          ? [run.automation.target.appSessionId]
+          : [],
+      ),
     );
+    // A target with nothing queued and no attempt running cannot be waiting on
+    // a retry either, so it stops blocking the next delivery to reach it.
     for (const id of this.retryBlockedTargets) {
       if (!queuedTargets.has(id) && !this.inFlightAttempts.has(id))
         this.retryBlockedTargets.delete(id);
     }
-    const ordered = this.options
-      .store()
-      .runs.filter((run) => run.status === 'queued')
-      .sort((left, right) => left.requestedAt - right.requestedAt);
-    for (const run of ordered) {
-      if (new Set([...this.inFlightAttempts.keys(), ...this.unsettledTurns]).size >= 2) break;
+    // Attempts only settle on a later tick, so tracking admissions here keeps
+    // the cap exact without rebuilding the set on every candidate.
+    const active = new Set([...this.inFlightAttempts.keys(), ...this.unsettledTurns]);
+    for (const run of queued) {
+      if (active.size >= MAX_ACTIVE_SCHEDULED_TURNS) break;
       const target = run.automation.target;
       if (target.kind !== 'existing-session' || run.status !== 'queued') continue;
       const id = target.appSessionId;
-      if (
-        this.inFlightAttempts.has(id) ||
-        this.unsettledTurns.has(id) ||
-        this.retryBlockedTargets.has(id)
-      )
-        continue;
+      if (active.has(id) || this.retryBlockedTargets.has(id)) continue;
+      active.add(id);
       const attempt = this.attempt(run, id)
         .catch((error: unknown) => {
           console.error('Could not persist scheduled message delivery', error);

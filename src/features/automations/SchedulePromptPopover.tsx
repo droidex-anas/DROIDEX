@@ -112,7 +112,7 @@ export default function SchedulePromptPopover({
             />
           </div>
         </fieldset>
-        <p className="mt-2 text-right text-[10.5px] text-droid-text-muted">
+        <p className="mt-2 text-right text-[11px] text-droid-text-muted">
           {timezone.replaceAll('_', ' ')}
         </p>
         <p className="mt-4 text-[11px] leading-[17px] text-droid-text-muted">
@@ -125,7 +125,7 @@ export default function SchedulePromptPopover({
           </p>
         )}
         <div className="mt-4 flex items-center justify-between gap-3">
-          <span className="text-[10.5px] text-droid-text-muted">Manage in Automations</span>
+          <span className="text-[11px] text-droid-text-muted">Manage in Automations</span>
           <button
             type="submit"
             disabled={saving || unconfirmed}

@@ -6,7 +6,7 @@ export type AutomationSchedule =
   | { kind: 'weekly'; weekday: number; time: string }
   | { kind: 'cron'; expression: string };
 
-export type AutomationTarget =
+type AutomationTarget =
   | { kind: 'new-session' }
   | { kind: 'existing-session'; appSessionId: string };
 
