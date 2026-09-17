@@ -4,18 +4,13 @@ import { preloadLazySurface } from '../../lib/chunkPreloader';
 import type { LazySurface } from '../../lib/lazySurfaces';
 import { utilityToolOption } from './utilityToolOptions';
 
-// The agents pane ships with the chat, so it has no chunk to warm.
-const TOOL_SURFACES: Partial<Record<UtilityTool, LazySurface>> = {
+const TOOL_SURFACES: Record<UtilityTool, LazySurface> = {
   review: 'review',
   browser: 'browser',
   terminal: 'terminal',
   files: 'files',
+  agents: 'agents',
 };
-
-function preloadTool(tool: UtilityTool): void {
-  const surface = TOOL_SURFACES[tool];
-  if (surface) preloadLazySurface(surface);
-}
 
 export function UtilityToolPicker({
   tools,
@@ -45,10 +40,10 @@ export function UtilityToolPicker({
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.25, delay: index * 0.04, ease: [0.16, 1, 0.3, 1] }}
               onPointerEnter={() => {
-                preloadTool(tool);
+                preloadLazySurface(TOOL_SURFACES[tool]);
               }}
               onFocus={() => {
-                preloadTool(tool);
+                preloadLazySurface(TOOL_SURFACES[tool]);
               }}
               onClick={() => {
                 onSelect(tool);
@@ -75,10 +70,10 @@ export function UtilityToolPicker({
             type="button"
             role="menuitem"
             onPointerEnter={() => {
-              preloadTool(tool);
+              preloadLazySurface(TOOL_SURFACES[tool]);
             }}
             onFocus={() => {
-              preloadTool(tool);
+              preloadLazySurface(TOOL_SURFACES[tool]);
             }}
             onClick={() => {
               onSelect(tool);
