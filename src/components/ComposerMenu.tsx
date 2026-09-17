@@ -1,9 +1,10 @@
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 import { useLayoutEffect, useRef, type MouseEvent, type ReactNode } from 'react';
 
+import { FileText } from 'lucide-react';
+
 import { CatalogRowIcon, CommandSigil } from './composer/CatalogRowIcon';
 import { catalogLabel, rowScope, type MenuEntry, type MenuItem } from './composer/menuItems';
-import { FileTypeIcon } from './FileTypeIcon';
 import { inlineCardMotion, INLINE_CARD_EASE } from './inlineCardMotion';
 
 const ACCENT = 'var(--droid-accent)';
@@ -121,7 +122,11 @@ function RowBody({ item, staged }: { item: MenuItem; staged: boolean }) {
   if (item.type === 'file') {
     return (
       <>
-        <FileTypeIcon filename={basename(item.path)} aria-hidden className="h-4 w-4 shrink-0" />
+        {/* One shared glyph, as the attachment chips already use: the per-type
+            Lucide file icons live in lazily loaded surfaces, and pulling that
+            set into the composer costs the initial bundle more than the rows
+            gain. */}
+        <FileText aria-hidden className="h-4 w-4 shrink-0 text-droid-text-muted" />
         <Name>{basename(item.path)}</Name>
         <Detail>{staged ? `Attached · ${item.path}` : item.path}</Detail>
       </>
