@@ -1,8 +1,8 @@
-import { ModelIcon } from '../ModelIcon';
+import { AgentAvatar } from '../AgentAvatar';
 import type { AgentRow } from './agentMonitorModel';
 
-/* A wave's lifecycle in the transcript: the agents' own marks and one sentence,
-   in the same quiet tone as the feed's status rows. */
+/* A wave's lifecycle in the transcript: the agents' own creatures and one
+   sentence, in the same quiet tone as the feed's status rows. */
 
 const LIFECYCLE_ICON_LIMIT = 4;
 
@@ -14,7 +14,7 @@ export function AgentLifecycleLine({ rows, text }: { rows: readonly AgentRow[]; 
     >
       <span className="flex shrink-0 items-center gap-1">
         {rows.slice(0, LIFECYCLE_ICON_LIMIT).map((row) => (
-          <ModelIcon key={row.key} provider={row.provider} size={14} />
+          <AgentAvatar key={row.key} seed={row.key} size={14} />
         ))}
       </span>
       <span className="min-w-0 break-words">{text}</span>

@@ -103,3 +103,25 @@ export function providerModelSelection(
   if (catalog.length === 0) return provider === 'droid' ? modelId : undefined;
   return catalog.some((model) => model.id === modelId) ? modelId : undefined;
 }
+
+// How each harness's own CLI picks a conversation back up, and the id it takes.
+// Droid and Claude Code resume by the session id DROIDEX pinned; Codex mints its
+// own thread id, which is the only one its CLI knows.
+export function sessionResumeId(session: {
+  provider: ProviderKind;
+  providerSessionId?: string;
+  resumeId?: string;
+}): string | undefined {
+  return session.provider === 'codex' ? session.resumeId : session.providerSessionId;
+}
+
+export function sessionResumeCommand(provider: ProviderKind, quotedId: string): string {
+  switch (provider) {
+    case 'droid':
+      return `droid -r ${quotedId}`;
+    case 'claude':
+      return `claude --resume ${quotedId}`;
+    case 'codex':
+      return `codex resume ${quotedId}`;
+  }
+}

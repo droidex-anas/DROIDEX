@@ -208,6 +208,21 @@
     background: color-mix(in srgb, var(--droid-text) 26%, transparent);
   }
 
+  /* A scroller that ends mid-window (the chat beside an open utility pane)
+     keeps its thumb out of sight until it moves: a permanent bar there reads as
+     a divider the layout does not have. `useScrollingAttribute` sets the flag. */
+  .scrollbar-while-scrolling::-webkit-scrollbar-thumb {
+    background: transparent;
+  }
+
+  .scrollbar-while-scrolling[data-scrolling]::-webkit-scrollbar-thumb {
+    background: color-mix(in srgb, var(--droid-text) 16%, transparent);
+  }
+
+  .scrollbar-while-scrolling::-webkit-scrollbar-thumb:hover {
+    background: color-mix(in srgb, var(--droid-text) 26%, transparent);
+  }
+
   /* A block wider than its frame fades at the edge it continues past, so it
      reads as scrollable without a permanent scrollbar. The fade tracks the
      scroll position through a scroll-driven animation, and when nothing

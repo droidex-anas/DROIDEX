@@ -115,6 +115,8 @@ test('the pane list splits active agents from finished ones', () => {
       elapsedMs: new Map([['child-b', 5_000]]),
       now: 1_000_000,
       onOpenAgent: () => undefined,
+      expanded: false,
+      onToggleExpanded: () => undefined,
     }),
   ).replace(/<!--.*?-->/g, '');
   assert.ok(text.includes('Active · 1'));
@@ -133,7 +135,11 @@ test('the pane detail stands in with status and preview until a transcript arriv
       models: [],
       transcript: [],
       live: true,
+      toolActivity: { density: 'balanced', inlineDiffs: true },
       onBack: () => undefined,
+      onOpenNested: () => undefined,
+      expanded: false,
+      onToggleExpanded: () => undefined,
     }),
   );
   const text = html.replace(/<!--.*?-->/g, '');

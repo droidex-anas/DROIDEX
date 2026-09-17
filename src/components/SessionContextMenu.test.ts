@@ -15,6 +15,8 @@ function render(props: Partial<SessionContextMenuProps> = {}): string {
       y: 40,
       pinned: false,
       cwd: '/repo',
+      provider: 'droid',
+      resumeSessionId: 'droid-123',
       providerSessionId: 'droid-123',
       onRename: () => undefined,
       onTogglePin: () => undefined,
@@ -102,7 +104,7 @@ test('SessionContextMenu separator is exposed to assistive technology', () => {
 });
 
 test('SessionContextMenu hides the session id and link rows until the harness assigns an id', () => {
-  const html = render({ providerSessionId: undefined });
+  const html = render({ providerSessionId: undefined, resumeSessionId: undefined });
   assert.doesNotMatch(html, /Copy Session ID/);
   assert.doesNotMatch(html, /Copy Session Link/);
   assert.match(html, /Copy Working Directory/);

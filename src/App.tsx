@@ -42,7 +42,12 @@ import { checkForAppUpdateAutomatically, startAutomaticAppUpdateChecks } from '.
 import { toast } from './lib/toast';
 import { UtilityPane } from './components/utility/UtilityPane';
 import { peekTerminalInstance, releaseTerminalInstancesExcept } from './lib/terminalInstances';
-import { utilityPanelForSession, type UtilityTab, type UtilityTool } from './lib/utilityPanel';
+import {
+  isExpandableTool,
+  utilityPanelForSession,
+  type UtilityTab,
+  type UtilityTool,
+} from './lib/utilityPanel';
 import { isTerminalInputTarget, isTerminalTabShortcut } from './lib/keyboardShortcuts';
 import {
   SHORTCUT_DEFINITIONS,
@@ -75,6 +80,7 @@ import {
   LazyAutomationsRoute,
   LazyBrowserFocusWorkspace,
   LazyCommandPalette,
+  LazyAgentsWorkspace,
   LazyFilesWorkspace,
   LazyMissionControl,
   LazyPullRequestsView,
@@ -166,9 +172,7 @@ export default function App() {
   useBackgroundWorkTier();
   const [forceWizard, setForceWizard] = useState(false);
   const [bannerDismissed, setBannerDismissed] = useState(false);
-  const [expandedBrowserAppSessionId, setExpandedBrowserAppSessionId] = useState<string | null>(
-    null,
-  );
+  const [expandedPaneAppSessionId, setExpandedPaneAppSessionId] = useState<string | null>(null);
   const cliLaunchHandled = useRef(false);
   const appUpdateLaunchCheckHandled = useRef(false);
   const showWizard =
@@ -209,13 +213,13 @@ export default function App() {
     !embedded && (state.mainView === 'pull-requests' || state.mainView === 'automations');
   const showUtilityPane =
     !embedded && !!activeSession && utilityPanel.open && !showWizard && !fullContentRoute;
-  // An expanded browser covers the full content row; the utility pane already
-  // stays out of the full-content routes, so the expansion follows it.
-  const browserExpanded =
+  // An expanded browser or agent covers the full content row; the utility pane
+  // already stays out of the full-content routes, so the expansion follows it.
+  const paneExpanded =
     !!activeSession &&
     showUtilityPane &&
-    activeUtilityTab?.tool === 'browser' &&
-    expandedBrowserAppSessionId === activeSession.appSessionId;
+    isExpandableTool(activeUtilityTab?.tool) &&
+    expandedPaneAppSessionId === activeSession.appSessionId;
   const focused = isMissionControlView;
   // A normal/spec session only has something worth showing once a message has
   // been sent (the first transcript is seeded from the opening prompt).
@@ -319,7 +323,7 @@ export default function App() {
   const toggleUtilityPane = useCallback(() => {
     // Closing the pane also ends a full-width browser expansion, so reopening
     // it later brings the pane back at its normal width beside the chat.
-    if (utilityPanel.open) setExpandedBrowserAppSessionId(null);
+    if (utilityPanel.open) setExpandedPaneAppSessionId(null);
     dispatch({ type: 'SET_UTILITY_PANEL_OPEN', open: !utilityPanel.open });
   }, [dispatch, utilityPanel.open]);
 
@@ -674,9 +678,9 @@ export default function App() {
         <main className="relative flex-1 min-w-0 flex flex-col min-h-0 overflow-hidden bg-droid-bg">
           <div ref={contentRowRef} className="relative flex min-h-0 min-w-0 flex-1 overflow-hidden">
             <section
-              aria-hidden={browserExpanded}
+              aria-hidden={paneExpanded}
               className={`relative flex min-w-0 flex-1 flex-col overflow-hidden ${
-                browserExpanded ? 'pointer-events-none' : ''
+                paneExpanded ? 'pointer-events-none' : ''
               }`}
             >
               {!embedded && state.mainView === 'pull-requests' ? (
@@ -704,7 +708,11 @@ export default function App() {
                 </motion.div>
               ) : (
                 <>
-                  <ChatView rightInset={rightPanelVisible} isObscured={browserExpanded} />
+                  <ChatView
+                    rightInset={rightPanelVisible}
+                    isObscured={paneExpanded}
+                    besidePane={showUtilityPane}
+                  />
                   <PromptInput rightInset={rightPanelVisible} />
                 </>
               )}
@@ -716,8 +724,7 @@ export default function App() {
                   key="utility-pane"
                   initial={{ width: 0, opacity: 0 }}
                   animate={{
-                    width:
-                      browserExpanded && contentRowWidth > 0 ? contentRowWidth : utilityPaneWidth,
+                    width: paneExpanded && contentRowWidth > 0 ? contentRowWidth : utilityPaneWidth,
                     opacity: 1,
                   }}
                   exit={{ width: 0, opacity: 0 }}
@@ -726,7 +733,7 @@ export default function App() {
                 >
                   <UtilityPane
                     panel={utilityPanel}
-                    expanded={browserExpanded}
+                    expanded={paneExpanded}
                     width={utilityPaneWidth}
                     minWidth={UTILITY_PANE_MIN}
                     maxWidth={utilityPaneMax}
@@ -743,7 +750,7 @@ export default function App() {
                     onOpenTool={openUtilityTool}
                     onActivateTab={(tabId) => {
                       const nextTab = utilityPanel.tabs.find((tab) => tab.id === tabId);
-                      if (nextTab?.tool !== 'browser') setExpandedBrowserAppSessionId(null);
+                      if (!isExpandableTool(nextTab?.tool)) setExpandedPaneAppSessionId(null);
                       dispatch({ type: 'ACTIVATE_UTILITY_TAB', tabId });
                     }}
                     onCloseTab={(tab) => {
@@ -766,7 +773,7 @@ export default function App() {
                           // render unless this tab is brought forward first
                           // — mirror onActivateTab's browser-expanded reset.
                           if (tab.id !== panel.activeTabId) {
-                            setExpandedBrowserAppSessionId(null);
+                            setExpandedPaneAppSessionId(null);
                             dispatch({ type: 'ACTIVATE_UTILITY_TAB', tabId: tab.id });
                           }
                           setConfirmCloseTabId(tab.id);
@@ -786,14 +793,29 @@ export default function App() {
                           });
                         return;
                       }
-                      if (tab.tool === 'browser') setExpandedBrowserAppSessionId(null);
+                      if (isExpandableTool(tab.tool)) setExpandedPaneAppSessionId(null);
                       dispatch({ type: 'CLOSE_UTILITY_TAB', tabId: tab.id });
                     }}
                     onClosePane={() => {
-                      setExpandedBrowserAppSessionId(null);
+                      setExpandedPaneAppSessionId(null);
                       dispatch({ type: 'SET_UTILITY_PANEL_OPEN', open: false });
                     }}
                     renderTab={(tab, { overlayOpen }) => {
+                      if (tab.tool === 'agents') {
+                        return (
+                          <Suspense fallback={utilityToolFallback('agents')}>
+                            <LazyAgentsWorkspace
+                              tab={tab}
+                              expanded={paneExpanded}
+                              onToggleExpanded={() => {
+                                setExpandedPaneAppSessionId(
+                                  paneExpanded ? null : activeSession.appSessionId,
+                                );
+                              }}
+                            />
+                          </Suspense>
+                        );
+                      }
                       if (tab.tool === 'review') {
                         return (
                           <Suspense fallback={utilityToolFallback('review')}>
@@ -805,11 +827,11 @@ export default function App() {
                         return (
                           <Suspense fallback={utilityToolFallback('browser')}>
                             <LazyBrowserFocusWorkspace
-                              expanded={browserExpanded}
+                              expanded={paneExpanded}
                               externalObscured={overlayOpen}
                               onToggleExpanded={() => {
-                                setExpandedBrowserAppSessionId(
-                                  browserExpanded ? null : activeSession.appSessionId,
+                                setExpandedPaneAppSessionId(
+                                  paneExpanded ? null : activeSession.appSessionId,
                                 );
                               }}
                             />

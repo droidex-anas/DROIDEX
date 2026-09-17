@@ -1,8 +1,9 @@
 import { useCallback, useMemo, useState } from 'react';
 import { AnimatePresence } from 'framer-motion';
 import { shallowEqual, useStoreSelector, type AppState } from '../../hooks/useStore';
+import { sessionIsLive } from '../../lib/sessions';
 import { currentAgentRun } from '../agents/agentMonitorModel';
-import { useAgentPane } from '../agents/AgentPane';
+import { useOpenAgent } from '../agents/useOpenAgent';
 import { AgentDockLine } from './AgentDockLine';
 import PlanSteps from './PlanSteps';
 
@@ -15,7 +16,7 @@ type OpenDock = 'plan' | 'agents' | null;
 export default function ComposerDock() {
   const [open, setOpen] = useState<OpenDock>(null);
   const agents = useDockedAgents();
-  const { openAgent } = useAgentPane();
+  const openAgent = useOpenAgent();
   // Collapsing only ever closes the line that asked: the plan resets itself on a
   // session switch, and that must not also fold an expanded agents line.
   const showPlan = useCallback((expanded: boolean) => {
@@ -70,6 +71,7 @@ export function selectDockedAgents(state: AppState) {
     models: state.models,
     provider: session?.provider,
     missionControl: session?.sessionPurpose === 'mission-control',
+    live: session ? sessionIsLive(session) : false,
   };
 }
 
@@ -80,10 +82,14 @@ function useDockedAgents() {
     if (!source.children || source.missionControl) return null;
     const sessions = currentAgentRun(Object.values(source.children));
     if (sessions.length === 0) return null;
+    // A restart restores an interrupted child as paused, and nothing will ever
+    // settle it. Only work that is happening docks the line: the chat's own
+    // turn, or an agent its harness still reports as running.
+    if (!source.live && !sessions.some((child) => child.status === 'running')) return null;
     return {
       sessions,
       models: source.models,
       ...(source.provider !== undefined ? { provider: source.provider } : {}),
     };
-  }, [source.children, source.missionControl, source.models, source.provider]);
+  }, [source.children, source.live, source.missionControl, source.models, source.provider]);
 }

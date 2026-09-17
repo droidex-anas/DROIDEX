@@ -1,20 +1,28 @@
-import { useMemo, useState } from 'react';
-import { ArrowLeft, ChevronRight } from '@droidex/icons';
+import { useMemo, useRef, useState } from 'react';
+import { ArrowLeft } from '@droidex/icons';
 import type { ModelInfo, ProviderKind, TranscriptEvent } from '../../types/bridge';
-import { scopeTranscriptToAgent } from '../../lib/transcript';
+import type { ChildSessionTarget } from '../../lib/childSessions';
+import type { ToolActivitySettings } from '../../lib/toolActivity';
 import { buildFeed } from '../chatFeed';
-import { groupTurns } from '../chatFeedTurns';
-import { FeedItemView } from '../chat';
-import { ModelIcon } from '../ModelIcon';
+import { MessageFeed } from '../MessageFeed';
+import { AgentAvatar } from '../AgentAvatar';
 import { SubagentStreamPreview } from '../SubagentStreamPreview';
+import { AgentPaneExpand } from './AgentPaneExpand';
 import { AgentEffortChip } from './AgentRow';
 import { AgentStatusPill } from './AgentStatusPill';
 import type { AgentRow } from './agentMonitorModel';
+import { useAgentTranscript } from './useAgentTranscript';
 
-/* One agent inside the Subagents tab: who it is, then its own transcript
-   rendered with the chat's own row components. A harness that does not stream a
-   child transcript yet shows what it does report — status, task and the latest
-   activity — and says so rather than pretending the agent is silent. */
+/* One agent in the agents pane: who it is, then its conversation exactly as the
+   chat would show it, because it is the chat's own feed: the message the parent
+   sent, then thinking, tool rows and replies, with the working indicator while
+   the agent runs. Two things differ on purpose. There is no prompt bar, since
+   the parent drives the agent. And finished work stays unfolded: the pane exists
+   to read what the agent did, so it never hides that behind a "Worked for" line.
+
+   The pane is the only place an agent is read; expanding gives it the content
+   row. A harness that streams no child transcript yet shows what it does report
+   and says so, rather than pretending the agent is silent. */
 
 export function AgentPaneDetail({
   row,
@@ -22,8 +30,11 @@ export function AgentPaneDetail({
   transcript,
   provider,
   live,
+  toolActivity,
   onBack,
-  onOpenTranscript,
+  onOpenNested,
+  expanded,
+  onToggleExpanded,
 }: {
   row: AgentRow;
   models: readonly ModelInfo[];
@@ -31,20 +42,25 @@ export function AgentPaneDetail({
   transcript: readonly TranscriptEvent[];
   provider?: ProviderKind;
   live: boolean;
+  // The chat's own tool-row settings, so the agent reads the way the chat does.
+  toolActivity: ToolActivitySettings;
   onBack: () => void;
-  onOpenTranscript?: () => void;
+  // An agent this one spawned opens in the same pane.
+  onOpenNested: (target: ChildSessionTarget) => void;
+  expanded: boolean;
+  onToggleExpanded: () => void;
 }) {
-  const items = useMemo(() => {
-    const events = scopeTranscriptToAgent(transcript, row.child.childSessionId);
-    if (events.length === 0) return [];
-    return groupTurns(buildFeed(events, { childSessionCards: true }), live);
-  }, [transcript, row.child.childSessionId, live]);
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const events = useAgentTranscript(transcript, row.child);
+  // Unfolded on purpose: see the note above.
+  const items = useMemo(() => buildFeed(events, { childSessionCards: true }), [events]);
+  const working = live && !row.queued && row.status === 'running';
 
   const modelName = models.find((entry) => entry.id === row.child.modelId)?.displayName;
 
   return (
     <div data-testid="agent-pane-detail" className="flex min-h-0 flex-1 flex-col">
-      <div className="flex shrink-0 items-center gap-2 px-2 py-2">
+      <div className="flex shrink-0 items-center gap-2.5 border-b border-droid-border/70 px-3 py-2.5">
         <button
           type="button"
           onClick={onBack}
@@ -53,12 +69,16 @@ export function AgentPaneDetail({
         >
           <ArrowLeft className="h-3.5 w-3.5" />
         </button>
-        <ModelIcon provider={row.provider} size={16} />
-        <span className="min-w-0 flex-1 truncate text-[13px] font-medium text-droid-text">
+        <AgentAvatar
+          seed={row.key}
+          size={20}
+          working={live && !row.queued && row.status === 'running'}
+        />
+        <span className="min-w-0 flex-1 truncate text-[14px] font-medium text-droid-text">
           {row.agentName}
         </span>
-        <span className="flex shrink-0 items-center gap-1.5 text-[11px] text-droid-text-muted">
-          <span className="max-w-[120px] truncate">{modelName ?? row.child.modelId}</span>
+        <span className="flex shrink-0 items-center gap-1.5 text-[12px] text-droid-text-muted">
+          <span className="max-w-40 truncate">{modelName ?? row.child.modelId}</span>
           {row.child.reasoningEffort ? (
             <>
               <span aria-hidden="true">·</span>
@@ -69,30 +89,27 @@ export function AgentPaneDetail({
             </>
           ) : null}
         </span>
+        <AgentPaneExpand expanded={expanded} onToggle={onToggleExpanded} />
       </div>
 
-      <div className="min-h-0 flex-1 overflow-y-auto px-3 pb-2">
-        {items.length > 0 ? (
-          <div className="space-y-2.5">
-            {items.map((item) => (
-              <FeedItemView key={item.key} item={item} live={live} sessionLive={live} />
-            ))}
-          </div>
-        ) : (
-          <AgentActivityStandIn row={row} />
-        )}
+      <div ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto">
+        {/* Expanded, the conversation takes the chat column's own measure. */}
+        <div className={`min-w-0 px-4 py-3 ${expanded ? 'mx-auto max-w-4xl px-6 py-6' : ''}`}>
+          {events.length > 0 ? (
+            <MessageFeed
+              events={events}
+              items={items}
+              pending={working}
+              onOpenChildSession={onOpenNested}
+              scrollElementRef={scrollRef}
+              density={toolActivity.density}
+              inlineDiffs={toolActivity.inlineDiffs}
+            />
+          ) : (
+            <AgentActivityStandIn row={row} />
+          )}
+        </div>
       </div>
-
-      {onOpenTranscript ? (
-        <button
-          type="button"
-          onClick={onOpenTranscript}
-          className="flex shrink-0 items-center gap-1 px-3 py-2 text-left text-[12px] text-droid-text-muted transition-colors hover:text-droid-text"
-        >
-          Open in the chat
-          <ChevronRight className="h-3.5 w-3.5" />
-        </button>
-      ) : null}
     </div>
   );
 }
