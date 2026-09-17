@@ -10,7 +10,7 @@ import {
 } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { ChevronRight } from 'lucide-react';
-import type { TranscriptEvent } from '../types/bridge';
+import type { ChildSessionSummary, TranscriptEvent } from '../types/bridge';
 import { SpecRenderer } from './SpecRenderer';
 import type { FileChange } from '../lib/diff';
 import type { OpenReviewFileHandler } from '../lib/reviewFocus';
@@ -43,7 +43,7 @@ import { buildFeed, isCompactingStatus, isSettingsStatus, type FeedItem } from '
 import { groupTurns, tailTimestamp, trailingSubagentPoll } from './chatFeedTurns';
 import { FeedItemView, feedItemPropsEqual, isSpecEcho } from './chat';
 import { WorkingIndicator } from './transcript/primitives';
-import type { SubagentsDockData } from './SubagentsDock';
+import type { AgentMonitorData } from './agents/AgentMonitorCard';
 
 /* ── Collapsed spec card shown inline in chat (chevron to expand) ── */
 const InlineSpecCard = memo(function InlineSpecCard({
@@ -116,8 +116,9 @@ export function MessageFeed({
   onOpenDiff,
   onOpenReviewFile,
   onOpenChildSession,
+  onOpenAgent,
   childSessionActivity,
-  subagentsDock,
+  agentMonitor,
   specContent,
   onOpenSpecWiki,
   createdWorktreePath,
@@ -138,10 +139,11 @@ export function MessageFeed({
   onOpenDiff?: (c: FileChange) => void;
   onOpenReviewFile?: OpenReviewFileHandler;
   onOpenChildSession?: (target: ChildSessionTarget) => void;
+  onOpenAgent?: (child: ChildSessionSummary) => void;
   childSessionActivity?: (target: ChildSessionTarget) => ChildSessionActivity | undefined;
   // When set (normal chat sessions only), the per-spawn child session lines are
-  // replaced by one grouping subagents dock at the first spawn's position.
-  subagentsDock?: SubagentsDockData;
+  // replaced by one agent monitor card at the first spawn's position.
+  agentMonitor?: AgentMonitorData;
   specContent?: string;
   onOpenSpecWiki?: () => void;
   createdWorktreePath?: string;
@@ -171,10 +173,10 @@ export function MessageFeed({
   // unchanged items instead of re-rendering the whole feed on every token. Keep
   // them undefined when the parent supplies no handler, so absent affordances
   // (e.g. non-clickable diffs in the chat feed) stay absent.
-  const cbRef = useRef({ onOpenDiff, onOpenReviewFile, onOpenChildSession });
+  const cbRef = useRef({ onOpenDiff, onOpenReviewFile, onOpenChildSession, onOpenAgent });
   useLayoutEffect(() => {
-    cbRef.current = { onOpenDiff, onOpenReviewFile, onOpenChildSession };
-  }, [onOpenDiff, onOpenReviewFile, onOpenChildSession]);
+    cbRef.current = { onOpenDiff, onOpenReviewFile, onOpenChildSession, onOpenAgent };
+  }, [onOpenDiff, onOpenReviewFile, onOpenChildSession, onOpenAgent]);
   const hasOpenDiff = !!onOpenDiff;
   const hasOpenReviewFile = !!onOpenReviewFile;
   const stableOnOpenDiff = useMemo(
@@ -192,12 +194,18 @@ export function MessageFeed({
     () => (rich ? (t: ChildSessionTarget) => cbRef.current.onOpenChildSession?.(t) : undefined),
     [rich],
   );
+  const hasOpenAgent = !!onOpenAgent;
+  const stableOnOpenAgent = useMemo(
+    () =>
+      hasOpenAgent ? (child: ChildSessionSummary) => cbRef.current.onOpenAgent?.(child) : undefined,
+    [hasOpenAgent],
+  );
 
   // With the subagents dock, each contiguous run of spawns becomes one wave
   // item: the dock card renders right where that turn spawned its agents (live
   // while the turn is in flight) and folds into the turn's Worked group once
   // the turn completes.
-  const dockEnabled = !!subagentsDock;
+  const dockEnabled = !!agentMonitor;
   const items = useMemo(
     () =>
       asChunkedSequence(
@@ -285,7 +293,7 @@ export function MessageFeed({
       const target = childSessionTargetFromEvent(event);
       const status =
         childSessionActivity?.(target)?.status ??
-        findChildSessionForTarget(subagentsDock?.sessions ?? [], target)?.status;
+        findChildSessionForTarget(agentMonitor?.sessions ?? [], target)?.status;
       return status === 'running';
     });
   // One live cue at a time. While the tail message streams, its caret is the
@@ -340,8 +348,9 @@ export function MessageFeed({
       onOpenDiff: stableOnOpenDiff,
       onOpenReviewFile: stableOnOpenReviewFile,
       onOpenChildSession: stableOnOpenChildSession,
+      onOpenAgent: stableOnOpenAgent,
       childSessionActivity,
-      subagentsDock,
+      agentMonitor,
       liveTiming: rich,
       specContent,
       density,
@@ -353,8 +362,9 @@ export function MessageFeed({
       stableOnOpenDiff,
       stableOnOpenReviewFile,
       stableOnOpenChildSession,
+      stableOnOpenAgent,
       childSessionActivity,
-      subagentsDock,
+      agentMonitor,
       rich,
       specContent,
       density,

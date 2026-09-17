@@ -10,6 +10,8 @@ import { getRendererPerfSnapshot, resetRendererPerfForTest } from '../lib/render
 import type { TranscriptMutation } from '../lib/transcriptMutation';
 import type { ChildSessionSummary } from '../types/bridge';
 import { childStreamSnapshot } from '../lib/childSessionStream';
+import { initialState, shallowEqual, type AppState } from '../hooks/useStore';
+import { selectDockedAgents } from './composer/ComposerDock';
 
 function event(id: string, overrides: Partial<TranscriptEvent> = {}): TranscriptEvent {
   return {
@@ -134,14 +136,14 @@ test('feedItemPropsEqual isolates a child_sessions card from sibling feed rows',
   const userEvent = user('user-1', 1);
   const wave = childItem('child-sessions-t1', [spawnEvent]);
   const dock = { sessions: [] as ChildSessionSummary[], models: [] };
-  const previousWave = viewProps(wave, { subagentsDock: dock });
-  const nextWave = viewProps(wave, { subagentsDock: dock });
+  const previousWave = viewProps(wave, { agentMonitor: dock });
+  const nextWave = viewProps(wave, { agentMonitor: dock });
   assert.equal(sameFeedEvents(wave, wave), true);
   assert.equal(feedItemPropsEqual(previousWave, nextWave), true);
 
   const nextDock = { sessions: [] as ChildSessionSummary[], models: [] };
   assert.equal(
-    feedItemPropsEqual(previousWave, viewProps(wave, { subagentsDock: nextDock })),
+    feedItemPropsEqual(previousWave, viewProps(wave, { agentMonitor: nextDock })),
     false,
   );
 
@@ -151,8 +153,8 @@ test('feedItemPropsEqual isolates a child_sessions card from sibling feed rows',
 
   assert.equal(
     feedItemPropsEqual(
-      viewProps(messageItem(userEvent), { subagentsDock: dock }),
-      viewProps(messageItem(userEvent), { subagentsDock: nextDock }),
+      viewProps(messageItem(userEvent), { agentMonitor: dock }),
+      viewProps(messageItem(userEvent), { agentMonitor: nextDock }),
     ),
     true,
   );
@@ -167,19 +169,16 @@ test('feedItemPropsEqual rerenders a worked fold when nested dock data changes',
     items: [wave],
   };
   const dock = { sessions: [] as ChildSessionSummary[], models: [] };
-  const previous = viewProps(worked, { subagentsDock: dock });
-  assert.equal(feedItemPropsEqual(previous, viewProps(worked, { subagentsDock: dock })), true);
+  const previous = viewProps(worked, { agentMonitor: dock });
+  assert.equal(feedItemPropsEqual(previous, viewProps(worked, { agentMonitor: dock })), true);
   assert.equal(
-    feedItemPropsEqual(
-      previous,
-      viewProps(worked, { subagentsDock: { sessions: [], models: [] } }),
-    ),
+    feedItemPropsEqual(previous, viewProps(worked, { agentMonitor: { sessions: [], models: [] } })),
     false,
   );
   assert.equal(
     feedItemPropsEqual(
-      viewProps(worked, { subagentsDock: dock, sessionLive: false }),
-      viewProps(worked, { subagentsDock: dock, sessionLive: true }),
+      viewProps(worked, { agentMonitor: dock, sessionLive: false }),
+      viewProps(worked, { agentMonitor: dock, sessionLive: true }),
     ),
     false,
   );
@@ -269,4 +268,35 @@ test('childStreamSnapshot identity is what feed isolation compares through the d
   });
   assert.equal(first.preview === same.preview, true);
   assert.equal(first.preview === grown.preview, false);
+});
+
+test('the docked agent line reads no transcript, so a streamed token cannot re-render it', () => {
+  // The composer sits on the per-token path. The docked line's source must stay
+  // identical across a transcript append, or every token would rebuild its rows.
+  const child: ChildSessionSummary = {
+    parentAppSessionId: 'session-a',
+    childSessionId: 'child-a',
+    role: 'worker',
+    status: 'running',
+    modelId: 'droid-core',
+    transcriptAvailable: true,
+    startedAt: 1,
+    streamFidelity: 'token',
+  };
+  const base: AppState = {
+    ...initialState,
+    activeAppSessionId: 'session-a',
+    sessions: { 'session-a': { appSessionId: 'session-a' } as AppState['sessions'][string] },
+    childSessions: { 'session-a': { 'child-a': child } },
+    transcripts: { 'session-a': [event('a')] },
+  };
+  const streamed: AppState = { ...base, transcripts: { 'session-a': [event('a'), event('b')] } };
+  assert.equal(shallowEqual(selectDockedAgents(base), selectDockedAgents(streamed)), true);
+
+  // A child that actually changed does reach it.
+  const settled: AppState = {
+    ...base,
+    childSessions: { 'session-a': { 'child-a': { ...child, status: 'completed' } } },
+  };
+  assert.equal(shallowEqual(selectDockedAgents(base), selectDockedAgents(settled)), false);
 });

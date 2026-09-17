@@ -1,6 +1,7 @@
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { initialState, StoreProvider } from './hooks/useStore';
+import { AgentPaneProvider } from './components/agents/AgentPane';
 import { initializeRendererDiagnostics } from './lib/rendererDiagnostics';
 import {
   getRendererPerfSnapshot,
@@ -32,7 +33,9 @@ if (!root) throw new Error('DROIDEX root element is missing.');
 createRoot(root).render(
   <StrictMode>
     <StoreProvider>
-      <App />
+      <AgentPaneProvider>
+        <App />
+      </AgentPaneProvider>
     </StoreProvider>
   </StrictMode>,
 );

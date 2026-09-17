@@ -9,9 +9,10 @@ import type { ChildSessionActivity, ChildSessionTarget } from '../lib/childSessi
 import type { FileChange } from '../lib/diff';
 import type { OpenReviewFileHandler } from '../lib/reviewFocus';
 import type { ToolActivityDensity } from '../lib/toolActivity';
+import type { ChildSessionSummary } from '../types/bridge';
 import { hasAppBlock } from './appBlockRuntime';
 import type { FeedItemViewProps } from './chat';
-import type { SubagentsDockData } from './SubagentsDock';
+import type { AgentMonitorData } from './agents/AgentMonitorCard';
 
 export interface FeedRowProps extends FeedItemViewProps {
   animateOnMount: boolean;
@@ -98,8 +99,9 @@ export interface FeedRowsSharedProps {
   onOpenDiff?: (change: FileChange) => void;
   onOpenReviewFile?: OpenReviewFileHandler;
   onOpenChildSession?: (target: ChildSessionTarget) => void;
+  onOpenAgent?: (child: ChildSessionSummary) => void;
   childSessionActivity?: (target: ChildSessionTarget) => ChildSessionActivity | undefined;
-  subagentsDock?: SubagentsDockData;
+  agentMonitor?: AgentMonitorData;
   liveTiming: boolean;
   specContent?: string;
   // Render-only tool-activity settings, applied to every row.
@@ -117,10 +119,11 @@ export function optionalFeedRowProps(shared: FeedRowsSharedProps): Partial<FeedI
     ...(shared.onOpenChildSession !== undefined
       ? { onOpenChildSession: shared.onOpenChildSession }
       : {}),
+    ...(shared.onOpenAgent !== undefined ? { onOpenAgent: shared.onOpenAgent } : {}),
     ...(shared.childSessionActivity !== undefined
       ? { childSessionActivity: shared.childSessionActivity }
       : {}),
-    ...(shared.subagentsDock !== undefined ? { subagentsDock: shared.subagentsDock } : {}),
+    ...(shared.agentMonitor !== undefined ? { agentMonitor: shared.agentMonitor } : {}),
     ...(shared.specContent !== undefined ? { specContent: shared.specContent } : {}),
   };
 }

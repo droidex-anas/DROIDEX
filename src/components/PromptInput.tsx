@@ -48,7 +48,7 @@ import { ImageViewerModal } from './composer/ImageViewerModal';
 import { ImageLightbox } from './media/ImageLightbox';
 import { imageSrc, partitionImagePaths } from '../lib/localImage';
 import { FeedbackModal } from './FeedbackModal';
-import PlanSteps from './composer/PlanSteps';
+import ComposerDock from './composer/ComposerDock';
 import { QueuedPrompts } from './composer/QueuedPrompts';
 import { markGitTurnStart } from '../lib/git';
 import { isAppUpdateInstalling, useAppUpdate } from '../lib/appUpdate';
@@ -1594,7 +1594,7 @@ export default function PromptInput({
           </div>
         )}
 
-        <PlanSteps />
+        <ComposerDock />
 
         <div
           className={`relative z-10 bg-droid-elevated border rounded-2xl transition-colors ${missionPreview ? '' : boxBorder}`}

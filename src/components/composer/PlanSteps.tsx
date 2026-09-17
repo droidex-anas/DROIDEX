@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { Check, ChevronDown } from 'lucide-react';
 import { shallowEqual, useStoreSelector, type AppState } from '../../hooks/useStore';
@@ -60,7 +60,13 @@ function StepRing({
 
 // The model's plan for the active session, tucked behind the composer. Mission
 // control owns its own feature progress, so this stays out of those sessions.
-export default function PlanSteps() {
+export default function PlanSteps({
+  expanded,
+  onExpandedChange,
+}: {
+  expanded: boolean;
+  onExpandedChange: (expanded: boolean) => void;
+}) {
   const { appSessionId, isMissionControl, selectedAgent } = useStoreSelector((state) => {
     const activeSession = state.activeAppSessionId
       ? state.sessions[state.activeAppSessionId]
@@ -101,6 +107,8 @@ export default function PlanSteps() {
       steps={steps}
       isRunning={isLive}
       resetKey={`${appSessionId ?? ''}:${selectedAgent ?? ''}`}
+      expanded={expanded}
+      onExpandedChange={onExpandedChange}
     />
   );
 }
@@ -110,28 +118,32 @@ export function PlanStepsPanel({
   steps,
   isRunning,
   resetKey,
+  expanded,
+  onExpandedChange,
 }: {
   steps: TodoItem[];
   isRunning: boolean;
   resetKey: string;
+  // The composer dock owns the disclosure: only one docked line is ever open.
+  expanded: boolean;
+  onExpandedChange: (expanded: boolean) => void;
 }) {
-  const [expanded, setExpanded] = useState(false);
   const panelRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
-    setExpanded(false);
-  }, [resetKey]);
+    onExpandedChange(false);
+  }, [resetKey, onExpandedChange]);
   useEffect(() => {
     if (!expanded) return;
     const collapseOutside = (event: PointerEvent) => {
       if (event.target instanceof Node && !panelRef.current?.contains(event.target)) {
-        setExpanded(false);
+        onExpandedChange(false);
       }
     };
     document.addEventListener('pointerdown', collapseOutside);
     return () => {
       document.removeEventListener('pointerdown', collapseOutside);
     };
-  }, [expanded]);
+  }, [expanded, onExpandedChange]);
 
   const activeIndex = activeTodoIndex(steps);
   const current = activeIndex >= 0 ? steps[activeIndex] : undefined;
@@ -152,7 +164,7 @@ export function PlanStepsPanel({
           <button
             type="button"
             onClick={() => {
-              setExpanded((v) => !v);
+              onExpandedChange(!expanded);
             }}
             aria-expanded={expanded}
             aria-controls="plan-steps-list"

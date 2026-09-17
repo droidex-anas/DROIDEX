@@ -70,6 +70,8 @@ export interface ProgressEntry {
 }
 
 export type ChildRole = 'worker' | 'validator';
+// 'failed' is terminal like 'completed': the agent stopped, but it did not
+// deliver. Never fold the two together in a count, a label, or a tint.
 export type ChildStatus = 'pending' | 'running' | 'paused' | 'completed' | 'failed';
 export type StreamFidelity = 'token' | 'tool' | 'state';
 

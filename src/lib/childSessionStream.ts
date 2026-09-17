@@ -136,14 +136,6 @@ function optionalText(value: string | undefined): string {
   return value ?? '';
 }
 
-function childStreamStatus(
-  child: ChildSessionSummary,
-  activity: ChildSessionActivity | undefined,
-): ChildStatus {
-  if (child.queued || child.streamFidelity === 'state') return child.status;
-  return activity?.status ?? child.status;
-}
-
 function childStreamRawPreview(
   latest: ChildSessionActivity['latest'],
   polledPreview: string,
@@ -210,7 +202,10 @@ export function childStreamSnapshot(
   const fidelity = child.streamFidelity;
   const phase = childStreamPhase({
     queued: child.queued,
-    status: childStreamStatus(child, activity),
+    // The child's own state-only status is authoritative. Activity derived from
+    // the spawning tool must never settle a row: a Task call returning is the
+    // launch acknowledging, not the agent finishing.
+    status: child.status,
     latestKind: latest?.kind,
     isError: latest?.isError,
     hasOutput: childStreamHasOutput(

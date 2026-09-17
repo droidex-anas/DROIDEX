@@ -108,7 +108,9 @@ export class ClaudeEventMapper {
   private system(message: Extract<SDKMessage, { type: 'system' }>): NormalizedEvent[] {
     // A local slash command answers through this frame instead of the model loop.
     if (message.subtype === 'local_command_output')
-      return message.content ? [{ transcript: this.transcript('text', { text: message.content }) }] : [];
+      return message.content
+        ? [{ transcript: this.transcript('text', { text: message.content }) }]
+        : [];
     return this.subagents.map(message, this.modelId ?? this.observedModelId);
   }
 
