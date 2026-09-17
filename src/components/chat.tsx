@@ -301,7 +301,13 @@ export const FeedItemView = memo(function FeedItemView({
   switch (item.type) {
     case 'message': {
       if (item.event.author === 'user')
-        return <UserBubble event={item.event} onOpenReviewFile={onOpenReviewFile} />;
+        return (
+          <UserBubble
+            event={item.event}
+            // An attachment chip is a path with no captured diff behind it.
+            onOpenReviewFile={cwd ? onOpenReviewFile : undefined}
+          />
+        );
       return (
         <AssistantMessage
           text={item.event.text ?? ''}

@@ -378,7 +378,9 @@ export function MessageFeed({
   return (
     // A reply's prose names files as it works; inside the transcript those
     // mentions are live and open in Review, the same handler a tool row uses.
-    <ProseFileLinks onOpenReviewFile={stableOnOpenReviewFile}>
+    // A mention is only a path, so it needs a workspace to be read from, unlike
+    // a captured change that carries its own diff.
+    <ProseFileLinks onOpenReviewFile={cwd ? stableOnOpenReviewFile : undefined}>
       <div className="space-y-4">
         {showSpecCard && (
           <div className="mx-auto min-w-0 max-w-2xl">
