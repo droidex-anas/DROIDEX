@@ -36,6 +36,8 @@ export function useQueuedPromptDelivery({
     live: false,
   });
   const previousInstalling = useRef(appUpdateInstalling);
+  const live = useRef(isLive);
+  live.current = isLive;
 
   useEffect(
     () => () => {
@@ -47,12 +49,17 @@ export function useQueuedPromptDelivery({
   const deliverPrompt = useCallback(async () => {
     if (!appSessionId || isAppUpdateInstalling()) return;
     if (!(store.getState().promptQueue[appSessionId] ?? []).length) return;
+    if (live.current) return;
     const capturedGeneration = generation.current;
     try {
       await guard.run(async () => {
         if (cwd) await markGitTurnStart(cwd, appSessionId);
+        // The guard serialises queued deliveries, not interactive sends: the
+        // user can start a turn while the git baseline is captured, and this
+        // prompt must wait for that turn instead of joining it.
         if (
           isAppUpdateInstalling() ||
+          live.current ||
           generation.current !== capturedGeneration ||
           store.getState().activeAppSessionId !== appSessionId
         )
@@ -111,9 +118,15 @@ export function useQueuedPromptDelivery({
 
   useEffect(() => {
     const was = previous.current;
-    if (was.live && !isLive && was.appSessionId === appSessionId) void deliverPrompt();
+    // Either this session just settled, or the user came back to one that
+    // settled while they were away; both leave its queue to drain here.
+    const settled = was.live && !isLive && was.appSessionId === appSessionId;
+    const returned = was.appSessionId !== appSessionId && !isLive;
     previous.current = { appSessionId, live: isLive };
-  }, [appSessionId, deliverPrompt, isLive]);
+    if (!settled && !returned) return;
+    if (appSessionId && (store.getState().promptQueue[appSessionId] ?? []).length)
+      void deliverPrompt();
+  }, [appSessionId, deliverPrompt, isLive, store]);
 
   useEffect(() => {
     const hasQueued = Boolean(

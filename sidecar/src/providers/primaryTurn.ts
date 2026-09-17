@@ -35,6 +35,13 @@ export async function runPrimaryTurn(
   const appSessionId = liveSession.summary.appSessionId;
   const context = turnContext(d, d.contextTarget(liveSession));
   if (!d.isCurrent(liveSession)) return;
+  // A scheduled delivery that cannot go ahead must leave no trace, and
+  // recordPrompt below writes to the durable transcript. So its preflight runs
+  // before the turn is opened; an interactive turn keeps its existing order.
+  const preflight = delivery
+    ? await d.applyDesignToolPolicy(liveSession, isDesignPrompt(prompt))
+    : undefined;
+  if (delivery && (!d.isCurrent(liveSession) || !preflight || !delivery.isCurrent())) return;
   d.eventFlow.beginTurn(appSessionId, appSessionId);
   d.timeline.recordPrompt(appSessionId, prompt);
   d.context.beginTurn(appSessionId);
@@ -43,7 +50,8 @@ export async function runPrimaryTurn(
   let reportedError = false;
   let reportedUsageLimit = false;
   try {
-    const configured = await d.applyDesignToolPolicy(liveSession, isDesignPrompt(prompt));
+    const configured =
+      preflight ?? (await d.applyDesignToolPolicy(liveSession, isDesignPrompt(prompt)));
     if (!d.isCurrent(liveSession) || (delivery && (!configured || !delivery.isCurrent()))) {
       context.stopPolling();
       return;

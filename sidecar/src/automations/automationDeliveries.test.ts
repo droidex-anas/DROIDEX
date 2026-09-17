@@ -212,6 +212,48 @@ test(
   },
 );
 
+test(
+  'a slot released while two attempts run rearms both of them',
+  { timeout: 10_000 },
+  async () => {
+    const entered: (() => void)[] = [];
+    const release = deferred<void>();
+    let capacityRefusals = 0;
+    const h = await harness({
+      deliverMessage: async () => {
+        if (capacityRefusals >= 2) return { status: 'accepted', settled: Promise.resolve() };
+        capacityRefusals += 1;
+        entered.shift()?.();
+        await release.promise;
+        return { status: 'busy', retryOn: 'capacity' };
+      },
+    });
+    try {
+      const first = deferred<void>();
+      const second = deferred<void>();
+      entered.push(first.resolve, second.resolve);
+      const one = await h.manager.create(message('one'));
+      const two = await h.manager.create(message('two'));
+      await h.manager.runNow(one.id);
+      await h.manager.runNow(two.id);
+      await first.promise;
+      await second.promise;
+
+      // The slot frees while both attempts are still waiting on their receipt.
+      await h.manager.observeSchedulingCapacity();
+      release.resolve();
+
+      // Neither may park on a capacity check the release already invalidated, so
+      // both drain without a further capacity or session signal.
+      await h.until((snapshot) => snapshot.runs.every((run) => run.status === 'completed'));
+      assert.equal(capacityRefusals, 2);
+    } finally {
+      release.resolve();
+      await h.close();
+    }
+  },
+);
+
 test('availability racing a busy receipt rearms the exact target once', async () => {
   const entered = deferred<void>();
   const blocked = deferred<void>();

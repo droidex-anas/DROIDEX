@@ -29,7 +29,7 @@ const inputSchema = z.object({
   timezone: z.string().optional(),
   modelId: z.string().nullable().optional(),
   reasoningEffort: z
-    .enum(['off', 'none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max', 'dynamic'])
+    .enum(['off', 'none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max', 'ultra', 'dynamic'])
     .nullable()
     .optional(),
   autonomy: z.enum(['off', 'low', 'medium', 'high']).optional(),

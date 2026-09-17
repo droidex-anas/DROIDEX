@@ -93,7 +93,13 @@ export class AutomationAttachments {
       try {
         await unlink(path);
       } catch (error) {
-        if (!(error instanceof Error && 'code' in error && error.code === 'ENOENT')) throw error;
+        if (!(error instanceof Error && 'code' in error && error.code === 'ENOENT')) {
+          // Startup awaits this sweep, so a file that cannot be removed right
+          // now must not fail it. The entry stays tracked and a later sweep
+          // retries it. Storage-integrity errors still come from root() above.
+          console.error('Could not remove an unreferenced automation attachment', error);
+          continue;
+        }
       }
       this.stored.delete(path);
       this.storedBytes -= bytes;

@@ -32,7 +32,9 @@ export class AutomationDeliveries {
   // nothing this conversation does will clear it — only a freed slot will.
   private readonly capacityBlockedTargets = new Set<string>();
   private readonly availabilityChangedDuringAttempt = new Set<string>();
-  private capacityChangedDuringAttempt = false;
+  // Bumped whenever a slot is released. An attempt compares the value it
+  // started with, so two concurrent attempts cannot consume one signal.
+  private capacityEpoch = 0;
 
   constructor(private readonly options: DeliveryOptions) {}
 
@@ -74,12 +76,6 @@ export class AutomationDeliveries {
         .finally(() => {
           this.inFlightAttempts.delete(id);
           if (this.availabilityChangedDuringAttempt.delete(id)) this.retryBlockedTargets.delete(id);
-          // A slot freed while this attempt ran would otherwise be lost: the
-          // attempt only joins the capacity set once its receipt comes back.
-          if (this.capacityChangedDuringAttempt) {
-            this.capacityChangedDuringAttempt = false;
-            this.capacityBlockedTargets.clear();
-          }
           this.startQueued();
         });
       this.inFlightAttempts.set(id, attempt);
@@ -111,7 +107,7 @@ export class AutomationDeliveries {
    * it, so they are rearmed here.
    */
   capacityChanged(): void {
-    if (this.inFlightAttempts.size > 0) this.capacityChangedDuringAttempt = true;
+    this.capacityEpoch += 1;
     this.capacityBlockedTargets.clear();
     this.startQueued();
   }
@@ -145,6 +141,7 @@ export class AutomationDeliveries {
       !this.options.isClosed() && this.find(run.id) === run && run.status === 'starting';
     if (!isCurrent()) return;
     const releaseAttachments = this.options.attachments.retain(run.automation.files);
+    const capacityEpoch = this.capacityEpoch;
     let receipt: AutomationDeliveryReceipt;
     try {
       receipt = await this.options.deliver(
@@ -202,7 +199,8 @@ export class AutomationDeliveries {
     });
     if (receipt.status === 'busy' && receipt.retryOn === 'capacity') {
       this.retryBlockedTargets.delete(appSessionId);
-      this.capacityBlockedTargets.add(appSessionId);
+      // A slot released while this attempt ran already invalidated its check.
+      if (capacityEpoch === this.capacityEpoch) this.capacityBlockedTargets.add(appSessionId);
     } else if (receipt.status !== 'busy') {
       this.retryBlockedTargets.delete(appSessionId);
     }

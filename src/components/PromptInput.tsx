@@ -1016,6 +1016,11 @@ export default function PromptInput({
       if (!text && skills.length === 0 && paths.length === 0) {
         throw new Error('Write a prompt or add an attachment first.');
       }
+      if (mentionsForRows(composerProvider, activeSkills).length > 0) {
+        throw new Error(
+          'Apps and plugins cannot be scheduled yet. Remove them, or send this prompt now.',
+        );
+      }
       if (
         submitCommandFor(text, {
           visualizeSelected,
