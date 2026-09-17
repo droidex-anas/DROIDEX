@@ -17,8 +17,14 @@ function isOptimisticEcho(event: TranscriptEvent): boolean {
 function echoMatchesPersisted(event: TranscriptEvent, persisted: Set<string | undefined>): boolean {
   const rawText = event.text ?? '';
   if (rawText && persisted.has(rawText)) return true;
-  const composed = composePrompt(rawText, event.skills ?? [], event.files ?? []);
-  return composed !== rawText && persisted.has(composed);
+  const files = event.files ?? [];
+  // A prompt whose skills, plugins or apps reached the harness as structured
+  // mentions persists with its words and files alone, so match that shape too.
+  const shapes = [
+    composePrompt(rawText, event.skills ?? [], files),
+    composePrompt(rawText, [], files),
+  ];
+  return shapes.some((composed) => composed !== rawText && persisted.has(composed));
 }
 
 function sessionKey(event: TranscriptEvent): string {

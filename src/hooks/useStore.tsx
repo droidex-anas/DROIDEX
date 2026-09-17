@@ -68,6 +68,7 @@ import type {
   SessionQuestion,
   ModelInfo,
   ProviderKind,
+  ProviderMention,
   ProviderStatus,
   ChildSessionSummary,
   SkillInfo,
@@ -186,6 +187,8 @@ export interface QueuedPrompt {
   text: string;
   skills: string[];
   files: string[];
+  /** Catalog rows the harness receives beside the text rather than inside it. */
+  mentions?: ProviderMention[];
   design?: QueuedDesignContext;
 }
 

@@ -77,7 +77,14 @@ import { reasoningEffortLabel, resolveReasoningEffortDisplay } from '../lib/reas
 import { compactionSettingsSnapshot } from '../lib/compactionSettings';
 import { composerTextAfterSeed, resetComposerAfterSubmit } from '../lib/composerReset';
 import { chipRemovedByBackspace } from '../lib/composerChips';
-import { composerTrigger, menuItemsForTrigger } from './composer/menuItems';
+import {
+  composerMenu,
+  composerTrigger,
+  menuRowKey,
+  type ComposerMenu as ComposerMenuModel,
+  type MenuItem,
+} from './composer/menuItems';
+import { composerCatalog, mentionsForRows } from './composer/composerCatalog';
 import { useDraftSelections } from './composer/useDraftSelections';
 import {
   childRuntimeSubmitTarget,
@@ -96,7 +103,7 @@ import SelectionMenu from './composer/SelectionMenu';
 import { useDraftEditing } from './composer/useDraftEditing';
 import type { ComposerHandle } from './composer/ComposerEditor';
 import { DraftSelections } from './composer/DraftSelections';
-import ComposerMenu, { type MenuItem, type SlashCommand } from './ComposerMenu';
+import ComposerMenu, { type SlashCommand } from './ComposerMenu';
 import ModelSelectorPopover from './ModelSelectorPopover';
 import ProviderPicker from '../features/providers/ProviderPicker';
 import { effectiveProvider } from '../features/providers/providerDraft';
@@ -126,6 +133,9 @@ import { toast } from '../lib/toast';
 // The live-markdown editor is a heavy chunk of the bundle, so it loads on
 // first composer paint rather than blocking the app's initial JavaScript.
 const ComposerEditor = lazy(() => import('./composer/ComposerEditor'));
+
+// Stable identity for a closed menu, so no trigger means no new object.
+const EMPTY_COMPOSER_MENU: ComposerMenuModel = { entries: [], rows: [] };
 
 const ACCENT = 'var(--droid-accent)';
 // Slash entries that drive Droid's own subsystems, so they leave the menu with
@@ -269,7 +279,7 @@ export default function PromptInput({
   const draftBeforeHistory = useRef('');
   const [modelsOpen, setModelsOpen] = useState(false);
   const [providerOpen, setProviderOpen] = useState(false);
-  const [menuIndex, setMenuIndex] = useState(0);
+  const [activeRowKey, setActiveRowKey] = useState<string | null>(null);
   const [files, setFiles] = useState<string[]>([]);
   const [filesCwd, setFilesCwd] = useState<string | null>(null);
   const [attachedFiles, setAttachedFilesState] = useState<string[]>([]);
@@ -655,16 +665,40 @@ export default function PromptInput({
     [onOverlayChange],
   );
 
+  // Everything the bound harness offers, as far as it has landed. Both menus
+  // read it, and neither asks for it: see composerCatalog.
+  const catalog = useMemo(
+    () =>
+      composerCatalog({
+        provider: composerProvider,
+        providerSessionId: skillsProviderSessionId,
+        skills: state.skills,
+        skillsProviderSessionId: state.skillsProviderSessionId,
+        providerStatuses: state.providerStatuses,
+      }),
+    [
+      composerProvider,
+      skillsProviderSessionId,
+      state.providerStatuses,
+      state.skills,
+      state.skillsProviderSessionId,
+    ],
+  );
+  // A `/name` typed out in full invokes the skill it names, so that lookup sees
+  // the same skills the menu offers.
   const invocableSkills = useMemo(
     () =>
-      state.skillsProviderSessionId === skillsProviderSessionId
-        ? state.skills.filter((s) => s.userInvocable !== false && s.enabled !== false)
-        : [],
-    [skillsProviderSessionId, state.skills, state.skillsProviderSessionId],
+      catalog.filter(
+        (row) => row.kind === 'skill' && row.userInvocable !== false && row.enabled !== false,
+      ),
+    [catalog],
   );
 
+  // Droid publishes its skills only when asked. The CLI harnesses publish
+  // theirs with their probe status and with their session, so opening a menu on
+  // one of them stays a read of what the renderer already holds.
   useEffect(() => {
-    if (trigger?.kind !== 'slash') {
+    if (trigger?.kind !== 'slash' || composerProvider !== 'droid') {
       pendingSkillsRequest.current = null;
       return;
     }
@@ -683,6 +717,7 @@ export default function PromptInput({
     listSkills(activeSession?.providerSessionId);
   }, [
     activeSession?.providerSessionId,
+    composerProvider,
     skillsProviderSessionId,
     state.skillsProviderSessionId,
     trigger?.kind,
@@ -690,19 +725,29 @@ export default function PromptInput({
     trigger?.start,
   ]);
 
-  const menuItems = useMemo<MenuItem[]>(
+  const menu = useMemo(
     () =>
       trigger
-        ? menuItemsForTrigger(trigger, {
-            commands: slashCommands,
-            skills: invocableSkills,
-            files,
-          })
-        : [],
-    [trigger, files, invocableSkills, slashCommands],
+        ? composerMenu(trigger, { commands: slashCommands, catalog, files })
+        : EMPTY_COMPOSER_MENU,
+    [trigger, files, catalog, slashCommands],
   );
 
-  const menuOpen = !!trigger && menuItems.length > 0;
+  const menuOpen = !!trigger && menu.rows.length > 0;
+  // What the draft already carries, so those rows read as staged.
+  const stagedRowKeys = useMemo(
+    () =>
+      new Set([
+        ...activeSkills.map((item) => menuRowKey({ type: 'catalog', item })),
+        ...attachedFiles.map((path) => menuRowKey({ type: 'file', path })),
+      ]),
+    [activeSkills, attachedFiles],
+  );
+  // The highlight follows the row rather than its position, so a row landing
+  // while the menu is open never moves it. No row named means the first one.
+  const activeRow = menu.rows.findIndex((row) => menuRowKey(row) === activeRowKey);
+  const activeIndex = activeRow < 0 ? 0 : activeRow;
+  const activeKey = menu.rows.length > 0 ? menuRowKey(menu.rows[activeIndex]) : null;
 
   // Lazy-load files when an @-trigger is active and cwd changed.
   useEffect(() => {
@@ -720,8 +765,9 @@ export default function PromptInput({
     };
   }, [trigger, cwd, filesCwd]);
 
+  // A new query is a new list; anything else leaves the highlight where it is.
   useEffect(() => {
-    setMenuIndex(0);
+    setActiveRowKey(null);
   }, [trigger?.kind, trigger?.query]);
 
   // Leave history-recall mode and drop any composer draft attachments when
@@ -879,9 +925,17 @@ export default function PromptInput({
     }
   };
 
-  const selectSkill = (skill: SkillInfo) => {
+  // A skill, plugin or app the next prompt carries, staged as a chip on the
+  // draft. A harness command is words instead: it takes its arguments from what
+  // follows, so it lands in the draft and the send button stays the only thing
+  // that starts a turn.
+  const runCatalogRow = (row: SkillInfo) => {
+    if (row.kind === 'command') {
+      replaceTrigger(`/${row.name} `);
+      return;
+    }
     setActiveSkills((prev) =>
-      prev.some((s) => s.filePath === skill.filePath) ? prev : [...prev, skill],
+      prev.some((s) => s.filePath === row.filePath) ? prev : [...prev, row],
     );
     replaceTrigger('');
   };
@@ -897,7 +951,7 @@ export default function PromptInput({
 
   const runMenuItem = (item: MenuItem) => {
     if (item.type === 'command') runCommand(item.command);
-    else if (item.type === 'skill') selectSkill(item.skill);
+    else if (item.type === 'catalog') runCatalogRow(item.item);
     else addFile(item.path);
   };
 
@@ -1028,7 +1082,15 @@ export default function PromptInput({
     const skillNames = slashSkill
       ? [slashSkill.skillName]
       : activeSkills.map((skill) => skill.name);
-    const composed = composeFrom(displayText, skillNames, allFiles);
+    // What the harness takes as structured items travels beside the prompt, so
+    // it must not also be written into the prompt's words.
+    const mentions = mentionsForRows(composerProvider, activeSkills);
+    const mentioned = new Set(mentions.map((mention) => mention.name));
+    const composed = composeFrom(
+      displayText,
+      skillNames.filter((name) => !mentioned.has(name)),
+      allFiles,
+    );
     const registerPending = (ref: string) => {
       if (turnStartingClientRef.current === ref) {
         turnStartingPendingRegisteredRef.current = true;
@@ -1151,7 +1213,13 @@ export default function PromptInput({
       dispatch({
         type: 'QUEUE_PROMPT',
         appSessionId: activeSession.appSessionId,
-        prompt: { id: newQueueId(), text: displayText, skills: skillNames, files: allFiles },
+        prompt: {
+          id: newQueueId(),
+          text: displayText,
+          skills: skillNames,
+          files: allFiles,
+          ...(mentions.length > 0 ? { mentions } : {}),
+        },
       });
       clearAfterSubmit();
       return;
@@ -1188,8 +1256,8 @@ export default function PromptInput({
           else
             sendToChild(activeSession.appSessionId, targetChildSessionId, composed, responseFormat);
         } else if (mode === 'now')
-          sendToSessionNow(activeSession.appSessionId, composed, responseFormat);
-        else sendToSession(activeSession.appSessionId, composed, responseFormat);
+          sendToSessionNow(activeSession.appSessionId, composed, responseFormat, mentions);
+        else sendToSession(activeSession.appSessionId, composed, responseFormat, mentions);
         armTurnStartingTimeout();
       } catch (err) {
         stopTurnStarting();
@@ -1285,10 +1353,18 @@ export default function PromptInput({
 
         try {
           const primaryTranscript = store.getState().transcripts[activeSession.appSessionId] ?? [];
+          // Rows queued as mentions kept their place in the chip list for the
+          // preview; the text they are sent with must still leave them out.
+          const mentioned = new Set(head.mentions?.map((mention) => mention.name));
           sendToSession(
             activeSession.appSessionId,
-            composeFrom(head.text, head.skills, head.files),
+            composeFrom(
+              head.text,
+              head.skills.filter((name) => !mentioned.has(name)),
+              head.files,
+            ),
             responseFormatForPrompt(head.text, hasAppContextForTranscript(primaryTranscript, null)),
+            head.mentions,
           );
         } catch (err) {
           // Keep the prompt staged and skip the transcript echo so a send failure
@@ -1407,22 +1483,26 @@ export default function PromptInput({
       return;
     }
     if (menuOpen) {
+      const moveHighlight = (delta: number) => {
+        const count = menu.rows.length;
+        setActiveRowKey(menuRowKey(menu.rows[(activeIndex + delta + count) % count]));
+      };
       if (e.key === 'ArrowDown') {
         e.preventDefault();
         e.stopPropagation();
-        setMenuIndex((i) => (i + 1) % menuItems.length);
+        moveHighlight(1);
         return;
       }
       if (e.key === 'ArrowUp') {
         e.preventDefault();
         e.stopPropagation();
-        setMenuIndex((i) => (i - 1 + menuItems.length) % menuItems.length);
+        moveHighlight(-1);
         return;
       }
       if (e.key === 'Tab' || (e.key === 'Enter' && !e.shiftKey)) {
         e.preventDefault();
         e.stopPropagation();
-        runMenuItem(menuItems[Math.min(menuIndex, menuItems.length - 1)]);
+        runMenuItem(menu.rows[activeIndex]);
         return;
       }
       if (e.key === 'Escape') {
@@ -1553,14 +1633,11 @@ export default function PromptInput({
       >
         <ComposerMenu
           open={menuOpen}
-          triggerKind={trigger?.kind ?? null}
-          filesLoading={!filesCwd}
-          items={menuItems}
-          activeIndex={menuIndex}
-          activeSkills={activeSkills}
-          attachedFiles={attachedFiles}
-          onHoverItem={setMenuIndex}
-          onRunItem={runMenuItem}
+          entries={menu.entries}
+          activeKey={activeKey}
+          stagedKeys={stagedRowKeys}
+          onHoverRow={setActiveRowKey}
+          onRunRow={runMenuItem}
         />
 
         <PlanApprovalInline />

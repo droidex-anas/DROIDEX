@@ -1,6 +1,7 @@
-import { useCallback, useState, type SetStateAction } from 'react';
-import { Blocks } from 'lucide-react';
+import { createElement, useCallback, useMemo, useState, type SetStateAction } from 'react';
 import type { SkillInfo } from '../../types/bridge';
+import { CatalogRowIcon } from './CatalogRowIcon';
+import { catalogLabel } from './menuItems';
 import { VisualizeIcon } from '../icons/VisualizeIcon';
 import type { DraftSelection } from './DraftSelections';
 
@@ -53,6 +54,23 @@ export function useDraftSelections(onDraftEdited: () => void): DraftSelectionsSt
     setVisualizeSelectedState(false);
   }, [onDraftEdited]);
 
+  // Each row's mark is built once per change, so a chip's icon keeps its
+  // component identity and never remounts mid-draft.
+  const catalogSelections = useMemo(
+    () =>
+      activeSkills.map((row) => ({
+        key: row.filePath,
+        icon: ({ className }: { className?: string }) =>
+          createElement(CatalogRowIcon, { item: row, className }),
+        label: catalogLabel(row),
+        removeLabel: `Remove the ${catalogLabel(row)} ${row.kind}`,
+        onRemove: () => {
+          setActiveSkills((prev) => prev.filter((s) => s.filePath !== row.filePath));
+        },
+      })),
+    [activeSkills, setActiveSkills],
+  );
+
   const items: DraftSelection[] = [
     ...(visualizeSelected
       ? [
@@ -67,15 +85,7 @@ export function useDraftSelections(onDraftEdited: () => void): DraftSelectionsSt
           },
         ]
       : []),
-    ...activeSkills.map((skill) => ({
-      key: skill.filePath,
-      icon: Blocks,
-      label: skill.name,
-      removeLabel: `Remove the ${skill.name} skill`,
-      onRemove: () => {
-        setActiveSkills((prev) => prev.filter((s) => s.filePath !== skill.filePath));
-      },
-    })),
+    ...catalogSelections,
   ];
 
   return {
