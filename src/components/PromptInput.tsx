@@ -83,7 +83,7 @@ import {
   type ComposerMenu as ComposerMenuModel,
   type MenuItem,
 } from './composer/menuItems';
-import { composerCatalog, mentionsForRows } from './composer/composerCatalog';
+import { catalogRowKey, composerCatalog, mentionsForRows } from './composer/composerCatalog';
 import { useDraftSelections } from './composer/useDraftSelections';
 import {
   childRuntimeSubmitTarget,
@@ -1155,6 +1155,7 @@ export default function PromptInput({
           cwd: dir,
           title,
           goal: composed,
+          ...(mentions.length > 0 ? { mentions } : {}),
           sessionPurpose: 'mission-control',
           provider: draftProvider,
           interactionMode: 'agi',
@@ -1203,6 +1204,7 @@ export default function PromptInput({
           cwd: dir,
           title,
           goal: composed,
+          ...(mentions.length > 0 ? { mentions } : {}),
           sessionPurpose: 'chat',
           provider: draftProvider,
           interactionMode: isSpecMode ? 'spec' : 'auto',
@@ -1233,6 +1235,7 @@ export default function PromptInput({
           skills: skillNames,
           files: allFiles,
           ...(mentions.length > 0 ? { mentions } : {}),
+          ...(activeSkills.length > 0 ? { rowKeys: activeSkills.map(catalogRowKey) } : {}),
         },
       });
       clearAfterSubmit();
@@ -1457,7 +1460,15 @@ export default function PromptInput({
     attachedFileSeqRef.current.clear();
     for (const path of p.files) attachedFileSeqRef.current.set(path, takeIntakeSeq());
     setAttachedFiles(p.files);
-    setActiveSkills(invocableSkills.filter((s) => p.skills.includes(s.name)));
+    // Rows come back by identity, so an app or plugin chip returns too and two
+    // skills that share a name are not confused. A prompt queued before rows
+    // carried one falls back to its skill names.
+    const rowKeys = new Set(p.rowKeys);
+    setActiveSkills(
+      rowKeys.size > 0
+        ? catalog.filter((row) => rowKeys.has(catalogRowKey(row)))
+        : invocableSkills.filter((skill) => p.skills.includes(skill.name)),
+    );
     // A queued App request already carries /visualize in its text, so the chip
     // would add a second copy of the command.
     setVisualizeSelected(false);

@@ -267,7 +267,7 @@ export class SessionLifecycle {
       this.trackProviderProcess(appSessionId, providerSession, mcp.configs);
       d.childSessions.attachParent(appSessionId);
       d.emit({ type: 'session.created', clientRef: command.clientRef, session: summary });
-      this.driveInBackground(appSessionId, command.goal);
+      this.driveInBackground(appSessionId, sessionPrompt(command.goal, command.mentions));
     } catch (error) {
       await this.cleanupFailedOpen(pendingMcpServers, pendingSession, pendingLiveSession);
       if (!isOpenAdmissionClosed(error)) {

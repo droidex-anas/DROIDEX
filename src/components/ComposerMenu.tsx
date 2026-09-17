@@ -75,6 +75,8 @@ function Row({
       ref={ref}
       onMouseEnter={onHover}
       onMouseDown={(e) => {
+        // A context or middle click must not run a command.
+        if (e.button !== 0) return;
         e.preventDefault();
         onRun();
       }}

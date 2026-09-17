@@ -629,6 +629,8 @@ export type ClientCommand =
       cwd?: string;
       title: string;
       goal: string;
+      // Catalog rows staged with the first prompt, as on a send.
+      mentions?: ProviderMention[];
       sessionPurpose: SessionPurpose;
       // Omitted means the default provider.
       provider?: ProviderKind;

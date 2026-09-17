@@ -189,6 +189,8 @@ export interface QueuedPrompt {
   files: string[];
   /** Catalog rows the harness receives beside the text rather than inside it. */
   mentions?: ProviderMention[];
+  /** The staged rows' catalog identities, so editing restores the same chips. */
+  rowKeys?: string[];
   design?: QueuedDesignContext;
 }
 

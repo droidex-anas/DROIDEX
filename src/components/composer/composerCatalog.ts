@@ -28,12 +28,18 @@ export function composerCatalog({
   // The published catalog belongs to one session at a time, and a draft shares
   // the null id with whatever was published for a draft before it, so the rows
   // still have to name this harness.
-  const live =
-    skillsProviderSessionId === providerSessionId
-      ? skills.filter((row) => row.provider === provider)
-      : NO_ROWS;
-  if (live.length > 0) return live;
+  const published = skillsProviderSessionId === providerSessionId;
+  const live = published ? skills.filter((row) => row.provider === provider) : NO_ROWS;
+  // Once a live session has published, its catalog is the answer, even when it
+  // is empty: the probe listed another working directory. Until then the probe's
+  // rows stand in, so a chat that just opened does not show an empty menu.
+  if (live.length > 0 || (published && providerSessionId !== null)) return live;
   return providerStatuses.find((status) => status.provider === provider)?.items ?? NO_ROWS;
+}
+
+/** A row's identity: two harness rows can share a name, never a kind and path. */
+export function catalogRowKey(row: SkillInfo): string {
+  return `${row.kind}:${row.filePath}`;
 }
 
 // Only Codex's turn protocol carries catalog items beside the prompt. The other

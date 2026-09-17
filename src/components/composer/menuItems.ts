@@ -1,4 +1,5 @@
 import { menuMatchRank, rankMenuCandidates } from '../../lib/composerMenuRanking';
+import { catalogRowKey } from './composerCatalog';
 import type { SkillInfo } from '../../types/bridge';
 import type { SlashCommand } from '../ComposerMenu';
 
@@ -57,7 +58,7 @@ export interface ComposerMenu {
 export function menuRowKey(item: MenuItem): string {
   if (item.type === 'command') return `command:${item.command.cmd}`;
   if (item.type === 'file') return `file:${item.path}`;
-  return `catalog:${item.item.kind}:${item.item.filePath}`;
+  return `catalog:${catalogRowKey(item.item)}`;
 }
 
 const LOCATION_SCOPE = { project: 'repo', personal: 'user', builtin: 'system' } as const;
@@ -137,8 +138,8 @@ function bestRank(query: string, rows: MenuItem[]): number {
   const first = rows.at(0);
   if (!first) return Number.POSITIVE_INFINITY;
   if (first.type === 'file') return fileRank(query, first.path);
-  const name = first.type === 'command' ? first.command.cmd.slice(1) : first.item.name;
-  return menuMatchRank(query, { name });
+  if (first.type === 'command') return menuMatchRank(query, { name: first.command.cmd.slice(1) });
+  return menuMatchRank(query, { name: first.item.name, description: first.item.description });
 }
 
 // Files rank on their name the way catalog rows do, so `@` can lead with an app

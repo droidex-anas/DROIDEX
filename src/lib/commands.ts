@@ -38,6 +38,7 @@ export const createSession = (input: {
   cwd?: string;
   title: string;
   goal: string;
+  mentions?: ProviderMention[];
   sessionPurpose: SessionPurpose;
   provider?: ProviderKind;
   interactionMode?: SessionInteractionMode;
