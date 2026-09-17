@@ -192,7 +192,7 @@ export class ClaudeSession implements ProviderSession {
       });
       // Only ever the first turn: by the second the CLI is up and its startup
       // is not what the chat is waiting for.
-      if (this.initializing) yield this.mapper.statusEvent(STARTING);
+      if (this.initializing) yield this.mapper.progressEvent(STARTING);
       for (;;) {
         const next = await turnQueue.next();
         // An exhausted stream is a failure, not a silent success.

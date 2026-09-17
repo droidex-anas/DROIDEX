@@ -10,9 +10,10 @@ import { objectValue } from './values.js';
 // read the discovery path performs per file.
 export interface SessionFileHead {
   start: StoredSessionStart;
-  // A provider writes session_start before the first prompt, so an interrupted
-  // or abandoned turn leaves a valid file with no completed exchange. Those are
-  // not durable conversations and must not become permanent sidebar rows.
+  // A provider writes session_start before the first prompt, so an abandoned
+  // turn leaves a valid file with no completed exchange. Those are not durable
+  // conversations and must not become permanent sidebar rows. A prompt answered
+  // only by a stored error row is one: that is how a crashed chat ended.
   hasCompletedConversation: boolean;
 }
 
@@ -28,25 +29,25 @@ const MAX_START_LINES = 8;
 export function readSessionFileHead(path: string, sizeBytes: number): SessionFileHead {
   let start: StoredSessionStart | undefined;
   let startLines = 0;
-  let hasUserMessage = false;
-  let hasAssistantMessage = false;
+  let hasPrompt = false;
+  let hasAnswer = false;
 
   for (const line of sessionLines(path, sizeBytes)) {
     if (!start && startLines < MAX_START_LINES) {
       startLines += 1;
       start = parseSessionStart(line);
     }
-    const role = storedMessageRole(line);
-    if (role === 'user') hasUserMessage = true;
-    if (role === 'assistant') hasAssistantMessage = true;
+    const part = exchangePart(line);
+    if (part === 'prompt') hasPrompt = true;
+    if (part === 'answer') hasAnswer = true;
     // Both answers are settled; nothing further in the file can change them.
     const startSettled = start !== undefined || startLines >= MAX_START_LINES;
-    if (startSettled && hasUserMessage && hasAssistantMessage) break;
+    if (startSettled && hasPrompt && hasAnswer) break;
   }
 
   return {
     start: start ?? {},
-    hasCompletedConversation: hasUserMessage && hasAssistantMessage,
+    hasCompletedConversation: hasPrompt && hasAnswer,
   };
 }
 
@@ -97,15 +98,19 @@ function parseSessionStart(line: string): StoredSessionStart | undefined {
   }
 }
 
-function storedMessageRole(line: string): 'user' | 'assistant' | undefined {
+// What one stored line contributes to a settled exchange. DROIDEX's own error
+// row answers a prompt the same way an assistant message does: the turn ended
+// there, and that chat still belongs in the sidebar.
+function exchangePart(line: string): 'prompt' | 'answer' | undefined {
   try {
     const parsed: unknown = JSON.parse(line);
     const record = objectValue(parsed);
+    if (record?.type === 'error') return 'answer';
     if (record?.type !== 'message') return undefined;
     const message = objectValue(record.message);
     if (isLlmOnlyMessage(message)) return undefined;
-    const role = message?.role;
-    return role === 'user' || role === 'assistant' ? role : undefined;
+    if (message?.role === 'user') return 'prompt';
+    return message?.role === 'assistant' ? 'answer' : undefined;
   } catch {
     return undefined;
   }

@@ -209,10 +209,16 @@ export class CodexEventMapper {
     };
   }
 
-  // A line the session itself has to say: what the thread is doing before it can
-  // answer, in the row shape every provider's status already uses.
+  // A line the session itself has to say, in the row shape every provider's
+  // status already uses. It is part of the conversation and is stored with it.
   statusEvent(text: string): NormalizedEvent {
     return { transcript: this.transcript('status', { text }) };
+  }
+
+  // What the thread is doing before it can answer. Only true while the turn waits,
+  // so it is shown live and never stored.
+  progressEvent(text: string): NormalizedEvent {
+    return { transcript: this.transcript('status', { text, transient: true }) };
   }
 
   private delta(kind: 'text' | 'thinking', params: DeltaParams | undefined): NormalizedEvent[] {

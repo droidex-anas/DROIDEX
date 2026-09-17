@@ -148,7 +148,10 @@ function fitByteBudget<T>(items: T[], maxBytes: number, keep: 'start' | 'end'): 
 
 function boundTranscriptEvents(events: TranscriptEvent[]): TranscriptEvent[] {
   return fitByteBudget(
-    events.slice(-MAX_SNAPSHOT_TRANSCRIPT_EVENTS),
+    // A transient row is only true while it is on screen, and the sidecar never
+    // stores one: repainting it after a reload would contradict the history
+    // page that replaces this snapshot a moment later.
+    events.slice(-MAX_SNAPSHOT_TRANSCRIPT_EVENTS).filter((event) => !event.transient),
     MAX_SNAPSHOT_TRANSCRIPT_BYTES,
     'end',
   );

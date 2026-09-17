@@ -412,6 +412,8 @@ export class SessionTimeline {
     hotPathMetrics.recordEmit(performance.now() - emitStartedAt);
   }
 
+  // A status row that belongs to the conversation: it is stored and replays
+  // when the session is reopened.
   appendStatus(
     appSessionId: string,
     text: string,
@@ -419,17 +421,62 @@ export class SessionTimeline {
     sourceSessionId = appSessionId,
     role: SessionRole = 'primary',
   ): void {
-    const now = this.dependencies.now ?? Date.now;
+    const ts = this.clock();
     this.append({
-      id: `status-${now().toString(36)}-${(this.statusSeq++).toString(36)}`,
+      id: this.noticeId('status', ts),
       appSessionId,
       sourceSessionId,
       role,
-      ts: now(),
+      ts,
       kind: 'status',
       text,
       ...(compactType ? { compactType } : {}),
     });
+  }
+
+  // A status row that is only true right now — a CLI booting, a steer being
+  // applied, an idle runtime released. Shown live, never stored.
+  appendProgress(appSessionId: string, text: string): void {
+    const ts = this.clock();
+    this.append({
+      id: this.noticeId('status', ts),
+      appSessionId,
+      sourceSessionId: appSessionId,
+      role: 'primary',
+      ts,
+      kind: 'status',
+      text,
+      transient: true,
+    });
+  }
+
+  // How a turn or a session ended badly. Stored, so a chat that crashed still
+  // reads that way after a restart.
+  appendError(
+    appSessionId: string,
+    text: string,
+    details: Pick<TranscriptEvent, 'errorKind' | 'resetsAt'> = {},
+  ): void {
+    const ts = this.clock();
+    this.append({
+      id: this.noticeId('error', ts),
+      appSessionId,
+      sourceSessionId: appSessionId,
+      role: 'primary',
+      ts,
+      kind: 'error',
+      text,
+      isError: true,
+      ...details,
+    });
+  }
+
+  private clock(): number {
+    return (this.dependencies.now ?? Date.now)();
+  }
+
+  private noticeId(kind: 'status' | 'error', ts: number): string {
+    return `${kind}-${ts.toString(36)}-${(this.statusSeq++).toString(36)}`;
   }
 
   appendCompaction(

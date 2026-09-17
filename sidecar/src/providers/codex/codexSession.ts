@@ -346,7 +346,7 @@ export class CodexSession implements ProviderSession {
       const turn = this.turn;
       if (!turn) return;
       const notices = this.startup.notices();
-      if (notices.length > 0) turn.push(notices.map((text) => this.mapper.statusEvent(text)));
+      if (notices.length > 0) turn.push(notices.map((text) => this.mapper.progressEvent(text)));
     }, STARTUP_QUIET_MS);
     this.startupNoticeTimer.unref();
   }

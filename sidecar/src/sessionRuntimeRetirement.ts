@@ -140,7 +140,9 @@ export interface SessionRuntimeRetirementDependencies {
   hasPendingSettings: (appSessionId: string) => boolean;
   hasAgentProcesses: (appSessionId: string) => boolean;
   retire: (appSessionId: string) => Promise<void>;
-  emitStatus: (appSessionId: string, text: string) => void;
+  // The released line is only true until the next prompt restores the
+  // runtime, so it is a live progress row rather than stored history.
+  appendProgress: (appSessionId: string, text: string) => void;
   emitError: (appSessionId: string, message: string) => void;
   idleMs: number;
   now: () => number;
@@ -211,7 +213,7 @@ export class SessionRuntimeRetirement {
       // this queue during that window, so the decision is taken again here.
       const current = this.factsFor(appSessionId);
       if (!current || !isDueForRetirement(current, d.now(), d.idleMs)) continue;
-      d.emitStatus(appSessionId, SESSION_RUNTIME_RETIRED_STATUS);
+      d.appendProgress(appSessionId, SESSION_RUNTIME_RETIRED_STATUS);
       try {
         await d.retire(appSessionId);
       } catch (error) {

@@ -593,8 +593,11 @@ export class SessionManager {
       emitError: (error) => {
         this.emitError(error);
       },
-      emitStatus: (appSessionId, text) => {
-        this.timeline.appendStatus(appSessionId, text);
+      appendProgress: (appSessionId, text) => {
+        this.timeline.appendProgress(appSessionId, text);
+      },
+      appendError: (appSessionId, message) => {
+        this.timeline.appendError(appSessionId, message);
       },
       recordPrompt: (appSessionId, text) => {
         this.timeline.recordPrompt(appSessionId, text);
@@ -620,8 +623,8 @@ export class SessionManager {
       hasPendingSettings: (id) => this.modelSettings.hasPending(id),
       hasAgentProcesses: (id) => this.agentProcesses.hasProcesses(id),
       retire: (id) => this.lifecycle.close(id, 'preserve-pending'),
-      emitStatus: (id, text) => {
-        this.timeline.appendStatus(id, text);
+      appendProgress: (id, text) => {
+        this.timeline.appendProgress(id, text);
       },
       emitError: (appSessionId, message) => {
         this.emitError({ appSessionId, message });
@@ -645,7 +648,7 @@ export class SessionManager {
         this.history.syncSummaries(summaries);
         for (const session of summaries) this.emit({ type: 'session.updated', session });
       },
-      emitStatus: (appSessionId, text) => {
+      appendStatus: (appSessionId, text) => {
         this.timeline.appendStatus(appSessionId, text);
       },
       sessionRuntimeIdleMs: limits.sessionRuntimeIdleMs,
@@ -1428,7 +1431,7 @@ export class SessionManager {
       previousLiveSession?.compacting ||
       previousLiveSession?.autoCompacting
     ) {
-      this.timeline.appendStatus(
+      this.timeline.appendProgress(
         appSessionId,
         'Cannot compact while a turn is active. Try again when the model is idle.',
       );

@@ -77,6 +77,27 @@ test('a session with no model reply is not a completed conversation', () => {
   assert.equal(head.hasCompletedConversation, false);
 });
 
+test('a prompt answered only by a crash row is still a completed conversation', () => {
+  const path = join(workspace, 'crashed.jsonl');
+  writeFileSync(
+    path,
+    `${[
+      JSON.stringify({ type: 'session_start', cwd: '/repo/app', sessionTitle: 'Crashed' }),
+      messageLine('user', 'hello'),
+      JSON.stringify({
+        type: 'error',
+        id: 'error-1',
+        timestamp: '2026-08-09T00:00:01.000Z',
+        text: 'Session process was killed (SIGKILL).',
+      }),
+    ].join('\n')}\n`,
+  );
+
+  const head = readSessionFileHead(path, statSync(path).size);
+
+  assert.equal(head.hasCompletedConversation, true);
+});
+
 test('an empty session file yields an empty start rather than throwing', () => {
   const path = join(workspace, 'empty.jsonl');
   writeFileSync(path, '');
