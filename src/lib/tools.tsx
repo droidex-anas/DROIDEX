@@ -188,11 +188,29 @@ export function hasTodoPayload(args: unknown): boolean {
 }
 
 // Factory Task/subagent metadata identifies a child-session spawn.
-// TaskOutput/TaskStop are the harness polling and stopping subagents it already
-// spawned, not work of their own. The Subagents card reports that status, so
-// these calls and their echoed poll bodies are noise wherever the card renders.
-export function isSubagentBookkeepingTool(name?: string): boolean {
+// TaskOutput/TaskStop are how a harness polls and stops the subagents it
+// spawned, which the agent card already reports, so there they are noise. But
+// the name alone does not say that: Claude Code reads and stops its background
+// shell commands with the same tools. A poll is about a subagent only in a chat
+// that has spawned one (see `pollsSpawnedChildSession`); anywhere else it is an
+// ordinary tool call and must stay visible.
+export function isTaskPollTool(name?: string): boolean {
   return /^task_?(output|stop)\b/i.test(name ?? '');
+}
+
+/** Whether the task poll at `pollIndex` can be about a subagent: only when a
+    spawn came before it. Scans backward from the poll and stops at the first
+    spawn, so it costs nothing unless a poll is actually being judged. */
+export function pollsSpawnedChildSession(
+  events: readonly { kind: string; toolName?: string; toolArgs?: unknown }[],
+  pollIndex: number,
+): boolean {
+  for (let i = pollIndex - 1; i >= 0; i--) {
+    const event = events[i];
+    if (event.kind === 'tool_call' && isChildSessionTool(event.toolName, event.toolArgs))
+      return true;
+  }
+  return false;
 }
 
 // The droid name and short description carried by a Task spawn's arguments.
