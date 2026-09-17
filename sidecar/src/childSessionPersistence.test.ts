@@ -373,6 +373,85 @@ for (const releasedVersion of [1, 2]) {
   });
 }
 
+test('schema v3 gains the settling time without losing existing children', () => {
+  const releasedHome = mkdtempSync(join(tmpdir(), 'droid-history-settled-upgrade-'));
+  process.env.HOME = releasedHome;
+  try {
+    const initial = new HistoryIndex();
+    initial.close();
+    const indexPath = join(releasedHome, '.factory', 'droidex', SESSION_INDEX_FILENAME);
+    const released = new DatabaseSync(indexPath);
+    released
+      .prepare(
+        `INSERT INTO app_sessions (
+          app_session_id,
+          provider_session_id,
+          compacted_from_provider_session_ids,
+          session_purpose,
+          interaction_mode,
+          title,
+          updated_at
+        ) VALUES (?, ?, '[]', 'chat', 'auto', ?, ?)`,
+      )
+      .run('existing-chat', 'existing-provider', 'Existing chat', 123);
+    released
+      .prepare(
+        `INSERT INTO child_sessions (
+          parent_app_session_id,
+          child_session_id,
+          provider_session_id,
+          role,
+          label,
+          prompt,
+          status,
+          model_id,
+          spawn_link_kind,
+          spawn_link_id,
+          transcript_available,
+          started_at,
+          updated_at
+        ) VALUES (?, ?, ?, 'worker', ?, ?, 'completed', ?, 'tool-use', ?, 1, ?, ?)`,
+      )
+      .run(
+        'existing-chat',
+        'existing-child',
+        'existing-child-provider',
+        'Existing worker',
+        'Continue the existing chat',
+        'claude-sonnet-4-5',
+        'existing-tool',
+        100,
+        124,
+      );
+    // A shipped v3 index is the canonical shape without the settling time.
+    released.exec('ALTER TABLE child_sessions DROP COLUMN settled_at; PRAGMA user_version = 3;');
+    const originalChild = released.prepare('SELECT * FROM child_sessions').get() as Record<
+      string,
+      unknown
+    >;
+    released.close();
+
+    const upgraded = new HistoryIndex();
+    const restoredChild = upgraded.childSession('existing-chat', 'existing-child');
+    upgraded.close();
+
+    const verified = new DatabaseSync(indexPath);
+    const version = verified.prepare('PRAGMA user_version').get() as { user_version: number };
+    const row = verified.prepare('SELECT * FROM child_sessions').get() as Record<string, unknown>;
+    verified.close();
+
+    assert.equal(version.user_version, 4);
+    assert.deepEqual({ ...row }, { ...originalChild, settled_at: null });
+    assert.ok(restoredChild);
+    // A child stored before this says nothing about when it finished.
+    assert.equal(restoredChild.settledAt, undefined);
+    assert.equal(restoredChild.prompt, 'Continue the existing chat');
+  } finally {
+    process.env.HOME = home;
+    rmSync(releasedHome, { recursive: true, force: true });
+  }
+});
+
 test('canonical session index remains isolated from the legacy droid index', () => {
   const isolatedHome = mkdtempSync(join(tmpdir(), 'droid-session-index-isolation-'));
   const indexDir = join(isolatedHome, '.factory', 'droidex');

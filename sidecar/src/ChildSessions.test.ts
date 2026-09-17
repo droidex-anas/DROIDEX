@@ -497,6 +497,25 @@ test('result-only completion admits the exact pending spawn as historical', () =
   assert.equal(h.history.childSessions(h.parentId)[0]?.providerSessionId, 'provider-child-current');
 });
 
+test('a settled state-only child keeps the moment it stopped', () => {
+  const h = createHarness([]);
+  const observation = {
+    parentAppSessionId: h.parentId,
+    providerSessionId: 'provider-state-only',
+    role: 'worker' as const,
+    modelId: 'model-default',
+    transcriptAvailable: false,
+    done: true,
+  };
+  h.owner.admitChildObservation(observation);
+  h.advanceClock(60_000);
+  h.owner.admitChildObservation(observation);
+
+  const child = h.owner.list(h.parentId)[0];
+  assert.equal(child?.status, 'completed');
+  assert.equal(child?.settledAt, 100);
+});
+
 test('missing Task settings defer exact admission and preserve provider-only completion', () => {
   const h = createHarness([]);
   h.owner.admitChildObservation({
