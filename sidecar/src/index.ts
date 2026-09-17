@@ -7,6 +7,8 @@ import { startBridgeServer } from './bridgeServer.js';
 import { droidexUserDataDir } from './droidexPaths.js';
 import { shutdownSidecar } from './shutdown.js';
 import { hotPathMetrics } from './telemetry/hotPathMetrics.js';
+import { startRemoteAdmin } from './remote/admin.js';
+import { RemoteSessionIndex } from './remote/sessionIndex.js';
 
 const REQUESTED_PORT = bridgePort(process.env.BRIDGE_PORT ?? '0');
 const TOKEN = requiredSecret('BRIDGE_TOKEN');
@@ -14,6 +16,9 @@ const ASSET_TOKEN = requiredSecret('BROWSER_ASSET_TOKEN');
 const EXIT_ON_STDIN_CLOSE = process.env.BRIDGE_EXIT_ON_STDIN_CLOSE !== '0';
 
 let automationManager: AutomationManager | null = null;
+let mobile: Awaited<ReturnType<typeof startRemoteAdmin>> | undefined;
+let mobileStartup: Promise<void> | undefined;
+const remoteIndex = new RemoteSessionIndex();
 
 const server = startBridgeServer({
   requestedPort: REQUESTED_PORT,
@@ -21,7 +26,10 @@ const server = startBridgeServer({
   assetToken: ASSET_TOKEN,
   onCommand: async (command) => {
     if (automationManager && (await automationManager.handleBridgeCommand(command))) return;
+    mobile?.commandReceived(command);
     await manager.handle(command);
+    remoteIndex.commandCompleted(command);
+    mobile?.commandCompleted(command);
   },
   getSnapshot: () => manager.runtimeSnapshot(),
 });
@@ -34,10 +42,10 @@ const manager = new SessionManager(
       });
     }
     server.broadcast(event);
+    remoteIndex.observe(event);
+    mobile?.observe(event);
   },
-  {
-    assetUrlFor: (filePath) => server.browserAssetUrl(filePath),
-  },
+  { assetUrlFor: (filePath) => server.browserAssetUrl(filePath) },
 );
 
 automationManager = configureAutomationManager({
@@ -60,6 +68,21 @@ server.ready
     hotPathMetrics.setGaugeProvider(() => manager.resourceCounts());
     // Stdout line consumed by the desktop supervisor to confirm readiness.
     process.stdout.write(`SIDECAR_READY ${String(server.port)}\n`);
+    mobileStartup = startRemoteAdmin(droidexUserDataDir(), {
+      handle: (command) => manager.handle(command),
+      announcePrompt: (appSessionId, requestId, prompt) => {
+        server.broadcast({
+          type: 'event.appended',
+          event: { id: `mobile-prompt:${requestId}`, appSessionId, sourceSessionId: 'user',
+            role: 'primary', ts: Date.now(), kind: 'text', text: prompt, author: 'user' },
+        });
+      },
+    }, remoteIndex).then(async (control) => {
+      mobile = control;
+      if (shuttingDown) await control.close();
+    }).catch(() => {
+      console.error('Mobile access could not start. The desktop remains available.');
+    });
     // Yield so the supervisor observes ready before the search isolate starts.
     setImmediate(() => {
       if (shuttingDown) return;
@@ -79,9 +102,13 @@ async function shutdown(): Promise<void> {
   const forceExit = setTimeout(() => process.exit(1), 5_000);
   forceExit.unref();
   try {
-    // Sessions close first so the automation store records their final run state
-    // before it flushes. Bridge close is bounded and flushes its ordered queue
-    // after shutdown.
+    try {
+      await mobileStartup;
+      await mobile?.close();
+    } catch (error) {
+      console.error('Mobile shutdown failed; continuing desktop cleanup.', error);
+      process.exitCode = 1;
+    }
     await shutdownSidecar({
       shutdownSessions: () => manager.shutdown(),
       shutdownAutomations: async () => {

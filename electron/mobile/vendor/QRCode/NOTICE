@@ -1,0 +1,6 @@
+QRCode for JavaScript, copyright (c) 2009 Kazuhiko Arase.
+Node adaptation vendored from qrcode-terminal 0.12.0 (npm's bundled copy).
+Source: https://github.com/gtanner/qrcode-terminal/tree/v0.12.0/vendor/QRCode
+The original QR encoder is MIT licensed; the distribution's Apache-2.0 license
+is included for the Node adaptation. These files are otherwise unmodified.
+This encoder runs locally. Pairing secrets are never sent to a QR service.

@@ -33,6 +33,7 @@ import {
   type SettingsSearchHit,
 } from '../lib/settingsSearch';
 import { ToolActivitySettings } from './ToolActivitySettings';
+import { RemoteSettings } from './RemoteSettings';
 
 interface NavItem {
   label: string;
@@ -55,7 +56,7 @@ const NAV: { group: string; items: NavItem[] }[] = [
   },
   {
     group: 'Integrations',
-    items: [{ label: 'Snapshots' }, { label: 'MCP servers' }, { label: 'Browser' }],
+    items: [{ label: 'Remote' }, { label: 'Snapshots' }, { label: 'MCP servers' }, { label: 'Browser' }],
   },
   {
     group: 'Coding',
@@ -867,6 +868,9 @@ export default function SettingsPanel() {
       break;
     case 'Privacy & diagnostics':
       content = <DiagnosticsSettings />;
+      break;
+    case 'Remote':
+      content = <RemoteSettings initialWorkspace={mcpCwd} />;
       break;
     case 'MCP servers':
       content = <McpServersSettings cwd={mcpCwd} />;

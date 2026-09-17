@@ -8,6 +8,10 @@
   "type": "module",
   "main": "electron/main.cjs",
   "scripts": {
+    "remote:assets": "node packages/remote-artwork/generate.mjs",
+    "predev": "npm run remote:assets",
+    "prebuild": "npm run remote:assets",
+    "preelectron:dev": "npm run remote:assets",
     "dev": "vite",
     "build": "tsc && vite build && npm run sidecar:build && npm run electron:check",
     "assets:build": "node tools/render-brand-assets.mjs",

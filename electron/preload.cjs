@@ -251,3 +251,7 @@ contextBridge.exposeInMainWorld('droidControl', {
   onNativeBrowserLoadFailed: (handler) => on('native-browser-load-failed', handler),
   onNativeBrowserAgentResult: (handler) => on('native-browser-agent-result', handler),
 });
+
+contextBridge.exposeInMainWorld('droidexRemote', {
+  control: (operation, value) => ipcRenderer.invoke('droidex-remote-settings', operation, value),
+});

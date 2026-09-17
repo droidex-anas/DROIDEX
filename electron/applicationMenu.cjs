@@ -54,7 +54,11 @@ function createApplicationMenuTemplate(options) {
       : []),
     {
       label: 'File',
-      submenu: [isMac ? { role: 'close' } : { role: 'quit' }],
+      submenu: [
+        { label: 'Connect phone…', click: () => options.connectPhone() },
+        { type: 'separator' },
+        isMac ? { role: 'close' } : { role: 'quit' },
+      ],
     },
     {
       label: 'Edit',
@@ -94,11 +98,17 @@ function createApplicationMenuTemplate(options) {
 }
 
 function installApplicationMenu(options) {
+  const installRemote = options.installRemoteSettings || (() => require('./mobile/desktop.cjs').installRemoteSettings());
+  installRemote();
   const template = createApplicationMenuTemplate({
     appName: options.appName,
     platform: options.platform || process.platform,
     isPackaged: options.app.isPackaged,
     reload: options.reload,
+    connectPhone: () => {
+      void require('./mobile/desktop.cjs').openMobileWindow()
+        .catch((error) => options.logError(error.message));
+    },
     checkForUpdates: () =>
       void options.appUpdater
         .check({
