@@ -47,7 +47,6 @@ import { FileChip } from './composer/FileChip';
 import { ImageViewerModal } from './composer/ImageViewerModal';
 import { ImageLightbox } from './media/ImageLightbox';
 import { imageSrc, partitionImagePaths } from '../lib/localImage';
-import { FeedbackModal } from './FeedbackModal';
 import ComposerDock from './composer/ComposerDock';
 import { QueuedPrompts } from './composer/QueuedPrompts';
 import { markGitTurnStart } from '../lib/git';
@@ -207,6 +206,13 @@ function basename(p: string): string {
 function sameStrings(left: readonly string[], right: readonly string[]): boolean {
   return left.length === right.length && left.every((value, index) => value === right[index]);
 }
+
+// A dialog the user asks for, so its code loads when they do. Declared here
+// rather than with the app's other lazy surfaces, which import the composer.
+const LazyFeedbackModal = lazy(async () => {
+  const module = await import('./FeedbackModal');
+  return { default: module.FeedbackModal };
+});
 
 export default function PromptInput({
   rightInset = false,
@@ -2013,12 +2019,14 @@ export default function PromptInput({
         />
       )}
       {feedbackReport && (
-        <FeedbackModal
-          initialReport={feedbackReport}
-          onClose={() => {
-            setFeedbackReport(null);
-          }}
-        />
+        <Suspense fallback={null}>
+          <LazyFeedbackModal
+            initialReport={feedbackReport}
+            onClose={() => {
+              setFeedbackReport(null);
+            }}
+          />
+        </Suspense>
       )}
       <SelectionMenu
         menu={draftEditing.menu}
