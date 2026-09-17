@@ -542,6 +542,7 @@ type Action =
       terminalId?: string;
       cwd?: string;
       filePath?: string;
+      agentId?: string;
     }
   | { type: 'CLOSE_UTILITY_TAB'; tabId: string; appSessionId?: string }
   | { type: 'ACTIVATE_UTILITY_TAB'; tabId: string }
@@ -553,6 +554,7 @@ type Action =
       cwd?: string;
       filePath?: string;
       label?: string;
+      agentId?: string | null;
     }
   | { type: 'SET_UTILITY_PANEL_OPEN'; open: boolean }
   | { type: 'SET_REVIEW_OPEN'; open: boolean }
@@ -1553,7 +1555,12 @@ function baseReducer(state: AppState, action: Action): AppState {
         state.utilityPanels[appSessionId],
         action.tool,
         () => action.tabId ?? `${action.tool}:${appSessionId}`,
-        { terminalId: action.terminalId, cwd: action.cwd, filePath: action.filePath },
+        {
+          terminalId: action.terminalId,
+          cwd: action.cwd,
+          filePath: action.filePath,
+          agentId: action.agentId,
+        },
       );
       return {
         ...state,
@@ -1613,6 +1620,7 @@ function baseReducer(state: AppState, action: Action): AppState {
         cwd: action.cwd,
         filePath: action.filePath,
         label: action.label,
+        agentId: action.agentId,
       });
       if (panel === current) return state;
       return {

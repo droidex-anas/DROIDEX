@@ -1,4 +1,4 @@
-export type UtilityTool = 'review' | 'terminal' | 'browser' | 'files';
+export type UtilityTool = 'review' | 'terminal' | 'browser' | 'files' | 'agents';
 
 export interface UtilityTab {
   id: string;
@@ -7,6 +7,8 @@ export interface UtilityTab {
   terminalId?: string;
   cwd?: string;
   filePath?: string;
+  // The agents pane: the agent it is showing, absent while it shows the list.
+  agentId?: string;
 }
 
 export interface UtilityPanelState {
@@ -21,7 +23,12 @@ export const CLOSED_UTILITY_PANEL: UtilityPanelState = {
   activeTabId: null,
 };
 
-const SINGLETON_TOOLS = new Set<UtilityTool>(['review', 'browser', 'files']);
+const SINGLETON_TOOLS = new Set<UtilityTool>(['review', 'browser', 'files', 'agents']);
+
+// The tools whose pane can take the whole content row.
+export function isExpandableTool(tool: UtilityTool | undefined): boolean {
+  return tool === 'browser' || tool === 'agents';
+}
 
 export function utilityPanelForSession(
   panels: Record<string, UtilityPanelState>,
@@ -35,16 +42,28 @@ export function openUtilityTool(
   panel: UtilityPanelState | undefined,
   tool: UtilityTool,
   createId: () => string,
-  details: Partial<Pick<UtilityTab, 'terminalId' | 'cwd' | 'filePath'>> = {},
+  details: Partial<Pick<UtilityTab, 'terminalId' | 'cwd' | 'filePath' | 'agentId'>> = {},
 ): UtilityPanelState {
   const current = panel ?? CLOSED_UTILITY_PANEL;
   const existing = SINGLETON_TOOLS.has(tool)
     ? current.tabs.find((tab) => tab.tool === tool)
     : undefined;
   if (existing) {
-    return current.open && current.activeTabId === existing.id
-      ? current
-      : { ...current, open: true, activeTabId: existing.id };
+    // Opening another agent points the one agents pane at it.
+    const retarget = details.agentId !== undefined && details.agentId !== existing.agentId;
+    if (!retarget && current.open && current.activeTabId === existing.id) return current;
+    return {
+      ...current,
+      open: true,
+      activeTabId: existing.id,
+      ...(retarget
+        ? {
+            tabs: current.tabs.map((tab) =>
+              tab.id === existing.id ? { ...tab, agentId: details.agentId } : tab,
+            ),
+          }
+        : {}),
+    };
   }
   const tab: UtilityTab = {
     id: createId(),
@@ -89,16 +108,23 @@ export function activateUtilityTab(
 export function updateUtilityTab(
   panel: UtilityPanelState | undefined,
   tabId: string,
-  details: Partial<Pick<UtilityTab, 'terminalId' | 'cwd' | 'filePath' | 'label'>>,
+  details: Partial<Pick<UtilityTab, 'terminalId' | 'cwd' | 'filePath' | 'label'>> & {
+    // null returns the agents pane to its list.
+    agentId?: string | null;
+  },
 ): UtilityPanelState {
   const current = panel ?? CLOSED_UTILITY_PANEL;
   const index = current.tabs.findIndex((tab) => tab.id === tabId);
   if (index < 0) return current;
   const tabs = [...current.tabs];
+  const { agentId, ...rest } = details;
   const nextDetails = Object.fromEntries(
-    Object.entries(details as Record<string, unknown>).filter(([, value]) => value !== undefined),
+    Object.entries(rest as Record<string, unknown>).filter(([, value]) => value !== undefined),
   ) as Partial<UtilityTab>;
-  tabs[index] = { ...tabs[index], ...nextDetails };
+  const next = { ...tabs[index], ...nextDetails };
+  if (agentId === null) delete next.agentId;
+  else if (agentId !== undefined) next.agentId = agentId;
+  tabs[index] = next;
   return { ...current, tabs };
 }
 
@@ -145,7 +171,7 @@ export function sanitizeUtilityPanels(value: unknown): Record<string, UtilityPan
       const id = typeof rawTab.id === 'string' ? rawTab.id : '';
       const tool = isUtilityTool(rawTab.tool) ? rawTab.tool : null;
       if (!id || !tool || seenIds.has(id)) continue;
-      if (tool === 'terminal') continue;
+      if (!isRestoredTool(tool)) continue;
       if (SINGLETON_TOOLS.has(tool) && singletonTools.has(tool)) continue;
       seenIds.add(id);
       singletonTools.add(tool);
@@ -180,7 +206,7 @@ export function persistUtilityPanels(
 ): Record<string, UtilityPanelState> {
   return Object.fromEntries(
     Object.entries(panels).map(([appSessionId, panel]) => {
-      const tabs = panel.tabs.filter((tab) => tab.tool !== 'terminal');
+      const tabs = panel.tabs.filter((tab) => isRestoredTool(tab.tool));
       const activeTabId = tabs.some((tab) => tab.id === panel.activeTabId)
         ? panel.activeTabId
         : (tabs[0]?.id ?? null);
@@ -209,7 +235,14 @@ export function utilityTerminalCwds(
     .filter((cwd): cwd is string => Boolean(cwd));
 }
 
+// A terminal is a live process and an agents pane follows live work: neither
+// is something a restart can bring back, so neither is stored or restored.
+function isRestoredTool(tool: UtilityTool): boolean {
+  return tool !== 'terminal' && tool !== 'agents';
+}
+
 function utilityToolLabel(tool: UtilityTool, tabs: UtilityTab[]): string {
+  if (tool === 'agents') return 'Subagents';
   if (tool !== 'terminal') return tool[0].toUpperCase() + tool.slice(1);
   const count = tabs.filter((tab) => tab.tool === 'terminal').length;
   return count === 0 ? 'Terminal' : `Terminal ${String(count + 1)}`;

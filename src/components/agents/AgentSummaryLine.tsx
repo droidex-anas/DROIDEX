@@ -52,7 +52,7 @@ export function AgentSummaryLine({
       <span className="shrink-0 text-[13px] font-semibold tabular-nums text-droid-text">
         {percent}%
       </span>
-      <span className="w-14 shrink-0 text-right text-[12px] tabular-nums text-droid-text-muted">
+      <span className="min-w-14 shrink-0 whitespace-nowrap text-right text-[12px] tabular-nums text-droid-text-muted">
         {wave.timeMs != null ? formatDuration(wave.timeMs) : ''}
       </span>
     </span>

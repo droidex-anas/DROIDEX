@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { ArrowLeft, ChevronRight } from '@droidex/icons';
+import { ArrowLeft } from '@droidex/icons';
 import type { ModelInfo, ProviderKind, TranscriptEvent } from '../../types/bridge';
 import { scopeTranscriptToAgent } from '../../lib/transcript';
 import { buildFeed } from '../chatFeed';
@@ -7,14 +7,17 @@ import { groupTurns } from '../chatFeedTurns';
 import { FeedItemView } from '../chat';
 import { ModelIcon } from '../ModelIcon';
 import { SubagentStreamPreview } from '../SubagentStreamPreview';
+import { AgentPaneExpand } from './AgentPaneExpand';
 import { AgentEffortChip } from './AgentRow';
 import { AgentStatusPill } from './AgentStatusPill';
 import type { AgentRow } from './agentMonitorModel';
 
-/* One agent inside the Subagents tab: who it is, then its own transcript
-   rendered with the chat's own row components. A harness that does not stream a
-   child transcript yet shows what it does report — status, task and the latest
-   activity — and says so rather than pretending the agent is silent. */
+/* One agent in the agents pane: who it is, then its own transcript rendered with
+   the chat's own row components. The pane is the only place an agent is read, so
+   there is no way from here into the chat; expanding gives it the content row
+   instead. A harness that does not stream a child transcript yet shows what it
+   does report — status, task and the latest activity — and says so rather than
+   pretending the agent is silent. */
 
 export function AgentPaneDetail({
   row,
@@ -23,7 +26,8 @@ export function AgentPaneDetail({
   provider,
   live,
   onBack,
-  onOpenTranscript,
+  expanded,
+  onToggleExpanded,
 }: {
   row: AgentRow;
   models: readonly ModelInfo[];
@@ -32,7 +36,8 @@ export function AgentPaneDetail({
   provider?: ProviderKind;
   live: boolean;
   onBack: () => void;
-  onOpenTranscript?: () => void;
+  expanded: boolean;
+  onToggleExpanded: () => void;
 }) {
   const items = useMemo(() => {
     const events = scopeTranscriptToAgent(transcript, row.child.childSessionId);
@@ -69,30 +74,23 @@ export function AgentPaneDetail({
             </>
           ) : null}
         </span>
+        <AgentPaneExpand expanded={expanded} onToggle={onToggleExpanded} />
       </div>
 
-      <div className="min-h-0 flex-1 overflow-y-auto px-3 pb-2">
-        {items.length > 0 ? (
-          <div className="space-y-2.5">
-            {items.map((item) => (
-              <FeedItemView key={item.key} item={item} live={live} sessionLive={live} />
-            ))}
-          </div>
-        ) : (
-          <AgentActivityStandIn row={row} />
-        )}
+      <div className="min-h-0 flex-1 overflow-y-auto px-3 pb-3">
+        {/* Expanded, the transcript keeps a reading measure under its header. */}
+        <div className={expanded ? 'w-full max-w-[860px]' : undefined}>
+          {items.length > 0 ? (
+            <div className="space-y-2.5">
+              {items.map((item) => (
+                <FeedItemView key={item.key} item={item} live={live} sessionLive={live} />
+              ))}
+            </div>
+          ) : (
+            <AgentActivityStandIn row={row} />
+          )}
+        </div>
       </div>
-
-      {onOpenTranscript ? (
-        <button
-          type="button"
-          onClick={onOpenTranscript}
-          className="flex shrink-0 items-center gap-1 px-3 py-2 text-left text-[12px] text-droid-text-muted transition-colors hover:text-droid-text"
-        >
-          Open in the chat
-          <ChevronRight className="h-3.5 w-3.5" />
-        </button>
-      ) : null}
     </div>
   );
 }

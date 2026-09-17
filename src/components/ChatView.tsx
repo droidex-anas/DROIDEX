@@ -24,7 +24,7 @@ import {
   shouldRequestReleasedChildHistory,
   visibleSessionTarget,
 } from '../lib/childSessions';
-import { useAgentPane } from './agents/AgentPane';
+import { useOpenAgent } from './agents/useOpenAgent';
 import { ConversationTimeline } from './ConversationTimeline';
 import { WelcomeScreen } from './WelcomeScreen';
 import { isChatWorktreePath } from '../lib/chatWorkspace';
@@ -218,7 +218,7 @@ export default function ChatView({
   isObscured?: boolean;
 }) {
   const dispatch = useStoreDispatch();
-  const agentPane = useAgentPane();
+  const openAgent = useOpenAgent();
   const equalChatState = useCallback(
     (previous: ChatViewState, next: ChatViewState) =>
       isObscured || equalVisibleChatState(previous, next),
@@ -312,7 +312,6 @@ export default function ChatView({
   );
 
   // A monitor row opens the agent beside the chat instead of navigating to it.
-  const openAgent = agentPane.openAgent;
   const openAgentTab = useCallback(
     (child: ChildSessionSummary) => {
       openAgent(child.childSessionId);

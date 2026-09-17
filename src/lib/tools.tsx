@@ -222,7 +222,10 @@ export function formatDuration(ms: number): string {
   if (s < 60) return `${String(s)}s`;
   const m = Math.floor(s / 60);
   const rem = s % 60;
-  return rem ? `${String(m)}m ${String(rem)}s` : `${String(m)}m`;
+  if (m < 60) return rem ? `${String(m)}m ${String(rem)}s` : `${String(m)}m`;
+  const h = Math.floor(m / 60);
+  const remM = m % 60;
+  return remM ? `${String(h)}h ${String(remM)}m` : `${String(h)}h`;
 }
 
 // The history reader appends a "[truncated N chars]" sentinel when a single

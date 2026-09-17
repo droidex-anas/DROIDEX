@@ -186,8 +186,10 @@ export function agentListSections(rows: readonly AgentRow[]): AgentListSection[]
   if (rows.some((row) => row.phase)) return agentPhaseSections(rows);
   const active = rows.filter((row) => !isSettledAgentStatus(row.status));
   const done = rows.filter((row) => isSettledAgentStatus(row.status));
+  // Active always leads, even empty: the pane then says nothing is working
+  // instead of leaving the reader to infer it from a missing group.
   return [
-    ...(active.length > 0 ? [{ key: 'active', label: 'Active', rows: active }] : []),
+    { key: 'active', label: 'Active', rows: active },
     ...(done.length > 0 ? [{ key: 'done', label: 'Done', rows: done }] : []),
   ];
 }

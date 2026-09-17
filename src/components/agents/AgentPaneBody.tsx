@@ -9,7 +9,6 @@ import type { ChildStreamSnapshot } from '../../lib/childSessionStream';
 import { INLINE_CARD_DURATION_S, INLINE_CARD_EASE } from '../inlineCardMotion';
 import { AgentPaneDetail } from './AgentPaneDetail';
 import { AgentPaneList } from './AgentPaneList';
-import { agentPanePanelProps } from './agentPaneIds';
 import { useAgentWave } from './useAgentWave';
 
 /* The Subagents tab. One level deep: the session's agents, and the agent the
@@ -29,7 +28,8 @@ export function AgentPaneBody({
   openAgentId,
   onOpenAgent,
   onBack,
-  onOpenTranscript,
+  expanded,
+  onToggleExpanded,
 }: {
   childSessions: readonly ChildSessionSummary[];
   models: readonly ModelInfo[];
@@ -40,7 +40,8 @@ export function AgentPaneBody({
   openAgentId: string | null;
   onOpenAgent: (childSessionId: string) => void;
   onBack: () => void;
-  onOpenTranscript: (child: ChildSessionSummary) => void;
+  expanded: boolean;
+  onToggleExpanded: () => void;
 }) {
   const reduceMotion = useReducedMotion() === true;
   const wave = useAgentWave({ sessions: childSessions, models, live, snapshots });
@@ -50,7 +51,6 @@ export function AgentPaneBody({
   return (
     <AnimatePresence initial={false} mode="wait">
       <motion.div
-        {...agentPanePanelProps('subagents')}
         key={open ? `detail:${open.key}` : 'list'}
         initial={{ opacity: 0, x: open ? travel : -travel }}
         animate={{ opacity: 1, x: 0 }}
@@ -68,9 +68,8 @@ export function AgentPaneBody({
             transcript={transcript}
             live={live}
             onBack={onBack}
-            onOpenTranscript={() => {
-              onOpenTranscript(open.child);
-            }}
+            expanded={expanded}
+            onToggleExpanded={onToggleExpanded}
             {...(provider !== undefined ? { provider } : {})}
           />
         ) : (
@@ -79,6 +78,8 @@ export function AgentPaneBody({
             elapsedMs={wave.elapsedMs}
             now={wave.now}
             onOpenAgent={onOpenAgent}
+            expanded={expanded}
+            onToggleExpanded={onToggleExpanded}
           />
         )}
       </motion.div>
