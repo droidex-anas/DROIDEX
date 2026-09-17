@@ -180,6 +180,7 @@ export function isSpecEcho(text: string, specContent: string | undefined): boole
 // message so a row never changes height when it settles.
 const AssistantMessage = memo(function AssistantMessage({
   text,
+  streamId,
   live,
   isFinalResponse,
   autoPlayAppBlocks,
@@ -187,6 +188,9 @@ const AssistantMessage = memo(function AssistantMessage({
   specContent,
 }: {
   text: string;
+  // The session this text streams in, so the caret's shared idle record is
+  // never shared with another session whose tail happens to read the same.
+  streamId: string;
   live: boolean;
   isFinalResponse?: boolean;
   autoPlayAppBlocks: boolean;
@@ -197,7 +201,7 @@ const AssistantMessage = memo(function AssistantMessage({
   // A live echo of the pinned spec shows no caret of its own: the feed's
   // Working cue speaks for it, so there is never more than one live cue.
   const echo = isSpecEcho(text, specContent);
-  const typing = useStreamingActivity(text, live && !appOwnsLiveStatus && !echo);
+  const typing = useStreamingActivity(streamId, text, live && !appOwnsLiveStatus && !echo);
   // Only a settled echo yields to the pinned spec card; collapsing a row
   // mid-stream would jolt the virtualized feed.
   if (!live && echo) return null;
@@ -301,6 +305,7 @@ export const FeedItemView = memo(function FeedItemView({
       return (
         <AssistantMessage
           text={item.event.text ?? ''}
+          streamId={item.event.appSessionId}
           live={live}
           isFinalResponse={isFinalResponse}
           autoPlayAppBlocks={autoPlayAppBlocks}

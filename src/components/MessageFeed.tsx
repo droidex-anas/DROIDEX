@@ -321,6 +321,7 @@ export function MessageFeed({
   // A tail that only echoes the pinned spec shows no caret of its own, so the
   // Working cue speaks for it.
   const tailTyping = useStreamingActivity(
+    tailIsReply ? last.event.appSessionId : '',
     tailText,
     pending &&
       tailIsReply &&
