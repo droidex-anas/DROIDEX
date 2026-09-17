@@ -5,7 +5,9 @@ import type {
   TranscriptEvent,
 } from '../../types/bridge';
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
+import { findChildSessionForTarget } from '../../lib/childSessions';
 import type { ChildStreamSnapshot } from '../../lib/childSessionStream';
+import type { ToolActivitySettings } from '../../lib/toolActivity';
 import { INLINE_CARD_DURATION_S, INLINE_CARD_EASE } from '../inlineCardMotion';
 import { AgentPaneDetail } from './AgentPaneDetail';
 import { AgentPaneList } from './AgentPaneList';
@@ -25,6 +27,7 @@ export function AgentPaneBody({
   transcript,
   provider,
   live,
+  toolActivity,
   openAgentId,
   onOpenAgent,
   onBack,
@@ -37,6 +40,7 @@ export function AgentPaneBody({
   transcript: readonly TranscriptEvent[];
   provider?: ProviderKind;
   live: boolean;
+  toolActivity: ToolActivitySettings;
   openAgentId: string | null;
   onOpenAgent: (childSessionId: string) => void;
   onBack: () => void;
@@ -67,7 +71,12 @@ export function AgentPaneBody({
             models={models}
             transcript={transcript}
             live={live}
+            toolActivity={toolActivity}
             onBack={onBack}
+            onOpenNested={(target) => {
+              const nested = findChildSessionForTarget(childSessions, target);
+              if (nested) onOpenAgent(nested.childSessionId);
+            }}
             expanded={expanded}
             onToggleExpanded={onToggleExpanded}
             {...(provider !== undefined ? { provider } : {})}

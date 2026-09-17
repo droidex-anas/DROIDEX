@@ -104,16 +104,18 @@ function agentRowTarget(child: ChildSessionSummary): ChildSessionTarget | undefi
 }
 
 // What the agent is doing, led by the agent's own name so a delegated child
-// reads "reviewer · checking the sidecar diff". The live step wins; before any
-// activity arrives the task it was given stands in. Neither repeats the status
-// pill beside it.
+// reads "reviewer · checking the sidecar diff". While it works the live step
+// wins, and before any activity arrives the task it was given stands in. Once it
+// has stopped, its last step is stale ("Working" beside a Done pill), so the row
+// goes back to the task. Neither repeats the status pill beside it.
 function agentRowDescription(
   child: ChildSessionSummary,
   snapshot: ChildStreamSnapshot,
   lead: string,
 ): string {
   const phaseLabel = childStreamPhaseLabel(snapshot.phase, snapshot.fidelity);
-  const step = snapshot.step === phaseLabel ? '' : snapshot.step;
+  const step =
+    isSettledAgentStatus(child.status) || snapshot.step === phaseLabel ? '' : snapshot.step;
   const body = step || firstLine(child.prompt);
   return [lead, body].filter(Boolean).join(' · ');
 }

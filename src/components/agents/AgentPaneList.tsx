@@ -3,7 +3,7 @@ import { LayoutGroup, motion, useReducedMotion } from 'framer-motion';
 import { isPendingChildPlaceholder } from '../../lib/childSessions';
 import { formatRelativeTime } from '../../lib/time';
 import { formatDuration } from '../../lib/tools';
-import { ModelIcon } from '../ModelIcon';
+import { AgentAvatar } from '../AgentAvatar';
 import { INLINE_CARD_DURATION_S, INLINE_CARD_EASE } from '../inlineCardMotion';
 import { AgentPaneExpand } from './AgentPaneExpand';
 import { agentListSections, isSettledAgentStatus, type AgentRow } from './agentMonitorModel';
@@ -41,10 +41,10 @@ export function AgentPaneList({
   return (
     <div
       data-testid="agent-pane-list"
-      className="relative min-h-0 flex-1 overflow-y-auto px-1.5 pb-2"
+      className="relative min-h-0 flex-1 overflow-y-auto px-2 pb-3"
     >
       {/* Shares the first group's label row, so the list spends no row on it. */}
-      <div className="absolute right-2 top-2 z-10">
+      <div className="absolute right-2 top-3 z-10">
         <AgentPaneExpand expanded={expanded} onToggle={onToggleExpanded} />
       </div>
       <LayoutGroup>
@@ -57,13 +57,13 @@ export function AgentPaneList({
               {section.label ? (
                 <motion.div
                   layout={!reduceMotion}
-                  className="px-3 pb-1 pt-4 text-[12px] font-medium text-droid-text-muted"
+                  className="px-3 pb-1.5 pt-5 text-[13px] font-medium text-droid-text-muted"
                 >
                   {section.label} · {section.rows.length}
                 </motion.div>
               ) : null}
               {section.rows.length === 0 ? (
-                <div className="px-3 py-1.5 text-[12px] text-droid-text-muted">
+                <div className="px-3 py-2 text-[13px] text-droid-text-muted">
                   No active subagents
                 </div>
               ) : null}
@@ -87,7 +87,7 @@ export function AgentPaneList({
                   onClick={() => {
                     setExpandedSections((current) => new Set(current).add(section.key));
                   }}
-                  className="w-full px-3 py-1.5 text-left text-[12px] text-droid-text-muted transition-colors hover:text-droid-text-secondary"
+                  className="w-full rounded-xl px-3 py-2 text-left text-[13px] text-droid-text-muted transition-colors hover:text-droid-text-secondary"
                 >
                   Show {hidden} more
                 </button>
@@ -127,16 +127,19 @@ function AgentListRow({
         onOpen(row.child.childSessionId);
       }}
       title={row.agentName}
-      className="group flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-left transition-colors hover:bg-droid-elevated/50 disabled:cursor-default disabled:hover:bg-transparent"
+      className="group flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left transition-colors hover:bg-droid-elevated/50 disabled:cursor-default disabled:hover:bg-transparent"
     >
-      <ModelIcon provider={row.provider} size={16} />
+      {/* One harness runs every agent of a chat, so its mark would say nothing
+          here: each agent carries its own creature, the one the context panel
+          already gives it. */}
+      <AgentAvatar seed={row.key} size={20} working={running} />
       <span className="flex min-w-0 flex-1 flex-col">
-        <span className="truncate text-[13px] font-medium leading-[18px] text-droid-text">
+        <span className="truncate text-[14px] font-medium leading-5 text-droid-text">
           {row.agentName}
         </span>
         {detail ? (
           <span
-            className={`truncate text-[11px] leading-4 ${
+            className={`truncate text-[12px] leading-4 ${
               running ? 'shimmer-text font-medium' : 'text-droid-text-muted'
             }`}
           >
@@ -144,7 +147,7 @@ function AgentListRow({
           </span>
         ) : null}
       </span>
-      <span className="shrink-0 text-[11px] tabular-nums text-droid-text-muted">{trailing}</span>
+      <span className="shrink-0 text-[12px] tabular-nums text-droid-text-muted">{trailing}</span>
     </motion.button>
   );
 }

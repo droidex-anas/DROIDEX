@@ -34,6 +34,7 @@ export function AgentsWorkspace({
       childSessions: current.childSessions,
       childRuntime: current.childRuntime,
       models: current.models,
+      toolActivity: current.toolActivity,
     };
   }, shallowEqual);
   const { session } = state;
@@ -73,6 +74,7 @@ export function AgentsWorkspace({
         snapshots={snapshots}
         transcript={transcript}
         live={working || childSessionsRunning}
+        toolActivity={state.toolActivity}
         openAgentId={tab.agentId ?? null}
         onOpenAgent={showAgent}
         onBack={() => {

@@ -708,7 +708,11 @@ export default function App() {
                 </motion.div>
               ) : (
                 <>
-                  <ChatView rightInset={rightPanelVisible} isObscured={paneExpanded} />
+                  <ChatView
+                    rightInset={rightPanelVisible}
+                    isObscured={paneExpanded}
+                    besidePane={showUtilityPane}
+                  />
                   <PromptInput rightInset={rightPanelVisible} />
                 </>
               )}
