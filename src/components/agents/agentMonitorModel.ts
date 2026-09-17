@@ -157,23 +157,26 @@ export interface AgentListSection {
   rows: AgentRow[];
 }
 
-// The card's own grouping, and the only one it has: a workflow labels each run
-// of rows with the phase they declared, in the order the phases first appear. A
+// The card's own grouping, and the only one it has: a workflow gathers its rows
+// under the phase they declared, phases in the order they first appear and rows
+// in spawn order within each. A pipeline spawns its phases interleaved, so
+// labelling runs of rows instead would repeat every phase down the card. A
 // plain wave is one unlabelled section, so its rows keep their spawn order.
 export function agentPhaseSections(rows: readonly AgentRow[]): AgentListSection[] {
   if (!rows.some((row) => row.phase)) return [{ key: 'agents', rows: [...rows] }];
-  const sections: AgentListSection[] = [];
+  const sections = new Map<string, AgentListSection>();
   for (const row of rows) {
-    const last = sections.at(-1);
-    if (last && last.label === row.phase) last.rows.push(row);
+    const key = row.phase ?? 'agents';
+    const section = sections.get(key);
+    if (section) section.rows.push(row);
     else
-      sections.push({
-        key: row.phase ?? 'agents',
+      sections.set(key, {
+        key,
         ...(row.phase !== undefined ? { label: row.phase } : {}),
         rows: [row],
       });
   }
-  return sections;
+  return [...sections.values()];
 }
 
 // The agent pane's list, which is scanned rather than read in order: a workflow
@@ -198,15 +201,22 @@ const AGENT_RUN_GAP_MS = 15_000;
 export function currentAgentRun(
   children: readonly ChildSessionSummary[],
 ): readonly ChildSessionSummary[] {
-  const ordered = [...children].sort((a, b) => (a.startedAt ?? 0) - (b.startedAt ?? 0));
-  let start = ordered.length - 1;
+  const unsettled = (child: ChildSessionSummary) => !isSettledAgentStatus(child.status);
+  const started = children
+    .filter((child) => child.startedAt != null)
+    .sort((a, b) => (a.startedAt ?? 0) - (b.startedAt ?? 0));
+  let start = started.length - 1;
   while (start > 0) {
-    const gap = (ordered[start].startedAt ?? 0) - (ordered[start - 1].startedAt ?? 0);
+    const gap = (started[start].startedAt ?? 0) - (started[start - 1].startedAt ?? 0);
     if (gap > AGENT_RUN_GAP_MS) break;
     start -= 1;
   }
-  const run = ordered.slice(Math.max(0, start));
-  return run.some((child) => !isSettledAgentStatus(child.status)) ? run : [];
+  const newest = started.slice(Math.max(0, start));
+  // A child not yet confirmed running has no start time. It belongs to the run
+  // being spawned now: the newest one while that still works, its own otherwise.
+  const waiting = children.filter((child) => child.startedAt == null && unsettled(child));
+  if (newest.some(unsettled)) return [...newest, ...waiting];
+  return waiting;
 }
 
 // Elapsed for the wave: it only starts once one agent is confirmed running, and

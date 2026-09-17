@@ -34,6 +34,7 @@ export function areAgentRowPropsEqual(previous: AgentRowProps, next: AgentRowPro
     previous.row.status === next.row.status &&
     previous.row.name === next.row.name &&
     previous.row.description === next.row.description &&
+    previous.row.provider === next.row.provider &&
     previous.row.target?.toolUseId === next.row.target?.toolUseId &&
     previous.provider === next.provider &&
     previous.durationMs === next.durationMs &&

@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react';
 import type { AgentPaneTab } from './AgentPane';
+import { agentPaneTabProps } from './agentPaneIds';
 
 /* The context panel's tab row: Context, always, and Subagents while the session
    has any. Never a tab per agent — the Subagents tab holds the whole list. */
@@ -24,6 +25,7 @@ export function AgentPaneTabs({
       className="flex h-11 shrink-0 items-center gap-1 border-b border-droid-border/70 pl-2 pr-3"
     >
       <PaneTab
+        tab="context"
         label="Context"
         selected={tab === 'context'}
         onSelect={() => {
@@ -32,6 +34,7 @@ export function AgentPaneTabs({
       />
       {hasAgents ? (
         <PaneTab
+          tab="subagents"
           label="Subagents"
           count={agentCount}
           selected={tab === 'subagents'}
@@ -46,11 +49,13 @@ export function AgentPaneTabs({
 }
 
 function PaneTab({
+  tab,
   label,
   count,
   selected,
   onSelect,
 }: {
+  tab: AgentPaneTab;
   label: string;
   count?: number;
   selected: boolean;
@@ -60,6 +65,7 @@ function PaneTab({
     <button
       type="button"
       role="tab"
+      {...agentPaneTabProps(tab)}
       aria-selected={selected}
       onClick={onSelect}
       className={`flex h-7 shrink-0 items-center gap-1.5 rounded-lg px-2 text-[13px] font-semibold tracking-[-0.01em] transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-droid-accent/60 ${
