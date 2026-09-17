@@ -58,5 +58,7 @@ export function utilityToolFallback(tool: UtilityTool) {
       return <UtilityPaneSkeleton />;
     case 'files':
       return <PanelSkeleton title="files" />;
+    case 'agents':
+      return <UtilityPaneSkeleton />;
   }
 }

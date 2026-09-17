@@ -66,11 +66,10 @@ export function detectChildSession(
     typeof input.subagent_type === 'string' ||
     typeof input.subagentType === 'string';
   if (!isTask && !providerSessionId) return undefined;
-  const label =
-    str(input.subagent_type) ??
-    str(input.subagentType) ??
-    str(input.description) ??
-    (typeof toolName === 'string' ? toolName : undefined);
+  // The call streams in fragments and the first carries no input yet. The tool's
+  // own name must not stand in: a child keeps the first label it is given, so
+  // every agent would be called "Task".
+  const label = str(input.subagent_type) ?? str(input.subagentType) ?? str(input.description);
   return { providerSessionId, toolUseId, label, prompt: taskPrompt(input) };
 }
 

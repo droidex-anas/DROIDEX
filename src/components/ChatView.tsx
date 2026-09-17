@@ -24,7 +24,8 @@ import {
   shouldRequestReleasedChildHistory,
   visibleSessionTarget,
 } from '../lib/childSessions';
-import { useAgentPane } from './agents/AgentPane';
+import { useOpenAgent } from './agents/useOpenAgent';
+import { useScrollingAttribute } from '../hooks/useScrollingAttribute';
 import { ConversationTimeline } from './ConversationTimeline';
 import { WelcomeScreen } from './WelcomeScreen';
 import { isChatWorktreePath } from '../lib/chatWorkspace';
@@ -213,12 +214,16 @@ function ChatHeader({
 export default function ChatView({
   rightInset = false,
   isObscured = false,
+  besidePane = false,
 }: {
   rightInset?: boolean;
   isObscured?: boolean;
+  // The utility pane is open beside the chat, so the chat's scrollbar ends
+  // mid-window and shows only while it moves.
+  besidePane?: boolean;
 }) {
   const dispatch = useStoreDispatch();
-  const agentPane = useAgentPane();
+  const openAgent = useOpenAgent();
   const equalChatState = useCallback(
     (previous: ChatViewState, next: ChatViewState) =>
       isObscured || equalVisibleChatState(previous, next),
@@ -230,6 +235,7 @@ export default function ChatView({
   // the obscured-gated chat state so a settings change always applies live.
   const toolActivity = useStoreSelector((s) => s.toolActivity);
   const scrollRef = useRef<HTMLDivElement>(null);
+  useScrollingAttribute(scrollRef, besidePane);
   const conversationListRef = useRef<ConversationListHandle>(null);
   const viewportLayoutRef = useRef<ConversationViewportLayout | null>(null);
   const activeSession = state.activeSession;
@@ -312,7 +318,6 @@ export default function ChatView({
   );
 
   // A monitor row opens the agent beside the chat instead of navigating to it.
-  const openAgent = agentPane.openAgent;
   const openAgentTab = useCallback(
     (child: ChildSessionSummary) => {
       openAgent(child.childSessionId);
@@ -764,7 +769,9 @@ export default function ChatView({
           <div
             ref={scrollRef}
             onScroll={onScroll}
-            className="flex-1 min-h-0 min-w-0 overflow-y-auto overflow-x-hidden"
+            className={`flex-1 min-h-0 min-w-0 overflow-y-auto overflow-x-hidden ${
+              besidePane ? 'scrollbar-while-scrolling' : ''
+            }`}
             style={{
               paddingRight: rightInset ? 312 : undefined,
               overflowAnchor: 'none',
