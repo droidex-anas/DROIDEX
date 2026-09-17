@@ -10,6 +10,7 @@ const {
   isGithubDeviceUrl,
   listPrs,
   mergePr,
+  normalizePr,
   prDiff,
   prSelector,
   resolveBrewExecutable,
@@ -1020,4 +1021,25 @@ test('prDiff rejects a non-integer selector and returns patch text on success', 
   });
   assert.equal(good.ok, true);
   assert.match(good.diff, /diff --git/);
+});
+
+test('normalizePr keeps a queued re-run pending and never merges two checks into one key', () => {
+  const stillQueued = normalizePr({
+    number: 1,
+    statusCheckRollup: [
+      { workflowName: 'CI', name: 'build', status: 'QUEUED' },
+      { workflowName: 'CI', name: 'build', status: 'COMPLETED', conclusion: 'SUCCESS' },
+    ],
+  });
+  assert.equal(stillQueued.checks, 'pending');
+
+  // 'Build/Test' + 'lint' and 'Build' + 'Test/lint' are different checks.
+  const bothCounted = normalizePr({
+    number: 2,
+    statusCheckRollup: [
+      { workflowName: 'Build/Test', name: 'lint', status: 'COMPLETED', conclusion: 'SUCCESS' },
+      { workflowName: 'Build', name: 'Test/lint', status: 'COMPLETED', conclusion: 'FAILURE' },
+    ],
+  });
+  assert.equal(bothCounted.checks, 'fail');
 });
