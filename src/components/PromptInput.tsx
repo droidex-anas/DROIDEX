@@ -1937,7 +1937,7 @@ export default function PromptInput({
                 />
               )}
 
-            {activeSession && visibleTarget.kind === 'primary' && (
+              {activeSession && visibleTarget.kind === 'primary' && (
                 <button
                   ref={scheduleAnchorRef}
                   type="button"
