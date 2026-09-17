@@ -37,8 +37,9 @@ import {
 } from './sessionTranscript.js';
 import { decodeProviderSessionIdList } from './historyProviderIds.js';
 import {
+  addChildSettledAt,
   CHILD_SESSIONS_TABLE_SCHEMA,
-  migrateChildSessionsToV3,
+  rebuildChildSessionsToV4,
 } from './historyChildSchemaMigration.js';
 import { DEFAULT_PROVIDER, providerKind } from './providers/providerKind.js';
 import { readSessionFileHead, readSessionStart } from './sessionFileHead.js';
@@ -133,6 +134,7 @@ export interface PersistedChildSession {
   spawnLink?: PersistedChildSpawnLink;
   transcriptAvailable: boolean;
   startedAt?: number;
+  settledAt?: number;
   updatedAt: number;
 }
 
@@ -157,7 +159,7 @@ const DEFAULT_HISTORY_WINDOW = 400;
 // (1<<27)/256 = 524,288 lines per segment — multi-GB at the multi-KB lines
 // real sessions store, far beyond any observed file.
 const SEQ_SEGMENT_STRIDE = 1 << 27;
-const HISTORY_SCHEMA_VERSION = 3;
+const HISTORY_SCHEMA_VERSION = 4;
 export const SESSION_INDEX_FILENAME = 'session-index.sqlite';
 export const SESSION_SEARCH_INDEX_FILENAME = 'session-search.sqlite';
 function historySchemaRecovery(): string {
@@ -333,7 +335,10 @@ export class HistoryIndex {
     }
     if (version === 1 || version === 2) {
       if (!hasCanonicalHistorySchema(db, version)) throw new Error(historySchemaRecovery());
-      migrateChildSessionsToV3(db, version);
+      rebuildChildSessionsToV4(db, version);
+    } else if (version === 3) {
+      if (!hasCanonicalHistorySchema(db, 3)) throw new Error(historySchemaRecovery());
+      addChildSettledAt(db);
     } else if (version !== HISTORY_SCHEMA_VERSION) {
       throw new Error(historySchemaRecovery());
     }
@@ -509,6 +514,7 @@ const CANONICAL_TABLE_COLUMNS = {
     'spawn_link_id',
     'transcript_available',
     'started_at',
+    'settled_at',
     'updated_at',
   ],
   events: ['id', 'source_session_id', 'app_session_id', 'kind', 'ts'],
@@ -520,15 +526,21 @@ const CANONICAL_TABLE_COLUMNS = {
   catalog_cache: ['catalog', 'value_json', 'updated_at'],
 } as const;
 
+// A stored index is canonical for the version it was written at, not for the
+// one this build writes: each entry is the child shape that version shipped.
 const CHILD_SESSION_COLUMNS_BY_VERSION = {
   1: CANONICAL_TABLE_COLUMNS.child_sessions.filter(
     (column) =>
-      column !== 'previous_provider_session_ids' && column !== 'group_name' && column !== 'phase',
+      column !== 'previous_provider_session_ids' &&
+      column !== 'group_name' &&
+      column !== 'phase' &&
+      column !== 'settled_at',
   ),
   2: CANONICAL_TABLE_COLUMNS.child_sessions.filter(
-    (column) => column !== 'group_name' && column !== 'phase',
+    (column) => column !== 'group_name' && column !== 'phase' && column !== 'settled_at',
   ),
-  3: CANONICAL_TABLE_COLUMNS.child_sessions,
+  3: CANONICAL_TABLE_COLUMNS.child_sessions.filter((column) => column !== 'settled_at'),
+  4: CANONICAL_TABLE_COLUMNS.child_sessions,
 };
 
 const CHILD_SCHEMA_CHECKS = [
@@ -553,7 +565,7 @@ const CANONICAL_PRIMARY_KEYS = {
 
 function hasCanonicalHistorySchema(
   db: DatabaseSync,
-  version: 1 | 2 | 3 = HISTORY_SCHEMA_VERSION,
+  version: 1 | 2 | 3 | 4 = HISTORY_SCHEMA_VERSION,
 ): boolean {
   for (const [table, expected] of Object.entries(CANONICAL_TABLE_COLUMNS)) {
     const expectedColumns =
@@ -575,7 +587,7 @@ function hasCanonicalHistorySchema(
       ['parent_app_session_id', 'provider_session_id'],
       'provider_session_id is not null',
     ) &&
-    (version === 3 ||
+    (version >= 3 ||
       hasPartialUniqueIndex(
         db,
         'child_sessions_spawn_identity',
@@ -638,13 +650,13 @@ function hasPartialUniqueIndex(
   );
 }
 
-function childSchemaHasChecks(db: DatabaseSync, version: 1 | 2 | 3): boolean {
+function childSchemaHasChecks(db: DatabaseSync, version: 1 | 2 | 3 | 4): boolean {
   const row = db
     .prepare("SELECT sql FROM sqlite_schema WHERE type = 'table' AND name = 'child_sessions'")
     .get() as Record<string, unknown> | undefined;
   const sql = stringValue(row?.sql)?.toLowerCase().replace(/\s+/g, ' ');
   const statusCheck =
-    version === 3
+    version >= 3
       ? "check (status in ('pending', 'running', 'paused', 'completed', 'failed'))"
       : "check (status in ('pending', 'running', 'paused', 'completed'))";
   return Boolean(
@@ -691,6 +703,7 @@ function persistedChildSessionFromRow(row: Record<string, unknown>): PersistedCh
     ...(spawnLink ? { spawnLink } : {}),
     transcriptAvailable: numberValue(row.transcript_available) === 1,
     ...whenNumber(row.started_at, (startedAt) => ({ startedAt })),
+    ...whenNumber(row.settled_at, (settledAt) => ({ settledAt })),
     updatedAt,
   };
 }

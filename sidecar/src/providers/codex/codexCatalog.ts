@@ -296,6 +296,12 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
+// A failing source can answer with a whole document — a sign-in challenge page
+// once put an HTML body in the log. One line, bounded, is all a warning needs.
+const LOG_LINE_LIMIT = 200;
+
 function errorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
+  const message = error instanceof Error ? error.message : String(error);
+  const firstLine = message.split('\n', 1)[0].trim();
+  return firstLine.length > LOG_LINE_LIMIT ? `${firstLine.slice(0, LOG_LINE_LIMIT)}…` : firstLine;
 }

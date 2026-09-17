@@ -11,6 +11,7 @@ import {
   childIdentity,
   childSettingsFromInit,
   parentDroidSession,
+  setChildStatus,
   type ChildIdentity,
   type ChildOpenAttempt,
   type ChildRuntimeState,
@@ -326,7 +327,7 @@ async function bindLoadedChildRuntime(input: {
   // is still driving (a background Task) keeps working while we mirror it,
   // so observing it must not report it as idle; only a turn we drive, an
   // interrupt, or a settlement may settle its status.
-  if (child.status !== 'running') child.status = 'paused';
+  if (child.status !== 'running') setChildStatus(child, 'paused', host.d.now());
   child.transcriptAvailable = true;
   attachOpenedChildNotifications({ parent, child, runtime, loaded, identity, host });
   host.persist(child);

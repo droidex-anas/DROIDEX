@@ -91,7 +91,8 @@ function useNow(active: boolean): number {
 
 // A row that stops running freezes at the moment it settled, so reopening the
 // transcript later shows what the agent took, not how long ago it ran. A row
-// never observed running has no honest duration to report at all.
+// this window never watched can still report the run the sidecar recorded; one
+// with neither has no honest duration to report at all.
 function useAgentRowElapsed(
   rows: readonly AgentRow[],
   now: number,
@@ -126,6 +127,8 @@ function useAgentRowElapsed(
     if (isSettledAgentStatus(row.status) || !live) {
       const frozen = observed.get(row.key);
       if (observed.has(row.key)) elapsed.set(row.key, frozen ?? Math.max(0, now - row.startedAt));
+      else if (row.settledAt != null)
+        elapsed.set(row.key, Math.max(0, row.settledAt - row.startedAt));
       continue;
     }
     if (row.status === 'running' || row.status === 'paused')

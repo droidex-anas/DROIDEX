@@ -65,7 +65,7 @@ test('prepareChildInterrupt discards queued sends and settles without looking ru
   state.queuedRequestId = 'open-1';
   state.turn.pendingSends.push('cancelled');
   const parent = parentWith(state);
-  const prepared = prepareChildInterrupt(parent, state);
+  const prepared = prepareChildInterrupt(parent, state, 1_000);
   assert.equal(prepared.kind, 'queued');
   assert.deepEqual(state.turn.pendingSends, []);
   assert.equal(state.queued, false);
@@ -79,7 +79,7 @@ test('a send already taken for admission is dropped after interrupt', () => {
   state.turn.pendingSends.push('cancelled');
   const drainEpoch = state.turn.pendingDrainEpoch;
   const taken = state.turn.pendingSends.shift();
-  prepareChildInterrupt(parentWith(state), state);
+  prepareChildInterrupt(parentWith(state), state, 1_000);
   assert.equal(taken, 'cancelled');
   assert.notEqual(state.turn.pendingDrainEpoch, drainEpoch);
   assert.equal(
@@ -91,7 +91,7 @@ test('a send already taken for admission is dropped after interrupt', () => {
 test('a send queued after interrupt still drains on a later admission', () => {
   const state = child();
   state.turn.pendingSends.push('cancelled');
-  prepareChildInterrupt(parentWith(state), state);
+  prepareChildInterrupt(parentWith(state), state, 1_000);
   state.turn.pendingSends.push('new prompt');
   assert.equal(takeAdmittedSend(state), 'new prompt');
 });
@@ -100,7 +100,7 @@ test('prepareChildInterrupt of a live child keeps the runtime path', () => {
   const state = child();
   state.turn.pendingSends.push('cancelled');
   state.runtime = { session: {} as never, generation: 1, lastUsedAt: 0 };
-  const prepared = prepareChildInterrupt(parentWith(state), state);
+  const prepared = prepareChildInterrupt(parentWith(state), state, 1_000);
   assert.equal(prepared.kind, 'live');
   assert.deepEqual(state.turn.pendingSends, []);
   assert.equal(state.turn.interrupting, false);
