@@ -185,6 +185,7 @@ export interface SessionManagerDependencies {
 export interface SessionManagerOptions {
   assetUrlFor?: (path: string) => string;
   onSessionAvailable?: (appSessionId: string) => void;
+  onScheduledCapacityChanged?: () => void;
   dependencies?: SessionManagerDependencies;
   initialModels?: ModelInfo[];
   // Injectable because a real probe starts the provider's CLI, which keeps
@@ -580,6 +581,7 @@ export class SessionManager {
       hasActiveSettingsChanges: (appSessionId) =>
         this.modelSettings.hasActiveMutations(appSessionId),
       onSessionAvailable: options.onSessionAvailable,
+      onScheduledCapacityChanged: options.onScheduledCapacityChanged,
       context: this.context,
       forgetInteractions: (appSessionId) => {
         this.interactions.forgetSession(appSessionId);

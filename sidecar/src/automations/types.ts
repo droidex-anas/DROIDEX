@@ -12,7 +12,9 @@ type AutomationTarget =
 
 export type AutomationDeliveryReceipt =
   | { status: 'accepted'; settled: Promise<void> }
-  | { status: 'busy' }
+  // `target` clears when that conversation frees up; `capacity` is global and
+  // clears when any scheduled runtime slot is released.
+  | { status: 'busy'; retryOn: 'target' | 'capacity' }
   | { status: 'unavailable'; error: string };
 
 export type AutomationExecutionMode = 'local' | 'worktree';

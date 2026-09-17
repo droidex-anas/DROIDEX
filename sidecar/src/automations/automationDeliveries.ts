@@ -28,7 +28,11 @@ export class AutomationDeliveries {
   private readonly inFlightAttempts = new Map<string, Promise<void>>();
   private readonly unsettledTurns = new Set<string>();
   private readonly retryBlockedTargets = new Set<string>();
+  // Blocked on the global runtime cap rather than on the target itself, so
+  // nothing this conversation does will clear it — only a freed slot will.
+  private readonly capacityBlockedTargets = new Set<string>();
   private readonly availabilityChangedDuringAttempt = new Set<string>();
+  private capacityChangedDuringAttempt = false;
 
   constructor(private readonly options: DeliveryOptions) {}
 
@@ -47,9 +51,10 @@ export class AutomationDeliveries {
     );
     // A target with nothing queued and no attempt running cannot be waiting on
     // a retry either, so it stops blocking the next delivery to reach it.
-    for (const id of this.retryBlockedTargets) {
-      if (!queuedTargets.has(id) && !this.inFlightAttempts.has(id))
-        this.retryBlockedTargets.delete(id);
+    for (const set of [this.retryBlockedTargets, this.capacityBlockedTargets]) {
+      for (const id of set) {
+        if (!queuedTargets.has(id) && !this.inFlightAttempts.has(id)) set.delete(id);
+      }
     }
     // Attempts only settle on a later tick, so tracking admissions here keeps
     // the cap exact without rebuilding the set on every candidate.
@@ -59,7 +64,8 @@ export class AutomationDeliveries {
       const target = run.automation.target;
       if (target.kind !== 'existing-session' || run.status !== 'queued') continue;
       const id = target.appSessionId;
-      if (active.has(id) || this.retryBlockedTargets.has(id)) continue;
+      if (active.has(id) || this.retryBlockedTargets.has(id) || this.capacityBlockedTargets.has(id))
+        continue;
       active.add(id);
       const attempt = this.attempt(run, id)
         .catch((error: unknown) => {
@@ -68,6 +74,12 @@ export class AutomationDeliveries {
         .finally(() => {
           this.inFlightAttempts.delete(id);
           if (this.availabilityChangedDuringAttempt.delete(id)) this.retryBlockedTargets.delete(id);
+          // A slot freed while this attempt ran would otherwise be lost: the
+          // attempt only joins the capacity set once its receipt comes back.
+          if (this.capacityChangedDuringAttempt) {
+            this.capacityChangedDuringAttempt = false;
+            this.capacityBlockedTargets.clear();
+          }
           this.startQueued();
         });
       this.inFlightAttempts.set(id, attempt);
@@ -83,13 +95,25 @@ export class AutomationDeliveries {
         id = event.session.appSessionId;
         break;
       case 'session.closed':
+        // A released runtime frees a slot and may also be the target itself.
         this.retryBlockedTargets.clear();
-        this.startQueued();
+        this.capacityChanged();
         return;
       default:
         return;
     }
     this.sessionAvailable(id);
+  }
+
+  /**
+   * A scheduled runtime slot was released without a session closing — a resume
+   * that failed or was cancelled. Nothing is emitted for the targets waiting on
+   * it, so they are rearmed here.
+   */
+  capacityChanged(): void {
+    if (this.inFlightAttempts.size > 0) this.capacityChangedDuringAttempt = true;
+    this.capacityBlockedTargets.clear();
+    this.startQueued();
   }
 
   sessionAvailable(appSessionId: string): void {
@@ -176,7 +200,12 @@ export class AutomationDeliveries {
         .automations.find((item) => item.id === current.automationId);
       if (automation) projectSettledRun(automation, current, this.options.now());
     });
-    if (receipt.status !== 'busy') this.retryBlockedTargets.delete(appSessionId);
+    if (receipt.status === 'busy' && receipt.retryOn === 'capacity') {
+      this.retryBlockedTargets.delete(appSessionId);
+      this.capacityBlockedTargets.add(appSessionId);
+    } else if (receipt.status !== 'busy') {
+      this.retryBlockedTargets.delete(appSessionId);
+    }
   }
 
   private find(id: string): AutomationRun | undefined {

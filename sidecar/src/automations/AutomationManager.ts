@@ -206,6 +206,11 @@ export class AutomationManager {
     if (!this.closed) this.deliveries.sessionAvailable(appSessionId);
   }
 
+  async observeSchedulingCapacity(): Promise<void> {
+    await this.ready;
+    if (!this.closed) this.deliveries.capacityChanged();
+  }
+
   isRunSession(appSessionId: string): boolean {
     return storeHasRunSession(this.store, appSessionId);
   }

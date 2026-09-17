@@ -42,6 +42,11 @@ const manager = new SessionManager(
         console.error('Automation availability observer failed', error);
       });
     },
+    onScheduledCapacityChanged: () => {
+      void automationManager?.observeSchedulingCapacity().catch((error: unknown) => {
+        console.error('Automation scheduling capacity observer failed', error);
+      });
+    },
   },
 );
 

@@ -146,6 +146,7 @@ test('scheduled delivery waits for user settings changes and keeps their effecti
     await provider.waitForSettings(count + 1);
     assert.deepEqual(await h.deliverScheduledMessage('provider-1', 'Later', () => true), {
       status: 'busy',
+      retryOn: 'target',
     });
     const eventCount = h.events.length;
     gate.resolve();
@@ -175,6 +176,7 @@ test('manual compaction completion rearms delivery without fabricating a summary
     const compacting = h.handle({ type: 'session.compact', appSessionId: 'provider-1' });
     assert.deepEqual(await h.deliverScheduledMessage('provider-1', 'Later', () => true), {
       status: 'busy',
+      retryOn: 'target',
     });
     assert.deepEqual(available, []);
     gate.resolve();
@@ -205,6 +207,7 @@ test('only the last pending question response rearms delivery, without protocol 
     assert.equal(questions.length, 2);
     assert.deepEqual(await h.deliverScheduledMessage('provider-1', 'Later', () => true), {
       status: 'busy',
+      retryOn: 'target',
     });
     const eventCount = h.events.length;
     for (const [index, event] of questions.entries()) {

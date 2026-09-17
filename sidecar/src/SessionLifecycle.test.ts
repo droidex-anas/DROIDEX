@@ -93,6 +93,7 @@ function createHarness(ordinarySummaries: SessionSummary[] = []) {
   let compactionLimit = (): Promise<number> => Promise.resolve(800);
   let shutdownStarted = false;
   let pendingInteractions = false;
+  let capacityReleases = 0;
   let closeChildren: (appSessionId: string) => Promise<void> = () => Promise.resolve();
   let killProcesses: (appSessionId: string) => Promise<void> = () => Promise.resolve();
   let emitSessionList: (closedProviderSessionId: string) => void | Promise<void> = () =>
@@ -277,6 +278,9 @@ function createHarness(ordinarySummaries: SessionSummary[] = []) {
     openProviderTranscript: () => {},
     forgetProviderTranscript: () => {},
     hasPendingInteractions: () => pendingInteractions,
+    onScheduledCapacityChanged: () => {
+      capacityReleases += 1;
+    },
     forgetInteractions: (appSessionId) => {
       forgettingAfterUnregister.push(registry.getLive(appSessionId) === undefined);
       calls.push({ target: 'cleanup', method: 'interactions.forget', args: [appSessionId] });
@@ -319,6 +323,7 @@ function createHarness(ordinarySummaries: SessionSummary[] = []) {
     forgettingAfterUnregister,
     eventFlowForgettingAfterUnregister,
     missionForgettingAfterUnregister,
+    capacityReleases: () => capacityReleases,
     setPendingInteractions: (pending: boolean) => {
       pendingInteractions = pending;
     },
@@ -1436,7 +1441,7 @@ test('scheduled delivery waits outside pendingSends for turns, compaction, inter
   const busy = async () => {
     assert.deepEqual(
       await harness.lifecycle.deliverScheduled('scheduled-busy', 'must wait', () => true),
-      { status: 'busy' },
+      { status: 'busy', retryOn: 'target' },
     );
     assert.deepEqual(provider.prompts, []);
   };
@@ -1504,7 +1509,7 @@ test('scheduled historical resumes honor the runtime cap without restricting liv
   }
   assert.deepEqual(
     await harness.lifecycle.deliverScheduled('bounded-8', 'wait for capacity', () => true),
-    { status: 'busy' },
+    { status: 'busy', retryOn: 'capacity' },
   );
   assert.equal(harness.runtime.loadCalls.length, 8);
   const live = await harness.lifecycle.deliverScheduled(
@@ -1524,6 +1529,36 @@ test('scheduled historical resumes honor the runtime cap without restricting liv
   assert.equal(receipt.status, 'accepted');
   if (receipt.status === 'accepted') await receipt.settled;
   assert.deepEqual(provider.prompts, ['capacity freed']);
+  await harness.lifecycle.closeAll();
+});
+
+test('a resume that fails hands its scheduled runtime slot back without a session closing', async () => {
+  const harness = createHarness([
+    ...Array.from({ length: 7 }, (_, index) => summary(`held-${index}`)),
+    summary('doomed'),
+    summary('waiting'),
+  ]);
+  for (let index = 0; index < 7; index += 1) {
+    queueLoad(harness, `held-${index}`);
+    await harness.lifecycle.resume(`held-${index}`);
+  }
+  assert.equal(harness.capacityReleases(), 0);
+
+  // Seven resident plus one resume in flight is the whole scheduled budget.
+  harness.runtime.loadQueue.set('doomed', [new Error('provider is gone')]);
+  const gate = harness.runtime.deferNextLoad();
+  const doomed = harness.lifecycle.resume('doomed');
+  await harness.runtime.waitForLoad('doomed');
+  assert.deepEqual(
+    await harness.lifecycle.deliverScheduled('waiting', 'needs a slot', () => true),
+    { status: 'busy', retryOn: 'capacity' },
+  );
+
+  gate.resolve();
+  assert.equal(await doomed, false);
+  // No session closed, so this callback is the only thing that says a slot is
+  // free again; without it a capacity-blocked delivery never retries.
+  assert.equal(harness.capacityReleases(), 1);
   await harness.lifecycle.closeAll();
 });
 

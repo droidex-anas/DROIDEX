@@ -30,7 +30,7 @@ export async function deliverScheduledMessage(
   if (historical?.appSessionId !== appSessionId || !available()) return unavailable;
   let live = d.registry.getLive(appSessionId);
   if (!live) {
-    if (!context.canResume()) return { status: 'busy' };
+    if (!context.canResume()) return { status: 'busy', retryOn: 'capacity' };
     if (!(await context.resume(appSessionId))) return unavailable;
     if (!available()) return unavailable;
     live = d.registry.getLive(appSessionId);
@@ -44,12 +44,12 @@ export async function deliverScheduledMessage(
     d.registry.getLive(appSessionId) === captured &&
     captured.session === provider &&
     !captured.closeMode;
-  if (isBusy(live, d)) return { status: 'busy' };
+  if (isBusy(live, d)) return { status: 'busy', retryOn: 'target' };
   const settingsApplied = await d.applyPendingSessionSettings(appSessionId);
   if (!current()) return unavailable;
   if (!settingsApplied)
     return { status: 'unavailable', error: 'Could not apply the target session settings.' };
-  if (isBusy(live, d)) return { status: 'busy' };
+  if (isBusy(live, d)) return { status: 'busy', retryOn: 'target' };
   let acknowledge: (accepted: boolean) => void = () => undefined;
   const acknowledgement = new Promise<boolean>((resolve) => {
     acknowledge = resolve;

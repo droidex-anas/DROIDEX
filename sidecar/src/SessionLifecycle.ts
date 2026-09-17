@@ -117,6 +117,8 @@ type SteerOutcome = 'taken' | 'queued' | 'interrupt';
 
 export interface SessionLifecycleDependencies {
   onSessionAvailable?: ((appSessionId: string) => void) | undefined;
+  // A scheduled runtime slot was released without a session closing.
+  onScheduledCapacityChanged?: (() => void) | undefined;
   provider: (kind: ProviderKind) => Provider;
   providerDefaultModelId?: (kind: ProviderKind) => string | undefined;
   registry: SessionRegistry<LiveSession>;
@@ -306,10 +308,13 @@ export class SessionLifecycle {
     if (pending) return pending;
 
     const operation = this.resumeOnce(requestedAppSessionId).finally(() => {
-      if (this.resumeOperations.get(appSessionId) === operation) {
-        this.resumeOperations.delete(appSessionId);
-        this.canceledResumes.delete(appSessionId);
-      }
+      if (this.resumeOperations.get(appSessionId) !== operation) return;
+      this.resumeOperations.delete(appSessionId);
+      this.canceledResumes.delete(appSessionId);
+      // A resume that produced a runtime spent the slot it was holding, and
+      // registering it already announced the session. One that failed or was
+      // cancelled hands the slot back silently, so say so.
+      if (!d.registry.getLive(appSessionId)) d.onScheduledCapacityChanged?.();
     });
     this.resumeOperations.set(appSessionId, operation);
     return operation;

@@ -159,7 +159,7 @@ test(
       now: () => clock,
       deliverMessage: async () => {
         attempts += 1;
-        return { status: 'busy' };
+        return { status: 'busy', retryOn: 'target' };
       },
     });
     try {
@@ -222,7 +222,7 @@ test('availability racing a busy receipt rearms the exact target once', async ()
       if (attempts > 1) return { status: 'accepted', settled: Promise.resolve() };
       entered.resolve();
       await blocked.promise;
-      return { status: 'busy' };
+      return { status: 'busy', retryOn: 'target' };
     },
   });
   try {
@@ -251,7 +251,7 @@ test(
       deliverMessage: async () => {
         attempted.resolve();
         await blocked.promise;
-        return { status: 'busy' };
+        return { status: 'busy', retryOn: 'target' };
       },
     });
     let restarted: AutomationManager | undefined;
@@ -297,7 +297,7 @@ test(
   'queued deliveries recover on startup and unavailable targets fail without replacement',
   { timeout: 10_000 },
   async () => {
-    const h = await harness({ deliverMessage: async () => ({ status: 'busy' }) });
+    const h = await harness({ deliverMessage: async () => ({ status: 'busy', retryOn: 'target' }) });
     let restarted: AutomationManager | undefined;
     try {
       const automation = await h.manager.create(message());
@@ -485,7 +485,7 @@ test(
     const h = await harness({
       deliverMessage: async () => {
         attempts += 1;
-        return { status: 'busy' };
+        return { status: 'busy', retryOn: 'target' };
       },
     });
     try {
