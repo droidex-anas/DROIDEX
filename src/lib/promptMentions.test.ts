@@ -53,6 +53,14 @@ test('splitTrailingMentions recovers an extensionless path with spaces', () => {
   });
 });
 
+test('splitTrailingMentions recovers a Windows path with no extension', () => {
+  const composed = composePrompt('read', [], ['C:\\repo\\My Docs\\LICENSE']);
+  assert.deepEqual(splitTrailingMentions(composed), {
+    text: 'read',
+    files: ['C:\\repo\\My Docs\\LICENSE'],
+  });
+});
+
 test('splitTrailingMentions recovers a bare file name that contains spaces', () => {
   const composed = composePrompt('summarise', [], ['Meeting Notes.pdf']);
   assert.deepEqual(splitTrailingMentions(composed), {
