@@ -25,7 +25,7 @@ interface Dependencies {
   isShutdownStarted: () => boolean;
   refreshPrimary: (live: LiveSession, modelChanged: boolean) => Promise<void>;
   onPrimaryModelChanged: (summary: SessionSummary, from: string, to: string) => void;
-  onSettled: () => void;
+  onSettled: (appSessionId: string) => void;
   emitError: (error: SettingsError) => void;
 }
 
@@ -43,6 +43,15 @@ export class SessionModelSettings {
 
   hasPending(appSessionId: string): boolean {
     return this.pending.has(appSessionId) || this.queues.has(appSessionId);
+  }
+
+  /**
+   * A write is in flight right now. Narrower than `hasPending`, which also
+   * counts settings remembered for a session that is not open: those are
+   * applied by the next send, so they must not read as busy to one.
+   */
+  hasActiveMutations(appSessionId: string): boolean {
+    return this.queues.has(appSessionId);
   }
 
   async waitForMutations(appSessionId: string): Promise<void> {
@@ -267,7 +276,7 @@ export class SessionModelSettings {
     return next.finally(() => {
       if (queue.tail === next) {
         this.queues.delete(appSessionId);
-        this.d.onSettled();
+        this.d.onSettled(appSessionId);
       }
     });
   }

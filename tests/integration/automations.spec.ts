@@ -10,6 +10,7 @@ import {
 
 const session: SessionSummary = {
   appSessionId: 'scheduled-target',
+  provider: 'droid',
   providerSessionId: 'replaceable-provider',
   sessionPurpose: 'chat',
   interactionMode: 'auto',

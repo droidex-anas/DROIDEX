@@ -545,8 +545,11 @@ export class SessionManager {
       onPrimaryModelChanged: (summary, from, to) => {
         this.appendSettingsStatus(summary, `Model switched: ${from} → ${to}`, { from, to });
       },
-      onSettled: () => {
+      onSettled: (appSessionId) => {
         this.runtimeRetirement.arm();
+        // A settled write is one of the states that made this session refuse a
+        // turn, so a scheduled delivery waiting on it can be rearmed.
+        this.onSessionAvailable?.(appSessionId);
       },
       emitError: (error) => {
         this.emitError(error);
@@ -574,7 +577,8 @@ export class SessionManager {
         this.runPrimaryTurn(liveSession, prompt, mentions, delivery),
       eventFlow: this.eventFlow,
       hasPendingInteractions: (appSessionId) => this.interactions.hasPending(appSessionId),
-      hasActiveSettingsChanges: (appSessionId) => this.modelSettings.hasPending(appSessionId),
+      hasActiveSettingsChanges: (appSessionId) =>
+        this.modelSettings.hasActiveMutations(appSessionId),
       onSessionAvailable: options.onSessionAvailable,
       context: this.context,
       forgetInteractions: (appSessionId) => {
@@ -847,7 +851,6 @@ export class SessionManager {
         if (cmd.interactionMode !== undefined) {
           await this.setInteractionMode(cmd.appSessionId, cmd.interactionMode);
         }
-        this.noteSettingsSettled(cmd.appSessionId);
         return;
       case 'session.compact': {
         await this.compactSession(cmd.appSessionId, cmd.customInstructions);
@@ -929,7 +932,6 @@ export class SessionManager {
       case 'settings.agent.update':
         assertProviderUnchanged(cmd);
         await this.modelSettings.updateAgent(cmd);
-        if (cmd.appSessionId) this.noteSettingsSettled(cmd.appSessionId);
         return;
       case 'settings.compaction.update':
         await this.compaction.updateLimits(cmd, this.compactionRetuneTargets());
@@ -1344,13 +1346,6 @@ export class SessionManager {
   // does not need TodoWrite — it otherwise loops updating the list after it has
   // already answered. Disable TodoWrite for design turns and restore it for
   // normal turns, calling updateSettings only when the policy changes.
-  // A settings write is one of the states that makes a session refuse a turn,
-  // so a scheduled delivery waiting on this target can be rearmed once it lands.
-  private noteSettingsSettled(appSessionId: string): void {
-    const id = this.registry.resolveSummary(appSessionId)?.appSessionId ?? appSessionId;
-    if (!this.modelSettings.hasPending(id)) this.onSessionAvailable?.(id);
-  }
-
   private async applyDesignToolPolicy(liveSession: LiveSession, design: boolean): Promise<boolean> {
     // When the in-memory flag is unset (cold start / page reload) we don't
     // know the session's current disabledToolIds, so always call updateSettings

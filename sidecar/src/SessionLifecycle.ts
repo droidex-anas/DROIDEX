@@ -1104,8 +1104,6 @@ export class SessionLifecycle {
       } else if (d.registry.getLive(stableAppSessionId) !== liveSession) {
         const queued = liveSession.pendingSends.splice(0);
         if (queued.length > 0) void this.redeliverQueuedSends(stableAppSessionId, queued);
-      } else if (d.registry.getLive(stableAppSessionId) !== liveSession) {
-        liveSession.pendingSends = [];
       } else if (liveSession.autoCompacting) {
         const compactionTarget = this.primaryAutomaticCompactionTarget(liveSession);
         if (compactionTarget) d.compaction.afterTurn(compactionTarget);

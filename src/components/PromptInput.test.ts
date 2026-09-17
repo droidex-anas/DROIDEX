@@ -1,7 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { shouldShowTurnStarting, shouldStopTurnStarting } from './PromptInput';
-import { shouldResumeQueuedPromptAfterUpdate } from './composer/useQueuedPromptDelivery';
+import { shouldStopTurnStarting } from './PromptInput';
 import type { TranscriptEvent } from '../types/bridge';
 import { hasAppContextForTranscript } from '../lib/composePrompt';
 import { shouldResumeQueuedPromptAfterUpdate } from './composer/useQueuedPromptDelivery';
