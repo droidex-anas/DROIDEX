@@ -325,11 +325,11 @@ export default function ChatView({
     [openAgent],
   );
 
-  // A captured change carries its own diff and opens anywhere; a bare path has
-  // to be read from the workspace, so a folderless chat has nothing to show.
   const cwd = activeSession?.cwd;
   const openReviewFile = useCallback<OpenReviewFileHandler>(
     (path, change) => {
+      // A captured change carries its own diff and opens anywhere; a bare path
+      // has to be read from the workspace, so a folderless chat has nothing.
       if (!change && !cwd) return;
       dispatch(openReviewAt(path, change));
     },
