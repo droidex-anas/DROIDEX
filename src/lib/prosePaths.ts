@@ -21,13 +21,12 @@ const FILE_EXTENSION =
 // Repo files whose whole name identifies them, so no extension can. Mirrors the
 // extensionless names in ./filePreview, which belongs to the lazily loaded Files
 // pane and must not be pulled into the transcript's bundle. "profile" is left
-// out on purpose: as inline code it reads as the word, not the file.
-const WHOLE_NAME_FILES = new Set([
-  'dockerfile',
-  'makefile',
-  'rakefile',
-  'gemfile',
-  'procfile',
+// out on purpose: as inline code it reads as the word, not the file. The dotted
+// names are listed apart because without their dot they are ordinary words:
+// "gitignore" in a sentence is prose, ".gitignore" is a file.
+const WHOLE_NAME_FILES = new Set(['dockerfile', 'makefile', 'rakefile', 'gemfile', 'procfile']);
+
+const DOTFILE_NAMES = new Set([
   'babelrc',
   'eslintrc',
   'prettierrc',
@@ -41,7 +40,9 @@ const WHOLE_NAME_FILES = new Set([
 ]);
 
 function namesWholeNameFile(name: string): boolean {
-  return WHOLE_NAME_FILES.has(name.toLowerCase().replace(/^\./, ''));
+  const lower = name.toLowerCase();
+  if (WHOLE_NAME_FILES.has(lower)) return true;
+  return lower.startsWith('.') && DOTFILE_NAMES.has(lower.slice(1));
 }
 
 // Inline code that cannot be a path at all: a command, a call, a glob, a URL or
@@ -79,5 +80,7 @@ export function repoPathInProse(text: string): string | null {
   const name = segments.at(-1) ?? '';
   if (FILE_EXTENSION.test(name) || namesWholeNameFile(name)) return path;
   const absolute = drive !== '' || body.startsWith('/');
-  return !absolute && segments.length > 2 ? path : null;
+  // The depth fallback has no extension to lean on, so a space in the last
+  // segment means prose ("src/lib/index.ts is stale"), not a file name.
+  return !absolute && segments.length > 2 && !name.includes(' ') ? path : null;
 }

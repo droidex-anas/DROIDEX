@@ -1037,8 +1037,10 @@ test('normalizePr keeps a queued re-run pending and never merges two checks into
   const bothCounted = normalizePr({
     number: 2,
     statusCheckRollup: [
-      { workflowName: 'Build/Test', name: 'lint', status: 'COMPLETED', conclusion: 'SUCCESS' },
+      // The failure is listed first on purpose: a key that merges the two lets
+      // the later success bury it, so this reads 'pass' on a colliding key.
       { workflowName: 'Build', name: 'Test/lint', status: 'COMPLETED', conclusion: 'FAILURE' },
+      { workflowName: 'Build/Test', name: 'lint', status: 'COMPLETED', conclusion: 'SUCCESS' },
     ],
   });
   assert.equal(bothCounted.checks, 'fail');

@@ -406,7 +406,9 @@ export const FeedItemView = memo(function FeedItemView({
           active={live}
           sessionLive={sessionLive ?? live}
           density={density}
-          onOpenReviewFile={onOpenReviewFile}
+          // A tool row names a path and carries no captured change, so without a
+          // workspace there is nothing for Review to open: it stays plain text.
+          onOpenReviewFile={cwd ? onOpenReviewFile : undefined}
         />
       );
     case 'turnChanges':

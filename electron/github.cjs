@@ -140,12 +140,11 @@ function rollupChecks(value) {
     const prior = latest.get(key);
     // A queued re-run has no timestamp yet; it is still the newer attempt, and
     // a finished attempt must not displace it just because the missing
-    // timestamp sorts below every other string.
-    if (
-      !prior ||
-      isRunning(item) ||
-      (!isRunning(prior) && startedAtOf(item) >= startedAtOf(prior))
-    ) {
+    // timestamp sorts below every other string. A running attempt that does
+    // carry a timestamp is compared normally, so a genuinely newer finished run
+    // still wins and an abandoned one cannot hold the rollup at pending.
+    const priorIsUndated = isRunning(prior) && startedAtOf(prior) === '';
+    if (!prior || isRunning(item) || (!priorIsUndated && startedAtOf(item) >= startedAtOf(prior))) {
       latest.set(key, item);
     }
   }
