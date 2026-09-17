@@ -114,6 +114,9 @@ export interface ChildSessionSummary {
   spawnLink?: ChildSpawnLink;
   transcriptAvailable: boolean;
   startedAt?: number;
+  // When the child reached 'completed' or 'failed'. Absent while it can still
+  // run, and absent for children stored before this was recorded.
+  settledAt?: number;
   // Provider-declared: how live output actually arrives. Orthogonal to phase.
   streamFidelity: StreamFidelity;
   // Live-only (never persisted) and absent unless the parent actually polled the

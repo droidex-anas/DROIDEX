@@ -325,7 +325,9 @@ function isChildSessionSummary(value: unknown): boolean {
     typeof value.transcriptAvailable === 'boolean' &&
     isStreamFidelity(value.streamFidelity) &&
     isOptionalString(value.group) &&
-    isOptionalString(value.phase)
+    isOptionalString(value.phase) &&
+    isOptionalTimestamp(value.startedAt) &&
+    isOptionalTimestamp(value.settledAt)
   );
 }
 
@@ -462,6 +464,10 @@ function hasStrings(value: Record<string, unknown>, keys: readonly string[]): bo
 
 function isOptionalString(value: unknown): boolean {
   return value === undefined || typeof value === 'string';
+}
+
+function isOptionalTimestamp(value: unknown): boolean {
+  return value === undefined || nonNegativeSafeInteger(value);
 }
 
 function hasNumbers(value: Record<string, unknown>, keys: readonly string[]): boolean {

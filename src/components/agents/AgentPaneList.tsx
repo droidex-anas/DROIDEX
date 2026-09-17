@@ -165,10 +165,15 @@ function elapsedLabel(row: AgentRow, elapsedMs: ReadonlyMap<string, number>): st
   return ms != null ? formatDuration(ms) : '';
 }
 
-// When the agent ran. Exact for an agent this window saw finish; otherwise its
-// start stands in, which at the scale this reads at ("18h ago") is the same answer.
+// When the agent finished. The recorded settling time when there is one, then
+// what this window watched; for agents that settled before the app recorded it,
+// the start stands in, which at the scale this reads at ("18h ago") is the same
+// answer.
 function finishedAgo(row: AgentRow, elapsedMs: ReadonlyMap<string, number>, now: number): string {
-  if (row.startedAt == null) return '';
-  const relative = formatRelativeTime(row.startedAt + (elapsedMs.get(row.key) ?? 0), now);
+  const settledAt =
+    row.settledAt ??
+    (row.startedAt == null ? undefined : row.startedAt + (elapsedMs.get(row.key) ?? 0));
+  if (settledAt == null) return '';
+  const relative = formatRelativeTime(settledAt, now);
   return relative === 'now' ? 'just now' : `${relative} ago`;
 }

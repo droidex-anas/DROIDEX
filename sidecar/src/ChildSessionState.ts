@@ -89,6 +89,7 @@ export interface ChildSessionState {
   spawnLink?: PersistedChildSession['spawnLink'];
   transcriptAvailable: boolean;
   startedAt?: number;
+  settledAt?: number;
   // See ChildSpawnObservation.activity: live-only, so it is absent after a
   // restart even though the child itself is restored from history.
   activity?: ChildActivity;
@@ -200,6 +201,18 @@ export function newChildState(input: {
   });
 }
 
+const isSettledStatus = (status: ChildStatus): boolean =>
+  status === 'completed' || status === 'failed';
+
+/** The one door every child status change goes through, so a finished child
+    remembers when it finished and one that runs again forgets. The first stamp
+    wins: a settled child observed as settled again keeps the moment it stopped. */
+export function setChildStatus(child: ChildSessionState, status: ChildStatus, now: number): void {
+  child.status = status;
+  if (isSettledStatus(status)) child.settledAt ??= now;
+  else child.settledAt = undefined;
+}
+
 export function applyObservedChild(
   child: ChildSessionState,
   observed: ChildSpawnObservation,
@@ -217,9 +230,13 @@ export function applyObservedChild(
   child.providerSessionId = providerSessionId;
   if (observed.transcriptAvailable === false && !observed.done) child.closeWhenIdle = false;
   // Terminal observations settle through complete(), after metadata is applied.
-  if (observed.done) child.status = 'running';
-  else if (observed.status) child.status = observed.status;
-  else if (observed.transcriptAvailable !== false) child.status = 'running';
+  // A state feed can report the same ending more than once; a child that has
+  // already settled must not be walked back through 'running', which would
+  // restart its clock.
+  if (observed.done) {
+    if (!isSettledStatus(child.status)) setChildStatus(child, 'running', now);
+  } else if (observed.status) setChildStatus(child, observed.status, now);
+  else if (observed.transcriptAvailable !== false) setChildStatus(child, 'running', now);
   applyChildLaunchSettings(child, {
     modelId: observed.modelId,
     reasoningEffort: observed.reasoningEffort,
@@ -265,6 +282,7 @@ export function persistedChild(child: ChildSessionState): PersistedChildSession 
     ...(child.reasoningEffort ? { reasoningEffort: child.reasoningEffort } : {}),
     ...(child.spawnLink ? { spawnLink: child.spawnLink } : {}),
     ...(child.startedAt === undefined ? {} : { startedAt: child.startedAt }),
+    ...(child.settledAt === undefined ? {} : { settledAt: child.settledAt }),
   };
 }
 

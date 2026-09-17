@@ -207,7 +207,7 @@ test('fresh history index uses only the canonical child schema', () => {
   ).map(({ name }) => name);
   db.close();
 
-  assert.equal(version.user_version, 3);
+  assert.equal(version.user_version, 4);
   assert.ok(tables.includes('child_sessions'));
   assert.ok(!tables.includes('child_session_links'));
   assert.ok(!tables.includes('linked_child_sessions'));
@@ -228,6 +228,7 @@ test('fresh history index uses only the canonical child schema', () => {
     'spawn_link_id',
     'transcript_available',
     'started_at',
+    'settled_at',
     'updated_at',
   ]);
 });
@@ -320,14 +321,14 @@ for (const releasedVersion of [1, 2]) {
         `);
       }
       const originalChild = released.prepare('SELECT * FROM child_sessions').get();
-      released.exec('CREATE TABLE child_sessions_v3 (reserved INTEGER);');
+      released.exec('CREATE TABLE child_sessions_v4 (reserved INTEGER);');
       assert.throws(
         () => HistoryIndex.initializeOrValidateHistorySchema(released),
         /already exists/,
       );
       assert.equal(released.prepare('PRAGMA user_version').get()?.user_version, releasedVersion);
       assert.deepEqual(released.prepare('SELECT * FROM child_sessions').get(), originalChild);
-      released.exec('BEGIN; DROP TABLE child_sessions_v3; COMMIT;');
+      released.exec('BEGIN; DROP TABLE child_sessions_v4; COMMIT;');
       released.close();
 
       const upgraded = new HistoryIndex();
@@ -348,7 +349,7 @@ for (const releasedVersion of [1, 2]) {
         .get('existing-chat', 'existing-child') as { previous_provider_session_ids: string };
       verified.close();
 
-      assert.equal(version.user_version, 3);
+      assert.equal(version.user_version, 4);
       assert.equal(summary.title, 'Existing chat');
       assert.equal(summary.provider_session_id, 'existing-provider');
       assert.equal(
@@ -371,6 +372,85 @@ for (const releasedVersion of [1, 2]) {
     }
   });
 }
+
+test('schema v3 gains the settling time without losing existing children', () => {
+  const releasedHome = mkdtempSync(join(tmpdir(), 'droid-history-settled-upgrade-'));
+  process.env.HOME = releasedHome;
+  try {
+    const initial = new HistoryIndex();
+    initial.close();
+    const indexPath = join(releasedHome, '.factory', 'droidex', SESSION_INDEX_FILENAME);
+    const released = new DatabaseSync(indexPath);
+    released
+      .prepare(
+        `INSERT INTO app_sessions (
+          app_session_id,
+          provider_session_id,
+          compacted_from_provider_session_ids,
+          session_purpose,
+          interaction_mode,
+          title,
+          updated_at
+        ) VALUES (?, ?, '[]', 'chat', 'auto', ?, ?)`,
+      )
+      .run('existing-chat', 'existing-provider', 'Existing chat', 123);
+    released
+      .prepare(
+        `INSERT INTO child_sessions (
+          parent_app_session_id,
+          child_session_id,
+          provider_session_id,
+          role,
+          label,
+          prompt,
+          status,
+          model_id,
+          spawn_link_kind,
+          spawn_link_id,
+          transcript_available,
+          started_at,
+          updated_at
+        ) VALUES (?, ?, ?, 'worker', ?, ?, 'completed', ?, 'tool-use', ?, 1, ?, ?)`,
+      )
+      .run(
+        'existing-chat',
+        'existing-child',
+        'existing-child-provider',
+        'Existing worker',
+        'Continue the existing chat',
+        'claude-sonnet-4-5',
+        'existing-tool',
+        100,
+        124,
+      );
+    // A shipped v3 index is the canonical shape without the settling time.
+    released.exec('ALTER TABLE child_sessions DROP COLUMN settled_at; PRAGMA user_version = 3;');
+    const originalChild = released.prepare('SELECT * FROM child_sessions').get() as Record<
+      string,
+      unknown
+    >;
+    released.close();
+
+    const upgraded = new HistoryIndex();
+    const restoredChild = upgraded.childSession('existing-chat', 'existing-child');
+    upgraded.close();
+
+    const verified = new DatabaseSync(indexPath);
+    const version = verified.prepare('PRAGMA user_version').get() as { user_version: number };
+    const row = verified.prepare('SELECT * FROM child_sessions').get() as Record<string, unknown>;
+    verified.close();
+
+    assert.equal(version.user_version, 4);
+    assert.deepEqual({ ...row }, { ...originalChild, settled_at: null });
+    assert.ok(restoredChild);
+    // A child stored before this says nothing about when it finished.
+    assert.equal(restoredChild.settledAt, undefined);
+    assert.equal(restoredChild.prompt, 'Continue the existing chat');
+  } finally {
+    process.env.HOME = home;
+    rmSync(releasedHome, { recursive: true, force: true });
+  }
+});
 
 test('canonical session index remains isolated from the legacy droid index', () => {
   const isolatedHome = mkdtempSync(join(tmpdir(), 'droid-session-index-isolation-'));
@@ -468,6 +548,7 @@ test('current index missing the canonical spawn-kind check uses hard-cut recover
         spawn_link_id TEXT,
         transcript_available INTEGER NOT NULL CHECK (transcript_available IN (0, 1)),
         started_at INTEGER,
+        settled_at INTEGER,
         updated_at INTEGER NOT NULL,
         CHECK (
           (spawn_link_kind IS NULL AND spawn_link_id IS NULL) OR

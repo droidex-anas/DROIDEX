@@ -1,7 +1,8 @@
-import type {
-  ChildRuntimeState,
-  ChildSessionState,
-  ParentChildSessions,
+import {
+  setChildStatus,
+  type ChildRuntimeState,
+  type ChildSessionState,
+  type ParentChildSessions,
 } from './ChildSessionState.js';
 
 export type PreparedChildInterrupt =
@@ -42,16 +43,17 @@ export function takeAdmittedSend(child: ChildSessionState): string | undefined {
   return send;
 }
 
-export function markQueuedInterruptSettled(child: ChildSessionState): void {
+export function markQueuedInterruptSettled(child: ChildSessionState, now: number): void {
   child.turn.interrupting = false;
   child.turn.interruptingForSteer = false;
   child.turn.phase = 'idle';
-  if (child.status === 'running') child.status = 'paused';
+  if (child.status === 'running') setChildStatus(child, 'paused', now);
 }
 
 export function prepareChildInterrupt(
   parent: ParentChildSessions | undefined,
   child: ChildSessionState | undefined,
+  now: number,
 ): PreparedChildInterrupt {
   if (!parent || !child) return { kind: 'missing' };
   discardCancelledPendingSends(child);
@@ -59,7 +61,7 @@ export function prepareChildInterrupt(
   if (!child.runtime) cancelInFlightOpen(parent, child);
   const runtime = child.runtime;
   if (!runtime) {
-    markQueuedInterruptSettled(child);
+    markQueuedInterruptSettled(child, now);
     return { kind: 'queued', parent, child };
   }
   return { kind: 'live', parent, child, runtime };

@@ -30,6 +30,7 @@ import {
   persistedChild,
   rememberPendingChildObservation,
   restoredChildStatus,
+  setChildStatus,
   type ChildIdentity,
   type ChildRuntimeState,
   type ChildRuntimeTarget,
@@ -409,7 +410,11 @@ export class ChildSessions {
 
   async interrupt(identity: ChildIdentity): Promise<void> {
     const parent = this.parents.get(identity.parentAppSessionId);
-    const prepared = prepareChildInterrupt(parent, parent?.children.get(identity.childSessionId));
+    const prepared = prepareChildInterrupt(
+      parent,
+      parent?.children.get(identity.childSessionId),
+      this.d.now(),
+    );
     if (prepared.kind === 'missing') {
       await this.requireRuntime(identity, 'interrupt');
       return;
@@ -437,7 +442,7 @@ export class ChildSessions {
     if (wasAutoCompacting) this.d.compaction.cancel(this.automaticTarget(liveParent, child));
     if (child.turn.phase === 'streaming') return;
     child.turn.interrupting = false;
-    child.status = 'paused';
+    setChildStatus(child, 'paused', this.d.now());
     this.commit(child);
   }
 
@@ -512,7 +517,7 @@ export class ChildSessions {
       void this.drive(parent, child, next);
       return;
     }
-    child.status = 'paused';
+    setChildStatus(child, 'paused', this.d.now());
     this.commit(child);
     if (parent.runtimeQueue.length > 0) void this.closeRuntime(parent, child, true);
   }
@@ -761,8 +766,9 @@ export class ChildSessions {
     if (child.turn.autoCompacting) this.d.compaction.cancel(this.automaticTarget(parent, child));
     const turnGeneration = ++child.turn.generation;
     child.turn.phase = 'streaming';
-    runtime.lastUsedAt = this.d.now();
-    child.status = 'running';
+    const startedTurnAt = this.d.now();
+    runtime.lastUsedAt = startedTurnAt;
+    setChildStatus(child, 'running', startedTurnAt);
     try {
       this.d.eventFlow.beginTurn(parent.parentAppSessionId, runtime.session.sessionId);
       const tokenStream = childTokenStream();
@@ -828,7 +834,7 @@ export class ChildSessions {
       void this.drive(parent, child, next);
       return;
     }
-    child.status = 'paused';
+    setChildStatus(child, 'paused', this.d.now());
     this.commit(child);
     if (parent.runtimeQueue.length > 0) await this.closeRuntime(parent, child, true);
   }
@@ -914,7 +920,7 @@ export class ChildSessions {
 
   private complete(child?: ChildSessionState, status: 'completed' | 'failed' = 'completed'): void {
     if (!child || child.status === 'completed' || child.status === 'failed') return;
-    child.status = status;
+    setChildStatus(child, status, this.d.now());
     // Activity describes a moment that has passed; keeping the last poll's line
     // would leave a finished subagent reading as still working.
     child.activity = undefined;
