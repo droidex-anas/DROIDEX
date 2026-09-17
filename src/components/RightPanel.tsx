@@ -12,6 +12,7 @@ import { Hash, ChevronRight, FileText } from 'lucide-react';
 import { ModelIcon, providerOf } from './ModelIcon';
 import { useAgentPane } from './agents/AgentPane';
 import { AgentPaneBody } from './agents/AgentPaneBody';
+import { agentPanePanelProps } from './agents/agentPaneIds';
 import { AgentPaneTabs } from './agents/AgentPaneTabs';
 import NotesSection from './NotesSection';
 import { SubagentsSection } from './SubagentsPanel';
@@ -189,7 +190,10 @@ export default function RightPanel() {
             {...(activeSession ? { provider: activeSession.provider } : {})}
           />
         ) : (
-          <div className="flex-1 min-h-0 overflow-y-auto px-1.5 pb-2">
+          <div
+            {...agentPanePanelProps('context')}
+            className="flex-1 min-h-0 overflow-y-auto px-1.5 pb-2"
+          >
             {/* Environment — git-backed rows only exist for folder-backed chats */}
             {activeSession && hasFolder && (
               <div>

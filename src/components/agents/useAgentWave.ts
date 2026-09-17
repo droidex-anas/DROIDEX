@@ -39,10 +39,13 @@ export function useAgentWave(input: {
 }): AgentWave {
   const rows = buildAgentRows(input.sessions, input.models, input.activity, input.snapshots);
   const counts = countAgentStatuses(rows);
-  const hasConfirmedRunning = counts.running > 0;
+  // An agent awaiting approval has run and will again: the wave is still open
+  // and its clock still counts.
+  const hasConfirmedRunning = counts.running + counts.paused > 0;
   const now = useNow(input.live && hasConfirmedRunning);
   const elapsedMs = useAgentRowElapsed(rows, now, input.live);
-  const inFlight = input.live && counts.running + counts.pending + counts.queued > 0;
+  const inFlight =
+    input.live && counts.running + counts.paused + counts.pending + counts.queued > 0;
   const started = rows.map((row) => row.startedAt).filter((at): at is number => at != null);
   const lastSettledAt = rows.reduce<number | undefined>((last, row) => {
     const elapsed = elapsedMs.get(row.key);
@@ -125,7 +128,8 @@ function useAgentRowElapsed(
       if (observed.has(row.key)) elapsed.set(row.key, frozen ?? Math.max(0, now - row.startedAt));
       continue;
     }
-    if (row.status === 'running') elapsed.set(row.key, Math.max(0, now - row.startedAt));
+    if (row.status === 'running' || row.status === 'paused')
+      elapsed.set(row.key, Math.max(0, now - row.startedAt));
   }
   return elapsed;
 }

@@ -232,6 +232,7 @@ function sameChildSessionInputs(prev: FeedItemViewProps, next: FeedItemViewProps
   return (
     !itemUsesChildSessions(next.item) ||
     (prev.agentMonitor === next.agentMonitor &&
+      prev.onOpenAgent === next.onOpenAgent &&
       prev.childSessionActivity === next.childSessionActivity)
   );
 }
