@@ -770,6 +770,14 @@ export default function PromptInput({
     setActiveRowKey(null);
   }, [trigger?.kind, trigger?.query]);
 
+  // A draft can still change harness. A skill, plugin or app staged from the
+  // previous harness's catalog means nothing to the new one, so it comes off
+  // with it rather than travelling as words the harness cannot resolve.
+  useEffect(() => {
+    if (activeSkills.every((row) => row.provider === composerProvider)) return;
+    setActiveSkills((prev) => prev.filter((row) => row.provider === composerProvider));
+  }, [activeSkills, composerProvider, setActiveSkills]);
+
   // Leave history-recall mode and drop any composer draft attachments when
   // switching conversations, so skills/files/images staged for one chat don't
   // linger on another chat's prompt bar. No prompt referenced the staged
