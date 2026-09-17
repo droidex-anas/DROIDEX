@@ -224,8 +224,9 @@ const ignoreError = (): undefined => undefined;
 const nextChildSessionId = () => `child-${randomUUID()}`;
 
 // MCP settings commands run in a throwaway session; without a workspace they
-// still need a directory to read user-level configuration from.
-const mcpSettingsCwd = (cwd?: string): string => cwd ?? tmpdir();
+// still need a directory to read user-level configuration from. A blank cwd on
+// the wire means the same as none, as it does everywhere else this is read.
+const mcpSettingsCwd = (cwd?: string): string => (cwd === undefined || cwd === '' ? tmpdir() : cwd);
 
 export class SessionManager {
   private ready = false;

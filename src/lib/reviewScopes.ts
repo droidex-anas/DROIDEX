@@ -92,9 +92,12 @@ function absolutePathMatch(
 ): string | null {
   const match = longestSuffixMatch(files, absPath);
   if (!match || !cwd) return match;
-  const root = comparablePath(absPath.slice(0, absPath.length - match.length - 1));
+  // A repo root of "/" slices to nothing, and a drive root keeps its own
+  // separator, so normalize both back to a root before comparing.
+  const root = comparablePath(absPath.slice(0, absPath.length - match.length - 1) || '/');
   const cwdNorm = comparablePath(cwd);
-  return cwdNorm === root || cwdNorm.startsWith(`${root}/`) ? match : null;
+  const rootPrefix = root.endsWith('/') ? root : `${root}/`;
+  return cwdNorm === root || cwdNorm.startsWith(rootPrefix) ? match : null;
 }
 
 // Match a focus-request path against a git diff file list. Focus paths come

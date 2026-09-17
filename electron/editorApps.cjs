@@ -15,7 +15,10 @@ const { nativeImage } = require('electron');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
-const { execFileSync } = require('node:child_process');
+const { execFile } = require('node:child_process');
+const { promisify } = require('node:util');
+
+const execFileAsync = promisify(execFile);
 
 const APP_DIRS = ['/Applications', path.join(os.homedir(), 'Applications')];
 
@@ -40,10 +43,12 @@ function macBundlePath(editor) {
   return MAC_BUNDLES[editor]?.find((bundle) => fs.existsSync(bundle)) ?? null;
 }
 
-function commandOnPath(command) {
+// Spawned, so never synchronous: this runs on the main process for every
+// renderer that opens the picker, and the macOS branch below never spawns.
+async function commandOnPath(command) {
   const probe = process.platform === 'win32' ? 'where' : 'which';
   try {
-    execFileSync(probe, [command], { stdio: 'ignore' });
+    await execFileAsync(probe, [command]);
     return true;
   } catch {
     return false;
@@ -51,7 +56,7 @@ function commandOnPath(command) {
 }
 
 /** Which launch targets are installed, so the UI only offers ones that open. */
-function listEditors() {
+async function listEditors() {
   const editors = [];
   if (process.platform === 'darwin') {
     if (macBundlePath('vscode')) editors.push('vscode');
@@ -60,10 +65,10 @@ function listEditors() {
     if (macBundlePath('xcode')) editors.push('xcode');
     return editors;
   }
-  if (commandOnPath('code')) editors.push('vscode');
-  if (commandOnPath('cursor')) editors.push('cursor');
+  if (await commandOnPath('code')) editors.push('vscode');
+  if (await commandOnPath('cursor')) editors.push('cursor');
   editors.push('finder');
-  if (process.platform === 'win32' || commandOnPath('x-terminal-emulator'))
+  if (process.platform === 'win32' || (await commandOnPath('x-terminal-emulator')))
     editors.push('terminal');
   return editors;
 }
