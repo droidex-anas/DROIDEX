@@ -5,6 +5,8 @@ import { Archive, FileText, Folder, Link2, Pencil, CircleCheck, RotateCcw } from
 import { Copy, Pin, PinOff } from '@droidex/icons';
 import { pushEscapeLayer } from './environment/usePopover';
 import { toast } from '../lib/toast';
+import { PROVIDER_LABELS, sessionResumeCommand } from '../features/providers/providerIdentity';
+import type { ProviderKind } from '../types/bridge';
 
 const EASE = [0.16, 1, 0.3, 1] as const;
 export const SESSION_MENU_WIDTH = 220;
@@ -45,8 +47,12 @@ export interface SessionContextMenuProps {
   onToggleSettled?: () => void;
   // Absent for workspace-less sessions; the Copy Working Directory row hides.
   cwd?: string;
-  // The real Droid session id (vs our appSessionId). Absent until the harness
-  // assigns one; the session-id/link rows hide in that case.
+  // The harness the chat runs on, and the id that harness's own CLI resumes by
+  // (vs our appSessionId). Absent until the harness assigns one; the session-id
+  // row hides in that case.
+  provider?: ProviderKind;
+  resumeSessionId?: string;
+  // Droid only: the id behind the Factory web link.
   providerSessionId?: string;
   onRename: () => void;
   onTogglePin: () => void;
@@ -57,8 +63,8 @@ export interface SessionContextMenuProps {
 
 // Action menu for a sidebar chat row (right-click or the hover "..." button).
 // Organization actions (pin/rename/archive) are app-level; the copy actions
-// expose the real Droid session so the user can continue it in the official
-// CLI (`droid -r <id>`) or the Factory web app. The portal + click-away
+// expose the harness's own session so the user can continue it in that
+// harness's official CLI, or for Droid in the Factory web app. The portal + click-away
 // backdrop live here; the panel is separate so tests can render it without a
 // DOM (portals reject fake containers even in SSR).
 export function SessionContextMenu(props: SessionContextMenuProps) {
@@ -88,6 +94,8 @@ export function SessionContextMenuPanel({
   settled,
   onToggleSettled,
   cwd,
+  provider = 'droid',
+  resumeSessionId,
   providerSessionId,
   onRename,
   onTogglePin,
@@ -264,7 +272,7 @@ export function SessionContextMenuPanel({
           Copy Working Directory
         </button>
       )}
-      {providerSessionId && (
+      {resumeSessionId && (
         <button
           type="button"
           role="menuitem"
@@ -272,12 +280,11 @@ export function SessionContextMenuPanel({
           // recipe is cd + resume; the toast spells out both, shell-quoted so
           // a path with spaces pastes back intact.
           onClick={() => {
-            const resume = cwd
-              ? `cd ${shellQuote(cwd)} && droid -r ${shellQuote(providerSessionId)}`
-              : `droid -r ${shellQuote(providerSessionId)}`;
+            const command = sessionResumeCommand(provider, shellQuote(resumeSessionId));
+            const resume = cwd ? `cd ${shellQuote(cwd)} && ${command}` : command;
             copyAndClose(
-              providerSessionId,
-              `Droid session ID copied. Continue in the official CLI: ${resume}`,
+              resumeSessionId,
+              `${PROVIDER_LABELS[provider]} session ID copied. Continue in the official CLI: ${resume}`,
             );
           }}
           className={itemClass}
@@ -286,7 +293,7 @@ export function SessionContextMenuPanel({
           Copy Session ID
         </button>
       )}
-      {providerSessionId && (
+      {provider === 'droid' && providerSessionId && (
         <button
           type="button"
           role="menuitem"

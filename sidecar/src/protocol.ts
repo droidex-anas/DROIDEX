@@ -3,7 +3,9 @@
 
 import type { AutomationBridgeCommand, AutomationBridgeEvent } from './automations/types.js';
 import type { McpClientCommand, McpServerEvent } from './mcpProtocol.js';
+import type { ProviderMention, SkillInfo } from './providers/catalog.js';
 import type { ProviderKind } from './providers/providerKind.js';
+export type { ProviderMention, SkillInfo } from './providers/catalog.js';
 export type {
   McpServerInfo,
   McpServerInput,
@@ -68,7 +70,9 @@ export interface ProgressEntry {
 }
 
 export type ChildRole = 'worker' | 'validator';
-export type ChildStatus = 'pending' | 'running' | 'paused' | 'completed';
+// 'failed' is terminal like 'completed': the agent stopped, but it did not
+// deliver. Never fold the two together in a count, a label, or a tint.
+export type ChildStatus = 'pending' | 'running' | 'paused' | 'completed' | 'failed';
 export type StreamFidelity = 'token' | 'tool' | 'state';
 
 export interface ChildSpawnLink {
@@ -91,6 +95,9 @@ export interface ChildSessionSummary {
   status: ChildStatus;
   label?: string;
   prompt?: string;
+  // Orchestration name and phase title, when reported by the provider.
+  group?: string;
+  phase?: string;
   modelId: string;
   reasoningEffort?: ReasoningEffort;
   // Confirmed effective autonomy, runtime-scoped: present only while the child
@@ -195,6 +202,9 @@ export interface TranscriptEvent {
   browserRefs?: BrowserTranscriptReference[];
   steered?: boolean;
   compactType?: 'auto' | 'manual';
+  modelSwitch?: { from: string; to: string };
+  errorKind?: 'usage_limit';
+  resetsAt?: number;
 }
 
 export type BrowserTranscriptReferenceKind = 'element' | 'region' | 'text';
@@ -262,6 +272,7 @@ export interface ProviderStatus {
   // calling it "Default". Absent when the harness reports none.
   defaultModelId?: string;
   models: ModelInfo[];
+  items?: SkillInfo[];
 }
 
 export interface FactoryDefaultSettings {
@@ -604,6 +615,8 @@ export type ClientCommand =
       cwd?: string;
       title: string;
       goal: string;
+      // Catalog rows staged with the first prompt, as on a send.
+      mentions?: ProviderMention[];
       sessionPurpose: SessionPurpose;
       // Omitted means the default provider.
       provider?: ProviderKind;
@@ -621,15 +634,28 @@ export type ClientCommand =
       validatorReasoning?: ReasoningEffort;
       responseFormat?: ResponseFormat;
     }
-  | { type: 'session.send'; appSessionId: string; text: string; responseFormat?: ResponseFormat }
-  | { type: 'session.sendNow'; appSessionId: string; text: string; responseFormat?: ResponseFormat }
+  | {
+      type: 'session.send';
+      appSessionId: string;
+      text: string;
+      mentions?: ProviderMention[];
+      responseFormat?: ResponseFormat;
+    }
+  | {
+      type: 'session.sendNow';
+      appSessionId: string;
+      text: string;
+      mentions?: ProviderMention[];
+      responseFormat?: ResponseFormat;
+    }
   | { type: 'session.resume'; appSessionId: string }
   | { type: 'session.interrupt'; appSessionId: string }
   | {
       type: 'session.updateSettings';
       appSessionId: string;
       modelId?: string | null;
-      reasoningEffort?: ReasoningEffort;
+      // null clears the effort: the model chosen offers none.
+      reasoningEffort?: ReasoningEffort | null;
       autonomy?: Autonomy;
       interactionMode?: SessionInteractionMode;
     }
@@ -719,7 +745,7 @@ export type ClientCommand =
       appSessionId?: string;
       agent: ConfigurableSessionRole;
       modelId?: string | null;
-      reasoningEffort?: ReasoningEffort;
+      reasoningEffort?: ReasoningEffort | null;
     }
   | {
       // Snapshot of the app's explicitly configured compaction limits. A null

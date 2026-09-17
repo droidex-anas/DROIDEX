@@ -68,6 +68,7 @@ import type {
   SessionQuestion,
   ModelInfo,
   ProviderKind,
+  ProviderMention,
   ProviderStatus,
   ChildSessionSummary,
   SkillInfo,
@@ -186,6 +187,10 @@ export interface QueuedPrompt {
   text: string;
   skills: string[];
   files: string[];
+  /** Catalog rows the harness receives beside the text rather than inside it. */
+  mentions?: ProviderMention[];
+  /** The staged rows' catalog identities, so editing restores the same chips. */
+  rowKeys?: string[];
   design?: QueuedDesignContext;
 }
 
@@ -370,11 +375,6 @@ export interface AppState {
   // Chord bound to each rebindable app action (see lib/shortcuts).
   shortcutBindings: ShortcutBindings;
 
-  // Per-session model/reasoning the user picked in the selector. These are
-  // authoritative: a stale server summary (e.g. an in-flight resume) must not
-  // revert the user's choice back to the session default.
-  sessionSettingOverrides: Record<string, { modelId?: string; reasoningEffort?: ReasoningEffort }>;
-
   // Skills catalog (for / invocation)
   skills: SkillInfo[];
   skillsProviderSessionId?: string | null;
@@ -547,6 +547,7 @@ type Action =
       terminalId?: string;
       cwd?: string;
       filePath?: string;
+      agentId?: string;
     }
   | { type: 'CLOSE_UTILITY_TAB'; tabId: string; appSessionId?: string }
   | { type: 'ACTIVATE_UTILITY_TAB'; tabId: string }
@@ -558,6 +559,7 @@ type Action =
       cwd?: string;
       filePath?: string;
       label?: string;
+      agentId?: string | null;
     }
   | { type: 'SET_UTILITY_PANEL_OPEN'; open: boolean }
   | { type: 'SET_REVIEW_OPEN'; open: boolean }
@@ -626,9 +628,7 @@ type Action =
     }
   | { type: 'FACTORY_DEFAULTS'; defaults: FactoryDefaultSettings }
   | { type: 'SET_AGENT_MODEL'; agent: AgentKind; modelId?: string }
-  | { type: 'SET_AGENT_REASONING'; agent: AgentKind; reasoning: ReasoningEffort }
-  | { type: 'SESSION_SET_MODEL'; appSessionId: string; modelId?: string }
-  | { type: 'SESSION_SET_REASONING'; appSessionId: string; reasoning: ReasoningEffort }
+  | { type: 'SET_AGENT_REASONING'; agent: AgentKind; reasoning: ReasoningEffort | undefined }
   | { type: 'SET_COMPACTION_MODEL_GLOBAL'; compactionModel: string }
   | { type: 'SET_COMPACTION_TOKEN_LIMIT_GLOBAL'; limit?: number }
   | { type: 'SET_COMPACTION_TOKEN_LIMIT_FOR_MODEL'; modelId: string; limit?: number }
@@ -640,17 +640,6 @@ type Action =
   | { type: 'SET_DRAFT_AUTONOMY'; autonomy: Autonomy }
   | { type: 'AUTONOMY_UPDATE_REQUESTED'; appSessionId: string; autonomy: Autonomy }
   | { type: 'AUTONOMY_UPDATE_SETTLED'; appSessionId: string };
-
-function applySessionOverride(
-  summary: SessionSummary,
-  override?: { modelId?: string; reasoningEffort?: ReasoningEffort },
-): SessionSummary {
-  if (!override) return summary;
-  const next = { ...summary };
-  if ('modelId' in override) next.modelId = override.modelId;
-  if (override.reasoningEffort !== undefined) next.reasoningEffort = override.reasoningEffort;
-  return next;
-}
 
 // Loaded once at module scope so the theme loader can match saved colors
 // against custom presets when recovering a missing presetId.
@@ -755,7 +744,6 @@ export const initialState: AppState = {
   reviewFocusChange: null,
   reviewFocusRequestId: 0,
   diffView: loadDiffView(),
-  sessionSettingOverrides: {},
   skills: [],
   skillsProviderSessionId: undefined,
   agentConfig: loadAgentConfig(),
@@ -901,10 +889,7 @@ function baseReducer(state: AppState, action: Action): AppState {
         ...childReset,
         sessions: {
           ...state.sessions,
-          [action.session.appSessionId]: applySessionOverride(
-            action.session,
-            state.sessionSettingOverrides[action.session.appSessionId],
-          ),
+          [action.session.appSessionId]: action.session,
         },
         sessionOrder: order,
         activeAppSessionId: shouldActivate ? action.session.appSessionId : state.activeAppSessionId,
@@ -959,10 +944,7 @@ function baseReducer(state: AppState, action: Action): AppState {
 
     case 'SESSION_UPDATED': {
       const previous = state.sessions[action.session.appSessionId];
-      const incoming = applySessionOverride(
-        action.session,
-        state.sessionSettingOverrides[action.session.appSessionId],
-      );
+      const incoming = action.session;
       // Compaction generations are monotonic. A delayed resume summary must not
       // put a restored session back on generation zero after history already
       // proved that compactions occurred.
@@ -1394,10 +1376,7 @@ function baseReducer(state: AppState, action: Action): AppState {
         map[id] = summary;
       }
       for (const m of action.sessions) {
-        map[m.appSessionId] = applySessionOverride(
-          m,
-          state.sessionSettingOverrides[m.appSessionId],
-        );
+        map[m.appSessionId] = m;
       }
       const order = [
         ...new Set([
@@ -1581,7 +1560,12 @@ function baseReducer(state: AppState, action: Action): AppState {
         state.utilityPanels[appSessionId],
         action.tool,
         () => action.tabId ?? `${action.tool}:${appSessionId}`,
-        { terminalId: action.terminalId, cwd: action.cwd, filePath: action.filePath },
+        {
+          terminalId: action.terminalId,
+          cwd: action.cwd,
+          filePath: action.filePath,
+          agentId: action.agentId,
+        },
       );
       return {
         ...state,
@@ -1641,6 +1625,7 @@ function baseReducer(state: AppState, action: Action): AppState {
         cwd: action.cwd,
         filePath: action.filePath,
         label: action.label,
+        agentId: action.agentId,
       });
       if (panel === current) return state;
       return {
@@ -2105,37 +2090,6 @@ function baseReducer(state: AppState, action: Action): AppState {
           [action.agent]: { ...state.agentConfig[action.agent], reasoning: action.reasoning },
         }),
       };
-
-    case 'SESSION_SET_MODEL': {
-      const m = state.sessions[action.appSessionId];
-      if (!m) return state;
-      const prevOverride = state.sessionSettingOverrides[action.appSessionId] ?? {};
-      return {
-        ...state,
-        sessions: { ...state.sessions, [action.appSessionId]: { ...m, modelId: action.modelId } },
-        sessionSettingOverrides: {
-          ...state.sessionSettingOverrides,
-          [action.appSessionId]: { ...prevOverride, modelId: action.modelId },
-        },
-      };
-    }
-
-    case 'SESSION_SET_REASONING': {
-      const m = state.sessions[action.appSessionId];
-      if (!m) return state;
-      const prevOverride = state.sessionSettingOverrides[action.appSessionId] ?? {};
-      return {
-        ...state,
-        sessions: {
-          ...state.sessions,
-          [action.appSessionId]: { ...m, reasoningEffort: action.reasoning },
-        },
-        sessionSettingOverrides: {
-          ...state.sessionSettingOverrides,
-          [action.appSessionId]: { ...prevOverride, reasoningEffort: action.reasoning },
-        },
-      };
-    }
 
     case 'SET_COMPACTION_MODEL_GLOBAL': {
       const value = saveCompactionModel(action.compactionModel);

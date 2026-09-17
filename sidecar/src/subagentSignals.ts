@@ -5,12 +5,12 @@
 // stream protocol, so they live here — one cohesive responsibility with its own
 // tests — instead of inside the generic event normalizer.
 
-import type { ChildActivity } from './protocol.js';
+import type { ChildActivity, ChildRole, ChildStatus, ReasoningEffort } from './protocol.js';
 import { trimmedString as str } from './values.js';
 
 // What a single event tells us about one child session. Fields are all optional
 // because different events carry different fragments; the child session store
-// merges them.
+// merges them. Provider task/thread ids identify state-only children.
 export interface ChildSessionSignal {
   providerSessionId?: string;
   toolUseId?: string;
@@ -18,6 +18,15 @@ export interface ChildSessionSignal {
   prompt?: string;
   done?: boolean;
   activity?: ChildActivity;
+  // Explicit settings bypass the provider-file launch-settings lookup.
+  modelId?: string;
+  reasoningEffort?: ReasoningEffort;
+  role?: ChildRole;
+  status?: ChildStatus;
+  group?: string;
+  phase?: string;
+  // False for state-only feeds with no child-transcript view.
+  transcriptAvailable?: boolean;
 }
 
 export function taskPrompt(input: Record<string, unknown>): string | undefined {
@@ -57,11 +66,10 @@ export function detectChildSession(
     typeof input.subagent_type === 'string' ||
     typeof input.subagentType === 'string';
   if (!isTask && !providerSessionId) return undefined;
-  const label =
-    str(input.subagent_type) ??
-    str(input.subagentType) ??
-    str(input.description) ??
-    (typeof toolName === 'string' ? toolName : undefined);
+  // The call streams in fragments and the first carries no input yet. The tool's
+  // own name must not stand in: a child keeps the first label it is given, so
+  // every agent would be called "Task".
+  const label = str(input.subagent_type) ?? str(input.subagentType) ?? str(input.description);
   return { providerSessionId, toolUseId, label, prompt: taskPrompt(input) };
 }
 

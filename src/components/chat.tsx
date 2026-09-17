@@ -11,17 +11,28 @@ import {
   type ChildSessionTarget,
 } from '../lib/childSessions';
 import { DEFAULT_TOOL_ACTIVITY, type ToolActivityDensity } from '../lib/toolActivity';
-import type { TranscriptEvent } from '../types/bridge';
+import type { ChildSessionSummary, TranscriptEvent } from '../types/bridge';
 import { MessageBody } from './MessageBody';
 import { DiffCard } from './DiffView';
-import type { SubagentsDockData } from './SubagentsDock';
+import type { AgentMonitorData } from './agents/AgentMonitorCard';
 import TurnChangesPanel from './TurnChangesPanel';
-import { isCompactionCompleteStatus, sameFeedEvents, type FeedItem } from './chatFeed';
-import { CompactingIndicator, CompactionDivider, MessageActions } from './transcript/primitives';
+import {
+  isCompactionCompleteStatus,
+  isSettingsStatus,
+  sameFeedEvents,
+  type FeedItem,
+} from './chatFeed';
+import {
+  CompactingIndicator,
+  CompactionDivider,
+  MessageActions,
+  TranscriptNotice,
+} from './transcript/primitives';
 import { correlateResults, ErrorLine, ThinkingItem } from './transcript/rows';
 import { DiffGroup, ToolGroupItem, WorkedGroup } from './transcript/groups';
 import { UserBubble } from './transcript/UserBubble';
-import { ChildSessionLine, ChildSessionsWave } from './transcript/ChildSessionLine';
+import { ChildSessionLine } from './transcript/ChildSessionLine';
+import { AgentWaveCard } from './agents/AgentWaveCard';
 import { GeneratedImageCard } from './media/GeneratedImageCard';
 
 // Row chrome and renderers live in the transcript modules; re-export the ones
@@ -116,11 +127,14 @@ export interface FeedItemViewProps {
   onOpenReviewFile?: OpenReviewFileHandler;
   onOpenChildSession?: (target: ChildSessionTarget) => void;
   childSessionActivity?: (target: ChildSessionTarget) => ChildSessionActivity | undefined;
-  // Store child sessions + models for the subagents dock. Every child_sessions
+  // Store child sessions + models for the agent monitor. Every child_sessions
   // wave item resolves its own subset from this list and renders one card per
   // wave. Wave items only exist when this is set; views without it (Mission
   // Control, child-session views) get per-spawn child_session lines instead.
-  subagentsDock?: SubagentsDockData;
+  agentMonitor?: AgentMonitorData;
+  // Opens one agent in the context pane. Distinct from onOpenChildSession,
+  // which navigates the whole view to that child.
+  onOpenAgent?: (child: ChildSessionSummary) => void;
   liveTiming?: boolean;
   specContent?: string;
   isFinalResponse?: boolean;
@@ -217,7 +231,8 @@ function itemUsesChildSessions(item: FeedItem): boolean {
 function sameChildSessionInputs(prev: FeedItemViewProps, next: FeedItemViewProps): boolean {
   return (
     !itemUsesChildSessions(next.item) ||
-    (prev.subagentsDock === next.subagentsDock &&
+    (prev.agentMonitor === next.agentMonitor &&
+      prev.onOpenAgent === next.onOpenAgent &&
       prev.childSessionActivity === next.childSessionActivity)
   );
 }
@@ -234,8 +249,8 @@ export function feedItemPropsEqual(prev: FeedItemViewProps, next: FeedItemViewPr
     return (
       prev.live === next.live &&
       prev.sessionLive === next.sessionLive &&
-      prev.subagentsDock === next.subagentsDock &&
-      prev.onOpenChildSession === next.onOpenChildSession &&
+      prev.agentMonitor === next.agentMonitor &&
+      prev.onOpenAgent === next.onOpenAgent &&
       prev.childSessionActivity === next.childSessionActivity &&
       sameFeedEvents(prev.item, next.item)
     );
@@ -270,8 +285,9 @@ export const FeedItemView = memo(function FeedItemView({
   onOpenDiff,
   onOpenReviewFile,
   onOpenChildSession,
+  onOpenAgent,
   childSessionActivity,
-  subagentsDock,
+  agentMonitor,
   liveTiming,
   specContent,
   isFinalResponse,
@@ -314,24 +330,25 @@ export const FeedItemView = memo(function FeedItemView({
       // Wave items are only built when dock data is passed (buildFeed gates on
       // it), so a missing dock here is a wiring bug; views that keep per-spawn
       // lines produce child_session items, never this case.
-      if (!subagentsDock) return null;
+      if (!agentMonitor) return null;
       return (
-        <ChildSessionsWave
+        <AgentWaveCard
           item={item}
-          dock={subagentsDock}
+          monitor={agentMonitor}
           live={sessionLive}
-          onOpen={onOpenChildSession}
+          onOpen={onOpenAgent}
           activity={childSessionActivity}
         />
       );
     }
     case 'status': {
+      if (item.event.modelSwitch) return <TranscriptNotice event={item.event} />;
       const text = item.event.text ?? '';
       if (item.event.kind === 'compaction') return <CompactionDivider compactType="auto" />;
       if (compacting) return <CompactingIndicator />;
       if (isCompactionCompleteStatus(text))
         return <CompactionDivider compactType={item.event.compactType} />;
-      return live ? (
+      return live && !isSettingsStatus(item.event) ? (
         <span className="shimmer-text text-[13px] font-medium">{text}</span>
       ) : (
         <span className="block text-[13px] text-droid-text-muted leading-relaxed break-words">
@@ -340,7 +357,11 @@ export const FeedItemView = memo(function FeedItemView({
       );
     }
     case 'error':
-      return <ErrorLine text={item.event.text ?? ''} />;
+      return item.event.errorKind === 'usage_limit' ? (
+        <TranscriptNotice event={item.event} />
+      ) : (
+        <ErrorLine text={item.event.text ?? ''} />
+      );
     case 'diff':
       return (
         <DiffCard
@@ -398,8 +419,9 @@ export const FeedItemView = memo(function FeedItemView({
               onOpenDiff={onOpenDiff}
               onOpenReviewFile={onOpenReviewFile}
               onOpenChildSession={onOpenChildSession}
+              onOpenAgent={onOpenAgent}
               childSessionActivity={childSessionActivity}
-              subagentsDock={subagentsDock}
+              agentMonitor={agentMonitor}
               specContent={specContent}
               density={density}
               inlineDiffs={inlineDiffs}

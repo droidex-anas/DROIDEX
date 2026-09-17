@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { parseSessionLineEvents } from './sessionTranscriptParser.js';
 import type { TranscriptEvent } from './protocol.js';
+import { storedNoticeLine } from './sessionNotices.js';
 
 function messageLine(opts: {
   role: string;
@@ -301,4 +302,27 @@ test('a mid-file compaction_state record replays as a divider event', () => {
   assert.equal(events.length, 1);
   assert.equal(events[0].kind, 'compaction');
   assert.equal(events[0].removedCount, 3);
+  for (const notice of [
+    { kind: 'status', modelSwitch: { from: 'old-model', to: 'new-model' } },
+    { kind: 'error', isError: true, errorKind: 'usage_limit', resetsAt: 3000 },
+  ] as const) {
+    const original: TranscriptEvent = {
+      id: 'notice',
+      appSessionId: 'app',
+      sourceSessionId: 'app',
+      role: 'primary',
+      ts: 2000,
+      text: 'Notice',
+      ...notice,
+    };
+    assert.deepEqual(
+      parseSessionLineEvents(
+        'app',
+        'provider',
+        'primary',
+        JSON.parse(JSON.stringify(storedNoticeLine(original))),
+      ),
+      [original],
+    );
+  }
 });

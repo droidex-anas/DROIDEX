@@ -6,11 +6,14 @@ import { droidexUserDataDir } from './droidexPaths.js';
 import type {
   ClientCommand,
   FactoryDefaultSettings,
+  ProviderMention,
   ServerEvent,
   SessionSummary,
+  SkillInfo,
 } from './protocol.js';
 import type { SessionRegistry } from './SessionRegistry.js';
 import type { PrimaryAutomaticCompactionTarget, SessionCompaction } from './SessionCompaction.js';
+import type { SessionEventFlow } from './SessionEventFlow.js';
 import type { LiveOperationTarget, SessionContext } from './SessionContext.js';
 import type { ChildSessions } from './ChildSessions.js';
 import type { AgentProcessMonitor } from './processes/AgentProcessMonitor.js';
@@ -66,10 +69,15 @@ export interface StartedLocalMcpResources {
   servers: LocalMcpResource[];
   configs: McpServerConfig[];
 }
+interface SessionPrompt {
+  text: string;
+  mentions?: ProviderMention[];
+}
+
 interface LiveTurnState {
   streaming: boolean;
   autoCompacting: boolean;
-  pendingSends: string[];
+  pendingSends: SessionPrompt[];
   interruptingForSteer?: boolean;
   interrupting?: boolean; // Marks user Stop so the resulting stream abort settles quietly.
 }
@@ -91,6 +99,7 @@ export interface LiveSession extends LiveTurnState {
   todoDisabledForDesign?: boolean;
   compacting?: boolean; // Manual-compaction overlap guard; auto-compaction is separate.
   unsubscribe?: () => void; // Primary provider notification subscription, replaced on swap.
+  catalogUnsubscribe?: () => void;
 }
 type LifecycleError = Omit<Extract<ServerEvent, { type: 'error' }>, 'type'>;
 
@@ -101,6 +110,7 @@ type SteerOutcome = 'taken' | 'queued' | 'interrupt';
 
 export interface SessionLifecycleDependencies {
   provider: (kind: ProviderKind) => Provider;
+  providerDefaultModelId?: (kind: ProviderKind) => string | undefined;
   registry: SessionRegistry<LiveSession>;
   ensureConnected: () => void;
   getFactoryDefaults: () => Promise<FactoryDefaultSettings>;
@@ -122,7 +132,13 @@ export interface SessionLifecycleDependencies {
   >;
   applyPendingSettingsToSummary: (summary: SessionSummary) => SessionSummary;
   applyPendingSessionSettings: (appSessionId: string) => Promise<boolean>;
-  runPrimaryTurn: (liveSession: LiveSession, prompt: string) => Promise<void>;
+  waitForSettingsMutations?: (appSessionId: string) => Promise<void>;
+  runPrimaryTurn: (
+    liveSession: LiveSession,
+    prompt: string,
+    mentions?: ProviderMention[],
+  ) => Promise<void>;
+  eventFlow: Pick<SessionEventFlow, 'apply'>;
   context: Pick<SessionContext, 'refresh' | 'stopPolling' | 'stopSession' | 'forgetSession'>;
   // Durable transcript for a provider that keeps no session file of its own.
   // Opened with the live session, released when it closes.
@@ -139,6 +155,7 @@ export interface SessionLifecycleDependencies {
   // A steered prompt joins the durable transcript without a new turn to record
   // it; the renderer already showed it from the send.
   recordPrompt: (appSessionId: string, text: string) => void;
+  catalogUpdated: (liveSession: LiveSession, items: SkillInfo[]) => void;
   emitSessionList: (closedProviderSessionId: string) => void | Promise<void>;
 }
 export class SessionLifecycle {
@@ -202,6 +219,9 @@ export class SessionLifecycle {
           compactionTokenLimit,
           mcpServers: mcp.configs,
         }),
+        ...(kind !== 'droid' && !primary.modelId
+          ? { modelId: d.providerDefaultModelId?.(kind) }
+          : {}),
         interactions: d.interactionsFor(ref),
       });
       pendingSession = providerSession;
@@ -238,14 +258,16 @@ export class SessionLifecycle {
       const liveSession = createLiveSession(summary, providerSession, droid, mcp);
       pendingLiveSession = liveSession;
       this.subscribeAutomaticCompaction(liveSession);
+      this.subscribeBackgroundEvents(liveSession);
       d.registry.register(liveSession);
+      this.subscribeCatalog(liveSession);
       this.observeProviderClosure(liveSession);
       // Registered first, so the failed-open path that unregisters also releases it.
       d.openProviderTranscript(summary);
       this.trackProviderProcess(appSessionId, providerSession, mcp.configs);
       d.childSessions.attachParent(appSessionId);
       d.emit({ type: 'session.created', clientRef: command.clientRef, session: summary });
-      this.driveInBackground(appSessionId, command.goal);
+      this.driveInBackground(appSessionId, sessionPrompt(command.goal, command.mentions));
     } catch (error) {
       await this.cleanupFailedOpen(pendingMcpServers, pendingSession, pendingLiveSession);
       if (!isOpenAdmissionClosed(error)) {
@@ -306,7 +328,8 @@ export class SessionLifecycle {
     try {
       // Resolved before any resource starts, so a session bound to a provider
       // this build cannot route fails before it costs anything.
-      const provider = d.provider(requireProviderKind(boundProvider(historical)));
+      const kind = requireProviderKind(boundProvider(historical));
+      const provider = d.provider(kind);
       const mcp = await d.startLocalMcpServers(ref, historical?.cwd);
       pendingMcpServers = mcp.servers;
       const providerSession = await provider.resume(providerSessionId, {
@@ -315,6 +338,9 @@ export class SessionLifecycle {
         interactions: d.interactionsFor(ref),
         cwd: historical?.cwd,
         ...resumeSettings(historical),
+        ...(kind !== 'droid' && !historical?.modelId
+          ? { modelId: d.providerDefaultModelId?.(kind) }
+          : {}),
         mcpServers: mcp.configs,
       });
       pendingSession = providerSession;
@@ -325,15 +351,19 @@ export class SessionLifecycle {
         providerSessionId,
         isCurrent: () => !d.isShutdownStarted() && pendingSession === providerSession,
       });
+      // A closed settings write must settle before registration changes its target.
+      await d.waitForSettingsMutations?.(appSessionId);
       this.requireOpenAdmission();
       const projectedSummary = d.applyPendingSettingsToSummary({ ...summary });
-      const liveSession = createLiveSession(summary, providerSession, session, mcp);
+      const liveSession = createLiveSession(projectedSummary, providerSession, session, mcp);
       pendingLiveSession = liveSession;
       this.subscribeAutomaticCompaction(liveSession);
+      this.subscribeBackgroundEvents(liveSession);
       d.registry.register(liveSession);
+      this.subscribeCatalog(liveSession);
       this.observeProviderClosure(liveSession);
       // Registered first, so the failed-open path that unregisters also releases it.
-      d.openProviderTranscript(summary);
+      d.openProviderTranscript(projectedSummary);
       this.trackProviderProcess(appSessionId, providerSession, mcp.configs);
       d.childSessions.attachParent(appSessionId);
       d.emit({
@@ -407,21 +437,55 @@ export class SessionLifecycle {
     return summary;
   }
 
-  async send(requestedAppSessionId: string, text: string): Promise<void> {
+  private subscribeCatalog(liveSession: LiveSession): void {
+    const { session } = liveSession;
+    if (!session.catalogItems) return;
+    const publish = (items: SkillInfo[]) => {
+      if (
+        this.dependencies.registry.getLive(liveSession.summary.appSessionId) === liveSession &&
+        liveSession.session === session &&
+        !liveSession.closeMode
+      )
+        this.dependencies.catalogUpdated(liveSession, items);
+    };
+    liveSession.catalogUnsubscribe = session.onCatalogUpdated?.(publish);
+    void session.catalogItems().then(publish, (error: unknown) => {
+      if (this.dependencies.registry.getLive(liveSession.summary.appSessionId) !== liveSession)
+        return;
+      this.dependencies.emitError({
+        appSessionId: liveSession.summary.appSessionId,
+        code: 'catalog.skills_failed',
+        message: `Could not load this session's provider catalog: ${errMsg(error)}`,
+        recoverable: true,
+      });
+    });
+  }
+
+  async send(
+    requestedAppSessionId: string,
+    text: string,
+    mentions?: ProviderMention[],
+  ): Promise<void> {
     const liveSession = await this.prepareToSend(requestedAppSessionId);
     if (!liveSession) return;
+    const prompt = sessionPrompt(text, mentions);
     if (liveSession.streaming || liveSession.compacting || liveSession.autoCompacting) {
-      liveSession.pendingSends.push(text);
+      liveSession.pendingSends.push(prompt);
       this.updateQueuedSends(liveSession);
       return;
     }
-    await this.drive(liveSession.summary.appSessionId, text);
+    await this.drive(liveSession.summary.appSessionId, prompt);
   }
-  async sendNow(requestedAppSessionId: string, text: string): Promise<void> {
+  async sendNow(
+    requestedAppSessionId: string,
+    text: string,
+    mentions?: ProviderMention[],
+  ): Promise<void> {
     const liveSession = await this.prepareToSend(requestedAppSessionId);
     if (!liveSession) return;
+    const prompt = sessionPrompt(text, mentions);
     if (!liveSession.streaming && !liveSession.compacting && !liveSession.autoCompacting) {
-      await this.drive(liveSession.summary.appSessionId, text);
+      await this.drive(liveSession.summary.appSessionId, prompt);
       return;
     }
     // A provider that takes the prompt into the turn it is already running
@@ -431,9 +495,9 @@ export class SessionLifecycle {
     const interrupting =
       Boolean(liveSession.interrupting) || Boolean(liveSession.interruptingForSteer);
     const steered =
-      compacting || interrupting ? 'interrupt' : await this.steerTurn(liveSession, text);
+      compacting || interrupting ? 'interrupt' : await this.steerTurn(liveSession, prompt);
     if (steered === 'taken') return;
-    liveSession.pendingSends.unshift(text);
+    liveSession.pendingSends.unshift(prompt);
     this.updateQueuedSends(liveSession);
     // 'queued' means the turn this send meant to steer is already ending, and an
     // interrupt already in flight means the same: the prompt travels on the
@@ -458,16 +522,16 @@ export class SessionLifecycle {
   // interrupt and resend, which is how every other provider steers. Steers run
   // one at a time per session: two racing sends would both aim at the turn id
   // they read before the other landed, and the loser would fall back.
-  private steerTurn(liveSession: LiveSession, text: string): Promise<SteerOutcome> {
+  private steerTurn(liveSession: LiveSession, prompt: SessionPrompt): Promise<SteerOutcome> {
     if (!liveSession.session.steer) return Promise.resolve('interrupt');
     const next = (
       this.steering.get(liveSession) ?? Promise.resolve<SteerOutcome>('interrupt')
-    ).then(() => this.steerOnce(liveSession, text));
+    ).then(() => this.steerOnce(liveSession, prompt));
     this.steering.set(liveSession, next);
     return next;
   }
 
-  private async steerOnce(liveSession: LiveSession, text: string): Promise<SteerOutcome> {
+  private async steerOnce(liveSession: LiveSession, prompt: SessionPrompt): Promise<SteerOutcome> {
     const session = liveSession.session;
     const appSessionId = liveSession.summary.appSessionId;
     if (!session.steer) return 'interrupt';
@@ -482,7 +546,7 @@ export class SessionLifecycle {
     )
       return 'queued';
     try {
-      await session.steer(text);
+      await session.steer(prompt.text, prompt.mentions);
     } catch (error) {
       this.dependencies.emitError({
         code: 'session.steer_failed',
@@ -494,7 +558,7 @@ export class SessionLifecycle {
     // The session may have been replaced while the steer was in flight; only
     // the one that took the prompt records it.
     if (this.dependencies.registry.getLive(appSessionId) === liveSession)
-      this.dependencies.recordPrompt(appSessionId, text);
+      this.dependencies.recordPrompt(appSessionId, prompt.text);
     return 'taken';
   }
 
@@ -654,6 +718,7 @@ export class SessionLifecycle {
     });
     await run(() => {
       liveSession.unsubscribe?.();
+      liveSession.catalogUnsubscribe?.();
     });
     for (const server of liveSession.mcpServers) {
       await run(() => server.close());
@@ -799,6 +864,20 @@ export class SessionLifecycle {
     if (target) this.dependencies.compaction.subscribePrimary(target);
   }
 
+  private subscribeBackgroundEvents(liveSession: LiveSession): void {
+    const appSessionId = liveSession.summary.appSessionId;
+    const unsubscribe = liveSession.session.onBackgroundEvent?.((normalized) => {
+      if (
+        this.dependencies.isShutdownStarted() ||
+        liveSession.closeMode ||
+        this.dependencies.registry.getLive(appSessionId) !== liveSession
+      )
+        return;
+      this.dependencies.eventFlow.apply(appSessionId, appSessionId, 'primary', normalized);
+    });
+    if (unsubscribe) liveSession.unsubscribe = unsubscribe;
+  }
+
   private observeProviderClosure(liveSession: LiveSession): void {
     const d = this.dependencies;
     const session = liveSession.session;
@@ -894,6 +973,7 @@ export class SessionLifecycle {
       }
     }
     liveSession?.unsubscribe?.();
+    liveSession?.catalogUnsubscribe?.();
     if (liveSession)
       await runBestEffortAsync(() =>
         this.dependencies.childSessions.closeParent(liveSession.summary.appSessionId),
@@ -922,7 +1002,7 @@ export class SessionLifecycle {
     }
   }
 
-  private async drive(appSessionId: string, prompt: string): Promise<void> {
+  private async drive(appSessionId: string, prompt: SessionPrompt): Promise<void> {
     const d = this.dependencies;
     const liveSession = d.registry.getLive(appSessionId);
     if (!liveSession || liveSession.closeMode || d.isShutdownStarted()) return;
@@ -937,7 +1017,7 @@ export class SessionLifecycle {
         streaming: true,
         queuedSends: liveSession.pendingSends.length,
       });
-      liveSession.turnPromise = d.runPrimaryTurn(liveSession, prompt);
+      liveSession.turnPromise = d.runPrimaryTurn(liveSession, prompt.text, prompt.mentions);
       await liveSession.turnPromise;
     } finally {
       liveSession.turnPromise = undefined;
@@ -970,8 +1050,9 @@ export class SessionLifecycle {
     }
   }
 
-  private driveInBackground(appSessionId: string, prompt: string): void {
-    void this.drive(appSessionId, prompt).catch((error: unknown) => {
+  private driveInBackground(appSessionId: string, prompt: SessionPrompt | string): void {
+    const input = typeof prompt === 'string' ? sessionPrompt(prompt) : prompt;
+    void this.drive(appSessionId, input).catch((error: unknown) => {
       if (!this.dependencies.isShutdownStarted())
         this.dependencies.emitError({ appSessionId, message: errMsg(error) });
     });
@@ -1003,11 +1084,11 @@ export class SessionLifecycle {
     return liveSession.closeMode === 'discard-pending';
   }
 
-  private async redeliverQueuedSends(appSessionId: string, queued: string[]): Promise<void> {
-    for (const text of queued) {
+  private async redeliverQueuedSends(appSessionId: string, queued: SessionPrompt[]): Promise<void> {
+    for (const prompt of queued) {
       if (this.dependencies.isShutdownStarted()) return;
       try {
-        await this.send(appSessionId, text);
+        await this.send(appSessionId, prompt.text, prompt.mentions);
       } catch (error) {
         this.dependencies.emitError({
           appSessionId,
@@ -1017,6 +1098,11 @@ export class SessionLifecycle {
     }
   }
 }
+
+function sessionPrompt(text: string, mentions?: ProviderMention[]): SessionPrompt {
+  return { text, ...(mentions?.length ? { mentions } : {}) };
+}
+
 function createLiveSession(
   summary: SessionSummary,
   session: ProviderSession,

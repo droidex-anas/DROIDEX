@@ -38,6 +38,7 @@ import { sessionIsLive, sessionIsUnread } from '../lib/sessions';
 import { prKind } from '../lib/github';
 import { sessionAttention } from '../lib/sessionAttention';
 import type { SessionSummary } from '../types/bridge';
+import { sessionResumeId } from '../features/providers/providerIdentity';
 import { SidebarAppUpdateButton } from './SidebarAppUpdateButton';
 import { SidebarNavigation } from './SidebarNavigation';
 
@@ -447,6 +448,12 @@ export default function Sidebar({
           }
           pinned={isChatPinned(chatMetadata[rowMenu.appSessionId])}
           cwd={rowMenuSession?.cwd}
+          {...(rowMenuSession
+            ? {
+                provider: rowMenuSession.provider,
+                resumeSessionId: sessionResumeId(rowMenuSession),
+              }
+            : {})}
           providerSessionId={rowMenuSession?.providerSessionId}
           onRename={() => {
             rowActions.startRenaming(rowMenu.appSessionId);

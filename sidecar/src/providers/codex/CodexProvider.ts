@@ -5,7 +5,7 @@ import { join } from 'node:path';
 
 import { nonEmptyEnv } from '../../droidexPaths.js';
 import { isExecutable, resolveOnPathSync } from '../../Environment.js';
-import type { ModelInfo, ProviderStatus } from '../../protocol.js';
+import type { ModelInfo, ProviderStatus, SkillInfo } from '../../protocol.js';
 import type {
   Provider,
   ProviderOpenInput,
@@ -13,6 +13,7 @@ import type {
   ProviderSession,
 } from '../session.js';
 import { AppServerClient } from './appServer.js';
+import { CodexCatalog } from './codexCatalog.js';
 import { listModels } from './codexModels.js';
 import { CodexSession, type CodexSessionInput } from './codexSession.js';
 
@@ -30,6 +31,8 @@ const CLIENT_INFO = {
 // newer releases keep the protocol and are accepted.
 const MINIMUM_VERSION = '0.149.0';
 const PROBE_TIMEOUT_MS = 25_000;
+// The probe's catalog has no reader waiting on it, only a process to release.
+const CATALOG_TIMEOUT_MS = 60_000;
 const INSTALL_HINT = 'Codex CLI not found. Install it, then refresh.';
 const LOGIN_HINT = 'Run `codex login` in a terminal and sign in, then refresh.';
 const PROBE_CANCELLED = 'Codex was not checked.';
@@ -110,8 +113,12 @@ export class CodexProvider implements Provider {
   }
 
   // What Codex can do for the user right now: one app-server process that
-  // reports its version, its account and its models, and is then torn down.
-  async probe(signal: AbortSignal): Promise<ProviderStatus> {
+  // reports its version, its account and its models. Its catalog follows from
+  // the same process, which is torn down once the last source has answered.
+  async probe(
+    signal: AbortSignal,
+    publishItems: (items: SkillInfo[]) => void,
+  ): Promise<ProviderStatus> {
     const executable = resolveCodexPath();
     if (!executable) return unavailable('missing', INSTALL_HINT);
     // A refresh cancelled during shutdown must not leave a process behind.
@@ -127,44 +134,38 @@ export class CodexProvider implements Provider {
       stop();
     }, PROBE_TIMEOUT_MS);
     signal.addEventListener('abort', stop);
+    let status: ProviderStatus;
     try {
-      // The gate comes first: an unsupported CLI is reported as such, not as
-      // whatever its account call happens to say about a protocol this build
-      // does not speak.
-      const { userAgent } = await initialize(client);
-      const version = codexVersion(userAgent);
-      if (!version) return unavailable('error', `Codex did not report a version (${userAgent}).`);
-      if (!atLeast(version, MINIMUM_VERSION))
-        return unavailable(
-          'unsupported',
-          `Codex ${version} is installed; this build needs ${MINIMUM_VERSION} or newer.`,
-          version,
-        );
-      const account = await client.request<AccountResponse>('account/read', {});
-      if (!account.account && account.requiresOpenaiAuth)
-        return unavailable('unauthenticated', LOGIN_HINT);
-      const label = accountLabel(account.account);
-      const configured = await configuredModel(client);
-      const models = await listModels(client, configured);
-      const defaultModelId = publishedDefault(models, configured);
-      return {
-        provider: 'codex',
-        readiness: 'ready',
-        version,
-        ...(label ? { accountLabel: label } : {}),
-        ...(defaultModelId ? { defaultModelId } : {}),
-        models,
-      };
+      status = await readiness(client);
     } catch (error) {
-      return unavailable(
+      status = unavailable(
         'error',
         deadline.expired ? 'Codex did not answer in time.' : errorMessage(error),
       );
     } finally {
       clearTimeout(timer);
+    }
+    if (status.readiness !== 'ready') {
       signal.removeEventListener('abort', stop);
       await client.close();
+      return status;
     }
+    // Readiness never waits for the catalog: its first app listing can take
+    // tens of seconds while Codex discovers connectors, so each source is
+    // published as it lands and the process ends with the last one.
+    const catalog = new CodexCatalog(client, [tmpdir()]);
+    catalog.onUpdated(publishItems);
+    client.onClose(() => {
+      signal.removeEventListener('abort', stop);
+      // Requests the close rejected are not failed sources.
+      catalog.close();
+    });
+    const release = setTimeout(stop, CATALOG_TIMEOUT_MS);
+    void catalog.catalogItems().then(() => {
+      clearTimeout(release);
+      stop();
+    });
+    return status;
   }
 
   private async openSession(
@@ -179,6 +180,13 @@ export class CodexProvider implements Provider {
     const session = new CodexSession({ ...input, client });
     try {
       await initialize(client);
+      if (!input.model.modelId) {
+        // Resuming without an override otherwise inherits the thread's last
+        // model, not the provider default the picker advertises.
+        const configured = await configuredModel(client);
+        const modelId = publishedDefault(await listModels(client, configured), configured);
+        if (modelId) await session.setModel({ modelId });
+      }
       await session.open(resumeId);
     } catch (error) {
       // A session that never opened must not leave its process behind.
@@ -187,6 +195,36 @@ export class CodexProvider implements Provider {
     }
     return session;
   }
+}
+
+// The gate comes first: an unsupported CLI is reported as such, not as
+// whatever its account call happens to say about a protocol this build does
+// not speak.
+async function readiness(client: AppServerClient): Promise<ProviderStatus> {
+  const { userAgent } = await initialize(client);
+  const version = codexVersion(userAgent);
+  if (!version) return unavailable('error', `Codex did not report a version (${userAgent}).`);
+  if (!atLeast(version, MINIMUM_VERSION))
+    return unavailable(
+      'unsupported',
+      `Codex ${version} is installed; this build needs ${MINIMUM_VERSION} or newer.`,
+      version,
+    );
+  const account = await client.request<AccountResponse>('account/read', {});
+  if (!account.account && account.requiresOpenaiAuth)
+    return unavailable('unauthenticated', LOGIN_HINT);
+  const label = accountLabel(account.account);
+  const configured = await configuredModel(client);
+  const models = await listModels(client, configured);
+  const defaultModelId = publishedDefault(models, configured);
+  return {
+    provider: 'codex',
+    readiness: 'ready',
+    version,
+    ...(label ? { accountLabel: label } : {}),
+    ...(defaultModelId ? { defaultModelId } : {}),
+    models,
+  };
 }
 
 // A provider that cannot run offers no models, whatever the reason.

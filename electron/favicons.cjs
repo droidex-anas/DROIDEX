@@ -1,8 +1,8 @@
 /**
- * Site icons for links in the transcript.
+ * Site icons for transcript links and provider catalogs.
  *
- * A link's mark is the linked site's own favicon, fetched once per host by the
- * main process and served to the renderer through `droidex-favicon://<host>/`.
+ * The main process discovers favicons by host or fetches a catalog's exact URL.
+ * Both are served through `droidex-favicon://`, never fetched by the renderer.
  * The renderer never contacts arbitrary origins itself, and Node's fetch keeps
  * these requests out of every browsing session, so no cookies are sent.
  *
@@ -17,6 +17,7 @@
  * Kept free of `require('electron')` so it runs under plain Node.
  */
 
+const { createHash } = require('node:crypto');
 const dns = require('node:dns/promises');
 const fsp = require('node:fs/promises');
 const net = require('node:net');
@@ -118,21 +119,39 @@ function ipv4MappedIn(address) {
   return `${high >> 8}.${high & 255}.${low >> 8}.${low & 255}`;
 }
 
-/** The host a `droidex-favicon://` URL asks about, or throws if it is not one we serve. */
-function faviconRequestHost(requestUrl) {
+/** The public host or exact icon URL carried by a favicon request. */
+function faviconRequestTarget(requestUrl) {
   const url = new URL(requestUrl);
   if (url.protocol !== `${FAVICON_SCHEME}:`) throw new Error(`Unsupported scheme: ${url.protocol}`);
+  if (url.username || url.password || url.port) throw new Error('Invalid icon request');
+  if (url.hostname === 'icon' && url.pathname === '/') {
+    const target = new URL(url.searchParams.get('url') ?? '');
+    assertPublicUrl(target);
+    target.hash = '';
+    return target;
+  }
   const host = url.hostname.toLowerCase();
   if (!isPublicHostname(host)) throw new Error(`Not a public host: ${host}`);
   return host;
 }
 
-async function assertPublicTarget(url, lookup) {
-  if (url.protocol !== 'https:' || (url.port !== '' && url.port !== '443')) {
-    throw new IconUnavailable(`Refusing ${url.href}: HTTPS on the default port only`);
+function assertPublicUrl(url) {
+  if (
+    url.protocol !== 'https:' ||
+    (url.port !== '' && url.port !== '443') ||
+    url.username ||
+    url.password
+  ) {
+    throw new IconUnavailable('Icons require credential-free HTTPS on the default port');
   }
+  if (!isPublicHostname(url.hostname.toLowerCase())) {
+    throw new IconUnavailable('Icon host is not public');
+  }
+}
+
+async function assertPublicTarget(url, lookup) {
+  assertPublicUrl(url);
   const host = url.hostname.toLowerCase();
-  if (!isPublicHostname(host)) throw new IconUnavailable(`Refusing non-public host ${host}`);
   const addresses = await lookup(host, { all: true });
   if (addresses.some((entry) => isPrivateAddress(entry.address))) {
     throw new IconUnavailable(`Refusing ${host}: it resolves to a private address`);
@@ -246,8 +265,25 @@ function createFaviconStore({
   const retryAfter = new Map();
   const request = { fetchImpl, lookup, userAgent };
 
-  async function fetchIcon(host) {
-    const origin = new URL(`https://${host}/`);
+  async function fetchImage(url) {
+    try {
+      const icon = await fetchFollowing(url, {
+        ...request,
+        accept: 'image/*',
+        maxBytes: MAX_ICON_BYTES,
+        truncate: false,
+      });
+      const mime = sniffImage(icon.body, icon.contentType);
+      return mime ? { mime, data: icon.body } : null;
+    } catch (error) {
+      if (!(error instanceof IconUnavailable)) throw error;
+      return null;
+    }
+  }
+
+  async function fetchIcon(target) {
+    if (target instanceof URL) return fetchImage(target);
+    const origin = new URL(`https://${target}/`);
     const candidates = [];
     try {
       const page = await fetchFollowing(origin, {
@@ -265,18 +301,8 @@ function createFaviconStore({
     for (const url of candidates) {
       if (tried.has(url.href)) continue;
       tried.add(url.href);
-      try {
-        const icon = await fetchFollowing(url, {
-          ...request,
-          accept: 'image/*',
-          maxBytes: MAX_ICON_BYTES,
-          truncate: false,
-        });
-        const mime = sniffImage(icon.body, icon.contentType);
-        if (mime) return { mime, data: icon.body };
-      } catch (error) {
-        if (!(error instanceof IconUnavailable)) throw error;
-      }
+      const icon = await fetchImage(url);
+      if (icon) return icon;
     }
     return null;
   }
@@ -315,35 +341,39 @@ function createFaviconStore({
     await fs.writeFile(files.meta, JSON.stringify({ mime: found?.mime ?? null, fetchedAt: now() }));
   }
 
-  async function resolveIcon(host) {
-    const cached = await readCached(host);
+  async function resolveIcon(target, key) {
+    const cached = await readCached(key);
     if (cached !== undefined) return cached;
-    const found = await fetchIcon(host);
-    await writeCached(host, found).catch((error) => {
-      logError(`Could not cache the icon for ${host}: ${error.message}`);
+    const found = await fetchIcon(target);
+    await writeCached(key, found).catch((error) => {
+      logError(`Could not cache the icon for ${key}: ${error.message}`);
     });
     return found;
   }
 
-  /** The icon for a public host, or null when it has none or cannot be reached right now. */
-  function load(host) {
-    if (settled.has(host)) return Promise.resolve(settled.get(host));
-    if ((retryAfter.get(host) ?? 0) > now()) return Promise.resolve(null);
-    let pending = inFlight.get(host);
+  /** A host's favicon or an exact public HTTPS image, fetched lazily. */
+  function load(target) {
+    const key =
+      target instanceof URL
+        ? `url-${createHash('sha256').update(target.href).digest('hex')}`
+        : target;
+    if (settled.has(key)) return Promise.resolve(settled.get(key));
+    if ((retryAfter.get(key) ?? 0) > now()) return Promise.resolve(null);
+    let pending = inFlight.get(key);
     if (!pending) {
-      pending = resolveIcon(host)
+      pending = resolveIcon(target, key)
         .then((found) => {
-          settled.set(host, found);
+          settled.set(key, found);
           if (settled.size > SETTLED_LIMIT) settled.delete(settled.keys().next().value);
           return found;
         })
-        .catch((error) => {
-          retryAfter.set(host, now() + RETRY_AFTER_MS);
-          logError(`Could not fetch the icon for ${host}: ${error.message}`);
+        .catch(() => {
+          retryAfter.set(key, now() + RETRY_AFTER_MS);
+          logError(`Could not fetch the icon for ${key}; retrying later`);
           return null;
         })
-        .finally(() => inFlight.delete(host));
-      inFlight.set(host, pending);
+        .finally(() => inFlight.delete(key));
+      inFlight.set(key, pending);
     }
     return pending;
   }
@@ -351,4 +381,4 @@ function createFaviconStore({
   return { load };
 }
 
-module.exports = { FAVICON_SCHEME, createFaviconStore, faviconRequestHost };
+module.exports = { FAVICON_SCHEME, createFaviconStore, faviconRequestTarget };

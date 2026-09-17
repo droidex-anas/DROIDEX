@@ -8,13 +8,17 @@ import {
   collectTurnFiles,
   isCancellationArtifact,
   isCompactionCompleteStatus,
+  isSettingsStatus,
   type BuildFeedOptions,
   type FeedItem,
 } from './chatFeed';
 import { isAutomationProposalCall } from '../features/automations/toolNames';
 
-function isUserMessage(item: FeedItem): boolean {
-  return item.type === 'message' && item.event.author === 'user';
+function isTurnBoundary(item: FeedItem): boolean {
+  return (
+    (item.type === 'message' && item.event.author === 'user') ||
+    (item.type === 'status' && isSettingsStatus(item.event))
+  );
 }
 
 // Short preview of a message for the conversation timeline tooltip: whitespace
@@ -335,13 +339,13 @@ export function groupTurns(
   const out: FeedItem[] = [];
   let i = 0;
   while (i < items.length) {
-    if (isUserMessage(items[i])) {
+    if (isTurnBoundary(items[i])) {
       out.push(items[i]);
       i++;
       continue;
     }
     const run: FeedItem[] = [];
-    while (i < items.length && !isUserMessage(items[i])) {
+    while (i < items.length && !isTurnBoundary(items[i])) {
       run.push(items[i]);
       i++;
     }

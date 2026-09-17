@@ -27,16 +27,42 @@ export function offersReasoningEffort(
   return !model || (model.supportedReasoningEfforts?.length ?? 0) > 0;
 }
 
-// Shared rule for the reasoning effort shown next to a model (composer badge
-// and context-panel pill): the session's pinned effort wins and the global
-// default is the fallback.
+// Callers choose the session or draft effort. An unset session effort stays
+// provider-managed; display code must not substitute a global or catalog default.
 export function resolveReasoningEffortDisplay(
-  sessionEffort: ReasoningEffort | undefined,
-  globalDefault: ReasoningEffort | undefined,
+  effort: ReasoningEffort | undefined,
   model: Pick<ModelInfo, 'supportedReasoningEfforts'> | undefined,
 ): ReasoningEffort | undefined {
-  if (!offersReasoningEffort(model)) return undefined;
-  return sessionEffort ?? globalDefault;
+  return offersReasoningEffort(model) ? effort : undefined;
+}
+
+export function compatibleReasoningForModel(
+  model: ModelInfo | undefined,
+  currentReasoning: ReasoningEffort | undefined,
+): ReasoningEffort | undefined {
+  if (!model || currentReasoning === undefined) return undefined;
+  const supported = model.supportedReasoningEfforts;
+  if (supported?.length)
+    return supported.includes(currentReasoning)
+      ? undefined
+      : (model.defaultReasoningEffort ?? supported.at(-1));
+  if (model.defaultReasoningEffort && currentReasoning !== model.defaultReasoningEffort)
+    return model.defaultReasoningEffort;
+  return undefined;
+}
+
+// The effort a model switch carries: a level the new model can run, null when
+// it offers no level and one is set (so the previous model's does not follow
+// it), undefined when the current one stands.
+export function reasoningForModelSwitch(
+  model: ModelInfo | undefined,
+  currentReasoning: ReasoningEffort | undefined,
+): ReasoningEffort | null | undefined {
+  const compatible = compatibleReasoningForModel(model, currentReasoning);
+  if (compatible !== undefined) return compatible;
+  const offersNone =
+    model && !model.supportedReasoningEfforts?.length && !model.defaultReasoningEffort;
+  return offersNone && currentReasoning !== undefined ? null : undefined;
 }
 
 // The top rung is the same idea on both harnesses but not the same word: Claude

@@ -75,6 +75,11 @@ test('resolveWaveSessions matches a registered child by spawn event id when tool
   const [resolved] = resolveWaveSessions([spawnEvent], [child]);
   assert.equal(resolved?.childSessionId, 'child-a');
   assert.equal(resolved?.status, 'running');
+  const siblings = resolveWaveSessions(
+    [spawnEvent],
+    [child, { ...child, childSessionId: 'child-b' }],
+  );
+  assert.deepEqual(siblings.map(childSessionKey), ['child-a', 'child-b']);
 });
 
 test('mergeChildSessionSpawn merges a label-only delta with a later description-only delta', () => {
@@ -277,14 +282,14 @@ test('spawned sessions cover a spawn the store has not registered yet', () => {
   assert.equal(pending[0].streamFidelity, 'state');
   assert.ok(isPendingChildPlaceholder(pending[0]));
 
-  // Once the session registers, the same spawn resolves to it — same row key, so
-  // the panel swaps the row's contents instead of replacing the row.
+  // Registration replaces the placeholder with the stable logical child identity.
   const resolved = spawnedChildSessions([spawnA], [registered]);
   assert.deepEqual(
     resolved.map((child) => child.childSessionId),
     ['child-a'],
   );
-  assert.equal(childSessionKey(pending[0]), childSessionKey(resolved[0]));
+  assert.equal(childSessionKey(pending[0]), 'pending-tool-a');
+  assert.equal(childSessionKey(resolved[0]), 'child-a');
   // The spawn event's time is the true start, not the store's later stamp.
   assert.equal(resolved[0].startedAt, 10);
 });

@@ -2,18 +2,15 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { MessageFeed } from './MessageFeed';
-import { buildFeed } from './chatFeed';
-import { groupTurns, trailingSubagentPoll } from './chatFeedTurns';
-import {
-  DOCK_VISIBLE_ROW_LIMIT,
-  foldedDockRows,
-  SubagentsDock,
-  subagentRowTitle,
-} from './SubagentsDock';
-import { isPendingChildPlaceholder, resolveWaveSessions } from '../lib/childSessions';
-import { childSessionInfo } from '../lib/tools';
-import type { ChildSessionSummary, ChildStatus, TranscriptEvent } from '../types/bridge';
+import { MessageFeed } from '../MessageFeed';
+import { buildFeed } from '../chatFeed';
+import { groupTurns, trailingSubagentPoll } from '../chatFeedTurns';
+import { AgentMonitorCard } from './AgentMonitorCard';
+import { AGENT_VISIBLE_ROW_LIMIT, foldedAgentRows } from './AgentRowList';
+import { agentRowTitle } from './AgentRow';
+import { isPendingChildPlaceholder, resolveWaveSessions } from '../../lib/childSessions';
+import { childSessionInfo } from '../../lib/tools';
+import type { ChildSessionSummary, ChildStatus, TranscriptEvent } from '../../types/bridge';
 
 let seq = 0;
 function ev(extra: Partial<TranscriptEvent>): TranscriptEvent {
@@ -57,7 +54,7 @@ function childSession(
   };
 }
 
-const dockData = {
+const monitorData = {
   sessions: [childSession('explorer', 't1', 'running'), childSession('worker', 't2', 'completed')],
   models: [],
 };
@@ -69,28 +66,46 @@ const textOf = (html: string) => html.replace(/<!--.*?-->/g, '');
 // A tool group shimmers its summary only while the step is still running.
 const LIVE_SUMMARY_CLASS = 'shimmer-text text-[13px] font-medium';
 
-test('live runtime activity outranks the stored status', () => {
+test("the child's own status outranks activity read off the spawn tool", () => {
+  // A background Task call returning means the launch was accepted, not that the
+  // agent finished; only the child's state-only status may settle a row.
   const text = textOf(
     renderToStaticMarkup(
-      createElement(SubagentsDock, {
+      createElement(AgentMonitorCard, {
         sessions: [childSession('a', 't1', 'running')],
         models: [],
         activity: () => ({ status: 'completed' }),
       }),
     ),
   );
+  assert.ok(text.includes('1 Running'));
+  assert.ok(!text.includes('1 Done'));
+});
+
+test('a failed agent is counted and tinted apart from a finished one', () => {
+  const text = textOf(
+    renderToStaticMarkup(
+      createElement(AgentMonitorCard, {
+        sessions: [childSession('a', 't1', 'failed'), childSession('b', 't2', 'completed')],
+        models: [],
+      }),
+    ),
+  );
+  assert.ok(text.includes('1 Failed'));
   assert.ok(text.includes('1 Done'));
-  assert.ok(!text.includes('1 Running'));
+  // Both are terminal, so the wave reads as fully accounted for.
+  assert.ok(text.includes('100%'));
+  assert.ok(text.includes('1 of 2 agents failed'));
 });
 
 test('collapsed dock shows grouped status counts, not per-agent rows', () => {
-  const text = textOf(renderToStaticMarkup(createElement(SubagentsDock, dockData)));
-  assert.ok(text.includes('Subagents'));
+  const html = renderToStaticMarkup(createElement(AgentMonitorCard, monitorData));
+  const text = textOf(html);
+  assert.ok(text.includes('Agents'));
   assert.ok(text.includes('1 Running'));
   assert.ok(text.includes('1 Done'));
-  // Names live in the expanded rows, which stay unmounted while collapsed.
-  assert.ok(!text.includes('explorer'));
-  assert.ok(!text.includes('worker'));
+  // Rows stay unmounted while collapsed; only the lifecycle line names agents.
+  assert.equal(html.includes('data-testid="agent-row"'), false);
 });
 
 test('dock mode groups a consecutive spawn wave into one feed item', () => {
@@ -164,11 +179,11 @@ test('an in-flight turn renders the wave as a dock instead of per-spawn lines', 
         events,
         pending: true,
         onOpenChildSession: () => {},
-        subagentsDock: dockData,
+        agentMonitor: monitorData,
       }),
     ),
   );
-  assert.equal(text.match(/Subagents/g)?.length, 1);
+  assert.equal(text.match(/Agents/g)?.length, 1);
   assert.ok(!text.includes('Spawned'));
 });
 
@@ -185,25 +200,26 @@ test('two in-flight waves render two docks, each scoped to its own agents', () =
         events,
         pending: true,
         onOpenChildSession: () => {},
-        subagentsDock: dockData,
+        agentMonitor: monitorData,
       }),
     ),
   );
-  assert.equal(text.match(/Subagents/g)?.length, 2);
+  assert.equal(text.match(/Agents/g)?.length, 2);
   // Wave 1 holds only the running explorer; wave 2 only the completed worker.
-  assert.ok(text.includes('1 Running'));
+  // A live wave opens, so its count pills have already become row pills.
+  assert.ok(text.includes('Running'));
   assert.ok(text.includes('1 Done'));
   // The header summarizes completion; the pills carry the status breakdown.
   assert.ok(!text.includes('spawned'));
-  assert.ok(text.includes('All 1 subagent finished'));
-  assert.ok(text.includes('0 of 1 subagent finished'));
+  assert.ok(text.includes('All 1 agent finished'));
+  assert.ok(text.includes('0 of 1 agent finished'));
   assert.ok(!text.includes('Spawned'));
 });
 
 test('the card reads as status pills plus a completion summary', () => {
   const text = textOf(
     renderToStaticMarkup(
-      createElement(SubagentsDock, {
+      createElement(AgentMonitorCard, {
         sessions: [
           childSession('a', 't1', 'running'),
           childSession('b', 't2', 'running'),
@@ -217,7 +233,7 @@ test('the card reads as status pills plus a completion summary', () => {
   assert.ok(text.includes('2 Running'));
   assert.ok(text.includes('1 Awaiting approval'));
   assert.ok(text.includes('1 Done'));
-  assert.ok(text.includes('1 of 4 subagents finished'));
+  assert.ok(text.includes('1 of 4 agents finished'));
   assert.ok(text.includes('25%'));
 });
 
@@ -232,11 +248,14 @@ test('an unresolved live spawn reports unknown status and never infers lifecycle
   const wave = resolveWaveSessions([launched], []);
   assert.equal(wave[0].status, 'pending');
   const text = textOf(
-    renderToStaticMarkup(createElement(SubagentsDock, { sessions: wave, models: [], live: true })),
+    renderToStaticMarkup(
+      createElement(AgentMonitorCard, { sessions: wave, models: [], live: true }),
+    ),
   );
-  assert.ok(text.includes('1 Awaiting status'));
-  assert.ok(text.includes('Awaiting status for 1 subagent'));
-  assert.ok(text.includes('Starting'));
+  assert.ok(text.includes('Awaiting status'));
+  assert.ok(text.includes('Awaiting status for 1 agent'));
+  // With no activity yet, the row says what the agent was asked to do.
+  assert.ok(text.includes('explorer work'));
   assert.ok(!text.includes('1m</'));
   assert.ok(!text.includes('Done'));
 
@@ -245,13 +264,10 @@ test('an unresolved live spawn reports unknown status and never infers lifecycle
 });
 
 test('placeholder tool ids are never presented as stable child ids', () => {
+  assert.equal(agentRowTitle('Explorer', 'pending-tool-1'), 'Open Explorer');
   assert.equal(
-    subagentRowTitle('Explorer', { childSessionId: 'pending-tool-1' }),
-    'Open Explorer session',
-  );
-  assert.equal(
-    subagentRowTitle('Explorer', { childSessionId: 'child-stable-1' }),
-    'Open Explorer session\nChild ID: child-stable-1',
+    agentRowTitle('Explorer', 'child-stable-1'),
+    'Open Explorer\nChild ID: child-stable-1',
   );
 });
 
@@ -263,14 +279,14 @@ test('the dock renders instantly from spawn events, before sessions register', (
         events,
         pending: true,
         onOpenChildSession: () => {},
-        subagentsDock: { sessions: [], models: [] },
+        agentMonitor: { sessions: [], models: [] },
       }),
     ),
   );
   // No resolved sessions yet: a placeholder stands in so the card never flashes
   // per-spawn lines while the store catches up.
-  assert.ok(text.includes('Subagents'));
-  assert.ok(text.includes('1 Awaiting status'));
+  assert.ok(text.includes('Agents'));
+  assert.ok(text.includes('Awaiting status'));
   assert.ok(!text.includes('Spawned'));
 });
 
@@ -284,11 +300,11 @@ test('an unresolved wave stays unknown once later items follow it in the same tu
         events,
         pending: true,
         onOpenChildSession: () => {},
-        subagentsDock: { sessions: [], models: [] },
+        agentMonitor: { sessions: [], models: [] },
       }),
     ),
   );
-  assert.ok(text.includes('1 Awaiting status'));
+  assert.ok(text.includes('Awaiting status'));
   assert.ok(!text.includes('Never started'));
 });
 
@@ -315,11 +331,11 @@ test('polling and stopping subagents never renders rows beside the card', () => 
         events,
         pending: true,
         onOpenChildSession: () => {},
-        subagentsDock: { sessions: [], models: [] },
+        agentMonitor: { sessions: [], models: [] },
       }),
     ),
   );
-  assert.ok(text.includes('Subagents'));
+  assert.ok(text.includes('Agents'));
   // The card speaks for the polls; neither the calls nor their echoed bodies
   // may appear as tool rows.
   assert.ok(!text.includes('TaskOutput'));
@@ -348,7 +364,7 @@ test('a poll after a finished step reads as checking subagents, not a stuck step
       events,
       pending: true,
       onOpenChildSession: () => {},
-      subagentsDock: dockData,
+      agentMonitor: monitorData,
     }),
   );
   assert.ok(textOf(html).includes('Checking subagents'));
@@ -377,7 +393,7 @@ test('a poll after the parent stopped talking still shows the parent working', (
         events,
         pending: true,
         onOpenChildSession: () => {},
-        subagentsDock: dockData,
+        agentMonitor: monitorData,
       }),
     ),
   );
@@ -403,12 +419,12 @@ test('a poll behind a running wave card does not add a second live cue', () => {
         events,
         pending: true,
         onOpenChildSession: () => {},
-        subagentsDock: { sessions: [childSession('explorer', 't1', 'running')], models: [] },
+        agentMonitor: { sessions: [childSession('explorer', 't1', 'running')], models: [] },
         childSessionActivity: () => ({ status: 'running' }),
       }),
     ),
   );
-  assert.ok(text.includes('Subagents'));
+  assert.ok(text.includes('Agents'));
   assert.ok(!text.includes('Checking subagents'));
 
   // Once the wave settles, the card stops animating and the cue is the only
@@ -419,7 +435,7 @@ test('a poll behind a running wave card does not add a second live cue', () => {
         events,
         pending: true,
         onOpenChildSession: () => {},
-        subagentsDock: { sessions: [childSession('explorer', 't1', 'completed')], models: [] },
+        agentMonitor: { sessions: [childSession('explorer', 't1', 'completed')], models: [] },
         childSessionActivity: () => ({ status: 'completed' }),
       }),
     ),
@@ -507,7 +523,7 @@ test('a row is timed from its spawn, not from when the store caught up', () => {
   const wave = resolveWaveSessions([spawnEvent], [late]);
   const text = textOf(
     renderToStaticMarkup(
-      createElement(SubagentsDock, {
+      createElement(AgentMonitorCard, {
         sessions: wave,
         models: [],
         live: true,
@@ -578,19 +594,19 @@ test('a registered row keeps the spawn event time as its true start', () => {
 // card folds everything past the first rows behind "Show N more subagents"
 // instead of dumping (and stagger-animating) the full list at once.
 test('an expanded wave folds rows past the visible limit, preserving spawn order', () => {
-  const rows = Array.from({ length: DOCK_VISIBLE_ROW_LIMIT + 4 }, (_, i) => `agent-${String(i)}`);
-  const folded = foldedDockRows(rows, false);
-  assert.equal(folded.length, DOCK_VISIBLE_ROW_LIMIT);
+  const rows = Array.from({ length: AGENT_VISIBLE_ROW_LIMIT + 4 }, (_, i) => `agent-${String(i)}`);
+  const folded = foldedAgentRows(rows, false);
+  assert.equal(folded.length, AGENT_VISIBLE_ROW_LIMIT);
   // A head slice, so visible rows keep their indices into the full row list
   // (names and duration lookups stay aligned).
-  assert.deepEqual(folded, rows.slice(0, DOCK_VISIBLE_ROW_LIMIT));
+  assert.deepEqual(folded, rows.slice(0, AGENT_VISIBLE_ROW_LIMIT));
   // "Show N more" reveals the rest in the same order.
-  assert.deepEqual(foldedDockRows(rows, true), rows);
+  assert.deepEqual(foldedAgentRows(rows, true), rows);
 });
 
 test('a wave at or under the visible limit shows every row with no fold', () => {
-  const rows = Array.from({ length: DOCK_VISIBLE_ROW_LIMIT }, (_, i) => `agent-${String(i)}`);
-  assert.deepEqual(foldedDockRows(rows, false), rows);
+  const rows = Array.from({ length: AGENT_VISIBLE_ROW_LIMIT }, (_, i) => `agent-${String(i)}`);
+  assert.deepEqual(foldedAgentRows(rows, false), rows);
 });
 
 test('a replayed spawn stays neutral until exact child status is known', () => {
@@ -602,63 +618,15 @@ test('a replayed spawn stays neutral until exact child status is known', () => {
 test('queued children render as Queued, not Awaiting status', () => {
   const text = textOf(
     renderToStaticMarkup(
-      createElement(SubagentsDock, {
+      createElement(AgentMonitorCard, {
         sessions: [{ ...childSession('queued-agent', 't1', 'pending'), queued: true }],
         models: [],
         live: true,
       }),
     ),
   );
-  assert.ok(text.includes('1 Queued'));
   assert.ok(text.includes('Queued'));
-  assert.ok(!text.includes('1 Awaiting status'));
-});
-
-test('a live token child shows a bounded typewriter preview on the in-flight card', () => {
-  const html = renderToStaticMarkup(
-    createElement(SubagentsDock, {
-      sessions: [{ ...childSession('explorer', 't1', 'running'), streamFidelity: 'token' }],
-      models: [],
-      live: true,
-      activity: () => ({
-        status: 'running',
-        startedAt: 1_000,
-        latest: { kind: 'text', text: `${'line\n'.repeat(12)}visible tail` },
-      }),
-    }),
-  );
-  const text = textOf(html);
-  assert.ok(text.includes('Streaming'));
-  assert.ok(text.includes('visible tail'));
-  assert.ok(html.includes('data-testid="subagent-stream-preview"'));
-  assert.ok(html.includes('data-presentation="typewriter"'));
-  assert.ok(html.includes('caret-blink'));
-  assert.ok(html.includes('min-h-[3.75rem] max-h-[3.75rem]'));
-  assert.equal(text.includes('line\nline\nline\nline\nline'), false);
-});
-
-test('a polled child shows a working cue and never a typewriter caret', () => {
-  const html = renderToStaticMarkup(
-    createElement(SubagentsDock, {
-      sessions: [
-        {
-          ...childSession('explorer', 't1', 'running'),
-          activity: { phase: 'Running', preview: 'last observed lump' },
-        },
-      ],
-      models: [],
-      live: true,
-    }),
-  );
-  const text = textOf(html);
-  assert.ok(text.includes('Working'));
-  assert.ok(text.includes('last observed lump'));
-  assert.ok(text.includes('Running…'));
-  assert.ok(html.includes('data-presentation="working"'));
-  assert.ok(html.includes('data-testid="subagent-working-cue"'));
-  assert.equal(html.includes('caret-blink'), false);
-  assert.equal(html.includes('data-presentation="typewriter"'), false);
-  assert.equal(text.includes('Streaming'), false);
+  assert.ok(!text.includes('Awaiting status'));
 });
 
 test('dock session status suppresses the global cue without an activity callback', () => {
@@ -667,9 +635,49 @@ test('dock session status suppresses the global cue without an activity callback
       events: [userMsg('go'), spawn('t1', 'explorer')],
       pending: true,
       onOpenChildSession: () => {},
-      subagentsDock: { sessions: [childSession('explorer', 't1', 'running')], models: [] },
+      agentMonitor: { sessions: [childSession('explorer', 't1', 'running')], models: [] },
     }),
   );
-  assert.ok(textOf(html).includes('Subagents'));
+  assert.ok(textOf(html).includes('Agents'));
   assert.equal(textOf(html).includes('Working'), false);
+});
+
+test('a workflow labels its phases; a plain wave keeps its rows in spawn order', () => {
+  const workflow = renderToStaticMarkup(
+    createElement(AgentMonitorCard, {
+      sessions: [
+        { ...childSession('explorer', 't1', 'running'), group: 'Repair work', phase: 'Read' },
+        { ...childSession('worker', 't2', 'completed'), group: 'Repair work', phase: 'Fix' },
+      ],
+      models: [],
+      live: true,
+    }),
+  );
+  // The workflow names the card, and its own phases are the groups.
+  assert.ok(textOf(workflow).includes('Repair work'));
+  assert.ok(textOf(workflow).includes('Read'));
+  assert.ok(textOf(workflow).includes('Fix'));
+
+  // A plain wave has nothing to label, so the card is the flat list of rows the
+  // turn spawned — never regrouped into active and finished under its own heads.
+  const plain = renderToStaticMarkup(
+    createElement(AgentMonitorCard, { ...monitorData, live: true }),
+  );
+  assert.equal(plain.includes('agent-section-label'), false);
+});
+
+test('the transcript states a wave lifecycle in one folded sentence', () => {
+  const text = textOf(
+    renderToStaticMarkup(
+      createElement(AgentMonitorCard, {
+        sessions: [
+          { ...childSession('explorer', 't1', 'completed'), group: 'Repair work' },
+          { ...childSession('worker', 't2', 'completed'), group: 'Repair work' },
+        ],
+        models: [],
+      }),
+    ),
+  );
+  assert.ok(text.includes('explorer and worker started working'));
+  assert.ok(text.includes('Repair work finished'));
 });

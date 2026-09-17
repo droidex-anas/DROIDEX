@@ -12,6 +12,7 @@ import { Hash, ChevronRight, FileText } from 'lucide-react';
 import { ModelIcon, providerOf } from './ModelIcon';
 import NotesSection from './NotesSection';
 import { SubagentsSection } from './SubagentsPanel';
+import { useOpenAgent } from './agents/useOpenAgent';
 import { Row, SectionHeader, Divider } from './environment/primitives';
 import { EnvironmentSection } from './environment/EnvironmentSection';
 import type { DiffStatMode } from '../types/vcs';
@@ -25,6 +26,7 @@ import {
 
 export default function RightPanel() {
   const dispatch = useStoreDispatch();
+  const openAgent = useOpenAgent();
   const state = useStoreSelector((current) => {
     const activeSession = current.activeAppSessionId
       ? current.sessions[current.activeAppSessionId]
@@ -32,7 +34,6 @@ export default function RightPanel() {
     return {
       activeSession,
       activeTranscript: activeSession ? current.transcripts[activeSession.appSessionId] : undefined,
-      agentConfig: current.agentConfig,
       childAccess: current.childAccess,
       childRuntime: current.childRuntime,
       childSessions: current.childSessions,
@@ -206,16 +207,7 @@ export default function RightPanel() {
                 models={state.models}
                 selectedChildSessionId={selectedAgent}
                 onSelect={(child) => {
-                  dispatch({
-                    type: 'SELECT_CHILD',
-                    selection:
-                      selectedAgent === child.childSessionId
-                        ? null
-                        : {
-                            parentAppSessionId: child.parentAppSessionId,
-                            childSessionId: child.childSessionId,
-                          },
-                  });
+                  openAgent(child.childSessionId);
                 }}
               />
             </div>
@@ -311,7 +303,6 @@ function modelRowContent(
   state: {
     models: ModelInfo[];
     providerStatuses: ProviderStatus[];
-    agentConfig: { primary: { reasoning?: ReasoningEffort } };
   },
 ): { modelInfo?: ModelInfo; modelLabel: string; reasoningEffort?: ReasoningEffort } {
   if (!session) return { modelLabel: 'default' };
@@ -329,10 +320,6 @@ function modelRowContent(
   return {
     ...(shown ? { modelInfo: shown } : {}),
     modelLabel: shown?.displayName ?? session.modelId ?? 'default',
-    reasoningEffort: resolveReasoningEffortDisplay(
-      session.reasoningEffort,
-      state.agentConfig.primary.reasoning,
-      shown,
-    ),
+    reasoningEffort: resolveReasoningEffortDisplay(session.reasoningEffort, shown),
   };
 }

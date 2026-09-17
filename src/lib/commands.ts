@@ -12,6 +12,7 @@ import type {
   McpServerInput,
   PermissionOutcome,
   ProviderKind,
+  ProviderMention,
   ReasoningEffort,
   ResponseFormat,
   SessionInteractionMode,
@@ -37,6 +38,7 @@ export const createSession = (input: {
   cwd?: string;
   title: string;
   goal: string;
+  mentions?: ProviderMention[];
   sessionPurpose: SessionPurpose;
   provider?: ProviderKind;
   interactionMode?: SessionInteractionMode;
@@ -59,7 +61,7 @@ export const createSession = (input: {
 export const updateSessionSettings = (input: {
   appSessionId: string;
   modelId?: string | null;
-  reasoningEffort?: ReasoningEffort;
+  reasoningEffort?: ReasoningEffort | null;
   autonomy?: Autonomy;
   interactionMode?: SessionInteractionMode;
 }) => {
@@ -116,12 +118,14 @@ export const sendToSession = (
   appSessionId: string,
   text: string,
   responseFormat?: ResponseFormat,
+  mentions?: ProviderMention[],
 ) => {
   requireAgentWorkAvailable();
   bridge.send({
     type: 'session.send',
     appSessionId,
     text,
+    ...(mentions?.length ? { mentions } : {}),
     ...(responseFormat ? { responseFormat } : {}),
   });
 };
@@ -130,12 +134,14 @@ export const sendToSessionNow = (
   appSessionId: string,
   text: string,
   responseFormat?: ResponseFormat,
+  mentions?: ProviderMention[],
 ) => {
   requireAgentWorkAvailable();
   bridge.send({
     type: 'session.sendNow',
     appSessionId,
     text,
+    ...(mentions?.length ? { mentions } : {}),
     ...(responseFormat ? { responseFormat } : {}),
   });
 };
@@ -360,7 +366,7 @@ export const updateAgentSettings = (input: {
   appSessionId?: string;
   agent: ConfigurableSessionRole;
   modelId?: string | null;
-  reasoningEffort?: ReasoningEffort;
+  reasoningEffort?: ReasoningEffort | null;
 }) => {
   bridge.send({ type: 'settings.agent.update', ...input });
 };

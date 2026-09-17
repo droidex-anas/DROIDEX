@@ -1,5 +1,6 @@
 import type { ChildSessionSummary, ModelInfo, ReasoningEffort } from '../types/bridge';
 import type { VisibleSessionTarget } from './childSessions';
+import { compatibleReasoningForModel } from './reasoningEffort';
 
 export type ExactChildRole = 'worker' | 'validator';
 export type ExactChildSettingsReadiness = 'opening' | 'ready' | 'failed';
@@ -62,7 +63,7 @@ export function buildVisibleChildSettingsTarget(
 export function planChildModelUpdate(
   target: ExactChildSettingsTarget,
   modelId: string | undefined,
-  currentReasoning: ReasoningEffort,
+  currentReasoning: ReasoningEffort | undefined,
   models: readonly ModelInfo[],
 ): ChildSettingsUpdate | undefined {
   if (target.readiness !== 'ready') return undefined;
@@ -74,19 +75,4 @@ export function planChildModelUpdate(
     modelId: modelId ?? null,
     ...(compatibleReasoning === undefined ? {} : { reasoningEffort: compatibleReasoning }),
   };
-}
-
-function compatibleReasoningForModel(
-  model: ModelInfo | undefined,
-  currentReasoning: ReasoningEffort,
-): ReasoningEffort | undefined {
-  if (!model) return undefined;
-  const supported = model.supportedReasoningEfforts;
-  if (supported?.length)
-    return supported.includes(currentReasoning)
-      ? undefined
-      : (model.defaultReasoningEffort ?? supported.at(-1));
-  if (model.defaultReasoningEffort && currentReasoning !== model.defaultReasoningEffort)
-    return model.defaultReasoningEffort;
-  return undefined;
 }

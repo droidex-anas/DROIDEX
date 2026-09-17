@@ -131,6 +131,7 @@ function createHarness(ordinarySummaries: SessionSummary[] = []) {
     interactionMode: 'auto',
   };
   const lifecycle = new SessionLifecycle({
+    eventFlow: { apply: () => undefined },
     provider: () => new DroidProvider(runtime),
     registry,
     ensureConnected: () => {
@@ -296,6 +297,7 @@ function createHarness(ordinarySummaries: SessionSummary[] = []) {
     recordPrompt: (appSessionId, text) => {
       calls.push({ target: 'protocol', method: 'recordPrompt', args: [appSessionId, text] });
     },
+    catalogUpdated: () => undefined,
     emitSessionList: (closedProviderSessionId) => emitSessionList(closedProviderSessionId),
   });
 
@@ -766,7 +768,10 @@ test('send-now queues without interrupting compaction and reports interrupt reje
   live.compacting = false;
   live.autoCompacting = true;
   await compacting.lifecycle.sendNow('compacting', 'automatic');
-  assert.deepEqual(live.pendingSends, ['automatic', 'manual']);
+  assert.deepEqual(
+    live.pendingSends.map((prompt) => prompt.text),
+    ['automatic', 'manual'],
+  );
   assert.equal(interruptCount(compacting), 0);
   const rejected = createHarness();
   const rejectingProvider = new RejectingInterruptSession('rejected', {}, rejected.calls);
@@ -775,7 +780,10 @@ test('send-now queues without interrupting compaction and reports interrupt reje
   await rejected.lifecycle.create(createCommand());
   await rejectingProvider.waitForPrompts(1);
   await rejected.lifecycle.sendNow('rejected', 'keep queued');
-  assert.deepEqual(requireLive(rejected, 'rejected').pendingSends, ['keep queued']);
+  assert.deepEqual(
+    requireLive(rejected, 'rejected').pendingSends.map((prompt) => prompt.text),
+    ['keep queued'],
+  );
   assert.equal(requireLive(rejected, 'rejected').interruptingForSteer, false);
   assert.equal(
     rejected.events.some(
@@ -848,7 +856,7 @@ test('interrupt handles idle, streaming, manual compaction, and auto-compaction 
   live.streaming = false;
   live.interrupting = false;
   live.compacting = true;
-  live.pendingSends = ['drop'];
+  live.pendingSends = [{ text: 'drop' }];
   await harness.lifecycle.interrupt('stop');
   assert.equal(interruptCount(harness), 2);
   assert.deepEqual(live.pendingSends, []);
@@ -1245,7 +1253,7 @@ test('concurrent close waits for cleanup and discard overrides queue preservatio
   await provider.waitForPrompts(1);
   await new Promise<void>((resolve) => setImmediate(resolve));
   const live = requireLive(harness, 'concurrent-close');
-  live.pendingSends = ['preserve unless user closes'];
+  live.pendingSends = [{ text: 'preserve unless user closes' }];
 
   const preserving = harness.lifecycle.close('concurrent-close', 'preserve-pending');
   await new Promise<void>((resolve) => setImmediate(resolve));
@@ -1263,7 +1271,7 @@ test('concurrent close waits for cleanup and discard overrides queue preservatio
   assert.equal(harness.registry.getLive('concurrent-close'), undefined);
 });
 
-test('pending settings stay projected until successful first-send application', async () => {
+test('accepted settings stay durable through resume and precede first-send application', async () => {
   const saved = summary('app-pending', 'provider-pending', {
     modelId: 'model-saved',
     reasoningEffort: ReasoningEffort.Low,
@@ -1279,17 +1287,17 @@ test('pending settings stay projected until successful first-send application', 
   };
   harness.setProjection(pending);
   await harness.lifecycle.resume('app-pending');
-  assert.equal(harness.registry.getCanonicalSummary('app-pending')?.modelId, 'model-saved');
+  assert.equal(harness.registry.getCanonicalSummary('app-pending')?.modelId, 'model-pending');
   assert.equal(harness.registry.resolveSummary('app-pending')?.modelId, 'model-pending');
   assert.equal(harness.registry.listSummaries().sessions[0]?.reasoningEffort, ReasoningEffort.High);
-  assert.equal(harness.history.persisted.at(-1)?.modelId, 'model-saved');
+  assert.equal(harness.history.persisted.at(-1)?.modelId, 'model-pending');
   assert.equal(
     harness.events.find((event) => event.type === 'session.created')?.session.modelId,
     'model-pending',
   );
   const replaced = harness.registry.replaceProvider('app-pending', 'provider-next');
-  assert.equal(replaced?.modelId, 'model-saved');
-  assert.equal(harness.history.persisted.at(-1)?.modelId, 'model-saved');
+  assert.equal(replaced?.modelId, 'model-pending');
+  assert.equal(harness.history.persisted.at(-1)?.modelId, 'model-pending');
   harness.setPendingApply(async (appSessionId) => {
     await provider.updateSettings(pending);
     harness.registry.updateSummary(appSessionId, pending);
@@ -1316,7 +1324,7 @@ test('pending settings stay projected until successful first-send application', 
   failed.setPendingApply(() => Promise.resolve(false));
   await failed.lifecycle.send('app-pending', 'must not stream');
   assert.deepEqual(failedProvider.prompts, []);
-  assert.equal(failed.registry.getCanonicalSummary('app-pending')?.modelId, 'model-saved');
+  assert.equal(failed.registry.getCanonicalSummary('app-pending')?.modelId, 'model-pending');
   assert.equal(failed.registry.resolveSummary('app-pending')?.modelId, 'model-pending');
 });
 

@@ -3,8 +3,10 @@ import type { McpServerConfig } from '@factory/droid-sdk';
 import type { CreateRuntimeSessionOptions } from '../DroidRuntime.js';
 import type { NormalizedEvent } from '../normalize.js';
 import type { Autonomy, ReasoningEffort, SessionInteractionMode } from '../protocol.js';
+import type { ProviderMention, SkillInfo } from './catalog.js';
 import type { ProviderInteractions } from './interactions.js';
 import type { ProviderKind } from './providerKind.js';
+import type { ProviderProbe } from './providerProbes.js';
 
 // The option shape the lifecycle already builds. A provider ignores the fields
 // its runtime does not support; Droid's handler pair is replaced by the neutral
@@ -35,7 +37,9 @@ export interface ProviderModelSettings {
   // A string selects that model; null resets the session to the provider's own
   // default; absent leaves the model alone.
   modelId?: string | null;
-  reasoningEffort?: ReasoningEffort;
+  // A level selects it; null clears the level a previous model carried, for a
+  // model that offers none; absent leaves it alone.
+  reasoningEffort?: ReasoningEffort | null;
 }
 
 export interface ProviderSession {
@@ -54,11 +58,19 @@ export interface ProviderSession {
   readonly isClosed?: boolean;
   // Returning means the turn settled; throwing means it failed. There is no
   // settlement event.
-  stream(prompt: string): AsyncGenerator<NormalizedEvent, void, undefined>;
+  stream(
+    prompt: string,
+    mentions?: ProviderMention[],
+  ): AsyncGenerator<NormalizedEvent, void, undefined>;
+  // Events delivered between turns, never duplicated by stream().
+  onBackgroundEvent?(listener: (event: NormalizedEvent) => void): () => void;
   // Takes a prompt into the turn that is already running, so the turn keeps its
   // work and continues with it. Absent on a provider that can only steer by
   // interrupting and resending, which is what the session layer then does.
-  steer?(text: string): Promise<void>;
+  steer?(text: string, mentions?: ProviderMention[]): Promise<void>;
+  // Provider-native command/skill/app/plugin rows, cached for this live runtime.
+  catalogItems?(): Promise<SkillInfo[]>;
+  onCatalogUpdated?(listener: (items: SkillInfo[]) => void): () => void;
   // The two things a live session can still change. Everything else about a
   // session is fixed when it opens.
   setAutonomy(autonomy: Autonomy): Promise<void>;
@@ -74,4 +86,10 @@ export interface Provider {
   readonly kind: ProviderKind;
   create(input: ProviderOpenInput): Promise<ProviderSession>;
   resume(providerSessionId: string, input: ProviderResumeInput): Promise<ProviderSession>;
+}
+
+// A provider backed by a CLI learns what it can do by probing that CLI; Droid's
+// runtime reports its own status instead.
+export interface ProbedProvider extends Provider {
+  probe: ProviderProbe;
 }
