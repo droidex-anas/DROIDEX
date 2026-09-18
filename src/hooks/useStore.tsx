@@ -621,6 +621,8 @@ type Action =
     }
   | { type: 'TOGGLE_SETTINGS' }
   | { type: 'TOGGLE_MISSION_CONTROL' }
+  | { type: 'OPEN_PROJECTS' }
+  | { type: 'CLOSE_PROJECTS' }
   | { type: 'OPEN_AUTOMATIONS'; automationId?: string }
   | { type: 'CLOSE_AUTOMATIONS' }
   | { type: 'AUTOMATION_EDITOR_REQUEST_HANDLED'; requestId: number }
@@ -1858,6 +1860,12 @@ function baseReducer(state: AppState, action: Action): AppState {
         ? next
         : { ...next, automationEditorRequest: null };
     }
+
+    case 'OPEN_PROJECTS':
+      return { ...state, mainView: 'projects', automationEditorRequest: null, rightPanelOpen: false };
+
+    case 'CLOSE_PROJECTS':
+      return state.mainView === 'projects' ? { ...state, mainView: 'session' } : state;
 
     case 'OPEN_AUTOMATIONS':
       return {
