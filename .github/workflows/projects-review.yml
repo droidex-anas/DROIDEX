@@ -1,0 +1,107 @@
+name: Projects review validation
+on:
+  push:
+    branches: [feat/local-projects-scheduled]
+    paths:
+      - tools/projects-polish.py
+      - .github/workflows/projects-review.yml
+permissions:
+  contents: write
+concurrency:
+  group: projects-293-review
+  cancel-in-progress: true
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      HUSKY: '0'
+      PROJECTS_BASE: 565b66bc93b7c1389cf9b5a4eb60a33e0659eb57
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          fetch-depth: 2
+          show-progress: false
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '22'
+      - name: Apply reviewed cleanup
+        run: python3 tools/projects-polish.py
+      - run: npm ci --ignore-scripts --no-audit --no-fund
+      - run: npm ci --prefix sidecar --ignore-scripts --no-audit --no-fund
+      - name: Format and validate feature boundaries first
+        run: |
+          git fetch --no-tags --depth=1 origin "$PROJECTS_BASE"
+          git add sidecar/src src docs
+          git diff --name-only --diff-filter=ACM "$PROJECTS_BASE" -- '*.ts' '*.tsx' '*.md' | xargs -r npx prettier --write
+          npx eslint --fix --max-warnings=0 sidecar/src/projects src/features/projects
+          npm run typecheck
+          npm run sidecar:typecheck
+      - name: Complete tests and build
+        run: |
+          python3 - <<'PY'
+          import json, subprocess, pathlib
+          checks = [
+            ('focused-frontend', "node --import tsx --test 'src/features/projects/*.test.ts' src/lib/bridge.integration.test.ts src/lib/bridgeBatch.integration.test.ts"),
+            ('frontend', 'npm test'),
+            ('sidecar', 'npm --prefix sidecar test'),
+            ('build', 'npm run build'),
+            ('quality', 'npm run quality:file-size && npm run quality:tech-debt && npm run quality:boundaries && npm run docs:check'),
+          ]
+          results = {}
+          for name, command in checks:
+            log = pathlib.Path('/tmp/projects-' + name + '.log')
+            with log.open('w') as output:
+              code = subprocess.run(command, shell=True, stdout=output, stderr=subprocess.STDOUT, timeout=420).returncode
+            results[name] = code
+            lines = log.read_text().splitlines()
+            print('CHECK_RESULT=' + name + ':' + str(code), flush=True)
+            if code:
+              hits = [i for i,line in enumerate(lines) if line.startswith('not ok') or line.startswith('✖') or 'error TS' in line or 'test at ' in line]
+              for hit in hits[-10:]: print('\n'.join(lines[max(0,hit-2):hit+25]))
+              print('\n'.join(lines[-70:]), flush=True)
+            else: print('\n'.join(lines[-16:]), flush=True)
+          pathlib.Path('/tmp/projects-checks.json').write_text(json.dumps(results))
+          print('PROJECTS_CHECKS=' + json.dumps(results), flush=True)
+          PY
+      - name: Final checked source
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          rm tools/projects-polish.py .github/workflows/projects-review.yml
+          git add sidecar/src src docs tools/projects-polish.py .github/workflows/projects-review.yml
+          git diff --name-only --cached --diff-filter=ACM "$PROJECTS_BASE" -- '*.ts' '*.tsx' '*.md' | xargs -r npx prettier --write
+          git add sidecar/src src docs
+          git diff --cached --check
+          git diff --cached --stat "$PROJECTS_BASE"
+          npx eslint --max-warnings=0 sidecar/src/projects src/features/projects
+          python3 - <<'PY'
+          import json, os, pathlib, subprocess, urllib.request
+          def git(*args): return subprocess.check_output(['git', *args], text=True).strip()
+          entries = []
+          for path in git('diff', '--cached', '--name-only', 'HEAD').splitlines():
+              file = pathlib.Path(path)
+              entry = {'path': path, 'mode': '100644', 'type': 'blob'}
+              if file.exists():
+                  entry['mode'] = git('ls-files', '--stage', '--', path).split()[0]
+                  entry['content'] = file.read_text()
+              else: entry['sha'] = None
+              entries.append(entry)
+          def post(endpoint, body):
+              request = urllib.request.Request(
+                  'https://api.github.com/repos/' + os.environ['GITHUB_REPOSITORY'] + '/git/' + endpoint,
+                  json.dumps(body).encode(),
+                  headers={'Authorization': 'Bearer ' + os.environ['GH_TOKEN'], 'Accept': 'application/vnd.github+json', 'Content-Type': 'application/json'}, method='POST')
+              with urllib.request.urlopen(request) as response: return json.load(response)
+          tree = post('trees', {'base_tree': git('rev-parse', 'HEAD^{tree}'), 'tree': entries})
+          commit = post('commits', {
+              'message': 'Polish Projects boundaries, settings and validated controls',
+              'tree': tree['sha'], 'parents': [git('rev-parse', 'HEAD')],
+              'author': {'name': 'github-actions[bot]', 'email': '41898282+github-actions[bot]@users.noreply.github.com'}})
+          print('PROJECTS_REVIEW_TREE=' + tree['sha'])
+          print('PROJECTS_REVIEW_COMMIT=' + commit['sha'])
+          results = json.loads(pathlib.Path('/tmp/projects-checks.json').read_text())
+          print('PROJECTS_CHECKS=' + json.dumps(results))
+          raise SystemExit(1 if any(results.values()) else 0)
+          PY
