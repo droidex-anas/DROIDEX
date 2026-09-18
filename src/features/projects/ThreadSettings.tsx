@@ -20,7 +20,7 @@ export function ThreadSettings({
   const [open, setOpen] = useState(false);
   const unknownModel = value.modelId && !catalog.models.some((item) => item.id === value.modelId);
   return (
-    <div className="my-4 flex flex-wrap items-center gap-2">
+    <div className="flex flex-wrap items-center gap-1.5">
       <ProviderPicker
         value={value.provider}
         locked={disabled}

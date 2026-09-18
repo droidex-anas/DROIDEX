@@ -1,13 +1,16 @@
 import { useState, type SyntheticEvent } from 'react';
 import { ArrowUp, FolderOpen } from '@droidex/icons';
 import { pickDirectory } from '../../lib/desktop';
+import { workspaceName } from '../../lib/workspaces';
 import { ThreadSettings } from './ThreadSettings';
 import { buildThreadInput, useThreadSelection } from './useThreadSelection';
 import type { ThreadInput } from './types';
 
-/* Starting a project: its first task, and the settings its main conversation
-   runs with. Threads it spawns later inherit these, so this is the only place
-   in Projects that asks for a harness, a model or an autonomy level. */
+/* Starting a project asks for one thing: the goal. Everything else — the
+   workspace it runs in and the harness, model and autonomy its lead carries —
+   sits on one quiet line under the composer, already filled in, because the
+   threads the lead spawns inherit those and a person should not have to design
+   a team before they can state what they want. */
 
 export function NewProjectForm({
   cwd,
@@ -24,7 +27,6 @@ export function NewProjectForm({
   const [error, setError] = useState('');
   const unavailable = selection.catalog.unavailable;
   const blocked = pending || !draft.prompt.trim() || Boolean(unavailable);
-  const submitLabel = 'Create project';
   const shownError = error || unavailable;
 
   async function submit(event: SyntheticEvent<HTMLFormElement>): Promise<void> {
@@ -53,28 +55,15 @@ export function NewProjectForm({
   return (
     <form
       onSubmit={(event) => void submit(event)}
-      className="mx-auto w-full max-w-2xl rounded-2xl border border-droid-border/60 bg-droid-elevated/25 p-5"
+      className="w-full rounded-2xl border border-droid-border bg-droid-surface/40 p-5"
     >
-      <h2 className="mb-1 text-[15px] font-semibold tracking-tight">New project</h2>
-      <p className="mb-5 text-[12px] leading-5 text-droid-text-muted">
-        One conversation leads the work. It can spread that work across threads, and every thread
-        inherits these settings.
+      <h2 className="text-[15px] font-semibold tracking-tight">Start a project</h2>
+      <p className="mt-1 text-[12px] leading-5 text-droid-text-muted">
+        Say what you want done. The project’s chat plans it, asks you what it needs to know, and
+        runs the parts that can go in parallel as threads.
       </p>
-      <label className="block text-xs text-droid-text-secondary">
-        Name
-        <input
-          value={draft.title}
-          onChange={(event) => {
-            setDraft({ ...draft, title: event.target.value });
-          }}
-          disabled={pending}
-          maxLength={120}
-          placeholder="Optional short name"
-          className="mt-1 mb-4 w-full rounded-xl border border-droid-border/50 bg-droid-bg px-3 py-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-droid-text-muted"
-        />
-      </label>
-      <label className="block text-xs text-droid-text-secondary">
-        Task
+
+      <div className="mt-4 rounded-xl border border-droid-border bg-droid-bg transition-colors focus-within:border-droid-border-hover">
         <textarea
           value={draft.prompt}
           onChange={(event) => {
@@ -83,64 +72,69 @@ export function NewProjectForm({
           disabled={pending}
           maxLength={8_192}
           required
-          rows={5}
-          placeholder="Describe the work for this conversation."
-          className="mt-1 w-full resize-y rounded-xl border border-droid-border/50 bg-droid-bg px-3 py-2 text-sm leading-relaxed outline-none focus-visible:ring-2 focus-visible:ring-droid-text-muted"
+          rows={4}
+          autoFocus
+          placeholder="Move us off the legacy payments client before Friday, and draft the release notes."
+          className="w-full resize-y bg-transparent px-3.5 py-3 text-[14px] leading-6 outline-none placeholder:text-droid-text-muted"
         />
-      </label>
-      <ThreadSettings
-        value={selection.value}
-        catalog={selection.catalog}
-        disabled={pending}
-        onChange={selection.setValue}
-      />
-      <label className="mb-4 block text-xs text-droid-text-secondary">
-        Workspace
-        <div className="mt-1 flex gap-2">
-          <input
-            value={draft.workspace}
-            onChange={(event) => {
-              setDraft({ ...draft, workspace: event.target.value });
-            }}
-            disabled={pending}
-            maxLength={4_096}
-            placeholder="Optional absolute folder path"
-            className="min-w-0 flex-1 rounded-xl border border-droid-border/50 bg-droid-bg px-3 py-2 outline-none focus-visible:ring-2 focus-visible:ring-droid-text-muted"
-          />
+        <div className="flex flex-wrap items-center gap-2 border-t border-droid-border/60 px-3 py-2">
           <button
             type="button"
-            aria-label="Choose workspace folder"
             disabled={pending}
             onClick={() => void chooseFolder()}
-            className="rounded-xl px-3 hover:bg-droid-elevated focus-visible:ring-2 focus-visible:ring-droid-text-muted"
+            title={draft.workspace || 'Choose a workspace folder'}
+            className="flex min-w-0 items-center gap-1.5 rounded-lg px-2 py-1 text-[12px] text-droid-text-secondary transition-colors hover:bg-droid-elevated"
           >
-            <FolderOpen className="h-4 w-4" />
+            <FolderOpen className="h-3.5 w-3.5 shrink-0" />
+            <span className="truncate">
+              {draft.workspace ? workspaceName(draft.workspace) : 'No folder'}
+            </span>
+          </button>
+          <ThreadSettings
+            value={selection.value}
+            catalog={selection.catalog}
+            disabled={pending}
+            onChange={selection.setValue}
+          />
+          <span className="flex-1" />
+          <button
+            type="button"
+            disabled={pending}
+            onClick={onCancel}
+            className="rounded-lg px-2.5 py-1 text-[12px] text-droid-text-muted transition-colors hover:bg-droid-elevated hover:text-droid-text"
+          >
+            Cancel
+          </button>
+          <button
+            type="submit"
+            aria-label="Start project"
+            disabled={blocked}
+            className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-droid-text text-droid-bg transition-opacity hover:opacity-80 disabled:opacity-30"
+          >
+            <ArrowUp className="h-4 w-4" />
           </button>
         </div>
+      </div>
+
+      <label className="mt-3 block text-[12px] text-droid-text-muted">
+        Name
+        <input
+          value={draft.title}
+          onChange={(event) => {
+            setDraft({ ...draft, title: event.target.value });
+          }}
+          disabled={pending}
+          maxLength={120}
+          placeholder="Optional — taken from the goal when empty"
+          className="mt-1 w-full rounded-xl border border-droid-border bg-droid-bg px-3 py-2 text-[13px] text-droid-text outline-none transition-colors focus-visible:border-droid-border-hover"
+        />
       </label>
+
       {shownError && (
-        <p role="alert" className="mb-3 text-xs leading-5 text-droid-text-secondary">
+        <p role="alert" className="mt-3 text-[12px] leading-5 text-droid-text-secondary">
           {shownError}
         </p>
       )}
-      <div className="flex items-center justify-between gap-3 border-t border-droid-border/50 pt-4">
-        <button
-          type="button"
-          disabled={pending}
-          onClick={onCancel}
-          className="rounded-lg px-3 py-2 text-xs text-droid-text-muted hover:bg-droid-elevated focus-visible:ring-2 focus-visible:ring-droid-text-muted"
-        >
-          Cancel
-        </button>
-        <button
-          type="submit"
-          disabled={blocked}
-          className="flex items-center gap-2 rounded-xl bg-droid-text px-3 py-2 text-xs font-medium text-droid-bg transition-opacity hover:opacity-80 disabled:opacity-40"
-        >
-          {pending ? 'Starting…' : submitLabel}
-          <ArrowUp className="h-3.5 w-3.5" />
-        </button>
-      </div>
     </form>
   );
 }
