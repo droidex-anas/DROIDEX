@@ -18,7 +18,7 @@ export class ProjectService {
   private readonly store: ProjectStore;
   private readonly ready: Promise<void>;
   private readonly pendingWake = new Map<string, ProjectWake[]>();
-  private readonly spawning = new Map<string, { projectId: string; parentId: string; task: string; title: string }>();
+  private readonly spawning = new Map<string, { projectId: string; parentId: string; threadId: string; task: string; title: string }>();
 
   constructor(private readonly host: ProjectHost) {
     this.store = new ProjectStore(host.dataDir);
@@ -59,7 +59,7 @@ export class ProjectService {
     const ref = `project:${randomUUID()}`;
     const threadId = randomUUID();
     this.spawning.set(ref, {
-      projectId: project.id, parentId: parent.id, task: input.task,
+      projectId: project.id, parentId: parent.id, threadId, task: input.task,
       title: input.title?.trim() || shortTitle(input.task),
     });
     await this.host.create({
@@ -68,7 +68,7 @@ export class ProjectService {
       interactionMode: 'auto', modelId: input.model, reasoningEffort: input.reasoning,
       autonomy: input.autonomy ?? source.autonomy,
     });
-    return { clientRef: ref, threadId } as { clientRef: string; threadId: string };
+    return { clientRef: ref, threadId };
   }
 
   async inspect(projectId: string): Promise<Project> {
@@ -108,10 +108,10 @@ export class ProjectService {
     await this.flush(projectId);
   }
 
-  private async attach(pending: { projectId: string; parentId: string; task: string; title: string }, summary: SessionSummary): Promise<void> {
+  private async attach(pending: { projectId: string; parentId: string; threadId: string; task: string; title: string }, summary: SessionSummary): Promise<void> {
     await this.change(pending.projectId, (project) => ({
       ...project, updatedAt: Date.now(),
-      threads: [...project.threads, { ...thread(summary, pending.title, pending.parentId), task: pending.task }],
+      threads: [...project.threads, { ...thread(summary, pending.title, pending.parentId), id: pending.threadId, task: pending.task }],
     }));
   }
 
