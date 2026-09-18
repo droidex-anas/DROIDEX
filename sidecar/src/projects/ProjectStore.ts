@@ -18,8 +18,9 @@ export class ProjectStore {
 
   async load(): Promise<void> {
     try {
-      const parsed = JSON.parse(await readFile(this.path, 'utf8')) as ProjectFile;
-      this.projects = parsed.version === 1 && Array.isArray(parsed.projects) ? parsed.projects : [];
+      const parsed: unknown = JSON.parse(await readFile(this.path, 'utf8'));
+      if (!isProjectFile(parsed)) throw new Error('Invalid Projects state.');
+      this.projects = parsed.projects;
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
     }
@@ -36,4 +37,11 @@ export class ProjectStore {
     await writeFile(tmp, JSON.stringify({ version: 1, projects } satisfies ProjectFile), 'utf8');
     await rename(tmp, this.path);
   }
+}
+
+
+function isProjectFile(value: unknown): value is ProjectFile {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
+  const record = value as Record<string, unknown>;
+  return record.version === 1 && Array.isArray(record.projects);
 }
