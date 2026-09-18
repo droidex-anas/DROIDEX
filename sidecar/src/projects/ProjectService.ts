@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import type { ClientCommand, ServerEvent, SessionSummary } from '../protocol.js';
 import { ProjectStore } from './store.js';
+import { setProjectService } from './wiring.js';
 import { wakePrompt } from './wake.js';
 import type { Project, ProjectThread, ProjectWake, SpawnThreadInput } from './types.js';
 
@@ -22,6 +23,7 @@ export class ProjectService {
   constructor(private readonly host: ProjectHost) {
     this.store = new ProjectStore(host.dataDir);
     this.ready = this.store.load();
+    setProjectService(this);
   }
 
   async list(): Promise<readonly Project[]> { await this.ready; return this.store.list(); }
