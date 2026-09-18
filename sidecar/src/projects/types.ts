@@ -16,6 +16,8 @@ export interface ThreadWorkspaceChoice {
   workspace?: 'inherit' | 'worktree';
   branch?: string;
   base?: string;
+  /** The plan step this thread carries, by its number or exact title. */
+  step?: string;
 }
 
 /**

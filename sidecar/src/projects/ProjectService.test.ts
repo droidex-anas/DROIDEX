@@ -358,6 +358,17 @@ test('native permissions and user questions never generate controller turns', as
   assert.equal(h.sent.length, 0);
 });
 
+test('a spawn carries a settled plan step, or none at all', async (t) => {
+  const h = await harness();
+  t.after(() => h.projects.close());
+  const { main } = await h.root();
+  await assert.rejects(h.projects.spawn(main, { ...input, step: 'Ship the moon' }), /no plan yet/);
+  await h.projects.setPlan(main, [{ title: 'Port the payments client' }]);
+  await assert.rejects(h.projects.spawn(main, { ...input, step: 'Ship the moon' }), /No plan step/);
+  const started = await h.projects.spawn(main, { ...input, step: 'Port the payments client' });
+  assert.equal(h.projects.list()[0]?.plan[0]?.threadAppSessionId, started.appSessionId);
+});
+
 test('durable project request identity avoids a duplicate root', async (t) => {
   const h = await harness();
   t.after(() => h.projects.close());

@@ -59,6 +59,14 @@ const spawnSchema = z.object({
     .max(200)
     .optional()
     .describe('Commit, branch or tag the worktree branches from. The checkout’s HEAD when omitted.'),
+  step: z
+    .string()
+    .min(1)
+    .max(200)
+    .optional()
+    .describe(
+      'The plan step this thread carries, by its number or its exact title. DROIDEX then shows the thread’s real state on that row, so you never mark it done yourself.',
+    ),
 });
 
 interface PlanStep {
@@ -88,9 +96,9 @@ export function createThreadMcpServer(appSessionIdForTool: () => string | undefi
       tool(
         'thread_spawn',
         [
-          'Start an independent DROIDEX thread: a separate conversation that carries one task on its own and reports back here when it settles.',
-          'Use it when the user asks for work to run in the background, or for several tasks that do not depend on each other — one thread per task.',
-          'Do not use it for a step you can finish in this turn, and do not spawn a thread to watch or summarise another thread.',
+          'Hand one settled step of the plan to an independent DROIDEX thread: a separate conversation that carries it on its own and reports back here when it settles.',
+          'Spawn only work you have already decided: name the plan step with `step`, and write a prompt that carries the whole task, because the thread cannot see this conversation — the context it needs, the files or areas involved, and what finishing looks like.',
+          'Never spawn to explore an open question, to decide what the task is, or to watch another thread. Investigate here, decide here, then hand out the decided work.',
           'The thread inherits this chat’s workspace, harness, model, reasoning and autonomy unless you name different ones; it can never exceed this chat’s autonomy.',
           'Choose deliberately: a cheap fast model for a mechanical task, a stronger one for judgement, and workspace "worktree" whenever threads will write files at the same time.',
         ].join(' '),
@@ -104,6 +112,7 @@ export function createThreadMcpServer(appSessionIdForTool: () => string | undefi
             title: input.title,
             state: 'working',
             ...(started.cwd ? { cwd: started.cwd, branch: started.branch } : {}),
+            ...(started.step ? { step: started.step } : {}),
             note: 'The thread runs on its own. Its report arrives here as a new turn; do not wait for it.',
           });
         }),
@@ -127,16 +136,22 @@ export function createThreadMcpServer(appSessionIdForTool: () => string | undefi
       tool(
         'plan_set',
         [
-          'Write the plan this project shows the user: the steps it intends to take, in order.',
-          'Call it once you know the shape of the work, and again whenever the shape changes — a step finishes, a new one appears, or one turns out to be unnecessary.',
-          'Point a step at the thread carrying it with threadId; DROIDEX then shows that conversation’s real state instead of a claim, so you never have to mark it done.',
-          'Keep steps short and in the user’s words. This replaces the whole plan, so send every step you still intend to take.',
+          'Write the plan this project shows the user: the steps it intends to take, in order, once you have settled what the work actually is.',
+          'A step is one concrete piece of work whose finish you could recognise — "Port the payments client to v3", not "look into payments". If you cannot say what done looks like, the step is not settled: find out first, or leave it out.',
+          'Call it again whenever the shape changes: a step finishes, a new one appears, one turns out to be unnecessary. This replaces the whole plan, so send every step you still intend to take.',
+          'Point a step at the thread carrying it with threadId, or pass the step to thread_spawn; DROIDEX then shows that conversation’s real state instead of a claim, so you never have to mark it done.',
+          'Keep the titles short and in the user’s words. This is what they read to see where the project stands.',
         ].join(' '),
         {
           steps: z
             .array(
               z.object({
-                title: z.string().trim().min(1).max(200),
+                title: z
+                  .string()
+                  .trim()
+                  .min(1)
+                  .max(200)
+                  .describe('One concrete piece of work, in the user’s words.'),
                 milestone: z
                   .string()
                   .trim()
@@ -148,7 +163,12 @@ export function createThreadMcpServer(appSessionIdForTool: () => string | undefi
                   .optional()
                   .describe('Only for a step no thread carries; a thread’s own state wins.'),
                 threadId: z.string().min(1).max(200).optional(),
-                note: z.string().trim().max(400).optional(),
+                note: z
+                  .string()
+                  .trim()
+                  .max(400)
+                  .optional()
+                  .describe('What finishing this step means, or what it is waiting on.'),
               }),
             )
             .max(60),
