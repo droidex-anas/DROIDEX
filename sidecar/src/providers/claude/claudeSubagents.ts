@@ -1,6 +1,8 @@
 import type { SDKMessage } from '@anthropic-ai/claude-agent-sdk';
 import type { NormalizedEvent } from '../../normalize.js';
+import type { ChildStatus } from '../../protocol.js';
 import type { ChildSessionSignal } from '../../subagentSignals.js';
+import { trimmedString as str } from '../../values.js';
 
 type SystemMessage = Extract<SDKMessage, { type: 'system' }>;
 type TaskStarted = Extract<SystemMessage, { subtype: 'task_started' }>;
@@ -8,9 +10,61 @@ type TaskProgress = Extract<SystemMessage, { subtype: 'task_progress' }>;
 type TaskUpdated = Extract<SystemMessage, { subtype: 'task_updated' }>;
 type BackgroundTasks = Extract<SystemMessage, { subtype: 'background_tasks_changed' }>;
 
+interface WorkflowRun {
+  name: string;
+  toolUseId?: string;
+  // Provider ids of the agents this run has reported, so a workflow that stops
+  // can settle the ones its last snapshot still showed working.
+  agentIds: Set<string>;
+}
+
+// One agent inside a workflow's progress snapshot. The CLI sends this array on
+// `task_progress` outside the SDK's declared shape, so it is read defensively.
+interface WorkflowAgentEntry {
+  agentId?: string;
+  label?: string;
+  model?: string;
+  phaseTitle?: string;
+  promptPreview?: string;
+  resultPreview?: string;
+  lastToolName?: string;
+  state?: string;
+}
+
+function workflowAgentEntries(message: TaskProgress): WorkflowAgentEntry[] {
+  const progress: unknown = Reflect.get(message, 'workflow_progress');
+  if (!Array.isArray(progress)) return [];
+  return progress.flatMap((entry: unknown) => {
+    if (typeof entry !== 'object' || entry === null) return [];
+    const read = (key: string) => str(Reflect.get(entry, key));
+    return Reflect.get(entry, 'type') === 'workflow_agent'
+      ? [
+          {
+            agentId: read('agentId'),
+            label: read('label'),
+            model: read('model'),
+            phaseTitle: read('phaseTitle'),
+            promptPreview: read('promptPreview'),
+            resultPreview: read('resultPreview'),
+            lastToolName: read('lastToolName'),
+            state: read('state'),
+          },
+        ]
+      : [];
+  });
+}
+
+// The CLI's own reading of an entry: 'done' and 'error' are terminal, and an
+// agent that has an id has left the queue, so anything else is working.
+function workflowAgentStatus(state: string | undefined): ChildStatus {
+  if (state === 'done') return 'completed';
+  if (state === 'error') return 'failed';
+  return 'running';
+}
+
 export class ClaudeSubagents {
   private readonly children = new Map<string, ChildSessionSignal>();
-  private readonly workflows = new Map<string, { name: string; toolUseId?: string }>();
+  private readonly workflows = new Map<string, WorkflowRun>();
   private backgroundTaskIds = new Set<string>();
   private turnSpawnToolUseId?: string;
 
@@ -30,13 +84,19 @@ export class ClaudeSubagents {
         return this.progress(message, modelId);
       case 'task_updated':
         return this.updated(message);
-      case 'task_notification':
-        this.workflows.delete(message.task_id);
+      case 'task_notification': {
+        const ended = message.status === 'completed' ? 'completed' : 'failed';
+        const workflow = this.workflows.get(message.task_id);
+        if (workflow) {
+          this.workflows.delete(message.task_id);
+          return this.settleWorkflowAgents(workflow, ended);
+        }
         if (!this.children.has(message.task_id)) return [];
         return this.update(message.task_id, {
           ...(message.tool_use_id ? { toolUseId: message.tool_use_id } : {}),
-          status: message.status === 'completed' ? 'completed' : 'failed',
+          status: ended,
         });
+      }
       case 'background_tasks_changed':
         return this.backgroundTasksChanged(message);
       default:
@@ -51,6 +111,7 @@ export class ClaudeSubagents {
         this.workflows.set(message.task_id, {
           name: message.workflow_name,
           toolUseId: message.tool_use_id ?? this.turnSpawnToolUseId,
+          agentIds: new Set(),
         });
       return [];
     }
@@ -68,6 +129,8 @@ export class ClaudeSubagents {
   }
 
   private progress(message: TaskProgress, modelId: string | undefined): NormalizedEvent[] {
+    const workflow = this.workflows.get(message.task_id);
+    if (workflow) return this.workflowAgents(message, workflow);
     const known = this.children.get(message.task_id);
     if (!known && !message.subagent_type) return [];
     return this.update(message.task_id, {
@@ -79,10 +142,11 @@ export class ClaudeSubagents {
 
   private updated(message: TaskUpdated): NormalizedEvent[] {
     const { status, description } = message.patch;
-    if (this.workflows.has(message.task_id)) {
-      if (status === 'completed' || status === 'failed' || status === 'killed')
-        this.workflows.delete(message.task_id);
-      return [];
+    const workflow = this.workflows.get(message.task_id);
+    if (workflow) {
+      if (status !== 'completed' && status !== 'failed' && status !== 'killed') return [];
+      this.workflows.delete(message.task_id);
+      return this.settleWorkflowAgents(workflow, status === 'completed' ? 'completed' : 'failed');
     }
     if (!this.children.has(message.task_id)) return [];
     return this.update(message.task_id, {
@@ -108,9 +172,51 @@ export class ClaudeSubagents {
     return events;
   }
 
-  private workflowFor(
-    toolUseId: string | undefined,
-  ): { name: string; toolUseId?: string } | undefined {
+  // A workflow's agents never get a `task_started` of their own: the CLI reports
+  // the whole fan-out as a snapshot array on the workflow's own `task_progress`.
+  // Each entry is one agent and carries what a child needs — its id, label,
+  // model, phase and prompt — so without this the whole wave is invisible.
+  private workflowAgents(message: TaskProgress, workflow: WorkflowRun): NormalizedEvent[] {
+    const events: NormalizedEvent[] = [];
+    for (const entry of workflowAgentEntries(message)) {
+      // An agent still waiting for a slot has no id yet; it appears when it starts.
+      const providerSessionId = entry.agentId;
+      if (!providerSessionId) continue;
+      const status = workflowAgentStatus(entry.state);
+      const preview = entry.resultPreview ?? entry.lastToolName;
+      const known = this.children.get(providerSessionId);
+      // One snapshot arrives per agent transition, each repeating every agent.
+      if (known?.status === status && known.activity?.preview === preview) continue;
+      workflow.agentIds.add(providerSessionId);
+      events.push(
+        ...this.update(providerSessionId, {
+          toolUseId: workflow.toolUseId,
+          label: entry.label,
+          group: workflow.name,
+          status,
+          ...(entry.promptPreview ? { prompt: entry.promptPreview } : {}),
+          ...(entry.model ? { modelId: entry.model } : {}),
+          ...(entry.phaseTitle ? { phase: entry.phaseTitle } : {}),
+          ...(preview ? { activity: { preview } } : {}),
+        }),
+      );
+    }
+    return events;
+  }
+
+  // The workflow stopped, so nothing more will arrive for an agent the last
+  // snapshot still showed working.
+  private settleWorkflowAgents(workflow: WorkflowRun, status: ChildStatus): NormalizedEvent[] {
+    const events: NormalizedEvent[] = [];
+    for (const agentId of workflow.agentIds) {
+      const child = this.children.get(agentId);
+      if (child && child.status !== 'completed' && child.status !== 'failed')
+        events.push(...this.update(agentId, { status }));
+    }
+    return events;
+  }
+
+  private workflowFor(toolUseId: string | undefined): WorkflowRun | undefined {
     for (const workflow of this.workflows.values())
       if (toolUseId && workflow.toolUseId === toolUseId) return workflow;
     // Internal workflow agents may have no tool-use block of their own.

@@ -17,11 +17,21 @@ const assistant = (content: unknown[], parent: string | null = null): SDKMessage
   message({ type: 'assistant', message: { content }, parent_tool_use_id: parent });
 
 function transcripts(messages: SDKMessage[]): TranscriptEvent[] {
+  return mapped(messages).map(({ transcript }) => transcript);
+}
+
+// Transcript rows with the spawn each one is attributed to. A subagent's rows
+// carry the tool_use that spawned it; the main thread's carry nothing.
+function mapped(messages: SDKMessage[]): { transcript: TranscriptEvent; owner?: string }[] {
   const mapper = new ClaudeEventMapper('app-1');
   return messages.flatMap((entry) =>
     mapper
       .map(entry)
-      .flatMap((normalized) => (normalized.transcript ? [normalized.transcript] : [])),
+      .flatMap((normalized) =>
+        normalized.transcript
+          ? [{ transcript: normalized.transcript, owner: normalized.childOwner?.id }]
+          : [],
+      ),
   );
 }
 
@@ -114,8 +124,8 @@ test('a tool call carries its streamed input and pairs with its result by id', (
   );
 });
 
-test("a subagent's narration is dropped while its tool call is kept", () => {
-  const events = transcripts([
+test("a subagent's rows carry the spawn that owns them, never the parent's feed", () => {
+  const events = mapped([
     streamEvent(
       { type: 'content_block_start', index: 0, content_block: { type: 'text' } },
       'toolu_task',
@@ -148,8 +158,98 @@ test("a subagent's narration is dropped while its tool call is kept", () => {
   ]);
 
   assert.deepEqual(
-    events.map((event) => [event.kind, event.toolName, event.toolArgs]),
-    [['tool_call', 'Read', { file_path: 'a.ts' }]],
+    events.map(({ transcript, owner }) => [transcript.kind, transcript.toolName, owner]),
+    [
+      ['text', undefined, 'toolu_task'],
+      ['tool_call', 'Read', 'toolu_task'],
+    ],
+  );
+});
+
+// Shapes taken from a real six-agent workflow run: the fan-out is reported only
+// as a snapshot array on the workflow's own task_progress, and its agents never
+// get a task_started of their own.
+test("a workflow's agents come from its progress snapshot, with a phase and a model", () => {
+  const workflowAgent = (index: number, label: string, over: Record<string, unknown> = {}) => ({
+    type: 'workflow_agent',
+    index,
+    label,
+    phaseIndex: 1,
+    phaseTitle: 'Echo',
+    model: 'claude-haiku-4-5',
+    promptPreview: `Reply with ${label} and stop.`,
+    state: 'start',
+    ...over,
+  });
+  const progress = (agents: unknown[]) =>
+    message({
+      type: 'system',
+      subtype: 'task_progress',
+      task_id: 'wf-1',
+      tool_use_id: 'toolu_workflow',
+      description: 'Echo',
+      usage: { total_tokens: 0, tool_uses: 0, duration_ms: 1 },
+      workflow_progress: [{ type: 'workflow_phase', index: 1, title: 'Echo' }, ...agents],
+    });
+
+  const mapper = new ClaudeEventMapper('app-1', 'claude-haiku-4-5');
+  const children = (entry: SDKMessage) =>
+    mapper.map(entry).flatMap((n) => (n.childSession ? [n.childSession] : []));
+
+  assert.deepEqual(
+    children(
+      message({
+        type: 'system',
+        subtype: 'task_started',
+        task_id: 'wf-1',
+        tool_use_id: 'toolu_workflow',
+        description: 'Six trivial agents',
+        task_type: 'local_workflow',
+        workflow_name: 'echo-six',
+      }),
+    ),
+    [],
+  );
+
+  // An agent still waiting for a slot has no id yet and cannot be identified.
+  const started = children(
+    progress([workflowAgent(1, 'echo:ONE', { agentId: 'agent-1' }), workflowAgent(2, 'echo:TWO')]),
+  );
+  assert.deepEqual(
+    started.map((child) => [child.providerSessionId, child.label, child.status, child.phase]),
+    [['agent-1', 'echo:ONE', 'running', 'Echo']],
+  );
+  assert.deepEqual(
+    [started[0].toolUseId, started[0].group, started[0].modelId, started[0].prompt],
+    ['toolu_workflow', 'echo-six', 'claude-haiku-4-5', 'Reply with echo:ONE and stop.'],
+  );
+
+  // The same snapshot repeats every agent, so an unchanged one says nothing.
+  assert.deepEqual(
+    children(
+      progress([
+        workflowAgent(1, 'echo:ONE', { agentId: 'agent-1' }),
+        workflowAgent(2, 'echo:TWO', { agentId: 'agent-2' }),
+      ]),
+    ).map((child) => child.providerSessionId),
+    ['agent-2'],
+  );
+
+  // The workflow stopping settles an agent its last snapshot still showed working.
+  assert.deepEqual(
+    children(
+      message({
+        type: 'system',
+        subtype: 'task_notification',
+        task_id: 'wf-1',
+        tool_use_id: 'toolu_workflow',
+        status: 'completed',
+      }),
+    ).map((child) => [child.providerSessionId, child.status]),
+    [
+      ['agent-1', 'completed'],
+      ['agent-2', 'completed'],
+    ],
   );
 });
 

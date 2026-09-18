@@ -1,16 +1,31 @@
 import type { DroidStreamEvent } from '@factory/droid-sdk';
 
 import { normalizeNotification, normalizeStreamEvent, type NormalizedEvent } from './normalize.js';
-import type { SessionRole, TranscriptEvent } from './protocol.js';
+import type { ChildSpawnLink, SessionRole, TranscriptEvent } from './protocol.js';
 import { hotPathMetrics } from './telemetry/hotPathMetrics.js';
 
-export type NormalizedSideEffects = Omit<NormalizedEvent, 'transcript' | 'done' | 'tokens'>;
+export type NormalizedSideEffects = Omit<
+  NormalizedEvent,
+  'transcript' | 'done' | 'tokens' | 'childOwner'
+>;
+
+// Where a row the provider marked as a child's own belongs.
+export interface ChildTranscriptScope {
+  childSessionId: string;
+  role: SessionRole;
+}
 export type NormalizedTokenUsage = NonNullable<NormalizedEvent['tokens']>;
 
 export interface SessionEventFlowDependencies {
   appendTranscript: (event: TranscriptEvent) => void;
   flushTranscript: (appSessionId: string, sourceSessionId: string) => void;
   applySideEffects: (appSessionId: string, sideEffects: NormalizedSideEffects) => void;
+  // The child that owns a spawn link, or undefined while the store has not
+  // admitted it yet.
+  resolveChildScope: (
+    appSessionId: string,
+    spawnLink: ChildSpawnLink,
+  ) => ChildTranscriptScope | undefined;
   recordUsage: (
     appSessionId: string,
     sourceProviderSessionId: string,
@@ -82,15 +97,19 @@ export class SessionEventFlow {
       return;
     }
 
+    // A subagent's own rows arrive inside the parent's stream. They are that
+    // agent's steps, so they take its scope and never fall back to the parent's
+    // feed: shown there they read as the parent's own work and cut its answer in
+    // half.
+    const owned = this.ownedBy(appSessionId, normalized.childOwner);
+    if (owned === 'unadmitted') return;
+
     const terminal = this.terminalSources.get(appSessionId)?.has(sourceProviderSessionId);
     const transcript =
       terminal && isPostTerminalGeneration(normalized.transcript)
         ? undefined
         : normalized.transcript;
-    if (transcript)
-      this.dependencies.appendTranscript(
-        childSessionId ? { ...transcript, sourceSessionId: childSessionId } : transcript,
-      );
+    if (transcript) this.dependencies.appendTranscript(scoped(transcript, childSessionId, owned));
     if (normalized.tokens)
       this.dependencies.recordUsage(appSessionId, sourceProviderSessionId, normalized.tokens);
 
@@ -98,7 +117,9 @@ export class SessionEventFlow {
     if (hasSideEffects(sideEffects)) {
       try {
         const sourceSessionId =
-          childSessionId ?? (role === 'primary' ? appSessionId : sourceProviderSessionId);
+          childSessionId ??
+          owned?.childSessionId ??
+          (role === 'primary' ? appSessionId : sourceProviderSessionId);
         this.dependencies.flushTranscript(appSessionId, sourceSessionId);
       } catch {
         // Provider notifications are synchronous SDK callbacks. Persistence
@@ -110,6 +131,16 @@ export class SessionEventFlow {
     }
   }
 
+  // Where a row the provider attributed to a spawn belongs, or 'unadmitted'
+  // while the store has no child for that spawn yet.
+  private ownedBy(
+    appSessionId: string,
+    owner: ChildSpawnLink | undefined,
+  ): ChildTranscriptScope | 'unadmitted' | undefined {
+    if (!owner) return undefined;
+    return this.dependencies.resolveChildScope(appSessionId, owner) ?? 'unadmitted';
+  }
+
   private terminalScope(appSessionId: string): Set<string> {
     const existing = this.terminalSources.get(appSessionId);
     if (existing) return existing;
@@ -117,6 +148,16 @@ export class SessionEventFlow {
     this.terminalSources.set(appSessionId, created);
     return created;
   }
+}
+
+function scoped(
+  event: TranscriptEvent,
+  childSessionId: string | undefined,
+  owned: ChildTranscriptScope | undefined,
+): TranscriptEvent {
+  if (owned) return { ...event, sourceSessionId: owned.childSessionId, role: owned.role };
+  if (childSessionId) return { ...event, sourceSessionId: childSessionId };
+  return event;
 }
 
 function isPostTerminalGeneration(transcript: TranscriptEvent | undefined): boolean {

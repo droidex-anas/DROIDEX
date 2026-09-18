@@ -1,6 +1,6 @@
 import { factoryReasoningEffort } from './DroidRuntime.js';
 import type { PersistedChildSession, PersistedChildSpawnLink } from './history.js';
-import type { ChildSessionSummary, ClientCommand } from './protocol.js';
+import type { ChildRole, ChildSessionSummary, ClientCommand } from './protocol.js';
 import type { ChildOperationTarget } from './SessionContext.js';
 import {
   matchesChildGenerationSnapshot,
@@ -154,6 +154,18 @@ export class ChildSessions {
       for (const child of parent.children.values()) summaries.push(childSummary(child));
     }
     return summaries;
+  }
+
+  // The scope a row the provider attributed to a spawn belongs in. Undefined
+  // while no child has been admitted for that spawn yet.
+  childScopeForSpawn(
+    parentAppSessionId: string,
+    spawnLink: PersistedChildSpawnLink,
+  ): { childSessionId: string; role: ChildRole } | undefined {
+    const parent = this.parents.get(parentAppSessionId);
+    if (!parent || !this.isCurrentParent(parent)) return undefined;
+    const child = findChildBySpawn(parent, spawnLink);
+    return child ? { childSessionId: child.identity.childSessionId, role: child.role } : undefined;
   }
 
   admitChildObservation(observation: ChildSpawnObservation): ChildIdentity | undefined {

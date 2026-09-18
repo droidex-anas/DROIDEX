@@ -11,7 +11,9 @@ import {
 import type { TranscriptEvent } from './protocol.js';
 import { assistantTextDelta, successfulResultEvent } from './testing/fakeFactoryRuntime.js';
 
-function createHarness(options: { flushError?: Error } = {}) {
+function createHarness(
+  options: { flushError?: Error; childScope?: { childSessionId: string; role: 'worker' } } = {},
+) {
   const transcripts: TranscriptEvent[] = [];
   const sideEffects: Array<{
     appSessionId: string;
@@ -40,6 +42,7 @@ function createHarness(options: { flushError?: Error } = {}) {
       trace.push('usage:tokens');
       usage.push({ appSessionId, sourceProviderSessionId, value });
     },
+    resolveChildScope: () => options.childScope,
   });
   return { eventFlow, sideEffects, trace, transcripts, usage };
 }
