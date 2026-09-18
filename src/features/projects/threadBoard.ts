@@ -145,11 +145,21 @@ function threadDetail(
   live: boolean,
   digest: ActivityDigest | undefined,
 ): string {
+  // What it wants from the user comes first, even mid-turn: a thread can be
+  // generating and still be stopped on an approval.
+  if (BLOCKED.includes(status)) return join(ACTIVITY_LABELS[status], digest?.snippet);
   if (live) return digest?.activity ?? 'Working';
   if (thread.waiting) return join('Asked the main chat', digest?.snippet);
-  if (status === 'failed' || status === 'interrupted') return ACTIVITY_LABELS[status];
   return digest?.snippet ?? ACTIVITY_LABELS[status];
 }
+
+const BLOCKED: readonly SessionActivityStatus[] = [
+  'approval',
+  'input',
+  'plan',
+  'failed',
+  'interrupted',
+];
 
 function join(lead: string, snippet: string | undefined): string {
   return snippet === undefined || snippet === '' ? lead : `${lead} · ${snippet}`;
