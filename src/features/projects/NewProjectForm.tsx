@@ -77,26 +77,27 @@ export function NewProjectForm({
           placeholder="Move us off the legacy payments client before Friday, and draft the release notes."
           className="w-full resize-y bg-transparent px-3.5 py-3 text-[14px] leading-6 outline-none placeholder:text-droid-text-muted"
         />
-        <div className="flex flex-wrap items-center gap-2 border-t border-droid-border/60 px-3 py-2">
+        <div className="flex items-center gap-2 border-t border-droid-border/60 px-3 py-2">
           <button
             type="button"
             disabled={pending}
             onClick={() => void chooseFolder()}
             title={draft.workspace || 'Choose a workspace folder'}
-            className="flex min-w-0 items-center gap-1.5 rounded-lg px-2 py-1 text-[12px] text-droid-text-secondary transition-colors hover:bg-droid-elevated"
+            className="flex min-w-0 max-w-[140px] items-center gap-1.5 rounded-lg px-2 py-1 text-[12px] text-droid-text-secondary transition-colors hover:bg-droid-elevated"
           >
             <FolderOpen className="h-3.5 w-3.5 shrink-0" />
             <span className="truncate">
               {draft.workspace ? workspaceName(draft.workspace) : 'No folder'}
             </span>
           </button>
-          <ThreadSettings
-            value={selection.value}
-            catalog={selection.catalog}
-            disabled={pending}
-            onChange={selection.setValue}
-          />
-          <span className="flex-1" />
+          <span className="flex min-w-0 flex-1 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+            <ThreadSettings
+              value={selection.value}
+              catalog={selection.catalog}
+              disabled={pending}
+              onChange={selection.setValue}
+            />
+          </span>
           <button
             type="button"
             disabled={pending}
