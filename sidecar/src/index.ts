@@ -9,7 +9,6 @@ import { shutdownSidecar } from './shutdown.js';
 import { hotPathMetrics } from './telemetry/hotPathMetrics.js';
 import { ProjectService } from './projects/ProjectService.js';
 import { handleProjectCommand } from './projects/bridge.js';
-import { setProjectService } from './projects/wiring.js';
 
 const REQUESTED_PORT = bridgePort(process.env.BRIDGE_PORT ?? '0');
 const TOKEN = requiredSecret('BRIDGE_TOKEN');
@@ -77,7 +76,6 @@ projects = new ProjectService({
   send: (id, text, current) => manager.handle({ type: current ? 'session.sendNow' : 'session.send', appSessionId: id, text }),
   wake: (id, text) => manager.deliverProjectWake(id, text),
 });
-setProjectService(projects);
 
 let shuttingDown = false;
 
