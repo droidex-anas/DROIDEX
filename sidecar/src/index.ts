@@ -76,6 +76,7 @@ projects = new ProjectService({
   create: (command) => manager.handle(command),
   send: (id, text, current) => manager.handle({ type: current ? 'session.sendNow' : 'session.send', appSessionId: id, text }),
   wake: (id, text) => manager.deliverProjectWake(id, text),
+  transcriptTail: (id) => manager.projectTranscriptTail(id),
 });
 setProjectService(projects);
 
