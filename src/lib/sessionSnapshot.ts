@@ -151,7 +151,7 @@ function boundTranscriptEvents(events: TranscriptEvent[]): TranscriptEvent[] {
     // A transient row is only true while it is on screen, and the sidecar never
     // stores one: repainting it after a reload would contradict the history
     // page that replaces this snapshot a moment later.
-    events.slice(-MAX_SNAPSHOT_TRANSCRIPT_EVENTS).filter((event) => !event.transient),
+    events.filter((event) => !event.transient).slice(-MAX_SNAPSHOT_TRANSCRIPT_EVENTS),
     MAX_SNAPSHOT_TRANSCRIPT_BYTES,
     'end',
   );
