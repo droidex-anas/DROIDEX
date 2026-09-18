@@ -11,9 +11,14 @@ jobs:
       - uses: actions/checkout@v4
         with:
           persist-credentials: false
-      - run: git archive --format=tar --output=projects-source.tar HEAD
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm ci --ignore-scripts --no-audit --no-fund
+      - run: npm ci --prefix sidecar --ignore-scripts --no-audit --no-fund
+      - run: tar -czf projects-deps.tar.gz node_modules sidecar/node_modules
       - uses: actions/upload-artifact@v4
         with:
-          name: projects-source
-          path: projects-source.tar
+          name: projects-deps
+          path: projects-deps.tar.gz
           retention-days: 1
