@@ -9,6 +9,8 @@ const autonomy = z.enum(['off','low','medium','high']);
 
 export const PROJECT_TOOL_NAMES = ['project_thread_spawn','project_threads','project_thread_steer'] as const;
 
+// Native DROIDEX tool definitions. Provider adapters expose these through their own tool channel; this module is not an MCP server.
+
 export function projectTools(sessionId: () => string) {
   return [
     localTool('project_thread_spawn', {
