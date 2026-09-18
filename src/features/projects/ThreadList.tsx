@@ -1,16 +1,15 @@
 import { useState } from 'react';
 import { LayoutGroup, motion, useReducedMotion } from 'framer-motion';
-import { Plus } from '@droidex/icons';
-import { formatRelativeTime } from '../../lib/time';
-import { INLINE_CARD_DURATION_S, INLINE_CARD_EASE } from '../../components/inlineCardMotion';
-import { threadGroups, threadHeadline, type ThreadRow } from './threadBoard';
+import { ArrowUp } from '@droidex/icons';
+import { ThreadRow } from './ThreadRow';
+import { threadGroups, threadHeadline, type ThreadRow as ThreadRowModel } from './threadBoard';
 
-/* The Threads panel's list. The headline states the only fact that matters —
-   what, if anything, is waiting on the user — and every row carries the thread's
-   own last step underneath its name, never a status the app cannot back up.
+/* The Threads list. The headline states the only fact that matters — what, if
+   anything, is waiting on the user — and every row carries the thread's own last
+   step, never a status the app cannot back up.
 
    Groups keep a fixed order and appear only when they hold something, so the
-   panel never spends a row saying a group is empty. */
+   list never spends a row saying a group is empty. */
 
 export function ThreadList({
   rows,
@@ -18,28 +17,28 @@ export function ThreadList({
   now,
   busy,
   error,
-  paused,
-  uncertain,
-  onResume,
+  activeAppSessionId,
   onOpenThread,
   onStartThread,
 }: {
-  rows: readonly ThreadRow[];
+  rows: readonly ThreadRowModel[];
   subtitle: string;
   now: number;
   busy: boolean;
   error: string;
-  /** Automatic reports and messages are held; threads themselves keep running. */
-  paused: boolean;
-  /** Deliveries that may already have landed before the app stopped. */
-  uncertain: number;
-  onResume: () => void;
+  activeAppSessionId?: string | null;
   onOpenThread: (appSessionId: string) => void;
   onStartThread: (prompt: string) => void;
 }) {
   const reduceMotion = useReducedMotion() === true;
   const [draft, setDraft] = useState('');
   const groups = threadGroups(rows);
+  const send = () => {
+    const prompt = draft.trim();
+    if (!prompt || busy) return;
+    onStartThread(prompt);
+    setDraft('');
+  };
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
@@ -50,23 +49,6 @@ export function ThreadList({
           </h2>
           <p className="mt-1.5 text-[12px] leading-5 text-droid-text-muted">{subtitle}</p>
         </div>
-
-        {paused && (
-          <div className="mx-4 mb-1 rounded-xl border border-droid-border px-3.5 py-3">
-            <p className="text-[12px] leading-5 text-droid-text-secondary">
-              {uncertain > 0
-                ? 'A message may already have reached its thread before DROIDEX stopped. Resuming does not send it again.'
-                : 'Coordination is paused: thread reports and queued messages wait until you resume.'}
-            </p>
-            <button
-              type="button"
-              onClick={onResume}
-              className="mt-2 rounded-lg bg-droid-active px-2.5 py-1 text-[12px] font-medium text-droid-text transition-colors hover:bg-droid-elevated"
-            >
-              {uncertain > 0 ? 'Resume without resending' : 'Resume'}
-            </button>
-          </div>
-        )}
 
         <div className="px-2 pb-3">
           <LayoutGroup>
@@ -79,10 +61,11 @@ export function ThreadList({
                   {group.label} · {group.rows.length}
                 </motion.div>
                 {group.rows.map((row) => (
-                  <ThreadListRow
+                  <ThreadRow
                     key={row.appSessionId}
                     row={row}
                     now={now}
+                    active={row.appSessionId === activeAppSessionId}
                     reduceMotion={reduceMotion}
                     onOpen={onOpenThread}
                   />
@@ -105,7 +88,7 @@ export function ThreadList({
             {error}
           </p>
         )}
-        <div className="rounded-xl border border-droid-border bg-droid-surface/50 focus-within:border-droid-border-hover">
+        <div className="rounded-xl border border-droid-border bg-droid-surface/50 transition-colors focus-within:border-droid-border-hover">
           <textarea
             value={draft}
             rows={2}
@@ -116,10 +99,9 @@ export function ThreadList({
               setDraft(event.target.value);
             }}
             onKeyDown={(event) => {
-              if (event.key !== 'Enter' || event.shiftKey || !draft.trim() || busy) return;
+              if (event.key !== 'Enter' || event.shiftKey) return;
               event.preventDefault();
-              onStartThread(draft.trim());
-              setDraft('');
+              send();
             }}
             className="w-full resize-none bg-transparent px-3 py-2.5 text-[13px] leading-5 text-droid-text outline-none placeholder:text-droid-text-muted"
           />
@@ -129,83 +111,16 @@ export function ThreadList({
             </span>
             <button
               type="button"
+              aria-label="Start thread"
               disabled={busy || !draft.trim()}
-              onClick={() => {
-                onStartThread(draft.trim());
-                setDraft('');
-              }}
-              className="flex shrink-0 items-center gap-1 rounded-lg bg-droid-active px-2.5 py-1 text-[12px] font-medium text-droid-text transition-colors hover:bg-droid-elevated disabled:opacity-40"
+              onClick={send}
+              className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-droid-text text-droid-bg transition-opacity hover:opacity-80 disabled:opacity-30"
             >
-              <Plus className="h-3 w-3" />
-              {busy ? 'Starting…' : 'Start'}
+              <ArrowUp className="h-3.5 w-3.5" />
             </button>
           </div>
         </div>
       </div>
     </div>
-  );
-}
-
-function ThreadListRow({
-  row,
-  now,
-  reduceMotion,
-  onOpen,
-}: {
-  row: ThreadRow;
-  now: number;
-  reduceMotion: boolean;
-  onOpen: (appSessionId: string) => void;
-}) {
-  return (
-    <motion.button
-      type="button"
-      layout={!reduceMotion}
-      layoutId={reduceMotion ? undefined : `thread-row:${row.appSessionId}`}
-      transition={{ duration: INLINE_CARD_DURATION_S, ease: INLINE_CARD_EASE }}
-      data-testid="thread-row"
-      data-thread-state={row.state}
-      disabled={row.unavailable}
-      title={row.title}
-      onClick={() => {
-        onOpen(row.appSessionId);
-      }}
-      className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left transition-colors hover:bg-droid-elevated/50 disabled:cursor-default disabled:hover:bg-transparent"
-    >
-      <ThreadDot state={row.state} live={row.live} />
-      <span className="flex min-w-0 flex-1 flex-col">
-        <span className="truncate text-[14px] font-medium leading-5 text-droid-text">
-          {row.title}
-        </span>
-        <span
-          className={`truncate text-[12px] leading-4 ${
-            row.live ? 'shimmer-text font-medium' : 'text-droid-text-muted'
-          }`}
-        >
-          {row.detail}
-        </span>
-      </span>
-      <span className="shrink-0 text-[12px] tabular-nums text-droid-text-muted">
-        {formatRelativeTime(row.updatedAt, now)}
-      </span>
-    </motion.button>
-  );
-}
-
-const DOT_TONE: Record<ThreadRow['state'], string> = {
-  attention: 'bg-droid-orange',
-  working: 'bg-droid-green',
-  idle: 'bg-droid-text-muted/60',
-};
-
-function ThreadDot({ state, live }: { state: ThreadRow['state']; live: boolean }) {
-  const tone = DOT_TONE[state];
-  return (
-    <span
-      aria-hidden="true"
-      className={`h-[7px] w-[7px] shrink-0 rounded-full ${tone} ${
-        live ? 'motion-safe:animate-pulse' : ''
-      }`}
-    />
   );
 }
