@@ -68,8 +68,10 @@ export async function createThreadWorkspace(
 // Threads live under one prefix so a repository's branch list says which
 // branches DROIDEX opened and which task each one carries.
 function threadBranchName(value: string): string {
-  const stem = sanitizeSegment(value).slice(0, 48) || 'thread';
-  return stem.startsWith('thread/') ? stem : `thread/${stem}`;
+  // Sanitizing flattens a slash, so a chat asking for "thread/rename-api" must
+  // not come back as thread/thread-rename-api.
+  const stem = sanitizeSegment(value).replace(/^thread[-/]/, '').slice(0, 48) || 'work';
+  return `thread/${stem}`;
 }
 
 async function freeBranch(root: string, name: string): Promise<string> {
