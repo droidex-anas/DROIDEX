@@ -139,6 +139,10 @@ function isServerEvent(value: unknown): value is ServerEvent {
   // Runtime `type` is a string; narrowing to the union makes a missing variant fail this switch.
   const type = value.type as ServerEvent['type'];
   switch (type) {
+    case 'projects.updated':
+      return Array.isArray(value.projects) && value.projects.every(isProject);
+    case 'project.created':
+      return typeof value.requestId === 'string' && isProject(value.project);
     case 'connection':
       return value.status === 'connected' || value.status === 'error';
     case 'runtime.updated':
@@ -319,6 +323,29 @@ function isServerEvent(value: unknown): value is ServerEvent {
       return false;
     }
   }
+}
+
+function isProject(value: unknown): boolean {
+  return (
+    isRecord(value) &&
+    hasStrings(value, ['id', 'title', 'cwd', 'controllerThreadId']) &&
+    typeof value.updatedAt === 'number' &&
+    Array.isArray(value.threads) &&
+    value.threads.every(isProjectThread)
+  );
+}
+
+function isProjectThread(value: unknown): boolean {
+  return (
+    isRecord(value) &&
+    hasStrings(value, ['id', 'appSessionId', 'title', 'provider', 'autonomy', 'status']) &&
+    isProviderKind(value.provider) &&
+    (value.parentThreadId === undefined || typeof value.parentThreadId === 'string') &&
+    (value.modelId === undefined || typeof value.modelId === 'string') &&
+    (value.reasoningEffort === undefined || typeof value.reasoningEffort === 'string') &&
+    ['idle', 'running', 'waiting', 'done', 'failed'].includes(value.status as string) &&
+    typeof value.updatedAt === 'number'
+  );
 }
 
 function isSessionSummary(value: unknown): boolean {
