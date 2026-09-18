@@ -9,7 +9,6 @@ const project: ProjectView = {
   id: 'project',
   title: 'Build',
   paused: false,
-  wakesLeft: 20,
   launching: 0,
   threads: [
     { appSessionId: 'main', title: 'Main', waiting: false },
@@ -60,15 +59,12 @@ test('validated project graphs and explicitly acknowledged results cross the bri
   assert.equal(wire({ type: 'project.result', requestId: 'request', ok: false }), null);
 });
 
-test('malformed graphs, negative budgets and foreign uncertain targets are rejected', () => {
+test('malformed graphs, bad counts and foreign uncertain targets are rejected', () => {
   assert.equal(
     wire({ type: 'projects.snapshot', projects: [{ ...project, threads: [{}] }] }),
     null,
   );
-  assert.equal(
-    wire({ type: 'projects.snapshot', projects: [{ ...project, wakesLeft: -1 }] }),
-    null,
-  );
+  assert.equal(wire({ type: 'projects.snapshot', projects: [{ ...project, queued: -1 }] }), null);
   assert.equal(
     wire({ type: 'projects.snapshot', projects: [{ ...project, uncertainTargets: ['foreign'] }] }),
     null,

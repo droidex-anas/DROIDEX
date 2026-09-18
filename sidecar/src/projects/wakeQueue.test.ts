@@ -20,7 +20,6 @@ function project(id = 'project'): Project {
     id,
     title: id,
     paused: false,
-    wakesLeft: 20,
     launching: 0,
     threads: [
       { appSessionId: 'main', title: 'Main', reply: '', waiting: false },
@@ -105,7 +104,6 @@ test('availability arriving during an awaited busy receipt is not lost', async (
   await tick();
   await tick();
   assert.equal(calls, 2);
-  assert.equal(state.wakesLeft, 19, 'busy admission is refunded');
   queue.close();
   await queue.flush();
 });
@@ -235,7 +233,6 @@ test('a cancelled admission cannot restore a busy marker after resume', async ()
   await tick();
   await tick();
   assert.equal(calls, 2);
-  assert.equal(state.wakesLeft, 19);
   assert.equal(state.pending.length, 0);
   queue.close();
   await queue.flush();

@@ -11,7 +11,6 @@ function project(): Project {
     id: 'project',
     title: 'Example',
     paused: false,
-    wakesLeft: 20,
     launching: 0,
     threads: [{ appSessionId: 'main', title: 'Main', reply: '', waiting: false }],
     pending: [],

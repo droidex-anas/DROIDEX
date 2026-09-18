@@ -125,7 +125,6 @@ export class ProjectService {
       title: project.title,
       ...(cwd ? { cwd } : {}),
       paused: project.paused,
-      wakesLeft: project.wakesLeft,
       launching: project.launching,
       threads: project.threads.map((thread) => ({
         appSessionId: thread.appSessionId,
@@ -266,10 +265,7 @@ export class ProjectService {
     }
     this.wakes.invalidate(project);
     project.paused = paused;
-    if (!paused) {
-      project.wakesLeft = 20;
-      delete project.error;
-    }
+    if (!paused) delete project.error;
     await this.save();
     this.wakes.kick(project);
   }
@@ -450,7 +446,6 @@ export class ProjectService {
       id,
       title: title.slice(0, 120) || 'Project',
       paused: false,
-      wakesLeft: 20,
       launching: 0,
       threads: [],
       pending: [],

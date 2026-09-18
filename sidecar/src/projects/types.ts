@@ -48,7 +48,6 @@ export interface Project {
   id: string;
   title: string;
   paused: boolean;
-  wakesLeft: number;
   launching: number;
   threads: ProjectThread[];
   pending: ThreadMessage[];
@@ -62,7 +61,6 @@ export interface ProjectView {
   // The main conversation's workspace, when its session is still known.
   cwd?: string;
   paused: boolean;
-  wakesLeft: number;
   launching: number;
   threads: Omit<ProjectThread, 'reply'>[];
   queued: number;
