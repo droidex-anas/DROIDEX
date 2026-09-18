@@ -14,7 +14,14 @@ const commandSchema = z.discriminatedUnion('type', [
       type: z.literal('project.spawn'),
       ...requestId,
       source: id,
-      input: threadInputSchema.omit({ cwd: true }).partial({ provider: true, autonomy: true }),
+      input: threadInputSchema
+        .omit({ cwd: true })
+        .partial({ provider: true, autonomy: true })
+        .extend({
+          workspace: z.enum(['inherit', 'worktree']).optional(),
+          branch: z.string().min(1).max(80).optional(),
+          base: z.string().min(1).max(200).optional(),
+        }),
     })
     .strict(),
   z

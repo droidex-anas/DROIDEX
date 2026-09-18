@@ -4,6 +4,7 @@ import { ProjectWakeQueue } from './ProjectWakeQueue.js';
 import { randomUUID } from 'node:crypto';
 import type { ServerEvent, SessionSummary } from '../protocol.js';
 import type { ProjectPersistence } from './store.js';
+import { createThreadWorkspace } from './threadWorkspace.js';
 import type {
   Project,
   ProjectThread,
@@ -159,7 +160,10 @@ export class ProjectService {
     }
   }
 
-  async spawn(source: string, requested: ThreadSpawnInput): Promise<{ appSessionId: string }> {
+  async spawn(
+    source: string,
+    requested: ThreadSpawnInput,
+  ): Promise<{ appSessionId: string; cwd?: string; branch?: string }> {
     this.requireOpen();
     const owner = this.requireSession(source);
     if (owner.sessionPurpose !== 'chat')
@@ -189,8 +193,26 @@ export class ProjectService {
     // live conversation, so it resumes coordination the same way the panel's
     // Resume does — and stops for the same reason, an unreviewed delivery.
     if (project.paused) await this.setPaused(project.id, false);
-    const appSessionId = await this.launch(project, { ...input, cwd: owner.cwd }, source);
-    return { appSessionId };
+    // The worktree is cut before the session exists, so a thread that is asked
+    // to work in isolation never reads the project's checkout by accident.
+    const workspace =
+      requested.workspace === 'worktree'
+        ? await createThreadWorkspace({
+            cwd: owner.cwd,
+            title: input.title,
+            ...(requested.branch ? { branch: requested.branch } : {}),
+            ...(requested.base ? { base: requested.base } : {}),
+          })
+        : undefined;
+    const cwd = workspace?.cwd ?? owner.cwd;
+    const prompt = workspace
+      ? `${input.prompt}\n\nWork in ${workspace.cwd} on branch ${workspace.branch}, cut from ${workspace.base}. It is yours alone; do not touch the project's own checkout.`
+      : input.prompt;
+    const appSessionId = await this.launch(project, { ...input, prompt, cwd }, source);
+    return {
+      appSessionId,
+      ...(workspace ? { cwd: workspace.cwd, branch: workspace.branch } : {}),
+    };
   }
 
   publish(): void {
