@@ -5,6 +5,7 @@ import type { AutomationBridgeCommand, AutomationBridgeEvent } from './automatio
 import type { McpClientCommand, McpServerEvent } from './mcpProtocol.js';
 import type { ProviderMention, SkillInfo } from './providers/catalog.js';
 import type { ProviderKind } from './providers/providerKind.js';
+import type { Project } from './projects/types.js';
 export type { ProviderMention, SkillInfo } from './providers/catalog.js';
 export type {
   McpServerInfo,
@@ -617,6 +618,9 @@ export type PermissionOutcome =
 
 // ── Frontend -> Sidecar ──────────────────────────────────────────────
 export type ClientCommand =
+  | { type: 'projects.list'; requestId: string }
+  | { type: 'projects.create'; requestId: string; title: string; controllerSessionId: string }
+  | { type: 'projects.wake'; requestId: string; projectId: string; text: string }
   | AutomationBridgeCommand
   | McpClientCommand
   | { type: 'connect'; apiKey?: string }
@@ -883,6 +887,7 @@ export interface ChildErrorEvent {
 export type VoiceNarration = 'brief' | 'commentary';
 
 export type ServerEvent =
+  | { type: 'projects.updated'; projects: Project[] }
   | { type: 'voice.answer'; appSessionId: string; sdp: string; attempt: string }
   | { type: 'voice.state'; appSessionId: string; status: 'live' | 'closed' }
   | {
@@ -1030,7 +1035,7 @@ export type ServerEvent =
   | { type: 'browser.closed'; appSessionId: string }
   | { type: 'browser.error'; appSessionId?: string; message: string };
 
-export const BRIDGE_PROTOCOL_VERSION = 4 as const;
+export const BRIDGE_PROTOCOL_VERSION = 5 as const;
 
 export interface SequencedServerEvent {
   seq: number;
