@@ -35,6 +35,7 @@ import { prKind } from '../lib/github';
 import { sessionAttention } from '../lib/sessionAttention';
 import type { SessionSummary } from '../types/bridge';
 import { sessionResumeId } from '../features/providers/providerIdentity';
+import { useProjectThreadIds } from '../features/projects/client';
 import { SidebarAppUpdateButton } from './SidebarAppUpdateButton';
 import { SidebarNavigation } from './SidebarNavigation';
 
@@ -136,6 +137,7 @@ export default function Sidebar({
     dismissSidebarCard(SIDEBAR_WELCOME_CARD_ID);
   };
 
+  const projectThreads = useProjectThreadIds();
   const compareRows = useCallback(
     (a: SessionSummary, b: SessionSummary) =>
       compareSidebarSessions(a, b, preferences.order, chatMetadata),
@@ -147,6 +149,8 @@ export default function Sidebar({
     const listed = state.sessionOrder
       .map((id) => state.sessions[id])
       .filter(Boolean)
+      // A project thread is read inside Projects, with its project around it.
+      .filter((m) => !projectThreads.has(m.appSessionId))
       .filter((m) => !isChatHidden(chatMetadata[m.appSessionId]) && (!unreadOnly || isUnread(m)))
       .filter((m) => matchesActivityFilter(statusFor(m), preferences.filter));
     const inScope = view === 'activity' ? listed.filter((m) => activity.inScope(m, now)) : listed;
@@ -158,6 +162,7 @@ export default function Sidebar({
     state.sessionOrder,
     state.sessions,
     chatMetadata,
+    projectThreads,
     unreadOnly,
     isUnread,
     statusFor,
