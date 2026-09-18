@@ -1,3 +1,5 @@
+import type { AutomationDeliveryReceipt } from './automations/types.js';
+import type { ScheduledTurnDelivery } from './sessionAutomationDelivery.js';
 import { type McpServerConfig } from '@factory/droid-sdk';
 import { randomUUID } from 'node:crypto';
 import { tmpdir } from 'node:os';
@@ -182,6 +184,8 @@ export interface SessionManagerDependencies {
 
 export interface SessionManagerOptions {
   assetUrlFor?: (path: string) => string;
+  onSessionAvailable?: (appSessionId: string) => void;
+  onScheduledCapacityChanged?: () => void;
   dependencies?: SessionManagerDependencies;
   initialModels?: ModelInfo[];
   // Injectable because a real probe starts the provider's CLI, which keeps
@@ -224,8 +228,9 @@ const ignoreError = (): undefined => undefined;
 const nextChildSessionId = () => `child-${randomUUID()}`;
 
 // MCP settings commands run in a throwaway session; without a workspace they
-// still need a directory to read user-level configuration from.
-const mcpSettingsCwd = (cwd?: string): string => cwd ?? tmpdir();
+// still need a directory to read user-level configuration from. A blank cwd on
+// the wire means the same as none, as it does everywhere else this is read.
+const mcpSettingsCwd = (cwd?: string): string => (cwd === undefined || cwd === '' ? tmpdir() : cwd);
 
 export class SessionManager {
   private ready = false;
@@ -255,6 +260,7 @@ export class SessionManager {
   // Per-session autonomy mutation queue: rapid changes settle against the
   // provider in the order they were requested.
   private readonly autonomyMutationTails = new Map<string, Promise<void>>();
+  private readonly onSessionAvailable: SessionManagerOptions['onSessionAvailable'];
   private readonly browsers: SessionBrowsers;
   private readonly createLocalMcpResource: SessionManagerDependencies['createLocalMcpResource'];
   private readonly createAutomationMcpResource: NonNullable<
@@ -294,6 +300,7 @@ export class SessionManager {
         void this.emitProviderStatus();
       },
     );
+    this.onSessionAvailable = options.onSessionAvailable;
     const limits = runtimeLimits(options.dependencies);
     let startWatcher: (
       options: SessionFileWatcherOptions,
@@ -422,6 +429,7 @@ export class SessionManager {
     });
     this.droidProvider = new DroidProvider(this.runtime);
     this.interactions = new SessionInteractions({
+      onSessionAvailable: options.onSessionAvailable,
       getLiveSession: (id) => this.registry.getLive(id),
       updateSummary: (id, patch) => {
         this.registry.updateSummary(id, patch);
@@ -541,8 +549,11 @@ export class SessionManager {
       onPrimaryModelChanged: (summary, from, to) => {
         this.appendSettingsStatus(summary, `Model switched: ${from} → ${to}`, { from, to });
       },
-      onSettled: () => {
+      onSettled: (appSessionId) => {
         this.runtimeRetirement.arm();
+        // A settled write is one of the states that made this session refuse a
+        // turn, so a scheduled delivery waiting on it can be rearmed.
+        this.onSessionAvailable?.(appSessionId);
       },
       emitError: (error) => {
         this.emitError(error);
@@ -566,9 +577,14 @@ export class SessionManager {
       applyPendingSettingsToSummary: (summary) => this.modelSettings.project(summary),
       applyPendingSessionSettings: (appSessionId) => this.modelSettings.applyPending(appSessionId),
       waitForSettingsMutations: (appSessionId) => this.modelSettings.waitForMutations(appSessionId),
-      runPrimaryTurn: (liveSession, prompt, mentions) =>
-        this.runPrimaryTurn(liveSession, prompt, mentions),
+      runPrimaryTurn: (liveSession, prompt, mentions, delivery) =>
+        this.runPrimaryTurn(liveSession, prompt, mentions, delivery),
       eventFlow: this.eventFlow,
+      hasPendingInteractions: (appSessionId) => this.interactions.hasPending(appSessionId),
+      hasActiveSettingsChanges: (appSessionId) =>
+        this.modelSettings.hasActiveMutations(appSessionId),
+      onSessionAvailable: options.onSessionAvailable,
+      onScheduledCapacityChanged: options.onScheduledCapacityChanged,
       context: this.context,
       forgetInteractions: (appSessionId) => {
         this.interactions.forgetSession(appSessionId);
@@ -994,6 +1010,14 @@ export class SessionManager {
     }
   }
 
+  deliverScheduledMessage(
+    appSessionId: string,
+    prompt: string,
+    isCurrent: () => boolean,
+  ): Promise<AutomationDeliveryReceipt> {
+    return this.lifecycle.deliverScheduled(appSessionId, prompt, isCurrent);
+  }
+
   async automationSessionContext(appSessionId: string): Promise<{
     cwd: string | null;
     modelId: string | null;
@@ -1256,6 +1280,7 @@ export class SessionManager {
     liveSession: LiveSession,
     prompt: string,
     mentions?: ProviderMention[],
+    delivery?: ScheduledTurnDelivery,
   ): Promise<void> {
     await runPrimaryTurn(
       {
@@ -1275,6 +1300,7 @@ export class SessionManager {
       liveSession,
       prompt,
       mentions,
+      delivery,
     );
   }
 
@@ -1328,30 +1354,32 @@ export class SessionManager {
   // does not need TodoWrite — it otherwise loops updating the list after it has
   // already answered. Disable TodoWrite for design turns and restore it for
   // normal turns, calling updateSettings only when the policy changes.
-  private async applyDesignToolPolicy(liveSession: LiveSession, design: boolean): Promise<void> {
+  private async applyDesignToolPolicy(liveSession: LiveSession, design: boolean): Promise<boolean> {
     // When the in-memory flag is unset (cold start / page reload) we don't
     // know the session's current disabledToolIds, so always call updateSettings
     // to synchronize. Once the flag is set we skip redundant calls.
     const droid = liveSession.droid;
     // The design tool policy is a Droid setting; other providers run design
-    // turns with their own tool set.
-    if (!droid) return;
+    // turns with their own tool set, so there is nothing to apply.
+    if (!droid) return true;
     if (
       liveSession.todoDisabledForDesign !== undefined &&
       liveSession.todoDisabledForDesign === design
     )
-      return;
-    if (!this.isCurrentPrimarySession(liveSession)) return;
+      return true;
+    if (!this.isCurrentPrimarySession(liveSession)) return false;
     try {
       await droid.updateSettings({ disabledToolIds: design ? ['TodoWrite'] : [] });
-      if (!this.isCurrentPrimarySession(liveSession)) return;
+      if (!this.isCurrentPrimarySession(liveSession)) return false;
       liveSession.todoDisabledForDesign = design;
+      return true;
     } catch (err) {
-      if (!this.isCurrentPrimarySession(liveSession)) return;
+      if (!this.isCurrentPrimarySession(liveSession)) return false;
       this.emitError({
         appSessionId: liveSession.summary.appSessionId,
         message: `Could not update design tool policy: ${errMsg(err)}`,
       });
+      return false;
     }
   }
 
@@ -1465,6 +1493,8 @@ export class SessionManager {
     } finally {
       if (readyToSettle) {
         await this.lifecycle.settleAfterCompaction(appSessionId, previousLiveSession);
+      } else {
+        this.onSessionAvailable?.(appSessionId);
       }
     }
   }

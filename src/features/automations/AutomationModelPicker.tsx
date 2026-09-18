@@ -16,6 +16,7 @@ const accentMix = (pct: number) =>
 const PANEL_MAX_HEIGHT = 560;
 
 type ModelCategory = 'core' | 'factory' | 'custom';
+const MODEL_CATEGORIES: readonly ModelCategory[] = ['core', 'factory', 'custom'];
 
 const CATEGORY_LABEL: Record<ModelCategory, string> = {
   core: 'Droid core',
@@ -237,7 +238,7 @@ export function AutomationModelPicker({
                     setCategory('all');
                   }}
                 />
-                {(Object.keys(CATEGORY_LABEL) as ModelCategory[]).map((value) =>
+                {MODEL_CATEGORIES.map((value) =>
                   categoryCounts[value] > 0 ? (
                     <CategoryButton
                       key={value}

@@ -46,8 +46,10 @@ export default function Toaster() {
             onMouseEnter={() => {
               pauseToast(t.id);
             }}
-            onMouseLeave={() => {
-              resumeToast(t.id);
+            onMouseLeave={(event) => {
+              // Focus keeps the countdown paused and the TTL bar frozen, so the
+              // pointer leaving must not restart it under a keyboard user.
+              if (!event.currentTarget.contains(document.activeElement)) resumeToast(t.id);
             }}
             onFocus={() => {
               pauseToast(t.id);

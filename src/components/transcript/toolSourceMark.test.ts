@@ -30,3 +30,13 @@ test('a tool source wears its server host, and nothing when the server has none'
   assert.equal(toolSourceMark('local tools'), null);
   assert.equal(toolSourceMark(undefined), null);
 });
+
+test('a server that reports no host this time drops the host it had before', () => {
+  recordMcpCatalog([server('notion', 'mcp.notion.com')]);
+  assert.equal(toolSourceMark('notion')?.host, 'mcp.notion.com');
+
+  // The same server over stdio in another workspace: explicitly hostless, so
+  // the cached endpoint goes with it.
+  recordMcpCatalog([server('notion')]);
+  assert.equal(toolSourceMark('notion'), null);
+});

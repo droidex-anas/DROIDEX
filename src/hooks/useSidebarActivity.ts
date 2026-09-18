@@ -111,12 +111,23 @@ export function useSidebarActivity(
   const shipCwds = useMemo(() => [...shipOwners.keys()], [shipOwners]);
   const diffs = useActivityShipSignals(shipCwds, preferences.view === 'activity');
 
+  // Every linked pull request is merged or closed, which settles a chat on its
+  // own, independently of a manual settle marker.
+  const prsAllDone = useCallback(
+    (session: SessionSummary): boolean => {
+      const metadata: Partial<ChatMetadataMap> = state.chatMetadata;
+      const links = metadata[session.appSessionId]?.pullRequests ?? [];
+      return (
+        links.length > 0 && links.every((pr) => prKind(pr) !== 'open' && prKind(pr) !== 'draft')
+      );
+    },
+    [state.chatMetadata],
+  );
+
   const statusFor = useCallback(
     (session: SessionSummary): SessionActivityStatus => {
       const id = session.appSessionId;
       const digest = freshDigest(digests, session);
-      const metadata: Partial<ChatMetadataMap> = state.chatMetadata;
-      const links = metadata[id]?.pullRequests ?? [];
       const owned: Partial<Record<string, GitDiffStat>> = diffs;
       const diff = shipOwners.get(session.cwd) === id ? owned[session.cwd] : undefined;
       return sessionActivityStatus(session, {
@@ -125,15 +136,14 @@ export function useSidebarActivity(
         settledAt: preferences.settled[id],
         awaitingReply: digest?.modelSpokeLast ?? false,
         uncommitted: (diff?.files ?? 0) > 0,
-        prDone:
-          links.length > 0 && links.every((pr) => prKind(pr) !== 'open' && prKind(pr) !== 'draft'),
+        prDone: prsAllDone(session),
       });
     },
     [
       digests,
       diffs,
+      prsAllDone,
       shipOwners,
-      state.chatMetadata,
       state.pendingPermissions,
       state.pendingQuestions,
       state.activeAppSessionId,
@@ -166,6 +176,11 @@ export function useSidebarActivity(
     statusFor,
     reasonFor,
     inScope,
+    // Reopening only means something while the manual marker is the only thing
+    // holding the row settled: a chat whose pull requests have all closed would
+    // settle again the moment the marker went.
+    canReopen: (session: SessionSummary) =>
+      Object.hasOwn(preferences.settled, session.appSessionId) && !prsAllDone(session),
     settle: (session: SessionSummary) => {
       const status = statusFor(session);
       if (!canSettleSession(status)) return;

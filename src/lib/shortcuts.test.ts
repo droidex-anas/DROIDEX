@@ -93,3 +93,16 @@ test('defaults are collision-free and conflicts are reported both ways', () => {
     ['openSettings'],
   );
 });
+
+test('the numpad plus key round-trips through a chord', () => {
+  const chord = chordFromEvent(event({ ctrlKey: true, key: '+', code: 'NumpadAdd' }));
+  assert.ok(chord);
+  assert.deepEqual(chord, { meta: true, ctrl: false, alt: false, shift: false, key: 'Plus' });
+  const serialized = serializeChord(chord);
+  assert.equal(serialized, 'Meta+Plus');
+  assert.deepEqual(parseChord(serialized), chord);
+  assert.equal(
+    matchesChord(event({ ctrlKey: true, key: '+', code: 'NumpadAdd' }), serialized),
+    true,
+  );
+});

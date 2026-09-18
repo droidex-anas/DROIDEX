@@ -1,81 +1,7 @@
-import { Fragment, useState } from 'react';
-import {
-  GripVertical,
-  ImageOff,
-  ListPlus,
-  MousePointerSquareDashed,
-  Pencil,
-  X,
-} from 'lucide-react';
+import { useState } from 'react';
+import { GripVertical, ListPlus, MousePointerSquareDashed, Pencil, X } from 'lucide-react';
 import type { QueuedPrompt } from '../../hooks/useStore';
-import { promptDisplayText } from '../../lib/composePrompt';
-import { imageSrc, isImagePath, pathBaseName } from '../../lib/localImage';
-import { FileChip } from './FileChip';
-import { queuedPromptPreview } from './queuedPromptPreview';
-
-// Compact reminder: consecutive images collapse to one thumbnail, but a PDF
-// between two images stays in paste order instead of jumping all files after
-// every image.
-type QueuedAttachmentGroup = { type: 'images'; paths: string[] } | { type: 'file'; path: string };
-
-function queuedAttachmentGroups(paths: readonly string[]): QueuedAttachmentGroup[] {
-  const groups: QueuedAttachmentGroup[] = [];
-  for (const path of paths) {
-    if (isImagePath(path)) {
-      const last = groups.at(-1);
-      if (last?.type === 'images') last.paths.push(path);
-      else groups.push({ type: 'images', paths: [path] });
-    } else {
-      groups.push({ type: 'file', path });
-    }
-  }
-  return groups;
-}
-
-// Queued attachments are a reminder, not a gallery: one tiny thumbnail stands in
-// for the prompt's images and carries the total as a badge. Editing the prompt
-// brings every image back as a full composer chip.
-function QueuedImages({ paths }: { paths: string[] }) {
-  const first = paths[0];
-  const src = imageSrc(first);
-  // Keyed by src: reordering the queue can hand this row a different image, and
-  // a stale failure would hide it.
-  const [failedSrc, setFailedSrc] = useState<string | null>(null);
-  const failed = failedSrc !== null && failedSrc === src;
-  const label = paths.length === 1 ? pathBaseName(first) : `${String(paths.length)} images`;
-
-  return (
-    <span
-      title={paths.map((p) => pathBaseName(p)).join('\n')}
-      className="relative mt-1 inline-block h-6 w-6 align-middle"
-    >
-      {/* The badge overhangs the thumbnail, so the clipping box is the inner
-          element: putting overflow-hidden on the positioned parent would cut it. */}
-      <span className="block h-full w-full overflow-hidden rounded-md border border-droid-border bg-droid-bg/60">
-        {src === null || failed ? (
-          <span className="flex h-full w-full items-center justify-center text-droid-text-muted">
-            <ImageOff className="h-3 w-3" />
-          </span>
-        ) : (
-          <img
-            src={src}
-            alt={label}
-            draggable={false}
-            className="h-full w-full object-cover"
-            onError={() => {
-              setFailedSrc(src);
-            }}
-          />
-        )}
-      </span>
-      {paths.length > 1 && (
-        <span className="absolute -right-1 -top-1 flex h-3.5 min-w-3.5 items-center justify-center rounded-full border border-droid-border bg-droid-elevated px-0.5 text-[11px] font-semibold leading-none text-droid-text">
-          {paths.length}
-        </span>
-      )}
-    </span>
-  );
-}
+import { PendingPromptPreview } from './PendingPromptPreview';
 
 // Prompts staged while the model is busy; they send one at a time after the
 // current turn. Rows are HTML5-draggable to reorder; the drag state lives here
@@ -109,7 +35,6 @@ export function QueuedPrompts({
         Queued · sends after the current turn
       </div>
       {queue.map((p, i) => {
-        const attachments = queuedAttachmentGroups(p.files);
         return (
           <div
             key={p.id}
@@ -140,19 +65,7 @@ export function QueuedPrompts({
             >
               <GripVertical className="w-3.5 h-3.5" />
             </span>
-            <span className="flex-1 min-w-0">
-              <span className="line-clamp-2 block break-words text-[12px] text-droid-text-secondary">
-                {queuedPromptPreview(promptDisplayText(p.text, p.skills)) || '(empty)'}
-              </span>
-              {attachments.map((group, index) => (
-                <Fragment key={String(index)}>
-                  {group.type === 'images' ? (
-                    <QueuedImages paths={group.paths} />
-                  ) : (
-                    <FileChip path={group.path} />
-                  )}
-                </Fragment>
-              ))}
+            <PendingPromptPreview text={p.text} files={p.files} skills={p.skills}>
               {p.design && p.design.references.length > 0 && (
                 <span className="mt-1 inline-flex items-center gap-1 rounded-md bg-droid-active px-1.5 py-0.5 text-[11px] text-droid-text-muted">
                   <MousePointerSquareDashed className="w-3 h-3" />
@@ -160,7 +73,7 @@ export function QueuedPrompts({
                   {p.design.references.length === 1 ? '' : 's'}
                 </span>
               )}
-            </span>
+            </PendingPromptPreview>
             <div className="flex shrink-0 items-center gap-0.5">
               {!p.design && (
                 <button

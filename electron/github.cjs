@@ -113,6 +113,14 @@ const PR_FIELDS = [
   'statusCheckRollup',
 ].join(',');
 
+// Only a check run reports progress: a legacy commit status has no `status`.
+function isRunning(item) {
+  const status = String(item?.status || '').toUpperCase();
+  return status !== '' && status !== 'COMPLETED';
+}
+
+const startedAtOf = (item) => String(item?.startedAt || '');
+
 // One state for the whole rollup, the way GitHub's own list marks a PR: any
 // failure is red, otherwise anything still running is pending, otherwise a
 // finished rollup is a pass. Skipped and neutral runs do not count against it.
@@ -123,22 +131,28 @@ function rollupChecks(value) {
   // each check counts, so a superseded cancelled run cannot paint a green PR.
   const latest = new Map();
   for (const item of value) {
-    const key = `${item?.workflowName || item?.context || ''}/${item?.name || item?.context || ''}`;
+    // Workflow, job and legacy status-context names may contain '/', so the two
+    // halves are joined unambiguously instead of with a bare separator.
+    const key = JSON.stringify([
+      item?.workflowName || item?.context || '',
+      item?.name || item?.context || '',
+    ]);
     const prior = latest.get(key);
-    // A queued re-run has no timestamp yet; it is still the newer attempt.
-    // Only a check run says so: a legacy commit status has no `status` field.
-    const status = String(item?.status || '').toUpperCase();
-    const running = status !== '' && status !== 'COMPLETED';
-    if (!prior || running || String(item?.startedAt || '') >= String(prior?.startedAt || '')) {
+    // A queued re-run has no timestamp yet; it is still the newer attempt, and
+    // a finished attempt must not displace it just because the missing
+    // timestamp sorts below every other string. A running attempt that does
+    // carry a timestamp is compared normally, so a genuinely newer finished run
+    // still wins and an abandoned one cannot hold the rollup at pending.
+    const priorIsUndated = isRunning(prior) && startedAtOf(prior) === '';
+    if (!prior || isRunning(item) || (!priorIsUndated && startedAtOf(item) >= startedAtOf(prior))) {
       latest.set(key, item);
     }
   }
   let pending = false;
   let counted = 0;
   for (const item of latest.values()) {
-    const status = String(item?.status || '').toUpperCase();
     const outcome = String(item?.conclusion || item?.state || '').toUpperCase();
-    if (status && status !== 'COMPLETED') {
+    if (isRunning(item)) {
       pending = true;
       continue;
     }

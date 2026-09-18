@@ -237,9 +237,7 @@ export default function Sidebar({
   // A settled row offers "reopen" only when a manual settle is what holds it
   // there; a chat settled because its PRs closed has nothing to reopen.
   const canToggleSettled = (m: SessionSummary, status: SessionActivityStatus) =>
-    status === 'settled'
-      ? Object.hasOwn(preferences.settled, m.appSessionId)
-      : canSettleSession(status);
+    status === 'settled' ? activity.canReopen(m) : canSettleSession(status);
   const rowPr = (link: ChatPullRequest | undefined) =>
     link ? { kind: prKind(link), checks: link.checks ?? null } : undefined;
   const renderRow = (m: SessionSummary) => {

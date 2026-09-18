@@ -3,6 +3,7 @@ import { normalizeAutonomy } from '../../lib/autonomy';
 import { isReasoningEffort } from '../../lib/reasoningEffort';
 import { cronExpressionIssue, deviceTimeZone, isTimeZone, validTime } from './schedule';
 import { parseToolResultObject } from './toolNames';
+import { isAutomationFiles, isAutomationTarget } from './wireValidation';
 import type { AutomationDraft, AutomationProposal, AutomationSchedule } from './types';
 
 export interface ProposalCardState {
@@ -87,8 +88,9 @@ export function findProposalForCall(
  * which throws on an unknown zone or an out-of-range instant.
  */
 export function draftPreviewFromToolArgs(value: unknown): AutomationDraft | null {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
-  const raw = value as Record<string, unknown>;
+  if (!isRecord(value)) return null;
+  const raw = value;
+  const { target, files } = raw;
   const schedule = previewSchedule(raw.schedule);
   if (typeof raw.prompt !== 'string' || !schedule) return null;
   return {
@@ -97,6 +99,8 @@ export function draftPreviewFromToolArgs(value: unknown): AutomationDraft | null
         ? raw.title.trim()
         : derivePreviewTitle(raw.prompt),
     prompt: raw.prompt,
+    target: isAutomationTarget(target) ? target : { kind: 'new-session' },
+    files: isAutomationFiles(files) ? files : [],
     workspaceCwd: typeof raw.workspaceCwd === 'string' ? raw.workspaceCwd : null,
     executionMode: raw.executionMode === 'worktree' ? 'worktree' : 'local',
     enabled: raw.enabled !== false,
@@ -115,8 +119,8 @@ export function draftPreviewFromToolArgs(value: unknown): AutomationDraft | null
 const MAX_EPOCH_MS = 8_640_000_000_000_000;
 
 function previewSchedule(value: unknown): AutomationSchedule | null {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
-  const raw = value as Record<string, unknown>;
+  if (!isRecord(value)) return null;
+  const raw = value;
   switch (raw.kind) {
     case 'once':
       return isEpochMs(raw.runAt) ? { kind: 'once', runAt: raw.runAt } : null;
@@ -143,6 +147,10 @@ function previewSchedule(value: unknown): AutomationSchedule | null {
     default:
       return null;
   }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
 function isEpochMs(value: unknown): value is number {
