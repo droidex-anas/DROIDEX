@@ -1,6 +1,7 @@
 import { motion } from 'framer-motion';
 import { ActivityStatusGlyph } from '../../components/ActivityStatusGlyph';
-import { ModelIcon, providerOf } from '../../components/ModelIcon';
+import { ModelIcon } from '../../components/ModelIcon';
+import { PROVIDER_LABELS, PROVIDER_MARKS } from '../providers/providerIdentity';
 import { INLINE_CARD_DURATION_S, INLINE_CARD_EASE } from '../../components/inlineCardMotion';
 import { formatRelativeTime } from '../../lib/time';
 import type { ThreadRow as ThreadRowModel } from './threadBoard';
@@ -23,6 +24,7 @@ export function ThreadRow({
   reduceMotion: boolean;
   onOpen: (appSessionId: string) => void;
 }) {
+  const harness = row.provider && row.provider !== 'droid' ? row.provider : undefined;
   return (
     <motion.button
       type="button"
@@ -64,9 +66,15 @@ export function ThreadRow({
           {row.detail}
         </span>
       </span>
+      {/* The harness mark the chat list uses, so a thread is identified the
+          same way its chat is; Droid, the default, wears none there either. */}
       <span className="ml-2 grid shrink-0 grid-cols-[16px_34px] items-center gap-x-2.5">
         <span className="flex justify-center">
-          <ModelIcon provider={providerOf(undefined, row.modelId)} size={14} />
+          {harness && (
+            <span role="img" aria-label={`${PROVIDER_LABELS[harness]} thread`}>
+              <ModelIcon provider={PROVIDER_MARKS[harness]} size={14} />
+            </span>
+          )}
         </span>
         <span className="text-right text-[12px] tabular-nums text-droid-text-muted">
           {formatRelativeTime(row.updatedAt, now)}
