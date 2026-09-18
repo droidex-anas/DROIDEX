@@ -16,6 +16,7 @@ jobs:
     timeout-minutes: 25
     env:
       HUSKY: '0'
+      PROJECTS_BASE: 565b66bc93b7c1389cf9b5a4eb60a33e0659eb57
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
@@ -24,14 +25,75 @@ jobs:
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
         with:
           node-version: '22'
-      - name: Prepare reviewed source
-        run: python3 tools/projects-review.py
+      - name: Incorporate current main and prepare reviewed source
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git merge --no-commit --no-ff "$PROJECTS_BASE"
+          python3 - <<'PY'
+          from pathlib import Path
+          import os
+          p = Path('tools/projects-review.py')
+          p.write_text(p.read_text().replace("BASE = 'd8746a4ca842b0d1c79707c0db1f0e4089119826'", "BASE = '" + os.environ['PROJECTS_BASE'] + "'"))
+          PY
+          python3 tools/projects-review.py
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('sidecar/src/projects/ProjectService.ts')
+          s = p.read_text().replace('newProject(title: string, id = randomUUID())', 'newProject(title: string, id: string = randomUUID())')
+          start = s.index('  inspect(source: string, target?: string) {')
+          end = s.index('  async send(', start)
+          s = s[:start] + '''  publish(): void {
+            // Loading Projects reads summaries, never resumes dormant providers.
+            for (const project of this.projects.values()) {
+              for (const thread of project.threads) {
+                const session = this.sessions.get(thread.appSessionId);
+                if (session) this.emit({ type: 'session.updated', session });
+              }
+            }
+            this.emit({ type: 'projects.snapshot', projects: this.list() });
+          }
+
+          ''' + s[end:]
+          p.write_text(s)
+          p = Path('sidecar/src/projects/bridge.ts')
+          p.write_text(p.read_text().replace("emit({ type: 'projects.snapshot', projects: (await ready).list() });", '(await ready).publish();'))
+          p = Path('sidecar/src/projects/ProjectService.test.ts')
+          s = p.read_text()
+          s = '\n'.join(line for line in s.split('\n') if 'h.projects.inspect(' not in line)
+          s = s.replace("interrupt: async (id) => { await streaming(id, false); },", "interrupt: async (id) => { const session = sessions.get(id); if (session) session.phase = 'paused'; await streaming(id, false); },")
+          s += '''
+          test('project listing restores ordinary summaries without starting a provider', async (t) => {
+            const h = await harness(); t.after(() => h.projects.close());
+            await h.root();
+            const launched = h.launched.length;
+            h.events.length = 0;
+            h.projects.publish();
+            assert.equal(h.launched.length, launched);
+            assert.ok(h.events.some((event) => event.type === 'session.updated'));
+            assert.equal(h.events.at(-1)?.type, 'projects.snapshot');
+          });
+          '''
+          p.write_text(s)
+          p = Path('src/hooks/useStore.tsx')
+          s = p.read_text().replace("  | { type: 'OPEN_PROJECTS'; appSessionId?: string }", "  | { type: 'OPEN_PROJECTS' }")
+          start = s.index("    case 'OPEN_PROJECTS': {")
+          end = s.index("    case 'CLOSE_PROJECTS':", start)
+          s = s[:start] + "    case 'OPEN_PROJECTS':\n      return { ...state, mainView: 'projects', automationEditorRequest: null, rightPanelOpen: false };\n" + s[end:]
+          p.write_text(s)
+          p = Path('src/features/projects/projects.test.ts')
+          s = p.read_text().replace("...initialState, mainView: 'session'", "...initialState, mainView: 'projects'").replace("{ type: 'OPEN_PROJECTS', appSessionId: 'worker' }", "{ type: 'SET_ACTIVE_SESSION', id: 'worker' }").replace("assert.equal(next.mainView, 'projects');", "assert.equal(next.mainView, 'session');")
+          p.write_text(s)
+          p = Path('src/features/projects/ProjectThreadCard.tsx')
+          s = p.read_text().replace('type="button" onClick={onOpen}', 'type="button" disabled={!state.provider || busy} onClick={onOpen}').replace('Open the conversation to load its settings.', 'This saved conversation is unavailable.')
+          p.write_text(s)
+          PY
       - run: npm ci --ignore-scripts --no-audit --no-fund
       - run: npm ci --prefix sidecar --ignore-scripts --no-audit --no-fund
       - name: Format only the changed source
         run: |
           git add sidecar/src src docs
-          git diff --name-only --diff-filter=ACM origin/main -- '*.ts' '*.tsx' '*.md' | xargs -r npx prettier --write
+          git diff --name-only --diff-filter=ACM "$PROJECTS_BASE" -- '*.ts' '*.tsx' '*.md' | xargs -r npx prettier --write
           npm run docs:generate
       - name: Renderer types
         run: npm run typecheck
@@ -41,7 +103,7 @@ jobs:
         run: |
           node --import tsx --test 'src/features/projects/*.test.ts'
           cd sidecar
-          node --import tsx --test 'src/projects/*.test.ts' src/SessionLifecycle.test.ts src/SessionManager.scheduledDelivery.test.ts
+          node --import tsx --test 'src/projects/*.test.ts' src/SessionLifecycle.test.ts src/SessionManager*.test.ts
       - name: Full frontend and Electron tests
         run: npm test
       - name: Full sidecar tests
@@ -62,14 +124,14 @@ jobs:
           rm tools/projects-review.py .github/workflows/projects-review.yml
           git add sidecar/src src docs tools/projects-review.py .github/workflows/projects-review.yml
           git diff --cached --check
-          git diff --cached --stat
-          git diff --name-only --cached --diff-filter=ACM origin/main -- '*.ts' '*.tsx' '*.md' | xargs -r npx prettier --check
+          git diff --cached --stat "$PROJECTS_BASE"
+          git diff --name-only --cached --diff-filter=ACM "$PROJECTS_BASE" -- '*.ts' '*.tsx' '*.md' | xargs -r npx prettier --check
           python3 - <<'PY'
           import json, os, pathlib, subprocess, urllib.request
           def git(*args):
               return subprocess.check_output(['git', *args], text=True).strip()
           entries = []
-          for path in git('diff', '--cached', '--name-only').splitlines():
+          for path in git('diff', '--cached', '--name-only', 'HEAD').splitlines():
               file = pathlib.Path(path)
               entry = {'path': path, 'mode': '100644', 'type': 'blob'}
               if file.exists():
@@ -88,8 +150,9 @@ jobs:
           tree = post('trees', {'base_tree': git('rev-parse', 'HEAD^{tree}'), 'tree': entries})
           commit = post('commits', {
               'message': 'Harden Projects delivery and expose working thread controls',
-              'tree': tree['sha'], 'parents': [git('rev-parse', 'HEAD')],
+              'tree': tree['sha'], 'parents': [git('rev-parse', 'HEAD'), os.environ['PROJECTS_BASE']],
               'author': {'name': 'github-actions[bot]', 'email': '41898282+github-actions[bot]@users.noreply.github.com'}})
+          print('PROJECTS_VALIDATED_BASE=' + os.environ['PROJECTS_BASE'])
           print('PROJECTS_VALIDATED_TREE=' + tree['sha'])
           print('PROJECTS_VALIDATED_COMMIT=' + commit['sha'])
           PY
