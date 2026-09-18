@@ -20,7 +20,8 @@ jobs:
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
-          fetch-depth: 0
+          fetch-depth: 100
+          show-progress: false
           persist-credentials: false
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
         with:
@@ -29,6 +30,7 @@ jobs:
         run: |
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git fetch --no-tags --depth=100 origin "$PROJECTS_BASE"
           git merge --no-commit --no-ff "$PROJECTS_BASE"
           python3 - <<'PY'
           from pathlib import Path
@@ -89,16 +91,16 @@ jobs:
           s = p.read_text().replace('type="button" onClick={onOpen}', 'type="button" disabled={!state.provider || busy} onClick={onOpen}').replace('Open the conversation to load its settings.', 'This saved conversation is unavailable.')
           p.write_text(s)
           matches = []
-          for p in Path('src').rglob('*.test.*'):
+          for p in Path('.').rglob('*.test.*'):
               s = p.read_text()
-              if 'startup idle prewarm only targets Settings' not in s:
+              if not all("'" + name + "'" in s for name in ['commandPalette', 'specWiki', 'onboarding', 'missionControl', 'pullRequests', 'automations', 'agents']):
                   continue
-              s, count = re.subn(r"(?m)^(\s*)'automations',\s*$", lambda m: m[0] + "\n" + m[1] + "'projects',", s)
-              assert count == 1, (str(p), count)
-              p.write_text(s)
-              matches.append(str(p))
-          assert len(matches) == 1, matches
-          print('Updated full lazy-route catalog:', matches[0])
+              s, count = re.subn(r"(?m)^([ \t]*)'automations',[ \t]*$", lambda m: m[0] + "\n" + m[1] + "'projects',", s)
+              if count:
+                  p.write_text(s)
+                  matches.append(str(p))
+          assert matches, 'The expected complete lazy-route catalog was not found.'
+          print('Updated lazy-route catalogs:', matches)
           PY
       - run: npm ci --ignore-scripts --no-audit --no-fund
       - run: npm ci --prefix sidecar --ignore-scripts --no-audit --no-fund
