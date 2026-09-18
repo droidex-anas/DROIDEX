@@ -257,7 +257,8 @@ export function loadPersistedUiState(): Partial<PersistedUiState> {
       mainView:
         parsed.mainView === 'session' ||
         parsed.mainView === 'pull-requests' ||
-        parsed.mainView === 'automations' || parsed.mainView === 'projects'
+        parsed.mainView === 'automations' ||
+        parsed.mainView === 'projects'
           ? parsed.mainView
           : undefined,
     };
@@ -313,7 +314,10 @@ export function loadShortcutBindings(): ShortcutBindings {
     const parsed = JSON.parse(raw) as Record<string, unknown>;
     for (const { action } of SHORTCUT_DEFINITIONS) {
       const chord = parsed[action];
-      if (typeof chord === 'string' && parseChord(chord)) bindings[action] = chord;
+      if (typeof chord !== 'string') continue;
+      // A stored chord without the primary modifier would fire on ordinary
+      // typing, so a hand-edited or corrupted entry keeps the default.
+      if (parseChord(chord)?.meta) bindings[action] = chord;
     }
     return bindings;
   } catch {

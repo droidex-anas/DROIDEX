@@ -183,6 +183,7 @@ export interface SessionManagerDependencies {
 }
 
 export interface SessionManagerOptions {
+  beforeFirstTurn?: ((session: SessionSummary, clientRef: string) => Promise<void>) | undefined;
   assetUrlFor?: (path: string) => string;
   onSessionAvailable?: (appSessionId: string) => void;
   onScheduledCapacityChanged?: () => void;
@@ -228,8 +229,9 @@ const ignoreError = (): undefined => undefined;
 const nextChildSessionId = () => `child-${randomUUID()}`;
 
 // MCP settings commands run in a throwaway session; without a workspace they
-// still need a directory to read user-level configuration from.
-const mcpSettingsCwd = (cwd?: string): string => cwd ?? tmpdir();
+// still need a directory to read user-level configuration from. A blank cwd on
+// the wire means the same as none, as it does everywhere else this is read.
+const mcpSettingsCwd = (cwd?: string): string => (cwd === undefined || cwd === '' ? tmpdir() : cwd);
 
 export class SessionManager {
   private ready = false;
@@ -557,6 +559,7 @@ export class SessionManager {
       },
     });
     this.lifecycle = new SessionLifecycle({
+      beforeFirstTurn: options.beforeFirstTurn,
       provider: (kind) => this.providerFor(kind),
       providerDefaultModelId: (kind) => this.providerProbes.status(kind)?.defaultModelId,
       registry: this.registry,
@@ -1034,13 +1037,8 @@ export class SessionManager {
     };
   }
 
-  projectSessionSummary(appSessionId: string): SessionSummary | undefined {
+  sessionSummary(appSessionId: string): SessionSummary | undefined {
     return this.registry.resolveSummary(appSessionId);
-  }
-
-  async deliverProjectWake(appSessionId: string, prompt: string): Promise<boolean> {
-    const receipt = await this.lifecycle.deliverScheduled(appSessionId, prompt, () => true);
-    return receipt.status === 'accepted';
   }
 
   async validateAutomationSelection(

@@ -14,15 +14,22 @@ interface Snapshot {
 let snapshot: Snapshot = { projects: [], loading: true };
 let initialized = false;
 const listeners = new Set<() => void>();
-const pending = new Map<string, {
-  resolve: (result: Result) => void;
-  reject: (error: Error) => void;
-  timeout: ReturnType<typeof setTimeout>;
-}>();
+const pending = new Map<
+  string,
+  {
+    resolve: (result: Result) => void;
+    reject: (error: Error) => void;
+    timeout: ReturnType<typeof setTimeout>;
+  }
+>();
 
 export function useProjects(): Snapshot {
   initialize();
-  return useSyncExternalStore(subscribe, () => snapshot, () => snapshot);
+  return useSyncExternalStore(
+    subscribe,
+    () => snapshot,
+    () => snapshot,
+  );
 }
 
 export function refreshProjects(): void {
@@ -36,14 +43,32 @@ export async function createProject(input: ThreadInput): Promise<string> {
   return result.projectId;
 }
 
-export async function spawnThread(source: string, input: Omit<ThreadInput, 'cwd'>): Promise<string> {
-  const result = await send({ type: 'project.spawn', requestId: crypto.randomUUID(), source, input });
+export async function spawnThread(
+  source: string,
+  input: Omit<ThreadInput, 'cwd'>,
+): Promise<string> {
+  const result = await send({
+    type: 'project.spawn',
+    requestId: crypto.randomUUID(),
+    source,
+    input,
+  });
   if (!result.appSessionId) throw new Error('The runtime did not identify the new thread.');
   return result.appSessionId;
 }
 
-export async function pauseProject(projectId: string, paused: boolean, acknowledgeDelivery = false): Promise<void> {
-  await send({ type: 'project.pause', requestId: crypto.randomUUID(), projectId, paused, acknowledgeDelivery });
+export async function pauseProject(
+  projectId: string,
+  paused: boolean,
+  acknowledgeDelivery = false,
+): Promise<void> {
+  await send({
+    type: 'project.pause',
+    requestId: crypto.randomUUID(),
+    projectId,
+    paused,
+    acknowledgeDelivery,
+  });
 }
 
 export async function stopThread(source: string, target: string): Promise<void> {
@@ -60,12 +85,16 @@ function initialize(): void {
 function handleEvent(event: ServerEvent): void {
   if (event.type === 'projects.snapshot') {
     snapshot = { projects: event.projects, loading: false };
-    listeners.forEach((listener) => { listener(); });
+    listeners.forEach((listener) => {
+      listener();
+    });
   } else if (event.type === 'connection' && event.status === 'connected') {
     refreshProjects();
   } else if (event.type === 'error' && event.code?.startsWith('project.')) {
     snapshot = { ...snapshot, loading: false, error: event.message };
-    listeners.forEach((listener) => { listener(); });
+    listeners.forEach((listener) => {
+      listener();
+    });
   } else if (event.type === 'project.result') {
     const waiter = pending.get(event.requestId);
     if (!waiter) return;
@@ -78,11 +107,16 @@ function handleEvent(event: ServerEvent): void {
 
 function send(command: Exclude<ProjectCommand, { type: 'projects.list' }>): Promise<Result> {
   initialize();
-  if (pending.size >= 32) return Promise.reject(new Error('Wait for the current Projects requests to finish.'));
+  if (pending.size >= 32)
+    return Promise.reject(new Error('Wait for the current Projects requests to finish.'));
   return new Promise((resolve, reject) => {
     const timeout = setTimeout(() => {
       pending.delete(command.requestId);
-      reject(new Error('The request was not acknowledged. Check the project before retrying; the thread may already exist.'));
+      reject(
+        new Error(
+          'The request was not acknowledged. Check the project before retrying; the thread may already exist.',
+        ),
+      );
     }, 30_000);
     pending.set(command.requestId, { resolve, reject, timeout });
     // Mutations must not be replayed from the transport's offline queue.
@@ -95,5 +129,7 @@ function send(command: Exclude<ProjectCommand, { type: 'projects.list' }>): Prom
 
 function subscribe(listener: () => void): () => void {
   listeners.add(listener);
-  return () => { listeners.delete(listener); };
+  return () => {
+    listeners.delete(listener);
+  };
 }

@@ -1,3 +1,4 @@
+import type { ProjectCommand, ProjectEvent } from './projects/types.js';
 // Bridge protocol shared between the Node sidecar and the React frontend.
 // The frontend keeps a mirror copy at src/types/bridge.ts — keep them in sync.
 
@@ -5,7 +6,6 @@ import type { AutomationBridgeCommand, AutomationBridgeEvent } from './automatio
 import type { McpClientCommand, McpServerEvent } from './mcpProtocol.js';
 import type { ProviderMention, SkillInfo } from './providers/catalog.js';
 import type { ProviderKind } from './providers/providerKind.js';
-import type { Project } from './projects/types.js';
 export type { ProviderMention, SkillInfo } from './providers/catalog.js';
 export type {
   McpServerInfo,
@@ -597,9 +597,7 @@ export type PermissionOutcome =
 
 // ── Frontend -> Sidecar ──────────────────────────────────────────────
 export type ClientCommand =
-  | { type: 'projects.list'; requestId: string }
-  | { type: 'projects.create'; requestId: string; title: string; controllerSessionId: string }
-  | { type: 'projects.wake'; requestId: string; projectId: string; text: string }
+  | ProjectCommand
   | AutomationBridgeCommand
   | McpClientCommand
   | { type: 'connect'; apiKey?: string }
@@ -847,7 +845,7 @@ export interface ChildErrorEvent {
 
 // ── Sidecar -> Frontend ──────────────────────────────────────────────
 export type ServerEvent =
-  | { type: 'projects.updated'; projects: Project[] }
+  | ProjectEvent
   | McpServerEvent
   | AutomationBridgeEvent
   | { type: 'connection'; status: 'connected' | 'error'; message?: string }

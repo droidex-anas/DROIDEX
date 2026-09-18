@@ -6,8 +6,14 @@ import { composePrompt } from './composePrompt';
  * and never spans lines; a typed sign-off like "@anas" is neither, so it stays
  * prose in the bubble.
  */
-function looksLikeAttachmentPath(mention: string): boolean {
-  if (mention.includes('\n')) return false;
+function looksLikeAttachmentPath(raw: string): boolean {
+  if (raw.includes('\n')) return false;
+  // A Windows attachment is a path too, and its separator is the only thing the
+  // shape checks below look for. The mention itself keeps its own separators.
+  // One backslash and no drive letter is a domain sign-off ("@CORP\\anas"), not
+  // a path, so it is left alone and falls through as prose.
+  const windowsPath = /^[A-Za-z]:\\/.test(raw) || (raw.match(/\\/g)?.length ?? 0) > 1;
+  const mention = windowsPath ? raw.replaceAll('\\', '/') : raw;
   // A path with spaces still starts as a path ("~/My Docs/a.md"); prose that
   // merely ends in one ("team please review src/a.ts") starts with a word. A
   // bare file name ("Meeting Notes.pdf") has no directory to start from, so

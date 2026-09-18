@@ -23,8 +23,9 @@ import { join } from 'node:path';
 // bindings (~2KB), tool-call naming and MCP source marks (~2KB), file mentions
 // in prose and chips that open Review (~1.7KB), native-surface obscuring and
 // the measured banner stack (~0.6KB), plus small growth across the transcript
-// rows and primitives. Main was already within a few hundred bytes of the old
-// line; the new headroom is again ~10KB.
+// rows and primitives. Those are the notable additions rather than the whole
+// accounting: main had also drifted up over the days between the two raises,
+// and this one covers both. The new headroom is again ~10KB.
 //
 // Raised from 1_340_000 to 1_350_000 for the inbox follow-ups on the same
 // pass: status marks that settle on click (~2KB), hover intent for the view

@@ -12,7 +12,6 @@ export type ToolCat =
   | 'skill'
   | 'task'
   | 'subagent'
-  | 'project'
   | 'other';
 
 export const CAT_LABEL: Record<ToolCat, string> = {
@@ -25,7 +24,6 @@ export const CAT_LABEL: Record<ToolCat, string> = {
   skill: 'Skill',
   task: 'Child session',
   subagent: 'Subagent',
-  project: 'Project thread',
   other: 'Tool',
 };
 
@@ -54,7 +52,6 @@ export function toolMeta(name?: string, args?: unknown): { cat: ToolCat; detail:
   // TaskStop) merely inspects or ends an existing subagent, so it must not
   // borrow the "Child session" label and read like a new spawn.
   else if (isChildSessionTool(name, args)) cat = 'task';
-  else if (/^project_thread_|^project_threads$/.test(n)) cat = 'project';
   else if (/^task/i.test(n)) cat = 'subagent';
   else if (n.includes('skill')) cat = 'skill';
   // The read fallback is broad ("open", "ls") and only safe for first-party
@@ -88,7 +85,6 @@ const CAT_VERBS: Record<Exclude<ToolCat, 'other'>, [done: string, live: string]>
   skill: ['Skill', 'Skill'],
   task: ['Child session', 'Child session'],
   subagent: ['Subagent', 'Subagent'],
-  project: ['Project thread', 'Project thread'],
 };
 
 // `mcp__claude_browser__navigate` → "Navigate"; `preview_start` → "Preview
@@ -250,7 +246,7 @@ function splitToolName(name: string): { server?: string; tool: string } {
   const tri = name.lastIndexOf('___');
   if (tri > 0 && tri + 3 < name.length)
     return { server: name.slice(0, tri), tool: name.slice(tri + 3) };
-  const mcp = /^mcp__(.+?)__(.+)$/.exec(name);
+  const mcp = /^mcp__(.+?)__(.+)$/i.exec(name);
   if (mcp) return { server: mcp[1], tool: mcp[2] };
   return { tool: name };
 }
@@ -501,8 +497,12 @@ export function webSourceName(url: string): string {
   try {
     const host = new URL(url).hostname.replace(/^www\./, '');
     const parts = host.split('.');
+    // Only under a two-letter country TLD: "foo.com.dev" ends in a gTLD, so its
+    // "com" is an ordinary label rather than half of a compound suffix.
     const secondLevelSuffix =
-      parts.length >= 3 && /^(co|com|org|net|ac|gov|edu)$/.test(parts[parts.length - 2]);
+      parts.length >= 3 &&
+      /^[a-z]{2}$/.test(parts[parts.length - 1]) &&
+      /^(co|com|org|net|ac|gov|edu)$/.test(parts[parts.length - 2]);
     const label = parts[Math.max(0, parts.length - (secondLevelSuffix ? 3 : 2))];
     return label.charAt(0).toUpperCase() + label.slice(1);
   } catch {

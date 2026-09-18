@@ -1774,7 +1774,12 @@ function baseReducer(state: AppState, action: Action): AppState {
     }
 
     case 'OPEN_PROJECTS':
-      return { ...state, mainView: 'projects', rightPanelOpen: false };
+      return {
+        ...state,
+        mainView: 'projects',
+        automationEditorRequest: null,
+        rightPanelOpen: false,
+      };
     case 'CLOSE_PROJECTS':
       return state.mainView === 'projects' ? { ...state, mainView: 'session' } : state;
     case 'OPEN_AUTOMATIONS':

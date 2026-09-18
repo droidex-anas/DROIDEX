@@ -70,5 +70,11 @@ export type ProjectCommand =
 
 export type ProjectEvent =
   | { type: 'projects.snapshot'; projects: ProjectView[] }
-  | { type: 'project.result'; requestId: string; ok: true; projectId?: string; appSessionId?: string }
+  | {
+      type: 'project.result';
+      requestId: string;
+      ok: true;
+      projectId?: string;
+      appSessionId?: string;
+    }
   | { type: 'project.result'; requestId: string; ok: false; error: string };
