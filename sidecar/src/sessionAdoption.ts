@@ -37,7 +37,7 @@ export interface SessionAdoptionDependencies {
   // recycled pid is never signalled.
   reapProcesses: (entries: readonly LiveProcessIdentity[]) => Promise<void>;
   persistSummaries: (summaries: SessionSummary[]) => void;
-  emitStatus: (appSessionId: string, text: string) => void;
+  appendStatus: (appSessionId: string, text: string) => void;
   sessionRuntimeIdleMs: number;
   now: () => number;
 }
@@ -151,7 +151,7 @@ export class SessionAdoption {
         appSessionId: identity.appSessionId,
         reason: TURN_INTERRUPTED,
       });
-      this.dependencies.emitStatus(identity.appSessionId, TURN_INTERRUPTED);
+      this.dependencies.appendStatus(identity.appSessionId, TURN_INTERRUPTED);
     } catch (error) {
       this.markSessionInterrupted(
         identity,
@@ -177,7 +177,7 @@ export class SessionAdoption {
     };
     this.dependencies.persistSummaries([updated]);
     this.interrupted.push({ appSessionId: identity.appSessionId, reason });
-    this.dependencies.emitStatus(identity.appSessionId, reason);
+    this.dependencies.appendStatus(identity.appSessionId, reason);
   }
 
   private markChildInterrupted(identity: LiveChildIdentity): void {

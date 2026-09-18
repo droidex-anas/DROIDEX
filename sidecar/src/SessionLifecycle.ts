@@ -151,7 +151,10 @@ export interface SessionLifecycleDependencies {
   closeBrowserSession: (appSessionId: string) => Promise<void>;
   emit: (event: ServerEvent) => void;
   emitError: (error: LifecycleError) => void;
-  emitStatus: (appSessionId: string, text: string) => void;
+  // A live progress row while the steer is applied; it is not stored.
+  appendProgress: (appSessionId: string, text: string) => void;
+  // The transcript row a crashed runtime leaves behind, stored with the chat.
+  appendError: (appSessionId: string, message: string) => void;
   // A steered prompt joins the durable transcript without a new turn to record
   // it; the renderer already showed it from the send.
   recordPrompt: (appSessionId: string, text: string) => void;
@@ -505,7 +508,7 @@ export class SessionLifecycle {
     // is about to redeliver it into.
     if (steered === 'queued' || compacting || interrupting) return;
     liveSession.interruptingForSteer = true;
-    this.dependencies.emitStatus(liveSession.summary.appSessionId, 'Steering now...');
+    this.dependencies.appendProgress(liveSession.summary.appSessionId, 'Steering now...');
     try {
       await liveSession.session.interrupt();
     } catch (error) {
@@ -893,7 +896,12 @@ export class SessionLifecycle {
       // without taking over its error handling before releasing the runtime.
       if (turn) await turn.catch(() => undefined);
       if (!isCurrent()) return;
-      if (error && !turn) d.emitError({ appSessionId, message: error.message });
+      // No turn owned this failure, so the chat would otherwise keep no record
+      // of the runtime dying: leave the same row a failed turn leaves.
+      if (error && !turn) {
+        d.appendError(appSessionId, error.message);
+        d.emitError({ appSessionId, message: error.message });
+      }
       const { deferred } = this.beginClose(liveSession, 'preserve-pending');
       // Keep ownership until cleanup succeeds; sends must not reuse a dead runtime.
       deferred.retryOnFailure = true;

@@ -291,8 +291,11 @@ function createHarness(ordinarySummaries: SessionSummary[] = []) {
     },
     emit: recordEvent,
     emitError: (error) => recordEvent({ type: 'error', ...error }),
-    emitStatus: (appSessionId, text) => {
-      calls.push({ target: 'protocol', method: 'status', args: [appSessionId, text] });
+    appendProgress: (appSessionId, text) => {
+      calls.push({ target: 'protocol', method: 'progress', args: [appSessionId, text] });
+    },
+    appendError: (appSessionId, message) => {
+      calls.push({ target: 'protocol', method: 'error', args: [appSessionId, message] });
     },
     recordPrompt: (appSessionId, text) => {
       calls.push({ target: 'protocol', method: 'recordPrompt', args: [appSessionId, text] });

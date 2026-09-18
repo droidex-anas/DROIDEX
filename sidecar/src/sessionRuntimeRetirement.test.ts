@@ -152,7 +152,7 @@ function ownerHarness(overrides: Partial<SessionRuntimeRetirementDependencies> =
       live.delete(appSessionId);
       return Promise.resolve();
     },
-    emitStatus: (appSessionId, text) => statuses.push({ appSessionId, text }),
+    appendProgress: (appSessionId, text) => statuses.push({ appSessionId, text }),
     emitError: (appSessionId, message) => errors.push({ appSessionId, message }),
     idleMs: IDLE_MS,
     now: () => clock.now,

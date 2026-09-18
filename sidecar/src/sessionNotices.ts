@@ -15,8 +15,11 @@ interface StoredNoticeLine {
   compactType?: TranscriptEvent['compactType'];
 }
 
+// The one gate deciding which notices outlive the run: every error row, and
+// every status row except the live progress lines marked transient.
 export function storedNoticeLine(event: TranscriptEvent): StoredNoticeLine | undefined {
   if (event.kind !== 'status' && event.kind !== 'error') return undefined;
+  if (event.transient) return undefined;
   return {
     type: event.kind,
     id: event.id,
