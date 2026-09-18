@@ -39,12 +39,14 @@ export class ProjectWakeQueue {
   }
 
   available(project: Project, appSessionId: string): void {
+    if (this.closed) return;
     this.revisions.set(appSessionId, (this.revisions.get(appSessionId) ?? 0) + 1);
     this.waiting.delete(appSessionId);
     this.kick(project);
   }
 
   capacityChanged(projects: Iterable<Project>): void {
+    if (this.closed) return;
     this.capacityRevision += 1;
     this.capacityWaiting.clear();
     for (const project of projects) this.kick(project);
@@ -81,7 +83,9 @@ export class ProjectWakeQueue {
           continue;
         }
         if (this.pumping.has(project.id) || this.capacityWaiting.has(project.id)) continue;
-        const first = project.pending.find((message) => !this.waiting.has(message.to) && !this.active.has(message.to));
+        const first = project.pending.find(
+          (message) => !this.waiting.has(message.to) && !this.active.has(message.to),
+        );
         if (!first) continue;
         this.queued.delete(project);
         const work = this.deliver(project, first.to)
@@ -102,7 +106,12 @@ export class ProjectWakeQueue {
     const isCurrent = this.guard(project);
     if (!isCurrent()) return;
     if (project.wakesLeft === 0) {
-      this.fail(project, new Error('Automatic wake allowance reached. Review the project and resume to allow 20 more wakes.'));
+      this.fail(
+        project,
+        new Error(
+          'Automatic wake allowance reached. Review the project and resume to allow 20 more wakes.',
+        ),
+      );
       await this.save();
       return;
     }
@@ -123,7 +132,10 @@ export class ProjectWakeQueue {
       try {
         receipt = await this.sessions.deliver(target, wakePrompt(messages), isCurrent);
       } catch (error) {
-        receipt = { status: 'unavailable', error: error instanceof Error ? error.message : String(error) };
+        receipt = {
+          status: 'unavailable',
+          error: error instanceof Error ? error.message : String(error),
+        };
       }
     }
     if (receipt.status === 'unavailable') {

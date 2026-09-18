@@ -12,7 +12,6 @@ export type ToolCat =
   | 'skill'
   | 'task'
   | 'subagent'
-  | 'project'
   | 'other';
 
 export const CAT_LABEL: Record<ToolCat, string> = {
@@ -25,7 +24,6 @@ export const CAT_LABEL: Record<ToolCat, string> = {
   skill: 'Skill',
   task: 'Child session',
   subagent: 'Subagent',
-  project: 'Project thread',
   other: 'Tool',
 };
 
@@ -54,7 +52,6 @@ export function toolMeta(name?: string, args?: unknown): { cat: ToolCat; detail:
   // TaskStop) merely inspects or ends an existing subagent, so it must not
   // borrow the "Child session" label and read like a new spawn.
   else if (isChildSessionTool(name, args)) cat = 'task';
-  else if (/^project_thread_|^project_threads$/.test(n)) cat = 'project';
   else if (/^task/i.test(n)) cat = 'subagent';
   else if (n.includes('skill')) cat = 'skill';
   // The read fallback is broad ("open", "ls") and only safe for first-party
@@ -88,7 +85,6 @@ const CAT_VERBS: Record<Exclude<ToolCat, 'other'>, [done: string, live: string]>
   skill: ['Skill', 'Skill'],
   task: ['Child session', 'Child session'],
   subagent: ['Subagent', 'Subagent'],
-  project: ['Project thread', 'Project thread'],
 };
 
 // `mcp__claude_browser__navigate` → "Navigate"; `preview_start` → "Preview

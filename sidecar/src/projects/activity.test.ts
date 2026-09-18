@@ -5,8 +5,20 @@ import type { TranscriptEvent } from '../protocol.js';
 
 test('only the bounded final primary reply survives a turn, never thinking or tool output', () => {
   const activity = new ProjectActivity();
-  const emit = (kind: TranscriptEvent['kind'], text: string, role: TranscriptEvent['role'] = 'primary') => {
-    activity.append({ id: text, appSessionId: 'thread', sourceSessionId: 'thread', ts: 1, kind, text, role });
+  const emit = (
+    kind: TranscriptEvent['kind'],
+    text: string,
+    role: TranscriptEvent['role'] = 'primary',
+  ) => {
+    activity.append({
+      id: text,
+      appSessionId: 'thread',
+      sourceSessionId: 'thread',
+      ts: 1,
+      kind,
+      text,
+      role,
+    });
   };
   assert.equal(activity.start('thread'), true);
   emit('text', 'Before checking files');

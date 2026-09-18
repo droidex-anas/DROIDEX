@@ -16,7 +16,9 @@ export const LAZY_SURFACE_LOADERS = {
     const module = await import('../features/automations/AutomationsRoute');
     return { default: module.AutomationsRoute };
   },
-  projects: async () => ({ default: (await import('../features/projects/ProjectsRoute')).ProjectsRoute }),
+  projects: async () => ({
+    default: (await import('../features/projects/ProjectsRoute')).ProjectsRoute,
+  }),
   review: async () => {
     const module = await import('../components/environment/ReviewPanel');
     return { default: module.ReviewPanel };

@@ -1,3 +1,8 @@
+import { join } from 'node:path';
+import { ProjectService } from './projects/ProjectService.js';
+import { ProjectStore } from './projects/store.js';
+import { ProjectSessions } from './projects/sessions.js';
+import { createProjectCommandHandler } from './projects/bridge.js';
 import {
   configureAutomationManager,
   type AutomationManager,
@@ -7,8 +12,6 @@ import { startBridgeServer } from './bridgeServer.js';
 import { droidexUserDataDir } from './droidexPaths.js';
 import { shutdownSidecar } from './shutdown.js';
 import { hotPathMetrics } from './telemetry/hotPathMetrics.js';
-import { ProjectService } from './projects/ProjectService.js';
-import { handleProjectCommand } from './projects/bridge.js';
 
 const REQUESTED_PORT = bridgePort(process.env.BRIDGE_PORT ?? '0');
 const TOKEN = requiredSecret('BRIDGE_TOKEN');
@@ -16,14 +19,19 @@ const ASSET_TOKEN = requiredSecret('BROWSER_ASSET_TOKEN');
 const EXIT_ON_STDIN_CLOSE = process.env.BRIDGE_EXIT_ON_STDIN_CLOSE !== '0';
 
 let automationManager: AutomationManager | null = null;
-let projects: ProjectService | null = null;
+let projects: ProjectService | undefined;
+let projectSessions: ProjectSessions | undefined;
 
 const server = startBridgeServer({
   requestedPort: REQUESTED_PORT,
   token: TOKEN,
   assetToken: ASSET_TOKEN,
   onCommand: async (command) => {
-    if (projects && (await handleProjectCommand(projects, command))) return;
+    if (command.type === 'session.interrupt' || command.type === 'session.close') {
+      // Invalidate automatic work immediately; never delay the user's Stop for disk IO.
+      void projects?.pauseForSession(command.appSessionId).catch(reportProjectError);
+    }
+    if (await handleProjectCommand(command)) return;
     if (automationManager && (await automationManager.handleBridgeCommand(command))) return;
     await manager.handle(command);
   },
@@ -32,7 +40,8 @@ const server = startBridgeServer({
 
 const manager = new SessionManager(
   (event) => {
-    if (projects) void projects.observe(event).catch((error: unknown) => console.error('Projects observer failed', error));
+    projectSessions?.observe(event);
+    if (projects) void projects.observe(event).catch(reportProjectError);
     if (automationManager) {
       void automationManager.observeSessionEvent(event).catch((error: unknown) => {
         console.error('Automation lifecycle observer failed', error);
@@ -42,18 +51,46 @@ const manager = new SessionManager(
   },
   {
     assetUrlFor: (filePath) => server.browserAssetUrl(filePath),
+    beforeFirstTurn: async (session, clientRef) => {
+      await projectSessions?.beforeFirstTurn(session, clientRef);
+    },
     onSessionAvailable: (appSessionId) => {
+      projects?.sessionAvailable(appSessionId);
       void automationManager?.observeSessionAvailability(appSessionId).catch((error: unknown) => {
         console.error('Automation availability observer failed', error);
       });
     },
     onScheduledCapacityChanged: () => {
+      projects?.capacityChanged();
       void automationManager?.observeSchedulingCapacity().catch((error: unknown) => {
         console.error('Automation scheduling capacity observer failed', error);
       });
     },
   },
 );
+
+projectSessions = new ProjectSessions(manager);
+const projectsReady = ProjectService.open(
+  projectSessions,
+  new ProjectStore(join(droidexUserDataDir(), 'projects.json')),
+  (event) => server.broadcast(event),
+).then((service) => {
+  projects = service;
+  if (shuttingDown) service.close();
+  return service;
+});
+void projectsReady.catch(reportProjectError);
+const handleProjectCommand = createProjectCommandHandler(projectsReady, (event) =>
+  server.broadcast(event),
+);
+
+function reportProjectError(error: unknown): void {
+  server.broadcast({
+    type: 'error',
+    code: 'project.failed',
+    message: error instanceof Error ? error.message : String(error),
+  });
+}
 
 automationManager = configureAutomationManager({
   dataDir: droidexUserDataDir(),
@@ -66,15 +103,6 @@ automationManager = configureAutomationManager({
   resolveSessionContext: (appSessionId) => manager.automationSessionContext(appSessionId),
   validateSelection: (modelId, reasoningEffort) =>
     manager.validateAutomationSelection(modelId, reasoningEffort),
-});
-
-projects = new ProjectService({
-  dataDir: droidexUserDataDir(),
-  emit: (event) => server.broadcast(event),
-  summary: (id) => manager.projectSessionSummary(id),
-  create: (command) => manager.handle(command),
-  send: (id, text, current) => manager.handle({ type: current ? 'session.sendNow' : 'session.send', appSessionId: id, text }),
-  wake: (id, text) => manager.deliverProjectWake(id, text),
 });
 
 let shuttingDown = false;
@@ -101,6 +129,7 @@ server.ready
 async function shutdown(): Promise<void> {
   if (shuttingDown) return;
   shuttingDown = true;
+  projects?.close();
   const forceExit = setTimeout(() => process.exit(1), 5_000);
   forceExit.unref();
   try {
@@ -110,7 +139,12 @@ async function shutdown(): Promise<void> {
     await shutdownSidecar({
       shutdownSessions: () => manager.shutdown(),
       shutdownAutomations: async () => {
-        await automationManager?.shutdown();
+        try {
+          await automationManager?.shutdown();
+        } finally {
+          const service = await projectsReady.catch(() => undefined);
+          await service?.flush();
+        }
       },
       disableMetrics: () => {
         hotPathMetrics.disable();

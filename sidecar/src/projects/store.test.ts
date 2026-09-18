@@ -3,12 +3,19 @@ import { mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
-import { ProjectStore, threadInputSchema } from './projectStore.js';
+import { ProjectStore, threadInputSchema } from './store.js';
 import type { Project } from './types.js';
 
 function project(): Project {
-  return { id: 'project', title: 'Example', paused: false, wakesLeft: 20, launching: 0,
-    threads: [{ appSessionId: 'main', title: 'Main', reply: '', waiting: false }], pending: [] };
+  return {
+    id: 'project',
+    title: 'Example',
+    paused: false,
+    wakesLeft: 20,
+    launching: 0,
+    threads: [{ appSessionId: 'main', title: 'Main', reply: '', waiting: false }],
+    pending: [],
+  };
 }
 
 test('a missing ledger is empty, writes are ordered, and a fresh reader restores the last snapshot', async (t) => {
@@ -45,15 +52,33 @@ test('unknown owners, duplicate identities, cycles and foreign message targets a
   await writeFile(path, JSON.stringify([duplicate, { ...duplicate, id: 'other' }]));
   await assert.rejects(store.load(), /multiple projects/);
   const unknown = project();
-  unknown.threads.push({ appSessionId: 'child', ownerAppSessionId: 'missing', title: 'Child', reply: '', waiting: false });
+  unknown.threads.push({
+    appSessionId: 'child',
+    ownerAppSessionId: 'missing',
+    title: 'Child',
+    reply: '',
+    waiting: false,
+  });
   await writeFile(path, JSON.stringify([unknown]));
   await assert.rejects(store.load(), /ownership/);
   const cycle = project();
-  cycle.threads.push({ appSessionId: 'child', ownerAppSessionId: 'child', title: 'Child', reply: '', waiting: false });
+  cycle.threads.push({
+    appSessionId: 'child',
+    ownerAppSessionId: 'child',
+    title: 'Child',
+    reply: '',
+    waiting: false,
+  });
   await writeFile(path, JSON.stringify([cycle]));
   await assert.rejects(store.load(), /ownership/);
   const foreign = project();
-  foreign.pending.push({ id: 'message', from: 'main', to: 'other', kind: 'question', text: 'Question' });
+  foreign.pending.push({
+    id: 'message',
+    from: 'main',
+    to: 'other',
+    kind: 'question',
+    text: 'Question',
+  });
   await writeFile(path, JSON.stringify([foreign]));
   await assert.rejects(store.load(), /target/);
 });
@@ -64,5 +89,8 @@ test('thread input rejects unbounded prompts and unknown provider or autonomy va
   assert.equal(threadInputSchema.safeParse({ ...valid, provider: 'unknown' }).success, false);
   assert.equal(threadInputSchema.safeParse({ ...valid, autonomy: 'bypass' }).success, false);
   assert.equal(threadInputSchema.safeParse({ ...valid, prompt: 'x'.repeat(8_193) }).success, false);
-  assert.equal(threadInputSchema.safeParse({ ...valid, ownerAppSessionId: 'spoofed' }).success, false);
+  assert.equal(
+    threadInputSchema.safeParse({ ...valid, ownerAppSessionId: 'spoofed' }).success,
+    false,
+  );
 });

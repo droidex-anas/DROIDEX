@@ -412,7 +412,8 @@ export function loadPersistedUiState(): Partial<PersistedUiState> {
       mainView:
         parsed.mainView === 'session' ||
         parsed.mainView === 'pull-requests' ||
-        parsed.mainView === 'automations' || parsed.mainView === 'projects'
+        parsed.mainView === 'automations' ||
+        parsed.mainView === 'projects'
           ? parsed.mainView
           : undefined,
     };

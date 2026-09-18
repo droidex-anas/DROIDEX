@@ -22,10 +22,7 @@ export class ProjectSessions implements ProjectPort {
     return this.host.sessionSummary(appSessionId);
   }
 
-  async create(
-    input: ThreadInput,
-    bind: Launch['bind'],
-  ): Promise<SessionSummary | undefined> {
+  async create(input: ThreadInput, bind: Launch['bind']): Promise<SessionSummary | undefined> {
     const clientRef = `project:${randomUUID()}`;
     const launch: Launch = { bind };
     this.launching.set(clientRef, launch);

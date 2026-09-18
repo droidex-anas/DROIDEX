@@ -9,11 +9,41 @@ const requestId = { requestId: id };
 const commandSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('projects.list') }).strict(),
   z.object({ type: z.literal('project.create'), ...requestId, input: threadInputSchema }).strict(),
-  z.object({ type: z.literal('project.spawn'), ...requestId, source: id, input: threadInputSchema.omit({ cwd: true }) }).strict(),
-  z.object({ type: z.literal('project.send'), ...requestId, source: id, target: id, text: z.string().trim().min(1).max(8_192) }).strict(),
-  z.object({ type: z.literal('project.ask'), ...requestId, source: id, text: z.string().trim().min(1).max(8_192) }).strict(),
+  z
+    .object({
+      type: z.literal('project.spawn'),
+      ...requestId,
+      source: id,
+      input: threadInputSchema.omit({ cwd: true }),
+    })
+    .strict(),
+  z
+    .object({
+      type: z.literal('project.send'),
+      ...requestId,
+      source: id,
+      target: id,
+      text: z.string().trim().min(1).max(8_192),
+    })
+    .strict(),
+  z
+    .object({
+      type: z.literal('project.ask'),
+      ...requestId,
+      source: id,
+      text: z.string().trim().min(1).max(8_192),
+    })
+    .strict(),
   z.object({ type: z.literal('project.stop'), ...requestId, source: id, target: id }).strict(),
-  z.object({ type: z.literal('project.pause'), ...requestId, projectId: id, paused: z.boolean(), acknowledgeDelivery: z.boolean().optional() }).strict(),
+  z
+    .object({
+      type: z.literal('project.pause'),
+      ...requestId,
+      projectId: id,
+      paused: z.boolean(),
+      acknowledgeDelivery: z.boolean().optional(),
+    })
+    .strict(),
 ]);
 
 type Command = z.infer<typeof commandSchema>;
@@ -25,20 +55,34 @@ export function createProjectCommandHandler(
 ): (command: ClientCommand) => Promise<boolean> {
   const requests = new Map<string, { input: string; reply: Promise<Reply>; settled: boolean }>();
   return async (value) => {
-    if (!value || typeof value.type !== 'string' || (!value.type.startsWith('project.') && !value.type.startsWith('projects.'))) return false;
+    if (
+      !value ||
+      typeof value.type !== 'string' ||
+      (!value.type.startsWith('project.') && !value.type.startsWith('projects.'))
+    )
+      return false;
     const parsed = commandSchema.safeParse(value);
     if (!parsed.success) {
       if ('requestId' in value && typeof value.requestId === 'string') {
-        emit({ type: 'project.result', requestId: value.requestId, ok: false, error: 'Invalid Projects command.' });
+        emit({
+          type: 'project.result',
+          requestId: value.requestId,
+          ok: false,
+          error: 'Invalid Projects command.',
+        });
       } else {
-        emit({ type: 'error', code: 'project.invalid_command', message: 'Invalid Projects command.' });
+        emit({
+          type: 'error',
+          code: 'project.invalid_command',
+          message: 'Invalid Projects command.',
+        });
       }
       return true;
     }
     const command = parsed.data;
     if (command.type === 'projects.list') {
       try {
-        emit({ type: 'projects.snapshot', projects: (await ready).list() });
+        (await ready).publish();
       } catch (error) {
         emit({ type: 'error', code: 'project.load_failed', message: errorMessage(error) });
       }
@@ -47,7 +91,12 @@ export function createProjectCommandHandler(
     const serialized = JSON.stringify(command);
     let request = requests.get(command.requestId);
     if (request && request.input !== serialized) {
-      emit({ type: 'project.result', requestId: command.requestId, ok: false, error: 'Request identity was reused with different arguments.' });
+      emit({
+        type: 'project.result',
+        requestId: command.requestId,
+        ok: false,
+        error: 'Request identity was reused with different arguments.',
+      });
       return true;
     }
     if (!request) {
@@ -56,13 +105,20 @@ export function createProjectCommandHandler(
         if (entry.settled) requests.delete(key);
       }
       if (requests.size >= 128) {
-        emit({ type: 'project.result', requestId: command.requestId, ok: false, error: 'Too many pending Projects requests.' });
+        emit({
+          type: 'project.result',
+          requestId: command.requestId,
+          ok: false,
+          error: 'Too many pending Projects requests.',
+        });
         return true;
       }
       const reply = runCommand(ready, command);
       const entry = { input: serialized, reply, settled: false };
       requests.set(command.requestId, entry);
-      void reply.then(() => { entry.settled = true; });
+      void reply.then(() => {
+        entry.settled = true;
+      });
       request = entry;
     }
     emit(await request.reply);
@@ -99,9 +155,20 @@ async function runCommand(
         projectId = command.projectId;
         break;
     }
-    return { type: 'project.result', requestId: command.requestId, ok: true, ...(projectId ? { projectId } : {}), ...(appSessionId ? { appSessionId } : {}) };
+    return {
+      type: 'project.result',
+      requestId: command.requestId,
+      ok: true,
+      ...(projectId ? { projectId } : {}),
+      ...(appSessionId ? { appSessionId } : {}),
+    };
   } catch (error) {
-    return { type: 'project.result', requestId: command.requestId, ok: false, error: errorMessage(error) };
+    return {
+      type: 'project.result',
+      requestId: command.requestId,
+      ok: false,
+      error: errorMessage(error),
+    };
   }
 }
 
