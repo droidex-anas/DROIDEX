@@ -20,12 +20,12 @@ export interface SessionEventFlowDependencies {
   appendTranscript: (event: TranscriptEvent) => void;
   flushTranscript: (appSessionId: string, sourceSessionId: string) => void;
   applySideEffects: (appSessionId: string, sideEffects: NormalizedSideEffects) => void;
-  // The child that owns a spawn link, or undefined while the store has not
-  // admitted it yet.
+  // The child that owns a spawn link, 'ambiguous' when several share it, or
+  // undefined while the store has not admitted one yet.
   resolveChildScope: (
     appSessionId: string,
     spawnLink: ChildSpawnLink,
-  ) => ChildTranscriptScope | undefined;
+  ) => ChildTranscriptScope | 'ambiguous' | undefined;
   recordUsage: (
     appSessionId: string,
     sourceProviderSessionId: string,
@@ -102,7 +102,14 @@ export class SessionEventFlow {
     // feed: shown there they read as the parent's own work and cut its answer in
     // half.
     const owned = this.ownedBy(appSessionId, normalized.childOwner);
-    if (owned === 'unadmitted') return;
+    if (owned === 'unadmitted') {
+      // A row with no agent to hold it would read as the parent's own work, so
+      // it is dropped; say so once, because a silent loss is undiagnosable.
+      console.warn(
+        `[children] dropped a ${normalized.transcript?.kind ?? 'provider'} row for an unadmitted agent (spawn ${normalized.childOwner?.id ?? 'unknown'})`,
+      );
+      return;
+    }
 
     const terminal = this.terminalSources.get(appSessionId)?.has(sourceProviderSessionId);
     const transcript =
@@ -138,7 +145,12 @@ export class SessionEventFlow {
     owner: ChildSpawnLink | undefined,
   ): ChildTranscriptScope | 'unadmitted' | undefined {
     if (!owner) return undefined;
-    return this.dependencies.resolveChildScope(appSessionId, owner) ?? 'unadmitted';
+    const scope = this.dependencies.resolveChildScope(appSessionId, owner);
+    // Several agents share this spawn, so nothing here can say which one acted.
+    // The row stays the parent's rather than being filed under a sibling, where
+    // it would be wrong in one pane and missing from another.
+    if (scope === 'ambiguous') return undefined;
+    return scope ?? 'unadmitted';
   }
 
   private terminalScope(appSessionId: string): Set<string> {

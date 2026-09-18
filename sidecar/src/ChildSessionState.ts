@@ -333,7 +333,17 @@ export function findChildByProvider(
 }
 
 export function findChildBySpawn(parent: ParentChildSessions, spawnLink: PersistedChildSpawnLink) {
-  return [...parent.children.values()].find(
+  return childrenBySpawn(parent, spawnLink)[0];
+}
+
+// Every child that carries this spawn. A workflow gives all of its agents the
+// same spawn link, so a caller that needs one child has to say what it means by
+// "the" child rather than take whichever comes first.
+export function childrenBySpawn(
+  parent: ParentChildSessions,
+  spawnLink: PersistedChildSpawnLink,
+): ChildSessionState[] {
+  return [...parent.children.values()].filter(
     (child) => child.spawnLink?.kind === spawnLink.kind && child.spawnLink.id === spawnLink.id,
   );
 }

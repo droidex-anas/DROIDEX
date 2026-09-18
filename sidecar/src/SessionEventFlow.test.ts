@@ -12,7 +12,10 @@ import type { TranscriptEvent } from './protocol.js';
 import { assistantTextDelta, successfulResultEvent } from './testing/fakeFactoryRuntime.js';
 
 function createHarness(
-  options: { flushError?: Error; childScope?: { childSessionId: string; role: 'worker' } } = {},
+  options: {
+    flushError?: Error;
+    childScope?: { childSessionId: string; role: 'worker' } | 'ambiguous';
+  } = {},
 ) {
   const transcripts: TranscriptEvent[] = [];
   const sideEffects: Array<{
@@ -109,6 +112,49 @@ test('stream ingress appends an accepted transcript before one side-effect callb
   assert.equal(harness.transcripts[0]?.sourceSessionId, 'provider-1');
   assert.equal(harness.sideEffects.length, 1);
   assert.equal(harness.sideEffects[0]?.appSessionId, 'app-1');
+});
+
+// A subagent's rows arrive inside the parent's stream tagged with the spawn that
+// started it. Where they land decides both whether the agent has any visible
+// steps and whether the parent's own answer stays whole.
+const childRow = (appSessionId: string) => ({
+  transcript: {
+    id: 'row-1',
+    appSessionId,
+    sourceSessionId: appSessionId,
+    role: 'primary' as const,
+    kind: 'tool_call' as const,
+    ts: 1,
+  },
+  childOwner: { kind: 'tool-use' as const, id: 'toolu_1' },
+});
+
+test('a row tagged with a spawn is rewritten onto the agent that owns it', () => {
+  const harness = createHarness({ childScope: { childSessionId: 'child-1', role: 'worker' } });
+
+  harness.eventFlow.apply('app-1', 'app-1', 'primary', childRow('app-1'));
+
+  assert.equal(harness.transcripts.length, 1);
+  assert.equal(harness.transcripts[0]?.sourceSessionId, 'child-1');
+  assert.equal(harness.transcripts[0]?.role, 'worker');
+});
+
+test("a row whose agent is not admitted yet is dropped, not shown as the parent's", () => {
+  const harness = createHarness();
+
+  harness.eventFlow.apply('app-1', 'app-1', 'primary', childRow('app-1'));
+
+  assert.deepEqual(harness.transcripts, []);
+});
+
+test('a spawn several agents share leaves the row on the parent rather than guessing', () => {
+  const harness = createHarness({ childScope: 'ambiguous' });
+
+  harness.eventFlow.apply('app-1', 'app-1', 'primary', childRow('app-1'));
+
+  assert.equal(harness.transcripts.length, 1);
+  assert.equal(harness.transcripts[0]?.sourceSessionId, 'app-1');
+  assert.equal(harness.transcripts[0]?.role, 'primary');
 });
 
 test('notification ingress converges on the same transcript gating and side-effect path', () => {

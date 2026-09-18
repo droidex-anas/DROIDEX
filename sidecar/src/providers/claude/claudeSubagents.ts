@@ -27,7 +27,6 @@ interface WorkflowAgentEntry {
   phaseTitle?: string;
   promptPreview?: string;
   resultPreview?: string;
-  lastToolName?: string;
   state?: string;
 }
 
@@ -46,7 +45,6 @@ function workflowAgentEntries(message: TaskProgress): WorkflowAgentEntry[] {
             phaseTitle: read('phaseTitle'),
             promptPreview: read('promptPreview'),
             resultPreview: read('resultPreview'),
-            lastToolName: read('lastToolName'),
             state: read('state'),
           },
         ]
@@ -85,7 +83,14 @@ export class ClaudeSubagents {
       case 'task_updated':
         return this.updated(message);
       case 'task_notification': {
-        const ended = message.status === 'completed' ? 'completed' : 'failed';
+        // Stopping is something the user did, not something the agent failed
+        // at; only a real failure wears the failed status.
+        const ended =
+          message.status === 'completed'
+            ? 'completed'
+            : message.status === 'stopped'
+              ? 'paused'
+              : 'failed';
         const workflow = this.workflows.get(message.task_id);
         if (workflow) {
           this.workflows.delete(message.task_id);
@@ -150,7 +155,7 @@ export class ClaudeSubagents {
     }
     if (!this.children.has(message.task_id)) return [];
     return this.update(message.task_id, {
-      ...(status ? { status: status === 'killed' ? 'failed' : status } : {}),
+      ...(status ? { status: status === 'killed' ? 'paused' : status } : {}),
       ...(description ? { activity: { preview: description } } : {}),
     });
   }
@@ -183,7 +188,7 @@ export class ClaudeSubagents {
       const providerSessionId = entry.agentId;
       if (!providerSessionId) continue;
       const status = workflowAgentStatus(entry.state);
-      const preview = entry.resultPreview ?? entry.lastToolName;
+      const preview = entry.resultPreview;
       const known = this.children.get(providerSessionId);
       // One snapshot arrives per agent transition, each repeating every agent.
       if (known?.status === status && known.activity?.preview === preview) continue;

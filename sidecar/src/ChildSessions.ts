@@ -21,6 +21,7 @@ import {
   childStateFromRecord,
   childSummary,
   findChildByProvider,
+  childrenBySpawn,
   findChildBySpawn,
   findPendingChildObservation,
   forgetPendingChildObservation,
@@ -157,15 +158,21 @@ export class ChildSessions {
   }
 
   // The scope a row the provider attributed to a spawn belongs in. Undefined
-  // while no child has been admitted for that spawn yet.
+  // while no child has been admitted for that spawn yet, and 'ambiguous' when
+  // several share the link: a workflow gives every one of its agents the same
+  // spawn, so picking one would file an agent's step under a sibling and lose
+  // it from both.
   childScopeForSpawn(
     parentAppSessionId: string,
     spawnLink: PersistedChildSpawnLink,
-  ): { childSessionId: string; role: ChildRole } | undefined {
+  ): { childSessionId: string; role: ChildRole } | 'ambiguous' | undefined {
     const parent = this.parents.get(parentAppSessionId);
     if (!parent || !this.isCurrentParent(parent)) return undefined;
-    const child = findChildBySpawn(parent, spawnLink);
-    return child ? { childSessionId: child.identity.childSessionId, role: child.role } : undefined;
+    const matches = childrenBySpawn(parent, spawnLink);
+    if (matches.length > 1) return 'ambiguous';
+    if (matches.length === 0) return undefined;
+    const child = matches[0];
+    return { childSessionId: child.identity.childSessionId, role: child.role };
   }
 
   admitChildObservation(observation: ChildSpawnObservation): ChildIdentity | undefined {
