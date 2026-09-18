@@ -617,7 +617,6 @@ export type PermissionOutcome =
 
 // ── Frontend -> Sidecar ──────────────────────────────────────────────
 export type ClientCommand =
-  | ProjectCommand
   | AutomationBridgeCommand
   | McpClientCommand
   | { type: 'connect'; apiKey?: string }
@@ -884,7 +883,6 @@ export interface ChildErrorEvent {
 export type VoiceNarration = 'brief' | 'commentary';
 
 export type ServerEvent =
-  | ProjectEvent
   | { type: 'voice.answer'; appSessionId: string; sdp: string; attempt: string }
   | { type: 'voice.state'; appSessionId: string; status: 'live' | 'closed' }
   | {
@@ -1032,7 +1030,7 @@ export type ServerEvent =
   | { type: 'browser.closed'; appSessionId: string }
   | { type: 'browser.error'; appSessionId?: string; message: string };
 
-export const BRIDGE_PROTOCOL_VERSION = 5 as const;
+export const BRIDGE_PROTOCOL_VERSION = 4 as const;
 
 export interface SequencedServerEvent {
   seq: number;
