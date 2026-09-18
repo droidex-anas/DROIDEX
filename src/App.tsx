@@ -214,7 +214,10 @@ export default function App() {
   // of them instead of covering their header. The pane's open state survives
   // the visit and it comes back with the chat.
   const fullContentRoute =
-    !embedded && (state.mainView === 'pull-requests' || state.mainView === 'automations' || state.mainView === 'projects');
+    !embedded &&
+    (state.mainView === 'pull-requests' ||
+      state.mainView === 'automations' ||
+      state.mainView === 'projects');
   const showUtilityPane =
     !embedded && !!activeSession && utilityPanel.open && !showWizard && !fullContentRoute;
   // An expanded browser or agent covers the full content row; the utility pane
@@ -695,7 +698,9 @@ export default function App() {
               }`}
             >
               {!embedded && state.mainView === 'projects' ? (
-                <Suspense fallback={<PanelSkeleton title="projects" />}><LazyProjectsRoute /></Suspense>
+                <Suspense fallback={<PanelSkeleton title="projects" />}>
+                  <LazyProjectsRoute />
+                </Suspense>
               ) : !embedded && state.mainView === 'pull-requests' ? (
                 <Suspense fallback={<PullRequestsSkeleton />}>
                   <LazyPullRequestsView />

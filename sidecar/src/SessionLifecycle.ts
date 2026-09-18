@@ -116,6 +116,7 @@ type LifecycleError = Omit<Extract<ServerEvent, { type: 'error' }>, 'type'>;
 type SteerOutcome = 'taken' | 'queued' | 'interrupt';
 
 export interface SessionLifecycleDependencies {
+  beforeFirstTurn?: ((session: SessionSummary, clientRef: string) => Promise<void>) | undefined;
   onSessionAvailable?: ((appSessionId: string) => void) | undefined;
   // A scheduled runtime slot was released without a session closing.
   onScheduledCapacityChanged?: (() => void) | undefined;
@@ -283,6 +284,18 @@ export class SessionLifecycle {
       d.openProviderTranscript(summary);
       this.trackProviderProcess(appSessionId, providerSession, mcp.configs);
       d.childSessions.attachParent(appSessionId);
+      // Commit dependent ownership before the provider can execute its first task.
+      if (d.beforeFirstTurn) {
+        await d.beforeFirstTurn(summary, command.clientRef);
+        this.requireOpenAdmission();
+        if (
+          d.registry.getLive(appSessionId) !== liveSession ||
+          liveSession.closeMode ||
+          providerSession.isClosed
+        ) {
+          throw new Error('The session closed before its first turn.');
+        }
+      }
       d.emit({ type: 'session.created', clientRef: command.clientRef, session: summary });
       // A chat can open with nothing to say: voice mode creates the session so
       // the conversation has a thread to attach to, and the first request

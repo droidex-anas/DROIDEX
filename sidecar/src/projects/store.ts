@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { mkdir, open, readFile, rename, stat, unlink } from 'node:fs/promises';
-import { dirname } from 'node:path';
+import { dirname, isAbsolute } from 'node:path';
 import { z } from 'zod';
 import { PROVIDER_KINDS } from '../providers/providerKind.js';
 import type { Project, ThreadInput } from './types.js';
@@ -17,7 +17,11 @@ export const threadInputSchema = z
       .enum(['off', 'none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max', 'ultra', 'dynamic'])
       .optional(),
     autonomy: z.enum(['off', 'low', 'medium', 'high']),
-    cwd: z.string().max(4_096).optional(),
+    cwd: z
+      .string()
+      .max(4_096)
+      .refine((value) => isAbsolute(value), 'Workspace must be an absolute path.')
+      .optional(),
   })
   .strict() satisfies z.ZodType<ThreadInput>;
 
@@ -109,7 +113,13 @@ export class ProjectStore implements ProjectPersistence {
           owner = threads.get(owner)?.ownerAppSessionId;
         }
       }
-      for (const note of [...item.pending, ...(item.delivery?.messages ?? [])]) {
+      const messages = [...item.pending, ...(item.delivery?.messages ?? [])];
+      if (messages.length > 64) throw new Error('Project inbox exceeds 64 messages.');
+      if (new Set(messages.map((note) => note.id)).size !== messages.length)
+        throw new Error('Duplicate message identity in project ledger.');
+      if (item.delivery && new Set(item.delivery.messages.map((note) => note.to)).size !== 1)
+        throw new Error('A delivery claim must have one recipient.');
+      for (const note of messages) {
         if (!threads.has(note.from) || !threads.has(note.to))
           throw new Error('Unknown delivery target.');
       }
