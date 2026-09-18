@@ -59,7 +59,6 @@ async function harness(saved: Project[] = []) {
     gate: undefined as Promise<void> | undefined,
     bindGate: undefined as Promise<void> | undefined,
   };
-  let projects: ProjectService;
   let next = 0;
   const store: ProjectPersistence = {
     load: async () => structuredClone(state.saved),
@@ -94,7 +93,7 @@ async function harness(saved: Project[] = []) {
       await streaming(id, false);
     },
   };
-  projects = await ProjectService.open(port, store, (event) => events.push(event));
+  const projects = await ProjectService.open(port, store, (event) => events.push(event));
   async function streaming(id: string, value: boolean) {
     const session = sessions.get(id);
     assert.ok(session);

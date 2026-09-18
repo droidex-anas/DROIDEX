@@ -89,41 +89,7 @@ export class ProjectStore implements ProjectPersistence {
       throw error;
     }
     const projects = ledger.parse(JSON.parse(raw));
-    const projectIds = new Set<string>();
-    const sessionIds = new Set<string>();
-    for (const item of projects) {
-      if (projectIds.has(item.id)) throw new Error('Duplicate project identity in ledger.');
-      projectIds.add(item.id);
-      const threads = new Map(item.threads.map((thread) => [thread.appSessionId, thread]));
-      if (
-        item.threads.length &&
-        item.threads.filter((thread) => !thread.ownerAppSessionId).length !== 1
-      ) {
-        throw new Error('Project ledger must have exactly one main thread.');
-      }
-      for (const thread of item.threads) {
-        if (sessionIds.has(thread.appSessionId))
-          throw new Error('A thread belongs to multiple projects.');
-        sessionIds.add(thread.appSessionId);
-        let owner = thread.ownerAppSessionId;
-        const seen = new Set([thread.appSessionId]);
-        while (owner) {
-          if (seen.has(owner) || !threads.has(owner)) throw new Error('Invalid project ownership.');
-          seen.add(owner);
-          owner = threads.get(owner)?.ownerAppSessionId;
-        }
-      }
-      const messages = [...item.pending, ...(item.delivery?.messages ?? [])];
-      if (messages.length > 64) throw new Error('Project inbox exceeds 64 messages.');
-      if (new Set(messages.map((note) => note.id)).size !== messages.length)
-        throw new Error('Duplicate message identity in project ledger.');
-      if (item.delivery && new Set(item.delivery.messages.map((note) => note.to)).size !== 1)
-        throw new Error('A delivery claim must have one recipient.');
-      for (const note of messages) {
-        if (!threads.has(note.from) || !threads.has(note.to))
-          throw new Error('Unknown delivery target.');
-      }
-    }
+    validateLedger(projects);
     return projects;
   }
 
@@ -132,7 +98,7 @@ export class ProjectStore implements ProjectPersistence {
     if (Buffer.byteLength(json) > MAX_BYTES)
       return Promise.reject(new Error('Project ledger exceeds 8 MiB.'));
     // The failing caller sees the rejection; the next write can repair the ledger.
-    const next = this.writing.catch(() => {}).then(() => this.write(json));
+    const next = this.writing.catch(() => undefined).then(() => this.write(json));
     this.writing = next;
     return next;
   }
@@ -159,9 +125,54 @@ export class ProjectStore implements ProjectPersistence {
         }
       }
     } finally {
-      await unlink(temporary).catch((error: NodeJS.ErrnoException) => {
-        if (error.code !== 'ENOENT') throw error;
+      await unlink(temporary).catch((error: unknown) => {
+        if (!(error instanceof Error && 'code' in error && error.code === 'ENOENT')) throw error;
       });
     }
+  }
+}
+
+function validateLedger(projects: Project[]): void {
+  const projectIds = new Set<string>();
+  const sessionIds = new Set<string>();
+  for (const item of projects) {
+    if (projectIds.has(item.id)) throw new Error('Duplicate project identity in ledger.');
+    projectIds.add(item.id);
+    for (const thread of item.threads) {
+      if (sessionIds.has(thread.appSessionId))
+        throw new Error('A thread belongs to multiple projects.');
+      sessionIds.add(thread.appSessionId);
+    }
+    validateOwnership(item);
+    validateInbox(item);
+  }
+}
+
+function validateOwnership(project: Project): void {
+  const threads = new Map(project.threads.map((thread) => [thread.appSessionId, thread]));
+  const roots = project.threads.filter((thread) => !thread.ownerAppSessionId);
+  if (project.threads.length && roots.length !== 1)
+    throw new Error('Project ledger must have exactly one main thread.');
+  for (const thread of project.threads) {
+    let owner = thread.ownerAppSessionId;
+    const seen = new Set([thread.appSessionId]);
+    while (owner) {
+      if (seen.has(owner) || !threads.has(owner)) throw new Error('Invalid project ownership.');
+      seen.add(owner);
+      owner = threads.get(owner)?.ownerAppSessionId;
+    }
+  }
+}
+
+function validateInbox(project: Project): void {
+  const ids = new Set(project.threads.map((thread) => thread.appSessionId));
+  const messages = [...project.pending, ...(project.delivery?.messages ?? [])];
+  if (messages.length > 64) throw new Error('Project inbox exceeds 64 messages.');
+  if (new Set(messages.map((note) => note.id)).size !== messages.length)
+    throw new Error('Duplicate message identity in project ledger.');
+  if (project.delivery && new Set(project.delivery.messages.map((note) => note.to)).size !== 1)
+    throw new Error('A delivery claim must have one recipient.');
+  for (const note of messages) {
+    if (!ids.has(note.from) || !ids.has(note.to)) throw new Error('Unknown delivery target.');
   }
 }
