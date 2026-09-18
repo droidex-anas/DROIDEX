@@ -26,7 +26,7 @@ jobs:
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
         with:
           node-version: '22'
-      - name: Incorporate current main and prepare reviewed source
+      - name: Incorporate main and prepare source
         run: |
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
@@ -41,7 +41,6 @@ jobs:
           python3 tools/projects-review.py
           python3 - <<'PY'
           from pathlib import Path
-          import re
           p = Path('sidecar/src/projects/ProjectService.ts')
           s = p.read_text().replace('newProject(title: string, id = randomUUID())', 'newProject(title: string, id: string = randomUUID())')
           start = s.index('  inspect(source: string, target?: string) {')
@@ -90,92 +89,128 @@ jobs:
           p = Path('src/features/projects/ProjectThreadCard.tsx')
           s = p.read_text().replace('type="button" onClick={onOpen}', 'type="button" disabled={!state.provider || busy} onClick={onOpen}').replace('Open the conversation to load its settings.', 'This saved conversation is unavailable.')
           p.write_text(s)
-          matches = []
-          for p in Path('.').rglob('*.test.*'):
-              s = p.read_text()
-              if not all("'" + name + "'" in s for name in ['commandPalette', 'specWiki', 'onboarding', 'missionControl', 'pullRequests', 'automations', 'agents']):
-                  continue
-              s, count = re.subn(r"(?m)^([ \t]*)'automations',[ \t]*$", lambda m: m[0] + "\n" + m[1] + "'projects',", s)
-              if count:
-                  p.write_text(s)
-                  matches.append(str(p))
-          assert matches, 'The expected complete lazy-route catalog was not found.'
-          print('Updated lazy-route catalogs:', matches)
           PY
       - run: npm ci --ignore-scripts --no-audit --no-fund
       - run: npm ci --prefix sidecar --ignore-scripts --no-audit --no-fund
-      - name: Format only the changed source
+      - name: Update complete route catalog without changing idle prewarm
+        run: |
+          node --input-type=module <<'JS'
+          import fs from 'node:fs';
+          import path from 'node:path';
+          import ts from 'typescript';
+          const keys = ['settings','commandPalette','specWiki','onboarding','missionControl','pullRequests','automations','review','browser','terminal','files','agents'];
+          let changed = 0;
+          function visitFiles(dir) {
+            for (const entry of fs.readdirSync(dir, {withFileTypes:true})) {
+              if (['node_modules','.git','dist','out'].includes(entry.name)) continue;
+              const file = path.join(dir, entry.name);
+              if (entry.isDirectory()) { visitFiles(file); continue; }
+              if (!/\.test\.[cm]?[jt]sx?$/.test(file)) continue;
+              let source = fs.readFileSync(file, 'utf8');
+              const parsed = ts.createSourceFile(file, source, ts.ScriptTarget.Latest, true);
+              const edits = [];
+              function visit(node) {
+                if (ts.isArrayLiteralExpression(node)) {
+                  const names = node.elements.map(e => ts.isStringLiteral(e) ? e.text : null);
+                  if (keys.every(k => names.includes(k)) && !names.includes('projects')) {
+                    const at = node.elements[names.indexOf('automations')].end;
+                    edits.push(at);
+                  }
+                }
+                ts.forEachChild(node, visit);
+              }
+              visit(parsed);
+              for (const at of edits.sort((a,b) => b-a)) source = source.slice(0,at) + ", 'projects'" + source.slice(at);
+              if (edits.length) { fs.writeFileSync(file, source); changed += edits.length; console.log('ROUTE_CATALOG_UPDATED=' + file); }
+              else if (/idle prewarm/i.test(source)) console.log('PREWARM_TEST=' + file + '\n' + source);
+            }
+          }
+          visitFiles('src');
+          visitFiles('tools');
+          console.log('ROUTE_CATALOG_EDITS=' + changed);
+          JS
+      - name: Format and document changed source
         run: |
           git add sidecar/src src docs
           git diff --name-only --diff-filter=ACM "$PROJECTS_BASE" -- '*.ts' '*.tsx' '*.md' | xargs -r npx prettier --write
           npm run docs:generate
-      - name: Focused source lint
-        run: npx eslint --fix sidecar/src/projects src/features/projects
-      - name: Renderer types
-        run: npm run typecheck
-      - name: Sidecar types
-        run: npm run sidecar:typecheck
-      - name: Focused regression tests
+      - name: Run checks with concise failure diagnostics
+        id: checks
         run: |
-          node --import tsx --test 'src/features/projects/*.test.ts'
-          cd sidecar
-          node --import tsx --test 'src/projects/*.test.ts' src/SessionLifecycle.test.ts src/SessionManager*.test.ts > /tmp/projects-focused.log 2>&1 || { tail -n 120 /tmp/projects-focused.log; exit 1; }
-          tail -n 12 /tmp/projects-focused.log
-      - name: Full frontend and Electron tests
-        run: |
-          npm test > /tmp/projects-frontend.log 2>&1 || { tail -n 160 /tmp/projects-frontend.log; exit 1; }
-          tail -n 16 /tmp/projects-frontend.log
-      - name: Full sidecar tests
-        run: |
-          npm --prefix sidecar test > /tmp/projects-sidecar.log 2>&1 || { tail -n 160 /tmp/projects-sidecar.log; exit 1; }
-          tail -n 16 /tmp/projects-sidecar.log
-      - name: Build and Electron checks
-        run: npm run build
-      - name: Verify focused source quality
-        run: |
-          npx eslint sidecar/src/projects src/features/projects
-          npm run quality:file-size
-          npm run quality:tech-debt
-          npm run quality:boundaries
-          npm run docs:check
-      - name: Create validated commit object without moving the branch
+          python3 - <<'PY'
+          import json, subprocess, pathlib
+          checks = [
+            ('lint', 'npx eslint --fix sidecar/src/projects src/features/projects'),
+            ('renderer-types', 'npm run typecheck'),
+            ('sidecar-types', 'npm run sidecar:typecheck'),
+            ('focused-frontend', "node --import tsx --test 'src/features/projects/*.test.ts'"),
+            ('focused-sidecar', "cd sidecar && node --import tsx --test 'src/projects/*.test.ts' src/SessionLifecycle.test.ts src/SessionManager*.test.ts"),
+            ('frontend', 'npm test'),
+            ('sidecar', 'npm --prefix sidecar test'),
+            ('build', 'npm run build'),
+            ('file-size', 'npm run quality:file-size'),
+            ('tech-debt', 'npm run quality:tech-debt'),
+            ('boundaries', 'npm run quality:boundaries'),
+            ('docs', 'npm run docs:check'),
+          ]
+          results = {}
+          for name, command in checks:
+            log = pathlib.Path('/tmp/projects-' + name + '.log')
+            with log.open('w') as output:
+              try:
+                code = subprocess.run(command, shell=True, stdout=output, stderr=subprocess.STDOUT, timeout=420).returncode
+              except subprocess.TimeoutExpired:
+                code = 124
+            results[name] = code
+            lines = log.read_text().splitlines()
+            print('CHECK_RESULT=' + name + ':' + str(code), flush=True)
+            if code:
+              hits = [i for i,line in enumerate(lines) if any(term in line for term in ['not ok', 'error ', 'Error:', '✖', 'error TS', 'AssertionError', 'test at'])]
+              shown = set()
+              for hit in hits[:20]:
+                for i in range(max(0,hit-2), min(len(lines),hit+22)):
+                  if i not in shown: print(lines[i]); shown.add(i)
+              print('\n'.join(lines[-50:]), flush=True)
+            else:
+              print('\n'.join(lines[-12:]), flush=True)
+          pathlib.Path('/tmp/projects-checks.json').write_text(json.dumps(results))
+          print('PROJECTS_CHECKS=' + json.dumps(results), flush=True)
+          PY
+      - name: Create inspectable integration commit without moving the branch
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           rm tools/projects-review.py .github/workflows/projects-review.yml
           git add sidecar/src src docs tools/projects-review.py .github/workflows/projects-review.yml
-          git diff --cached --check
-          git diff --cached --stat "$PROJECTS_BASE"
           git diff --name-only --cached --diff-filter=ACM "$PROJECTS_BASE" -- '*.ts' '*.tsx' '*.md' | xargs -r npx prettier --write
           git add sidecar/src src docs
-          git diff --name-only --cached --diff-filter=ACM "$PROJECTS_BASE" -- '*.ts' '*.tsx' '*.md' | xargs -r npx prettier --check
+          git diff --cached --check
+          git diff --cached --stat "$PROJECTS_BASE"
           python3 - <<'PY'
           import json, os, pathlib, subprocess, urllib.request
-          def git(*args):
-              return subprocess.check_output(['git', *args], text=True).strip()
+          def git(*args): return subprocess.check_output(['git', *args], text=True).strip()
           entries = []
           for path in git('diff', '--cached', '--name-only', 'HEAD').splitlines():
               file = pathlib.Path(path)
               entry = {'path': path, 'mode': '100644', 'type': 'blob'}
-              if file.exists():
-                  entry['content'] = file.read_text()
-              else:
-                  entry['sha'] = None
+              if file.exists(): entry['content'] = file.read_text()
+              else: entry['sha'] = None
               entries.append(entry)
           def post(endpoint, body):
               request = urllib.request.Request(
                   'https://api.github.com/repos/' + os.environ['GITHUB_REPOSITORY'] + '/git/' + endpoint,
                   json.dumps(body).encode(),
-                  headers={'Authorization': 'Bearer ' + os.environ['GH_TOKEN'], 'Accept': 'application/vnd.github+json', 'Content-Type': 'application/json'},
-                  method='POST')
-              with urllib.request.urlopen(request) as response:
-                  return json.load(response)
+                  headers={'Authorization': 'Bearer ' + os.environ['GH_TOKEN'], 'Accept': 'application/vnd.github+json', 'Content-Type': 'application/json'}, method='POST')
+              with urllib.request.urlopen(request) as response: return json.load(response)
           tree = post('trees', {'base_tree': git('rev-parse', 'HEAD^{tree}'), 'tree': entries})
           commit = post('commits', {
-              'message': 'Harden Projects delivery and expose working thread controls',
+              'message': 'Harden Projects delivery and expose managed thread controls',
               'tree': tree['sha'], 'parents': [git('rev-parse', 'HEAD'), os.environ['PROJECTS_BASE']],
               'author': {'name': 'github-actions[bot]', 'email': '41898282+github-actions[bot]@users.noreply.github.com'}})
-          print('PROJECTS_VALIDATED_BASE=' + os.environ['PROJECTS_BASE'])
-          print('PROJECTS_VALIDATED_TREE=' + tree['sha'])
-          print('PROJECTS_VALIDATED_COMMIT=' + commit['sha'])
+          print('PROJECTS_REVIEW_BASE=' + os.environ['PROJECTS_BASE'])
+          print('PROJECTS_REVIEW_TREE=' + tree['sha'])
+          print('PROJECTS_REVIEW_COMMIT=' + commit['sha'])
+          results = json.loads(pathlib.Path('/tmp/projects-checks.json').read_text())
+          print('PROJECTS_CHECKS=' + json.dumps(results))
+          raise SystemExit(1 if any(results.values()) else 0)
           PY
