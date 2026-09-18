@@ -1,5 +1,3 @@
-import { randomUUID } from 'node:crypto';
-
 import { isDesignPrompt } from '../browser/designPromptPacks.js';
 import type { ServerEvent, SessionSummary } from '../protocol.js';
 import type { LiveOperationTarget, SessionContext } from '../SessionContext.js';
@@ -13,7 +11,10 @@ import { usageLimitDetails } from './usageLimit.js';
 export interface PrimaryTurnDependencies {
   eventFlow: Pick<SessionEventFlow, 'beginTurn' | 'apply'>;
   context: Pick<SessionContext, 'beginTurn' | 'startPolling' | 'stopPolling' | 'refresh'>;
-  timeline: Pick<SessionTimeline, 'recordPrompt' | 'settleStreaming' | 'appendStatus' | 'append'>;
+  timeline: Pick<
+    SessionTimeline,
+    'recordPrompt' | 'settleStreaming' | 'appendStatus' | 'appendError'
+  >;
   // Absent for a provider without Droid's context accounting.
   contextTarget: (liveSession: LiveSession) => LiveOperationTarget | undefined;
   isCurrent: (liveSession: LiveSession) => boolean;
@@ -91,17 +92,7 @@ function settleTurnFailure(
     const message = errMsg(error);
     const usageLimit = usageLimitDetails(error);
     if (!reportedError || (usageLimit.errorKind && !reportedUsageLimit)) {
-      d.timeline.append({
-        id: randomUUID(),
-        appSessionId,
-        sourceSessionId: appSessionId,
-        role: 'primary',
-        ts: Date.now(),
-        kind: 'error',
-        text: message,
-        isError: true,
-        ...usageLimit,
-      });
+      d.timeline.appendError(appSessionId, message, usageLimit);
     }
     d.emitError({ appSessionId, message });
   }

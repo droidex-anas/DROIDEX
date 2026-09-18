@@ -145,6 +145,21 @@ test('the transcript is capped to the newest events and the byte budget', () => 
   );
 });
 
+test('a live progress row is not repainted from the snapshot', () => {
+  const snapshot = saveAndLoad([summary('s1')], {
+    appSessionId: 's1',
+    events: [
+      event('kept', 1),
+      { ...event('progress', 2), kind: 'status', transient: true },
+      event('also-kept', 3),
+    ],
+  });
+  assert.deepEqual(
+    snapshot?.transcript?.events.map((item) => item.id),
+    ['kept', 'also-kept'],
+  );
+});
+
 test('duplicate session ids in a stored payload are collapsed', () => {
   withLocalStorageMap(
     { [SNAPSHOT_KEY]: JSON.stringify({ sessions: [summary('s1', 1), summary('s1', 2)] }) },

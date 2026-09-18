@@ -215,6 +215,10 @@ export interface TranscriptEvent {
   modelSwitch?: { from: string; to: string };
   errorKind?: 'usage_limit';
   resetsAt?: number;
+  // A 'status' row that only says what the app is doing right now (booting a
+  // CLI, steering, releasing an idle runtime). It is shown live and never
+  // stored, so reopening the session does not replay stale progress.
+  transient?: true;
 }
 
 export type BrowserTranscriptReferenceKind = 'element' | 'region' | 'text';

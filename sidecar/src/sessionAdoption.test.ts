@@ -75,7 +75,7 @@ test('failed provider adoption marks the session interrupted instead of running'
       persistSummaries: (sessions) => {
         persisted.push(...sessions);
       },
-      emitStatus: (_appSessionId, text) => {
+      appendStatus: (_appSessionId, text) => {
         statuses.push(text);
       },
       sessionRuntimeIdleMs: SESSION_RUNTIME_IDLE_RETIREMENT_MS,
@@ -129,7 +129,7 @@ test('a resumed in-flight session is paused with an interrupt reason', async () 
         persisted.push(...sessions);
         live.summary = sessions[0] ?? live.summary;
       },
-      emitStatus: () => undefined,
+      appendStatus: () => undefined,
       sessionRuntimeIdleMs: SESSION_RUNTIME_IDLE_RETIREMENT_MS,
       now: () => NOW,
     });
@@ -180,7 +180,7 @@ test('running children are marked interrupted and written out of the live journa
       recordedProcesses: () => [],
       reapProcesses: () => Promise.resolve(),
       persistSummaries: () => undefined,
-      emitStatus: () => undefined,
+      appendStatus: () => undefined,
       sessionRuntimeIdleMs: SESSION_RUNTIME_IDLE_RETIREMENT_MS,
       now: () => NOW,
     });
@@ -235,7 +235,7 @@ function bootAdoption(dir: string, options: BootCase = {}) {
     recordedProcesses: () => [],
     reapProcesses: () => Promise.resolve(),
     persistSummaries: () => undefined,
-    emitStatus: () => undefined,
+    appendStatus: () => undefined,
     sessionRuntimeIdleMs: SESSION_RUNTIME_IDLE_RETIREMENT_MS,
     now: () => NOW,
   });
@@ -322,7 +322,7 @@ test('the journal carries when each live session was last active', async () => {
       recordedProcesses: () => [],
       reapProcesses: () => Promise.resolve(),
       persistSummaries: () => undefined,
-      emitStatus: () => undefined,
+      appendStatus: () => undefined,
       sessionRuntimeIdleMs: SESSION_RUNTIME_IDLE_RETIREMENT_MS,
       now: () => NOW,
     });

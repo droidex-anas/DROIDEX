@@ -37,7 +37,9 @@ export class AppServerClient {
   private readonly pending = new Map<number, PendingRequest>();
   private readonly notificationHandlers = new Map<string, (params: unknown) => void>();
   private readonly requestHandlers = new Map<string, (params: unknown) => Promise<unknown>>();
-  private closed?: (error: Error) => void;
+  private closed?: (error: Error, cleanExit: boolean) => void;
+  // Whether the process ended on its own terms rather than dying.
+  private cleanExit = false;
   private remainder = '';
   private diagnostics = '';
   private nextRequestId = 1;
@@ -67,6 +69,9 @@ export class AppServerClient {
       this.fail(error);
     });
     this.child.on('close', (code, signal) => {
+      // Every pending request still has to reject, but a process that ended on
+      // its own terms is not something the chat should record as a crash.
+      this.cleanExit = !signal && (code ?? 0) === 0;
       this.fail(new Error(this.exitMessage(code, signal)));
     });
   }
@@ -91,7 +96,7 @@ export class AppServerClient {
 
   // Called once when the process is gone, so a turn waiting on notifications
   // fails instead of hanging. Fires immediately if it is already gone.
-  onClose(listener: (error: Error) => void): void {
+  onClose(listener: (error: Error, cleanExit: boolean) => void): void {
     this.closed = listener;
     if (this.failure) this.settle(this.failure);
   }
@@ -204,7 +209,7 @@ export class AppServerClient {
   private settle(error: Error): void {
     const listener = this.closed;
     this.closed = undefined;
-    listener?.(error);
+    listener?.(error, this.cleanExit);
   }
 
   private exitMessage(code: number | null, signal: NodeJS.Signals | null): string {
