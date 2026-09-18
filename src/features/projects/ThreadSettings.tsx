@@ -4,7 +4,7 @@ import ProviderPicker from '../providers/ProviderPicker';
 import type { ThreadCatalog, ThreadSelection } from './useThreadSelection';
 
 const selectClass =
-  'min-w-0 max-w-[220px] rounded-lg bg-droid-elevated px-2 py-1.5 text-xs text-droid-text-secondary outline-none focus-visible:ring-2 focus-visible:ring-droid-text-muted';
+  'min-w-0 max-w-[150px] shrink-0 rounded-lg bg-droid-elevated px-2 py-1 text-[12px] text-droid-text-secondary outline-none focus-visible:ring-2 focus-visible:ring-droid-text-muted';
 
 export function ThreadSettings({
   value,
@@ -20,7 +20,7 @@ export function ThreadSettings({
   const [open, setOpen] = useState(false);
   const unknownModel = value.modelId && !catalog.models.some((item) => item.id === value.modelId);
   return (
-    <div className="flex flex-wrap items-center gap-1.5">
+    <div className="flex items-center gap-1.5">
       <ProviderPicker
         value={value.provider}
         locked={disabled}
