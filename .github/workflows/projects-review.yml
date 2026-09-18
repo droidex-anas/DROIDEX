@@ -39,6 +39,7 @@ jobs:
           python3 tools/projects-review.py
           python3 - <<'PY'
           from pathlib import Path
+          import re
           p = Path('sidecar/src/projects/ProjectService.ts')
           s = p.read_text().replace('newProject(title: string, id = randomUUID())', 'newProject(title: string, id: string = randomUUID())')
           start = s.index('  inspect(source: string, target?: string) {')
@@ -87,6 +88,17 @@ jobs:
           p = Path('src/features/projects/ProjectThreadCard.tsx')
           s = p.read_text().replace('type="button" onClick={onOpen}', 'type="button" disabled={!state.provider || busy} onClick={onOpen}').replace('Open the conversation to load its settings.', 'This saved conversation is unavailable.')
           p.write_text(s)
+          matches = []
+          for p in Path('src').rglob('*.test.*'):
+              s = p.read_text()
+              if 'startup idle prewarm only targets Settings' not in s:
+                  continue
+              s, count = re.subn(r"(?m)^(\s*)'automations',\s*$", lambda m: m[0] + "\n" + m[1] + "'projects',", s)
+              assert count == 1, (str(p), count)
+              p.write_text(s)
+              matches.append(str(p))
+          assert len(matches) == 1, matches
+          print('Updated full lazy-route catalog:', matches[0])
           PY
       - run: npm ci --ignore-scripts --no-audit --no-fund
       - run: npm ci --prefix sidecar --ignore-scripts --no-audit --no-fund
@@ -95,6 +107,8 @@ jobs:
           git add sidecar/src src docs
           git diff --name-only --diff-filter=ACM "$PROJECTS_BASE" -- '*.ts' '*.tsx' '*.md' | xargs -r npx prettier --write
           npm run docs:generate
+      - name: Focused source lint
+        run: npx eslint --fix sidecar/src/projects src/features/projects
       - name: Renderer types
         run: npm run typecheck
       - name: Sidecar types
@@ -103,11 +117,16 @@ jobs:
         run: |
           node --import tsx --test 'src/features/projects/*.test.ts'
           cd sidecar
-          node --import tsx --test 'src/projects/*.test.ts' src/SessionLifecycle.test.ts src/SessionManager*.test.ts
+          node --import tsx --test 'src/projects/*.test.ts' src/SessionLifecycle.test.ts src/SessionManager*.test.ts > /tmp/projects-focused.log 2>&1 || { tail -n 120 /tmp/projects-focused.log; exit 1; }
+          tail -n 12 /tmp/projects-focused.log
       - name: Full frontend and Electron tests
-        run: npm test
+        run: |
+          npm test > /tmp/projects-frontend.log 2>&1 || { tail -n 160 /tmp/projects-frontend.log; exit 1; }
+          tail -n 16 /tmp/projects-frontend.log
       - name: Full sidecar tests
-        run: npm --prefix sidecar test
+        run: |
+          npm --prefix sidecar test > /tmp/projects-sidecar.log 2>&1 || { tail -n 160 /tmp/projects-sidecar.log; exit 1; }
+          tail -n 16 /tmp/projects-sidecar.log
       - name: Build and Electron checks
         run: npm run build
       - name: Verify focused source quality
@@ -125,6 +144,8 @@ jobs:
           git add sidecar/src src docs tools/projects-review.py .github/workflows/projects-review.yml
           git diff --cached --check
           git diff --cached --stat "$PROJECTS_BASE"
+          git diff --name-only --cached --diff-filter=ACM "$PROJECTS_BASE" -- '*.ts' '*.tsx' '*.md' | xargs -r npx prettier --write
+          git add sidecar/src src docs
           git diff --name-only --cached --diff-filter=ACM "$PROJECTS_BASE" -- '*.ts' '*.tsx' '*.md' | xargs -r npx prettier --check
           python3 - <<'PY'
           import json, os, pathlib, subprocess, urllib.request
