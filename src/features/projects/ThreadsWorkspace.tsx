@@ -10,6 +10,7 @@ import { useProjects } from './client';
 import { ThreadDetail } from './ThreadDetail';
 import { ThreadList } from './ThreadList';
 import { projectForSession, threadRows } from './threadBoard';
+import type { ProjectStep } from './types';
 
 /* The Threads tab of the utility panel: every thread this chat runs, grouped by
    what it needs, and the one thread the user opened. One level deep, like the
@@ -83,6 +84,7 @@ export function ThreadsWorkspace({ tab }: { tab: UtilityTab }) {
         ) : (
           <ThreadList
             rows={rows}
+            plan={project?.plan ?? EMPTY_PLAN}
             subtitle={subtitle(project?.title, session?.cwd, rows.length)}
             now={now}
             error={project?.error ?? ''}
@@ -127,6 +129,8 @@ function PaneTransition({
     </AnimatePresence>
   );
 }
+
+const EMPTY_PLAN: ProjectStep[] = [];
 
 function subtitle(title: string | undefined, cwd: string | undefined, count: number): string {
   const folder = cwd ? workspaceName(cwd) : '';

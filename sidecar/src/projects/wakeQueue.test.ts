@@ -21,6 +21,7 @@ function project(id = 'project'): Project {
     title: id,
     paused: false,
     launching: 0,
+  plan: [],
     threads: [
       { appSessionId: 'main', title: 'Main', reply: '', waiting: false },
       {

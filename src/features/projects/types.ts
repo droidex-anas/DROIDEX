@@ -14,6 +14,15 @@ export interface ThreadInput {
 export type ThreadSpawnInput = Omit<ThreadInput, 'cwd' | 'provider' | 'autonomy'> &
   Partial<Pick<ThreadInput, 'provider' | 'autonomy'>>;
 
+export interface ProjectStep {
+  id: string;
+  title: string;
+  milestone?: string;
+  state?: 'planned' | 'doing' | 'done' | 'blocked';
+  threadAppSessionId?: string;
+  note?: string;
+}
+
 export interface ProjectThread {
   appSessionId: string;
   ownerAppSessionId?: string;
@@ -27,6 +36,7 @@ export interface ProjectView {
   cwd?: string;
   paused: boolean;
   launching: number;
+  plan: ProjectStep[];
   threads: ProjectThread[];
   queued: number;
   uncertain: number;

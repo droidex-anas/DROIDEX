@@ -1,7 +1,8 @@
-import type { ProjectThread, ProjectView } from './types';
+import type { ProjectStep, ProjectThread, ProjectView } from './types';
 
 export function isProjectView(value: unknown): value is ProjectView {
   if (!record(value) || !isProjectMetadata(value) || !isThreadList(value.threads)) return false;
+  if (!isPlan(value.plan)) return false;
   if (!Array.isArray(value.uncertainTargets) || value.uncertainTargets.length > 8) return false;
   const owners = new Map(
     value.threads.map((thread) => [thread.appSessionId, thread.ownerAppSessionId]),
@@ -20,6 +21,24 @@ function isProjectMetadata(value: Record<string, unknown>): boolean {
     count(value.queued, 64) &&
     count(value.uncertain, 64) &&
     (value.error === undefined || text(value.error, 2_000))
+  );
+}
+
+function isPlan(value: unknown): value is ProjectStep[] {
+  return (
+    Array.isArray(value) &&
+    value.length <= 60 &&
+    value.every(
+      (step: unknown) =>
+        record(step) &&
+        text(step.id, 200) &&
+        text(step.title, 200) &&
+        (step.milestone === undefined || text(step.milestone, 80)) &&
+        (step.note === undefined || text(step.note, 400)) &&
+        (step.threadAppSessionId === undefined || text(step.threadAppSessionId, 200)) &&
+        (step.state === undefined ||
+          ['planned', 'doing', 'done', 'blocked'].includes(step.state as string)),
+    )
   );
 }
 

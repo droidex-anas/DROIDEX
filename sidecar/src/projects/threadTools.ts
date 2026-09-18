@@ -9,12 +9,19 @@ const TOOL_TITLES: Record<string, string> = {
   thread_list: 'View DROIDEX threads',
   thread_stop: 'Stop DROIDEX thread',
   thread_ask_owner: 'Ask the main chat',
+  plan_set: 'Update the DROIDEX project plan',
 };
 
 // Spawning is the one tool that spends real work: it opens another conversation
 // that edits files under its own autonomy. Everything else only moves text
 // between conversations DROIDEX already owns, or stops one.
-const ALWAYS_SAFE = new Set(['thread_list', 'thread_send', 'thread_stop', 'thread_ask_owner']);
+const ALWAYS_SAFE = new Set([
+  'thread_list',
+  'thread_send',
+  'thread_stop',
+  'thread_ask_owner',
+  'plan_set',
+]);
 
 export function threadToolDisplayTitle(serverName: string, toolName: string): string | null {
   if (!isThreadServer(serverName)) return null;

@@ -23,9 +23,20 @@ never exceed its owner's autonomy. `thread_spawn` also takes
 chat names and tells the thread to work there, so threads writing at the same
 time never share a tree.
 
-**Projects** lists every local project with what it is doing, and opens a
-project's main conversation. **New project** starts one from a first task and
-is the only place that asks for a harness, model and autonomy.
+**Projects** lists every local project with what it is doing. Opening a row
+opens the conversation that leads it with its Threads panel already beside it;
+the chevron opens the project inside the Projects view instead, where its plan,
+threads and held state live. **New project** starts one from a goal and is the
+only place that asks for a harness, model and autonomy.
+
+## The plan
+
+The lead keeps a plan with `plan_set`: the steps it means to take, optionally
+grouped under milestones, each one able to name the thread carrying it. A step
+with a thread shows that conversation's real state and its own last step, so the
+table reports what DROIDEX can see rather than what a model claimed. A step
+without one shows only what the lead said about it. The plan is stored in the
+project ledger and appears above the threads wherever the project is read.
 
 ## The Threads panel
 

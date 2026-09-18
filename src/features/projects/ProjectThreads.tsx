@@ -68,6 +68,7 @@ export function ProjectThreads({
       <div className="flex min-h-0 flex-1 flex-col rounded-2xl border border-droid-border bg-droid-surface/30">
         <ThreadList
           rows={rows}
+          plan={project.plan}
           subtitle={[folder, `${String(rows.length)} threads`].filter(Boolean).join(' · ')}
           now={now}
           error={project.error ?? ''}

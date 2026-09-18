@@ -1,6 +1,8 @@
 import { LayoutGroup, motion, useReducedMotion } from 'framer-motion';
+import { ProjectPlan } from './ProjectPlan';
 import { ThreadRow } from './ThreadRow';
 import { threadCounts, threadGroups, type ThreadRow as ThreadRowModel } from './threadBoard';
+import type { ProjectStep } from './types';
 import { threadGreeting, threadStatusLine } from './threadGreeting';
 
 /* The Threads list: the panel's own line, the facts under it, then the threads
@@ -13,6 +15,7 @@ import { threadGreeting, threadStatusLine } from './threadGreeting';
 
 export function ThreadList({
   rows,
+  plan,
   subtitle,
   now,
   error,
@@ -20,6 +23,7 @@ export function ThreadList({
   onOpenThread,
 }: {
   rows: readonly ThreadRowModel[];
+  plan: readonly ProjectStep[];
   subtitle: string;
   now: number;
   error: string;
@@ -44,6 +48,8 @@ export function ThreadList({
           <p className="mt-0.5 text-[12px] leading-5 text-droid-text-muted">{subtitle}</p>
         </div>
 
+        <ProjectPlan plan={plan} rows={rows} onOpenThread={onOpenThread} />
+
         <div className="px-2 pb-3">
           <LayoutGroup>
             {groups.map((group) => (
@@ -67,7 +73,7 @@ export function ThreadList({
               </div>
             ))}
           </LayoutGroup>
-          {rows.length === 0 && (
+          {rows.length === 0 && plan.length === 0 && (
             <p className="px-3 py-2 text-[13px] leading-5 text-droid-text-muted">
               This project has not started any threads. Tell its chat what to run in parallel and it
               will open them here.
