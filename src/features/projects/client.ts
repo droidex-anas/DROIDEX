@@ -11,11 +11,14 @@ interface Snapshot {
 let snapshot: Snapshot = { projects: [], loading: true };
 const listeners = new Set<() => void>();
 let unsubscribe: (() => void) | undefined;
-const pending = new Map<string, {
-  resolve: (id: string) => void;
-  reject: (error: Error) => void;
-  timeout: ReturnType<typeof setTimeout>;
-}>();
+const pending = new Map<
+  string,
+  {
+    resolve: (id: string) => void;
+    reject: (error: Error) => void;
+    timeout: ReturnType<typeof setTimeout>;
+  }
+>();
 
 function publish(next: Snapshot): void {
   snapshot = next;
@@ -37,11 +40,18 @@ function release(): void {
 function subscribe(listener: () => void): () => void {
   listeners.add(listener);
   start();
-  return () => { listeners.delete(listener); release(); };
+  return () => {
+    listeners.delete(listener);
+    release();
+  };
 }
 
 export function useProjects(): Snapshot {
-  return useSyncExternalStore(subscribe, () => snapshot, () => snapshot);
+  return useSyncExternalStore(
+    subscribe,
+    () => snapshot,
+    () => snapshot,
+  );
 }
 
 function handleEvent(event: ServerEvent): void {
@@ -53,7 +63,11 @@ function handleEvent(event: ServerEvent): void {
       for (const [id, waiter] of pending) {
         clearTimeout(waiter.timeout);
         pending.delete(id);
-        waiter.reject(new Error('Connection lost. The request may have completed; check Projects before retrying.'));
+        waiter.reject(
+          new Error(
+            'Connection lost. The request may have completed; check Projects before retrying.',
+          ),
+        );
       }
       release();
     }
@@ -64,7 +78,8 @@ function handleEvent(event: ServerEvent): void {
     if (!waiter) return;
     clearTimeout(waiter.timeout);
     pending.delete(event.requestId);
-    if (event.error || !event.projectId) waiter.reject(new Error(event.error ?? 'Project identity was not returned.'));
+    if (event.error || !event.projectId)
+      waiter.reject(new Error(event.error ?? 'Project identity was not returned.'));
     else waiter.resolve(event.projectId);
     release();
   }
@@ -91,6 +106,16 @@ export function createProject(input: ThreadInput): Promise<string> {
   return request({ type: 'project.create', requestId: crypto.randomUUID(), input });
 }
 
-export function pauseProject(projectId: string, paused: boolean, acknowledgeDelivery = false): Promise<string> {
-  return request({ type: 'project.pause', requestId: crypto.randomUUID(), projectId, paused, acknowledgeDelivery });
+export function pauseProject(
+  projectId: string,
+  paused: boolean,
+  acknowledgeDelivery = false,
+): Promise<string> {
+  return request({
+    type: 'project.pause',
+    requestId: crypto.randomUUID(),
+    projectId,
+    paused,
+    acknowledgeDelivery,
+  });
 }

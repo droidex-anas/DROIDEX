@@ -1,3 +1,5 @@
+import type { ProviderStatus } from './protocol.js';
+import type { ProjectSessions } from './projects/Projects.js';
 import { type McpServerConfig } from '@factory/droid-sdk';
 import { randomUUID } from 'node:crypto';
 import { tmpdir } from 'node:os';
@@ -181,6 +183,11 @@ export interface SessionManagerDependencies {
 }
 
 export interface SessionManagerOptions {
+  createProjectMcpResource?: (
+    appSessionId: () => string,
+  ) => StartedLocalMcpResources['servers'][number] & {
+    start(): Promise<StartedLocalMcpResources['configs'][number]>;
+  };
   assetUrlFor?: (path: string) => string;
   dependencies?: SessionManagerDependencies;
   initialModels?: ModelInfo[];
@@ -256,6 +263,7 @@ export class SessionManager {
   // provider in the order they were requested.
   private readonly autonomyMutationTails = new Map<string, Promise<void>>();
   private readonly browsers: SessionBrowsers;
+  private readonly createProjectMcpResource: SessionManagerOptions['createProjectMcpResource'];
   private readonly createLocalMcpResource: SessionManagerDependencies['createLocalMcpResource'];
   private readonly createAutomationMcpResource: NonNullable<
     SessionManagerDependencies['createAutomationMcpResource']
@@ -281,6 +289,7 @@ export class SessionManager {
     private readonly emit: Emit,
     options: SessionManagerOptions = {},
   ) {
+    this.createProjectMcpResource = options.createProjectMcpResource;
     this.providerProbes = new ProviderProbes(
       options.providerProbes ??
         new Map<ProviderKind, ProviderProbe>([
@@ -989,6 +998,48 @@ export class SessionManager {
     }
   }
 
+  projectSessions(): ProjectSessions {
+    return {
+      get: (id) => this.registry.getLive(id)?.summary ?? this.registry.resolveSummary(id),
+      create: (input, bind) => {
+        const { prompt, ...settings } = input;
+        const status = this.projectCatalog().find((item) => item.provider === input.provider);
+        const model = status?.models.find((item) => item.id === input.modelId);
+        if (
+          input.reasoningEffort &&
+          model?.supportedReasoningEfforts?.length &&
+          !model.supportedReasoningEfforts.includes(input.reasoningEffort)
+        ) {
+          throw new Error(
+            `${model.displayName} does not support ${input.reasoningEffort} reasoning.`,
+          );
+        }
+        return this.lifecycle.create(
+          {
+            ...settings,
+            type: 'session.create',
+            clientRef: `project:${randomUUID()}`,
+            goal: prompt,
+            sessionPurpose: 'chat',
+            interactionMode: 'auto',
+          },
+          bind,
+        );
+      },
+      sendWhenIdle: (id, prompt, isCurrent) => this.lifecycle.sendWhenIdle(id, prompt, isCurrent),
+      interrupt: (id) => this.lifecycle.interrupt(id),
+    };
+  }
+
+  projectCatalog(): ProviderStatus[] {
+    return providerStatuses(
+      this.runtime.status().droidPath,
+      this.cachedModels ?? [],
+      this.cachedModels?.find((model) => model.isDefault)?.id,
+      (provider) => this.providerProbes.status(provider),
+    );
+  }
+
   async automationSessionContext(appSessionId: string): Promise<{
     cwd: string | null;
     modelId: string | null;
@@ -1144,6 +1195,7 @@ export class SessionManager {
     cwd?: string,
   ): Promise<StartedLocalMcpResources> {
     const servers = [this.createLocalMcpResource(() => ref.id)];
+    if (this.createProjectMcpResource) servers.push(this.createProjectMcpResource(() => ref.id));
     if (shouldAttachAutomationMcp(ref.clientRef, await isUnattendedAutomationSession(ref.id))) {
       servers.push(this.createAutomationMcpResource(() => ref.id));
     }

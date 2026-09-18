@@ -21,7 +21,9 @@ export function codexMcpConfig(configs: McpServerConfig[] = []): Record<string, 
         http_headers: Object.fromEntries(config.headers.map(({ name, value }) => [name, value])),
       };
     } else {
-      throw new Error(`Codex cannot connect to the SSE MCP server "${config.name}". Use a streamable HTTP or stdio endpoint.`);
+      throw new Error(
+        `Codex cannot connect to the SSE MCP server "${config.name}". Use a streamable HTTP or stdio endpoint.`,
+      );
     }
   }
   return configs.length ? { mcp_servers: servers } : {};

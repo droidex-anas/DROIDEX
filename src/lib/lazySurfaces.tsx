@@ -3,6 +3,7 @@ import type { UtilityTool } from './utilityPanel';
 import { PanelSkeleton, UtilityPaneSkeleton } from '../components/skeletons/WorkspaceSkeletons';
 
 export const LAZY_SURFACE_LOADERS = {
+  projects: () => import('../features/projects/ProjectsRoute'),
   settings: () => import('../components/SettingsPanel'),
   commandPalette: () => import('../components/CommandPalette'),
   specWiki: () => import('../components/SpecWikiModal'),
@@ -46,6 +47,7 @@ export const LazySpecWikiModal = lazy(LAZY_SURFACE_LOADERS.specWiki);
 export const LazyOnboardingWizard = lazy(LAZY_SURFACE_LOADERS.onboarding);
 export const LazyMissionControl = lazy(LAZY_SURFACE_LOADERS.missionControl);
 export const LazyPullRequestsView = lazy(LAZY_SURFACE_LOADERS.pullRequests);
+export const LazyProjectsRoute = lazy(LAZY_SURFACE_LOADERS.projects);
 export const LazyAutomationsRoute = lazy(LAZY_SURFACE_LOADERS.automations);
 export const LazyReviewPanel = lazy(LAZY_SURFACE_LOADERS.review);
 export const LazyBrowserFocusWorkspace = lazy(LAZY_SURFACE_LOADERS.browser);
