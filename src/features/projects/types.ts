@@ -26,7 +26,6 @@ export interface ProjectView {
   title: string;
   cwd?: string;
   paused: boolean;
-  wakesLeft: number;
   launching: number;
   threads: ProjectThread[];
   queued: number;

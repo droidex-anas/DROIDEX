@@ -4,7 +4,17 @@ import type { Project, ThreadMessage } from './types.js';
 
 const MAX_ACTIVE = 2;
 
+/* A project's threads and its lead wake each other as work settles, which is the
+   point; two of them answering each other forever is not. There is no allowance
+   to spend — a project runs as long as it is making progress — but a burst this
+   far above the pace of real turns is a loop, and DROIDEX holds the project so a
+   person can look. The marks live in memory: a restart already pauses every
+   project. */
+const LOOP_WINDOW_MS = 5 * 60_000;
+const LOOP_LIMIT = 60;
+
 export class ProjectWakeQueue {
+  private readonly recent = new Map<string, number[]>();
   private readonly generations = new Map<string, number>();
   private readonly queued = new Set<Project>();
   private readonly pumping = new Map<string, Promise<void>>();
@@ -28,6 +38,7 @@ export class ProjectWakeQueue {
   }
 
   invalidate(project: Project): void {
+    this.recent.delete(project.id);
     this.generations.set(project.id, (this.generations.get(project.id) ?? 0) + 1);
     this.queued.delete(project);
     this.capacityWaiting.delete(project.id);
@@ -61,6 +72,7 @@ export class ProjectWakeQueue {
 
   close(): void {
     this.closed = true;
+    this.recent.clear();
     if (this.scheduled) clearImmediate(this.scheduled);
     this.scheduled = undefined;
     this.queued.clear();
@@ -104,14 +116,23 @@ export class ProjectWakeQueue {
     });
   }
 
+  /** False when this project has woken far more often than work could explain. */
+  private admit(project: Project): boolean {
+    const now = Date.now();
+    const marks = (this.recent.get(project.id) ?? []).filter((at) => now - at < LOOP_WINDOW_MS);
+    marks.push(now);
+    this.recent.set(project.id, marks);
+    return marks.length <= LOOP_LIMIT;
+  }
+
   private async deliver(project: Project, target: string): Promise<void> {
     const isCurrent = this.guard(project);
     if (!isCurrent()) return;
-    if (project.wakesLeft === 0) {
+    if (!this.admit(project)) {
       this.fail(
         project,
         new Error(
-          'Automatic wake allowance reached. Review the project and resume to allow 20 more wakes.',
+          `DROIDEX held this project: ${String(LOOP_LIMIT)} deliveries in ${String(LOOP_WINDOW_MS / 60_000)} minutes reads as threads talking in circles rather than working. Review them and resume.`,
         ),
       );
       await this.save();
@@ -124,7 +145,6 @@ export class ProjectWakeQueue {
     project.pending = project.pending.filter((message) => !ids.has(message.id));
     const claim = { state: 'sending' as const, messages };
     project.delivery = claim;
-    project.wakesLeft -= 1;
     await this.save();
 
     let receipt: AutomationDeliveryReceipt;
@@ -149,7 +169,8 @@ export class ProjectWakeQueue {
     if (project.delivery === claim) delete project.delivery;
     if (receipt.status === 'busy') {
       project.pending.unshift(...messages);
-      project.wakesLeft += 1;
+      // A recipient that was busy never woke, so it does not count as a lap.
+      this.recent.get(project.id)?.pop();
       await this.save();
       // A cancelled generation cannot put a resumed recipient back to sleep.
       if (!isCurrent()) return;

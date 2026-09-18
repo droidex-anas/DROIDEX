@@ -16,7 +16,6 @@ function isProjectMetadata(value: Record<string, unknown>): boolean {
     text(value.title, 120) &&
     (value.cwd === undefined || text(value.cwd, 4_096)) &&
     typeof value.paused === 'boolean' &&
-    count(value.wakesLeft, 20) &&
     count(value.launching, 8) &&
     count(value.queued, 64) &&
     count(value.uncertain, 64) &&

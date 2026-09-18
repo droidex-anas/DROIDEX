@@ -181,7 +181,6 @@ test('busy owners retain messages; sibling completions batch into one later turn
   await drain();
   assert.equal(h.sent.length, 1);
   assert.equal(h.projects.list()[0]?.queued, 0);
-  assert.equal(h.projects.list()[0]?.wakesLeft, 19);
 });
 
 test('questions return immediately and suppress redundant child completion results', async (t) => {
@@ -232,7 +231,6 @@ test('pause cancels a pending wake after asynchronous admission work', async (t)
   await drain();
   assert.equal(h.sent.length, 0);
   assert.equal(h.projects.list()[0]?.queued, 1);
-  assert.equal(h.projects.list()[0]?.wakesLeft, 20);
 });
 
 test('stop waits for a cancelled claim before removing target messages', async (t) => {
@@ -312,20 +310,25 @@ test('restart preserves an uncertain delivery and never replays it implicitly', 
   await h.projects.flush();
 });
 
-test('automatic wake allowance bounds feedback without resetting on agent messages', async (t) => {
+test('work keeps flowing, and only a runaway loop holds the project', async (t) => {
   const h = await harness();
   t.after(() => h.projects.close());
   const { main } = await h.root();
   const child = await h.projects.spawn(main, input);
-  for (let i = 0; i < 21; i += 1) {
+  const report = async (index: number) => {
     await h.streaming(child.appSessionId, true);
-    await h.finish(child.appSessionId, `Result ${i}`);
+    await h.finish(child.appSessionId, `Result ${String(index)}`);
     await drain();
     await h.finish(main);
-  }
-  assert.equal(h.sent.length, 20);
+  };
+  // Long-running work is never rationed: a project reports as often as it settles.
+  for (let i = 0; i < 40; i += 1) await report(i);
+  assert.equal(h.sent.length, 40);
+  assert.equal(h.projects.list()[0]?.paused, false);
+  // Past the pace any real turn could keep, DROIDEX holds it for a person.
+  for (let i = 40; i < 62; i += 1) await report(i);
   assert.equal(h.projects.list()[0]?.paused, true);
-  assert.equal(h.projects.list()[0]?.wakesLeft, 0);
+  assert.match(h.projects.list()[0]?.error ?? '', /talking in circles/);
 });
 
 test('native permissions and user questions never generate controller turns', async (t) => {

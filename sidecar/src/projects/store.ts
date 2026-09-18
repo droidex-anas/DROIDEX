@@ -39,7 +39,9 @@ const project = z
     id,
     title: z.string().min(1).max(120),
     paused: z.boolean(),
-    wakesLeft: z.number().int().min(0).max(20),
+    // Ledgers written before the allowance was dropped still load; the value is
+    // not carried into the project.
+    wakesLeft: z.number().int().min(0).max(20).optional(),
     launching: z.number().int().min(0).max(8),
     threads: z
       .array(
@@ -88,7 +90,13 @@ export class ProjectStore implements ProjectPersistence {
       if (error instanceof Error && 'code' in error && error.code === 'ENOENT') return [];
       throw error;
     }
-    const projects = ledger.parse(JSON.parse(raw));
+    // A ledger written before the wake allowance was dropped still loads; the
+    // value it carries is not part of a project any more.
+    const projects: Project[] = ledger.parse(JSON.parse(raw)).map((entry) => {
+      const project = { ...entry };
+      delete project.wakesLeft;
+      return project;
+    });
     validateLedger(projects);
     return projects;
   }

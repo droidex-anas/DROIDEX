@@ -17,7 +17,11 @@ four tools only move text between conversations DROIDEX already owns.
 
 A thread inherits the workspace, harness, model, reasoning level and autonomy
 of the chat that spawned it unless the call names different ones, and it can
-never exceed its owner's autonomy.
+never exceed its owner's autonomy. `thread_spawn` also takes
+`workspace: "worktree"` with an optional `branch` and `base`: DROIDEX cuts
+`<repo>/.worktrees/<branch>/<repo>` on a `thread/` branch from the commit the
+chat names and tells the thread to work there, so threads writing at the same
+time never share a tree.
 
 **Projects** lists every local project with what it is doing, and opens a
 project's main conversation. **New project** starts one from a first task and
@@ -47,21 +51,24 @@ An owner receives an ordinary new turn when it becomes available; no model
 polls or stays running to wait for another model. Ordinary user questions and
 permission requests still require the human, not approval by another agent.
 
-**Pause coordination** stops new automatic deliveries and launches, not turns
-already handed to a provider. Resume permits another 20 automatic wakes. This
-is a feedback-loop guard, not a token or monetary budget. Projects allows up
-to eight threads per project, three levels of descendants, 32 projects and 64
-queued/claimed messages per project. At most two Projects delivery turns run
+**Holding a project** stops new automatic deliveries and launches, not turns
+already handed to a provider. There is no wake allowance: a project reports as
+often as its threads settle, for as long as the work runs. DROIDEX holds it only
+when deliveries run far past the pace real turns could produce — 60 within five
+minutes — which reads as threads talking in circles rather than working.
+Projects allows up to eight threads per project, three levels of descendants,
+32 projects and 64 queued/claimed messages per project. At most two Projects delivery turns run
 at once; ordinary interactive sends keep their existing behavior.
 
-Threads currently share their owner's workspace. Separate worktrees and
-conflict resolution are not implemented; coordinate file ownership before
-parallel edits. DROIDEX must remain running. It cannot wake a sleeping computer.
+Threads share their owner's workspace unless the spawn asks for a worktree.
+Merging those branches back is still the user's call: DROIDEX opens the branch,
+it does not integrate it. DROIDEX must remain running; it cannot wake a sleeping
+computer.
 
 ## Not implemented
 
-Automatic worktree isolation and per-thread diff attribution remain outside
-this draft. Review still uses the ordinary conversation/workspace facilities;
+Automatic integration of thread branches and per-thread diff attribution remain
+outside this draft. Review still uses the ordinary conversation/workspace facilities;
 a shared checkout does not establish which agent authored each file change.
 
 ## Delivery and recovery
