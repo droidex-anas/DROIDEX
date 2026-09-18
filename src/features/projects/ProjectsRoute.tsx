@@ -9,6 +9,7 @@ import { createProject, refreshProjects, useProjects } from './client';
 import { NewProjectForm } from './NewProjectForm';
 import { projectSession } from './sessions';
 import { threadRows, type ThreadRow } from './threadBoard';
+import { ACTIVITY_GROUPS } from '../../lib/sidebarActivity';
 import type { ProjectView, ThreadInput } from './types';
 
 /* Projects home: every local project as one row that says what it is doing and
@@ -122,6 +123,8 @@ export function ProjectsRoute() {
   );
 }
 
+const ATTENTION: readonly string[] = ACTIVITY_GROUPS[0].statuses;
+
 function ProjectRow({
   project,
   rows,
@@ -133,8 +136,8 @@ function ProjectRow({
   now: number;
   onOpen: () => void;
 }) {
-  const waiting = rows.filter((row) => row.state === 'attention').length;
-  const working = rows.filter((row) => row.state === 'working').length;
+  const waiting = rows.filter((row) => ATTENTION.includes(row.status)).length;
+  const working = rows.filter((row) => row.status === 'working').length;
   const updatedAt = rows.reduce((newest, row) => Math.max(newest, row.updatedAt), 0);
   const folder = project.cwd ? workspaceName(project.cwd) : '';
   return (
