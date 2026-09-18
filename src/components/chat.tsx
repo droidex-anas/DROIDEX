@@ -2,7 +2,7 @@ import { lazy, memo, Suspense } from 'react';
 import { hasAppBlock } from './appBlockRuntime';
 import { isAutomationProposalCall } from '../features/automations/toolNames';
 import { isThreadSpawnCall, spawnedThread } from '../features/projects/threadToolNames';
-import { threadBrief, threadReports } from '../features/projects/ThreadNotices';
+import { threadBrief, threadReports } from '../features/projects/threadNotices';
 import type { FileChange } from '../lib/diff';
 import type { OpenReviewFileHandler } from '../lib/reviewFocus';
 import { copyTextForMessage } from '../features/transcript-reach/transcriptCopy';
@@ -52,18 +52,18 @@ const AutomationProposalCard = lazy(async () => {
   return { default: module.AutomationProposalCard };
 });
 
-const ThreadSpawnRow = lazy(async () => {
-  const module = await import('../features/projects/ThreadSpawnRow');
-  return { default: module.ThreadSpawnRow };
+const ThreadSpawnLine = lazy(async () => {
+  const module = await import('../features/projects/ThreadSpawnLine');
+  return { default: module.ThreadSpawnLine };
 });
 
 const ThreadReportNotice = lazy(async () => {
-  const module = await import('../features/projects/ThreadNotices');
+  const module = await import('../features/projects/ThreadNoticeCards');
   return { default: module.ThreadReportNotice };
 });
 
 const ThreadBriefNotice = lazy(async () => {
-  const module = await import('../features/projects/ThreadNotices');
+  const module = await import('../features/projects/ThreadNoticeCards');
   return { default: module.ThreadBriefNotice };
 });
 
@@ -137,7 +137,7 @@ function AutomationToolGroup({
     <div className="space-y-2.5">
       {spawns.map(({ call, result }) => (
         <Suspense key={call.id} fallback={null}>
-          <ThreadSpawnRow call={call} {...(result ? { result } : {})} />
+          <ThreadSpawnLine call={call} {...(result ? { result } : {})} />
         </Suspense>
       ))}
       {proposals.map(({ call, result }) => (
