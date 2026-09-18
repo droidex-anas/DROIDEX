@@ -1,7 +1,13 @@
 import { useEffect, useState } from 'react';
 import { useStoreSelector } from '../../hooks/useStore';
 import { refreshProviders } from '../../lib/commands';
-import type { Autonomy, ProviderKind, ProviderStatus, ReasoningEffort, SessionSummary } from '../../types/bridge';
+import type {
+  Autonomy,
+  ProviderKind,
+  ProviderStatus,
+  ReasoningEffort,
+  SessionSummary,
+} from '../../types/bridge';
 import { providerDefaultModel, providerUnavailableReason } from '../providers/providerIdentity';
 import type { ThreadInput } from './types';
 
@@ -13,7 +19,9 @@ export interface ThreadSelection {
 }
 
 export function useThreadSelection(owner: SessionSummary | undefined) {
-  useEffect(() => { refreshProviders(); }, []);
+  useEffect(() => {
+    refreshProviders();
+  }, []);
   const statuses = useStoreSelector((state) => state.providerStatuses);
   const defaultAutonomy = useStoreSelector((state) => state.defaultAutonomy);
   const [value, setValue] = useState<ThreadSelection>(() => ({
@@ -48,13 +56,15 @@ export function buildThreadInput(
 ): ThreadInput {
   const prompt = draft.prompt.trim();
   const modelId = value.modelId || catalog.defaultModel?.id;
-  const reasoning = value.reasoning && catalog.efforts.includes(value.reasoning)
-    ? value.reasoning
-    : undefined;
+  const reasoning =
+    value.reasoning && catalog.efforts.includes(value.reasoning) ? value.reasoning : undefined;
   const title = draft.title.trim() || prompt.split('\n')[0].slice(0, 80);
   const cwd = draft.workspace.trim();
   return {
-    title, prompt, provider: value.provider, autonomy: value.autonomy,
+    title,
+    prompt,
+    provider: value.provider,
+    autonomy: value.autonomy,
     ...(cwd ? { cwd } : {}),
     ...(modelId ? { modelId } : {}),
     ...(reasoning ? { reasoningEffort: reasoning } : {}),

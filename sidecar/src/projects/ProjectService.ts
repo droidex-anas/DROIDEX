@@ -74,7 +74,12 @@ export class ProjectService {
       paused: project.paused,
       wakesLeft: project.wakesLeft,
       launching: project.launching,
-      threads: project.threads.map(({ reply: _reply, ...thread }) => thread),
+      threads: project.threads.map((thread) => ({
+        appSessionId: thread.appSessionId,
+        title: thread.title,
+        waiting: thread.waiting,
+        ...(thread.ownerAppSessionId ? { ownerAppSessionId: thread.ownerAppSessionId } : {}),
+      })),
       queued: project.pending.length,
       uncertain: project.delivery?.state === 'uncertain' ? project.delivery.messages.length : 0,
       uncertainTargets:
@@ -205,7 +210,10 @@ export class ProjectService {
       return;
     }
     if (event.type !== 'session.updated' && event.type !== 'session.created') return;
-    const session = event.session;
+    await this.observeSession(event.session);
+  }
+
+  private async observeSession(session: SessionSummary): Promise<void> {
     const project = this.membership.get(session.appSessionId);
     if (!project) return;
     const thread = this.thread(project, session.appSessionId);

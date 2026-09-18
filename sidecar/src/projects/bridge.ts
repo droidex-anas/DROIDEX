@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import type { ClientCommand, ServerEvent } from '../protocol.js';
+import type { ServerEvent } from '../protocol.js';
 import type { ProjectService } from './ProjectService.js';
 import { threadInputSchema } from './store.js';
 import type { ProjectEvent } from './types.js';
@@ -52,15 +52,10 @@ type Reply = Extract<ProjectEvent, { type: 'project.result' }>;
 export function createProjectCommandHandler(
   ready: Promise<ProjectService>,
   emit: (event: ServerEvent) => void,
-): (command: ClientCommand) => Promise<boolean> {
+): (command: unknown) => Promise<boolean> {
   const requests = new Map<string, { input: string; reply: Promise<Reply>; settled: boolean }>();
   return async (value) => {
-    if (
-      !value ||
-      typeof value.type !== 'string' ||
-      (!value.type.startsWith('project.') && !value.type.startsWith('projects.'))
-    )
-      return false;
+    if (!isProjectRequest(value)) return false;
     const parsed = commandSchema.safeParse(value);
     if (!parsed.success) {
       if ('requestId' in value && typeof value.requestId === 'string') {
@@ -174,4 +169,10 @@ async function runCommand(
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
+}
+
+function isProjectRequest(value: unknown): value is Record<string, unknown> {
+  if (!value || typeof value !== 'object' || !('type' in value) || typeof value.type !== 'string')
+    return false;
+  return value.type.startsWith('project.') || value.type.startsWith('projects.');
 }
