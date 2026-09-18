@@ -6,7 +6,7 @@
 // Written by ProjectWakeQueue's wakePrompt and ProjectService's brief; each
 // pair must stay in step.
 const REPORT_PREFIX = 'From DROIDEX, not the user: your project threads reported.';
-const BRIEF_PREFIX = 'You are an independent DROIDEX thread:';
+const BRIEF_PREFIXES = ['You are an independent DROIDEX thread:', 'You lead a DROIDEX project.'];
 const BRIEF_TASK = '\nTask:\n';
 
 export interface ThreadReport {
@@ -30,7 +30,8 @@ export function threadReports(text: string | undefined): ThreadReport[] | null {
 
 /** The task a thread opened with, without the instructions DROIDEX added. */
 export function threadBrief(text: string | undefined): string | null {
-  if (!text?.startsWith(BRIEF_PREFIX)) return null;
+  if (!BRIEF_PREFIXES.some((prefix) => text?.startsWith(prefix))) return null;
+  if (text === undefined) return null;
   const marker = text.indexOf(BRIEF_TASK);
   const task = marker < 0 ? '' : text.slice(marker + BRIEF_TASK.length).trim();
   return task || null;

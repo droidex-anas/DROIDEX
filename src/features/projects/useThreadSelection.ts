@@ -23,12 +23,13 @@ export function useThreadSelection(owner: SessionSummary | undefined) {
     refreshProviders();
   }, []);
   const statuses = useStoreSelector((state) => state.providerStatuses);
-  const defaultAutonomy = useStoreSelector((state) => state.defaultAutonomy);
   const [value, setValue] = useState<ThreadSelection>(() => ({
     provider: owner?.provider ?? 'droid',
     modelId: owner?.modelId ?? '',
     reasoning: undefined,
-    autonomy: owner?.autonomy ?? defaultAutonomy,
+    // The project's chat runs the work and answers to the user, so it starts at
+    // full autonomy; a thread it spawns can never exceed what it is set to.
+    autonomy: owner?.autonomy ?? 'high',
   }));
   return { value, setValue, catalog: selectionCatalog(value, statuses) };
 }
