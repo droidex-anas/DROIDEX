@@ -51,12 +51,13 @@ export class ProjectService {
     return project;
   }
 
-  async spawn(input: SpawnThreadInput): Promise<{ clientRef: string }> {
+  async spawn(input: SpawnThreadInput): Promise<{ clientRef: string; threadId: string }> {
     await this.ready;
     const project = this.requireProject(input.projectId);
     const parent = this.requireThread(project, input.parentId);
     const source = this.requireSummary(parent.sessionId);
     const ref = `project:${randomUUID()}`;
+    const threadId = randomUUID();
     this.spawning.set(ref, {
       projectId: project.id, parentId: parent.id, task: input.task,
       title: input.title?.trim() || shortTitle(input.task),
@@ -67,7 +68,7 @@ export class ProjectService {
       interactionMode: 'auto', modelId: input.model, reasoningEffort: input.reasoning,
       autonomy: input.autonomy ?? source.autonomy,
     });
-    return { clientRef: ref };
+    return { clientRef: ref, threadId } as { clientRef: string; threadId: string };
   }
 
   async inspect(projectId: string): Promise<Project> {
