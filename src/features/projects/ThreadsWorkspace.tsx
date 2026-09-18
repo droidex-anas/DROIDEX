@@ -6,7 +6,7 @@ import { INLINE_CARD_DURATION_S, INLINE_CARD_EASE } from '../../components/inlin
 import { sessionAttention } from '../../lib/sessionAttention';
 import { workspaceName } from '../../lib/workspaces';
 import type { UtilityTab } from '../../lib/utilityPanel';
-import { pauseProject, spawnThread, stopThread, useProjects } from './client';
+import { spawnThread, useProjects } from './client';
 import { ThreadDetail } from './ThreadDetail';
 import { ThreadList } from './ThreadList';
 import { projectForSession, threadRows } from './threadBoard';
@@ -77,10 +77,6 @@ export function ThreadsWorkspace({ tab }: { tab: UtilityTab }) {
             onBack={() => {
               showThread(null);
             }}
-            onStop={() => {
-              const main = project?.threads.find((thread) => !thread.ownerAppSessionId);
-              if (main) void stopThread(main.appSessionId, open.appSessionId);
-            }}
             onOpenInChat={() => {
               dispatch({ type: 'SET_ACTIVE_SESSION', id: open.appSessionId });
             }}
@@ -92,11 +88,7 @@ export function ThreadsWorkspace({ tab }: { tab: UtilityTab }) {
             now={now}
             busy={starter.busy || Boolean(project?.launching)}
             error={starter.error === '' ? (project?.error ?? '') : starter.error}
-            paused={project?.paused ?? false}
-            uncertain={project?.uncertain ?? 0}
-            onResume={() => {
-              if (project) void pauseProject(project.id, false, true);
-            }}
+            activeAppSessionId={session?.appSessionId}
             onOpenThread={showThread}
             onStartThread={starter.start}
           />
