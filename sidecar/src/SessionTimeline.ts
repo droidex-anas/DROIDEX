@@ -432,6 +432,30 @@ export class SessionTimeline {
     });
   }
 
+  // A prompt nobody typed: the parent agent's brief to one of its children.
+  // `recordPrompt` only persists, because the renderer draws the user's own
+  // prompt as it is sent; this one has never been drawn, so it goes through
+  // `append` and reaches the child's pane as the same bubble the chat gives a
+  // user's prompt.
+  appendPrompt(
+    appSessionId: string,
+    text: string,
+    sourceSessionId = appSessionId,
+    role: SessionRole = 'primary',
+  ): void {
+    const now = this.dependencies.now ?? Date.now;
+    this.append({
+      id: `prompt-${now().toString(36)}-${(this.statusSeq++).toString(36)}`,
+      appSessionId,
+      sourceSessionId,
+      role,
+      ts: now(),
+      kind: 'text',
+      author: 'user',
+      text,
+    });
+  }
+
   appendCompaction(
     appSessionId: string,
     removedCount: number,

@@ -237,11 +237,12 @@ export class ChildSessions {
       if (observed.done)
         this.complete(child, observed.status === 'failed' ? 'failed' : 'completed');
       else this.commit(child);
+      // The parent agent is the sender, so the brief reads as a prompt in the
+      // agent's pane rather than as a status line.
       if (child.prompt && child.prompt !== previousPrompt)
-        this.d.timeline.appendStatus(
+        this.d.timeline.appendPrompt(
           child.identity.parentAppSessionId,
-          `Task prompt\n\n${child.prompt}`,
-          undefined,
+          child.prompt,
           child.identity.childSessionId,
           child.role,
         );
