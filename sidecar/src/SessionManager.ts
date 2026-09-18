@@ -1034,6 +1034,15 @@ export class SessionManager {
     };
   }
 
+  projectSessionSummary(appSessionId: string): SessionSummary | undefined {
+    return this.registry.resolveSummary(appSessionId);
+  }
+
+  async deliverProjectWake(appSessionId: string, prompt: string): Promise<boolean> {
+    const receipt = await this.lifecycle.deliverScheduled(appSessionId, prompt, () => true);
+    return receipt.status === 'accepted';
+  }
+
   async validateAutomationSelection(
     modelId: string,
     reasoningEffort: ReasoningEffort,
