@@ -30,6 +30,8 @@ export class ProjectWakeQueue {
   invalidate(project: Project): void {
     this.generations.set(project.id, (this.generations.get(project.id) ?? 0) + 1);
     this.queued.delete(project);
+    this.capacityWaiting.delete(project.id);
+    for (const thread of project.threads) this.waiting.delete(thread.appSessionId);
   }
 
   kick(project: Project): void {
@@ -148,12 +150,14 @@ export class ProjectWakeQueue {
     if (receipt.status === 'busy') {
       project.pending.unshift(...messages);
       project.wakesLeft += 1;
+      await this.save();
+      // A cancelled generation cannot put a resumed recipient back to sleep.
+      if (!isCurrent()) return;
       if (receipt.retryOn === 'capacity') {
         if (this.capacityRevision === capacityRevision) this.capacityWaiting.add(project.id);
       } else if (this.revisions.get(target) === targetRevision) {
         this.waiting.add(target);
       }
-      await this.save();
       return;
     }
 
