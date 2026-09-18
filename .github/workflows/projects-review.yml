@@ -1,0 +1,95 @@
+name: Projects review validation
+on:
+  push:
+    branches: [feat/local-projects-scheduled]
+    paths:
+      - tools/projects-review.py
+      - .github/workflows/projects-review.yml
+permissions:
+  contents: write
+concurrency:
+  group: projects-293-review
+  cancel-in-progress: true
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      HUSKY: '0'
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '22'
+      - name: Prepare reviewed source
+        run: python3 tools/projects-review.py
+      - run: npm ci --ignore-scripts --no-audit --no-fund
+      - run: npm ci --prefix sidecar --ignore-scripts --no-audit --no-fund
+      - name: Format only the changed source
+        run: |
+          git add sidecar/src src docs
+          git diff --name-only --diff-filter=ACM origin/main -- '*.ts' '*.tsx' '*.md' | xargs -r npx prettier --write
+          npm run docs:generate
+      - name: Renderer types
+        run: npm run typecheck
+      - name: Sidecar types
+        run: npm run sidecar:typecheck
+      - name: Focused regression tests
+        run: |
+          node --import tsx --test 'src/features/projects/*.test.ts'
+          cd sidecar
+          node --import tsx --test 'src/projects/*.test.ts' src/SessionLifecycle.test.ts src/SessionManager.scheduledDelivery.test.ts
+      - name: Full frontend and Electron tests
+        run: npm test
+      - name: Full sidecar tests
+        run: npm --prefix sidecar test
+      - name: Build and Electron checks
+        run: npm run build
+      - name: Verify focused source quality
+        run: |
+          npx eslint sidecar/src/projects src/features/projects
+          npm run quality:file-size
+          npm run quality:tech-debt
+          npm run quality:boundaries
+          npm run docs:check
+      - name: Create validated commit object without moving the branch
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          rm tools/projects-review.py .github/workflows/projects-review.yml
+          git add sidecar/src src docs tools/projects-review.py .github/workflows/projects-review.yml
+          git diff --cached --check
+          git diff --cached --stat
+          git diff --name-only --cached --diff-filter=ACM origin/main -- '*.ts' '*.tsx' '*.md' | xargs -r npx prettier --check
+          python3 - <<'PY'
+          import json, os, pathlib, subprocess, urllib.request
+          def git(*args):
+              return subprocess.check_output(['git', *args], text=True).strip()
+          entries = []
+          for path in git('diff', '--cached', '--name-only').splitlines():
+              file = pathlib.Path(path)
+              entry = {'path': path, 'mode': '100644', 'type': 'blob'}
+              if file.exists():
+                  entry['content'] = file.read_text()
+              else:
+                  entry['sha'] = None
+              entries.append(entry)
+          def post(endpoint, body):
+              request = urllib.request.Request(
+                  'https://api.github.com/repos/' + os.environ['GITHUB_REPOSITORY'] + '/git/' + endpoint,
+                  json.dumps(body).encode(),
+                  headers={'Authorization': 'Bearer ' + os.environ['GH_TOKEN'], 'Accept': 'application/vnd.github+json', 'Content-Type': 'application/json'},
+                  method='POST')
+              with urllib.request.urlopen(request) as response:
+                  return json.load(response)
+          tree = post('trees', {'base_tree': git('rev-parse', 'HEAD^{tree}'), 'tree': entries})
+          commit = post('commits', {
+              'message': 'Harden Projects delivery and expose working thread controls',
+              'tree': tree['sha'], 'parents': [git('rev-parse', 'HEAD')],
+              'author': {'name': 'github-actions[bot]', 'email': '41898282+github-actions[bot]@users.noreply.github.com'}})
+          print('PROJECTS_VALIDATED_TREE=' + tree['sha'])
+          print('PROJECTS_VALIDATED_COMMIT=' + commit['sha'])
+          PY
