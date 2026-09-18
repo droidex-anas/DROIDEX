@@ -3,6 +3,7 @@ import { ProjectService } from './projects/ProjectService.js';
 import { ProjectStore } from './projects/store.js';
 import { ProjectSessions } from './projects/sessions.js';
 import { createProjectCommandHandler } from './projects/bridge.js';
+import { registerProjectService } from './projects/service.js';
 import {
   configureAutomationManager,
   type AutomationManager,
@@ -79,6 +80,7 @@ const projectsReady = ProjectService.open(
   if (shuttingDown) service.close();
   return service;
 });
+registerProjectService(projectsReady);
 void projectsReady.catch(reportProjectError);
 const handleProjectCommand = createProjectCommandHandler(projectsReady, (event) =>
   server.broadcast(event),

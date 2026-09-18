@@ -590,6 +590,7 @@ type Action =
       cwd?: string;
       filePath?: string;
       agentId?: string;
+      threadId?: string;
     }
   | { type: 'CLOSE_UTILITY_TAB'; tabId: string; appSessionId?: string }
   | { type: 'ACTIVATE_UTILITY_TAB'; tabId: string }
@@ -602,6 +603,7 @@ type Action =
       filePath?: string;
       label?: string;
       agentId?: string | null;
+      threadId?: string | null;
     }
   | { type: 'SET_UTILITY_PANEL_OPEN'; open: boolean }
   | { type: 'SET_REVIEW_OPEN'; open: boolean }
@@ -1634,6 +1636,7 @@ function baseReducer(state: AppState, action: Action): AppState {
           cwd: action.cwd,
           filePath: action.filePath,
           agentId: action.agentId,
+          threadId: action.threadId,
         },
       );
       return {
@@ -1695,6 +1698,7 @@ function baseReducer(state: AppState, action: Action): AppState {
         filePath: action.filePath,
         label: action.label,
         agentId: action.agentId,
+        threadId: action.threadId,
       });
       if (panel === current) return state;
       return {

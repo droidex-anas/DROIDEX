@@ -1,29 +1,30 @@
 import { useState, type SyntheticEvent } from 'react';
-import { ArrowUp, FolderOpen } from 'lucide-react';
+import { ArrowUp, FolderOpen } from '@droidex/icons';
 import { pickDirectory } from '../../lib/desktop';
-import type { SessionSummary } from '../../types/bridge';
 import { ThreadSettings } from './ThreadSettings';
 import { buildThreadInput, useThreadSelection } from './useThreadSelection';
 import type { ThreadInput } from './types';
 
-export function NewThreadForm({
-  owner,
+/* Starting a project: its first task, and the settings its main conversation
+   runs with. Threads it spawns later inherit these, so this is the only place
+   in Projects that asks for a harness, a model or an autonomy level. */
+
+export function NewProjectForm({
   cwd,
   onSubmit,
   onCancel,
 }: {
-  owner?: SessionSummary;
   cwd: string;
   onSubmit: (input: ThreadInput) => Promise<void>;
   onCancel: () => void;
 }) {
-  const selection = useThreadSelection(owner);
+  const selection = useThreadSelection(undefined);
   const [draft, setDraft] = useState({ title: '', prompt: '', workspace: cwd });
   const [pending, setPending] = useState(false);
   const [error, setError] = useState('');
   const unavailable = selection.catalog.unavailable;
   const blocked = pending || !draft.prompt.trim() || Boolean(unavailable);
-  const submitLabel = owner ? 'Start thread' : 'Create project';
+  const submitLabel = 'Create project';
   const shownError = error || unavailable;
 
   async function submit(event: SyntheticEvent<HTMLFormElement>): Promise<void> {
@@ -54,13 +55,10 @@ export function NewThreadForm({
       onSubmit={(event) => void submit(event)}
       className="mx-auto w-full max-w-2xl rounded-2xl border border-droid-border/60 bg-droid-elevated/25 p-5"
     >
-      <h2 className="mb-1 text-lg font-medium tracking-tight">
-        {owner ? 'New thread' : 'New project'}
-      </h2>
-      <p className="mb-5 text-xs text-droid-text-muted">
-        {owner
-          ? `Managed by ${owner.title}`
-          : 'Start a main conversation, then add independent threads.'}
+      <h2 className="mb-1 text-[15px] font-semibold tracking-tight">New project</h2>
+      <p className="mb-5 text-[12px] leading-5 text-droid-text-muted">
+        One conversation leads the work. It can spread that work across threads, and every thread
+        inherits these settings.
       </p>
       <label className="block text-xs text-droid-text-secondary">
         Name
@@ -96,32 +94,30 @@ export function NewThreadForm({
         disabled={pending}
         onChange={selection.setValue}
       />
-      {!owner && (
-        <label className="mb-4 block text-xs text-droid-text-secondary">
-          Workspace
-          <div className="mt-1 flex gap-2">
-            <input
-              value={draft.workspace}
-              onChange={(event) => {
-                setDraft({ ...draft, workspace: event.target.value });
-              }}
-              disabled={pending}
-              maxLength={4_096}
-              placeholder="Optional absolute folder path"
-              className="min-w-0 flex-1 rounded-xl border border-droid-border/50 bg-droid-bg px-3 py-2 outline-none focus-visible:ring-2 focus-visible:ring-droid-text-muted"
-            />
-            <button
-              type="button"
-              aria-label="Choose workspace folder"
-              disabled={pending}
-              onClick={() => void chooseFolder()}
-              className="rounded-xl px-3 hover:bg-droid-elevated focus-visible:ring-2 focus-visible:ring-droid-text-muted"
-            >
-              <FolderOpen size={16} />
-            </button>
-          </div>
-        </label>
-      )}
+      <label className="mb-4 block text-xs text-droid-text-secondary">
+        Workspace
+        <div className="mt-1 flex gap-2">
+          <input
+            value={draft.workspace}
+            onChange={(event) => {
+              setDraft({ ...draft, workspace: event.target.value });
+            }}
+            disabled={pending}
+            maxLength={4_096}
+            placeholder="Optional absolute folder path"
+            className="min-w-0 flex-1 rounded-xl border border-droid-border/50 bg-droid-bg px-3 py-2 outline-none focus-visible:ring-2 focus-visible:ring-droid-text-muted"
+          />
+          <button
+            type="button"
+            aria-label="Choose workspace folder"
+            disabled={pending}
+            onClick={() => void chooseFolder()}
+            className="rounded-xl px-3 hover:bg-droid-elevated focus-visible:ring-2 focus-visible:ring-droid-text-muted"
+          >
+            <FolderOpen className="h-4 w-4" />
+          </button>
+        </div>
+      </label>
       {shownError && (
         <p role="alert" className="mb-3 text-xs leading-5 text-droid-text-secondary">
           {shownError}
@@ -142,7 +138,7 @@ export function NewThreadForm({
           className="flex items-center gap-2 rounded-xl bg-droid-text px-3 py-2 text-xs font-medium text-droid-bg transition-opacity hover:opacity-80 disabled:opacity-40"
         >
           {pending ? 'Starting…' : submitLabel}
-          <ArrowUp size={14} />
+          <ArrowUp className="h-3.5 w-3.5" />
         </button>
       </div>
     </form>

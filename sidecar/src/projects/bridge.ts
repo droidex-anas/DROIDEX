@@ -14,7 +14,7 @@ const commandSchema = z.discriminatedUnion('type', [
       type: z.literal('project.spawn'),
       ...requestId,
       source: id,
-      input: threadInputSchema.omit({ cwd: true }),
+      input: threadInputSchema.omit({ cwd: true }).partial({ provider: true, autonomy: true }),
     })
     .strict(),
   z

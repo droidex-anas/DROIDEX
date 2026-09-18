@@ -1,5 +1,6 @@
 import { isUnattendedAutomationSession } from './automations/AutomationManager.js';
 import { shouldAutoApproveAutomationTool } from './automations/permissionPolicy.js';
+import { shouldAutoApproveThreadTool } from './projects/threadTools.js';
 import {
   isAlwaysOutcome,
   isApprovalOutcome,
@@ -91,13 +92,13 @@ export class SessionInteractions {
   ): Promise<PermissionOutcome> {
     const liveSession = this.dependencies.getLiveSession(sessionId);
     const autonomy = liveSession?.summary.autonomy;
-    const tool = approval.automationTool;
-    const safeForUnattended =
+    const tool = approval.appTool;
+    const autoApproved = (unattended: boolean) =>
       tool !== undefined &&
-      shouldAutoApproveAutomationTool(tool.serverName, tool.toolName, autonomy, true);
-    const safeForInteractive =
-      tool !== undefined &&
-      shouldAutoApproveAutomationTool(tool.serverName, tool.toolName, autonomy);
+      (shouldAutoApproveAutomationTool(tool.serverName, tool.toolName, autonomy, unattended) ||
+        shouldAutoApproveThreadTool(tool.serverName, tool.toolName, autonomy, unattended));
+    const safeForUnattended = autoApproved(true);
+    const safeForInteractive = autoApproved(false);
     if (
       safeForUnattended ||
       (safeForInteractive &&

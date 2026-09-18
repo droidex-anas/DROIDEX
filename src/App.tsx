@@ -83,6 +83,7 @@ import {
   LazyBrowserFocusWorkspace,
   LazyCommandPalette,
   LazyAgentsWorkspace,
+  LazyThreadsWorkspace,
   LazyFilesWorkspace,
   LazyMissionControl,
   LazyPullRequestsView,
@@ -831,6 +832,13 @@ export default function App() {
                                 );
                               }}
                             />
+                          </Suspense>
+                        );
+                      }
+                      if (tab.tool === 'threads') {
+                        return (
+                          <Suspense fallback={utilityToolFallback('threads')}>
+                            <LazyThreadsWorkspace tab={tab} />
                           </Suspense>
                         );
                       }

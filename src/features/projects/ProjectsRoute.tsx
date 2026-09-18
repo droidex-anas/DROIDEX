@@ -1,180 +1,196 @@
-import { useState, type ReactNode } from 'react';
-import { MessageCirclePlus, Plus, RefreshCw } from 'lucide-react';
-import { useStoreDispatch, useStoreSelector } from '../../hooks/useStore';
-import { createProject, refreshProjects, spawnThread, useProjects } from './client';
-import { NewThreadForm } from './NewThreadForm';
-import { ProjectPanel } from './ProjectPanel';
+import { useState } from 'react';
+import { Plus, RefreshCw } from '@droidex/icons';
+import { shallowEqual, useStoreDispatch, useStoreSelector } from '../../hooks/useStore';
+import { useActivityDigests } from '../../hooks/useActivityDigests';
+import { sessionAttention } from '../../lib/sessionAttention';
+import { formatRelativeTime } from '../../lib/time';
+import { workspaceName } from '../../lib/workspaces';
+import { createProject, refreshProjects, useProjects } from './client';
+import { NewProjectForm } from './NewProjectForm';
 import { projectSession } from './sessions';
-import type { ThreadInput } from './types';
+import { threadRows, type ThreadRow } from './threadBoard';
+import type { ProjectView, ThreadInput } from './types';
+
+/* Projects home: every local project as one row that says what it is doing and
+   whether anything is waiting on the user. Opening a row is ordinary navigation
+   to that project's main conversation — its threads live in the chat's Threads
+   panel, so this view stays a list rather than a second workspace. */
 
 export function ProjectsRoute() {
   const snapshot = useProjects();
   const dispatch = useStoreDispatch();
-  const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [form, setForm] = useState<{ ownerId?: string } | null>(null);
-  const [pending, setPending] = useState(false);
-  const owner = useStoreSelector((state) => projectSession(state.sessions, form?.ownerId));
-  const cwd = useStoreSelector(
-    (state) => projectSession(state.sessions, state.activeAppSessionId)?.cwd ?? '',
+  const [creating, setCreating] = useState(false);
+  const [now] = useState(() => Date.now());
+  const state = useStoreSelector(
+    (current) => ({
+      sessions: current.sessions,
+      pendingPermissions: current.pendingPermissions,
+      pendingQuestions: current.pendingQuestions,
+      cwd: projectSession(current.sessions, current.activeAppSessionId)?.cwd ?? '',
+    }),
+    shallowEqual,
   );
-  const project =
-    snapshot.projects.find((item) => item.id === selectedId) ?? snapshot.projects.at(0);
+  const digests = useActivityDigests(true);
 
-  function openThread(appSessionId: string): void {
-    // Ordinary navigation preserves Review, diffs, browser and session controls.
-    dispatch({ type: 'SET_ACTIVE_SESSION', id: appSessionId });
-  }
-
-  async function submit(input: ThreadInput): Promise<void> {
-    setPending(true);
-    try {
-      if (form?.ownerId) {
-        if (!owner) throw new Error('The owning conversation is no longer available.');
-        const selection = { ...input };
-        delete selection.cwd;
-        openThread(await spawnThread(form.ownerId, selection));
-      } else {
-        setSelectedId(await createProject(input));
-      }
-      setForm(null);
-    } finally {
-      setPending(false);
-    }
+  function openProject(project: ProjectView): void {
+    const main = project.threads.find((thread) => !thread.ownerAppSessionId);
+    if (main) dispatch({ type: 'SET_ACTIVE_SESSION', id: main.appSessionId });
   }
 
-  let content: ReactNode = (
-    <Empty
-      loading={snapshot.loading}
-      failed={Boolean(snapshot.error)}
-      onCreate={() => {
-        setForm({});
-      }}
-    />
-  );
-  if (project) {
-    content = (
-      <ProjectPanel
-        key={project.id}
-        project={project}
-        onOpen={openThread}
-        onSpawn={(ownerId) => {
-          setForm({ ownerId });
-        }}
-      />
-    );
+  async function create(input: ThreadInput): Promise<void> {
+    const id = await createProject(input);
+    setCreating(false);
+    const project = snapshot.projects.find((item) => item.id === id);
+    if (project) openProject(project);
   }
-  if (form) {
-    content = (
-      <div className="overflow-auto px-6 py-8">
-        <NewThreadForm
-          key={form.ownerId ?? 'new'}
-          owner={owner}
-          cwd={cwd}
-          onSubmit={submit}
-          onCancel={() => {
-            setForm(null);
-          }}
-        />
-      </div>
-    );
-  }
+
+  const rows = (project: ProjectView) =>
+    threadRows(project, {
+      sessions: state.sessions,
+      attention: (id) => sessionAttention(id, state.pendingPermissions, state.pendingQuestions),
+      digests,
+    });
 
   return (
     <div className="flex h-full min-h-0 flex-col bg-droid-bg text-droid-text">
       <div data-electron-drag-region className="h-9 shrink-0" />
-      <div className="flex min-h-0 flex-1">
-        <aside
-          aria-label="Projects"
-          className="w-[236px] shrink-0 overflow-auto border-r border-droid-border/60 px-3 py-3"
-        >
-          <div className="mb-3 flex items-center justify-between px-2">
-            <span className="text-[11px] font-medium text-droid-text-muted">Projects</span>
+      <div className="min-h-0 flex-1 overflow-y-auto">
+        <div className="mx-auto w-full max-w-3xl px-6 pb-16 pt-4">
+          <div className="flex items-center gap-3 pb-5">
+            <h1 className="flex-1 text-[22px] font-semibold tracking-tight">Projects</h1>
             <button
               type="button"
-              aria-label="New project"
-              disabled={pending}
               onClick={() => {
-                setForm({});
+                setCreating((open) => !open);
               }}
-              className="rounded-lg p-1.5 text-droid-text-secondary hover:bg-droid-elevated focus-visible:ring-2 focus-visible:ring-droid-text-muted"
+              className="flex items-center gap-1.5 rounded-xl bg-droid-active px-3 py-1.5 text-[13px] font-medium text-droid-text transition-colors hover:bg-droid-elevated"
             >
-              <Plus size={14} />
+              <Plus className="h-3.5 w-3.5" />
+              New project
             </button>
           </div>
-          <div className="space-y-1">
-            {snapshot.projects.map((item) => (
-              <button
-                type="button"
-                key={item.id}
-                disabled={pending}
-                onClick={() => {
-                  setSelectedId(item.id);
-                  setForm(null);
-                }}
-                aria-current={project?.id === item.id ? 'page' : undefined}
-                className={`w-full rounded-xl px-3 py-2 text-left transition-colors focus-visible:ring-2 focus-visible:ring-droid-text-muted ${project?.id === item.id && !form ? 'bg-droid-active' : 'hover:bg-droid-elevated'}`}
-              >
-                <div className="truncate text-[13px] font-medium">{item.title}</div>
-                <div className="mt-0.5 text-[10px] text-droid-text-muted">
-                  {item.threads.length} threads{item.paused ? ' · Paused' : ''}
-                </div>
-              </button>
-            ))}
-          </div>
-        </aside>
-        <section aria-label="Project workspace" className="flex min-h-0 min-w-0 flex-1 flex-col">
+
           {snapshot.error && (
             <div
               role="alert"
-              className="flex items-center gap-3 border-b border-droid-border/50 px-6 py-3 text-xs text-droid-text-secondary"
+              className="mb-4 flex items-center gap-3 rounded-xl border border-droid-border px-4 py-3 text-[12px] text-droid-text-secondary"
             >
               <span className="flex-1">{snapshot.error}</span>
               <button
                 type="button"
                 onClick={refreshProjects}
-                className="rounded-lg p-1.5 hover:bg-droid-elevated"
                 aria-label="Reload projects"
+                className="rounded-lg p-1.5 hover:bg-droid-elevated"
               >
-                <RefreshCw size={14} />
+                <RefreshCw className="h-3.5 w-3.5" />
               </button>
             </div>
           )}
-          {content}
-        </section>
+
+          {creating && (
+            <div className="mb-5">
+              <NewProjectForm
+                cwd={state.cwd}
+                onSubmit={create}
+                onCancel={() => {
+                  setCreating(false);
+                }}
+              />
+            </div>
+          )}
+
+          {snapshot.projects.length === 0 && !creating ? (
+            <Empty loading={snapshot.loading} />
+          ) : (
+            <div className="flex flex-col gap-2">
+              {snapshot.projects.map((project) => (
+                <ProjectRow
+                  key={project.id}
+                  project={project}
+                  rows={rows(project)}
+                  now={now}
+                  onOpen={() => {
+                    openProject(project);
+                  }}
+                />
+              ))}
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );
 }
 
-function Empty({
-  loading,
-  failed,
-  onCreate,
+function ProjectRow({
+  project,
+  rows,
+  now,
+  onOpen,
 }: {
-  loading: boolean;
-  failed: boolean;
-  onCreate: () => void;
+  project: ProjectView;
+  rows: ThreadRow[];
+  now: number;
+  onOpen: () => void;
 }) {
+  const waiting = rows.filter((row) => row.state === 'attention').length;
+  const working = rows.filter((row) => row.state === 'working').length;
+  const updatedAt = rows.reduce((newest, row) => Math.max(newest, row.updatedAt), 0);
+  const folder = project.cwd ? workspaceName(project.cwd) : '';
   return (
-    <div className="mx-auto flex max-w-md flex-col items-center px-6 pt-24 text-center">
-      <div className="mb-4 rounded-2xl border border-droid-border/60 bg-droid-elevated/40 p-3">
-        <MessageCirclePlus size={20} className="text-droid-text-secondary" />
-      </div>
-      <h1 className="text-[20px] font-semibold tracking-tight">
-        {loading ? 'Loading projects…' : 'Projects'}
-      </h1>
-      <p className="mt-2 text-[12px] leading-5 text-droid-text-muted">
-        Independent conversations, one local workspace. Each thread keeps its own history.
-      </p>
-      {!loading && !failed && (
-        <button
-          type="button"
-          onClick={onCreate}
-          className="mt-5 rounded-xl bg-droid-text px-4 py-2 text-xs font-medium text-droid-bg"
-        >
-          Create project
-        </button>
+    <button
+      type="button"
+      onClick={onOpen}
+      data-testid="project-row"
+      className="flex items-center gap-4 rounded-2xl border border-droid-border bg-droid-surface/40 px-5 py-4 text-left transition-colors hover:border-droid-border-hover hover:bg-droid-elevated/40"
+    >
+      <span className="min-w-0 flex-1">
+        <span className="flex items-center gap-2.5">
+          <span className="truncate text-[15px] font-semibold text-droid-text">
+            {project.title}
+          </span>
+          {folder && <span className="truncate text-[12px] text-droid-text-muted">{folder}</span>}
+        </span>
+        <span className="mt-1 block truncate text-[13px] text-droid-text-secondary">
+          {summary(project, waiting, working, rows.length)}
+        </span>
+      </span>
+      {project.paused && (
+        <span className="shrink-0 rounded-full bg-droid-active/60 px-2.5 py-0.5 text-[12px] text-droid-text-muted">
+          Paused
+        </span>
       )}
+      <span className="w-14 shrink-0 text-right text-[12px] tabular-nums text-droid-text-muted">
+        {formatRelativeTime(updatedAt, now)}
+      </span>
+    </button>
+  );
+}
+
+function summary(project: ProjectView, waiting: number, working: number, total: number): string {
+  const parts: string[] = [];
+  if (waiting > 0) parts.push(plural(waiting, 'thread needs you', 'threads need you'));
+  if (working > 0) parts.push(plural(working, 'thread working', 'threads working'));
+  if (parts.length === 0)
+    parts.push(total === 0 ? 'No threads yet' : plural(total, 'thread settled', 'threads settled'));
+  if (project.queued > 0) parts.push(`${String(project.queued)} queued`);
+  return parts.join(' · ');
+}
+
+function plural(count: number, one: string, many: string): string {
+  return count === 1 ? `One ${one}` : `${String(count)} ${many}`;
+}
+
+function Empty({ loading }: { loading: boolean }) {
+  return (
+    <div className="rounded-2xl border border-droid-border px-6 py-10 text-center">
+      <h2 className="text-[15px] font-medium">
+        {loading ? 'Loading projects…' : 'No projects yet'}
+      </h2>
+      <p className="mx-auto mt-2 max-w-sm text-[13px] leading-6 text-droid-text-muted">
+        A project is one conversation that can run others. Start it with a task, then ask it to
+        spread the work across threads — each thread is its own chat you can open and steer.
+      </p>
     </div>
   );
 }

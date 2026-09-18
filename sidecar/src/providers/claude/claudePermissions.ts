@@ -4,11 +4,7 @@
 // the worker's whole deadline.
 import type { CanUseTool, PermissionMode, PermissionResult } from '@anthropic-ai/claude-agent-sdk';
 
-import {
-  AUTOMATION_MCP_SERVER_NAME,
-  isAutomationMutationTool,
-  normalizeMcpServerName,
-} from '../../automations/permissionPolicy.js';
+import { isAutomationMutationTool } from '../../automations/permissionPolicy.js';
 import { toolArgumentDigest } from '../../normalize.js';
 import type { Autonomy, PermissionKind } from '../../protocol.js';
 import { nextInteractionRequestId, type ProviderInteractions } from '../interactions.js';
@@ -118,9 +114,7 @@ async function approveTool(
     },
     confirmationType: CONFIRMATION_TYPES[kind],
     ...(signature ? { signature } : {}),
-    ...(mcp && normalizeMcpServerName(mcp.serverName) === AUTOMATION_MCP_SERVER_NAME
-      ? { automationTool: mcp }
-      : {}),
+    ...(mcp ? { appTool: mcp } : {}),
   });
   if (outcome === 'cancel')
     return { behavior: 'deny', message: 'The user stopped this tool.', interrupt: true };

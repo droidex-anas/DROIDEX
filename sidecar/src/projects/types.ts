@@ -11,6 +11,14 @@ export interface ThreadInput {
   cwd?: string;
 }
 
+/**
+ * What a spawn asks for. A model naming only the task inherits the harness,
+ * model, reasoning and autonomy of the conversation it spawns from, so a thread
+ * runs with the same brain and the same limits as the chat that ordered it.
+ */
+export type ThreadSpawnInput = Omit<ThreadInput, 'cwd' | 'provider' | 'autonomy'> &
+  Partial<Pick<ThreadInput, 'provider' | 'autonomy'>>;
+
 export interface ProjectThread {
   appSessionId: string;
   // The owner is another top-level conversation, not a harness subagent.
@@ -43,6 +51,8 @@ export interface Project {
 export interface ProjectView {
   id: string;
   title: string;
+  // The main conversation's workspace, when its session is still known.
+  cwd?: string;
   paused: boolean;
   wakesLeft: number;
   launching: number;
@@ -56,7 +66,7 @@ export interface ProjectView {
 export type ProjectCommand =
   | { type: 'projects.list' }
   | { type: 'project.create'; requestId: string; input: ThreadInput }
-  | { type: 'project.spawn'; requestId: string; source: string; input: Omit<ThreadInput, 'cwd'> }
+  | { type: 'project.spawn'; requestId: string; source: string; input: ThreadSpawnInput }
   | { type: 'project.send'; requestId: string; source: string; target: string; text: string }
   | { type: 'project.ask'; requestId: string; source: string; text: string }
   | { type: 'project.stop'; requestId: string; source: string; target: string }

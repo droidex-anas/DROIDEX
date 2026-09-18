@@ -2,7 +2,7 @@ import { useSyncExternalStore } from 'react';
 import { bridge } from '../../lib/bridge';
 import type { ServerEvent } from '../../types/bridge';
 import type { ProjectCommand, ProjectEvent } from './protocol';
-import type { ProjectView, ThreadInput } from './types';
+import type { ProjectView, ThreadInput, ThreadSpawnInput } from './types';
 
 type Result = Extract<ProjectEvent, { type: 'project.result'; ok: true }>;
 interface Snapshot {
@@ -43,10 +43,7 @@ export async function createProject(input: ThreadInput): Promise<string> {
   return result.projectId;
 }
 
-export async function spawnThread(
-  source: string,
-  input: Omit<ThreadInput, 'cwd'>,
-): Promise<string> {
+export async function spawnThread(source: string, input: ThreadSpawnInput): Promise<string> {
   const result = await send({
     type: 'project.spawn',
     requestId: crypto.randomUUID(),
