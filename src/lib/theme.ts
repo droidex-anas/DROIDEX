@@ -495,10 +495,18 @@ export function applyTheme(theme: ThemeSettings) {
   );
   // Semantic status colors are FIXED, never accent-derived, so success/warning
   // and diff add/remove always read as green/amber/red even when the accent is a
-  // neutral monochrome tone. Each scheme gets the shade that passes AA for
-  // 11–13px status text on its own canvas.
-  root.style.setProperty('--droid-green', bgIsDark ? '#4fae82' : '#1f7a4d');
-  root.style.setProperty('--droid-orange', bgIsDark ? '#d9913a' : '#9a5a0f');
+  // neutral monochrome tone. The light shades are tuned for the Default canvas
+  // and then darkened per theme only where a cooler or darker canvas would drop
+  // them below AA for 11–13px status text. Red clears AA on every built-in
+  // light canvas, so it always keeps its tuned shade.
+  root.style.setProperty(
+    '--droid-green',
+    bgIsDark ? '#4fae82' : statusColorOnLight('#1f7a4d', theme.bg),
+  );
+  root.style.setProperty(
+    '--droid-orange',
+    bgIsDark ? '#d9913a' : statusColorOnLight('#9a5a0f', theme.bg),
+  );
   root.style.setProperty('--droid-red', bgIsDark ? '#cf5d54' : '#b3312a');
   root.setAttribute('data-diff-style', theme.diffStyle);
   const diffPalette = diffPaletteForTheme(bgIsDark, theme.diffStyle);
@@ -590,6 +598,27 @@ function mixToContrast(hex: string, target: string, ratio: number): string {
     else faded = middle;
   }
   return mixHex(hex, target, readable);
+}
+
+// AA for normal text; status text runs 11–13px, so the large-text 3:1 tier
+// does not apply to it.
+const AA_NORMAL_TEXT = 4.5;
+
+/**
+ * A light theme's status shade, darkened toward black only as far as the given
+ * canvas demands. A canvas the tuned shade already reads on gets it back
+ * unchanged, so only the presets that actually fail AA shift.
+ */
+export function statusColorOnLight(hex: string, bg: string): string {
+  if (contrastRatio(hex, bg) >= AA_NORMAL_TEXT) return hex;
+  let light = 0;
+  let dark = 1;
+  for (let i = 0; i < 12; i++) {
+    const middle = (light + dark) / 2;
+    if (contrastRatio(mixHex(hex, '#000000', middle), bg) >= AA_NORMAL_TEXT) dark = middle;
+    else light = middle;
+  }
+  return mixHex(hex, '#000000', dark);
 }
 
 // sRGB channel -> linear-light value, for WCAG contrast checks.

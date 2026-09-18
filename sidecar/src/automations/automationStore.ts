@@ -1,4 +1,9 @@
-import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
+import {
+  automationFilesSchema,
+  automationScheduleSchema,
+  automationTargetSchema,
+} from './automationSchemas.js';
+import { mkdir, open, readFile, rename } from 'node:fs/promises';
 import { dirname } from 'node:path';
 import {
   isReasoningEffort,
@@ -17,11 +22,8 @@ import type {
   AutomationStore,
 } from './types.js';
 
-/**
- * DROIDEX keeps one canonical store shape: a file written by another version is
- * quarantined rather than migrated (see the hard-cut policy in AGENTS.md).
- */
-export const STORE_VERSION = 1;
+/** Additive fields default on read; incompatible store versions are quarantined. */
+const STORE_VERSION = 1;
 
 // Retention is deliberately tight: the whole store is serialized on every state
 // change and the snapshot is broadcast to every renderer, so history costs both
@@ -47,8 +49,13 @@ export function restoreAutomationStore(store: AutomationStore, snapshot: Automat
 /** True when this chat was started by an automation run, even if origins were trimmed. */
 export function storeHasRunSession(store: AutomationStore, appSessionId: string): boolean {
   if (store.sessionOrigins[appSessionId]) return true;
-  if (store.runs.some((run) => run.appSessionId === appSessionId)) return true;
-  return store.automations.some((automation) => automation.lastAppSessionId === appSessionId);
+  const matching = store.runs.filter((run) => run.appSessionId === appSessionId);
+  if (matching.length > 0)
+    return matching.some((run) => run.automation.target.kind === 'new-session');
+  return store.automations.some(
+    (automation) =>
+      automation.target.kind === 'new-session' && automation.lastAppSessionId === appSessionId,
+  );
 }
 
 export function isActiveRunStatus(status: AutomationRunStatus): boolean {
@@ -87,11 +94,7 @@ export class AutomationStoreFile {
     }
   }
 
-  /**
-   * Serializes the current store. Writes are queued so they cannot interleave,
-   * a queued write that has not started yet is superseded by the newer state,
-   * and a failed write is reported to its caller without poisoning the queue.
-   */
+  /** Coalesce writes not yet started; a failed write never poisons the queue. */
   write(store: AutomationStore): Promise<void> {
     this.pendingPayload = `${JSON.stringify(store)}\n`;
     if (this.pendingWrite) return this.pendingWrite;
@@ -114,8 +117,20 @@ export class AutomationStoreFile {
   private async writeAtomically(payload: string): Promise<void> {
     await mkdir(dirname(this.filePath), { recursive: true });
     const temporaryPath = `${this.filePath}.${String(process.pid)}`;
-    await writeFile(temporaryPath, payload, 'utf8');
+    const temporary = await open(temporaryPath, 'w', 0o600);
+    try {
+      await temporary.writeFile(payload, 'utf8');
+      await temporary.sync();
+    } finally {
+      await temporary.close();
+    }
     await rename(temporaryPath, this.filePath);
+    const directory = await open(dirname(this.filePath), 'r');
+    try {
+      await directory.sync();
+    } finally {
+      await directory.close();
+    }
   }
 }
 
@@ -198,13 +213,7 @@ export function buildAutomationSnapshot(
   };
 }
 
-/**
- * Queued and active runs are live work, never history, so they always survive.
- * Each automation also keeps its most recent settled run so a busy automation
- * cannot erase another one's last result. A settled isolated run still holding
- * a review chat is not history yet: closing that chat is what releases the
- * worktree.
- */
+/** Preserve unsettled runs, each latest result, and worktrees still open for review. */
 function retainRuns(store: AutomationStore): AutomationRun[] {
   const runs = store.runs;
   let excess = runs.length - MAX_RUNS;
@@ -262,7 +271,10 @@ function parseAutomation(value: unknown, now: number): Automation | null {
   const raw = recordValue(value);
   if (!raw || typeof raw.id !== 'string') return null;
   const input = parseStoredAutomationInput(raw);
-  if (!input) return null;
+  if (!input) {
+    console.error('Dropped an invalid automation record');
+    return null;
+  }
   try {
     const normalized = normalizeAutomationInput(input);
     const storedNextRunAt = finiteNumberOrNull(raw.nextRunAt);
@@ -367,13 +379,20 @@ function parseStoredAutomationInput(raw: Record<string, unknown>): AutomationInp
   ) {
     return null;
   }
+  const { target: storedTarget, files: storedFiles } = raw;
+  const schedule = automationScheduleSchema.safeParse(raw.schedule);
+  const target = automationTargetSchema.safeParse(storedTarget ?? { kind: 'new-session' });
+  const files = automationFilesSchema.safeParse(storedFiles ?? []);
+  if (!schedule.success || !target.success || !files.success) return null;
   const input: AutomationInput = {
+    target: target.data,
+    files: files.data,
     title: raw.title,
     prompt: raw.prompt,
     workspaceCwd: stringOrNull(raw.workspaceCwd),
     executionMode: raw.executionMode === 'worktree' ? 'worktree' : 'local',
     enabled: raw.enabled !== false,
-    schedule: raw.schedule as AutomationInput['schedule'],
+    schedule: schedule.data,
     modelId: stringOrNull(raw.modelId),
     reasoningEffort: isReasoningEffort(raw.reasoningEffort) ? raw.reasoningEffort : null,
     autonomy: isAutonomy(raw.autonomy) ? raw.autonomy : undefined,
@@ -392,7 +411,13 @@ function parseRunAutomationSnapshot(value: unknown): AutomationRun['automation']
   ) {
     return null;
   }
+  const { target: storedTarget, files: storedFiles } = raw;
+  const target = automationTargetSchema.safeParse(storedTarget ?? { kind: 'new-session' });
+  const files = automationFilesSchema.safeParse(storedFiles ?? []);
+  if (!target.success || !files.success) return null;
   return {
+    target: target.data,
+    files: files.data,
     id: raw.id,
     title: raw.title,
     prompt: raw.prompt,
@@ -443,9 +468,7 @@ function parseRunStatus(value: unknown): AutomationRunStatus | null {
 }
 
 function recordValue(value: unknown): Record<string, unknown> | null {
-  return value && typeof value === 'object' && !Array.isArray(value)
-    ? (value as Record<string, unknown>)
-    : null;
+  return isRecord(value) ? value : null;
 }
 
 function finiteNumber(value: unknown, fallback: number): number {
@@ -466,4 +489,8 @@ function isMissingFile(error: unknown): boolean {
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === 'object' && !Array.isArray(value);
 }

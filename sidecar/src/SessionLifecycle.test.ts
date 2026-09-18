@@ -12,6 +12,7 @@ import type {
   SessionSummary,
 } from './protocol.js';
 import { DroidProvider } from './providers/droid/DroidProvider.js';
+import { DroidProviderSession } from './providers/droid/DroidProviderSession.js';
 import type { ProviderQuestionAnswers } from './providers/interactions.js';
 import {
   SessionLifecycle,
@@ -91,6 +92,8 @@ function createHarness(ordinarySummaries: SessionSummary[] = []) {
   let enableAutoCompaction = (): Promise<boolean> => Promise.resolve(true);
   let compactionLimit = (): Promise<number> => Promise.resolve(800);
   let shutdownStarted = false;
+  let pendingInteractions = false;
+  let capacityReleases = 0;
   let closeChildren: (appSessionId: string) => Promise<void> = () => Promise.resolve();
   let killProcesses: (appSessionId: string) => Promise<void> = () => Promise.resolve();
   let emitSessionList: (closedProviderSessionId: string) => void | Promise<void> = () =>
@@ -228,12 +231,16 @@ function createHarness(ordinarySummaries: SessionSummary[] = []) {
         return killProcesses(appSessionId);
       },
     },
+    hasActiveSettingsChanges: () => false,
     applyPendingSettingsToSummary: (item) => ({ ...item, ...projection }),
     applyPendingSessionSettings: (appSessionId) => applyPending(appSessionId),
-    runPrimaryTurn: async (live, prompt) => {
+    runPrimaryTurn: async (live, prompt, _mentions, delivery) => {
+      if (delivery && !delivery.isCurrent()) return;
       for await (const event of live.session.stream(prompt)) {
+        delivery?.accepted();
         void event;
       }
+      delivery?.accepted();
     },
     context: {
       refresh: (target) => {
@@ -270,6 +277,10 @@ function createHarness(ordinarySummaries: SessionSummary[] = []) {
     },
     openProviderTranscript: () => {},
     forgetProviderTranscript: () => {},
+    hasPendingInteractions: () => pendingInteractions,
+    onScheduledCapacityChanged: () => {
+      capacityReleases += 1;
+    },
     forgetInteractions: (appSessionId) => {
       forgettingAfterUnregister.push(registry.getLive(appSessionId) === undefined);
       calls.push({ target: 'cleanup', method: 'interactions.forget', args: [appSessionId] });
@@ -315,6 +326,10 @@ function createHarness(ordinarySummaries: SessionSummary[] = []) {
     forgettingAfterUnregister,
     eventFlowForgettingAfterUnregister,
     missionForgettingAfterUnregister,
+    capacityReleases: () => capacityReleases,
+    setPendingInteractions: (pending: boolean) => {
+      pendingInteractions = pending;
+    },
     setProjection: (patch: Partial<SessionSummary>) => {
       projection = { ...patch };
     },
@@ -1397,5 +1412,172 @@ test("configured stdio MCP servers become the session's ignored command lines", 
       .filter((call) => call.method === 'processes.setIgnoredCommands')
       .map((call) => call.args),
     [['created-ignored', 'npx -y some-mcp']],
+  );
+});
+
+test('scheduled delivery resumes the exact historical provider and waits for a runtime acknowledgement', async () => {
+  const harness = createHarness([summary('scheduled-app', 'scheduled-provider')]);
+  const provider = queueLoad(harness, 'scheduled-provider');
+  const turn = provider.deferNextStream();
+  const delivery = harness.lifecycle.deliverScheduled(
+    'scheduled-app',
+    'scheduled prompt',
+    () => true,
+  );
+  await provider.waitForPrompts(1);
+  assert.deepEqual(provider.prompts, ['scheduled prompt']);
+  assert.equal(harness.runtime.loadCalls.length, 1);
+  assert.equal(requireLive(harness, 'scheduled-app').streaming, true);
+  turn.resolve();
+  const receipt = await delivery;
+  assert.equal(receipt.status, 'accepted');
+  if (receipt.status === 'accepted') await receipt.settled;
+  assert.equal(requireLive(harness, 'scheduled-app').streaming, false);
+  await harness.lifecycle.closeAll();
+});
+
+test('scheduled delivery waits outside pendingSends for turns, compaction, interactions and ready user sends', async () => {
+  const harness = createHarness([summary('scheduled-busy')]);
+  const provider = queueLoad(harness, 'scheduled-busy');
+  await harness.lifecycle.resume('scheduled-busy');
+  const live = requireLive(harness, 'scheduled-busy');
+  const busy = async () => {
+    assert.deepEqual(
+      await harness.lifecycle.deliverScheduled('scheduled-busy', 'must wait', () => true),
+      { status: 'busy', retryOn: 'target' },
+    );
+    assert.deepEqual(provider.prompts, []);
+  };
+  live.streaming = true;
+  await busy();
+  live.streaming = false;
+  live.compacting = true;
+  await busy();
+  live.compacting = false;
+  live.autoCompacting = true;
+  await busy();
+  live.autoCompacting = false;
+  harness.setPendingInteractions(true);
+  await busy();
+  harness.setPendingInteractions(false);
+  live.pendingSends.push({ text: 'user prompt' });
+  await busy();
+  assert.deepEqual(
+    live.pendingSends.map((pending) => pending.text),
+    ['user prompt'],
+  );
+  await harness.lifecycle.closeAll();
+});
+
+test('scheduled delivery rejects unknown IDs and discards settings results after cancellation or provider replacement', async () => {
+  const harness = createHarness([summary('scheduled-race')]);
+  const provider = queueLoad(harness, 'scheduled-race');
+  assert.equal(
+    (await harness.lifecycle.deliverScheduled('deleted', 'never create', () => true)).status,
+    'unavailable',
+  );
+  assert.equal(harness.runtime.loadCalls.length, 0);
+  await harness.lifecycle.resume('scheduled-race');
+  let apply: (value: boolean) => void = () => undefined;
+  harness.setPendingApply(
+    () =>
+      new Promise<boolean>((resolve) => {
+        apply = resolve;
+      }),
+  );
+  let current = true;
+  const canceled = harness.lifecycle.deliverScheduled('scheduled-race', 'canceled', () => current);
+  current = false;
+  apply(true);
+  assert.equal((await canceled).status, 'unavailable');
+  const replaced = harness.lifecycle.deliverScheduled('scheduled-race', 'stale', () => true);
+  const live = requireLive(harness, 'scheduled-race');
+  live.session = new DroidProviderSession(
+    'scheduled-race',
+    new FakeFactorySession('replacement', {}, harness.calls),
+    harness.runtime,
+  );
+  apply(true);
+  assert.equal((await replaced).status, 'unavailable');
+  assert.deepEqual(provider.prompts, []);
+  await harness.lifecycle.closeAll();
+});
+
+test('scheduled historical resumes honor the runtime cap without restricting live targets', async () => {
+  const summaries = Array.from({ length: 9 }, (_, index) => summary(`bounded-${index}`));
+  const harness = createHarness(summaries);
+  for (let index = 0; index < 8; index += 1) {
+    queueLoad(harness, `bounded-${index}`);
+    await harness.lifecycle.resume(`bounded-${index}`);
+  }
+  assert.deepEqual(
+    await harness.lifecycle.deliverScheduled('bounded-8', 'wait for capacity', () => true),
+    { status: 'busy', retryOn: 'capacity' },
+  );
+  assert.equal(harness.runtime.loadCalls.length, 8);
+  const live = await harness.lifecycle.deliverScheduled(
+    'bounded-0',
+    'already resident',
+    () => true,
+  );
+  assert.equal(live.status, 'accepted');
+  if (live.status === 'accepted') await live.settled;
+  await harness.lifecycle.close('bounded-0');
+  const provider = queueLoad(harness, 'bounded-8');
+  const receipt = await harness.lifecycle.deliverScheduled(
+    'bounded-8',
+    'capacity freed',
+    () => true,
+  );
+  assert.equal(receipt.status, 'accepted');
+  if (receipt.status === 'accepted') await receipt.settled;
+  assert.deepEqual(provider.prompts, ['capacity freed']);
+  await harness.lifecycle.closeAll();
+});
+
+test('a resume that fails hands its scheduled runtime slot back without a session closing', async () => {
+  const harness = createHarness([
+    ...Array.from({ length: 7 }, (_, index) => summary(`held-${index}`)),
+    summary('doomed'),
+    summary('waiting'),
+  ]);
+  for (let index = 0; index < 7; index += 1) {
+    queueLoad(harness, `held-${index}`);
+    await harness.lifecycle.resume(`held-${index}`);
+  }
+  assert.equal(harness.capacityReleases(), 0);
+
+  // Seven resident plus one resume in flight is the whole scheduled budget.
+  harness.runtime.loadQueue.set('doomed', [new Error('provider is gone')]);
+  const gate = harness.runtime.deferNextLoad();
+  const doomed = harness.lifecycle.resume('doomed');
+  await harness.runtime.waitForLoad('doomed');
+  assert.deepEqual(
+    await harness.lifecycle.deliverScheduled('waiting', 'needs a slot', () => true),
+    { status: 'busy', retryOn: 'capacity' },
+  );
+
+  gate.resolve();
+  assert.equal(await doomed, false);
+  // No session closed, so this callback is the only thing that says a slot is
+  // free again; without it a capacity-blocked delivery never retries.
+  assert.equal(harness.capacityReleases(), 1);
+  await harness.lifecycle.closeAll();
+});
+
+test('closing a scheduled target during cold resume invalidates its provisional runtime', async () => {
+  const harness = createHarness([summary('cold-close')]);
+  const provider = queueLoad(harness, 'cold-close');
+  const load = harness.runtime.deferNextLoad();
+  const delivery = harness.lifecycle.deliverScheduled('cold-close', 'Do not send', () => true);
+  await harness.runtime.waitForLoad('cold-close');
+  const closing = harness.lifecycle.close('cold-close');
+  load.resolve();
+  assert.equal((await delivery).status, 'unavailable');
+  await closing;
+  assert.equal(harness.registry.getLive('cold-close'), undefined);
+  assert.deepEqual(provider.prompts, []);
+  assert.ok(
+    harness.calls.some((call) => call.method === 'session.close' && call.args[0] === 'cold-close'),
   );
 });

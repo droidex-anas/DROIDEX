@@ -40,8 +40,7 @@ export function ToolGroupItem({
   // The header shimmers and speaks progressively while a call is in flight,
   // even once later prose has taken the tail from this group.
   const inFlight = useMemo(() => hasPendingCall(events, sessionLive), [events, sessionLive]);
-  const busy = active || inFlight;
-  const summary = useMemo(() => summarizeTools(events, busy), [events, busy]);
+  const summary = useMemo(() => summarizeTools(events, inFlight), [events, inFlight]);
   // While the group is live each new row enters with motion (see index.css);
   // a settled group is history and renders still.
   const rows = `space-y-2.5${active ? ' tool-rows-live' : ''}`;
@@ -63,7 +62,7 @@ export function ToolGroupItem({
         className="group flex items-center gap-1.5 text-left"
       >
         <Caret open={open} />
-        {busy ? (
+        {inFlight ? (
           <span className="shimmer-text text-[13px] font-medium">{summary}</span>
         ) : (
           <span className="text-[13px] text-droid-text-muted group-hover:text-droid-text-secondary transition-colors">

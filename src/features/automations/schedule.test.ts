@@ -2,9 +2,9 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import type { ModelInfo } from '../../types/bridge';
 import {
+  automationWorkspaceIssue,
   defaultAutomationDraft,
   epochFromZonedInput,
-  supportedTimeZones,
   validateAutomationDraft,
 } from './schedule';
 
@@ -31,6 +31,20 @@ test('draft validation rejects a past one-time schedule and keeps a catalog-miss
   assert.equal(validateAutomationDraft(draft, MODELS), null);
 });
 
+test('existing-session drafts allow attachments without model overrides but require a one-time target', () => {
+  const draft = defaultAutomationDraft(null);
+  draft.title = 'Continue review';
+  draft.target = { kind: 'existing-session', appSessionId: 'original-chat' };
+  draft.schedule = { kind: 'once', runAt: Date.now() + 60_000 };
+  assert.equal(validateAutomationDraft(draft, []), 'Describe what DROIDEX should do.');
+  draft.files = ['/tmp/review.txt'];
+  assert.equal(validateAutomationDraft(draft, []), null);
+  draft.schedule = { kind: 'daily', time: '09:00' };
+  assert.equal(validateAutomationDraft(draft, []), 'Scheduled prompts are sent once.');
+  draft.target = { kind: 'existing-session', appSessionId: '' };
+  assert.equal(validateAutomationDraft(draft, []), 'Choose a session.');
+});
+
 test('zoned input rejects a nonexistent DST-gap time and preserves the first fallback occurrence', () => {
   assert.equal(
     epochFromZonedInput({ year: 2025, month: 3, day: 9, hour: 2, minute: 30 }, 'America/New_York'),
@@ -42,6 +56,19 @@ test('zoned input rejects a nonexistent DST-gap time and preserves the first fal
   );
 });
 
-test('timezone options always include UTC', () => {
-  assert.ok(supportedTimeZones().includes('UTC'));
+test('workspace validation waits for discovery and rejects a disappeared selection', () => {
+  const draft = defaultAutomationDraft('/repo', 'model-a', 'high');
+
+  assert.equal(
+    automationWorkspaceIssue(draft, [], false),
+    'Checking whether the selected workspace is available.',
+  );
+  assert.equal(automationWorkspaceIssue(draft, [{ cwd: '/repo', executionCwds: [] }], true), null);
+  assert.equal(
+    automationWorkspaceIssue(draft, [{ cwd: '/other', executionCwds: [] }], true),
+    'repo is no longer available. Choose a workspace or select No workspace.',
+  );
+
+  draft.workspaceCwd = null;
+  assert.equal(automationWorkspaceIssue(draft, [], false), null);
 });

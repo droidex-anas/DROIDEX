@@ -5,6 +5,7 @@ import type { OpenReviewFileHandler } from '../../lib/reviewFocus';
 import { ImageAttachmentChip } from '../media/ImageAttachmentChip';
 import { FileChip } from '../composer/FileChip';
 import { isImagePath } from '../../lib/localImage';
+import { isTempStoreAttachment } from '../../lib/fileKind';
 import { promptDisplayParts } from '../../lib/composePrompt';
 import { userMessageAttachments } from '../../lib/promptMentions';
 import { VisualizeIcon } from '../icons/VisualizeIcon';
@@ -160,6 +161,8 @@ function ClampedPrompt({ source }: { source: string }) {
   );
 }
 
+// Review reads a file through the workspace root, so a pasted or dropped
+// attachment — which lives in the temp store outside it — stays a plain chip.
 export function UserBubble({
   event,
   onOpenReviewFile,
@@ -204,7 +207,7 @@ export function UserBubble({
               <FileChip
                 key={f}
                 path={f}
-                {...(onOpenReviewFile
+                {...(onOpenReviewFile && !isTempStoreAttachment(f)
                   ? {
                       onOpen: () => {
                         onOpenReviewFile(f);

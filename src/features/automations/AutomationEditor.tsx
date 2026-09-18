@@ -1,5 +1,6 @@
-import { X } from 'lucide-react';
-import { useId, useMemo, type ReactNode } from 'react';
+import { MessageSquareText, X } from 'lucide-react';
+import { useMemo } from 'react';
+import { FileChip } from '../../components/composer/FileChip';
 import type { WorkspaceScope } from '../../lib/workspaces';
 import type { ModelInfo } from '../../types/bridge';
 import { AutomationModelPicker } from './AutomationModelPicker';
@@ -8,19 +9,11 @@ import {
   AUTOMATION_AUTONOMY_OPTIONS,
   automationWorkspaceIssue,
   convertOnceRunAt,
-  epochFromZonedInput,
   supportedTimeZones,
   validateAutomationDraft,
-  WEEKDAYS,
   workspaceLabel,
-  zonedInputParts,
 } from './schedule';
-import {
-  AutomationDateInput,
-  AutomationMinuteInput,
-  AutomationTimeInput,
-  clampNumber,
-} from './TimeFields';
+import { EditorRow, ScheduleControls, scheduleForKind } from './ScheduleControls';
 import type { AutomationDraft, AutomationEditorState, AutomationSchedule } from './types';
 
 interface AutomationEditorProps {
@@ -29,6 +22,8 @@ interface AutomationEditorProps {
   // Saving waits for discovery so a path cannot disappear between load and edit.
   workspaceScopesReady: boolean;
   models: ModelInfo[];
+  saving: boolean;
+  targetTitle?: string | undefined;
   onChange: (draft: AutomationDraft) => void;
   onSave: () => void;
   onClose: () => void;
@@ -42,11 +37,14 @@ export function AutomationEditor({
   workspaceScopes,
   workspaceScopesReady,
   models,
+  saving,
+  targetTitle,
   onChange,
   onSave,
   onClose,
 }: AutomationEditorProps) {
   const { draft } = editor;
+  const isDelivery = draft.target.kind === 'existing-session';
   const validation = useMemo(
     () =>
       validateAutomationDraft(draft, models) ??
@@ -90,16 +88,25 @@ export function AutomationEditor({
   };
 
   return (
-    <aside className="flex h-full w-[410px] flex-col border-l border-droid-border bg-droid-bg shadow-droid">
+    <aside
+      aria-busy={saving}
+      className="flex h-full w-full flex-col border-l border-droid-border bg-droid-bg shadow-droid"
+    >
       <div data-electron-drag-region className="h-9 shrink-0" />
       <div className="flex min-h-0 flex-1 flex-col">
         <div className="flex items-center justify-between px-5 pb-3 pt-2">
           <div>
             <div className="text-[12px] font-medium text-droid-text-secondary">
-              {editor.mode === 'create' ? 'New automation' : 'Edit automation'}
+              {isDelivery
+                ? 'Scheduled prompt'
+                : editor.mode === 'create'
+                  ? 'New automation'
+                  : 'Edit automation'}
             </div>
             <div className="mt-0.5 text-[11px] text-droid-text-muted">
-              Schedule a task that runs as a DROIDEX chat
+              {isDelivery
+                ? 'Continue a conversation at the right time'
+                : 'Schedule a task that runs as a DROIDEX chat'}
             </div>
           </div>
           <button
@@ -112,8 +119,9 @@ export function AutomationEditor({
           </button>
         </div>
 
-        <div className="min-h-0 flex-1 overflow-y-auto px-5 pb-8">
+        <fieldset disabled={saving} className="min-h-0 min-w-0 flex-1 overflow-y-auto px-5 pb-8">
           <input
+            aria-label="Automation title"
             value={draft.title}
             onChange={(event) => {
               update('title', event.target.value);
@@ -123,107 +131,144 @@ export function AutomationEditor({
             autoFocus
           />
           <textarea
+            aria-label="Automation prompt"
             value={draft.prompt}
             onChange={(event) => {
               update('prompt', event.target.value);
             }}
-            placeholder="Describe the task DROIDEX should complete each time"
+            placeholder={
+              isDelivery
+                ? 'What should DROIDEX do next?'
+                : 'Describe the task DROIDEX should complete each time'
+            }
             rows={6}
             className={`${CONTROL} resize-none leading-5`}
           />
+          {draft.files.length > 0 && (
+            <div className="mt-2 flex flex-wrap gap-1.5" aria-label="Scheduled attachments">
+              {draft.files.map((path) => (
+                <FileChip
+                  key={path}
+                  path={path}
+                  onRemove={() => {
+                    update(
+                      'files',
+                      draft.files.filter((file) => file !== path),
+                    );
+                  }}
+                />
+              ))}
+            </div>
+          )}
 
-          <SectionLabel>Run configuration</SectionLabel>
-          <div className="overflow-visible rounded-2xl border border-droid-border bg-droid-surface/35">
-            <EditorRow label="Model">
-              <AutomationModelPicker
-                models={models}
-                modelId={draft.modelId}
-                reasoningEffort={draft.reasoningEffort}
-                onChange={(selection) => {
-                  onChange({
-                    ...draft,
-                    modelId: selection.modelId,
-                    reasoningEffort: selection.reasoningEffort,
-                  });
-                }}
-              />
-            </EditorRow>
-            <EditorRow label="Autonomy">
-              <SelectMenu
-                value={draft.autonomy}
-                ariaLabel="Automation autonomy"
-                onChange={(value) => {
-                  update('autonomy', value as AutomationDraft['autonomy']);
-                }}
-                options={AUTOMATION_AUTONOMY_OPTIONS}
-              />
-            </EditorRow>
-            <EditorRow label="Workspace">
-              <SelectMenu
-                value={draft.workspaceCwd ?? ''}
-                ariaLabel="Automation workspace"
-                searchable
-                width={330}
-                onChange={(value) => {
-                  onChange({
-                    ...draft,
-                    workspaceCwd: value || null,
-                    executionMode: value ? draft.executionMode : 'local',
-                  });
-                }}
-                options={[
-                  { value: '', label: 'No workspace', detail: 'Run as a folder-less chat' },
-                  ...workspaceScopes.map((scope) => ({
-                    value: scope.cwd,
-                    label: workspaceLabel(scope.cwd),
-                    detail: scope.cwd,
-                  })),
-                ]}
-              />
-            </EditorRow>
-            <EditorRow label="Checkout" last>
-              <SelectMenu
-                value={draft.executionMode}
-                ariaLabel="Automation checkout mode"
-                disabled={!draft.workspaceCwd}
-                onChange={(value) => {
-                  update('executionMode', value as 'worktree' | 'local');
-                }}
-                options={[
-                  {
-                    value: 'local',
-                    label: 'Current workspace',
-                    detail: 'Runs in the selected checkout',
-                  },
-                  {
-                    value: 'worktree',
-                    label: 'Isolated worktree',
-                    detail: 'Creates a clean detached checkout for the run',
-                  },
-                ]}
-              />
-            </EditorRow>
-          </div>
+          {isDelivery ? (
+            <div className="mt-5 flex items-start gap-2.5 text-[12px] text-droid-text-secondary">
+              <MessageSquareText className="mt-0.5 h-4 w-4 shrink-0 text-droid-text-muted" />
+              <div className="min-w-0">
+                <p className="truncate">{targetTitle ?? 'Original conversation'}</p>
+                <p className="mt-1 text-[11px] leading-4 text-droid-text-muted">
+                  Keeps its model, workspace, and permissions. No new chat is created.
+                </p>
+              </div>
+            </div>
+          ) : (
+            <>
+              <SectionLabel>Run configuration</SectionLabel>
+              <div className="overflow-visible rounded-2xl border border-droid-border bg-droid-surface/35">
+                <EditorRow label="Model">
+                  <AutomationModelPicker
+                    models={models}
+                    modelId={draft.modelId}
+                    reasoningEffort={draft.reasoningEffort}
+                    onChange={(selection) => {
+                      onChange({
+                        ...draft,
+                        modelId: selection.modelId,
+                        reasoningEffort: selection.reasoningEffort,
+                      });
+                    }}
+                  />
+                </EditorRow>
+                <EditorRow label="Autonomy">
+                  <SelectMenu
+                    value={draft.autonomy}
+                    ariaLabel="Automation autonomy"
+                    onChange={(value) => {
+                      update('autonomy', value);
+                    }}
+                    options={AUTOMATION_AUTONOMY_OPTIONS}
+                  />
+                </EditorRow>
+                <EditorRow label="Workspace">
+                  <SelectMenu
+                    value={draft.workspaceCwd ?? ''}
+                    ariaLabel="Automation workspace"
+                    searchable
+                    width={330}
+                    onChange={(value) => {
+                      onChange({
+                        ...draft,
+                        workspaceCwd: value || null,
+                        executionMode: value ? draft.executionMode : 'local',
+                      });
+                    }}
+                    options={[
+                      { value: '', label: 'No workspace', detail: 'Run as a folder-less chat' },
+                      ...workspaceScopes.map((scope) => ({
+                        value: scope.cwd,
+                        label: workspaceLabel(scope.cwd),
+                        detail: scope.cwd,
+                      })),
+                    ]}
+                  />
+                </EditorRow>
+                <EditorRow label="Checkout" last>
+                  <SelectMenu
+                    value={draft.executionMode}
+                    ariaLabel="Automation checkout mode"
+                    disabled={!draft.workspaceCwd}
+                    onChange={(value) => {
+                      update('executionMode', value);
+                    }}
+                    options={[
+                      {
+                        value: 'local',
+                        label: 'Current workspace',
+                        detail: 'Runs in the selected checkout',
+                      },
+                      {
+                        value: 'worktree',
+                        label: 'Isolated worktree',
+                        detail: 'Creates a clean detached checkout for the run',
+                      },
+                    ]}
+                  />
+                </EditorRow>
+              </div>
+            </>
+          )}
 
           <SectionLabel>Schedule</SectionLabel>
           <div className="overflow-visible rounded-2xl border border-droid-border bg-droid-surface/35">
-            <EditorRow label="Repeat">
-              <SelectMenu
-                value={draft.schedule.kind}
-                ariaLabel="Automation frequency"
-                onChange={(value) => {
-                  updateSchedule(scheduleForKind(value, draft.schedule));
-                }}
-                options={[
-                  { value: 'once', label: 'Once' },
-                  { value: 'hourly', label: 'Hourly' },
-                  { value: 'daily', label: 'Daily' },
-                  { value: 'weekdays', label: 'Weekdays' },
-                  { value: 'weekly', label: 'Weekly' },
-                  { value: 'cron', label: 'Custom schedule' },
-                ]}
-              />
-            </EditorRow>
+            {!isDelivery && (
+              <EditorRow label="Repeat">
+                <SelectMenu
+                  value={draft.schedule.kind}
+                  ariaLabel="Automation frequency"
+                  onChange={(value) => {
+                    updateSchedule(scheduleForKind(value, draft.schedule));
+                  }}
+                  options={[
+                    { value: 'once', label: 'Once' },
+                    { value: 'hourly', label: 'Hourly' },
+                    { value: 'daily', label: 'Daily' },
+                    { value: 'weekdays', label: 'Weekdays' },
+                    { value: 'weekly', label: 'Weekly' },
+                    { value: 'cron', label: 'Custom schedule' },
+                  ]}
+                />
+              </EditorRow>
+            )}
             <ScheduleControls
               schedule={draft.schedule}
               timezone={draft.timezone}
@@ -259,20 +304,23 @@ export function AutomationEditor({
           </div>
 
           <div className="mt-4 rounded-xl border border-droid-border/70 bg-droid-surface/25 px-3 py-2.5 text-[11px] leading-4 text-droid-text-muted">
-            Every run opens as a background chat. Automations shows whether it is queued, starting,
-            running, completed, or failed, and lets you open the run chat directly.
+            {isDelivery
+              ? 'Sends once, after any active turn finishes. Delivered means the conversation accepted the prompt, not that the agent finished its work. Attachments are saved copies.'
+              : 'Every run opens as a background chat. Open it here to follow its progress.'}{' '}
+            If DROIDEX is asleep or closed at the scheduled time, it catches up when available
+            again.
           </div>
-        </div>
+        </fieldset>
 
         <div className="border-t border-droid-border px-5 py-4">
           {validation && <p className="mb-2 text-[11px] text-droid-text-muted">{validation}</p>}
           <button
             type="button"
             onClick={onSave}
-            disabled={Boolean(validation)}
+            disabled={saving || Boolean(validation)}
             className="ml-auto block rounded-xl bg-droid-text px-4 py-2 text-[13px] font-medium text-droid-bg transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-30"
           >
-            {editor.mode === 'create' ? 'Create automation' : 'Save changes'}
+            {saving ? 'Saving…' : editor.mode === 'create' ? 'Create automation' : 'Save changes'}
           </button>
         </div>
       </div>
@@ -280,176 +328,6 @@ export function AutomationEditor({
   );
 }
 
-export function ScheduleControls({
-  schedule,
-  timezone,
-  onChange,
-}: {
-  schedule: AutomationSchedule;
-  timezone: string;
-  onChange: (schedule: AutomationSchedule) => void;
-}) {
-  switch (schedule.kind) {
-    case 'once': {
-      const parts = zonedInputParts(schedule.runAt, timezone);
-      const minimumDate = zonedInputParts(Date.now(), timezone);
-      return (
-        <>
-          <EditorRow label="Date">
-            <AutomationDateInput
-              value={parts}
-              minimum={minimumDate}
-              onChange={(date) => {
-                const runAt = epochFromZonedInput({ ...parts, ...date }, timezone);
-                if (runAt === null) return;
-                onChange({
-                  kind: 'once',
-                  runAt,
-                });
-              }}
-            />
-          </EditorRow>
-          <EditorRow label="Time">
-            <AutomationTimeInput
-              value={`${String(parts.hour).padStart(2, '0')}:${String(parts.minute).padStart(2, '0')}`}
-              onChange={(time) => {
-                const [hourText = '', minuteText = ''] = time.split(':');
-                const runAt = epochFromZonedInput(
-                  {
-                    ...parts,
-                    hour: clampNumber(hourText, 0, 23, parts.hour),
-                    minute: clampNumber(minuteText, 0, 59, parts.minute),
-                  },
-                  timezone,
-                );
-                if (runAt === null) return;
-                onChange({
-                  kind: 'once',
-                  runAt,
-                });
-              }}
-            />
-          </EditorRow>
-        </>
-      );
-    }
-    case 'hourly':
-      return (
-        <EditorRow label="At">
-          <AutomationMinuteInput
-            value={schedule.minute}
-            onChange={(minute) => {
-              onChange({ kind: 'hourly', minute });
-            }}
-          />
-        </EditorRow>
-      );
-    case 'daily':
-    case 'weekdays':
-      return (
-        <EditorRow label="At">
-          <AutomationTimeInput
-            value={schedule.time}
-            onChange={(time) => {
-              onChange({ kind: schedule.kind, time });
-            }}
-          />
-        </EditorRow>
-      );
-    case 'weekly':
-      return (
-        <>
-          <EditorRow label="On">
-            <SelectMenu
-              value={String(schedule.weekday)}
-              ariaLabel="Automation weekday"
-              onChange={(value) => {
-                onChange({ ...schedule, weekday: Number(value) });
-              }}
-              options={WEEKDAYS.map((weekday, index) => ({
-                value: String(index),
-                label: weekday,
-              }))}
-            />
-          </EditorRow>
-          <EditorRow label="At">
-            <AutomationTimeInput
-              value={schedule.time}
-              onChange={(time) => {
-                onChange({ ...schedule, time });
-              }}
-            />
-          </EditorRow>
-        </>
-      );
-    case 'cron':
-      return (
-        <EditorRow label="Expression">
-          <div className="w-[215px]">
-            <input
-              value={schedule.expression}
-              aria-label="Cron expression"
-              onChange={(event) => {
-                onChange({ kind: 'cron', expression: event.target.value });
-              }}
-              placeholder="0 9 * * 1-5"
-              className="w-full rounded-lg border border-droid-border bg-droid-bg/70 px-2.5 py-1.5 text-right text-[12px] tabular-nums text-droid-text outline-none transition-colors placeholder:text-droid-text-muted focus:border-droid-border-hover"
-            />
-            <div className="mt-1 text-right text-[11px] text-droid-text-muted">
-              minute · hour · day · month · weekday
-            </div>
-          </div>
-        </EditorRow>
-      );
-  }
-}
-
-export function scheduleForKind(kind: string, current: AutomationSchedule): AutomationSchedule {
-  const time = 'time' in current ? current.time : '09:00';
-  switch (kind) {
-    case 'once':
-      return { kind: 'once', runAt: Date.now() + 60 * 60 * 1_000 };
-    case 'hourly':
-      return { kind: 'hourly', minute: 0 };
-    case 'weekdays':
-      return { kind: 'weekdays', time };
-    case 'weekly':
-      return { kind: 'weekly', weekday: 1, time };
-    case 'cron':
-      return { kind: 'cron', expression: '0 9 * * 1-5' };
-    default:
-      return { kind: 'daily', time };
-  }
-}
-
 function SectionLabel({ children }: { children: string }) {
   return <h3 className="mb-2 mt-6 text-[12px] font-medium text-droid-text-muted">{children}</h3>;
-}
-
-export function EditorRow({
-  label,
-  children,
-  last = false,
-}: {
-  label: string;
-  children: ReactNode;
-  last?: boolean;
-}) {
-  const captionId = useId();
-  return (
-    <div
-      className={`flex min-h-12 items-center justify-between gap-4 px-3.5 py-2 text-[13px] ${
-        last ? '' : 'border-b border-droid-border/70'
-      }`}
-    >
-      <span id={captionId} className="shrink-0 text-droid-text-secondary">
-        {label}
-      </span>
-      {/* The caption is the only visible name for the row's control, so it is
-          published as the group name rather than left as decorative text. */}
-      <div role="group" aria-labelledby={captionId} className="min-w-0 text-right">
-        {children}
-      </div>
-    </div>
-  );
 }

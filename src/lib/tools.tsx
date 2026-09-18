@@ -246,7 +246,7 @@ function splitToolName(name: string): { server?: string; tool: string } {
   const tri = name.lastIndexOf('___');
   if (tri > 0 && tri + 3 < name.length)
     return { server: name.slice(0, tri), tool: name.slice(tri + 3) };
-  const mcp = /^mcp__(.+?)__(.+)$/.exec(name);
+  const mcp = /^mcp__(.+?)__(.+)$/i.exec(name);
   if (mcp) return { server: mcp[1], tool: mcp[2] };
   return { tool: name };
 }
@@ -497,8 +497,12 @@ export function webSourceName(url: string): string {
   try {
     const host = new URL(url).hostname.replace(/^www\./, '');
     const parts = host.split('.');
+    // Only under a two-letter country TLD: "foo.com.dev" ends in a gTLD, so its
+    // "com" is an ordinary label rather than half of a compound suffix.
     const secondLevelSuffix =
-      parts.length >= 3 && /^(co|com|org|net|ac|gov|edu)$/.test(parts[parts.length - 2]);
+      parts.length >= 3 &&
+      /^[a-z]{2}$/.test(parts[parts.length - 1]) &&
+      /^(co|com|org|net|ac|gov|edu)$/.test(parts[parts.length - 2]);
     const label = parts[Math.max(0, parts.length - (secondLevelSuffix ? 3 : 2))];
     return label.charAt(0).toUpperCase() + label.slice(1);
   } catch {

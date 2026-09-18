@@ -17,6 +17,7 @@ import {
   relativeLuminance,
   removeCustomTheme,
   resolveVariant,
+  statusColorOnLight,
   surfaceStep,
   upsertCustomTheme,
   type ThemeColors,
@@ -97,6 +98,26 @@ describe('BUILT_IN_THEMES', () => {
         }
       }
     }
+  });
+});
+
+describe('statusColorOnLight', () => {
+  it('keeps light status text at WCAG AA on every preset canvas', () => {
+    for (const preset of BUILT_IN_THEMES) {
+      for (const tuned of ['#1f7a4d', '#9a5a0f']) {
+        const shade = statusColorOnLight(tuned, preset.light.bg);
+        assert.ok(
+          contrastRatio(shade, preset.light.bg) >= 4.5,
+          `${preset.id} status ${shade} on ${preset.light.bg} should reach 4.5:1`,
+        );
+      }
+    }
+  });
+
+  it('returns a shade that already reads on its canvas untouched', () => {
+    const { bg } = DEFAULT_THEME.light;
+    assert.equal(statusColorOnLight('#1f7a4d', bg), '#1f7a4d');
+    assert.equal(statusColorOnLight('#9a5a0f', bg), '#9a5a0f');
   });
 });
 

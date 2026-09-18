@@ -4,7 +4,7 @@ import { useStoreDispatch, useStoreSelector } from '../../hooks/useStore';
 import { AUTONOMY_LABELS } from '../../lib/autonomy';
 import { toast } from '../../lib/toast';
 import type { TranscriptEvent } from '../../types/bridge';
-import { EditorRow, ScheduleControls, scheduleForKind } from './AutomationEditor';
+import { EditorRow, ScheduleControls, scheduleForKind } from './ScheduleControls';
 import { AutomationModelPicker } from './AutomationModelPicker';
 import {
   confirmAutomationProposal,
@@ -31,7 +31,7 @@ import {
 } from './schedule';
 import type { AutomationDraft, AutomationSchedule } from './types';
 
-const EASE = [0.16, 1, 0.3, 1] as const;
+const EASE: [number, number, number, number] = [0.16, 1, 0.3, 1];
 
 export function AutomationProposalCard({
   call,
@@ -262,7 +262,7 @@ export function AutomationProposalCard({
                 value={workingDraft.autonomy}
                 ariaLabel="Automation autonomy"
                 onChange={(value) => {
-                  updateDraft({ autonomy: value as AutomationDraft['autonomy'] });
+                  updateDraft({ autonomy: value });
                 }}
                 options={AUTOMATION_AUTONOMY_OPTIONS}
               />

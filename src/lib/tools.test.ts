@@ -216,6 +216,9 @@ test('webSourceName derives a capitalized registrable label', () => {
   assert.equal(webSourceName('https://www.theregister.com/2026/01/01/x'), 'Theregister');
   assert.equal(webSourceName('https://docs.sentry.io/platforms'), 'Sentry');
   assert.equal(webSourceName('not a url'), 'not a url');
+  assert.equal(webSourceName('https://bbc.co.uk/news'), 'Bbc');
+  // ".dev" is a gTLD, so the "com" in front of it is an ordinary label.
+  assert.equal(webSourceName('https://foo.com.dev/x'), 'Com');
 });
 
 test('toolArgString reads a string arg and ignores other values', () => {

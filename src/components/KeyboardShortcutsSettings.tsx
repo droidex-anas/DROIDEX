@@ -91,7 +91,11 @@ export function KeyboardShortcutsSettings() {
                   </kbd>
                   <button
                     type="button"
-                    aria-label={`Change the ${definition.label.toLowerCase()} shortcut`}
+                    aria-label={
+                      active
+                        ? `Cancel changing the ${definition.label.toLowerCase()} shortcut`
+                        : `Change the ${definition.label.toLowerCase()} shortcut`
+                    }
                     onClick={() => {
                       setCapturing(active ? null : definition.action);
                     }}

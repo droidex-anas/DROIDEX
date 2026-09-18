@@ -30,6 +30,14 @@ interface AutomationCommandResult {
   runId?: string;
 }
 
+export class AutomationRequestUnconfirmedError extends Error {
+  constructor() {
+    super(
+      'The request was not acknowledged. Check Automations before scheduling again; it may have been saved.',
+    );
+  }
+}
+
 export function useAutomationSnapshot(): AutomationSnapshot {
   initialize();
   return useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
@@ -110,7 +118,7 @@ function send(command: AutomationBridgeCommand): Promise<AutomationCommandResult
   return new Promise((resolve, reject) => {
     const timeout = setTimeout(() => {
       pending.delete(command.requestId);
-      reject(new Error('DROIDEX did not acknowledge the automation request.'));
+      reject(new AutomationRequestUnconfirmedError());
     }, 10_000);
     pending.set(command.requestId, { resolve, reject, timeout });
     if (bridge.sendIfConnected(command)) return;

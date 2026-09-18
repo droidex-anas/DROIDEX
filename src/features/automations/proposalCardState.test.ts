@@ -43,6 +43,8 @@ test('an explicit proposal id never falls back to a different proposal', () => {
     draft: {
       title: 'Daily report',
       prompt: 'Write the report.',
+      target: { kind: 'new-session' },
+      files: [],
       workspaceCwd: '/repo',
       executionMode: 'worktree',
       enabled: true,

@@ -59,7 +59,7 @@ test('conflicting explicit and namespaced MCP server names are rejected', () => 
         },
       },
     ],
-  } as never;
+  };
 
   assert.equal(automationPermissionTarget(params), null);
 });

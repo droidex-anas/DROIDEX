@@ -120,7 +120,7 @@ export async function releaseAutomationWorkspace(
   }
 }
 
-export function automationWorktreeName(title: string, runId: string): string {
+function automationWorktreeName(title: string, runId: string): string {
   const suffix = sanitizeSegment(runId).slice(-6) || 'run';
   const intent = sanitizeSegment(title).slice(0, Math.max(8, 54 - suffix.length)) || 'automation';
   return `${intent}-${suffix}`;

@@ -5,6 +5,7 @@ import type { SessionEventFlow } from '../SessionEventFlow.js';
 import { errMsg, isUserCancellation } from '../sessionHelpers.js';
 import type { ProviderMention } from './catalog.js';
 import type { LiveSession } from '../SessionLifecycle.js';
+import type { ScheduledTurnDelivery } from '../sessionAutomationDelivery.js';
 import { isReportedStreamingTranscriptError, type SessionTimeline } from '../SessionTimeline.js';
 import { usageLimitDetails } from './usageLimit.js';
 
@@ -18,7 +19,9 @@ export interface PrimaryTurnDependencies {
   // Absent for a provider without Droid's context accounting.
   contextTarget: (liveSession: LiveSession) => LiveOperationTarget | undefined;
   isCurrent: (liveSession: LiveSession) => boolean;
-  applyDesignToolPolicy: (liveSession: LiveSession, design: boolean) => Promise<void>;
+  // False when the policy could not be applied, which cancels a scheduled
+  // delivery rather than sending it into a session configured for something else.
+  applyDesignToolPolicy: (liveSession: LiveSession, design: boolean) => Promise<boolean>;
   updateSummary: (appSessionId: string, patch: Partial<SessionSummary>) => void;
   emitError: (error: Omit<Extract<ServerEvent, { type: 'error' }>, 'type'>) => void;
 }
@@ -28,10 +31,18 @@ export async function runPrimaryTurn(
   liveSession: LiveSession,
   prompt: string,
   mentions?: ProviderMention[],
+  delivery?: ScheduledTurnDelivery,
 ): Promise<void> {
   const appSessionId = liveSession.summary.appSessionId;
   const context = turnContext(d, d.contextTarget(liveSession));
   if (!d.isCurrent(liveSession)) return;
+  // A scheduled delivery that cannot go ahead must leave no trace, and
+  // recordPrompt below writes to the durable transcript. So its preflight runs
+  // before the turn is opened; an interactive turn keeps its existing order.
+  const preflight = delivery
+    ? await d.applyDesignToolPolicy(liveSession, isDesignPrompt(prompt))
+    : undefined;
+  if (delivery && (!d.isCurrent(liveSession) || !preflight || !delivery.isCurrent())) return;
   d.eventFlow.beginTurn(appSessionId, appSessionId);
   d.timeline.recordPrompt(appSessionId, prompt);
   d.context.beginTurn(appSessionId);
@@ -40,12 +51,16 @@ export async function runPrimaryTurn(
   let reportedError = false;
   let reportedUsageLimit = false;
   try {
-    await d.applyDesignToolPolicy(liveSession, isDesignPrompt(prompt));
-    if (!d.isCurrent(liveSession)) {
+    const configured =
+      preflight ?? (await d.applyDesignToolPolicy(liveSession, isDesignPrompt(prompt)));
+    if (!d.isCurrent(liveSession) || (delivery && (!configured || !delivery.isCurrent()))) {
       context.stopPolling();
       return;
     }
     for await (const normalized of liveSession.session.stream(prompt, mentions)) {
+      // The runtime answered, so the prompt is accepted even if this turn stops
+      // applying events; acknowledgement must never depend on the turn's outcome.
+      delivery?.accepted();
       if (!d.isCurrent(liveSession)) break;
       d.eventFlow.apply(appSessionId, appSessionId, 'primary', normalized);
       if (normalized.transcript?.kind === 'error') {
@@ -53,6 +68,8 @@ export async function runPrimaryTurn(
         reportedUsageLimit ||= normalized.transcript.errorKind === 'usage_limit';
       }
     }
+    // A stream that ends without a single event still ran to completion.
+    delivery?.accepted();
   } catch (err) {
     turnError = err;
   }
