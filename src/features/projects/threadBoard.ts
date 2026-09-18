@@ -74,15 +74,15 @@ export function threadGroups(rows: readonly ThreadRow[]): ThreadGroup[] {
   })).filter((group) => group.rows.length > 0);
 }
 
-/** The one line the header states: what, if anything, is on the user. */
-export function threadHeadline(rows: readonly ThreadRow[]): string {
-  const waiting = rows.filter((row) => needsUser(row.status)).length;
-  if (waiting === 1) return 'One thread needs you.';
-  if (waiting > 1) return `${String(waiting)} threads need you.`;
+/** How many threads are in each of the three states a person acts on. */
+export function threadCounts(rows: readonly ThreadRow[]): {
+  attention: number;
+  working: number;
+  settled: number;
+} {
+  const attention = rows.filter((row) => needsUser(row.status)).length;
   const working = rows.filter((row) => row.status === 'working').length;
-  if (working === 1) return 'One thread is working.';
-  if (working > 1) return `${String(working)} threads are working.`;
-  return rows.length > 0 ? 'Every thread is settled.' : 'No threads yet.';
+  return { attention, working, settled: rows.length - attention - working };
 }
 
 function needsUser(status: SessionActivityStatus): boolean {

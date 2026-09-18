@@ -6,7 +6,7 @@ import { INLINE_CARD_DURATION_S, INLINE_CARD_EASE } from '../../components/inlin
 import { sessionAttention } from '../../lib/sessionAttention';
 import { workspaceName } from '../../lib/workspaces';
 import type { UtilityTab } from '../../lib/utilityPanel';
-import { spawnThread, useProjects } from './client';
+import { useProjects } from './client';
 import { ThreadDetail } from './ThreadDetail';
 import { ThreadList } from './ThreadList';
 import { projectForSession, threadRows } from './threadBoard';
@@ -64,7 +64,6 @@ export function ThreadsWorkspace({ tab }: { tab: UtilityTab }) {
   const showThread = (threadId: string | null) => {
     dispatch({ type: 'UPDATE_UTILITY_TAB', tabId: tab.id, threadId });
   };
-  const starter = useThreadStarter(session?.appSessionId, showThread);
 
   return (
     <div data-testid="threads-workspace" className="flex h-full min-h-0 flex-col">
@@ -86,11 +85,9 @@ export function ThreadsWorkspace({ tab }: { tab: UtilityTab }) {
             rows={rows}
             subtitle={subtitle(project?.title, session?.cwd, rows.length)}
             now={now}
-            busy={starter.busy || Boolean(project?.launching)}
-            error={starter.error === '' ? (project?.error ?? '') : starter.error}
+            error={project?.error ?? ''}
             activeAppSessionId={session?.appSessionId}
             onOpenThread={showThread}
-            onStartThread={starter.start}
           />
         )}
       </PaneTransition>
@@ -129,28 +126,6 @@ function PaneTransition({
       </motion.div>
     </AnimatePresence>
   );
-}
-
-/* Starting a thread by hand. It carries only the task: its harness, model,
-   reasoning, autonomy and workspace come from the chat, and its name is the
-   task's first line — the same rule the new-project form follows. */
-function useThreadStarter(appSessionId: string | undefined, onStarted: (id: string) => void) {
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState('');
-  const start = (prompt: string) => {
-    if (!appSessionId || busy) return;
-    setBusy(true);
-    setError('');
-    spawnThread(appSessionId, { title: prompt.split('\n')[0].slice(0, 80), prompt })
-      .then(onStarted)
-      .catch((failure: unknown) => {
-        setError(failure instanceof Error ? failure.message : String(failure));
-      })
-      .finally(() => {
-        setBusy(false);
-      });
-  };
-  return { busy, error, start };
 }
 
 function subtitle(title: string | undefined, cwd: string | undefined, count: number): string {
