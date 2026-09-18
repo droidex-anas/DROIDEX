@@ -1,3 +1,4 @@
+import { tool } from '@factory/droid-sdk';
 import { z } from 'zod';
 import { jsonResult, safeTool } from '../mcpToolUtils.js';
 import { getProjectService } from './wiring.js';
@@ -55,7 +56,7 @@ function localTool<T extends Schema>(
   schema: T,
   handler: (input: z.infer<z.ZodObject<T>>) => Promise<string>,
 ) {
-  return { name, description: description(name), schema, handler: safeTool(handler) };
+  return tool(name, description(name), schema, safeTool(handler));
 }
 
 function description(name: string): string {
