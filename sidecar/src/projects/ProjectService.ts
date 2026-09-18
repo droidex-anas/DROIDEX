@@ -43,11 +43,13 @@ const THREAD_BRIEF = [
    leader that polls burns the loop the wake budget is there to protect. */
 const LEAD_BRIEF = [
   'You lead a DROIDEX project. You own its goal and its plan, and you are the only conversation that talks to the user.',
-  'Ask the user whenever the goal, the scope or a trade-off is unclear. Do not guess at what they want from the project.',
-  'Hand independent work to threads with thread_spawn, one task per thread, choosing each thread’s model, reasoning and autonomy for that task.',
-  'Keep plan_set current: the steps you intend to take, each pointed at the thread carrying it. It is what the user reads to see where the project stands.',
+  'Work in this order. First settle the goal: ask the user whatever is unclear about scope, priorities or trade-offs, and look at the code yourself before deciding. Never guess.',
+  'Then write the plan with plan_set: concrete steps in the order you mean to take them, each one naming what finishing it looks like. A step a stranger could not act on is not settled yet — settle it or leave it out.',
+  'Only then hand a settled step to a thread with thread_spawn, naming the step it carries. A thread cannot see this conversation, so its prompt must carry the whole task: the context, the files or areas involved, and what done means.',
+  'Do not spawn a thread to think for you, to explore an open question, or to work out what the task is. Investigate here, decide here, hand out the decided work.',
+  'Choose each thread’s model, reasoning and autonomy for the job, and give it its own worktree whenever two threads will write files at once.',
   'After spawning, end your turn. DROIDEX wakes you when a thread reports, asks something or stops; never poll or keep generating while you wait.',
-  'When threads report, tell the user what changed and what you decided, briefly, and keep the plan moving.',
+  'When threads report, keep plan_set current and tell the user what changed and what you decided, briefly.',
 ].join('\n');
 
 export class ProjectService {
@@ -165,7 +167,7 @@ export class ProjectService {
   async spawn(
     source: string,
     requested: ThreadSpawnInput,
-  ): Promise<{ appSessionId: string; cwd?: string; branch?: string }> {
+  ): Promise<{ appSessionId: string; cwd?: string; branch?: string; step?: string }> {
     this.requireOpen();
     const owner = this.requireSession(source);
     if (owner.sessionPurpose !== 'chat')
@@ -195,26 +197,58 @@ export class ProjectService {
     // live conversation, so it resumes coordination the same way the panel's
     // Resume does — and stops for the same reason, an unreviewed delivery.
     if (project.paused) await this.setPaused(project.id, false);
-    // The worktree is cut before the session exists, so a thread that is asked
-    // to work in isolation never reads the project's checkout by accident.
-    const workspace =
-      requested.workspace === 'worktree'
-        ? await createThreadWorkspace({
-            cwd: owner.cwd,
-            title: input.title,
-            ...(requested.branch ? { branch: requested.branch } : {}),
-            ...(requested.base ? { base: requested.base } : {}),
-          })
-        : undefined;
+    const workspace = await this.threadWorkspace(owner.cwd, input.title, requested);
     const cwd = workspace?.cwd ?? owner.cwd;
     const prompt = workspace
       ? `${input.prompt}\n\nWork in ${workspace.cwd} on branch ${workspace.branch}, cut from ${workspace.base}. It is yours alone; do not touch the project's own checkout.`
       : input.prompt;
+    // A step is named before the launch so a rejected name costs nothing.
+    const step = requested.step ? this.planStep(project, requested.step) : undefined;
     const appSessionId = await this.launch(project, { ...input, prompt, cwd }, source);
+    if (step) {
+      step.threadAppSessionId = appSessionId;
+      delete step.state;
+      await this.save();
+    }
     return {
       appSessionId,
       ...(workspace ? { cwd: workspace.cwd, branch: workspace.branch } : {}),
+      ...(step ? { step: step.title } : {}),
     };
+  }
+
+  /**
+   * The checkout a thread will work in. Cut before the session exists, so a
+   * thread asked to work in isolation never reads the project's own tree.
+   */
+  private async threadWorkspace(
+    cwd: string,
+    title: string,
+    requested: ThreadSpawnInput,
+  ): Promise<{ cwd: string; branch: string; base: string } | undefined> {
+    if (requested.workspace !== 'worktree') return undefined;
+    return await createThreadWorkspace({
+      cwd,
+      title,
+      ...(requested.branch ? { branch: requested.branch } : {}),
+      ...(requested.base ? { base: requested.base } : {}),
+    });
+  }
+
+  /** The plan step a spawn says it carries, by its number or its exact title. */
+  private planStep(project: Project, step: string): ProjectStep {
+    const wanted = step.trim();
+    const found = project.plan.find(
+      (candidate) => candidate.id === wanted || candidate.title === wanted,
+    );
+    if (!found) {
+      throw new Error(
+        project.plan.length
+          ? `No plan step called "${wanted}". Call plan_set first, then spawn for a step it holds.`
+          : 'This project has no plan yet. Call plan_set with the steps you mean to take, then spawn for one of them.',
+      );
+    }
+    return found;
   }
 
   /**
@@ -231,7 +265,7 @@ export class ProjectService {
     project.plan = steps.map((step, index) => {
       if (step.threadAppSessionId) this.thread(project, step.threadAppSessionId);
       return {
-        id: `${String(index + 1)}`,
+        id: String(index + 1),
         title: step.title.slice(0, 200),
         ...(step.milestone ? { milestone: step.milestone.slice(0, 80) } : {}),
         ...(step.state ? { state: step.state } : {}),

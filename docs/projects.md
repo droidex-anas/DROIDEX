@@ -29,10 +29,22 @@ the chevron opens the project inside the Projects view instead, where its plan,
 threads and held state live. **New project** starts one from a goal and is the
 only place that asks for a harness, model and autonomy.
 
+## How a project works
+
+The lead settles the goal before it hands anything out: it asks the user what is
+unclear, reads the code itself, and only then writes the plan. A step is one
+concrete piece of work whose finish it could recognise — "Port the payments
+client to v3", not "look into payments" — and a thread is started for a settled
+step, never to explore an open question or to work out what the task is. The
+thread cannot see the chat, so the prompt it is given carries the whole task:
+context, the files or areas involved, and what done means.
+
 ## The plan
 
 The lead keeps a plan with `plan_set`: the steps it means to take, optionally
-grouped under milestones, each one able to name the thread carrying it. A step
+grouped under milestones, each one able to name the thread carrying it.
+`thread_spawn` takes the step it carries, so starting the work is what links the
+row to its conversation. A step
 with a thread shows that conversation's real state and its own last step, so the
 table reports what DROIDEX can see rather than what a model claimed. A step
 without one shows only what the lead said about it. The plan is stored in the
