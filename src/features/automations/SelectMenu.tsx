@@ -16,14 +16,14 @@ import {
   virtualOptionWindow,
 } from './selectVirtualization';
 
-export interface SelectOption {
-  value: string;
+export interface SelectOption<Value extends string = string> {
+  value: Value;
   label: string;
   detail?: string;
   keywords?: string;
 }
 
-export function SelectMenu({
+export function SelectMenu<Value extends string>({
   value,
   options,
   onChange,
@@ -34,9 +34,9 @@ export function SelectMenu({
   width = 300,
   ariaLabel,
 }: {
-  value: string;
-  options: readonly SelectOption[];
-  onChange: (value: string) => void;
+  value: Value;
+  options: readonly SelectOption<Value>[];
+  onChange: (value: Value) => void;
   placeholder?: string;
   searchable?: boolean;
   disabled?: boolean;
@@ -143,7 +143,7 @@ export function SelectMenu({
   }, [activeIndex, open, visible.length, virtualized]);
 
   const choose = useCallback(
-    (option: SelectOption | undefined) => {
+    (option: SelectOption<Value> | undefined) => {
       if (!option) return;
       // Close before the parent update replaces editor rows. Pointer selection
       // commits on pointerdown so focus cannot bounce through a stale portal.
@@ -296,7 +296,7 @@ export function SelectMenu({
   );
 }
 
-function VirtualizedOptions({
+function VirtualizedOptions<Value extends string>({
   options,
   value,
   activeIndex,
@@ -305,13 +305,13 @@ function VirtualizedOptions({
   onActiveIndex,
   onChoose,
 }: {
-  options: readonly SelectOption[];
-  value: string;
+  options: readonly SelectOption<Value>[];
+  value: Value;
   activeIndex: number;
   listboxId: string;
   scrollTop: number;
   onActiveIndex: (index: number) => void;
-  onChoose: (option: SelectOption) => void;
+  onChoose: (option: SelectOption<Value>) => void;
 }) {
   const optionWindow = virtualOptionWindow(options.length, scrollTop);
   return (

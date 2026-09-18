@@ -1,3 +1,4 @@
+import type { AutomationAttachments } from './automationAttachments.js';
 import {
   assertEnabledScheduleHasNextRun,
   assertModelSelection,
@@ -21,7 +22,7 @@ import type {
  * belong to a schedule.
  */
 interface AutomationRunCascade {
-  dropQueuedSchedules: (automationId: string) => void;
+  dropPendingRunsForScheduleChange: (automationId: string) => void;
   dropAllFor: (automationId: string) => void;
 }
 
@@ -36,6 +37,7 @@ export interface AutomationCatalogOptions {
   /** Settings an automation inherits from the chat that asked for it. */
   sessionContext: (appSessionId: string) => Promise<AutomationSessionContext | null>;
   runs: AutomationRunCascade;
+  attachments: AutomationAttachments;
 }
 
 /**
@@ -112,6 +114,8 @@ export class AutomationCatalog {
     return this.options.commit(async () => {
       const current = this.require(id);
       const normalized = normalizeAutomationInput({
+        target: patch.target ?? current.target,
+        files: patch.files ?? current.files,
         title: patch.title ?? current.title,
         prompt: patch.prompt ?? current.prompt,
         workspaceCwd: patch.workspaceCwd === undefined ? current.workspaceCwd : patch.workspaceCwd,
@@ -124,10 +128,12 @@ export class AutomationCatalog {
           patch.reasoningEffort === undefined ? current.reasoningEffort : patch.reasoningEffort,
         autonomy: patch.autonomy ?? current.autonomy,
       });
-      if (normalized.enabled) {
+      if (normalized.enabled && normalized.target.kind === 'new-session') {
         assertModelSelection(normalized);
         await this.options.validateSelection(normalized.modelId, normalized.reasoningEffort);
       }
+      if (patch.files !== undefined)
+        normalized.files = await this.options.attachments.snapshot(normalized.files);
       const now = this.options.now();
       const scheduleChanged = patch.schedule !== undefined || patch.timezone !== undefined;
       const enabledChanged = patch.enabled !== undefined;
@@ -141,7 +147,19 @@ export class AutomationCatalog {
         completedAt: normalized.enabled ? null : current.completedAt,
         updatedAt: now,
       };
-      if (scheduleChanged || !normalized.enabled) this.options.runs.dropQueuedSchedules(id);
+      if (scheduleChanged || patch.enabled === false) {
+        this.options.runs.dropPendingRunsForScheduleChange(id);
+        if (
+          current.target.kind === 'existing-session' &&
+          (current.lastRunStatus === 'queued' || current.lastRunStatus === 'starting')
+        ) {
+          next.lastRunStatus = null;
+          next.lastRunAt = null;
+          next.lastRunDurationMs = null;
+          next.lastRunError = null;
+          next.lastAppSessionId = null;
+        }
+      }
       this.replace(id, next);
       return structuredClone(next);
     });
@@ -149,8 +167,11 @@ export class AutomationCatalog {
 
   private async createRecord(input: AutomationInput): Promise<Automation> {
     const normalized = normalizeAutomationInput(input);
-    assertModelSelection(normalized);
-    await this.options.validateSelection(normalized.modelId, normalized.reasoningEffort);
+    if (normalized.target.kind === 'new-session') {
+      assertModelSelection(normalized);
+      await this.options.validateSelection(normalized.modelId, normalized.reasoningEffort);
+    }
+    normalized.files = await this.options.attachments.snapshot(normalized.files);
     const automation = createAutomationRecord(normalized, this.options.now());
     this.add(automation);
     return structuredClone(automation);

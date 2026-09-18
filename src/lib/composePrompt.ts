@@ -1,7 +1,10 @@
+import type { TranscriptEvent } from '../types/bridge';
+import { hasCompleteAppBlock } from './appBlocks';
+
 export const VISUALIZE_COMMAND = {
   cmd: '/visualize',
   desc: 'Create an interactive in-chat App',
-} as const;
+};
 
 export function isVisualizeCommand(text: string): boolean {
   return /^\/visualize(?:\s|$)/i.test(text.trim());
@@ -38,6 +41,19 @@ export function responseFormatForPrompt(
 ): 'app-create' | 'app-followup' | undefined {
   if (isVisualizeCommand(text)) return 'app-create';
   return hasAppContext ? 'app-followup' : undefined;
+}
+
+export function hasAppContextForTranscript(
+  events: TranscriptEvent[],
+  childSessionId: string | null,
+): boolean {
+  return events.some((event) => {
+    if (event.kind !== 'text' || event.author === 'user') return false;
+    const belongsToTarget = childSessionId
+      ? event.sourceSessionId === childSessionId
+      : event.role === 'primary';
+    return belongsToTarget && hasCompleteAppBlock(event.text ?? '');
+  });
 }
 
 // Builds the prompt text actually sent to a session from the raw user input plus

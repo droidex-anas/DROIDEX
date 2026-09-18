@@ -1,3 +1,8 @@
+import {
+  deliverScheduledMessage,
+  type ScheduledTurnDelivery,
+} from './sessionAutomationDelivery.js';
+import type { AutomationDeliveryReceipt } from './automations/types.js';
 import { type McpServerConfig } from '@factory/droid-sdk';
 import { mkdir } from 'node:fs/promises';
 import { join } from 'node:path';
@@ -36,6 +41,8 @@ import type { ProviderInteractions } from './providers/interactions.js';
 import { requireProviderKind, type ProviderKind } from './providers/providerKind.js';
 import { droidSessionOf } from './providers/droid/DroidProviderSession.js';
 import type { Provider, ProviderSession } from './providers/session.js';
+
+const MAX_SCHEDULED_SESSION_RUNTIMES = 8;
 
 export type SessionCreateCommand = Extract<ClientCommand, { type: 'session.create' }>;
 
@@ -109,6 +116,9 @@ type LifecycleError = Omit<Extract<ServerEvent, { type: 'error' }>, 'type'>;
 type SteerOutcome = 'taken' | 'queued' | 'interrupt';
 
 export interface SessionLifecycleDependencies {
+  onSessionAvailable?: ((appSessionId: string) => void) | undefined;
+  // A scheduled runtime slot was released without a session closing.
+  onScheduledCapacityChanged?: (() => void) | undefined;
   provider: (kind: ProviderKind) => Provider;
   providerDefaultModelId?: (kind: ProviderKind) => string | undefined;
   registry: SessionRegistry<LiveSession>;
@@ -137,9 +147,12 @@ export interface SessionLifecycleDependencies {
     liveSession: LiveSession,
     prompt: string,
     mentions?: ProviderMention[],
+    delivery?: ScheduledTurnDelivery,
   ) => Promise<void>;
   eventFlow: Pick<SessionEventFlow, 'apply'>;
   context: Pick<SessionContext, 'refresh' | 'stopPolling' | 'stopSession' | 'forgetSession'>;
+  hasPendingInteractions: (appSessionId: string) => boolean;
+  hasActiveSettingsChanges: (appSessionId: string) => boolean;
   // Durable transcript for a provider that keeps no session file of its own.
   // Opened with the live session, released when it closes.
   openProviderTranscript: (summary: SessionSummary) => void;
@@ -163,6 +176,7 @@ export class SessionLifecycle {
   // One steer at a time per session; see steerTurn.
   private readonly steering = new WeakMap<LiveSession, Promise<SteerOutcome>>();
   private readonly resumeOperations = new Map<string, Promise<boolean>>();
+  private readonly canceledResumes = new Set<string>();
 
   constructor(private readonly dependencies: SessionLifecycleDependencies) {}
   async create(command: SessionCreateCommand): Promise<void> {
@@ -267,7 +281,7 @@ export class SessionLifecycle {
       this.trackProviderProcess(appSessionId, providerSession, mcp.configs);
       d.childSessions.attachParent(appSessionId);
       d.emit({ type: 'session.created', clientRef: command.clientRef, session: summary });
-      this.driveInBackground(appSessionId, sessionPrompt(command.goal, command.mentions));
+      void this.driveInBackground(appSessionId, sessionPrompt(command.goal, command.mentions));
     } catch (error) {
       await this.cleanupFailedOpen(pendingMcpServers, pendingSession, pendingLiveSession);
       if (!isOpenAdmissionClosed(error)) {
@@ -294,8 +308,13 @@ export class SessionLifecycle {
     if (pending) return pending;
 
     const operation = this.resumeOnce(requestedAppSessionId).finally(() => {
-      if (this.resumeOperations.get(appSessionId) === operation)
-        this.resumeOperations.delete(appSessionId);
+      if (this.resumeOperations.get(appSessionId) !== operation) return;
+      this.resumeOperations.delete(appSessionId);
+      this.canceledResumes.delete(appSessionId);
+      // A resume that produced a runtime spent the slot it was holding, and
+      // registering it already announced the session. One that failed or was
+      // cancelled hands the slot back silently, so say so.
+      if (!d.registry.getLive(appSessionId)) d.onScheduledCapacityChanged?.();
     });
     this.resumeOperations.set(appSessionId, operation);
     return operation;
@@ -321,6 +340,17 @@ export class SessionLifecycle {
       return true;
     }
 
+    const requireCurrentResume = (): void => {
+      this.requireOpenAdmission();
+      if (this.canceledResumes.has(appSessionId)) throw new OpenAdmissionClosedError();
+      if (
+        historical &&
+        d.registry.getCanonicalSummary(appSessionId)?.providerSessionId !==
+          historical.providerSessionId
+      ) {
+        throw new Error('The target session changed while it was being resumed.');
+      }
+    };
     const ref = { id: appSessionId };
     let pendingMcpServers: LocalMcpResource[] = [];
     let pendingSession: ProviderSession | undefined;
@@ -332,6 +362,7 @@ export class SessionLifecycle {
       const provider = d.provider(kind);
       const mcp = await d.startLocalMcpServers(ref, historical?.cwd);
       pendingMcpServers = mcp.servers;
+      requireCurrentResume();
       const providerSession = await provider.resume(providerSessionId, {
         appSessionId,
         ...resumeHandle(historical),
@@ -344,8 +375,10 @@ export class SessionLifecycle {
         mcpServers: mcp.configs,
       });
       pendingSession = providerSession;
+      requireCurrentResume();
       const session = droidSessionOf(providerSession);
       const summary = await this.resumedSummary(session, {
+        requireCurrent: requireCurrentResume,
         historical,
         appSessionId,
         providerSessionId,
@@ -353,7 +386,7 @@ export class SessionLifecycle {
       });
       // A closed settings write must settle before registration changes its target.
       await d.waitForSettingsMutations?.(appSessionId);
-      this.requireOpenAdmission();
+      requireCurrentResume();
       const projectedSummary = d.applyPendingSettingsToSummary({ ...summary });
       const liveSession = createLiveSession(projectedSummary, providerSession, session, mcp);
       pendingLiveSession = liveSession;
@@ -405,6 +438,7 @@ export class SessionLifecycle {
       appSessionId: string;
       providerSessionId: string;
       isCurrent: () => boolean;
+      requireCurrent: () => void;
     },
   ): Promise<SessionSummary> {
     if (!session) return buildResumedProviderSummary(input.historical, input.appSessionId);
@@ -425,7 +459,7 @@ export class SessionLifecycle {
       modelId: projectedModel,
       exposed: resumed.exposedCompaction,
     });
-    this.requireOpenAdmission();
+    input.requireCurrent();
     if (
       await d.compaction.arm(
         { appSessionId: input.appSessionId, session, isCurrent: input.isCurrent },
@@ -459,6 +493,26 @@ export class SessionLifecycle {
         recoverable: true,
       });
     });
+  }
+
+  deliverScheduled(
+    appSessionId: string,
+    prompt: string,
+    isCurrent: () => boolean,
+  ): Promise<AutomationDeliveryReceipt> {
+    return deliverScheduledMessage(
+      {
+        dependencies: this.dependencies,
+        canResume: () =>
+          this.dependencies.registry.liveSessionsSnapshot().length + this.resumeOperations.size <
+          MAX_SCHEDULED_SESSION_RUNTIMES,
+        resume: (id) => this.resume(id),
+        start: (id, text, delivery) => this.driveInBackground(id, text, delivery),
+      },
+      appSessionId,
+      prompt,
+      isCurrent,
+    );
   }
 
   async send(
@@ -622,14 +676,22 @@ export class SessionLifecycle {
     if (liveSession.closeMode) return;
     if (liveSession.streaming || liveSession.compacting || liveSession.autoCompacting) return;
     const next = liveSession.pendingSends.shift();
-    if (next === undefined && previousLiveSession) return;
+    if (next === undefined && previousLiveSession) {
+      this.dependencies.onSessionAvailable?.(appSessionId);
+      return;
+    }
     this.updateQueuedSends(liveSession);
     if (next !== undefined) await this.drive(liveSession.summary.appSessionId, next);
   }
 
   async close(appSessionId: string, mode: SessionCloseMode = 'discard-pending'): Promise<void> {
+    const pendingResume = this.resumeOperations.get(appSessionId);
+    if (pendingResume) this.canceledResumes.add(appSessionId);
     const liveSession = this.dependencies.registry.getLive(appSessionId);
-    if (!liveSession) return;
+    if (!liveSession) {
+      await pendingResume;
+      return;
+    }
     const operation = this.beginClose(liveSession, mode);
     if (operation.created || operation.deferred.retryTimer) await this.finishClose(liveSession);
     await operation.deferred.promise;
@@ -1002,7 +1064,11 @@ export class SessionLifecycle {
     }
   }
 
-  private async drive(appSessionId: string, prompt: SessionPrompt): Promise<void> {
+  private async drive(
+    appSessionId: string,
+    prompt: SessionPrompt,
+    delivery?: ScheduledTurnDelivery,
+  ): Promise<void> {
     const d = this.dependencies;
     const liveSession = d.registry.getLive(appSessionId);
     if (!liveSession || liveSession.closeMode || d.isShutdownStarted()) return;
@@ -1017,7 +1083,12 @@ export class SessionLifecycle {
         streaming: true,
         queuedSends: liveSession.pendingSends.length,
       });
-      liveSession.turnPromise = d.runPrimaryTurn(liveSession, prompt.text, prompt.mentions);
+      liveSession.turnPromise = d.runPrimaryTurn(
+        liveSession,
+        prompt.text,
+        prompt.mentions,
+        delivery,
+      );
       await liveSession.turnPromise;
     } finally {
       liveSession.turnPromise = undefined;
@@ -1045,14 +1116,20 @@ export class SessionLifecycle {
       } else {
         const next = liveSession.pendingSends.shift();
         this.publishTurnSettled(liveSession);
-        if (next !== undefined) this.driveInBackground(stableAppSessionId, next);
+        if (next !== undefined) void this.driveInBackground(stableAppSessionId, next);
       }
     }
   }
 
-  private driveInBackground(appSessionId: string, prompt: SessionPrompt | string): void {
+  // Returns the turn so a scheduled delivery can await the settlement it
+  // reserved; ordinary callers discard it.
+  private driveInBackground(
+    appSessionId: string,
+    prompt: SessionPrompt | string,
+    delivery?: ScheduledTurnDelivery,
+  ): Promise<void> {
     const input = typeof prompt === 'string' ? sessionPrompt(prompt) : prompt;
-    void this.drive(appSessionId, input).catch((error: unknown) => {
+    return this.drive(appSessionId, input, delivery).catch((error: unknown) => {
       if (!this.dependencies.isShutdownStarted())
         this.dependencies.emitError({ appSessionId, message: errMsg(error) });
     });

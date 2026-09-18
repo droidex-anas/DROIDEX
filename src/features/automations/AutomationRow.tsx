@@ -27,6 +27,7 @@ export function AutomationRow({
   run: snapshotRun,
   model,
   modelIssue,
+  targetTitle,
   now,
   deleteArmed,
   last,
@@ -40,18 +41,26 @@ export function AutomationRow({
   run: AutomationRun | undefined;
   model: ModelInfo | undefined;
   modelIssue: string | null;
+  targetTitle?: string | undefined;
   now: number;
   deleteArmed: boolean;
   last: boolean;
   onEdit: () => void;
-  onToggle: () => void;
+  onToggle: (enabled: boolean) => void;
   onRun: () => void;
   onOpenSession: (appSessionId: string) => void;
   onDelete: () => void;
 }) {
   const run = snapshotRun ?? persistedLastRun(automation);
   const active = isAutomationRunActive(run);
-  const needsSetup = modelIssue !== null;
+  const isDelivery = automation.target.kind === 'existing-session';
+  const pendingDelivery = isDelivery && active;
+  const canPause = automation.enabled || pendingDelivery;
+  const sessionId =
+    automation.target.kind === 'existing-session'
+      ? automation.target.appSessionId
+      : run?.appSessionId;
+  const needsSetup = !isDelivery && modelIssue !== null;
   const status = needsSetup && !active ? 'Setup required' : formatAutomationRunStatus(run, now);
   const error = run?.status === 'failed' ? run.error : modelIssue;
   const statusContent = (
@@ -66,7 +75,7 @@ export function AutomationRow({
 
   return (
     <div
-      className={`group flex min-h-[92px] items-center gap-3 px-4 py-3.5 transition-colors hover:bg-droid-elevated/32 ${
+      className={`group grid grid-cols-[auto_1fr] items-center gap-x-3 gap-y-2 px-4 py-3.5 transition-colors hover:bg-droid-elevated/30 [@container(min-width:540px)]:flex ${
         last ? '' : 'border-b border-droid-border/60'
       }`}
     >
@@ -87,17 +96,23 @@ export function AutomationRow({
         <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] text-droid-text-muted">
           <span>{formatSchedule(automation.schedule, automation.timezone)}</span>
           <span aria-hidden>·</span>
-          <span>{workspaceLabel(automation.workspaceCwd)}</span>
-          <span aria-hidden>·</span>
-          <span>{model?.displayName ?? automation.modelId ?? 'Choose a model'}</span>
-          <span aria-hidden>·</span>
-          <span className="capitalize">
-            {automation.reasoningEffort
-              ? `${automation.reasoningEffort} reasoning`
-              : 'Choose reasoning'}
-          </span>
-          <span aria-hidden>·</span>
-          <span>{AUTONOMY_LABELS[automation.autonomy]} autonomy</span>
+          {isDelivery ? (
+            <span className="truncate">Continue {targetTitle ?? 'original conversation'}</span>
+          ) : (
+            <>
+              <span>{workspaceLabel(automation.workspaceCwd)}</span>
+              <span aria-hidden>·</span>
+              <span>{model?.displayName ?? automation.modelId ?? 'Choose a model'}</span>
+              <span aria-hidden>·</span>
+              <span className="capitalize">
+                {automation.reasoningEffort
+                  ? `${automation.reasoningEffort} reasoning`
+                  : 'Choose reasoning'}
+              </span>
+              <span aria-hidden>·</span>
+              <span>{AUTONOMY_LABELS[automation.autonomy]} autonomy</span>
+            </>
+          )}
         </div>
         <div className="mt-1.5 flex min-w-0 items-center gap-2 text-[11px]">
           {error ? (
@@ -113,12 +128,18 @@ export function AutomationRow({
         </div>
       </button>
 
-      <div className="flex shrink-0 items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100">
-        {run?.appSessionId && (
+      <div className="col-start-2 flex shrink-0 items-center gap-0.5 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100 motion-reduce:transition-none [@media(hover:hover)]:[@container(min-width:540px)]:opacity-0">
+        {sessionId && (
           <RowAction
-            label={active ? 'Open running chat' : 'Open last run chat'}
+            label={
+              isDelivery
+                ? 'Open target conversation'
+                : active
+                  ? 'Open running chat'
+                  : 'Open last run chat'
+            }
             onClick={() => {
-              if (run.appSessionId) onOpenSession(run.appSessionId);
+              onOpenSession(sessionId);
             }}
           >
             <MessageSquareText className="h-3.5 w-3.5" />
@@ -130,7 +151,9 @@ export function AutomationRow({
               ? 'Choose a model and reasoning before running'
               : active
                 ? 'This automation is already active'
-                : 'Run now and open its chat'
+                : isDelivery
+                  ? 'Send now and open conversation'
+                  : 'Run now and open its chat'
           }
           onClick={onRun}
           disabled={active || needsSetup}
@@ -141,20 +164,24 @@ export function AutomationRow({
           <Pencil className="h-3.5 w-3.5" />
         </RowAction>
         <RowAction
-          label={automation.enabled ? 'Pause schedule' : 'Resume schedule'}
-          onClick={onToggle}
+          label={
+            pendingDelivery
+              ? 'Cancel pending delivery'
+              : canPause
+                ? 'Pause schedule'
+                : 'Resume schedule'
+          }
+          onClick={() => {
+            onToggle(!canPause);
+          }}
         >
-          {automation.enabled ? (
-            <CirclePause className="h-3.5 w-3.5" />
-          ) : (
-            <Play className="h-3.5 w-3.5" />
-          )}
+          {canPause ? <CirclePause className="h-3.5 w-3.5" /> : <Play className="h-3.5 w-3.5" />}
         </RowAction>
         <RowAction
           label={deleteArmed ? 'Click again to delete' : 'Delete automation'}
           onClick={onDelete}
           danger={deleteArmed}
-          disabled={active}
+          disabled={active && run?.status !== 'queued'}
         >
           <Trash2 className="h-3.5 w-3.5" />
         </RowAction>
@@ -199,6 +226,11 @@ function rowHint(
   needsSetup: boolean,
 ): string {
   if (active) {
+    if (automation.target.kind === 'existing-session') {
+      return run?.status === 'queued'
+        ? 'Waiting for this conversation to be ready'
+        : 'Delivering to the original conversation';
+    }
     return run?.status === 'queued'
       ? 'Waiting for the current automation slot'
       : 'The run chat is receiving live model activity';

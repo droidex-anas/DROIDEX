@@ -1,10 +1,6 @@
-import {
-  hasModelSelection,
-  MODEL_SELECTION_REQUIRED,
-  type NormalizedAutomationInput,
-} from './automationInput.js';
+import { hasModelSelection, MODEL_SELECTION_REQUIRED } from './automationInput.js';
 import { nextAutomationRun, retireWhenUnschedulable } from './schedule.js';
-import type { Automation, AutomationStore } from './types.js';
+import type { Automation, AutomationStore, NormalizedAutomationInput } from './types.js';
 
 // How long the scheduler may sleep in one step. A timer measures elapsed time,
 // not calendar time, so a suspended machine, an NTP correction, or a clock change
@@ -59,7 +55,7 @@ export class AutomationScheduler {
     let changed = false;
     for (const automation of this.options.store().automations) {
       if (!automation.enabled) continue;
-      if (!hasModelSelection(automation)) {
+      if (automation.target.kind === 'new-session' && !hasModelSelection(automation)) {
         disableForMissingSelection(automation, now);
         changed = true;
         continue;

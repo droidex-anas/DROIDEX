@@ -37,6 +37,16 @@ const manager = new SessionManager(
   },
   {
     assetUrlFor: (filePath) => server.browserAssetUrl(filePath),
+    onSessionAvailable: (appSessionId) => {
+      void automationManager?.observeSessionAvailability(appSessionId).catch((error: unknown) => {
+        console.error('Automation availability observer failed', error);
+      });
+    },
+    onScheduledCapacityChanged: () => {
+      void automationManager?.observeSchedulingCapacity().catch((error: unknown) => {
+        console.error('Automation scheduling capacity observer failed', error);
+      });
+    },
   },
 );
 
@@ -46,6 +56,7 @@ automationManager = configureAutomationManager({
     server.broadcast(event);
   },
   launchSession: (command) => manager.handle(command),
+  deliverMessage: (id, prompt, isCurrent) => manager.deliverScheduledMessage(id, prompt, isCurrent),
   closeSession: (appSessionId) => manager.handle({ type: 'session.close', appSessionId }),
   resolveSessionContext: (appSessionId) => manager.automationSessionContext(appSessionId),
   validateSelection: (modelId, reasoningEffort) =>

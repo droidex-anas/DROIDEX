@@ -24,6 +24,7 @@ interface PendingPermission {
   resolve: (outcome: PermissionOutcome) => void;
   kind: PermissionKind;
   signature?: string;
+  responding?: boolean;
 }
 
 interface InteractionScope {
@@ -39,6 +40,7 @@ export interface InteractionLiveSession {
 type InteractionError = Omit<Extract<ServerEvent, { type: 'error' }>, 'type'>;
 
 export interface SessionInteractionsDependencies {
+  onSessionAvailable?: ((appSessionId: string) => void) | undefined;
   getLiveSession: (id: string) => InteractionLiveSession | undefined;
   updateSummary: (id: string, patch: Partial<SessionSummary>) => void;
   // Moves the provider in and out of planning. The summary that goes with it is
@@ -151,8 +153,19 @@ export class SessionInteractions {
     if (!liveSession) return;
     const scope = this.scopes.get(liveSession.summary.appSessionId);
     const pending = scope?.pendingPermissions.get(requestId);
-    if (!scope || !pending) return;
-    scope.pendingPermissions.delete(requestId);
+    // Answering is asynchronous: a second click must not resolve the same
+    // request twice, nor resolve it into a session that has since been replaced.
+    if (!scope || !pending || pending.responding) return;
+    pending.responding = true;
+    const settle = (result: PermissionOutcome): void => {
+      scope.pendingPermissions.delete(requestId);
+      // A session replaced while the spec exit was in flight gets a new live
+      // object, so identity alone tells us this answer no longer applies.
+      if (this.dependencies.getLiveSession(appSessionId) !== liveSession) return;
+      pending.resolve(result);
+      if (!this.hasPending(liveSession.summary.appSessionId))
+        this.dependencies.onSessionAvailable?.(liveSession.summary.appSessionId);
+    };
     let normalized: PermissionOutcome;
     try {
       normalized = normalizePermissionOutcome(outcome);
@@ -171,13 +184,12 @@ export class SessionInteractions {
     // first. If it refuses, the plan is declined instead of approved into a
     // session that is still planning.
     if (pending.kind === 'spec' && isApprovalOutcome(normalized)) {
-      const left = await this.prepareSpecExitForRun(liveSession);
-      if (!left) {
-        pending.resolve('cancel');
+      if (!(await this.prepareSpecExitForRun(liveSession))) {
+        settle('cancel');
         return;
       }
     }
-    pending.resolve(normalized);
+    settle(normalized);
   }
 
   respondToQuestion(
@@ -193,6 +205,13 @@ export class SessionInteractions {
     if (!scope || !resolve) return;
     scope.pendingQuestions.delete(requestId);
     resolve({ cancelled, answers });
+    if (!this.hasPending(liveSession.summary.appSessionId))
+      this.dependencies.onSessionAvailable?.(liveSession.summary.appSessionId);
+  }
+
+  hasPending(appSessionId: string): boolean {
+    const scope = this.scopes.get(appSessionId);
+    return Boolean(scope && (scope.pendingPermissions.size > 0 || scope.pendingQuestions.size > 0));
   }
 
   forgetSession(appSessionId: string): void {

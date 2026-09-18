@@ -8,7 +8,7 @@ import {
   useCallback,
   type SetStateAction,
 } from 'react';
-import { AnimatePresence, motion } from 'framer-motion';
+import { AnimatePresence } from 'framer-motion';
 import {
   shallowEqual,
   useStoreApi,
@@ -22,7 +22,6 @@ import {
   sendToSessionNow,
   sendToChild,
   sendToChildNow,
-  sendDesignPrompt,
   createSession,
   interruptVisibleSession,
   compactSession,
@@ -30,7 +29,6 @@ import {
   newClientRef,
   listSkills,
 } from '../lib/commands';
-import { browserTranscriptReferencesFromDesignReferences } from './browser/browserTranscriptReferences';
 import {
   pickDirectory,
   pickFiles,
@@ -57,13 +55,10 @@ import {
   prepareChatWorkingDirectory,
   type ChatWorkingDirectoryResult,
 } from '../lib/chatWorkspace';
-import {
-  createLocalDesignTranscriptEvent,
-  createPromptQueueDeliveryGuard,
-  newQueueId,
-} from '../lib/promptQueue';
+import { newQueueId } from '../lib/promptQueue';
 import {
   composePrompt,
+  hasAppContextForTranscript,
   isVisualizeCommand,
   parseSlashSkillInvocation,
   promptTextWithVisualize,
@@ -71,7 +66,6 @@ import {
   submitCommandFor,
   VISUALIZE_COMMAND,
 } from '../lib/composePrompt';
-import { hasCompleteAppBlock } from './appBlockRuntime';
 import { reasoningEffortLabel, resolveReasoningEffortDisplay } from '../lib/reasoningEffort';
 import { compactionSettingsSnapshot } from '../lib/compactionSettings';
 import { composerTextAfterSeed, resetComposerAfterSubmit } from '../lib/composerReset';
@@ -95,8 +89,10 @@ import {
   type VisibleSessionTarget,
 } from '../lib/childSessions';
 import { commitPrimaryPromptAfterBaseline } from '../lib/promptSend';
-import { ArrowUp, ChevronDown, SlidersHorizontal, Square } from 'lucide-react';
-import { Spinner } from '@droidex/icons';
+import { ChevronDown, SlidersHorizontal } from 'lucide-react';
+import { Clock } from '@droidex/icons';
+import { ComposerSendButton } from './composer/ComposerSendButton';
+import { useQueuedPromptDelivery } from './composer/useQueuedPromptDelivery';
 import AddMenu from './composer/AddMenu';
 import SelectionMenu from './composer/SelectionMenu';
 import { useDraftEditing } from './composer/useDraftEditing';
@@ -123,7 +119,7 @@ import PermissionInline from './PermissionInline';
 import PlanApprovalInline from './PlanApprovalInline';
 import { ModelIcon, providerOf } from './ModelIcon';
 import { StartInBar } from './environment/StartInBar';
-import type { Autonomy, SkillInfo, TranscriptEvent } from '../types/bridge';
+import type { Autonomy, SkillInfo } from '../types/bridge';
 import { feedbackDraftFromCommand } from '../lib/feedbackReport';
 import { useSessionWorkingDirectory } from '../hooks/useSessionWorkingDirectory';
 import { useRuntimeHealth } from '../hooks/useRuntimeHealth';
@@ -132,6 +128,8 @@ import { toast } from '../lib/toast';
 // The live-markdown editor is a heavy chunk of the bundle, so it loads on
 // first composer paint rather than blocking the app's initial JavaScript.
 const ComposerEditor = lazy(() => import('./composer/ComposerEditor'));
+const SchedulePromptPopover = lazy(() => import('../features/automations/SchedulePromptPopover'));
+const ScheduledPrompts = lazy(() => import('../features/automations/ScheduledPrompts'));
 
 // Stable identity for a closed menu, so no trigger means no new object.
 const EMPTY_COMPOSER_MENU: ComposerMenuModel = { entries: [], rows: [] };
@@ -147,31 +145,6 @@ const oppositeSubmitMode = (mode: SubmitMode): SubmitMode => (mode === 'queue' ?
 
 export function shouldShowTurnStarting(isLive: boolean): boolean {
   return !isLive;
-}
-
-export function shouldResumeQueuedPromptAfterUpdate(
-  wasInstalling: boolean,
-  isInstalling: boolean,
-  isLive: boolean,
-  hasQueuedPrompt: boolean,
-  installResult: 'downloaded' | 'presented' | null,
-): boolean {
-  return (
-    wasInstalling && !isInstalling && !isLive && hasQueuedPrompt && installResult === 'presented'
-  );
-}
-
-export function hasAppContextForTranscript(
-  events: TranscriptEvent[],
-  childSessionId: string | null,
-): boolean {
-  return events.some((event) => {
-    if (event.kind !== 'text' || event.author === 'user') return false;
-    const belongsToTarget = childSessionId
-      ? event.sourceSessionId === childSessionId
-      : event.role === 'primary';
-    return belongsToTarget && hasCompleteAppBlock(event.text ?? '');
-  });
 }
 
 export function shouldStopTurnStarting({
@@ -286,6 +259,9 @@ export default function PromptInput({
   const [modelsOpen, setModelsOpen] = useState(false);
   const [providerOpen, setProviderOpen] = useState(false);
   const [activeRowKey, setActiveRowKey] = useState<string | null>(null);
+  const [scheduleTarget, setScheduleTarget] = useState<{ appSessionId: string } | null>(null);
+  const scheduleAnchorRef = useRef<HTMLButtonElement>(null);
+  const scheduleGeneration = useRef(0);
   const [files, setFiles] = useState<string[]>([]);
   const [filesCwd, setFilesCwd] = useState<string | null>(null);
   const [attachedFiles, setAttachedFilesState] = useState<string[]>([]);
@@ -394,10 +370,6 @@ export default function PromptInput({
   const turnStartingPendingRegisteredRef = useRef(false);
   const pendingCaret = useRef<number | null>(null);
   const consumedComposerSeedId = useRef<number | null>(null);
-  const prevLive = useRef<{ appSessionId: string | null; live: boolean }>({
-    appSessionId: null,
-    live: false,
-  });
 
   const activeSession = state.activeSession;
   const primaryIsLive = useSessionLive(state.activeAppSessionId);
@@ -620,6 +592,7 @@ export default function PromptInput({
     addMenuOpen,
     feedbackReport,
     draftEditing.menu,
+    scheduleTarget !== null && scheduleTarget.appSessionId === activeSession?.appSessionId,
     isLive && sendHintOpen,
   ].some(Boolean);
 
@@ -628,6 +601,19 @@ export default function PromptInput({
   useEffect(() => {
     if (state.activeAppSessionId) setProviderOpen(false);
   }, [state.activeAppSessionId]);
+
+  // Switching conversations abandons any schedule in progress; the bumped
+  // generation also stops an in-flight save from clearing the new draft.
+  useEffect(() => {
+    setScheduleTarget(null);
+    return () => {
+      scheduleGeneration.current += 1;
+    };
+  }, [visibleTargetKey]);
+
+  useEffect(() => {
+    if (!isLive) setSendHintOpen(false);
+  }, [isLive]);
 
   useEffect(() => {
     if (
@@ -969,8 +955,6 @@ export default function PromptInput({
     else addFile(item.path);
   };
 
-  const composeFrom = composePrompt;
-
   const prepareDraftCwd = async (
     dir: string,
     clientRef: string,
@@ -995,6 +979,86 @@ export default function PromptInput({
     submittingRef.current = true;
     try {
       await runSubmit(mode, autonomyOverride);
+    } finally {
+      submittingRef.current = false;
+    }
+  };
+
+  const schedulePrompt = async (runAt: number, timezone: string) => {
+    if (!activeSession || visibleTarget.kind !== 'primary') {
+      throw new Error('Open the conversation you want to continue.');
+    }
+    if (submittingRef.current) throw new Error('A prompt is already being saved or sent.');
+    const appSessionId = activeSession.appSessionId;
+    const generation = scheduleGeneration.current;
+    const revision = composerRevisionRef.current;
+    const intakeCutoff = nextIntakeSeqRef.current;
+    const text = promptTextWithVisualize(input.trim(), visualizeSelected);
+    const skills = activeSkills.map((skill) => skill.name);
+    const attachedPaths = attachedFiles.map((path, index) => ({
+      path,
+      sequence: attachedFileSeqRef.current.get(path) ?? 1_000_000 + index,
+    }));
+    const stillTargeted = () =>
+      scheduleGeneration.current === generation &&
+      store.getState().activeAppSessionId === appSessionId &&
+      visibleTargetRef.current.kind === 'primary';
+    submittingRef.current = true;
+    try {
+      const [images, documents, client, schedules] = await Promise.all([
+        imageAttachments.whenReady(intakeCutoff),
+        fileAttachments.whenReady(intakeCutoff),
+        import('../features/automations/client'),
+        import('../features/automations/schedule'),
+      ]);
+      if (!stillTargeted()) throw new Error('The conversation changed. Nothing was scheduled.');
+      const paths = pathsInSequence([...attachedPaths, ...documents, ...images]);
+      if (!text && skills.length === 0 && paths.length === 0) {
+        throw new Error('Write a prompt or add an attachment first.');
+      }
+      if (mentionsForRows(composerProvider, activeSkills).length > 0) {
+        throw new Error(
+          'Apps and plugins cannot be scheduled yet. Remove them, or send this prompt now.',
+        );
+      }
+      if (
+        submitCommandFor(text, {
+          visualizeSelected,
+          skillCount: skills.length,
+          fileCount: paths.length,
+        }) ||
+        feedbackDraftFromCommand(text)
+      ) {
+        throw new Error('App commands cannot be scheduled. Write a prompt for the agent instead.');
+      }
+      await client.createAutomation({
+        ...schedules.defaultAutomationDraft(null, null, null),
+        title: (input.trim() || skills[0] || 'Scheduled prompt').replace(/\s+/g, ' ').slice(0, 80),
+        prompt: composePrompt(text, skills, []),
+        files: paths,
+        target: { kind: 'existing-session', appSessionId },
+        schedule: { kind: 'once', runAt },
+        timezone,
+      });
+      if (stillTargeted()) {
+        resetComposerAfterSubmit({
+          draftUntouched: composerRevisionRef.current === revision,
+          clearImages: () => {
+            imageAttachments.clearReady(intakeCutoff);
+            fileAttachments.clearReady(intakeCutoff);
+            setViewerImageId(null);
+            setViewerPath(null);
+          },
+          resetDraft: () => {
+            setInput('');
+            setHistoryIndex(null);
+            clearDraftSelections();
+            attachedFileSeqRef.current.clear();
+            setAttachedFiles([]);
+          },
+        });
+      }
+      toast.success('Prompt scheduled.');
     } finally {
       submittingRef.current = false;
     }
@@ -1100,7 +1164,7 @@ export default function PromptInput({
     // it must not also be written into the prompt's words.
     const mentions = mentionsForRows(composerProvider, activeSkills);
     const mentioned = new Set(mentions.map((mention) => mention.name));
-    const composed = composeFrom(
+    const composed = composePrompt(
       displayText,
       skillNames.filter((name) => !mentioned.has(name)),
       allFiles,
@@ -1321,131 +1385,13 @@ export default function PromptInput({
     ? (state.promptQueue[activeSession.appSessionId] ?? [])
     : [];
 
-  // Mirror the live queue so an async delivery can re-check membership after an
-  // await, even though deliverPrompt closes over a stale render snapshot.
-  const promptQueueRef = useRef(state.promptQueue);
-  promptQueueRef.current = state.promptQueue;
-  const promptQueueDelivery = useMemo(createPromptQueueDeliveryGuard, []);
-
-  const deliverPrompt = async () => {
-    if (!activeSession || isAppUpdateInstalling()) return;
-    try {
-      await promptQueueDelivery.run(async () => {
-        // Capture the Last-turn git baseline before sending ANY prompt (design
-        // included) so the Review tab diffs the turn from the right starting point.
-        if (primaryWorkingDirectory)
-          await markGitTurnStart(primaryWorkingDirectory, activeSession.appSessionId);
-        if (isAppUpdateInstalling()) return;
-        // The queue stays editable while that runs, so deliver whatever is now at
-        // the head: this honors deletes and edits (both remove the item) as well as
-        // reorders, and never sends a stale prompt out of the visible order.
-        const head = (promptQueueRef.current[activeSession.appSessionId] ?? []).at(0);
-        if (!head) return;
-
-        if (head.design) {
-          try {
-            sendDesignPrompt(head.design.browserKey, head.text, head.design.referenceIds);
-          } catch (err) {
-            console.error('[PromptInput] queued design send failed:', err);
-            return;
-          }
-          const browserRefs = browserTranscriptReferencesFromDesignReferences(
-            head.design.references,
-          );
-          dispatch({
-            type: 'SESSION_TRANSCRIPT',
-            event: createLocalDesignTranscriptEvent(
-              activeSession.appSessionId,
-              head.text,
-              browserRefs,
-            ),
-          });
-          dispatch({
-            type: 'REMOVE_QUEUED_PROMPT',
-            appSessionId: activeSession.appSessionId,
-            id: head.id,
-          });
-          return;
-        }
-
-        try {
-          const primaryTranscript = store.getState().transcripts[activeSession.appSessionId] ?? [];
-          // Rows queued as mentions kept their place in the chip list for the
-          // preview; the text they are sent with must still leave them out.
-          const mentioned = new Set(head.mentions?.map((mention) => mention.name));
-          sendToSession(
-            activeSession.appSessionId,
-            composeFrom(
-              head.text,
-              head.skills.filter((name) => !mentioned.has(name)),
-              head.files,
-            ),
-            responseFormatForPrompt(head.text, hasAppContextForTranscript(primaryTranscript, null)),
-            head.mentions,
-          );
-        } catch (err) {
-          // Keep the prompt staged and skip the transcript echo so a send failure
-          // neither loses queued input nor leaves a duplicate user message behind.
-          console.error('[PromptInput] queued send failed:', err);
-          return;
-        }
-        dispatch({
-          type: 'SESSION_TRANSCRIPT',
-          event: {
-            id: `local-${String(Date.now())}`,
-            appSessionId: activeSession.appSessionId,
-            sourceSessionId: 'user',
-            role: 'primary',
-            ts: Date.now(),
-            kind: 'text',
-            text: head.text,
-            author: 'user',
-            skills: head.skills,
-            files: head.files,
-          },
-        });
-        dispatch({
-          type: 'REMOVE_QUEUED_PROMPT',
-          appSessionId: activeSession.appSessionId,
-          id: head.id,
-        });
-      });
-    } catch (error) {
-      console.error('[PromptInput] queued delivery preparation failed:', error);
-    }
-  };
-
-  // When the current turn finishes, deliver the next staged prompt. Delivering
-  // it restarts the turn, so the effect drains the queue one prompt at a time.
-  useEffect(() => {
-    const prev = prevLive.current;
-    // Only deliver when the same session transitioned live -> idle. Switching
-    // sessions mid-turn must not drain a different session's queue.
-    if (prev.live && !primaryIsLive && prev.appSessionId === activeSession?.appSessionId) {
-      const next = (state.promptQueue[activeSession.appSessionId] ?? []).at(0);
-      if (next) void deliverPrompt();
-    }
-    prevLive.current = {
-      appSessionId: activeSession?.appSessionId ?? null,
-      live: primaryIsLive,
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [primaryIsLive, activeSession?.appSessionId]);
-
-  const previousAppUpdateInstalling = useRef(appUpdateInstalling);
-  useEffect(() => {
-    const shouldResume = shouldResumeQueuedPromptAfterUpdate(
-      previousAppUpdateInstalling.current,
-      appUpdateInstalling,
-      primaryIsLive,
-      queue.length > 0,
-      appUpdateInstallResult,
-    );
-    previousAppUpdateInstalling.current = appUpdateInstalling;
-    if (shouldResume) void deliverPrompt();
-    // deliverPrompt intentionally reads the latest queue through promptQueueRef.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [appUpdateInstalling]);
+  useQueuedPromptDelivery({
+    appSessionId: activeSession?.appSessionId ?? null,
+    cwd: primaryWorkingDirectory,
+    isLive: primaryIsLive,
+    appUpdateInstalling,
+    appUpdateInstallResult,
+  });
 
   const editQueuedInComposer = (p: QueuedPrompt) => {
     if (!activeSession) return;
@@ -1689,6 +1635,14 @@ export default function PromptInput({
           onEdit={editQueuedInComposer}
           onRemove={removeQueued}
         />
+        {activeSession && visibleTarget.kind === 'primary' && (
+          <Suspense fallback={null}>
+            <ScheduledPrompts
+              key={activeSession.appSessionId}
+              appSessionId={activeSession.appSessionId}
+            />
+          </Suspense>
+        )}
 
         {showStartIn && (
           <div className="relative z-0 mx-[6%] -mb-3 min-w-0 rounded-t-2xl border border-droid-border bg-droid-surface px-4 pb-4 pt-1.5">
@@ -1988,109 +1942,44 @@ export default function PromptInput({
                 />
               )}
 
-              {turnStarting ? (
+              {activeSession && visibleTarget.kind === 'primary' && (
                 <button
+                  ref={scheduleAnchorRef}
                   type="button"
-                  disabled
-                  title="Starting turn"
-                  className="p-2 rounded-full text-droid-bg shrink-0 opacity-90"
-                  style={{ background: ACCENT }}
-                >
-                  <Spinner className="w-3.5 h-3.5 motion-safe:animate-spin-slow" />
-                </button>
-              ) : isLive && !hasContent ? (
-                <button
+                  aria-label="Schedule prompt"
+                  aria-haspopup="dialog"
+                  aria-expanded={scheduleTarget?.appSessionId === activeSession.appSessionId}
+                  title="Schedule this prompt for later"
+                  disabled={!hasContent || appUpdateInstalling}
                   onClick={() => {
-                    if (activeSession)
-                      interruptVisibleSession(activeSession.appSessionId, targetChildSessionId);
+                    setScheduleTarget({ appSessionId: activeSession.appSessionId });
                   }}
-                  title="Working — click to stop"
-                  className="p-2 rounded-full text-droid-bg shrink-0 transition-opacity hover:opacity-90"
-                  style={{ background: ACCENT }}
+                  className="rounded-lg px-1.5 py-2 text-droid-text-muted transition-colors hover:bg-droid-bg/40 hover:text-droid-text focus-visible:outline focus-visible:outline-droid-border-hover disabled:opacity-30"
                 >
-                  <Square className="w-3.5 h-3.5" fill="currentColor" strokeWidth={0} />
-                </button>
-              ) : isLive ? (
-                // Keyboard users reach the send button by tab, never by pointer, so
-                // focus opens the same hint that hover does.
-                <div
-                  className="relative shrink-0"
-                  onMouseEnter={() => {
-                    setSendHintOpen(true);
-                  }}
-                  onMouseLeave={() => {
-                    setSendHintOpen(false);
-                  }}
-                  onFocus={() => {
-                    setSendHintOpen(true);
-                  }}
-                  onBlur={() => {
-                    setSendHintOpen(false);
-                  }}
-                >
-                  <AnimatePresence>
-                    {sendHintOpen && (
-                      <motion.div
-                        initial={{ opacity: 0, y: 4 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        exit={{ opacity: 0, y: 4 }}
-                        transition={{ duration: 0.12, ease: [0.16, 1, 0.3, 1] }}
-                        className="absolute bottom-full right-0 mb-2 z-50 flex flex-col gap-0.5 rounded-xl border border-droid-border bg-droid-elevated p-1.5 shadow-droid"
-                      >
-                        {[
-                          { label: enterSteers ? 'Steer' : 'Queue', keys: ['⏎'] },
-                          { label: enterSteers ? 'Queue' : 'Steer', keys: ['⌘', '⏎'] },
-                        ].map((row) => (
-                          <div
-                            key={row.label}
-                            className="flex items-center justify-between gap-3 rounded-lg px-2 py-1 text-[12px] text-droid-text"
-                          >
-                            <span>{row.label}</span>
-                            <span className="flex items-center gap-0.5 rounded-md bg-droid-bg/70 px-1.5 py-0.5 text-[11px] text-droid-text-secondary">
-                              {row.keys.map((k) => (
-                                <kbd key={k} className="font-sans leading-none">
-                                  {k}
-                                </kbd>
-                              ))}
-                            </span>
-                          </div>
-                        ))}
-                      </motion.div>
-                    )}
-                  </AnimatePresence>
-                  <button
-                    onClick={() => void handleSubmit(enterSteers ? 'now' : 'queue')}
-                    disabled={runtimeActionsBlocked}
-                    title={
-                      appUpdateInstalling
-                        ? 'Installing DROIDEX update'
-                        : runtimeReady
-                          ? undefined
-                          : 'Agent runtime is unavailable'
-                    }
-                    className="p-2 rounded-full text-droid-bg transition-opacity enabled:hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
-                    style={{ background: ACCENT }}
-                  >
-                    <ArrowUp className="w-3.5 h-3.5" />
-                  </button>
-                </div>
-              ) : (
-                <button
-                  onClick={() => void handleSubmit()}
-                  disabled={!hasContent || !childActionsEnabled || runtimeActionsBlocked}
-                  title={
-                    appUpdateInstalling
-                      ? 'Installing DROIDEX update'
-                      : runtimeReady
-                        ? idleSendTooltip
-                        : 'Agent runtime is unavailable'
-                  }
-                  className="p-2 rounded-full text-droid-bg transition-all enabled:hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed shrink-0"
-                  style={{ background: ACCENT }}
-                >
-                  <ArrowUp className="w-3.5 h-3.5" />
+                  <Clock className="h-3.5 w-3.5" />
                 </button>
               )}
+              <ComposerSendButton
+                starting={turnStarting}
+                live={isLive}
+                hasContent={hasContent}
+                disabled={!childActionsEnabled || runtimeActionsBlocked}
+                title={
+                  appUpdateInstalling
+                    ? 'Installing DROIDEX update'
+                    : runtimeReady
+                      ? idleSendTooltip
+                      : 'Agent runtime is unavailable'
+                }
+                enterSteers={enterSteers}
+                hintOpen={sendHintOpen}
+                onHintOpenChange={setSendHintOpen}
+                onSend={() => void handleSubmit(isLive && enterSteers ? 'now' : 'queue')}
+                onStop={() => {
+                  if (activeSession)
+                    interruptVisibleSession(activeSession.appSessionId, targetChildSessionId);
+                }}
+              />
             </div>
           </div>
         </div>
@@ -2129,7 +2018,29 @@ export default function PromptInput({
         onFormat={applyFormat}
         onEdit={draftEditing.applyEdit}
         onClose={draftEditing.closeMenu}
+        canSchedule={hasContent && !appUpdateInstalling}
+        onSchedule={
+          activeSession && visibleTarget.kind === 'primary'
+            ? () => {
+                setScheduleTarget({ appSessionId: activeSession.appSessionId });
+              }
+            : undefined
+        }
       />
+      {scheduleTarget &&
+        activeSession?.appSessionId === scheduleTarget.appSessionId &&
+        visibleTarget.kind === 'primary' && (
+          <Suspense fallback={null}>
+            <SchedulePromptPopover
+              anchorRef={scheduleAnchorRef}
+              sessionTitle={activeSession.title}
+              onSave={schedulePrompt}
+              onClose={() => {
+                setScheduleTarget((current) => (current === scheduleTarget ? null : current));
+              }}
+            />
+          </Suspense>
+        )}
     </div>
   );
 }

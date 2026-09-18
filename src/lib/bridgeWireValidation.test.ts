@@ -146,6 +146,8 @@ test('validates complete automation snapshot records', () => {
   const draft = {
     title: 'Morning summary',
     prompt: 'Summarize the repository.',
+    target: { kind: 'new-session' },
+    files: [],
     workspaceCwd: '/repo',
     executionMode: 'worktree',
     enabled: true,
@@ -175,6 +177,8 @@ test('validates complete automation snapshot records', () => {
       id: automation.id,
       title: automation.title,
       prompt: automation.prompt,
+      target: automation.target,
+      files: automation.files,
       workspaceCwd: automation.workspaceCwd,
       executionMode: automation.executionMode,
       timezone: automation.timezone,
