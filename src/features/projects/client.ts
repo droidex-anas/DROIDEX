@@ -1,4 +1,4 @@
-import { useSyncExternalStore } from 'react';
+import { useMemo, useSyncExternalStore } from 'react';
 import { bridge } from '../../lib/bridge';
 import type { ServerEvent } from '../../types/bridge';
 import type { ProjectCommand, ProjectEvent } from './protocol';
@@ -29,6 +29,22 @@ export function useProjects(): Snapshot {
     subscribe,
     () => snapshot,
     () => snapshot,
+  );
+}
+
+/** Spawned threads: the sessions Projects owns, which the chat list leaves out. */
+export function useProjectThreadIds(): ReadonlySet<string> {
+  const { projects } = useProjects();
+  return useMemo(
+    () =>
+      new Set(
+        projects.flatMap((project) =>
+          project.threads
+            .filter((thread) => thread.ownerAppSessionId)
+            .map((thread) => thread.appSessionId),
+        ),
+      ),
+    [projects],
   );
 }
 
