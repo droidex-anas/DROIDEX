@@ -33,7 +33,12 @@ export interface ChildSessionsDependencies {
   };
   timeline: Pick<
     SessionTimeline,
-    'append' | 'appendStatus' | 'loadChildHistory' | 'flushStreamingFor' | 'settleStreaming'
+    | 'append'
+    | 'appendPrompt'
+    | 'appendStatus'
+    | 'loadChildHistory'
+    | 'flushStreamingFor'
+    | 'settleStreaming'
   >;
   eventFlow: Pick<SessionEventFlow, 'beginTurn' | 'applyNotification' | 'applyStreamEvent'>;
   interactions: Pick<SessionInteractions, 'interactionsFor'>;

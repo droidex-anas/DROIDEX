@@ -105,6 +105,9 @@ function createHarness(
       appendStatus: (...args) => {
         calls.push({ target: 'protocol', method: 'timeline.status', args });
       },
+      appendPrompt: (...args) => {
+        calls.push({ target: 'protocol', method: 'timeline.prompt', args });
+      },
       flushStreamingFor: () => {
         sequence.push('timeline.flushStreaming');
         if (!failFlushStreaming) return;
@@ -1034,9 +1037,9 @@ test('repeated child observations publish only new task prompts', () => {
 
   assert.deepEqual(
     h.calls
-      .filter((call) => call.target === 'protocol' && call.method === 'timeline.status')
+      .filter((call) => call.target === 'protocol' && call.method === 'timeline.prompt')
       .map((call) => call.args[1]),
-    ['Task prompt\n\nfirst prompt', 'Task prompt\n\nchanged prompt'],
+    ['first prompt', 'changed prompt'],
   );
 });
 

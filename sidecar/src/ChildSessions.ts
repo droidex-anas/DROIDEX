@@ -1,6 +1,6 @@
 import { factoryReasoningEffort } from './DroidRuntime.js';
 import type { PersistedChildSession, PersistedChildSpawnLink } from './history.js';
-import type { ChildSessionSummary, ClientCommand } from './protocol.js';
+import type { ChildRole, ChildSessionSummary, ClientCommand } from './protocol.js';
 import type { ChildOperationTarget } from './SessionContext.js';
 import {
   matchesChildGenerationSnapshot,
@@ -21,6 +21,7 @@ import {
   childStateFromRecord,
   childSummary,
   findChildByProvider,
+  childrenBySpawn,
   findChildBySpawn,
   findPendingChildObservation,
   forgetPendingChildObservation,
@@ -156,6 +157,24 @@ export class ChildSessions {
     return summaries;
   }
 
+  // The scope a row the provider attributed to a spawn belongs in. Undefined
+  // while no child has been admitted for that spawn yet, and 'ambiguous' when
+  // several share the link: a workflow gives every one of its agents the same
+  // spawn, so picking one would file an agent's step under a sibling and lose
+  // it from both.
+  childScopeForSpawn(
+    parentAppSessionId: string,
+    spawnLink: PersistedChildSpawnLink,
+  ): { childSessionId: string; role: ChildRole } | 'ambiguous' | undefined {
+    const parent = this.parents.get(parentAppSessionId);
+    if (!parent || !this.isCurrentParent(parent)) return undefined;
+    const matches = childrenBySpawn(parent, spawnLink);
+    if (matches.length > 1) return 'ambiguous';
+    if (matches.length === 0) return undefined;
+    const child = matches[0];
+    return { childSessionId: child.identity.childSessionId, role: child.role };
+  }
+
   admitChildObservation(observation: ChildSpawnObservation): ChildIdentity | undefined {
     const parent = this.parents.get(observation.parentAppSessionId);
     if (!parent || !this.isCurrentParent(parent)) return undefined;
@@ -237,11 +256,12 @@ export class ChildSessions {
       if (observed.done)
         this.complete(child, observed.status === 'failed' ? 'failed' : 'completed');
       else this.commit(child);
+      // The parent agent is the sender, so the brief reads as a prompt in the
+      // agent's pane rather than as a status line.
       if (child.prompt && child.prompt !== previousPrompt)
-        this.d.timeline.appendStatus(
+        this.d.timeline.appendPrompt(
           child.identity.parentAppSessionId,
-          `Task prompt\n\n${child.prompt}`,
-          undefined,
+          child.prompt,
           child.identity.childSessionId,
           child.role,
         );

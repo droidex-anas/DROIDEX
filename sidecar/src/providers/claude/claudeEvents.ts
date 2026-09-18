@@ -172,16 +172,14 @@ export class ClaudeEventMapper {
       if (tool) tool.json += delta.partial_json ?? '';
       return [];
     }
-    // A subagent narrates its own conversation; only the main thread's prose
-    // belongs in this chat. Its tool calls above are kept.
-    if (parentToolUseId) return [];
     // A start always comes first in practice; recording the block here keeps the
     // snapshot rule right even if one is ever missed.
     if (!blocks.has(index)) blocks.set(index, {});
+    const owner = this.childOwner(parentToolUseId);
     if (delta.type === 'text_delta' && delta.text)
-      return [{ transcript: this.transcript('text', { text: delta.text }) }];
+      return [{ ...owner, transcript: this.transcript('text', { text: delta.text }) }];
     if (delta.type === 'thinking_delta' && delta.thinking)
-      return [{ transcript: this.transcript('thinking', { text: delta.thinking }) }];
+      return [{ ...owner, transcript: this.transcript('thinking', { text: delta.thinking }) }];
     return [];
   }
 
@@ -215,11 +213,15 @@ export class ClaudeEventMapper {
           );
         continue;
       }
-      if (streamed || message.parent_tool_use_id) continue;
+      if (streamed) continue;
+      const owner = this.childOwner(message.parent_tool_use_id);
       if (block.type === 'text' && block.text)
-        events.push({ transcript: this.transcript('text', { text: block.text }) });
+        events.push({ ...owner, transcript: this.transcript('text', { text: block.text }) });
       if (block.type === 'thinking' && block.thinking)
-        events.push({ transcript: this.transcript('thinking', { text: block.thinking }) });
+        events.push({
+          ...owner,
+          transcript: this.transcript('thinking', { text: block.thinking }),
+        });
     }
     if (message.error)
       events.push({
@@ -235,10 +237,12 @@ export class ClaudeEventMapper {
   private toolResults(message: Extract<SDKMessage, { type: 'user' }>): NormalizedEvent[] {
     const content = message.message.content;
     if (typeof content === 'string') return [];
+    const owner = this.childOwner(message.parent_tool_use_id);
     return content.flatMap((block) => {
       if (block.type !== 'tool_result') return [];
       this.reportedResults.add(block.tool_use_id);
       return {
+        ...owner,
         transcript: this.transcript('tool_result', {
           text: toolResultText(block.content),
           isError: block.is_error === true,
@@ -314,6 +318,7 @@ export class ClaudeEventMapper {
     // Nested tool calls must not change the parent's spawn correlation.
     if (!parentToolUseId) this.subagents.noteToolUse(name, id);
     return {
+      ...this.childOwner(parentToolUseId),
       transcript: this.transcript('tool_call', { toolName: name, toolArgs: input, toolUseId: id }),
     };
   }
@@ -337,6 +342,14 @@ export class ClaudeEventMapper {
     const created = new Map<number, BlockState>();
     this.blocks.set(key, created);
     return created;
+  }
+
+  // A subagent's own messages arrive inside the parent's stream, tagged with the
+  // tool_use that spawned it. Every row so tagged is that agent's step, and the
+  // event flow resolves the tag to the agent's scope; untagged rows are the main
+  // thread's own.
+  private childOwner(parentToolUseId: string | null): Pick<NormalizedEvent, 'childOwner'> {
+    return parentToolUseId ? { childOwner: { kind: 'tool-use', id: parentToolUseId } } : {};
   }
 
   private transcript(

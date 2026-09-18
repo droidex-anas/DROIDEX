@@ -470,6 +470,8 @@ export class SessionManager {
       applySideEffects: (appSessionId, sideEffects) => {
         this.applyEventSideEffects(appSessionId, sideEffects);
       },
+      resolveChildScope: (appSessionId, spawnLink) =>
+        this.childSessions.childScopeForSpawn(appSessionId, spawnLink),
       recordUsage: (appSessionId, sourceProviderSessionId, usage) => {
         this.context.recordUsage(appSessionId, sourceProviderSessionId, usage);
       },

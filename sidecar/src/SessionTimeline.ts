@@ -434,6 +434,30 @@ export class SessionTimeline {
     });
   }
 
+  // A prompt nobody typed: the parent agent's brief to one of its children.
+  // `recordPrompt` only persists, because the renderer draws the user's own
+  // prompt as it is sent; this one has never been drawn, so it goes through
+  // `append` and reaches the child's pane as the same bubble the chat gives a
+  // user's prompt.
+  appendPrompt(
+    appSessionId: string,
+    text: string,
+    sourceSessionId = appSessionId,
+    role: SessionRole = 'primary',
+  ): void {
+    const ts = this.clock();
+    this.append({
+      id: this.noticeId('prompt', ts),
+      appSessionId,
+      sourceSessionId,
+      role,
+      ts,
+      kind: 'text',
+      author: 'user',
+      text,
+    });
+  }
+
   // A status row that is only true right now — a CLI booting, a steer being
   // applied, an idle runtime released. Shown live, never stored.
   appendProgress(appSessionId: string, text: string): void {
@@ -475,7 +499,7 @@ export class SessionTimeline {
     return (this.dependencies.now ?? Date.now)();
   }
 
-  private noticeId(kind: 'status' | 'error', ts: number): string {
+  private noticeId(kind: 'status' | 'error' | 'prompt', ts: number): string {
     return `${kind}-${ts.toString(36)}-${(this.statusSeq++).toString(36)}`;
   }
 

@@ -408,7 +408,9 @@ export default function PromptInput({
     const events = activeSession ? (current.transcripts[activeSession.appSessionId] ?? []) : [];
     const out: string[] = [];
     for (const ev of events) {
-      if (ev.author !== 'user' || ev.kind !== 'text') continue;
+      // An agent's brief is a user-authored row too, but the parent's composer
+      // recalls what THIS user typed, not what the chat sent to a subagent.
+      if (ev.author !== 'user' || ev.kind !== 'text' || ev.role !== 'primary') continue;
       const text = ev.text ?? '';
       if (!text.trim()) continue;
       if (out[out.length - 1] !== text) out.push(text);

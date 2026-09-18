@@ -15,6 +15,7 @@ import { droidErrorDetails } from './providers/droid/droidErrors.js';
 import type {
   SessionRole,
   BridgeFeature,
+  ChildSpawnLink,
   PermissionKind,
   PermissionRequest,
   ProgressEntry,
@@ -84,6 +85,11 @@ export interface NormalizedEvent {
     exitCode?: number;
   };
   childSession?: ChildSessionSignal;
+  // The transcript row is a child session's own, not the parent's. Claude Code
+  // streams a subagent's messages inside the parent's stream, tagged with the
+  // tool_use that spawned it; this is that tag, resolved to the child's scope
+  // where the transcript is appended.
+  childOwner?: ChildSpawnLink;
   tokens?: {
     tokensIn: number;
     tokensOut: number;
