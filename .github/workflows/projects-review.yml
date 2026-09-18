@@ -1,0 +1,171 @@
+name: Projects final regression
+on:
+  push:
+    branches: [feat/local-projects-scheduled]
+    paths: [.github/workflows/projects-review.yml]
+permissions:
+  contents: write
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      HUSKY: '0'
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+          show-progress: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '22'
+      - run: npm ci --ignore-scripts --no-audit --no-fund
+      - run: npm ci --prefix sidecar --ignore-scripts --no-audit --no-fund
+      - name: Add resume regression
+        run: |
+          cat >> sidecar/src/projects/wakeQueue.test.ts <<'TS'
+
+          test('explicit resume rechecks both target and capacity busy markers', async () => {
+            for (const retryOn of ['target', 'capacity'] as const) {
+              const state = project();
+              let calls = 0;
+              const queue = new ProjectWakeQueue({
+                deliver: async () => {
+                  calls += 1;
+                  if (calls === 1) return { status: 'busy', retryOn };
+                  return { status: 'accepted', settled: Promise.resolve() };
+                },
+              }, () => Promise.resolve(), (_project, error) => { throw error; });
+              queue.kick(state);
+              await tick(); await tick();
+              assert.equal(calls, 1);
+              state.paused = true;
+              queue.invalidate(state);
+              state.paused = false;
+              queue.invalidate(state);
+              queue.kick(state);
+              await tick(); await tick();
+              assert.equal(calls, 2, retryOn + ' must be rechecked on explicit resume');
+              assert.equal(state.pending.length, 0);
+              queue.close();
+              await queue.flush();
+            }
+          });
+
+          test('a cancelled admission cannot restore a busy marker after resume', async () => {
+            const state = project();
+            const admitted = deferred<AutomationDeliveryReceipt>();
+            let calls = 0;
+            const queue = new ProjectWakeQueue({
+              deliver: async () => {
+                calls += 1;
+                if (calls === 1) return admitted.promise;
+                return { status: 'accepted', settled: Promise.resolve() };
+              },
+            }, () => Promise.resolve(), (_project, error) => { throw error; });
+            queue.kick(state);
+            await tick();
+            state.paused = true;
+            queue.invalidate(state);
+            admitted.resolve({ status: 'busy', retryOn: 'target' });
+            await tick();
+            state.paused = false;
+            queue.invalidate(state);
+            queue.kick(state);
+            await tick(); await tick();
+            assert.equal(calls, 2);
+            assert.equal(state.wakesLeft, 19);
+            assert.equal(state.pending.length, 0);
+            queue.close();
+            await queue.flush();
+          });
+          TS
+          cd sidecar
+          if node --import tsx --test src/projects/wakeQueue.test.ts > /tmp/before.log 2>&1; then
+            cat /tmp/before.log
+            echo 'Expected the old queue to fail the new resume regression.'
+            exit 1
+          fi
+          grep -A 20 -B 2 'not ok' /tmp/before.log || true
+      - name: Invalidate stale waits without a polling retry
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('sidecar/src/projects/ProjectWakeQueue.ts')
+          s = p.read_text()
+          old = '    this.queued.delete(project);\n  }'
+          assert s.count(old) == 1
+          s = s.replace(old, '''    this.queued.delete(project);
+              this.capacityWaiting.delete(project.id);
+              for (const thread of project.threads) this.waiting.delete(thread.appSessionId);
+            }''')
+          old = '      project.wakesLeft += 1;\n      if (receipt.retryOn'
+          assert s.count(old) == 1
+          s = s.replace(old, '''      project.wakesLeft += 1;
+                await this.save();
+                // A cancelled generation cannot put a resumed recipient back to sleep.
+                if (!isCurrent()) return;
+                if (receipt.retryOn''')
+          old = '        this.waiting.add(target);\n      }\n      await this.save();\n      return;'
+          assert s.count(old) == 1
+          s = s.replace(old, '        this.waiting.add(target);\n      }\n      return;')
+          p.write_text(s)
+          PY
+          npx prettier --write sidecar/src/projects/ProjectWakeQueue.ts sidecar/src/projects/wakeQueue.test.ts
+          npx eslint --max-warnings=0 sidecar/src/projects src/features/projects
+          npm run typecheck
+          npm run sidecar:typecheck
+      - name: Full suites, build and quality
+        run: |
+          python3 - <<'PY'
+          import subprocess, pathlib
+          checks = [
+            ('frontend', 'npm test'),
+            ('sidecar', 'npm --prefix sidecar test'),
+            ('build', 'npm run build'),
+            ('quality', 'npm run quality:file-size && npm run quality:tech-debt && npm run quality:boundaries && npm run docs:check'),
+          ]
+          for name, command in checks:
+            log = pathlib.Path('/tmp/projects-final-' + name + '.log')
+            with log.open('w') as output:
+              result = subprocess.run(command, shell=True, stdout=output, stderr=subprocess.STDOUT, timeout=420)
+            lines = log.read_text().splitlines()
+            print('PROJECTS_FINAL_CHECK=' + name + ':' + str(result.returncode), flush=True)
+            if result.returncode:
+              for index,line in enumerate(lines):
+                if line.startswith('not ok') or line.startswith('✖'): print('\n'.join(lines[max(0,index-2):index+25]))
+              print('\n'.join(lines[-60:]), flush=True)
+              raise SystemExit(result.returncode)
+            print('\n'.join(line for line in lines if any(term in line for term in ['# tests ', '# pass ', '# fail ', 'ℹ tests ', 'ℹ pass ', 'ℹ fail '])), flush=True)
+            print('\n'.join(lines[-12:]), flush=True)
+          PY
+      - name: Publish checked commit object without moving the branch
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          rm .github/workflows/projects-review.yml
+          git add sidecar/src/projects/ProjectWakeQueue.ts sidecar/src/projects/wakeQueue.test.ts .github/workflows/projects-review.yml
+          git diff --cached --check
+          npx prettier --check sidecar/src/projects/ProjectWakeQueue.ts sidecar/src/projects/wakeQueue.test.ts
+          python3 - <<'PY'
+          import json, os, pathlib, subprocess, urllib.request
+          def git(*args): return subprocess.check_output(['git', *args], text=True).strip()
+          entries = []
+          for path in git('diff', '--cached', '--name-only', 'HEAD').splitlines():
+            file = pathlib.Path(path)
+            entry = {'path': path, 'mode': '100644', 'type': 'blob'}
+            if file.exists(): entry['content'] = file.read_text()
+            else: entry['sha'] = None
+            entries.append(entry)
+          def post(endpoint, body):
+            req = urllib.request.Request('https://api.github.com/repos/' + os.environ['GITHUB_REPOSITORY'] + '/git/' + endpoint,
+              json.dumps(body).encode(), headers={'Authorization': 'Bearer ' + os.environ['GH_TOKEN'], 'Accept': 'application/vnd.github+json', 'Content-Type': 'application/json'}, method='POST')
+            with urllib.request.urlopen(req) as response: return json.load(response)
+          tree = post('trees', {'base_tree': git('rev-parse', 'HEAD^{tree}'), 'tree': entries})
+          commit = post('commits', {'message': 'Recheck cancelled wake admission on explicit resume',
+            'tree': tree['sha'], 'parents': [git('rev-parse', 'HEAD')],
+            'author': {'name': 'github-actions[bot]', 'email': '41898282+github-actions[bot]@users.noreply.github.com'}})
+          print('PROJECTS_FINAL_TREE=' + tree['sha'])
+          print('PROJECTS_FINAL_COMMIT=' + commit['sha'])
+          PY
