@@ -12,8 +12,6 @@ export const PROJECT_TOOL_NAMES = ['project_thread_spawn','project_threads','pro
 export function projectTools(sessionId: () => string) {
   return [
     localTool('project_thread_spawn', {
-      projectId: z.string().uuid(),
-      parentId: z.string().uuid(),
       task: z.string().min(1).max(20_000),
       title: z.string().min(1).max(80).optional(),
       provider: provider.optional(),
@@ -22,13 +20,15 @@ export function projectTools(sessionId: () => string) {
       autonomy: autonomy.optional(),
     }, async (input) => {
       const service = getProjectService();
-      service.assertMember(input.projectId, sessionId());
-      return jsonResult({ ok: true, ...(await service.spawn(input)) });
+      const context = service.toolContext(sessionId());
+      if (!context) throw new Error('This session is not in a project.');
+      return jsonResult({ ok: true, ...(await service.spawn({ ...input, projectId: context.projectId, parentId: context.threadId })) });
     }),
-    localTool('project_threads', { projectId: z.string().uuid() }, async ({ projectId }) => {
+    localTool('project_threads', {}, async () => {
       const service = getProjectService();
-      service.assertMember(projectId, sessionId());
-      const project = await service.inspect(projectId);
+      const context = service.toolContext(sessionId());
+      if (!context) throw new Error('This session is not in a project.');
+      const project = await service.inspect(context.projectId);
       return jsonResult({
         ok: true,
         threads: project.threads.map(({ id, parentId, title, provider, model, reasoning, autonomy, state, task, result }) => ({
@@ -37,13 +37,13 @@ export function projectTools(sessionId: () => string) {
       });
     }),
     localTool('project_thread_steer', {
-      projectId: z.string().uuid(),
       threadId: z.string().uuid(),
       text: z.string().min(1).max(20_000),
-    }, async ({ projectId, threadId, text }) => {
+    }, async ({ threadId, text }) => {
       const service = getProjectService();
-      service.assertMember(projectId, sessionId());
-      await service.steer(projectId, threadId, text);
+      const context = service.toolContext(sessionId());
+      if (!context) throw new Error('This session is not in a project.');
+      await service.steer(context.projectId, threadId, text);
       return jsonResult({ ok: true, threadId });
     }),
   ];
