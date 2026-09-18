@@ -1,6 +1,8 @@
 import { lazy, memo, Suspense } from 'react';
 import { hasAppBlock } from './appBlockRuntime';
 import { isAutomationProposalCall } from '../features/automations/toolNames';
+import { isThreadSpawnCall, spawnedThread } from '../features/projects/threadToolNames';
+import { threadBrief, threadReports } from '../features/projects/ThreadNotices';
 import type { FileChange } from '../lib/diff';
 import type { OpenReviewFileHandler } from '../lib/reviewFocus';
 import { copyTextForMessage } from '../features/transcript-reach/transcriptCopy';
@@ -50,11 +52,50 @@ const AutomationProposalCard = lazy(async () => {
   return { default: module.AutomationProposalCard };
 });
 
+const ThreadSpawnRow = lazy(async () => {
+  const module = await import('../features/projects/ThreadSpawnRow');
+  return { default: module.ThreadSpawnRow };
+});
+
+const ThreadReportNotice = lazy(async () => {
+  const module = await import('../features/projects/ThreadNotices');
+  return { default: module.ThreadReportNotice };
+});
+
+const ThreadBriefNotice = lazy(async () => {
+  const module = await import('../features/projects/ThreadNotices');
+  return { default: module.ThreadBriefNotice };
+});
+
 export function splitAutomationProposals(events: TranscriptEvent[]): {
   proposals: { call: TranscriptEvent; result?: TranscriptEvent }[];
   remaining: TranscriptEvent[];
 } {
-  const calls = events.filter(isAutomationProposalCall);
+  return splitCalls(events, isAutomationProposalCall);
+}
+
+/* A spawned thread reads as the thread itself, not as a tool call: the row the
+   Threads panel shows, inline where the chat started it. A spawn that was
+   refused started nothing, so it stays an ordinary failed tool row. */
+export function splitThreadSpawns(events: TranscriptEvent[]): {
+  proposals: { call: TranscriptEvent; result?: TranscriptEvent }[];
+  remaining: TranscriptEvent[];
+} {
+  const split = splitCalls(events, isThreadSpawnCall);
+  const started = split.proposals.filter(({ result }) => !result || spawnedThread(result.text));
+  if (started.length === split.proposals.length) return split;
+  const shown = new Set(started.flatMap(({ call, result }) => (result ? [call, result] : [call])));
+  return { proposals: started, remaining: events.filter((event) => !shown.has(event)) };
+}
+
+function splitCalls(
+  events: TranscriptEvent[],
+  matches: (event: TranscriptEvent) => boolean,
+): {
+  proposals: { call: TranscriptEvent; result?: TranscriptEvent }[];
+  remaining: TranscriptEvent[];
+} {
+  const calls = events.filter(matches);
   if (calls.length === 0) return { proposals: [], remaining: events };
   const { resultByCall } = correlateResults(events);
   const shown = new Set<TranscriptEvent>();
@@ -80,7 +121,8 @@ function AutomationToolGroup({
   density: ToolActivityDensity;
   onOpenReviewFile?: OpenReviewFileHandler;
 }) {
-  const { proposals, remaining } = splitAutomationProposals(events);
+  const { proposals, remaining: withoutProposals } = splitAutomationProposals(events);
+  const { proposals: spawns, remaining } = splitThreadSpawns(withoutProposals);
   const group = (groupEvents: TranscriptEvent[]) => (
     <ToolGroupItem
       events={groupEvents}
@@ -90,9 +132,14 @@ function AutomationToolGroup({
       onOpenReviewFile={onOpenReviewFile}
     />
   );
-  if (proposals.length === 0) return group(events);
+  if (proposals.length === 0 && spawns.length === 0) return group(events);
   return (
     <div className="space-y-2.5">
+      {spawns.map(({ call, result }) => (
+        <Suspense key={call.id} fallback={null}>
+          <ThreadSpawnRow call={call} {...(result ? { result } : {})} />
+        </Suspense>
+      ))}
       {proposals.map(({ call, result }) => (
         <Suspense
           key={call.id}
@@ -309,7 +356,22 @@ export const FeedItemView = memo(function FeedItemView({
 }: FeedItemViewProps) {
   switch (item.type) {
     case 'message': {
-      if (item.event.author === 'user')
+      if (item.event.author === 'user') {
+        // A thread's brief and its reports are DROIDEX speaking, not the user.
+        const reports = threadReports(item.event.text);
+        if (reports)
+          return (
+            <Suspense fallback={null}>
+              <ThreadReportNotice reports={reports} />
+            </Suspense>
+          );
+        const brief = threadBrief(item.event.text);
+        if (brief)
+          return (
+            <Suspense fallback={null}>
+              <ThreadBriefNotice task={brief} />
+            </Suspense>
+          );
         return (
           <UserBubble
             event={item.event}
@@ -317,6 +379,7 @@ export const FeedItemView = memo(function FeedItemView({
             onOpenReviewFile={cwd ? onOpenReviewFile : undefined}
           />
         );
+      }
       return (
         <AssistantMessage
           text={item.event.text ?? ''}

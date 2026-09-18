@@ -3,6 +3,7 @@ import {
   Files,
   Globe,
   Hierarchy,
+  MessageSquareText,
   SquareTerminal,
   type IconComponent,
 } from '@droidex/icons';
@@ -20,6 +21,7 @@ export const UTILITY_TOOL_OPTIONS: UtilityToolOption[] = [
   { tool: 'terminal', label: 'Terminal', icon: SquareTerminal, shortcut: '⌃`' },
   { tool: 'browser', label: 'Browser', icon: Globe, shortcut: '⌘⇧B' },
   { tool: 'files', label: 'Files', icon: Files, shortcut: '⌘⇧F' },
+  { tool: 'threads', label: 'Threads', icon: MessageSquareText, shortcut: '' },
 ];
 
 // Opened from an agent row, never from the picker: the tool grid stays the four

@@ -10,6 +10,10 @@ export interface ThreadInput {
   cwd?: string;
 }
 
+/** A spawn names the task; harness, model, reasoning and autonomy follow the chat. */
+export type ThreadSpawnInput = Omit<ThreadInput, 'cwd' | 'provider' | 'autonomy'> &
+  Partial<Pick<ThreadInput, 'provider' | 'autonomy'>>;
+
 export interface ProjectThread {
   appSessionId: string;
   ownerAppSessionId?: string;
@@ -20,6 +24,7 @@ export interface ProjectThread {
 export interface ProjectView {
   id: string;
   title: string;
+  cwd?: string;
   paused: boolean;
   wakesLeft: number;
   launching: number;

@@ -1,21 +1,45 @@
 # Local Projects
 
-Projects is a draft workspace for independent DROIDEX conversations. Its main
-conversation and managed threads are normal top-level sessions, not harness
-subagents. Each retains its own history, settings and runtime identity.
+A project is one conversation that can run others. Its main conversation and
+the threads it spawns are normal top-level sessions, not harness subagents:
+each keeps its own history, settings, transcript and runtime identity, and each
+can be opened, steered and reviewed like any other chat.
 
-## Available in this draft
+## Starting threads
 
-Open **Projects**, choose **Create project**, and select a harness, model,
-reasoning level, autonomy and optional workspace. **New thread** on a card
-starts a conversation owned by that thread. Cards identify their direct owner.
-The main conversation can coordinate all members; other conversations can only
-control their direct children. A child cannot exceed its owner's autonomy.
+Any chat can start a thread, because DROIDEX gives every interactive chat the
+`droidex-threads` MCP tools: `thread_spawn`, `thread_send`, `thread_list`,
+`thread_stop` and `thread_ask_owner`. Asking a chat to run work in parallel is
+enough — it spawns the threads itself, and the chat becomes that project's main
+conversation on the first spawn. `thread_spawn` follows the chat's own
+autonomy: it is auto-approved at High and asks the user otherwise; the other
+four tools only move text between conversations DROIDEX already owns.
 
-Opening a card uses the existing chat and composer: read history, send work,
-change settings and inspect the conversation as usual. Opening or selecting a
-thread does not stop its siblings. **Stop** remains available while automatic
-coordination is paused. It interrupts that thread and cancels its queued work.
+A thread inherits the workspace, harness, model, reasoning level and autonomy
+of the chat that spawned it unless the call names different ones, and it can
+never exceed its owner's autonomy.
+
+**Projects** lists every local project with what it is doing, and opens a
+project's main conversation. **New project** starts one from a first task and
+is the only place that asks for a harness, model and autonomy.
+
+## The Threads panel
+
+The chat's utility panel has a **Threads** tab: a headline stating what is
+waiting on the user, then the chat's threads grouped **Needs you**, **Working**
+and **Idle**, each row carrying the thread's own last step and how long ago it
+moved. The states come from the same signals the sidebar's activity view reads
+— a pending approval or question, the session phase, the chat's activity digest
+— so the panel never claims something the app cannot back up.
+
+Opening a row shows that thread's own conversation with a composer that steers
+it in place, **Stop** while it runs, and **Open** to bring it into the main
+pane. In the chat, a spawned thread renders as an inline row with its live step
+that stays visible after the turn folds, and a thread's report back arrives as
+a quiet notice rather than a message wearing the user's bubble.
+
+Opening or selecting a thread does not stop its siblings. **Stop** interrupts
+that thread and cancels its queued work.
 
 A settled managed turn reports only a bounded excerpt of its final primary
 reply to its direct owner. Tool output and thinking never enter that report.
@@ -36,14 +60,7 @@ parallel edits. DROIDEX must remain running. It cannot wake a sleeping computer.
 
 ## Not implemented
 
-**Agent-native thread tools are not connected.** The app bridge supports
-creation, spawning, messaging, coordination questions, stopping and pausing,
-but bridge commands are not tools automatically visible inside Factory,
-Codex or Claude. This draft does not add an MCP server, register fictional
-native tools, or claim autonomous thread spawning from a chat prompt.
-
-Native provider tool transport, authenticated cross-harness end-to-end testing,
-automatic worktree isolation and per-thread diff attribution remain outside
+Automatic worktree isolation and per-thread diff attribution remain outside
 this draft. Review still uses the ordinary conversation/workspace facilities;
 a shared checkout does not establish which agent authored each file change.
 
@@ -60,10 +77,12 @@ retry from lifecycle availability or runtime capacity events, not a timer.
 Messages arriving during admission stay queued independently of that claim.
 
 An unavailable or unacknowledged delivery pauses coordination with the claim
-retained as uncertain. After restart, projects are paused. Open the indicated
-conversations and review them before checking the acknowledgement and resuming;
-that discards the uncertain claim **without resending it**. Automatic replay
-could duplicate work and is deliberately forbidden.
+retained as uncertain. After restart, projects are paused, and the Threads
+panel says so with a Resume control. Starting a thread from a live conversation
+resumes coordination the same way that control does, and refuses for the same
+reason: an uncertain delivery must be reviewed first. Resuming discards that
+claim **without resending it**; automatic replay could duplicate work and is
+deliberately forbidden.
 
 Malformed or incompatible experimental ledgers fail visibly and are left
 untouched. This draft provides no migration from earlier prototypes. Back up

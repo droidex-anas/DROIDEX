@@ -10,6 +10,7 @@ const TOOL_SURFACES: Record<UtilityTool, LazySurface> = {
   terminal: 'terminal',
   files: 'files',
   agents: 'agents',
+  threads: 'threads',
 };
 
 export function UtilityToolPicker({

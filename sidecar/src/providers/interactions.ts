@@ -8,8 +8,9 @@ export interface ProviderApprovalRequest {
   confirmationType: string;
   // Stable key for an always-allow grant; absent when the request cannot earn one.
   signature?: string;
-  // Set when the request targets a DROIDEX automation MCP tool.
-  automationTool?: { serverName: string; toolName: string };
+  // Set when the request targets one of DROIDEX's own MCP tools (automations,
+  // project threads), whose approval follows the chat's autonomy.
+  appTool?: { serverName: string; toolName: string };
 }
 
 export interface ProviderQuestionAnswers {
