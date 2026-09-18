@@ -11,13 +11,21 @@ export interface ThreadInput {
   cwd?: string;
 }
 
+/** How a thread's checkout is chosen: the project's own, or one of its own. */
+export interface ThreadWorkspaceChoice {
+  workspace?: 'inherit' | 'worktree';
+  branch?: string;
+  base?: string;
+}
+
 /**
  * What a spawn asks for. A model naming only the task inherits the harness,
  * model, reasoning and autonomy of the conversation it spawns from, so a thread
  * runs with the same brain and the same limits as the chat that ordered it.
  */
 export type ThreadSpawnInput = Omit<ThreadInput, 'cwd' | 'provider' | 'autonomy'> &
-  Partial<Pick<ThreadInput, 'provider' | 'autonomy'>>;
+  Partial<Pick<ThreadInput, 'provider' | 'autonomy'>> &
+  ThreadWorkspaceChoice;
 
 export interface ProjectThread {
   appSessionId: string;

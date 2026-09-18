@@ -41,6 +41,24 @@ const spawnSchema = z.object({
     .enum(['off', 'low', 'medium', 'high'])
     .optional()
     .describe('At most this chat’s autonomy. Omit to inherit it.'),
+  workspace: z
+    .enum(['inherit', 'worktree'])
+    .optional()
+    .describe(
+      'Where the thread works. "inherit" (default) shares this chat’s checkout. "worktree" gives the thread its own checkout on its own branch — use it whenever two threads will write files, so neither sees the other’s half-finished tree.',
+    ),
+  branch: z
+    .string()
+    .min(1)
+    .max(80)
+    .optional()
+    .describe('Branch for a worktree thread. Named after the task when omitted; prefixed thread/.'),
+  base: z
+    .string()
+    .min(1)
+    .max(200)
+    .optional()
+    .describe('Commit, branch or tag the worktree branches from. The checkout’s HEAD when omitted.'),
 });
 
 /**
@@ -66,16 +84,18 @@ export function createThreadMcpServer(appSessionIdForTool: () => string | undefi
           'Use it when the user asks for work to run in the background, or for several tasks that do not depend on each other — one thread per task.',
           'Do not use it for a step you can finish in this turn, and do not spawn a thread to watch or summarise another thread.',
           'The thread inherits this chat’s workspace, harness, model, reasoning and autonomy unless you name different ones; it can never exceed this chat’s autonomy.',
+          'Choose deliberately: a cheap fast model for a mechanical task, a stronger one for judgement, and workspace "worktree" whenever threads will write files at the same time.',
         ].join(' '),
         spawnSchema.shape,
         safeTool(async (input: z.infer<typeof spawnSchema>) => {
           const projects = await requireProjectService();
-          const { appSessionId: threadId } = await projects.spawn(appSessionId(), input);
+          const started = await projects.spawn(appSessionId(), input);
           return jsonResult({
             ok: true,
-            threadId,
+            threadId: started.appSessionId,
             title: input.title,
             state: 'working',
+            ...(started.cwd ? { cwd: started.cwd, branch: started.branch } : {}),
             note: 'The thread runs on its own. Its report arrives here as a new turn; do not wait for it.',
           });
         }),
