@@ -199,6 +199,13 @@ export function SidebarCustomize({ preferences, unreadCount, onChange, onMarkAll
     if (closeTimer.current) clearTimeout(closeTimer.current);
     closeTimer.current = null;
   };
+  // Backing out of the cascade also drops a row switch still waiting on its
+  // delay, or the flyout just left behind reopens by itself.
+  const closeSubmenu = () => {
+    if (switchTimer.current) clearTimeout(switchTimer.current);
+    switchTimer.current = null;
+    setSubmenu(null);
+  };
   const filtered = preferences.filter !== DEFAULT_SIDEBAR_PREFERENCES.filter;
   const customized =
     filtered ||
@@ -218,7 +225,7 @@ export function SidebarCustomize({ preferences, unreadCount, onChange, onMarkAll
     else if (event.key === 'ArrowLeft') {
       const row = (document.activeElement as HTMLElement | null)?.closest('[data-submenu]');
       row?.querySelector<HTMLElement>('button')?.focus();
-      setSubmenu(null);
+      closeSubmenu();
     } else if (event.key === 'ArrowRight') {
       const row = (document.activeElement as HTMLElement | null)?.closest('[data-submenu]');
       const id = row?.getAttribute('data-submenu') as Submenu | null;
@@ -365,9 +372,7 @@ export function SidebarCustomize({ preferences, unreadCount, onChange, onMarkAll
           <button
             className={`${ROW} disabled:text-droid-text-muted disabled:hover:bg-transparent`}
             disabled={unreadCount === 0}
-            onMouseEnter={() => {
-              setSubmenu(null);
-            }}
+            onMouseEnter={closeSubmenu}
             onClick={() => {
               onMarkAllRead();
               close();

@@ -75,10 +75,13 @@ const PUNCTUATION_BY_CODE: Record<string, string> = {
   Semicolon: ';',
   Slash: '/',
   Space: 'Space',
+  // '+' is the chord separator, so the numpad key is stored under a name.
+  NumpadAdd: 'Plus',
 };
 
 function normalizeKey(key: string): string {
   if (key === ' ') return 'Space';
+  if (key === '+') return 'Plus';
   return key.length === 1 ? key.toUpperCase() : key;
 }
 

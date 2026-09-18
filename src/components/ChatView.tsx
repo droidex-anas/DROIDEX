@@ -325,15 +325,16 @@ export default function ChatView({
     [openAgent],
   );
 
+  const cwd = activeSession?.cwd;
   const openReviewFile = useCallback<OpenReviewFileHandler>(
     (path, change) => {
+      // A captured change carries its own diff and opens anywhere; a bare path
+      // has to be read from the workspace, so a folderless chat has nothing.
+      if (!change && !cwd) return;
       dispatch(openReviewAt(path, change));
     },
-    [dispatch],
+    [cwd, dispatch],
   );
-  // Review previews a file from the workspace; a folderless chat has nothing
-  // to open, so its paths and chips stay plain text.
-  const canOpenFiles = Boolean(activeSession?.cwd);
   const openDiff = useCallback(
     (change: FileChange) => {
       openReviewFile(change.path, change);
@@ -624,7 +625,6 @@ export default function ChatView({
     useStoreSelector((current) =>
       current.activeAppSessionId ? current.agentProcesses[current.activeAppSessionId] : undefined,
     ) ?? NO_LIVE_PROCESSES;
-  const messageFeedCwd = activeSession?.cwd;
   const messageFeedAgentMonitor = agentMonitor;
   let conversationContent: ReactNode;
   if (activeSession && transcript.length > 0) {
@@ -650,9 +650,9 @@ export default function ChatView({
             updateKind={feedUpdateKind}
             rebuiltFromItemIndex={rebuiltFromFeedItemIndex}
             pending={live}
-            {...(messageFeedCwd !== undefined ? { cwd: messageFeedCwd } : {})}
-            onOpenDiff={canOpenFiles ? openDiff : undefined}
-            onOpenReviewFile={canOpenFiles ? openReviewFile : undefined}
+            {...(cwd !== undefined ? { cwd } : {})}
+            onOpenDiff={openDiff}
+            onOpenReviewFile={openReviewFile}
             onOpenChildSession={openChildSession}
             childSessionActivity={childSessionActivity}
             onOpenAgent={openAgentTab}

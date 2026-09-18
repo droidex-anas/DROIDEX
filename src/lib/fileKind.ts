@@ -143,3 +143,8 @@ export function attachmentDisplayName(path: string): string {
   const original = base.replace(TEMP_FILE_PREFIX, '');
   return original.length > 0 ? original : base;
 }
+
+/** A pasted or dropped attachment, which lives in the temp store, not the workspace. */
+export function isTempStoreAttachment(path: string): boolean {
+  return TEMP_FILE_PREFIX.test(pathFileName(path));
+}

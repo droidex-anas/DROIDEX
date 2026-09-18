@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { Search, Check, SlidersHorizontal } from 'lucide-react';
 import { shallowEqual, useStoreDispatch, useStoreSelector } from '../hooks/useStore';
@@ -23,8 +23,12 @@ import {
   providerModelSelection,
 } from '../features/providers/providerIdentity';
 import ModelCatalogList, { defaultModelOf, effortsFor, stepEffort } from './ModelCatalogList';
+import { fitToWindow } from './composer/popoverFit';
 
 export type { ExactChildSettingsTarget } from '../lib/exactChildSettings';
+
+const PREFERRED_WIDTH_PX = 420;
+const MIN_WIDTH_PX = 280;
 
 const ACCENT = 'var(--droid-accent)';
 const accentMix = (pct: number) =>
@@ -89,6 +93,31 @@ export default function ModelSelectorPopover({
   const [filterOpen, setFilterOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
   const filterRef = useRef<HTMLDivElement>(null);
+  const [fit, setFit] = useState<{ width: number; left: number }>();
+
+  // The panel grows right from the trigger, which sits well inside the composer,
+  // so on a narrow window it would run past the edge. Narrow it to the room
+  // there and slide it back, like the composer's other popovers. `left-0`
+  // resolves against the trigger's positioning box, so that box is the anchor.
+  useLayoutEffect(() => {
+    const refit = () => {
+      const anchor = ref.current?.offsetParent;
+      if (!anchor) return;
+      setFit(
+        fitToWindow(
+          anchor.getBoundingClientRect().left,
+          window.innerWidth,
+          PREFERRED_WIDTH_PX,
+          MIN_WIDTH_PX,
+        ),
+      );
+    };
+    refit();
+    window.addEventListener('resize', refit);
+    return () => {
+      window.removeEventListener('resize', refit);
+    };
+  }, []);
   const childMode = childTarget !== undefined;
 
   const selectedAgent = childTarget?.role ?? agent;
@@ -270,6 +299,9 @@ export default function ModelSelectorPopover({
       if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
         if (childTarget && !childReady) return;
         const ids: (string | undefined)[] = [undefined, ...models.map((m) => m.id)];
+        // Nothing matches the filter: there is nowhere to step, and stepping
+        // would silently switch the live setting to Default.
+        if (ids.length < 2) return;
         const idx = ids.indexOf(resolvedModelId);
         const down = e.key === 'ArrowDown';
         // A model the filter hides is nowhere in the list: step onto its first
@@ -310,6 +342,7 @@ export default function ModelSelectorPopover({
       animate={{ opacity: 1, y: 0 }}
       exit={{ opacity: 0, y: 8 }}
       transition={{ duration: 0.16, ease: [0.16, 1, 0.3, 1] }}
+      style={fit}
       className="absolute bottom-full left-0 mb-3 w-[min(420px,calc(100vw-2rem))] z-50"
     >
       <div className="rounded-2xl border border-droid-border bg-droid-elevated shadow-droid overflow-hidden">
