@@ -11,6 +11,7 @@ interface ProjectHost {
   create: (command: Extract<ClientCommand, { type: 'session.create' }>) => Promise<void>;
   send: (sessionId: string, text: string, current?: boolean) => Promise<void>;
   wake: (sessionId: string, text: string) => Promise<boolean>;
+  transcriptTail: (sessionId: string) => string | undefined;
 }
 
 export class ProjectService {
@@ -127,7 +128,8 @@ export class ProjectService {
     }));
     if (hit.thread.id === hit.project.controllerId || previous === nextState) return;
     if (nextState === 'done' || nextState === 'failed') {
-      this.queue(hit.project.id, { kind: nextState === 'done' ? 'thread.done' : 'thread.failed', threadId: hit.thread.id, title: hit.thread.title });
+      const result = this.host.transcriptTail(summary.appSessionId);
+      this.queue(hit.project.id, { kind: nextState === 'done' ? 'thread.done' : 'thread.failed', threadId: hit.thread.id, title: hit.thread.title, ...(result ? { result } : {}) });
       await this.flush(hit.project.id);
     }
   }
