@@ -21,7 +21,7 @@ export class ProjectCoordinator {
   }
 
   async handle(command: ProjectCommand | { type: string }): Promise<boolean> {
-    if (!command.type.startsWith('project.')) return false;
+    if (!isProjectCommand(command)) return false;
     await this.ready;
 
     switch (command.type) {
@@ -120,8 +120,9 @@ export class ProjectCoordinator {
       const index = project.threads.findIndex((thread) => thread.appSessionId === session.appSessionId);
       if (index < 0) return project;
       const threads = [...project.threads];
-      threads[index] = {
-        ...threads[index],
+      const previous = threads[index];
+      const next = {
+        ...previous,
         provider: session.provider,
         modelId: session.modelId,
         reasoningEffort: session.reasoningEffort,
@@ -129,6 +130,16 @@ export class ProjectCoordinator {
         status,
         updatedAt: session.updatedAt,
       };
+      if (
+        previous.provider === next.provider &&
+        previous.modelId === next.modelId &&
+        previous.reasoningEffort === next.reasoningEffort &&
+        previous.autonomy === next.autonomy &&
+        previous.status === next.status &&
+        previous.updatedAt === next.updatedAt
+      )
+        return project;
+      threads[index] = next;
       changed = true;
       return { ...project, threads, updatedAt: Date.now() };
     });
@@ -193,4 +204,15 @@ function threadFromSession(
     status: session.streaming ? 'running' : 'idle',
     updatedAt: now,
   };
+}
+
+
+function isProjectCommand(command: ProjectCommand | { type: string }): command is ProjectCommand {
+  return (
+    command.type === 'project.list' ||
+    command.type === 'project.create' ||
+    command.type === 'project.attach' ||
+    command.type === 'project.removeThread' ||
+    command.type === 'project.send'
+  );
 }
