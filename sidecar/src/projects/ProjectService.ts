@@ -26,6 +26,17 @@ export class ProjectService {
 
   async list(): Promise<readonly Project[]> { await this.ready; return this.store.list(); }
 
+  async publish(): Promise<void> {
+    await this.ready;
+    this.host.emit({ type: 'projects.updated', projects: [...this.store.list()] });
+  }
+
+  assertMember(projectId: string, sessionId: string): void {
+    const project = this.requireProject(projectId);
+    if (!project.threads.some((thread) => thread.sessionId === sessionId))
+      throw new Error('This session is not part of the project.');
+  }
+
   async create(title: string, controllerSessionId: string): Promise<Project> {
     await this.ready;
     const summary = this.requireSummary(controllerSessionId);
