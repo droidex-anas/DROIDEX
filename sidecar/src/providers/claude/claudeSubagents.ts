@@ -1,6 +1,6 @@
 import type { SDKMessage } from '@anthropic-ai/claude-agent-sdk';
 import type { NormalizedEvent } from '../../normalize.js';
-import type { ChildStatus } from '../../protocol.js';
+import type { ChildActivity, ChildStatus } from '../../protocol.js';
 import type { ChildSessionSignal } from '../../subagentSignals.js';
 import { trimmedString as str } from '../../values.js';
 
@@ -58,6 +58,23 @@ function workflowAgentStatus(state: string | undefined): ChildStatus {
   if (state === 'done') return 'completed';
   if (state === 'error') return 'failed';
   return 'running';
+}
+
+// A task that was killed stopped because something asked it to; only a real
+// failure wears the failed status.
+function endedStatus(status: string): ChildStatus {
+  if (status === 'completed') return 'completed';
+  return status === 'killed' ? 'paused' : 'failed';
+}
+
+// Whether every field this patch would write already holds that value, so the
+// snapshot repeats what the row already says.
+function writesNothingNew(known: ChildSessionSignal, patch: Partial<ChildSessionSignal>): boolean {
+  return Object.entries(patch).every(([key, value]) =>
+    key === 'activity'
+      ? known.activity?.preview === (value as ChildActivity | undefined)?.preview
+      : known[key as keyof ChildSessionSignal] === value,
+  );
 }
 
 export class ClaudeSubagents {
@@ -151,11 +168,11 @@ export class ClaudeSubagents {
     if (workflow) {
       if (status !== 'completed' && status !== 'failed' && status !== 'killed') return [];
       this.workflows.delete(message.task_id);
-      return this.settleWorkflowAgents(workflow, status === 'completed' ? 'completed' : 'failed');
+      return this.settleWorkflowAgents(workflow, endedStatus(status));
     }
     if (!this.children.has(message.task_id)) return [];
     return this.update(message.task_id, {
-      ...(status ? { status: status === 'killed' ? 'paused' : status } : {}),
+      ...(status ? { status: endedStatus(status) } : {}),
       ...(description ? { activity: { preview: description } } : {}),
     });
   }
@@ -189,22 +206,22 @@ export class ClaudeSubagents {
       if (!providerSessionId) continue;
       const status = workflowAgentStatus(entry.state);
       const preview = entry.resultPreview;
+      const patch: Partial<ChildSessionSignal> = {
+        toolUseId: workflow.toolUseId,
+        label: entry.label,
+        group: workflow.name,
+        status,
+        ...(entry.promptPreview ? { prompt: entry.promptPreview } : {}),
+        ...(entry.model ? { modelId: entry.model } : {}),
+        ...(entry.phaseTitle ? { phase: entry.phaseTitle } : {}),
+        ...(preview ? { activity: { preview } } : {}),
+      };
+      // One snapshot arrives per agent transition and each repeats every agent,
+      // so only a snapshot that changes something the row shows is an event.
       const known = this.children.get(providerSessionId);
-      // One snapshot arrives per agent transition, each repeating every agent.
-      if (known?.status === status && known.activity?.preview === preview) continue;
+      if (known && writesNothingNew(known, patch)) continue;
       workflow.agentIds.add(providerSessionId);
-      events.push(
-        ...this.update(providerSessionId, {
-          toolUseId: workflow.toolUseId,
-          label: entry.label,
-          group: workflow.name,
-          status,
-          ...(entry.promptPreview ? { prompt: entry.promptPreview } : {}),
-          ...(entry.model ? { modelId: entry.model } : {}),
-          ...(entry.phaseTitle ? { phase: entry.phaseTitle } : {}),
-          ...(preview ? { activity: { preview } } : {}),
-        }),
-      );
+      events.push(...this.update(providerSessionId, patch));
     }
     return events;
   }

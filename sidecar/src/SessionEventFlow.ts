@@ -37,6 +37,10 @@ const POST_TERMINAL_GENERATION_KINDS = new Set(['text', 'thinking', 'tool_call',
 
 export class SessionEventFlow {
   private readonly terminalSources = new Map<string, Set<string>>();
+  // Spawns already reported as unadmitted. Every delta of an unresolved or
+  // ambient agent reaches the drop, and one line per row is a flood, not a
+  // diagnostic.
+  private readonly warnedSpawns = new Map<string, Set<string>>();
 
   constructor(private readonly dependencies: SessionEventFlowDependencies) {}
 
@@ -81,6 +85,7 @@ export class SessionEventFlow {
 
   forgetSession(appSessionId: string): void {
     this.terminalSources.delete(appSessionId);
+    this.warnedSpawns.delete(appSessionId);
   }
 
   // A provider session streams already-normalized events; SDK-shaped callbacks
@@ -104,10 +109,9 @@ export class SessionEventFlow {
     const owned = this.ownedBy(appSessionId, normalized.childOwner);
     if (owned === 'unadmitted') {
       // A row with no agent to hold it would read as the parent's own work, so
-      // it is dropped; say so once, because a silent loss is undiagnosable.
-      console.warn(
-        `[children] dropped a ${normalized.transcript?.kind ?? 'provider'} row for an unadmitted agent (spawn ${normalized.childOwner?.id ?? 'unknown'})`,
-      );
+      // it is dropped; say so once per spawn, because a silent loss is
+      // undiagnosable and a line per row is a flood.
+      this.warnUnadmitted(appSessionId, normalized);
       return;
     }
 
@@ -151,6 +155,20 @@ export class SessionEventFlow {
     // it would be wrong in one pane and missing from another.
     if (scope === 'ambiguous') return undefined;
     return scope ?? 'unadmitted';
+  }
+
+  private warnUnadmitted(appSessionId: string, normalized: NormalizedEvent): void {
+    const spawnId = normalized.childOwner?.id ?? 'unknown';
+    let warned = this.warnedSpawns.get(appSessionId);
+    if (!warned) {
+      warned = new Set<string>();
+      this.warnedSpawns.set(appSessionId, warned);
+    }
+    if (warned.has(spawnId)) return;
+    warned.add(spawnId);
+    console.warn(
+      `[children] dropping rows for an unadmitted agent (spawn ${spawnId}); the first was a ${normalized.transcript?.kind ?? 'provider'} row`,
+    );
   }
 
   private terminalScope(appSessionId: string): Set<string> {
