@@ -6,6 +6,7 @@ import { SessionManager } from './SessionManager.js';
 import { startBridgeServer } from './bridgeServer.js';
 import { droidexUserDataDir } from './droidexPaths.js';
 import { shutdownSidecar } from './shutdown.js';
+import { ProjectCoordinator } from './projects/ProjectCoordinator.js';
 import { hotPathMetrics } from './telemetry/hotPathMetrics.js';
 
 const REQUESTED_PORT = bridgePort(process.env.BRIDGE_PORT ?? '0');
@@ -14,12 +15,14 @@ const ASSET_TOKEN = requiredSecret('BROWSER_ASSET_TOKEN');
 const EXIT_ON_STDIN_CLOSE = process.env.BRIDGE_EXIT_ON_STDIN_CLOSE !== '0';
 
 let automationManager: AutomationManager | null = null;
+let projectCoordinator: ProjectCoordinator | null = null;
 
 const server = startBridgeServer({
   requestedPort: REQUESTED_PORT,
   token: TOKEN,
   assetToken: ASSET_TOKEN,
   onCommand: async (command) => {
+    if (projectCoordinator && (await projectCoordinator.handle(command))) return;
     if (automationManager && (await automationManager.handleBridgeCommand(command))) return;
     await manager.handle(command);
   },
@@ -33,6 +36,11 @@ const manager = new SessionManager(
         console.error('Automation lifecycle observer failed', error);
       });
     }
+    if (projectCoordinator) {
+      void projectCoordinator.observe(event).catch((error: unknown) => {
+        console.error('Project lifecycle observer failed', error);
+      });
+    }
     server.broadcast(event);
   },
   {
@@ -40,6 +48,9 @@ const manager = new SessionManager(
     onSessionAvailable: (appSessionId) => {
       void automationManager?.observeSessionAvailability(appSessionId).catch((error: unknown) => {
         console.error('Automation availability observer failed', error);
+      });
+      void projectCoordinator?.onSessionAvailable(appSessionId).catch((error: unknown) => {
+        console.error('Project availability observer failed', error);
       });
     },
     onScheduledCapacityChanged: () => {
@@ -61,6 +72,13 @@ automationManager = configureAutomationManager({
   resolveSessionContext: (appSessionId) => manager.automationSessionContext(appSessionId),
   validateSelection: (modelId, reasoningEffort) =>
     manager.validateAutomationSelection(modelId, reasoningEffort),
+});
+
+projectCoordinator = new ProjectCoordinator({
+  dataDir: droidexUserDataDir(),
+  emit: (event) => server.broadcast(event),
+  session: (appSessionId) => manager.sessionSummary(appSessionId),
+  send: (appSessionId, text) => manager.handle({ type: 'session.send', appSessionId, text }),
 });
 
 let shuttingDown = false;
