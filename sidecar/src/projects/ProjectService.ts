@@ -94,6 +94,11 @@ export class ProjectService {
       await this.markWaiting(event.request.appSessionId, event.request.title);
   }
 
+  toolContext(sessionId: string): { projectId: string; threadId: string } | undefined {
+    const hit = findThread(this.store.list(), sessionId);
+    return hit ? { projectId: hit.project.id, threadId: hit.thread.id } : undefined;
+  }
+
   async userWake(projectId: string, text: string): Promise<void> {
     await this.ready;
     this.queue(projectId, { kind: 'user', text });
