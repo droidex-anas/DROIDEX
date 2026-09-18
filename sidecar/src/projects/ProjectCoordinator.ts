@@ -4,7 +4,7 @@ import type { ServerEvent, SessionSummary } from '../protocol.js';
 import type { Project, ProjectCommand, ProjectEvent, ProjectThread } from './types.js';
 import { ProjectStore } from './ProjectStore.js';
 
-interface ProjectCoordinatorOptions {
+export interface ProjectCoordinatorOptions {
   dataDir: string;
   emit: (event: ProjectEvent) => void;
   session: (appSessionId: string) => SessionSummary | undefined;
@@ -20,7 +20,7 @@ export class ProjectCoordinator {
     this.ready = this.store.load();
   }
 
-  async handle(command: ProjectCommand): Promise<boolean> {
+  async handle(command: ProjectCommand | { type: string }): Promise<boolean> {
     if (!command.type.startsWith('project.')) return false;
     await this.ready;
 
