@@ -165,7 +165,10 @@ export class SessionLifecycle {
   private readonly resumeOperations = new Map<string, Promise<boolean>>();
 
   constructor(private readonly dependencies: SessionLifecycleDependencies) {}
-  async create(command: SessionCreateCommand): Promise<void> {
+  async create(
+    command: SessionCreateCommand,
+    bind?: (session: SessionSummary) => Promise<void>,
+  ): Promise<SessionSummary | undefined> {
     const d = this.dependencies;
     d.ensureConnected();
     const appCwd = command.cwd ?? '';
@@ -266,8 +269,16 @@ export class SessionLifecycle {
       d.openProviderTranscript(summary);
       this.trackProviderProcess(appSessionId, providerSession, mcp.configs);
       d.childSessions.attachParent(appSessionId);
+      if (bind) {
+        await bind(summary);
+        this.requireOpenAdmission();
+        if (d.registry.getLive(appSessionId) !== liveSession || liveSession.session.isClosed) {
+          throw new Error('The session closed before its first turn.');
+        }
+      }
       d.emit({ type: 'session.created', clientRef: command.clientRef, session: summary });
       this.driveInBackground(appSessionId, sessionPrompt(command.goal, command.mentions));
+      return summary;
     } catch (error) {
       await this.cleanupFailedOpen(pendingMcpServers, pendingSession, pendingLiveSession);
       if (!isOpenAdmissionClosed(error)) {
@@ -459,6 +470,44 @@ export class SessionLifecycle {
         recoverable: true,
       });
     });
+  }
+
+  // Admit a watcher turn only after resume/settings have settled. Unlike send(),
+  // this must never join the user's pending queue or interrupt their active turn.
+  async sendWhenIdle(
+    appSessionId: string,
+    text: string,
+    isCurrent: () => boolean,
+  ): Promise<boolean> {
+    const d = this.dependencies;
+    if (!isCurrent() || d.isShutdownStarted()) return false;
+    const current = d.registry.getLive(appSessionId);
+    if (current && !this.acceptsWake(current)) return false;
+    const live = await this.prepareToSend(appSessionId);
+    if (
+      !live ||
+      !isCurrent() ||
+      d.isShutdownStarted() ||
+      d.registry.getLive(live.summary.appSessionId) !== live ||
+      !this.acceptsWake(live)
+    )
+      return false;
+    this.driveInBackground(live.summary.appSessionId, sessionPrompt(text));
+    return true;
+  }
+
+  private acceptsWake(live: LiveSession): boolean {
+    return (
+      !live.streaming &&
+      !live.compacting &&
+      !live.autoCompacting &&
+      !live.pendingSends.length &&
+      !live.closeMode &&
+      !live.interrupting &&
+      !live.interruptingForSteer &&
+      !live.session.isClosed &&
+      !live.summary.phase.startsWith('awaiting_')
+    );
   }
 
   async send(

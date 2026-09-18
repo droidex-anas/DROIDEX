@@ -1,3 +1,4 @@
+import { isProjectView } from '../../sidecar/src/projects/types';
 import type {
   BridgeResetMessage,
   BridgeRuntimeSnapshot,
@@ -139,6 +140,19 @@ function isServerEvent(value: unknown): value is ServerEvent {
   // Runtime `type` is a string; narrowing to the union makes a missing variant fail this switch.
   const type = value.type as ServerEvent['type'];
   switch (type) {
+    case 'projects.snapshot':
+      return (
+        Array.isArray(value.projects) &&
+        value.projects.length <= 32 &&
+        value.projects.every(isProjectView)
+      );
+    case 'project.result':
+      return (
+        typeof value.requestId === 'string' &&
+        (value.error !== undefined
+          ? typeof value.error === 'string'
+          : typeof value.projectId === 'string')
+      );
     case 'connection':
       return value.status === 'connected' || value.status === 'error';
     case 'runtime.updated':

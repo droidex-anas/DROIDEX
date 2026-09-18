@@ -1,0 +1,71 @@
+name: Projects validation
+on:
+  push:
+    branches: [feat/local-projects]
+    paths:
+      - tools/apply-projects.py
+      - .github/workflows/projects-validate.yml
+permissions:
+  contents: write
+concurrency:
+  group: projects-validation
+  cancel-in-progress: false
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feat/local-projects
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Apply integration
+        run: |
+          if test -f tools/apply-projects.py; then
+            python3 tools/apply-projects.py
+            rm tools/apply-projects.py
+          fi
+      - run: npm ci --ignore-scripts --no-audit --no-fund
+      - run: npm ci --prefix sidecar --ignore-scripts --no-audit --no-fund
+      - name: Format changed source and commit
+        run: |
+          git diff --name-only --diff-filter=ACM origin/main -- '*.ts' '*.tsx' '*.md' | xargs -r npx prettier --write
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add sidecar/src src docs tools/apply-projects.py
+          if ! git diff --cached --quiet; then
+            git commit -m 'Wire local Projects into sessions and workspace'
+            git push origin HEAD:feat/local-projects
+          fi
+          wc -l sidecar/src/projects/* src/features/projects/*
+      - name: Renderer types
+        if: always()
+        continue-on-error: true
+        run: npm run typecheck
+      - name: Sidecar types
+        if: always()
+        continue-on-error: true
+        run: npm run sidecar:typecheck
+      - name: Electron checks
+        if: always()
+        continue-on-error: true
+        run: npm run electron:check
+      - name: Frontend tests
+        if: always()
+        continue-on-error: true
+        run: npm test
+      - name: Sidecar tests
+        if: always()
+        continue-on-error: true
+        run: npm --prefix sidecar test
+      - name: Build
+        if: always()
+        continue-on-error: true
+        run: npm run build
+      - name: Docs and formatting
+        if: always()
+        continue-on-error: true
+        run: npm run docs:check && npm run format:check

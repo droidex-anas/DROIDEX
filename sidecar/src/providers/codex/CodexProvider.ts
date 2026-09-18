@@ -76,11 +76,13 @@ export class CodexProvider implements Provider {
     modelId,
     reasoningEffort,
     autonomyLevel,
+    mcpServers,
   }: ProviderOpenInput): Promise<ProviderSession> {
     // Codex mints the thread id, so DROIDEX's own identity is minted here and
     // the thread becomes the session's separate resume handle.
     return this.openSession({
       appSessionId: randomUUID(),
+      mcpServers,
       cwd,
       autonomy: autonomyLevel ?? 'low',
       model: {
@@ -93,13 +95,22 @@ export class CodexProvider implements Provider {
 
   resume(
     providerSessionId: string,
-    { interactions, cwd, modelId, reasoningEffort, autonomy, resumeId }: ProviderResumeInput,
+    {
+      interactions,
+      cwd,
+      modelId,
+      reasoningEffort,
+      autonomy,
+      resumeId,
+      mcpServers,
+    }: ProviderResumeInput,
   ): Promise<ProviderSession> {
     if (!resumeId)
       throw new Error('This Codex session has no stored thread and cannot be reopened.');
     return this.openSession(
       {
         appSessionId: providerSessionId,
+        mcpServers,
         cwd: cwd ?? tmpdir(),
         autonomy: autonomy ?? 'low',
         model: {

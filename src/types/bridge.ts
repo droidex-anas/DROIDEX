@@ -1,3 +1,4 @@
+import type { ProjectCommand, ProjectEvent } from '../../sidecar/src/projects/types';
 // Bridge protocol shared between the Node sidecar and the React frontend.
 // The frontend keeps a mirror copy at src/types/bridge.ts — keep them in sync.
 
@@ -610,6 +611,7 @@ export type PermissionOutcome =
 
 // ── Frontend -> Sidecar ──────────────────────────────────────────────
 export type ClientCommand =
+  | ProjectCommand
   | AutomationBridgeCommand
   | McpClientCommand
   | { type: 'connect'; apiKey?: string }
@@ -857,6 +859,7 @@ export interface ChildErrorEvent {
 
 // ── Sidecar -> Frontend ──────────────────────────────────────────────
 export type ServerEvent =
+  | ProjectEvent
   | McpServerEvent
   | AutomationBridgeEvent
   | { type: 'connection'; status: 'connected' | 'error'; message?: string }

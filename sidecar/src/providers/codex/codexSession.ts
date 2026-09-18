@@ -1,3 +1,5 @@
+import type { McpServerConfig } from '@factory/droid-sdk';
+import { codexMcpConfig } from './codexMcp.js';
 // One `codex app-server` process per DROIDEX session, holding one thread. Turns
 // run on that thread; model, effort and autonomy ride on each `turn/start`,
 // which Codex applies to that turn and the ones after it.
@@ -23,6 +25,7 @@ import { TurnStream, turnInput, turnStartParams } from './codexTurn.js';
 const STARTUP_QUIET_MS = 40;
 
 export interface CodexSessionInput {
+  mcpServers?: McpServerConfig[];
   // DROIDEX's own identity for the session. Codex mints its thread id itself,
   // which the session carries separately as its resume handle.
   appSessionId: string;
@@ -50,6 +53,7 @@ export class CodexSession implements ProviderSession {
   private readonly client: AppServerClient;
   private readonly mapper: CodexEventMapper;
   private readonly cwd: string;
+  private readonly mcpConfig: Record<string, unknown>;
   private autonomy: Autonomy;
   private model: ProviderModelSettings;
   private threadId?: string;
@@ -75,6 +79,7 @@ export class CodexSession implements ProviderSession {
     });
     this.client = input.client;
     this.cwd = input.cwd;
+    this.mcpConfig = codexMcpConfig(input.mcpServers);
     this.autonomy = input.autonomy;
     this.model = input.model;
     this.mapper = new CodexEventMapper(input.appSessionId, input.model);
@@ -110,6 +115,7 @@ export class CodexSession implements ProviderSession {
   async open(resumeId?: string): Promise<void> {
     const { approvalPolicy, sandbox } = codexAutonomy(this.autonomy);
     const settings = {
+      ...(Object.keys(this.mcpConfig).length ? { config: this.mcpConfig } : {}),
       cwd: this.cwd,
       approvalPolicy,
       sandbox,

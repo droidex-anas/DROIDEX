@@ -1,3 +1,4 @@
+import { GitBranch } from 'lucide-react';
 import { useEffect, useRef } from 'react';
 import { shallowEqual, useStoreDispatch, useStoreSelector } from '../hooks/useStore';
 import { bindLazySurfaceIntent } from '../lib/chunkPreloader';
@@ -19,14 +20,26 @@ export function SidebarNavigation() {
       workspaceCwds: current.workspaceCwds,
     };
   }, shallowEqual);
+  const projectsButtonRef = useRef<HTMLButtonElement>(null);
   const automationsButtonRef = useRef<HTMLButtonElement>(null);
 
   useEffect(() => bindLazySurfaceIntent('automations', automationsButtonRef.current), []);
+  useEffect(() => bindLazySurfaceIntent('projects', projectsButtonRef.current), []);
 
   if (isEmbedded()) return null;
 
   return (
     <>
+      <button
+        ref={projectsButtonRef}
+        data-testid="projects-nav"
+        onClick={() => dispatch({ type: 'OPEN_PROJECTS' })}
+        aria-current={state.mainView === 'projects' ? 'page' : undefined}
+        className={`group mt-0.5 flex w-full items-center gap-2.5 rounded-xl px-2.5 py-1.5 text-[13px] font-medium transition-colors ${state.mainView === 'projects' ? 'bg-droid-active text-droid-text' : 'text-droid-text hover:bg-droid-elevated'}`}
+      >
+        <GitBranch className="h-3.5 w-3.5 shrink-0 text-droid-text-secondary" />
+        Projects
+      </button>
       <button
         data-testid="pull-requests-nav"
         onClick={() => {

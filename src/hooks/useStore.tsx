@@ -578,6 +578,8 @@ type Action =
     }
   | { type: 'TOGGLE_SETTINGS' }
   | { type: 'TOGGLE_MISSION_CONTROL' }
+  | { type: 'OPEN_PROJECTS'; appSessionId?: string }
+  | { type: 'CLOSE_PROJECTS' }
   | { type: 'OPEN_AUTOMATIONS'; automationId?: string }
   | { type: 'CLOSE_AUTOMATIONS' }
   | { type: 'AUTOMATION_EDITOR_REQUEST_HANDLED'; requestId: number }
@@ -1486,6 +1488,15 @@ function baseReducer(state: AppState, action: Action): AppState {
         Object.keys(pendingQuestions).length !== Object.keys(state.pendingQuestions).length;
       return cleared ? { ...state, pendingPermissions, pendingQuestions } : state;
     }
+
+    case 'OPEN_PROJECTS': {
+      const next = action.appSessionId
+        ? reducer(state, { type: 'SET_ACTIVE_SESSION', id: action.appSessionId })
+        : state;
+      return { ...next, mainView: 'projects', selectedChild: null };
+    }
+    case 'CLOSE_PROJECTS':
+      return { ...state, mainView: 'session' };
 
     case 'SET_ACTIVE_SESSION': {
       // Stamp "seen now" on both the session being left (so responses received
