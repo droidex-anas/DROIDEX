@@ -9,7 +9,6 @@ interface ProjectHost {
   emit: (event: ServerEvent) => void;
   summary: (sessionId: string) => SessionSummary | undefined;
   create: (command: Extract<ClientCommand, { type: 'session.create' }>) => Promise<void>;
-  attachTools?: (sessionId: string) => Promise<void>;
   send: (sessionId: string, text: string, current?: boolean) => Promise<void>;
   wake: (sessionId: string, text: string) => Promise<boolean>;
 }
@@ -86,7 +85,6 @@ export class ProjectService {
       if (!pending) return;
       this.spawning.delete(event.clientRef);
       await this.attach(pending, event.session);
-      await this.host.attachTools?.(event.session.appSessionId);
       return;
     }
     if (event.type === 'session.updated') await this.sync(event.session);
