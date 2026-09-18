@@ -139,6 +139,8 @@ function isServerEvent(value: unknown): value is ServerEvent {
   // Runtime `type` is a string; narrowing to the union makes a missing variant fail this switch.
   const type = value.type as ServerEvent['type'];
   switch (type) {
+    case 'projects.updated':
+      return Array.isArray(value.projects);
     case 'connection':
       return value.status === 'connected' || value.status === 'error';
     case 'runtime.updated':
