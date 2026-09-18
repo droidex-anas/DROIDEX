@@ -7,6 +7,9 @@ import { startBridgeServer } from './bridgeServer.js';
 import { droidexUserDataDir } from './droidexPaths.js';
 import { shutdownSidecar } from './shutdown.js';
 import { hotPathMetrics } from './telemetry/hotPathMetrics.js';
+import { ProjectService } from './projects/ProjectService.js';
+import { handleProjectCommand } from './projects/bridge.js';
+import { setProjectService } from './projects/wiring.js';
 
 const REQUESTED_PORT = bridgePort(process.env.BRIDGE_PORT ?? '0');
 const TOKEN = requiredSecret('BRIDGE_TOKEN');
@@ -14,12 +17,14 @@ const ASSET_TOKEN = requiredSecret('BROWSER_ASSET_TOKEN');
 const EXIT_ON_STDIN_CLOSE = process.env.BRIDGE_EXIT_ON_STDIN_CLOSE !== '0';
 
 let automationManager: AutomationManager | null = null;
+let projects: ProjectService | null = null;
 
 const server = startBridgeServer({
   requestedPort: REQUESTED_PORT,
   token: TOKEN,
   assetToken: ASSET_TOKEN,
   onCommand: async (command) => {
+    if (projects && (await handleProjectCommand(projects, command))) return;
     if (automationManager && (await automationManager.handleBridgeCommand(command))) return;
     await manager.handle(command);
   },
@@ -28,6 +33,7 @@ const server = startBridgeServer({
 
 const manager = new SessionManager(
   (event) => {
+    if (projects) void projects.observe(event).catch((error: unknown) => console.error('Projects observer failed', error));
     if (automationManager) {
       void automationManager.observeSessionEvent(event).catch((error: unknown) => {
         console.error('Automation lifecycle observer failed', error);
@@ -62,6 +68,16 @@ automationManager = configureAutomationManager({
   validateSelection: (modelId, reasoningEffort) =>
     manager.validateAutomationSelection(modelId, reasoningEffort),
 });
+
+projects = new ProjectService({
+  dataDir: droidexUserDataDir(),
+  emit: (event) => server.broadcast(event),
+  summary: (id) => manager.projectSessionSummary(id),
+  create: (command) => manager.handle(command),
+  send: (id, text, current) => manager.handle({ type: current ? 'session.sendNow' : 'session.send', appSessionId: id, text }),
+  wake: (id, text) => manager.deliverProjectWake(id, text),
+});
+setProjectService(projects);
 
 let shuttingDown = false;
 
