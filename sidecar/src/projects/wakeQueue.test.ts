@@ -170,3 +170,73 @@ test('completed callbacks free the global limit of two accepted project turns', 
   queue.close();
   await queue.flush();
 });
+
+test('explicit resume rechecks both target and capacity busy markers', async () => {
+  for (const retryOn of ['target', 'capacity'] as const) {
+    const state = project();
+    let calls = 0;
+    const queue = new ProjectWakeQueue(
+      {
+        deliver: async () => {
+          calls += 1;
+          if (calls === 1) return { status: 'busy', retryOn };
+          return { status: 'accepted', settled: Promise.resolve() };
+        },
+      },
+      () => Promise.resolve(),
+      (_project, error) => {
+        throw error;
+      },
+    );
+    queue.kick(state);
+    await tick();
+    await tick();
+    assert.equal(calls, 1);
+    state.paused = true;
+    queue.invalidate(state);
+    state.paused = false;
+    queue.invalidate(state);
+    queue.kick(state);
+    await tick();
+    await tick();
+    assert.equal(calls, 2, retryOn + ' must be rechecked on explicit resume');
+    assert.equal(state.pending.length, 0);
+    queue.close();
+    await queue.flush();
+  }
+});
+
+test('a cancelled admission cannot restore a busy marker after resume', async () => {
+  const state = project();
+  const admitted = deferred<AutomationDeliveryReceipt>();
+  let calls = 0;
+  const queue = new ProjectWakeQueue(
+    {
+      deliver: async () => {
+        calls += 1;
+        if (calls === 1) return admitted.promise;
+        return { status: 'accepted', settled: Promise.resolve() };
+      },
+    },
+    () => Promise.resolve(),
+    (_project, error) => {
+      throw error;
+    },
+  );
+  queue.kick(state);
+  await tick();
+  state.paused = true;
+  queue.invalidate(state);
+  admitted.resolve({ status: 'busy', retryOn: 'target' });
+  await tick();
+  state.paused = false;
+  queue.invalidate(state);
+  queue.kick(state);
+  await tick();
+  await tick();
+  assert.equal(calls, 2);
+  assert.equal(state.wakesLeft, 19);
+  assert.equal(state.pending.length, 0);
+  queue.close();
+  await queue.flush();
+});
