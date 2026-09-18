@@ -12,6 +12,7 @@ function project(): Project {
     title: 'Example',
     paused: false,
     launching: 0,
+  plan: [],
     threads: [{ appSessionId: 'main', title: 'Main', reply: '', waiting: false }],
     pending: [],
   };

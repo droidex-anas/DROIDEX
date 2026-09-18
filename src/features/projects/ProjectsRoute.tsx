@@ -30,9 +30,14 @@ export function ProjectsRoute() {
   );
   const open = entries.find((entry) => entry.project.id === openId);
 
+  /* Opening a project is opening the conversation that leads it, with its
+     threads already beside it: that pairing is the project, and a person should
+     not have to reassemble it from two clicks. */
   function openChat(entry: ProjectBoardEntry): void {
     const main = entry.project.threads.find((thread) => !thread.ownerAppSessionId);
-    if (main) dispatch({ type: 'SET_ACTIVE_SESSION', id: main.appSessionId });
+    if (!main) return;
+    dispatch({ type: 'SET_ACTIVE_SESSION', id: main.appSessionId });
+    dispatch({ type: 'OPEN_UTILITY_TOOL', tool: 'threads' });
   }
 
   async function create(input: ThreadInput): Promise<void> {
@@ -86,6 +91,7 @@ export function ProjectsRoute() {
                 setCreating((value) => !value);
               }}
               onOpen={setOpenId}
+              onOpenChat={openChat}
             />
           )}
         </motion.div>
@@ -103,6 +109,7 @@ function ProjectListView({
   onCreate,
   onToggleCreate,
   onOpen,
+  onOpenChat,
 }: {
   entries: ProjectBoardEntry[];
   loading: boolean;
@@ -112,6 +119,7 @@ function ProjectListView({
   onCreate: (input: ThreadInput) => Promise<void>;
   onToggleCreate: () => void;
   onOpen: (projectId: string) => void;
+  onOpenChat: (entry: ProjectBoardEntry) => void;
 }) {
   return (
     <div className="min-h-0 flex-1 overflow-y-auto">
@@ -143,7 +151,10 @@ function ProjectListView({
                 key={entry.project.id}
                 entry={entry}
                 now={now}
-                onOpen={() => {
+                onOpenChat={() => {
+                  onOpenChat(entry);
+                }}
+                onOpenDetails={() => {
                   onOpen(entry.project.id);
                 }}
               />
@@ -158,52 +169,66 @@ function ProjectListView({
 function ProjectRow({
   entry,
   now,
-  onOpen,
+  onOpenChat,
+  onOpenDetails,
 }: {
   entry: ProjectBoardEntry;
   now: number;
-  onOpen: () => void;
+  onOpenChat: () => void;
+  onOpenDetails: () => void;
 }) {
   const { project, pulse } = entry;
   const folder = project.cwd ? workspaceName(project.cwd) : '';
   return (
-    <button
-      type="button"
-      onClick={onOpen}
+    <div
       data-testid="project-row"
-      className="group flex items-center gap-4 rounded-2xl border border-droid-border bg-droid-surface/40 px-5 py-4 text-left transition-colors hover:border-droid-border-hover hover:bg-droid-elevated/40"
+      className="group flex items-center gap-2 rounded-2xl border border-droid-border bg-droid-surface/40 pr-2 transition-colors hover:border-droid-border-hover hover:bg-droid-elevated/40"
     >
-      <span className="flex w-4 shrink-0 justify-center">
-        {pulse.live ? (
-          <span
-            aria-label="working"
-            className="h-3 w-3 rounded-full border-[1.5px] border-droid-text border-r-transparent motion-safe:animate-spin-slow"
-          />
-        ) : (
-          <span
-            aria-hidden="true"
-            className={`h-1.5 w-1.5 rounded-full ${
-              pulse.attention > 0 ? 'bg-droid-orange' : 'bg-droid-text-muted/50'
-            }`}
-          />
-        )}
-      </span>
-      <span className="min-w-0 flex-1">
-        <span className="flex items-center gap-2.5">
-          <span className="truncate text-[15px] font-semibold text-droid-text">
-            {project.title}
+      <button
+        type="button"
+        onClick={onOpenChat}
+        title="Open this project’s chat and its threads"
+        className="flex min-w-0 flex-1 items-center gap-4 rounded-2xl px-5 py-4 text-left"
+      >
+        <span className="flex w-4 shrink-0 justify-center">
+          {pulse.live ? (
+            <span
+              aria-label="working"
+              className="h-3 w-3 rounded-full border-[1.5px] border-droid-text border-r-transparent motion-safe:animate-spin-slow"
+            />
+          ) : (
+            <span
+              aria-hidden="true"
+              className={`h-1.5 w-1.5 rounded-full ${
+                pulse.attention > 0 ? 'bg-droid-orange' : 'bg-droid-text-muted/50'
+              }`}
+            />
+          )}
+        </span>
+        <span className="min-w-0 flex-1">
+          <span className="flex items-center gap-2.5">
+            <span className="truncate text-[15px] font-semibold text-droid-text">
+              {project.title}
+            </span>
+            {folder && <span className="truncate text-[12px] text-droid-text-muted">{folder}</span>}
           </span>
-          {folder && <span className="truncate text-[12px] text-droid-text-muted">{folder}</span>}
+          <span className="mt-1 block truncate text-[13px] text-droid-text-secondary">
+            {pulse.summary}
+          </span>
         </span>
-        <span className="mt-1 block truncate text-[13px] text-droid-text-secondary">
-          {pulse.summary}
+        <span className="w-14 shrink-0 text-right text-[12px] tabular-nums text-droid-text-muted">
+          {formatRelativeTime(pulse.updatedAt, now)}
         </span>
-      </span>
-      <span className="w-14 shrink-0 text-right text-[12px] tabular-nums text-droid-text-muted">
-        {formatRelativeTime(pulse.updatedAt, now)}
-      </span>
-      <ChevronRight className="h-4 w-4 shrink-0 text-droid-text-muted opacity-0 transition-opacity group-hover:opacity-100" />
-    </button>
+      </button>
+      <button
+        type="button"
+        onClick={onOpenDetails}
+        aria-label={`Open ${project.title} in Projects`}
+        className="shrink-0 rounded-lg p-2 text-droid-text-muted opacity-0 transition-opacity hover:bg-droid-elevated hover:text-droid-text focus-visible:opacity-100 group-hover:opacity-100"
+      >
+        <ChevronRight className="h-4 w-4" />
+      </button>
+    </div>
   );
 }
 

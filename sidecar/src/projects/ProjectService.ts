@@ -7,6 +7,7 @@ import type { ProjectPersistence } from './store.js';
 import { createThreadWorkspace } from './threadWorkspace.js';
 import type {
   Project,
+  ProjectStep,
   ProjectThread,
   ProjectView,
   ThreadInput,
@@ -44,6 +45,7 @@ const LEAD_BRIEF = [
   'You lead a DROIDEX project. You own its goal and its plan, and you are the only conversation that talks to the user.',
   'Ask the user whenever the goal, the scope or a trade-off is unclear. Do not guess at what they want from the project.',
   'Hand independent work to threads with thread_spawn, one task per thread, choosing each thread’s model, reasoning and autonomy for that task.',
+  'Keep plan_set current: the steps you intend to take, each pointed at the thread carrying it. It is what the user reads to see where the project stands.',
   'After spawning, end your turn. DROIDEX wakes you when a thread reports, asks something or stops; never poll or keep generating while you wait.',
   'When threads report, tell the user what changed and what you decided, briefly, and keep the plan moving.',
 ].join('\n');
@@ -126,6 +128,7 @@ export class ProjectService {
       ...(cwd ? { cwd } : {}),
       paused: project.paused,
       launching: project.launching,
+      plan: project.plan,
       threads: project.threads.map((thread) => ({
         appSessionId: thread.appSessionId,
         title: thread.title,
@@ -212,6 +215,32 @@ export class ProjectService {
       appSessionId,
       ...(workspace ? { cwd: workspace.cwd, branch: workspace.branch } : {}),
     };
+  }
+
+  /**
+   * Replaces the plan the lead keeps for a project. Steps are the lead's words;
+   * a step that names a thread must name one of this project's own, so the table
+   * can follow that conversation's real state instead of a claim.
+   */
+  async setPlan(source: string, steps: readonly Omit<ProjectStep, 'id'>[]): Promise<number> {
+    this.requireOpen();
+    const project = this.requireProjectFor(source);
+    if (this.thread(project, source).ownerAppSessionId)
+      throw new Error('Only the project’s main chat keeps its plan.');
+    if (steps.length > 60) throw new Error('A project plan holds at most 60 steps.');
+    project.plan = steps.map((step, index) => {
+      if (step.threadAppSessionId) this.thread(project, step.threadAppSessionId);
+      return {
+        id: `${String(index + 1)}`,
+        title: step.title.slice(0, 200),
+        ...(step.milestone ? { milestone: step.milestone.slice(0, 80) } : {}),
+        ...(step.state ? { state: step.state } : {}),
+        ...(step.threadAppSessionId ? { threadAppSessionId: step.threadAppSessionId } : {}),
+        ...(step.note ? { note: step.note.slice(0, 400) } : {}),
+      };
+    });
+    await this.save();
+    return project.plan.length;
   }
 
   publish(): void {
@@ -447,6 +476,7 @@ export class ProjectService {
       title: title.slice(0, 120) || 'Project',
       paused: false,
       launching: 0,
+      plan: [],
       threads: [],
       pending: [],
     };

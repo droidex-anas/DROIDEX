@@ -10,6 +10,7 @@ const project: ProjectView = {
   title: 'Build',
   paused: false,
   launching: 0,
+  plan: [{ id: '1', title: 'Port the client', threadAppSessionId: 'worker' }],
   threads: [
     { appSessionId: 'main', title: 'Main', waiting: false },
     { appSessionId: 'worker', ownerAppSessionId: 'main', title: 'Worker', waiting: false },

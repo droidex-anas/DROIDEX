@@ -27,6 +27,23 @@ export type ThreadSpawnInput = Omit<ThreadInput, 'cwd' | 'provider' | 'autonomy'
   Partial<Pick<ThreadInput, 'provider' | 'autonomy'>> &
   ThreadWorkspaceChoice;
 
+/* The plan the lead keeps for the user: what this project intends to do, in
+   order. A step that names a thread has no state of its own — it reports the
+   state of that conversation — so the table can never claim progress the app
+   cannot see. */
+export interface ProjectStep {
+  id: string;
+  title: string;
+  /** Optional grouping, the way a mission groups features under milestones. */
+  milestone?: string;
+  /** Only for a step no thread carries yet. */
+  state?: 'planned' | 'doing' | 'done' | 'blocked';
+  /** The thread carrying the step; its live state wins over `state`. */
+  threadAppSessionId?: string;
+  /** One line of outcome or blocker, in the lead's words. */
+  note?: string;
+}
+
 export interface ProjectThread {
   appSessionId: string;
   // The owner is another top-level conversation, not a harness subagent.
@@ -49,6 +66,7 @@ export interface Project {
   title: string;
   paused: boolean;
   launching: number;
+  plan: ProjectStep[];
   threads: ProjectThread[];
   pending: ThreadMessage[];
   delivery?: { state: 'sending' | 'uncertain'; messages: ThreadMessage[] };
@@ -62,6 +80,7 @@ export interface ProjectView {
   cwd?: string;
   paused: boolean;
   launching: number;
+  plan: ProjectStep[];
   threads: Omit<ProjectThread, 'reply'>[];
   queued: number;
   uncertain: number;

@@ -61,6 +61,14 @@ const spawnSchema = z.object({
     .describe('Commit, branch or tag the worktree branches from. The checkout’s HEAD when omitted.'),
 });
 
+interface PlanStep {
+  title: string;
+  milestone?: string;
+  state?: 'planned' | 'doing' | 'done' | 'blocked';
+  threadId?: string;
+  note?: string;
+}
+
 /**
  * The tools that let a chat run work in parallel. A thread is a full DROIDEX
  * conversation of its own — its own history, settings and transcript — not a
@@ -114,6 +122,47 @@ export function createThreadMcpServer(appSessionIdForTool: () => string | undefi
           const projects = await requireProjectService();
           await projects.send(appSessionId(), input.threadId, input.text);
           return jsonResult({ ok: true, threadId: input.threadId, state: 'queued' });
+        }),
+      ),
+      tool(
+        'plan_set',
+        [
+          'Write the plan this project shows the user: the steps it intends to take, in order.',
+          'Call it once you know the shape of the work, and again whenever the shape changes — a step finishes, a new one appears, or one turns out to be unnecessary.',
+          'Point a step at the thread carrying it with threadId; DROIDEX then shows that conversation’s real state instead of a claim, so you never have to mark it done.',
+          'Keep steps short and in the user’s words. This replaces the whole plan, so send every step you still intend to take.',
+        ].join(' '),
+        {
+          steps: z
+            .array(
+              z.object({
+                title: z.string().trim().min(1).max(200),
+                milestone: z
+                  .string()
+                  .trim()
+                  .max(80)
+                  .optional()
+                  .describe('Optional heading a run of steps belongs under.'),
+                state: z
+                  .enum(['planned', 'doing', 'done', 'blocked'])
+                  .optional()
+                  .describe('Only for a step no thread carries; a thread’s own state wins.'),
+                threadId: z.string().min(1).max(200).optional(),
+                note: z.string().trim().max(400).optional(),
+              }),
+            )
+            .max(60),
+        },
+        safeTool(async (input: { steps: PlanStep[] }) => {
+          const projects = await requireProjectService();
+          const steps = await projects.setPlan(
+            appSessionId(),
+            input.steps.map(({ threadId, ...step }) => ({
+              ...step,
+              ...(threadId ? { threadAppSessionId: threadId } : {}),
+            })),
+          );
+          return jsonResult({ ok: true, steps });
         }),
       ),
       tool(
