@@ -1113,6 +1113,10 @@ export class SessionManager {
     };
   }
 
+  sessionSummary(appSessionId: string): SessionSummary | undefined {
+    return this.registry.getLive(appSessionId)?.summary ?? this.registry.resolveSummary(appSessionId);
+  }
+
   async validateAutomationSelection(
     modelId: string,
     reasoningEffort: ReasoningEffort,
