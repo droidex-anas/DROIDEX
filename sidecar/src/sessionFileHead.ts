@@ -105,7 +105,8 @@ function exchangePart(line: string): 'prompt' | 'answer' | undefined {
   try {
     const parsed: unknown = JSON.parse(line);
     const record = objectValue(parsed);
-    if (record?.type === 'error') return 'answer';
+    // The text is what makes it a row worth showing; a bare marker is not one.
+    if (record?.type === 'error' && typeof record.text === 'string') return 'answer';
     if (record?.type !== 'message') return undefined;
     const message = objectValue(record.message);
     if (isLlmOnlyMessage(message)) return undefined;

@@ -307,12 +307,14 @@ export class CodexSession implements ProviderSession {
       // A retrying error is a hiccup the turn recovers from on its own.
       if (!failure.willRetry) this.turn?.fail(failure.error);
     });
-    this.client.onClose((error) => {
+    this.client.onClose((error, cleanExit) => {
       this.cancelStartupNotice();
       this.catalog?.close();
+      // A turn still in flight when the process goes away has failed, however
+      // the process ended; an idle chat only records a death that was abnormal.
       this.turn?.fail(error);
       this.prompts.cancel();
-      this.resolveClosed(error);
+      this.resolveClosed(cleanExit ? undefined : error);
     });
     this.prompts.register(this.client, (itemId: string) => this.mapper.toolDetail(itemId));
   }
