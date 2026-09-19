@@ -1,0 +1,8 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Report a security vulnerability
+    url: https://github.com/droidex-anas/droid-maxxing/security/advisories/new
+    about: Report privately. Never open a public issue for a security problem.
+  - name: Contributing guide
+    url: https://github.com/droidex-anas/droid-maxxing/blob/main/CONTRIBUTING.md
+    about: Development setup, the checks to run, and how to get a change merged.
