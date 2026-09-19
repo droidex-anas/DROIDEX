@@ -56,7 +56,7 @@ These are license obligations, not requests.
 - Selling merchandise or services under the DROIDEX name.
 - Any use suggesting that DROIDEX produced, sponsors, or endorses your work.
 
-To ask, open an issue on the repository. Permission that is not given in
+To ask, open a [discussion](https://github.com/droidex-anas/droid-maxxing/discussions) on the repository. Permission that is not given in
 writing has not been given.
 
 ## Enforcement

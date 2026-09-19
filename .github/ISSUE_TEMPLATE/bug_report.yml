@@ -5,8 +5,8 @@ body:
   - type: markdown
     attributes:
       value: |
-        Thanks for taking the time to file this. Please do not report security
-        vulnerabilities here — use a
+        Thanks for taking the time to file this. Do not report security
+        vulnerabilities here. Use a
         [private advisory](https://github.com/droidex-anas/droid-maxxing/security/advisories/new)
         instead.
   - type: textarea

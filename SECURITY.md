@@ -47,7 +47,7 @@ machine, so the interesting boundaries are:
 
 - An agent CLI doing what the user explicitly approved it to do. DROIDEX runs
   real agents against real files by design.
-- Vulnerabilities in the agent CLIs themselves — report those to their vendors.
+- Vulnerabilities in the agent CLIs themselves. Report those to their vendors.
 - Findings that require an attacker who already has local code execution as the
   same user, since they can read the same files DROIDEX can.
 - Reports produced only by an automated scanner, with no demonstrated impact.
@@ -59,6 +59,5 @@ released version is supported; there are no backports to older versions.
 
 ## Handling of your data
 
-DROIDEX's privacy and diagnostics behaviour — what crash reporting collects, how
-to turn it off, and what `/bug` and `/feedback` send — is documented in the
+DROIDEX's privacy and diagnostics behaviour is documented in the
 [README](README.md#privacy-and-diagnostics).

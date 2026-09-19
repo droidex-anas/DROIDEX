@@ -16,19 +16,19 @@ file, and state prominently in any file you changed that you changed it.
 
 The DROIDEX name, logo, and visual identity are not covered by the license. If
 you fork DROIDEX, rename your build and say plainly that it is a fork of
-DROIDEX, with a link back here — see [TRADEMARKS.md](TRADEMARKS.md) for what
+DROIDEX, with a link back here. [TRADEMARKS.md](TRADEMARKS.md) covers what
 that means in practice. Fork it, build on it, sell it if you like; just do not
 present it as though you wrote it.
 
 ## Contributing
 
-Contributions are welcome — bugs, fixes, features, and documentation.
+Contributions are welcome: bugs, fixes, features, and documentation.
 [CONTRIBUTING.md](CONTRIBUTING.md) covers the development setup, the checks to
 run, and the commit sign-off. [AGENTS.md](AGENTS.md) is the engineering guide
 the review holds changes to, and [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md)
 applies to everyone taking part.
 
-Found a security problem? Do not open an issue — follow
+Found a security problem? Do not open an issue. Follow
 [SECURITY.md](SECURITY.md).
 
 ## Run it locally

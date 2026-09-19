@@ -1,7 +1,7 @@
 # Contributing to DROIDEX
 
 DROIDEX is open source under the [Apache License 2.0](LICENSE), and
-contributions are genuinely welcome — bug reports, fixes, features,
+contributions are genuinely welcome. Bug reports, fixes, features,
 documentation, and design feedback all move the project forward.
 
 This guide covers how to get the app running, what the project expects from a
@@ -33,7 +33,10 @@ change that crosses a process boundary.
 - **Pick up an issue.** Anything labelled `good first issue` or `help wanted` is
   fair game. Comment on it so two people do not build the same thing.
 - **Improve the docs.** Unclear setup steps and stale runbooks are real bugs.
-- **Report a vulnerability.** Do not open a public issue — follow
+- **Ask a question.** Use
+  [Discussions](https://github.com/droidex-anas/droid-maxxing/discussions) for
+  anything that is not a bug or a concrete proposal.
+- **Report a vulnerability.** Do not open a public issue. Follow
   [SECURITY.md](SECURITY.md).
 
 ## Before you write code
@@ -106,9 +109,9 @@ short version:
 - Comments explain *why*, sparingly. Prefer a clearer name over a comment.
 
 On tests, this project deliberately does **not** want padded pull requests. Add
-a test when it protects real behaviour — data integrity, session targeting,
-ordering, cancellation, cleanup, or a cross-process contract — or when it pins a
-bug you just fixed. Keep the existing suites green and update the tests your
+a test when it protects real behaviour, such as data integrity, session
+targeting, ordering, cancellation, cleanup, or a cross-process contract, or when
+it pins a bug you just fixed. Keep the existing suites green and update the tests your
 change affects. "No new tests" is a normal and accepted outcome.
 
 ## Validating your change
@@ -127,7 +130,7 @@ npm run build               # Production build
 ```
 
 `npm run lint` is non-blocking because of an existing backlog, but files you add
-or change own their diagnostics — leave them clean.
+or change own their diagnostics, so leave them clean.
 
 If you changed scripts, environment variables, or onboarding commands,
 regenerate the docs:
@@ -219,7 +222,7 @@ commits so a reviewer is not hunting for logic inside a rename.
 
 A maintainer reviews every pull request. CI must be green and the DCO check must
 pass before review. Expect questions about naming, ownership of state, failure
-handling, and whether a simpler version of the change exists — the bar is
+handling, and whether a simpler version of the change exists. The bar is
 readability by the next person, not just working code.
 
 Push follow-up commits rather than force-pushing during review, so reviewers can
@@ -237,6 +240,6 @@ license.
 If a change includes third-party code, say so explicitly in the pull request and
 name its license, so it can be attributed correctly in `NOTICE`.
 
-Forking for your own product is allowed and encouraged — see
+Forking for your own product is allowed and encouraged. See
 [TRADEMARKS.md](TRADEMARKS.md) for what you must do to credit DROIDEX and make
 clear that your fork is a fork.

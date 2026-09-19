@@ -1,5 +1,8 @@
-blank_issues_enabled: true
+blank_issues_enabled: false
 contact_links:
+  - name: Question or idea
+    url: https://github.com/droidex-anas/droid-maxxing/discussions
+    about: Ask how something works, or float an idea before writing it up as a request.
   - name: Report a security vulnerability
     url: https://github.com/droidex-anas/droid-maxxing/security/advisories/new
     about: Report privately. Never open a public issue for a security problem.
