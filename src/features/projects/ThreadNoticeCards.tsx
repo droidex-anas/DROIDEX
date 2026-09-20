@@ -1,17 +1,20 @@
 import { MessageBody } from '../../components/MessageBody';
-import type { ThreadReport } from './threadNotices';
+import type { ThreadBrief, ThreadReport } from './threadNotices';
 
-export function ThreadBriefNotice({ task }: { task: string }) {
+export function ThreadBriefNotice({ brief }: { brief: ThreadBrief }) {
   return (
     <div
       data-testid="thread-brief-notice"
       className="rounded-2xl border border-droid-border bg-droid-surface/35 px-4 py-3"
     >
-      <p className="text-[12px] font-medium text-droid-text-muted">
-        Task from the chat that started this thread
-      </p>
+      <p className="text-[12px] font-medium text-droid-text-muted">{brief.lead}</p>
       <div className="mt-1.5 text-[13px] leading-6 text-droid-text-secondary">
-        <MessageBody text={task} live={false} autoPlayAppBlocks={false} cacheId="thread-brief" />
+        <MessageBody
+          text={brief.task}
+          live={false}
+          autoPlayAppBlocks={false}
+          cacheId="thread-brief"
+        />
       </div>
     </div>
   );
