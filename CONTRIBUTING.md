@@ -218,6 +218,26 @@ drive-by renames make a change harder to review and will be asked out. If a
 mechanical move and a behaviour change are both large, split them into separate
 commits so a reviewer is not hunting for logic inside a rename.
 
+## Changes that steer automation
+
+DROIDEX is built with coding agents, and maintainers run agents against
+contributor branches while reviewing them. A few paths therefore decide what
+that automation does:
+
+```
+AGENTS.md  .agent/  .factory/  .coderabbit.yaml  .github/workflows/  .husky/
+package.json  sidecar/package.json
+```
+
+A pull request that touches any of them trips the **Sensitive path review**
+check. That is not an accusation. It is a reminder that a maintainer has to read
+those diffs by hand, line by line, before anything runs them, and it will go red
+on your pull request until they have.
+
+If your change genuinely needs to touch one of these paths, that is fine. Say in
+the pull request description what you changed there and why, keep it in its own
+commit so it is easy to read, and expect it to take longer to review.
+
 ## Review
 
 A maintainer reviews every pull request. CI must be green and the DCO check must

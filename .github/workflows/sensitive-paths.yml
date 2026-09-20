@@ -1,0 +1,51 @@
+name: Sensitive paths
+
+on:
+  pull_request:
+    types: [opened, reopened, synchronize, ready_for_review]
+
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  review-required:
+    name: Sensitive path review
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      # Agent instruction files and CI definitions decide what automation does.
+      # A contributor branch that edits them can steer a maintainer's agent or
+      # the pipeline, so they get a loud, deliberate signal rather than a
+      # silent pass. Maintainer pull requests are exempt.
+      - name: Flag changes to agent instructions and CI definitions
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          PR_AUTHOR: ${{ github.event.pull_request.user.login }}
+          REPO_OWNER: ${{ github.repository_owner }}
+        run: |
+          set -euo pipefail
+
+          if [[ "$PR_AUTHOR" == "$REPO_OWNER" || "$PR_AUTHOR" == 'evilfps' ]]; then
+            echo 'Maintainer pull request. Nothing to flag.'
+            exit 0
+          fi
+
+          touched=$(gh api --paginate "repos/$REPO/pulls/$PR_NUMBER/files" --jq '.[].filename' \
+            | grep -E '^(AGENTS\.md$|\.agent/|\.factory/|\.coderabbit\.yaml|\.github/workflows/|\.husky/|package\.json$|sidecar/package\.json$)' \
+            || true)
+
+          if [[ -z "$touched" ]]; then
+            echo 'No sensitive paths touched.'
+            exit 0
+          fi
+
+          echo 'This pull request changes files that steer automation:' >&2
+          echo "$touched" | sed 's/^/  /' >&2
+          echo >&2
+          echo 'A maintainer must read these diffs line by line before merging.' >&2
+          echo 'Do not run this branch'"'"'s build or scripts until that has happened.' >&2
+          echo 'See the "Untrusted input and prompt injection" section of AGENTS.md.' >&2
+          exit 1
