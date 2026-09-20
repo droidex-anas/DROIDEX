@@ -70,7 +70,10 @@ export async function createThreadWorkspace(
 function threadBranchName(value: string): string {
   // Sanitizing flattens a slash, so a chat asking for "thread/rename-api" must
   // not come back as thread/thread-rename-api.
-  const stem = sanitizeSegment(value).replace(/^thread[-/]/, '').slice(0, 48) || 'work';
+  const stem =
+    sanitizeSegment(value)
+      .replace(/^thread[-/]/, '')
+      .slice(0, 48) || 'work';
   return `thread/${stem}`;
 }
 

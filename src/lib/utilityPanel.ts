@@ -44,7 +44,9 @@ export function openUtilityTool(
   panel: UtilityPanelState | undefined,
   tool: UtilityTool,
   createId: () => string,
-  details: Partial<Pick<UtilityTab, 'terminalId' | 'cwd' | 'filePath' | 'agentId' | 'threadId'>> = {},
+  details: Partial<
+    Pick<UtilityTab, 'terminalId' | 'cwd' | 'filePath' | 'agentId' | 'threadId'>
+  > = {},
 ): UtilityPanelState {
   const current = panel ?? CLOSED_UTILITY_PANEL;
   const existing = SINGLETON_TOOLS.has(tool)

@@ -579,7 +579,8 @@ function inheritSettings(owner: SessionSummary, input: ThreadSpawnInput): Omit<T
   const provider = input.provider ?? owner.provider;
   const sameHarness = provider === owner.provider;
   const modelId = input.modelId ?? (sameHarness ? owner.modelId : undefined);
-  const reasoningEffort = input.reasoningEffort ?? (sameHarness ? owner.reasoningEffort : undefined);
+  const reasoningEffort =
+    input.reasoningEffort ?? (sameHarness ? owner.reasoningEffort : undefined);
   return {
     title: input.title,
     prompt: input.prompt,
