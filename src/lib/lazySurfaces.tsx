@@ -43,6 +43,10 @@ export const LAZY_SURFACE_LOADERS = {
     const module = await import('../features/projects/ThreadsWorkspace');
     return { default: module.ThreadsWorkspace };
   },
+  threadNotifier: async () => {
+    const module = await import('../features/projects/ThreadAttentionNotifier');
+    return { default: module.ThreadAttentionNotifier };
+  },
 };
 
 export type LazySurface = keyof typeof LAZY_SURFACE_LOADERS;
@@ -61,6 +65,7 @@ export const LazyTerminalWorkspace = lazy(LAZY_SURFACE_LOADERS.terminal);
 export const LazyFilesWorkspace = lazy(LAZY_SURFACE_LOADERS.files);
 export const LazyAgentsWorkspace = lazy(LAZY_SURFACE_LOADERS.agents);
 export const LazyThreadsWorkspace = lazy(LAZY_SURFACE_LOADERS.threads);
+export const LazyThreadAttentionNotifier = lazy(LAZY_SURFACE_LOADERS.threadNotifier);
 
 export function utilityToolFallback(tool: UtilityTool) {
   switch (tool) {
