@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { ChevronRight } from '@droidex/icons';
 import { shallowEqual, useStoreDispatch, useStoreSelector } from '../../hooks/useStore';
-import { useActivityDigests } from '../../hooks/useActivityDigests';
+import { useThreadDigests } from './useThreadDigests';
 import { sessionAttention } from '../../lib/sessionAttention';
 import { Caret, Expand } from '../../components/transcript/primitives';
 import { ActivityStatusGlyph } from '../../components/ActivityStatusGlyph';
@@ -135,7 +135,7 @@ function useThreadRow(appSessionId: string | undefined) {
     }),
     shallowEqual,
   );
-  const digests = useActivityDigests(true);
+  const digests = useThreadDigests(appSessionId ? [appSessionId] : EMPTY_IDS);
   if (!appSessionId) return undefined;
   const rows = threadRows(projectForSession(snapshot.projects, state.activeAppSessionId), {
     sessions: state.sessions,
@@ -151,3 +151,5 @@ function stringArg(call: TranscriptEvent, key: string): string | undefined {
   const value: unknown = (args as Record<string, unknown>)[key];
   return typeof value === 'string' && value.trim() ? value : undefined;
 }
+
+const EMPTY_IDS: string[] = [];

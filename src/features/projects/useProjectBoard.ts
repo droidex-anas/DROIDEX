@@ -1,6 +1,6 @@
 import { useMemo } from 'react';
 import { shallowEqual, useStoreSelector } from '../../hooks/useStore';
-import { useActivityDigests } from '../../hooks/useActivityDigests';
+import { useThreadDigests } from './useThreadDigests';
 import { sessionAttention } from '../../lib/sessionAttention';
 import { useProjects } from './client';
 import { projectPulse, type ProjectPulse } from './projectBoard';
@@ -26,7 +26,12 @@ export function useProjectBoard(): { entries: ProjectBoardEntry[]; loading: bool
     }),
     shallowEqual,
   );
-  const digests = useActivityDigests(true);
+  const digests = useThreadDigests(
+    useMemo(
+      () => snapshot.projects.flatMap((project) => project.threads.map((t) => t.appSessionId)),
+      [snapshot.projects],
+    ),
+  );
   const entries = useMemo(
     () =>
       snapshot.projects.map((project) => {

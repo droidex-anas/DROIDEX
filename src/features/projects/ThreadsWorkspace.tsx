@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 import { shallowEqual, useStoreDispatch, useStoreSelector } from '../../hooks/useStore';
-import { useActivityDigests } from '../../hooks/useActivityDigests';
+import { useThreadDigests } from './useThreadDigests';
 import { INLINE_CARD_DURATION_S, INLINE_CARD_EASE } from '../../components/inlineCardMotion';
 import { sessionAttention } from '../../lib/sessionAttention';
 import { workspaceName } from '../../lib/workspaces';
@@ -37,9 +37,11 @@ export function ThreadsWorkspace({ tab }: { tab: UtilityTab }) {
       toolActivity: current.toolActivity,
     };
   }, shallowEqual);
-  const digests = useActivityDigests(true);
   const { session } = state;
   const project = projectForSession(snapshot.projects, session?.appSessionId);
+  const digests = useThreadDigests(
+    project?.threads.map((thread) => thread.appSessionId) ?? EMPTY_IDS,
+  );
 
   const rows = useMemo(
     () =>
@@ -131,6 +133,7 @@ function PaneTransition({
 }
 
 const EMPTY_PLAN: ProjectStep[] = [];
+const EMPTY_IDS: string[] = [];
 
 function subtitle(title: string | undefined, cwd: string | undefined, count: number): string {
   const folder = cwd ? workspaceName(cwd) : '';
