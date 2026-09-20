@@ -12,7 +12,7 @@ export interface ThreadInput {
 }
 
 /** How a thread's checkout is chosen: the project's own, or one of its own. */
-export interface ThreadWorkspaceChoice {
+interface ThreadWorkspaceChoice {
   workspace?: 'inherit' | 'worktree';
   branch?: string;
   base?: string;
@@ -48,6 +48,8 @@ export interface ProjectStep {
 
 export interface ProjectThread {
   appSessionId: string;
+  /** Set while its own question is waiting on the conversation that owns it. */
+  ask?: ThreadAsk;
   // The owner is another top-level conversation, not a harness subagent.
   ownerAppSessionId?: string;
   title: string;
@@ -61,6 +63,12 @@ export interface ThreadMessage {
   to: string;
   kind: 'result' | 'question' | 'message';
   text: string;
+}
+
+/** A harness question a thread is blocked on, routed to the chat that owns it. */
+interface ThreadAsk {
+  requestId: string;
+  questions: { index: number; question: string; options: string[] }[];
 }
 
 export interface Project {
@@ -93,10 +101,6 @@ export interface ProjectView {
 export type ProjectCommand =
   | { type: 'projects.list' }
   | { type: 'project.create'; requestId: string; input: ThreadInput }
-  | { type: 'project.spawn'; requestId: string; source: string; input: ThreadSpawnInput }
-  | { type: 'project.send'; requestId: string; source: string; target: string; text: string }
-  | { type: 'project.ask'; requestId: string; source: string; text: string }
-  | { type: 'project.stop'; requestId: string; source: string; target: string }
   | {
       type: 'project.pause';
       requestId: string;

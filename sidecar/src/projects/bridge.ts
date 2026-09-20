@@ -9,38 +9,6 @@ const requestId = { requestId: id };
 const commandSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('projects.list') }).strict(),
   z.object({ type: z.literal('project.create'), ...requestId, input: threadInputSchema }).strict(),
-  z
-    .object({
-      type: z.literal('project.spawn'),
-      ...requestId,
-      source: id,
-      input: threadInputSchema
-        .omit({ cwd: true })
-        .partial({ provider: true, autonomy: true })
-        .extend({
-          workspace: z.enum(['inherit', 'worktree']).optional(),
-          branch: z.string().min(1).max(80).optional(),
-          base: z.string().min(1).max(200).optional(),
-        }),
-    })
-    .strict(),
-  z
-    .object({
-      type: z.literal('project.send'),
-      ...requestId,
-      source: id,
-      target: id,
-      text: z.string().trim().min(1).max(8_192),
-    })
-    .strict(),
-  z
-    .object({
-      type: z.literal('project.ask'),
-      ...requestId,
-      source: id,
-      text: z.string().trim().min(1).max(8_192),
-    })
-    .strict(),
   z.object({ type: z.literal('project.stop'), ...requestId, source: id, target: id }).strict(),
   z
     .object({
@@ -139,18 +107,6 @@ async function runCommand(
     switch (command.type) {
       case 'project.create':
         ({ projectId, appSessionId } = await projects.create(command.input, command.requestId));
-        break;
-      case 'project.spawn':
-        ({ appSessionId } = await projects.spawn(command.source, command.input));
-        break;
-      case 'project.send':
-        await projects.send(command.source, command.target, command.text);
-        break;
-      case 'project.ask':
-        await projects.ask(command.source, command.text);
-        break;
-      case 'project.stop':
-        await projects.stop(command.source, command.target);
         break;
       case 'project.pause':
         await projects.setPaused(command.projectId, command.paused, command.acknowledgeDelivery);

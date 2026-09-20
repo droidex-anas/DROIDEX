@@ -8,8 +8,8 @@ can be opened, steered and reviewed like any other chat.
 ## Starting threads
 
 Any chat can start a thread, because DROIDEX gives every interactive chat the
-`droidex-threads` MCP tools: `thread_spawn`, `thread_send`, `thread_list`,
-`thread_stop` and `thread_ask_owner`. Asking a chat to run work in parallel is
+`droidex-threads` MCP tools: `thread_spawn`, `thread_send`, `thread_stop` and
+`plan_set`. Asking a chat to run work in parallel is
 enough — it spawns the threads itself, and the chat becomes that project's main
 conversation on the first spawn. `thread_spawn` follows the chat's own
 autonomy: it is auto-approved at High and asks the user otherwise; the other
@@ -38,6 +38,19 @@ client to v3", not "look into payments" — and a thread is started for a settle
 step, never to explore an open question or to work out what the task is. The
 thread cannot see the chat, so the prompt it is given carries the whole task:
 context, the files or areas involved, and what done means.
+
+## A thread's questions reach its lead
+
+When a thread asks its harness's own question — the one a person clicks an
+answer to — DROIDEX routes it to the conversation that started it, options
+intact, and wakes that chat. The lead answers with `thread_send`'s `answers`,
+which reaches the waiting call directly instead of queueing behind the question
+that is blocking the thread. The human can still answer it inside the thread;
+whoever answers first wins and the other side stops asking. A paused project
+routes nothing: its threads wait for the user.
+
+Permission requests are never routed. They stay with the person, whatever the
+project is doing.
 
 ## The plan
 
