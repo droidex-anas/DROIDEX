@@ -1,5 +1,5 @@
 import { useRef, useState } from 'react';
-import { ChevronDown } from '@droidex/icons';
+import { ChevronDown, Search } from '@droidex/icons';
 import ModelCatalogList from '../../components/ModelCatalogList';
 import { Popover } from '../../components/environment/Popover';
 import { ModelIcon, providerOf } from '../../components/ModelIcon';
@@ -26,6 +26,7 @@ export function ThreadSettings({
 }) {
   const [providerOpen, setProviderOpen] = useState(false);
   const [modelOpen, setModelOpen] = useState(false);
+  const [query, setQuery] = useState('');
   const modelRef = useRef<HTMLButtonElement>(null);
   const selected = catalog.models.find((model) => model.id === value.modelId);
   const shown = selected ?? catalog.defaultModel;
@@ -65,12 +66,27 @@ export function ThreadSettings({
         open={modelOpen}
         onClose={() => {
           setModelOpen(false);
+          setQuery('');
         }}
         anchorRef={modelRef}
         align="left"
         width={320}
         label="Choose a model"
       >
+        <div className="px-3 pb-2 pt-3">
+          <div className="flex h-9 items-center gap-2 rounded-lg border border-droid-border bg-droid-bg/60 px-3 transition-colors focus-within:border-droid-border-hover">
+            <Search className="h-3.5 w-3.5 shrink-0 text-droid-text-muted" />
+            <input
+              autoFocus
+              value={query}
+              onChange={(event) => {
+                setQuery(event.target.value);
+              }}
+              placeholder="Search models"
+              className="flex-1 bg-transparent text-[12px] text-droid-text placeholder-droid-text-muted focus:outline-none"
+            />
+          </div>
+        </div>
         <ModelCatalogList
           models={catalog.models}
           defaultModel={catalog.defaultModel}
@@ -78,13 +94,14 @@ export function ThreadSettings({
           provider={value.provider}
           selectedModelId={value.modelId || undefined}
           reasoning={value.reasoning}
-          query=""
+          query={query}
           disabled={disabled}
           reasoningLocked={false}
           showReasoning={catalog.efforts.length > 0}
           onSelectModel={(modelId) => {
             onChange({ ...value, modelId: modelId ?? '', reasoning: undefined });
             setModelOpen(false);
+            setQuery('');
           }}
           onSelectReasoning={(reasoning) => {
             onChange({ ...value, reasoning });

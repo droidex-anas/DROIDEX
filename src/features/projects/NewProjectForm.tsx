@@ -90,7 +90,7 @@ export function NewProjectForm({
               {draft.workspace ? workspaceName(draft.workspace) : 'No folder'}
             </span>
           </button>
-          <span className="flex min-w-0 flex-1 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+          <span className="flex min-w-0 flex-1">
             <ThreadSettings
               value={selection.value}
               catalog={selection.catalog}
