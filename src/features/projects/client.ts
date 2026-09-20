@@ -2,7 +2,7 @@ import { useMemo, useSyncExternalStore } from 'react';
 import { bridge } from '../../lib/bridge';
 import type { ServerEvent } from '../../types/bridge';
 import type { ProjectCommand, ProjectEvent } from './protocol';
-import type { ProjectView, ThreadInput, ThreadSpawnInput } from './types';
+import type { ProjectView, ThreadInput } from './types';
 
 type Result = Extract<ProjectEvent, { type: 'project.result'; ok: true }>;
 interface Snapshot {
@@ -48,26 +48,10 @@ export function useProjectThreadIds(): ReadonlySet<string> {
   );
 }
 
-export function refreshProjects(): void {
-  initialize();
-  bridge.send({ type: 'projects.list' });
-}
-
 export async function createProject(input: ThreadInput): Promise<string> {
   const result = await send({ type: 'project.create', requestId: crypto.randomUUID(), input });
   if (!result.projectId) throw new Error('The runtime did not identify the new project.');
   return result.projectId;
-}
-
-export async function spawnThread(source: string, input: ThreadSpawnInput): Promise<string> {
-  const result = await send({
-    type: 'project.spawn',
-    requestId: crypto.randomUUID(),
-    source,
-    input,
-  });
-  if (!result.appSessionId) throw new Error('The runtime did not identify the new thread.');
-  return result.appSessionId;
 }
 
 export async function pauseProject(
@@ -84,10 +68,6 @@ export async function pauseProject(
   });
 }
 
-export async function stopThread(source: string, target: string): Promise<void> {
-  await send({ type: 'project.stop', requestId: crypto.randomUUID(), source, target });
-}
-
 function initialize(): void {
   if (initialized) return;
   initialized = true;
@@ -102,7 +82,8 @@ function handleEvent(event: ServerEvent): void {
       listener();
     });
   } else if (event.type === 'connection' && event.status === 'connected') {
-    refreshProjects();
+    // A reconnect starts from the runtime's own snapshot, not a stale one.
+    bridge.send({ type: 'projects.list' });
   } else if (event.type === 'error' && event.code?.startsWith('project.')) {
     snapshot = { ...snapshot, loading: false, error: event.message };
     listeners.forEach((listener) => {

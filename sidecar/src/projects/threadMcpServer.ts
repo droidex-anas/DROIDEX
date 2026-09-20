@@ -35,7 +35,14 @@ const spawnSchema = z.object({
     .enum(PROVIDER_KINDS)
     .optional()
     .describe('Harness for the thread. Omit to use this chat’s harness.'),
-  modelId: z.string().min(1).max(200).optional(),
+  modelId: z
+    .string()
+    .min(1)
+    .max(200)
+    .optional()
+    .describe(
+      'A model id or display name from thread_models. Omit to inherit this chat’s model. A name the harness does not know is refused here rather than running empty.',
+    ),
   reasoningEffort: reasoningSchema.optional(),
   autonomy: z
     .enum(['off', 'low', 'medium', 'high'])
@@ -111,7 +118,7 @@ export function createThreadMcpServer(appSessionIdForTool: () => string | undefi
           return jsonResult({
             ok: true,
             threadId: started.appSessionId,
-            title: input.title,
+            title: started.title,
             state: 'working',
             ...(started.cwd ? { cwd: started.cwd, branch: started.branch } : {}),
             ...(started.step ? { step: started.step } : {}),
@@ -185,6 +192,15 @@ export function createThreadMcpServer(appSessionIdForTool: () => string | undefi
             })),
           );
           return jsonResult({ ok: true, steps });
+        }),
+      ),
+      tool(
+        'thread_models',
+        'List the models each harness can run right now, with the ids thread_spawn accepts. Read it before naming a model you are not certain of.',
+        {},
+        safeTool(async () => {
+          const projects = await requireProjectService();
+          return jsonResult({ ok: true, providers: await projects.models() });
         }),
       ),
       tool(

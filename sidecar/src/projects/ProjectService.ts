@@ -2,7 +2,7 @@ import type { AutomationDeliveryReceipt } from '../automations/types.js';
 import { ProjectActivity } from './activity.js';
 import { ProjectWakeQueue } from './ProjectWakeQueue.js';
 import { randomUUID } from 'node:crypto';
-import type { ServerEvent, SessionSummary } from '../protocol.js';
+import type { ProviderStatus, ServerEvent, SessionSummary } from '../protocol.js';
 import type { ProjectPersistence } from './store.js';
 import { createThreadWorkspace } from './threadWorkspace.js';
 import type {
@@ -17,6 +17,8 @@ import type {
 
 export interface ProjectPort {
   get(appSessionId: string): SessionSummary | undefined;
+  /** What each provider can run right now, so a spawn cannot name a model that is not there. */
+  catalog(): Promise<ProviderStatus[]>;
   create(
     input: ThreadInput,
     bind: (session: SessionSummary) => Promise<void>,
@@ -50,6 +52,7 @@ const LEAD_BRIEF = [
   'Choose each thread’s model, reasoning and autonomy for the job, and give it its own worktree whenever two threads will write files at once.',
   'After spawning, end your turn. DROIDEX wakes you when a thread reports, asks something or stops; never poll or keep generating while you wait.',
   'When threads report, keep plan_set current and tell the user what changed and what you decided, briefly.',
+  'Never print thread ids or session ids to the user. Name the thread; DROIDEX shows them the rest.',
 ].join('\n');
 
 export class ProjectService {
@@ -167,12 +170,18 @@ export class ProjectService {
   async spawn(
     source: string,
     requested: ThreadSpawnInput,
-  ): Promise<{ appSessionId: string; cwd?: string; branch?: string; step?: string }> {
+  ): Promise<{
+    appSessionId: string;
+    title: string;
+    cwd?: string;
+    branch?: string;
+    step?: string;
+  }> {
     this.requireOpen();
     const owner = this.requireSession(source);
     if (owner.sessionPurpose !== 'chat')
       throw new Error('Only ordinary chats can own project threads.');
-    const input = inheritSettings(owner, requested);
+    const input = await this.resolveModel(inheritSettings(owner, requested));
     this.checkAutonomy(owner, input);
     let project = this.membership.get(source);
     if (!project) {
@@ -204,7 +213,8 @@ export class ProjectService {
       : input.prompt;
     // A step is named before the launch so a rejected name costs nothing.
     const step = requested.step ? this.planStep(project, requested.step) : undefined;
-    const appSessionId = await this.launch(project, { ...input, prompt, cwd }, source);
+    const title = uniqueTitle(project, input.title);
+    const appSessionId = await this.launch(project, { ...input, title, prompt, cwd }, source);
     if (step) {
       step.threadAppSessionId = appSessionId;
       delete step.state;
@@ -212,6 +222,7 @@ export class ProjectService {
     }
     return {
       appSessionId,
+      title,
       ...(workspace ? { cwd: workspace.cwd, branch: workspace.branch } : {}),
       ...(step ? { step: step.title } : {}),
     };
@@ -233,6 +244,47 @@ export class ProjectService {
       ...(requested.branch ? { branch: requested.branch } : {}),
       ...(requested.base ? { base: requested.base } : {}),
     });
+  }
+
+  /** The models a provider can run right now, for a lead choosing one. */
+  async models(): Promise<{ provider: string; models: { id: string; name: string }[] }[]> {
+    const catalog = await this.sessions.catalog();
+    return catalog.map((status) => ({
+      provider: status.provider,
+      models: status.models
+        .slice(0, 60)
+        .map((model) => ({ id: model.id, name: model.displayName })),
+    }));
+  }
+
+  /*
+   * A harness given a model id it does not know does not fail: it answers with
+   * nothing, and the thread comes back empty. So a named model is resolved here,
+   * against the same catalog the composer offers, and a name that resolves to
+   * nothing stops the spawn with the ids that would have worked.
+   */
+  private async resolveModel(input: Omit<ThreadInput, 'cwd'>): Promise<Omit<ThreadInput, 'cwd'>> {
+    const wanted = input.modelId?.trim();
+    if (!wanted) return input;
+    const status = (await this.sessions.catalog()).find(
+      (candidate) => candidate.provider === input.provider,
+    );
+    const models = status?.models ?? [];
+    const match =
+      models.find((model) => model.id === wanted) ??
+      models.find((model) => model.displayName.toLowerCase() === wanted.toLowerCase()) ??
+      models.find((model) => model.id.toLowerCase() === wanted.toLowerCase());
+    if (match) return { ...input, modelId: match.id };
+    // A harness DROIDEX has not probed offers no catalog to check against, and
+    // refusing there would block work over something the app cannot know.
+    if (!models.length) return input;
+    const offered = models
+      .slice(0, 12)
+      .map((model) => `${model.id} (${model.displayName})`)
+      .join(', ');
+    throw new Error(
+      `${input.provider} has no model "${wanted}". Call thread_models for the full list. Available here: ${offered}.`,
+    );
   }
 
   /** The plan step a spawn says it carries, by its number or its exact title. */
@@ -572,6 +624,18 @@ export class ProjectService {
     }
     this.emit({ type: 'projects.snapshot', projects: this.list() });
   }
+}
+
+/* Threads are named, not numbered, everywhere a person reads them, so two of
+   them cannot wear one name. A repeat gets the next free number. */
+function uniqueTitle(project: Project, title: string): string {
+  const taken = new Set(project.threads.map((thread) => thread.title));
+  if (!taken.has(title)) return title;
+  for (let suffix = 2; suffix < 100; suffix += 1) {
+    const candidate = `${title} ${String(suffix)}`.slice(0, 120);
+    if (!taken.has(candidate)) return candidate;
+  }
+  return title;
 }
 
 /** A spawn names the task; everything else follows the conversation it came from. */

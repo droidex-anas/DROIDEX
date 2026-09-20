@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import type { SessionManager } from '../SessionManager.js';
-import type { ServerEvent, SessionSummary } from '../protocol.js';
+import type { ProviderStatus, ServerEvent, SessionSummary } from '../protocol.js';
 import type { ProjectPort } from './ProjectService.js';
 import type { ThreadInput } from './types.js';
 
@@ -10,7 +10,10 @@ interface Launch {
   error?: string;
 }
 
-type Host = Pick<SessionManager, 'handle' | 'sessionSummary' | 'deliverScheduledMessage'>;
+type Host = Pick<
+  SessionManager,
+  'handle' | 'sessionSummary' | 'deliverScheduledMessage' | 'providerCatalog'
+>;
 
 /** Correlates session creation and commits membership before the first provider turn. */
 export class ProjectSessions implements ProjectPort {
@@ -20,6 +23,10 @@ export class ProjectSessions implements ProjectPort {
 
   get(appSessionId: string): SessionSummary | undefined {
     return this.host.sessionSummary(appSessionId);
+  }
+
+  catalog(): Promise<ProviderStatus[]> {
+    return this.host.providerCatalog();
   }
 
   async create(input: ThreadInput, bind: Launch['bind']): Promise<SessionSummary | undefined> {

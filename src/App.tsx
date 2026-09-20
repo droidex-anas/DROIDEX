@@ -59,6 +59,7 @@ import {
 import { useSessionWorkingDirectory } from './hooks/useSessionWorkingDirectory';
 import { useDiagnosticsContext } from './hooks/useDiagnosticsContext';
 import { useFinishNotifications } from './hooks/useFinishNotifications';
+import { useThreadAttentionNotifications } from './features/projects/useThreadAttentionNotifications';
 import { useWorkspaceScopes } from './hooks/useWorkspaceScopes';
 import { useWorkspaceSessionList } from './hooks/useWorkspaceSessionList';
 import { useHistoryIndexingIdle } from './hooks/useHistoryIndexingIdle';
@@ -184,6 +185,7 @@ export default function App() {
     !embedded && onboard.ready && (forceWizard || shouldShowOnboarding(onboard.onboarding));
   // Desktop-only: toast when a model turn finishes (snippet + optional sound).
   useFinishNotifications(!embedded && !showWizard);
+  useThreadAttentionNotifications(!embedded && !showWizard);
   const activeSession = state.activeSession;
   const workingDirectory = useSessionWorkingDirectory(activeSession);
   const repoStatus = useRepoStatus(workingDirectory);
