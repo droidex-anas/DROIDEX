@@ -58,6 +58,7 @@ const LEAD_BRIEF = [
   'Choose each thread’s model, reasoning and autonomy for the job. DROIDEX isolates a thread in its own worktree when another is already working in the checkout; pass workspace only to override that.',
   'After spawning, end your turn. DROIDEX wakes you when a thread reports, asks something or stops; never poll or keep generating while you wait.',
   'When threads report, keep plan_set current and tell the user what changed and what you decided, briefly.',
+  'Review your own work before calling a step done: spawn a thread with workspaceOf set to the thread that did it, so the reviewer reads the real changes in the tree they were made in.',
   'Never print thread ids or session ids to the user. Name the thread; DROIDEX shows them the rest.',
 ].join('\n');
 
@@ -197,9 +198,7 @@ export class ProjectService {
     if (project.paused) await this.setPaused(project.id, false);
     const workspace = await this.threadWorkspace(project, owner.cwd, input.title, requested);
     const cwd = workspace?.cwd ?? owner.cwd;
-    const prompt = workspace
-      ? `${input.prompt}\n\nWork in ${workspace.cwd} on branch ${workspace.branch}, cut from ${workspace.base}. It is yours alone; do not touch the project's own checkout.`
-      : input.prompt;
+    const prompt = threadPrompt(input.prompt, workspace);
     // A step is named before the launch so a rejected name costs nothing.
     const step = requested.step ? this.planStep(project, requested.step) : undefined;
     const title = uniqueTitle(project, input.title);
@@ -227,6 +226,16 @@ export class ProjectService {
     title: string,
     requested: ThreadSpawnInput,
   ): Promise<{ cwd: string; branch: string; base: string } | undefined> {
+    // A reviewer reads the work where it was done, so it joins that thread's
+    // checkout rather than cutting a tree with none of the changes in it.
+    if (requested.workspaceOf) {
+      const target = this.thread(project, requested.workspaceOf);
+      const session = this.requireSession(target.appSessionId);
+      if (session.streaming)
+        throw new Error(`${target.title} is still working. Review it once it settles.`);
+      if (!session.cwd.trim()) throw new Error(`${target.title} has no workspace folder to join.`);
+      return { cwd: session.cwd, branch: '', base: '' };
+    }
     if (requested.workspace === 'inherit') return undefined;
     // Isolation is not left to a lead remembering to ask: a checkout with work
     // already running in it gets the next thread its own, because two threads
@@ -707,4 +716,16 @@ function inheritSettings(owner: SessionSummary, input: ThreadSpawnInput): Omit<T
     ...(modelId ? { modelId } : {}),
     ...(reasoningEffort ? { reasoningEffort } : {}),
   };
+}
+
+/* Where a thread is told to work. A tree of its own says so and says it is
+   alone in it; a tree it was sent to join says only where it is, because the
+   thread that made the changes still owns it. */
+function threadPrompt(
+  task: string,
+  workspace: { cwd: string; branch: string; base: string } | undefined,
+): string {
+  if (!workspace) return task;
+  if (!workspace.branch) return `${task}\n\nWork in ${workspace.cwd}, where that work was done.`;
+  return `${task}\n\nWork in ${workspace.cwd} on branch ${workspace.branch}, cut from ${workspace.base}. It is yours alone; do not touch the project's own checkout.`;
 }
