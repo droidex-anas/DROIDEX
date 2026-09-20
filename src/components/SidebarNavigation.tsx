@@ -4,7 +4,8 @@ import { bindLazySurfaceIntent } from '../lib/chunkPreloader';
 import { isEmbedded } from '../lib/embed';
 import { resolvePrWorkspaceCwd } from '../features/pull-requests/lib/prWorkspaceCwd';
 import { GitPullRequestIcon } from './environment/GithubIcons';
-import { Clock, MessageCirclePlus } from '@droidex/icons';
+import { Clock } from '@droidex/icons';
+import { ActivityStatusGlyph } from './ActivityStatusGlyph';
 import { useProjectBoard } from '../features/projects/useProjectBoard';
 
 export function SidebarNavigation() {
@@ -63,7 +64,9 @@ export function SidebarNavigation() {
         }}
         className={`group mt-0.5 flex w-full items-center gap-2.5 rounded-xl px-2.5 py-1.5 text-[13px] font-medium transition-colors ${state.mainView === 'projects' ? 'bg-droid-active text-droid-text' : 'text-droid-text hover:bg-droid-elevated'}`}
       >
-        <MessageCirclePlus className="h-3.5 w-3.5 shrink-0 text-droid-text-secondary" />
+        <span className="flex h-3.5 w-3.5 shrink-0 items-center justify-center text-droid-text-secondary">
+          <ActivityStatusGlyph status="ready" decorative />
+        </span>
         Projects
         {/* A project runs while the user is elsewhere, so the entry says when
             one is moving and when one is holding for them. */}

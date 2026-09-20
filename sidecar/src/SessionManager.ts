@@ -12,6 +12,7 @@ import type {
   HistorySearchReply,
   PersistenceRecovery,
   ProviderMention,
+  ProviderStatus,
   SessionSummary,
   ModelInfo,
   ReasoningEffort,
@@ -1098,6 +1099,16 @@ export class SessionManager {
 
   sessionSummary(appSessionId: string): SessionSummary | undefined {
     return this.registry.resolveSummary(appSessionId);
+  }
+
+  /** What each provider can run right now, for callers that must validate a choice. */
+  async providerCatalog(): Promise<ProviderStatus[]> {
+    return providerStatuses(
+      this.runtime.status().droidPath,
+      await this.getModels(),
+      undefined,
+      (provider) => this.providerProbes.status(provider),
+    );
   }
 
   async validateAutomationSelection(

@@ -69,6 +69,17 @@ async function harness(saved: Project[] = []) {
   };
   const port: ProjectPort = {
     get: (id) => sessions.get(id),
+    catalog: () =>
+      Promise.resolve([
+        {
+          provider: 'droid' as const,
+          readiness: 'ready' as const,
+          models: [
+            { id: 'droid-core', displayName: 'Droid Core', isCustom: false },
+            { id: 'glm-5.3-flash-zai', displayName: 'GLM-5.3 Flash [Z.AI]', isCustom: true },
+          ],
+        },
+      ]),
     create: async (selection, bind) => {
       const session = summary(`session-${++next}`, selection);
       sessions.set(session.appSessionId, session);
@@ -356,6 +367,23 @@ test('native permissions and user questions never generate controller turns', as
   });
   await drain();
   assert.equal(h.sent.length, 0);
+});
+
+test('a named model resolves against the catalog, or the spawn says what would work', async (t) => {
+  const h = await harness();
+  t.after(() => h.projects.close());
+  const { main } = await h.root();
+  await assert.rejects(
+    h.projects.spawn(main, { ...input, provider: 'droid', modelId: 'glm-5.3-flash' }),
+    /no model "glm-5.3-flash".*thread_models/s,
+  );
+  // A display name is what a person reads in the composer, so it resolves too.
+  await h.projects.spawn(main, {
+    ...input,
+    provider: 'droid',
+    modelId: 'GLM-5.3 Flash [Z.AI]',
+  });
+  assert.equal(h.launched.at(-1)?.modelId, 'glm-5.3-flash-zai');
 });
 
 test('a spawn carries a settled plan step, or none at all', async (t) => {

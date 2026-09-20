@@ -7,6 +7,7 @@ const TOOL_TITLES: Record<string, string> = {
   thread_spawn: 'Start DROIDEX thread',
   thread_send: 'Message DROIDEX thread',
   thread_list: 'View DROIDEX threads',
+  thread_models: 'View available models',
   thread_stop: 'Stop DROIDEX thread',
   thread_ask_owner: 'Ask the main chat',
   plan_set: 'Update the DROIDEX project plan',
@@ -17,6 +18,7 @@ const TOOL_TITLES: Record<string, string> = {
 // between conversations DROIDEX already owns, or stops one.
 const ALWAYS_SAFE = new Set([
   'thread_list',
+  'thread_models',
   'thread_send',
   'thread_stop',
   'thread_ask_owner',

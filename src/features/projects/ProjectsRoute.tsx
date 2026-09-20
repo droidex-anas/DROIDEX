@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
-import { ChevronRight, Plus } from '@droidex/icons';
+import { ChevronRight, Plus, Spinner } from '@droidex/icons';
+import { ActivityStatusGlyph } from '../../components/ActivityStatusGlyph';
 import { useStoreDispatch, useStoreSelector } from '../../hooks/useStore';
 import { INLINE_CARD_DURATION_S, INLINE_CARD_EASE } from '../../components/inlineCardMotion';
 import { formatRelativeTime } from '../../lib/time';
@@ -191,19 +192,7 @@ function ProjectRow({
         className="flex min-w-0 flex-1 items-center gap-4 rounded-2xl px-5 py-4 text-left"
       >
         <span className="flex w-4 shrink-0 justify-center">
-          {pulse.live ? (
-            <span
-              aria-label="working"
-              className="h-3 w-3 rounded-full border-[1.5px] border-droid-text border-r-transparent motion-safe:animate-spin-slow"
-            />
-          ) : (
-            <span
-              aria-hidden="true"
-              className={`h-1.5 w-1.5 rounded-full ${
-                pulse.attention > 0 ? 'bg-droid-orange' : 'bg-droid-text-muted/50'
-              }`}
-            />
-          )}
+          <ActivityStatusGlyph status={pulse.attention > 0 ? 'input' : 'ready'} />
         </span>
         <span className="min-w-0 flex-1">
           <span className="flex items-center gap-2.5">
@@ -216,8 +205,16 @@ function ProjectRow({
             {pulse.summary}
           </span>
         </span>
-        <span className="w-14 shrink-0 text-right text-[12px] tabular-nums text-droid-text-muted">
-          {formatRelativeTime(pulse.updatedAt, now)}
+        {/* While it runs, the trailing slot carries the work instead of a time
+            that would only tell the user how long ago it started. */}
+        <span className="flex w-14 shrink-0 items-center justify-end">
+          {pulse.live ? (
+            <WorkingSpinner />
+          ) : (
+            <span className="text-[12px] tabular-nums text-droid-text-muted">
+              {formatRelativeTime(pulse.updatedAt, now)}
+            </span>
+          )}
         </span>
       </button>
       <button
@@ -229,6 +226,16 @@ function ProjectRow({
         <ChevronRight className="h-4 w-4" />
       </button>
     </div>
+  );
+}
+
+/** The app's own spinner, tinted to the accent so a running project reads at a glance. */
+function WorkingSpinner() {
+  return (
+    <Spinner
+      aria-label="working"
+      className="h-4 w-4 text-droid-accent motion-safe:animate-spin-slow"
+    />
   );
 }
 
