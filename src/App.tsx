@@ -59,6 +59,7 @@ import {
 import { useSessionWorkingDirectory } from './hooks/useSessionWorkingDirectory';
 import { useDiagnosticsContext } from './hooks/useDiagnosticsContext';
 import { useFinishNotifications } from './hooks/useFinishNotifications';
+import { useThreadsPaneAutoOpen } from './features/projects/useThreadsPaneAutoOpen';
 import { useWorkspaceScopes } from './hooks/useWorkspaceScopes';
 import { useWorkspaceSessionList } from './hooks/useWorkspaceSessionList';
 import { useHistoryIndexingIdle } from './hooks/useHistoryIndexingIdle';
@@ -186,6 +187,7 @@ export default function App() {
   // Desktop-only: toast when a model turn finishes (snippet + optional sound).
   useFinishNotifications(!embedded && !showWizard);
   const hasProjects = useStoreSelector((current) => current.projects.length > 0);
+  useThreadsPaneAutoOpen();
   const activeSession = state.activeSession;
   const workingDirectory = useSessionWorkingDirectory(activeSession);
   const repoStatus = useRepoStatus(workingDirectory);

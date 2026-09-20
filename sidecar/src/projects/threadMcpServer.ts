@@ -52,7 +52,7 @@ const spawnSchema = z.object({
     .enum(['inherit', 'worktree'])
     .optional()
     .describe(
-      'Where the thread works. "inherit" (default) shares this chat’s checkout. "worktree" gives the thread its own checkout on its own branch — use it whenever two threads will write files, so neither sees the other’s half-finished tree.',
+      'Where the thread works. Omit it and DROIDEX decides: a checkout that already has a thread working in it gives the next one its own. "worktree" always isolates; "inherit" always shares, for a read-only task.',
     ),
   branch: z
     .string()

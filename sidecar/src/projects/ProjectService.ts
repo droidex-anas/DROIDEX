@@ -49,7 +49,7 @@ const LEAD_BRIEF = [
   'Then write the plan with plan_set: concrete steps in the order you mean to take them, each one naming what finishing it looks like. A step a stranger could not act on is not settled yet — settle it or leave it out.',
   'Only then hand a settled step to a thread with thread_spawn, naming the step it carries. A thread cannot see this conversation, so its prompt must carry the whole task: the context, the files or areas involved, and what done means.',
   'Do not spawn a thread to think for you, to explore an open question, or to work out what the task is. Investigate here, decide here, hand out the decided work.',
-  'Choose each thread’s model, reasoning and autonomy for the job, and give it its own worktree whenever two threads will write files at once.',
+  'Choose each thread’s model, reasoning and autonomy for the job. DROIDEX isolates a thread in its own worktree when another is already working in the checkout; pass workspace only to override that.',
   'After spawning, end your turn. DROIDEX wakes you when a thread reports, asks something or stops; never poll or keep generating while you wait.',
   'When threads report, keep plan_set current and tell the user what changed and what you decided, briefly.',
   'Never print thread ids or session ids to the user. Name the thread; DROIDEX shows them the rest.',
@@ -214,7 +214,7 @@ export class ProjectService {
     // live conversation, so it resumes coordination the same way the panel's
     // Resume does — and stops for the same reason, an unreviewed delivery.
     if (project.paused) await this.setPaused(project.id, false);
-    const workspace = await this.threadWorkspace(owner.cwd, input.title, requested);
+    const workspace = await this.threadWorkspace(project, owner.cwd, input.title, requested);
     const cwd = workspace?.cwd ?? owner.cwd;
     const prompt = workspace
       ? `${input.prompt}\n\nWork in ${workspace.cwd} on branch ${workspace.branch}, cut from ${workspace.base}. It is yours alone; do not touch the project's own checkout.`
@@ -241,17 +241,36 @@ export class ProjectService {
    * thread asked to work in isolation never reads the project's own tree.
    */
   private async threadWorkspace(
+    project: Project,
     cwd: string,
     title: string,
     requested: ThreadSpawnInput,
   ): Promise<{ cwd: string; branch: string; base: string } | undefined> {
-    if (requested.workspace !== 'worktree') return undefined;
-    return await createThreadWorkspace({
+    if (requested.workspace === 'inherit') return undefined;
+    // Isolation is not left to a lead remembering to ask: a checkout with work
+    // already running in it gets the next thread its own, because two threads
+    // editing one tree see each other's half-finished files.
+    const shared = project.threads.some((thread) => {
+      if (!thread.ownerAppSessionId) return false;
+      const session = this.sessions.get(thread.appSessionId);
+      return session?.cwd === cwd && (session.streaming === true || thread.waiting);
+    });
+    const asked = requested.workspace === 'worktree';
+    if (!asked && !shared) return undefined;
+    if (!cwd.trim()) {
+      if (asked) throw new Error('A thread worktree needs the project to have a workspace folder.');
+      return undefined;
+    }
+    const request = {
       cwd,
       title,
       ...(requested.branch ? { branch: requested.branch } : {}),
       ...(requested.base ? { base: requested.base } : {}),
-    });
+    };
+    if (asked) return await createThreadWorkspace(request);
+    // Nobody asked for this one, so a checkout that cannot carry a worktree
+    // (no repository, no commit) shares the tree rather than losing the work.
+    return await createThreadWorkspace(request).catch(() => undefined);
   }
 
   /** The models a provider can run right now, for a lead choosing one. */

@@ -369,7 +369,7 @@ export const FeedItemView = memo(function FeedItemView({
         if (brief)
           return (
             <Suspense fallback={null}>
-              <ThreadBriefNotice task={brief} />
+              <ThreadBriefNotice brief={brief} />
             </Suspense>
           );
         return (
