@@ -90,6 +90,11 @@ export const requestRuntimeStatus = () => {
   bridge.send({ type: 'runtime.status' });
 };
 
+/** The project graph: which sessions are threads, and what each project is doing. */
+export const listProjects = () => {
+  bridge.send({ type: 'projects.list' });
+};
+
 export const listModels = () => {
   bridge.send({ type: 'catalog.models' });
 };

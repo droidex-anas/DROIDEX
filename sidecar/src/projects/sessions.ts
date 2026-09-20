@@ -70,4 +70,18 @@ export class ProjectSessions implements ProjectPort {
   interrupt(appSessionId: string): Promise<void> {
     return this.host.handle({ type: 'session.interrupt', appSessionId });
   }
+
+  answer(
+    appSessionId: string,
+    requestId: string,
+    answers: { index: number; question: string; answer: string }[],
+  ): Promise<void> {
+    return this.host.handle({
+      type: 'question.respond',
+      appSessionId,
+      requestId,
+      cancelled: false,
+      answers,
+    });
+  }
 }

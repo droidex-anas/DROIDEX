@@ -58,6 +58,7 @@ import {
 } from './lib/shortcuts';
 import { useSessionWorkingDirectory } from './hooks/useSessionWorkingDirectory';
 import { useDiagnosticsContext } from './hooks/useDiagnosticsContext';
+import { listProjects } from './lib/commands';
 import { useFinishNotifications } from './hooks/useFinishNotifications';
 import { useThreadsPaneAutoOpen } from './features/projects/useThreadsPaneAutoOpen';
 import { useWorkspaceScopes } from './hooks/useWorkspaceScopes';
@@ -439,6 +440,9 @@ export default function App() {
       // The session panel and composer badge name the model from this catalog;
       // without it a custom model shows as its raw id until the selector opens.
       listModels();
+      // The chat list hides a project's threads, so it needs the project graph
+      // before it draws; nothing else asks for it until Projects is opened.
+      listProjects();
     })();
   }, [embedded]);
 

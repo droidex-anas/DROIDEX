@@ -34,14 +34,28 @@ const message = z
     text,
   })
   .strict();
+
+const ask = z
+  .object({
+    requestId: id,
+    questions: z
+      .array(
+        z
+          .object({
+            index: z.number().int().min(0).max(64),
+            question: z.string().max(2_000),
+            options: z.array(z.string().max(500)).max(16),
+          })
+          .strict(),
+      )
+      .max(16),
+  })
+  .strict();
 const project = z
   .object({
     id,
     title: z.string().min(1).max(120),
     paused: z.boolean(),
-    // Ledgers written before the allowance was dropped still load; the value is
-    // not carried into the project.
-    wakesLeft: z.number().int().min(0).max(20).optional(),
     launching: z.number().int().min(0).max(8),
     plan: z
       .array(
@@ -63,6 +77,7 @@ const project = z
         z
           .object({
             appSessionId: id,
+            ask: ask.optional(),
             ownerAppSessionId: id.optional(),
             title: z.string().max(120),
             reply: text,
@@ -105,13 +120,9 @@ export class ProjectStore implements ProjectPersistence {
       if (error instanceof Error && 'code' in error && error.code === 'ENOENT') return [];
       throw error;
     }
-    // A ledger written before the wake allowance was dropped still loads; the
-    // value it carries is not part of a project any more.
-    const projects: Project[] = ledger.parse(JSON.parse(raw)).map((entry) => {
-      const project = { ...entry, plan: entry.plan ?? [] };
-      delete project.wakesLeft;
-      return project;
-    });
+    const projects: Project[] = ledger
+      .parse(JSON.parse(raw))
+      .map((entry) => ({ ...entry, plan: entry.plan ?? [] }));
     validateLedger(projects);
     return projects;
   }

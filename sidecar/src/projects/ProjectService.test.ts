@@ -59,6 +59,7 @@ async function harness(saved: Project[] = []) {
     gate: undefined as Promise<void> | undefined,
     bindGate: undefined as Promise<void> | undefined,
   };
+  const answered: { id: string; requestId: string; answers: unknown[] }[] = [];
   let next = 0;
   const store: ProjectPersistence = {
     load: async () => structuredClone(state.saved),
@@ -98,6 +99,9 @@ async function harness(saved: Project[] = []) {
       await streaming(id, true);
       return { status: 'accepted', settled: Promise.resolve() };
     },
+    answer: async (id, requestId, answers) => {
+      answered.push({ id, requestId, answers });
+    },
     interrupt: async (id) => {
       const session = sessions.get(id);
       if (session) session.phase = 'paused';
@@ -136,6 +140,7 @@ async function harness(saved: Project[] = []) {
     projects,
     sessions,
     sent,
+    answered,
     launched,
     events,
     state,
@@ -193,21 +198,31 @@ test('busy owners retain messages; sibling completions batch into one later turn
   assert.equal(h.projects.list()[0]?.queued, 0);
 });
 
-test('questions return immediately and suppress redundant child completion results', async (t) => {
+test('a thread’s own question reaches its lead with its options, and the answer goes back at once', async (t) => {
   const h = await harness();
   t.after(() => h.projects.close());
   const { main } = await h.root();
   const child = await h.projects.spawn(main, input);
-  await h.projects.ask(child.appSessionId, 'Which storage format?');
+  await h.projects.observe({
+    type: 'question.requested',
+    question: {
+      appSessionId: child.appSessionId,
+      requestId: 'ask-1',
+      questions: [{ index: 0, question: 'Which storage format?', options: ['JSON', 'SQLite'] }],
+    },
+  });
   await h.finish(child.appSessionId, 'Waiting.');
   await drain();
-  assert.equal(h.sent.length, 1);
+  assert.equal(h.sent.length, 1, 'the lead is woken once, with the question');
   assert.match(h.sent[0]?.prompt ?? '', /Which storage format/);
+  assert.match(h.sent[0]?.prompt ?? '', /- JSON/);
   assert.doesNotMatch(h.sent[0]?.prompt ?? '', /finished its turn/);
-  await h.projects.send(main, child.appSessionId, 'Use JSON.');
-  await drain();
-  assert.equal(h.sent[1]?.id, child.appSessionId);
+
+  // Answering must reach the waiting harness call, not the delivery queue.
+  await h.projects.send(main, child.appSessionId, '', ['JSON']);
+  assert.equal(h.answered.at(-1)?.requestId, 'ask-1');
   assert.equal(h.projects.list()[0]?.threads[1]?.waiting, false);
+  assert.equal(h.projects.list()[0]?.queued, 0);
 });
 
 test('ordinary chats adopt a project, with scoped ownership and no autonomy escalation', async (t) => {

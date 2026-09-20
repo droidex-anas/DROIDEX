@@ -128,18 +128,26 @@ export function createThreadMcpServer(appSessionIdForTool: () => string | undefi
       ),
       tool(
         'thread_send',
-        [
-          'Send a message to a thread this chat started: new instructions, a correction, or the answer to a question it asked.',
-          'It is queued and delivered when that thread is ready. Use the user’s own words when you are forwarding their message.',
-        ].join(' '),
+        'Send a thread this chat started new instructions, a correction, or answers to a question it asked; use the user’s own words when forwarding theirs.',
         {
           threadId: z.string().min(1).max(200),
-          text: z.string().trim().min(1).max(8_192),
+          text: z.string().trim().max(8_192),
+          answers: z
+            .array(z.string().max(2_000))
+            .max(16)
+            .optional()
+            .describe(
+              'Answers to the question this thread asked, in the order DROIDEX listed them. They reach the waiting thread at once instead of queueing behind it.',
+            ),
         },
-        safeTool(async (input: { threadId: string; text: string }) => {
+        safeTool(async (input: { threadId: string; text: string; answers?: string[] }) => {
           const projects = await requireProjectService();
-          await projects.send(appSessionId(), input.threadId, input.text);
-          return jsonResult({ ok: true, threadId: input.threadId, state: 'queued' });
+          await projects.send(appSessionId(), input.threadId, input.text, input.answers);
+          return jsonResult({
+            ok: true,
+            threadId: input.threadId,
+            state: input.answers?.length ? 'answered' : 'queued',
+          });
         }),
       ),
       tool(
@@ -195,24 +203,6 @@ export function createThreadMcpServer(appSessionIdForTool: () => string | undefi
         }),
       ),
       tool(
-        'thread_models',
-        'List the models each harness can run right now, with the ids thread_spawn accepts. Read it before naming a model you are not certain of.',
-        {},
-        safeTool(async () => {
-          const projects = await requireProjectService();
-          return jsonResult({ ok: true, providers: await projects.models() });
-        }),
-      ),
-      tool(
-        'thread_list',
-        'List this chat’s threads and what each one is doing. Read it before answering a question about their progress.',
-        {},
-        safeTool(async () => {
-          const projects = await requireProjectService();
-          return jsonResult({ ok: true, threads: projects.threadStates(appSessionId()) });
-        }),
-      ),
-      tool(
         'thread_stop',
         'Stop a thread this chat started. It interrupts its current turn and drops its queued messages; its conversation stays open.',
         { threadId: z.string().min(1).max(200) },
@@ -220,23 +210,6 @@ export function createThreadMcpServer(appSessionIdForTool: () => string | undefi
           const projects = await requireProjectService();
           await projects.stop(appSessionId(), input.threadId);
           return jsonResult({ ok: true, threadId: input.threadId, state: 'stopped' });
-        }),
-      ),
-      tool(
-        'thread_ask_owner',
-        [
-          'Ask the chat that started this thread for a decision you cannot make, then end your turn.',
-          'Only a spawned thread can call this. Ask one concrete question and name the options.',
-        ].join(' '),
-        { question: z.string().trim().min(1).max(8_192) },
-        safeTool(async (input: { question: string }) => {
-          const projects = await requireProjectService();
-          await projects.ask(appSessionId(), input.question);
-          return jsonResult({
-            ok: true,
-            state: 'waiting',
-            note: 'End your turn now. The answer arrives as a new turn in this thread.',
-          });
         }),
       ),
     ],
