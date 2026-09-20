@@ -212,8 +212,11 @@ disabled, each report uses a report-scoped ID that is not persisted locally.
 
 Sentry is operational observability, not product analytics. DROIDEX does not use
 Sentry messages as analytics events and does not track clicks, prompts, commands,
-project names, file paths, browser activity, or session content. Add a dedicated
-privacy-reviewed analytics system before measuring feature funnels or retention.
+project names, file paths, browser activity, or session content. Installation
+counting lives in a separate system described in
+[Anonymous installation analytics](#anonymous-installation-analytics); measuring
+feature funnels or retention would need its own privacy review before anything
+beyond those two events is collected.
 
 Connect the private Sentry project to the source repository using Sentry's
 server-side GitHub integration and an issue alert rule. No GitHub token belongs
@@ -230,8 +233,169 @@ If a deployment causes user impact:
 4. Run the relevant runbook in `docs/runbooks.md`.
 5. File the fix with the failing CI command and observed runtime log excerpt.
 
+## Anonymous installation analytics
+
+DROIDEX counts installations through Datadog RUM. The goal is a defensible
+answer to "how many people run this?", not product analytics. Only two events
+exist, and both are emitted by `src/lib/usageAnalytics.ts`:
+
+| Event | When | Properties |
+| --- | --- | --- |
+| `app_opened` | Every launch of a packaged build | `app_version`, `platform`, `architecture`, `distribution_channel` |
+| `install_first_launch` | Once per installation ID | the same four, plus `install_origin` |
+
+### The installation identifier
+
+`electron/usageAnalytics.cjs` mints a `crypto.randomUUID()` on the first launch
+that reaches it and stores it at `<userData>/usage-analytics.json`. Because
+`userData` is outside the app bundle, the identifier survives restarts and
+in-place updates, so one installation stays one row forever. It is never derived
+from hardware, serial numbers, MAC addresses, usernames, emails, IP addresses,
+or any account. Two installations therefore share nothing, and the identifier
+cannot be reversed into a person.
+
+`install_origin` separates the two populations that appear the first time an
+instrumented build runs:
+
+- `new_install` — nothing else was in `userData`, so this is a genuinely new user.
+- `existing_install` — an older DROIDEX had already written to `userData`, so
+  this is an existing user whose app updated into an instrumented build.
+
+Without that flag, the day an instrumented release ships, the entire existing
+user base would look like new installs.
+
+### What is deliberately not collected
+
+Session Replay is not merely disabled, the recorder is not shipped: the app
+depends on `@datadog/browser-rum-slim`, which has no replay module, and
+`sessionReplaySampleRate` is `0`. Datadog's automatic instrumentation that could
+observe user content is off (`trackUserInteractions`, `trackResources`,
+`trackLongTasks` are all `false`), `defaultPrivacyLevel` is `mask`, and views
+are started manually. Because a RUM view URL in Electron would otherwise be a
+local file path, `beforeSend` rewrites every URL and referrer to `app://droidex`
+and discards any event that is not one of the two actions or their view.
+`sessionPersistence` is `local-storage` because a packaged build loads the
+renderer with `loadFile()`, so the page runs on a `file://` origin where cookies
+are unavailable and the SDK could not otherwise keep a session. No
+prompt, message, file content, repository name, path, project name, email, or
+username is collected at any point.
+
+### What Datadog adds server-side
+
+Datadog derives two fields from the connection itself, so they arrive with every
+event although the app never sends them: `session.ip`, the client IP, and `geo`,
+resolved from it. No client-side SDK option affects either; they are controlled
+in the Datadog account under **Organization Settings → RUM**, and changing that
+is not retroactive. The Privacy panel names both so its description stays true.
+
+`trackAnonymousUser` is `false`, so the only identifier the app attaches is
+`usr.id`, the installation ID.
+
+### Where it does not run
+
+Telemetry initializes only when `app.isPackaged` is true, so `npm run dev`,
+`npm run electron`, tests, and CI send nothing. A packaged build stays silent
+when any of the three Datadog values is missing, when
+`DROIDEX_DISABLE_USAGE_ANALYTICS=1` is set, or when the user has opted out.
+Maintainer builds are excluded by channel rather than by hand: only the release
+workflow sets `DROIDEX_DISTRIBUTION_CHANNEL=release`, so a local
+`npm run dist:mac` reports `distribution_channel:local` and every query below
+filters on `release`.
+
+Every failure path is silent by design. A missing configuration, an unreadable
+state file, a blocked network, or an SDK that will not load all resolve to "no
+telemetry this launch"; none can prevent or delay startup.
+
+### Consent
+
+`Settings → Privacy & diagnostics → Anonymous usage analytics` is a separate
+opt-out from the existing crash-reporting toggle, because the two collect
+different data for different reasons. It defaults to on, and the copy in the
+panel states exactly what is sent. Turning it off deletes the stored
+installation ID; turning it back on mints a new one, which counts as a new
+installation.
+
+### Release configuration
+
+Set these for the signed release build. They are configured in the
+`macos-release` environment and consumed by `.github/workflows/release-macos.yml`,
+which passes them to `electron-builder.config.cjs`; that config embeds them in
+the packaged `package.json` under `datadog`, which `readBuildMetadata()` in
+`electron/main.cjs` reads at startup.
+
+| Variable | Kind | Value |
+| --- | --- | --- |
+| `DATADOG_APPLICATION_ID` | secret | RUM application id from the Datadog RUM application |
+| `DATADOG_CLIENT_TOKEN` | secret | RUM **client token** (`pub…`) from the same application |
+| `DATADOG_SITE` | variable | Datadog site — `us5.datadoghq.com` for this project |
+| `DROIDEX_DISTRIBUTION_CHANNEL` | literal | `release`, set by the workflow only |
+
+A Datadog **API key** must never be added. It is a server-side credential; a
+desktop app ships to users' machines, so anything embedded in it is public. The
+RUM client token is designed for exactly this exposure: it can only submit RUM
+events to one application and cannot read data or call the Datadog API.
+
+To create the RUM application: in Datadog, go to **Digital Experience → Real
+User Monitoring → Applications → New Application**, choose the **Browser** type,
+name it `droidex`, and copy the application id and client token. Leave Session
+Replay off.
+
+Choose **Browser**, not **Electron**, even though DROIDEX is an Electron app.
+The app uses `@datadog/browser-rum-slim`, which is what Datadog's own guide
+[Monitor Electron Applications Using the Browser SDK][electron-guide]
+prescribes. Datadog's dedicated Electron SDK is alpha, requires Electron 39 or
+newer, and does not replace the Browser SDK — it still needs it in every
+renderer and only bridges the telemetry through the main process.
+
+[electron-guide]: https://docs.datadoghq.com/real_user_monitoring/guide/monitor-electron-applications-using-browser-sdk/ The app sets `service: droidex` and `env: production` itself, so no
+further configuration is needed in Datadog.
+
+### Reading the numbers
+
+All queries filter `@context.distribution_channel:release` so maintainer builds
+are excluded, and count `@usr.id`, which is the installation ID.
+
+- **Total unique installations** — RUM Analytics, on `action` events:
+
+      @action.name:app_opened @context.distribution_channel:release
+      → measure: unique count of @usr.id, over the full retention window
+
+- **Daily active installations (DAI)** — the same query as a timeseries with a
+  1-day rollup; **monthly active installations (MAU)** is the same with a
+  30-day rolling window rather than a 30-day rollup, so each point answers "how
+  many distinct installations opened the app in the preceding 30 days".
+
+- **New installations per day** — swap the event name:
+
+      @action.name:install_first_launch @context.distribution_channel:release @context.install_origin:new_install
+      → unique count of @usr.id, 1-day rollup
+
+  Splitting by `@context.install_origin` separates genuinely new users from the
+  existing base migrating onto an instrumented build.
+
+- **Breakdown by version, platform, and architecture** — the total-installations
+  query grouped by `@context.app_version`, `@context.platform`, and
+  `@context.architecture`. Grouped by `app_version` over a rolling window this
+  doubles as update adoption: the share still on an old version is the share
+  that has not updated.
+
+Build these as a single RUM dashboard and link it here once it holds real data.
+
+### Why GitHub release downloads are not the number
+
+The GitHub release API's `download_count` counts asset requests, not people. It
+includes repeated downloads by one person, CI and mirror fetches, bots and
+scanners, resumed or retried transfers, and the update files Sparkle pulls on
+every check. It also cannot tell whether an asset was ever launched. Download
+counts and installation counts are different quantities; do not present one as
+the other.
+
+A public README badge is deliberately not part of this work. Collect and
+validate production telemetry first. A badge, if it is added later, must be fed
+by a server-side endpoint that exposes only the aggregate count — never by
+embedding a Datadog credential in a public page.
+
 ## Missing observability
 
-Product analytics and release notifications are not configured. If either is
-added, link the private dashboard and alert channel here and update
-`docs/runbooks.md` with escalation steps.
+Release notifications are not configured. If they are added, link the alert
+channel here and update `docs/runbooks.md` with escalation steps.

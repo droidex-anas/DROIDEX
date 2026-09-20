@@ -44,6 +44,7 @@ const { autoUpdater } = require('electron-updater');
 const { createAppUpdater } = require('./appUpdater.cjs');
 const Sentry = require('@sentry/electron/main');
 const { createDiagnostics } = require('./diagnostics.cjs');
+const { createUsageAnalytics } = require('./usageAnalytics.cjs');
 const {
   preferenceFilePath: hardwareAccelerationPreferenceFilePath,
   readHardwareAccelerationPreferenceSync,
@@ -83,6 +84,11 @@ const diagnostics = createDiagnostics({
   sentry: Sentry,
   dsn: buildMetadata.sentryDsn,
   logError: (message, error) => console.error('[diagnostics] %s:', message, error),
+});
+const usageAnalytics = createUsageAnalytics({
+  app,
+  config: buildMetadata.datadog,
+  logError: (message, error) => console.error('[usage-analytics] %s:', message, error),
 });
 const sidecarSupervisor = createSidecarSupervisor({
   entryPath: sidecarEntry,
@@ -628,6 +634,22 @@ function registerIpc() {
     assertMainRenderer(event);
     return diagnostics.setAutomaticDiagnosticsEnabled(enabled);
   });
+  ipcMain.handle('usage-analytics-bootstrap', (event) => {
+    assertMainRenderer(event);
+    return usageAnalytics.bootstrap();
+  });
+  ipcMain.handle('usage-analytics-first-launch-reported', (event) => {
+    assertMainRenderer(event);
+    return usageAnalytics.markFirstLaunchReported();
+  });
+  ipcMain.handle('usage-analytics-preference-get', (event) => {
+    assertMainRenderer(event);
+    return usageAnalytics.preference();
+  });
+  ipcMain.handle('usage-analytics-preference-set', async (event, { enabled }) => {
+    assertMainRenderer(event);
+    return usageAnalytics.setEnabled(enabled);
+  });
   ipcMain.handle('hardware-acceleration-preference-get', (event) => {
     assertMainRenderer(event);
     return loadHardwareAccelerationPreference({
@@ -990,6 +1012,7 @@ function readBuildMetadata() {
       sentryDsn: process.env.SENTRY_DSN || '',
       sparkleFeedUrl: process.env.SPARKLE_FEED_URL || '',
       updateInstallMode: 'sparkle',
+      datadog: readDatadogMetadata(process.env),
     };
   }
   try {
@@ -998,10 +1021,30 @@ function readBuildMetadata() {
       sentryDsn: typeof metadata.sentryDsn === 'string' ? metadata.sentryDsn : '',
       sparkleFeedUrl: typeof metadata.sparkleFeedUrl === 'string' ? metadata.sparkleFeedUrl : '',
       updateInstallMode: metadata.updateInstallMode === 'automatic' ? 'automatic' : 'sparkle',
+      datadog: readDatadogMetadata(metadata.datadog || {}),
     };
   } catch {
-    return { sentryDsn: '', sparkleFeedUrl: '', updateInstallMode: 'sparkle' };
+    return {
+      sentryDsn: '',
+      sparkleFeedUrl: '',
+      updateInstallMode: 'sparkle',
+      datadog: readDatadogMetadata({}),
+    };
   }
+}
+
+// Datadog RUM ships an application id and a *client* token. Both are meant to
+// be public in a client build; the Datadog API key is a CI-only secret and is
+// never read here or embedded in the app.
+function readDatadogMetadata(source) {
+  const read = (key) => (typeof source[key] === 'string' ? source[key].trim() : '');
+  return {
+    applicationId: read('DATADOG_APPLICATION_ID') || read('applicationId'),
+    clientToken: read('DATADOG_CLIENT_TOKEN') || read('clientToken'),
+    site: read('DATADOG_SITE') || read('site'),
+    distributionChannel:
+      read('DROIDEX_DISTRIBUTION_CHANNEL') || read('distributionChannel') || 'local',
+  };
 }
 
 function isWindowUsable(window) {

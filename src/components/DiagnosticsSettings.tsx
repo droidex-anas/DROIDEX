@@ -1,20 +1,32 @@
 import { useEffect, useState } from 'react';
 import { getAutomaticDiagnostics, setAutomaticDiagnostics } from '../lib/rendererDiagnostics';
+import { getUsageAnalyticsPreference, setUsageAnalyticsPreference } from '../lib/usageAnalytics';
 import { Switch } from './Switch';
 
-export function DiagnosticsSettings() {
+interface Preference {
+  enabled: boolean;
+  isLoading: boolean;
+  error: string;
+  update: (next: boolean) => void;
+}
+
+function usePreference(
+  load: () => Promise<{ enabled: boolean }>,
+  save: (enabled: boolean) => Promise<{ enabled: boolean }>,
+  subject: string,
+): Preference {
   const [enabled, setEnabled] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState('');
 
   useEffect(() => {
     let active = true;
-    void getAutomaticDiagnostics()
+    void load()
       .then((preference) => {
         if (active) setEnabled(preference.enabled);
       })
       .catch(() => {
-        if (active) setError('Could not load the diagnostics preference.');
+        if (active) setError(`Could not load the ${subject} preference.`);
       })
       .finally(() => {
         if (active) setIsLoading(false);
@@ -22,20 +34,39 @@ export function DiagnosticsSettings() {
     return () => {
       active = false;
     };
+    // The loader and saver are module functions, stable across renders.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const update = async (nextEnabled: boolean) => {
+  const update = (next: boolean) => {
     setIsLoading(true);
     setError('');
-    try {
-      const preference = await setAutomaticDiagnostics(nextEnabled);
-      setEnabled(preference.enabled);
-    } catch {
-      setError('Could not save the diagnostics preference. Try again.');
-    } finally {
-      setIsLoading(false);
-    }
+    void save(next)
+      .then((preference) => {
+        setEnabled(preference.enabled);
+      })
+      .catch(() => {
+        setError(`Could not save the ${subject} preference. Try again.`);
+      })
+      .finally(() => {
+        setIsLoading(false);
+      });
   };
+
+  return { enabled, isLoading, error, update };
+}
+
+export function DiagnosticsSettings() {
+  const diagnostics = usePreference(
+    getAutomaticDiagnostics,
+    setAutomaticDiagnostics,
+    'diagnostics',
+  );
+  const analytics = usePreference(
+    getUsageAnalyticsPreference,
+    setUsageAnalyticsPreference,
+    'usage analytics',
+  );
 
   return (
     <div className="mx-auto max-w-2xl">
@@ -64,9 +95,11 @@ export function DiagnosticsSettings() {
           </div>
           <Switch
             label="Automatic crash reports and Release Health"
-            checked={enabled}
-            disabled={isLoading}
-            onChange={(value) => void update(value)}
+            checked={diagnostics.enabled}
+            disabled={diagnostics.isLoading}
+            onChange={(value) => {
+              diagnostics.update(value);
+            }}
           />
         </div>
       </div>
@@ -76,9 +109,47 @@ export function DiagnosticsSettings() {
         profile ID. Reports you explicitly submit through <span className="font-mono">/bug</span> or{' '}
         <span className="font-mono">/feedback</span> are still sent when you choose Submit.
       </p>
-      {error && (
+      {diagnostics.error && (
         <p role="alert" className="mt-3 text-[12px] text-red-400">
-          {error}
+          {diagnostics.error}
+        </p>
+      )}
+
+      <div className="mb-3 mt-8 text-[11px] font-medium uppercase tracking-wider text-droid-text-muted">
+        Anonymous usage analytics
+      </div>
+      <div className="rounded-xl border border-droid-border bg-droid-surface">
+        <div className="flex items-start justify-between gap-5 px-4 py-4">
+          <div className="min-w-0">
+            <div className="text-[13px] text-droid-text">Count this installation</div>
+            <p className="mt-1 max-w-xl text-[11px] leading-[17px] text-droid-text-muted">
+              Records that the app was opened, so DROIDEX knows how many installations are active.
+              It sends a random installation ID, the app version, your platform and architecture,
+              and which channel the build came from. It never sends your name, email, prompts,
+              messages, file contents, repository names, or paths, and the ID is not derived from
+              your device or account. The analytics service also records the IP address the
+              connection comes from and the approximate location, city and country, it resolves to.
+              Released builds only.
+            </p>
+          </div>
+          <Switch
+            label="Anonymous usage analytics"
+            checked={analytics.enabled}
+            disabled={analytics.isLoading}
+            onChange={(value) => {
+              analytics.update(value);
+            }}
+          />
+        </div>
+      </div>
+
+      <p className="mt-3 text-[11px] leading-[17px] text-droid-text-muted">
+        Turning it off stops the counting and deletes the stored installation ID. Turning it back on
+        creates a new one, which counts as a separate installation.
+      </p>
+      {analytics.error && (
+        <p role="alert" className="mt-3 text-[12px] text-red-400">
+          {analytics.error}
         </p>
       )}
     </div>
