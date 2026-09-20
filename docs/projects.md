@@ -17,11 +17,12 @@ four tools only move text between conversations DROIDEX already owns.
 
 A thread inherits the workspace, harness, model, reasoning level and autonomy
 of the chat that spawned it unless the call names different ones, and it can
-never exceed its owner's autonomy. `thread_spawn` also takes
-`workspace: "worktree"` with an optional `branch` and `base`: DROIDEX cuts
-`<repo>/.worktrees/<branch>/<repo>` on a `thread/` branch from the commit the
-chat names and tells the thread to work there, so threads writing at the same
-time never share a tree.
+never exceed its owner's autonomy. DROIDEX isolates a thread on its own: a checkout that already has a thread
+working in it gives the next one its own worktree,
+`<repo>/.worktrees/<branch>/<repo>` on a `thread/` branch. `thread_spawn` can
+override that with `workspace`, name the `branch` and `base`, or put a thread in
+the checkout another thread used with `workspaceOf` — how a review thread reads
+the work where it was done.
 
 **Projects** lists every local project with what it is doing. Opening a row
 opens the conversation that leads it with its Threads panel already beside it;

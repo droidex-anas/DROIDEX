@@ -54,6 +54,14 @@ const spawnSchema = z.object({
     .describe(
       'Where the thread works. Omit it and DROIDEX decides: a checkout that already has a thread working in it gives the next one its own. "worktree" always isolates; "inherit" always shares, for a read-only task.',
     ),
+  workspaceOf: z
+    .string()
+    .min(1)
+    .max(200)
+    .optional()
+    .describe(
+      'Put this thread in the checkout another thread already worked in, by its id — how a review thread reads the work. That thread must have settled.',
+    ),
   branch: z
     .string()
     .min(1)

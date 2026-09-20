@@ -14,6 +14,8 @@ export interface ThreadInput {
 /** How a thread's checkout is chosen: the project's own, or one of its own. */
 interface ThreadWorkspaceChoice {
   workspace?: 'inherit' | 'worktree';
+  /** Work in the checkout another thread of this project already has. */
+  workspaceOf?: string;
   branch?: string;
   base?: string;
   /** The plan step this thread carries, by its number or exact title. */
