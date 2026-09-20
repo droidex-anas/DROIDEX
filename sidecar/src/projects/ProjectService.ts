@@ -150,13 +150,21 @@ export class ProjectService {
     };
   }
 
-  async create(input: ThreadInput, requestId?: string): Promise<string> {
+  /** Starts a project and its lead; the caller opens that conversation. */
+  async create(
+    input: ThreadInput,
+    requestId?: string,
+  ): Promise<{ projectId: string; appSessionId?: string }> {
     this.requireOpen();
-    if (requestId && this.projects.has(requestId)) return requestId;
+    const existing = requestId ? this.projects.get(requestId) : undefined;
+    if (existing) {
+      const main = existing.threads.find((thread) => !thread.ownerAppSessionId);
+      return { projectId: existing.id, ...(main ? { appSessionId: main.appSessionId } : {}) };
+    }
     const project = this.newProject(input.title, requestId);
     try {
-      await this.launch(project, input);
-      return project.id;
+      const appSessionId = await this.launch(project, input);
+      return { projectId: project.id, appSessionId };
     } catch (error) {
       this.fail(project, error);
       if (!project.threads.length) {

@@ -41,10 +41,17 @@ export function ProjectsRoute() {
     dispatch({ type: 'OPEN_UTILITY_TOOL', tool: 'threads' });
   }
 
+  /* Starting a project is starting its conversation, so it opens like any other
+     chat — with its threads beside it — instead of leaving the user on a list. */
   async function create(input: ThreadInput): Promise<void> {
-    const id = await createProject(input);
+    const started = await createProject(input);
     setCreating(false);
-    setOpenId(id);
+    if (!started.appSessionId) {
+      setOpenId(started.projectId);
+      return;
+    }
+    dispatch({ type: 'SET_ACTIVE_SESSION', id: started.appSessionId });
+    dispatch({ type: 'OPEN_UTILITY_TOOL', tool: 'threads' });
   }
 
   const travel = reduceMotion ? 0 : 12;

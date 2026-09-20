@@ -127,8 +127,7 @@ async function harness(saved: Project[] = []) {
     await streaming(id, false);
   }
   async function root() {
-    const id = await projects.create(input);
-    const main = projects.list().find((project) => project.id === id)?.threads[0]?.appSessionId;
+    const { projectId: id, appSessionId: main } = await projects.create(input);
     assert.ok(main);
     await finish(main);
     return { id, main };
@@ -400,8 +399,8 @@ test('a spawn carries a settled plan step, or none at all', async (t) => {
 test('durable project request identity avoids a duplicate root', async (t) => {
   const h = await harness();
   t.after(() => h.projects.close());
-  assert.equal(await h.projects.create(input, 'request-1'), 'request-1');
-  assert.equal(await h.projects.create(input, 'request-1'), 'request-1');
+  assert.equal((await h.projects.create(input, 'request-1')).projectId, 'request-1');
+  assert.equal((await h.projects.create(input, 'request-1')).projectId, 'request-1');
   assert.equal(h.launched.length, 1);
 });
 

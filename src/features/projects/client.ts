@@ -32,10 +32,15 @@ export function useProjects(): { projects: ProjectView[]; loading: boolean; erro
   );
 }
 
-export async function createProject(input: ThreadInput): Promise<string> {
+export async function createProject(
+  input: ThreadInput,
+): Promise<{ projectId: string; appSessionId?: string }> {
   const result = await send({ type: 'project.create', requestId: crypto.randomUUID(), input });
   if (!result.projectId) throw new Error('The runtime did not identify the new project.');
-  return result.projectId;
+  return {
+    projectId: result.projectId,
+    ...(result.appSessionId ? { appSessionId: result.appSessionId } : {}),
+  };
 }
 
 export async function pauseProject(

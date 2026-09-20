@@ -138,7 +138,7 @@ async function runCommand(
     let appSessionId: string | undefined;
     switch (command.type) {
       case 'project.create':
-        projectId = await projects.create(command.input, command.requestId);
+        ({ projectId, appSessionId } = await projects.create(command.input, command.requestId));
         break;
       case 'project.spawn':
         ({ appSessionId } = await projects.spawn(command.source, command.input));
