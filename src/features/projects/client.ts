@@ -1,19 +1,13 @@
-import { useMemo, useSyncExternalStore } from 'react';
+import { shallowEqual, useStoreSelector } from '../../hooks/useStore';
 import { bridge } from '../../lib/bridge';
 import type { ServerEvent } from '../../types/bridge';
 import type { ProjectCommand, ProjectEvent } from './protocol';
 import type { ProjectView, ThreadInput } from './types';
 
 type Result = Extract<ProjectEvent, { type: 'project.result'; ok: true }>;
-interface Snapshot {
-  projects: ProjectView[];
-  loading: boolean;
-  error?: string;
-}
 
-let snapshot: Snapshot = { projects: [], loading: true };
 let initialized = false;
-const listeners = new Set<() => void>();
+let failure = '';
 const pending = new Map<
   string,
   {
@@ -23,28 +17,18 @@ const pending = new Map<
   }
 >();
 
-export function useProjects(): Snapshot {
+/* The store owns the snapshot; this module owns the commands and their replies.
+   Keeping one copy means the chat list, the navigation and Projects can never
+   disagree about what is running. */
+export function useProjects(): { projects: ProjectView[]; loading: boolean; error?: string } {
   initialize();
-  return useSyncExternalStore(
-    subscribe,
-    () => snapshot,
-    () => snapshot,
-  );
-}
-
-/** Spawned threads: the sessions Projects owns, which the chat list leaves out. */
-export function useProjectThreadIds(): ReadonlySet<string> {
-  const { projects } = useProjects();
-  return useMemo(
-    () =>
-      new Set(
-        projects.flatMap((project) =>
-          project.threads
-            .filter((thread) => thread.ownerAppSessionId)
-            .map((thread) => thread.appSessionId),
-        ),
-      ),
-    [projects],
+  return useStoreSelector(
+    (state) => ({
+      projects: state.projects,
+      loading: state.connection !== 'connected' && state.projects.length === 0,
+      ...(failure ? { error: failure } : {}),
+    }),
+    shallowEqual,
   );
 }
 
@@ -76,27 +60,22 @@ function initialize(): void {
 }
 
 function handleEvent(event: ServerEvent): void {
-  if (event.type === 'projects.snapshot') {
-    snapshot = { projects: event.projects, loading: false };
-    listeners.forEach((listener) => {
-      listener();
-    });
-  } else if (event.type === 'connection' && event.status === 'connected') {
+  if (event.type === 'connection' && event.status === 'connected') {
     // A reconnect starts from the runtime's own snapshot, not a stale one.
     bridge.send({ type: 'projects.list' });
-  } else if (event.type === 'error' && event.code?.startsWith('project.')) {
-    snapshot = { ...snapshot, loading: false, error: event.message };
-    listeners.forEach((listener) => {
-      listener();
-    });
-  } else if (event.type === 'project.result') {
-    const waiter = pending.get(event.requestId);
-    if (!waiter) return;
-    pending.delete(event.requestId);
-    clearTimeout(waiter.timeout);
-    if (event.ok) waiter.resolve(event);
-    else waiter.reject(new Error(event.error));
+    return;
   }
+  if (event.type === 'error' && event.code?.startsWith('project.')) {
+    failure = event.message;
+    return;
+  }
+  if (event.type !== 'project.result') return;
+  const waiter = pending.get(event.requestId);
+  if (!waiter) return;
+  pending.delete(event.requestId);
+  clearTimeout(waiter.timeout);
+  if (event.ok) waiter.resolve(event);
+  else waiter.reject(new Error(event.error));
 }
 
 function send(command: Exclude<ProjectCommand, { type: 'projects.list' }>): Promise<Result> {
@@ -119,11 +98,4 @@ function send(command: Exclude<ProjectCommand, { type: 'projects.list' }>): Prom
     clearTimeout(timeout);
     reject(new Error('DROIDEX is not connected. Your draft has been kept.'));
   });
-}
-
-function subscribe(listener: () => void): () => void {
-  listeners.add(listener);
-  return () => {
-    listeners.delete(listener);
-  };
 }

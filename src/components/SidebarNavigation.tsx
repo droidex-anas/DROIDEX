@@ -6,11 +6,25 @@ import { resolvePrWorkspaceCwd } from '../features/pull-requests/lib/prWorkspace
 import { GitPullRequestIcon } from './environment/GithubIcons';
 import { Clock } from '@droidex/icons';
 import { ActivityStatusGlyph } from './ActivityStatusGlyph';
-import { useProjectBoard } from '../features/projects/useProjectBoard';
+import { projectsPulse } from '../lib/projectThreads';
+import type { SessionSummary } from '../types/bridge';
 
 export function SidebarNavigation() {
   const dispatch = useStoreDispatch();
-  const board = useProjectBoard();
+  const pulse = useStoreSelector(
+    (current) => {
+      // A project outlives the window's session map, so a thread it names may
+      // not be loaded here.
+      const sessions: Partial<Record<string, SessionSummary>> = current.sessions;
+      return projectsPulse(current.projects, {
+        streaming: (id) => Boolean(sessions[id]?.streaming),
+        blocked: (id) =>
+          Object.hasOwn(current.pendingPermissions, id) ||
+          Object.hasOwn(current.pendingQuestions, id),
+      });
+    },
+    (a, b) => a.attention === b.attention && a.live === b.live,
+  );
   const state = useStoreSelector((current) => {
     const activeSession = current.activeAppSessionId
       ? current.sessions[current.activeAppSessionId]
@@ -70,10 +84,7 @@ export function SidebarNavigation() {
         Projects
         {/* A project runs while the user is elsewhere, so the entry says when
             one is moving and when one is holding for them. */}
-        <ProjectsPulse
-          attention={board.entries.reduce((total, entry) => total + entry.pulse.attention, 0)}
-          live={board.entries.some((entry) => entry.pulse.live)}
-        />
+        <ProjectsPulse attention={pulse.attention} live={pulse.live} />
       </button>
       <button
         ref={automationsButtonRef}

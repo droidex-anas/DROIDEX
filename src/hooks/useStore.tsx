@@ -69,6 +69,7 @@ import {
   type ModelSelectorStyle,
 } from './persistedUiPreferences';
 import type { ShortcutAction, ShortcutBindings } from '../lib/shortcuts';
+import type { ProjectView } from '../features/projects/types';
 import {
   clearDesignMode,
   setDesignMode,
@@ -228,6 +229,9 @@ export interface AppState {
   // Sessions domain
   sessions: Record<string, SessionSummary>;
   sessionOrder: string[];
+  // Every local project as the runtime last reported it. The chat list, the
+  // navigation and Projects itself all read this one copy.
+  projects: ProjectView[];
   // Ids vouched for by the last authoritative listing: the boot snapshot
   // before the first SESSION_LIST, then the sessions of the most recent
   // SESSION_LIST. A SESSION_LIST prunes confirmed rows it no longer reports,
@@ -451,6 +455,7 @@ type Action =
   | { type: 'SESSION_CLOSED'; appSessionId: string }
   | { type: 'SESSION_PROCESSES'; appSessionId: string; processes: AgentProcess[] }
   | { type: 'SESSIONS_PROCESSES'; processes: Record<string, AgentProcess[]> }
+  | { type: 'PROJECTS_SNAPSHOT'; projects: ProjectView[] }
   // App-level chat organization (rename/pin/archive/delete); see lib/chatMetadata.
   // A blank RENAME_CHAT title clears the override back to the generated title.
   | { type: 'LINK_CHATS_PR'; appSessionIds: readonly string[]; cwd: string; pr: ChatPullRequest }
@@ -722,6 +727,7 @@ export const initialState: AppState = {
   connection: 'idle',
   sessions: sessionSnapshot?.sessions ?? {},
   sessionOrder: sessionSnapshot?.sessionOrder ?? [],
+  projects: [],
   listConfirmedSessionIds: sessionSnapshot?.sessionOrder ?? null,
   earlierSessionsByCwd: {},
   activeAppSessionId: persistedUiState.activeAppSessionId ?? null,
@@ -1071,6 +1077,9 @@ function baseReducer(state: AppState, action: Action): AppState {
         return next;
       return releaseSessionTranscriptWindow(next, m.appSessionId, INACTIVE_TRANSCRIPT_POLICY);
     }
+
+    case 'PROJECTS_SNAPSHOT':
+      return { ...state, projects: action.projects };
 
     case 'SESSIONS_PROCESSES':
       return { ...state, agentProcesses: action.processes };
@@ -2354,6 +2363,8 @@ export function adaptEvent(ev: ServerEvent): Action | null {
       return { type: 'SESSION_CLOSED', appSessionId: ev.appSessionId };
     case 'session.processes':
       return { type: 'SESSION_PROCESSES', appSessionId: ev.appSessionId, processes: ev.processes };
+    case 'projects.snapshot':
+      return { type: 'PROJECTS_SNAPSHOT', projects: ev.projects };
     case 'sessions.processes':
       return { type: 'SESSIONS_PROCESSES', processes: ev.processes };
     case 'mission.features':
@@ -2719,7 +2730,7 @@ function useStoreContext(): StoreContextValue {
   return context;
 }
 
-export function useStoreApi(): Pick<StoreContextValue, 'getState'> {
+export function useStoreApi(): Pick<StoreContextValue, 'getState' | 'subscribe'> {
   return useStoreContext();
 }
 

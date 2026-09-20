@@ -59,7 +59,6 @@ import {
 import { useSessionWorkingDirectory } from './hooks/useSessionWorkingDirectory';
 import { useDiagnosticsContext } from './hooks/useDiagnosticsContext';
 import { useFinishNotifications } from './hooks/useFinishNotifications';
-import { useThreadAttentionNotifications } from './features/projects/useThreadAttentionNotifications';
 import { useWorkspaceScopes } from './hooks/useWorkspaceScopes';
 import { useWorkspaceSessionList } from './hooks/useWorkspaceSessionList';
 import { useHistoryIndexingIdle } from './hooks/useHistoryIndexingIdle';
@@ -85,6 +84,7 @@ import {
   LazyCommandPalette,
   LazyAgentsWorkspace,
   LazyThreadsWorkspace,
+  LazyThreadAttentionNotifier,
   LazyFilesWorkspace,
   LazyMissionControl,
   LazyPullRequestsView,
@@ -185,7 +185,7 @@ export default function App() {
     !embedded && onboard.ready && (forceWizard || shouldShowOnboarding(onboard.onboarding));
   // Desktop-only: toast when a model turn finishes (snippet + optional sound).
   useFinishNotifications(!embedded && !showWizard);
-  useThreadAttentionNotifications(!embedded && !showWizard);
+  const hasProjects = useStoreSelector((current) => current.projects.length > 0);
   const activeSession = state.activeSession;
   const workingDirectory = useSessionWorkingDirectory(activeSession);
   const repoStatus = useRepoStatus(workingDirectory);
@@ -1003,6 +1003,13 @@ export default function App() {
       <Suspense fallback={null}>
         <LazySpecWikiModal />
       </Suspense>
+      {/* Watches project threads for a block that needs the user. Nothing to
+          watch until a project exists, so it loads with the first one. */}
+      {hasProjects && !embedded && !showWizard && (
+        <Suspense fallback={null}>
+          <LazyThreadAttentionNotifier />
+        </Suspense>
+      )}
       <Toaster />
 
       <AnimatePresence>{state.settingsOpen && <SettingsLazyHost />}</AnimatePresence>
