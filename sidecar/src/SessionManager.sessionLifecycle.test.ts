@@ -47,8 +47,8 @@ test('[L1] Ordinary create', { concurrency: false }, async () => {
     assert.equal(options.autonomyLevel, 'low');
     assert.deepEqual(
       options.mcpServers?.map((server) => server.name),
-      ['test-cli', 'test-browser', 'droidex-automations'],
-      'the effective CLI MCP config and DROIDEX browser MCP must initialize together',
+      ['test-cli', 'test-browser', 'droidex-automations', 'droidex-threads'],
+      'the effective CLI MCP config and DROIDEX’s own tool servers must initialize together',
     );
     assert.equal(
       h.calls.some((call) => call.target === 'provider' && call.method === 'addMcpServer'),

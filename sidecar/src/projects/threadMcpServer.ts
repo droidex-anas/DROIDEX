@@ -58,7 +58,9 @@ const spawnSchema = z.object({
     .min(1)
     .max(200)
     .optional()
-    .describe('Commit, branch or tag the worktree branches from. The checkout’s HEAD when omitted.'),
+    .describe(
+      'Commit, branch or tag the worktree branches from. The checkout’s HEAD when omitted.',
+    ),
   step: z
     .string()
     .min(1)
