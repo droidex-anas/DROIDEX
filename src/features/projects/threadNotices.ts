@@ -21,18 +21,23 @@ export interface ThreadReport {
   body: string;
 }
 
+/* Each report opens with its own head line — "<thread> reported back (thread
+   <id>):" — and runs to the next one. Splitting on blank lines instead would
+   lose every paragraph after the first and merge two threads into one card. */
+const REPORT_HEAD = /^(.+?)\s*\(thread [^)]+\):\s*$/;
+
 export function threadReports(text: string | undefined): ThreadReport[] | null {
   if (!text?.startsWith(REPORT_PREFIX)) return null;
-  const reports = text
-    .split('\n\n')
-    .slice(1)
-    .flatMap((block) => {
-      const [head, ...rest] = block.split('\n');
-      const lead = head.replace(/\s*\(thread [^)]+\):\s*$/, '');
-      const body = rest.join('\n').trim();
-      return lead && body ? [{ lead, body }] : [];
-    });
-  return reports.length > 0 ? reports : null;
+  const reports: { lead: string; body: string[] }[] = [];
+  for (const line of text.split('\n')) {
+    const head = REPORT_HEAD.exec(line);
+    if (head) reports.push({ lead: head[1], body: [] });
+    else reports.at(-1)?.body.push(line);
+  }
+  const shown = reports
+    .map((report) => ({ lead: report.lead, body: report.body.join('\n').trim() }))
+    .filter((report) => report.body);
+  return shown.length > 0 ? shown : null;
 }
 
 /**
