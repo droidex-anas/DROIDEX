@@ -51,8 +51,9 @@ context, the files or areas involved, and what done means.
 When a thread asks its harness's own question — the one a person clicks an
 answer to — DROIDEX routes it to the conversation that started it, options
 intact, and wakes that chat. The lead answers with `thread_send`'s `answers`,
-which reaches the waiting call directly instead of queueing behind the question
-that is blocking the thread. The human can still answer it inside the thread;
+one per question, which reaches the waiting call directly instead of queueing
+behind the question that is blocking the thread; a send without them is refused
+while a thread waits, because it would queue behind that question. The human can still answer it inside the thread;
 whoever answers first wins and the other side stops asking. A paused project
 routes nothing: its threads wait for the user.
 
@@ -88,8 +89,11 @@ a quiet notice rather than a message wearing the user's bubble.
 Opening or selecting a thread does not stop its siblings. **Stop** interrupts
 that thread and cancels its queued work.
 
-A settled managed turn reports only a bounded excerpt of its final primary
-reply to its direct owner. Tool output and thinking never enter that report.
+A settled managed turn reports to its direct owner however it ended: a bounded
+excerpt of its final primary reply, the error that failed it, that it was
+stopped, or that it ended without a reply. Tool output and thinking never enter
+that report. A thread that reports nothing twice is not working, and the lead is
+briefed to stop it and tell the user rather than nudge it again.
 An owner receives an ordinary new turn when it becomes available; no model
 polls or stays running to wait for another model. Ordinary user questions and
 permission requests still require the human, not approval by another agent.
@@ -141,7 +145,9 @@ any existing experimental `projects.json` before trying a changed draft.
 ## Ownership in code
 
 `ProjectService` owns the graph and bounded reports. `ProjectActivity` retains
-only a bounded final reply during an active managed turn. `ProjectWakeQueue`
+only a bounded final reply and the last error of a managed turn, opening that
+turn on the first sign of one — the streaming flag or any transcript event —
+because a reply that opened no turn would be reported to its owner as silence. `ProjectWakeQueue`
 owns claims, admission, cancellation and turn slots. `ProjectSessions`
 correlates ordinary session creation and uses the existing scheduling receipt;
 `SessionLifecycle` remains the only runtime owner. There is no second session

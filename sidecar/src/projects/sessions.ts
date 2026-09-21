@@ -12,7 +12,7 @@ interface Launch {
 
 type Host = Pick<
   SessionManager,
-  'handle' | 'sessionSummary' | 'deliverScheduledMessage' | 'providerCatalog'
+  'handle' | 'sessionSummary' | 'deliverScheduledMessage' | 'providerCatalog' | 'answerQuestion'
 >;
 
 /** Correlates session creation and commits membership before the first provider turn. */
@@ -75,13 +75,7 @@ export class ProjectSessions implements ProjectPort {
     appSessionId: string,
     requestId: string,
     answers: { index: number; question: string; answer: string }[],
-  ): Promise<void> {
-    return this.host.handle({
-      type: 'question.respond',
-      appSessionId,
-      requestId,
-      cancelled: false,
-      answers,
-    });
+  ): boolean {
+    return this.host.answerQuestion(appSessionId, requestId, answers);
   }
 }

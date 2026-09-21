@@ -10,10 +10,6 @@ export interface ThreadInput {
   cwd?: string;
 }
 
-/** A spawn names the task; harness, model, reasoning and autonomy follow the chat. */
-export type ThreadSpawnInput = Omit<ThreadInput, 'cwd' | 'provider' | 'autonomy'> &
-  Partial<Pick<ThreadInput, 'provider' | 'autonomy'>>;
-
 export interface ProjectStep {
   id: string;
   title: string;

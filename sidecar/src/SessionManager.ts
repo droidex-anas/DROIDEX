@@ -1101,6 +1101,18 @@ export class SessionManager {
     return this.registry.resolveSummary(appSessionId);
   }
 
+  /**
+   * Answers a question a session is blocked on, for callers that must know
+   * whether it landed: false when the question was already settled elsewhere.
+   */
+  answerQuestion(
+    appSessionId: string,
+    requestId: string,
+    answers: { index: number; question: string; answer: string }[],
+  ): boolean {
+    return this.interactions.respondToQuestion(appSessionId, requestId, false, answers);
+  }
+
   /** What each provider can run right now, for callers that must validate a choice. */
   async providerCatalog(): Promise<ProviderStatus[]> {
     return providerStatuses(

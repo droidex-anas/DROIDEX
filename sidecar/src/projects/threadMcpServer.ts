@@ -145,17 +145,18 @@ export function createThreadMcpServer(appSessionIdForTool: () => string | undefi
             .max(16)
             .optional()
             .describe(
-              'Answers to the question this thread asked, in the order DROIDEX listed them. They reach the waiting thread at once instead of queueing behind it.',
+              'One answer per question this thread asked, in the order DROIDEX listed them. They reach the waiting thread at once instead of queueing behind the question.',
             ),
         },
         safeTool(async (input: { threadId: string; text: string; answers?: string[] }) => {
           const projects = await requireProjectService();
-          await projects.send(appSessionId(), input.threadId, input.text, input.answers);
-          return jsonResult({
-            ok: true,
-            threadId: input.threadId,
-            state: input.answers?.length ? 'answered' : 'queued',
-          });
+          const state = await projects.send(
+            appSessionId(),
+            input.threadId,
+            input.text,
+            input.answers,
+          );
+          return jsonResult({ ok: true, threadId: input.threadId, state });
         }),
       ),
       tool(

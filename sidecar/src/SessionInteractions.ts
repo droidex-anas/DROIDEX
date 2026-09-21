@@ -193,21 +193,23 @@ export class SessionInteractions {
     settle(normalized);
   }
 
+  /** False when nothing was waiting on this request, so no answer was taken. */
   respondToQuestion(
     appSessionId: string,
     requestId: string,
     cancelled: boolean,
     answers: { index: number; question: string; answer: string }[],
-  ): void {
+  ): boolean {
     const liveSession = this.dependencies.getLiveSession(appSessionId);
-    if (!liveSession) return;
+    if (!liveSession) return false;
     const scope = this.scopes.get(liveSession.summary.appSessionId);
     const resolve = scope?.pendingQuestions.get(requestId);
-    if (!scope || !resolve) return;
+    if (!scope || !resolve) return false;
     scope.pendingQuestions.delete(requestId);
     resolve({ cancelled, answers });
     if (!this.hasPending(liveSession.summary.appSessionId))
       this.dependencies.onSessionAvailable?.(liveSession.summary.appSessionId);
+    return true;
   }
 
   hasPending(appSessionId: string): boolean {
