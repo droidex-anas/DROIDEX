@@ -42,9 +42,11 @@ export function useThreadAttentionNotifications(enabled: boolean): void {
             continue;
           }
           if (notified.current.has(key)) continue;
-          notified.current.add(key);
           // Looking at the thread is seeing the request; a banner repeats it.
+          // Marking it only once one is sent, so a request first seen on screen
+          // still reaches the user after they look away.
           if (state.activeAppSessionId === thread.appSessionId && isAppInForeground()) continue;
+          notified.current.add(key);
           void notify(`${thread.title} ${LEAD[kind]}`, project.title, {
             appSessionId: thread.appSessionId,
           });
