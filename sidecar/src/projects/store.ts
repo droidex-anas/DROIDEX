@@ -81,6 +81,7 @@ const project = z
             ownerAppSessionId: id.optional(),
             title: z.string().max(120),
             reply: text,
+            error: z.string().max(600).optional(),
             waiting: z.boolean(),
           })
           .strict(),

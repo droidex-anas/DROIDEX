@@ -212,6 +212,53 @@ export function createThreadMcpServer(appSessionIdForTool: () => string | undefi
         }),
       ),
       tool(
+        'thread_read',
+        [
+          'Read a thread this chat started: its whole final reply, the question it is waiting on, and what it is running as.',
+          'A thread’s report to you is an excerpt. Read the rest here before you tell the user what it found or treat its step as done, and read it again whenever you need its state back — after a compaction, or before deciding what to do next.',
+          'A thread that is still working has no reply yet. DROIDEX wakes you when it settles; reading it again to see whether it is done is polling.',
+        ].join(' '),
+        { threadId: z.string().min(1).max(200) },
+        safeTool(async (input: { threadId: string }) => {
+          const projects = await requireProjectService();
+          return jsonResult(projects.read(appSessionId(), input.threadId));
+        }),
+      ),
+      tool(
+        'thread_configure',
+        [
+          'Retune a thread this chat started, the way a person would change a chat’s own controls: its model, its reasoning effort, its autonomy.',
+          'Use it when the work changes shape — a lower effort for a quick back-and-forth, a stronger model for the part that needs judgement — rather than stopping the thread and starting another.',
+          'A thread can never exceed this chat’s autonomy. The thread and its history stay as they are; only what it runs as changes.',
+        ].join(' '),
+        {
+          threadId: z.string().min(1).max(200),
+          modelId: z
+            .string()
+            .min(1)
+            .max(200)
+            .optional()
+            .describe('Resolved the same way thread_spawn resolves a model name.'),
+          reasoningEffort: reasoningSchema.optional(),
+          autonomy: z
+            .enum(['off', 'low', 'medium', 'high'])
+            .optional()
+            .describe('At most this chat’s autonomy.'),
+        },
+        safeTool(
+          async (input: {
+            threadId: string;
+            modelId?: string;
+            reasoningEffort?: z.infer<typeof reasoningSchema>;
+            autonomy?: 'off' | 'low' | 'medium' | 'high';
+          }) => {
+            const { threadId, ...settings } = input;
+            const projects = await requireProjectService();
+            return jsonResult(await projects.configure(appSessionId(), threadId, settings));
+          },
+        ),
+      ),
+      tool(
         'thread_stop',
         'Stop a thread this chat started. It interrupts its current turn and drops its queued messages; its conversation stays open.',
         { threadId: z.string().min(1).max(200) },

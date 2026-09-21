@@ -9,11 +9,12 @@ can be opened, steered and reviewed like any other chat.
 
 Any chat can start a thread, because DROIDEX gives every interactive chat the
 `droidex-threads` MCP tools: `thread_spawn`, `thread_send`, `thread_stop` and
-`plan_set`. Asking a chat to run work in parallel is
-enough — it spawns the threads itself, and the chat becomes that project's main
-conversation on the first spawn. `thread_spawn` follows the chat's own
-autonomy: it is auto-approved at High and asks the user otherwise; the other
-four tools only move text between conversations DROIDEX already owns.
+`plan_set`, `thread_read` and `thread_configure`. Asking a chat to run work in
+parallel is enough — it spawns the threads itself, and the chat becomes that
+project's main conversation on the first spawn. `thread_spawn` follows the
+chat's own autonomy: it is auto-approved at High and asks the user otherwise;
+the rest only read, retune or move text between conversations DROIDEX already
+owns, and none of them can put a thread past the autonomy its owner has.
 
 A thread inherits the workspace, harness, model, reasoning level and autonomy
 of the chat that spawned it unless the call names different ones, and it can
@@ -91,7 +92,16 @@ that thread and cancels its queued work.
 
 A settled managed turn reports to its direct owner however it ended: a bounded
 excerpt of its final primary reply, the error that failed it, that it was
-stopped, or that it ended without a reply. Tool output and thinking never enter
+stopped, or that it ended without a reply. The report is an excerpt and says so
+when it is one. `thread_read` gives the owner the whole reply, the question the
+thread is waiting on, and what it is running as, so a lead can look again —
+after a compaction, or before deciding a step is done — instead of acting on
+what it happened to be handed. `thread_configure` retunes a thread's model,
+reasoning effort and autonomy in place, for the same reason a person reaches for
+the composer's own controls: a quick back-and-forth does not need the effort the
+original work did. The wake stays a push, because a report is the thing the
+lead exists to act on and pulling one costs a whole extra turn to fetch a few
+hundred characters. Tool output and thinking never enter
 that report. A thread that reports nothing twice is not working, and the lead is
 briefed to stop it and tell the user rather than nudge it again.
 An owner receives an ordinary new turn when it becomes available; no model

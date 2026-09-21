@@ -18,6 +18,7 @@ import type {
   ProjectView,
   ThreadInput,
   ThreadMessage,
+  ThreadSettings,
   ThreadSpawnInput,
 } from './types.js';
 
@@ -35,12 +36,30 @@ export interface ProjectPort {
     isCurrent: () => boolean,
   ): Promise<AutomationDeliveryReceipt>;
   interrupt(appSessionId: string): Promise<void>;
+  /** Retunes a live thread, the way the composer's own controls do. */
+  configure(appSessionId: string, settings: ThreadSettings): Promise<void>;
   /** Answers a question a thread is blocked on; false when it was already settled. */
   answer(
     appSessionId: string,
     requestId: string,
     answers: { index: number; question: string; answer: string }[],
   ): boolean;
+}
+
+/** What a chat reads back about a thread it owns. */
+type ThreadState = 'working' | 'waiting' | 'stopped' | 'failed' | 'idle';
+
+export interface ThreadReadout {
+  threadId: string;
+  title: string;
+  state: ThreadState;
+  reply: string;
+  error?: string;
+  question?: { index: number; question: string; options: string[] }[];
+  cwd?: string;
+  modelId?: string;
+  reasoningEffort?: string;
+  autonomy?: string;
 }
 
 const autonomy = ['off', 'low', 'medium', 'high'];
@@ -63,6 +82,8 @@ const LEAD_BRIEF = [
   'Do not spawn a thread to think for you, to explore an open question, or to work out what the task is. Investigate here, decide here, hand out the decided work.',
   'Choose each thread’s model, reasoning and autonomy for the job. DROIDEX isolates a thread in its own worktree when another is already working in the checkout; pass workspace only to override that.',
   'After spawning, end your turn. DROIDEX wakes you when a thread reports, asks something or stops; never poll or keep generating while you wait.',
+  'A report is an excerpt of a thread’s reply. Read the rest with thread_read before you tell the user what a thread found or treat its step as done, and read a thread again whenever you need its state, its question or its settings.',
+  'Retune a thread with thread_configure when the work changed shape: a lower reasoning effort for a quick back-and-forth, a stronger model for the part that needs judgement.',
   'When threads report, keep plan_set current and tell the user what changed and what you decided, briefly.',
   'A thread that reports back twice without a reply is not working. Stop it and tell the user what you saw; never keep nudging it.',
   'Review your own work before calling a step done: spawn a thread with workspaceOf set to the thread that did it, so the reviewer reads the real changes in the tree they were made in.',
@@ -413,6 +434,64 @@ export class ProjectService {
     return 'queued';
   }
 
+  /**
+   * The whole of a thread, for the chat that owns it: what it last replied, the
+   * question it is waiting on, and what it is running as. A report carries an
+   * excerpt, so this is how a lead reads the rest or looks again later.
+   */
+  read(source: string, target: string): ThreadReadout {
+    const project = this.controlledProject(source, target);
+    const thread = this.thread(project, target);
+    const session = this.sessions.get(target);
+    return {
+      threadId: target,
+      title: thread.title,
+      state: threadState(thread, session),
+      reply: thread.reply,
+      ...(thread.error ? { error: thread.error } : {}),
+      ...(thread.ask ? { question: thread.ask.questions } : {}),
+      ...(session
+        ? {
+            cwd: session.cwd,
+            modelId: session.modelId,
+            reasoningEffort: session.reasoningEffort,
+            autonomy: session.autonomy,
+          }
+        : {}),
+    };
+  }
+
+  /** Retunes a thread within the owner's own limits, and reads back what took. */
+  async configure(
+    source: string,
+    target: string,
+    settings: ThreadSettings,
+  ): Promise<ThreadReadout> {
+    const project = this.controlledProject(source, target);
+    const owner = this.requireSession(source);
+    const session = this.requireSession(target);
+    const wanted = settings.modelId
+      ? (
+          await this.resolveModel(owner, {
+            title: '',
+            prompt: '',
+            provider: session.provider,
+            autonomy: session.autonomy,
+            modelId: settings.modelId,
+          })
+        ).modelId
+      : undefined;
+    if (settings.autonomy && autonomy.indexOf(settings.autonomy) > autonomy.indexOf(owner.autonomy))
+      throw new Error('A thread cannot exceed its owner’s autonomy.');
+    await this.sessions.configure(target, {
+      ...(wanted ? { modelId: wanted } : {}),
+      ...(settings.reasoningEffort ? { reasoningEffort: settings.reasoningEffort } : {}),
+      ...(settings.autonomy ? { autonomy: settings.autonomy } : {}),
+    });
+    this.wakes.kick(project);
+    return this.read(source, target);
+  }
+
   async stop(source: string, target: string): Promise<void> {
     const project = this.controlledProject(source, target);
     this.wakes.invalidate(project);
@@ -485,6 +564,8 @@ export class ProjectService {
       return;
     }
     thread.reply = turn.text;
+    if (turn.error) thread.error = turn.error;
+    else delete thread.error;
     // A question the turn ended on will never be answered now.
     this.clearAsk(thread);
     if (!thread.ownerAppSessionId) {
@@ -734,16 +815,32 @@ export class ProjectService {
   }
 }
 
+/* The live state of a thread, owned by its session rather than copied here. A
+   question outlives no turn, so an outstanding one is what it is waiting on. */
+function threadState(thread: ProjectThread, session: SessionSummary | undefined): ThreadState {
+  if (session?.streaming) return 'working';
+  if (thread.ask) return 'waiting';
+  if (session?.phase === 'failed') return 'failed';
+  if (session?.phase === 'paused') return 'stopped';
+  return 'idle';
+}
+
 /* What the owner is told when a thread's turn ends. A thread that answered
    nothing says so plainly: the owner has to see the difference between a report
-   and silence, or it will keep nudging a thread that cannot answer. */
+   and silence, or it will keep nudging a thread that cannot answer. A long reply
+   is excerpted here and read in full with thread_read, so the excerpt says it is
+   one — in words that read the same to the person watching this chat. */
 function threadReport(session: SessionSummary, turn: ThreadTurn): string {
   const reply = turn.text.slice(-1_200);
+  const excerpt =
+    reply.length < turn.text.length
+      ? `The last 1,200 characters of a longer reply:\n${reply}`
+      : reply;
   if (session.phase === 'failed')
-    return ['It failed before finishing.', turn.error, reply].filter(Boolean).join('\n');
+    return ['It failed before finishing.', turn.error, excerpt].filter(Boolean).join('\n');
   if (session.phase === 'paused')
-    return ['It was stopped before it finished.', reply].filter(Boolean).join('\n');
-  return reply || 'It ended its turn without a reply.';
+    return ['It was stopped before it finished.', excerpt].filter(Boolean).join('\n');
+  return excerpt || 'It ended its turn without a reply.';
 }
 
 /** Ids and names as a model is spoken about: "GLM-5.3 Flash" is `custom:glm-5.3-flash`. */

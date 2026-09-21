@@ -11,6 +11,13 @@ export interface ThreadInput {
   cwd?: string;
 }
 
+/** What the chat that owns a thread may retune on it, within its own limits. */
+export interface ThreadSettings {
+  modelId?: string;
+  reasoningEffort?: ReasoningEffort;
+  autonomy?: Autonomy;
+}
+
 /** How a thread's checkout is chosen: the project's own, or one of its own. */
 interface ThreadWorkspaceChoice {
   workspace?: 'inherit' | 'worktree';
@@ -55,7 +62,10 @@ export interface ProjectThread {
   // The owner is another top-level conversation, not a harness subagent.
   ownerAppSessionId?: string;
   title: string;
+  /** The whole final reply of its last turn, which its report only excerpts. */
   reply: string;
+  /** Why that turn failed. The session summary keeps the phase, not the reason. */
+  error?: string;
   waiting: boolean;
 }
 
