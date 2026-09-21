@@ -233,11 +233,6 @@ export class ProjectService {
       ancestor = this.thread(project, ancestor).ownerAppSessionId;
     }
     if (depth >= 4) throw new Error('Project thread nesting is limited to three levels.');
-    // A held project is one a person stopped, or one whose delivery a restart
-    // caught mid-flight. Starting a thread is an explicit act by a live
-    // conversation, so it resumes coordination the same way the panel's Resume
-    // does — and stops for the same reason, an unreviewed delivery.
-    if (project.paused) await this.setPaused(project.id, false);
     const workspace = await this.threadWorkspace(project, owner.cwd, input.title, requested);
     const cwd = workspace?.cwd ?? owner.cwd;
     const prompt = threadPrompt(input.prompt, workspace);
