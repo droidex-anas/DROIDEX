@@ -1,6 +1,7 @@
 import { useRef, useEffect, useMemo, useState, useCallback, type ReactNode } from 'react';
 import { GripVertical, ChevronRight, Square } from 'lucide-react';
 import { useStoreDispatch, useStoreSelector } from '../hooks/useStore';
+import { threadOrigin } from '../lib/projectThreads';
 import { WINDOW_CONTROLS_LEAD_PX } from '../lib/windowChrome';
 import { openReviewAt, type OpenReviewFileHandler } from '../lib/reviewFocus';
 import type { FileChange } from '../lib/diff';
@@ -51,6 +52,18 @@ import type { ConversationListHandle } from './ConversationList';
 import { TranscriptReachHost } from '../features/transcript-reach/TranscriptReachHost';
 
 const NO_LIVE_PROCESSES: readonly AgentProcess[] = [];
+
+function equalOrigin(
+  left: ReturnType<typeof threadOrigin>,
+  right: ReturnType<typeof threadOrigin>,
+): boolean {
+  if (!left || !right) return left === right;
+  return (
+    left.ownerAppSessionId === right.ownerAppSessionId &&
+    left.projectTitle === right.projectTitle &&
+    left.threadTitle === right.threadTitle
+  );
+}
 
 // While a conversation restores we show an animated placeholder instead of a
 // "Restoring…" label, so switching chats feels like content loading in (the way
@@ -151,7 +164,14 @@ function ChatHeader({
 }: {
   title: string;
   live: boolean;
-  sub?: { label: string; meta?: string; running: boolean; onBack: () => void; onStop?: () => void };
+  sub?: {
+    label: string;
+    meta?: string;
+    running: boolean;
+    backTitle?: string;
+    onBack: () => void;
+    onStop?: () => void;
+  };
   // Room left at the row's start for the window controls and the sidebar
   // toggle while the sidebar is collapsed.
   leadPx: number;
@@ -169,7 +189,7 @@ function ChatHeader({
           <button
             type="button"
             onClick={sub.onBack}
-            title="Back to primary session"
+            title={sub.backTitle ?? 'Back to primary session'}
             className="truncate text-[13px] font-medium text-droid-text-muted transition-colors hover:text-droid-text max-w-[200px]"
           >
             {title}
@@ -582,6 +602,13 @@ export default function ChatView({
           interruptChild(visibleTarget.parentAppSessionId, visibleTarget.childSessionId);
         }
       : undefined;
+  // A thread opened as a full chat is not in the chat list, so its own header
+  // carries the way back to the conversation that started it. It is selected
+  // apart from the chat state so a project snapshot never re-renders the feed.
+  const origin = useStoreSelector(
+    (current) => threadOrigin(current.projects, current.activeAppSessionId ?? undefined),
+    equalOrigin,
+  );
   const chatHeaderSub = viewingChildSession
     ? {
         label: selectedChildLabel,
@@ -592,7 +619,16 @@ export default function ChatView({
         },
         ...(stopSelectedChild !== undefined ? { onStop: stopSelectedChild } : {}),
       }
-    : undefined;
+    : origin
+      ? {
+          label: origin.threadTitle,
+          running: live,
+          backTitle: 'Back to the chat that started this thread',
+          onBack: () => {
+            dispatch({ type: 'SET_ACTIVE_SESSION', id: origin.ownerAppSessionId });
+          },
+        }
+      : undefined;
   const openSpecWiki = activeAppSessionId
     ? () => {
         dispatch({ type: 'SPEC_OPEN_WIKI', appSessionId: activeAppSessionId });
@@ -730,7 +766,10 @@ export default function ChatView({
     <div data-testid="chat-view" className="flex-1 min-h-0 min-w-0 flex flex-col overflow-hidden">
       {activeSession ? (
         <ChatHeader
-          title={chatDisplayTitle(activeSession, state.chatMetadata[activeSession.appSessionId])}
+          title={
+            origin?.projectTitle ??
+            chatDisplayTitle(activeSession, state.chatMetadata[activeSession.appSessionId])
+          }
           live={live}
           leadPx={sidebarCollapsed ? WINDOW_CONTROLS_LEAD_PX : 16}
           appSessionId={activeSession.appSessionId}
