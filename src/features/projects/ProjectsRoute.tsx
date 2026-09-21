@@ -9,6 +9,7 @@ import { workspaceName } from '../../lib/workspaces';
 import { createProject, pauseProject } from './client';
 import { NewProjectForm } from './NewProjectForm';
 import { ProjectThreads } from './ProjectThreads';
+import { resolveNewChatCwd } from '../../lib/workspaces';
 import { projectSession } from './sessions';
 import { useProjectBoard, type ProjectBoardEntry } from './useProjectBoard';
 import type { ThreadInput } from './types';
@@ -26,8 +27,10 @@ export function ProjectsRoute() {
   const [openId, setOpenId] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
   const [now] = useState(() => Date.now());
-  const cwd = useStoreSelector(
-    (state) => projectSession(state.sessions, state.activeAppSessionId)?.cwd ?? '',
+  // A new project follows the workspace a new chat would, so starting one from
+  // the Projects tab lands in the folder the user is already working in.
+  const cwd = useStoreSelector((state) =>
+    resolveNewChatCwd(projectSession(state.sessions, state.activeAppSessionId), state.draftChat),
   );
   const open = entries.find((entry) => entry.project.id === openId);
 

@@ -51,7 +51,8 @@ import { worktreeName } from '../../lib/git';
 import { resolveMainCheckout } from '../../lib/chatWorkspace';
 import { workspaceName } from '../../lib/workspaces';
 
-function Pill({
+/** One control of the Start in row. `open` is omitted by a pill with no menu. */
+export function Pill({
   icon,
   label,
   title,
@@ -62,18 +63,18 @@ function Pill({
   icon: React.ReactNode;
   label: string;
   title: string;
-  open: boolean;
-  innerRef: React.RefObject<HTMLButtonElement | null>;
+  open?: boolean;
+  innerRef?: React.RefObject<HTMLButtonElement | null>;
   onClick: () => void;
 }) {
   return (
     <button
+      type="button"
       ref={innerRef}
       onClick={onClick}
       title={`${title}: ${label}`}
       aria-label={`${title}: ${label}`}
-      aria-expanded={open}
-      aria-haspopup="dialog"
+      {...(open === undefined ? {} : { 'aria-expanded': open, 'aria-haspopup': 'dialog' as const })}
       className={`group flex min-w-0 items-center gap-1.5 rounded-md px-1.5 py-1 text-[11px] transition-colors ${
         open
           ? 'bg-droid-bg/60 text-droid-text'
