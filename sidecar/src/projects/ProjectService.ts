@@ -128,9 +128,15 @@ export class ProjectService {
     const owner = new ProjectService(sessions, store, emit);
     const saved = await store.load();
     for (const project of saved) {
-      project.paused = true;
       project.launching = 0;
-      if (project.delivery) project.delivery.state = 'uncertain';
+      // Only a delivery caught mid-flight is uncertain, and only that needs a
+      // person to look before coordination goes on. Holding every project over
+      // a restart stopped them all silently: a thread would answer, its report
+      // would queue, and the lead would never be woken for it.
+      if (project.delivery) {
+        project.delivery.state = 'uncertain';
+        project.paused = true;
+      }
       owner.projects.set(project.id, project);
       for (const thread of project.threads) owner.membership.set(thread.appSessionId, project);
     }
@@ -227,10 +233,10 @@ export class ProjectService {
       ancestor = this.thread(project, ancestor).ownerAppSessionId;
     }
     if (depth >= 4) throw new Error('Project thread nesting is limited to three levels.');
-    // Every project reloads paused, because a restart cannot know whether its
-    // last automatic delivery landed. Starting a thread is an explicit act by a
-    // live conversation, so it resumes coordination the same way the panel's
-    // Resume does — and stops for the same reason, an unreviewed delivery.
+    // A held project is one a person stopped, or one whose delivery a restart
+    // caught mid-flight. Starting a thread is an explicit act by a live
+    // conversation, so it resumes coordination the same way the panel's Resume
+    // does — and stops for the same reason, an unreviewed delivery.
     if (project.paused) await this.setPaused(project.id, false);
     const workspace = await this.threadWorkspace(project, owner.cwd, input.title, requested);
     const cwd = workspace?.cwd ?? owner.cwd;
