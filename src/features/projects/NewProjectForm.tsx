@@ -2,7 +2,7 @@ import { useState, type SyntheticEvent } from 'react';
 import { ArrowUp, FolderOpen } from '@droidex/icons';
 import { pickDirectory } from '../../lib/desktop';
 import { chatWorktreeName, prepareChatWorkingDirectory } from '../../lib/chatWorkspace';
-import { StartInBar, type StartInSelection } from '../../components/environment/StartInBar';
+import { Pill, StartInBar, type StartInSelection } from '../../components/environment/StartInBar';
 import { ThreadSettings } from './ThreadSettings';
 import { buildThreadInput, useThreadSelection } from './useThreadSelection';
 import type { ThreadInput } from './types';
@@ -87,15 +87,23 @@ export function NewProjectForm({
         runs the parts that can go in parallel as threads.
       </p>
 
-      {startIn.cwd ? (
-        // The composer's own treatment: the bar sits above the box and tucks
-        // behind it, so a project is set up the way a chat is.
-        <div className="relative z-0 mx-[4%] -mb-3 mt-4 min-w-0 rounded-t-2xl border border-droid-border bg-droid-surface px-4 pb-4 pt-1.5">
+      {/* Where it runs, in the composer's own treatment: the bar sits above the
+          box and tucks behind it, and holds the folder control whether or not
+          one has been chosen yet. */}
+      <div className="relative z-0 mx-[6%] -mb-3 mt-4 min-w-0 rounded-t-2xl border border-droid-border bg-droid-surface px-4 pb-4 pt-1.5">
+        {startIn.cwd ? (
           <StartInBar value={startIn} onChange={setStartIn} />
-        </div>
-      ) : null}
+        ) : (
+          <Pill
+            icon={<FolderOpen className="h-3.5 w-3.5" />}
+            label="Open folder…"
+            title="Project"
+            onClick={() => void chooseFolder()}
+          />
+        )}
+      </div>
 
-      <div className="relative z-10 mt-4 rounded-xl border border-droid-border bg-droid-bg transition-colors focus-within:border-droid-border-hover">
+      <div className="relative z-10 rounded-2xl border border-droid-border bg-droid-bg transition-colors focus-within:border-droid-border-hover">
         <textarea
           value={draft.prompt}
           onChange={(event) => {
@@ -107,21 +115,9 @@ export function NewProjectForm({
           rows={4}
           autoFocus
           placeholder="Move us off the legacy payments client before Friday, and draft the release notes."
-          className="w-full resize-y bg-transparent px-3.5 py-3 text-[14px] leading-6 outline-none placeholder:text-droid-text-muted"
+          className="w-full resize-y bg-transparent px-3.5 pb-3 pt-4 text-[14px] leading-6 outline-none placeholder:text-droid-text-muted"
         />
         <div className="flex items-center gap-2 border-t border-droid-border/60 px-3 py-2">
-          {!startIn.cwd && (
-            <button
-              type="button"
-              disabled={pending}
-              onClick={() => void chooseFolder()}
-              title="Choose a workspace folder"
-              className="flex min-w-0 max-w-[140px] items-center gap-1.5 rounded-lg px-2 py-1 text-[12px] text-droid-text-secondary transition-colors hover:bg-droid-elevated"
-            >
-              <FolderOpen className="h-3.5 w-3.5 shrink-0" />
-              <span className="truncate">No folder</span>
-            </button>
-          )}
           <span className="flex min-w-0 flex-1">
             <ThreadSettings
               value={selection.value}
