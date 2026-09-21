@@ -55,14 +55,26 @@ import { join } from 'node:path';
 // entry by construction. Everything a conversation shows stays lazy: the full
 // surface, the mini bar, the composer's orb and controls, the settings sheet
 // and the chimes all load with the first conversation. The merged ~1_365_300
-// left ~9KB of headroom before DroidProxy was merged.
+// leaves the usual ~9KB of headroom.
 //
-// Raised from 1_375_000 to 1_390_000 for the DroidProxy provider marks in the
-// composer and picker, plus bridge validation. The settings page stays lazy.
-// The merged entry is ~1_381_450 bytes, leaving ~8.5KB of headroom.
+// Raised from 1_365_000 to 1_380_000 for Projects: the sidebar has to know
+// which sessions are project threads before it paints, or threads flash into
+// the chat list on every load, so the snapshot reducer and its wire validation,
+// the sidebar filter and nav pulse, and the Threads pane's auto-open all sit in
+// the entry. That is ~8.4KB measured against the pre-Projects base (1_362_540
+// at fba7e24a); the route, the threads panel, the plan table and the attention
+// notifier stay lazy. Headroom above the current ~1_371_000 is ~9KB.
+//
+// initialCssBytes raised from 100_000 to 101_500: that same base already
+// measured 100_629, over the old line before any of this work, and Projects
+// lands ~0.3KB under it. The raise covers main's drift, not the feature.
+//
+// Main meanwhile raised its own line from 1_375_000 to 1_390_000 for the
+// DroidProxy provider marks in the composer and picker, plus bridge
+// validation, with the settings page lazy; main alone measured ~1_381_450.
 const BUDGETS = {
   initialRendererJsBytes: 1_390_000,
-  initialCssBytes: 100_000,
+  initialCssBytes: 101_500,
   largestLazyChunkBytes: 700_000,
   duplicatePackageMaxBytes: 120_000,
 };
