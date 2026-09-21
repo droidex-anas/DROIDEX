@@ -77,7 +77,7 @@ export function splitAutomationProposals(events: TranscriptEvent[]): {
 /* A spawned thread reads as the thread itself, not as a tool call: the row the
    Threads panel shows, inline where the chat started it. A spawn that was
    refused started nothing, so it stays an ordinary failed tool row. */
-export function splitThreadSpawns(events: TranscriptEvent[]): {
+function splitThreadSpawns(events: TranscriptEvent[]): {
   proposals: { call: TranscriptEvent; result?: TranscriptEvent }[];
   remaining: TranscriptEvent[];
 } {
