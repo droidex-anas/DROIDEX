@@ -15,8 +15,8 @@ For UI changes, attach a screenshot or short recording of the change in the runn
 
 ## Checklist
 
-- [ ] Every commit is signed off (`git commit -s`), per [CONTRIBUTING.md](https://github.com/droidex-anas/droid-maxxing/blob/main/CONTRIBUTING.md#sign-your-commits-dco)
-- [ ] The change follows the engineering guide in [AGENTS.md](https://github.com/droidex-anas/droid-maxxing/blob/main/AGENTS.md)
+- [ ] Every commit is signed off (`git commit -s`), per [CONTRIBUTING.md](https://github.com/droidex-anas/DROIDEX/blob/main/CONTRIBUTING.md#sign-your-commits-dco)
+- [ ] The change follows the engineering guide in [AGENTS.md](https://github.com/droidex-anas/DROIDEX/blob/main/AGENTS.md)
 - [ ] Checks relevant to the files I touched pass locally
 - [ ] Docs regenerated (`npm run docs:generate`) if scripts, environment variables, or onboarding commands changed
 - [ ] No unrelated reformatting, renames, or dead code left behind

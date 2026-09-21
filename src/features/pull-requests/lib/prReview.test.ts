@@ -41,14 +41,14 @@ test('cubic activity is detected from any comment on the pull request', () => {
 
 test('the cubic memory is keyed by repository, not by checkout', () => {
   assert.equal(
-    repoKeyFromPrUrl('https://github.com/droidex-anas/droid-maxxing/pull/113'),
-    'droidex-anas/droid-maxxing',
+    repoKeyFromPrUrl('https://github.com/droidex-anas/DROIDEX/pull/113'),
+    'droidex-anas/droidex',
   );
   assert.equal(
-    repoKeyFromPrUrl('https://github.com/Droidex-Anas/Droid-Maxxing/pull/113#issuecomment-1'),
-    'droidex-anas/droid-maxxing',
+    repoKeyFromPrUrl('https://github.com/Droidex-Anas/droidex/pull/113#issuecomment-1'),
+    'droidex-anas/droidex',
   );
-  assert.equal(repoKeyFromPrUrl('https://github.com/droidex-anas/droid-maxxing'), null);
+  assert.equal(repoKeyFromPrUrl('https://github.com/droidex-anas/DROIDEX'), null);
   assert.equal(repoKeyFromPrUrl(null), null);
   assert.equal(repoKeyFromPrUrl(undefined), null);
 });

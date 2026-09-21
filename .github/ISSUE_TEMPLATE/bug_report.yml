@@ -7,7 +7,7 @@ body:
       value: |
         Thanks for taking the time to file this. Do not report security
         vulnerabilities here. Use a
-        [private advisory](https://github.com/droidex-anas/droid-maxxing/security/advisories/new)
+        [private advisory](https://github.com/droidex-anas/DROIDEX/security/advisories/new)
         instead.
   - type: textarea
     id: summary

@@ -32,8 +32,8 @@ agent you want to use: Factory Droid, Claude Code, or Codex. DROIDEX can install
 the Factory Droid CLI for you during onboarding.
 
 ```bash
-git clone https://github.com/droidex-anas/droid-maxxing.git
-cd droid-maxxing
+git clone https://github.com/droidex-anas/DROIDEX.git
+cd DROIDEX
 npm install
 npm ci --prefix sidecar
 npm run electron
@@ -100,9 +100,9 @@ sent when you submit them yourself.
 Contributions are welcome: bugs, fixes, features, and documentation. Start with
 [CONTRIBUTING.md](CONTRIBUTING.md) for the setup, the checks to run, and the
 commit sign-off. Issues labelled
-[good first issue](https://github.com/droidex-anas/droid-maxxing/issues?q=is%3Aissue+is%3Aopen+label%3A%22good+first+issue%22)
+[good first issue](https://github.com/droidex-anas/DROIDEX/issues?q=is%3Aissue+is%3Aopen+label%3A%22good+first+issue%22)
 are a good place to start, and
-[Discussions](https://github.com/droidex-anas/droid-maxxing/discussions) is the
+[Discussions](https://github.com/droidex-anas/DROIDEX/discussions) is the
 place for questions.
 
 Found a security problem? Do not open an issue. Follow [SECURITY.md](SECURITY.md).

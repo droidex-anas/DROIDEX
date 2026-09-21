@@ -26,15 +26,15 @@ change that crosses a process boundary.
 
 ## Ways to contribute
 
-- **Report a bug.** Open a [bug report](https://github.com/droidex-anas/droid-maxxing/issues/new?template=bug_report.yml)
+- **Report a bug.** Open a [bug report](https://github.com/droidex-anas/DROIDEX/issues/new?template=bug_report.yml)
   with your macOS version, DROIDEX version, and the steps that reproduce it.
-- **Propose a feature.** Open a [feature request](https://github.com/droidex-anas/droid-maxxing/issues/new?template=feature_request.yml)
+- **Propose a feature.** Open a [feature request](https://github.com/droidex-anas/DROIDEX/issues/new?template=feature_request.yml)
   describing the problem before the solution.
 - **Pick up an issue.** Anything labelled `good first issue` or `help wanted` is
   fair game. Comment on it so two people do not build the same thing.
 - **Improve the docs.** Unclear setup steps and stale runbooks are real bugs.
 - **Ask a question.** Use
-  [Discussions](https://github.com/droidex-anas/droid-maxxing/discussions) for
+  [Discussions](https://github.com/droidex-anas/DROIDEX/discussions) for
   anything that is not a bug or a concrete proposal.
 - **Report a vulnerability.** Do not open a public issue. Follow
   [SECURITY.md](SECURITY.md).
@@ -59,8 +59,8 @@ Droid, Claude Code, Codex) and can install the Factory Droid CLI for you during
 onboarding.
 
 ```bash
-git clone https://github.com/<your-username>/droid-maxxing.git
-cd droid-maxxing
+git clone https://github.com/<your-username>/DROIDEX.git
+cd DROIDEX
 npm install
 npm ci --prefix sidecar
 ```
