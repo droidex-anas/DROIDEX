@@ -60,6 +60,7 @@ async function harness(saved: Project[] = []) {
     bindGate: undefined as Promise<void> | undefined,
   };
   const answered: { id: string; requestId: string; answers: unknown[] }[] = [];
+  const configured: { id: string; settings: unknown }[] = [];
   let next = 0;
   const store: ProjectPersistence = {
     load: async () => structuredClone(state.saved),
@@ -104,6 +105,13 @@ async function harness(saved: Project[] = []) {
       await streaming(id, true);
       return { status: 'accepted', settled: Promise.resolve() };
     },
+    configure: async (id, settings) => {
+      const session = sessions.get(id);
+      assert.ok(session);
+      sessions.set(id, { ...session, ...settings });
+      configured.push({ id, settings });
+      await tick();
+    },
     answer: (id, requestId, answers) => {
       answered.push({ id, requestId, answers });
       return true;
@@ -147,6 +155,7 @@ async function harness(saved: Project[] = []) {
     sessions,
     sent,
     answered,
+    configured,
     launched,
     events,
     state,
@@ -453,6 +462,37 @@ test('a model named the way a chat names its own resolves to that one, not its h
   // An exact id says which twin, so it is never ambiguous.
   await h.projects.spawn(main, { ...input, modelId: 'custom:glm-5.3-flash' });
   assert.equal(h.launched.at(-1)?.modelId, 'custom:glm-5.3-flash');
+});
+
+test('a lead reads a thread in full and retunes it within its own autonomy', async (t) => {
+  const h = await harness();
+  t.after(() => h.projects.close());
+  const { main } = await h.root();
+  const child = await h.projects.spawn(main, input);
+  await h.finish(child.appSessionId, 'x'.repeat(2_000));
+  await drain();
+  // The report is an excerpt; reading the thread gives the whole reply back.
+  assert.match(h.sent.at(-1)?.prompt ?? '', /last 1,200 characters/);
+  const read = h.projects.read(main, child.appSessionId);
+  assert.equal(read.reply.length, 2_000);
+  assert.equal(read.state, 'idle');
+
+  const lead = h.sessions.get(main);
+  assert.ok(lead);
+  lead.modelId = 'custom:glm-5.3-flash';
+  const tuned = await h.projects.configure(main, child.appSessionId, {
+    reasoningEffort: 'low',
+    modelId: 'glm-5.3-flash',
+  });
+  assert.equal(tuned.reasoningEffort, 'low');
+  // A model name resolves the way a spawn resolves it, twin rule included.
+  assert.equal(tuned.modelId, 'custom:glm-5.3-flash');
+  await assert.rejects(
+    h.projects.configure(main, child.appSessionId, { autonomy: 'high' }),
+    /cannot exceed/,
+  );
+  // Reading and retuning stay inside the project, like every other control.
+  assert.throws(() => h.projects.read('ordinary', child.appSessionId), /has not spawned/);
 });
 
 test('a spawn carries a settled plan step, or none at all', async (t) => {

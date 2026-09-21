@@ -6,14 +6,23 @@ export const THREAD_MCP_SERVER_NAME = 'droidex-threads';
 const TOOL_TITLES: Record<string, string> = {
   thread_spawn: 'Start DROIDEX thread',
   thread_send: 'Message DROIDEX thread',
+  thread_read: 'Read DROIDEX thread',
+  thread_configure: 'Adjust DROIDEX thread',
   thread_stop: 'Stop DROIDEX thread',
   plan_set: 'Update the DROIDEX project plan',
 };
 
 // Spawning is the one tool that spends real work: it opens another conversation
-// that edits files under its own autonomy. Everything else only moves text
-// between conversations DROIDEX already owns, or stops one.
-const ALWAYS_SAFE = new Set(['thread_send', 'thread_stop', 'plan_set']);
+// that edits files under its own autonomy. Everything else only reads, retunes
+// or moves text between conversations DROIDEX already owns, or stops one, and
+// none of them can put a thread past the autonomy its owner already has.
+const ALWAYS_SAFE = new Set([
+  'thread_send',
+  'thread_read',
+  'thread_configure',
+  'thread_stop',
+  'plan_set',
+]);
 
 export function threadToolDisplayTitle(serverName: string, toolName: string): string | null {
   if (!isThreadServer(serverName)) return null;

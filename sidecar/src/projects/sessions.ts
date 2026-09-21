@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import type { SessionManager } from '../SessionManager.js';
 import type { ProviderStatus, ServerEvent, SessionSummary } from '../protocol.js';
 import type { ProjectPort } from './ProjectService.js';
-import type { ThreadInput } from './types.js';
+import type { ThreadInput, ThreadSettings } from './types.js';
 
 interface Launch {
   bind: (session: SessionSummary) => Promise<void>;
@@ -65,6 +65,10 @@ export class ProjectSessions implements ProjectPort {
 
   deliver(appSessionId: string, prompt: string, isCurrent: () => boolean) {
     return this.host.deliverScheduledMessage(appSessionId, prompt, isCurrent);
+  }
+
+  configure(appSessionId: string, settings: ThreadSettings): Promise<void> {
+    return this.host.handle({ type: 'session.updateSettings', appSessionId, ...settings });
   }
 
   interrupt(appSessionId: string): Promise<void> {
