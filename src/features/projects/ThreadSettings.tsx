@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import { ChevronDown, Search } from '@droidex/icons';
 import ModelCatalogList from '../../components/ModelCatalogList';
 import { Popover } from '../../components/environment/Popover';
@@ -28,6 +28,18 @@ export function ThreadSettings({
   const [modelOpen, setModelOpen] = useState(false);
   const [query, setQuery] = useState('');
   const modelRef = useRef<HTMLButtonElement>(null);
+  // The list is what the search narrows: ModelCatalogList renders the rows it is
+  // given and only uses the query to say when none matched.
+  const models = useMemo(() => {
+    const normalized = query.trim().toLowerCase();
+    if (!normalized) return catalog.models;
+    return catalog.models.filter(
+      (model) =>
+        model.displayName.toLowerCase().includes(normalized) ||
+        model.id.toLowerCase().includes(normalized) ||
+        (model.provider ?? '').toLowerCase().includes(normalized),
+    );
+  }, [catalog.models, query]);
   const selected = catalog.models.find((model) => model.id === value.modelId);
   const shown = selected ?? catalog.defaultModel;
   const effort = value.reasoning ?? shown?.defaultReasoningEffort;
@@ -88,7 +100,7 @@ export function ThreadSettings({
           </div>
         </div>
         <ModelCatalogList
-          models={catalog.models}
+          models={models}
           defaultModel={catalog.defaultModel}
           hasRealModels={catalog.models.length > 0}
           provider={value.provider}
