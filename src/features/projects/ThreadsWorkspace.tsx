@@ -88,6 +88,7 @@ export function ThreadsWorkspace({ tab }: { tab: UtilityTab }) {
             rows={rows}
             plan={project?.plan ?? EMPTY_PLAN}
             subtitle={subtitle(project?.title, session?.cwd, rows.length)}
+            held={project?.paused === true}
             now={now}
             error={project?.error ?? ''}
             activeAppSessionId={session?.appSessionId}

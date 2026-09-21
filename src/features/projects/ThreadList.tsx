@@ -17,6 +17,7 @@ export function ThreadList({
   rows,
   plan,
   subtitle,
+  held,
   now,
   error,
   activeAppSessionId,
@@ -25,6 +26,8 @@ export function ThreadList({
   rows: readonly ThreadRowModel[];
   plan: readonly ProjectStep[];
   subtitle: string;
+  /** Coordination is held, so nothing waiting will move on its own. */
+  held: boolean;
   now: number;
   error: string;
   activeAppSessionId?: string | null;
@@ -43,7 +46,7 @@ export function ThreadList({
             {threadGreeting(rows, counts, now)}
           </h2>
           <p className="mt-1.5 text-[13px] leading-5 text-droid-text-secondary">
-            {status || 'Nothing running.'}
+            {held ? 'Coordination is held — resume it in Projects.' : status || 'Nothing running.'}
           </p>
           <p className="mt-0.5 text-[12px] leading-5 text-droid-text-muted">{subtitle}</p>
         </div>

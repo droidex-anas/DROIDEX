@@ -70,6 +70,8 @@ export function ProjectThreads({
           rows={rows}
           plan={project.plan}
           subtitle={[folder, `${String(rows.length)} threads`].filter(Boolean).join(' · ')}
+          // This view carries its own held banner, with the control to resume.
+          held={false}
           now={now}
           error={project.error ?? ''}
           onOpenThread={onOpenThread}
