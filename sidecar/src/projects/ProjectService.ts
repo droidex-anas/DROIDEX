@@ -2,7 +2,13 @@ import type { AutomationDeliveryReceipt } from '../automations/types.js';
 import { ProjectActivity } from './activity.js';
 import { ProjectWakeQueue } from './ProjectWakeQueue.js';
 import { randomUUID } from 'node:crypto';
-import type { ProviderStatus, ServerEvent, SessionQuestion, SessionSummary } from '../protocol.js';
+import type {
+  ModelInfo,
+  ProviderStatus,
+  ServerEvent,
+  SessionQuestion,
+  SessionSummary,
+} from '../protocol.js';
 import type { ProjectPersistence } from './store.js';
 import { createThreadWorkspace } from './threadWorkspace.js';
 import type {
@@ -171,7 +177,7 @@ export class ProjectService {
     const owner = this.requireSession(source);
     if (owner.sessionPurpose !== 'chat')
       throw new Error('Only ordinary chats can own project threads.');
-    const input = await this.resolveModel(inheritSettings(owner, requested));
+    const input = await this.resolveModel(owner, inheritSettings(owner, requested));
     this.checkAutonomy(owner, input);
     let project = this.membership.get(source);
     if (!project) {
@@ -265,31 +271,44 @@ export class ProjectService {
 
   /*
    * A harness given a model id it does not know does not fail: it answers with
-   * nothing, and the thread comes back empty. So a named model is resolved here,
-   * against the same catalog the composer offers, and a name that resolves to
-   * nothing stops the spawn with the ids that would have worked.
+   * nothing, and the thread comes back empty. So a named model is resolved here
+   * against the same catalog the composer offers.
+   *
+   * A harness can carry one model twice, hosted beside the user's own key for
+   * it — `glm-5.3-flash` and `custom:glm-5.3-flash`. A name that fits both
+   * resolves to the model this chat is already running, because naming your own
+   * model never meant "move this thread onto another account". A name that fits
+   * several other models is refused rather than guessed.
    */
-  private async resolveModel(input: Omit<ThreadInput, 'cwd'>): Promise<Omit<ThreadInput, 'cwd'>> {
+  private async resolveModel(
+    owner: SessionSummary,
+    input: Omit<ThreadInput, 'cwd'>,
+  ): Promise<Omit<ThreadInput, 'cwd'>> {
     const wanted = input.modelId?.trim();
     if (!wanted) return input;
     const status = (await this.sessions.catalog()).find(
       (candidate) => candidate.provider === input.provider,
     );
     const models = status?.models ?? [];
-    const match =
-      models.find((model) => model.id === wanted) ??
-      models.find((model) => model.displayName.toLowerCase() === wanted.toLowerCase()) ??
-      models.find((model) => model.id.toLowerCase() === wanted.toLowerCase());
-    if (match) return { ...input, modelId: match.id };
     // A harness DROIDEX has not probed offers no catalog to check against, and
     // refusing there would block work over something the app cannot know.
     if (!models.length) return input;
-    const offered = models
-      .slice(0, 12)
-      .map((model) => `${model.id} (${model.displayName})`)
-      .join(', ');
+    const named = models.filter((model) => modelAnswersTo(model, wanted));
+    const own =
+      owner.provider === input.provider
+        ? named.find((model) => model.id === owner.modelId)
+        : undefined;
+    const match =
+      own ??
+      models.find((model) => model.id === wanted) ??
+      (named.length === 1 ? named[0] : undefined);
+    if (match) return { ...input, modelId: match.id };
+    if (named.length)
+      throw new Error(
+        `"${wanted}" names ${String(named.length)} models on ${input.provider}: ${modelList(named)}. Name the one you want by its id.`,
+      );
     throw new Error(
-      `${input.provider} has no model "${wanted}". Call thread_models for the full list. Available here: ${offered}.`,
+      `${input.provider} has no model "${wanted}". Available here: ${modelList(models.slice(0, 12))}.`,
     );
   }
 
@@ -687,6 +706,24 @@ export class ProjectService {
     }
     this.emit({ type: 'projects.snapshot', projects: this.list() });
   }
+}
+
+/** Ids and names as a model is spoken about: "GLM-5.3 Flash" is `custom:glm-5.3-flash`. */
+function modelAnswersTo(model: ModelInfo, wanted: string): boolean {
+  const key = modelKey(wanted);
+  return modelKey(model.id) === key || modelKey(model.displayName) === key;
+}
+
+function modelKey(value: string): string {
+  return value
+    .replace(/^custom:/, '')
+    .replace(/\[.*$/, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]/g, '');
+}
+
+function modelList(models: readonly ModelInfo[]): string {
+  return models.map((model) => `${model.id} (${model.displayName})`).join(', ');
 }
 
 /* Threads are named, not numbered, everywhere a person reads them, so two of
