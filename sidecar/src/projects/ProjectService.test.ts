@@ -77,7 +77,12 @@ async function harness(saved: Project[] = []) {
           readiness: 'ready' as const,
           models: [
             { id: 'droid-core', displayName: 'Droid Core', isCustom: false },
-            { id: 'glm-5.3-flash-zai', displayName: 'GLM-5.3 Flash [Z.AI]', isCustom: true },
+            { id: 'glm-5.3-flash', displayName: 'GLM-5.3-Flash', isCustom: false },
+            {
+              id: 'custom:glm-5.3-flash',
+              displayName: 'GLM-5.3 Flash [Z.AI Chat Completions]',
+              isCustom: true,
+            },
           ],
         },
       ]),
@@ -383,21 +388,30 @@ test('native permissions and user questions never generate controller turns', as
   assert.equal(h.sent.length, 0);
 });
 
-test('a named model resolves against the catalog, or the spawn says what would work', async (t) => {
+test('a model named the way a chat names its own resolves to that one, not its hosted twin', async (t) => {
   const h = await harness();
   t.after(() => h.projects.close());
   const { main } = await h.root();
+  const lead = h.sessions.get(main);
+  assert.ok(lead);
+  // The lead runs the user's own key for this model. The harness carries the
+  // hosted one under the bare id too, and that one answers nothing here.
+  lead.modelId = 'custom:glm-5.3-flash';
+  await h.projects.spawn(main, { ...input, modelId: 'glm-5.3-flash' });
+  assert.equal(h.launched.at(-1)?.modelId, 'custom:glm-5.3-flash');
+
+  lead.modelId = 'droid-core';
   await assert.rejects(
-    h.projects.spawn(main, { ...input, provider: 'droid', modelId: 'glm-5.3-flash' }),
-    /no model "glm-5.3-flash".*thread_models/s,
+    h.projects.spawn(main, { ...input, modelId: 'GLM-5.3 Flash' }),
+    /names 2 models.*custom:glm-5\.3-flash/s,
   );
-  // A display name is what a person reads in the composer, so it resolves too.
-  await h.projects.spawn(main, {
-    ...input,
-    provider: 'droid',
-    modelId: 'GLM-5.3 Flash [Z.AI]',
-  });
-  assert.equal(h.launched.at(-1)?.modelId, 'glm-5.3-flash-zai');
+  await assert.rejects(
+    h.projects.spawn(main, { ...input, modelId: 'gpt-9' }),
+    /no model "gpt-9".*droid-core/s,
+  );
+  // An exact id says which twin, so it is never ambiguous.
+  await h.projects.spawn(main, { ...input, modelId: 'custom:glm-5.3-flash' });
+  assert.equal(h.launched.at(-1)?.modelId, 'custom:glm-5.3-flash');
 });
 
 test('a spawn carries a settled plan step, or none at all', async (t) => {

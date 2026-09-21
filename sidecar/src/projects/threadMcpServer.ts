@@ -41,7 +41,7 @@ const spawnSchema = z.object({
     .max(200)
     .optional()
     .describe(
-      'A model id or display name from thread_models. Omit to inherit this chat’s model. A name the harness does not know is refused here rather than running empty.',
+      'The model for this thread, by id or display name. Omit to inherit this chat’s model. A name the harness does not know is refused here rather than running empty, and a name your own model also answers to gives the thread your model.',
     ),
   reasoningEffort: reasoningSchema.optional(),
   autonomy: z

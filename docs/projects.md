@@ -17,7 +17,13 @@ four tools only move text between conversations DROIDEX already owns.
 
 A thread inherits the workspace, harness, model, reasoning level and autonomy
 of the chat that spawned it unless the call names different ones, and it can
-never exceed its owner's autonomy. DROIDEX isolates a thread on its own: a checkout that already has a thread
+never exceed its owner's autonomy. A named model is resolved against the same
+catalog the composer offers, because a harness handed an id it does not know
+answers nothing instead of failing. A harness can carry one model twice — the
+hosted `glm-5.3-flash` beside the user's own key for it as
+`custom:glm-5.3-flash` — so a name that fits both resolves to the model the
+chat is already running, and a name that fits several others is refused with
+their ids rather than guessed. DROIDEX isolates a thread on its own: a checkout that already has a thread
 working in it gives the next one its own worktree,
 `<repo>/.worktrees/<branch>/<repo>` on a `thread/` branch. `thread_spawn` can
 override that with `workspace`, name the `branch` and `base`, or put a thread in
