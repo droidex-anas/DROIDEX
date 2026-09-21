@@ -118,7 +118,8 @@ function isAutomationServer(serverName: string): boolean {
   return normalizeMcpServerName(serverName) === AUTOMATION_MCP_SERVER_NAME;
 }
 
-function splitNamespacedTool(value: string): { serverName: string; toolName: string } {
+/** Splits `mcp__server__tool` / `server___tool` into its two halves. */
+export function splitNamespacedTool(value: string): { serverName: string; toolName: string } {
   if (value.includes('___')) {
     const marker = value.indexOf('___');
     return { serverName: value.slice(0, marker), toolName: value.slice(marker + 3) };
