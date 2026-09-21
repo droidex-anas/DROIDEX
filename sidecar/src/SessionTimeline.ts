@@ -304,6 +304,27 @@ export class SessionTimeline {
     this.transcripts.recordPrompt(appSessionId, prompt);
   }
 
+  /**
+   * A prompt nobody typed — an automation's or a project thread's — which the
+   * renderer therefore never showed. It is announced as well as persisted, so
+   * the conversation reads the same live as it does after a reload instead of
+   * answering something the reader cannot see.
+   */
+  announcePrompt(appSessionId: string, prompt: string): void {
+    this.recordPrompt(appSessionId, prompt);
+    const now = this.dependencies.now ?? Date.now;
+    this.emitRecordedEvent({
+      id: `delivered-${now().toString(36)}-${(this.statusSeq++).toString(36)}`,
+      appSessionId,
+      sourceSessionId: appSessionId,
+      role: 'primary',
+      ts: now(),
+      kind: 'text',
+      text: prompt,
+      author: 'user',
+    });
+  }
+
   append(event: TranscriptEvent): void {
     // Non-streaming appends (status lines, compaction dividers, replay) must
     // never overtake their own source's buffered delta run.
