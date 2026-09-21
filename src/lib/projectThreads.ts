@@ -15,6 +15,32 @@ export function projectThreadIds(projects: readonly ProjectView[]): ReadonlySet<
   return ids;
 }
 
+/** Where an open thread came from, so its chat can offer the way back. */
+export interface ThreadOrigin {
+  ownerAppSessionId: string;
+  /** The conversation that started it: the project's own name. */
+  projectTitle: string;
+  threadTitle: string;
+}
+
+export function threadOrigin(
+  projects: readonly ProjectView[],
+  appSessionId: string | undefined,
+): ThreadOrigin | undefined {
+  if (!appSessionId) return undefined;
+  for (const project of projects) {
+    for (const thread of project.threads) {
+      if (thread.appSessionId !== appSessionId || !thread.ownerAppSessionId) continue;
+      return {
+        ownerAppSessionId: thread.ownerAppSessionId,
+        projectTitle: project.title,
+        threadTitle: thread.title,
+      };
+    }
+  }
+  return undefined;
+}
+
 export interface ProjectsPulse {
   /** Threads stopped on an approval or a question. */
   attention: number;
