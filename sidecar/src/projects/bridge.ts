@@ -9,7 +9,6 @@ const requestId = { requestId: id };
 const commandSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('projects.list') }).strict(),
   z.object({ type: z.literal('project.create'), ...requestId, input: threadInputSchema }).strict(),
-  z.object({ type: z.literal('project.stop'), ...requestId, source: id, target: id }).strict(),
   z
     .object({
       type: z.literal('project.pause'),

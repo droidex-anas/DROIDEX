@@ -1,5 +1,5 @@
 import type { AutomationDeliveryReceipt } from '../automations/types.js';
-import { ProjectActivity } from './activity.js';
+import { ProjectActivity, type ThreadTurn } from './activity.js';
 import { ProjectWakeQueue } from './ProjectWakeQueue.js';
 import { randomUUID } from 'node:crypto';
 import type {
@@ -35,12 +35,12 @@ export interface ProjectPort {
     isCurrent: () => boolean,
   ): Promise<AutomationDeliveryReceipt>;
   interrupt(appSessionId: string): Promise<void>;
-  /** Answers a harness question a thread is blocked on. */
+  /** Answers a question a thread is blocked on; false when it was already settled. */
   answer(
     appSessionId: string,
     requestId: string,
     answers: { index: number; question: string; answer: string }[],
-  ): Promise<void>;
+  ): boolean;
 }
 
 const autonomy = ['off', 'low', 'medium', 'high'];
@@ -64,6 +64,7 @@ const LEAD_BRIEF = [
   'Choose each thread’s model, reasoning and autonomy for the job. DROIDEX isolates a thread in its own worktree when another is already working in the checkout; pass workspace only to override that.',
   'After spawning, end your turn. DROIDEX wakes you when a thread reports, asks something or stops; never poll or keep generating while you wait.',
   'When threads report, keep plan_set current and tell the user what changed and what you decided, briefly.',
+  'A thread that reports back twice without a reply is not working. Stop it and tell the user what you saw; never keep nudging it.',
   'Review your own work before calling a step done: spawn a thread with workspaceOf set to the thread that did it, so the reviewer reads the real changes in the tree they were made in.',
   'Never print thread ids or session ids to the user. Name the thread; DROIDEX shows them the rest.',
 ].join('\n');
@@ -365,31 +366,51 @@ export class ProjectService {
     this.emit({ type: 'projects.snapshot', projects: this.list() });
   }
 
-  async send(source: string, target: string, text: string, answers?: string[]): Promise<void> {
+  /**
+   * Sends a thread instructions, or the answers to the question it asked. A
+   * queued message would sit behind that question, so answers go straight to
+   * the harness call waiting on it.
+   */
+  async send(
+    source: string,
+    target: string,
+    text: string,
+    answers?: string[],
+  ): Promise<'answered' | 'queued' | 'already-answered'> {
     const project = this.controlledProject(source, target);
     const thread = this.thread(project, target);
-    const ask = answers?.length ? thread.ask : undefined;
-    if (ask) {
-      // Answering goes straight to the waiting harness call: a queued message
-      // would sit behind the very question that is blocking the thread.
-      await this.sessions.answer(
+    const ask = thread.ask;
+    if (ask && !answers?.length)
+      throw new Error(
+        `${thread.title} is waiting on the question it asked. Send its answers with this thread's answers argument.`,
+      );
+    if (answers?.length) {
+      if (!ask) throw new Error(`${thread.title} has no question waiting for an answer.`);
+      if (answers.length !== ask.questions.length)
+        throw new Error(
+          `${thread.title} asked ${String(ask.questions.length)} questions; answer them all, in order.`,
+        );
+      const landed = this.sessions.answer(
         target,
         ask.requestId,
         ask.questions.map((item, position) => ({
           index: item.index,
           question: item.question,
-          answer: answers?.[position] ?? answers?.[0] ?? '',
+          answer: answers[position],
         })),
       );
-      delete thread.ask;
-      thread.waiting = false;
+      this.clearAsk(thread);
+      // Answered inside the thread before this arrived, so that answer stands
+      // and the words sent with it go on as an ordinary message.
+      if (!landed && text.trim()) this.enqueue(project, source, target, 'message', text);
       await this.save();
       this.wakes.kick(project);
-      return;
+      return landed ? 'answered' : 'already-answered';
     }
     this.enqueue(project, source, target, 'message', text);
     await this.save();
     this.wakes.kick(project);
+    return 'queued';
   }
 
   async stop(source: string, target: string): Promise<void> {
@@ -428,7 +449,7 @@ export class ProjectService {
   async observe(event: ServerEvent): Promise<void> {
     if (this.closed) return;
     if (event.type === 'event.appended') {
-      this.activity.append(event.event);
+      if (this.membership.has(event.event.appSessionId)) this.activity.append(event.event);
       return;
     }
     if (event.type === 'question.requested') {
@@ -436,7 +457,7 @@ export class ProjectService {
       return;
     }
     if (event.type === 'interaction.cancelled') {
-      this.dropRoutedQuestion(event.appSessionId, event.requestId);
+      await this.dropRoutedQuestion(event.appSessionId, event.requestId);
       return;
     }
     if (event.type === 'session.closed') {
@@ -452,40 +473,35 @@ export class ProjectService {
     if (!project) return;
     const thread = this.thread(project, session.appSessionId);
     if (session.streaming) {
-      if (this.activity.start(session.appSessionId)) {
-        if (thread.waiting) {
-          thread.waiting = false;
-          await this.save();
-        }
-      }
+      if (this.activity.open(session.appSessionId) && this.clearAsk(thread)) await this.save();
       return;
     }
-    const reply = this.activity.finish(session.appSessionId);
+    const turn = this.activity.finish(session.appSessionId);
     this.wakes.available(project, session.appSessionId);
-    if (reply === undefined) {
+    // Nothing was open, so this update settled nothing: a title, a token count,
+    // or the tail of a turn already reported.
+    if (!turn) {
       this.wakes.kick(project);
       return;
     }
-    thread.reply = reply;
-    if (!thread.ownerAppSessionId && session.phase === 'failed')
-      this.fail(
-        project,
-        new Error('The main thread failed. Review its error before resuming coordination.'),
-      );
-    if (thread.ownerAppSessionId && !thread.waiting && session.phase !== 'paused') {
+    thread.reply = turn.text;
+    // A question the turn ended on will never be answered now.
+    this.clearAsk(thread);
+    if (!thread.ownerAppSessionId) {
+      if (session.phase === 'failed')
+        this.fail(
+          project,
+          new Error('The main thread failed. Review its error before resuming coordination.'),
+        );
+    } else {
       try {
-        // The wake already names the thread; this is what it came back with.
+        // The wake already names the thread; this is how its turn ended.
         this.enqueue(
           project,
           thread.appSessionId,
           thread.ownerAppSessionId,
           'result',
-          [
-            session.phase === 'failed' ? 'It failed before finishing.' : '',
-            reply.slice(-1_200) || 'It produced no text. Open the thread to see what it did.',
-          ]
-            .filter(Boolean)
-            .join('\n'),
+          threadReport(session, turn),
         );
       } catch (error) {
         this.fail(project, error);
@@ -527,11 +543,21 @@ export class ProjectService {
     this.wakes.kick(project);
   }
 
-  /** The question settled elsewhere — the user answered it in the thread. */
-  private dropRoutedQuestion(appSessionId: string, requestId: string): void {
+  /** The question died with the turn that raised it, so nobody can answer it. */
+  private async dropRoutedQuestion(appSessionId: string, requestId: string): Promise<void> {
     const project = this.membership.get(appSessionId);
     const thread = project?.threads.find((candidate) => candidate.appSessionId === appSessionId);
-    if (thread?.ask?.requestId === requestId) delete thread.ask;
+    if (thread?.ask?.requestId !== requestId) return;
+    this.clearAsk(thread);
+    await this.save();
+  }
+
+  /** Leaves a thread with no question outstanding. True when that changed it. */
+  private clearAsk(thread: ProjectThread): boolean {
+    if (!thread.ask && !thread.waiting) return false;
+    delete thread.ask;
+    thread.waiting = false;
+    return true;
   }
 
   sessionAvailable(appSessionId: string): void {
@@ -706,6 +732,18 @@ export class ProjectService {
     }
     this.emit({ type: 'projects.snapshot', projects: this.list() });
   }
+}
+
+/* What the owner is told when a thread's turn ends. A thread that answered
+   nothing says so plainly: the owner has to see the difference between a report
+   and silence, or it will keep nudging a thread that cannot answer. */
+function threadReport(session: SessionSummary, turn: ThreadTurn): string {
+  const reply = turn.text.slice(-1_200);
+  if (session.phase === 'failed')
+    return ['It failed before finishing.', turn.error, reply].filter(Boolean).join('\n');
+  if (session.phase === 'paused')
+    return ['It was stopped before it finished.', reply].filter(Boolean).join('\n');
+  return reply || 'It ended its turn without a reply.';
 }
 
 /** Ids and names as a model is spoken about: "GLM-5.3 Flash" is `custom:glm-5.3-flash`. */

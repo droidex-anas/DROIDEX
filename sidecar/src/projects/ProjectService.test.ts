@@ -104,8 +104,9 @@ async function harness(saved: Project[] = []) {
       await streaming(id, true);
       return { status: 'accepted', settled: Promise.resolve() };
     },
-    answer: async (id, requestId, answers) => {
+    answer: (id, requestId, answers) => {
       answered.push({ id, requestId, answers });
+      return true;
     },
     interrupt: async (id) => {
       const session = sessions.get(id);
@@ -216,18 +217,58 @@ test('a thread’s own question reaches its lead with its options, and the answe
       questions: [{ index: 0, question: 'Which storage format?', options: ['JSON', 'SQLite'] }],
     },
   });
-  await h.finish(child.appSessionId, 'Waiting.');
   await drain();
   assert.equal(h.sent.length, 1, 'the lead is woken once, with the question');
   assert.match(h.sent[0]?.prompt ?? '', /Which storage format/);
   assert.match(h.sent[0]?.prompt ?? '', /- JSON/);
-  assert.doesNotMatch(h.sent[0]?.prompt ?? '', /finished its turn/);
+  assert.equal(h.projects.list()[0]?.threads[1]?.waiting, true);
 
+  // A blind send would sit behind the question that is blocking the thread.
+  await assert.rejects(
+    h.projects.send(main, child.appSessionId, 'Carry on'),
+    /waiting on the question/,
+  );
   // Answering must reach the waiting harness call, not the delivery queue.
-  await h.projects.send(main, child.appSessionId, '', ['JSON']);
+  assert.equal(await h.projects.send(main, child.appSessionId, '', ['JSON']), 'answered');
   assert.equal(h.answered.at(-1)?.requestId, 'ask-1');
   assert.equal(h.projects.list()[0]?.threads[1]?.waiting, false);
   assert.equal(h.projects.list()[0]?.queued, 0);
+});
+
+test('a thread that settles reports either way: an empty turn, or the failure that ended it', async (t) => {
+  const h = await harness();
+  t.after(() => h.projects.close());
+  const { main } = await h.root();
+  const quiet = await h.projects.spawn(main, input);
+  // A model that answers nothing must still wake its lead, or the project
+  // stalls with the lead believing the thread is still working.
+  await h.streaming(quiet.appSessionId, false);
+  await drain();
+  assert.match(h.sent.at(-1)?.prompt ?? '', /without a reply/);
+  // The lead is mid-turn on that wake; its next one waits for it to settle.
+  await h.finish(main);
+
+  const broken = await h.projects.spawn(main, input);
+  const session = h.sessions.get(broken.appSessionId);
+  assert.ok(session);
+  await h.projects.observe({
+    type: 'event.appended',
+    event: {
+      id: 'boom',
+      appSessionId: broken.appSessionId,
+      sourceSessionId: broken.appSessionId,
+      role: 'primary',
+      ts: 1,
+      kind: 'error',
+      text: 'Model provider refused the request.',
+      isError: true,
+    },
+  });
+  session.phase = 'failed';
+  await h.streaming(broken.appSessionId, false);
+  await drain();
+  assert.match(h.sent.at(-1)?.prompt ?? '', /failed before finishing/);
+  assert.match(h.sent.at(-1)?.prompt ?? '', /provider refused/);
 });
 
 test('ordinary chats adopt a project, with scoped ownership and no autonomy escalation', async (t) => {
