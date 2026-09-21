@@ -88,9 +88,24 @@ function Pill({
   );
 }
 
+/** Where a conversation will start, as the bar reads and writes it. */
+export interface StartInSelection {
+  cwd: string;
+  executionMode: 'worktree' | 'local';
+  branch?: string;
+}
+
 // The composer's "Start in" controls: pick the repository, choose an isolated
-// worktree or the local checkout, and select the starting ref.
-export function StartInBar() {
+// worktree or the local checkout, and select the starting ref. It drives the
+// composer's own draft by default; a caller with a draft of its own — starting
+// a project, say — passes it in and gets the same controls over it.
+export function StartInBar({
+  value,
+  onChange,
+}: {
+  value?: StartInSelection;
+  onChange?: (next: StartInSelection) => void;
+} = {}) {
   const dispatch = useStoreDispatch();
   const state = useStoreSelector(
     (current) => ({
@@ -99,7 +114,7 @@ export function StartInBar() {
     }),
     shallowEqual,
   );
-  const draft = state.draftChat;
+  const draft = value ?? state.draftChat;
   const cwd = draft?.cwd ?? '';
   // 'uncommitted' so the branch-switch warning counts only working-tree changes
   // that a checkout would carry over — not committed work, which stays put.
@@ -134,6 +149,10 @@ export function StartInBar() {
     branch?: string,
     executionMode: 'worktree' | 'local' = 'worktree',
   ) => {
+    if (onChange) {
+      onChange({ cwd: path, executionMode, ...(branch ? { branch } : {}) });
+      return;
+    }
     dispatch({ type: 'START_CHAT', cwd: path, executionMode, branch });
   };
 

@@ -1,7 +1,8 @@
 import { useState, type SyntheticEvent } from 'react';
 import { ArrowUp, FolderOpen } from '@droidex/icons';
 import { pickDirectory } from '../../lib/desktop';
-import { workspaceName } from '../../lib/workspaces';
+import { chatWorktreeName, prepareChatWorkingDirectory } from '../../lib/chatWorkspace';
+import { StartInBar, type StartInSelection } from '../../components/environment/StartInBar';
 import { ThreadSettings } from './ThreadSettings';
 import { buildThreadInput, useThreadSelection } from './useThreadSelection';
 import type { ThreadInput } from './types';
@@ -10,7 +11,12 @@ import type { ThreadInput } from './types';
    workspace it runs in and the harness, model and autonomy its lead carries —
    sits on one quiet line under the composer, already filled in, because the
    threads the lead spawns inherit those and a person should not have to design
-   a team before they can state what they want. */
+   a team before they can state what they want.
+
+   Where it runs is the composer's own Start in bar, above the goal exactly as
+   it sits above the composer: the same repository, worktree and branch menus.
+   A project cut into a worktree of its own runs its lead there, and the
+   threads it spawns inherit that checkout. */
 
 export function NewProjectForm({
   cwd,
@@ -22,9 +28,13 @@ export function NewProjectForm({
   onCancel: () => void;
 }) {
   const selection = useThreadSelection(undefined);
-  const [draft, setDraft] = useState({ title: '', prompt: '', workspace: cwd });
+  const [draft, setDraft] = useState({ title: '', prompt: '' });
   const [pending, setPending] = useState(false);
   const [error, setError] = useState('');
+  const [startIn, setStartIn] = useState<StartInSelection>({
+    cwd,
+    executionMode: 'local',
+  });
   const unavailable = selection.catalog.unavailable;
   const blocked = pending || !draft.prompt.trim() || Boolean(unavailable);
   const shownError = error || unavailable;
@@ -35,7 +45,9 @@ export function NewProjectForm({
     setPending(true);
     setError('');
     try {
-      await onSubmit(buildThreadInput(draft, selection.value, selection.catalog));
+      const workspace = await startWorkspace();
+      if (workspace === undefined) return;
+      await onSubmit(buildThreadInput({ ...draft, workspace }, selection.value, selection.catalog));
     } catch (failure) {
       setError(failure instanceof Error ? failure.message : String(failure));
     } finally {
@@ -43,10 +55,22 @@ export function NewProjectForm({
     }
   }
 
+  /** The folder the lead will work in, cutting its worktree first if asked. */
+  async function startWorkspace(): Promise<string | undefined> {
+    const result = await prepareChatWorkingDirectory(startIn.cwd, {
+      executionMode: startIn.executionMode,
+      ...(startIn.branch ? { base: startIn.branch } : {}),
+      name: chatWorktreeName(draft.title || draft.prompt, 'project'),
+    });
+    if (result.ok) return result.path;
+    setError(result.message ?? 'Could not create the project worktree.');
+    return undefined;
+  }
+
   async function chooseFolder(): Promise<void> {
     try {
-      const workspace = await pickDirectory();
-      if (workspace) setDraft((current) => ({ ...current, workspace }));
+      const folder = await pickDirectory();
+      if (folder) setStartIn({ cwd: folder, executionMode: 'local' });
     } catch (failure) {
       setError(failure instanceof Error ? failure.message : String(failure));
     }
@@ -63,7 +87,15 @@ export function NewProjectForm({
         runs the parts that can go in parallel as threads.
       </p>
 
-      <div className="mt-4 rounded-xl border border-droid-border bg-droid-bg transition-colors focus-within:border-droid-border-hover">
+      {startIn.cwd ? (
+        // The composer's own treatment: the bar sits above the box and tucks
+        // behind it, so a project is set up the way a chat is.
+        <div className="relative z-0 mx-[4%] -mb-3 mt-4 min-w-0 rounded-t-2xl border border-droid-border bg-droid-surface px-4 pb-4 pt-1.5">
+          <StartInBar value={startIn} onChange={setStartIn} />
+        </div>
+      ) : null}
+
+      <div className="relative z-10 mt-4 rounded-xl border border-droid-border bg-droid-bg transition-colors focus-within:border-droid-border-hover">
         <textarea
           value={draft.prompt}
           onChange={(event) => {
@@ -78,18 +110,18 @@ export function NewProjectForm({
           className="w-full resize-y bg-transparent px-3.5 py-3 text-[14px] leading-6 outline-none placeholder:text-droid-text-muted"
         />
         <div className="flex items-center gap-2 border-t border-droid-border/60 px-3 py-2">
-          <button
-            type="button"
-            disabled={pending}
-            onClick={() => void chooseFolder()}
-            title={draft.workspace || 'Choose a workspace folder'}
-            className="flex min-w-0 max-w-[140px] items-center gap-1.5 rounded-lg px-2 py-1 text-[12px] text-droid-text-secondary transition-colors hover:bg-droid-elevated"
-          >
-            <FolderOpen className="h-3.5 w-3.5 shrink-0" />
-            <span className="truncate">
-              {draft.workspace ? workspaceName(draft.workspace) : 'No folder'}
-            </span>
-          </button>
+          {!startIn.cwd && (
+            <button
+              type="button"
+              disabled={pending}
+              onClick={() => void chooseFolder()}
+              title="Choose a workspace folder"
+              className="flex min-w-0 max-w-[140px] items-center gap-1.5 rounded-lg px-2 py-1 text-[12px] text-droid-text-secondary transition-colors hover:bg-droid-elevated"
+            >
+              <FolderOpen className="h-3.5 w-3.5 shrink-0" />
+              <span className="truncate">No folder</span>
+            </button>
+          )}
           <span className="flex min-w-0 flex-1">
             <ThreadSettings
               value={selection.value}
