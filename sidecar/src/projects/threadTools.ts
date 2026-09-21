@@ -1,4 +1,4 @@
-import { normalizeMcpServerName } from '../automations/permissionPolicy.js';
+import { normalizeMcpServerName, splitNamespacedTool } from '../automations/permissionPolicy.js';
 
 /** The single MCP server name DROIDEX registers for project thread tools. */
 export const THREAD_MCP_SERVER_NAME = 'droidex-threads';
@@ -51,14 +51,4 @@ function threadToolName(value: string): string {
 
 function isThreadServer(serverName: string): boolean {
   return normalizeMcpServerName(serverName) === THREAD_MCP_SERVER_NAME;
-}
-
-function splitNamespacedTool(value: string): { serverName: string; toolName: string } {
-  if (value.includes('___')) {
-    const marker = value.indexOf('___');
-    return { serverName: value.slice(0, marker), toolName: value.slice(marker + 3) };
-  }
-  const mcpMatch = /^mcp__([^_].*?)__([^_].*)$/i.exec(value);
-  if (mcpMatch) return { serverName: mcpMatch[1], toolName: mcpMatch[2] };
-  return { serverName: '', toolName: value };
 }
