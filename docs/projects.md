@@ -96,7 +96,10 @@ stopped, or that it ended without a reply. The report is an excerpt and says so
 when it is one. `thread_read` gives the owner the whole reply, the question the
 thread is waiting on, and what it is running as, so a lead can look again —
 after a compaction, or before deciding a step is done — instead of acting on
-what it happened to be handed. `thread_configure` retunes a thread's model,
+what it happened to be handed. It answers with the thread's latest reply alone
+unless the lead asks for more, and DROIDEX keeps the last ten, so an owner that
+lost the thread of a conversation can read as far back as it needs and no
+further. A turn that ends without a reply never erases the last real one. `thread_configure` retunes a thread's model,
 reasoning effort and autonomy in place, for the same reason a person reaches for
 the composer's own controls: a quick back-and-forth does not need the effort the
 original work did. The wake stays a push, because a report is the thing the
