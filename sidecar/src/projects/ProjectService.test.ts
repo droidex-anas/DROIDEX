@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { ProjectService, type ProjectPort } from './ProjectService.js';
-import type { ProjectPersistence } from './store.js';
+import { LEDGER_LIMITS, type ProjectPersistence } from './store.js';
 import type { Project, ThreadInput } from './types.js';
 import type { ServerEvent, SessionSummary } from '../protocol.js';
 
@@ -242,6 +242,37 @@ test('a thread’s own question reaches its lead with its options, and the answe
   assert.equal(h.answered.at(-1)?.requestId, 'ask-1');
   assert.equal(h.projects.list()[0]?.threads[1]?.waiting, false);
   assert.equal(h.projects.list()[0]?.queued, 0);
+});
+
+test('an outsized harness question is bounded to what the ledger will load', async (t) => {
+  const h = await harness();
+  t.after(() => h.projects.close());
+  const { main } = await h.root();
+  const child = await h.projects.spawn(main, input);
+  await h.projects.observe({
+    type: 'question.requested',
+    question: {
+      appSessionId: child.appSessionId,
+      requestId: 'huge',
+      questions: Array.from({ length: 40 }, (_, index) => ({
+        index: index + 1_000,
+        question: 'q'.repeat(9_000),
+        options: Array.from({ length: 40 }, () => 'o'.repeat(4_000)),
+      })),
+    },
+  });
+  // The ledger is validated on load, so a question stored past its limits would
+  // refuse the whole file and take every project with it.
+  const stored = h.state.saved[0]?.threads[1]?.ask;
+  assert.ok(stored);
+  assert.ok(stored.questions.length <= LEDGER_LIMITS.askQuestions);
+  for (const item of stored.questions) {
+    assert.ok(item.index <= LEDGER_LIMITS.askIndex);
+    assert.ok(item.question.length <= LEDGER_LIMITS.askQuestionText);
+    assert.ok(item.options.length <= LEDGER_LIMITS.askOptions);
+    for (const option of item.options) assert.ok(option.length <= LEDGER_LIMITS.askOptionText);
+  }
+  assert.ok((h.state.saved[0]?.pending[0]?.text.length ?? 0) <= LEDGER_LIMITS.messageText);
 });
 
 test('a thread that settles reports either way: an empty turn, or the failure that ended it', async (t) => {

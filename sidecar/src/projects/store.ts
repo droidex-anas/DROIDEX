@@ -7,6 +7,18 @@ import type { Project, ThreadInput } from './types.js';
 
 const id = z.string().min(1).max(200);
 const text = z.string().max(8_192);
+
+/* What the ledger will accept back. The service bounds a harness's question to
+   these before storing it: the schema is checked on load, and a file it refuses
+   takes every project with it. */
+export const LEDGER_LIMITS = {
+  messageText: 8_192,
+  askQuestions: 16,
+  askOptions: 16,
+  askQuestionText: 2_000,
+  askOptionText: 500,
+  askIndex: 64,
+} as const;
 export const threadInputSchema = z
   .object({
     title: z.string().trim().min(1).max(120),
@@ -42,13 +54,15 @@ const ask = z
       .array(
         z
           .object({
-            index: z.number().int().min(0).max(64),
-            question: z.string().max(2_000),
-            options: z.array(z.string().max(500)).max(16),
+            index: z.number().int().min(0).max(LEDGER_LIMITS.askIndex),
+            question: z.string().max(LEDGER_LIMITS.askQuestionText),
+            options: z
+              .array(z.string().max(LEDGER_LIMITS.askOptionText))
+              .max(LEDGER_LIMITS.askOptions),
           })
           .strict(),
       )
-      .max(16),
+      .max(LEDGER_LIMITS.askQuestions),
   })
   .strict();
 const project = z

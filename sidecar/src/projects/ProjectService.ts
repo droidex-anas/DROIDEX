@@ -9,7 +9,7 @@ import type {
   SessionQuestion,
   SessionSummary,
 } from '../protocol.js';
-import type { ProjectPersistence } from './store.js';
+import { LEDGER_LIMITS, type ProjectPersistence } from './store.js';
 import { createThreadWorkspace } from './threadWorkspace.js';
 import type {
   Project,
@@ -625,20 +625,32 @@ export class ProjectService {
       (candidate) => candidate.appSessionId === question.appSessionId,
     );
     if (!thread?.ownerAppSessionId) return;
-    const asked = question.questions
+    // A harness writes this, so it is bounded here rather than trusted: the
+    // ledger's own limits are enforced when it loads, and a question stored
+    // past them would refuse to load the whole file on the next start.
+    const questions = question.questions.slice(0, LEDGER_LIMITS.askQuestions).map((item) => ({
+      index: Math.min(Math.max(Math.trunc(item.index), 0), LEDGER_LIMITS.askIndex),
+      question: item.question.slice(0, LEDGER_LIMITS.askQuestionText),
+      options: item.options
+        .slice(0, LEDGER_LIMITS.askOptions)
+        .map((option) => option.slice(0, LEDGER_LIMITS.askOptionText)),
+    }));
+    if (!questions.length) return;
+    const asked = questions
       .map((item) =>
         item.options.length
           ? `${item.question}\n${item.options.map((option) => `- ${option}`).join('\n')}`
           : item.question,
       )
-      .join('\n\n');
+      .join('\n\n')
+      .slice(0, LEDGER_LIMITS.messageText);
     try {
       this.enqueue(project, thread.appSessionId, thread.ownerAppSessionId, 'question', asked);
     } catch (error) {
       this.fail(project, error);
       return;
     }
-    thread.ask = { requestId: question.requestId, questions: question.questions };
+    thread.ask = { requestId: question.requestId, questions };
     thread.waiting = true;
     await this.save();
     this.wakes.kick(project);
