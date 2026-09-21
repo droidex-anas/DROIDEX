@@ -62,8 +62,11 @@ export interface ProjectThread {
   // The owner is another top-level conversation, not a harness subagent.
   ownerAppSessionId?: string;
   title: string;
-  /** The whole final reply of its last turn, which its report only excerpts. */
+  /** Its latest final reply in full, which its report only excerpts. */
   reply: string;
+  /** The final replies before that one, oldest first, so an owner that lost the
+      thread of a conversation can read further back than its last answer. */
+  earlierReplies?: string[];
   /** Why that turn failed. The session summary keeps the phase, not the reason. */
   error?: string;
   waiting: boolean;

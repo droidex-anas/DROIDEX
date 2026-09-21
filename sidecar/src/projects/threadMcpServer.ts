@@ -214,14 +214,26 @@ export function createThreadMcpServer(appSessionIdForTool: () => string | undefi
       tool(
         'thread_read',
         [
-          'Read a thread this chat started: its whole final reply, the question it is waiting on, and what it is running as.',
+          'Read a thread this chat started: its final replies in full, the question it is waiting on, and what it is running as.',
           'A thread’s report to you is an excerpt. Read the rest here before you tell the user what it found or treat its step as done, and read it again whenever you need its state back — after a compaction, or before deciding what to do next.',
+          'It answers with the thread’s latest reply alone unless you ask for more, so you choose how much of its history you take on.',
           'A thread that is still working has no reply yet. DROIDEX wakes you when it settles; reading it again to see whether it is done is polling.',
         ].join(' '),
-        { threadId: z.string().min(1).max(200) },
-        safeTool(async (input: { threadId: string }) => {
+        {
+          threadId: z.string().min(1).max(200),
+          replies: z
+            .number()
+            .int()
+            .min(1)
+            .max(10)
+            .optional()
+            .describe(
+              'How many of this thread’s own final replies to read, oldest first. One — its latest — when omitted. Ask for more only when you need the thread of a conversation back, after a compaction or before a decision that turns on what it said earlier; moreReplies tells you how many are still there.',
+            ),
+        },
+        safeTool(async (input: { threadId: string; replies?: number }) => {
           const projects = await requireProjectService();
-          return jsonResult(projects.read(appSessionId(), input.threadId));
+          return jsonResult(projects.read(appSessionId(), input.threadId, input.replies));
         }),
       ),
       tool(

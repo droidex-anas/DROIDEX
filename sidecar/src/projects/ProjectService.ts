@@ -53,7 +53,10 @@ export interface ThreadReadout {
   threadId: string;
   title: string;
   state: ThreadState;
-  reply: string;
+  /** The replies asked for, oldest first; the latest one alone by default. */
+  replies: string[];
+  /** Older replies DROIDEX still holds, for an owner that wants more context. */
+  moreReplies: number;
   error?: string;
   question?: { index: number; question: string; options: string[] }[];
   cwd?: string;
@@ -61,6 +64,11 @@ export interface ThreadReadout {
   reasoningEffort?: string;
   autonomy?: string;
 }
+
+/* How far back a thread's own answers stay readable. Deep enough that an owner
+   which compacted can pick the conversation up again, shallow enough that the
+   ledger stays a ledger. */
+const MAX_EARLIER_REPLIES = 9;
 
 const autonomy = ['off', 'low', 'medium', 'high'];
 const THREAD_BRIEF = [
@@ -435,19 +443,23 @@ export class ProjectService {
   }
 
   /**
-   * The whole of a thread, for the chat that owns it: what it last replied, the
+   * The whole of a thread, for the chat that owns it: what it replied, the
    * question it is waiting on, and what it is running as. A report carries an
-   * excerpt, so this is how a lead reads the rest or looks again later.
+   * excerpt, so this is how a lead reads the rest or looks again later. It asks
+   * for how far back it wants to read — one answer by default, never the lot.
    */
-  read(source: string, target: string): ThreadReadout {
+  read(source: string, target: string, replies = 1): ThreadReadout {
     const project = this.controlledProject(source, target);
     const thread = this.thread(project, target);
     const session = this.sessions.get(target);
+    const kept = thread.reply ? [...(thread.earlierReplies ?? []), thread.reply] : [];
+    const wanted = Math.min(Math.max(replies, 1), MAX_EARLIER_REPLIES + 1);
     return {
       threadId: target,
       title: thread.title,
       state: threadState(thread, session),
-      reply: thread.reply,
+      replies: kept.slice(-wanted),
+      moreReplies: Math.max(kept.length - wanted, 0),
       ...(thread.error ? { error: thread.error } : {}),
       ...(thread.ask ? { question: thread.ask.questions } : {}),
       ...(session
@@ -563,7 +575,14 @@ export class ProjectService {
       this.wakes.kick(project);
       return;
     }
-    thread.reply = turn.text;
+    if (turn.text) {
+      // A turn that says nothing must not erase what the thread last said.
+      if (thread.reply)
+        thread.earlierReplies = [...(thread.earlierReplies ?? []), thread.reply].slice(
+          -MAX_EARLIER_REPLIES,
+        );
+      thread.reply = turn.text;
+    }
     if (turn.error) thread.error = turn.error;
     else delete thread.error;
     // A question the turn ended on will never be answered now.

@@ -474,8 +474,21 @@ test('a lead reads a thread in full and retunes it within its own autonomy', asy
   // The report is an excerpt; reading the thread gives the whole reply back.
   assert.match(h.sent.at(-1)?.prompt ?? '', /last 1,200 characters/);
   const read = h.projects.read(main, child.appSessionId);
-  assert.equal(read.reply.length, 2_000);
+  assert.deepEqual(read.replies.length, 1);
+  assert.equal(read.replies[0]?.length, 2_000);
   assert.equal(read.state, 'idle');
+
+  // A second answer keeps the first readable, and a silent turn erases neither.
+  await h.finish(main);
+  await h.finish(child.appSessionId, 'Second answer');
+  await h.streaming(child.appSessionId, true);
+  await h.streaming(child.appSessionId, false);
+  await drain();
+  assert.equal(h.projects.read(main, child.appSessionId).replies.at(-1), 'Second answer');
+  const both = h.projects.read(main, child.appSessionId, 5);
+  assert.equal(both.replies.length, 2);
+  assert.equal(both.replies[0]?.length, 2_000);
+  assert.equal(both.moreReplies, 0);
 
   const lead = h.sessions.get(main);
   assert.ok(lead);
