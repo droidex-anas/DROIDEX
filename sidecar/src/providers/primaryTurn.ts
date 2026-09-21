@@ -14,7 +14,10 @@ import { usageLimitDetails } from './usageLimit.js';
 export interface PrimaryTurnDependencies {
   eventFlow: Pick<SessionEventFlow, 'beginTurn' | 'apply'>;
   context: Pick<SessionContext, 'beginTurn' | 'startPolling' | 'stopPolling' | 'refresh'>;
-  timeline: Pick<SessionTimeline, 'recordPrompt' | 'settleStreaming' | 'appendStatus' | 'append'>;
+  timeline: Pick<
+    SessionTimeline,
+    'recordPrompt' | 'announcePrompt' | 'settleStreaming' | 'appendStatus' | 'append'
+  >;
   // Absent for a provider without Droid's context accounting.
   contextTarget: (liveSession: LiveSession) => LiveOperationTarget | undefined;
   isCurrent: (liveSession: LiveSession) => boolean;
@@ -43,7 +46,9 @@ export async function runPrimaryTurn(
     : undefined;
   if (delivery && (!d.isCurrent(liveSession) || !preflight || !delivery.isCurrent())) return;
   d.eventFlow.beginTurn(appSessionId, appSessionId);
-  d.timeline.recordPrompt(appSessionId, prompt);
+  // Nobody typed a scheduled delivery, so the renderer has not shown it.
+  if (delivery) d.timeline.announcePrompt(appSessionId, prompt);
+  else d.timeline.recordPrompt(appSessionId, prompt);
   d.context.beginTurn(appSessionId);
   context.startPolling();
   let turnError: unknown;
