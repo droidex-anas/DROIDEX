@@ -6,6 +6,10 @@ import type { AppServerClient } from './appServer.js';
 type CatalogSource = 'skills' | 'plugins' | 'apps';
 // Publication order, whichever order the sources answer in.
 const SOURCES: readonly CatalogSource[] = ['skills', 'plugins', 'apps'];
+// The app listing is a round trip to Codex's connector service: it takes tens
+// of seconds and sometimes answers with a server error. Asking once would let
+// one bad answer cost the session every app, with nothing to retry it.
+const APP_RETRY_DELAY_MS = 1_000;
 
 // Skills answer in milliseconds, installed plugins in a second or two, and the
 // first app listing in tens of seconds while Codex discovers its connectors.
@@ -103,6 +107,16 @@ async function loadCodexPlugins(client: AppServerClient, cwds: string[]): Promis
 }
 
 async function loadCodexApps(client: AppServerClient): Promise<SkillInfo[]> {
+  try {
+    return await listCodexApps(client);
+  } catch (error) {
+    if (!client.isAlive()) throw error;
+    await new Promise((resolve) => setTimeout(resolve, APP_RETRY_DELAY_MS));
+    return listCodexApps(client);
+  }
+}
+
+async function listCodexApps(client: AppServerClient): Promise<SkillInfo[]> {
   const items: SkillInfo[] = [];
   const seenCursors = new Set<string>();
   let cursor: string | null = null;
