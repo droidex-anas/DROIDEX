@@ -98,6 +98,10 @@ export default function Sidebar({
     (current) => projectThreadIds(current.projects),
     (a, b) => a.size === b.size && [...a].every((id) => b.has(id)),
   );
+  // Until the project graph has been answered for, a thread cannot be told from
+  // an ordinary chat — and drawing the list first would show threads that then
+  // vanish. A runtime that cannot answer counts as having answered.
+  const projectsKnown = useStoreSelector((current) => current.projectsLoaded);
   // Counting what the list cannot show would leave unread-only empty with a
   // badge still on it; a thread's unread belongs to Projects.
   const unreadCount = useMemo(
@@ -152,6 +156,7 @@ export default function Sidebar({
   // The Activity view is an inbox, so it also drops chats that aged out of
   // scope; the count feeds a footer pointing at Workspaces.
   const { visibleSessions, agedOutCount } = useMemo(() => {
+    if (!projectsKnown) return { visibleSessions: [], agedOutCount: 0 };
     const listed = state.sessionOrder
       .map((id) => state.sessions[id])
       .filter(Boolean)
@@ -169,6 +174,7 @@ export default function Sidebar({
     state.sessions,
     chatMetadata,
     projectThreads,
+    projectsKnown,
     unreadOnly,
     isUnread,
     statusFor,
