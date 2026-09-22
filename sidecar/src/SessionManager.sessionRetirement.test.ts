@@ -6,6 +6,7 @@ import test from 'node:test';
 import type { ProcessRecord } from './processes/processTree.js';
 import type { SessionFileChange } from './sessionFileCache.js';
 import type * as Protocol from './protocol.js';
+import { SessionRuntimeWarmUp } from './sessionRuntimeWarmUp.js';
 import { writeProviderConversation } from './testing/historyCharacterizationSupport.js';
 import {
   createSessionManagerTestContext,
@@ -476,6 +477,37 @@ test('a chat the user passed over on the way to another is never warmed', async 
   } finally {
     await h.dispose();
   }
+});
+
+test('a warm-up queued behind another is skipped once its chat is no longer selected', async () => {
+  // Chat A is still resuming when the user settles on B, so B waits behind A.
+  // Moving on to C before A finishes must drop B: only what is on screen when
+  // its turn comes is worth a process.
+  const resumed: string[] = [];
+  let finishA = (): void => undefined;
+  const warmUp = new SessionRuntimeWarmUp({
+    ready: () => Promise.resolve(),
+    isResumable: () => true,
+    isLive: () => false,
+    resume: (id) => {
+      resumed.push(id);
+      return id === 'A' ? new Promise<void>((resolve) => (finishA = resolve)) : Promise.resolve();
+    },
+  });
+
+  warmUp.selected('A');
+  const a = warmUp.flush();
+  // Let A's resume actually begin before the selection moves on.
+  await new Promise((resolve) => setImmediate(resolve));
+  warmUp.selected('B');
+  const b = warmUp.flush();
+  warmUp.selected('C');
+  finishA();
+  await Promise.all([a, b]);
+  assert.deepEqual(resumed, ['A'], 'B was left before its turn came, so it never resumes');
+
+  await warmUp.flush();
+  assert.deepEqual(resumed, ['A', 'C'], 'the chat that is on screen still warms');
 });
 
 test('a prompt that lands while the runtime is being released still reaches the session', async () => {
