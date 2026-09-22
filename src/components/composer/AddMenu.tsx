@@ -149,7 +149,7 @@ export default function AddMenu({
       // the menu through its own toggle instead of an outside click that reopens
       // it on the way back up.
       const anchor = anchorRef.current;
-      if (anchor && !anchor.contains(e.target as Node)) onOpenChange(false);
+      if (anchor && e.target instanceof Node && !anchor.contains(e.target)) onOpenChange(false);
     };
     window.addEventListener('keydown', onKey);
     window.addEventListener('mousedown', onDown);
@@ -166,7 +166,7 @@ export default function AddMenu({
         onClick={() => {
           onOpenChange(!open);
         }}
-        className={`p-1.5 rounded-lg transition-colors ${
+        className={`flex h-8 w-8 items-center justify-center rounded-full transition-colors ${
           open
             ? 'bg-droid-bg/60 text-droid-text'
             : 'text-droid-text-muted hover:text-droid-text hover:bg-droid-bg/50'

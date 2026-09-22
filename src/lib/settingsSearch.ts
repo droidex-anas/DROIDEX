@@ -115,6 +115,13 @@ export const SETTINGS_SEARCH_ENTRIES: readonly SettingsSearchEntry[] = [
   e('Setup & updates', 'Run setup again', ['onboarding', 'first run', 'setup tour', 'wizard']),
 
   // ── Configuration ────────────────────────────────────────────────────────
+  e('Configuration', 'Model selector', [
+    'model picker',
+    'effort slider',
+    'classic list',
+    'composer model',
+    'selector style',
+  ]),
   e('Configuration', 'Tool activity', [
     'compact',
     'balanced',

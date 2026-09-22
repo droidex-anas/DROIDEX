@@ -27,6 +27,7 @@ import {
   loadDiffView,
   loadImagePasteQuality,
   loadLiveEnterBehavior,
+  loadModelSelectorStyle,
   loadPersistedUiState,
   loadReviewScope,
   loadSessionLastSeen,
@@ -37,6 +38,7 @@ import {
   saveDiffView,
   saveImagePasteQuality,
   saveLiveEnterBehavior,
+  saveModelSelectorStyle,
   savePersistedUiState,
   saveReviewScope,
   saveSessionLastSeen,
@@ -48,6 +50,7 @@ import {
   type DiffViewMode,
   type LiveEnterBehavior,
   type MainView,
+  type ModelSelectorStyle,
 } from './persistedUiPreferences';
 import type { ShortcutAction, ShortcutBindings } from '../lib/shortcuts';
 import {
@@ -294,6 +297,9 @@ export interface AppState {
   // previous request (a repeated click must re-arm the scope-fallback dedupe).
   reviewFocusRequestId: number;
   diffView: DiffViewMode;
+  // Which picker the composer's model chip opens: the classic list with
+  // per-row effort dots, or the card that drills into the effort slider.
+  modelSelectorStyle: ModelSelectorStyle;
   sidebarCollapsed: boolean;
   mainView: MainView;
   automationEditorRequest: AutomationEditorRequest | null;
@@ -567,6 +573,7 @@ type Action =
   | OpenReviewAtAction
   | { type: 'CLEAR_REVIEW_FOCUS' }
   | { type: 'SET_DIFF_VIEW'; mode: DiffViewMode }
+  | { type: 'SET_MODEL_SELECTOR_STYLE'; style: ModelSelectorStyle }
   | { type: 'TOGGLE_COMMAND_PALETTE' }
   | { type: 'CLOSE_COMMAND_PALETTE' }
   | { type: 'TOGGLE_SIDEBAR' }
@@ -744,6 +751,7 @@ export const initialState: AppState = {
   reviewFocusChange: null,
   reviewFocusRequestId: 0,
   diffView: loadDiffView(),
+  modelSelectorStyle: loadModelSelectorStyle(),
   skills: [],
   skillsProviderSessionId: undefined,
   agentConfig: loadAgentConfig(),
@@ -1728,6 +1736,9 @@ function baseReducer(state: AppState, action: Action): AppState {
 
     case 'SET_DIFF_VIEW':
       return { ...state, diffView: saveDiffView(action.mode) };
+
+    case 'SET_MODEL_SELECTOR_STYLE':
+      return { ...state, modelSelectorStyle: saveModelSelectorStyle(action.style) };
 
     case 'TOGGLE_COMMAND_PALETTE':
       return { ...state, commandPaletteOpen: !state.commandPaletteOpen };

@@ -5,7 +5,12 @@
 const v = (name) => `color-mix(in srgb, var(${name}) calc(<alpha-value> * 100%), transparent)`;
 
 export default {
-  content: ['./index.html', './src/**/*.{js,ts,jsx,tsx}'],
+  content: [
+    './index.html',
+    './src/**/*.{js,ts,jsx,tsx}',
+    // Plain CSS for the effort slider's shadow root, not Tailwind markup.
+    '!./src/components/effortSlider/effortSliderStyles.ts',
+  ],
   theme: {
     extend: {
       colors: {

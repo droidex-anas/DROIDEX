@@ -5,7 +5,11 @@ import {
   type ImagePasteQuality,
 } from '../hooks/useStore';
 import type { DiffStyle } from '../hooks/persistedThemePreferences';
-import type { DiffViewMode, LiveEnterBehavior } from '../hooks/persistedUiPreferences';
+import type {
+  DiffViewMode,
+  LiveEnterBehavior,
+  ModelSelectorStyle,
+} from '../hooks/persistedUiPreferences';
 import { ChevronLeft, ChevronDown, Search, Check, X, Plus } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import AutonomySelector from './AutonomySelector';
@@ -719,9 +723,33 @@ function SetupSection({ onClose }: { onClose: () => void }) {
 function ConfigurationSection() {
   const dispatch = useStoreDispatch();
   const defaultAutonomy = useStoreSelector((state) => state.defaultAutonomy);
+  const modelSelectorStyle = useStoreSelector((state) => state.modelSelectorStyle);
   return (
     <div className="max-w-2xl mx-auto">
       <SectionTitle title="Configuration" />
+      <GroupLabel>Composer</GroupLabel>
+      <div className="rounded-xl border border-droid-border bg-droid-surface divide-y divide-droid-border mb-8">
+        <SettingRow
+          label="Model selector"
+          description="How the composer's model chip picks a model: a card that drills into an effort slider, or the classic list with per-row effort dots."
+        >
+          <Dropdown
+            ariaLabel="Model selector"
+            value={modelSelectorStyle}
+            width="w-44"
+            options={[
+              { value: 'slider', label: 'Effort slider' },
+              { value: 'classic', label: 'Classic list' },
+            ]}
+            onChange={(style) => {
+              dispatch({
+                type: 'SET_MODEL_SELECTOR_STYLE',
+                style: style as ModelSelectorStyle,
+              });
+            }}
+          />
+        </SettingRow>
+      </div>
       <GroupLabel>Transcript</GroupLabel>
       <ToolActivitySettings />
       <GroupLabel>Sessions</GroupLabel>
@@ -820,7 +848,7 @@ export default function SettingsPanel() {
       mcpCwd: activeSession?.cwd ?? state.workspaceCwds[0],
     };
   }, shallowEqual);
-  const [active, setActive] = useState('Appearance');
+  const [active, setActive] = useState('General');
   const [query, setQuery] = useState('');
 
   useEffect(() => {

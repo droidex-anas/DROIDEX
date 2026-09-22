@@ -90,5 +90,5 @@ test('a dangling active session id keeps using the visible global defaults', () 
   assert.match(html, /aria-selected="true"[\s\S]*?capitalize[^>]*>low<\/span>/);
   assert.equal((html.match(/aria-selected="true"/g) ?? []).length, 1);
   assert.equal((html.match(/aria-selected="false"/g) ?? []).length, 1);
-  assert.equal((html.match(/w-\[9px\]/g) ?? []).length, 2);
+  assert.equal((html.match(/w-2\.5/g) ?? []).length, 2);
 });
