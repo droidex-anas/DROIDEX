@@ -152,7 +152,6 @@ export class CodexSession implements ProviderSession {
     const turn = new TurnStream();
     this.turn = turn;
     this.pendingInterrupt = false;
-    if (this.heldNotices.length > 0) turn.push(this.heldNotices.splice(0));
     try {
       const started = await this.client.request<{ turn: CodexTurn }>(
         'turn/start',
@@ -163,6 +162,9 @@ export class CodexSession implements ProviderSession {
         }),
       );
       this.adoptTurn(started.turn.id);
+      // Only a turn that started can carry them; one that Codex refused would
+      // have dropped them with it.
+      if (this.heldNotices.length > 0) turn.push(this.heldNotices.splice(0));
       yield* turn.drain();
     } finally {
       turn.finish();
@@ -261,7 +263,7 @@ export class CodexSession implements ProviderSession {
   // that is running, or waits for the next one.
   private notice(events: NormalizedEvent[]): void {
     if (events.length === 0) return;
-    if (this.turn) this.turn.push(events);
+    if (this.turn && this.turnId) this.turn.push(events);
     else this.heldNotices.push(...events);
   }
 

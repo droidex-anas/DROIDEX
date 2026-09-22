@@ -63,7 +63,8 @@ export interface McpServerFailure {
 
 export function mcpServerFailure(params: unknown): McpServerFailure | undefined {
   if (!isObject(params) || params.status !== 'failed') return undefined;
-  const name = text(params.name);
+  // The whole name: it is the key that keeps a server to one row.
+  const name = typeof params.name === 'string' ? params.name.trim() : '';
   if (!name) return undefined;
   const detail = text(params.error);
   return { name, ...(detail ? { detail } : {}) };

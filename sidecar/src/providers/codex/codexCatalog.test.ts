@@ -29,7 +29,7 @@ test('a failed app listing is asked once more before the apps are given up', asy
     },
   } as unknown as AppServerClient;
 
-  const items = await new CodexCatalog(client, ['/tmp']).catalogItems();
+  const items = await new CodexCatalog(client, ['/tmp'], 0).catalogItems();
 
   assert.equal(attempts, 2);
   assert.deepEqual(

@@ -24,11 +24,13 @@ export class CodexCatalog {
   constructor(
     private readonly client: AppServerClient,
     private readonly cwds: string[],
+    // How long to wait before asking for the apps again; a test passes zero.
+    appRetryDelayMs = APP_RETRY_DELAY_MS,
   ) {
     this.initial = Promise.all([
       this.load('skills', () => loadCodexSkills(client, cwds)),
       this.load('plugins', () => loadCodexPlugins(client, cwds)),
-      this.load('apps', () => loadCodexApps(client)),
+      this.load('apps', () => loadCodexApps(client, appRetryDelayMs)),
     ]).then(() => undefined);
   }
 
@@ -106,12 +108,12 @@ async function loadCodexPlugins(client: AppServerClient, cwds: string[]): Promis
   });
 }
 
-async function loadCodexApps(client: AppServerClient): Promise<SkillInfo[]> {
+async function loadCodexApps(client: AppServerClient, retryDelayMs: number): Promise<SkillInfo[]> {
   try {
     return await listCodexApps(client);
   } catch (error) {
     if (!client.isAlive()) throw error;
-    await new Promise((resolve) => setTimeout(resolve, APP_RETRY_DELAY_MS));
+    await new Promise((resolve) => setTimeout(resolve, retryDelayMs));
     return listCodexApps(client);
   }
 }
