@@ -95,7 +95,6 @@ import {
 } from '../lib/childSessions';
 import { commitPrimaryPromptAfterBaseline } from '../lib/promptSend';
 import { ChevronDown, SlidersHorizontal } from 'lucide-react';
-import { Clock } from '@droidex/icons';
 import { ComposerSendButton } from './composer/ComposerSendButton';
 import { useQueuedPromptDelivery } from './composer/useQueuedPromptDelivery';
 import AddMenu from './composer/AddMenu';
@@ -272,7 +271,9 @@ export default function PromptInput({
   const [modelsOpen, setModelsOpen] = useState(false);
   const [activeRowKey, setActiveRowKey] = useState<string | null>(null);
   const [scheduleTarget, setScheduleTarget] = useState<{ appSessionId: string } | null>(null);
-  const scheduleAnchorRef = useRef<HTMLButtonElement>(null);
+  // Scheduling lives in the draft's right-click menu; its popover opens from the
+  // send button, where the prompt would otherwise go.
+  const scheduleAnchorRef = useRef<HTMLDivElement>(null);
   const scheduleGeneration = useRef(0);
   const [files, setFiles] = useState<string[]>([]);
   const [filesCwd, setFilesCwd] = useState<string | null>(null);
@@ -1999,33 +2000,17 @@ export default function PromptInput({
                 </AnimatePresence>
               </div>
 
-              {activeSession && visibleTarget.kind === 'primary' && (
-                <button
-                  ref={scheduleAnchorRef}
-                  type="button"
-                  aria-label="Schedule prompt"
-                  aria-haspopup="dialog"
-                  aria-expanded={scheduleTarget?.appSessionId === activeSession.appSessionId}
-                  title="Schedule this prompt for later"
-                  disabled={!hasContent || appUpdateInstalling}
-                  onClick={() => {
-                    setScheduleTarget({ appSessionId: activeSession.appSessionId });
-                  }}
-                  className="flex h-8 w-8 items-center justify-center rounded-full text-droid-text-muted transition-colors hover:bg-droid-bg/40 hover:text-droid-text focus-visible:outline focus-visible:outline-droid-border-hover disabled:opacity-30"
-                >
-                  <Clock className="h-3.5 w-3.5" />
-                </button>
-              )}
-
-              {VOICE_MODE_ENABLED ? (
-                <Suspense fallback={sendButton}>
-                  <VoiceSendSlot showSend={showSendAction} onVoice={voice.start}>
-                    {sendButton}
-                  </VoiceSendSlot>
-                </Suspense>
-              ) : (
-                sendButton
-              )}
+              <div ref={scheduleAnchorRef} className="shrink-0">
+                {VOICE_MODE_ENABLED ? (
+                  <Suspense fallback={sendButton}>
+                    <VoiceSendSlot showSend={showSendAction} onVoice={voice.start}>
+                      {sendButton}
+                    </VoiceSendSlot>
+                  </Suspense>
+                ) : (
+                  sendButton
+                )}
+              </div>
             </div>
           </div>
         </div>
