@@ -44,6 +44,11 @@ export class ProjectSessions implements ProjectPort {
         interactionMode: 'auto',
       });
       if (launch.error) throw new Error(launch.error);
+      // Admission can close after the bind — a shutdown, a cancelled resume —
+      // and that path reports no error at all. A session the manager no longer
+      // knows never opened, whatever the bind saw.
+      if (launch.session && !this.host.sessionSummary(launch.session.appSessionId))
+        return undefined;
       return launch.session;
     } finally {
       this.launching.delete(clientRef);
