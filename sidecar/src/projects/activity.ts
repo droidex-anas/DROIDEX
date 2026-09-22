@@ -1,5 +1,14 @@
 import type { TranscriptEvent } from '../protocol.js';
 
+/** The kinds a model produces while answering; the rest are the app talking. */
+const GENERATED = new Set<TranscriptEvent['kind']>([
+  'text',
+  'thinking',
+  'tool_call',
+  'tool_result',
+  'error',
+]);
+
 /** What a thread's turn came back with: its final reply, and why it stopped. */
 export interface ThreadTurn {
   text: string;
@@ -26,6 +35,10 @@ export class ProjectActivity {
   /** Callers pass events of project conversations only. */
   append(event: TranscriptEvent): void {
     if (event.role !== 'primary' || event.author === 'user') return;
+    // Only generation opens a turn. A status line or a compaction divider
+    // reaches an idle thread — retuning one, or an automatic compaction — and
+    // opening a turn on it would report silence its owner never asked for.
+    if (!GENERATED.has(event.kind)) return;
     this.open(event.appSessionId);
     const turn = this.turns.get(event.appSessionId);
     if (!turn) return;
