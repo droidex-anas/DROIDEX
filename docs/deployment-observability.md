@@ -236,30 +236,35 @@ If a deployment causes user impact:
 ## Anonymous installation analytics
 
 DROIDEX counts installations through Datadog RUM. The goal is a defensible
-answer to "how many people run this?", not product analytics. Only two events
-exist, and both are emitted by `src/lib/usageAnalytics.ts`:
+answer to "how many installations run this?". Nothing here observes features,
+funnels, or content: no screen, click, command, setting, harness, prompt, or
+session is recorded. Only two events exist, and both are emitted by
+`src/lib/usageAnalytics.ts`:
 
 | Event | When | Properties |
 | --- | --- | --- |
-| `app_opened` | Every launch of a packaged build | `app_version`, `platform`, `architecture`, `distribution_channel` |
-| `install_first_launch` | Once per installation ID | the same four, plus `install_origin` |
+| `app_opened` | Every launch of a packaged, configured build whose user has not opted out | `app_version`, `platform`, `architecture`, `distribution_channel` |
+| `install_first_launch` | Once per installation ID, under the same conditions | the same four, plus `install_origin` |
 
 ### The installation identifier
 
 `electron/usageAnalytics.cjs` mints a `crypto.randomUUID()` on the first launch
 that reaches it and stores it at `<userData>/usage-analytics.json`. Because
 `userData` is outside the app bundle, the identifier survives restarts and
-in-place updates, so one installation stays one row forever. It is never derived
-from hardware, serial numbers, MAC addresses, usernames, emails, IP addresses,
-or any account. Two installations therefore share nothing, and the identifier
-cannot be reversed into a person.
+in-place updates, so an installation keeps counting as one installation for as
+long as that file is there. It is never derived from hardware, serial numbers,
+MAC addresses, usernames, emails, IP addresses, or any account, so it carries
+nothing that can be reversed into a person or matched against another
+installation. Opting out deletes it and opting back in mints a new one, so the
+count is of installations over time and not of people.
 
 `install_origin` separates the two populations that appear the first time an
 instrumented build runs:
 
-- `new_install` — nothing else was in `userData`, so this is a genuinely new user.
+- `new_install` — nothing else was in `userData`, so this is a first run of the
+  app against a fresh profile.
 - `existing_install` — an older DROIDEX had already written to `userData`, so
-  this is an existing user whose app updated into an instrumented build.
+  this is an installation that updated into an instrumented build.
 
 Without that flag, the day an instrumented release ships, the entire existing
 user base would look like new installs.
@@ -330,6 +335,11 @@ the packaged `package.json` under `datadog`, which `readBuildMetadata()` in
 | `DATADOG_SITE` | variable | Datadog site — `us5.datadoghq.com` for this project |
 | `DROIDEX_DISTRIBUTION_CHANNEL` | literal | `release`, set by the workflow only |
 
+`Kind` says where the release environment holds the value, not how sensitive it
+is. The application id and client token are stored as environment secrets so
+they are not editable from a fork, but both are embedded in the packaged app and
+are public once it ships.
+
 A Datadog **API key** must never be added. It is a server-side credential; a
 desktop app ships to users' machines, so anything embedded in it is public. The
 RUM client token is designed for exactly this exposure: it can only submit RUM
@@ -347,8 +357,10 @@ prescribes. Datadog's dedicated Electron SDK is alpha, requires Electron 39 or
 newer, and does not replace the Browser SDK — it still needs it in every
 renderer and only bridges the telemetry through the main process.
 
-[electron-guide]: https://docs.datadoghq.com/real_user_monitoring/guide/monitor-electron-applications-using-browser-sdk/ The app sets `service: droidex` and `env: production` itself, so no
-further configuration is needed in Datadog.
+The app sets `service: droidex` and `env: production` itself, so no further
+configuration is needed in Datadog.
+
+[electron-guide]: https://docs.datadoghq.com/real_user_monitoring/guide/monitor-electron-applications-using-browser-sdk/
 
 ### Reading the numbers
 
@@ -370,8 +382,8 @@ are excluded, and count `@usr.id`, which is the installation ID.
       @action.name:install_first_launch @context.distribution_channel:release @context.install_origin:new_install
       → unique count of @usr.id, 1-day rollup
 
-  Splitting by `@context.install_origin` separates genuinely new users from the
-  existing base migrating onto an instrumented build.
+  Splitting by `@context.install_origin` separates first runs against a fresh
+  profile from the existing base migrating onto an instrumented build.
 
 - **Breakdown by version, platform, and architecture** — the total-installations
   query grouped by `@context.app_version`, `@context.platform`, and
