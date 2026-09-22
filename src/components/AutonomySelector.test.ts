@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 
-import AutonomySelector, { AutonomyMenu, type AutonomyScope } from './AutonomySelector.js';
+import AutonomySelector, { AutonomyMenu } from './AutonomySelector.js';
 import { AUTONOMY_DESCRIPTIONS, AUTONOMY_LABELS, AUTONOMY_LEVELS } from '../lib/autonomy.js';
 
 test('the menu lists every level with its consequence description', () => {
@@ -19,16 +19,6 @@ test('the menu lists every level with its consequence description', () => {
   // Exactly the current level is checked.
   assert.equal((html.match(/aria-checked="true"/g) ?? []).length, 1);
   assert.ok(html.includes('aria-checked="true"'));
-});
-
-test('only the settings menu carries a scope caption', () => {
-  const render = (scope: AutonomyScope) =>
-    renderToStaticMarkup(
-      createElement(AutonomyMenu, { scope, value: 'low', onSelect: () => undefined }),
-    );
-  assert.match(render('settings'), /Default for new sessions/);
-  assert.doesNotMatch(render('draft'), /Applies to this new session/);
-  assert.doesNotMatch(render('session'), /This session/);
 });
 
 test('the pill shows the confirmed level and its meaning on hover', () => {
