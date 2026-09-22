@@ -1,19 +1,16 @@
 import { useEffect, useRef } from 'react';
-import { bridge } from '../../lib/bridge';
 import { notify } from '../../lib/desktop';
 import { isAppInForeground } from '../../lib/finishNotifications';
 import { useStoreApi } from '../../hooks/useStore';
-import type { ServerEvent } from '../../types/bridge';
-import type { ProjectView } from './types';
 
 /* A project runs while the user is somewhere else, so a thread that stops for
    an approval or a question would otherwise wait unseen. One banner per block,
    naming the thread and its project; clicking it opens that conversation, and
    the chat already on screen never raises one.
 
-   This watches the bridge and reads the store imperatively: a notifier renders
-   nothing, and subscribing the whole app to every project snapshot would cost a
-   re-render for work no one sees. */
+   This reads the store imperatively rather than selecting from it: a notifier
+   renders nothing, and subscribing the whole app to every project snapshot
+   would cost a re-render for work no one sees. */
 
 type Blocked = 'approval' | 'question';
 
@@ -24,14 +21,15 @@ const LEAD: Record<Blocked, string> = {
 
 export function useThreadAttentionNotifications(enabled: boolean): void {
   const store = useStoreApi();
-  const projects = useRef<ProjectView[]>([]);
   const notified = useRef<Set<string>>(new Set());
 
   useEffect(() => {
     if (!enabled) return undefined;
     const review = () => {
       const state = store.getState();
-      for (const project of projects.current) {
+      // Read from the store, which already holds the snapshot: a copy of its own
+      // would start empty and stay empty until the next snapshot happened by.
+      for (const project of state.projects) {
         for (const thread of project.threads) {
           if (!thread.ownerAppSessionId) continue;
           const kind = blockedOn(state, thread.appSessionId);
@@ -53,15 +51,8 @@ export function useThreadAttentionNotifications(enabled: boolean): void {
         }
       }
     };
-    const unsubscribeBridge = bridge.subscribe((event: ServerEvent) => {
-      if (event.type === 'projects.snapshot') projects.current = event.projects;
-      review();
-    });
-    const unsubscribeStore = store.subscribe(review);
-    return () => {
-      unsubscribeBridge();
-      unsubscribeStore();
-    };
+    review();
+    return store.subscribe(review);
   }, [enabled, store]);
 }
 
