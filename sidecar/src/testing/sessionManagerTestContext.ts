@@ -79,6 +79,7 @@ export interface SessionManagerTestContext {
     command: Omit<Extract<Protocol.ClientCommand, { type: 'session.create' }>, 'type'>,
   ): Promise<void>;
   retireIdleSessionRuntimes(): Promise<void>;
+  warmSelectedSessionRuntime(): Promise<void>;
   scanAgentProcesses(): Promise<void>;
   shutdown(): Promise<void>;
   waitForIdle(): Promise<void>;
@@ -268,6 +269,7 @@ export function createSessionManagerTestContext(
     deliverScheduledMessage: manager.deliverScheduledMessage.bind(manager),
     create: (command) => handle({ type: 'session.create', ...command }),
     retireIdleSessionRuntimes: () => manager.retireIdleSessionRuntimes(),
+    warmSelectedSessionRuntime: () => manager.warmSelectedSessionRuntime(),
     scanAgentProcesses: () => manager.scanAgentProcesses(),
     shutdown: () => manager.shutdown(),
     waitForIdle: () => new Promise((resolve) => setImmediate(resolve)),

@@ -94,6 +94,7 @@ import {
   SESSION_RUNTIME_IDLE_RETIREMENT_MS,
   SessionRuntimeRetirement,
 } from './sessionRuntimeRetirement.js';
+import { SessionRuntimeWarmUp } from './sessionRuntimeWarmUp.js';
 import { MissionControlPolicy } from './MissionControlPolicy.js';
 import { normalizeCompactionTokenLimit } from './compaction.js';
 import type { HotPathResourceCounts } from './telemetry/hotPathMetrics.js';
@@ -250,6 +251,7 @@ export class SessionManager {
   private readonly missionControlPolicy: MissionControlPolicy;
   private readonly lifecycle: SessionLifecycle;
   private readonly runtimeRetirement: SessionRuntimeRetirement;
+  private readonly runtimeWarmUp: SessionRuntimeWarmUp;
   private readonly adoption: SessionAdoption;
   private readonly agentProcesses: AgentProcessMonitor;
   private readonly sessionFiles: SessionFileServing;
@@ -650,6 +652,12 @@ export class SessionManager {
       idleMs: limits.sessionRuntimeIdleMs,
       now: Date.now,
     });
+    this.runtimeWarmUp = new SessionRuntimeWarmUp({
+      ready: () => this.sessionFiles.whenBootReconciled(),
+      isResumable: (id) => this.registry.getCanonicalSummary(id) !== undefined,
+      isLive: (id) => this.registry.getLive(id) !== undefined,
+      resume: (id) => this.lifecycle.resume(id),
+    });
     this.adoption = new SessionAdoption({
       journal: new LiveRuntimeJournal(liveRuntimeJournalPath(droidexUserDataDir())),
       registry: this.registry,
@@ -725,6 +733,12 @@ export class SessionManager {
   // Runs on its own idle timer; exposed so callers can force the sweep.
   retireIdleSessionRuntimes(): Promise<void> {
     return this.runtimeRetirement.sweep();
+  }
+
+  // Start the selected chat's runtime now instead of waiting out the delay that
+  // keeps a scroll through the sidebar from opening one per row.
+  warmSelectedSessionRuntime(): Promise<void> {
+    return this.runtimeWarmUp.flush();
   }
 
   // Runs on its own tick while a session is tracked; exposed so callers can
@@ -935,6 +949,10 @@ export class SessionManager {
         const previouslyFocused = this.context.focusedSession();
         this.context.setBackgroundWork(cmd.tier, cmd.focusedAppSessionId);
         this.runtimeRetirement.noteFocus(previouslyFocused);
+        // Only a change of chat is a new selection; the tier moves on its own
+        // whenever the window is hidden or the machine goes on battery.
+        const focused = this.context.focusedSession();
+        if (focused !== previouslyFocused) this.runtimeWarmUp.selected(focused);
         return;
       }
       case 'settings.agent.update':
@@ -1801,6 +1819,7 @@ export class SessionManager {
   private async performShutdown(): Promise<void> {
     this.historyQueries.forget();
     this.runtimeRetirement.stop();
+    this.runtimeWarmUp.stop();
     this.providerProbes.cancel();
     let firstError: unknown;
     const run = async (action: () => void | Promise<void>): Promise<void> => {

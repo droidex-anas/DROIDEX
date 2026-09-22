@@ -411,6 +411,73 @@ test('a retired session reopens on the next prompt with its history intact', asy
   }
 });
 
+test('selecting a retired chat starts its runtime again before any prompt', async () => {
+  const h = createSessionManagerTestContext({ sessionRuntimeIdleMs: 0 });
+  try {
+    const session = await openIdleSession(h, 'reselected');
+    writeProviderConversation(h.home, session.providerSessionId, 'reselected');
+    await focusElsewhere(h);
+    await h.retireIdleSessionRuntimes();
+    assert.deepEqual(providerClosures(h), [session.providerSessionId]);
+
+    await focusOn(h, session.appSessionId);
+    await h.warmSelectedSessionRuntime();
+
+    assert.deepEqual(
+      h.runtime.loadCalls.map((call) => call.sessionId),
+      [session.providerSessionId],
+      'selecting the chat reloads its runtime without waiting for a prompt',
+    );
+    assert.deepEqual(
+      h.provider.session(session.providerSessionId).prompts,
+      [],
+      'a warm-up must not start a turn',
+    );
+    assert.deepEqual(
+      appendedEvents(h)
+        .filter(({ event }) => event.appSessionId === session.appSessionId)
+        .map(({ event }) => event.text ?? '')
+        .filter((text) => /Starting|Resuming|warm/i.test(text)),
+      [],
+      'a warm-up must not write a row into the transcript',
+    );
+
+    await h.handle({ type: 'session.send', appSessionId: session.appSessionId, text: 'instant' });
+    await h.provider.waitForPrompts(session.providerSessionId, 1);
+    assert.deepEqual(
+      h.runtime.loadCalls.map((call) => call.sessionId),
+      [session.providerSessionId],
+      'the send reuses the warmed runtime rather than reloading it again',
+    );
+  } finally {
+    await h.dispose();
+  }
+});
+
+test('a chat the user passed over on the way to another is never warmed', async () => {
+  const h = createSessionManagerTestContext({ sessionRuntimeIdleMs: 0 });
+  try {
+    const passed = await openIdleSession(h, 'passed-over');
+    const opened = await openIdleSession(h, 'opened');
+    writeProviderConversation(h.home, passed.providerSessionId, 'passed-over');
+    writeProviderConversation(h.home, opened.providerSessionId, 'opened');
+    await focusElsewhere(h);
+    await h.retireIdleSessionRuntimes();
+
+    await focusOn(h, passed.appSessionId);
+    await focusOn(h, opened.appSessionId);
+    await h.warmSelectedSessionRuntime();
+
+    assert.deepEqual(
+      h.runtime.loadCalls.map((call) => call.sessionId),
+      [opened.providerSessionId],
+      'only the chat the selection settled on is worth a process',
+    );
+  } finally {
+    await h.dispose();
+  }
+});
+
 test('a prompt that lands while the runtime is being released still reaches the session', async () => {
   const h = createSessionManagerTestContext({ sessionRuntimeIdleMs: 0 });
   try {
