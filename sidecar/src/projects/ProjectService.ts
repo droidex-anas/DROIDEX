@@ -458,8 +458,14 @@ export class ProjectService {
     if (project) await this.setPaused(project.id, true);
   }
 
-  observe(event: ServerEvent): Promise<void> {
-    return this.closed ? Promise.resolve() : this.turns.observe(event);
+  async observe(event: ServerEvent): Promise<void> {
+    if (this.closed) return;
+    await this.turns.observe(event);
+    // A released runtime hands back a scheduled slot, which is exactly what a
+    // delivery parked on capacity is waiting for. Nothing else announces it:
+    // the capacity hook fires for a resume that produced no runtime, not for a
+    // session that closed.
+    if (event.type === 'session.closed') this.capacityChanged();
   }
 
   sessionAvailable(appSessionId: string): void {
