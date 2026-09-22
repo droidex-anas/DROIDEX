@@ -179,7 +179,7 @@ function SliderRow({
             e.stopPropagation();
             onDrill();
           }}
-          className={`flex h-6 shrink-0 items-center gap-0.5 rounded-md px-1.5 text-[11px] transition-colors hover:bg-droid-bg/70 ${
+          className={`flex h-6 shrink-0 items-center gap-0.5 rounded-md px-1.5 text-[11px] transition-colors hover:bg-droid-bg/60 ${
             drillUltra ? 'text-droid-ultra' : 'text-droid-text-secondary hover:text-droid-text'
           }`}
         >

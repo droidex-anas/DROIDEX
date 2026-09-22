@@ -79,7 +79,7 @@ export default function EffortHelpCard({
           className="pointer-events-none fixed z-[200] rounded-xl border border-droid-border/60 bg-droid-elevated px-3.5 py-3 shadow-droid"
         >
           <div className="text-[13px] font-medium text-droid-text">Effort</div>
-          <p className="mt-1 text-[12px] leading-[18px] text-droid-text-muted">
+          <p className="mt-1 text-[12px] leading-5 text-droid-text-muted">
             Higher effort means more thorough responses, but takes longer and uses your limits
             faster.
           </p>

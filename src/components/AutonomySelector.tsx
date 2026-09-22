@@ -105,7 +105,7 @@ export default function AutonomySelector({
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: POPOVER_OFFSET_Y[placement], scale: 0.98 }}
             transition={{ duration: 0.16, ease: [0.16, 1, 0.3, 1] }}
-            className={`absolute z-50 w-[360px] max-w-[calc(100vw-2rem)] ${POPOVER_PLACEMENT_CLASS[placement]} ${POPOVER_ALIGN_CLASS[align]}`}
+            className={`absolute z-50 w-[360px] ${POPOVER_PLACEMENT_CLASS[placement]} ${POPOVER_ALIGN_CLASS[align]}`}
           >
             <AutonomyMenu
               scope={scope}

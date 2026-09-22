@@ -166,7 +166,7 @@ export default function AddMenu({
         onClick={() => {
           onOpenChange(!open);
         }}
-        className={`grid h-8 w-8 place-items-center rounded-full transition-colors ${
+        className={`flex h-8 w-8 items-center justify-center rounded-full transition-colors ${
           open
             ? 'bg-droid-bg/60 text-droid-text'
             : 'text-droid-text-muted hover:text-droid-text hover:bg-droid-bg/50'

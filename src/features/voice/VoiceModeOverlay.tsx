@@ -7,7 +7,7 @@ import { voiceStatusLabel, type VoiceMode } from './useVoiceMode';
 import { VoiceOrb } from './VoiceOrb';
 
 /** Full-window voice surface, portalled like every overlay in the app. */
-export function VoiceModeOverlay({ voice }: { voice: VoiceMode }) {
+export default function VoiceModeOverlay({ voice }: { voice: VoiceMode }) {
   if (voice.view !== 'full') return null;
   return createPortal(<VoiceModeDialog voice={voice} />, document.body);
 }
@@ -84,7 +84,7 @@ function VoiceModeDialog({ voice }: { voice: VoiceMode }) {
       <header className="flex items-center px-5 py-4">
         <span className="text-[12px] font-medium text-droid-text-muted">Voice</span>
       </header>
-      <div className="flex flex-1 flex-col items-center justify-center gap-10">
+      <div className="flex flex-1 flex-col items-center justify-center" style={{ gap: 40 }}>
         <motion.div
           initial={reducedMotion ? false : { opacity: 0, scale: 0.82 }}
           animate={{ opacity: 1, scale: 1 }}
@@ -96,7 +96,7 @@ function VoiceModeDialog({ voice }: { voice: VoiceMode }) {
           {voiceStatusLabel(voice.muted, voice.micDenied)}
         </p>
       </div>
-      <div className="flex justify-center px-4 pb-10">
+      <div className="flex justify-center px-4" style={{ paddingBottom: 40 }}>
         <div className="flex items-center gap-1 rounded-full border border-droid-border bg-droid-elevated p-1.5 shadow-droid">
           <button
             type="button"

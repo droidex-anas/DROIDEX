@@ -18,7 +18,7 @@ export function VoiceButton({
       aria-label="Start voice mode"
       aria-hidden={parked || undefined}
       tabIndex={parked ? -1 : undefined}
-      className="grid h-8 w-8 place-items-center rounded-full bg-droid-text text-droid-bg transition-opacity hover:opacity-90 focus-visible:outline focus-visible:outline-droid-border-hover"
+      className="flex h-8 w-8 items-center justify-center rounded-full bg-droid-text text-droid-bg transition-opacity hover:opacity-90 focus-visible:outline focus-visible:outline-droid-border-hover"
     >
       <AudioLines className="h-4 w-4" />
     </button>

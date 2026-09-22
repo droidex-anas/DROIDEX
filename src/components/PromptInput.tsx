@@ -40,9 +40,6 @@ import {
 import { pathsInSequence, useImageAttachments } from '../hooks/useImageAttachments';
 import { useFileAttachments } from '../hooks/useFileAttachments';
 import { useVoiceMode, VOICE_MODE_ENABLED } from '../features/voice/useVoiceMode';
-import { VoiceButton } from '../features/voice/VoiceButton';
-import { VoiceDock } from '../features/voice/VoiceDock';
-import { VoiceModeOverlay } from '../features/voice/VoiceModeOverlay';
 import { useComposerFileDrop } from '../hooks/useComposerFileDrop';
 import { ImageChip } from './composer/ImageChip';
 import { FileChip } from './composer/FileChip';
@@ -107,8 +104,6 @@ import { useDraftEditing } from './composer/useDraftEditing';
 import type { ComposerHandle } from './composer/ComposerEditor';
 import { DraftSelections } from './composer/DraftSelections';
 import ComposerMenu, { type SlashCommand } from './ComposerMenu';
-import ModelSelectorPopover from './ModelSelectorPopover';
-import ModelSliderPopover from './ModelSliderPopover';
 import { effectiveProvider } from '../features/providers/providerDraft';
 import {
   providerDefaultModel,
@@ -138,6 +133,15 @@ import { toast } from '../lib/toast';
 const ComposerEditor = lazy(() => import('./composer/ComposerEditor'));
 const SchedulePromptPopover = lazy(() => import('../features/automations/SchedulePromptPopover'));
 const ScheduledPrompts = lazy(() => import('../features/automations/ScheduledPrompts'));
+// The model pickers open on demand; hovering the chip starts the download so
+// the first open does not wait on it.
+const loadModelSliderPopover = () => import('./ModelSliderPopover');
+const loadModelSelectorPopover = () => import('./ModelSelectorPopover');
+const ModelSliderPopover = lazy(loadModelSliderPopover);
+const ModelSelectorPopover = lazy(loadModelSelectorPopover);
+const VoiceSendSlot = lazy(() => import('../features/voice/VoiceSendSlot'));
+const VoiceDock = lazy(() => import('../features/voice/VoiceDock'));
+const VoiceModeOverlay = lazy(() => import('../features/voice/VoiceModeOverlay'));
 
 // Stable identity for a closed menu, so no trigger means no new object.
 const EMPTY_COMPOSER_MENU: ComposerMenuModel = { entries: [], rows: [] };
@@ -1550,7 +1554,7 @@ export default function PromptInput({
 
   const boxBorder = isSpecMode
     ? 'border-droid-orange/40 hover:border-droid-orange/60 focus-within:border-droid-orange/60'
-    : 'border-droid-border hover:border-droid-border-hover focus-within:border-droid-border-hover focus-within:shadow-[0_0_0_3px_color-mix(in_srgb,var(--droid-text)_5%,transparent)]';
+    : 'border-droid-border hover:border-droid-border-hover focus-within:border-droid-border-hover composer-focus-ring';
 
   const viewerImage = imageAttachments.images.find((i) => i.id === viewerImageId) ?? null;
   // Files attached as paths (the @ menu, the picker, or a queued prompt brought
@@ -1591,6 +1595,31 @@ export default function PromptInput({
   useEffect(() => {
     if (!isLive || !hasContent || turnStarting) setSendHintOpen(false);
   }, [isLive, hasContent, turnStarting]);
+
+  const sendButton = (
+    <ComposerSendButton
+      parked={!showSendAction}
+      starting={turnStarting}
+      live={isLive}
+      hasContent={hasContent}
+      disabled={!childActionsEnabled || runtimeActionsBlocked}
+      title={
+        appUpdateInstalling
+          ? 'Installing DROIDEX update'
+          : runtimeReady
+            ? idleSendTooltip
+            : 'Agent runtime is unavailable'
+      }
+      enterSteers={enterSteers}
+      hintOpen={sendHintOpen}
+      onHintOpenChange={setSendHintOpen}
+      onSend={() => void handleSubmit(isLive && enterSteers ? 'now' : 'queue')}
+      onStop={() => {
+        if (activeSession)
+          interruptVisibleSession(activeSession.appSessionId, targetChildSessionId);
+      }}
+    />
+  );
 
   return (
     <div
@@ -1651,17 +1680,25 @@ export default function PromptInput({
         )}
 
         {showStartIn && (
-          <div className="relative z-0 mx-[6%] -mb-3 min-w-0 rounded-t-[20px] border border-droid-border bg-droid-surface px-4 pb-4 pt-1.5">
+          <div
+            className="relative z-0 mx-[6%] -mb-3 min-w-0 border border-droid-border bg-droid-surface px-4 pb-4 pt-1.5"
+            // The composer's own 20px corner, carried onto the tab above it.
+            style={{ borderTopLeftRadius: 20, borderTopRightRadius: 20 }}
+          >
             <StartInBar />
           </div>
         )}
 
         <ComposerDock />
 
-        <VoiceDock voice={voice} />
+        {voice.view === 'compact' && (
+          <Suspense fallback={null}>
+            <VoiceDock voice={voice} />
+          </Suspense>
+        )}
 
         <div
-          className={`relative z-10 bg-droid-elevated border rounded-[20px] transition-[border-color,box-shadow] ${missionPreview ? '' : boxBorder}`}
+          className={`relative z-10 bg-droid-elevated border rounded-[20px] composer-frame ${missionPreview ? '' : boxBorder}`}
           style={
             missionPreview
               ? {
@@ -1874,6 +1911,11 @@ export default function PromptInput({
             <div className="flex min-w-0 flex-auto items-center justify-end gap-1">
               <div className="relative shrink-0">
                 <button
+                  onPointerEnter={() => {
+                    void (state.modelSelectorStyle === 'slider'
+                      ? loadModelSliderPopover()
+                      : loadModelSelectorPopover());
+                  }}
                   onClick={() => {
                     setModelsOpen((v) => !v);
                   }}
@@ -1932,26 +1974,28 @@ export default function PromptInput({
                 </button>
 
                 <AnimatePresence>
-                  {modelsOpen &&
-                    // The slider style is a chat-composer picker; Mission Control
-                    // and exact-child editors keep the classic popover's semantics.
-                    (state.modelSelectorStyle === 'slider' &&
-                    !missionPreview &&
-                    !childSettingsTarget ? (
-                      <ModelSliderPopover
-                        onClose={() => {
-                          setModelsOpen(false);
-                        }}
-                      />
-                    ) : (
-                      <ModelSelectorPopover
-                        onClose={() => {
-                          setModelsOpen(false);
-                        }}
-                        singleAgent={!missionPreview}
-                        childTarget={childSettingsTarget}
-                      />
-                    ))}
+                  <Suspense fallback={null}>
+                    {modelsOpen &&
+                      // The slider style is a chat-composer picker; Mission Control
+                      // and exact-child editors keep the classic popover's semantics.
+                      (state.modelSelectorStyle === 'slider' &&
+                      !missionPreview &&
+                      !childSettingsTarget ? (
+                        <ModelSliderPopover
+                          onClose={() => {
+                            setModelsOpen(false);
+                          }}
+                        />
+                      ) : (
+                        <ModelSelectorPopover
+                          onClose={() => {
+                            setModelsOpen(false);
+                          }}
+                          singleAgent={!missionPreview}
+                          childTarget={childSettingsTarget}
+                        />
+                      ))}
+                  </Suspense>
                 </AnimatePresence>
               </div>
 
@@ -1967,56 +2011,21 @@ export default function PromptInput({
                   onClick={() => {
                     setScheduleTarget({ appSessionId: activeSession.appSessionId });
                   }}
-                  className="grid h-8 w-8 place-items-center rounded-full text-droid-text-muted transition-colors hover:bg-droid-bg/40 hover:text-droid-text focus-visible:outline focus-visible:outline-droid-border-hover disabled:opacity-30"
+                  className="flex h-8 w-8 items-center justify-center rounded-full text-droid-text-muted transition-colors hover:bg-droid-bg/40 hover:text-droid-text focus-visible:outline focus-visible:outline-droid-border-hover disabled:opacity-30"
                 >
                   <Clock className="h-3.5 w-3.5" />
                 </button>
               )}
 
-              {/* Voice and send share one slot; the draft decides which is on
-                  stage. Both stay mounted so the swap is transform-only, and
-                  the parked one drops out of focus and hit-testing. */}
-              <div className="relative h-8 w-8 shrink-0">
-                {VOICE_MODE_ENABLED && (
-                  <div
-                    className={`absolute inset-0 transition-[transform,opacity] duration-200 ease-[cubic-bezier(0.16,1,0.3,1)] motion-reduce:transform-none motion-reduce:transition-none ${
-                      showSendAction
-                        ? 'pointer-events-none -translate-y-3 scale-[0.6] opacity-0'
-                        : ''
-                    }`}
-                  >
-                    <VoiceButton parked={showSendAction} onClick={voice.start} />
-                  </div>
-                )}
-                <div
-                  className={`absolute inset-0 transition-[transform,opacity] duration-200 ease-[cubic-bezier(0.16,1,0.3,1)] motion-reduce:transform-none motion-reduce:transition-none ${
-                    showSendAction ? '' : 'pointer-events-none translate-y-3 scale-[0.6] opacity-0'
-                  }`}
-                >
-                  <ComposerSendButton
-                    parked={!showSendAction}
-                    starting={turnStarting}
-                    live={isLive}
-                    hasContent={hasContent}
-                    disabled={!childActionsEnabled || runtimeActionsBlocked}
-                    title={
-                      appUpdateInstalling
-                        ? 'Installing DROIDEX update'
-                        : runtimeReady
-                          ? idleSendTooltip
-                          : 'Agent runtime is unavailable'
-                    }
-                    enterSteers={enterSteers}
-                    hintOpen={sendHintOpen}
-                    onHintOpenChange={setSendHintOpen}
-                    onSend={() => void handleSubmit(isLive && enterSteers ? 'now' : 'queue')}
-                    onStop={() => {
-                      if (activeSession)
-                        interruptVisibleSession(activeSession.appSessionId, targetChildSessionId);
-                    }}
-                  />
-                </div>
-              </div>
+              {VOICE_MODE_ENABLED ? (
+                <Suspense fallback={sendButton}>
+                  <VoiceSendSlot showSend={showSendAction} onVoice={voice.start}>
+                    {sendButton}
+                  </VoiceSendSlot>
+                </Suspense>
+              ) : (
+                sendButton
+              )}
             </div>
           </div>
         </div>
@@ -2078,7 +2087,11 @@ export default function PromptInput({
             />
           </Suspense>
         )}
-      <VoiceModeOverlay voice={voice} />
+      {voice.view === 'full' && (
+        <Suspense fallback={null}>
+          <VoiceModeOverlay voice={voice} />
+        </Suspense>
+      )}
     </div>
   );
 }

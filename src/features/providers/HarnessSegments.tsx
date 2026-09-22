@@ -26,6 +26,10 @@ function segmentTone(selected: boolean, unavailable: boolean): string {
  * the rail: a live chat keeps the harness it was created on, and a harness
  * with no usable status is not pickable yet.
  */
+// One px inside the track's 10px corner; inline so the one-off radius does not
+// add a utility to the app stylesheet.
+const SEGMENT_RADIUS = { borderRadius: 9 } as const;
+
 export default function HarnessSegments({
   provider,
   statuses,
@@ -67,14 +71,15 @@ export default function HarnessSegments({
               onClick={() => {
                 if (!selected) onSelect(kind);
               }}
-              className={`relative flex h-7 flex-1 items-center justify-center rounded-[9px] text-[11px] font-medium transition-colors ${segmentTone(selected, unavailable)}`}
+              className={`relative flex h-7 flex-1 items-center justify-center text-[11px] font-medium transition-colors ${segmentTone(selected, unavailable)}`}
+              style={SEGMENT_RADIUS}
             >
               {selected && (
                 <motion.span
                   layoutId="model-slider-harness-pill"
                   aria-hidden
-                  className="absolute inset-0 rounded-[9px] bg-droid-surface"
-                  style={{ boxShadow: `inset 0 0 0 1px ${accentMix(33)}` }}
+                  className="absolute inset-0 bg-droid-surface"
+                  style={{ ...SEGMENT_RADIUS, boxShadow: `inset 0 0 0 1px ${accentMix(33)}` }}
                   transition={{ type: 'spring', stiffness: 520, damping: 38 }}
                 />
               )}

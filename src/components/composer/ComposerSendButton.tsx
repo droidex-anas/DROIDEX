@@ -43,7 +43,7 @@ export function ComposerSendButton({
         title="Starting turn"
         aria-label="Starting turn"
         {...parkedProps}
-        className="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-droid-text text-droid-bg opacity-90"
+        className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-droid-text text-droid-bg opacity-90"
       >
         <Spinner className="h-4 w-4 motion-safe:animate-spin-slow" />
       </button>
@@ -57,7 +57,7 @@ export function ComposerSendButton({
         title="Working — click to stop"
         aria-label="Stop turn"
         {...parkedProps}
-        className="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-droid-text text-droid-bg transition-opacity hover:opacity-90"
+        className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-droid-text text-droid-bg transition-opacity hover:opacity-90"
       >
         <Square className="h-3.5 w-3.5" fill="currentColor" strokeWidth={0} />
       </button>
@@ -113,7 +113,7 @@ export function ComposerSendButton({
         title={title}
         aria-label={live ? (enterSteers ? 'Steer' : 'Queue prompt') : 'Send prompt'}
         {...parkedProps}
-        className="grid h-8 w-8 place-items-center rounded-full bg-droid-text text-droid-bg transition-opacity enabled:hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
+        className="flex h-8 w-8 items-center justify-center rounded-full bg-droid-text text-droid-bg transition-opacity enabled:hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
       >
         <ArrowUp className="h-4 w-4" />
       </button>

@@ -184,7 +184,7 @@ export default function ModelSliderPopover({ onClose }: { onClose: () => void })
       exit={{ opacity: 0, y: 8 }}
       transition={{ duration: 0.16, ease: [0.16, 1, 0.3, 1] }}
       style={{ width, maxHeight }}
-      className="absolute bottom-full right-0 mb-3 max-w-[calc(100vw-2rem)] z-50"
+      className="absolute bottom-full right-0 mb-3 z-50"
     >
       <div
         ref={setCard}
@@ -207,7 +207,7 @@ export default function ModelSliderPopover({ onClose }: { onClose: () => void })
                   onClick={() => {
                     setView('list');
                   }}
-                  className="grid h-6 w-6 shrink-0 place-items-center rounded-md text-droid-text-muted transition-colors hover:bg-droid-surface/60 hover:text-droid-text"
+                  className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-droid-text-muted transition-colors hover:bg-droid-surface/60 hover:text-droid-text"
                 >
                   <ChevronLeft className="h-4 w-4" />
                 </button>
@@ -225,7 +225,7 @@ export default function ModelSliderPopover({ onClose }: { onClose: () => void })
                     onClick={() => {
                       sliderRef.current?.setValue(defaultEffort, { emit: true });
                     }}
-                    className="grid h-6 w-6 shrink-0 place-items-center rounded-md text-droid-text-muted transition-colors hover:bg-droid-surface/60 hover:text-droid-text"
+                    className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-droid-text-muted transition-colors hover:bg-droid-surface/60 hover:text-droid-text"
                   >
                     <RotateCcw className="h-3.5 w-3.5" />
                   </button>

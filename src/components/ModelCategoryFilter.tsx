@@ -63,7 +63,7 @@ export default function ModelCategoryFilter({
         }}
         title="Filter models by category"
         aria-expanded={open}
-        className={`grid h-6 w-6 place-items-center rounded-md transition-colors ${
+        className={`flex h-6 w-6 items-center justify-center rounded-md transition-colors ${
           active ? 'text-droid-text' : 'text-droid-text-muted hover:text-droid-text'
         }`}
         style={

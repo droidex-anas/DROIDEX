@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { motion, useReducedMotion } from 'framer-motion';
 import { ChevronUp, Mic, MicOff, X } from 'lucide-react';
 import { voiceStatusLabel, type VoiceMode } from './useVoiceMode';
 import { VoiceOrb } from './VoiceOrb';
@@ -10,8 +11,9 @@ const ghostClass =
  * Compact voice surface: a dock above the composer so the transcript and tool
  * calls stay visible while voice is running.
  */
-export function VoiceDock({ voice }: { voice: VoiceMode }) {
+export default function VoiceDock({ voice }: { voice: VoiceMode }) {
   const [nowMs, setNowMs] = useState(() => Date.now());
+  const reducedMotion = useReducedMotion();
 
   useEffect(() => {
     if (voice.view !== 'compact') return;
@@ -26,7 +28,12 @@ export function VoiceDock({ voice }: { voice: VoiceMode }) {
   if (voice.view !== 'compact') return null;
 
   return (
-    <div className="mb-2 flex items-center gap-3 rounded-2xl border border-droid-border bg-droid-elevated px-3 py-2 shadow-droid motion-safe:animate-slide-up">
+    <motion.div
+      initial={reducedMotion ? false : { opacity: 0, y: 8 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.3, ease: [0.16, 1, 0.3, 1] }}
+      className="mb-2 flex items-center gap-3 rounded-2xl border border-droid-border bg-droid-elevated px-3 py-2 shadow-droid"
+    >
       <VoiceOrb stream={voice.micStream} size={34} />
       <div className="min-w-0 flex-1">
         <div className="text-[12px] leading-tight text-droid-text">
@@ -70,7 +77,7 @@ export function VoiceDock({ voice }: { voice: VoiceMode }) {
           <X className="h-3.5 w-3.5" />
         </button>
       </div>
-    </div>
+    </motion.div>
   );
 }
 

@@ -7,6 +7,10 @@ import { useReducedMotion } from 'framer-motion';
  * transforms straight to the DOM, so 60fps audio reactivity never re-renders
  * React. Without a mic stream it breathes slowly instead of going flat.
  */
+
+// Inline rather than utilities: the orb renders only while voice is on, so its
+// one-off effects should not ship in every window's stylesheet.
+const GLOW_BLOB = { mixBlendMode: 'screen', filter: 'blur(24px)' } as const;
 export function VoiceOrb({ stream, size = 240 }: { stream: MediaStream | null; size?: number }) {
   const blobsRef = useRef<HTMLDivElement>(null);
   const sphereRef = useRef<HTMLDivElement>(null);
@@ -86,8 +90,9 @@ export function VoiceOrb({ stream, size = 240 }: { stream: MediaStream | null; s
       >
         <div ref={blobsRef} aria-hidden className="absolute" style={{ inset: '-15%' }}>
           <div
-            className="absolute rounded-full mix-blend-screen blur-xl"
+            className="absolute rounded-full"
             style={{
+              ...GLOW_BLOB,
               width: '55%',
               height: '55%',
               left: '-4%',
@@ -97,8 +102,9 @@ export function VoiceOrb({ stream, size = 240 }: { stream: MediaStream | null; s
             }}
           />
           <div
-            className="absolute rounded-full mix-blend-screen blur-xl"
+            className="absolute rounded-full"
             style={{
+              ...GLOW_BLOB,
               width: '60%',
               height: '60%',
               right: '-6%',
@@ -110,8 +116,9 @@ export function VoiceOrb({ stream, size = 240 }: { stream: MediaStream | null; s
         </div>
         <div
           aria-hidden
-          className="absolute inset-0 rounded-full mix-blend-screen"
+          className="absolute inset-0 rounded-full"
           style={{
+            mixBlendMode: 'screen',
             background:
               'radial-gradient(circle at 32% 26%, rgb(255 255 255 / 0.85), transparent 45%)',
           }}

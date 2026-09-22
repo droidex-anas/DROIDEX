@@ -150,7 +150,7 @@ export default function ModelSelectorPopover({
       exit={{ opacity: 0, y: 8 }}
       transition={{ duration: 0.16, ease: [0.16, 1, 0.3, 1] }}
       style={{ width, maxHeight }}
-      className="absolute bottom-full right-0 mb-3 max-w-[calc(100vw-2rem)] z-50"
+      className="absolute bottom-full right-0 mb-3 z-50"
     >
       <div className="flex max-h-[inherit] flex-col overflow-hidden rounded-2xl border border-droid-border/60 bg-droid-elevated shadow-droid">
         <div className="flex min-h-0 flex-1">
