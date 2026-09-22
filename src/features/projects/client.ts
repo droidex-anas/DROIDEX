@@ -79,6 +79,12 @@ function handleEvent(event: ServerEvent): void {
     bridge.send({ type: 'projects.list' });
     return;
   }
+  // A graph that arrives is the runtime answering, which retires whatever it
+  // last failed at; without this one bad load reads as broken for good.
+  if (event.type === 'projects.snapshot') {
+    failure = '';
+    return;
+  }
   if (event.type === 'error' && event.code?.startsWith('project.')) {
     failure = event.message;
     return;

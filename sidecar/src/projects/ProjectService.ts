@@ -44,6 +44,8 @@ export interface ProjectPort {
     isCurrent: () => boolean,
   ): Promise<AutomationDeliveryReceipt>;
   interrupt(appSessionId: string): Promise<void>;
+  /** Whether a question routed to an owner is still waiting on its thread. */
+  isAsking(appSessionId: string, requestId: string): boolean;
   /** Retunes a live thread, the way the composer's own controls do. */
   configure(appSessionId: string, settings: ThreadSettings): Promise<void>;
   /** Answers a question a thread is blocked on; false when it was already settled. */
@@ -96,6 +98,7 @@ export class ProjectService {
     );
     this.turns = new ProjectTurns({
       project: (appSessionId) => this.membership.get(appSessionId),
+      isAsking: (appSessionId, requestId) => sessions.isAsking(appSessionId, requestId),
       enqueue: (project, from, to, kind, text) => {
         this.enqueue(project, from, to, kind, text);
       },

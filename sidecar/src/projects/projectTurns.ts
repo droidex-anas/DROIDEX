@@ -14,6 +14,8 @@ export type ThreadState = 'working' | 'waiting' | 'stopped' | 'failed' | 'idle';
 interface ProjectTurnsDependencies {
   /** The project a conversation belongs to, if it belongs to one. */
   project: (appSessionId: string) => Project | undefined;
+  /** Whether the question a thread was routed from is still waiting. */
+  isAsking: (appSessionId: string, requestId: string) => boolean;
   enqueue: (
     project: Project,
     from: string,
@@ -51,6 +53,7 @@ export class ProjectTurns {
     }
     if (event.type === 'session.closed') {
       this.activity.finish(event.appSessionId);
+      await this.forgetAsk(event.appSessionId);
       return;
     }
     if (event.type !== 'session.updated' && event.type !== 'session.created') return;
@@ -66,8 +69,15 @@ export class ProjectTurns {
     if (!project) return;
     const thread = requireThread(project, session.appSessionId);
     if (session.streaming) {
-      if (this.activity.open(session.appSessionId) && clearAsk(project, thread))
+      const opened = this.activity.open(session.appSessionId);
+      // A question answered in the thread itself settles without an event, and
+      // the turn carries on: checking it here is what lets the answer given
+      // first win, instead of the owner being told to answer it all turn.
+      const settled = thread.ask && !this.d.isAsking(thread.appSessionId, thread.ask.requestId);
+      if ((opened || settled) && clearAsk(project, thread)) {
         await this.d.save();
+        this.d.wakes.kick(project);
+      }
       return;
     }
     const turn = this.activity.finish(session.appSessionId);
@@ -168,6 +178,15 @@ export class ProjectTurns {
     if (!project || thread?.ask?.requestId !== requestId) return;
     clearAsk(project, thread);
     await this.d.save();
+  }
+
+  /** Whatever the thread was waiting on, it is not waiting any more. */
+  private async forgetAsk(appSessionId: string): Promise<void> {
+    const project = this.d.project(appSessionId);
+    const thread = project?.threads.find((candidate) => candidate.appSessionId === appSessionId);
+    if (!project || !thread || !clearAsk(project, thread)) return;
+    await this.d.save();
+    this.d.wakes.kick(project);
   }
 }
 

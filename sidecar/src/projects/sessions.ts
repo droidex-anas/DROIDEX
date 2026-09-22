@@ -15,6 +15,7 @@ type Host = Pick<
   | 'handle'
   | 'sessionSummary'
   | 'isSessionLive'
+  | 'isQuestionPending'
   | 'deliverScheduledMessage'
   | 'providerCatalog'
   | 'answerQuestion'
@@ -75,6 +76,10 @@ export class ProjectSessions implements ProjectPort {
 
   deliver(appSessionId: string, prompt: string, isCurrent: () => boolean) {
     return this.host.deliverScheduledMessage(appSessionId, prompt, isCurrent);
+  }
+
+  isAsking(appSessionId: string, requestId: string): boolean {
+    return this.host.isQuestionPending(appSessionId, requestId);
   }
 
   configure(appSessionId: string, settings: ThreadSettings): Promise<void> {
