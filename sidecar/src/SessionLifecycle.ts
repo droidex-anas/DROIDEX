@@ -39,6 +39,7 @@ import {
 } from './sessionHelpers.js';
 import type { ProviderInteractions } from './providers/interactions.js';
 import { requireProviderKind, type ProviderKind } from './providers/providerKind.js';
+import type { PrimaryTurnRequest } from './providers/primaryTurn.js';
 import { droidSessionOf } from './providers/droid/DroidProviderSession.js';
 import type { Provider, ProviderSession } from './providers/session.js';
 
@@ -79,6 +80,8 @@ export interface StartedLocalMcpResources {
 interface SessionPrompt {
   text: string;
   mentions?: ProviderMention[];
+  // See PrimaryTurnRequest.notice: set for a turn the app owes the chat.
+  notice?: string;
 }
 
 interface LiveTurnState {
@@ -143,12 +146,7 @@ export interface SessionLifecycleDependencies {
   applyPendingSettingsToSummary: (summary: SessionSummary) => SessionSummary;
   applyPendingSessionSettings: (appSessionId: string) => Promise<boolean>;
   waitForSettingsMutations?: (appSessionId: string) => Promise<void>;
-  runPrimaryTurn: (
-    liveSession: LiveSession,
-    prompt: string,
-    mentions?: ProviderMention[],
-    delivery?: ScheduledTurnDelivery,
-  ) => Promise<void>;
+  runPrimaryTurn: (liveSession: LiveSession, request: PrimaryTurnRequest) => Promise<void>;
   eventFlow: Pick<SessionEventFlow, 'apply'>;
   context: Pick<SessionContext, 'refresh' | 'stopPolling' | 'stopSession' | 'forgetSession'>;
   hasPendingInteractions: (appSessionId: string) => boolean;
@@ -617,6 +615,21 @@ export class SessionLifecycle {
     if (this.dependencies.registry.getLive(appSessionId) === liveSession)
       this.dependencies.recordPrompt(appSessionId, prompt.text);
     return 'taken';
+  }
+
+  /** One turn the app owes a chat whose agents have all stopped. No harness
+      wakes an idle parent when a background agent finishes, so without this the
+      results reach nobody and the chat sleeps on. The turn is dropped rather
+      than queued: a chat that is busy, or that already has a prompt waiting,
+      learns the same thing from the turn it is about to run. Mission control
+      drives its own agents and needs no nudge. */
+  async wakeForSettledAgents(appSessionId: string, prompt: string, notice: string): Promise<void> {
+    const liveSession = this.dependencies.registry.getLive(appSessionId);
+    if (!liveSession || liveSession.closeMode) return;
+    if (liveSession.summary.sessionPurpose === 'mission-control') return;
+    if (liveSession.streaming || liveSession.compacting || liveSession.autoCompacting) return;
+    if (liveSession.pendingSends.length > 0) return;
+    await this.drive(liveSession.summary.appSessionId, { text: prompt, notice });
   }
 
   async interrupt(requestedAppSessionId: string): Promise<void> {
@@ -1091,12 +1104,12 @@ export class SessionLifecycle {
         streaming: true,
         queuedSends: liveSession.pendingSends.length,
       });
-      liveSession.turnPromise = d.runPrimaryTurn(
-        liveSession,
-        prompt.text,
-        prompt.mentions,
-        delivery,
-      );
+      liveSession.turnPromise = d.runPrimaryTurn(liveSession, {
+        prompt: prompt.text,
+        ...(prompt.mentions ? { mentions: prompt.mentions } : {}),
+        ...(delivery ? { delivery } : {}),
+        ...(prompt.notice ? { notice: prompt.notice } : {}),
+      });
       await liveSession.turnPromise;
     } finally {
       liveSession.turnPromise = undefined;

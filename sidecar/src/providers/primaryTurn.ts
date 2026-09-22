@@ -26,13 +26,21 @@ export interface PrimaryTurnDependencies {
   emitError: (error: Omit<Extract<ServerEvent, { type: 'error' }>, 'type'>) => void;
 }
 
+export interface PrimaryTurnRequest {
+  prompt: string;
+  mentions?: ProviderMention[];
+  delivery?: ScheduledTurnDelivery;
+  // Set when the app, not the user, started this turn. The transcript then gets
+  // this quiet status row instead of a prompt bubble nobody typed.
+  notice?: string;
+}
+
 export async function runPrimaryTurn(
   d: PrimaryTurnDependencies,
   liveSession: LiveSession,
-  prompt: string,
-  mentions?: ProviderMention[],
-  delivery?: ScheduledTurnDelivery,
+  request: PrimaryTurnRequest,
 ): Promise<void> {
+  const { prompt, mentions, delivery, notice } = request;
   const appSessionId = liveSession.summary.appSessionId;
   const context = turnContext(d, d.contextTarget(liveSession));
   if (!d.isCurrent(liveSession)) return;
@@ -44,7 +52,8 @@ export async function runPrimaryTurn(
     : undefined;
   if (delivery && (!d.isCurrent(liveSession) || !preflight || !delivery.isCurrent())) return;
   d.eventFlow.beginTurn(appSessionId, appSessionId);
-  d.timeline.recordPrompt(appSessionId, prompt);
+  if (notice) d.timeline.appendStatus(appSessionId, notice);
+  else d.timeline.recordPrompt(appSessionId, prompt);
   d.context.beginTurn(appSessionId);
   context.startPolling();
   let turnError: unknown;

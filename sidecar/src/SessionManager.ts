@@ -1,5 +1,4 @@
 import type { AutomationDeliveryReceipt } from './automations/types.js';
-import type { ScheduledTurnDelivery } from './sessionAutomationDelivery.js';
 import { type McpServerConfig } from '@factory/droid-sdk';
 import { randomUUID } from 'node:crypto';
 import { tmpdir } from 'node:os';
@@ -11,7 +10,6 @@ import type {
   InstallChannel,
   HistorySearchReply,
   PersistenceRecovery,
-  ProviderMention,
   SessionSummary,
   ModelInfo,
   ReasoningEffort,
@@ -104,7 +102,8 @@ import { loadFactoryMcpServers } from './FactoryMcpConfig.js';
 import { assertValidResponseFormat, formatAppPrompt } from './appPrompt.js';
 import { droidCatalogItems } from './providers/catalog.js';
 import { DroidProvider } from './providers/droid/DroidProvider.js';
-import { runPrimaryTurn } from './providers/primaryTurn.js';
+import { runPrimaryTurn, type PrimaryTurnRequest } from './providers/primaryTurn.js';
+import { agentWakePrompt, AGENT_WAKE_NOTICE } from './childWaveWake.js';
 import {
   assertProviderUnchanged,
   DEFAULT_PROVIDER,
@@ -496,6 +495,13 @@ export class SessionManager {
       interactions: this.interactions,
       context: this.context,
       compaction: this.compaction,
+      onAgentWaveSettled: (parentAppSessionId, agents) => {
+        void this.lifecycle.wakeForSettledAgents(
+          parentAppSessionId,
+          agentWakePrompt(agents),
+          AGENT_WAKE_NOTICE,
+        );
+      },
       resolveDefaultSettings: (summary, initResult, role) =>
         this.resolveChildDefaultSettings(summary, initResult, role),
       isShutdownStarted: () => this.shutdownPromise !== undefined,
@@ -579,8 +585,7 @@ export class SessionManager {
       applyPendingSettingsToSummary: (summary) => this.modelSettings.project(summary),
       applyPendingSessionSettings: (appSessionId) => this.modelSettings.applyPending(appSessionId),
       waitForSettingsMutations: (appSessionId) => this.modelSettings.waitForMutations(appSessionId),
-      runPrimaryTurn: (liveSession, prompt, mentions, delivery) =>
-        this.runPrimaryTurn(liveSession, prompt, mentions, delivery),
+      runPrimaryTurn: (liveSession, request) => this.runPrimaryTurn(liveSession, request),
       eventFlow: this.eventFlow,
       hasPendingInteractions: (appSessionId) => this.interactions.hasPending(appSessionId),
       hasActiveSettingsChanges: (appSessionId) =>
@@ -1296,9 +1301,7 @@ export class SessionManager {
 
   private async runPrimaryTurn(
     liveSession: LiveSession,
-    prompt: string,
-    mentions?: ProviderMention[],
-    delivery?: ScheduledTurnDelivery,
+    request: PrimaryTurnRequest,
   ): Promise<void> {
     await runPrimaryTurn(
       {
@@ -1316,9 +1319,7 @@ export class SessionManager {
         },
       },
       liveSession,
-      prompt,
-      mentions,
-      delivery,
+      request,
     );
   }
 

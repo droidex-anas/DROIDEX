@@ -10,6 +10,7 @@ import type { SessionCompaction } from './SessionCompaction.js';
 import type { SessionInitResult } from './sessionHelpers.js';
 import type { ChildParentLease, ChildRuntimeTarget, ChildSettings } from './ChildSessionState.js';
 import type { AgentProcessMonitor } from './processes/AgentProcessMonitor.js';
+import type { SettledAgent } from './childWaveWake.js';
 
 export type ChildOperation = 'open' | 'loadHistory' | 'send' | 'sendNow' | 'interrupt' | 'settings';
 
@@ -53,6 +54,9 @@ export interface ChildSessionsDependencies {
     | 'rearmModelChangedChild'
     | 'resolveLimit'
   >;
+  // The chat's agents have all stopped and it is owed one turn carrying their
+  // results; see childWaveWake.
+  onAgentWaveSettled(parentAppSessionId: string, agents: readonly SettledAgent[]): void;
   resolveDefaultSettings(
     summary: SessionSummary,
     initResult: SessionInitResult,

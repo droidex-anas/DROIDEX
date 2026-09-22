@@ -1,6 +1,6 @@
 import { factoryReasoningEffort } from './DroidRuntime.js';
 import type { PersistedChildSession, PersistedChildSpawnLink } from './history.js';
-import type { ChildRole, ChildSessionSummary, ClientCommand } from './protocol.js';
+import type { ChildRole, ChildSessionSummary, ChildStatus, ClientCommand } from './protocol.js';
 import type { ChildOperationTarget } from './SessionContext.js';
 import {
   matchesChildGenerationSnapshot,
@@ -66,6 +66,7 @@ import {
 import { RuntimeRetirementTimer } from './runtimeRetirementTimer.js';
 import { ChildProviderCleanup } from './childProviderCleanup.js';
 import { childTokenStream } from './childStreamFidelity.js';
+import { isSettledChildStatus, settledAgent, type SettledAgent } from './childWaveWake.js';
 import { dequeueQueuedChild, prepareChildInterrupt } from './childTurnCancellation.js';
 
 type ChildSettingsCommand = Extract<ClientCommand, { type: 'child.updateSettings' }>;
@@ -108,6 +109,7 @@ export class ChildSessions {
       generation: ++this.nextParentGeneration,
       lease,
       children: new Map(),
+      settledSinceWake: new Set(),
       pendingSpawns: new Map(),
       openAttempts: new Map(),
       reservedOpenSlots: new Set(),
@@ -253,7 +255,7 @@ export class ChildSessions {
       if (child.retiredProviderSessionIds.has(providerSessionId)) return;
       if (child.role !== observed.role && child.turn.autoCompacting)
         this.d.compaction.cancel(this.automaticTarget(parent, child));
-      const { previousPrompt } = applyObservedChild(
+      const { previousPrompt, previousStatus } = applyObservedChild(
         child,
         observed,
         linkForApply,
@@ -262,7 +264,10 @@ export class ChildSessions {
       );
       if (observed.done)
         this.complete(child, observed.status === 'failed' ? 'failed' : 'completed');
-      else this.commit(child);
+      else {
+        this.commit(child);
+        this.noteWaveSettlement(child, previousStatus);
+      }
       // The parent agent is the sender, so the brief reads as a prompt in the
       // agent's pane rather than as a status line.
       if (child.prompt && child.prompt !== previousPrompt)
@@ -947,6 +952,7 @@ export class ChildSessions {
 
   private complete(child?: ChildSessionState, status: 'completed' | 'failed' = 'completed'): void {
     if (!child || child.status === 'completed' || child.status === 'failed') return;
+    const previousStatus = child.status;
     setChildStatus(child, status, this.d.now());
     // Activity describes a moment that has passed; keeping the last poll's line
     // would leave a finished subagent reading as still working.
@@ -956,6 +962,31 @@ export class ChildSessions {
       const pending = this.childrenAwaitingDurability.get(childDurabilityKey(child.identity));
       if (pending) pending.closeAfterPublish = true;
     }
+    this.noteWaveSettlement(child, previousStatus);
+  }
+
+  /** An agent stopped. When it was the last one working, the chat is owed one
+      turn carrying the whole wave: no harness wakes an idle parent when a
+      background agent finishes, so the results would otherwise reach nobody.
+      Only a crossing into a settled status counts, so a repeated observation of
+      an agent that already stopped can never wake the chat a second time, and
+      agents the wake's own turn spawns settle into the next wave. */
+  private noteWaveSettlement(child: ChildSessionState, previousStatus: ChildStatus): void {
+    if (previousStatus === child.status || !isSettledChildStatus(child.status)) return;
+    const parent = this.parents.get(child.identity.parentAppSessionId);
+    if (!parent || !this.isCurrentParent(parent)) return;
+    parent.settledSinceWake.add(child.identity.childSessionId);
+    for (const candidate of parent.children.values())
+      if (candidate.status === 'running' || candidate.queued) return;
+    const agents: SettledAgent[] = [];
+    let index = 0;
+    for (const candidate of parent.children.values()) {
+      if (parent.settledSinceWake.has(candidate.identity.childSessionId))
+        agents.push(settledAgent(candidate, index));
+      index += 1;
+    }
+    parent.settledSinceWake.clear();
+    if (agents.length > 0) this.d.onAgentWaveSettled(parent.parentAppSessionId, agents);
   }
 
   private createChild(
