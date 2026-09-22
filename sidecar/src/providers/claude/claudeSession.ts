@@ -13,6 +13,7 @@ import {
 import { spawn, type ChildProcess } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 
+import { childEnv } from '../../childEnv.js';
 import type { NormalizedEvent } from '../../normalize.js';
 import type { Autonomy, ReasoningEffort, SessionInteractionMode } from '../../protocol.js';
 import { errMsg } from '../../sessionHelpers.js';
@@ -448,9 +449,14 @@ function sessionOptions(
     // with setPermissionMode, which the CLI refuses without this.
     allowDangerouslySkipPermissions: true,
     canUseTool: claudeCanUseTool(input.appSessionId, input.interactions, isPlanning),
+    // This replaces the subprocess environment rather than adding to it, which
+    // is why childEnv copies process.env: the CLI needs the user's PATH, HOME
+    // and login, and only the app's own variables are left behind.
+    env: childEnv(),
     // The SDK would otherwise own the subprocess privately; spawning it here is
     // what gives the session a pid for the agent-process monitor to track and
     // kill, the way it tracks Droid's.
+    // `env` here is the one above, handed back by the SDK unchanged.
     spawnClaudeCodeProcess: ({ command, args, cwd, env, signal }) => {
       const child = spawn(command, args, {
         ...(cwd !== undefined ? { cwd } : {}),

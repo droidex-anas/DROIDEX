@@ -3,6 +3,7 @@
 // request correlation and the lifetime of the one process it speaks to.
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
 
+import { childEnv } from '../../childEnv.js';
 import { errMsg } from '../../sessionHelpers.js';
 
 // A line this long is a runaway payload rather than a message: fail the client
@@ -45,10 +46,15 @@ export class AppServerClient {
   private nextRequestId = 1;
   private failure?: Error;
 
-  // The environment is inherited as-is: Codex reads its own home, login and
-  // config from it, and a relocated home would report the user as signed out.
+  // The user's environment is inherited whole apart from the app's own private
+  // variables: Codex reads its home, login and config from it, and a relocated
+  // home would report the user as signed out.
   constructor(executable: string, cwd: string) {
-    this.child = spawn(executable, ['app-server'], { cwd, stdio: ['pipe', 'pipe', 'pipe'] });
+    this.child = spawn(executable, ['app-server'], {
+      cwd,
+      env: childEnv(),
+      stdio: ['pipe', 'pipe', 'pipe'],
+    });
     this.child.stdout.setEncoding('utf8');
     this.child.stderr.setEncoding('utf8');
     this.child.stdout.on('data', (chunk: string) => {

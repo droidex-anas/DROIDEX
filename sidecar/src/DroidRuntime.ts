@@ -14,6 +14,7 @@ import {
   type MessageOptions,
   type PermissionHandler,
 } from '@factory/droid-sdk';
+import { childEnv } from './childEnv.js';
 import { createDroidTransport, type ConnectableDroidTransport } from './DroidTransport.js';
 import { buildDroidInvocation, resolveDroidPath } from './Environment.js';
 import type { Autonomy, ReasoningEffort, SessionInteractionMode } from './protocol.js';
@@ -208,10 +209,7 @@ export class DroidRuntime implements FactoryRuntime {
   }
 
   private env(): Record<string, string> {
-    const env: Record<string, string> = {};
-    for (const [key, value] of Object.entries(process.env)) {
-      if (value !== undefined) env[key] = value;
-    }
+    const env = childEnv();
 
     if (this.explicitApiKey) env.FACTORY_API_KEY = this.explicitApiKey;
     else delete env.FACTORY_API_KEY;
