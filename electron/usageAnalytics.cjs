@@ -1,7 +1,11 @@
 const crypto = require('node:crypto');
 const fs = require('node:fs/promises');
 const path = require('node:path');
-const { loadBooleanPreference, saveBooleanPreference } = require('./preferenceFile.cjs');
+const {
+  loadBooleanPreference,
+  saveBooleanPreference,
+  writeJsonFile,
+} = require('./preferenceFile.cjs');
 
 // Anonymous installation counting.
 //
@@ -111,20 +115,19 @@ function createUsageAnalytics(options) {
   }
 
   /**
-   * Records that `install_first_launch` reached Datadog, so a later launch of
-   * the same installation cannot report it a second time.
+   * Records that `install_first_launch` was handed to the SDK, so a later
+   * launch of the same installation cannot report it a second time. The SDK
+   * sends on its own schedule; a first launch that quits before that send is
+   * not retried.
    */
   async function markFirstLaunchReported() {
     try {
       const record = await installation();
       if (record.firstLaunchReportedAt) return { recorded: true };
       const reportedAt = (options.now?.() ?? new Date()).toISOString();
-      await writeInstallation({
-        filePath: installationFilePath(),
-        fs: fileSystem,
-        record: { ...record, firstLaunchReportedAt: reportedAt },
-      });
-      installationPromise = Promise.resolve({ ...record, firstLaunchReportedAt: reportedAt });
+      const reported = { ...record, firstLaunchReportedAt: reportedAt };
+      await writeInstallation(fileSystem, installationFilePath(), reported);
+      installationPromise = Promise.resolve(reported);
       return { recorded: true };
     } catch (error) {
       options.logError?.('Usage analytics first-launch marker skipped', error);
@@ -132,7 +135,7 @@ function createUsageAnalytics(options) {
     }
   }
 
-  return { bootstrap, installation, markFirstLaunchReported, preference, setEnabled };
+  return { bootstrap, markFirstLaunchReported, preference, setEnabled };
 }
 
 function buildContext(app, config, options) {
@@ -183,7 +186,7 @@ async function loadOrCreateInstallation(options) {
     createdAt: (options.now?.() ?? new Date()).toISOString(),
     created: true,
   };
-  await writeInstallation({ filePath: options.filePath, fs: options.fs, record });
+  await writeInstallation(options.fs, options.filePath, record);
   return record;
 }
 
@@ -199,8 +202,7 @@ async function hasExistingInstallMarkers(options) {
   return false;
 }
 
-async function writeInstallation(options) {
-  const record = options.record;
+function writeInstallation(fileSystem, filePath, record) {
   const payload = {
     version: 1,
     installationId: record.installationId,
@@ -208,21 +210,7 @@ async function writeInstallation(options) {
     createdAt: record.createdAt,
   };
   if (record.firstLaunchReportedAt) payload.firstLaunchReportedAt = record.firstLaunchReportedAt;
-  const temporaryPath = `${options.filePath}.${crypto.randomUUID()}.tmp`;
-  await options.fs.mkdir(path.dirname(options.filePath), { recursive: true, mode: 0o700 });
-  try {
-    await options.fs.writeFile(temporaryPath, `${JSON.stringify(payload, null, 2)}\n`, {
-      mode: 0o600,
-    });
-    await options.fs.rename(temporaryPath, options.filePath);
-  } catch (error) {
-    try {
-      await options.fs.unlink(temporaryPath);
-    } catch {
-      // The temporary file may not have been created.
-    }
-    throw error;
-  }
+  return writeJsonFile(fileSystem, filePath, payload);
 }
 
 module.exports = { createUsageAnalytics };

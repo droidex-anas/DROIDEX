@@ -75,7 +75,9 @@ export async function startUsageAnalytics(
 ): Promise<UsageAnalyticsOutcome> {
   if (hasStarted) return 'disabled';
   try {
-    const bootstrap = normalizeBootstrap(await (deps.bootstrap ?? bridgeBootstrap)());
+    const bootstrap = normalizeBootstrap(
+      await (deps.bootstrap ?? (() => callBridge('usageAnalyticsBootstrap')))(),
+    );
     if (!bootstrap) return 'disabled';
     hasStarted = true;
 
@@ -90,7 +92,7 @@ export async function startUsageAnalytics(
         ...bootstrap.context,
         install_origin: bootstrap.installOrigin,
       });
-      await (deps.reportFirstLaunch ?? bridgeReportFirstLaunch)();
+      await (deps.reportFirstLaunch ?? (() => callBridge('usageAnalyticsFirstLaunchReported')))();
     }
     return 'started';
   } catch {
@@ -213,19 +215,23 @@ export function normalizeBootstrap(value: unknown): ResolvedBootstrap | null {
   };
 }
 
+// Outside the desktop app there is no bridge; the toggle simply reads as off.
+const OFF = { enabled: false };
+
 export async function getUsageAnalyticsPreference(): Promise<{ enabled: boolean }> {
-  return normalizePreference(await invokeBridge('getUsageAnalytics'));
+  return normalizePreference((await callBridge('getUsageAnalytics')) ?? OFF);
 }
 
 export async function setUsageAnalyticsPreference(enabled: boolean): Promise<{ enabled: boolean }> {
-  return normalizePreference(await invokeBridge('setUsageAnalytics', [enabled]));
+  return normalizePreference((await callBridge('setUsageAnalytics', [enabled])) ?? OFF);
 }
 
-function invokeBridge(name: string, args: unknown[] = []): Promise<unknown> {
+// Resolves to null when the desktop bridge or the method is missing, which every
+// caller already treats as "not available".
+function callBridge(name: string, args: unknown[] = []): Promise<unknown> {
   const bridge = window.droidControl;
-  if (!bridge) return Promise.resolve({ enabled: false });
-  const method: unknown = Reflect.get(bridge, name);
-  if (typeof method !== 'function') return Promise.resolve({ enabled: false });
+  const method: unknown = bridge ? Reflect.get(bridge, name) : undefined;
+  if (typeof method !== 'function') return Promise.resolve(null);
   return Promise.resolve(Reflect.apply(method, bridge, args) as unknown);
 }
 
@@ -254,20 +260,4 @@ async function loadRum(): Promise<RumApi> {
   // never downloaded by builds that report nothing.
   const module = await import('@datadog/browser-rum-slim');
   return module.datadogRum as unknown as RumApi;
-}
-
-function bridgeBootstrap(): Promise<unknown> {
-  const bridge = window.droidControl;
-  if (!bridge) return Promise.resolve(null);
-  const method: unknown = Reflect.get(bridge, 'usageAnalyticsBootstrap');
-  if (typeof method !== 'function') return Promise.resolve(null);
-  return Promise.resolve(Reflect.apply(method, bridge, []) as unknown);
-}
-
-function bridgeReportFirstLaunch(): Promise<unknown> {
-  const bridge = window.droidControl;
-  if (!bridge) return Promise.resolve(null);
-  const method: unknown = Reflect.get(bridge, 'usageAnalyticsFirstLaunchReported');
-  if (typeof method !== 'function') return Promise.resolve(null);
-  return Promise.resolve(Reflect.apply(method, bridge, []) as unknown);
 }

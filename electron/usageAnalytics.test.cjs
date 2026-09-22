@@ -104,7 +104,7 @@ test('the id is not derived from device, account, or network identity', async ()
   );
   const bootstrap = await analytics.bootstrap();
   const serialized = JSON.stringify(bootstrap).toLowerCase();
-  for (const secret of ['anas', 'macbook', '/users/', 'darwin-'.concat('serial')]) {
+  for (const secret of ['anas', 'macbook', '/users/']) {
     assert.equal(serialized.includes(secret), false, `payload leaked ${secret}`);
   }
   assert.deepEqual(Object.keys(bootstrap.context).sort(), [

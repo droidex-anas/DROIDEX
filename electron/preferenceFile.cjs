@@ -19,19 +19,23 @@ async function loadBooleanPreference(options) {
   }
 }
 
-async function saveBooleanPreference(options) {
-  const temporaryPath = `${options.filePath}.${crypto.randomUUID()}.tmp`;
-  await options.fs.mkdir(path.dirname(options.filePath), { recursive: true, mode: 0o700 });
+function saveBooleanPreference(options) {
+  return writeJsonFile(options.fs, options.filePath, { version: 1, enabled: options.enabled });
+}
+
+// Writes through a temporary file and a rename, with owner-only permissions, so
+// a crash mid-write can never leave a truncated file behind.
+async function writeJsonFile(fileSystem, filePath, value) {
+  const temporaryPath = `${filePath}.${crypto.randomUUID()}.tmp`;
+  await fileSystem.mkdir(path.dirname(filePath), { recursive: true, mode: 0o700 });
   try {
-    await options.fs.writeFile(
-      temporaryPath,
-      `${JSON.stringify({ version: 1, enabled: options.enabled }, null, 2)}\n`,
-      { mode: 0o600 },
-    );
-    await options.fs.rename(temporaryPath, options.filePath);
+    await fileSystem.writeFile(temporaryPath, `${JSON.stringify(value, null, 2)}\n`, {
+      mode: 0o600,
+    });
+    await fileSystem.rename(temporaryPath, filePath);
   } catch (error) {
     try {
-      await options.fs.unlink(temporaryPath);
+      await fileSystem.unlink(temporaryPath);
     } catch {
       // The temporary file may not have been created.
     }
@@ -39,4 +43,4 @@ async function saveBooleanPreference(options) {
   }
 }
 
-module.exports = { loadBooleanPreference, saveBooleanPreference };
+module.exports = { loadBooleanPreference, saveBooleanPreference, writeJsonFile };
