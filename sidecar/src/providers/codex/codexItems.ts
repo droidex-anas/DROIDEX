@@ -145,6 +145,13 @@ export interface ToolCall {
 // a shell name for commands, an edit name for patches, and Claude's `mcp__`
 // prefix for an MCP tool.
 export function toolCall(item: ThreadItem): ToolCall | undefined {
+  const call = describeCall(item);
+  // Codex reports a steer or a stop as the item's own status, whatever kind of
+  // call it is, so one read covers them all.
+  return call && { ...call, interrupted: 'status' in item && item.status === 'interrupted' };
+}
+
+function describeCall(item: ThreadItem): Omit<ToolCall, 'interrupted'> | undefined {
   if (item.type === 'commandExecution')
     return {
       id: item.id,
@@ -152,7 +159,6 @@ export function toolCall(item: ThreadItem): ToolCall | undefined {
       detail: item.command,
       args: { command: item.command, cwd: item.cwd },
       failed: item.status !== 'completed' || (item.exitCode ?? 0) !== 0,
-      interrupted: item.status === 'interrupted',
     };
   if (item.type === 'fileChange')
     return {
@@ -164,7 +170,6 @@ export function toolCall(item: ThreadItem): ToolCall | undefined {
         changes: item.changes.map((change) => `${change.kind.type} ${change.path}`),
       },
       failed: item.status !== 'completed',
-      interrupted: item.status === 'interrupted',
     };
   if (item.type === 'imageGeneration')
     return {
@@ -173,7 +178,6 @@ export function toolCall(item: ThreadItem): ToolCall | undefined {
       detail: item.revisedPrompt ?? '',
       args: { prompt: item.revisedPrompt ?? '' },
       failed: item.status !== 'completed' || Boolean(item.failure),
-      interrupted: item.status === 'interrupted',
     };
   if (item.type === 'mcpToolCall')
     return {
@@ -184,7 +188,6 @@ export function toolCall(item: ThreadItem): ToolCall | undefined {
       // Codex reports a tool that answered with an error as completed, so the
       // error itself is what makes the row an error.
       failed: item.status !== 'completed' || item.error !== null,
-      interrupted: item.status === 'interrupted',
     };
   // Only the spawn anchors a transcript row; later calls update its children.
   if (item.type === 'collabAgentToolCall' && item.tool === 'spawnAgent')
@@ -194,7 +197,6 @@ export function toolCall(item: ThreadItem): ToolCall | undefined {
       detail: item.prompt ?? '',
       args: { prompt: item.prompt ?? undefined },
       failed: item.status === 'failed',
-      interrupted: item.status === 'interrupted',
     };
   return undefined;
 }
