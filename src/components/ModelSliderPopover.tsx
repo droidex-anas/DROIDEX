@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
+import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { ChevronLeft, RotateCcw, Search } from 'lucide-react';
 import type { ProviderKind, ReasoningEffort } from '../types/bridge';
@@ -11,14 +11,13 @@ import { ModelIcon, providerOf } from './ModelIcon';
 import HarnessSegments from '../features/providers/HarnessSegments';
 import ModelCategoryFilter from './ModelCategoryFilter';
 import { effortsFor } from './ModelCatalogList';
-import { fitToWindow } from './composer/popoverFit';
+import { useTriggerAnchor } from './composer/useTriggerAnchor';
 import useModelPicker from './useModelPicker';
 import ModelSliderCatalogList from './ModelSliderCatalogList';
 import EffortSlider from './effortSlider/EffortSlider';
 import type { EffortSliderElement, EffortSliderLevel } from './effortSlider/effortSliderElement';
 
 const PREFERRED_WIDTH_PX = 320;
-const MIN_WIDTH_PX = 280;
 
 // The slider names levels in the reference design's vocabulary; 'ultra' keeps
 // the harness's own word (Ultracode on Claude, Ultra elsewhere) via the labeler.
@@ -40,6 +39,21 @@ function effortDisplay(effort: ReasoningEffort, provider: ProviderKind): string 
   if (effort === 'ultra') return capitalize(reasoningEffortLabel(effort, provider));
   return EFFORT_DISPLAY[effort] ?? capitalize(effort);
 }
+
+// The card is already the surface, so the slider's own panel stays flat and
+// fills the card at the app's type scale instead of scaling with its width.
+const SLIDER_STYLE = {
+  '--effort-unit': '1px',
+  '--effort-width': '100%',
+  '--effort-padding': '8px 4px 4px',
+  '--effort-surface': 'transparent',
+  '--effort-border': 'transparent',
+  '--effort-shadow': 'none',
+  '--effort-text': 'var(--droid-text)',
+  '--effort-muted': 'var(--droid-text-muted)',
+  '--effort-fill': 'color-mix(in srgb, var(--droid-text) 45%, transparent)',
+  '--effort-accent': 'var(--droid-ultra, #a392e5)',
+} as CSSProperties;
 
 /**
  * The alternative composer model selector: a card that lists models and drills
@@ -75,29 +89,7 @@ export default function ModelSliderPopover({ onClose }: { onClose: () => void })
   const [view, setView] = useState<'list' | 'effort'>('list');
   const ref = useRef<HTMLDivElement>(null);
   const sliderRef = useRef<EffortSliderElement>(null);
-  const [fit, setFit] = useState<{ width: number; left: number }>();
-
-  useLayoutEffect(() => {
-    const refit = () => {
-      const anchor = ref.current?.offsetParent;
-      if (!anchor) return;
-      setFit(
-        fitToWindow(
-          anchor.getBoundingClientRect().left,
-          window.innerWidth,
-          PREFERRED_WIDTH_PX,
-          MIN_WIDTH_PX,
-        ),
-      );
-    };
-    refit();
-    window.addEventListener('resize', refit);
-    return () => {
-      window.removeEventListener('resize', refit);
-    };
-  }, []);
-
-  const panelWidth = fit?.width ?? PREFERRED_WIDTH_PX;
+  const { width, maxHeight, tailRight } = useTriggerAnchor(ref, PREFERRED_WIDTH_PX);
 
   const efforts = effortsFor(activeModel, effReasoning);
   const canDrill =
@@ -127,24 +119,9 @@ export default function ModelSliderPopover({ onClose }: { onClose: () => void })
     defaultEffort !== sliderValue &&
     levels.some((level) => level.value === defaultEffort);
 
-  const sliderStyle = useMemo(
-    () =>
-      ({
-        // The panel is 218 units wide; the unit scales it to the card's content box.
-        '--effort-unit': `${String((panelWidth - 24) / 218)}px`,
-        '--effort-surface': 'var(--droid-bg)',
-        '--effort-border': 'var(--droid-border)',
-        '--effort-text': 'var(--droid-text)',
-        '--effort-muted': 'var(--droid-text-muted)',
-        '--effort-fill': 'color-mix(in srgb, var(--droid-text) 45%, transparent)',
-        '--effort-accent': 'var(--droid-ultra, #a392e5)',
-      }) as CSSProperties,
-    [panelWidth],
-  );
-
+  // A pick keeps the slider open: releasing the thumb is not a request to leave.
   const commitEffort = (value: string) => {
     if (isReasoningEffort(value)) updateReasoning(value);
-    setView('list');
   };
 
   useEffect(() => {
@@ -205,10 +182,10 @@ export default function ModelSliderPopover({ onClose }: { onClose: () => void })
       animate={{ opacity: 1, y: 0 }}
       exit={{ opacity: 0, y: 8 }}
       transition={{ duration: 0.16, ease: [0.16, 1, 0.3, 1] }}
-      style={fit ?? { width: PREFERRED_WIDTH_PX }}
-      className="absolute bottom-full left-0 mb-3 max-w-[calc(100vw-2rem)] z-50"
+      style={{ width, maxHeight }}
+      className="absolute bottom-full right-0 mb-3 max-w-[calc(100vw-2rem)] z-50"
     >
-      <div className="rounded-2xl border border-droid-border bg-droid-elevated shadow-droid overflow-hidden">
+      <div className="flex max-h-[inherit] flex-col overflow-hidden rounded-2xl border border-droid-border/60 bg-droid-elevated shadow-droid">
         <AnimatePresence mode="wait" initial={false}>
           {showEffortView ? (
             <motion.div
@@ -256,7 +233,7 @@ export default function ModelSliderPopover({ onClose }: { onClose: () => void })
                 value={sliderValue}
                 autoFocus
                 onCommit={commitEffort}
-                style={sliderStyle}
+                style={SLIDER_STYLE}
               />
             </motion.div>
           ) : (
@@ -266,6 +243,7 @@ export default function ModelSliderPopover({ onClose }: { onClose: () => void })
               animate={{ opacity: 1, x: 0 }}
               exit={{ opacity: 0, x: -12 }}
               transition={{ duration: 0.14, ease: [0.16, 1, 0.3, 1] }}
+              className="flex min-h-0 flex-col"
             >
               {showHarness && (
                 <HarnessSegments
@@ -276,8 +254,8 @@ export default function ModelSliderPopover({ onClose }: { onClose: () => void })
                 />
               )}
 
-              <div className="px-3 pt-3 pb-3">
-                <div className="flex h-9 items-center gap-2 rounded-lg border border-droid-border bg-droid-bg/60 px-3 transition-colors focus-within:border-droid-border-hover">
+              <div className="flex min-h-0 flex-col px-3 pt-3 pb-3">
+                <div className="flex h-8 shrink-0 items-center gap-2 rounded-lg bg-droid-bg/50 px-3">
                   <Search className="h-3.5 w-3.5 shrink-0 text-droid-text-muted" />
                   <input
                     autoFocus
@@ -322,7 +300,10 @@ export default function ModelSliderPopover({ onClose }: { onClose: () => void })
       </div>
 
       {/* Tail */}
-      <div className="absolute -bottom-1.5 left-7 h-3 w-3 rotate-45 border-r border-b border-droid-border bg-droid-elevated" />
+      <div
+        className="absolute -bottom-1.5 h-3 w-3 rotate-45 border-r border-b border-droid-border/60 bg-droid-elevated"
+        style={{ right: tailRight }}
+      />
     </motion.div>
   );
 }

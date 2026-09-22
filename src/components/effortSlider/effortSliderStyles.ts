@@ -7,7 +7,7 @@ export const EFFORT_SLIDER_STYLES = `
   :host {
     --u: var(--effort-unit, 1px);
     display: block;
-    width: calc(218 * var(--u));
+    width: var(--effort-width, calc(218 * var(--u)));
     color: var(--effort-text, #dedede);
     font: 400 calc(13 * var(--u))/1.25 Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", Arial, sans-serif;
     -webkit-font-smoothing: antialiased;
@@ -17,12 +17,12 @@ export const EFFORT_SLIDER_STYLES = `
   }
   *, *::before, *::after { box-sizing: border-box; }
   .panel {
-    padding: calc(12 * var(--u)) calc(11 * var(--u)) calc(13 * var(--u));
+    padding: var(--effort-padding, calc(12 * var(--u)) calc(11 * var(--u)) calc(13 * var(--u)));
     border: var(--u) solid var(--effort-border, #303030);
     border-radius: calc(10 * var(--u));
     background: var(--effort-surface, #1d1d1d);
-    box-shadow: 0 calc(5 * var(--u)) calc(14 * var(--u)) #00000018,
-                inset 0 var(--u) 0 #ffffff02;
+    box-shadow: var(--effort-shadow, 0 calc(5 * var(--u)) calc(14 * var(--u)) #00000018,
+                inset 0 var(--u) 0 #ffffff02);
   }
   .heading {
     display: flex; align-items: center; gap: calc(8 * var(--u));
@@ -59,7 +59,7 @@ export const EFFORT_SLIDER_STYLES = `
   .ultra-base { position: absolute; inset: 0; background: #2f2f2c; opacity: 0; }
   .fill { position: absolute; inset: 0; background: var(--effort-fill, #727272); transform-origin: left center; }
   canvas { display: block; position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
-  .ticks { position: absolute; inset: 0 5% 0 5.2%; display: flex; align-items: center; justify-content: space-between; pointer-events: none; }
+  .ticks { position: absolute; inset: 0 calc(6.6 * var(--u)); display: flex; align-items: center; justify-content: space-between; pointer-events: none; }
   .tick { width: calc(2.8 * var(--u)); height: calc(2.8 * var(--u)); border-radius: 50%; background: #ffffff38; }
   .thumb {
     position: absolute; top: 0; left: 0; width: calc(16 * var(--u)); height: 100%;

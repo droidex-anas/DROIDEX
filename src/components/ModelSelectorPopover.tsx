@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { useEffect, useRef } from 'react';
 import { motion } from 'framer-motion';
 import { Search } from 'lucide-react';
 import type { AgentKind } from '../hooks/persistedUiPreferences';
@@ -9,16 +9,15 @@ import {
 import ModelCatalogList, { effortsFor, stepEffort } from './ModelCatalogList';
 import ModelCategoryFilter from './ModelCategoryFilter';
 import HarnessRail from '../features/providers/HarnessRail';
-import { fitToWindow } from './composer/popoverFit';
+import { useTriggerAnchor } from './composer/useTriggerAnchor';
 import useModelPicker from './useModelPicker';
 
 export type { ExactChildSettingsTarget } from '../lib/exactChildSettings';
 
-const PREFERRED_WIDTH_PX = 420;
+const PREFERRED_WIDTH_PX = 380;
 // Matches HarnessRail's w-11 column: with the rail the panel widens so the
 // catalog keeps its room.
 const RAIL_WIDTH_PX = 44;
-const MIN_WIDTH_PX = 280;
 
 const accentMix = (pct: number) =>
   `color-mix(in srgb, var(--droid-accent) ${String(pct)}%, transparent)`;
@@ -71,33 +70,8 @@ export default function ModelSelectorPopover({
     updateReasoning,
   } = picker;
   const ref = useRef<HTMLDivElement>(null);
-  const [fit, setFit] = useState<{ width: number; left: number }>();
-
   const preferredWidth = PREFERRED_WIDTH_PX + (showHarness ? RAIL_WIDTH_PX : 0);
-
-  // The panel grows right from the trigger, which sits well inside the composer,
-  // so on a narrow window it would run past the edge. Narrow it to the room
-  // there and slide it back, like the composer's other popovers. `left-0`
-  // resolves against the trigger's positioning box, so that box is the anchor.
-  useLayoutEffect(() => {
-    const refit = () => {
-      const anchor = ref.current?.offsetParent;
-      if (!anchor) return;
-      setFit(
-        fitToWindow(
-          anchor.getBoundingClientRect().left,
-          window.innerWidth,
-          preferredWidth,
-          MIN_WIDTH_PX,
-        ),
-      );
-    };
-    refit();
-    window.addEventListener('resize', refit);
-    return () => {
-      window.removeEventListener('resize', refit);
-    };
-  }, [preferredWidth]);
+  const { width, maxHeight, tailRight } = useTriggerAnchor(ref, preferredWidth);
 
   const active = AGENTS.find((a) => a.kind === selectedAgent) ?? {
     kind: selectedAgent,
@@ -175,11 +149,11 @@ export default function ModelSelectorPopover({
       animate={{ opacity: 1, y: 0 }}
       exit={{ opacity: 0, y: 8 }}
       transition={{ duration: 0.16, ease: [0.16, 1, 0.3, 1] }}
-      style={fit ?? { width: preferredWidth }}
-      className="absolute bottom-full left-0 mb-3 max-w-[calc(100vw-2rem)] z-50"
+      style={{ width, maxHeight }}
+      className="absolute bottom-full right-0 mb-3 max-w-[calc(100vw-2rem)] z-50"
     >
-      <div className="rounded-2xl border border-droid-border bg-droid-elevated shadow-droid overflow-hidden">
-        <div className={showHarness ? 'flex' : undefined}>
+      <div className="flex max-h-[inherit] flex-col overflow-hidden rounded-2xl border border-droid-border/60 bg-droid-elevated shadow-droid">
+        <div className="flex min-h-0 flex-1">
           {showHarness && (
             <HarnessRail
               current={provider}
@@ -188,9 +162,9 @@ export default function ModelSelectorPopover({
               onSelect={selectHarness}
             />
           )}
-          <div className="min-w-0 flex-1">
+          <div className="flex min-h-0 min-w-0 flex-1 flex-col">
             {/* Header */}
-            <div className="flex items-center justify-between gap-3 px-4 pt-3 pb-2">
+            <div className="flex items-center justify-between gap-3 px-3 pt-3 pb-1">
               <span className="shrink-0 text-[12px] font-medium text-droid-text-secondary">
                 {childTarget ? childTarget.label : singleAgent ? 'Model' : 'Models'}
               </span>
@@ -238,8 +212,8 @@ export default function ModelSelectorPopover({
             )}
 
             {/* Model search + list */}
-            <div className="px-4 pt-3 pb-3">
-              <div className="flex items-center gap-2 px-3 h-9 rounded-lg bg-droid-bg/60 border border-droid-border focus-within:border-droid-border-hover transition-colors">
+            <div className="flex min-h-0 flex-col px-2 pt-2 pb-2">
+              <div className="flex shrink-0 items-center gap-2 px-3 h-8 rounded-lg bg-droid-bg/50">
                 <Search className="w-3.5 h-3.5 text-droid-text-muted shrink-0" />
                 <input
                   autoFocus
@@ -281,7 +255,10 @@ export default function ModelSelectorPopover({
       </div>
 
       {/* Tail */}
-      <div className="absolute -bottom-1.5 left-7 w-3 h-3 rotate-45 bg-droid-elevated border-r border-b border-droid-border" />
+      <div
+        className="absolute -bottom-1.5 w-3 h-3 rotate-45 bg-droid-elevated border-r border-b border-droid-border/60"
+        style={{ right: tailRight }}
+      />
     </motion.div>
   );
 }

@@ -101,7 +101,7 @@ function ModelCatalogList({
   const rowProps = { pick, provider, disabled, reasoningLocked, showReasoning };
 
   return (
-    <div ref={scrollRef} className="mt-2 max-h-[200px] overflow-y-auto -mx-1 px-1">
+    <div ref={scrollRef} className="mt-2 max-h-[200px] min-h-0 overflow-y-auto -mx-1 px-1">
       <div
         role="listbox"
         aria-label="Models"
@@ -110,7 +110,7 @@ function ModelCatalogList({
       >
         <div
           aria-hidden
-          className={`absolute inset-x-0 top-0 h-10 rounded-lg bg-droid-surface ring-1 ring-inset ring-droid-active pointer-events-none ${
+          className={`absolute inset-x-0 top-0 h-10 rounded-lg bg-droid-surface pointer-events-none ${
             selectedIndex < 0 ? 'opacity-0' : ''
           }`}
           style={{

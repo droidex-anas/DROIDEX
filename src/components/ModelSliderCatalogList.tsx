@@ -56,7 +56,7 @@ export default function ModelSliderCatalogList({
   }, [selectedIndex, virtualizer]);
 
   return (
-    <div ref={scrollRef} className="-mx-1 max-h-[200px] overflow-y-auto px-1">
+    <div ref={scrollRef} className="-mx-1 max-h-[200px] min-h-0 overflow-y-auto px-1">
       <div
         role="listbox"
         aria-label="Models"
@@ -65,7 +65,7 @@ export default function ModelSliderCatalogList({
       >
         <div
           aria-hidden
-          className={`pointer-events-none absolute inset-x-0 top-0 h-10 rounded-lg bg-droid-surface ring-1 ring-inset ring-droid-active ${
+          className={`pointer-events-none absolute inset-x-0 top-0 h-10 rounded-lg bg-droid-surface ${
             selectedIndex < 0 ? 'opacity-0' : ''
           }`}
           style={{
