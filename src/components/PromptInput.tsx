@@ -70,7 +70,11 @@ import {
   submitCommandFor,
   VISUALIZE_COMMAND,
 } from '../lib/composePrompt';
-import { reasoningEffortLabel, resolveReasoningEffortDisplay } from '../lib/reasoningEffort';
+import {
+  draftEffortFor,
+  reasoningEffortLabel,
+  resolveReasoningEffortDisplay,
+} from '../lib/reasoningEffort';
 import { compactionSettingsSnapshot } from '../lib/compactionSettings';
 import { composerTextAfterSeed, resetComposerAfterSubmit } from '../lib/composerReset';
 import { chipRemovedByBackspace } from '../lib/composerChips';
@@ -872,7 +876,7 @@ export default function PromptInput({
   // on the chip and is created with none. That is the provider default when
   // nothing is pinned, the same model the chip's icon and label already use.
   const draftReasoning = resolveReasoningEffortDisplay(
-    state.agentConfig.primary.reasoning,
+    draftEffortFor(chipModel, state.agentConfig.primary.reasoning),
     chipModel,
   );
   const primaryReasoning = chatScoped

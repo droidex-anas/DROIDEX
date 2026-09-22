@@ -51,6 +51,17 @@ export function compatibleReasoningForModel(
   return undefined;
 }
 
+// A new chat's effort is one setting shared by every harness, so the harness
+// it is shown on may not offer it (Ultra picked on Codex, then Droid chosen).
+// Read it through the model it would run on: an effort that model cannot run
+// becomes the one it can, and the pick stands for the harness that offers it.
+export function draftEffortFor(
+  model: ModelInfo | undefined,
+  effort: ReasoningEffort | undefined,
+): ReasoningEffort | undefined {
+  return compatibleReasoningForModel(model, effort) ?? effort;
+}
+
 // The effort a model switch carries: a level the new model can run, null when
 // it offers no level and one is set (so the previous model's does not follow
 // it), undefined when the current one stands.

@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { shallowEqual, useStoreDispatch, useStoreSelector } from '../hooks/useStore';
 import type { AgentKind } from '../hooks/persistedUiPreferences';
 import type { ModelInfo, ProviderKind, ReasoningEffort } from '../types/bridge';
-import { reasoningForModelSwitch } from '../lib/reasoningEffort';
+import { draftEffortFor, reasoningForModelSwitch } from '../lib/reasoningEffort';
 import {
   updateAgentSettings,
   updateChildSettings,
@@ -161,6 +161,7 @@ export default function useModelPicker({
     ? (source.find((model) => model.id === resolvedModelId)?.displayName ?? resolvedModelId)
     : (defaultModel?.displayName ?? 'Default');
   const activeModel = resolvedModelId ? source.find((x) => x.id === resolvedModelId) : defaultModel;
+  if (!childTarget && !scopedAppSessionId) effReasoning = draftEffortFor(activeModel, effReasoning);
 
   const updateReasoning = useCallback(
     (reasoning: ReasoningEffort) => {
