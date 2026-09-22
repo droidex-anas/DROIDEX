@@ -393,6 +393,14 @@ for (const architecture of architectures) {
       typeof packagedMetadata.sentryDsn === 'string' && packagedMetadata.sentryDsn.length > 0,
       `${name} package is missing Sentry reporting configuration`,
     );
+    const { datadog } = packagedMetadata;
+    assert(
+      datadog?.distributionChannel === 'release' &&
+        [datadog.applicationId, datadog.clientToken, datadog.site].every(
+          (value) => typeof value === 'string' && value.length > 0,
+        ),
+      `${name} package is missing Datadog installation counting configuration`,
+    );
   }
 
   const executableDescription = run('/usr/bin/file', [executablePath]);
