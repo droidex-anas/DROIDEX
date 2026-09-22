@@ -8,7 +8,6 @@ type SystemMessage = Extract<SDKMessage, { type: 'system' }>;
 type TaskStarted = Extract<SystemMessage, { subtype: 'task_started' }>;
 type TaskProgress = Extract<SystemMessage, { subtype: 'task_progress' }>;
 type TaskUpdated = Extract<SystemMessage, { subtype: 'task_updated' }>;
-type BackgroundTasks = Extract<SystemMessage, { subtype: 'background_tasks_changed' }>;
 
 interface WorkflowRun {
   name: string;
@@ -80,7 +79,6 @@ function writesNothingNew(known: ChildSessionSignal, patch: Partial<ChildSession
 export class ClaudeSubagents {
   private readonly children = new Map<string, ChildSessionSignal>();
   private readonly workflows = new Map<string, WorkflowRun>();
-  private backgroundTaskIds = new Set<string>();
   private turnSpawnToolUseId?: string;
 
   beginTurn(): void {
@@ -119,8 +117,13 @@ export class ClaudeSubagents {
           status: ended,
         });
       }
+      // Ids only, and an id leaves this list for every reason a task can end:
+      // finished, stopped, killed. Disappearance therefore says that something
+      // happened, never what. Status comes from task_notification and
+      // task_updated, which say which it was. A late 'completed' is honest; a
+      // 'paused' inferred from an absent id is a lie the user sees flash by.
       case 'background_tasks_changed':
-        return this.backgroundTasksChanged(message);
+        return [];
       default:
         return [];
     }
@@ -175,23 +178,6 @@ export class ClaudeSubagents {
       ...(status ? { status: endedStatus(status) } : {}),
       ...(description ? { activity: { preview: description } } : {}),
     });
-  }
-
-  private backgroundTasksChanged(message: BackgroundTasks): NormalizedEvent[] {
-    const current = new Set(
-      message.tasks
-        .filter((task) => task.task_type === 'local_agent' && !task.ambient)
-        .map((task) => task.task_id),
-    );
-    const events: NormalizedEvent[] = [];
-    // This list covers background work only. Disappearance is not proof of success.
-    for (const id of this.backgroundTaskIds) {
-      const child = this.children.get(id);
-      if (!current.has(id) && child && (child.status === 'running' || child.status === 'pending'))
-        events.push(...this.update(id, { status: 'paused' }));
-    }
-    this.backgroundTaskIds = current;
-    return events;
   }
 
   // A workflow's agents never get a `task_started` of their own: the CLI reports

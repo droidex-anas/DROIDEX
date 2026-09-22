@@ -3,6 +3,7 @@ import test from 'node:test';
 
 import type { SDKMessage } from '@anthropic-ai/claude-agent-sdk';
 import type { TranscriptEvent } from '../../protocol.js';
+import type { ChildSessionSignal } from '../../subagentSignals.js';
 import { ClaudeEventMapper } from './claudeEvents.js';
 
 // The cross-provider contract: a Claude turn has to reach the transcript in the
@@ -15,6 +16,12 @@ const streamEvent = (event: unknown, parent: string | null = null): SDKMessage =
 
 const assistant = (content: unknown[], parent: string | null = null): SDKMessage =>
   message({ type: 'assistant', message: { content }, parent_tool_use_id: parent });
+
+// The child-session signals one mapper reports, message by message.
+const childrenOf =
+  (mapper: ClaudeEventMapper) =>
+  (entry: SDKMessage): ChildSessionSignal[] =>
+    mapper.map(entry).flatMap((n) => (n.childSession ? [n.childSession] : []));
 
 function transcripts(messages: SDKMessage[]): TranscriptEvent[] {
   return mapped(messages).map(({ transcript }) => transcript);
@@ -192,9 +199,7 @@ test("a workflow's agents come from its progress snapshot, with a phase and a mo
       workflow_progress: [{ type: 'workflow_phase', index: 1, title: 'Echo' }, ...agents],
     });
 
-  const mapper = new ClaudeEventMapper('app-1', 'claude-haiku-4-5');
-  const children = (entry: SDKMessage) =>
-    mapper.map(entry).flatMap((n) => (n.childSession ? [n.childSession] : []));
+  const children = childrenOf(new ClaudeEventMapper('app-1', 'claude-haiku-4-5'));
 
   assert.deepEqual(
     children(
@@ -279,5 +284,48 @@ test('the result reports only the denials that never reached the transcript', ()
       ['tool_result', 'toolu_1', 'declined', true],
       ['tool_result', 'toolu_2', 'Bash was denied.', true],
     ],
+  );
+});
+
+// The SDK's background-task list carries ids only, and an agent's id leaves it
+// when the agent finishes exactly as it does when one is stopped. Reading the
+// gap as a stop flashed every completing agent through "Awaiting approval".
+test('an agent leaving the background task list is not reported as paused', () => {
+  const children = childrenOf(new ClaudeEventMapper('app-1', 'claude-haiku-4-5'));
+
+  assert.deepEqual(
+    children(
+      message({
+        type: 'system',
+        subtype: 'task_started',
+        task_id: 'task-1',
+        tool_use_id: 'toolu_task',
+        description: 'Check the diff',
+        task_type: 'local_agent',
+      }),
+    ).map((child) => child.status),
+    ['running'],
+  );
+
+  const backgroundTasks = (tasks: unknown[]) =>
+    children(message({ type: 'system', subtype: 'background_tasks_changed', tasks }));
+
+  assert.deepEqual(
+    backgroundTasks([{ task_id: 'task-1', task_type: 'local_agent', ambient: false }]),
+    [],
+  );
+  // The agent drops off the list a beat before its own terminal notification.
+  assert.deepEqual(backgroundTasks([]), []);
+
+  assert.deepEqual(
+    children(
+      message({
+        type: 'system',
+        subtype: 'task_notification',
+        task_id: 'task-1',
+        status: 'completed',
+      }),
+    ).map((child) => child.status),
+    ['completed'],
   );
 });
