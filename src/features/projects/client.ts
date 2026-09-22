@@ -22,14 +22,18 @@ const pending = new Map<
    disagree about what is running. */
 export function useProjects(): { projects: ProjectView[]; loading: boolean; error?: string } {
   initialize();
-  return useStoreSelector(
-    (state) => ({
+  return useStoreSelector((state) => {
+    // An unreachable runtime is an answer, not a wait: without this the view
+    // spins forever. And being connected is not the same as having heard, so
+    // an empty list before the first snapshot is still loading.
+    const unreachable =
+      state.connection === 'error' ? state.connectionError || 'The runtime is not reachable.' : '';
+    return {
       projects: state.projects,
-      loading: state.connection !== 'connected' && state.projects.length === 0,
-      ...(failure ? { error: failure } : {}),
-    }),
-    shallowEqual,
-  );
+      loading: !state.projectsLoaded && !unreachable,
+      ...(failure || unreachable ? { error: failure || unreachable } : {}),
+    };
+  }, shallowEqual);
 }
 
 export async function createProject(

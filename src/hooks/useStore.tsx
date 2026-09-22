@@ -232,6 +232,8 @@ export interface AppState {
   // Every local project as the runtime last reported it. The chat list, the
   // navigation and Projects itself all read this one copy.
   projects: ProjectView[];
+  /** True once the runtime has answered with a snapshot, empty or not. */
+  projectsLoaded: boolean;
   // Ids vouched for by the last authoritative listing: the boot snapshot
   // before the first SESSION_LIST, then the sessions of the most recent
   // SESSION_LIST. A SESSION_LIST prunes confirmed rows it no longer reports,
@@ -728,6 +730,7 @@ export const initialState: AppState = {
   sessions: sessionSnapshot?.sessions ?? {},
   sessionOrder: sessionSnapshot?.sessionOrder ?? [],
   projects: [],
+  projectsLoaded: false,
   listConfirmedSessionIds: sessionSnapshot?.sessionOrder ?? null,
   earlierSessionsByCwd: {},
   activeAppSessionId: persistedUiState.activeAppSessionId ?? null,
@@ -1079,7 +1082,7 @@ function baseReducer(state: AppState, action: Action): AppState {
     }
 
     case 'PROJECTS_SNAPSHOT':
-      return { ...state, projects: action.projects };
+      return { ...state, projects: action.projects, projectsLoaded: true };
 
     case 'SESSIONS_PROCESSES':
       return { ...state, agentProcesses: action.processes };
