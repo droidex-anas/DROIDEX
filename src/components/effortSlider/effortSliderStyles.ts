@@ -36,10 +36,11 @@ export const EFFORT_SLIDER_STYLES = `
   .help {
     position: relative; display: grid; place-items: center; flex: 0 0 auto;
     width: calc(14 * var(--u)); height: calc(16 * var(--u)); padding: 0;
-    color: #777875; background: none; border: 0; border-radius: 50%; cursor: help;
+    color: var(--effort-muted, #777875); background: none; border: 0; border-radius: 50%; cursor: help;
   }
   .help::before { content: ''; position: absolute; inset: calc(-5 * var(--u)); }
   .help svg { width: calc(13 * var(--u)); height: calc(13 * var(--u)); }
+  .help:hover { color: var(--effort-text, #dedede); }
   .help:focus-visible { outline: var(--u) solid #a392e5; outline-offset: calc(3 * var(--u)); }
   .labels {
     display: flex; justify-content: space-between;
@@ -85,8 +86,7 @@ export const EFFORT_SLIDER_MARKUP = `
     <div class="heading">
       <span class="caption">Effort</span>
       <span class="value-slot" aria-hidden="true"></span>
-      <button class="help" type="button" aria-label="About effort"
-        title="Move toward Smarter to select a higher effort level.">
+      <button class="help" type="button" aria-label="About effort">
         <svg viewBox="0 0 16 16" fill="none" aria-hidden="true">
           <circle cx="8" cy="8" r="6.2" stroke="currentColor" stroke-width="1.2"/>
           <path d="M6.3 6.2a1.75 1.75 0 0 1 3.45.4c0 1.25-1.75 1.35-1.75 2.6" stroke="currentColor" stroke-width="1.1" stroke-linecap="round"/>

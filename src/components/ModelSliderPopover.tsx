@@ -89,6 +89,7 @@ export default function ModelSliderPopover({ onClose }: { onClose: () => void })
   const [view, setView] = useState<'list' | 'effort'>('list');
   const ref = useRef<HTMLDivElement>(null);
   const sliderRef = useRef<EffortSliderElement>(null);
+  const [card, setCard] = useState<HTMLDivElement | null>(null);
   const { width, maxHeight, tailRight } = useTriggerAnchor(ref, PREFERRED_WIDTH_PX);
 
   const efforts = effortsFor(activeModel, effReasoning);
@@ -185,7 +186,10 @@ export default function ModelSliderPopover({ onClose }: { onClose: () => void })
       style={{ width, maxHeight }}
       className="absolute bottom-full right-0 mb-3 max-w-[calc(100vw-2rem)] z-50"
     >
-      <div className="flex max-h-[inherit] flex-col overflow-hidden rounded-2xl border border-droid-border/60 bg-droid-elevated shadow-droid">
+      <div
+        ref={setCard}
+        className="flex max-h-[inherit] flex-col overflow-hidden rounded-2xl border border-droid-border/60 bg-droid-elevated shadow-droid"
+      >
         <AnimatePresence mode="wait" initial={false}>
           {showEffortView ? (
             <motion.div
@@ -234,6 +238,7 @@ export default function ModelSliderPopover({ onClose }: { onClose: () => void })
                 autoFocus
                 onCommit={commitEffort}
                 style={SLIDER_STYLE}
+                helpAnchor={card}
               />
             </motion.div>
           ) : (

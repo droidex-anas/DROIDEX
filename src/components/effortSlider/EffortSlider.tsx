@@ -1,12 +1,15 @@
 import {
+  useCallback,
   useEffect,
   useRef,
+  useState,
   type CSSProperties,
   type DetailedHTMLProps,
   type HTMLAttributes,
   type Ref,
 } from 'react';
 import './effortSliderElement';
+import EffortHelpCard from './EffortHelpCard';
 import type {
   EffortSliderChangeDetail,
   EffortSliderElement,
@@ -40,6 +43,7 @@ export default function EffortSlider({
   autoFocus = false,
   onCommit,
   style,
+  helpAnchor = null,
   ref,
 }: {
   levels: EffortSliderLevel[];
@@ -50,9 +54,21 @@ export default function EffortSlider({
   /** Fires on a settled pick: pointer release, keyboard step, or `setValue(emit)`. */
   onCommit: (value: string) => void;
   style?: CSSProperties;
+  /** The surface the help explanation floats above; without one it stays hidden. */
+  helpAnchor?: HTMLElement | null;
   ref?: Ref<EffortSliderElement>;
 }) {
   const inner = useRef<EffortSliderElement | null>(null);
+  const [helpButton, setHelpButton] = useState<HTMLElement | null>(null);
+  const attach = useCallback(
+    (el: HTMLElement | null) => {
+      inner.current = el as EffortSliderElement | null;
+      setHelpButton(inner.current?.helpButton ?? null);
+      if (typeof ref === 'function') ref(inner.current);
+      else if (ref) ref.current = inner.current;
+    },
+    [ref],
+  );
   const onCommitRef = useRef(onCommit);
   onCommitRef.current = onCommit;
 
@@ -82,14 +98,9 @@ export default function EffortSlider({
   }, []);
 
   return (
-    <effort-slider
-      ref={(el: HTMLElement | null) => {
-        inner.current = el as EffortSliderElement | null;
-        if (typeof ref === 'function') ref(inner.current);
-        else if (ref) ref.current = inner.current;
-      }}
-      style={style}
-      disabled={disabled}
-    />
+    <>
+      <effort-slider ref={attach} style={style} disabled={disabled} />
+      {helpAnchor && <EffortHelpCard button={helpButton} anchor={helpAnchor} />}
+    </>
   );
 }

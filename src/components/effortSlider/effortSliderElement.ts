@@ -41,6 +41,8 @@ export interface EffortSliderElement extends HTMLElement {
   setLevels(levels: readonly EffortSliderLevel[]): void;
   setValue(value: string | number, options?: { emit?: boolean; animate?: boolean }): string;
   focusControl(): void;
+  /** The heading's help button, for a host that shows its explanation. */
+  readonly helpButton: HTMLElement | null;
 }
 
 if (typeof customElements !== 'undefined' && !customElements.get('effort-slider')) {
@@ -278,6 +280,10 @@ if (typeof customElements !== 'undefined' && !customElements.get('effort-slider'
 
     focusControl(): void {
       this._control.focus();
+    }
+
+    get helpButton(): HTMLElement | null {
+      return this.shadowRoot?.querySelector<HTMLElement>('.help') ?? null;
     }
 
     /** Set a named level or zero-based index; programmatic changes are silent by default. */
