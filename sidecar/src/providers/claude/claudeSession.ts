@@ -24,10 +24,6 @@ import { ClaudeEventMapper, rateLimitRefusal } from './claudeEvents.js';
 import { MessageQueue } from './claudeMessages.js';
 import { claudeCanUseTool, claudePermissionMode } from './claudePermissions.js';
 
-// Booting the CLI takes seconds, and the first turn streams while it happens, so
-// the chat says what it is waiting for instead of sitting empty.
-const STARTING = 'Starting Claude Code…';
-
 export interface ClaudeSessionInput {
   // Claude pins the session id it is given, so DROIDEX's own identity is also
   // the provider's: there is no separate resume handle.
@@ -190,9 +186,6 @@ export class ClaudeSession implements ProviderSession {
         parent_tool_use_id: null,
         message: { role: 'user', content: prompt },
       });
-      // Only ever the first turn: by the second the CLI is up and its startup
-      // is not what the chat is waiting for.
-      if (this.initializing) yield this.mapper.progressEvent(STARTING);
       for (;;) {
         const next = await turnQueue.next();
         // An exhausted stream is a failure, not a silent success.

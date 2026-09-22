@@ -209,12 +209,6 @@ export class CodexEventMapper {
     };
   }
 
-  // What the thread is doing before it can answer. Only true while the turn waits,
-  // so it is shown live and never stored.
-  progressEvent(text: string): NormalizedEvent {
-    return { transcript: this.transcript('status', { text, transient: true }) };
-  }
-
   private delta(kind: 'text' | 'thinking', params: DeltaParams | undefined): NormalizedEvent[] {
     if (!params?.delta) return [];
     if (kind === 'text') this.streamed.add(params.itemId);

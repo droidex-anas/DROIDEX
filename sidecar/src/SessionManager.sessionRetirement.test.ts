@@ -6,6 +6,7 @@ import test from 'node:test';
 import type { ProcessRecord } from './processes/processTree.js';
 import type { SessionFileChange } from './sessionFileCache.js';
 import type * as Protocol from './protocol.js';
+import { SessionRuntimeWarmUp } from './sessionRuntimeWarmUp.js';
 import { writeProviderConversation } from './testing/historyCharacterizationSupport.js';
 import {
   createSessionManagerTestContext,
@@ -409,6 +410,104 @@ test('a retired session reopens on the next prompt with its history intact', asy
   } finally {
     await h.dispose();
   }
+});
+
+test('selecting a retired chat starts its runtime again before any prompt', async () => {
+  const h = createSessionManagerTestContext({ sessionRuntimeIdleMs: 0 });
+  try {
+    const session = await openIdleSession(h, 'reselected');
+    writeProviderConversation(h.home, session.providerSessionId, 'reselected');
+    await focusElsewhere(h);
+    await h.retireIdleSessionRuntimes();
+    assert.deepEqual(providerClosures(h), [session.providerSessionId]);
+
+    await focusOn(h, session.appSessionId);
+    await h.warmSelectedSessionRuntime();
+
+    assert.deepEqual(
+      h.runtime.loadCalls.map((call) => call.sessionId),
+      [session.providerSessionId],
+      'selecting the chat reloads its runtime without waiting for a prompt',
+    );
+    assert.deepEqual(
+      h.provider.session(session.providerSessionId).prompts,
+      [],
+      'a warm-up must not start a turn',
+    );
+    assert.deepEqual(
+      appendedEvents(h)
+        .filter(({ event }) => event.appSessionId === session.appSessionId)
+        .map(({ event }) => event.text ?? '')
+        .filter((text) => /Starting|Resuming|warm/i.test(text)),
+      [],
+      'a warm-up must not write a row into the transcript',
+    );
+
+    await h.handle({ type: 'session.send', appSessionId: session.appSessionId, text: 'instant' });
+    await h.provider.waitForPrompts(session.providerSessionId, 1);
+    assert.deepEqual(
+      h.runtime.loadCalls.map((call) => call.sessionId),
+      [session.providerSessionId],
+      'the send reuses the warmed runtime rather than reloading it again',
+    );
+  } finally {
+    await h.dispose();
+  }
+});
+
+test('a chat the user passed over on the way to another is never warmed', async () => {
+  const h = createSessionManagerTestContext({ sessionRuntimeIdleMs: 0 });
+  try {
+    const passed = await openIdleSession(h, 'passed-over');
+    const opened = await openIdleSession(h, 'opened');
+    writeProviderConversation(h.home, passed.providerSessionId, 'passed-over');
+    writeProviderConversation(h.home, opened.providerSessionId, 'opened');
+    await focusElsewhere(h);
+    await h.retireIdleSessionRuntimes();
+
+    await focusOn(h, passed.appSessionId);
+    await focusOn(h, opened.appSessionId);
+    await h.warmSelectedSessionRuntime();
+
+    assert.deepEqual(
+      h.runtime.loadCalls.map((call) => call.sessionId),
+      [opened.providerSessionId],
+      'only the chat the selection settled on is worth a process',
+    );
+  } finally {
+    await h.dispose();
+  }
+});
+
+test('a warm-up queued behind another is skipped once its chat is no longer selected', async () => {
+  // Chat A is still resuming when the user settles on B, so B waits behind A.
+  // Moving on to C before A finishes must drop B: only what is on screen when
+  // its turn comes is worth a process.
+  const resumed: string[] = [];
+  let finishA = (): void => undefined;
+  const warmUp = new SessionRuntimeWarmUp({
+    ready: () => Promise.resolve(),
+    isResumable: () => true,
+    isLive: () => false,
+    resume: (id) => {
+      resumed.push(id);
+      return id === 'A' ? new Promise<void>((resolve) => (finishA = resolve)) : Promise.resolve();
+    },
+  });
+
+  warmUp.selected('A');
+  const a = warmUp.flush();
+  // Let A's resume actually begin before the selection moves on.
+  await new Promise((resolve) => setImmediate(resolve));
+  warmUp.selected('B');
+  const b = warmUp.flush();
+  warmUp.selected('C');
+  finishA();
+  await Promise.all([a, b]);
+  assert.deepEqual(resumed, ['A'], 'B was left before its turn came, so it never resumes');
+
+  await warmUp.flush();
+  assert.deepEqual(resumed, ['A', 'C'], 'the chat that is on screen still warms');
 });
 
 test('a prompt that lands while the runtime is being released still reaches the session', async () => {

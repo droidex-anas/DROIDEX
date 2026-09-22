@@ -1,18 +1,23 @@
-// A top-level session's provider runtime is an OS process holding ~367 MiB and
-// 17 threads, measured by PID. Nothing releases one during an app run: the
+// A top-level session's provider runtime is an OS process, and an idle one is
+// not cheap: measured on this machine by PID, a Claude Code CLI holds 291 to
+// 295 MiB, a `codex app-server` thread about 241 MiB, and a Droid runtime about
+// 367 MiB across 17 threads. Nothing releases one during an app run: the
 // renderer never sends session.close, so eight open workspaces hold eight of
 // them until quit. These rules release the ones the user has demonstrably
-// walked away from. The transcript is served from history either way; only the
-// next prompt pays for the reload.
+// walked away from. The transcript is served from history either way.
 import type { LiveSession } from './SessionLifecycle.js';
 import type { SessionPhase } from './protocol.js';
 import { RuntimeRetirementTimer } from './runtimeRetirementTimer.js';
 
-// Six times the child budget, though a session reloads faster than a child
-// (measured 0.7s against 2.4-3.1s, with the transcript painting in under 10ms
-// either way). The budget is long because of where the cost lands, not how
-// large it is: a child pays behind its own loading state, a session pays after
-// the user has typed a prompt and pressed enter.
+// Six times the child budget, because of where the cost lands rather than how
+// large it is: a child pays behind its own loading state, while a session used
+// to pay after the user had typed a prompt and pressed enter. Selecting the
+// chat now starts its runtime first (sessionRuntimeWarmUp), so that reload runs
+// while the user types instead of after: measured on this machine, a Claude
+// Code session answers again 2.0 to 2.1 s after the resume call, and a Codex
+// process opens a thread in about 0.2 s. Thirty minutes stands; the memory
+// figures above argue about how many runtimes may sit idle, not about how long
+// one the user has walked away from should wait.
 export const SESSION_RUNTIME_IDLE_RETIREMENT_MS = 30 * 60_000;
 
 export const SESSION_RUNTIME_RETIRED_STATUS =

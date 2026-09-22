@@ -17,10 +17,7 @@ import {
   turnOf,
   type CodexTurn,
 } from './codexEvents.js';
-import { CodexStartup } from './codexStartup.js';
 import { TurnStream, turnInput, turnStartParams } from './codexTurn.js';
-
-const STARTUP_QUIET_MS = 40;
 
 export interface CodexSessionInput {
   // DROIDEX's own identity for the session. Codex mints its thread id itself,
@@ -60,9 +57,7 @@ export class CodexSession implements ProviderSession {
   // to name it with yet.
   private pendingInterrupt = false;
   private readonly prompts: OpenPrompts;
-  private readonly startup = new CodexStartup();
   private readonly backgroundListeners = new Set<(event: NormalizedEvent) => void>();
-  private startupNoticeTimer?: ReturnType<typeof setTimeout>;
   private catalog?: CodexCatalog;
 
   constructor(input: CodexSessionInput) {
@@ -154,9 +149,6 @@ export class CodexSession implements ProviderSession {
     this.turn = turn;
     this.pendingInterrupt = false;
     try {
-      // The thread's own startup may still be running behind this turn; what is
-      // left of it is announced now rather than leaving the chat silent.
-      this.announceStartup();
       const started = await this.client.request<{ turn: CodexTurn }>(
         'turn/start',
         turnStartParams(threadId, prompt, mentions, {
@@ -168,8 +160,6 @@ export class CodexSession implements ProviderSession {
       this.adoptTurn(started.turn.id);
       yield* turn.drain();
     } finally {
-      // Releases a waiter left parked when the consumer stops reading early.
-      this.cancelStartupNotice();
       turn.finish();
       this.turn = undefined;
       this.turnId = undefined;
@@ -227,7 +217,6 @@ export class CodexSession implements ProviderSession {
   close(): Promise<void> {
     this.resolveClosed();
     this.catalog?.close();
-    this.cancelStartupNotice();
     return (this.closePromise ??= this.client.close());
   }
 
@@ -269,28 +258,11 @@ export class CodexSession implements ProviderSession {
     });
     for (const method of MAPPED_NOTIFICATIONS) {
       this.onThreadNotification(method, (params) => {
-        const events = this.mapper.map(method, params);
-        // Only mapped output counts as an answer, not unknown items or accounting.
-        if (method.startsWith('item/') && events.length > 0) {
-          this.startup.itemArrived();
-          this.cancelStartupNotice();
-        }
-        this.deliver(events);
+        this.deliver(this.mapper.map(method, params));
       });
     }
     this.client.onNotification('skills/changed', () => {
       this.catalog?.refreshSkills();
-    });
-    this.onThreadNotification('mcpServer/startupStatus/updated', (params) => {
-      this.startup.serverStatus(params);
-      this.announceStartup();
-    });
-    this.onThreadNotification('hook/started', () => {
-      this.startup.hookStarted();
-      this.announceStartup();
-    });
-    this.onThreadNotification('hook/completed', () => {
-      this.startup.hookCompleted();
     });
     this.onThreadNotification('turn/started', (params) => {
       const turn = turnOf(params);
@@ -308,7 +280,6 @@ export class CodexSession implements ProviderSession {
       if (!failure.willRetry) this.turn?.fail(failure.error);
     });
     this.client.onClose((error, cleanExit) => {
-      this.cancelStartupNotice();
       this.catalog?.close();
       // A turn still in flight when the process goes away has failed, however
       // the process ended; an idle chat only records a death that was abnormal.
@@ -331,31 +302,6 @@ export class CodexSession implements ProviderSession {
     void this.sendInterrupt(turnId).catch((error: unknown) => {
       if (this.turn === turn) turn?.push([this.mapper.errorEvent(error)]);
     });
-  }
-
-  // Nothing to say outside a turn: there is no transcript for it to land in, and
-  // holding the notice keeps it for the turn that is actually waiting.
-  private announceStartup(): void {
-    if (!this.turn || !this.startup.hasPendingNotices) return;
-    // A microtask only sees one stdout chunk. Keep the burst open across chunks;
-    // downstream bridge batching cannot amend a transcript row already emitted.
-    if (this.startupNoticeTimer) {
-      this.startupNoticeTimer.refresh();
-      return;
-    }
-    this.startupNoticeTimer = setTimeout(() => {
-      this.startupNoticeTimer = undefined;
-      const turn = this.turn;
-      if (!turn) return;
-      const notices = this.startup.notices();
-      if (notices.length > 0) turn.push(notices.map((text) => this.mapper.progressEvent(text)));
-    }, STARTUP_QUIET_MS);
-    this.startupNoticeTimer.unref();
-  }
-
-  private cancelStartupNotice(): void {
-    clearTimeout(this.startupNoticeTimer);
-    this.startupNoticeTimer = undefined;
   }
 
   private sendInterrupt(turnId: string): Promise<unknown> {
