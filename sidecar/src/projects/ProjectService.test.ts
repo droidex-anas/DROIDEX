@@ -61,6 +61,8 @@ async function harness(saved: Project[] = []) {
   };
   const answered: { id: string; requestId: string; answers: unknown[] }[] = [];
   const configured: { id: string; settings: unknown }[] = [];
+  // What each session is actually blocked on, the way the harness would know.
+  const asking = new Map<string, string>();
   let next = 0;
   const store: ProjectPersistence = {
     load: async () => structuredClone(state.saved),
@@ -105,6 +107,7 @@ async function harness(saved: Project[] = []) {
       await streaming(id, true);
       return { status: 'accepted', settled: Promise.resolve() };
     },
+    isAsking: (id, requestId) => asking.get(id) === requestId,
     configure: async (id, settings) => {
       const session = sessions.get(id);
       assert.ok(session);
@@ -114,7 +117,9 @@ async function harness(saved: Project[] = []) {
     },
     answer: (id, requestId, answers) => {
       answered.push({ id, requestId, answers });
-      return true;
+      const live = asking.get(id) === requestId;
+      asking.delete(id);
+      return live;
     },
     interrupt: async (id) => {
       const session = sessions.get(id);
@@ -155,6 +160,7 @@ async function harness(saved: Project[] = []) {
     sessions,
     sent,
     answered,
+    asking,
     configured,
     launched,
     events,
@@ -221,6 +227,7 @@ test('a thread’s own question reaches its lead with its options, and the answe
   t.after(() => h.projects.close());
   const { main } = await h.root();
   const child = await h.projects.spawn(main, input);
+  h.asking.set(child.appSessionId, 'ask-1');
   await h.projects.observe({
     type: 'question.requested',
     question: {
@@ -302,6 +309,31 @@ test('a question that dies with its turn takes its wake off the queue', async (t
   assert.equal(h.projects.list()[0]?.queued, 0);
   assert.equal(h.projects.list()[0]?.threads[1]?.waiting, false);
   assert.equal(h.sent.length, 0);
+});
+
+test('a question answered inside its thread stops asking the owner mid-turn', async (t) => {
+  const h = await harness();
+  t.after(() => h.projects.close());
+  const { main } = await h.root();
+  const child = await h.projects.spawn(main, input);
+  h.asking.set(child.appSessionId, 'ask-live');
+  await h.projects.observe({
+    type: 'question.requested',
+    question: {
+      appSessionId: child.appSessionId,
+      requestId: 'ask-live',
+      questions: [{ index: 0, question: 'Which format?', options: ['JSON', 'SQLite'] }],
+    },
+  });
+  assert.equal(h.projects.list()[0]?.threads[1]?.waiting, true);
+
+  // The person answered it in the thread's own chat: no event says so, and the
+  // turn carries on. The owner must stop being told to answer it.
+  h.asking.delete(child.appSessionId);
+  await h.streaming(child.appSessionId, true);
+  await drain();
+  assert.equal(h.projects.list()[0]?.threads[1]?.waiting, false);
+  assert.equal(h.projects.list()[0]?.queued, 0);
 });
 
 test('a thread that settles reports either way: an empty turn, or the failure that ended it', async (t) => {

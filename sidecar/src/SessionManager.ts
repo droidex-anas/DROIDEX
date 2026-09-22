@@ -1101,6 +1101,11 @@ export class SessionManager {
     return this.registry.resolveSummary(appSessionId);
   }
 
+  /** Whether a question a conversation was asked is still waiting for an answer. */
+  isQuestionPending(appSessionId: string, requestId: string): boolean {
+    return this.interactions.isQuestionPending(appSessionId, requestId);
+  }
+
   /** Whether this conversation is open right now, rather than merely known. */
   isSessionLive(appSessionId: string): boolean {
     return this.registry.getLive(appSessionId) !== undefined;

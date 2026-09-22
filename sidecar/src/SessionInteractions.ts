@@ -212,6 +212,13 @@ export class SessionInteractions {
     return true;
   }
 
+  /** Whether this exact question is still waiting for an answer. */
+  isQuestionPending(appSessionId: string, requestId: string): boolean {
+    const liveSession = this.dependencies.getLiveSession(appSessionId);
+    const scope = liveSession ? this.scopes.get(liveSession.summary.appSessionId) : undefined;
+    return scope?.pendingQuestions.has(requestId) === true;
+  }
+
   hasPending(appSessionId: string): boolean {
     const scope = this.scopes.get(appSessionId);
     return Boolean(scope && (scope.pendingPermissions.size > 0 || scope.pendingQuestions.size > 0));
