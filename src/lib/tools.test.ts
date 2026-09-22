@@ -284,12 +284,32 @@ test('only a real spawn is labeled a child session', () => {
   assert.ok(isChildSessionTool('Task', { subagent_type: 'my-custom-droid' }));
 
   // Inspecting or stopping an existing subagent is not a spawn, so it must not
-  // read as "Child session <tool>" in the feed.
+  // read as "Child session <tool>" in the feed. DROIDEX has no card for these,
+  // and the name alone says nothing about what they are polling, so they keep
+  // their own name and the task they were given.
   for (const name of ['TaskOutput', 'TaskStop']) {
-    assert.equal(toolMeta(name, { task_id: 'abc' }).cat, 'subagent');
-    assert.equal(CAT_LABEL[toolMeta(name, { task_id: 'abc' }).cat], 'Subagent');
+    assert.equal(toolMeta(name, { task_id: 'abc' }).cat, 'other');
+    assert.equal(CAT_LABEL[toolMeta(name, { task_id: 'abc' }).cat], 'Tool');
     assert.ok(!isChildSessionTool(name, { task_id: 'abc' }));
   }
+  const poll = describeToolCall('TaskOutput', { task_id: 'abc', block: true });
+  assert.equal(poll.verb, 'Task output');
+  assert.equal(poll.object, 'task id abc');
+});
+
+test('a tool with no card keeps its own name instead of borrowing a verb', () => {
+  // "Searched" belongs to a codebase search; a tool that merely has "search" in
+  // its name and a bare query is not one, so it says what it is.
+  const search = describeToolCall('ToolSearch', { query: 'select:Read,Edit', max_results: 5 });
+  assert.equal(search.verb, 'Tool search');
+  assert.equal(search.object, 'select:Read,Edit');
+  // A real codebase search still reads as one: it carries a pattern.
+  assert.equal(describeToolCall('Grep', { pattern: 'foo', path: 'src' }).verb, 'Searched');
+  assert.equal(describeToolCall('Glob', { pattern: '**/*.ts' }).verb, 'Searched');
+  // Nothing recognisable at all: the name, plus one argument, is the whole row.
+  const monitor = describeToolCall('Monitor', { description: 'errors in deploy.log' });
+  assert.equal(monitor.verb, 'Monitor');
+  assert.equal(monitor.object, 'errors in deploy.log');
 });
 
 test('describeToolCall categorises a namespaced tool by its bare name and keeps its server', () => {

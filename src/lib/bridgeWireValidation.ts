@@ -341,7 +341,9 @@ function isTranscriptEvent(value: unknown): boolean {
     hasStrings(value, ['id', 'appSessionId', 'sourceSessionId', 'role', 'kind']) &&
     typeof value.ts === 'number' &&
     (value.errorKind === undefined || value.errorKind === 'usage_limit') &&
-    (value.resetsAt === undefined || nonNegativeSafeInteger(value.resetsAt))
+    (value.resetsAt === undefined || nonNegativeSafeInteger(value.resetsAt)) &&
+    isOptionalString(value.pollsChildSessionId) &&
+    (value.interrupted === undefined || value.interrupted === true)
   );
 }
 

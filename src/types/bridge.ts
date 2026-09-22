@@ -207,6 +207,15 @@ export interface TranscriptEvent {
   toolArgs?: unknown;
   toolUseId?: string;
   isError?: boolean;
+  // A 'tool_call' the provider knows is about a child session it is already
+  // tracking: polling that agent for output, or stopping it. The same tool
+  // names also read and stop background shell commands, so only the provider
+  // can tell the two apart, and the feed must not guess from the name.
+  pollsChildSessionId?: string;
+  // A 'tool_result' for a call that never ran because the user steered or
+  // stopped the turn. Reported by the harness, not inferred from the text: it
+  // is not a failure and must not read as one.
+  interrupted?: true;
   // For a 'compaction' divider: how many messages the compaction summarized away.
   removedCount?: number;
   author?: 'user';

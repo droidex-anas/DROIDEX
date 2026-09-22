@@ -295,6 +295,57 @@ test('the result reports only the denials that never reached the transcript', ()
   );
 });
 
+test('a task poll is marked only when it names an agent the mapper is tracking', () => {
+  const poll = (toolUseId: string, taskId: string): SDKMessage =>
+    assistant([
+      { type: 'tool_use', id: toolUseId, name: 'TaskOutput', input: { task_id: taskId } },
+    ]);
+  const started: SDKMessage = message({
+    type: 'system',
+    subtype: 'task_started',
+    task_id: 'task-1',
+    task_type: 'local_agent',
+    description: 'survey the code',
+    tool_use_id: 'toolu_spawn',
+  });
+
+  const events = transcripts([started, poll('toolu_2', 'task-1'), poll('toolu_3', 'bash_7')]);
+  assert.deepEqual(
+    events.map((event) => [event.toolUseId, event.pollsChildSessionId]),
+    [
+      // The agent this chat spawned.
+      ['toolu_2', 'task-1'],
+      // The same tool reading a background command: no agent, so no mark.
+      ['toolu_3', undefined],
+    ],
+  );
+});
+
+test('a call the user steered away from is interrupted, not failed', () => {
+  const result = (toolUseId: string, content: string): SDKMessage =>
+    message({
+      type: 'user',
+      message: {
+        content: [{ type: 'tool_result', tool_use_id: toolUseId, content, is_error: true }],
+      },
+    });
+
+  const events = transcripts([
+    result(
+      'toolu_1',
+      "The user doesn't want to proceed with this tool use. The tool use was rejected.",
+    ),
+    result('toolu_2', 'Error: no such file or directory'),
+  ]);
+  assert.deepEqual(
+    events.map((event) => [event.toolUseId, event.isError, event.interrupted]),
+    [
+      ['toolu_1', false, true],
+      ['toolu_2', true, undefined],
+    ],
+  );
+});
+
 // The SDK's background-task list carries ids only, and an agent's id leaves it
 // when the agent finishes exactly as it does when one is stopped. Reading the
 // gap as a stop flashed every completing agent through "Awaiting approval".

@@ -2,7 +2,7 @@ import { useContext, useState } from 'react';
 import { commandLineContains } from '../../lib/commandLineMatch';
 import { LiveProcessesContext } from './liveProcessesContext';
 import { stripAnsi } from '../../lib/tools';
-import { Caret, ErrorTag, Expand, linkify, RED, ToolPanel } from './primitives';
+import { Caret, ErrorTag, Expand, InterruptedTag, linkify, RED, ToolPanel } from './primitives';
 
 // A backgrounded server keeps its card "running" after the turn ends as long
 // as a live agent process still carries the command the agent typed.
@@ -28,11 +28,13 @@ export function ToolCallCard({
   heading,
   output,
   error = false,
+  interrupted = false,
   running = false,
 }: {
   heading: React.ReactNode;
   output?: string;
   error?: boolean;
+  interrupted?: boolean;
   running?: boolean;
 }) {
   const out = output ? stripAnsi(output).trimEnd() : '';
@@ -48,6 +50,7 @@ export function ToolCallCard({
       <div className="px-3.5 py-2.5 font-mono text-[12px] leading-[1.6]">
         {heading}
         {running && <span className="shimmer-text text-[13px] font-medium">Running</span>}
+        {interrupted && <InterruptedTag />}
         {out && (
           <pre
             className="mt-2 pt-2 border-t border-droid-border/60 max-h-56 overflow-auto whitespace-pre-wrap text-[12px] leading-[1.55] break-words text-droid-text-muted"
@@ -65,11 +68,13 @@ export function CommandCard({
   command,
   output,
   error = false,
+  interrupted = false,
   running = false,
 }: {
   command: string;
   output?: string;
   error?: boolean;
+  interrupted?: boolean;
   running?: boolean;
 }) {
   const alive = useCommandStillRunning(command);
@@ -88,6 +93,7 @@ export function CommandCard({
       }
       output={output}
       error={error}
+      interrupted={interrupted}
       running={running || alive}
     />
   );
@@ -100,12 +106,14 @@ export function CommandLine({
   command,
   output,
   error = false,
+  interrupted = false,
   running = false,
   forceOpen = false,
 }: {
   command: string;
   output?: string;
   error?: boolean;
+  interrupted?: boolean;
   running?: boolean;
   forceOpen?: boolean;
 }) {
@@ -144,7 +152,7 @@ export function CommandLine({
       >
         <Caret open={expanded} />
         {label}
-        {error && <ErrorTag />}
+        {interrupted ? <InterruptedTag /> : error && <ErrorTag />}
       </button>
       <Expand open={expanded}>
         <div className="mt-1.5 pl-[18px]">
