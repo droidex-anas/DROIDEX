@@ -2,7 +2,6 @@ import { existsSync } from 'node:fs';
 import {
   addWorktree,
   ensureWorktreeDirectoryIgnored,
-  git,
   removeManagedWorktree,
   repositoryRoot,
   requireDirectory,

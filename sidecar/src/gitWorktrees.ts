@@ -1,5 +1,14 @@
 import { execFile } from 'node:child_process';
-import { appendFile, lstat, mkdir, readFile, realpath, rmdir, stat } from 'node:fs/promises';
+import {
+  appendFile,
+  lstat,
+  mkdir,
+  readFile,
+  realpath,
+  rmdir,
+  stat,
+  unlink,
+} from 'node:fs/promises';
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { promisify } from 'node:util';
 
@@ -158,6 +167,14 @@ export async function isManagedWorktreePath(
 
 /** Removes a worktree DROIDEX made, keeping any that still holds work. */
 export async function removeManagedWorktree(target: string): Promise<void> {
+  // A symbolic link standing where a worktree was recorded resolves to whatever
+  // it points at, and every check below runs on that instead. Drop the link and
+  // stop: its destination belongs to someone else.
+  const link = await lstat(target).catch(() => undefined);
+  if (link?.isSymbolicLink()) {
+    await unlink(target).catch(() => undefined);
+    return;
+  }
   const worktrees = parseWorktreePaths(await git(target, ['worktree', 'list', '--porcelain']));
   const main = worktrees[0];
   const canonicalTarget = await registeredWorktreePath(worktrees, target);
