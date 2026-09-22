@@ -14,6 +14,7 @@ import {
   errorOf,
   isObject,
   MAPPED_NOTIFICATIONS,
+  mcpServerFailure,
   turnOf,
   type CodexTurn,
 } from './codexEvents.js';
@@ -58,6 +59,9 @@ export class CodexSession implements ProviderSession {
   private pendingInterrupt = false;
   private readonly prompts: OpenPrompts;
   private readonly backgroundListeners = new Set<(event: NormalizedEvent) => void>();
+  // A thread's MCP servers start before its first turn, so a notice about one
+  // has no transcript to land in yet and waits for the turn that follows.
+  private readonly heldNotices: NormalizedEvent[] = [];
   private catalog?: CodexCatalog;
 
   constructor(input: CodexSessionInput) {
@@ -148,6 +152,7 @@ export class CodexSession implements ProviderSession {
     const turn = new TurnStream();
     this.turn = turn;
     this.pendingInterrupt = false;
+    if (this.heldNotices.length > 0) turn.push(this.heldNotices.splice(0));
     try {
       const started = await this.client.request<{ turn: CodexTurn }>(
         'turn/start',
@@ -252,6 +257,14 @@ export class CodexSession implements ProviderSession {
     }
   }
 
+  // Something the chat should keep that no turn asked for: it joins the turn
+  // that is running, or waits for the next one.
+  private notice(events: NormalizedEvent[]): void {
+    if (events.length === 0) return;
+    if (this.turn) this.turn.push(events);
+    else this.heldNotices.push(...events);
+  }
+
   private registerHandlers(): void {
     this.client.onNotification('thread/started', (params) => {
       this.deliver(this.mapper.childThreadStarted(params, this.threadId));
@@ -263,6 +276,10 @@ export class CodexSession implements ProviderSession {
     }
     this.client.onNotification('skills/changed', () => {
       this.catalog?.refreshSkills();
+    });
+    this.onThreadNotification('mcpServer/startupStatus/updated', (params) => {
+      const failure = mcpServerFailure(params);
+      if (failure) this.notice(this.mapper.mcpFailureEvents(failure));
     });
     this.onThreadNotification('turn/started', (params) => {
       const turn = turnOf(params);
