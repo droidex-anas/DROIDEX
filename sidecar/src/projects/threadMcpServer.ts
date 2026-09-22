@@ -201,14 +201,14 @@ export function createThreadMcpServer(appSessionIdForTool: () => string | undefi
         },
         safeTool(async (input: { steps: PlanStep[] }) => {
           const projects = await requireProjectService();
-          const steps = await projects.setPlan(
+          const stepCount = await projects.setPlan(
             appSessionId(),
             input.steps.map(({ threadId, ...step }) => ({
               ...step,
               ...(threadId ? { threadAppSessionId: threadId } : {}),
             })),
           );
-          return jsonResult({ ok: true, steps });
+          return jsonResult({ ok: true, stepCount });
         }),
       ),
       tool(

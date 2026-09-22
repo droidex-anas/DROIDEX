@@ -149,7 +149,10 @@ export class ProjectTurns {
     try {
       this.d.enqueue(project, thread.appSessionId, thread.ownerAppSessionId, 'question', asked);
     } catch (error) {
+      // Holding a project is a decision the ledger has to carry: without this
+      // the hold and its reason live only in memory until something else saves.
       this.d.fail(project, error);
+      await this.d.save();
       return;
     }
     thread.ask = { requestId: question.requestId, questions };
