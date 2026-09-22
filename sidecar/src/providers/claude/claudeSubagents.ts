@@ -167,6 +167,9 @@ export class ClaudeSubagents {
     return this.update(message.task_id, {
       ...(!known ? { modelId, label: message.description, status: 'running' } : {}),
       ...(message.tool_use_id ? { toolUseId: message.tool_use_id } : {}),
+      // The agent's own running total, which belongs to its row rather than to
+      // the parent's session totals.
+      ...(message.usage.total_tokens ? { tokensUsed: message.usage.total_tokens } : {}),
       activity: { preview: message.summary ?? message.description },
     });
   }

@@ -25,6 +25,8 @@ export interface ChildSessionSignal {
   status?: ChildStatus;
   group?: string;
   phase?: string;
+  // What this child alone has spent, when its provider reports it.
+  tokensUsed?: number;
   // False for state-only feeds with no child-transcript view.
   transcriptAvailable?: boolean;
 }

@@ -23,6 +23,13 @@ const childrenOf =
   (entry: SDKMessage): ChildSessionSignal[] =>
     mapper.map(entry).flatMap((n) => (n.childSession ? [n.childSession] : []));
 
+const mainLoopUsage = (input: number, output: number) => ({
+  input_tokens: input,
+  output_tokens: output,
+  cache_read_input_tokens: 0,
+  cache_creation_input_tokens: 0,
+});
+
 function transcripts(messages: SDKMessage[]): TranscriptEvent[] {
   return mapped(messages).map(({ transcript }) => transcript);
 }
@@ -270,6 +277,7 @@ test('the result reports only the denials that never reached the transcript', ()
     }),
     message({
       type: 'result',
+      usage: mainLoopUsage(0, 0),
       modelUsage: {},
       permission_denials: [
         { tool_name: 'Write', tool_use_id: 'toolu_1', tool_input: {} },
@@ -353,4 +361,63 @@ test('a spawn keeps only its label fields in the parent transcript', () => {
     events.map((event) => [event.toolName, event.toolArgs]),
     [['Task', { subagent_type: 'reviewer', description: 'Check the diff' }]],
   );
+});
+
+// A subagent's spend belongs to its own row, so the number travels with the
+// child rather than disappearing into the parent's session totals.
+test("a subagent's progress reports its own token spend", () => {
+  const children = childrenOf(new ClaudeEventMapper('app-1', 'claude-haiku-4-5'));
+  children(
+    message({
+      type: 'system',
+      subtype: 'task_started',
+      task_id: 'task-1',
+      task_type: 'local_agent',
+      description: 'Check the diff',
+    }),
+  );
+
+  assert.deepEqual(
+    children(
+      message({
+        type: 'system',
+        subtype: 'task_progress',
+        task_id: 'task-1',
+        description: 'Check the diff',
+        summary: 'Reading the diff',
+        usage: { total_tokens: 4200, tool_uses: 3, duration_ms: 900 },
+      }),
+    ).map((child) => [child.providerSessionId, child.tokensUsed, child.activity?.preview]),
+    [['task-1', 4200, 'Reading the diff']],
+  );
+});
+
+// modelUsage is cumulative but counts every subagent and compaction call the
+// query made. The session's own totals are the main loop's, which arrives per
+// turn, so the turns are summed and /clear starts the tally again.
+test("the session's totals count the main loop, not its subagents", () => {
+  const mapper = new ClaudeEventMapper('app-1');
+  const tokens = (entry: SDKMessage) =>
+    mapper.map(entry).flatMap((n) => (n.tokens ? [n.tokens] : []));
+  // The same turn as the CLI reports it: `usage` is the main loop alone, while
+  // `modelUsage` also carries what the turn's subagents spent.
+  const turn = (input: number, output: number): SDKMessage =>
+    message({
+      type: 'result',
+      usage: mainLoopUsage(input, output),
+      modelUsage: {
+        'claude-haiku-4-5': {
+          inputTokens: input * 10,
+          outputTokens: output * 10,
+          cacheReadInputTokens: 0,
+          cacheCreationInputTokens: 0,
+        },
+      },
+      permission_denials: [],
+    });
+
+  assert.deepEqual(tokens(turn(100, 20)), [{ tokensIn: 100, tokensOut: 20, contextTokens: 0 }]);
+  assert.deepEqual(tokens(turn(50, 10)), [{ tokensIn: 150, tokensOut: 30, contextTokens: 0 }]);
+  assert.deepEqual(tokens(message({ type: 'conversation_reset' })), []);
+  assert.deepEqual(tokens(turn(7, 3)), [{ tokensIn: 7, tokensOut: 3, contextTokens: 0 }]);
 });

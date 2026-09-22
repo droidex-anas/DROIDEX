@@ -97,7 +97,12 @@ export class ClaudeEventMapper {
       case 'tool_use_summary':
       case 'auth_status':
       case 'prompt_suggestion':
+        return [];
+      // /clear starts a fresh conversation, and the CLI's own usage counting
+      // starts again with it, so the session's totals follow.
       case 'conversation_reset':
+        this.totals.tokensIn = 0;
+        this.totals.tokensOut = 0;
         return [];
       default:
         // Fails the build when the SDK adds a top-level message type.
@@ -253,17 +258,16 @@ export class ClaudeEventMapper {
     });
   }
 
-  // modelUsage covers the main loop, subagents and compaction, and is cumulative
-  // for the whole query(). Settlement itself is the session's call: a result left
+  // The session's own spend. `modelUsage` would be cumulative for the whole
+  // query(), but it counts subagents and compaction too, and a subagent's tokens
+  // belong to its own row; `usage` is the main loop alone and per turn, so the
+  // turns are summed here. Settlement itself is the session's call: a result left
   // behind by an interrupted turn contributes usage and nothing else.
   private result(message: Extract<SDKMessage, { type: 'result' }>): NormalizedEvent[] {
-    this.totals.tokensIn = 0;
-    this.totals.tokensOut = 0;
-    for (const usage of Object.values(message.modelUsage)) {
-      this.totals.tokensIn +=
-        usage.inputTokens + usage.cacheReadInputTokens + usage.cacheCreationInputTokens;
-      this.totals.tokensOut += usage.outputTokens;
-    }
+    const { usage } = message;
+    this.totals.tokensIn +=
+      usage.input_tokens + usage.cache_read_input_tokens + usage.cache_creation_input_tokens;
+    this.totals.tokensOut += usage.output_tokens;
     // The denial list is the turn's authoritative record; a refusal usually
     // reaches the model as a tool result too, and that row is the one the
     // transcript keeps. What is left never streamed at all.
