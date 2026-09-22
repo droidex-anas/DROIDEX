@@ -66,11 +66,18 @@ export function isSettledAgentStatus(status: ChildStatus): boolean {
   return status === 'completed' || status === 'failed';
 }
 
-// Work in flight: the agent is running, or it has been spawned and its harness
-// has not reported on it yet. A paused agent is waiting on the user rather than
-// working, and a settled one has stopped.
-export function isWorkingAgentStatus(status: ChildStatus): boolean {
-  return status === 'running' || status === 'pending';
+// Work in flight. A running agent always is. A pending one, spawned but not yet
+// reported on by its harness, is only while the chat's own turn is live: that is
+// a spawn in progress. Once the turn has ended nothing will ever report on it
+// (Codex mints a pending child before the agent initialises, and a restart
+// restores it unchanged), so counting it would pin the docked line open for the
+// life of the session. A paused agent is waiting on the user, and a settled one
+// has stopped.
+export function isWorkingAgent(
+  child: Pick<ChildSessionSummary, 'status'>,
+  turnLive: boolean,
+): boolean {
+  return child.status === 'running' || (turnLive && child.status === 'pending');
 }
 
 export function buildAgentRows(
