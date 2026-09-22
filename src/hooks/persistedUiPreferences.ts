@@ -194,8 +194,9 @@ export function saveDiffView(value: DiffViewMode): DiffViewMode {
   return mode;
 }
 
+// The slider is the default; only someone who chose the classic list keeps it.
 function normalizeModelSelectorStyle(value: unknown): ModelSelectorStyle {
-  return value === 'slider' ? 'slider' : 'classic';
+  return value === 'classic' ? 'classic' : 'slider';
 }
 
 export function loadModelSelectorStyle(): ModelSelectorStyle {
@@ -204,7 +205,7 @@ export function loadModelSelectorStyle(): ModelSelectorStyle {
       getLocalStorage()?.getItem(MODEL_SELECTOR_STYLE_STORAGE_KEY),
     );
   } catch {
-    return 'classic';
+    return 'slider';
   }
 }
 

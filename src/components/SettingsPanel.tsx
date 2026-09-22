@@ -731,15 +731,15 @@ function ConfigurationSection() {
       <div className="rounded-xl border border-droid-border bg-droid-surface divide-y divide-droid-border mb-8">
         <SettingRow
           label="Model selector"
-          description="How the composer's model chip picks a model: the classic list with per-row effort dots, or a card that drills into a spring effort slider."
+          description="How the composer's model chip picks a model: a card that drills into an effort slider, or the classic list with per-row effort dots."
         >
           <Dropdown
             ariaLabel="Model selector"
             value={modelSelectorStyle}
             width="w-44"
             options={[
-              { value: 'classic', label: 'Classic list' },
               { value: 'slider', label: 'Effort slider' },
+              { value: 'classic', label: 'Classic list' },
             ]}
             onChange={(style) => {
               dispatch({
