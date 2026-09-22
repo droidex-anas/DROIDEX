@@ -185,7 +185,9 @@ export function toolCall(item: ThreadItem): ToolCall | undefined {
       id: item.id,
       name: 'Subagent',
       detail: item.prompt ?? '',
-      args: { prompt: item.prompt ?? undefined },
+      // The brief reaches the agent's own pane as a prompt row through
+      // collabChildSignals; the parent's transcript does not keep a second copy.
+      args: {},
       failed: item.status === 'failed' || item.status === 'interrupted',
     };
   return undefined;

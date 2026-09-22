@@ -11,7 +11,8 @@ import type { SDKMessage, SDKRateLimitInfo } from '@anthropic-ai/claude-agent-sd
 
 import type { NormalizedEvent } from '../../normalize.js';
 import type { TranscriptEvent } from '../../protocol.js';
-import { ClaudeSubagents } from './claudeSubagents.js';
+import { slimChildSessionArgs } from '../../subagentSignals.js';
+import { ClaudeSubagents, isSpawnToolName } from './claudeSubagents.js';
 import { resetAtMillis, UsageLimitError, usageLimitDetails } from '../usageLimit.js';
 
 const TOOL_BLOCK_TYPES = new Set(['tool_use', 'server_tool_use', 'mcp_tool_use']);
@@ -317,9 +318,13 @@ export class ClaudeEventMapper {
   ): NormalizedEvent {
     // Nested tool calls must not change the parent's spawn correlation.
     if (!parentToolUseId) this.subagents.noteToolUse(name, id);
+    // A spawn's input is the subagent's whole brief. The subagent's own pane
+    // already receives that brief as a prompt row, so the parent's transcript
+    // keeps only the fields that label the call.
+    const toolArgs = isSpawnToolName(name) && isRecord(input) ? slimChildSessionArgs(input) : input;
     return {
       ...this.childOwner(parentToolUseId),
-      transcript: this.transcript('tool_call', { toolName: name, toolArgs: input, toolUseId: id }),
+      transcript: this.transcript('tool_call', { toolName: name, toolArgs, toolUseId: id }),
     };
   }
 
@@ -379,6 +384,9 @@ function toolBlock(block: { type: string }): { id: string; name: string } | unde
 // A tool whose input never finished streaming (an interrupt, or a block the
 // model left open) still deserves its row, so a partial payload reads as no
 // arguments rather than failing the turn.
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  typeof value === 'object' && value !== null;
+
 function parseToolInput(json: string): unknown {
   if (!json) return {};
   try {

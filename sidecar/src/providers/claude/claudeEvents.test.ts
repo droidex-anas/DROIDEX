@@ -329,3 +329,28 @@ test('an agent leaving the background task list is not reported as paused', () =
     ['completed'],
   );
 });
+
+// The brief reaches the agent's own pane as a prompt row, so the parent's feed
+// keeps only what labels the call. A whole subagent brief in the parent's
+// transcript is stored twice and reads as the parent's own writing.
+test('a spawn keeps only its label fields in the parent transcript', () => {
+  const events = transcripts([
+    assistant([
+      {
+        type: 'tool_use',
+        id: 'toolu_task',
+        name: 'Task',
+        input: {
+          subagent_type: 'reviewer',
+          description: 'Check the diff',
+          prompt: 'Read every file in the diff and report what is wrong.',
+        },
+      },
+    ]),
+  ]);
+
+  assert.deepEqual(
+    events.map((event) => [event.toolName, event.toolArgs]),
+    [['Task', { subagent_type: 'reviewer', description: 'Check the diff' }]],
+  );
+});

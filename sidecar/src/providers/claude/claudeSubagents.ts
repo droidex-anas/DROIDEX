@@ -76,6 +76,12 @@ function writesNothingNew(known: ChildSessionSignal, patch: Partial<ChildSession
   );
 }
 
+// The three tools that start a subagent. Their input is the whole brief the
+// subagent is given, so a call to one of them is both a spawn correlation and a
+// row whose arguments the parent's transcript must not keep in full.
+export const isSpawnToolName = (name: string): boolean =>
+  name === 'Task' || name === 'Agent' || name === 'Workflow';
+
 export class ClaudeSubagents {
   private readonly children = new Map<string, ChildSessionSignal>();
   private readonly workflows = new Map<string, WorkflowRun>();
@@ -86,7 +92,7 @@ export class ClaudeSubagents {
   }
 
   noteToolUse(name: string, id: string): void {
-    if (name === 'Task' || name === 'Agent' || name === 'Workflow') this.turnSpawnToolUseId = id;
+    if (isSpawnToolName(name)) this.turnSpawnToolUseId = id;
   }
 
   map(message: SystemMessage, modelId: string | undefined): NormalizedEvent[] {
