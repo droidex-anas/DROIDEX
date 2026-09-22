@@ -944,10 +944,10 @@ export default function App() {
               onClick={toggleRightPanel}
               aria-label="Toggle context panel"
               aria-pressed={state.rightPanelOpen}
-              className={`rounded-md p-1.5 transition-colors ${
-                state.rightPanelOpen
-                  ? 'bg-droid-elevated text-droid-text'
-                  : 'text-droid-text-muted/70 hover:bg-droid-elevated/60 hover:text-droid-text'
+              // No pressed fill: like the sidebar and utility toggles beside it,
+              // the open panel is its own evidence; the icon only brightens.
+              className={`rounded-md p-1.5 transition-colors hover:bg-droid-elevated/60 hover:text-droid-text ${
+                state.rightPanelOpen ? 'text-droid-text' : 'text-droid-text-muted/70'
               }`}
               title="Toggle context"
             >

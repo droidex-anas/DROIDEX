@@ -848,7 +848,7 @@ export default function SettingsPanel() {
       mcpCwd: activeSession?.cwd ?? state.workspaceCwds[0],
     };
   }, shallowEqual);
-  const [active, setActive] = useState('Appearance');
+  const [active, setActive] = useState('General');
   const [query, setQuery] = useState('');
 
   useEffect(() => {
