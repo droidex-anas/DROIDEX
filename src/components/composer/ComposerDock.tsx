@@ -1,8 +1,8 @@
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { AnimatePresence } from 'framer-motion';
 import { shallowEqual, useStoreSelector, type AppState } from '../../hooks/useStore';
 import { sessionIsLive } from '../../lib/sessions';
-import { currentAgentRun } from '../agents/agentMonitorModel';
+import { currentAgentRun, isWorkingAgent } from '../agents/agentMonitorModel';
 import { useOpenAgent } from '../agents/useOpenAgent';
 import { AgentDockLine } from './AgentDockLine';
 import PlanSteps from './PlanSteps';
@@ -17,6 +17,13 @@ export default function ComposerDock() {
   const [open, setOpen] = useState<OpenDock>(null);
   const agents = useDockedAgents();
   const openAgent = useOpenAgent();
+  // Between two waves of one turn the line leaves and returns. It must come back
+  // the way a new line arrives, collapsed, rather than wearing the expansion the
+  // previous wave was given.
+  const docked = agents !== null;
+  useEffect(() => {
+    if (!docked) setOpen((current) => (current === 'agents' ? null : current));
+  }, [docked]);
   // Collapsing only ever closes the line that asked: the plan resets itself on a
   // session switch, and that must not also fold an expanded agents line.
   const showPlan = useCallback((expanded: boolean) => {
@@ -68,10 +75,10 @@ export function selectDockedAgents(state: AppState) {
   const childrenByParent: Partial<typeof state.childSessions> = state.childSessions;
   return {
     children: session ? childrenByParent[session.appSessionId] : undefined,
+    live: session ? sessionIsLive(session) : false,
     models: state.models,
     provider: session?.provider,
     missionControl: session?.sessionPurpose === 'mission-control',
-    live: session ? sessionIsLive(session) : false,
   };
 }
 
@@ -81,11 +88,11 @@ function useDockedAgents() {
   return useMemo(() => {
     if (!source.children || source.missionControl) return null;
     const sessions = currentAgentRun(Object.values(source.children));
-    if (sessions.length === 0) return null;
-    // A restart restores an interrupted child as paused, and nothing will ever
-    // settle it. Only work that is happening docks the line: the chat's own
-    // turn, or an agent its harness still reports as running.
-    if (!source.live && !sessions.some((child) => child.status === 'running')) return null;
+    // Above the composer is how the user knows agents are working right now, so
+    // the line follows the agents alone and never the chat's own turn: it docks
+    // while the newest wave still has one working and leaves when none does. A
+    // finished wave stays in the Subagents panel and the transcript.
+    if (!sessions.some((child) => isWorkingAgent(child, source.live))) return null;
     return {
       sessions,
       models: source.models,
