@@ -220,16 +220,23 @@ export class ChildSessions {
           observed.reasoningEffort = launchSettings.reasoningEffort;
         }
       }
-      if (!observed.modelId) {
+      // A state-only feed has no provider session file to read settings from,
+      // and retryPendingLaunchSettings skips it on purpose, so parking one here
+      // would hide that agent for good. Admit it on the parent's own defaults
+      // instead: a row carrying the model the parent launched it with is honest,
+      // an agent nobody can see is not.
+      if (!observed.modelId && !stateOnly) {
         rememberPendingChildObservation(parent, pending, observed);
         return undefined;
       }
     }
 
+    // Exact settings need a model to be exact about.
+    const exactLaunchSettings = needsExactSettings && observed.modelId !== undefined;
     const child =
       spawnChild ??
       providerChild ??
-      this.createChild(parent, observed.role, spawnLink, observed, needsExactSettings);
+      this.createChild(parent, observed.role, spawnLink, observed, exactLaunchSettings);
     forgetPendingChildObservation(parent, pending);
     // Poll-style observations (TaskOutput) carry their own call's tool_use id,
     // not the spawn's; only a link that matched an observed spawn call (pending)
@@ -958,16 +965,18 @@ export class ChildSessions {
     launchSettings: ChildSettings = {},
     exactLaunchSettings = false,
   ): ChildSessionState {
-    const settings = exactLaunchSettings
-      ? launchSettings
-      : {
-          ...this.d.resolveDefaultSettings(
+    // An observation carries both launch fields together, absent ones as an
+    // explicit undefined, and a model belongs with the effort it was launched
+    // at, so the pair is taken whole: the child's own when it named a model,
+    // the parent's defaults when it did not.
+    const settings =
+      exactLaunchSettings || launchSettings.modelId
+        ? launchSettings
+        : this.d.resolveDefaultSettings(
             parent.lease.summary,
             parentDroidSession(parent.lease).initResult,
             role,
-          ),
-          ...launchSettings,
-        };
+          );
     if (!settings.modelId) throw new Error(`No accepted model is available for ${role}.`);
     const child = newChildState({
       parentAppSessionId: parent.parentAppSessionId,
