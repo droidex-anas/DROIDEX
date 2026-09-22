@@ -171,10 +171,7 @@ export function invalidateSelectedChildOpening<S extends ChildSessionStore>(stat
     : state;
 }
 
-export function withAgentsWorking<S extends ChildSessionStore>(
-  state: S,
-  parentAppSessionId: string,
-): S {
+function withAgentsWorking<S extends ChildSessionStore>(state: S, parentAppSessionId: string): S {
   const children = state.childSessions[parentAppSessionId];
   const working = Object.values(children ?? {}).some((child) => isWorkingAgent(child, false));
   if (working === (state.agentsWorkingByParent[parentAppSessionId] ?? false)) return state;
