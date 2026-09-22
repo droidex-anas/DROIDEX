@@ -10,9 +10,12 @@ with this software in the LICENSE file, and is also available at
 http://www.apache.org/licenses/LICENSE-2.0.
 
 If you redistribute this software or a derivative of it, Section 4 of the
-License requires you to keep this NOTICE file with your distribution and to
-state prominently that you changed the files. "DROIDEX" and the DROIDEX marks
-are not licensed for use by derivative works; see TRADEMARKS.md.
+License requires a readable copy of the attribution notices in this file to
+appear in at least one of three places: a NOTICE text file distributed with the
+work, the documentation or source you distribute with it, or a display your
+software produces. It also requires you to state prominently that you changed
+the files. "DROIDEX" and the DROIDEX marks are not licensed for use by
+derivative works; see TRADEMARKS.md.
 
 Third-party components bundled with or used by DROIDEX remain subject to their
 own licenses.
