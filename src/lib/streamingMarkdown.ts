@@ -21,7 +21,7 @@ import {
 
 export { pendingFenceBody } from './markdownBlockScan';
 
-export type StreamingBlockKind =
+type StreamingBlockKind =
   | 'paragraph'
   | 'heading'
   | 'fence'
@@ -31,14 +31,7 @@ export type StreamingBlockKind =
   | 'thematicBreak'
   | 'html';
 
-export type PendingKind =
-  | 'empty'
-  | 'paragraph'
-  | 'fence'
-  | 'list'
-  | 'table'
-  | 'blockquote'
-  | 'other';
+type PendingKind = 'empty' | 'paragraph' | 'fence' | 'list' | 'table' | 'blockquote' | 'other';
 
 export interface StreamingBlock {
   id: string;
@@ -54,7 +47,7 @@ export interface StreamingDocument {
   pendingFenceInfo?: string;
 }
 
-export interface StreamingIngestStats {
+interface StreamingIngestStats {
   scannedChars: number;
   usedIncremental: boolean;
 }

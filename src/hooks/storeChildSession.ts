@@ -6,8 +6,6 @@ import { INACTIVE_TRANSCRIPT_POLICY, VIEWPORT_TRANSCRIPT_POLICY } from '../lib/t
 /* eslint-disable @typescript-eslint/no-unnecessary-condition -- sparse keyed renderer maps */
 /* eslint-disable @typescript-eslint/no-dynamic-delete -- sparse childAccess parent keys */
 
-export type ChildSettingsReadiness = 'opening' | 'ready' | 'failed';
-
 export type ChildSessionInfo = ChildSessionSummary;
 
 export interface ChildSelection {

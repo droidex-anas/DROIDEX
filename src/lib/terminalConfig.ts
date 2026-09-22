@@ -32,17 +32,17 @@ export interface ResolvedShell {
   args: string[];
 }
 
-export interface ValidateCwdOk {
+interface ValidateCwdOk {
   ok: true;
   cwd: string;
 }
-export interface ValidateCwdErr {
+interface ValidateCwdErr {
   ok: false;
   error: string;
 }
 export type ValidateCwdResult = ValidateCwdOk | ValidateCwdErr;
 
-export interface FsStatLike {
+interface FsStatLike {
   isDirectory: () => boolean;
 }
 
