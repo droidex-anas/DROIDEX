@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import { ArrowRight } from 'lucide-react';
 import { useSidebarContentSearch } from '../hooks/useSidebarContentSearch';
-import { shallowEqual, useStoreSelector } from '../hooks/useStore';
+import { useStoreSelector } from '../hooks/useStore';
 import {
   chatDisplayTitle,
   chatMatchesPullRequest,
@@ -10,6 +10,7 @@ import {
   type ChatMetadataMap,
 } from '../lib/chatMetadata';
 import { sidebarSearchNotice } from '../lib/sidebarSearchStatus';
+import { projectThreadIds } from '../lib/projectThreads';
 import { formatRelativeTime } from '../lib/time';
 import type { SessionSearchMatch, SessionSummary } from '../types/bridge';
 import PaletteShell from './PaletteShell';
@@ -37,8 +38,14 @@ export default function SidebarSearch({
       chatMetadata: current.chatMetadata,
       sessionOrder: current.sessionOrder,
       sessions: current.sessions,
+      projectThreads: projectThreadIds(current.projects),
     }),
-    shallowEqual,
+    (a, b) =>
+      a.chatMetadata === b.chatMetadata &&
+      a.sessionOrder === b.sessionOrder &&
+      a.sessions === b.sessions &&
+      a.projectThreads.size === b.projectThreads.size &&
+      [...a.projectThreads].every((id) => b.projectThreads.has(id)),
   );
   const metadata: Partial<ChatMetadataMap> = state.chatMetadata;
   const [query, setQuery] = useState('');
@@ -49,6 +56,8 @@ export default function SidebarSearch({
     const sessions = state.sessionOrder
       .map((id) => state.sessions[id])
       .filter((s): s is SessionSummary => Boolean(s))
+      // A project thread is read inside Projects, like the list beneath this.
+      .filter((s) => !state.projectThreads.has(s.appSessionId))
       .filter((s) => !isChatHidden(state.chatMetadata[s.appSessionId]))
       .map((s) => {
         const title = chatDisplayTitle(s, state.chatMetadata[s.appSessionId]);
@@ -68,7 +77,14 @@ export default function SidebarSearch({
       byId.set(session.appSessionId, { session, matches: contentMatches ?? [] });
     }
     return [...byId.values()].slice(0, MAX_ENTRIES);
-  }, [query, state.sessionOrder, state.sessions, state.chatMetadata, contentResults]);
+  }, [
+    query,
+    state.sessionOrder,
+    state.sessions,
+    state.chatMetadata,
+    state.projectThreads,
+    contentResults,
+  ]);
 
   const open = (entry: SearchEntry) => {
     onOpen(entry.session.appSessionId);
