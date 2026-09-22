@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 import { ChevronRight, Plus, Spinner } from '@droidex/icons';
 import { ActivityStatusGlyph } from '../../components/ActivityStatusGlyph';
@@ -26,7 +26,16 @@ export function ProjectsRoute() {
   const { entries, loading } = useProjectBoard();
   const [openId, setOpenId] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
-  const [now] = useState(() => Date.now());
+  // Relative times on the list would otherwise read from the moment it opened.
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setNow(Date.now());
+    }, 30_000);
+    return () => {
+      clearInterval(timer);
+    };
+  }, []);
   // A new project follows the workspace a new chat would, so starting one from
   // the Projects tab lands in the folder the user is already working in.
   const cwd = useStoreSelector((state) =>

@@ -52,7 +52,20 @@ export function useThreadAttentionNotifications(enabled: boolean): void {
       }
     };
     review();
-    return store.subscribe(review);
+    const unsubscribe = store.subscribe(review);
+    // Leaving the app is itself a reason to look again: a request first seen on
+    // screen raises nothing then, and nothing else would run this until the
+    // next project change.
+    const onAway = () => {
+      review();
+    };
+    window.addEventListener('blur', onAway);
+    document.addEventListener('visibilitychange', onAway);
+    return () => {
+      unsubscribe();
+      window.removeEventListener('blur', onAway);
+      document.removeEventListener('visibilitychange', onAway);
+    };
   }, [enabled, store]);
 }
 
