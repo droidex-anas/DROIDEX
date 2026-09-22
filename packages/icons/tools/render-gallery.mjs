@@ -116,7 +116,7 @@ export function renderGallery() {
       <div class="icon-grid">${cards}</div>
       <p id="empty" hidden>No matching icons. Try another name or category.</p>
     </section>
-    <footer><span>DROIDEX icon library · 0.1.0</span><span>Source-available under the repository license.</span></footer>
+    <footer><span>DROIDEX icon library · 0.1.0</span><span>Apache License 2.0</span></footer>
   </main>
   <dialog id="inspector" aria-labelledby="inspector-title">
     <div class="dialog-heading"><h2 id="inspector-title"></h2><button id="close" type="button" aria-label="Close inspector">${glyph('X', 20)}</button></div>

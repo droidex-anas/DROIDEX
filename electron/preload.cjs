@@ -196,6 +196,11 @@ contextBridge.exposeInMainWorld('droidControl', {
   getAutomaticDiagnostics: () => ipcRenderer.invoke('diagnostics-preference-get'),
   setAutomaticDiagnostics: (enabled) =>
     ipcRenderer.invoke('diagnostics-preference-set', { enabled }),
+  usageAnalyticsBootstrap: () => ipcRenderer.invoke('usage-analytics-bootstrap'),
+  usageAnalyticsFirstLaunchReported: () =>
+    ipcRenderer.invoke('usage-analytics-first-launch-reported'),
+  getUsageAnalytics: () => ipcRenderer.invoke('usage-analytics-preference-get'),
+  setUsageAnalytics: (enabled) => ipcRenderer.invoke('usage-analytics-preference-set', { enabled }),
   getHardwareAcceleration: () => ipcRenderer.invoke('hardware-acceleration-preference-get'),
   setHardwareAcceleration: (enabled) =>
     ipcRenderer.invoke('hardware-acceleration-preference-set', { enabled }),

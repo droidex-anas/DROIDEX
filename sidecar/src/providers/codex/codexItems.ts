@@ -195,7 +195,9 @@ function describeCall(item: ThreadItem): Omit<ToolCall, 'interrupted'> | undefin
       id: item.id,
       name: 'Subagent',
       detail: item.prompt ?? '',
-      args: { prompt: item.prompt ?? undefined },
+      // The brief reaches the agent's own pane as a prompt row through
+      // collabChildSignals; the parent's transcript does not keep a second copy.
+      args: {},
       failed: item.status === 'failed',
     };
   return undefined;

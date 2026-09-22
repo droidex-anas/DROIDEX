@@ -1,0 +1,68 @@
+name: Bug report
+description: Something in DROIDEX behaves incorrectly.
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to file this. Do not report security
+        vulnerabilities here. Use a
+        [private advisory](https://github.com/droidex-anas/droid-maxxing/security/advisories/new)
+        instead.
+  - type: textarea
+    id: summary
+    attributes:
+      label: What happened
+      description: Describe the incorrect behaviour and what you expected instead.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Open a chat on ...
+        2. Run ...
+        3. The sidebar shows ...
+    validations:
+      required: true
+  - type: input
+    id: droidex-version
+    attributes:
+      label: DROIDEX version
+      description: From the DROIDEX menu, or the commit you built from.
+    validations:
+      required: true
+  - type: input
+    id: macos
+    attributes:
+      label: macOS version and architecture
+      placeholder: macOS 15.2, Apple silicon
+    validations:
+      required: true
+  - type: dropdown
+    id: harness
+    attributes:
+      label: Which agent CLI was involved
+      multiple: true
+      options:
+        - Factory Droid
+        - Claude Code
+        - Codex
+        - None or not applicable
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs, screenshots, or recording
+      description: Attach anything that shows the failure. Redact API keys, tokens, and private file contents first.
+  - type: checkboxes
+    id: confirmations
+    attributes:
+      label: Before submitting
+      options:
+        - label: I searched existing issues and this is not a duplicate.
+          required: true
+        - label: I removed secrets and private data from everything I attached.
+          required: true

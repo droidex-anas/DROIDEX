@@ -122,6 +122,10 @@ export interface ChildSessionSummary {
   // Live-only (never persisted) and absent unless the parent actually polled the
   // child; autonomous children stream nothing to the parent themselves.
   activity?: ChildActivity;
+  // What this child alone has spent, as its own provider reports it. Live-only,
+  // and absent for a provider that reports no per-child usage. The parent's
+  // tokensIn/tokensOut never include it.
+  tokensUsed?: number;
   // Live-only: waiting for a runtime slot. Never persisted; never means running.
   queued?: boolean;
 }

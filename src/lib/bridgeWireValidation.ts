@@ -327,7 +327,8 @@ function isChildSessionSummary(value: unknown): boolean {
     isOptionalString(value.group) &&
     isOptionalString(value.phase) &&
     isOptionalTimestamp(value.startedAt) &&
-    isOptionalTimestamp(value.settledAt)
+    isOptionalTimestamp(value.settledAt) &&
+    isOptionalCount(value.tokensUsed)
   );
 }
 
@@ -469,6 +470,11 @@ function isOptionalString(value: unknown): boolean {
 }
 
 function isOptionalTimestamp(value: unknown): boolean {
+  return value === undefined || nonNegativeSafeInteger(value);
+}
+
+// A tally the sidecar reports, absent when it has nothing to report.
+function isOptionalCount(value: unknown): boolean {
   return value === undefined || nonNegativeSafeInteger(value);
 }
 

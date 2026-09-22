@@ -36,3 +36,11 @@ createRoot(root).render(
     </StoreProvider>
   </StrictMode>,
 );
+
+// Anonymous installation counting, loaded after the first render so neither the
+// module nor the Datadog SDK sits in the initial bundle. It no-ops outside
+// packaged builds, and the SDK is only fetched once the main process confirms
+// reporting is configured and consented to.
+if (window.droidControl) {
+  void import('./lib/usageAnalytics').then((module) => module.startUsageAnalytics());
+}

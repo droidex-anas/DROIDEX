@@ -8,6 +8,7 @@ const {
   getEnvelopeEndpointWithUrlEncodedAuth,
   serializeEnvelope,
 } = require('@sentry/core');
+const { loadBooleanPreference, saveBooleanPreference } = require('./preferenceFile.cjs');
 
 const FEEDBACK_CATEGORIES = new Set(['bug', 'bad_result', 'good_result', 'safety', 'other']);
 const AUTOMATIC_DIAGNOSTICS_DEFAULT = true;
@@ -178,36 +179,20 @@ function createDiagnostics(options) {
 }
 
 async function loadAutomaticDiagnosticsPreference(options) {
-  try {
-    const parsed = JSON.parse(await options.fs.readFile(options.filePath, 'utf8'));
-    if (parsed?.version === 1 && typeof parsed.enabled === 'boolean') {
-      return { enabled: parsed.enabled };
-    }
-    throw new Error('Diagnostics preference is invalid. Toggle it again in Settings.');
-  } catch (error) {
-    if (error?.code === 'ENOENT') return { enabled: AUTOMATIC_DIAGNOSTICS_DEFAULT };
-    throw error;
-  }
+  return loadBooleanPreference({
+    filePath: options.filePath,
+    fs: options.fs,
+    fallback: AUTOMATIC_DIAGNOSTICS_DEFAULT,
+    invalidMessage: 'Diagnostics preference is invalid. Toggle it again in Settings.',
+  });
 }
 
 async function saveAutomaticDiagnosticsPreference(options) {
-  const temporaryPath = `${options.filePath}.${crypto.randomUUID()}.tmp`;
-  await options.fs.mkdir(path.dirname(options.filePath), { recursive: true, mode: 0o700 });
-  try {
-    await options.fs.writeFile(
-      temporaryPath,
-      `${JSON.stringify({ version: 1, enabled: options.enabled }, null, 2)}\n`,
-      { mode: 0o600 },
-    );
-    await options.fs.rename(temporaryPath, options.filePath);
-  } catch (error) {
-    try {
-      await options.fs.unlink(temporaryPath);
-    } catch {
-      // The temporary file may not have been created.
-    }
-    throw error;
-  }
+  return saveBooleanPreference({
+    filePath: options.filePath,
+    enabled: options.enabled,
+    fs: options.fs,
+  });
 }
 
 async function loadOrCreateIdentity(options) {
