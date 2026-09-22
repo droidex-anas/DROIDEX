@@ -334,6 +334,7 @@ export function pruneRemovedSessionState(
     ),
     progress: pruneSessionRecord(state.progress, retainedSessionIds),
     childSessions: pruneSessionRecord(state.childSessions, retainedSessionIds),
+    agentsWorkingByParent: pruneSessionRecord(state.agentsWorkingByParent, retainedSessionIds),
     historyLoaded: pruneSessionRecord(state.historyLoaded, retainedSessionIds),
     historyCursor: pruneSessionRecord(state.historyCursor, retainedSessionIds),
     historyLoadingOlder: pruneSessionRecord(state.historyLoadingOlder, retainedSessionIds),
