@@ -374,7 +374,7 @@ export const ULTRA_COLORS = {
 // Hyperlinks read by hue, like skills and status do. The neutral accent governs
 // chrome and is near-white in dark themes, which left links looking like plain
 // underlined text everywhere they appeared.
-export const LINK_COLORS = {
+const LINK_COLORS = {
   dark: '#7cb2ff',
   light: '#1d4ed8',
 } as const;

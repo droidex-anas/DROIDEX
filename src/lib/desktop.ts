@@ -531,12 +531,6 @@ export async function setApiKey(key: string): Promise<void> {
   await api.setApiKey(key);
 }
 
-export async function clearApiKey(): Promise<void> {
-  const api = desktopApi();
-  if (!api) return;
-  await api.clearApiKey();
-}
-
 export async function setAppIcon(mode: AppIconMode): Promise<void> {
   const api = desktopApi();
   if (!api) return;

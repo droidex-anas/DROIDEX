@@ -107,7 +107,7 @@ export function estimateRetainedPayloadCost(value: unknown): number {
   return cost;
 }
 
-export function estimateTranscriptEventCost(event: TranscriptEvent): number {
+function estimateTranscriptEventCost(event: TranscriptEvent): number {
   const cached = EVENT_ESTIMATES.get(event);
   if (cached !== undefined) return cached;
   const cost = estimateRetainedPayloadCost(event);

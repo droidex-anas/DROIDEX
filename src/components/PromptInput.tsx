@@ -143,7 +143,7 @@ const accentMix = (pct: number) =>
 type SubmitMode = 'queue' | 'now';
 const oppositeSubmitMode = (mode: SubmitMode): SubmitMode => (mode === 'queue' ? 'now' : 'queue');
 
-export function shouldShowTurnStarting(isLive: boolean): boolean {
+function shouldShowTurnStarting(isLive: boolean): boolean {
   return !isLive;
 }
 

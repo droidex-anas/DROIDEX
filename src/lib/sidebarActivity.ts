@@ -126,7 +126,7 @@ export const DEFAULT_SIDEBAR_PREFERENCES: SidebarActivityPreferences = {
 
 const STORAGE_KEY = 'droid-sidebar-activity';
 
-export function isSidebarOrder(value: unknown): value is SidebarActivityPreferences['order'] {
+function isSidebarOrder(value: unknown): value is SidebarActivityPreferences['order'] {
   return value === 'recent' || value === 'oldest' || value === 'title';
 }
 

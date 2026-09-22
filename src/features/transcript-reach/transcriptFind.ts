@@ -24,7 +24,7 @@ export interface TranscriptFindMatch {
   snippet: string;
 }
 
-export function searchableTextForFeedItem(item: FeedItem): string {
+function searchableTextForFeedItem(item: FeedItem): string {
   return copyTextForFeedItem(item);
 }
 

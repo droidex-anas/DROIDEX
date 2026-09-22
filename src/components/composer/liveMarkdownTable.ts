@@ -54,7 +54,7 @@ function escapeCell(cell: string): string {
     .trim();
 }
 
-export function toTableMarkdown(rows: TableRows): string {
+function toTableMarkdown(rows: TableRows): string {
   const line = (cells: string[]) => `| ${cells.map(escapeCell).join(' | ')} |`;
   return [line(rows.header), rows.delimiter, ...rows.body.map(line)].join('\n');
 }

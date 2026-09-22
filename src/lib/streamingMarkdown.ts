@@ -64,7 +64,7 @@ export interface StreamingIngestResult {
   stats: StreamingIngestStats;
 }
 
-export const EMPTY_STREAMING_DOCUMENT: StreamingDocument = {
+const EMPTY_STREAMING_DOCUMENT: StreamingDocument = {
   completedBlocks: [],
   pendingSource: '',
   pendingKind: 'empty',
