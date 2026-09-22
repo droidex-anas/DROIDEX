@@ -519,6 +519,28 @@ test('a settled state-only child keeps the moment it stopped', () => {
   assert.equal(child?.settledAt, 100);
 });
 
+// A state-only child has no provider session file to read a model from and is
+// never retried, so one observed before the parent knows its own model would be
+// parked out of sight forever. It is admitted on the parent's defaults instead.
+test('a state-only child with no model is admitted rather than parked', () => {
+  const h = createHarness([]);
+  const identity = h.owner.admitChildObservation({
+    parentAppSessionId: h.parentId,
+    providerSessionId: 'agent-1',
+    role: 'worker',
+    label: 'echo:ONE',
+    requiresExactLaunchSettings: true,
+    transcriptAvailable: false,
+    status: 'running',
+  });
+
+  assert.ok(identity);
+  assert.deepEqual(
+    h.owner.list(h.parentId).map((child) => [child.label, child.status, child.modelId]),
+    [['echo:ONE', 'running', 'model-default']],
+  );
+});
+
 test('missing Task settings defer exact admission and preserve provider-only completion', () => {
   const h = createHarness([]);
   h.owner.admitChildObservation({

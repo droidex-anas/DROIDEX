@@ -41,6 +41,8 @@ export interface ChildSpawnObservation {
   status?: ChildStatus;
   group?: string;
   phase?: string;
+  // See ChildSessionSummary.tokensUsed: this child's own spend, live-only.
+  tokensUsed?: number;
   transcriptAvailable?: boolean;
 }
 export interface ChildParentLease {
@@ -93,6 +95,8 @@ export interface ChildSessionState {
   // See ChildSpawnObservation.activity: live-only, so it is absent after a
   // restart even though the child itself is restored from history.
   activity?: ChildActivity;
+  // This child's own spend, live-only for the same reason.
+  tokensUsed?: number;
   // Live-only. Absent until a token/tool stream is opened; summaries publish `state`.
   streamFidelity?: StreamFidelity;
   runtimeGeneration: number;
@@ -249,6 +253,7 @@ export function applyObservedChild(
   child.prompt = observed.prompt ?? child.prompt;
   child.spawnLink = spawnLink ?? child.spawnLink;
   child.activity = observed.activity ?? child.activity;
+  child.tokensUsed = observed.tokensUsed ?? child.tokensUsed;
   child.transcriptAvailable = observed.transcriptAvailable ?? true;
   child.startedAt ??= now;
   return { previousPrompt };
@@ -302,6 +307,7 @@ export function childSummary(child: ChildSessionState | PersistedChildSession) {
     // Autonomy is runtime-scoped: only a live child reports its confirmed value.
     ...(live?.runtime && live.autonomy ? { autonomy: live.autonomy } : {}),
     ...(live?.activity ? { activity: live.activity } : {}),
+    ...(live?.tokensUsed === undefined ? {} : { tokensUsed: live.tokensUsed }),
     ...(live?.queued ? { queued: true } : {}),
     streamFidelity: publishedStreamFidelity(live?.streamFidelity),
   };
