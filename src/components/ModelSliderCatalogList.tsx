@@ -1,11 +1,7 @@
-import { useEffect, useRef } from 'react';
-import { useVirtualizer } from '@tanstack/react-virtual';
 import { ChevronRight } from 'lucide-react';
 import type { ModelInfo } from '../types/bridge';
 import { ModelIcon, providerOf } from './ModelIcon';
-
-const ROW_H = 40;
-const VISIBLE_H = 200;
+import { ModelListStatus, SelectionHighlight, useModelListVirtualizer } from './modelListParts';
 
 /**
  * The slider popover's model list: a virtualized Default row plus the filtered
@@ -33,7 +29,6 @@ export default function ModelSliderCatalogList({
   onSelectModel: (modelId?: string) => void;
   onDrill: () => void;
 }) {
-  const scrollRef = useRef<HTMLDivElement>(null);
   const rows = hasRealModels ? models : [];
   const selectedIndex = selectedModelId
     ? (() => {
@@ -42,18 +37,7 @@ export default function ModelSliderCatalogList({
       })()
     : 0;
 
-  const virtualizer = useVirtualizer({
-    count: rows.length + 1,
-    getScrollElement: () => scrollRef.current,
-    estimateSize: () => ROW_H,
-    overscan: 4,
-    initialRect: { width: 0, height: VISIBLE_H },
-    initialOffset: Math.max(0, selectedIndex * ROW_H - VISIBLE_H / 2 + ROW_H / 2),
-  });
-
-  useEffect(() => {
-    if (selectedIndex > 0) virtualizer.scrollToIndex(selectedIndex, { align: 'auto' });
-  }, [selectedIndex, virtualizer]);
+  const { scrollRef, virtualizer } = useModelListVirtualizer(rows.length + 1, selectedIndex);
 
   return (
     <div ref={scrollRef} className="-mx-1 max-h-[200px] min-h-0 overflow-y-auto px-1">
@@ -63,16 +47,7 @@ export default function ModelSliderCatalogList({
         className="relative"
         style={{ height: `${String(virtualizer.getTotalSize())}px` }}
       >
-        <div
-          aria-hidden
-          className={`pointer-events-none absolute inset-x-0 top-0 h-10 rounded-lg bg-droid-surface ${
-            selectedIndex < 0 ? 'opacity-0' : ''
-          }`}
-          style={{
-            transform: `translateY(${String(Math.max(0, selectedIndex) * ROW_H)}px)`,
-            transition: 'transform .22s cubic-bezier(.16,1,.3,1), opacity .15s',
-          }}
-        />
+        <SelectionHighlight index={selectedIndex} />
         {virtualizer.getVirtualItems().map((item) => {
           const isDefaultRow = item.index === 0;
           const model = isDefaultRow ? defaultModel : rows[item.index - 1];
@@ -97,16 +72,7 @@ export default function ModelSliderCatalogList({
           );
         })}
       </div>
-      {!hasRealModels && (
-        <div className="px-2 py-3 text-center text-[11px] text-droid-text-muted">
-          Loading models…
-        </div>
-      )}
-      {hasRealModels && models.length === 0 && (
-        <div className="px-2 py-3 text-center text-[11px] text-droid-text-muted">
-          No matches for “{query}”
-        </div>
-      )}
+      <ModelListStatus hasRealModels={hasRealModels} empty={models.length === 0} query={query} />
     </div>
   );
 }

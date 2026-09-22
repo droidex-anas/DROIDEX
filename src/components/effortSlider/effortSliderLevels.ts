@@ -15,9 +15,9 @@ export const DEFAULT_LEVELS: readonly EffortSliderLevel[] = Object.freeze(
       ['low', 'Low'],
       ['medium', 'Medium'],
       ['high', 'High'],
-      ['extra', 'Extra'],
+      ['xhigh', 'Extra'],
       ['max', 'Max'],
-      ['ultracode', 'Ultracode'],
+      ['ultra', 'Ultracode'],
     ] as const
   ).map(([value, label]) => Object.freeze({ value, label })),
 );

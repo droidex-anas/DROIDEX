@@ -10,7 +10,7 @@ import {
 import { ModelIcon, providerOf } from './ModelIcon';
 import HarnessSegments from '../features/providers/HarnessSegments';
 import ModelCategoryFilter from './ModelCategoryFilter';
-import { effortsFor } from './ModelCatalogList';
+import { effortsFor, stepModel } from './ModelCatalogList';
 import { useTriggerAnchor } from './composer/useTriggerAnchor';
 import useModelPicker from './useModelPicker';
 import ModelSliderCatalogList from './ModelSliderCatalogList';
@@ -106,7 +106,9 @@ export default function ModelSliderPopover({ onClose }: { onClose: () => void })
   // An unset effort is provider-managed; the slider sits on the model's default.
   const shownEffort = effReasoning ?? activeModel?.defaultReasoningEffort;
   const sliderValue =
-    levels.find((level) => level.value === shownEffort)?.value ?? levels.at(-1)?.value ?? '';
+    shownEffort !== undefined && levels.some((level) => level.value === shownEffort)
+      ? shownEffort
+      : (levels.at(-1)?.value ?? '');
   const showEffortView = view === 'effort' && canDrill && sliderValue !== '';
   const drillLabel = !canDrill
     ? undefined
@@ -157,18 +159,8 @@ export default function ModelSliderPopover({ onClose }: { onClose: () => void })
       }
       if (e.key === 'ArrowLeft') return;
       e.preventDefault();
-      const ids: (string | undefined)[] = [undefined, ...models.map((m) => m.id)];
-      // Nothing matches the filter: stepping would silently switch to Default.
-      if (ids.length < 2) return;
-      const idx = ids.indexOf(resolvedModelId);
-      const down = e.key === 'ArrowDown';
-      const next =
-        idx === -1
-          ? down
-            ? Math.min(1, ids.length - 1)
-            : ids.length - 1
-          : Math.min(ids.length - 1, Math.max(0, idx + (down ? 1 : -1)));
-      if (next !== idx) updateModel(ids[next]);
+      const step = stepModel(models, resolvedModelId, e.key === 'ArrowDown');
+      if (step) updateModel(step.modelId);
     };
     window.addEventListener('keydown', onKey);
     return () => {

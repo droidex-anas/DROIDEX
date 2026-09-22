@@ -1,11 +1,8 @@
-import { memo, useCallback, useEffect, useRef } from 'react';
-import { useVirtualizer } from '@tanstack/react-virtual';
+import { memo, useCallback, useRef } from 'react';
 import { offersReasoningEffort, reasoningEffortLabel } from '../lib/reasoningEffort';
 import type { ModelInfo, ProviderKind, ReasoningEffort } from '../types/bridge';
 import { ModelIcon, providerOf } from './ModelIcon';
-
-const ROW_H = 40;
-const VISIBLE_H = 200;
+import { ModelListStatus, SelectionHighlight, useModelListVirtualizer } from './modelListParts';
 
 /** The catalog entry Droid CLI falls back to when no model is chosen. */
 export function defaultModelOf(models: ModelInfo[]) {
@@ -29,6 +26,24 @@ export function stepEffort(
   const idx = efforts.indexOf(current);
   const base = idx === -1 ? efforts.length - 1 : idx;
   return efforts[Math.min(efforts.length - 1, Math.max(0, base + delta))];
+}
+
+// Where an ↑/↓ step lands in a model list headed by Default (undefined). Null
+// when there is nowhere to go: nothing matches the filter, where a step would
+// silently switch to Default, or the selection is already at that end. A
+// model the filter hides steps onto the first or last visible entry instead of
+// off the end into Default.
+export function stepModel(
+  models: ModelInfo[],
+  current: string | undefined,
+  down: boolean,
+): { modelId: string | undefined } | null {
+  const ids = [undefined, ...models.map((model) => model.id)];
+  if (ids.length < 2) return null;
+  const index = ids.indexOf(current);
+  let next = Math.min(ids.length - 1, Math.max(0, index + (down ? 1 : -1)));
+  if (index === -1) next = down ? 1 : ids.length - 1;
+  return next === index ? null : { modelId: ids[next] };
 }
 
 type Pick = (modelId: string | undefined, effort?: ReasoningEffort) => void;
@@ -64,7 +79,6 @@ function ModelCatalogList({
   /** False where the provider publishes no efforts, so no row offers one. */
   showReasoning?: boolean;
 }) {
-  const scrollRef = useRef<HTMLDivElement>(null);
   const rows = hasRealModels ? models : [];
   const firstModelIndex = showDefault ? 1 : 0;
   // -1 when the active model is filtered out: nothing is highlighted then.
@@ -77,18 +91,10 @@ function ModelCatalogList({
       ? 0
       : -1;
 
-  const virtualizer = useVirtualizer({
-    count: rows.length + firstModelIndex,
-    getScrollElement: () => scrollRef.current,
-    estimateSize: () => ROW_H,
-    overscan: 4,
-    initialRect: { width: 0, height: VISIBLE_H },
-    initialOffset: Math.max(0, selectedIndex * ROW_H - VISIBLE_H / 2 + ROW_H / 2),
-  });
-
-  useEffect(() => {
-    if (selectedIndex > 0) virtualizer.scrollToIndex(selectedIndex, { align: 'auto' });
-  }, [selectedIndex, virtualizer]);
+  const { scrollRef, virtualizer } = useModelListVirtualizer(
+    rows.length + firstModelIndex,
+    selectedIndex,
+  );
 
   const latest = useRef({ selectedModelId, onSelectModel, onSelectReasoning });
   latest.current = { selectedModelId, onSelectModel, onSelectReasoning };
@@ -108,16 +114,7 @@ function ModelCatalogList({
         className="relative"
         style={{ height: `${String(virtualizer.getTotalSize())}px` }}
       >
-        <div
-          aria-hidden
-          className={`absolute inset-x-0 top-0 h-10 rounded-lg bg-droid-surface pointer-events-none ${
-            selectedIndex < 0 ? 'opacity-0' : ''
-          }`}
-          style={{
-            transform: `translateY(${String(Math.max(0, selectedIndex) * ROW_H)}px)`,
-            transition: 'transform .22s cubic-bezier(.16,1,.3,1), opacity .15s',
-          }}
-        />
+        <SelectionHighlight index={selectedIndex} />
         {virtualizer.getVirtualItems().map((item) => {
           const isDefaultRow = showDefault && item.index === 0;
           const model = isDefaultRow ? undefined : rows[item.index - firstModelIndex];
@@ -150,16 +147,7 @@ function ModelCatalogList({
           );
         })}
       </div>
-      {!hasRealModels && (
-        <div className="px-2 py-3 text-[11px] text-droid-text-muted text-center">
-          Loading models…
-        </div>
-      )}
-      {hasRealModels && models.length === 0 && (
-        <div className="px-2 py-3 text-[11px] text-droid-text-muted text-center">
-          No matches for “{query}”
-        </div>
-      )}
+      <ModelListStatus hasRealModels={hasRealModels} empty={models.length === 0} query={query} />
     </div>
   );
 }

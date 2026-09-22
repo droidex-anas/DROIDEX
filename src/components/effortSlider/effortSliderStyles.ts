@@ -1,7 +1,9 @@
 /**
- * The effort slider's shadow-DOM stylesheet, verbatim from the reference file.
- * The `--effort-*` custom properties are the theming seam the host uses to
- * match the app palette; `--effort-unit` scales the whole control.
+ * The effort slider's shadow-DOM stylesheet, from the reference file. The
+ * `--effort-*` custom properties are the host's seam: palette, `--effort-unit`
+ * to scale the control, and `--effort-width`, `--effort-padding` and
+ * `--effort-shadow` to sit flat inside a card. The ticks are inset to the
+ * thumb's travel so each one marks where the thumb stops.
  */
 export const EFFORT_SLIDER_STYLES = `
   :host {

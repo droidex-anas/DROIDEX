@@ -6,7 +6,7 @@ import {
   childSettingsReadinessLabel,
   type ExactChildSettingsTarget,
 } from '../lib/exactChildSettings';
-import ModelCatalogList, { effortsFor, stepEffort } from './ModelCatalogList';
+import ModelCatalogList, { effortsFor, stepEffort, stepModel } from './ModelCatalogList';
 import ModelCategoryFilter from './ModelCategoryFilter';
 import HarnessRail from '../features/providers/HarnessRail';
 import { useTriggerAnchor } from './composer/useTriggerAnchor';
@@ -105,21 +105,8 @@ export default function ModelSelectorPopover({
       e.preventDefault();
       if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
         if (childTarget && !childReady) return;
-        const ids: (string | undefined)[] = [undefined, ...models.map((m) => m.id)];
-        // Nothing matches the filter: there is nowhere to step, and stepping
-        // would silently switch the live setting to Default.
-        if (ids.length < 2) return;
-        const idx = ids.indexOf(resolvedModelId);
-        const down = e.key === 'ArrowDown';
-        // A model the filter hides is nowhere in the list: step onto its first
-        // or last visible entry instead of off the end into Default.
-        const next =
-          idx === -1
-            ? down
-              ? Math.min(1, ids.length - 1)
-              : ids.length - 1
-            : Math.min(ids.length - 1, Math.max(0, idx + (down ? 1 : -1)));
-        if (next !== idx) updateModel(ids[next]);
+        const step = stepModel(models, resolvedModelId, e.key === 'ArrowDown');
+        if (step) updateModel(step.modelId);
         return;
       }
       const efforts = effortsFor(activeModel, effReasoning);

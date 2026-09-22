@@ -39,13 +39,36 @@ const READINESS_REASONS: Record<Exclude<ProviderReadiness, 'ready'>, string> = {
 // Why a provider cannot be picked, for the picker's secondary line. A ready
 // provider needs no explanation and a missing status means the sidecar has not
 // reported yet.
-export function providerUnavailableReason(status: ProviderStatus | undefined): string | null {
+function providerUnavailableReason(status: ProviderStatus | undefined): string | null {
   if (!status) return 'Checking availability…';
   if (status.readiness === 'ready') return null;
   // A provider that reports a blank message still needs a reason shown.
   const message = status.message?.trim();
   if (message) return message;
   return READINESS_REASONS[status.readiness];
+}
+
+// How one harness reads in a harness picker. A new draft switches freely; once
+// the chat exists its harness is fixed, so the others stay visible but inert.
+export function harnessChoice(
+  provider: ProviderKind,
+  current: ProviderKind,
+  statuses: ProviderStatus[],
+  locked: boolean,
+): { selected: boolean; disabled: boolean; title: string } {
+  const selected = provider === current;
+  const label = PROVIDER_LABELS[provider];
+  if (locked) {
+    return {
+      selected,
+      disabled: !selected,
+      title: selected
+        ? `${label} — this chat's harness`
+        : `${label} — a chat keeps the harness it was created on`,
+    };
+  }
+  const reason = providerUnavailableReason(statuses.find((entry) => entry.provider === provider));
+  return { selected, disabled: reason !== null, title: reason ?? `Run this chat on ${label}` };
 }
 
 // Shared so a provider with no status yet keeps a stable identity across

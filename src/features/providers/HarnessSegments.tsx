@@ -2,7 +2,7 @@ import { motion } from 'framer-motion';
 import { Lock } from 'lucide-react';
 import { PROVIDER_KINDS, type ProviderKind, type ProviderStatus } from '../../types/bridge';
 import { ModelIcon } from '../../components/ModelIcon';
-import { PROVIDER_LABELS, PROVIDER_MARKS, providerUnavailableReason } from './providerIdentity';
+import { harnessChoice, PROVIDER_MARKS } from './providerIdentity';
 
 const accentMix = (pct: number) =>
   `color-mix(in srgb, var(--droid-accent) ${String(pct)}%, transparent)`;
@@ -20,16 +20,16 @@ function segmentTone(selected: boolean, unavailable: boolean): string {
   return 'text-droid-text-muted hover:text-droid-text';
 }
 
+// One px inside the track's 10px corner; inline so the one-off radius does not
+// add a utility to the app stylesheet.
+const SEGMENT_RADIUS = { borderRadius: 9 } as const;
+
 /**
  * Compact harness picker for the slider-style model popover: one segment per
  * harness with a sliding selection pill. Lock and availability semantics match
  * the rail: a live chat keeps the harness it was created on, and a harness
  * with no usable status is not pickable yet.
  */
-// One px inside the track's 10px corner; inline so the one-off radius does not
-// add a utility to the app stylesheet.
-const SEGMENT_RADIUS = { borderRadius: 9 } as const;
-
 export default function HarnessSegments({
   provider,
   statuses,
@@ -49,17 +49,11 @@ export default function HarnessSegments({
         className="relative flex gap-0.5 rounded-xl border border-droid-border bg-droid-bg/60 p-0.5"
       >
         {PROVIDER_KINDS.map((kind) => {
-          const selected = kind === provider;
-          const reason = providerUnavailableReason(
-            statuses.find((entry) => entry.provider === kind),
-          );
-          const unavailable = locked ? !selected : reason !== null;
-          let title = reason ?? `Run this chat on ${PROVIDER_LABELS[kind]}`;
-          if (locked) {
-            title = selected
-              ? `${PROVIDER_LABELS[kind]} — this chat's harness`
-              : `${PROVIDER_LABELS[kind]} — a chat keeps the harness it was created on`;
-          }
+          const {
+            selected,
+            disabled: unavailable,
+            title,
+          } = harnessChoice(kind, provider, statuses, locked);
           return (
             <button
               key={kind}
