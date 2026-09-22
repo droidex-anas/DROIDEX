@@ -233,15 +233,19 @@ export class ProjectService {
       ancestor = this.thread(project, ancestor).ownerAppSessionId;
     }
     if (depth >= 4) throw new Error('Project thread nesting is limited to three levels.');
+    // Everything a spawn can be refused for is checked before its checkout is
+    // cut, because a worktree for a thread that never starts is left on disk
+    // with nothing to say it was ours: a bad step name, a held project or a
+    // full one would each strand one.
+    this.checkAdmission(project);
+    const named = requested.step ? this.planStep(project, requested.step).title : undefined;
     const workspace = await this.threadWorkspace(project, owner.cwd, input.title, requested);
     const cwd = workspace?.cwd ?? owner.cwd;
     const prompt = threadPrompt(input.prompt, workspace);
-    // A step is named before the launch so a rejected name costs nothing, and
-    // looked up again after it: plan_set may have replaced the plan while the
-    // thread was starting, and the step that was resolved with it.
-    const named = requested.step ? this.planStep(project, requested.step).title : undefined;
     const title = uniqueTitle(project, input.title);
     const appSessionId = await this.launch(project, { ...input, title, prompt, cwd }, source);
+    // Looked up again: plan_set may have replaced the plan while the thread
+    // started, and the step resolved with it.
     const step = named ? project.plan.find((candidate) => candidate.title === named) : undefined;
     if (step) {
       step.threadAppSessionId = appSessionId;
@@ -433,9 +437,10 @@ export class ProjectService {
         })),
       );
       this.clearAsk(project, thread);
-      // Answered inside the thread before this arrived, so that answer stands
-      // and the words sent with it go on as an ordinary message.
-      if (!landed && text.trim()) this.enqueue(project, source, target, 'message', text);
+      // Words sent with an answer are instructions of their own and reach the
+      // thread either way: alongside an answer that landed, or in place of one
+      // the thread had already settled without.
+      if (text.trim()) this.enqueue(project, source, target, 'message', text);
       await this.save();
       this.wakes.kick(project);
       return landed ? 'answered' : 'already-answered';
@@ -726,9 +731,7 @@ export class ProjectService {
     ownerAppSessionId?: string,
   ): Promise<string> {
     this.requireOpen();
-    if (project.paused) throw new Error('Resume project coordination before spawning a thread.');
-    if (project.threads.length + project.launching >= 8)
-      throw new Error('A project supports at most eight threads.');
+    this.checkAdmission(project);
     const isCurrent = this.wakes.guard(project);
     let bound: string | undefined;
     project.launching += 1;
@@ -834,6 +837,13 @@ export class ProjectService {
   private checkAutonomy(owner: SessionSummary, input: ThreadInput): void {
     if (autonomy.indexOf(input.autonomy) > autonomy.indexOf(owner.autonomy))
       throw new Error('A spawned thread cannot exceed its owner’s autonomy.');
+  }
+
+  /** Whether this project can take another thread at all. */
+  private checkAdmission(project: Project): void {
+    if (project.paused) throw new Error('Resume project coordination before spawning a thread.');
+    if (project.threads.length + project.launching >= 8)
+      throw new Error('A project supports at most eight threads.');
   }
 
   private requireOpen(): void {
