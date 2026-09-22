@@ -21,18 +21,14 @@ test('the menu lists every level with its consequence description', () => {
   assert.ok(html.includes('aria-checked="true"'));
 });
 
-test('the menu caption names the scope the choice applies to', () => {
-  const captions: Record<AutonomyScope, RegExp> = {
-    draft: /Applies to this new session/,
-    session: /This session/,
-    settings: /Default for new sessions/,
-  };
-  for (const scope of Object.keys(captions) as AutonomyScope[]) {
-    const html = renderToStaticMarkup(
+test('only the settings menu carries a scope caption', () => {
+  const render = (scope: AutonomyScope) =>
+    renderToStaticMarkup(
       createElement(AutonomyMenu, { scope, value: 'low', onSelect: () => undefined }),
     );
-    assert.match(html, captions[scope]);
-  }
+  assert.match(render('settings'), /Default for new sessions/);
+  assert.doesNotMatch(render('draft'), /Applies to this new session/);
+  assert.doesNotMatch(render('session'), /This session/);
 });
 
 test('the pill shows the confirmed level and its meaning on hover', () => {

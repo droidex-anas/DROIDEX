@@ -1823,6 +1823,7 @@ export default function PromptInput({
               </span>
             ) : activeSession ? (
               <AutonomySelector
+                align="start"
                 scope="session"
                 value={activeSession.autonomy}
                 pending={activeSession.appSessionId in state.pendingAutonomy}
@@ -1840,6 +1841,7 @@ export default function PromptInput({
               />
             ) : (
               <AutonomySelector
+                align="start"
                 scope="draft"
                 value={draftAutonomy}
                 onSelect={(level) => {

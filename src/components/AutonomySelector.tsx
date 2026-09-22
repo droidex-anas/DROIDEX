@@ -8,9 +8,9 @@ import { AUTONOMY_DESCRIPTIONS, AUTONOMY_LABELS, AUTONOMY_LEVELS } from '../lib/
 
 export type AutonomyScope = 'draft' | 'session' | 'settings';
 
-const SCOPE_CAPTIONS: Record<AutonomyScope, string> = {
-  draft: 'Applies to this new session',
-  session: 'This session',
+// In the composer the pill already says which chat it belongs to; only the
+// settings copy needs to say what its choice applies to.
+const SCOPE_CAPTIONS: Partial<Record<AutonomyScope, string>> = {
   settings: 'Default for new sessions',
 };
 
@@ -105,7 +105,7 @@ export default function AutonomySelector({
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: POPOVER_OFFSET_Y[placement], scale: 0.98 }}
             transition={{ duration: 0.16, ease: [0.16, 1, 0.3, 1] }}
-            className={`absolute z-50 w-[300px] ${POPOVER_PLACEMENT_CLASS[placement]} ${POPOVER_ALIGN_CLASS[align]}`}
+            className={`absolute z-50 w-[360px] max-w-[calc(100vw-2rem)] ${POPOVER_PLACEMENT_CLASS[placement]} ${POPOVER_ALIGN_CLASS[align]}`}
           >
             <AutonomyMenu
               scope={scope}
@@ -163,15 +163,17 @@ export function AutonomyMenu({
       role="menu"
       aria-label="Autonomy"
       onKeyDown={onMenuKey}
-      className="rounded-2xl border border-droid-border bg-droid-elevated shadow-droid overflow-hidden"
+      className="rounded-2xl border border-droid-border/60 bg-droid-elevated shadow-droid overflow-hidden"
     >
-      <div className="flex items-center justify-between px-4 pt-3 pb-2">
-        <span className="text-[11px] font-medium text-droid-text-secondary tracking-wide">
-          Autonomy
-        </span>
-        <span className="text-[11px] text-droid-text-muted">{SCOPE_CAPTIONS[scope]}</span>
+      <div className="flex items-center justify-between gap-3 px-3 pt-3 pb-1.5">
+        <span className="text-[12px] font-medium text-droid-text-secondary">Autonomy</span>
+        {SCOPE_CAPTIONS[scope] && (
+          <span className="truncate text-[11px] text-droid-text-muted">
+            {SCOPE_CAPTIONS[scope]}
+          </span>
+        )}
       </div>
-      <div className="px-2 pb-2 space-y-0.5">
+      <div className="px-1.5 pb-1.5 space-y-0.5">
         {AUTONOMY_LEVELS.map((level, i) => {
           const selected = level === value;
           return (
@@ -187,15 +189,19 @@ export function AutonomyMenu({
               onClick={() => {
                 onSelect(level);
               }}
-              className="w-full flex items-center gap-3 px-2.5 py-2 rounded-lg text-left transition-colors hover:bg-droid-surface/60"
+              className={`w-full flex items-center gap-3 px-2.5 py-2 rounded-lg text-left transition-colors ${
+                selected ? 'bg-droid-surface' : 'hover:bg-droid-surface/60'
+              }`}
             >
               <span className="min-w-0 flex-1">
                 <span
-                  className={`block text-[12px] text-droid-text ${selected ? 'font-medium' : ''}`}
+                  className={`block text-[13px] ${
+                    selected ? 'font-medium text-droid-text' : 'text-droid-text-secondary'
+                  }`}
                 >
                   {AUTONOMY_LABELS[level]}
                 </span>
-                <span className="block text-[11px] text-droid-text-muted leading-snug">
+                <span className="mt-0.5 block text-[11px] text-droid-text-muted leading-snug">
                   {AUTONOMY_DESCRIPTIONS[level]}
                 </span>
               </span>
