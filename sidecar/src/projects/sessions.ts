@@ -12,7 +12,12 @@ interface Launch {
 
 type Host = Pick<
   SessionManager,
-  'handle' | 'sessionSummary' | 'deliverScheduledMessage' | 'providerCatalog' | 'answerQuestion'
+  | 'handle'
+  | 'sessionSummary'
+  | 'isSessionLive'
+  | 'deliverScheduledMessage'
+  | 'providerCatalog'
+  | 'answerQuestion'
 >;
 
 /** Correlates session creation and commits membership before the first provider turn. */
@@ -45,10 +50,10 @@ export class ProjectSessions implements ProjectPort {
       });
       if (launch.error) throw new Error(launch.error);
       // Admission can close after the bind — a shutdown, a cancelled resume —
-      // and that path reports no error at all. A session the manager no longer
-      // knows never opened, whatever the bind saw.
-      if (launch.session && !this.host.sessionSummary(launch.session.appSessionId))
-        return undefined;
+      // and that path reports no error at all. Its cleanup can leave a
+      // historical row behind, so the question is whether the conversation is
+      // open, not whether the manager has heard of it.
+      if (launch.session && !this.host.isSessionLive(launch.session.appSessionId)) return undefined;
       return launch.session;
     } finally {
       this.launching.delete(clientRef);
