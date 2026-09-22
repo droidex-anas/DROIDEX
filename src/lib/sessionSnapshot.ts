@@ -23,7 +23,7 @@ export interface SessionSnapshot {
   transcript?: { appSessionId: string; events: TranscriptEvent[] };
 }
 
-export interface SnapshotInput {
+interface SnapshotInput {
   sessions: Record<string, SessionSummary>;
   sessionOrder: string[];
   activeTranscript?: { appSessionId: string; events: TranscriptEvent[] };

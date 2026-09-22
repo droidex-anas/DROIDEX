@@ -20,7 +20,7 @@ import { RuntimeRetirementTimer } from './runtimeRetirementTimer.js';
 // one the user has walked away from should wait.
 export const SESSION_RUNTIME_IDLE_RETIREMENT_MS = 30 * 60_000;
 
-export const SESSION_RUNTIME_RETIRED_STATUS =
+const SESSION_RUNTIME_RETIRED_STATUS =
   'Session runtime released after 30 minutes idle to free memory. Sending a message restores it.';
 
 // `streaming` is the authority on whether a turn is in flight: nothing moves a

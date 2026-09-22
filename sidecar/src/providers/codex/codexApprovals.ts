@@ -63,14 +63,14 @@ export interface CodexApproval {
   raw: unknown;
 }
 
-export interface CommandApproval {
+interface CommandApproval {
   itemId: string;
   command?: string | null;
   reason?: string | null;
   commandActions?: { command: string }[] | null;
 }
 
-export interface FileChangeApproval {
+interface FileChangeApproval {
   itemId: string;
   reason?: string | null;
 }
@@ -78,7 +78,7 @@ export interface FileChangeApproval {
 // What the user is being asked to allow. A command request describes itself; a
 // file-change request carries no description at all, so the open item the event
 // mapper is tracking is the only thing that can name the files.
-export function commandApproval(params: CommandApproval): CodexApproval {
+function commandApproval(params: CommandApproval): CodexApproval {
   const actions = params.commandActions ?? [];
   const command = params.command ?? actions.map((action) => action.command).join('; ');
   // The grant key is the exact action list, serialized: two different lists can
@@ -93,10 +93,7 @@ export function commandApproval(params: CommandApproval): CodexApproval {
   };
 }
 
-export function fileChangeApproval(
-  params: FileChangeApproval,
-  files: string | undefined,
-): CodexApproval {
+function fileChangeApproval(params: FileChangeApproval, files: string | undefined): CodexApproval {
   return {
     kind: 'edit',
     title: 'Edit',
@@ -106,7 +103,7 @@ export function fileChangeApproval(
   };
 }
 
-export async function decideApproval(
+async function decideApproval(
   appSessionId: string,
   interactions: ProviderInteractions,
   approval: CodexApproval,
@@ -132,7 +129,7 @@ function approvalDecision(outcome: PermissionOutcome): ApprovalDecision {
   return outcome.startsWith('proceed') ? 'accept' : 'decline';
 }
 
-export interface RequestedQuestion {
+interface RequestedQuestion {
   id: string;
   question: string;
   options: { label: string }[] | null;
@@ -140,7 +137,7 @@ export interface RequestedQuestion {
 
 // Codex keys answers by question id and accepts several per question; DROIDEX
 // asks one answer per question, in order. An empty map is the cancellation.
-export async function answerQuestions(
+async function answerQuestions(
   interactions: ProviderInteractions,
   questions: RequestedQuestion[],
 ): Promise<Record<string, { answers: string[] }>> {

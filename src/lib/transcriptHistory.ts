@@ -252,7 +252,7 @@ export function reconcileRestoredTranscript(
   return merged;
 }
 
-export function reconcileTranscriptPage(
+function reconcileTranscriptPage(
   existing: TranscriptEvent[],
   page: TranscriptEvent[],
   mode: 'replace' | 'prepend',

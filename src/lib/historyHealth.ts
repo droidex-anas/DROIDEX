@@ -1,7 +1,7 @@
 import type { ServerEvent } from '../types/bridge';
 
-export type HistoryPersistenceHealth = 'ok' | 'degraded';
-export type HistorySearchHealth = 'ok' | 'unavailable';
+type HistoryPersistenceHealth = 'ok' | 'degraded';
+type HistorySearchHealth = 'ok' | 'unavailable';
 
 export interface HistoryHealthSnapshot {
   persistence: HistoryPersistenceHealth;

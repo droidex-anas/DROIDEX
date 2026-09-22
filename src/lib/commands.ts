@@ -3,7 +3,6 @@ import { isAppUpdateInstalling } from './appUpdate';
 import type {
   Autonomy,
   BrowserNativeResult,
-  BrowserScrollDirection,
   BrowserViewport,
   BrowserViewportMode,
   ConfigurableSessionRole,
@@ -77,10 +76,6 @@ export const installCli = (channel: InstallChannel) => {
 export const updateCli = (channel?: InstallChannel) => {
   bridge.send({ type: 'cli.update', channel });
 };
-export const requestRuntimeStatus = () => {
-  bridge.send({ type: 'runtime.status' });
-};
-
 export const listModels = () => {
   bridge.send({ type: 'catalog.models' });
 };
@@ -195,7 +190,7 @@ export const respondQuestion = (
   bridge.send({ type: 'question.respond', appSessionId, requestId, cancelled, answers });
 };
 
-export const interruptSession = (appSessionId: string) => {
+const interruptSession = (appSessionId: string) => {
   bridge.send({ type: 'session.interrupt', appSessionId });
 };
 
@@ -232,10 +227,6 @@ export const openChild = (
   requestId: string,
 ) => {
   bridge.send({ type: 'child.open', parentAppSessionId, childSessionId, requestId });
-};
-
-export const closeSession = (appSessionId: string) => {
-  bridge.send({ type: 'session.close', appSessionId });
 };
 
 export const stopAgentProcess = (appSessionId: string, pid: number) => {
@@ -396,16 +387,8 @@ export const openBrowser = (input: {
   bridge.send({ type: 'browser.open', ...input });
 };
 
-export const closeBrowser = (appSessionId: string) => {
-  bridge.send({ type: 'browser.close', appSessionId });
-};
-
 export const reloadBrowser = (appSessionId: string) => {
   bridge.send({ type: 'browser.reload', appSessionId });
-};
-
-export const refreshBrowser = (appSessionId: string) => {
-  bridge.send({ type: 'browser.refresh', appSessionId });
 };
 
 export const resizeBrowserViewport = (input: {
@@ -414,34 +397,6 @@ export const resizeBrowserViewport = (input: {
   viewportMode: BrowserViewportMode;
 }) => {
   bridge.send({ type: 'browser.resizeViewport', ...input });
-};
-
-export const clickBrowser = (input: {
-  appSessionId: string;
-  ref?: string;
-  x?: number;
-  y?: number;
-  source?: 'agent' | 'user';
-}) => {
-  bridge.send({ type: 'browser.click', ...input });
-};
-
-export const typeBrowser = (appSessionId: string, text: string) => {
-  bridge.send({ type: 'browser.type', appSessionId, text });
-};
-
-export const keypressBrowser = (appSessionId: string, key: string) => {
-  bridge.send({ type: 'browser.keypress', appSessionId, key });
-};
-
-export const scrollBrowser = (input: {
-  appSessionId: string;
-  direction: BrowserScrollDirection;
-  pixels?: number;
-  ref?: string;
-  source?: 'agent' | 'user';
-}) => {
-  bridge.send({ type: 'browser.scroll', ...input });
 };
 
 export const addDesignReference = (appSessionId: string, reference: DesignReference) => {

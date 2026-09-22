@@ -64,7 +64,7 @@ export interface ChildRuntimeState {
   lastUsedAt: number;
   unsubscribe?: () => void;
 }
-export interface ChildTurnState {
+interface ChildTurnState {
   generation: number;
   phase: 'idle' | 'streaming';
   autoCompacting: boolean;
@@ -259,7 +259,7 @@ export function applyObservedChild(
   return { previousPrompt };
 }
 
-export function applyChildLaunchSettings(child: ChildSessionState, settings: ChildSettings): void {
+function applyChildLaunchSettings(child: ChildSessionState, settings: ChildSettings): void {
   if (!settings.modelId) return;
   if (child.modelId === settings.modelId && child.reasoningEffort === settings.reasoningEffort)
     return;

@@ -463,7 +463,6 @@ function registerIpc() {
   });
   ipcMain.handle('get-api-key', getApiKey);
   ipcMain.handle('set-api-key', (_event, { key }) => setApiKey(key));
-  ipcMain.handle('clear-api-key', clearApiKey);
   ipcMain.handle('list-files', (_event, { dir }) => listFiles(dir));
   ipcMain.handle('get-performance-metrics', (event) => {
     assertMainRenderer(event);
@@ -1069,10 +1068,6 @@ async function setApiKey(key) {
   }
   await fsp.mkdir(path.dirname(apiKeyPath()), { recursive: true });
   await fsp.writeFile(apiKeyPath(), safeStorage.encryptString(key));
-}
-
-async function clearApiKey() {
-  await fsp.rm(apiKeyPath(), { force: true });
 }
 
 function apiKeyPath() {

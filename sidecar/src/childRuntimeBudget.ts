@@ -45,7 +45,7 @@ export function childRuntimeAdmission(
   return 'reject';
 }
 
-export function idleLiveRuntimes(
+function idleLiveRuntimes(
   parent: ParentChildSessions,
   requested: ChildSessionState,
 ): (ChildSessionState & { runtime: ChildRuntimeState })[] {
@@ -61,7 +61,7 @@ export function idleLiveRuntimes(
     .sort((left, right) => left.runtime.lastUsedAt - right.runtime.lastUsedAt);
 }
 
-export function parentRuntimeOccupancy(
+function parentRuntimeOccupancy(
   parent: ParentChildSessions,
   idleLive: number,
 ): ChildRuntimeOccupancy {

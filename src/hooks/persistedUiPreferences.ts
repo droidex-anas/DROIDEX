@@ -25,7 +25,7 @@ export type AgentKind = 'primary' | 'worker' | 'validator';
 export type LiveEnterBehavior = 'queue' | 'interrupt';
 export type DiffViewMode = 'unified' | 'split';
 
-export interface AgentModelConfig {
+interface AgentModelConfig {
   modelId?: string;
   reasoning: ReasoningEffort;
 }
