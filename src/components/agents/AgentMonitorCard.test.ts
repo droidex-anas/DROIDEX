@@ -470,28 +470,37 @@ test('only a suppressed poll at the tail redirects the working cue', () => {
   const pollResult = ev({ kind: 'tool_result', toolUseId: 'p1', text: 'Status: running' });
   const read = ev({ kind: 'tool_call', toolName: 'Read', toolUseId: 'r1', toolArgs: {} });
 
+  const spawned = [userMsg('go'), spawn('t1', 'explorer')];
   // The poll call is returned so the cue can time the check from it.
-  assert.equal(trailingSubagentPoll([userMsg('go'), poll], true), poll);
+  assert.equal(trailingSubagentPoll([...spawned, poll], true), poll);
   // Replayed results carry no toolName, so the tail resolves through its call.
-  assert.equal(trailingSubagentPoll([userMsg('go'), poll, pollResult], true), poll);
-  assert.equal(trailingSubagentPoll([userMsg('go'), poll, read], true), undefined);
+  assert.equal(trailingSubagentPoll([...spawned, poll, pollResult], true), poll);
+  assert.equal(trailingSubagentPoll([...spawned, poll, read], true), undefined);
   assert.equal(trailingSubagentPoll([userMsg('go'), assistantMsg('done')], true), undefined);
   // Views that keep the poll rows render them, so their tail is honest already.
-  assert.equal(trailingSubagentPoll([userMsg('go'), poll], false), undefined);
+  assert.equal(trailingSubagentPoll([...spawned, poll], false), undefined);
+  // With no agent spawned the same tool is reading a background command, which
+  // is ordinary work: it keeps its row and the cue does not mention agents.
+  assert.equal(trailingSubagentPoll([userMsg('go'), poll], true), undefined);
 });
 
 test('a poll between two tools does not split them into separate groups', () => {
   const toolCall = (toolUseId: string, toolName: string) =>
     ev({ kind: 'tool_call', toolName, toolUseId, toolArgs: { file_path: `/tmp/${toolUseId}.ts` } });
+  const poll = ev({ kind: 'tool_call', toolName: 'TaskOutput', toolUseId: 'p1', toolArgs: {} });
+  const options = { childSessionCards: true, groupChildSessions: true };
   const feed = buildFeed(
-    [
-      toolCall('a', 'Read'),
-      ev({ kind: 'tool_call', toolName: 'TaskOutput', toolUseId: 'p1', toolArgs: {} }),
-      toolCall('b', 'Grep'),
-    ],
-    { childSessionCards: true, groupChildSessions: true },
+    [spawn('t1', 'explorer'), toolCall('a', 'Read'), poll, toolCall('b', 'Grep')],
+    options,
   );
-  assert.equal(feed.filter((item) => item.type === 'tools').length, 1);
+  const groups = feed.filter((item) => item.type === 'tools');
+  assert.equal(groups.length, 1);
+  if (groups[0].type === 'tools') assert.equal(groups[0].events.length, 2);
+
+  // With no agent spawned the poll is a background command's output: a row.
+  const plain = buildFeed([toolCall('a', 'Read'), poll, toolCall('b', 'Grep')], options);
+  const plainGroups = plain.filter((item) => item.type === 'tools');
+  if (plainGroups[0].type === 'tools') assert.equal(plainGroups[0].events.length, 3);
 });
 
 test('views that keep per-spawn lines keep the poll rows too', () => {
