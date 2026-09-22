@@ -34,6 +34,7 @@ export function ThreadsWorkspace({ tab }: { tab: UtilityTab }) {
       pendingPermissions: current.pendingPermissions,
       pendingQuestions: current.pendingQuestions,
       transcripts: current.transcripts,
+      sessionRestore: current.sessionRestore,
       toolActivity: current.toolActivity,
     };
   }, shallowEqual);
@@ -75,6 +76,7 @@ export function ThreadsWorkspace({ tab }: { tab: UtilityTab }) {
           <ThreadDetail
             row={open}
             transcript={state.transcripts[open.appSessionId]}
+            historyError={state.sessionRestore[open.appSessionId]?.error ?? ''}
             toolActivity={state.toolActivity}
             onBack={() => {
               showThread(null);

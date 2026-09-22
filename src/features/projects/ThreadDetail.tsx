@@ -16,12 +16,15 @@ import type { ThreadRow } from './threadBoard';
 export function ThreadDetail({
   row,
   transcript,
+  historyError,
   toolActivity,
   onBack,
   onOpenInChat,
 }: {
   row: ThreadRow;
   transcript: readonly TranscriptEvent[] | undefined;
+  /** Why this thread's history could not be read, when it could not. */
+  historyError: string;
   toolActivity: ToolActivitySettings;
   onBack: () => void;
   onOpenInChat: () => void;
@@ -31,10 +34,11 @@ export function ThreadDetail({
   const items = useMemo(() => buildFeed(events, { childSessionCards: true }), [events]);
 
   // The thread may never have been opened in this window; its history loads the
-  // same way the chat loads one.
+  // same way the chat loads one. A load that failed is not retried on its own:
+  // it would spin against the same failure.
   useEffect(() => {
-    if (transcript === undefined) loadSessionHistory(row.appSessionId);
-  }, [transcript, row.appSessionId]);
+    if (transcript === undefined && !historyError) loadSessionHistory(row.appSessionId);
+  }, [transcript, historyError, row.appSessionId]);
 
   return (
     <div data-testid="thread-detail" className="flex min-h-0 flex-1 flex-col">
@@ -74,7 +78,7 @@ export function ThreadDetail({
             />
           ) : (
             <p className="text-[12px] leading-5 text-droid-text-muted">
-              {transcript === undefined ? 'Loading this thread…' : row.detail}
+              {historyError || (transcript === undefined ? 'Loading this thread…' : row.detail)}
             </p>
           )}
         </div>
