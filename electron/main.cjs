@@ -21,6 +21,7 @@ const fsp = require('node:fs/promises');
 const os = require('node:os');
 const path = require('node:path');
 const { pathToFileURL } = require('node:url');
+const { childEnv } = require('./childEnv.cjs');
 const gitVcs = require('./git.cjs');
 const githubVcs = require('./github.cjs');
 const githubPrConversation = require('./githubPrConversation.cjs');
@@ -1230,9 +1231,16 @@ function openTerminal(root) {
   return spawnDetached('x-terminal-emulator', ['--working-directory', root]);
 }
 
+// Everything launched this way is the user's own tool — an editor, a terminal
+// — and both go on to run shells, so neither inherits the app's variables.
 function spawnDetached(command, args, options = {}) {
   return new Promise((resolve, reject) => {
-    const child = spawn(command, args, { detached: true, stdio: 'ignore', cwd: options.cwd });
+    const child = spawn(command, args, {
+      detached: true,
+      stdio: 'ignore',
+      cwd: options.cwd,
+      env: childEnv(),
+    });
     child.once('error', reject);
     child.once('spawn', () => {
       child.unref();
