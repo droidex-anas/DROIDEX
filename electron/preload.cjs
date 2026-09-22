@@ -142,7 +142,6 @@ contextBridge.exposeInMainWorld('droidControl', {
     ipcRenderer.invoke('notification-activate-ack', { appSessionId }),
   getApiKey: () => ipcRenderer.invoke('get-api-key'),
   setApiKey: (key) => ipcRenderer.invoke('set-api-key', { key }),
-  clearApiKey: () => ipcRenderer.invoke('clear-api-key'),
   listFiles: (dir) => ipcRenderer.invoke('list-files', { dir }),
   getPerformanceMetrics: () => ipcRenderer.invoke('get-performance-metrics'),
   systemIdleTime: () => ipcRenderer.invoke('system-idle-time'),

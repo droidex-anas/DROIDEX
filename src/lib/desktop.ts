@@ -202,7 +202,6 @@ interface DroidControlApi {
   ackNotificationActivate: (appSessionId: string) => Promise<{ ok: boolean }>;
   getApiKey: () => Promise<string | null>;
   setApiKey: (key: string) => Promise<void>;
-  clearApiKey: () => Promise<void>;
   listFiles: (dir: string) => Promise<string[]>;
   getPerformanceMetrics: () => Promise<DesktopPerformanceMetrics>;
   systemIdleTime: () => Promise<number>;
