@@ -1,5 +1,6 @@
 const crypto = require('node:crypto');
 const fs = require('node:fs/promises');
+const { existsSync } = require('node:fs');
 const path = require('node:path');
 const {
   loadBooleanPreference,
@@ -27,9 +28,10 @@ const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{
 const INVALID_PREFERENCE_MESSAGE =
   'Usage analytics preference is invalid. Toggle it again in Settings.';
 
-// Files older builds already wrote into userData. Finding one while minting the
-// installation ID means this is an existing user whose app just updated into an
-// instrumented build, not a new installation.
+// Files an earlier run leaves in userData. Seeing one means an existing user
+// updated into an instrumented build rather than a new installation. This build
+// writes diagnostics.json itself during startup, so the check has to run before
+// that: see notePriorInstall().
 const EXISTING_INSTALL_MARKERS = ['diagnostics.json', 'onboarding.json', 'chats'];
 
 const DISABLED = Object.freeze({ enabled: false });
@@ -40,7 +42,16 @@ function createUsageAnalytics(options) {
   const fileSystem = options.fs || fs;
   const randomUUID = options.randomUUID || crypto.randomUUID;
   const env = options.env || process.env;
+  const exists = options.exists || existsSync;
   let installationPromise = null;
+  let priorInstall = null;
+
+  /** Snapshot whether an earlier run left files behind. Call before anything this run writes to userData. */
+  function notePriorInstall() {
+    priorInstall ??= EXISTING_INSTALL_MARKERS.some((marker) =>
+      exists(path.join(app.getPath('userData'), marker)),
+    );
+  }
 
   function installationFilePath() {
     return path.join(app.getPath('userData'), INSTALLATION_FILENAME);
@@ -75,9 +86,10 @@ function createUsageAnalytics(options) {
   }
 
   function installation() {
+    notePriorInstall();
     installationPromise ??= loadOrCreateInstallation({
       filePath: installationFilePath(),
-      userDataDir: app.getPath('userData'),
+      priorInstall,
       randomUUID,
       fs: fileSystem,
       now: options.now,
@@ -136,7 +148,7 @@ function createUsageAnalytics(options) {
     }
   }
 
-  return { bootstrap, markFirstLaunchReported, preference, setEnabled };
+  return { bootstrap, markFirstLaunchReported, notePriorInstall, preference, setEnabled };
 }
 
 function buildContext(app, config, options) {
@@ -182,23 +194,11 @@ async function loadOrCreateInstallation(options) {
   }
   const record = {
     installationId: options.randomUUID(),
-    origin: (await hasExistingInstallMarkers(options)) ? 'existing_install' : 'new_install',
+    origin: options.priorInstall ? 'existing_install' : 'new_install',
     createdAt: (options.now?.() ?? new Date()).toISOString(),
   };
   await writeInstallation(options.fs, options.filePath, record);
   return record;
-}
-
-async function hasExistingInstallMarkers(options) {
-  for (const marker of EXISTING_INSTALL_MARKERS) {
-    try {
-      await options.fs.stat(path.join(options.userDataDir, marker));
-      return true;
-    } catch {
-      // Absent marker; keep looking.
-    }
-  }
-  return false;
 }
 
 function writeInstallation(fileSystem, filePath, record) {

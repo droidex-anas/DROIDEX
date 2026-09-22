@@ -191,6 +191,8 @@ if (
 ) {
   app.disableHardwareAcceleration();
 }
+// Before diagnostics writes into userData, or a new install looks like an old one.
+usageAnalytics.notePriorInstall();
 const diagnosticsInitialization = diagnostics.initialize();
 app.whenReady().then(async () => {
   await diagnosticsInitialization;

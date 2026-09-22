@@ -58,6 +58,7 @@ interface RumApi {
   setUser: (user: { id: string }) => void;
   startView: (view: { name: string }) => void;
   addAction: (name: string, context?: Record<string, unknown>) => void;
+  stopSession: () => void;
 }
 
 interface UsageAnalyticsDeps {
@@ -69,6 +70,10 @@ interface UsageAnalyticsDeps {
 type UsageAnalyticsOutcome = 'started' | 'disabled' | 'failed';
 
 let hasStarted = false;
+// The running client, if any, and whether it may still send. Opting out flips
+// this for the rest of the launch; the next launch never starts a client.
+let client: RumApi | null = null;
+let reportingAllowed = true;
 
 export async function startUsageAnalytics(
   deps: UsageAnalyticsDeps = {},
@@ -82,6 +87,7 @@ export async function startUsageAnalytics(
     hasStarted = true;
 
     const rum = await (deps.loadRum ?? loadRum)();
+    client = rum;
     rum.init(buildRumConfig(bootstrap));
     rum.setUser({ id: bootstrap.installationId });
     rum.startView({ name: VIEW_NAME });
@@ -140,7 +146,7 @@ export function buildRumConfig(bootstrap: ResolvedBootstrap): Record<string, unk
  * attaches automatically.
  */
 export function sanitizeRumEvent(event: unknown): boolean {
-  if (!event || typeof event !== 'object') return false;
+  if (!reportingAllowed || !event || typeof event !== 'object') return false;
   const record = event as MutableRumEvent;
   if (record.type !== 'action' && record.type !== 'view') return false;
 
@@ -223,7 +229,12 @@ export async function getUsageAnalyticsPreference(): Promise<{ enabled: boolean 
 }
 
 export async function setUsageAnalyticsPreference(enabled: boolean): Promise<{ enabled: boolean }> {
-  return normalizePreference((await callBridge('setUsageAnalytics', [enabled])) ?? OFF);
+  const preference = normalizePreference((await callBridge('setUsageAnalytics', [enabled])) ?? OFF);
+  if (!preference.enabled) {
+    reportingAllowed = false;
+    client?.stopSession();
+  }
+  return preference;
 }
 
 // Resolves to null when the desktop bridge or the method is missing, which every
@@ -249,6 +260,8 @@ function normalizePreference(value: unknown): { enabled: boolean } {
 /** @internal Reset module state for deterministic tests. */
 export function __resetUsageAnalyticsForTest(): void {
   hasStarted = false;
+  client = null;
+  reportingAllowed = true;
 }
 
 function text(value: unknown): string {

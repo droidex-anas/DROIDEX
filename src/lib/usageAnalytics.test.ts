@@ -5,6 +5,7 @@ import {
   buildRumConfig,
   normalizeBootstrap,
   sanitizeRumEvent,
+  setUsageAnalyticsPreference,
   startUsageAnalytics,
 } from './usageAnalytics';
 
@@ -36,6 +37,7 @@ function fakeRum() {
   const actions: RecordedAction[] = [];
   let config: Record<string, unknown> = {};
   let user: { id: string } | null = null;
+  let stopped = false;
   return {
     api: {
       init: (value: Record<string, unknown>) => {
@@ -48,7 +50,11 @@ function fakeRum() {
       addAction: (name: string, context?: Record<string, unknown>) => {
         actions.push({ name, context });
       },
+      stopSession: () => {
+        stopped = true;
+      },
     },
+    stopped: () => stopped,
     actions,
     config: () => config,
     user: () => user,
@@ -215,4 +221,21 @@ test('a failing SDK load never propagates', async () => {
     },
   });
   assert.equal(outcome, 'failed');
+});
+
+test('opting out stops a running client for the rest of the launch', async () => {
+  __resetUsageAnalyticsForTest();
+  const rum = fakeRum();
+  await startUsageAnalytics({ bootstrap: async () => ENABLED, loadRum: async () => rum.api });
+  Reflect.set(globalThis, 'window', {
+    droidControl: { setUsageAnalytics: async () => ({ enabled: false }) },
+  });
+  try {
+    await setUsageAnalyticsPreference(false);
+  } finally {
+    Reflect.deleteProperty(globalThis, 'window');
+  }
+  assert.equal(rum.stopped(), true);
+  assert.equal(sanitizeRumEvent({ type: 'action', context: {} }), false);
+  __resetUsageAnalyticsForTest();
 });

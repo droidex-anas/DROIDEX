@@ -55,6 +55,7 @@ const CONFIG = {
 
 let uuidCounter = 0;
 function options(overrides = {}) {
+  const fs = overrides.fs ?? memoryFs();
   return {
     app: {
       getPath: () => USER_DATA,
@@ -63,7 +64,8 @@ function options(overrides = {}) {
       ...overrides.app,
     },
     config: overrides.config ?? CONFIG,
-    fs: overrides.fs ?? memoryFs(),
+    fs,
+    exists: (filePath) => fs.files.has(filePath),
     env: overrides.env ?? {},
     platform: 'darwin',
     arch: 'arm64',
@@ -175,6 +177,15 @@ test('an existing user updating into an instrumented build is tagged as such', a
   const bootstrap = await createUsageAnalytics(options({ fs })).bootstrap();
   assert.equal(bootstrap.firstLaunch, true);
   assert.equal(bootstrap.installOrigin, 'existing_install');
+});
+
+test('files this run writes at startup do not make a new install look existing', async () => {
+  const fs = memoryFs();
+  const analytics = createUsageAnalytics(options({ fs }));
+  analytics.notePriorInstall();
+  // Diagnostics writes its identity file during startup, before any window.
+  fs.files.set(path.join(USER_DATA, 'diagnostics.json'), '{}');
+  assert.equal((await analytics.bootstrap()).installOrigin, 'new_install');
 });
 
 test('opting out stops reporting and deletes the stored id', async () => {
