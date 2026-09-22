@@ -57,6 +57,7 @@ async function harness(saved: Project[] = []) {
     saved: structuredClone(saved),
     failSave: false,
     gate: undefined as Promise<void> | undefined,
+    capacity: 'free' as 'free' | 'busy',
     bindGate: undefined as Promise<void> | undefined,
   };
   const answered: { id: string; requestId: string; answers: unknown[] }[] = [];
@@ -100,6 +101,7 @@ async function harness(saved: Project[] = []) {
     },
     deliver: async (id, prompt, isCurrent) => {
       if (state.gate) await state.gate;
+      if (state.capacity === 'busy') return { status: 'busy', retryOn: 'capacity' };
       const session = sessions.get(id);
       if (!isCurrent() || !session || session.streaming)
         return { status: 'busy', retryOn: 'target' };
@@ -501,6 +503,26 @@ test('work keeps flowing, and only a runaway loop holds the project', async (t) 
   for (let i = 40; i < 62; i += 1) await report(i);
   assert.equal(h.projects.list()[0]?.paused, true);
   assert.match(h.projects.list()[0]?.error ?? '', /talking in circles/);
+});
+
+test('a released runtime unparks a delivery that was waiting for a slot', async (t) => {
+  const h = await harness();
+  t.after(() => h.projects.close());
+  const { main } = await h.root();
+  const child = await h.projects.spawn(main, input);
+  // The runtime limit, not the recipient, is what turned this delivery away.
+  h.state.capacity = 'busy';
+  await h.finish(child.appSessionId, 'Done');
+  await drain();
+  assert.equal(h.sent.length, 0);
+  assert.equal(h.projects.list()[0]?.queued, 1);
+
+  // Another session closing hands its slot back; nothing else announces that.
+  h.state.capacity = 'free';
+  await h.projects.observe({ type: 'session.closed', appSessionId: 'someone-else' });
+  await drain();
+  assert.equal(h.sent.length, 1);
+  assert.equal(h.projects.list()[0]?.queued, 0);
 });
 
 test('native permissions and user questions never generate controller turns', async (t) => {
