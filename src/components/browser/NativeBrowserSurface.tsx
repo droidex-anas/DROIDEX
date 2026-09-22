@@ -45,7 +45,7 @@ import type {
   BrowserViewport,
   BrowserViewportMode,
 } from '../../types/bridge';
-import type { Size } from '../canvas/canvasMath';
+import type { Size } from './browserGeometry';
 
 interface NativeBrowserSurfaceProps {
   browserKey: string;
