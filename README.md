@@ -1,19 +1,35 @@
 # DROIDEX
 
+[![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
+
 DROIDEX is a macOS desktop workspace for Factory Droid. It keeps chats,
 projects, terminals, browser sessions, and agent work together in one app.
 
 Website: [droidex.vercel.app](https://droidex.vercel.app)
 
-## License and contributions
+## License
 
-DROIDEX is proprietary source-available software, not open-source software.
-You may inspect the code and create a fork solely to propose contributions to
-this repository. Reuse, redistribution, deployment as another project, and
-claims of ownership are prohibited without written permission. See
-[LICENSE](LICENSE) for the complete terms. Contributions are welcome under the
-process in [CONTRIBUTING.md](CONTRIBUTING.md) and the copyright-assignment terms
-in [CLA.md](CLA.md).
+DROIDEX is open source under the [Apache License 2.0](LICENSE). You may use,
+modify, and redistribute it, including commercially, as long as you follow the
+license: keep the copyright and attribution notices, ship the [NOTICE](NOTICE)
+file, and state prominently in any file you changed that you changed it.
+
+The DROIDEX name, logo, and visual identity are not covered by the license. If
+you fork DROIDEX, rename your build and say plainly that it is a fork of
+DROIDEX, with a link back here. [TRADEMARKS.md](TRADEMARKS.md) covers what
+that means in practice. Fork it, build on it, sell it if you like; just do not
+present it as though you wrote it.
+
+## Contributing
+
+Contributions are welcome: bugs, fixes, features, and documentation.
+[CONTRIBUTING.md](CONTRIBUTING.md) covers the development setup, the checks to
+run, and the commit sign-off. [AGENTS.md](AGENTS.md) is the engineering guide
+the review holds changes to, and [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md)
+applies to everyone taking part.
+
+Found a security problem? Do not open an issue. Follow
+[SECURITY.md](SECURITY.md).
 
 ## Run it locally
 
