@@ -9,9 +9,6 @@ export type { ProviderMention, SkillInfo } from './providers/catalog.js';
 export type {
   McpServerInfo,
   McpServerInput,
-  McpServerSource,
-  McpServerStatus,
-  McpServerType,
   McpStatusSummary,
   McpToolInfo,
 } from './mcpProtocol.js';
@@ -30,10 +27,9 @@ export type SessionPhase =
 
 export type FeatureStatus = 'pending' | 'in_progress' | 'completed' | 'cancelled';
 export type SessionRole = 'primary' | 'worker' | 'validator';
-export type SessionPurpose = 'chat' | 'design' | 'mission-control';
+type SessionPurpose = 'chat' | 'design' | 'mission-control';
 export type SessionInteractionMode = 'auto' | 'spec' | 'agi';
 export type ResponseFormat = 'app-create' | 'app-followup';
-export type RunStatus = 'pending' | 'running' | 'paused' | 'done' | 'failed' | 'blocked';
 export type Autonomy = 'off' | 'low' | 'medium' | 'high';
 export type ReasoningEffort =
   | 'off'
@@ -227,7 +223,7 @@ export interface TranscriptEvent {
   transient?: true;
 }
 
-export type BrowserTranscriptReferenceKind = 'element' | 'region' | 'text';
+type BrowserTranscriptReferenceKind = 'element' | 'region' | 'text';
 
 export interface BrowserTranscriptReference {
   id: string;
@@ -279,7 +275,7 @@ export interface ModelInfo {
 
 // What a provider can do for the user right now. Derived from what the sidecar
 // already knows about each runtime; see providers/providerStatus.ts.
-export type ProviderReadiness = 'ready' | 'missing' | 'unauthenticated' | 'unsupported' | 'error';
+type ProviderReadiness = 'ready' | 'missing' | 'unauthenticated' | 'unsupported' | 'error';
 
 export interface ProviderStatus {
   provider: ProviderKind;
@@ -322,7 +318,7 @@ export interface PackageManagers {
   pnpm: boolean;
 }
 
-export interface CliInfo {
+interface CliInfo {
   present: boolean;
   path: string;
   version?: string;
@@ -351,7 +347,7 @@ export interface ContextStatsSnapshot {
   compactions?: number;
 }
 
-export interface ContextBreakdownCategory {
+interface ContextBreakdownCategory {
   name: string;
   tokens: number;
   colorKey?: string;
@@ -378,7 +374,7 @@ export interface SessionHistoryEntry {
 // One transcript line that matched a sessions.search query, shaped for the
 // sidebar's result row: a snippet centered on the match plus enough context
 // (author, timestamp) to recognize the conversation moment.
-export interface SessionSearchMatch {
+interface SessionSearchMatch {
   snippet: string;
   author: 'user' | 'assistant';
   ts: number;
@@ -403,16 +399,16 @@ export interface BrowserViewport {
 }
 
 export type BrowserViewportMode = 'fit' | 'desktop' | 'laptop' | 'tablet' | 'mobile' | 'custom';
-export type BrowserScrollDirection = 'up' | 'down' | 'left' | 'right';
+type BrowserScrollDirection = 'up' | 'down' | 'left' | 'right';
 
-export interface BrowserBox {
+interface BrowserBox {
   x: number;
   y: number;
   width: number;
   height: number;
 }
 
-export interface BrowserElementRef {
+interface BrowserElementRef {
   ref: string;
   selector: string;
   tagName: string;
@@ -425,7 +421,7 @@ export interface BrowserElementRef {
   computedStyles?: Record<string, string>;
 }
 
-export interface BrowserState {
+interface BrowserState {
   browserSessionId: string;
   appSessionId?: string;
   url: string;
@@ -442,7 +438,7 @@ export interface BrowserState {
   error?: string;
 }
 
-export interface BrowserNativeSnapshot {
+interface BrowserNativeSnapshot {
   url: string;
   title?: string;
   scroll: { x: number; y: number };
@@ -451,7 +447,7 @@ export interface BrowserNativeSnapshot {
   canGoForward?: boolean;
 }
 
-export interface BrowserElementInspection {
+interface BrowserElementInspection {
   selector: string;
   tagName: string;
   role?: string;
@@ -466,7 +462,7 @@ export interface BrowserElementInspection {
   };
 }
 
-export interface BrowserNetworkEvent {
+interface BrowserNetworkEvent {
   timestamp: number;
   method: string;
   url: string;
@@ -475,7 +471,7 @@ export interface BrowserNetworkEvent {
   error?: string;
 }
 
-export interface BrowserConsoleEvent {
+interface BrowserConsoleEvent {
   timestamp: number;
   level: number;
   message: string;
@@ -483,7 +479,7 @@ export interface BrowserConsoleEvent {
   source?: string;
 }
 
-export type BrowserNativeAction =
+type BrowserNativeAction =
   | 'open'
   | 'reload'
   | 'goBack'
@@ -538,7 +534,7 @@ export interface BrowserNativeResult {
   error?: string;
 }
 
-export interface ElementSource {
+interface ElementSource {
   framework?: 'react' | 'vue' | 'svelte' | 'unknown';
   component?: string;
   componentChain?: string[];
@@ -548,23 +544,23 @@ export interface ElementSource {
   confidence: 'exact' | 'attribute' | 'heuristic' | 'none';
 }
 
-export interface DesignAnchorAncestor {
+interface DesignAnchorAncestor {
   tag: string;
   component?: string;
   selector?: string;
 }
 
-export interface DesignStrokePoint {
+interface DesignStrokePoint {
   x: number;
   y: number;
 }
 
-export interface DesignSelectionScreenshot {
+interface DesignSelectionScreenshot {
   base64: string;
   box: BrowserBox;
 }
 
-export interface DesignAnchor {
+interface DesignAnchor {
   id: string;
   kind: 'element' | 'region' | 'text';
   label: string;
@@ -578,7 +574,7 @@ export interface DesignAnchor {
   strokes?: DesignStrokePoint[][];
 }
 
-export interface DesignAnchorDetail {
+interface DesignAnchorDetail {
   id: string;
   selector: string;
   selectorVerified: boolean;
@@ -588,7 +584,7 @@ export interface DesignAnchorDetail {
   html?: string;
 }
 
-export interface DesignReference {
+interface DesignReference {
   id: string;
   anchor: DesignAnchor;
   detail?: DesignAnchorDetail;
@@ -825,7 +821,7 @@ export type ClientCommand =
     }
   | { type: 'browser.native.result'; result: BrowserNativeResult };
 
-export type ChildUpdatedEvent =
+type ChildUpdatedEvent =
   | {
       type: 'child.updated';
       parentAppSessionId: string;
@@ -842,7 +838,7 @@ export type ChildUpdatedEvent =
       access: 'history';
     };
 
-export interface SessionChildEvent {
+interface SessionChildEvent {
   type: 'session.child';
   event: 'upserted';
   child: ChildSessionSummary;
@@ -850,7 +846,7 @@ export interface SessionChildEvent {
   runtimeGeneration: number;
 }
 
-export interface ChildErrorEvent {
+interface ChildErrorEvent {
   type: 'child.error';
   parentAppSessionId: string;
   childSessionId: string;

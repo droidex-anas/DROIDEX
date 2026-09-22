@@ -52,7 +52,7 @@ export const isTaskToolName = (name: unknown): boolean =>
 const TASK_COMPANION_TOOL = /^task[_ -]?(output|stop)$/i;
 
 // Every tool whose result can legitimately describe a subagent.
-export const isTaskFamilyToolName = (name: unknown): boolean =>
+const isTaskFamilyToolName = (name: unknown): boolean =>
   isTaskToolName(name) || (typeof name === 'string' && TASK_COMPANION_TOOL.test(name.trim()));
 
 // The task a `TaskOutput`/`TaskStop` call names, whoever that task belongs to.

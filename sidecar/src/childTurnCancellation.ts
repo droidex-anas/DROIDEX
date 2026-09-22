@@ -15,7 +15,7 @@ export type PreparedChildInterrupt =
       runtime: ChildRuntimeState;
     };
 
-export function discardCancelledPendingSends(child: ChildSessionState): void {
+function discardCancelledPendingSends(child: ChildSessionState): void {
   child.turn.pendingSends = [];
   child.turn.pendingDrainEpoch += 1;
 }
@@ -43,7 +43,7 @@ export function takeAdmittedSend(child: ChildSessionState): string | undefined {
   return send;
 }
 
-export function markQueuedInterruptSettled(child: ChildSessionState, now: number): void {
+function markQueuedInterruptSettled(child: ChildSessionState, now: number): void {
   child.turn.interrupting = false;
   child.turn.interruptingForSteer = false;
   child.turn.phase = 'idle';

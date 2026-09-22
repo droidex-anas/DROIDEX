@@ -8,7 +8,7 @@ import { generatedImage, type GeneratedImage } from './codexImages.js';
 
 // The tool name the transcript renders as an image card. Shared with the
 // renderer by convention, the way every other tool row is matched by name.
-export const IMAGE_TOOL_NAME = 'image_generation';
+const IMAGE_TOOL_NAME = 'image_generation';
 export interface FileUpdateChange {
   path: string;
   kind: { type: string };
