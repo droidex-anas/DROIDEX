@@ -21,7 +21,6 @@ const EXIT_ON_STDIN_CLOSE = process.env.BRIDGE_EXIT_ON_STDIN_CLOSE !== '0';
 
 let automationManager: AutomationManager | null = null;
 let projects: ProjectService | undefined;
-let projectSessions: ProjectSessions | undefined;
 
 const server = startBridgeServer({
   requestedPort: REQUESTED_PORT,
@@ -41,7 +40,7 @@ const server = startBridgeServer({
 
 const manager = new SessionManager(
   (event) => {
-    projectSessions?.observe(event);
+    projectSessions.observe(event);
     if (projects) void projects.observe(event).catch(reportProjectError);
     if (automationManager) {
       void automationManager.observeSessionEvent(event).catch((error: unknown) => {
@@ -53,7 +52,7 @@ const manager = new SessionManager(
   {
     assetUrlFor: (filePath) => server.browserAssetUrl(filePath),
     beforeFirstTurn: async (session, clientRef) => {
-      await projectSessions?.beforeFirstTurn(session, clientRef);
+      await projectSessions.beforeFirstTurn(session, clientRef);
     },
     onSessionAvailable: (appSessionId) => {
       projects?.sessionAvailable(appSessionId);
@@ -70,11 +69,15 @@ const manager = new SessionManager(
   },
 );
 
-projectSessions = new ProjectSessions(manager);
+// Declared after the manager it wraps, and reached only from its callbacks,
+// which run long after this module has finished loading.
+const projectSessions = new ProjectSessions(manager);
 const projectsReady = ProjectService.open(
   projectSessions,
   new ProjectStore(join(droidexUserDataDir(), 'projects.json')),
-  (event) => server.broadcast(event),
+  (event) => {
+    server.broadcast(event);
+  },
 ).then((service) => {
   projects = service;
   if (shuttingDown) service.close();
@@ -82,9 +85,9 @@ const projectsReady = ProjectService.open(
 });
 registerProjectService(projectsReady);
 void projectsReady.catch(reportProjectError);
-const handleProjectCommand = createProjectCommandHandler(projectsReady, (event) =>
-  server.broadcast(event),
-);
+const handleProjectCommand = createProjectCommandHandler(projectsReady, (event) => {
+  server.broadcast(event);
+});
 
 function reportProjectError(error: unknown): void {
   server.broadcast({
