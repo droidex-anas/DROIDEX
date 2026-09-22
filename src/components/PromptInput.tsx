@@ -606,7 +606,7 @@ export default function PromptInput({
     feedbackReport,
     draftEditing.menu,
     scheduleTarget !== null && scheduleTarget.appSessionId === activeSession?.appSessionId,
-    isLive && sendHintOpen,
+    sendHintOpen,
   ].some(Boolean);
 
   // Switching conversations abandons any schedule in progress; the bumped
@@ -617,10 +617,6 @@ export default function PromptInput({
       scheduleGeneration.current += 1;
     };
   }, [visibleTargetKey]);
-
-  useEffect(() => {
-    if (!isLive) setSendHintOpen(false);
-  }, [isLive]);
 
   useEffect(() => {
     if (
@@ -1568,9 +1564,6 @@ export default function PromptInput({
   // new chat; it renders as the top section of the composer card.
   const showStartIn = !activeSession && !missionPreview && !!cwd;
   const enterSteers = state.liveEnterBehavior === 'interrupt';
-  const idleSendTooltip = childActionsEnabled
-    ? 'Enter: send\nShift+Enter: newline'
-    : 'This child transcript is read-only';
   const promptPlaceholder = missionPreview
     ? activeSession
       ? targetChildSessionId
@@ -1591,11 +1584,11 @@ export default function PromptInput({
   // the stage, but a live or starting turn keeps stop/send reachable even on
   // an empty draft. With voice off, send is always on stage.
   const showSendAction = !VOICE_MODE_ENABLED || hasContent || isLive || turnStarting;
-  // The hint's host unmounts while a turn starts or the draft is empty; clear
+  // The hint's host swaps (send, stop, spinner) as a turn starts and ends; clear
   // the state with it so the hint never reopens without a hover or focus.
   useEffect(() => {
-    if (!isLive || !hasContent || turnStarting) setSendHintOpen(false);
-  }, [isLive, hasContent, turnStarting]);
+    setSendHintOpen(false);
+  }, [isLive, turnStarting]);
 
   const sendButton = (
     <ComposerSendButton
@@ -1608,7 +1601,7 @@ export default function PromptInput({
         appUpdateInstalling
           ? 'Installing DROIDEX update'
           : runtimeReady
-            ? idleSendTooltip
+            ? 'This child transcript is read-only'
             : 'Agent runtime is unavailable'
       }
       enterSteers={enterSteers}

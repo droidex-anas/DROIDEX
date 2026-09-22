@@ -66,6 +66,19 @@ export function ComposerSendButton({
   const setHint = (open: boolean) => () => {
     onHintOpenChange(open);
   };
+  // The keys this button stands for: send and newline at rest, and while a turn
+  // runs the Enter setting's pair of steer and queue. A disabled button keeps
+  // its title, which says why.
+  const hintRows = live
+    ? [
+        { label: enterSteers ? 'Steer' : 'Queue', keys: ['⏎'] },
+        { label: enterSteers ? 'Queue' : 'Steer', keys: ['⌘', '⏎'] },
+      ]
+    : [
+        { label: 'Send', keys: ['⏎'] },
+        { label: 'New line', keys: ['⇧', '⏎'] },
+      ];
+  const showHint = hintOpen && !parked && !disabled;
   return (
     // Keyboard users reach the send button by tab, never by pointer, so focus
     // opens the same hint that hover does.
@@ -77,18 +90,15 @@ export function ComposerSendButton({
       onBlur={setHint(false)}
     >
       <AnimatePresence>
-        {live && hintOpen && (
+        {showHint && (
           <motion.div
             initial={reducedMotion ? false : { opacity: 0, y: 4 }}
             animate={{ opacity: 1, y: 0 }}
             exit={reducedMotion ? { opacity: 0 } : { opacity: 0, y: 4 }}
             transition={{ duration: reducedMotion ? 0 : 0.12, ease: [0.16, 1, 0.3, 1] }}
-            className="absolute bottom-full right-0 z-50 mb-2 flex flex-col gap-0.5 rounded-xl border border-droid-border bg-droid-elevated p-1.5 shadow-droid"
+            className="absolute bottom-full right-0 z-50 mb-2 flex flex-col gap-0.5 whitespace-nowrap rounded-xl border border-droid-border bg-droid-elevated p-1.5 shadow-droid"
           >
-            {[
-              { label: enterSteers ? 'Steer' : 'Queue', keys: ['⏎'] },
-              { label: enterSteers ? 'Queue' : 'Steer', keys: ['⌘', '⏎'] },
-            ].map((row) => (
+            {hintRows.map((row) => (
               <div
                 key={row.label}
                 className="flex items-center justify-between gap-3 rounded-lg px-2 py-1 text-[12px] text-droid-text"
@@ -110,7 +120,7 @@ export function ComposerSendButton({
         type="button"
         onClick={onSend}
         disabled={disabled || (!live && !hasContent)}
-        title={title}
+        title={disabled ? title : undefined}
         aria-label={live ? (enterSteers ? 'Steer' : 'Queue prompt') : 'Send prompt'}
         {...parkedProps}
         className="flex h-8 w-8 items-center justify-center rounded-full bg-droid-text text-droid-bg transition-opacity enabled:hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
