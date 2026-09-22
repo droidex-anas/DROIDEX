@@ -71,7 +71,7 @@ export function lastSentence(text: string): string {
   // and either half alone reads as noise. Drop the leading punctuation such a
   // cut leaves behind and keep only pieces long enough to say something.
   const readable = sentences
-    .map((sentence) => sentence.replace(/^[^A-Za-z0-9"'(\[]+/, '').trim())
+    .map((sentence) => sentence.replace(/^[^A-Za-z0-9"'([]+/, '').trim())
     .filter((sentence) => sentence.split(/\s+/).length >= 3);
   const candidates = readable.length > 0 ? readable : [plain];
   const pick = [...candidates].reverse().find((s) => s.endsWith('?')) ?? candidates.at(-1);

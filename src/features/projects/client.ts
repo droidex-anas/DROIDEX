@@ -26,14 +26,19 @@ export function useProjects(): { projects: ProjectView[]; loading: boolean; erro
     // An unreachable runtime is an answer, not a wait: without this the view
     // spins forever. And being connected is not the same as having heard, so
     // an empty list before the first snapshot is still loading.
-    const unreachable =
-      state.connection === 'error' ? state.connectionError || 'The runtime is not reachable.' : '';
+    const unreachable = state.connection === 'error' ? runtimeError(state.connectionError) : '';
+    const error = failure || unreachable;
     return {
       projects: state.projects,
       loading: !state.projectsLoaded && !unreachable,
-      ...(failure || unreachable ? { error: failure || unreachable } : {}),
+      ...(error ? { error } : {}),
     };
   }, shallowEqual);
+}
+
+/** A connection error the runtime did not explain still has to read as one. */
+function runtimeError(message: string | undefined): string {
+  return message?.trim() ? message : 'The runtime is not reachable.';
 }
 
 export async function createProject(

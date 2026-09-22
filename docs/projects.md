@@ -7,9 +7,12 @@ can be opened, steered and reviewed like any other chat.
 
 ## Starting threads
 
-Any chat can start a thread, because DROIDEX gives every interactive chat the
-`droidex-threads` MCP tools: `thread_spawn`, `thread_send`, `thread_stop` and
-`plan_set`, `thread_read` and `thread_configure`. Asking a chat to run work in
+A chat on a harness that runs DROIDEX's in-app tools can start a thread: it is
+given the `droidex-threads` MCP server — `thread_spawn`, `thread_send`,
+`thread_stop`, `plan_set`, `thread_read` and `thread_configure`. That is Droid
+and Claude Code today. The Codex runtime has no MCP path at all, so a Codex chat
+sees none of DROIDEX's in-app tools and cannot lead a project; its threads can
+still run on any harness a lead names. Asking a chat to run work in
 parallel is enough — it spawns the threads itself, and the chat becomes that
 project's main conversation on the first spawn. `thread_spawn` follows the
 chat's own autonomy: it is auto-approved at High and asks the user otherwise;
@@ -120,7 +123,10 @@ Projects allows up to eight threads per project, three levels of descendants,
 32 projects and 64 queued/claimed messages per project. At most two Projects delivery turns run
 at once; ordinary interactive sends keep their existing behavior.
 
-Threads share their owner's workspace unless the spawn asks for a worktree.
+Threads share their owner's workspace unless the spawn asks for a worktree, or
+DROIDEX gives one its own because another thread is already writing in that
+checkout. A thread's worktree outlives the thread: it holds that work on its own
+branch, and removing it is the user's call, from the app's Worktrees settings.
 Merging those branches back is still the user's call: DROIDEX opens the branch,
 it does not integrate it. DROIDEX must remain running; it cannot wake a sleeping
 computer.
