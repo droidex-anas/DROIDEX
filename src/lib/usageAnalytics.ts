@@ -87,6 +87,10 @@ export async function startUsageAnalytics(
     hasStarted = true;
 
     const rum = await (deps.loadRum ?? loadRum)();
+    // Opting out while the SDK was still loading has to stop the launch here.
+    // Starting a view emits a view event, and Datadog does not let beforeSend
+    // discard those, so the only way not to send one is never to start it.
+    if (!reportingAllowed) return 'disabled';
     client = rum;
     rum.init(buildRumConfig(bootstrap));
     rum.setUser({ id: bootstrap.installationId });
