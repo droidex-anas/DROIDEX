@@ -27,7 +27,7 @@ export interface InFlightPersistenceBatch {
   minimumSequence: number;
 }
 
-export interface PersistenceDirtyMarkerPort {
+interface PersistenceDirtyMarkerPort {
   markDirty(): void;
   markClean(): void;
 }

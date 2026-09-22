@@ -20,7 +20,7 @@ import { liveMarkdownTheme } from './liveMarkdownTheme';
 // them away. Typing the first character of the title inserts that space, so a
 // heading starts the moment it is recognisable and the document stays valid
 // markdown. A single `#` is left alone: `#1` and `#release` are ordinary words.
-export function needsHeadingSpace(beforeCaret: string, typed: string): boolean {
+function needsHeadingSpace(beforeCaret: string, typed: string): boolean {
   if (typed.length !== 1 || typed === ' ' || typed === '#') return false;
   // Up to three spaces of indentation still make a heading in CommonMark.
   return /^ {0,3}#{2,6}$/.test(beforeCaret);

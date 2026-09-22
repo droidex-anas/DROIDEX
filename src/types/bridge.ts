@@ -8,15 +8,7 @@ import type {
 import type { McpClientCommand, McpServerEvent } from './mcp.js';
 import type { ProviderMention, SkillInfo } from './catalog.js';
 export type { ProviderMention, SkillInfo } from './catalog.js';
-export type {
-  McpServerInfo,
-  McpServerInput,
-  McpServerSource,
-  McpServerStatus,
-  McpServerType,
-  McpStatusSummary,
-  McpToolInfo,
-} from './mcp.js';
+export type { McpServerInfo, McpServerInput, McpStatusSummary, McpToolInfo } from './mcp.js';
 
 // Which agent runtime a session runs on. Bound once when the session is
 // created and never changed afterwards.
@@ -40,7 +32,6 @@ export type SessionRole = 'primary' | 'worker' | 'validator';
 export type SessionPurpose = 'chat' | 'design' | 'mission-control';
 export type SessionInteractionMode = 'auto' | 'spec' | 'agi';
 export type ResponseFormat = 'app-create' | 'app-followup';
-export type RunStatus = 'pending' | 'running' | 'paused' | 'done' | 'failed' | 'blocked';
 export type Autonomy = 'off' | 'low' | 'medium' | 'high';
 export type ReasoningEffort =
   | 'off'
@@ -234,7 +225,7 @@ export interface TranscriptEvent {
   transient?: true;
 }
 
-export type BrowserTranscriptReferenceKind = 'element' | 'region' | 'text';
+type BrowserTranscriptReferenceKind = 'element' | 'region' | 'text';
 
 export interface BrowserTranscriptReference {
   id: string;
@@ -336,7 +327,7 @@ export interface PackageManagers {
   pnpm: boolean;
 }
 
-export interface CliInfo {
+interface CliInfo {
   present: boolean;
   path: string;
   version?: string;
@@ -365,7 +356,7 @@ export interface ContextStatsSnapshot {
   compactions?: number;
 }
 
-export interface ContextBreakdownCategory {
+interface ContextBreakdownCategory {
   name: string;
   tokens: number;
   colorKey?: string;
@@ -403,11 +394,6 @@ export interface SessionSearchMatch {
 export interface SessionSearchResult {
   appSessionId: string;
   matches: SessionSearchMatch[];
-}
-
-export interface HistorySearchReply {
-  results: SessionSearchResult[];
-  indexingIncomplete: boolean;
 }
 
 export interface BrowserViewport {
@@ -552,7 +538,7 @@ export interface BrowserNativeResult {
   error?: string;
 }
 
-export interface ElementSource {
+interface ElementSource {
   framework?: 'react' | 'vue' | 'svelte' | 'unknown';
   component?: string;
   componentChain?: string[];
@@ -562,7 +548,7 @@ export interface ElementSource {
   confidence: 'exact' | 'attribute' | 'heuristic' | 'none';
 }
 
-export interface DesignAnchorAncestor {
+interface DesignAnchorAncestor {
   tag: string;
   component?: string;
   selector?: string;
@@ -839,7 +825,7 @@ export type ClientCommand =
     }
   | { type: 'browser.native.result'; result: BrowserNativeResult };
 
-export type ChildUpdatedEvent =
+type ChildUpdatedEvent =
   | {
       type: 'child.updated';
       parentAppSessionId: string;
@@ -856,7 +842,7 @@ export type ChildUpdatedEvent =
       access: 'history';
     };
 
-export interface SessionChildEvent {
+interface SessionChildEvent {
   type: 'session.child';
   event: 'upserted';
   child: ChildSessionSummary;
@@ -864,7 +850,7 @@ export interface SessionChildEvent {
   runtimeGeneration: number;
 }
 
-export interface ChildErrorEvent {
+interface ChildErrorEvent {
   type: 'child.error';
   parentAppSessionId: string;
   childSessionId: string;

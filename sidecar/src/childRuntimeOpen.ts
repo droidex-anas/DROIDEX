@@ -126,7 +126,7 @@ export async function cancelOpenAttempts(parent: ParentChildSessions): Promise<v
   await Promise.all(closes);
 }
 
-export function closeProvisional(attempt: ChildOpenAttempt): Promise<void> {
+function closeProvisional(attempt: ChildOpenAttempt): Promise<void> {
   if (!attempt.provisionalSession) return Promise.resolve();
   attempt.provisionalClose ??= attempt.provisionalSession.close().catch(ignoreError);
   return attempt.provisionalClose;

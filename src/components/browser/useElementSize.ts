@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import type { RefObject } from 'react';
-import type { Size } from '../canvas/canvasMath';
+import type { Size } from './browserGeometry';
 
 export function useElementSize(ref: RefObject<HTMLElement | null>): Size {
   const [size, setSize] = useState<Size>({ width: 1, height: 1 });

@@ -176,7 +176,7 @@ import {
 
 export type { ImagePasteQuality } from '../lib/images';
 
-export interface QueuedDesignContext {
+interface QueuedDesignContext {
   browserKey: string;
   references: DesignReference[];
   referenceIds: string[];

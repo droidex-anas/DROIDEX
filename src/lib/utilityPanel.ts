@@ -17,7 +17,7 @@ export interface UtilityPanelState {
   activeTabId: string | null;
 }
 
-export const CLOSED_UTILITY_PANEL: UtilityPanelState = {
+const CLOSED_UTILITY_PANEL: UtilityPanelState = {
   open: false,
   tabs: [],
   activeTabId: null,

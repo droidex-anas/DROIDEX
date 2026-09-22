@@ -42,7 +42,7 @@
     "quality:bundle-budgets": "node tools/check-bundle-budgets.mjs",
     "quality:perf-gates": "npm --prefix sidecar run perf:replay -- --gates --enforce-gates",
     "quality:tech-debt": "node tools/check-tech-debt.mjs",
-    "quality:deadcode": "knip --include files,exports,types --max-issues 100 --no-config-hints && knip --directory sidecar --include files,exports,types --max-issues 100 --no-config-hints",
+    "quality:deadcode": "knip --include files,exports,types --max-issues 35 --no-config-hints && knip --directory sidecar --include files,exports,types --max-issues 25 --no-config-hints",
     "quality:deps": "knip --dependencies --no-config-hints && knip --directory sidecar --dependencies --no-config-hints",
     "quality:duplicates": "jscpd --config .jscpd.json",
     "quality:boundaries": "depcruise --config .dependency-cruiser.cjs src sidecar/src electron",

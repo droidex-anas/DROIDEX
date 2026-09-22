@@ -51,14 +51,14 @@ function resolveCodexPath(): string | undefined {
   return CLI_CANDIDATES.find((candidate) => isExecutable(candidate)) ?? resolveOnPathSync('codex');
 }
 
-export interface InitializeResponse {
+interface InitializeResponse {
   userAgent: string;
 }
 
 // Every connection starts here, after its handlers are registered: the
 // capability opt-in that exposes the thread and turn API, then the bare
 // `initialized` notification Codex waits for before serving anything else.
-export async function initialize(client: AppServerClient): Promise<InitializeResponse> {
+async function initialize(client: AppServerClient): Promise<InitializeResponse> {
   const response = await client.request<InitializeResponse>('initialize', {
     clientInfo: CLIENT_INFO,
     capabilities: { experimentalApi: true },
