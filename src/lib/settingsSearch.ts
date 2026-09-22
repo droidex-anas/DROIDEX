@@ -163,6 +163,14 @@ export const SETTINGS_SEARCH_ENTRIES: readonly SettingsSearchEntry[] = [
     'profile id',
     'ops data',
   ]),
+  e('Privacy & diagnostics', 'Anonymous usage analytics', [
+    'usage analytics',
+    'analytics',
+    'datadog',
+    'installation id',
+    'active installations',
+    'opt out',
+  ]),
 
   // ── Keyboard shortcuts ───────────────────────────────────────────────────
   ...SHORTCUT_DEFINITIONS.map((definition) =>

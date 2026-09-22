@@ -72,6 +72,14 @@ jobs:
         env:
           DROIDEX_UNSIGNED_RELEASE_BUILD: '1'
           SENTRY_DSN: ${{ secrets.SENTRY_DSN }}
+          # RUM application id and client token are client-side credentials and
+          # are embedded in the build. The Datadog API key is never used here.
+          DATADOG_APPLICATION_ID: ${{ secrets.DATADOG_APPLICATION_ID }}
+          DATADOG_CLIENT_TOKEN: ${{ secrets.DATADOG_CLIENT_TOKEN }}
+          DATADOG_SITE: ${{ vars.DATADOG_SITE }}
+          # Marks these artifacts as the real release channel. Builds made
+          # anywhere else stay 'local' and are excluded from install counts.
+          DROIDEX_DISTRIBUTION_CHANNEL: release
         run: npm run dist:mac
 
       - name: Sign Sparkle feeds and verify artifacts
