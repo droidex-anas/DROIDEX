@@ -16,7 +16,11 @@ export interface ProjectBoardEntry {
 /* Every project with its threads resolved against the live sessions, so the
    Projects view, its rows and the navigation all read one board rather than
    each deriving its own. */
-export function useProjectBoard(): { entries: ProjectBoardEntry[]; loading: boolean } {
+export function useProjectBoard(): {
+  entries: ProjectBoardEntry[];
+  loading: boolean;
+  error?: string;
+} {
   const snapshot = useProjects();
   const signals = useStoreSelector(
     (current) => ({
@@ -45,5 +49,9 @@ export function useProjectBoard(): { entries: ProjectBoardEntry[]; loading: bool
       }),
     [snapshot.projects, signals, digests],
   );
-  return { entries, loading: snapshot.loading };
+  return {
+    entries,
+    loading: snapshot.loading,
+    ...(snapshot.error ? { error: snapshot.error } : {}),
+  };
 }

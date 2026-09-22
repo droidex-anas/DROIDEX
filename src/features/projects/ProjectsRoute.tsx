@@ -23,7 +23,7 @@ import type { ThreadInput } from './types';
 export function ProjectsRoute() {
   const dispatch = useStoreDispatch();
   const reduceMotion = useReducedMotion() === true;
-  const { entries, loading } = useProjectBoard();
+  const { entries, loading, error } = useProjectBoard();
   const [openId, setOpenId] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
   // Relative times on the list would otherwise read from the moment it opened.
@@ -102,6 +102,7 @@ export function ProjectsRoute() {
             <ProjectListView
               entries={entries}
               loading={loading}
+              error={error ?? ''}
               now={now}
               creating={creating}
               cwd={cwd}
@@ -122,6 +123,7 @@ export function ProjectsRoute() {
 function ProjectListView({
   entries,
   loading,
+  error,
   now,
   creating,
   cwd,
@@ -132,6 +134,7 @@ function ProjectListView({
 }: {
   entries: ProjectBoardEntry[];
   loading: boolean;
+  error: string;
   now: number;
   creating: boolean;
   cwd: string;
@@ -162,7 +165,7 @@ function ProjectListView({
         )}
 
         {entries.length === 0 && !creating ? (
-          <Empty loading={loading} onCreate={onToggleCreate} />
+          <Empty loading={loading} error={error} onCreate={onToggleCreate} />
         ) : (
           <div className="flex flex-col gap-2">
             {entries.map((entry) => (
@@ -257,17 +260,28 @@ function WorkingSpinner() {
   );
 }
 
-function Empty({ loading, onCreate }: { loading: boolean; onCreate: () => void }) {
+/* Three states, never mixed: the runtime could not answer, it has not answered
+   yet, or it answered with nothing. A failure that read as "still loading" left
+   the tab spinning with no way to learn why. */
+function Empty({
+  loading,
+  error,
+  onCreate,
+}: {
+  loading: boolean;
+  error: string;
+  onCreate: () => void;
+}) {
   return (
     <div className="rounded-2xl border border-droid-border px-6 py-10 text-center">
       <h2 className="text-[15px] font-medium">
-        {loading ? 'Loading projects…' : 'No projects yet'}
+        {error ? 'Projects could not be loaded' : loading ? 'Loading projects…' : 'No projects yet'}
       </h2>
       <p className="mx-auto mt-2 max-w-sm text-[13px] leading-6 text-droid-text-muted">
-        A project is one conversation that leads the work. Give it a goal and it splits the parts
-        that can run at once into threads — each its own chat, reporting back as it finishes.
+        {error ||
+          'A project is one conversation that leads the work. Give it a goal and it splits the parts that can run at once into threads — each its own chat, reporting back as it finishes.'}
       </p>
-      {!loading && (
+      {!loading && !error && (
         <button
           type="button"
           onClick={onCreate}
