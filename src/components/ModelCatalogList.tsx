@@ -4,8 +4,8 @@ import { offersReasoningEffort, reasoningEffortLabel } from '../lib/reasoningEff
 import type { ModelInfo, ProviderKind, ReasoningEffort } from '../types/bridge';
 import { ModelIcon, providerOf } from './ModelIcon';
 
-const ROW_H = 36;
-const VISIBLE_H = 180;
+const ROW_H = 40;
+const VISIBLE_H = 200;
 
 /** The catalog entry Droid CLI falls back to when no model is chosen. */
 export function defaultModelOf(models: ModelInfo[]) {
@@ -101,7 +101,7 @@ function ModelCatalogList({
   const rowProps = { pick, provider, disabled, reasoningLocked, showReasoning };
 
   return (
-    <div ref={scrollRef} className="mt-2 max-h-[180px] overflow-y-auto -mx-1 px-1">
+    <div ref={scrollRef} className="mt-2 max-h-[200px] overflow-y-auto -mx-1 px-1">
       <div
         role="listbox"
         aria-label="Models"
@@ -110,7 +110,7 @@ function ModelCatalogList({
       >
         <div
           aria-hidden
-          className={`absolute inset-x-0 top-0 h-9 rounded-lg bg-droid-surface ring-1 ring-inset ring-droid-active pointer-events-none ${
+          className={`absolute inset-x-0 top-0 h-10 rounded-lg bg-droid-surface ring-1 ring-inset ring-droid-active pointer-events-none ${
             selectedIndex < 0 ? 'opacity-0' : ''
           }`}
           style={{
@@ -242,7 +242,7 @@ const ModelRow = memo(function ModelRow({
         if (!disabled) pick(id);
       }}
       title={label}
-      className={`relative flex items-center gap-2.5 h-9 px-2.5 rounded-lg select-none ${
+      className={`relative flex items-center gap-2.5 h-10 px-2.5 rounded-lg select-none ${
         disabled
           ? 'cursor-not-allowed opacity-50'
           : selected
@@ -255,17 +255,13 @@ const ModelRow = memo(function ModelRow({
       >
         <ModelIcon provider={providerOf(model)} size={16} />
       </span>
-      <span
-        className={`min-w-0 flex-1 text-[13px] truncate ${
-          selected ? 'text-droid-text' : 'text-droid-text-secondary'
-        }`}
-      >
+      <span className="min-w-0 flex-1 truncate text-[14px] font-medium text-droid-text">
         {label}
       </span>
       {offersReasoning && (
         <>
           {arrow(-1)}
-          <span className="flex gap-[3px] shrink-0" title={lockTitle}>
+          <span className="flex gap-1 shrink-0" title={lockTitle}>
             {efforts.map((effort, i) => {
               const filled = i <= current;
               return (
@@ -280,7 +276,7 @@ const ModelRow = memo(function ModelRow({
                     e.stopPropagation();
                     pick(id, effort);
                   }}
-                  className={`w-[9px] h-[9px] rounded-[2px] ${dotFill(filled, selected, ultra)} ${
+                  className={`w-2.5 h-2.5 rounded-[3px] ${dotFill(filled, selected, ultra)} ${
                     disabled || reasoningLocked ? 'cursor-not-allowed' : ''
                   }`}
                   style={{
@@ -314,5 +310,5 @@ function dotFill(filled: boolean, selected: boolean, ultra: boolean): string {
 
 function effortWordTone(selected: boolean, ultra: boolean): string {
   if (ultra) return 'text-droid-ultra';
-  return selected ? 'text-droid-text' : 'text-droid-text-muted';
+  return selected ? 'text-droid-text' : 'text-droid-text-secondary';
 }

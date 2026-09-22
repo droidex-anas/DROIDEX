@@ -10,6 +10,7 @@ export function ComposerSendButton({
   title,
   enterSteers,
   hintOpen,
+  parked = false,
   onHintOpenChange,
   onSend,
   onStop,
@@ -21,11 +22,19 @@ export function ComposerSendButton({
   title: string | undefined;
   enterSteers: boolean;
   hintOpen: boolean;
+  // The action slot keeps this mounted while it is slid offstage (empty idle
+  // draft shows the voice twin instead); parked removes it from focus.
+  parked?: boolean;
   onHintOpenChange: (open: boolean) => void;
   onSend: () => void;
   onStop: () => void;
 }) {
   const reducedMotion = useReducedMotion();
+  // Parked (slid offstage for the voice twin) drops the button from focus and
+  // the a11y tree while it stays mounted for the transform swap.
+  const parkedProps: { tabIndex?: number; 'aria-hidden'?: boolean } = parked
+    ? { tabIndex: -1, 'aria-hidden': true }
+    : {};
   if (starting) {
     return (
       <button
@@ -33,9 +42,10 @@ export function ComposerSendButton({
         disabled
         title="Starting turn"
         aria-label="Starting turn"
-        className="shrink-0 rounded-full bg-droid-accent p-2 text-droid-bg opacity-90"
+        {...parkedProps}
+        className="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-droid-text text-droid-bg opacity-90"
       >
-        <Spinner className="h-3.5 w-3.5 motion-safe:animate-spin-slow" />
+        <Spinner className="h-4 w-4 motion-safe:animate-spin-slow" />
       </button>
     );
   }
@@ -46,7 +56,8 @@ export function ComposerSendButton({
         onClick={onStop}
         title="Working — click to stop"
         aria-label="Stop turn"
-        className="shrink-0 rounded-full bg-droid-accent p-2 text-droid-bg transition-opacity hover:opacity-90"
+        {...parkedProps}
+        className="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-droid-text text-droid-bg transition-opacity hover:opacity-90"
       >
         <Square className="h-3.5 w-3.5" fill="currentColor" strokeWidth={0} />
       </button>
@@ -101,9 +112,10 @@ export function ComposerSendButton({
         disabled={disabled || (!live && !hasContent)}
         title={title}
         aria-label={live ? (enterSteers ? 'Steer' : 'Queue prompt') : 'Send prompt'}
-        className="rounded-full bg-droid-accent p-2 text-droid-bg transition-opacity enabled:hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
+        {...parkedProps}
+        className="grid h-8 w-8 place-items-center rounded-full bg-droid-text text-droid-bg transition-opacity enabled:hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
       >
-        <ArrowUp className="h-3.5 w-3.5" />
+        <ArrowUp className="h-4 w-4" />
       </button>
     </div>
   );

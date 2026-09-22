@@ -24,6 +24,7 @@ import {
 export type AgentKind = 'primary' | 'worker' | 'validator';
 export type LiveEnterBehavior = 'queue' | 'interrupt';
 export type DiffViewMode = 'unified' | 'split';
+export type ModelSelectorStyle = 'classic' | 'slider';
 
 export interface AgentModelConfig {
   modelId?: string;
@@ -88,6 +89,7 @@ const COMPACTION_MODEL_STORAGE_KEY = 'droid-compaction-model';
 const LIVE_ENTER_BEHAVIOR_STORAGE_KEY = 'droid-live-enter-behavior';
 const IMAGE_PASTE_QUALITY_STORAGE_KEY = 'droid-image-paste-quality';
 const DIFF_VIEW_STORAGE_KEY = 'droid-diff-view';
+const MODEL_SELECTOR_STYLE_STORAGE_KEY = 'droid-model-selector-style';
 const REVIEW_SCOPE_STORAGE_KEY = 'droid-review-scope';
 const WORKSPACES_STORAGE_KEY = 'droid-workspaces';
 const SESSION_LAST_SEEN_STORAGE_KEY = 'droid-session-last-seen-v1';
@@ -190,6 +192,30 @@ export function saveDiffView(value: DiffViewMode): DiffViewMode {
     /* ignore */
   }
   return mode;
+}
+
+function normalizeModelSelectorStyle(value: unknown): ModelSelectorStyle {
+  return value === 'slider' ? 'slider' : 'classic';
+}
+
+export function loadModelSelectorStyle(): ModelSelectorStyle {
+  try {
+    return normalizeModelSelectorStyle(
+      getLocalStorage()?.getItem(MODEL_SELECTOR_STYLE_STORAGE_KEY),
+    );
+  } catch {
+    return 'classic';
+  }
+}
+
+export function saveModelSelectorStyle(value: ModelSelectorStyle): ModelSelectorStyle {
+  const style = normalizeModelSelectorStyle(value);
+  try {
+    getLocalStorage()?.setItem(MODEL_SELECTOR_STYLE_STORAGE_KEY, style);
+  } catch {
+    /* ignore */
+  }
+  return style;
 }
 
 export function loadReviewScope(): DiffScope {

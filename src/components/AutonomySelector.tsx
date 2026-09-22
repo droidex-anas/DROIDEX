@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
-import { ChevronDown } from 'lucide-react';
+import { Check, ChevronDown } from 'lucide-react';
 import { Spinner } from '@droidex/icons';
 
 import type { Autonomy } from '../types/bridge';
@@ -89,7 +89,7 @@ export default function AutonomySelector({
         aria-busy={pending}
         aria-label={`Autonomy: ${AUTONOMY_LABELS[value]}`}
         title={title}
-        className={`flex items-center gap-1.5 px-2 py-1 rounded-lg text-[11px] transition-colors ${tone}`}
+        className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] transition-colors ${tone}`}
       >
         {pending && <Spinner className="w-3.5 h-3.5 shrink-0 motion-safe:animate-spin-slow" />}
         <span>{AUTONOMY_LABELS[value]}</span>
@@ -123,8 +123,9 @@ export default function AutonomySelector({
 }
 
 // The level menu panel: header caption plus every level with its consequence
-// description. Exported on its own so the menu content is testable without
-// opening the popover.
+// description. A check marks the active level and each row's number is its
+// keyboard shortcut. Exported on its own so the menu content is testable
+// without opening the popover.
 export function AutonomyMenu({
   scope,
   value,
@@ -136,7 +137,15 @@ export function AutonomyMenu({
 }) {
   const optionRefs = useRef<(HTMLButtonElement | null)[]>([]);
 
-  const moveFocus = (e: React.KeyboardEvent) => {
+  const onMenuKey = (e: React.KeyboardEvent) => {
+    if (/^[1-9]$/.test(e.key)) {
+      const index = Number(e.key) - 1;
+      if (index < AUTONOMY_LEVELS.length) {
+        e.preventDefault();
+        onSelect(AUTONOMY_LEVELS[index]);
+      }
+      return;
+    }
     if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return;
     e.preventDefault();
     const options = optionRefs.current.filter((el): el is HTMLButtonElement => el !== null);
@@ -153,7 +162,7 @@ export function AutonomyMenu({
     <div
       role="menu"
       aria-label="Autonomy"
-      onKeyDown={moveFocus}
+      onKeyDown={onMenuKey}
       className="rounded-2xl border border-droid-border bg-droid-elevated shadow-droid overflow-hidden"
     >
       <div className="flex items-center justify-between px-4 pt-3 pb-2">
@@ -178,17 +187,23 @@ export function AutonomyMenu({
               onClick={() => {
                 onSelect(level);
               }}
-              className={`w-full px-2.5 py-2 rounded-lg text-left transition-colors ${
-                selected ? 'bg-droid-surface' : 'hover:bg-droid-surface/60'
-              }`}
+              className="w-full flex items-center gap-3 px-2.5 py-2 rounded-lg text-left transition-colors hover:bg-droid-surface/60"
             >
-              <span
-                className={`block text-[12px] ${selected ? 'font-medium' : ''} text-droid-text`}
-              >
-                {AUTONOMY_LABELS[level]}
+              <span className="min-w-0 flex-1">
+                <span
+                  className={`block text-[12px] text-droid-text ${selected ? 'font-medium' : ''}`}
+                >
+                  {AUTONOMY_LABELS[level]}
+                </span>
+                <span className="block text-[11px] text-droid-text-muted leading-snug">
+                  {AUTONOMY_DESCRIPTIONS[level]}
+                </span>
               </span>
-              <span className="block text-[11px] text-droid-text-muted leading-snug">
-                {AUTONOMY_DESCRIPTIONS[level]}
+              {selected && (
+                <Check className="h-3.5 w-3.5 shrink-0 text-droid-accent" strokeWidth={3} />
+              )}
+              <span className="w-3 shrink-0 text-right text-[10px] tabular-nums text-droid-text-muted/60">
+                {i + 1}
               </span>
             </button>
           );
