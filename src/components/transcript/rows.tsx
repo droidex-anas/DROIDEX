@@ -21,6 +21,7 @@ import { StreamingCaret } from '../StreamingCaret';
 import {
   Caret,
   ErrorTag,
+  InterruptedTag,
   Expand,
   firstLine,
   linkify,
@@ -294,6 +295,7 @@ function ToolLine({
   event,
   output,
   error = false,
+  interrupted = false,
   running = false,
   forceOpen = false,
   onOpenReviewFile,
@@ -301,6 +303,7 @@ function ToolLine({
   event: TranscriptEvent;
   output?: string;
   error?: boolean;
+  interrupted?: boolean;
   running?: boolean;
   forceOpen?: boolean;
   onOpenReviewFile?: OpenReviewFileHandler;
@@ -351,7 +354,7 @@ function ToolLine({
         {call.source && !mark && (
           <span className="shrink-0 text-droid-text-muted/60">· {call.source}</span>
         )}
-        {error && <ErrorTag />}
+        {interrupted ? <InterruptedTag /> : error && <ErrorTag />}
       </div>
       {hasBody && (
         <Expand open={expanded}>
@@ -478,6 +481,9 @@ export function renderToolEvents(
         continue;
       }
       const result = resultByCall.get(e);
+      // The provider says when a call never ran because the user steered or
+      // stopped the turn. That is not a failure, and must not read as one.
+      const interrupted = result?.interrupted === true;
       const isError = !!result?.isError;
       // A call without its result while the group is live is still in flight —
       // web/fetch cards show a shimmer until the result lands.
@@ -492,6 +498,7 @@ export function renderToolEvents(
             event={e}
             output={result?.text}
             error={isError}
+            interrupted={interrupted}
             running={running}
             forceOpen={detailed}
           />,
@@ -504,6 +511,7 @@ export function renderToolEvents(
             event={e}
             output={result?.text}
             error={isError}
+            interrupted={interrupted}
             running={running}
             forceOpen={detailed}
           />,
@@ -531,6 +539,7 @@ export function renderToolEvents(
               command={command}
               output={result?.text}
               error={isError}
+              interrupted={interrupted}
               running={running}
               forceOpen={false}
             />
@@ -543,6 +552,7 @@ export function renderToolEvents(
             event={e}
             output={result?.text}
             error={isError}
+            interrupted={interrupted}
             running={running}
             forceOpen={detailed}
             onOpenReviewFile={onOpenReviewFile}

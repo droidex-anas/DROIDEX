@@ -1,12 +1,7 @@
 import { extractFileChange, type FileChange } from '../lib/diff';
 import { mergeChildSessionSpawn } from '../lib/childSessions';
 import { classifyEvent } from '../lib/transcript';
-import {
-  hasTodoPayload,
-  isChildSessionTool,
-  isImageGenerationTool,
-  isTaskPollTool,
-} from '../lib/tools';
+import { hasTodoPayload, isChildSessionTool, isImageGenerationTool } from '../lib/tools';
 import type { TranscriptEvent } from '../types/bridge';
 import type { TurnChangesItem, TurnFile } from './TurnChangesPanel';
 
@@ -198,19 +193,12 @@ export function buildFeed(
   // row would repeat the path or the reason twice.
   const imageResultIds = new Set<string>();
   const imageResults = new Map<string, TranscriptEvent>();
-  // A task poll belongs to the agent card only once the chat has spawned an
-  // agent. Before that it is an ordinary call and stays a row: Claude Code reads
-  // a background command's output with the same tool.
-  const firstSpawn = events.findIndex(
-    (e) => e.kind === 'tool_call' && isChildSessionTool(e.toolName, e.toolArgs),
-  );
-  const isSubagentPoll = (e: TranscriptEvent, index: number) =>
-    groupChildSessions &&
-    firstSpawn !== -1 &&
-    index > firstSpawn &&
-    e.kind === 'tool_call' &&
-    isTaskPollTool(e.toolName);
-  for (const [index, e] of events.entries()) {
+  // A call is agent bookkeeping only when the provider said which agent it is
+  // about. The same tool names also read and stop background commands, and the
+  // feed cannot tell those apart from the name.
+  const isSubagentPoll = (e: TranscriptEvent) =>
+    groupChildSessions && e.kind === 'tool_call' && Boolean(e.pollsChildSessionId);
+  for (const e of events) {
     if (e.kind !== 'tool_call' || !e.toolUseId) continue;
     // Subagent polls (TaskOutput/TaskStop) belong to the wave card the same way a
     // spawn's own result does: the card reports the status they carry, and their
@@ -218,7 +206,7 @@ export function buildFeed(
     // grouped card speaks for them, so views that keep per-spawn lines keep them.
     if (childSessionCards && isChildSessionTool(e.toolName, e.toolArgs))
       childSessionResultIds.add(e.toolUseId);
-    else if (isSubagentPoll(e, index)) childSessionResultIds.add(e.toolUseId);
+    else if (isSubagentPoll(e)) childSessionResultIds.add(e.toolUseId);
     else if (isImageGenerationTool(e.toolName)) imageResultIds.add(e.toolUseId);
     else if (classifyEvent(e) === 'plan_update') planResultIds.add(e.toolUseId);
   }
@@ -334,7 +322,7 @@ export function buildFeed(
       }
       // Polling or stopping an existing subagent is bookkeeping the wave card
       // already speaks for, so it never becomes a row of its own.
-      if (isSubagentPoll(ev, i)) {
+      if (isSubagentPoll(ev)) {
         i++;
         if (isResultFor(ev, events[i])) i++;
         continue;
@@ -434,7 +422,7 @@ export function buildFeed(
           break;
         // Skipped rather than breaking the group, so a poll landing between two
         // real tool calls does not split them into two cards.
-        if (isSubagentPoll(t, i)) {
+        if (isSubagentPoll(t)) {
           i++;
           continue;
         }

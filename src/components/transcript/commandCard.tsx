@@ -2,7 +2,7 @@ import { useContext, useState } from 'react';
 import { commandLineContains } from '../../lib/commandLineMatch';
 import { LiveProcessesContext } from './liveProcessesContext';
 import { stripAnsi } from '../../lib/tools';
-import { Caret, ErrorTag, Expand, linkify, RED, ToolPanel } from './primitives';
+import { Caret, ErrorTag, Expand, InterruptedTag, linkify, RED, ToolPanel } from './primitives';
 
 // A backgrounded server keeps its card "running" after the turn ends as long
 // as a live agent process still carries the command the agent typed.
@@ -100,12 +100,14 @@ export function CommandLine({
   command,
   output,
   error = false,
+  interrupted = false,
   running = false,
   forceOpen = false,
 }: {
   command: string;
   output?: string;
   error?: boolean;
+  interrupted?: boolean;
   running?: boolean;
   forceOpen?: boolean;
 }) {
@@ -144,7 +146,7 @@ export function CommandLine({
       >
         <Caret open={expanded} />
         {label}
-        {error && <ErrorTag />}
+        {interrupted ? <InterruptedTag /> : error && <ErrorTag />}
       </button>
       <Expand open={expanded}>
         <div className="mt-1.5 pl-[18px]">

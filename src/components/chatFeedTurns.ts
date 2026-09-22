@@ -1,7 +1,6 @@
 import { feedItemTailId } from '../hooks/conversationViewportAnchor';
 import { promptDisplayText } from '../lib/composePrompt';
 import { classifyEvent } from '../lib/transcript';
-import { isTaskPollTool, pollsSpawnedChildSession } from '../lib/tools';
 import type { TranscriptEvent } from '../types/bridge';
 import {
   buildFeed,
@@ -64,7 +63,7 @@ export function trailingSubagentPoll(
   for (let i = events.length - 1; i >= 0; i--) {
     const e = events[i];
     if (isCancellationArtifact(e)) continue;
-    if (e.kind === 'tool_call') return isSubagentPoll(events, i) ? e : undefined;
+    if (e.kind === 'tool_call') return isSubagentPoll(e) ? e : undefined;
     if (e.kind !== 'tool_result' || !e.toolUseId) return undefined;
     // A replayed result carries no toolName, so correlate it back to its call —
     // scanning backward from the result, since the call is always just behind it
@@ -72,15 +71,17 @@ export function trailingSubagentPoll(
     for (let j = i - 1; j >= 0; j--) {
       const call = events[j];
       if (call.kind !== 'tool_call' || call.toolUseId !== e.toolUseId) continue;
-      return isSubagentPoll(events, j) ? call : undefined;
+      return isSubagentPoll(call) ? call : undefined;
     }
     return undefined;
   }
   return undefined;
 }
 
-function isSubagentPoll(events: TranscriptEvent[], index: number): boolean {
-  return isTaskPollTool(events[index].toolName) && pollsSpawnedChildSession(events, index);
+// The provider marks a call that polls or stops an agent it is tracking; the
+// tool's name alone never says so.
+function isSubagentPoll(event: TranscriptEvent): boolean {
+  return Boolean(event.pollsChildSessionId);
 }
 
 // Build the grouped feed once so callers can share it (the chat view derives

@@ -241,12 +241,18 @@ export class ClaudeEventMapper {
     return content.flatMap((block) => {
       if (block.type !== 'tool_result') return [];
       this.reportedResults.add(block.tool_use_id);
+      const text = toolResultText(block.content);
+      // A call the user steered or stopped away from is not a failure, and the
+      // CLI says so in this one sentence. Reading it here keeps the renderer
+      // free of text matching, and the row quiet instead of red.
+      const interrupted = block.is_error === true && isInterruptionNotice(text);
       return {
         ...owner,
         transcript: this.transcript('tool_result', {
-          text: toolResultText(block.content),
-          isError: block.is_error === true,
+          text,
+          isError: block.is_error === true && !interrupted,
           toolUseId: block.tool_use_id,
+          ...(interrupted ? { interrupted: true } : {}),
         }),
       };
     });
@@ -317,9 +323,15 @@ export class ClaudeEventMapper {
   ): NormalizedEvent {
     // Nested tool calls must not change the parent's spawn correlation.
     if (!parentToolUseId) this.subagents.noteToolUse(name, id);
+    const pollsChildSessionId = this.subagents.pollsChildSessionId(name, input);
     return {
       ...this.childOwner(parentToolUseId),
-      transcript: this.transcript('tool_call', { toolName: name, toolArgs: input, toolUseId: id }),
+      transcript: this.transcript('tool_call', {
+        toolName: name,
+        toolArgs: input,
+        toolUseId: id,
+        ...(pollsChildSessionId ? { pollsChildSessionId } : {}),
+      }),
     };
   }
 
@@ -366,6 +378,15 @@ export class ClaudeEventMapper {
       ...extra,
     };
   }
+}
+
+// What the CLI puts in a tool result when the user steers or stops the turn
+// before the tool runs. It is the harness's own wording, so it belongs here
+// with the rest of this adapter's knowledge of the SDK, never in the renderer.
+const INTERRUPTION_NOTICE = /the user (?:doesn't|does not) want to proceed with this tool use/i;
+
+function isInterruptionNotice(text: string): boolean {
+  return INTERRUPTION_NOTICE.test(text);
 }
 
 // The tool-use block shapes share id/name; the SDK's own union splits them by

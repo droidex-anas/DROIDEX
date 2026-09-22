@@ -27,6 +27,22 @@ function ev(extra: Partial<TranscriptEvent>): TranscriptEvent {
 
 const userMsg = (text: string) => ev({ kind: 'text', author: 'user', text });
 const assistantMsg = (text: string) => ev({ kind: 'text', author: 'assistant', text });
+// The provider marks a poll that is about an agent it is tracking; the same
+// tool name against a background command carries no mark.
+const agentPoll = ev({
+  kind: 'tool_call',
+  toolName: 'TaskOutput',
+  toolUseId: 'p1',
+  toolArgs: { task_id: 'abc' },
+  pollsChildSessionId: 'abc',
+});
+const commandPoll = ev({
+  kind: 'tool_call',
+  toolName: 'TaskOutput',
+  toolUseId: 'p2',
+  toolArgs: { task_id: 'bash_1' },
+});
+
 const spawn = (toolUseId: string, label: string) =>
   ev({
     kind: 'tool_call',
@@ -310,7 +326,13 @@ test('an unresolved wave stays unknown once later items follow it in the same tu
 
 test('polling and stopping subagents never renders rows beside the card', () => {
   const poll = (toolUseId: string, toolName: string) =>
-    ev({ kind: 'tool_call', toolName, toolUseId, toolArgs: { task_id: 'abc' } });
+    ev({
+      kind: 'tool_call',
+      toolName,
+      toolUseId,
+      toolArgs: { task_id: 'abc' },
+      pollsChildSessionId: 'abc',
+    });
   const pollResult = (toolUseId: string) =>
     ev({
       kind: 'tool_result',
@@ -352,12 +374,7 @@ test('a poll after a finished step reads as checking subagents, not a stuck step
     spawn('t1', 'explorer'),
     ev({ kind: 'tool_call', toolName: 'Grep', toolUseId: 'g1', toolArgs: { pattern: 'foo' } }),
     ev({ kind: 'tool_result', toolUseId: 'g1', text: 'src/a.ts:1: foo' }),
-    ev({
-      kind: 'tool_call',
-      toolName: 'TaskOutput',
-      toolUseId: 'p1',
-      toolArgs: { task_id: 'abc' },
-    }),
+    agentPoll,
   ];
   const html = renderToStaticMarkup(
     createElement(MessageFeed, {
@@ -379,12 +396,7 @@ test('a poll after the parent stopped talking still shows the parent working', (
     userMsg('go'),
     spawn('t1', 'explorer'),
     assistantMsg('spawned the explorer'),
-    ev({
-      kind: 'tool_call',
-      toolName: 'TaskOutput',
-      toolUseId: 'p1',
-      toolArgs: { task_id: 'abc' },
-    }),
+    agentPoll,
     ev({ kind: 'tool_result', toolUseId: 'p1', text: 'Task ID: abc\nStatus: running\n\nworking' }),
   ];
   const text = textOf(
@@ -403,16 +415,7 @@ test('a poll after the parent stopped talking still shows the parent working', (
 test('a poll behind a running wave card does not add a second live cue', () => {
   // The card at the tail already reports the wave with its own status pills and
   // timers, so announcing the check as well would say the same thing twice.
-  const events = [
-    userMsg('go'),
-    spawn('t1', 'explorer'),
-    ev({
-      kind: 'tool_call',
-      toolName: 'TaskOutput',
-      toolUseId: 'p1',
-      toolArgs: { task_id: 'abc' },
-    }),
-  ];
+  const events = [userMsg('go'), spawn('t1', 'explorer'), agentPoll];
   const text = textOf(
     renderToStaticMarkup(
       createElement(MessageFeed, {
@@ -450,7 +453,7 @@ test('a poll between two spawn batches keeps them in one wave card', () => {
     [
       userMsg('go'),
       spawn('t1', 'explorer'),
-      ev({ kind: 'tool_call', toolName: 'TaskOutput', toolUseId: 'p1', toolArgs: {} }),
+      agentPoll,
       ev({ kind: 'tool_result', toolUseId: 'p1', text: 'Task ID: abc\nStatus: completed' }),
       spawn('t2', 'worker'),
     ],
@@ -466,39 +469,41 @@ test('a poll between two spawn batches keeps them in one wave card', () => {
 });
 
 test('only a suppressed poll at the tail redirects the working cue', () => {
-  const poll = ev({ kind: 'tool_call', toolName: 'TaskOutput', toolUseId: 'p1', toolArgs: {} });
   const pollResult = ev({ kind: 'tool_result', toolUseId: 'p1', text: 'Status: running' });
   const read = ev({ kind: 'tool_call', toolName: 'Read', toolUseId: 'r1', toolArgs: {} });
 
   const spawned = [userMsg('go'), spawn('t1', 'explorer')];
   // The poll call is returned so the cue can time the check from it.
-  assert.equal(trailingSubagentPoll([...spawned, poll], true), poll);
+  assert.equal(trailingSubagentPoll([...spawned, agentPoll], true), agentPoll);
   // Replayed results carry no toolName, so the tail resolves through its call.
-  assert.equal(trailingSubagentPoll([...spawned, poll, pollResult], true), poll);
-  assert.equal(trailingSubagentPoll([...spawned, poll, read], true), undefined);
+  assert.equal(trailingSubagentPoll([...spawned, agentPoll, pollResult], true), agentPoll);
+  assert.equal(trailingSubagentPoll([...spawned, agentPoll, read], true), undefined);
   assert.equal(trailingSubagentPoll([userMsg('go'), assistantMsg('done')], true), undefined);
   // Views that keep the poll rows render them, so their tail is honest already.
-  assert.equal(trailingSubagentPoll([...spawned, poll], false), undefined);
-  // With no agent spawned the same tool is reading a background command, which
-  // is ordinary work: it keeps its row and the cue does not mention agents.
-  assert.equal(trailingSubagentPoll([userMsg('go'), poll], true), undefined);
+  assert.equal(trailingSubagentPoll([...spawned, agentPoll], false), undefined);
+  // The same tool reading a background command names no agent, so the cue says
+  // nothing about agents even in a chat that has spawned one.
+  assert.equal(trailingSubagentPoll([...spawned, commandPoll], true), undefined);
 });
 
 test('a poll between two tools does not split them into separate groups', () => {
   const toolCall = (toolUseId: string, toolName: string) =>
     ev({ kind: 'tool_call', toolName, toolUseId, toolArgs: { file_path: `/tmp/${toolUseId}.ts` } });
-  const poll = ev({ kind: 'tool_call', toolName: 'TaskOutput', toolUseId: 'p1', toolArgs: {} });
   const options = { childSessionCards: true, groupChildSessions: true };
   const feed = buildFeed(
-    [spawn('t1', 'explorer'), toolCall('a', 'Read'), poll, toolCall('b', 'Grep')],
+    [spawn('t1', 'explorer'), toolCall('a', 'Read'), agentPoll, toolCall('b', 'Grep')],
     options,
   );
   const groups = feed.filter((item) => item.type === 'tools');
   assert.equal(groups.length, 1);
   if (groups[0].type === 'tools') assert.equal(groups[0].events.length, 2);
 
-  // With no agent spawned the poll is a background command's output: a row.
-  const plain = buildFeed([toolCall('a', 'Read'), poll, toolCall('b', 'Grep')], options);
+  // The same call against a background command keeps its row: the card speaks
+  // for agents, and this one is not about an agent.
+  const plain = buildFeed(
+    [spawn('t1', 'explorer'), toolCall('a', 'Read'), commandPoll, toolCall('b', 'Grep')],
+    options,
+  );
   const plainGroups = plain.filter((item) => item.type === 'tools');
   if (plainGroups[0].type === 'tools') assert.equal(plainGroups[0].events.length, 3);
 });
@@ -506,16 +511,7 @@ test('a poll between two tools does not split them into separate groups', () => 
 test('views that keep per-spawn lines keep the poll rows too', () => {
   // Mission Control and child-session panes render no wave card, so nothing
   // there would account for a suppressed poll.
-  const events = [
-    userMsg('go'),
-    spawn('t1', 'explorer'),
-    ev({
-      kind: 'tool_call',
-      toolName: 'TaskOutput',
-      toolUseId: 'p1',
-      toolArgs: { task_id: 'abc' },
-    }),
-  ];
+  const events = [userMsg('go'), spawn('t1', 'explorer'), agentPoll];
   const feed = buildFeed(events, { childSessionCards: true, groupChildSessions: false });
   const tools = feed.filter((item) => item.type === 'tools');
   assert.equal(tools.length, 1);

@@ -265,8 +265,9 @@ export class CodexEventMapper {
         transcript: this.transcript('tool_result', {
           toolName: call.name,
           text: toolOutput(item, open?.output ?? '', this.appSessionId),
-          isError: call.failed,
+          isError: call.failed && !call.interrupted,
           toolUseId: call.id,
+          ...(call.interrupted ? { interrupted: true as const } : {}),
         }),
       },
     ];

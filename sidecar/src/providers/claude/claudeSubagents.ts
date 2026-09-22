@@ -1,7 +1,7 @@
 import type { SDKMessage } from '@anthropic-ai/claude-agent-sdk';
 import type { NormalizedEvent } from '../../normalize.js';
 import type { ChildActivity, ChildStatus } from '../../protocol.js';
-import type { ChildSessionSignal } from '../../subagentSignals.js';
+import { taskPollTargetId, type ChildSessionSignal } from '../../subagentSignals.js';
 import { trimmedString as str } from '../../values.js';
 
 type SystemMessage = Extract<SDKMessage, { type: 'system' }>;
@@ -89,6 +89,15 @@ export class ClaudeSubagents {
 
   noteToolUse(name: string, id: string): void {
     if (name === 'Task' || name === 'Agent' || name === 'Workflow') this.turnSpawnToolUseId = id;
+  }
+
+  // The agent a call is about, when it is about one. `TaskOutput` and `TaskStop`
+  // read and stop background shell commands with the same names they use for
+  // agents, so the task id is what tells the two apart: only an id this mapper
+  // is already tracking as a child belongs to an agent.
+  pollsChildSessionId(name: string, input: unknown): string | undefined {
+    const taskId = taskPollTargetId(name, input);
+    return taskId !== undefined && this.children.has(taskId) ? taskId : undefined;
   }
 
   map(message: SystemMessage, modelId: string | undefined): NormalizedEvent[] {

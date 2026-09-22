@@ -136,6 +136,9 @@ export interface ToolCall {
   detail: string;
   args: unknown;
   failed: boolean;
+  // The turn was steered or stopped before this call finished. Codex reports it
+  // as an item status, so it is a fact, not a failure.
+  interrupted: boolean;
 }
 
 // Tool names follow the conventions the transcript already classifies by:
@@ -149,6 +152,7 @@ export function toolCall(item: ThreadItem): ToolCall | undefined {
       detail: item.command,
       args: { command: item.command, cwd: item.cwd },
       failed: item.status !== 'completed' || (item.exitCode ?? 0) !== 0,
+      interrupted: item.status === 'interrupted',
     };
   if (item.type === 'fileChange')
     return {
@@ -160,6 +164,7 @@ export function toolCall(item: ThreadItem): ToolCall | undefined {
         changes: item.changes.map((change) => `${change.kind.type} ${change.path}`),
       },
       failed: item.status !== 'completed',
+      interrupted: item.status === 'interrupted',
     };
   if (item.type === 'imageGeneration')
     return {
@@ -168,6 +173,7 @@ export function toolCall(item: ThreadItem): ToolCall | undefined {
       detail: item.revisedPrompt ?? '',
       args: { prompt: item.revisedPrompt ?? '' },
       failed: item.status !== 'completed' || Boolean(item.failure),
+      interrupted: item.status === 'interrupted',
     };
   if (item.type === 'mcpToolCall')
     return {
@@ -178,6 +184,7 @@ export function toolCall(item: ThreadItem): ToolCall | undefined {
       // Codex reports a tool that answered with an error as completed, so the
       // error itself is what makes the row an error.
       failed: item.status !== 'completed' || item.error !== null,
+      interrupted: item.status === 'interrupted',
     };
   // Only the spawn anchors a transcript row; later calls update its children.
   if (item.type === 'collabAgentToolCall' && item.tool === 'spawnAgent')
@@ -186,7 +193,8 @@ export function toolCall(item: ThreadItem): ToolCall | undefined {
       name: 'Subagent',
       detail: item.prompt ?? '',
       args: { prompt: item.prompt ?? undefined },
-      failed: item.status === 'failed' || item.status === 'interrupted',
+      failed: item.status === 'failed',
+      interrupted: item.status === 'interrupted',
     };
   return undefined;
 }
@@ -197,10 +205,10 @@ export function toolOutput(item: ThreadItem, streamed: string, appSessionId: str
   // is the line shown in its place.
   if (item.type === 'imageGeneration') return generatedImage(appSessionId, item);
   if (item.type === 'fileChange') return patchText(item.changes);
-  if (item.type === 'collabAgentToolCall')
-    return item.status === 'failed' || item.status === 'interrupted'
-      ? 'Subagent spawn failed.'
-      : '';
+  if (item.type === 'collabAgentToolCall') {
+    if (item.status === 'failed') return 'Subagent spawn failed.';
+    return item.status === 'interrupted' ? 'The turn was stopped before the agent started.' : '';
+  }
   if (item.type === 'mcpToolCall')
     return item.error ? item.error.message : mcpContent(item.result?.content ?? []);
   return streamed;

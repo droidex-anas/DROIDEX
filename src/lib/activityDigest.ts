@@ -28,7 +28,6 @@ const VERB: Record<ToolCat, string> = {
   web: 'Fetching',
   skill: 'Using skill',
   task: 'Delegating',
-  subagent: 'Delegating',
   other: 'Working',
 };
 
