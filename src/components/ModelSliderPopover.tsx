@@ -19,25 +19,11 @@ import type { EffortSliderElement, EffortSliderLevel } from './effortSlider/effo
 
 const PREFERRED_WIDTH_PX = 320;
 
-// The slider names levels in the reference design's vocabulary; 'ultra' keeps
-// the harness's own word (Ultracode on Claude, Ultra elsewhere) via the labeler.
-const EFFORT_DISPLAY: Partial<Record<ReasoningEffort, string>> = {
-  off: 'Off',
-  none: 'None',
-  minimal: 'Minimal',
-  low: 'Low',
-  medium: 'Medium',
-  high: 'High',
-  xhigh: 'Extra',
-  max: 'Max',
-  dynamic: 'Dynamic',
-};
-
-const capitalize = (word: string) => word.charAt(0).toUpperCase() + word.slice(1);
-
+// The slider speaks the chip's vocabulary (Xhigh, and the harness's own word
+// for ultra: Ultracode on Claude, Ultra elsewhere).
 function effortDisplay(effort: ReasoningEffort, provider: ProviderKind): string {
-  if (effort === 'ultra') return capitalize(reasoningEffortLabel(effort, provider));
-  return EFFORT_DISPLAY[effort] ?? capitalize(effort);
+  const label = reasoningEffortLabel(effort, provider);
+  return label.charAt(0).toUpperCase() + label.slice(1);
 }
 
 // The card is already the surface, so the slider's own panel stays flat and
