@@ -15,7 +15,7 @@ export type { McpServerInfo, McpServerInput, McpStatusSummary, McpToolInfo } fro
 export const PROVIDER_KINDS = ['droid', 'claude', 'codex'] as const;
 export type ProviderKind = (typeof PROVIDER_KINDS)[number];
 
-type SessionPhase =
+export type SessionPhase =
   | 'intake'
   | 'planning'
   | 'awaiting_plan_approval'
@@ -27,8 +27,8 @@ type SessionPhase =
   | 'completed'
   | 'failed';
 
-type FeatureStatus = 'pending' | 'in_progress' | 'completed' | 'cancelled';
-type SessionRole = 'primary' | 'worker' | 'validator';
+export type FeatureStatus = 'pending' | 'in_progress' | 'completed' | 'cancelled';
+export type SessionRole = 'primary' | 'worker' | 'validator';
 export type SessionPurpose = 'chat' | 'design' | 'mission-control';
 export type SessionInteractionMode = 'auto' | 'spec' | 'agi';
 export type ResponseFormat = 'app-create' | 'app-followup';
@@ -67,13 +67,13 @@ export interface ProgressEntry {
   workerChildSessionId?: string;
 }
 
-type ChildRole = 'worker' | 'validator';
+export type ChildRole = 'worker' | 'validator';
 // 'failed' is terminal like 'completed': the agent stopped, but it did not
 // deliver. Never fold the two together in a count, a label, or a tint.
 export type ChildStatus = 'pending' | 'running' | 'paused' | 'completed' | 'failed';
 export type StreamFidelity = 'token' | 'tool' | 'state';
 
-interface ChildSpawnLink {
+export interface ChildSpawnLink {
   kind: 'tool-use' | 'spawn';
   id: string;
 }
@@ -81,7 +81,7 @@ interface ChildSpawnLink {
 // Live activity of an autonomous child, as observed by polling its background
 // task from the parent: the task's status ("Running", "Completed") and the last
 // line it had produced at that moment.
-interface ChildActivity {
+export interface ChildActivity {
   phase?: string;
   preview?: string;
 }
@@ -320,7 +320,7 @@ export interface FactoryDefaultSettings {
 
 export type InstallChannel = 'script' | 'brew' | 'npm';
 
-interface PackageManagers {
+export interface PackageManagers {
   brew: boolean;
   npm: boolean;
   curl: boolean;
@@ -362,7 +362,7 @@ interface ContextBreakdownCategory {
   colorKey?: string;
 }
 
-interface ContextBreakdownSnapshot {
+export interface ContextBreakdownSnapshot {
   modelId?: string;
   modelDisplayName?: string;
   contextBudget: number;
@@ -371,7 +371,7 @@ interface ContextBreakdownSnapshot {
   categories: ContextBreakdownCategory[];
 }
 
-interface SessionHistoryEntry {
+export interface SessionHistoryEntry {
   providerSessionId: string;
   title: string;
   cwd?: string;
@@ -391,7 +391,7 @@ export interface SessionSearchMatch {
 
 // A session whose transcript matched the query. Title matching itself happens
 // over the local session list; the sidecar only reports content hits.
-interface SessionSearchResult {
+export interface SessionSearchResult {
   appSessionId: string;
   matches: SessionSearchMatch[];
 }
@@ -992,7 +992,7 @@ export type ServerEvent =
 
 export const BRIDGE_PROTOCOL_VERSION = 4 as const;
 
-interface SequencedServerEvent {
+export interface SequencedServerEvent {
   seq: number;
   event: ServerEvent;
 }
