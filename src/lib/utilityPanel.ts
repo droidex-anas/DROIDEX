@@ -29,7 +29,7 @@ const SINGLETON_TOOLS = new Set<UtilityTool>(['review', 'browser', 'files', 'age
 
 // The tools whose pane can take the whole content row.
 export function isExpandableTool(tool: UtilityTool | undefined): boolean {
-  return tool === 'browser' || tool === 'agents' || tool === 'threads';
+  return tool === 'browser' || tool === 'agents';
 }
 
 export function utilityPanelForSession(
