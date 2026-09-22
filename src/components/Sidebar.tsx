@@ -94,14 +94,21 @@ export default function Sidebar({
     [activeId, lastSeen],
   );
 
+  const projectThreads = useStoreSelector(
+    (current) => projectThreadIds(current.projects),
+    (a, b) => a.size === b.size && [...a].every((id) => b.has(id)),
+  );
+  // Counting what the list cannot show would leave unread-only empty with a
+  // badge still on it; a thread's unread belongs to Projects.
   const unreadCount = useMemo(
     () =>
       state.sessionOrder
         .map((id) => state.sessions[id])
         .filter(Boolean)
+        .filter((m) => !projectThreads.has(m.appSessionId))
         .filter((m) => !isChatHidden(chatMetadata[m.appSessionId]))
         .filter(isUnread).length,
-    [state.sessionOrder, state.sessions, chatMetadata, isUnread],
+    [state.sessionOrder, state.sessions, chatMetadata, isUnread, projectThreads],
   );
 
   const markAllSessionsRead = useCallback(() => {
@@ -137,10 +144,6 @@ export default function Sidebar({
     dismissSidebarCard(SIDEBAR_WELCOME_CARD_ID);
   };
 
-  const projectThreads = useStoreSelector(
-    (current) => projectThreadIds(current.projects),
-    (a, b) => a.size === b.size && [...a].every((id) => b.has(id)),
-  );
   const compareRows = useCallback(
     (a: SessionSummary, b: SessionSummary) =>
       compareSidebarSessions(a, b, preferences.order, chatMetadata),
