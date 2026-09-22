@@ -236,10 +236,13 @@ export class ProjectService {
     const workspace = await this.threadWorkspace(project, owner.cwd, input.title, requested);
     const cwd = workspace?.cwd ?? owner.cwd;
     const prompt = threadPrompt(input.prompt, workspace);
-    // A step is named before the launch so a rejected name costs nothing.
-    const step = requested.step ? this.planStep(project, requested.step) : undefined;
+    // A step is named before the launch so a rejected name costs nothing, and
+    // looked up again after it: plan_set may have replaced the plan while the
+    // thread was starting, and the step that was resolved with it.
+    const named = requested.step ? this.planStep(project, requested.step).title : undefined;
     const title = uniqueTitle(project, input.title);
     const appSessionId = await this.launch(project, { ...input, title, prompt, cwd }, source);
+    const step = named ? project.plan.find((candidate) => candidate.title === named) : undefined;
     if (step) {
       step.threadAppSessionId = appSessionId;
       delete step.state;
@@ -429,7 +432,7 @@ export class ProjectService {
           answer: answers[position],
         })),
       );
-      this.clearAsk(thread);
+      this.clearAsk(project, thread);
       // Answered inside the thread before this arrived, so that answer stands
       // and the words sent with it go on as an ordinary message.
       if (!landed && text.trim()) this.enqueue(project, source, target, 'message', text);
@@ -510,6 +513,7 @@ export class ProjectService {
     this.wakes.invalidate(project);
     await this.sessions.interrupt(target);
     await this.wakes.settle(project);
+    this.clearAsk(project, this.thread(project, target));
     project.pending = project.pending.filter((message) => message.to !== target);
     await this.save();
     this.wakes.kick(project);
@@ -565,7 +569,8 @@ export class ProjectService {
     if (!project) return;
     const thread = this.thread(project, session.appSessionId);
     if (session.streaming) {
-      if (this.activity.open(session.appSessionId) && this.clearAsk(thread)) await this.save();
+      if (this.activity.open(session.appSessionId) && this.clearAsk(project, thread))
+        await this.save();
       return;
     }
     const turn = this.activity.finish(session.appSessionId);
@@ -587,7 +592,7 @@ export class ProjectService {
     if (turn.error) thread.error = turn.error;
     else delete thread.error;
     // A question the turn ended on will never be answered now.
-    this.clearAsk(thread);
+    this.clearAsk(project, thread);
     if (!thread.ownerAppSessionId) {
       if (session.phase === 'failed')
         this.fail(
@@ -661,20 +666,22 @@ export class ProjectService {
     const project = this.membership.get(appSessionId);
     const thread = project?.threads.find((candidate) => candidate.appSessionId === appSessionId);
     if (!project || thread?.ask?.requestId !== requestId) return;
-    this.clearAsk(thread);
-    // Waking an owner to answer a question its thread no longer holds would
-    // send it back to a thread that has nothing waiting on the answer.
-    project.pending = project.pending.filter(
-      (message) => message.kind !== 'question' || message.from !== appSessionId,
-    );
+    this.clearAsk(project, thread);
     await this.save();
   }
 
-  /** Leaves a thread with no question outstanding. True when that changed it. */
-  private clearAsk(thread: ProjectThread): boolean {
+  /**
+   * Leaves a thread with no question outstanding, and takes the wake that
+   * carried it off the queue: an owner woken to answer a question its thread no
+   * longer holds would send the answer to a thread waiting for nothing.
+   */
+  private clearAsk(project: Project, thread: ProjectThread): boolean {
     if (!thread.ask && !thread.waiting) return false;
     delete thread.ask;
     thread.waiting = false;
+    project.pending = project.pending.filter(
+      (message) => message.kind !== 'question' || message.from !== thread.appSessionId,
+    );
     return true;
   }
 
