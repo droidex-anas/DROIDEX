@@ -1231,8 +1231,8 @@ function openTerminal(root) {
   return spawnDetached('x-terminal-emulator', ['--working-directory', root]);
 }
 
-// Everything launched this way is the user's own tool — an editor, a terminal
-// — and both go on to run shells, so neither inherits the app's variables.
+// Everything launched this way is one of the user's own tools, an editor or a
+// terminal, and both go on to run shells, so neither gets the app's variables.
 function spawnDetached(command, args, options = {}) {
   return new Promise((resolve, reject) => {
     const child = spawn(command, args, {
