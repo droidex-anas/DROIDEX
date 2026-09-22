@@ -1,6 +1,11 @@
 import { useCallback, useState } from 'react';
 import { useMicStream } from './useMicStream';
 
+// Off until Codex can open a realtime voice session on a ChatGPT sign-in: its
+// app-server (0.154) refuses `thread/realtime/start` without API key auth. The
+// orb, dock and overlay stay built so turning this on is the only change.
+export const VOICE_MODE_ENABLED = false;
+
 export type VoiceView = 'off' | 'full' | 'compact';
 
 export interface VoiceMode {

@@ -39,7 +39,7 @@ import {
 } from '../lib/desktop';
 import { pathsInSequence, useImageAttachments } from '../hooks/useImageAttachments';
 import { useFileAttachments } from '../hooks/useFileAttachments';
-import { useVoiceMode } from '../features/voice/useVoiceMode';
+import { useVoiceMode, VOICE_MODE_ENABLED } from '../features/voice/useVoiceMode';
 import { VoiceButton } from '../features/voice/VoiceButton';
 import { VoiceDock } from '../features/voice/VoiceDock';
 import { VoiceModeOverlay } from '../features/voice/VoiceModeOverlay';
@@ -1584,8 +1584,8 @@ export default function PromptInput({
     imageAttachments.images.length > 0;
   // The action slot morphs between voice and send: a draft with content owns
   // the stage, but a live or starting turn keeps stop/send reachable even on
-  // an empty draft.
-  const showSendAction = hasContent || isLive || turnStarting;
+  // an empty draft. With voice off, send is always on stage.
+  const showSendAction = !VOICE_MODE_ENABLED || hasContent || isLive || turnStarting;
   // The hint's host unmounts while a turn starts or the draft is empty; clear
   // the state with it so the hint never reopens without a hover or focus.
   useEffect(() => {
@@ -1977,13 +1977,17 @@ export default function PromptInput({
                   stage. Both stay mounted so the swap is transform-only, and
                   the parked one drops out of focus and hit-testing. */}
               <div className="relative h-8 w-8 shrink-0">
-                <div
-                  className={`absolute inset-0 transition-[transform,opacity] duration-200 ease-[cubic-bezier(0.16,1,0.3,1)] motion-reduce:transform-none motion-reduce:transition-none ${
-                    showSendAction ? 'pointer-events-none -translate-y-3 scale-[0.6] opacity-0' : ''
-                  }`}
-                >
-                  <VoiceButton parked={showSendAction} onClick={voice.start} />
-                </div>
+                {VOICE_MODE_ENABLED && (
+                  <div
+                    className={`absolute inset-0 transition-[transform,opacity] duration-200 ease-[cubic-bezier(0.16,1,0.3,1)] motion-reduce:transform-none motion-reduce:transition-none ${
+                      showSendAction
+                        ? 'pointer-events-none -translate-y-3 scale-[0.6] opacity-0'
+                        : ''
+                    }`}
+                  >
+                    <VoiceButton parked={showSendAction} onClick={voice.start} />
+                  </div>
+                )}
                 <div
                   className={`absolute inset-0 transition-[transform,opacity] duration-200 ease-[cubic-bezier(0.16,1,0.3,1)] motion-reduce:transform-none motion-reduce:transition-none ${
                     showSendAction ? '' : 'pointer-events-none translate-y-3 scale-[0.6] opacity-0'
