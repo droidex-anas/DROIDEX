@@ -2060,6 +2060,13 @@ export default function PromptInput({
               sessionTitle={activeSession.title}
               onSave={schedulePrompt}
               onClose={() => {
+                // Scheduling opens from the draft's menu, so a close from inside
+                // the panel (Escape, Close, Save) hands focus back to the draft;
+                // a click elsewhere keeps its own focus.
+                const focused = document.activeElement;
+                if (focused instanceof Element && focused.closest('[role="dialog"]')) {
+                  editorRef.current?.focus();
+                }
                 setScheduleTarget((current) => (current === scheduleTarget ? null : current));
               }}
             />
