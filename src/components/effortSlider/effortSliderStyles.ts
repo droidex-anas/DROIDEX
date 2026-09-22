@@ -70,8 +70,6 @@ export const EFFORT_SLIDER_STYLES = `
     box-shadow: 0 calc(.4 * var(--u)) calc(.7 * var(--u)) #00000016;
     transform-origin: center center; pointer-events: none;
   }
-  :host([disabled]) { opacity: .48; }
-  :host([disabled]) .control { cursor: not-allowed; }
   @media (prefers-reduced-motion: reduce) { .value-layer { transition: none; } }
   @media (forced-colors: active) {
     .panel { border-color: CanvasText; }

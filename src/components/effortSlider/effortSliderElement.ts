@@ -34,10 +34,7 @@ export interface EffortSliderChangeDetail {
 
 /** Structural type of the element, for the React wrapper's ref. */
 export interface EffortSliderElement extends HTMLElement {
-  levels: readonly EffortSliderLevel[];
-  value: string;
-  valueAsNumber: number;
-  disabled: boolean;
+  readonly value: string;
   setLevels(levels: readonly EffortSliderLevel[]): void;
   setValue(value: string | number, options?: { emit?: boolean; animate?: boolean }): string;
   focusControl(): void;
@@ -50,10 +47,6 @@ if (typeof customElements !== 'undefined' && !customElements.get('effort-slider'
   template.innerHTML = `<style>${EFFORT_SLIDER_STYLES}</style>${EFFORT_SLIDER_MARKUP}`;
 
   class EffortSlider extends HTMLElement implements EffortSliderElement {
-    static get observedAttributes(): string[] {
-      return ['value', 'disabled'];
-    }
-
     private _levels: readonly EffortSliderLevel[] = DEFAULT_LEVELS;
     private readonly _control: HTMLElement;
     private readonly _rail: HTMLElement;
@@ -84,7 +77,6 @@ if (typeof customElements !== 'undefined' && !customElements.get('effort-slider'
     private _events: AbortController | undefined;
     private _resizeObserver: ResizeObserver | undefined;
     private _intersection: IntersectionObserver | undefined;
-    private _reflecting = false;
 
     constructor() {
       super();
@@ -115,14 +107,6 @@ if (typeof customElements !== 'undefined' && !customElements.get('effort-slider'
     /** The highest reachable index, never below 1 so single-level lists cannot divide by zero. */
     private get _last(): number {
       return Math.max(this._levels.length - 1, 1);
-    }
-
-    get levels(): readonly EffortSliderLevel[] {
-      return this._levels;
-    }
-
-    set levels(levels: readonly EffortSliderLevel[]) {
-      this.setLevels(levels);
     }
 
     /** Swap the stops (a model's own effort list); clamps the current value. */
@@ -227,7 +211,6 @@ if (typeof customElements !== 'undefined' && !customElements.get('effort-slider'
         else this._sleep();
       });
       this._intersection.observe(this);
-      this._syncDisabled();
       this._resize();
     }
 
@@ -241,41 +224,8 @@ if (typeof customElements !== 'undefined' && !customElements.get('effort-slider'
       this._press.value = this._press.target = this._press.velocity = 0;
     }
 
-    attributeChangedCallback(name: string, oldValue: string | null, newValue: string | null): void {
-      if (oldValue === newValue || this._reflecting) return;
-      if (name === 'disabled') {
-        this._syncDisabled();
-        return;
-      }
-      let index: number;
-      try {
-        index = parseEffortValue(this._levels, newValue ?? this._levels[0].value);
-      } catch {
-        return;
-      }
-      this._setIndex(index, this.isConnected, false);
-      this._position.target = index / this._last;
-      if (!this.isConnected) this._position.value = this._position.target;
-      this._wake();
-    }
-
     get value(): string {
       return this._levels[this._index]?.value ?? '';
-    }
-    set value(value: string) {
-      this.setValue(value);
-    }
-    get valueAsNumber(): number {
-      return this._index;
-    }
-    set valueAsNumber(index: number) {
-      this.setValue(index);
-    }
-    get disabled(): boolean {
-      return this.hasAttribute('disabled');
-    }
-    set disabled(value: boolean) {
-      this.toggleAttribute('disabled', value);
     }
 
     focusControl(): void {
@@ -309,9 +259,6 @@ if (typeof customElements !== 'undefined' && !customElements.get('effort-slider'
       if (index === this._index) return false;
       const previous = this._index;
       this._index = index;
-      this._reflecting = true;
-      this.setAttribute('value', this.value);
-      this._reflecting = false;
       this._control.setAttribute('aria-valuenow', String(index));
       this._control.setAttribute('aria-valuetext', this._levels[index]?.label ?? '');
       this._renderLabel(animate && !this._motion.matches, index > previous ? 1 : -1);
@@ -341,14 +288,6 @@ if (typeof customElements !== 'undefined' && !customElements.get('effort-slider'
       });
     }
 
-    private _syncDisabled(): void {
-      this._control.tabIndex = this.disabled ? -1 : 0;
-      this._control.setAttribute('aria-disabled', String(this.disabled));
-      const help = this.shadowRoot?.querySelector<HTMLButtonElement>('.help');
-      if (help) help.disabled = this.disabled;
-      if (this.disabled && this._pointer) this._pointerEnd({ pointerId: this._pointer.id }, true);
-    }
-
     private _syncTicks(): void {
       this._ticks.replaceChildren(
         ...this._levels.map(() => {
@@ -360,7 +299,7 @@ if (typeof customElements !== 'undefined' && !customElements.get('effort-slider'
     }
 
     private _pointerDown(event: PointerEvent): void {
-      if (this.disabled || this._pointer || !event.isPrimary || event.button !== 0) return;
+      if (this._pointer || !event.isPrimary || event.button !== 0) return;
       event.preventDefault();
       this._resize();
       if (!this._travel) return;
@@ -405,7 +344,6 @@ if (typeof customElements !== 'undefined' && !customElements.get('effort-slider'
 
     private _keyDown(event: KeyboardEvent): void {
       this._control.classList.remove('pointer-focus');
-      if (this.disabled) return;
       const index = effortIndexFromKey(event.key, this._index, this._levels.length - 1);
       if (index === undefined) return;
       event.preventDefault();

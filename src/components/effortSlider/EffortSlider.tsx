@@ -5,7 +5,6 @@ import {
   useState,
   type CSSProperties,
   type DetailedHTMLProps,
-  type HTMLAttributes,
   type Ref,
 } from 'react';
 import './effortSliderElement';
@@ -16,17 +15,12 @@ import type {
   EffortSliderLevel,
 } from './effortSliderElement';
 
-interface EffortSliderTagProps extends DetailedHTMLProps<HTMLAttributes<HTMLElement>, HTMLElement> {
-  /** Reflects to the element's `disabled` property (a real setter on it). */
-  disabled?: boolean;
-}
-
 declare module 'react' {
   // Augmenting React's intrinsic elements requires the JSX namespace form.
   // eslint-disable-next-line @typescript-eslint/no-namespace
   namespace JSX {
     interface IntrinsicElements {
-      'effort-slider': EffortSliderTagProps;
+      'effort-slider': DetailedHTMLProps<HTMLAttributes<HTMLElement>, HTMLElement>;
     }
   }
 }
@@ -39,7 +33,6 @@ declare module 'react' {
 export default function EffortSlider({
   levels,
   value,
-  disabled = false,
   autoFocus = false,
   onCommit,
   style,
@@ -49,7 +42,6 @@ export default function EffortSlider({
   levels: EffortSliderLevel[];
   /** Must be one of `levels`' values; the caller picks the fallback. */
   value: string;
-  disabled?: boolean;
   autoFocus?: boolean;
   /** Fires on a settled pick: pointer release, keyboard step, or `setValue(emit)`. */
   onCommit: (value: string) => void;
@@ -99,7 +91,7 @@ export default function EffortSlider({
 
   return (
     <>
-      <effort-slider ref={attach} style={style} disabled={disabled} />
+      <effort-slider ref={attach} style={style} />
       {helpAnchor && <EffortHelpCard button={helpButton} anchor={helpAnchor} />}
     </>
   );
