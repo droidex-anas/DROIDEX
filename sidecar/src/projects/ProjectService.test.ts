@@ -275,6 +275,32 @@ test('an outsized harness question is bounded to what the ledger will load', asy
   assert.ok((h.state.saved[0]?.pending[0]?.text.length ?? 0) <= LEDGER_LIMITS.messageText);
 });
 
+test('a question that dies with its turn takes its wake off the queue', async (t) => {
+  const h = await harness();
+  t.after(() => h.projects.close());
+  const { main } = await h.root();
+  const child = await h.projects.spawn(main, input);
+  const question = {
+    appSessionId: child.appSessionId,
+    requestId: 'ask-dead',
+    questions: [{ index: 0, question: 'Which format?', options: ['JSON', 'SQLite'] }],
+  };
+  await h.projects.observe({ type: 'question.requested', question });
+  assert.equal(h.projects.list()[0]?.queued, 1);
+
+  // The turn ended before anyone answered, so the thread holds no question and
+  // waking its owner to answer one would send the answer nowhere.
+  await h.projects.observe({
+    type: 'interaction.cancelled',
+    appSessionId: child.appSessionId,
+    requestId: 'ask-dead',
+  });
+  await drain();
+  assert.equal(h.projects.list()[0]?.queued, 0);
+  assert.equal(h.projects.list()[0]?.threads[1]?.waiting, false);
+  assert.equal(h.sent.length, 0);
+});
+
 test('a thread that settles reports either way: an empty turn, or the failure that ended it', async (t) => {
   const h = await harness();
   t.after(() => h.projects.close());

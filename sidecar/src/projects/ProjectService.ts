@@ -660,8 +660,13 @@ export class ProjectService {
   private async dropRoutedQuestion(appSessionId: string, requestId: string): Promise<void> {
     const project = this.membership.get(appSessionId);
     const thread = project?.threads.find((candidate) => candidate.appSessionId === appSessionId);
-    if (thread?.ask?.requestId !== requestId) return;
+    if (!project || thread?.ask?.requestId !== requestId) return;
     this.clearAsk(thread);
+    // Waking an owner to answer a question its thread no longer holds would
+    // send it back to a thread that has nothing waiting on the answer.
+    project.pending = project.pending.filter(
+      (message) => message.kind !== 'question' || message.from !== appSessionId,
+    );
     await this.save();
   }
 
