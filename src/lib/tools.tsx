@@ -109,9 +109,36 @@ function toolObjectKind(
   return 'text';
 }
 
+// A tool search that names its tools (`select:server___tool_a,server___tool_b`)
+// loads those definitions rather than searching, so it reads as the tools it
+// loaded, by their readable names, with the server as the source when they
+// all share one.
+function loadedTools(args: Record<string, unknown>): ToolCallLabel | null {
+  const query = typeof args.query === 'string' ? args.query.trim() : '';
+  const match = /^select:(.+)$/i.exec(query);
+  if (!match) return null;
+  const tools = match[1]
+    .split(',')
+    .map((entry) => entry.trim())
+    .filter(Boolean)
+    .map(splitToolName);
+  if (tools.length === 0) return null;
+  const servers = new Set(tools.map((tool) => tool.server));
+  const [server] = servers;
+  return {
+    verb: 'Loaded',
+    liveVerb: 'Loading',
+    object: tools.map((tool) => humanizeToolName(tool.tool)).join(', '),
+    objectKind: 'text',
+    source: servers.size === 1 && server ? server.replace(/[_-]+/g, ' ') : undefined,
+  };
+}
+
 export function describeToolCall(name?: string, args?: unknown): ToolCallLabel {
   const { cat, detail } = toolMeta(name, args);
   const a = args && typeof args === 'object' ? (args as Record<string, unknown>) : {};
+  const loaded = loadedTools(a);
+  if (loaded) return loaded;
   const objectKind = toolObjectKind(detail, a);
   const { server, tool } = splitToolName(name ?? '');
   // Every namespaced tool names its server, categorised or not, so a GitHub
