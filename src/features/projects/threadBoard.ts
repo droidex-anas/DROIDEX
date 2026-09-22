@@ -23,7 +23,6 @@ export interface ThreadRow {
   live: boolean;
   updatedAt: number;
   /** A saved thread whose conversation this window has not loaded. */
-  unavailable: boolean;
   /** The conversation that started it, so a thread's own spawns nest under it. */
   ownerAppSessionId?: string;
   /** 0 for a thread of the main chat, 1 for a thread that thread started. */
@@ -129,7 +128,6 @@ function threadRow(
     detail: threadDetail(thread, status, live, digest),
     live,
     updatedAt: session?.updatedAt ?? 0,
-    unavailable: !session,
     depth,
     ...(thread.ownerAppSessionId ? { ownerAppSessionId: thread.ownerAppSessionId } : {}),
     ...(session?.provider ? { provider: session.provider } : {}),

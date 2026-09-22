@@ -33,15 +33,14 @@ export function ThreadRow({
       transition={{ duration: INLINE_CARD_DURATION_S, ease: INLINE_CARD_EASE }}
       data-testid="thread-row"
       data-thread-status={row.status}
-      disabled={row.unavailable}
       title={row.title}
       aria-current={active ? 'true' : undefined}
       onClick={() => {
         onOpen(row.appSessionId);
       }}
       style={{ paddingLeft: `${String(10 + Math.min(row.depth, 3) * 14)}px` }}
-      className={`group flex w-full items-center gap-2.5 rounded-lg py-1.5 pr-2 text-left transition-colors disabled:cursor-default ${
-        active ? 'bg-droid-active' : 'hover:bg-droid-elevated/50 disabled:hover:bg-transparent'
+      className={`group flex w-full items-center gap-2.5 rounded-lg py-1.5 pr-2 text-left transition-colors ${
+        active ? 'bg-droid-active' : 'hover:bg-droid-elevated/50'
       }`}
     >
       <span className="flex w-3.5 shrink-0 items-center justify-center">
