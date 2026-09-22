@@ -235,9 +235,10 @@ export const SessionRow = memo(function SessionRow({
         >
           {working ? (
             <span
-              // The ultra ring borrows the existing text token rather than a
-              // border one: the initial CSS sits a few bytes under its budget.
-              className={`w-3 h-3 rounded-full border-[1.5px] ${ultra ? 'text-droid-ultra border-current' : 'border-droid-text'} border-r-transparent motion-safe:animate-spin-slow`}
+              // The ring takes its colour from the text token so the purple can
+              // ease in and out as the main agent sleeps and wakes, and because
+              // the initial CSS sits a few bytes under its budget.
+              className={`w-3 h-3 rounded-full border-[1.5px] border-current border-r-transparent transition-colors duration-300 ${ultra ? 'text-droid-ultra' : 'text-droid-text'} motion-safe:animate-spin-slow`}
               aria-label={
                 agentsAlone
                   ? 'agents working'

@@ -182,7 +182,7 @@ test('SessionRow: a running row shows the spinner alongside the timestamp', () =
   assert.match(html, /aria-label="working"/);
   assert.match(
     html,
-    /w-3 h-3 rounded-full border-\[1\.5px\] border-droid-text border-r-transparent/,
+    /w-3 h-3 rounded-full border-\[1\.5px\] border-current border-r-transparent transition-colors duration-300 text-droid-text/,
   );
   assert.match(html, />now</);
 });
@@ -196,7 +196,7 @@ test('SessionRow: an ultracode session spins in the ultra colour with the effort
       session: makeSession({ provider: 'claude', reasoningEffort: 'ultra' }),
     }),
   );
-  assert.match(html, /text-droid-ultra border-current/);
+  assert.match(html, /border-current [^"]*text-droid-ultra/);
   assert.match(html, /effort-dot-ultra/);
   assert.match(html, /aria-label="working on ultracode"/);
 
@@ -212,7 +212,7 @@ test('SessionRow: a sleeping chat whose agents work keeps the ultra mark', () =>
   // has to stay alive without claiming the chat's own turn is running.
   const html = render(makeProps({ running: false, agentsWorking: true, now: 60_000 }));
   assert.match(html, /motion-safe:animate-spin-slow/);
-  assert.match(html, /text-droid-ultra border-current/);
+  assert.match(html, /border-current [^"]*text-droid-ultra/);
   assert.match(html, /effort-dot-ultra/);
   assert.match(html, /aria-label="agents working"/);
 
