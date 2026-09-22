@@ -157,7 +157,7 @@ test('a transcript DROIDEX writes for a non-Droid session is enumerated and repl
   // A live progress line is shown once and never stored. The plan-mode notice
   // and the crash row are what this chat ended on, so both must come back.
   transcript.append(
-    transcriptEvent(appSessionId, 'status', { text: 'Starting Claude Code…', transient: true }),
+    transcriptEvent(appSessionId, 'status', { text: 'Reconnecting…', transient: true }),
   );
   transcript.append(
     transcriptEvent(appSessionId, 'status', { text: 'Planning on opus, the plan-mode model.' }),

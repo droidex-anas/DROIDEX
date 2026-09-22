@@ -300,12 +300,6 @@ export class ClaudeEventMapper {
     return { transcript: this.transcript('status', { text }) };
   }
 
-  // What the CLI is doing before it can answer. Only true while the turn waits,
-  // so it is shown live and never stored.
-  progressEvent(text: string): NormalizedEvent {
-    return { transcript: this.transcript('status', { text, transient: true }) };
-  }
-
   private rateLimit(info: SDKRateLimitInfo): NormalizedEvent[] {
     const refusal = rateLimitRefusal(info);
     if (!refusal) return [];
