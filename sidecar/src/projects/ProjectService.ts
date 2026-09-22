@@ -169,6 +169,9 @@ export class ProjectService {
     this.requireOpen();
     const existing = requestId ? this.projects.get(requestId) : undefined;
     if (existing) {
+      // A repeat of a request whose lead is still starting waits for it, so the
+      // caller is told which conversation to open rather than a bare id.
+      if (existing.launching > 0) await Promise.allSettled([...this.launches]);
       const main = existing.threads.find((thread) => !thread.ownerAppSessionId);
       return { projectId: existing.id, ...(main ? { appSessionId: main.appSessionId } : {}) };
     }

@@ -12,6 +12,8 @@ const text = z.string().max(8_192);
    these before storing it: the schema is checked on load, and a file it refuses
    takes every project with it. */
 export const LEDGER_LIMITS = {
+  /** Queued and claimed messages together, which is what the writer bounds. */
+  inbox: 64,
   messageText: 8_192,
   askQuestions: 16,
   askOptions: 16,
@@ -102,11 +104,11 @@ const project = z
           .strict(),
       )
       .max(8),
-    pending: z.array(message).max(64),
+    pending: z.array(message).max(LEDGER_LIMITS.inbox),
     delivery: z
       .object({
         state: z.enum(['sending', 'uncertain']),
-        messages: z.array(message).min(1).max(64),
+        messages: z.array(message).min(1).max(LEDGER_LIMITS.inbox),
       })
       .strict()
       .optional(),
@@ -217,7 +219,8 @@ function validateOwnership(project: Project): void {
 function validateInbox(project: Project): void {
   const ids = new Set(project.threads.map((thread) => thread.appSessionId));
   const messages = [...project.pending, ...(project.delivery?.messages ?? [])];
-  if (messages.length > 64) throw new Error('Project inbox exceeds 64 messages.');
+  if (messages.length > LEDGER_LIMITS.inbox)
+    throw new Error(`Project inbox exceeds ${String(LEDGER_LIMITS.inbox)} messages.`);
   if (new Set(messages.map((note) => note.id)).size !== messages.length)
     throw new Error('Duplicate message identity in project ledger.');
   if (project.delivery && new Set(project.delivery.messages.map((note) => note.to)).size !== 1)
