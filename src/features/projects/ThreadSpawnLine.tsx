@@ -18,16 +18,21 @@ import { spawnedThread } from './threadToolNames';
 export function ThreadSpawnLine({
   call,
   result,
+  sessionLive,
 }: {
   call: TranscriptEvent;
   result?: TranscriptEvent;
+  /** Whether the conversation that spawned it is still running. */
+  sessionLive: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const dispatch = useStoreDispatch();
   const spawned = spawnedThread(result?.text);
   const row = useThreadRow(spawned?.id);
   const title = row?.title ?? spawned?.title ?? stringArg(call, 'title') ?? 'thread';
-  const starting = result === undefined;
+  // A turn interrupted mid-spawn never gets a result, so "starting" has to end
+  // when the conversation does rather than shimmer for good.
+  const starting = result === undefined && sessionLive;
   const live = row?.live === true || starting;
   const openThread = () => {
     if (spawned) dispatch({ type: 'OPEN_UTILITY_TOOL', tool: 'threads', threadId: spawned.id });

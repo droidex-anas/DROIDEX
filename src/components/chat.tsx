@@ -137,7 +137,7 @@ function AutomationToolGroup({
     <div className="space-y-2.5">
       {spawns.map(({ call, result }) => (
         <Suspense key={call.id} fallback={null}>
-          <ThreadSpawnLine call={call} {...(result ? { result } : {})} />
+          <ThreadSpawnLine call={call} sessionLive={sessionLive} {...(result ? { result } : {})} />
         </Suspense>
       ))}
       {proposals.map(({ call, result }) => (
