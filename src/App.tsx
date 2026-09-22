@@ -440,11 +440,17 @@ export default function App() {
       // The session panel and composer badge name the model from this catalog;
       // without it a custom model shows as its raw id until the selector opens.
       listModels();
-      // The chat list hides a project's threads, so it needs the project graph
-      // before it draws; nothing else asks for it until Projects is opened.
-      listProjects();
     })();
   }, [embedded]);
+
+  // The chat list hides a project's threads, so it waits to have been answered
+  // about them before it draws. Asking on every connection rather than once at
+  // startup keeps that true after a reconnect, and keeps the list from
+  // depending on one call at one moment to ever be made.
+  const connection = useStoreSelector((current) => current.connection);
+  useEffect(() => {
+    if (connection === 'connected') listProjects();
+  }, [connection]);
 
   // App update discovery must never wait on CLI/env probing: that work can be
   // slow or unavailable, while the verified appcast is independent.
