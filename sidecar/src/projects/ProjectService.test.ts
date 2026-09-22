@@ -210,6 +210,9 @@ test('busy owners retain messages; sibling completions batch into one later turn
   await h.finish(main);
   await drain();
   assert.equal(h.sent.length, 1);
+  // One wake, carrying both — batching them is the point, so assert the text.
+  assert.match(h.sent[0]?.prompt ?? '', /\bA\b/);
+  assert.match(h.sent[0]?.prompt ?? '', /\bB\b/);
   assert.equal(h.projects.list()[0]?.queued, 0);
 });
 
@@ -579,8 +582,13 @@ test('a spawn carries a settled plan step, or none at all', async (t) => {
 test('durable project request identity avoids a duplicate root', async (t) => {
   const h = await harness();
   t.after(() => h.projects.close());
-  assert.equal((await h.projects.create(input, 'request-1')).projectId, 'request-1');
-  assert.equal((await h.projects.create(input, 'request-1')).projectId, 'request-1');
+  const first = await h.projects.create(input, 'request-1');
+  const repeat = await h.projects.create(input, 'request-1');
+  assert.equal(first.projectId, 'request-1');
+  assert.equal(repeat.projectId, 'request-1');
+  // The repeat must name the same conversation, or the caller opens nothing.
+  assert.ok(first.appSessionId);
+  assert.equal(repeat.appSessionId, first.appSessionId);
   assert.equal(h.launched.length, 1);
 });
 
