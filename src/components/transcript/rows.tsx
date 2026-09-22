@@ -531,6 +531,7 @@ export function renderToolEvents(
               command={command}
               output={result?.text}
               error={isError}
+              interrupted={interrupted}
               running={running}
             />
           ) : (

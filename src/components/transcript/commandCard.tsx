@@ -28,11 +28,13 @@ export function ToolCallCard({
   heading,
   output,
   error = false,
+  interrupted = false,
   running = false,
 }: {
   heading: React.ReactNode;
   output?: string;
   error?: boolean;
+  interrupted?: boolean;
   running?: boolean;
 }) {
   const out = output ? stripAnsi(output).trimEnd() : '';
@@ -48,6 +50,7 @@ export function ToolCallCard({
       <div className="px-3.5 py-2.5 font-mono text-[12px] leading-[1.6]">
         {heading}
         {running && <span className="shimmer-text text-[13px] font-medium">Running</span>}
+        {interrupted && <InterruptedTag />}
         {out && (
           <pre
             className="mt-2 pt-2 border-t border-droid-border/60 max-h-56 overflow-auto whitespace-pre-wrap text-[12px] leading-[1.55] break-words text-droid-text-muted"
@@ -65,11 +68,13 @@ export function CommandCard({
   command,
   output,
   error = false,
+  interrupted = false,
   running = false,
 }: {
   command: string;
   output?: string;
   error?: boolean;
+  interrupted?: boolean;
   running?: boolean;
 }) {
   const alive = useCommandStillRunning(command);
@@ -88,6 +93,7 @@ export function CommandCard({
       }
       output={output}
       error={error}
+      interrupted={interrupted}
       running={running || alive}
     />
   );
