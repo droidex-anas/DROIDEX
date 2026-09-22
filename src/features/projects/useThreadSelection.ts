@@ -31,7 +31,7 @@ export function useThreadSelection(owner: SessionSummary | undefined) {
     // full autonomy; a thread it spawns can never exceed what it is set to.
     autonomy: owner?.autonomy ?? 'high',
   }));
-  return { value, setValue, catalog: selectionCatalog(value, statuses) };
+  return { value, setValue, statuses, catalog: selectionCatalog(value, statuses) };
 }
 
 export function selectionCatalog(value: ThreadSelection, statuses: ProviderStatus[]) {

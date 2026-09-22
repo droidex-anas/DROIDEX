@@ -5,26 +5,29 @@ import { Popover } from '../../components/environment/Popover';
 import { ModelIcon, providerOf } from '../../components/ModelIcon';
 import AutonomySelector from '../../components/AutonomySelector';
 import { reasoningEffortLabel } from '../../lib/reasoningEffort';
-import ProviderPicker from '../providers/ProviderPicker';
+import HarnessSegments from '../providers/HarnessSegments';
+import type { ProviderStatus } from '../../types/bridge';
 import type { ThreadCatalog, ThreadSelection } from './useThreadSelection';
 
-/* What a project's lead will run with. The model control is the app's own
-   catalog list in the app's own popover — the same rows, search and effort
-   levels the composer offers — because a second, native picker would neither
-   match the app nor show a harness's real catalog. */
+/* What a project's lead will run with: the app's own catalog list in the app's
+   own popover — the same harness segments, rows, search and effort levels the
+   composer offers — because a second, native picker would neither match the app
+   nor show a harness's real catalog. The harness sits above the models it
+   decides, as it does in the composer. */
 
 export function ThreadSettings({
   value,
   catalog,
+  statuses,
   disabled,
   onChange,
 }: {
   value: ThreadSelection;
   catalog: ThreadCatalog;
+  statuses: ProviderStatus[];
   disabled: boolean;
   onChange: (selection: ThreadSelection) => void;
 }) {
-  const [providerOpen, setProviderOpen] = useState(false);
   const [modelOpen, setModelOpen] = useState(false);
   const [query, setQuery] = useState('');
   const modelRef = useRef<HTMLButtonElement>(null);
@@ -46,15 +49,6 @@ export function ThreadSettings({
 
   return (
     <div className="flex min-w-0 items-center gap-1.5">
-      <ProviderPicker
-        value={value.provider}
-        locked={disabled}
-        open={providerOpen}
-        onOpenChange={setProviderOpen}
-        onSelect={(provider) => {
-          onChange({ ...value, provider, modelId: '', reasoning: undefined });
-        }}
-      />
       <button
         ref={modelRef}
         type="button"
@@ -85,6 +79,14 @@ export function ThreadSettings({
         width={320}
         label="Choose a model"
       >
+        <HarnessSegments
+          provider={value.provider}
+          statuses={statuses}
+          locked={disabled}
+          onSelect={(provider) => {
+            onChange({ ...value, provider, modelId: '', reasoning: undefined });
+          }}
+        />
         <div className="px-3 pb-2 pt-3">
           <div className="flex h-9 items-center gap-2 rounded-lg border border-droid-border bg-droid-bg/60 px-3 transition-colors focus-within:border-droid-border-hover">
             <Search className="h-3.5 w-3.5 shrink-0 text-droid-text-muted" />
@@ -101,7 +103,6 @@ export function ThreadSettings({
         </div>
         <ModelCatalogList
           models={models}
-          defaultModel={catalog.defaultModel}
           hasRealModels={catalog.models.length > 0}
           provider={value.provider}
           selectedModelId={value.modelId || undefined}
@@ -111,7 +112,7 @@ export function ThreadSettings({
           reasoningLocked={false}
           showReasoning={catalog.efforts.length > 0}
           onSelectModel={(modelId) => {
-            onChange({ ...value, modelId: modelId ?? '', reasoning: undefined });
+            onChange({ ...value, modelId, reasoning: undefined });
             setModelOpen(false);
             setQuery('');
           }}

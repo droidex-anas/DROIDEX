@@ -122,6 +122,7 @@ export function NewProjectForm({
             <ThreadSettings
               value={selection.value}
               catalog={selection.catalog}
+              statuses={selection.statuses}
               disabled={pending}
               onChange={selection.setValue}
             />
