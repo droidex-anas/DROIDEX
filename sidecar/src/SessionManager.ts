@@ -1101,6 +1101,11 @@ export class SessionManager {
     return this.registry.resolveSummary(appSessionId);
   }
 
+  /** Whether this conversation is open right now, rather than merely known. */
+  isSessionLive(appSessionId: string): boolean {
+    return this.registry.getLive(appSessionId) !== undefined;
+  }
+
   /**
    * Answers a question a session is blocked on, for callers that must know
    * whether it landed: false when the question was already settled elsewhere.
