@@ -767,7 +767,9 @@ export default function ChatView({
       {activeSession ? (
         <ChatHeader
           title={
-            origin?.projectTitle ??
+            // A child session's breadcrumb walks back to this thread, not to
+            // the project, so only the thread's own crumb carries the project.
+            (viewingChildSession ? undefined : origin?.projectTitle) ??
             chatDisplayTitle(activeSession, state.chatMetadata[activeSession.appSessionId])
           }
           live={live}
