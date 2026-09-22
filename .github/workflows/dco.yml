@@ -1,0 +1,51 @@
+name: DCO
+
+on:
+  pull_request:
+    types: [opened, reopened, synchronize, ready_for_review]
+
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  signed-off:
+    name: Developer Certificate of Origin
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      # This job always runs so it can be a required status check. A skipped
+      # job never reports a result, which would block every maintainer PR.
+      - name: Verify every commit carries a sign-off
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          PR_AUTHOR: ${{ github.event.pull_request.user.login }}
+          REPO_OWNER: ${{ github.repository_owner }}
+        run: |
+          set -euo pipefail
+
+          if [[ "$PR_AUTHOR" == "$REPO_OWNER" || "$PR_AUTHOR" == 'evilfps' ]]; then
+            echo "Maintainer pull request. Sign-off is not required."
+            exit 0
+          fi
+
+          unsigned=$(gh api --paginate "repos/$REPO/pulls/$PR_NUMBER/commits" \
+            --jq '.[]
+              | select(.commit.message | split("\n") | any(test("^Signed-off-by: .+ <.+@.+>")) | not)
+              | "  \(.sha[0:8])  \(.commit.message | split("\n")[0])"')
+
+          if [[ -n "$unsigned" ]]; then
+            echo 'These commits are missing a Developer Certificate of Origin sign-off:' >&2
+            echo "$unsigned" >&2
+            echo >&2
+            echo 'Sign off by committing with -s, then force-push:' >&2
+            echo '  git rebase --signoff main' >&2
+            echo '  git push --force-with-lease' >&2
+            echo >&2
+            echo 'See CONTRIBUTING.md and https://developercertificate.org/.' >&2
+            exit 1
+          fi
+
+          echo 'All commits are signed off.'

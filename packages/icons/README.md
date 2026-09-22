@@ -133,7 +133,7 @@ its HTML renderer and catalog live in `tools/`.
 
 ## License
 
-The repository's [DROIDEX Proprietary Source-Available License](./LICENSE)
-applies. Source availability does **not** grant third-party reuse, production,
-hosting, or redistribution rights. Those uses require the copyright holder's
-prior written permission. This branch does not change the license.
+The repository's [Apache License 2.0](./LICENSE) applies. You may reuse
+these icons under its terms, which include keeping the attribution notices and
+marking files you changed. The DROIDEX name and logo are not covered by the
+license; see [TRADEMARKS.md](../../TRADEMARKS.md).
