@@ -104,7 +104,9 @@ function createUsageAnalytics(options) {
         site: config.site,
         version: app.getVersion(),
         installationId: record.installationId,
-        firstLaunch: record.created && !record.firstLaunchReportedAt,
+        // Until the report is recorded, every launch retries it, including launches
+        // after one that minted the ID and quit before recording.
+        firstLaunch: !record.firstLaunchReportedAt,
         installOrigin: record.origin,
         context: buildContext(app, config, options),
       };
@@ -115,10 +117,9 @@ function createUsageAnalytics(options) {
   }
 
   /**
-   * Records that `install_first_launch` was handed to the SDK, so a later
-   * launch of the same installation cannot report it a second time. The SDK
-   * sends on its own schedule; a first launch that quits before that send is
-   * not retried.
+   * Records that `install_first_launch` was handed to the SDK, so later
+   * launches stop reporting it. A launch that quits before this runs leaves the
+   * marker unset and the next launch reports it again.
    */
   async function markFirstLaunchReported() {
     try {
@@ -174,7 +175,6 @@ async function loadOrCreateInstallation(options) {
           typeof parsed.firstLaunchReportedAt === 'string'
             ? parsed.firstLaunchReportedAt
             : undefined,
-        created: false,
       };
     }
   } catch {
@@ -184,7 +184,6 @@ async function loadOrCreateInstallation(options) {
     installationId: options.randomUUID(),
     origin: (await hasExistingInstallMarkers(options)) ? 'existing_install' : 'new_install',
     createdAt: (options.now?.() ?? new Date()).toISOString(),
-    created: true,
   };
   await writeInstallation(options.fs, options.filePath, record);
   return record;

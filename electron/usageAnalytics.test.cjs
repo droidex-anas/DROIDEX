@@ -160,6 +160,15 @@ test('first launch is reported once per installation', async () => {
   assert.equal(relaunch.installationId, first.installationId);
 });
 
+test('a first launch that quits before recording its report retries next launch', async () => {
+  const fs = memoryFs();
+  const first = await createUsageAnalytics(options({ fs })).bootstrap();
+  // No markFirstLaunchReported: the app quit after minting the ID.
+  const relaunch = await createUsageAnalytics(options({ fs })).bootstrap();
+  assert.equal(relaunch.installationId, first.installationId);
+  assert.equal(relaunch.firstLaunch, true);
+});
+
 test('an existing user updating into an instrumented build is tagged as such', async () => {
   // Older builds already wrote these into userData.
   const fs = memoryFs({ [path.join(USER_DATA, 'diagnostics.json')]: '{}' });
