@@ -75,7 +75,9 @@ requests and user questions stay with the human.
 
 The Projects route owns its snapshot outside the streaming chat store and
 opens conversations through the normal chat/composer. This draft exposes app
-controls, not an agent-native tool transport. No Projects MCP server is added.
+controls, not an agent-native tool transport. The lead's own tools arrive the
+way the browser's and automations' do: an in-app MCP server, `droidex-threads`,
+started per session alongside them.
 See [Projects](projects.md) for current capabilities and limitations.
 
 ### Child runtime residency

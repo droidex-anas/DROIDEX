@@ -52,7 +52,6 @@ export function projectsPulse(
   signals: {
     streaming: (appSessionId: string) => boolean;
     blocked: (appSessionId: string) => boolean;
-    launching?: boolean;
   },
 ): ProjectsPulse {
   let attention = 0;
