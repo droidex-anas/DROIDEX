@@ -234,7 +234,7 @@ function createHarness(ordinarySummaries: SessionSummary[] = []) {
     hasActiveSettingsChanges: () => false,
     applyPendingSettingsToSummary: (item) => ({ ...item, ...projection }),
     applyPendingSessionSettings: (appSessionId) => applyPending(appSessionId),
-    runPrimaryTurn: async (live, prompt, _mentions, delivery) => {
+    runPrimaryTurn: async (live, { prompt, delivery }) => {
       if (delivery && !delivery.isCurrent()) return;
       for await (const event of live.session.stream(prompt)) {
         delivery?.accepted();

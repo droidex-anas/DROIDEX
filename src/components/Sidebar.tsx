@@ -53,6 +53,9 @@ export default function Sidebar({
   const state = useStoreSelector(
     (current) => ({
       activeAppSessionId: current.activeAppSessionId,
+      // A chat's own map of running agents, not the child sessions themselves:
+      // this one is rewritten only when an agent starts or stops.
+      agentsWorkingByParent: current.agentsWorkingByParent,
       chatMetadata: current.chatMetadata,
       draftChat: current.draftChat,
       earlierSessionsByCwd: current.earlierSessionsByCwd,
@@ -251,6 +254,7 @@ export default function Sidebar({
         active={state.activeAppSessionId === m.appSessionId}
         unread={isUnread(m)}
         running={sessionIsLive(m)}
+        agentsWorking={Boolean(state.agentsWorkingByParent[m.appSessionId])}
         activityStatus={status}
         detail={inbox ? reasonFor(m, status) || ACTIVITY_LABELS[status] : undefined}
         // The PR view already names the PR in its group header.

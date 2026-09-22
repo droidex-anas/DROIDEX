@@ -232,6 +232,7 @@ export interface AppState {
   transcriptViewportPinned: Partial<Record<string, boolean>>;
   progress: Record<string, ProgressEntry[]>;
   childSessions: Record<string, Record<string, ChildSessionInfo>>;
+  agentsWorkingByParent: Partial<Record<string, true>>;
   historyLoaded: Record<string, boolean>;
   // Cursor for the next older page of primary-session scrollback;
   // undefined/absent once the oldest compaction segment has been loaded.
@@ -683,6 +684,7 @@ export const initialState: AppState = {
   transcriptViewportPinned: {},
   progress: {},
   childSessions: {},
+  agentsWorkingByParent: {},
   historyLoaded: {},
   historyCursor: {},
   historyLoadingOlder: {},

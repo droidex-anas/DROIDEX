@@ -123,6 +123,9 @@ export interface ParentChildSessions {
   generation: number;
   lease: ChildParentLease;
   children: Map<string, ChildSessionState>;
+  // Agents that have settled since this parent was last told about a finished
+  // wave. Emptied when the wave is reported, so no agent is carried twice.
+  settledSinceWake: Set<string>;
   pendingSpawns: Map<string, ChildSpawnObservation>;
   openAttempts: Map<string, ChildOpenAttempt>;
   reservedOpenSlots: Set<string>;
@@ -223,10 +226,11 @@ export function applyObservedChild(
   spawnLink: PersistedChildSpawnLink | undefined,
   providerSessionId: string,
   now: number,
-): { previousPrompt: string | undefined } {
+): { previousPrompt: string | undefined; previousStatus: ChildStatus } {
   if (child.providerSessionId && child.providerSessionId !== providerSessionId)
     child.retiredProviderSessionIds.add(child.providerSessionId);
   const previousPrompt = child.prompt;
+  const previousStatus = child.status;
   if (child.role !== observed.role) {
     child.role = observed.role;
     child.configurationGeneration += 1;
@@ -256,7 +260,7 @@ export function applyObservedChild(
   child.tokensUsed = observed.tokensUsed ?? child.tokensUsed;
   child.transcriptAvailable = observed.transcriptAvailable ?? true;
   child.startedAt ??= now;
-  return { previousPrompt };
+  return { previousPrompt, previousStatus };
 }
 
 function applyChildLaunchSettings(child: ChildSessionState, settings: ChildSettings): void {

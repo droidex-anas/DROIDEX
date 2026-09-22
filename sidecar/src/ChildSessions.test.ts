@@ -189,6 +189,16 @@ function createHarness(
         return Promise.reject(new Error('limit lookup failed'));
       },
     },
+    onAgentWaveSettled: (parentAppSessionId, agents) => {
+      calls.push({
+        target: 'protocol',
+        method: 'agents.waveSettled',
+        args: [
+          parentAppSessionId,
+          agents.map((agent) => `${agent.name}:${agent.status}`).join(','),
+        ],
+      });
+    },
     resolveDefaultSettings: () => ({
       modelId: 'model-default',
       reasoningEffort: ReasoningEffort.Low,

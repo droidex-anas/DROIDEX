@@ -34,6 +34,7 @@ function makeProps(overrides: Partial<SessionRowProps> = {}): SessionRowProps {
     active: false,
     unread: false,
     running: false,
+    agentsWorking: false,
     attention: null,
     activityStatus: 'ready',
     renaming: false,
@@ -181,7 +182,7 @@ test('SessionRow: a running row shows the spinner alongside the timestamp', () =
   assert.match(html, /aria-label="working"/);
   assert.match(
     html,
-    /w-3 h-3 rounded-full border-\[1\.5px\] border-droid-text border-r-transparent/,
+    /w-3 h-3 rounded-full border-\[1\.5px\] border-current border-r-transparent transition-colors duration-300 text-droid-text/,
   );
   assert.match(html, />now</);
 });
@@ -195,7 +196,7 @@ test('SessionRow: an ultracode session spins in the ultra colour with the effort
       session: makeSession({ provider: 'claude', reasoningEffort: 'ultra' }),
     }),
   );
-  assert.match(html, /text-droid-ultra border-current/);
+  assert.match(html, /border-current [^"]*text-droid-ultra/);
   assert.match(html, /effort-dot-ultra/);
   assert.match(html, /aria-label="working on ultracode"/);
 
@@ -204,6 +205,28 @@ test('SessionRow: an ultracode session spins in the ultra colour with the effort
   );
   assert.doesNotMatch(high, /droid-ultra/);
   assert.match(high, /aria-label="working"/);
+});
+
+test('SessionRow: a sleeping chat whose agents work keeps the ultra mark', () => {
+  // The main agent idles through a wave and wakes when it finishes, so the row
+  // has to stay alive without claiming the chat's own turn is running.
+  const html = render(makeProps({ running: false, agentsWorking: true, now: 60_000 }));
+  assert.match(html, /motion-safe:animate-spin-slow/);
+  assert.match(html, /border-current [^"]*text-droid-ultra/);
+  assert.match(html, /effort-dot-ultra/);
+  assert.match(html, /aria-label="agents working"/);
+
+  // Its own turn back in flight is the chat working, not its agents.
+  const live = render(makeProps({ running: true, agentsWorking: true }));
+  assert.match(live, /aria-label="working"/);
+});
+
+test('areSessionRowPropsEqual: an agents-working change is not equal', () => {
+  const props = makeProps();
+  assert.equal(
+    areSessionRowPropsEqual({ ...props, agentsWorking: false }, { ...props, agentsWorking: true }),
+    false,
+  );
 });
 
 test('SessionRow: attention replaces both the working spinner and timestamp', () => {

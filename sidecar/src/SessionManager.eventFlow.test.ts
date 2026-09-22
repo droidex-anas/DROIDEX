@@ -564,6 +564,80 @@ test('background Task completion notification settles a child without TaskOutput
       ),
       true,
     );
+
+    // The parent sat idle through the agent's whole run and nothing would have
+    // told it the agent finished, so the app owes it one turn carrying the
+    // result — as a quiet status row, because nobody typed the prompt.
+    await provider.waitForPrompts(3);
+    await context.waitForIdle();
+    assert.deepEqual(provider.prompts.slice(2), [
+      [
+        'The agents you started have finished while this chat was idle.',
+        '- worker-2: completed',
+        'Continue from these results.',
+      ].join('\n'),
+    ]);
+    const appended = context.events.filter((event) => event.type === 'event.appended');
+    assert.deepEqual(
+      appended.filter((event) => event.event.kind === 'status').map((event) => event.event.text),
+      ['Agents finished; continuing'],
+    );
+    assert.equal(
+      appended.some((event) => event.event.role === 'primary' && event.event.author === 'user'),
+      false,
+    );
+  } finally {
+    await context.dispose();
+  }
+});
+
+test('an agent that settles inside the parent turn does not wake it a second time', async () => {
+  const context = createSessionManagerTestContext();
+  try {
+    await context.create({
+      sessionPurpose: 'chat',
+      clientRef: 'event-foreground-task-completion',
+      title: 'Foreground task completion',
+      goal: 'initial',
+      interactionMode: 'auto',
+      autonomy: 'low',
+    });
+    const provider = context.provider.session('provider-1');
+    await provider.waitForPrompts(1);
+    await context.waitForIdle();
+    context.history.seedSessionLaunchSettings('provider-child-foreground', {
+      modelId: 'custom:glm-5.2',
+    });
+
+    provider.queueStreamEvents([
+      {
+        type: 'tool_call',
+        toolUse: {
+          type: 'tool_use',
+          id: 'task-foreground',
+          name: 'Task',
+          input: { subagent_type: 'worker-2', description: 'foreground work' },
+        },
+      },
+      {
+        type: 'tool_result',
+        toolName: 'Task',
+        toolUseId: 'task-foreground',
+        content: 'session_id: provider-child-foreground\n\ndone',
+        isError: false,
+      },
+    ]);
+    await context.handle({
+      type: 'session.send',
+      appSessionId: 'provider-1',
+      text: 'run worker in this turn',
+    });
+    await context.waitForIdle();
+
+    // The agent ran and finished inside the parent's own turn, which read its
+    // result: a wake would only repeat what the parent already has.
+    assert.equal(context.history.childSessions('provider-1')[0]?.status, 'completed');
+    assert.deepEqual(provider.prompts, ['initial', 'run worker in this turn']);
   } finally {
     await context.dispose();
   }

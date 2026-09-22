@@ -131,3 +131,24 @@ test('closing a parent preserves historical parent and child discovery but clear
     false,
   );
 });
+
+test('a chat is marked as having agents working only while one is running', () => {
+  const upsert = (child: ChildSessionSummary) =>
+    ({ type: 'SESSION_CHILD', child, runtimeAvailable: false, runtimeGeneration: 1 }) as const;
+  const running: ChildSessionSummary = { ...child('parent', 'child'), status: 'running' };
+
+  const started = reducer(initialState, upsert(running));
+  assert.deepEqual(started.agentsWorkingByParent, { parent: true });
+
+  // An activity preview and a token tick arrive as full child upserts; neither
+  // crosses the status, so the sidebar's map must stay the same object.
+  const ticked = reducer(
+    started,
+    upsert({ ...running, activity: { preview: 'reading the sidecar' }, tokensUsed: 120 }),
+  );
+  assert.equal(ticked.agentsWorkingByParent, started.agentsWorkingByParent);
+  assert.notEqual(ticked.childSessions.parent, started.childSessions.parent);
+
+  const settled = reducer(ticked, upsert({ ...running, status: 'completed' }));
+  assert.deepEqual(settled.agentsWorkingByParent, {});
+});

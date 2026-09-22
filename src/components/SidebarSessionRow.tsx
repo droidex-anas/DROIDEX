@@ -43,6 +43,8 @@ export interface SessionRowProps {
   active: boolean;
   unread: boolean;
   running: boolean;
+  // The chat's own turn is idle but at least one of its agents is still working.
+  agentsWorking: boolean;
   attention: SessionAttentionKind | null;
   activityStatus: SessionActivityStatus;
   // Activity view only: a second line saying why the chat is listed. When set
@@ -70,6 +72,7 @@ export function areSessionRowPropsEqual(prev: SessionRowProps, next: SessionRowP
     prev.active === next.active &&
     prev.unread === next.unread &&
     prev.running === next.running &&
+    prev.agentsWorking === next.agentsWorking &&
     prev.attention === next.attention &&
     prev.activityStatus === next.activityStatus &&
     prev.detail === next.detail &&
@@ -93,6 +96,7 @@ export const SessionRow = memo(function SessionRow({
   active,
   unread,
   running,
+  agentsWorking,
   attention,
   activityStatus,
   detail,
@@ -124,11 +128,14 @@ export const SessionRow = memo(function SessionRow({
   const side = detail ? 'h-5' : '';
   // Droid is the default runtime, so only the other providers are marked.
   const providerMark = session.provider === 'droid' ? null : PROVIDER_MARKS[session.provider];
-  const working = running && !attention;
-  // On the top level the main agent can sit idle while its agents work, so a
-  // working chat must read as more than "running". Same purple and shimmer the
-  // effort control gives the level, in the harness's own word.
-  const ultra = working && session.reasoningEffort === 'ultra';
+  // The main agent sleeps through a wave of agents and wakes when it finishes,
+  // so a chat with no turn of its own in flight can still be working. It keeps
+  // the spinning mark and says what is true when the label is read out.
+  const agentsAlone = !running && agentsWorking;
+  const working = (running || agentsAlone) && !attention;
+  // Same purple and shimmer the effort control gives the deepest level: an
+  // ultra turn, and a wave of agents, which is where that level does its work.
+  const ultra = working && (agentsAlone || session.reasoningEffort === 'ultra');
 
   // Return focus to the row when the inline editor closes, unless the user
   // already moved focus elsewhere (e.g. clicked another row).
@@ -228,11 +235,16 @@ export const SessionRow = memo(function SessionRow({
         >
           {working ? (
             <span
-              // The ultra ring borrows the existing text token rather than a
-              // border one: the initial CSS sits a few bytes under its budget.
-              className={`w-3 h-3 rounded-full border-[1.5px] ${ultra ? 'text-droid-ultra border-current' : 'border-droid-text'} border-r-transparent motion-safe:animate-spin-slow`}
+              // The ring takes its colour from the text token so the purple can
+              // ease in and out as the main agent sleeps and wakes, and because
+              // the initial CSS sits a few bytes under its budget.
+              className={`w-3 h-3 rounded-full border-[1.5px] border-current border-r-transparent transition-colors duration-300 ${ultra ? 'text-droid-ultra' : 'text-droid-text'} motion-safe:animate-spin-slow`}
               aria-label={
-                ultra ? `working on ${reasoningEffortLabel('ultra', session.provider)}` : 'working'
+                agentsAlone
+                  ? 'agents working'
+                  : ultra
+                    ? `working on ${reasoningEffortLabel('ultra', session.provider)}`
+                    : 'working'
               }
             />
           ) : inbox ? (
