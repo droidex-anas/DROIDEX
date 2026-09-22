@@ -458,6 +458,7 @@ type Action =
   | { type: 'SESSION_PROCESSES'; appSessionId: string; processes: AgentProcess[] }
   | { type: 'SESSIONS_PROCESSES'; processes: Record<string, AgentProcess[]> }
   | { type: 'PROJECTS_SNAPSHOT'; projects: ProjectView[] }
+  | { type: 'PROJECTS_UNAVAILABLE' }
   // App-level chat organization (rename/pin/archive/delete); see lib/chatMetadata.
   // A blank RENAME_CHAT title clears the override back to the generated title.
   | { type: 'LINK_CHATS_PR'; appSessionIds: readonly string[]; cwd: string; pr: ChatPullRequest }
@@ -1083,6 +1084,9 @@ function baseReducer(state: AppState, action: Action): AppState {
 
     case 'PROJECTS_SNAPSHOT':
       return { ...state, projects: action.projects, projectsLoaded: true };
+
+    case 'PROJECTS_UNAVAILABLE':
+      return state.projectsLoaded ? state : { ...state, projectsLoaded: true };
 
     case 'SESSIONS_PROCESSES':
       return { ...state, agentProcesses: action.processes };
@@ -2437,6 +2441,9 @@ export function adaptEvent(ev: ServerEvent): Action | null {
           ? { type: 'MODEL_UPDATE_SETTLED', appSessionId: ev.appSessionId, requestId: ev.requestId }
           : null;
       }
+      // The chat list waits to hear about projects before it paints, so a
+      // runtime that cannot answer has to count as having answered.
+      if (ev.code?.startsWith('project.')) return { type: 'PROJECTS_UNAVAILABLE' };
       if (ev.code === 'session.create_failed' && ev.clientRef) {
         return {
           type: 'SESSION_CREATE_FAILED',

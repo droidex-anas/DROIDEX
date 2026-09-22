@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { initialState, reducer, type AppState } from '../../hooks/useStore';
+import { adaptEvent, initialState, reducer, type AppState } from '../../hooks/useStore';
 import { serverWireMessage } from '../../lib/bridgeWireValidation';
 import type { SessionSummary } from '../../types/bridge';
 import type { ProjectView } from './types';
@@ -117,4 +117,20 @@ test('a wake carrying several reports renders one card each, paragraphs intact',
   assert.equal(reports?.[1]?.lead, 'Draft the notes needs a decision');
   assert.match(reports?.[1]?.body ?? '', /- SQLite/);
   assert.equal(threadReports('An ordinary user message'), null);
+});
+
+test('a runtime that cannot answer for projects still lets the chat list paint', () => {
+  // The list holds its rows until it knows which sessions are threads. A
+  // ledger it cannot read is an answer too, or the list would never draw.
+  assert.equal(initialState.projectsLoaded, false);
+  const failed = adaptEvent({
+    type: 'error',
+    code: 'project.load_failed',
+    message: 'Project ledger exceeds 8 MiB.',
+  });
+  assert.ok(failed);
+  assert.equal(reducer(initialState, failed).projectsLoaded, true);
+  const answered = adaptEvent({ type: 'projects.snapshot', projects: [project] });
+  assert.ok(answered);
+  assert.equal(reducer(initialState, answered).projectsLoaded, true);
 });

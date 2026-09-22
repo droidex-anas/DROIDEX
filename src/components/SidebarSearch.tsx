@@ -39,8 +39,10 @@ export default function SidebarSearch({
       sessionOrder: current.sessionOrder,
       sessions: current.sessions,
       projectThreads: projectThreadIds(current.projects),
+      projectsKnown: current.projectsLoaded,
     }),
     (a, b) =>
+      a.projectsKnown === b.projectsKnown &&
       a.chatMetadata === b.chatMetadata &&
       a.sessionOrder === b.sessionOrder &&
       a.sessions === b.sessions &&
@@ -53,6 +55,8 @@ export default function SidebarSearch({
     useSidebarContentSearch(query);
 
   const entries = useMemo<SearchEntry[]>(() => {
+    // A thread cannot be told from a chat until the project graph is known.
+    if (!state.projectsKnown) return [];
     const sessions = state.sessionOrder
       .map((id) => state.sessions[id])
       .filter((s): s is SessionSummary => Boolean(s))
@@ -83,6 +87,7 @@ export default function SidebarSearch({
     state.sessions,
     state.chatMetadata,
     state.projectThreads,
+    state.projectsKnown,
     contentResults,
   ]);
 
