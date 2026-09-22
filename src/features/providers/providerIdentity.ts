@@ -36,7 +36,8 @@ const READINESS_REASONS: Record<Exclude<ProviderReadiness, 'ready'>, string> = {
   error: 'Unavailable',
 };
 
-// Why a provider cannot be picked, for the picker's secondary line. A ready
+// Why a provider cannot be picked, for the picker's secondary line and for the
+// project form, which says the same thing before a project is started. A ready
 // provider needs no explanation and a missing status means the sidecar has not
 // reported yet.
 export function providerUnavailableReason(status: ProviderStatus | undefined): string | null {
