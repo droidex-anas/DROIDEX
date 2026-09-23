@@ -52,6 +52,7 @@ export default function ModelSliderPopover({ onClose }: { onClose: () => void })
     setQuery,
     cat,
     setCat,
+    catOptions,
     filterOpen,
     setFilterOpen,
     provider,
@@ -59,31 +60,29 @@ export default function ModelSliderPopover({ onClose }: { onClose: () => void })
     showHarness,
     harnessLocked,
     selectHarness,
-    source,
     models,
-    catCounts,
     hasRealModels,
     showsReasoning,
-    defaultModel,
     resolvedModelId,
+    selectedRowId,
     selectedLabel,
     activeModel,
     effReasoning,
     updateModel,
     updateReasoning,
   } = useModelPicker({ singleAgent: true });
-  const [view, setView] = useState<'list' | 'effort'>('list');
-  const ref = useRef<HTMLDivElement>(null);
-  const sliderRef = useRef<EffortSliderElement>(null);
-  const [card, setCard] = useState<HTMLDivElement | null>(null);
-  const { width, maxHeight, tailRight } = useTriggerAnchor(ref, PREFERRED_WIDTH_PX);
-
   const efforts = effortsFor(activeModel, effReasoning);
   const canDrill =
     activeModel !== undefined &&
     showsReasoning &&
     offersReasoningEffort(activeModel) &&
     efforts.length > 1;
+  // Reopening the chip is usually about effort; the back button reaches the list.
+  const [view, setView] = useState<'list' | 'effort'>(canDrill ? 'effort' : 'list');
+  const ref = useRef<HTMLDivElement>(null);
+  const sliderRef = useRef<EffortSliderElement>(null);
+  const [card, setCard] = useState<HTMLDivElement | null>(null);
+  const { width, maxHeight, tailRight } = useTriggerAnchor(ref, PREFERRED_WIDTH_PX);
 
   const levels = useMemo<EffortSliderLevel[]>(
     () => efforts.map((effort) => ({ value: effort, label: effortDisplay(effort, provider) })),
@@ -145,14 +144,14 @@ export default function ModelSliderPopover({ onClose }: { onClose: () => void })
       }
       if (e.key === 'ArrowLeft') return;
       e.preventDefault();
-      const step = stepModel(models, resolvedModelId, e.key === 'ArrowDown');
-      if (step) updateModel(step.modelId);
+      const next = stepModel(models, selectedRowId, e.key === 'ArrowDown');
+      if (next) updateModel(next);
     };
     window.addEventListener('keydown', onKey);
     return () => {
       window.removeEventListener('keydown', onKey);
     };
-  }, [view, filterOpen, canDrill, models, resolvedModelId, updateModel, onClose]);
+  }, [view, filterOpen, canDrill, models, selectedRowId, updateModel, onClose]);
 
   return (
     <motion.div
@@ -238,25 +237,28 @@ export default function ModelSliderPopover({ onClose }: { onClose: () => void })
               )}
 
               <div className="flex min-h-0 flex-col px-3 pt-3 pb-3">
-                <div className="flex h-8 shrink-0 items-center gap-2 rounded-lg bg-droid-bg/50 px-3">
-                  <Search className="h-3.5 w-3.5 shrink-0 text-droid-text-muted" />
-                  <input
-                    autoFocus
-                    value={query}
-                    onChange={(e) => {
-                      setQuery(e.target.value);
-                    }}
-                    placeholder="Search models"
-                    className="min-w-0 flex-1 bg-transparent text-[13px] text-droid-text placeholder-droid-text-muted focus:outline-none"
-                  />
-                  <ModelCategoryFilter
-                    cat={cat}
-                    total={source.length}
-                    counts={catCounts}
-                    open={filterOpen}
-                    onOpenChange={setFilterOpen}
-                    onSelect={setCat}
-                  />
+                <div className="flex shrink-0 items-center gap-1.5">
+                  <div className="flex h-8 min-w-0 flex-1 items-center gap-2 rounded-lg bg-droid-bg/50 px-3">
+                    <Search className="h-3.5 w-3.5 shrink-0 text-droid-text-muted" />
+                    <input
+                      autoFocus
+                      value={query}
+                      onChange={(e) => {
+                        setQuery(e.target.value);
+                      }}
+                      placeholder="Search models"
+                      className="min-w-0 flex-1 bg-transparent text-[13px] text-droid-text placeholder-droid-text-muted focus:outline-none"
+                    />
+                  </div>
+                  {catOptions.length > 0 && (
+                    <ModelCategoryFilter
+                      options={catOptions}
+                      selected={cat}
+                      open={filterOpen}
+                      onOpenChange={setFilterOpen}
+                      onSelect={setCat}
+                    />
+                  )}
                 </div>
 
                 <div className="px-0.5 pt-2.5 pb-1 text-[11px] text-droid-text-muted">
@@ -265,9 +267,8 @@ export default function ModelSliderPopover({ onClose }: { onClose: () => void })
 
                 <ModelSliderCatalogList
                   models={models}
-                  defaultModel={defaultModel}
                   hasRealModels={hasRealModels}
-                  selectedModelId={resolvedModelId}
+                  selectedModelId={selectedRowId}
                   query={query}
                   drillLabel={drillLabel}
                   drillUltra={canDrill && shownEffort === 'ultra'}

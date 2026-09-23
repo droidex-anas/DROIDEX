@@ -46,6 +46,7 @@ export default function ModelSelectorPopover({
     setQuery,
     cat,
     setCat,
+    catOptions,
     filterOpen,
     setFilterOpen,
     provider,
@@ -56,13 +57,10 @@ export default function ModelSelectorPopover({
     childMode,
     childReady,
     disabled,
-    source,
     models,
-    catCounts,
     hasRealModels,
     showsReasoning,
-    defaultModel,
-    resolvedModelId,
+    selectedRowId,
     selectedLabel,
     activeModel,
     effReasoning,
@@ -105,8 +103,8 @@ export default function ModelSelectorPopover({
       e.preventDefault();
       if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
         if (childTarget && !childReady) return;
-        const step = stepModel(models, resolvedModelId, e.key === 'ArrowDown');
-        if (step) updateModel(step.modelId);
+        const next = stepModel(models, selectedRowId, e.key === 'ArrowDown');
+        if (next) updateModel(next);
         return;
       }
       const efforts = effortsFor(activeModel, effReasoning);
@@ -121,7 +119,7 @@ export default function ModelSelectorPopover({
     activeModel,
     childReady,
     childTarget,
-    resolvedModelId,
+    selectedRowId,
     effReasoning,
     filterOpen,
     models,
@@ -200,34 +198,35 @@ export default function ModelSelectorPopover({
 
             {/* Model search + list */}
             <div className="flex min-h-0 flex-col px-2 pt-2 pb-2">
-              <div className="flex shrink-0 items-center gap-2 px-3 h-8 rounded-lg bg-droid-bg/50">
-                <Search className="w-3.5 h-3.5 text-droid-text-muted shrink-0" />
-                <input
-                  autoFocus
-                  value={query}
-                  onChange={(e) => {
-                    setQuery(e.target.value);
-                  }}
-                  placeholder="Search models"
-                  className="min-w-0 flex-1 bg-transparent text-[13px] text-droid-text placeholder-droid-text-muted focus:outline-none"
-                />
-
-                <ModelCategoryFilter
-                  cat={cat}
-                  total={source.length}
-                  counts={catCounts}
-                  open={filterOpen}
-                  onOpenChange={setFilterOpen}
-                  onSelect={setCat}
-                />
+              <div className="flex shrink-0 items-center gap-1.5">
+                <div className="flex h-8 min-w-0 flex-1 items-center gap-2 rounded-lg bg-droid-bg/50 px-3">
+                  <Search className="w-3.5 h-3.5 text-droid-text-muted shrink-0" />
+                  <input
+                    autoFocus
+                    value={query}
+                    onChange={(e) => {
+                      setQuery(e.target.value);
+                    }}
+                    placeholder="Search models"
+                    className="min-w-0 flex-1 bg-transparent text-[13px] text-droid-text placeholder-droid-text-muted focus:outline-none"
+                  />
+                </div>
+                {catOptions.length > 0 && (
+                  <ModelCategoryFilter
+                    options={catOptions}
+                    selected={cat}
+                    open={filterOpen}
+                    onOpenChange={setFilterOpen}
+                    onSelect={setCat}
+                  />
+                )}
               </div>
 
               <ModelCatalogList
                 models={models}
-                defaultModel={defaultModel}
                 hasRealModels={hasRealModels}
                 provider={provider}
-                selectedModelId={resolvedModelId}
+                selectedModelId={selectedRowId}
                 reasoning={effReasoning}
                 query={query}
                 onSelectModel={updateModel}

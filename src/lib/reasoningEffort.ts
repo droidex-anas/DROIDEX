@@ -76,6 +76,17 @@ export function reasoningForModelSwitch(
   return offersNone && currentReasoning !== undefined ? null : undefined;
 }
 
+// The saved effort a default keeps after its model changes: snapped to what the
+// new model runs, cleared when it runs none, otherwise unchanged.
+export function reasoningAfterModelSwitch(
+  model: ModelInfo | undefined,
+  currentReasoning: ReasoningEffort | undefined,
+): ReasoningEffort | undefined {
+  const next = reasoningForModelSwitch(model, currentReasoning);
+  if (next === null) return undefined;
+  return next ?? currentReasoning;
+}
+
 // The top rung is the same idea on both harnesses but not the same word: Claude
 // Code calls it ultracode, Codex calls it Ultra. Every surface that names a
 // level goes through here, so the chip, the picker rows, and the context panel

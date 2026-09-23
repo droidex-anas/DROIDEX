@@ -1,6 +1,6 @@
 import { sanitizePersistedPrWorkspace } from '../features/pull-requests/lib/prWorkspaceCwd';
 import { sanitizePersistedPrBacklog } from '../features/pull-requests/lib/prBacklog';
-import type { BrowserState, ModelInfo, ReasoningEffort } from '../types/bridge';
+import type { BrowserState, ModelInfo, ProviderKind, ReasoningEffort } from '../types/bridge';
 import { isReasoningEffort } from '../lib/reasoningEffort';
 import { DIFF_SCOPES, type DiffScope } from '../types/vcs';
 import type { ImagePasteQuality } from '../lib/images';
@@ -21,7 +21,8 @@ import {
   persistBrowsers,
 } from './persistedBrowserSnapshot';
 
-export type AgentKind = 'primary' | 'worker' | 'validator';
+export type MissionRole = 'worker' | 'validator';
+export type AgentKind = 'primary' | MissionRole;
 export type LiveEnterBehavior = 'queue' | 'interrupt';
 export type DiffViewMode = 'unified' | 'split';
 export type ModelSelectorStyle = 'classic' | 'slider';
@@ -31,14 +32,67 @@ export interface AgentModelConfig {
   reasoning: ReasoningEffort;
 }
 
-export type AgentConfig = Record<AgentKind, AgentModelConfig>;
+export type AgentConfig = Record<MissionRole, AgentModelConfig>;
 
 const AGENT_CONFIG_STORAGE_KEY = 'droid-agent-config-v2';
 const defaultAgentConfig: AgentConfig = {
-  primary: { modelId: undefined, reasoning: 'high' },
   worker: { modelId: undefined, reasoning: 'medium' },
   validator: { modelId: undefined, reasoning: 'medium' },
 };
+
+// What a new chat on a harness starts with. An unset field defers to the
+// harness's own configured default; DROIDEX never writes that back to the CLI.
+export interface HarnessModel {
+  modelId?: string;
+  reasoning?: ReasoningEffort;
+}
+
+export type HarnessModels = Record<ProviderKind, HarnessModel>;
+
+const HARNESS_MODELS_STORAGE_KEY = 'droid-harness-models-v1';
+
+export function loadHarnessModels(): HarnessModels {
+  const models: HarnessModels = { droid: {}, claude: {}, codex: {} };
+  try {
+    const raw = getLocalStorage()?.getItem(HARNESS_MODELS_STORAGE_KEY);
+    if (!raw) return adoptLegacyPrimaryModel(models);
+    const parsed = JSON.parse(raw) as Partial<Record<ProviderKind, Partial<HarnessModel>>>;
+    for (const provider of Object.keys(models) as ProviderKind[]) {
+      const entry = parsed[provider];
+      if (typeof entry?.modelId === 'string' && entry.modelId) {
+        models[provider].modelId = entry.modelId;
+      }
+      if (isReasoningEffort(entry?.reasoning)) models[provider].reasoning = entry.reasoning;
+    }
+    return models;
+  } catch {
+    return models;
+  }
+}
+
+// A default model picked before per-harness defaults existed lives in the old
+// shared `primary` agent entry; it becomes Droid's default. Saved at once
+// because the next agent-config save drops `primary`, which also retires this
+// path after one launch. An effort saved without a model was the app's own
+// default, not a choice, so it stays behind.
+function adoptLegacyPrimaryModel(models: HarnessModels): HarnessModels {
+  const raw = getLocalStorage()?.getItem(AGENT_CONFIG_STORAGE_KEY);
+  if (!raw) return models;
+  const { primary } = JSON.parse(raw) as { primary?: Partial<AgentModelConfig> };
+  if (typeof primary?.modelId !== 'string' || !primary.modelId) return models;
+  const droid: HarnessModel = { modelId: primary.modelId };
+  if (isReasoningEffort(primary.reasoning)) droid.reasoning = primary.reasoning;
+  return saveHarnessModels({ ...models, droid });
+}
+
+export function saveHarnessModels(models: HarnessModels): HarnessModels {
+  try {
+    getLocalStorage()?.setItem(HARNESS_MODELS_STORAGE_KEY, JSON.stringify(models));
+  } catch {
+    /* ignore */
+  }
+  return models;
+}
 
 function getLocalStorage(): Storage | undefined {
   if (typeof window !== 'undefined') return window.localStorage;
@@ -52,9 +106,8 @@ export function loadAgentConfig(): AgentConfig {
     if (!storage) return defaultAgentConfig;
     const raw = storage.getItem(AGENT_CONFIG_STORAGE_KEY);
     if (!raw) return defaultAgentConfig;
-    const parsed = JSON.parse(raw) as Partial<Record<AgentKind, Partial<AgentModelConfig>>>;
+    const parsed = JSON.parse(raw) as Partial<Record<MissionRole, Partial<AgentModelConfig>>>;
     return {
-      primary: readAgentConfig(parsed.primary, defaultAgentConfig.primary),
       worker: readAgentConfig(parsed.worker, defaultAgentConfig.worker),
       validator: readAgentConfig(parsed.validator, defaultAgentConfig.validator),
     };
@@ -386,7 +439,6 @@ export function saveSessionLastSeen(map: Record<string, number>): void {
 export function sanitizeAgentConfig(config: AgentConfig, models: ModelInfo[]): AgentConfig {
   if (models.length === 0) return config;
   return {
-    primary: sanitizeAgent(config.primary, models),
     worker: sanitizeAgent(config.worker, models),
     validator: sanitizeAgent(config.validator, models),
   };

@@ -3,12 +3,7 @@ import test from 'node:test';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 
-import {
-  initialState,
-  StaticStoreProvider,
-  StoreProvider,
-  type AppState,
-} from '../hooks/useStore.js';
+import { initialState, StaticStoreProvider, type AppState } from '../hooks/useStore.js';
 import type { ExactChildSettingsTarget } from '../lib/exactChildSettings.js';
 import type { ModelInfo } from '../types/bridge.js';
 import ModelSelectorPopover from './ModelSelectorPopover.js';
@@ -23,10 +18,21 @@ function renderTarget(readiness: ExactChildSettingsTarget['readiness']): string 
     reasoningEffort: 'high',
     readiness,
   };
+  const state: AppState = {
+    ...initialState,
+    models: [
+      {
+        id: 'validator-model',
+        displayName: 'Validator Model',
+        provider: 'factory',
+        supportedReasoningEfforts: ['low', 'high'],
+      },
+    ],
+  };
   return renderToStaticMarkup(
     createElement(
-      StoreProvider,
-      null,
+      StaticStoreProvider,
+      { state, dispatch: () => undefined },
       createElement(ModelSelectorPopover, {
         childTarget: target,
         onClose: () => undefined,
@@ -67,9 +73,10 @@ test('a dangling active session id keeps using the visible global defaults', () 
     activeAppSessionId: 'missing-session',
     sessions: {},
     models: [model],
-    agentConfig: {
-      ...initialState.agentConfig,
-      primary: { modelId: model.id, reasoning: 'low' },
+    draftProvider: 'droid',
+    harnessModels: {
+      ...initialState.harnessModels,
+      droid: { modelId: model.id, reasoning: 'low' },
     },
   };
   const html = renderToStaticMarkup(
@@ -89,6 +96,6 @@ test('a dangling active session id keeps using the visible global defaults', () 
   // The selected row shows the session's effort; the meter has one dot per supported effort.
   assert.match(html, /aria-selected="true"[\s\S]*?capitalize[^>]*>low<\/span>/);
   assert.equal((html.match(/aria-selected="true"/g) ?? []).length, 1);
-  assert.equal((html.match(/aria-selected="false"/g) ?? []).length, 1);
+  assert.equal((html.match(/aria-selected="false"/g) ?? []).length, 0);
   assert.equal((html.match(/w-2\.5/g) ?? []).length, 2);
 });

@@ -275,6 +275,25 @@ export interface ProviderStatus {
   items?: SkillInfo[];
 }
 
+// The harnesses whose CLI DROIDEX runs but does not ship: Claude Code and Codex.
+export type HarnessCliProvider = Exclude<ProviderKind, 'droid'>;
+// Where a harness CLI was installed from, read off its resolved binary. It
+// decides which updater owns the binary.
+export type HarnessInstallSource = 'homebrew' | 'npm' | 'native';
+
+export type HarnessCliState =
+  | { provider: HarnessCliProvider; installed: false }
+  | {
+      provider: HarnessCliProvider;
+      installed: true;
+      path: string;
+      source: HarnessInstallSource;
+      version?: string;
+      updating: boolean;
+      // Why the last update from the app failed; cleared by a successful one.
+      updateError?: string;
+    };
+
 export interface FactoryDefaultSettings {
   modelId?: string;
   reasoningEffort?: ReasoningEffort;
@@ -604,6 +623,8 @@ export type ClientCommand =
   | { type: 'env.detect' }
   | { type: 'cli.install'; channel: InstallChannel }
   | { type: 'cli.update'; channel?: InstallChannel }
+  | { type: 'harness.cli.check' }
+  | { type: 'harness.cli.update'; provider: HarnessCliProvider }
   | { type: 'catalog.models' }
   | { type: 'provider.refresh' }
   | { type: 'catalog.tools'; providerSessionId?: string }
@@ -656,6 +677,9 @@ export type ClientCommand =
       modelId?: string | null;
       // null clears the effort: the model chosen offers none.
       reasoningEffort?: ReasoningEffort | null;
+      // Echoed once the model/effort change settles, by
+      // `session.model_update_applied` or a `session.model_update_failed` error.
+      requestId?: string;
       autonomy?: Autonomy;
       interactionMode?: SessionInteractionMode;
     }
@@ -858,7 +882,16 @@ export type ServerEvent =
       line: string;
     }
   | { type: 'cli.install.done'; phase: 'install' | 'update'; ok: boolean; exitCode: number }
+  | { type: 'harness.cli.report'; clis: HarnessCliState[] }
+  | {
+      type: 'harness.cli.update.done';
+      provider: HarnessCliProvider;
+      ok: boolean;
+      previousVersion?: string;
+      version?: string;
+    }
   | { type: 'session.created'; clientRef: string; session: SessionSummary }
+  | { type: 'session.model_update_applied'; appSessionId: string; requestId: string }
   | { type: 'session.updated'; session: SessionSummary }
   | { type: 'session.closed'; appSessionId: string }
   | { type: 'session.processes'; appSessionId: string; processes: AgentProcess[] }

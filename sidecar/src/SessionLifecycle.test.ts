@@ -135,7 +135,7 @@ function createHarness(ordinarySummaries: SessionSummary[] = []) {
   };
   const lifecycle = new SessionLifecycle({
     eventFlow: { apply: () => undefined },
-    provider: () => new DroidProvider(runtime),
+    provider: () => new DroidProvider(runtime, () => undefined),
     registry,
     ensureConnected: () => {
       calls.push({ target: 'runtime', method: 'ensureConnected', args: [] });
@@ -463,7 +463,7 @@ test('create and cold resume publish only after registration', async () => {
   assert.equal(resumed.publicationRegistration.every(Boolean), true);
 });
 
-test('folder-less chats run in the DROIDEX chats directory', async (t) => {
+test('folder-less chats run and resume in the DROIDEX chats directory', async (t) => {
   const userDataDir = await mkdtemp(join(tmpdir(), 'droidex-user-data-'));
   const previousUserDataDir = process.env.DROIDEX_USER_DATA_DIR;
   process.env.DROIDEX_USER_DATA_DIR = userDataDir;
@@ -488,6 +488,13 @@ test('folder-less chats run in the DROIDEX chats directory', async (t) => {
     },
     { cwd: '', workspaceKind: 'none' },
   );
+
+  const resumed = createHarness([
+    summary('old-chat', 'provider-old', { cwd: '', workspaceKind: 'none' }),
+  ]);
+  queueLoad(resumed, 'provider-old');
+  await resumed.lifecycle.resume('old-chat');
+  assert.equal(resumed.runtime.loadCalls[0]?.handlers.cwd, chatCwd);
 });
 
 test('create omits an unarmed daemon compaction limit from its summary', async () => {

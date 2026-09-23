@@ -8,6 +8,7 @@ import type {
   BrowserViewportMode,
   ConfigurableSessionRole,
   DesignReference,
+  HarnessCliProvider,
   InstallChannel,
   McpServerInput,
   PermissionOutcome,
@@ -62,6 +63,7 @@ export const updateSessionSettings = (input: {
   appSessionId: string;
   modelId?: string | null;
   reasoningEffort?: ReasoningEffort | null;
+  requestId?: string;
   autonomy?: Autonomy;
   interactionMode?: SessionInteractionMode;
 }) => {
@@ -76,6 +78,12 @@ export const installCli = (channel: InstallChannel) => {
 };
 export const updateCli = (channel?: InstallChannel) => {
   bridge.send({ type: 'cli.update', channel });
+};
+export const checkHarnessClis = () => {
+  bridge.send({ type: 'harness.cli.check' });
+};
+export const updateHarnessCli = (provider: HarnessCliProvider) => {
+  bridge.send({ type: 'harness.cli.update', provider });
 };
 export const requestRuntimeStatus = () => {
   bridge.send({ type: 'runtime.status' });

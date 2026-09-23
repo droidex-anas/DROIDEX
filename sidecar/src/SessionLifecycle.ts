@@ -362,12 +362,13 @@ export class SessionLifecycle {
       const provider = d.provider(kind);
       const mcp = await d.startLocalMcpServers(ref, historical?.cwd);
       pendingMcpServers = mcp.servers;
+      const runtimeCwd = await sessionRuntimeCwd(historical?.cwd ?? '');
       requireCurrentResume();
       const providerSession = await provider.resume(providerSessionId, {
         appSessionId,
         ...resumeHandle(historical),
         interactions: d.interactionsFor(ref),
-        cwd: historical?.cwd,
+        cwd: runtimeCwd,
         ...resumeSettings(historical),
         ...(kind !== 'droid' && !historical?.modelId
           ? { modelId: d.providerDefaultModelId?.(kind) }

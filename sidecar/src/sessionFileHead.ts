@@ -9,7 +9,8 @@ import { objectValue } from './values.js';
 // sidebar row must never depend on the transcript body, so this is the only
 // read the discovery path performs per file.
 export interface SessionFileHead {
-  start: StoredSessionStart;
+  // Absent when the head has no session_start; Droid cannot load such a file.
+  start?: StoredSessionStart;
   // A provider writes session_start before the first prompt, so an interrupted
   // or abandoned turn leaves a valid file with no completed exchange. Those are
   // not durable conversations and must not become permanent sidebar rows.
@@ -45,7 +46,7 @@ export function readSessionFileHead(path: string, sizeBytes: number): SessionFil
   }
 
   return {
-    start: start ?? {},
+    start,
     hasCompletedConversation: hasUserMessage && hasAssistantMessage,
   };
 }

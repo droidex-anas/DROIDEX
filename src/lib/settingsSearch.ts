@@ -122,6 +122,15 @@ export const SETTINGS_SEARCH_ENTRIES: readonly SettingsSearchEntry[] = [
     'composer model',
     'selector style',
   ]),
+  e('Configuration', 'Default models', [
+    'default model',
+    'reasoning effort',
+    'harness',
+    'droid',
+    'claude code',
+    'codex',
+    'new chat model',
+  ]),
   e('Configuration', 'Tool activity', [
     'compact',
     'balanced',

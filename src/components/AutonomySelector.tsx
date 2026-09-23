@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
-import { Check, ChevronDown } from 'lucide-react';
+import { Check } from 'lucide-react';
 import { Spinner } from '@droidex/icons';
 
 import type { Autonomy } from '../types/bridge';
@@ -93,9 +93,6 @@ export default function AutonomySelector({
       >
         {pending && <Spinner className="w-3.5 h-3.5 shrink-0 motion-safe:animate-spin-slow" />}
         <span>{AUTONOMY_LABELS[value]}</span>
-        <ChevronDown
-          className={`w-3 h-3 shrink-0 text-droid-text-muted/40 transition-transform ${open ? 'rotate-180' : ''}`}
-        />
       </button>
 
       <AnimatePresence>

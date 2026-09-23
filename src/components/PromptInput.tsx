@@ -72,6 +72,7 @@ import {
   reasoningEffortLabel,
   resolveReasoningEffortDisplay,
 } from '../lib/reasoningEffort';
+import { displayedModelSettings } from '../lib/pendingModelSettings';
 import { compactionSettingsSnapshot } from '../lib/compactionSettings';
 import { composerTextAfterSeed, resetComposerAfterSubmit } from '../lib/composerReset';
 import { chipRemovedByBackspace } from '../lib/composerChips';
@@ -94,7 +95,7 @@ import {
   type VisibleSessionTarget,
 } from '../lib/childSessions';
 import { commitPrimaryPromptAfterBaseline } from '../lib/promptSend';
-import { ChevronDown, SlidersHorizontal } from 'lucide-react';
+import { SlidersHorizontal } from 'lucide-react';
 import { ComposerSendButton } from './composer/ComposerSendButton';
 import { useQueuedPromptDelivery } from './composer/useQueuedPromptDelivery';
 import AddMenu from './composer/AddMenu';
@@ -229,6 +230,7 @@ export default function PromptInput({
         ? current.sessions[current.activeAppSessionId]
         : null,
       agentConfig: current.agentConfig,
+      harnessModels: current.harnessModels,
       childAccess: current.childAccess,
       childSessions: current.childSessions,
       compactionModel: current.compactionModel,
@@ -247,6 +249,9 @@ export default function PromptInput({
       modelSelectorStyle: current.modelSelectorStyle,
       models: current.models,
       pendingAutonomy: current.pendingAutonomy,
+      pendingActiveModelUpdate: current.activeAppSessionId
+        ? current.pendingModelUpdates[current.activeAppSessionId]
+        : undefined,
       pendingCompose: current.pendingCompose,
       promptQueue: current.promptQueue,
       selectedChild: current.selectedChild,
@@ -848,15 +853,19 @@ export default function PromptInput({
   // A single chat carries its own model/reasoning; only fall back to the global
   // default while composing a brand-new chat that has no session yet.
   const chatScoped = !missionPreview && !!activeSession;
+  const chatModelSettings = activeSession
+    ? displayedModelSettings(activeSession, state.pendingActiveModelUpdate)
+    : undefined;
   const composerModels = providerModelCatalog(
     composerProvider,
     state.models,
     state.providerStatuses,
   );
+  const harnessModel = state.harnessModels[composerProvider];
   // Catalog validation applies to draft preferences, never to saved chat settings.
   const primaryModelId = chatScoped
-    ? activeSession.modelId
-    : providerModelSelection(composerProvider, state.agentConfig.primary.modelId, composerModels);
+    ? chatModelSettings?.modelId
+    : providerModelSelection(composerProvider, harnessModel.modelId, composerModels);
   const selectedModel = primaryModelId
     ? composerModels.find((m) => m.id === primaryModelId)
     : undefined;
@@ -877,11 +886,11 @@ export default function PromptInput({
   // on the chip and is created with none. That is the provider default when
   // nothing is pinned, the same model the chip's icon and label already use.
   const draftReasoning = resolveReasoningEffortDisplay(
-    draftEffortFor(chipModel, state.agentConfig.primary.reasoning),
+    draftEffortFor(chipModel, harnessModel.reasoning),
     chipModel,
   );
   const primaryReasoning = chatScoped
-    ? resolveReasoningEffortDisplay(activeSession.reasoningEffort, chipModel)
+    ? resolveReasoningEffortDisplay(chatModelSettings?.reasoningEffort, chipModel)
     : draftReasoning;
   // The one model selection a new chat is created with. Built from the
   // validated id so no path can send a model the chat's provider never
@@ -1962,9 +1971,6 @@ export default function PromptInput({
                       )}
                     </>
                   )}
-                  <ChevronDown
-                    className={`w-3 h-3 shrink-0 text-droid-text-muted/40 transition-transform ${modelsOpen ? 'rotate-180' : ''}`}
-                  />
                 </button>
 
                 <AnimatePresence>
