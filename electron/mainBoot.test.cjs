@@ -72,3 +72,12 @@ test("privileged IPC handlers reject every sender but the main window's top fram
   assert.equal(result.status, 0, `stdout:\n${result.stdout}\nstderr:\n${result.stderr}`);
   assert.match(result.stdout, new RegExp(`^${IPC_SENTINEL}$`, 'm'));
 });
+
+test('the main window guards navigation and requests and tears down with its renderer', () => {
+  const result = spawnSync(process.execPath, [path.join(__dirname, 'mainIpcEval.cjs'), 'window'], {
+    encoding: 'utf8',
+    timeout: 15_000,
+  });
+  assert.equal(result.status, 0, `stdout:\n${result.stdout}\nstderr:\n${result.stderr}`);
+  assert.match(result.stdout, new RegExp(`^${IPC_SENTINEL}$`, 'm'));
+});

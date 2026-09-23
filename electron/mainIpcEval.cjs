@@ -1,15 +1,29 @@
-// Readies main.cjs under the mainBootEval electron stub, then calls its IPC
-// handlers as the main window's top frame and as renderers they must reject.
+// Readies main.cjs under the mainBootEval electron stub, then either calls its
+// IPC handlers as the main window's top frame and as renderers they must reject,
+// or (argv[2] === 'window') checks the main window's guards and teardown.
 const assert = require('node:assert/strict');
 const { EventEmitter } = require('node:events');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { createElectronStub, installElectronStub } = require('./mainBootEval.cjs');
+const { preferenceFilePath } = require('./hardwareAcceleration.cjs');
+const { LOCAL_IMAGE_SCHEME } = require('./localImages.cjs');
 
 const SENTINEL = 'MAIN_IPC_EVAL_OK';
 const REJECTED = 'Desktop request rejected for unknown renderer.';
 const PASSED = 'passed the sender check';
+const PR_WORKSPACE_OPERATIONS = {
+  'github-detect-pr': 'detectPr',
+  'github-list-prs': 'listPrs',
+  'github-view-pr': 'viewPr',
+  'github-pr-diff': 'prDiff',
+  'github-pr-checks': 'prChecks',
+  'github-pr-comments': 'prComments',
+  'github-create-pr': 'createPr',
+  'github-post-comment': 'postComment',
+  'github-merge-pr': 'mergePr',
+};
 
 // Browser pane pages send these through nativeBrowserPreload.cjs, so they
 // cannot require the main window.
@@ -105,11 +119,59 @@ async function senderCheck(handler, event) {
   return rejection ?? posted[0] ?? PASSED;
 }
 
-async function evaluateIpc() {
+// Records what main.cjs asks of the modules that would spawn gh or ptys, and of
+// app lifecycle calls Electron only honours before ready.
+function observeMain(electron) {
+  const calls = [];
+  const boot = { privilegedSchemes: [], protocolHandlers: new Map() };
+  let ready = false;
+  const beforeReady = (name) => {
+    if (ready) throw new Error(`${name} must be called before the app is ready`);
+  };
+  electron.app.whenReady = () => Promise.resolve().then(() => (ready = true));
+  electron.app.disableHardwareAcceleration = () => {
+    beforeReady('app.disableHardwareAcceleration');
+    boot.hardwareAccelerationDisabled = true;
+  };
+  electron.app.relaunch = () => calls.push('relaunch');
+  electron.protocol.registerSchemesAsPrivileged = (schemes) => {
+    beforeReady('protocol.registerSchemesAsPrivileged');
+    boot.privilegedSchemes.push(...schemes.map((entry) => entry.scheme));
+  };
+  // Only default-session handlers are recorded: web pages in other partitions must not reach them.
+  electron.session.defaultSession.protocol = {
+    handle: (scheme, handler) => boot.protocolHandlers.set(scheme, handler),
+  };
+  electron.session.fromPartition = () => ({ protocol: { handle() {} } });
+
+  const github = require('./github.cjs');
+  const conversation = require('./githubPrConversation.cjs');
+  for (const operation of Object.values(PR_WORKSPACE_OPERATIONS)) {
+    const owner = operation === 'prComments' ? conversation : github;
+    owner[operation] = async () => calls.push(operation);
+  }
+  github.authenticate = async ({ onDeviceCode }) => onDeviceCode('ABCD-1234');
+  github.cancelSetup = () => calls.push('cancel GitHub setup');
+  const terminal = require('./terminal.cjs');
+  const createTerminalManager = terminal.createTerminalManager;
+  terminal.createTerminalManager = (options) => {
+    const manager = createTerminalManager(options);
+    const closeAll = manager.closeAll;
+    manager.closeAll = () => {
+      calls.push('close terminals');
+      closeAll();
+    };
+    return manager;
+  };
+  return { calls, boot };
+}
+
+async function bootMain() {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'droidex-ipc-eval-'));
   process.on('exit', () => fs.rmSync(root, { recursive: true, force: true }));
   const userData = path.join(root, 'profile');
   fs.mkdirSync(userData);
+  fs.writeFileSync(preferenceFilePath(userData), JSON.stringify({ version: 1, enabled: false }));
   const sidecarEntry = path.join(root, 'sidecar.cjs');
   // Never reports ready, and exits once the supervisor's stdin pipe closes.
   fs.writeFileSync(sidecarEntry, 'process.stdin.resume();\n');
@@ -129,15 +191,17 @@ async function evaluateIpc() {
   const register = (channel, handler) => channels.set(channel, handler);
   electron.ipcMain.handle = register;
   electron.ipcMain.on = register;
-  electron.app.whenReady = () => Promise.resolve();
   const { BrowserWindow, created } = createBrowserWindowStub();
   electron.BrowserWindow = BrowserWindow;
   electron.Menu = { buildFromTemplate: () => ({ popup() {} }), setApplicationMenu() {} };
   electron.session.defaultSession.getUserAgent = () => 'DROIDEX';
+  const observed = observeMain(electron);
   installElectronStub(electron, path.join(root, 'resources'));
   require('./main.cjs');
-  const mainWindow = await created;
+  return { electron, channels, mainWindow: await created, root, ...observed };
+}
 
+async function checkSenders({ channels, mainWindow }) {
   const mainFrameEvent = {
     sender: mainWindow.webContents,
     senderFrame: mainWindow.webContents.mainFrame,
@@ -163,19 +227,87 @@ async function evaluateIpc() {
     }
   }
   assert.deepEqual(accepted, [], 'IPC handlers that did not reject a foreign sender');
-  process.stdout.write(`${SENTINEL}\n`);
+}
+
+async function checkMainWindow({ electron, channels, mainWindow, root, calls, boot }) {
+  const contents = mainWindow.webContents;
+  const call = (channel, payload) =>
+    channels.get(channel)({ sender: contents, senderFrame: contents.mainFrame }, payload);
+
+  assert.equal(boot.hardwareAccelerationDisabled, true, 'saved GPU preference ignored at boot');
+  assert.ok(boot.privilegedSchemes.includes(LOCAL_IMAGE_SCHEME));
+  const svgPath = path.join(root, 'shot.svg');
+  fs.writeFileSync(svgPath, '<svg xmlns="http://www.w3.org/2000/svg"/>');
+  const image = await boot.protocolHandlers.get(LOCAL_IMAGE_SCHEME)({
+    url: `${LOCAL_IMAGE_SCHEME}://image?p=${encodeURIComponent(svgPath)}`,
+  });
+  assert.equal(
+    image.headers.get('content-security-policy'),
+    "default-src 'none'; style-src 'unsafe-inline'",
+  );
+  assert.equal(image.headers.get('x-content-type-options'), 'nosniff');
+
+  let prevented = false;
+  contents.emit('will-navigate', { preventDefault: () => (prevented = true) }, 'https://x.test/');
+  assert.equal(prevented, true, 'the main window navigated away from the app');
+
+  for (const channel of Object.keys(PR_WORKSPACE_OPERATIONS)) {
+    for (const dir of [undefined, 42, '  ']) {
+      assert.equal((await call(channel, { dir })).ok, false, `${channel} with dir ${dir}`);
+    }
+  }
+  await call('hardware-acceleration-preference-set', { enabled: true });
+  await call('diagnostics-preference-set', { enabled: false });
+  assert.deepEqual(calls, [], 'invalid PR requests or preference changes reached an operation');
+
+  const icons = [];
+  mainWindow.setIcon = (iconPath) => icons.push(path.basename(iconPath));
+  assert.throws(() => call('app-set-icon', { mode: 'sepia' }), /light, dark, or system/);
+  electron.nativeTheme.shouldUseDarkColors = true;
+  call('app-set-icon', { mode: 'system' });
+  electron.nativeTheme.shouldUseDarkColors = false;
+  electron.nativeTheme.emit('updated');
+  call('app-set-icon', { mode: 'dark' });
+  electron.nativeTheme.emit('updated');
+  assert.deepEqual(icons, ['icon-dark.png', 'icon.png', 'icon-dark.png']);
+
+  const deviceCodes = [];
+  contents.send = (channel, payload) => channel === 'github-auth-code' && deviceCodes.push(payload);
+  contents.isDestroyed = () => false;
+  await call('github-authenticate');
+  assert.deepEqual(deviceCodes, [{ code: 'ABCD-1234' }]);
+
+  // The window closes last: afterwards main.cjs has no main window to address.
+  const teardowns = {
+    'renderer navigation': () => contents.emit('will-frame-navigate', {}, 'x', false, true),
+    'renderer crash': () => contents.emit('render-process-gone', {}, { reason: 'crashed' }),
+    'app quit': () => electron.app.emit('before-quit'),
+    'window close': () => mainWindow.emit('closed'),
+  };
+  for (const [name, tearDown] of Object.entries(teardowns)) {
+    contents.emit('did-finish-load');
+    calls.length = 0;
+    tearDown();
+    assert.deepEqual(calls, ['cancel GitHub setup', 'close terminals'], name);
+  }
 }
 
 module.exports = { SENTINEL };
 
 if (require.main === module) {
-  // Exit without turning the event loop: the sidecar stub holds it open, and a
-  // handler that got past its guard must not reach its I/O.
-  evaluateIpc().then(
-    () => process.exit(0),
-    (error) => {
-      console.error(error);
-      process.exit(1);
-    },
-  );
+  const check = process.argv[2] === 'window' ? checkMainWindow : checkSenders;
+  // Exit once the checks settle: the sidecar stub holds the event loop open, and
+  // a handler that got past its sender guard must not reach its I/O.
+  bootMain()
+    .then(check)
+    .then(
+      () => {
+        process.stdout.write(`${SENTINEL}\n`);
+        process.exit(0);
+      },
+      (error) => {
+        console.error(error);
+        process.exit(1);
+      },
+    );
 }
