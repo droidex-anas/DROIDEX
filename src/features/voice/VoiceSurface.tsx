@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 import { ChevronDown, Keyboard, Mic, MicOff, Settings2, X } from 'lucide-react';
 import { useObscuresNativeSurfaces } from '../../hooks/useObscuresNativeSurfaces';
+import { WINDOW_CONTROLS_INSET_PX } from '../../lib/windowChrome';
 import { MessageBody } from '../../components/MessageBody';
 import { SpokenMark } from '../../components/transcript/primitives';
 import { UserBubble } from '../../components/transcript/UserBubble';
@@ -78,7 +79,13 @@ function VoiceSurfaceDialog({ voice }: { voice: Voice }) {
       transition={{ duration: reducedMotion ? 0 : 0.2, ease: [0.16, 1, 0.3, 1] }}
       className="fixed inset-0 z-[1200] flex flex-col bg-droid-bg text-droid-text"
     >
-      <header className="flex items-center px-5 py-4">
+      {/* The window controls sit over this row on macOS, so the label starts
+          clear of them and the empty space still drags the window. */}
+      <header
+        data-electron-drag-region
+        className="flex items-center py-4 pr-5"
+        style={{ paddingLeft: WINDOW_CONTROLS_INSET_PX }}
+      >
         <span className="text-[12px] font-medium text-droid-text-muted">Voice</span>
       </header>
 

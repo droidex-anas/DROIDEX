@@ -97,12 +97,13 @@ export function VoiceOrb({
         aria-hidden
         className="absolute rounded-full blur-2xl"
         style={{
-          inset: '-22%',
+          inset: '-14%',
           // The halo is light, not a panel: masking it to a circle keeps its
-          // blurred bounding box from reading as a square behind the orb.
-          maskImage: 'radial-gradient(closest-side, #000 60%, transparent 100%)',
+          // blurred bounding box from reading as a square behind the orb, and
+          // it stays faint so the orb reads as a sphere rather than a lamp.
+          maskImage: 'radial-gradient(closest-side, #000 55%, transparent 100%)',
           background:
-            'radial-gradient(closest-side, color-mix(in srgb, var(--droid-skill) 55%, transparent), color-mix(in srgb, var(--droid-ultra) 30%, transparent) 55%, transparent 75%)',
+            'radial-gradient(closest-side, color-mix(in srgb, var(--droid-skill) 32%, transparent), transparent 70%)',
         }}
       />
       <div
@@ -113,10 +114,11 @@ export function VoiceOrb({
           // the box's rectangle by the compositor, which shows as a square edge
           // around the orb. Clipping to the circle keeps the shape it is drawn as.
           clipPath: 'circle(50% at 50% 50%)',
+          // Sky at the top falling into cloud: the orb is lit from inside
+          // rather than shaded like a ball, so it keeps one crisp edge and no
+          // dark underside.
           background:
-            'linear-gradient(145deg, #ffffff 0%, var(--droid-skill) 38%, var(--droid-ultra) 68%, color-mix(in srgb, var(--droid-ultra) 45%, #000000) 100%)',
-          boxShadow:
-            'inset -14px -20px 40px rgb(24 16 68 / 0.4), inset 6px 8px 24px rgb(255 255 255 / 0.35), 0 24px 70px -18px color-mix(in srgb, var(--droid-ultra) 55%, transparent)',
+            'linear-gradient(170deg, color-mix(in srgb, var(--droid-skill) 82%, #ffffff) 0%, color-mix(in srgb, var(--droid-skill) 34%, #ffffff) 44%, #ffffff 78%, color-mix(in srgb, var(--droid-ultra) 18%, #ffffff) 100%)',
         }}
       >
         <div ref={blobsRef} aria-hidden className="absolute" style={{ inset: '-15%' }}>
@@ -124,24 +126,22 @@ export function VoiceOrb({
             className="absolute rounded-full"
             style={{
               ...GLOW_BLOB,
-              width: '55%',
-              height: '55%',
-              left: '-4%',
-              top: '8%',
-              background:
-                'radial-gradient(closest-side, color-mix(in srgb, var(--droid-skill) 60%, transparent), transparent)',
+              width: '70%',
+              height: '62%',
+              left: '-8%',
+              bottom: '4%',
+              background: 'radial-gradient(closest-side, rgb(255 255 255 / 0.9), transparent)',
             }}
           />
           <div
             className="absolute rounded-full"
             style={{
               ...GLOW_BLOB,
-              width: '60%',
-              height: '60%',
-              right: '-6%',
-              bottom: '2%',
-              background:
-                'radial-gradient(closest-side, color-mix(in srgb, var(--droid-ultra) 60%, transparent), transparent)',
+              width: '62%',
+              height: '55%',
+              right: '-10%',
+              bottom: '-6%',
+              background: 'radial-gradient(closest-side, rgb(255 255 255 / 0.75), transparent)',
             }}
           />
         </div>
@@ -151,7 +151,7 @@ export function VoiceOrb({
           style={{
             mixBlendMode: 'screen',
             background:
-              'radial-gradient(circle at 32% 26%, rgb(255 255 255 / 0.85), transparent 45%)',
+              'radial-gradient(circle at 38% 70%, rgb(255 255 255 / 0.5), transparent 60%)',
           }}
         />
       </div>
