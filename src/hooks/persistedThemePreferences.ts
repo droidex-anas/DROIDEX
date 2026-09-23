@@ -2,8 +2,10 @@ import { normalizeAppIconMode, type AppIconMode } from '../lib/appIcon';
 import {
   DEFAULT_THEME_ID,
   detectPresetId,
+  findPreset,
   migrateLegacyLightPreset,
   parseCustomThemes,
+  resolveVariant,
   type ThemePreset,
 } from '../lib/theme';
 
@@ -159,7 +161,10 @@ export function loadTheme(customThemes: ThemePreset[]): ThemeConfig {
       typeof savedPresetId === 'string' && savedPresetId
         ? savedPresetId
         : detectPresetId(theme, customThemes);
-    return theme;
+    // The preset owns its colors; the flattened copy is only a cache. Re-reading
+    // it means a retuned preset reaches themes saved before the change.
+    const preset = findPreset(theme.presetId, customThemes);
+    return preset ? { ...theme, ...resolveVariant(preset, theme.mode) } : theme;
   } catch {
     /* ignore */
   }

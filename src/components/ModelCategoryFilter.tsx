@@ -69,7 +69,7 @@ export default function ModelCategoryFilter({
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -4 }}
             transition={{ duration: 0.14, ease: [0.16, 1, 0.3, 1] }}
-            className="absolute right-0 top-full z-50 mt-1.5 w-44 overflow-hidden rounded-xl border border-droid-border bg-droid-elevated p-1 shadow-md"
+            className="absolute right-0 top-full z-50 mt-1.5 w-44 overflow-hidden rounded-xl border border-droid-border bg-droid-raised p-1 shadow-md"
           >
             {options.map((option) => {
               const on = option.value === selected;

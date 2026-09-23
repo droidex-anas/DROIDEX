@@ -96,7 +96,7 @@ export function ComposerSendButton({
             animate={{ opacity: 1, y: 0 }}
             exit={reducedMotion ? { opacity: 0 } : { opacity: 0, y: 4 }}
             transition={{ duration: reducedMotion ? 0 : 0.12, ease: [0.16, 1, 0.3, 1] }}
-            className="absolute bottom-full right-0 z-50 mb-2 flex flex-col gap-0.5 whitespace-nowrap rounded-xl border border-droid-border bg-droid-elevated p-1.5 shadow-droid"
+            className="absolute bottom-full right-0 z-50 mb-2 flex flex-col gap-0.5 whitespace-nowrap rounded-xl border border-droid-border bg-droid-raised p-1.5 shadow-droid"
           >
             {hintRows.map((row) => (
               <div

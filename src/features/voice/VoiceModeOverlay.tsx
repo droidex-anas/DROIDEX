@@ -97,7 +97,7 @@ function VoiceModeDialog({ voice }: { voice: VoiceMode }) {
         </p>
       </div>
       <div className="flex justify-center px-4" style={{ paddingBottom: 40 }}>
-        <div className="flex items-center gap-1 rounded-full border border-droid-border bg-droid-elevated p-1.5 shadow-droid">
+        <div className="flex items-center gap-1 rounded-full border border-droid-border bg-droid-raised p-1.5 shadow-droid">
           <button
             type="button"
             onClick={voice.stop}

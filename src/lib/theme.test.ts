@@ -56,12 +56,12 @@ describe('BUILT_IN_THEMES', () => {
     assert.equal(DEFAULT_THEME.id, 'droid');
   });
 
-  it('light canvases are tinted (not near-white) with surfaces above them', () => {
+  it('light canvases are soft off-whites with surfaces above them', () => {
     for (const preset of BUILT_IN_THEMES) {
       const { bg, surface } = preset.light;
       assert.ok(
-        relativeLuminance(bg) < 0.86,
-        `${preset.id} light bg ${bg} should sit below searing white`,
+        relativeLuminance(bg) < 0.96,
+        `${preset.id} light bg ${bg} should sit below pure white`,
       );
       assert.ok(
         relativeLuminance(surface) > relativeLuminance(bg),

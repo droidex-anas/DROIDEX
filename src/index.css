@@ -63,6 +63,8 @@
     /* One step above elevated: the lightest neutral, for selected/active rows so
        the surface ramp reads bg < surface < elevated < active. */
     --droid-active: #292929;
+    /* Floating layers: the elevated rung on dark, near-white on light. */
+    --droid-raised: #1e1e1e;
     --droid-border: #161616;
     --droid-border-hover: #222222;
     --droid-text: #ededed;
@@ -596,7 +598,9 @@
   }
 
   .composer-focus-ring:focus-within {
-    box-shadow: 0 0 0 3px color-mix(in srgb, var(--droid-text) 5%, transparent);
+    box-shadow:
+      var(--droid-shadow-sm),
+      0 0 0 3px color-mix(in srgb, var(--droid-text) 5%, transparent);
   }
 
   .pr-workspace-scroll {

@@ -165,7 +165,7 @@ export default function ModelSliderPopover({ onClose }: { onClose: () => void })
     >
       <div
         ref={setCard}
-        className="flex max-h-[inherit] flex-col overflow-hidden rounded-2xl border border-droid-border/60 bg-droid-elevated shadow-droid"
+        className="flex max-h-[inherit] flex-col overflow-hidden rounded-2xl border border-droid-border/60 bg-droid-raised shadow-droid"
       >
         <AnimatePresence mode="wait" initial={false}>
           {showEffortView ? (
@@ -285,7 +285,7 @@ export default function ModelSliderPopover({ onClose }: { onClose: () => void })
 
       {/* Tail */}
       <div
-        className="absolute -bottom-1.5 h-3 w-3 rotate-45 border-r border-b border-droid-border/60 bg-droid-elevated"
+        className="absolute -bottom-1.5 h-3 w-3 rotate-45 border-r border-b border-droid-border/60 bg-droid-raised"
         style={{ right: tailRight }}
       />
     </motion.div>

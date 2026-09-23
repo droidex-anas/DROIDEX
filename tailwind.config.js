@@ -20,6 +20,7 @@ export default {
           elevated: v('--droid-elevated'),
           field: v('--droid-field'),
           active: v('--droid-active'),
+          raised: v('--droid-raised'),
           border: v('--droid-border'),
           'border-hover': v('--droid-border-hover'),
           text: v('--droid-text'),

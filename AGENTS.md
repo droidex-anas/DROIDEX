@@ -170,6 +170,35 @@ A name should communicate the concept at the scope where it is read.
 - Large lists mount only what is visible. Measure render cost with the real
   catalog or transcript before shipping a list-shaped change.
 
+## Visual design
+
+The interface should feel calm and deliberately designed: soft, quiet surfaces
+rather than lines and boxes. Visible hard borders and heavy background panels
+are the most common way a change makes the app look worse.
+
+- Separate layers with tone and soft shadow, not outlines. Use a border only
+  when tone cannot do the job, and then only the resting `--droid-border`
+  hairline. Never use `border-hover`, the accent, or text color as a resting
+  edge: the default light accent is near-black, so accent outlines become hard
+  black boxes.
+- Do not nest outlines. A control inside a bordered card is a borderless tinted
+  fill (`bg-droid-elevated`, `hover:bg-droid-active`), like the settings
+  dropdowns.
+- Floating layers (composer, popovers, menus, tooltips, toasts, dialogs) use
+  `bg-droid-raised` with `shadow-droid` or `shadow-droid-sm`. No fixed black
+  shadows; the theme owns the shadow color.
+- Hover and selected states are soft tint shifts (`elevated` to `active`, or a
+  low-alpha accent mix). Avoid thick rings and high-contrast selection fills;
+  a check mark or text weight carries the meaning.
+- Adjacent surfaces differ by a few percent of lightness, never a visible
+  block. Light mode is a soft warm off-white, not pure white or grey; dark mode
+  is a deep near-black.
+- Tune colors in `src/lib/theme.ts`, not per component, and keep the contrast
+  tests in `src/lib/theme.test.ts` passing.
+- Keep focus visible for keyboard users with a soft ring (the
+  `composer-focus-ring` pattern), not a hard outline.
+- Check both light and dark in the running app before shipping a visual change.
+
 ## DROIDEX identity and runtime contracts
 
 Preserve these distinctions when touching sessions, providers, or async work:

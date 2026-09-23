@@ -137,7 +137,7 @@ export default function ModelSelectorPopover({
       style={{ width, maxHeight }}
       className="absolute bottom-full right-0 mb-3 z-50"
     >
-      <div className="flex max-h-[inherit] flex-col overflow-hidden rounded-2xl border border-droid-border/60 bg-droid-elevated shadow-droid">
+      <div className="flex max-h-[inherit] flex-col overflow-hidden rounded-2xl border border-droid-border/60 bg-droid-raised shadow-droid">
         <div className="flex min-h-0 flex-1">
           {showHarness && (
             <HarnessRail
@@ -242,7 +242,7 @@ export default function ModelSelectorPopover({
 
       {/* Tail */}
       <div
-        className="absolute -bottom-1.5 w-3 h-3 rotate-45 bg-droid-elevated border-r border-b border-droid-border/60"
+        className="absolute -bottom-1.5 w-3 h-3 rotate-45 bg-droid-raised border-r border-b border-droid-border/60"
         style={{ right: tailRight }}
       />
     </motion.div>
