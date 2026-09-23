@@ -236,7 +236,7 @@ export class ProjectService {
     // with nothing to say it was ours: a bad step name, a held project or a
     // full one would each strand one.
     this.checkAdmission(project);
-    const named = requested.step ? this.planStep(project, requested.step).title : undefined;
+    const named = requested.step ? this.planStep(project, requested.step) : undefined;
     // The slot is held while the checkout is cut, so a parallel spawn cannot
     // pass the same cap, and it is handed to the launch without a gap.
     project.launching += 1;
@@ -262,9 +262,12 @@ export class ProjectService {
       if (workspace) await discardThreadCheckout(owner.cwd, workspace);
       throw error;
     }
-    // Looked up again: plan_set may have replaced the plan while the thread
-    // started, and the step resolved with it.
-    const step = named ? project.plan.find((candidate) => candidate.title === named) : undefined;
+    // The step resolved before the launch, unless plan_set replaced the plan
+    // while the thread started; then the new step with its title.
+    const step =
+      named && !project.plan.includes(named)
+        ? project.plan.find((candidate) => candidate.title === named.title)
+        : named;
     if (step) {
       step.threadAppSessionId = appSessionId;
       delete step.state;
