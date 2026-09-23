@@ -100,9 +100,9 @@ in [`docs/releasing.md`](docs/releasing.md).
 
 ## Run it locally
 
-You need macOS, Node.js 22, npm, and at least one supported agent CLI. DROIDEX
-can install the Factory Droid CLI during onboarding if it is not already
-available.
+You need macOS, Node.js 22, and npm to launch DROIDEX locally. A supported
+agent CLI is required when you start agent work; DROIDEX can install the
+Factory Droid CLI during onboarding if it is not already available.
 
 Install dependencies and launch the desktop app:
 
