@@ -400,7 +400,7 @@ export function elevatedSurfaceColor(theme: Pick<ThemeColors, 'bg' | 'surface'>)
 // a grey hole in the page, so they lift to near-white and rely on the hairline
 // border and shadow. Dark themes already lighten upward, so they share the
 // elevated rung.
-export function raisedSurfaceColor(theme: Pick<ThemeColors, 'bg' | 'surface'>): string {
+function raisedSurfaceColor(theme: Pick<ThemeColors, 'bg' | 'surface'>): string {
   return colorLuminance(theme.bg) < 0.4
     ? elevatedSurfaceColor(theme)
     : mixHex(theme.surface, '#ffffff', 0.6);
