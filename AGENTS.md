@@ -99,9 +99,9 @@ Line count is a signal to inspect responsibilities, not a design goal.
 - Leaf UI files usually sit around 50-250 lines; feature modules, hooks,
   reducers, and screens around 150-400.
 - Do not create a production file above 500 lines, take a file across 500, or
-  materially grow one already above it without stopping for review. Justify the
-  exception: the file's single responsibility, why a split would hurt ownership
-  or readability, and the reviewed ceiling.
+  materially grow one already above it without justifying the exception in the
+  pull request: the file's single responsibility, why a split would hurt
+  ownership or readability, and the reviewed ceiling.
 - Existing oversized files are debt. Extract a cohesive responsibility only when
   it belongs to the current task.
 
@@ -318,9 +318,10 @@ npm run docs:check
 npm run build
 ```
 
-`npm run lint` is non-blocking because of existing backlog; new and changed
-files still own their diagnostics. The pre-commit hook runs lint-staged, file
-size, tech-debt, and typecheck gates.
+`npm run lint` blocks CI on new errors. The existing backlog is recorded in
+`eslint-suppressions.json`; never add to it to get a green run. When you fix old
+errors, prune it with `npx eslint . --prune-suppressions`. The pre-commit hook
+runs lint-staged, file size, tech-debt, and typecheck gates.
 
 Performance changes are validated with the deterministic replay harness
 (`npm run perf:replay -- --scenario <smoke|idle|streaming|multi-agent|agents-4|agents-16|agents-27|long-history|long-tail|session-switch|soak>`),
