@@ -869,6 +869,8 @@ function baseReducer(state: AppState, action: Action): AppState {
         childAccess: {},
         childRuntime: {},
         agentProcesses: {},
+        // A lost bridge never settles in-flight changes, so fall back to the last confirmed values.
+        pendingModelUpdates: {},
         contextStats: { ...next.contextStats, child: {} },
       };
     }

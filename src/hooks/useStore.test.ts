@@ -348,3 +348,14 @@ test('a model change stays shown until its latest request settles', () => {
   state = reducer(state, { type: 'MODEL_UPDATE_SETTLED', appSessionId: 'sess-a', requestId: 'r2' });
   assert.equal(state.pendingModelUpdates['sess-a'], undefined);
 });
+
+test('a lost bridge drops model changes it can no longer settle', () => {
+  let state = reducer(initialState, {
+    type: 'MODEL_UPDATE_REQUESTED',
+    appSessionId: 'sess-a',
+    requestId: 'r1',
+    settings: { reasoningEffort: 'high' },
+  });
+  state = reducer(state, { type: 'SET_CONNECTION', status: 'error', message: 'Bridge closed' });
+  assert.deepEqual(state.pendingModelUpdates, {});
+});
