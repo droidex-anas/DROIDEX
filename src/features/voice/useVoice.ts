@@ -17,6 +17,8 @@ export interface Voice {
   minimize: () => void;
   expand: () => void;
   close: () => void;
+  /** Reopens the conversation, which is how a new voice takes over. */
+  restart: () => void;
 }
 
 /**
@@ -57,6 +59,14 @@ export function useVoice(
     setView((current) => (current === 'off' ? current : 'full'));
   }, []);
 
+  // A voice is chosen when a conversation opens, so taking a new one means
+  // opening a new conversation. The surface stays up across the swap.
+  const restart = useCallback(() => {
+    if (status !== 'live' && status !== 'connecting') return;
+    setReconnecting(true);
+    stop();
+  }, [status, stop]);
+
   // A conversation that ends on its own (the provider closed it, the mic was
   // refused, the chat was switched) takes its surface with it. A reconnect
   // passes through the same idle state and keeps the surface.
@@ -64,21 +74,6 @@ export function useVoice(
     if (reconnecting) return;
     if (status === 'idle' || status === 'closed') setView('off');
   }, [reconnecting, status]);
-
-  // Switching voices: end the conversation, then open the next one on the
-  // voice now chosen. Only a running conversation reconnects; a change made
-  // while voice is off simply applies the next time it starts.
-  const openedWith = useRef(preferences.voice);
-  useEffect(() => {
-    if (status !== 'live') {
-      if (status === 'idle' && !reconnecting) openedWith.current = preferences.voice;
-      return;
-    }
-    if (openedWith.current === preferences.voice) return;
-    openedWith.current = preferences.voice;
-    setReconnecting(true);
-    stop();
-  }, [preferences.voice, reconnecting, status, stop]);
 
   useEffect(() => {
     if (!reconnecting || status !== 'idle') return;
@@ -94,5 +89,14 @@ export function useVoice(
     session.refreshVoices();
   }, [appSessionId, session, view]);
 
-  return { available: canUseVoice(provider), view, session, open, minimize, expand, close };
+  return {
+    available: canUseVoice(provider),
+    view,
+    session,
+    open,
+    minimize,
+    expand,
+    close,
+    restart,
+  };
 }

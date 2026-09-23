@@ -21,16 +21,25 @@ const capitalize = (word: string) => word.charAt(0).toUpperCase() + word.slice(1
 export function VoiceSettingsSheet({
   voices,
   defaultVoice,
+  onVoiceChanged,
   onClose,
 }: {
   voices: string[];
   defaultVoice?: string;
+  /** Called when a different voice is chosen, to reopen on it. */
+  onVoiceChanged: () => void;
   onClose: () => void;
 }) {
   const dispatch = useStoreDispatch();
   const reducedMotion = useReducedMotion();
   const selectedVoice = useStoreSelector((state) => state.defaultVoice);
   const narration = useStoreSelector((state) => state.narrationMode);
+
+  const chooseVoice = (voice: string) => {
+    if (voice === selectedVoice) return;
+    dispatch({ type: 'SET_DEFAULT_VOICE', voice });
+    onVoiceChanged();
+  };
 
   return (
     <div
@@ -58,7 +67,7 @@ export function VoiceSettingsSheet({
             label={defaultVoice ? `Default · ${capitalize(defaultVoice)}` : 'Harness default'}
             selected={selectedVoice === HARNESS_DEFAULT}
             onSelect={() => {
-              dispatch({ type: 'SET_DEFAULT_VOICE', voice: HARNESS_DEFAULT });
+              chooseVoice(HARNESS_DEFAULT);
             }}
           />
           {voices.map((voice) => (
@@ -67,7 +76,7 @@ export function VoiceSettingsSheet({
               label={capitalize(voice)}
               selected={selectedVoice === voice}
               onSelect={() => {
-                dispatch({ type: 'SET_DEFAULT_VOICE', voice });
+                chooseVoice(voice);
               }}
             />
           ))}
