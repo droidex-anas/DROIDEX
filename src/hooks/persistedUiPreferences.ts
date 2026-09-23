@@ -55,7 +55,7 @@ export function loadHarnessModels(): HarnessModels {
   const models: HarnessModels = { droid: {}, claude: {}, codex: {} };
   try {
     const raw = getLocalStorage()?.getItem(HARNESS_MODELS_STORAGE_KEY);
-    if (!raw) return models;
+    if (!raw) return adoptLegacyPrimaryModel(models);
     const parsed = JSON.parse(raw) as Partial<Record<ProviderKind, Partial<HarnessModel>>>;
     for (const provider of Object.keys(models) as ProviderKind[]) {
       const entry = parsed[provider];
@@ -68,6 +68,21 @@ export function loadHarnessModels(): HarnessModels {
   } catch {
     return models;
   }
+}
+
+// A default model picked before per-harness defaults existed lives in the old
+// shared `primary` agent entry; it becomes Droid's default. Saved at once
+// because the next agent-config save drops `primary`, which also retires this
+// path after one launch. An effort saved without a model was the app's own
+// default, not a choice, so it stays behind.
+function adoptLegacyPrimaryModel(models: HarnessModels): HarnessModels {
+  const raw = getLocalStorage()?.getItem(AGENT_CONFIG_STORAGE_KEY);
+  if (!raw) return models;
+  const { primary } = JSON.parse(raw) as { primary?: Partial<AgentModelConfig> };
+  if (typeof primary?.modelId !== 'string' || !primary.modelId) return models;
+  const droid: HarnessModel = { modelId: primary.modelId };
+  if (isReasoningEffort(primary.reasoning)) droid.reasoning = primary.reasoning;
+  return saveHarnessModels({ ...models, droid });
 }
 
 export function saveHarnessModels(models: HarnessModels): HarnessModels {

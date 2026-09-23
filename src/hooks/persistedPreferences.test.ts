@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { DEFAULT_THEME, type ThemeColors, type ThemePreset } from '../lib/theme';
 import { loadTheme } from './persistedThemePreferences';
-import { loadAgentConfig, sanitizeAgentConfig } from './persistedUiPreferences';
+import { loadAgentConfig, loadHarnessModels, sanitizeAgentConfig } from './persistedUiPreferences';
 import type { ModelInfo } from '../types/bridge';
 
 const LEGACY_LIGHT: ThemeColors = {
@@ -86,6 +86,29 @@ test('malformed agent config sanitizes to defaults', () => {
         worker: { modelId: undefined, reasoning: 'medium' },
         validator: { modelId: undefined, reasoning: 'high' },
       });
+    },
+  );
+});
+
+test("a legacy primary default model becomes Droid's saved harness default", () => {
+  withLocalStorageMap(
+    {
+      'droid-agent-config-v2': JSON.stringify({
+        primary: { modelId: 'model-a', reasoning: 'low' },
+        worker: { modelId: undefined, reasoning: 'medium' },
+      }),
+    },
+    () => {
+      const expected = {
+        droid: { modelId: 'model-a', reasoning: 'low' },
+        claude: {},
+        codex: {},
+      };
+      assert.deepEqual(loadHarnessModels(), expected);
+      assert.deepEqual(
+        JSON.parse(globalThis.localStorage?.getItem('droid-harness-models-v1') ?? '{}'),
+        expected,
+      );
     },
   );
 });
