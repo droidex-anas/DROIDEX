@@ -428,11 +428,7 @@ export class ProjectService {
     const project = this.controlledProject(source, target);
     this.wakes.invalidate(project);
     await this.sessions.interrupt(target);
-    await this.wakes.settle(project);
-    clearAsk(project, this.thread(project, target));
-    project.pending = project.pending.filter((message) => message.to !== target);
-    await this.save();
-    this.wakes.kick(project);
+    await this.quiet(project, target);
   }
 
   async setPaused(id: string, paused: boolean, acknowledgeDelivery = false): Promise<void> {
@@ -453,19 +449,35 @@ export class ProjectService {
     this.wakes.kick(project);
   }
 
-  async pauseForSession(appSessionId: string): Promise<void> {
+  /**
+   * The user stopped or closed a conversation by hand. Stopping the main thread
+   * holds the whole project; stopping one thread quiets only that thread, so
+   * the rest of the project keeps working.
+   */
+  async userStopped(appSessionId: string): Promise<void> {
     const project = this.membership.get(appSessionId);
-    if (project) await this.setPaused(project.id, true);
+    if (!project || this.closed) return;
+    if (!this.thread(project, appSessionId).ownerAppSessionId) {
+      await this.setPaused(project.id, true);
+      return;
+    }
+    this.wakes.invalidate(project);
+    await this.quiet(project, appSessionId);
   }
 
   async observe(event: ServerEvent): Promise<void> {
     if (this.closed) return;
     await this.turns.observe(event);
+    if (event.type !== 'session.closed') return;
+    // A delivery parked on a busy member waits for its turn to settle. A closed
+    // session never settles one, and the next delivery resumes it instead.
+    const project = this.membership.get(event.appSessionId);
+    if (project) this.wakes.available(project, event.appSessionId);
     // A released runtime hands back a scheduled slot, which is exactly what a
     // delivery parked on capacity is waiting for. Nothing else announces it:
     // the capacity hook fires for a resume that produced no runtime, not for a
     // session that closed.
-    if (event.type === 'session.closed') this.capacityChanged();
+    this.capacityChanged();
   }
 
   sessionAvailable(appSessionId: string): void {
@@ -487,6 +499,15 @@ export class ProjectService {
     await Promise.allSettled(this.launches);
     await this.wakes.flush();
     await this.save();
+  }
+
+  /** Drops what was queued for a stopped thread once admission has settled. */
+  private async quiet(project: Project, target: string): Promise<void> {
+    await this.wakes.settle(project);
+    clearAsk(project, this.thread(project, target));
+    project.pending = project.pending.filter((message) => message.to !== target);
+    await this.save();
+    this.wakes.kick(project);
   }
 
   private launch(

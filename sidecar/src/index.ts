@@ -29,7 +29,7 @@ const server = startBridgeServer({
   onCommand: async (command) => {
     if (command.type === 'session.interrupt' || command.type === 'session.close') {
       // Invalidate automatic work immediately; never delay the user's Stop for disk IO.
-      void projects?.pauseForSession(command.appSessionId).catch(reportProjectError);
+      void projects?.userStopped(command.appSessionId).catch(reportProjectError);
     }
     if (await handleProjectCommand(command)) return;
     if (automationManager && (await automationManager.handleBridgeCommand(command))) return;
