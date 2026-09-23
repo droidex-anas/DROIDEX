@@ -525,6 +525,49 @@ test('a released runtime unparks a delivery that was waiting for a slot', async 
   assert.equal(h.projects.list()[0]?.queued, 0);
 });
 
+test('stopping one thread by hand quiets that thread, not the project', async (t) => {
+  const h = await harness();
+  t.after(() => h.projects.close());
+  const { main } = await h.root();
+  const stopped = await h.projects.spawn(main, input);
+  const working = await h.projects.spawn(main, input);
+  await h.projects.send(main, stopped.appSessionId, 'Drop this.');
+  await h.projects.userStopped(stopped.appSessionId);
+  await drain();
+  assert.equal(h.projects.list()[0]?.paused, false);
+  assert.equal(
+    h.sent.some((item) => item.id === stopped.appSessionId),
+    false,
+  );
+  await h.finish(working.appSessionId, 'Still reporting.');
+  await drain();
+  assert.equal(h.sent.at(-1)?.id, main);
+
+  // Stopping the main thread still holds the whole project.
+  await h.projects.userStopped(main);
+  assert.equal(h.projects.list()[0]?.paused, true);
+});
+
+test('a closed recipient unparks the delivery that waited on its turn', async (t) => {
+  const h = await harness();
+  t.after(() => h.projects.close());
+  const { main } = await h.root();
+  const child = await h.projects.spawn(main, input);
+  const owner = h.sessions.get(main);
+  assert.ok(owner);
+  owner.streaming = true;
+  await h.finish(child.appSessionId, 'Done');
+  await drain();
+  assert.equal(h.sent.length, 0);
+
+  // The owner closes mid-turn, so no settlement ever frees the delivery.
+  owner.streaming = false;
+  await h.projects.observe({ type: 'session.closed', appSessionId: main });
+  await drain();
+  assert.equal(h.sent.at(-1)?.id, main);
+  assert.equal(h.projects.list()[0]?.queued, 0);
+});
+
 test('native permissions and user questions never generate controller turns', async (t) => {
   const h = await harness();
   t.after(() => h.projects.close());
