@@ -42,6 +42,35 @@ export interface ProviderModelSettings {
   reasoningEffort?: ReasoningEffort | null;
 }
 
+// A live voice conversation on the same session: the client negotiates WebRTC
+// with the provider's own service, so audio never reaches the sidecar. The
+// session relays the handshake and reports what was said.
+export interface ProviderVoiceStart {
+  // The client's SDP offer, built from its microphone and audio sink.
+  sdp: string;
+  // One of the voices `listVoices` published; absent takes the provider default.
+  voice?: string;
+  // How much the agent's work is spoken while it runs.
+  narration?: VoiceNarration;
+}
+
+export type VoiceNarration = 'brief' | 'commentary';
+
+export type ProviderVoiceEvent =
+  | { kind: 'answer'; sdp: string }
+  | { kind: 'started' }
+  | { kind: 'transcript'; role: 'user' | 'assistant'; text: string; final: boolean }
+  | { kind: 'closed'; reason: string }
+  | { kind: 'error'; message: string };
+
+export interface ProviderVoice {
+  // The voices this provider offers, and the one it uses when none is chosen.
+  listVoices(): Promise<{ voices: string[]; defaultVoice?: string }>;
+  start(input: ProviderVoiceStart): Promise<void>;
+  stop(): Promise<void>;
+  onEvent(listener: (event: ProviderVoiceEvent) => void): () => void;
+}
+
 export interface ProviderSession {
   readonly provider: ProviderKind;
   // Native id of the session the provider holds open.
@@ -78,6 +107,8 @@ export interface ProviderSession {
   // Only for a provider that has a planning mode of its own. Absent means the
   // session runs in Auto always, and the composer offers no Spec toggle for it.
   setInteractionMode?(mode: SessionInteractionMode): Promise<void>;
+  // Present only on a provider that can hold a voice conversation.
+  readonly voice?: ProviderVoice;
   interrupt(): Promise<void>;
   close(): Promise<void>;
 }

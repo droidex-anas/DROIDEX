@@ -686,6 +686,15 @@ export type ClientCommand =
   | { type: 'session.resume'; appSessionId: string }
   | { type: 'session.interrupt'; appSessionId: string }
   | {
+      type: 'voice.start';
+      appSessionId: string;
+      sdp: string;
+      voice?: string;
+      narration?: VoiceNarration;
+    }
+  | { type: 'voice.stop'; appSessionId: string }
+  | { type: 'voice.voices'; appSessionId: string }
+  | {
       type: 'session.updateSettings';
       appSessionId: string;
       modelId?: string | null;
@@ -880,7 +889,21 @@ export interface ChildErrorEvent {
 }
 
 // ── Sidecar -> Frontend ──────────────────────────────────────────────
+// How much of the agent's work a voice session speaks while it runs.
+export type VoiceNarration = 'brief' | 'commentary';
+
 export type ServerEvent =
+  | { type: 'voice.answer'; appSessionId: string; sdp: string }
+  | { type: 'voice.state'; appSessionId: string; status: 'live' | 'closed'; reason?: string }
+  | {
+      type: 'voice.transcript';
+      appSessionId: string;
+      role: 'user' | 'assistant';
+      text: string;
+      final: boolean;
+    }
+  | { type: 'voice.voices'; appSessionId: string; voices: string[]; defaultVoice?: string }
+  | { type: 'voice.error'; appSessionId: string; message: string }
   | McpServerEvent
   | AutomationBridgeEvent
   | { type: 'connection'; status: 'connected' | 'error'; message?: string }

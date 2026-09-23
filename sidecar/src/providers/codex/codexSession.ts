@@ -18,6 +18,7 @@ import {
   type CodexTurn,
 } from './codexEvents.js';
 import { CodexStartup } from './codexStartup.js';
+import { CodexVoice } from './codexVoice.js';
 import { TurnStream, turnInput, turnStartParams } from './codexTurn.js';
 
 const STARTUP_QUIET_MS = 40;
@@ -43,6 +44,9 @@ export class CodexSession implements ProviderSession {
   readonly provider = 'codex' as const;
   readonly providerSessionId: string;
   readonly closed: Promise<Error | undefined>;
+  // Codex can hold a voice conversation on this thread; the client does the
+  // audio and this only relays the handshake and the transcript.
+  readonly voice: CodexVoice;
 
   private resolveClosed: (error?: Error) => void = () => undefined;
   private hasClosed = false;
@@ -78,6 +82,7 @@ export class CodexSession implements ProviderSession {
     this.autonomy = input.autonomy;
     this.model = input.model;
     this.mapper = new CodexEventMapper(input.appSessionId, input.model);
+    this.voice = new CodexVoice(this.client, () => this.threadId);
     this.prompts = new OpenPrompts(input.appSessionId, input.interactions);
     // Registered before `initialize`, so nothing the server sends can arrive
     // before its handler exists. Requests left unregistered — the legacy exec
