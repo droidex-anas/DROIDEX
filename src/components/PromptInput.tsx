@@ -2130,17 +2130,7 @@ export default function PromptInput({
         )}
       {voice.view === 'full' && (
         <Suspense fallback={null}>
-          <VoiceSurface
-            voice={voice}
-            narration={state.narrationMode}
-            selectedVoice={state.defaultVoice || undefined}
-            onNarrationChange={(mode) => {
-              dispatch({ type: 'SET_NARRATION_MODE', mode });
-            }}
-            onVoiceChange={(next) => {
-              dispatch({ type: 'SET_DEFAULT_VOICE', voice: next });
-            }}
-          />
+          <VoiceSurface voice={voice} />
         </Suspense>
       )}
     </div>

@@ -76,6 +76,11 @@ export type VoiceAction =
 // would actually show.
 const MAX_LINES = 200;
 
+// How far back a finished line is matched against what just arrived. One
+// exchange deep: long enough for the provider to restate the request it is
+// answering, short enough that repeating yourself later reads as a new line.
+const RESTATED_WINDOW = 3;
+
 const IDLE: VoiceSessionState = { status: 'idle', voices: [], lines: [], linesOpened: 0 };
 
 /** The chat's voice state, or the shared idle one when it has never spoken. */
@@ -155,9 +160,26 @@ function withSpokenText(
     const spoken = { ...open, text: final ? text || open.text : open.text + text, final };
     return { ...current, lines: [...lines.slice(0, -1), spoken] };
   }
-  // A closing notification can arrive twice. The line it closed already holds
-  // that utterance, so there is nothing to open and nothing to say again.
-  if (final && open?.final && open.role === role && open.text === text) return current;
+  // The provider closes an utterance more than once, and it closes a short
+  // reply before continuing it, so a finished line can arrive again verbatim or
+  // extended. Both land on the line that already holds that utterance rather
+  // than beside it. Only the recent tail is considered, so the same words said
+  // again later are a new line.
+  if (final && text) {
+    const from = Math.max(0, lines.length - RESTATED_WINDOW);
+    for (let index = lines.length - 1; index >= from; index -= 1) {
+      const line = lines[index];
+      if (line.role !== role || !line.final) continue;
+      if (line.text === text) return current;
+      if (!text.startsWith(line.text) && !line.text.startsWith(text)) continue;
+      const kept = text.length > line.text.length ? text : line.text;
+      if (kept === line.text) return current;
+      return {
+        ...current,
+        lines: [...lines.slice(0, index), { ...line, text: kept }, ...lines.slice(index + 1)],
+      };
+    }
+  }
   if (!text) return current;
   const id = current.linesOpened + 1;
   return {

@@ -3,11 +3,9 @@ import { createPortal } from 'react-dom';
 import { motion, useReducedMotion } from 'framer-motion';
 import { ChevronDown, Mic, MicOff, X } from 'lucide-react';
 import { useObscuresNativeSurfaces } from '../../hooks/useObscuresNativeSurfaces';
-import { VoiceControls } from './VoiceControls';
 import { VoiceOrb } from './VoiceOrb';
 import { voiceStatusLabel } from './voiceStatus';
 import type { Voice } from './useVoice';
-import type { VoiceNarration } from '../../types/bridge';
 
 /** How many spoken lines stay on screen; the chat keeps the rest. */
 const VISIBLE_LINES = 6;
@@ -16,49 +14,17 @@ const controlClass =
   'grid h-9 w-9 place-items-center rounded-full text-droid-text-secondary transition-colors hover:bg-droid-surface/70 hover:text-droid-text';
 
 /**
- * The full-window voice surface: the orb, what is being said right now, and
- * the settings that belong to the conversation itself. The chat keeps every
- * finished line, so this only holds the last few.
+ * The full-window voice surface: the orb, what is being said right now, and the
+ * two controls a conversation needs while it runs. Which voice speaks and how
+ * much it narrates are settings, not in-call controls, so they live in
+ * Settings. The chat keeps every finished line; this holds only the last few.
  */
-export function VoiceSurface({
-  voice,
-  narration,
-  onNarrationChange,
-  onVoiceChange,
-  selectedVoice,
-}: {
-  voice: Voice;
-  narration: VoiceNarration;
-  onNarrationChange: (narration: VoiceNarration) => void;
-  onVoiceChange: (voice: string) => void;
-  selectedVoice?: string;
-}) {
+export function VoiceSurface({ voice }: { voice: Voice }) {
   if (voice.view !== 'full') return null;
-  return createPortal(
-    <VoiceSurfaceDialog
-      voice={voice}
-      narration={narration}
-      onNarrationChange={onNarrationChange}
-      onVoiceChange={onVoiceChange}
-      selectedVoice={selectedVoice}
-    />,
-    document.body,
-  );
+  return createPortal(<VoiceSurfaceDialog voice={voice} />, document.body);
 }
 
-function VoiceSurfaceDialog({
-  voice,
-  narration,
-  onNarrationChange,
-  onVoiceChange,
-  selectedVoice,
-}: {
-  voice: Voice;
-  narration: VoiceNarration;
-  onNarrationChange: (narration: VoiceNarration) => void;
-  onVoiceChange: (voice: string) => void;
-  selectedVoice?: string;
-}) {
+function VoiceSurfaceDialog({ voice }: { voice: Voice }) {
   const dialogRef = useRef<HTMLDivElement>(null);
   const reducedMotion = useReducedMotion();
   const { session } = voice;
@@ -160,15 +126,6 @@ function VoiceSurfaceDialog({
           >
             {session.muted ? <MicOff className="h-4 w-4" /> : <Mic className="h-4 w-4" />}
           </button>
-
-          <VoiceControls
-            voices={session.voices}
-            defaultVoice={session.defaultVoice}
-            selectedVoice={selectedVoice}
-            onVoiceChange={onVoiceChange}
-            narration={narration}
-            onNarrationChange={onNarrationChange}
-          />
 
           <button
             type="button"
