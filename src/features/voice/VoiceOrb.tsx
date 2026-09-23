@@ -98,6 +98,9 @@ export function VoiceOrb({
         className="absolute rounded-full blur-2xl"
         style={{
           inset: '-22%',
+          // The halo is light, not a panel: masking it to a circle keeps its
+          // blurred bounding box from reading as a square behind the orb.
+          maskImage: 'radial-gradient(closest-side, #000 60%, transparent 100%)',
           background:
             'radial-gradient(closest-side, color-mix(in srgb, var(--droid-skill) 55%, transparent), color-mix(in srgb, var(--droid-ultra) 30%, transparent) 55%, transparent 75%)',
         }}
@@ -106,6 +109,10 @@ export function VoiceOrb({
         ref={sphereRef}
         className="absolute inset-0 overflow-hidden rounded-full"
         style={{
+          // Blurred, blended children in a rounded overflow box get clipped to
+          // the box's rectangle by the compositor, which shows as a square edge
+          // around the orb. Clipping to the circle keeps the shape it is drawn as.
+          clipPath: 'circle(50% at 50% 50%)',
           background:
             'linear-gradient(145deg, #ffffff 0%, var(--droid-skill) 38%, var(--droid-ultra) 68%, color-mix(in srgb, var(--droid-ultra) 45%, #000000) 100%)',
           boxShadow:
