@@ -95,6 +95,8 @@ export function runStreaming(
       onLine({ stream: 'stderr', line: err instanceof Error ? err.message : String(err) });
       resolve(1);
     });
-    child.on('close', (code) => { resolve(completedProcessExitCode(code)); });
+    child.on('close', (code) => {
+      resolve(completedProcessExitCode(code));
+    });
   });
 }

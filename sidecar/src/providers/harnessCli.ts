@@ -117,13 +117,18 @@ export class HarnessCliUpdater {
       return;
     }
     this.updating.add(provider);
-    const previousVersion = await installedVersion(install.path);
-    await this.report();
+    let previousVersion: string | undefined;
     let lastLine: string | undefined;
-    const exitCode = await runStreaming(install.update, ({ line }) => {
-      lastLine = line;
-    });
-    this.updating.delete(provider);
+    let exitCode: number;
+    try {
+      previousVersion = await installedVersion(install.path);
+      await this.report();
+      exitCode = await runStreaming(install.update, ({ line }) => {
+        lastLine = line;
+      });
+    } finally {
+      this.updating.delete(provider);
+    }
     const ok = exitCode === 0;
     if (ok) {
       this.updateErrors.delete(provider);
