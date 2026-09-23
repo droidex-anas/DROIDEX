@@ -300,6 +300,10 @@ function createHarness(ordinarySummaries: SessionSummary[] = []) {
       calls.push({ target: 'browser', method: 'browser.close', args: [appSessionId] });
       return Promise.resolve();
     },
+    stopVoiceSession: (appSessionId) => {
+      calls.push({ target: 'cleanup', method: 'voice.stop', args: [appSessionId] });
+      return Promise.resolve();
+    },
     emit: recordEvent,
     emitError: (error) => recordEvent({ type: 'error', ...error }),
     emitStatus: (appSessionId, text) => {

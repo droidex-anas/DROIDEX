@@ -162,6 +162,9 @@ export interface SessionLifecycleDependencies {
   forgetMissionControl: (appSessionId: string) => void;
   forgetPendingSettings: (appSessionId: string) => void;
   closeBrowserSession: (appSessionId: string) => Promise<void>;
+  // Ends a live voice conversation before the provider session it runs on is
+  // torn down, so no realtime session is left open.
+  stopVoiceSession: (appSessionId: string) => Promise<void>;
   emit: (event: ServerEvent) => void;
   emitError: (error: LifecycleError) => void;
   emitStatus: (appSessionId: string, text: string) => void;
@@ -761,6 +764,8 @@ export class SessionLifecycle {
         firstError ??= error;
       }
     };
+
+    await run(() => d.stopVoiceSession(liveSession.summary.appSessionId));
 
     // First, while every provider process of this session is still alive and
     // still the parent of what it spawned: the dev servers are descendants of
