@@ -34,44 +34,6 @@ const BROWSER_PANE_CHANNELS = [
   'native-browser-credential-capture',
 ];
 
-// Unguarded today: these run for any sender. Listed so no new channel joins them unreviewed.
-const UNGUARDED_CHANNELS = [
-  'pick-directory',
-  'pick-files',
-  'save-image',
-  'save-attachment',
-  'discard-image',
-  'get-api-key',
-  'set-api-key',
-  'clear-api-key',
-  'list-files',
-  'read-file',
-  'repo-status',
-  'list-editors',
-  'editor-icon',
-  'open-project',
-  'git-environment',
-  'git-branches',
-  'git-worktrees',
-  'git-diff-stat',
-  'git-diff-files',
-  'git-file-diff',
-  'git-mark-turn-start',
-  'git-adopt-turn-baseline',
-  'git-create-branch',
-  'git-checkout',
-  'git-create-worktree',
-  'git-remove-worktree',
-  'git-commit',
-  'git-push',
-  'git-fetch',
-  'onboarding-get',
-  'onboarding-set',
-  'app-version',
-  'app-relaunch',
-  'open-external',
-];
-
 function createBrowserWindowStub() {
   const created = Promise.withResolvers();
   class BrowserWindow extends EventEmitter {
@@ -208,11 +170,10 @@ async function checkSenders({ channels, mainWindow }) {
   };
   assert.equal(await senderCheck(channels.get('bridge-info'), mainFrameEvent), PASSED);
 
-  const exempt = [...BROWSER_PANE_CHANNELS, ...UNGUARDED_CHANNELS];
   assert.deepEqual(
-    exempt.filter((channel) => !channels.has(channel)),
+    BROWSER_PANE_CHANNELS.filter((channel) => !channels.has(channel)),
     [],
-    'exempt channels that main.cjs no longer registers',
+    'Browser pane channels that main.cjs no longer registers',
   );
   const foreignSenders = {
     'another renderer': { sender: new EventEmitter(), senderFrame: {} },
@@ -220,7 +181,7 @@ async function checkSenders({ channels, mainWindow }) {
   };
   const accepted = [];
   for (const [channel, handler] of channels) {
-    if (exempt.includes(channel)) continue;
+    if (BROWSER_PANE_CHANNELS.includes(channel)) continue;
     for (const [senderName, event] of Object.entries(foreignSenders)) {
       const outcome = await senderCheck(handler, event);
       if (outcome !== REJECTED) accepted.push(`${channel} from ${senderName}: ${outcome}`);

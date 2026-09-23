@@ -395,28 +395,35 @@ function registerIpc() {
     assertMainRenderer(event);
     return sidecarSupervisor.snapshot();
   });
-  ipcMain.handle('pick-directory', async () => {
+  ipcMain.handle('pick-directory', async (event) => {
+    assertMainRenderer(event);
     const result = await dialog.showOpenDialog({ properties: ['openDirectory'] });
     const selected = result.canceled ? null : (result.filePaths[0] ?? null);
     if (selected) await filesRootAccess.authorize(selected);
     return selected;
   });
-  ipcMain.handle('pick-files', async () => {
+  ipcMain.handle('pick-files', async (event) => {
+    assertMainRenderer(event);
     const result = await dialog.showOpenDialog({ properties: ['openFile', 'multiSelections'] });
     return result.canceled ? [] : result.filePaths;
   });
   // Composer image pastes/drops land in a temp dir and travel to Droid as
   // ordinary @-mentioned paths; discard only ever unlinks inside that dir.
   const attachmentsDir = path.join(os.tmpdir(), 'droidex-attachments');
-  ipcMain.handle('save-image', (_event, { dataUrl }) => attachments.save(attachmentsDir, dataUrl));
+  ipcMain.handle('save-image', (event, { dataUrl }) => {
+    assertMainRenderer(event);
+    return attachments.save(attachmentsDir, dataUrl);
+  });
   // Pasted non-image files (PDF, doc, video, ...) land in the same temp store
   // and likewise travel to Droid as @-mentioned paths.
-  ipcMain.handle('save-attachment', (_event, { name, dataUrl }) =>
-    attachments.saveFile(attachmentsDir, { name, dataUrl }),
-  );
-  ipcMain.handle('discard-image', (_event, { path: target }) =>
-    attachments.discard(attachmentsDir, target),
-  );
+  ipcMain.handle('save-attachment', (event, { name, dataUrl }) => {
+    assertMainRenderer(event);
+    return attachments.saveFile(attachmentsDir, { name, dataUrl });
+  });
+  ipcMain.handle('discard-image', (event, { path: target }) => {
+    assertMainRenderer(event);
+    return attachments.discard(attachmentsDir, target);
+  });
   // OS finish/status banners. silent=false plays the system notification sound.
   // Foreground suppress is owned by the renderer; click opens the finished
   // session via the pending-open queue.
@@ -461,10 +468,22 @@ function registerIpc() {
     assertMainRenderer(event);
     return takePendingNotificationOpen();
   });
-  ipcMain.handle('get-api-key', getApiKey);
-  ipcMain.handle('set-api-key', (_event, { key }) => setApiKey(key));
-  ipcMain.handle('clear-api-key', clearApiKey);
-  ipcMain.handle('list-files', (_event, { dir }) => listFiles(dir));
+  ipcMain.handle('get-api-key', (event) => {
+    assertMainRenderer(event);
+    return getApiKey();
+  });
+  ipcMain.handle('set-api-key', (event, { key }) => {
+    assertMainRenderer(event);
+    return setApiKey(key);
+  });
+  ipcMain.handle('clear-api-key', (event) => {
+    assertMainRenderer(event);
+    return clearApiKey();
+  });
+  ipcMain.handle('list-files', (event, { dir }) => {
+    assertMainRenderer(event);
+    return listFiles(dir);
+  });
   ipcMain.handle('get-performance-metrics', (event) => {
     assertMainRenderer(event);
     return performanceMetrics.collect();
@@ -477,39 +496,87 @@ function registerIpc() {
     assertMainRenderer(event);
     return powerTier.snapshot();
   });
-  ipcMain.handle('read-file', (_event, { path: filePath }) => readFile(filePath));
-  ipcMain.handle('repo-status', (_event, { dir }) => repoStatus(dir));
-  ipcMain.handle('list-editors', () => editorApps.listEditors());
-  ipcMain.handle('editor-icon', (_event, { editor }) => editorApps.editorIcon(editor));
-  ipcMain.handle('open-project', (_event, { dir, editor, target }) =>
-    openProject(dir, editor, target),
-  );
+  ipcMain.handle('read-file', (event, { path: filePath }) => {
+    assertMainRenderer(event);
+    return readFile(filePath);
+  });
+  ipcMain.handle('repo-status', (event, { dir }) => {
+    assertMainRenderer(event);
+    return repoStatus(dir);
+  });
+  ipcMain.handle('list-editors', (event) => {
+    assertMainRenderer(event);
+    return editorApps.listEditors();
+  });
+  ipcMain.handle('editor-icon', (event, { editor }) => {
+    assertMainRenderer(event);
+    return editorApps.editorIcon(editor);
+  });
+  ipcMain.handle('open-project', (event, { dir, editor, target }) => {
+    assertMainRenderer(event);
+    return openProject(dir, editor, target);
+  });
 
-  ipcMain.handle('git-environment', (_event, { dir }) => gitVcs.environment(dir));
-  ipcMain.handle('git-branches', (_event, { dir }) => gitVcs.branches(dir));
-  ipcMain.handle('git-worktrees', (_event, { dir }) => gitVcs.worktrees(dir));
-  ipcMain.handle('git-diff-stat', (_event, { dir, options }) => gitVcs.diffStat(dir, options));
-  ipcMain.handle('git-diff-files', (_event, { dir, options }) => gitVcs.diffFiles(dir, options));
-  ipcMain.handle('git-file-diff', (_event, { dir, options }) => gitVcs.fileDiff(dir, options));
-  ipcMain.handle('git-mark-turn-start', (_event, { dir, ownerId }) =>
-    gitVcs.markTurnStart(dir, ownerId),
-  );
-  ipcMain.handle('git-adopt-turn-baseline', (_event, { dir, clientRef, appSessionId }) =>
-    gitVcs.adoptTurnBaseline(dir, clientRef, appSessionId),
-  );
-  ipcMain.handle('git-create-branch', (_event, { dir, options }) =>
-    gitVcs.createBranch(dir, options),
-  );
-  ipcMain.handle('git-checkout', (_event, { dir, options }) => gitVcs.checkout(dir, options));
-  ipcMain.handle('git-create-worktree', (_event, { dir, options }) =>
-    gitVcs.createWorktree(dir, options),
-  );
-  ipcMain.handle('git-remove-worktree', (_event, { dir, options }) =>
-    gitVcs.removeWorktree(dir, options),
-  );
-  ipcMain.handle('git-commit', (_event, { dir, options }) => gitVcs.commit(dir, options));
-  ipcMain.handle('git-push', (_event, { dir, options }) => gitVcs.push(dir, options));
-  ipcMain.handle('git-fetch', (_event, { dir }) => gitVcs.fetchRemotes(dir));
+  ipcMain.handle('git-environment', (event, { dir }) => {
+    assertMainRenderer(event);
+    return gitVcs.environment(dir);
+  });
+  ipcMain.handle('git-branches', (event, { dir }) => {
+    assertMainRenderer(event);
+    return gitVcs.branches(dir);
+  });
+  ipcMain.handle('git-worktrees', (event, { dir }) => {
+    assertMainRenderer(event);
+    return gitVcs.worktrees(dir);
+  });
+  ipcMain.handle('git-diff-stat', (event, { dir, options }) => {
+    assertMainRenderer(event);
+    return gitVcs.diffStat(dir, options);
+  });
+  ipcMain.handle('git-diff-files', (event, { dir, options }) => {
+    assertMainRenderer(event);
+    return gitVcs.diffFiles(dir, options);
+  });
+  ipcMain.handle('git-file-diff', (event, { dir, options }) => {
+    assertMainRenderer(event);
+    return gitVcs.fileDiff(dir, options);
+  });
+  ipcMain.handle('git-mark-turn-start', (event, { dir, ownerId }) => {
+    assertMainRenderer(event);
+    return gitVcs.markTurnStart(dir, ownerId);
+  });
+  ipcMain.handle('git-adopt-turn-baseline', (event, { dir, clientRef, appSessionId }) => {
+    assertMainRenderer(event);
+    return gitVcs.adoptTurnBaseline(dir, clientRef, appSessionId);
+  });
+  ipcMain.handle('git-create-branch', (event, { dir, options }) => {
+    assertMainRenderer(event);
+    return gitVcs.createBranch(dir, options);
+  });
+  ipcMain.handle('git-checkout', (event, { dir, options }) => {
+    assertMainRenderer(event);
+    return gitVcs.checkout(dir, options);
+  });
+  ipcMain.handle('git-create-worktree', (event, { dir, options }) => {
+    assertMainRenderer(event);
+    return gitVcs.createWorktree(dir, options);
+  });
+  ipcMain.handle('git-remove-worktree', (event, { dir, options }) => {
+    assertMainRenderer(event);
+    return gitVcs.removeWorktree(dir, options);
+  });
+  ipcMain.handle('git-commit', (event, { dir, options }) => {
+    assertMainRenderer(event);
+    return gitVcs.commit(dir, options);
+  });
+  ipcMain.handle('git-push', (event, { dir, options }) => {
+    assertMainRenderer(event);
+    return gitVcs.push(dir, options);
+  });
+  ipcMain.handle('git-fetch', (event, { dir }) => {
+    assertMainRenderer(event);
+    return gitVcs.fetchRemotes(dir);
+  });
 
   ipcMain.handle('github-available', (event) => {
     assertMainRenderer(event);
@@ -596,9 +663,18 @@ function registerIpc() {
     return githubVcs.mergePr(requestDir, options);
   });
 
-  ipcMain.handle('onboarding-get', getOnboarding);
-  ipcMain.handle('onboarding-set', (_event, { patch }) => setOnboarding(patch));
-  ipcMain.handle('app-version', () => app.getVersion());
+  ipcMain.handle('onboarding-get', (event) => {
+    assertMainRenderer(event);
+    return getOnboarding();
+  });
+  ipcMain.handle('onboarding-set', (event, { patch }) => {
+    assertMainRenderer(event);
+    return setOnboarding(patch);
+  });
+  ipcMain.handle('app-version', (event) => {
+    assertMainRenderer(event);
+    return app.getVersion();
+  });
   ipcMain.handle('app-check-update', (event, options) => {
     assertMainRenderer(event);
     return appUpdater.check(options);
@@ -667,12 +743,18 @@ function registerIpc() {
       fs: fsp,
     });
   });
-  ipcMain.handle('app-relaunch', () => relaunchApp());
+  ipcMain.handle('app-relaunch', (event) => {
+    assertMainRenderer(event);
+    relaunchApp();
+  });
   ipcMain.handle('app-set-icon', (event, payload) => {
     assertMainRenderer(event);
     return setAppIcon(payload?.mode);
   });
-  ipcMain.handle('open-external', (_event, { url }) => openExternal(url));
+  ipcMain.handle('open-external', (event, { url }) => {
+    assertMainRenderer(event);
+    return openExternal(url);
+  });
 
   ipcMain.handle('terminal-create', (event, args) => {
     assertMainRenderer(event);
