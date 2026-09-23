@@ -39,11 +39,11 @@ your own projects, requires prior written permission from the copyright holder.
 Only after obtaining that permission, build and install a local tarball:
 
 ```sh
-cd /path/to/droid-maxxing/packages/icons
+cd /path/to/DROIDEX/packages/icons
 npm pack
 
 cd /path/to/your-app
-npm install /path/to/droid-maxxing/packages/icons/droidex-icons-0.1.0.tgz
+npm install /path/to/DROIDEX/packages/icons/droidex-icons-0.1.0.tgz
 ```
 
 The tarball contains compiled ESM, TypeScript declarations, CSS and SVGs.

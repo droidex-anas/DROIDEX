@@ -26,8 +26,8 @@ These are license obligations, not requests.
 
 - **Say it is a fork.** State clearly and near the top of your README, website,
   and app description that your project is a fork or derivative of DROIDEX, and
-  link back to https://github.com/droidex-anas/droid-maxxing. A single sentence
-  is enough, for example: "Foo is a fork of [DROIDEX](https://github.com/droidex-anas/droid-maxxing)
+  link back to https://github.com/droidex-anas/DROIDEX. A single sentence
+  is enough, for example: "Foo is a fork of [DROIDEX](https://github.com/droidex-anas/DROIDEX)
   by Anas, licensed under Apache 2.0."
 - **Use your own name and branding.** Rename the application, the binary, the
   bundle identifier, the update feed, and the icon. Do not ship a product called
@@ -56,7 +56,7 @@ These are license obligations, not requests.
 - Selling merchandise or services under the DROIDEX name.
 - Any use suggesting that DROIDEX produced, sponsors, or endorses your work.
 
-To ask, open a [discussion](https://github.com/droidex-anas/droid-maxxing/discussions) on the repository. Permission that is not given in
+To ask, open a [discussion](https://github.com/droidex-anas/DROIDEX/discussions) on the repository. Permission that is not given in
 writing has not been given.
 
 ## Enforcement

@@ -96,7 +96,7 @@ function assertNoPrivateBuildFiles(paths, label) {
 function assertNoPrivateContent(content, label) {
   const text = content.toString('utf8');
   for (const forbidden of [
-    'github.com/droidex-anas/droid-maxxing',
+    'github.com/droidex-anas/DROIDEX',
     '/Users/anas/',
     '.codex/worktrees/',
   ]) {

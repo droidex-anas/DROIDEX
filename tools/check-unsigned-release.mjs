@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs';
 import process from 'node:process';
 import { extractFile } from '@electron/asar';
 
-const sourceRepository = 'droidex-anas/droid-maxxing';
+const sourceRepository = 'droidex-anas/DROIDEX';
 const releaseRepository = 'droidex-anas/droidex-releases';
 const releaseDirectory = 'release';
 const packageVersion = JSON.parse(readFileSync('package.json', 'utf8')).version;

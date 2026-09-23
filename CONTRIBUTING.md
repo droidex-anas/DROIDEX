@@ -26,15 +26,15 @@ change that crosses a process boundary.
 
 ## Ways to contribute
 
-- **Report a bug.** Open a [bug report](https://github.com/droidex-anas/droid-maxxing/issues/new?template=bug_report.yml)
+- **Report a bug.** Open a [bug report](https://github.com/droidex-anas/DROIDEX/issues/new?template=bug_report.yml)
   with your macOS version, DROIDEX version, and the steps that reproduce it.
-- **Propose a feature.** Open a [feature request](https://github.com/droidex-anas/droid-maxxing/issues/new?template=feature_request.yml)
+- **Propose a feature.** Open a [feature request](https://github.com/droidex-anas/DROIDEX/issues/new?template=feature_request.yml)
   describing the problem before the solution.
 - **Pick up an issue.** Anything labelled `good first issue` or `help wanted` is
   fair game. Comment on it so two people do not build the same thing.
 - **Improve the docs.** Unclear setup steps and stale runbooks are real bugs.
 - **Ask a question.** Use
-  [Discussions](https://github.com/droidex-anas/droid-maxxing/discussions) for
+  [Discussions](https://github.com/droidex-anas/DROIDEX/discussions) for
   anything that is not a bug or a concrete proposal.
 - **Report a vulnerability.** Do not open a public issue. Follow
   [SECURITY.md](SECURITY.md).
@@ -59,8 +59,8 @@ Droid, Claude Code, Codex) and can install the Factory Droid CLI for you during
 onboarding.
 
 ```bash
-git clone https://github.com/<your-username>/droid-maxxing.git
-cd droid-maxxing
+git clone https://github.com/<your-username>/DROIDEX.git
+cd DROIDEX
 npm install
 npm ci --prefix sidecar
 ```
@@ -217,6 +217,26 @@ Keep the diff reviewable. Unrelated reformatting, import reordering, and
 drive-by renames make a change harder to review and will be asked out. If a
 mechanical move and a behaviour change are both large, split them into separate
 commits so a reviewer is not hunting for logic inside a rename.
+
+## Changes that steer automation
+
+DROIDEX is built with coding agents, and maintainers run agents against
+contributor branches while reviewing them. A few paths therefore decide what
+that automation does:
+
+```
+AGENTS.md  .agent/  .factory/  .coderabbit.yaml  .github/workflows/  .husky/
+package.json  sidecar/package.json
+```
+
+A pull request that touches any of them trips the **Sensitive path review**
+check. That is not an accusation. It is a reminder that a maintainer has to read
+those diffs by hand, line by line, before anything runs them, and it will go red
+on your pull request until they have.
+
+If your change genuinely needs to touch one of these paths, that is fine. Say in
+the pull request description what you changed there and why, keep it in its own
+commit so it is easy to read, and expect it to take longer to review.
 
 ## Review
 

@@ -2,7 +2,7 @@ import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import process from 'node:process';
 
-const sourceRepository = 'droidex-anas/droid-maxxing';
+const sourceRepository = 'droidex-anas/DROIDEX';
 const releaseRepository = 'droidex-anas/droidex-releases';
 const releaseEnvironment = 'macos-release';
 const packageVersion = JSON.parse(readFileSync('package.json', 'utf8')).version;

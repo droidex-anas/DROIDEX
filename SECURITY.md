@@ -5,7 +5,7 @@
 **Do not open a public issue for a security problem.**
 
 Report it privately through GitHub:
-[Report a vulnerability](https://github.com/droidex-anas/droid-maxxing/security/advisories/new).
+[Report a vulnerability](https://github.com/droidex-anas/DROIDEX/security/advisories/new).
 This opens a private advisory visible only to you and the maintainer.
 
 Please include:

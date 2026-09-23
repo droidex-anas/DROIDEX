@@ -37,7 +37,7 @@ This Code of Conduct applies within all community spaces, and also applies when 
 
 ## Enforcement
 
-Instances of abusive, harassing, or otherwise unacceptable behavior may be reported privately to the project maintainer, [@droidex-anas](https://github.com/droidex-anas), using the contact address on that profile or a private report from the repository's [Security tab](https://github.com/droidex-anas/droid-maxxing/security/advisories/new). All complaints will be reviewed and investigated promptly and fairly.
+Instances of abusive, harassing, or otherwise unacceptable behavior may be reported privately to the project maintainer, [@droidex-anas](https://github.com/droidex-anas), using the contact address on that profile or a private report from the repository's [Security tab](https://github.com/droidex-anas/DROIDEX/security/advisories/new). All complaints will be reviewed and investigated promptly and fairly.
 
 All community leaders are obligated to respect the privacy and security of the reporter of any incident.
 
