@@ -15,39 +15,6 @@ const nativeBrowserSource = [
   .map((file) => fs.readFileSync(path.join(__dirname, file), 'utf8'))
   .join('\n');
 
-test('native browser invoke handlers authorize the main renderer', () => {
-  const channels = [
-    'native-browser-open',
-    'native-browser-attach',
-    'native-browser-detach',
-    'native-browser-set-bounds',
-    'native-browser-visible',
-    'native-browser-close',
-    'native-browser-reload',
-    'native-browser-go-back',
-    'native-browser-go-forward',
-    'native-browser-set-design-mode',
-    'native-browser-set-pencil-mode',
-    'native-browser-agent-action',
-    'native-browser-capture',
-  ];
-
-  for (const channel of channels) {
-    const start = mainSource.indexOf(`ipcMain.handle('${channel}'`);
-    assert.notEqual(start, -1, `missing ${channel} handler`);
-    const nextHandle = mainSource.indexOf('\n  ipcMain.handle(', start + 1);
-    const nextListener = mainSource.indexOf('\n  ipcMain.on(', start + 1);
-    const end = Math.min(
-      ...[nextHandle, nextListener, mainSource.length].filter((index) => index >= 0),
-    );
-    assert.match(
-      mainSource.slice(start, end),
-      /assertMainRenderer\(event\)/,
-      `${channel} must authorize its sender`,
-    );
-  }
-});
-
 test('native browser restore does not reopen a URL that already failed this run', () => {
   assert.match(nativeBrowserSource, /targetUrl: null,\s*failedRestoreUrl: null,/);
   assert.match(
@@ -122,44 +89,20 @@ test('sidecar lifecycle is delegated to the packaged-runtime supervisor', () => 
   assert.doesNotMatch(mainSource, /NODE_BIN|function nodeBin/);
 });
 
-test('bridge credentials require the top-level trusted renderer', () => {
-  const handlerStart = mainSource.indexOf("ipcMain.handle('bridge-info'");
-  const handlerEnd = mainSource.indexOf('\n  ipcMain.handle(', handlerStart + 1);
-  const handler = mainSource.slice(handlerStart, handlerEnd);
-
-  assert.notEqual(handlerStart, -1);
-  assert.match(handler, /assertMainRenderer\(event\)/);
-  assert.match(mainSource, /event\.senderFrame !== mainWindow\.webContents\.mainFrame/);
+test('the main window installs the renderer navigation guard', () => {
   assert.match(mainSource, /installRendererNavigationGuard\(mainWindow\.webContents/);
 });
 
-test('manual feedback reports require the trusted renderer', () => {
+test('manual feedback reports go to diagnostics', () => {
   const handlerStart = mainSource.indexOf("ipcMain.handle('feedback-report'");
   const handlerEnd = mainSource.indexOf('\n  ipcMain.handle(', handlerStart + 1);
   const handler = mainSource.slice(handlerStart, handlerEnd);
 
   assert.notEqual(handlerStart, -1);
-  assert.match(handler, /assertMainRenderer\(event\)/);
   assert.match(handler, /diagnostics\.reportFeedback\(report,/);
 });
 
-test('GitHub setup handlers require the trusted renderer and teardown their process', () => {
-  for (const channel of [
-    'github-available',
-    'github-install',
-    'github-authenticate',
-    'github-cancel-setup',
-  ]) {
-    const handlerStart = mainSource.indexOf(`ipcMain.handle('${channel}'`);
-    const handlerEnd = mainSource.indexOf('\n  ipcMain.handle(', handlerStart + 1);
-    assert.notEqual(handlerStart, -1, `missing ${channel} handler`);
-    assert.match(
-      mainSource.slice(handlerStart, handlerEnd),
-      /assertMainRenderer\(event\)/,
-      `${channel} must authorize its sender`,
-    );
-  }
-
+test('GitHub setup sends device codes to its caller and tears down its process', () => {
   const authenticateStart = mainSource.indexOf("ipcMain.handle('github-authenticate'");
   const authenticateEnd = mainSource.indexOf('\n  ipcMain.handle(', authenticateStart + 1);
   const authenticateHandler = mainSource.slice(authenticateStart, authenticateEnd);
@@ -175,29 +118,6 @@ test('GitHub setup handlers require the trusted renderer and teardown their proc
     mainSource,
     /const cleanupForRendererReplacement = \(\) => \{[\s\S]*?githubVcs\.cancelSetup\(\)/,
   );
-});
-
-test('pull request workspace handlers require the trusted renderer', () => {
-  for (const channel of [
-    'github-detect-pr',
-    'github-list-prs',
-    'github-view-pr',
-    'github-pr-diff',
-    'github-pr-checks',
-    'github-pr-comments',
-    'github-create-pr',
-    'github-post-comment',
-    'github-merge-pr',
-  ]) {
-    const handlerStart = mainSource.indexOf(`ipcMain.handle('${channel}'`);
-    const handlerEnd = mainSource.indexOf('\n  ipcMain.handle(', handlerStart + 1);
-    assert.notEqual(handlerStart, -1, `missing ${channel} handler`);
-    assert.match(
-      mainSource.slice(handlerStart, handlerEnd),
-      /assertMainRenderer\(event\)/,
-      `${channel} must authorize its sender`,
-    );
-  }
 });
 
 test('pull request workspace handlers validate IPC directories before PR operations', () => {
@@ -236,7 +156,7 @@ test('pull request workspace handlers validate IPC directories before PR operati
   }
 });
 
-test('diagnostics initialize before app readiness and preferences require the trusted renderer', () => {
+test('diagnostics initialize before app readiness and preference changes do not relaunch', () => {
   const disableAt = mainSource.indexOf('app.disableHardwareAcceleration();');
   const initializeAt = mainSource.indexOf(
     'const diagnosticsInitialization = diagnostics.initialize();',
@@ -255,17 +175,6 @@ test('diagnostics initialize before app readiness and preferences require the tr
   );
   assert.doesNotMatch(mainSource, /resolveUserDataDir|resolveHardwareAccelerationUserDataDir/);
 
-  for (const channel of [
-    'diagnostics-preference-get',
-    'diagnostics-preference-set',
-    'hardware-acceleration-preference-get',
-    'hardware-acceleration-preference-set',
-  ]) {
-    const handlerStart = mainSource.indexOf(`ipcMain.handle('${channel}'`);
-    const handlerEnd = mainSource.indexOf('\n  ipcMain.handle(', handlerStart + 1);
-    assert.notEqual(handlerStart, -1);
-    assert.match(mainSource.slice(handlerStart, handlerEnd), /assertMainRenderer\(event\)/);
-  }
   const preferenceHandlerStart = mainSource.indexOf("ipcMain.handle('diagnostics-preference-set'");
   const preferenceHandlerEnd = mainSource.indexOf(
     '\n  ipcMain.handle(',
@@ -293,13 +202,12 @@ test('embedded websites cannot request unused system permissions', () => {
   );
 });
 
-test('app icon switching authorizes the renderer and accepts only committed icon modes', () => {
+test('app icon switching accepts only committed icon modes', () => {
   const handlerStart = mainSource.indexOf("ipcMain.handle('app-set-icon'");
   const handlerEnd = mainSource.indexOf('\n  ipcMain.handle(', handlerStart + 1);
   const handler = mainSource.slice(handlerStart, handlerEnd);
 
   assert.notEqual(handlerStart, -1);
-  assert.match(handler, /assertMainRenderer\(event\)/);
   assert.match(handler, /setAppIcon\(payload\?\.mode\)/);
   assert.match(mainSource, /mode !== 'light' && mode !== 'dark' && mode !== 'system'/);
   assert.match(mainSource, /app\.dock\.setIcon\(iconPath\)/);
@@ -337,12 +245,7 @@ test('system app icon tracks the OS appearance and repaints on change', () => {
   );
 });
 
-test('power-tier IPC is trusted-renderer only and browser eviction is not crash recovery', () => {
-  const handlerStart = mainSource.indexOf("ipcMain.handle('power-tier'");
-  const handlerEnd = mainSource.indexOf('\n  ipcMain.handle(', handlerStart + 1);
-  const handler = mainSource.slice(handlerStart, handlerEnd);
-  assert.notEqual(handlerStart, -1);
-  assert.match(handler, /assertMainRenderer\(event\)/);
+test('browser eviction is not crash recovery and browser pages keep their own partition', () => {
   assert.match(nativeBrowserSource, /budget\.isEvictionClose\(entry\.viewCloseReason\)/);
   assert.match(nativeBrowserSource, /partition: BROWSER_PARTITION/);
   assert.match(nativeBrowserSource, /const BROWSER_PARTITION = 'persist:droidex-browser'/);

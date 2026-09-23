@@ -119,7 +119,10 @@ function createElectronStub(options) {
   };
 }
 
-function installElectronStub(electron) {
+function installElectronStub(electron, resourcesPath) {
+  process.resourcesPath = resourcesPath;
+  Object.defineProperty(process.versions, 'electron', { value: '37.2.0', configurable: true });
+  Object.defineProperty(process.versions, 'chrome', { value: '136.0.0.0', configurable: true });
   const originalLoad = Module._load;
   Module._load = function load(request, parent, isMain) {
     if (request === 'electron') return electron;
@@ -158,9 +161,6 @@ function evaluateMain() {
   delete process.env.SENTRY_DSN;
   delete process.env.ELECTRON_START_URL;
   delete process.env.SIDECAR_ENTRY;
-  process.resourcesPath = path.join(userData, 'resources');
-  Object.defineProperty(process.versions, 'electron', { value: '37.2.0', configurable: true });
-  Object.defineProperty(process.versions, 'chrome', { value: '136.0.0.0', configurable: true });
 
   const packageJson = JSON.parse(fs.readFileSync(path.join(appRoot, 'package.json'), 'utf8'));
   const electron = createElectronStub({
@@ -168,14 +168,14 @@ function evaluateMain() {
     userData,
     version: packageJson.version,
   });
-  installElectronStub(electron);
+  installElectronStub(electron, path.join(userData, 'resources'));
   require(path.join(__dirname, 'main.cjs'));
   assert.equal(electron.app.getPath('userData'), expectedProfile);
   assert.equal(fs.statSync(expectedProfile).isDirectory(), true);
   process.stdout.write(`${SENTINEL}\n`);
 }
 
-module.exports = { SENTINEL, evaluateMain };
+module.exports = { SENTINEL, createElectronStub, installElectronStub };
 
 if (require.main === module) {
   try {
