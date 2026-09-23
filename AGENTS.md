@@ -243,7 +243,7 @@ count, coverage targets, or a wish to look thorough.
   rest. Never commit scaffolding to look thorough, and never drop a valuable
   test to look small.
 - Do not weaken assertions or delete failing tests to get a green run. Honor CI
-  gates, including the coverage thresholds in `npm run test:coverage`.
+  gates, including the coverage thresholds in `npm run test:ci`.
 
 Tests are maintained code too. Keep the ones whose protection justifies their
 cost.
