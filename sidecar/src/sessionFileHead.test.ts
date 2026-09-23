@@ -55,9 +55,9 @@ test('a session head read reports the start and a completed exchange', () => {
 
   const head = readSessionFileHead(path, statSync(path).size);
 
-  assert.equal(head.start.type, 'session_start');
-  assert.equal(head.start.cwd, '/repo/app');
-  assert.equal(head.start.sessionTitle, 'Head test');
+  assert.equal(head.start?.type, 'session_start');
+  assert.equal(head.start?.cwd, '/repo/app');
+  assert.equal(head.start?.sessionTitle, 'Head test');
   assert.equal(head.hasCompletedConversation, true);
 });
 
@@ -73,16 +73,16 @@ test('a session with no model reply is not a completed conversation', () => {
 
   const head = readSessionFileHead(path, statSync(path).size);
 
-  assert.equal(head.start.sessionTitle, 'Unanswered');
+  assert.equal(head.start?.sessionTitle, 'Unanswered');
   assert.equal(head.hasCompletedConversation, false);
 });
 
-test('an empty session file yields an empty start rather than throwing', () => {
+test('an empty session file yields no start rather than throwing', () => {
   const path = join(workspace, 'empty.jsonl');
   writeFileSync(path, '');
 
   assert.deepEqual(readSessionFileHead(path, 0), {
-    start: {},
+    start: undefined,
     hasCompletedConversation: false,
   });
   assert.deepEqual(readSessionStart(path, 0), {});
@@ -140,7 +140,7 @@ test('a session_start larger than the first scan window is still read whole', ()
 
   const head = readSessionFileHead(path, statSync(path).size);
 
-  assert.equal(head.start.sessionTitle, 'Wide start');
-  assert.equal(head.start.cwd, '/repo/app');
+  assert.equal(head.start?.sessionTitle, 'Wide start');
+  assert.equal(head.start?.cwd, '/repo/app');
   assert.equal(head.hasCompletedConversation, true);
 });

@@ -77,14 +77,12 @@ test('malformed agent config sanitizes to defaults', () => {
   withLocalStorageMap(
     {
       'droid-agent-config-v2': JSON.stringify({
-        primary: { modelId: 42, reasoning: 'bogus' },
         worker: null,
         validator: { modelId: '', reasoning: 'high' },
       }),
     },
     () => {
       assert.deepEqual(loadAgentConfig(), {
-        primary: { modelId: undefined, reasoning: 'high' },
         worker: { modelId: undefined, reasoning: 'medium' },
         validator: { modelId: undefined, reasoning: 'high' },
       });
@@ -103,14 +101,12 @@ test('sanitizeAgentConfig drops unknown models and coerces unsupported reasoning
     },
   ];
   const config = {
-    primary: { modelId: 'model-a', reasoning: 'max' as const },
     worker: { modelId: 'missing', reasoning: 'medium' as const },
-    validator: { modelId: undefined, reasoning: 'medium' as const },
+    validator: { modelId: 'model-a', reasoning: 'max' as const },
   };
   assert.deepEqual(sanitizeAgentConfig(config, models), {
-    primary: { modelId: 'model-a', reasoning: 'low' },
     worker: { modelId: undefined, reasoning: 'medium' },
-    validator: { modelId: undefined, reasoning: 'medium' },
+    validator: { modelId: 'model-a', reasoning: 'low' },
   });
 });
 

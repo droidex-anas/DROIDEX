@@ -29,6 +29,8 @@ import { NotificationsSettings } from './NotificationsSettings';
 import { WorktreesSettings } from './WorktreesSettings';
 import { Dropdown, GroupLabel, SectionTitle, SettingRow } from './settingsKit';
 import { HardwareAccelerationSetting } from './HardwareAccelerationSetting';
+import { HarnessCliSettings } from './HarnessCliSettings';
+import { HarnessModelSettings } from './HarnessModelSettings';
 import { ArchivedChatsSettings } from './ArchivedChatsSettings';
 import {
   bestTabForQuery,
@@ -608,7 +610,7 @@ function SetupSection({ onClose }: { onClose: () => void }) {
     <div className="max-w-2xl mx-auto">
       <SectionTitle
         title="Setup & updates"
-        sub="Manage the Droid CLI, your sign-in, and app updates."
+        sub="Manage the Droid, Claude Code, and Codex CLIs, your sign-in, and app updates."
       />
 
       <GroupLabel>Droid CLI</GroupLabel>
@@ -663,6 +665,12 @@ function SetupSection({ onClose }: { onClose: () => void }) {
           )}
         </SettingRow>
       </div>
+
+      <GroupLabel>Claude Code and Codex</GroupLabel>
+      <HarnessCliSettings
+        autoUpdate={onboarding?.harnessCliAutoUpdate ?? true}
+        onAutoUpdateChange={(enabled) => void onboard.patch({ harnessCliAutoUpdate: enabled })}
+      />
 
       <GroupLabel>DROIDEX app</GroupLabel>
       <div className="rounded-xl border border-droid-border bg-droid-surface divide-y divide-droid-border mb-8">
@@ -727,6 +735,8 @@ function ConfigurationSection() {
   return (
     <div className="max-w-2xl mx-auto">
       <SectionTitle title="Configuration" />
+      <GroupLabel>Default models</GroupLabel>
+      <HarnessModelSettings />
       <GroupLabel>Composer</GroupLabel>
       <div className="rounded-xl border border-droid-border bg-droid-surface divide-y divide-droid-border mb-8">
         <SettingRow

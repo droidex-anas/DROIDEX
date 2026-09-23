@@ -1,8 +1,13 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { shallowEqual, useStoreDispatch, useStoreSelector } from '../hooks/useStore';
-import type { AgentKind } from '../hooks/persistedUiPreferences';
-import type { ModelInfo, ProviderKind, ReasoningEffort } from '../types/bridge';
-import { draftEffortFor, reasoningForModelSwitch } from '../lib/reasoningEffort';
+import type { AgentKind, HarnessModel } from '../hooks/persistedUiPreferences';
+import type { ProviderKind, ReasoningEffort } from '../types/bridge';
+import {
+  draftEffortFor,
+  reasoningAfterModelSwitch,
+  reasoningForModelSwitch,
+} from '../lib/reasoningEffort';
+import { displayedModelSettings, type PendingModelSettings } from '../lib/pendingModelSettings';
 import {
   updateAgentSettings,
   updateChildSettings,
@@ -18,16 +23,7 @@ import {
   providerModelSelection,
 } from '../features/providers/providerIdentity';
 import { defaultModelOf } from './ModelCatalogList';
-import type { ModelCategory } from './ModelCategoryFilter';
-
-function categoryOf(model: ModelInfo): ModelCategory {
-  if (model.isCustom || model.id.startsWith('custom:')) return 'custom';
-  const provider = (model.provider ?? '').toLowerCase();
-  if (provider === 'anthropic') return 'claude';
-  if (provider === 'droid-core' || model.displayName.toLowerCase().startsWith('droid core'))
-    return 'core';
-  return 'factory';
-}
+import { categoryOf, categoryOptions, type ModelCategory } from './modelCategories';
 
 /**
  * Everything a model picker popover needs from the store: the active harness's
@@ -47,11 +43,18 @@ export default function useModelPicker({
     const activeSession = current.activeAppSessionId
       ? current.sessions[current.activeAppSessionId]
       : undefined;
+    const activeSettings = activeSession
+      ? displayedModelSettings(
+          activeSession,
+          current.pendingModelUpdates[activeSession.appSessionId],
+        )
+      : undefined;
     return {
       activeSessionAppSessionId: activeSession?.appSessionId,
-      activeSessionModelId: activeSession?.modelId,
-      activeSessionReasoning: activeSession?.reasoningEffort,
+      activeSessionModelId: activeSettings?.modelId,
+      activeSessionReasoning: activeSettings?.reasoningEffort,
       agentConfig: current.agentConfig,
+      harnessModels: current.harnessModels,
       // The chat's provider owns the catalog: Droid's comes from the CLI,
       // every other provider reports its own with its status. A draft follows
       // the same fallback the composer applies to an unrunnable stored pick.
@@ -74,10 +77,12 @@ export default function useModelPicker({
   const showHarness = singleAgent && !childMode;
   const harnessLocked = state.activeSessionAppSessionId !== undefined;
 
-  // The harness selector disables harnesses on a stale status, so refresh as it opens.
+  // The harness selector disables harnesses on a stale status, so refresh as it
+  // opens. A locked harness has nothing to choose, and a refresh re-probes every CLI.
+  const refreshesHarnesses = showHarness && !harnessLocked;
   useEffect(() => {
-    if (showHarness) refreshProviders();
-  }, [showHarness]);
+    if (refreshesHarnesses) refreshProviders();
+  }, [refreshesHarnesses]);
 
   const selectHarness = (provider: ProviderKind) => {
     if (harnessLocked || provider === state.provider) return;
@@ -88,7 +93,11 @@ export default function useModelPicker({
   };
 
   const selectedAgent = childTarget?.role ?? agent;
-  const cfg = state.agentConfig[selectedAgent];
+  // The primary's default is its harness's; worker/validator are Mission Control's own.
+  const cfg: HarnessModel =
+    selectedAgent === 'primary'
+      ? state.harnessModels[state.provider]
+      : state.agentConfig[selectedAgent];
 
   // For a single chat, the model/reasoning belong to that session, not the global default.
   const scopedAppSessionId = singleAgent ? state.activeSessionAppSessionId : undefined;
@@ -127,13 +136,7 @@ export default function useModelPicker({
     if (needsDroidCatalog) listModels();
   }, [needsDroidCatalog]);
 
-  const catCounts = useMemo(() => {
-    const counts: Record<ModelCategory, number> = { core: 0, factory: 0, claude: 0, custom: 0 };
-    source.forEach((m) => {
-      counts[categoryOf(m)] += 1;
-    });
-    return counts;
-  }, [source]);
+  const catOptions = useMemo(() => categoryOptions(source, cat), [source, cat]);
 
   const models = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -161,27 +164,59 @@ export default function useModelPicker({
     ? (source.find((model) => model.id === resolvedModelId)?.displayName ?? resolvedModelId)
     : (defaultModel?.displayName ?? 'Default');
   const activeModel = resolvedModelId ? source.find((x) => x.id === resolvedModelId) : defaultModel;
+  // With no model of its own the chat runs on its default, so the list marks that row.
+  const selectedRowId = resolvedModelId ?? defaultModel?.id;
   if (!childTarget && !scopedAppSessionId) effReasoning = draftEffortFor(activeModel, effReasoning);
+
+  const updateSession = useCallback(
+    (appSessionId: string, settings: PendingModelSettings) => {
+      const requestId = crypto.randomUUID();
+      dispatch({ type: 'MODEL_UPDATE_REQUESTED', appSessionId, requestId, settings });
+      updateSessionSettings({ appSessionId, requestId, ...settings });
+    },
+    [dispatch],
+  );
+
+  const saveDefault = useCallback(
+    (next: HarnessModel) => {
+      if (agent === 'primary') {
+        dispatch({ type: 'SET_HARNESS_MODEL', provider: state.provider, model: next });
+        return;
+      }
+      dispatch({ type: 'SET_AGENT_MODEL', agent, modelId: next.modelId });
+      if (next.reasoning)
+        dispatch({ type: 'SET_AGENT_REASONING', agent, reasoning: next.reasoning });
+    },
+    [agent, dispatch, state.provider],
+  );
 
   const updateReasoning = useCallback(
     (reasoning: ReasoningEffort) => {
       if (childTarget) return;
       if (scopedAppSessionId) {
-        updateSessionSettings({ appSessionId: scopedAppSessionId, reasoningEffort: reasoning });
+        updateSession(scopedAppSessionId, { reasoningEffort: reasoning });
         return;
       }
-      dispatch({ type: 'SET_AGENT_REASONING', agent, reasoning });
+      saveDefault({ modelId: cfg.modelId, reasoning });
       updateAgentSettings({
         appSessionId: state.activeSessionAppSessionId,
         agent,
         reasoningEffort: reasoning,
       });
     },
-    [agent, childTarget, dispatch, scopedAppSessionId, state.activeSessionAppSessionId],
+    [
+      agent,
+      cfg.modelId,
+      childTarget,
+      saveDefault,
+      scopedAppSessionId,
+      state.activeSessionAppSessionId,
+      updateSession,
+    ],
   );
 
   const updateModel = useCallback(
-    (modelId?: string) => {
+    (modelId: string) => {
       if (childTarget) {
         const update = planChildModelUpdate(childTarget, modelId, effReasoning, source);
         if (update) updateChildSettings(update);
@@ -189,34 +224,29 @@ export default function useModelPicker({
       }
 
       // Snap only an explicit effort, as part of the same user-requested update.
-      const next = modelId ? source.find((x) => x.id === modelId) : defaultModel;
+      const next = source.find((x) => x.id === modelId);
       const reasoningEffort = reasoningForModelSwitch(next, effReasoning);
       const settings = {
-        modelId: modelId ?? null,
+        modelId,
         ...(reasoningEffort === undefined ? {} : { reasoningEffort }),
       };
       if (scopedAppSessionId) {
-        updateSessionSettings({ appSessionId: scopedAppSessionId, ...settings });
+        updateSession(scopedAppSessionId, settings);
         return;
       }
-      dispatch({ type: 'SET_AGENT_MODEL', agent, modelId });
-      if (reasoningEffort !== undefined)
-        dispatch({
-          type: 'SET_AGENT_REASONING',
-          agent,
-          reasoning: reasoningEffort ?? undefined,
-        });
+      saveDefault({ modelId, reasoning: reasoningAfterModelSwitch(next, cfg.reasoning) });
       updateAgentSettings({ appSessionId: state.activeSessionAppSessionId, agent, ...settings });
     },
     [
       agent,
+      cfg.reasoning,
       childTarget,
-      defaultModel,
-      dispatch,
       effReasoning,
+      saveDefault,
       scopedAppSessionId,
       source,
       state.activeSessionAppSessionId,
+      updateSession,
     ],
   );
 
@@ -228,6 +258,7 @@ export default function useModelPicker({
     setQuery,
     cat,
     setCat,
+    catOptions,
     filterOpen,
     setFilterOpen,
     provider: state.provider,
@@ -238,13 +269,11 @@ export default function useModelPicker({
     childMode,
     childReady,
     disabled,
-    source,
     models,
-    catCounts,
     hasRealModels,
     showsReasoning,
-    defaultModel,
     resolvedModelId,
+    selectedRowId,
     selectedLabel,
     activeModel,
     effReasoning,

@@ -39,7 +39,7 @@ const READINESS_REASONS: Record<Exclude<ProviderReadiness, 'ready'>, string> = {
 // Why a provider cannot be picked, for the picker's secondary line. A ready
 // provider needs no explanation and a missing status means the sidecar has not
 // reported yet.
-function providerUnavailableReason(status: ProviderStatus | undefined): string | null {
+export function providerUnavailableReason(status: ProviderStatus | undefined): string | null {
   if (!status) return 'Checking availability…';
   if (status.readiness === 'ready') return null;
   // A provider that reports a blank message still needs a reason shown.
@@ -69,6 +69,23 @@ export function harnessChoice(
   }
   const reason = providerUnavailableReason(statuses.find((entry) => entry.provider === provider));
   return { selected, disabled: reason !== null, title: reason ?? `Run this chat on ${label}` };
+}
+
+// The sidecar republishes every status on each probe round, usually unchanged.
+// Keeping the previous object for an unchanged status (and the previous array
+// when nothing changed) spares the composer and an open picker a full re-render
+// of their catalogs.
+export function reuseUnchangedStatuses(
+  previous: ProviderStatus[],
+  next: ProviderStatus[],
+): ProviderStatus[] {
+  const merged = next.map((status) => {
+    const prior = previous.find((entry) => entry.provider === status.provider);
+    return prior && JSON.stringify(prior) === JSON.stringify(status) ? prior : status;
+  });
+  const unchanged =
+    merged.length === previous.length && merged.every((status, i) => status === previous[i]);
+  return unchanged ? previous : merged;
 }
 
 // Shared so a provider with no status yet keeps a stable identity across

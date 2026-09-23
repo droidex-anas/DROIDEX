@@ -7,7 +7,8 @@ const VISIBLE_H = 200;
 /**
  * The model lists' shared scroller: a fixed-height virtual list that opens
  * with the selected row in view and follows the selection as it moves.
- * `selectedIndex` is -1 when the selected model is filtered out.
+ * `selectedIndex` is -1 when the selected model is filtered out; the list
+ * then returns to its top.
  */
 export function useModelListVirtualizer(count: number, selectedIndex: number) {
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -21,7 +22,8 @@ export function useModelListVirtualizer(count: number, selectedIndex: number) {
   });
 
   useEffect(() => {
-    if (selectedIndex > 0) virtualizer.scrollToIndex(selectedIndex, { align: 'auto' });
+    if (selectedIndex < 0) virtualizer.scrollToOffset(0);
+    else virtualizer.scrollToIndex(selectedIndex, { align: 'auto' });
   }, [selectedIndex, virtualizer]);
 
   return { scrollRef, virtualizer };

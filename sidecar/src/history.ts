@@ -1475,6 +1475,7 @@ function summarizeSessionFile(
   // sidebar row, so launch settings are cached independently of admission.
   const launch = launchSettings(settings);
   const cachedLaunch = launch ? { launchSettings: launch } : {};
+  if (!start) return { summary: null, ...cachedLaunch };
   const classification = classifyStoredSession(start);
   // Live sessions are registered separately, so refusing an unfinished
   // exchange here cannot hide a first turn while it is running.
@@ -1566,7 +1567,10 @@ function sessionInteractionMode(start: StoredSessionStart): string | undefined {
   return stringValue(direct) ?? stringValue(settings?.interactionMode);
 }
 
-function readSessionModelSettings(start: StoredSessionStart, sessionPath: string): FactoryDefaults {
+function readSessionModelSettings(
+  start: StoredSessionStart | undefined,
+  sessionPath: string,
+): FactoryDefaults {
   const raw = objectValue(start) ?? {};
   const settings = objectValue(raw.settings) ?? objectValue(raw.sessionSettings) ?? {};
   const sidecarSettings = readAdjacentSessionSettings(sessionPath);

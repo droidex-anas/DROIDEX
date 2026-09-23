@@ -325,3 +325,26 @@ test('session seeds preserve live file provenance without claiming background co
   });
   assert.equal(background.transcripts['background-session']?.[0]?.files, undefined);
 });
+
+test('a model change stays shown until its latest request settles', () => {
+  const chat = session('sess-a', 1_000);
+  let state: AppState = { ...initialState, sessions: { 'sess-a': chat } };
+  for (const [requestId, modelId] of [
+    ['r1', 'model-a'],
+    ['r2', 'model-b'],
+  ])
+    state = reducer(state, {
+      type: 'MODEL_UPDATE_REQUESTED',
+      appSessionId: 'sess-a',
+      requestId,
+      settings: { modelId },
+    });
+
+  // The first request confirms while the second is still in flight.
+  state = reducer(state, { type: 'SESSION_UPDATED', session: { ...chat, modelId: 'model-a' } });
+  state = reducer(state, { type: 'MODEL_UPDATE_SETTLED', appSessionId: 'sess-a', requestId: 'r1' });
+  assert.equal(state.pendingModelUpdates['sess-a']?.settings.modelId, 'model-b');
+
+  state = reducer(state, { type: 'MODEL_UPDATE_SETTLED', appSessionId: 'sess-a', requestId: 'r2' });
+  assert.equal(state.pendingModelUpdates['sess-a'], undefined);
+});

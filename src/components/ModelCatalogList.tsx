@@ -28,29 +28,26 @@ export function stepEffort(
   return efforts[Math.min(efforts.length - 1, Math.max(0, base + delta))];
 }
 
-// Where an ↑/↓ step lands in a model list headed by Default (undefined). Null
-// when there is nowhere to go: nothing matches the filter, where a step would
-// silently switch to Default, or the selection is already at that end. A
-// model the filter hides steps onto the first or last visible entry instead of
-// off the end into Default.
+// Where an ↑/↓ step lands in the filtered list: undefined when nothing matches
+// or the selection is already at that end. A model the filter hides steps onto
+// the first or last visible entry.
 export function stepModel(
   models: ModelInfo[],
   current: string | undefined,
   down: boolean,
-): { modelId: string | undefined } | null {
-  const ids = [undefined, ...models.map((model) => model.id)];
-  if (ids.length < 2) return null;
-  const index = ids.indexOf(current);
-  let next = Math.min(ids.length - 1, Math.max(0, index + (down ? 1 : -1)));
-  if (index === -1) next = down ? 1 : ids.length - 1;
-  return next === index ? null : { modelId: ids[next] };
+): string | undefined {
+  if (models.length === 0) return undefined;
+  const last = models.length - 1;
+  const index = models.findIndex((model) => model.id === current);
+  if (index === -1) return models[down ? 0 : last].id;
+  const next = Math.min(last, Math.max(0, index + (down ? 1 : -1)));
+  return next === index ? undefined : models[next].id;
 }
 
-type Pick = (modelId: string | undefined, effort?: ReasoningEffort) => void;
+type Pick = (modelId: string, effort?: ReasoningEffort) => void;
 
 function ModelCatalogList({
   models,
-  defaultModel,
   hasRealModels,
   provider,
   selectedModelId,
@@ -60,41 +57,27 @@ function ModelCatalogList({
   onSelectReasoning,
   disabled,
   reasoningLocked,
-  showDefault = true,
   showReasoning = true,
 }: {
   models: ModelInfo[];
-  defaultModel: ModelInfo | undefined;
   hasRealModels: boolean;
   /** The harness these rows belong to; it names the top effort level. */
   provider: ProviderKind;
   selectedModelId: string | undefined;
   reasoning: ReasoningEffort | undefined;
   query: string;
-  onSelectModel: (modelId?: string) => void;
+  onSelectModel: (modelId: string) => void;
   onSelectReasoning: (reasoning: ReasoningEffort) => void;
   disabled: boolean;
   reasoningLocked: boolean;
-  showDefault?: boolean;
   /** False where the provider publishes no efforts, so no row offers one. */
   showReasoning?: boolean;
 }) {
   const rows = hasRealModels ? models : [];
-  const firstModelIndex = showDefault ? 1 : 0;
   // -1 when the active model is filtered out: nothing is highlighted then.
-  const selectedIndex = selectedModelId
-    ? (() => {
-        const index = rows.findIndex((model) => model.id === selectedModelId);
-        return index < 0 ? -1 : index + firstModelIndex;
-      })()
-    : showDefault
-      ? 0
-      : -1;
+  const selectedIndex = rows.findIndex((model) => model.id === selectedModelId);
 
-  const { scrollRef, virtualizer } = useModelListVirtualizer(
-    rows.length + firstModelIndex,
-    selectedIndex,
-  );
+  const { scrollRef, virtualizer } = useModelListVirtualizer(rows.length, selectedIndex);
 
   const latest = useRef({ selectedModelId, onSelectModel, onSelectReasoning });
   latest.current = { selectedModelId, onSelectModel, onSelectReasoning };
@@ -116,33 +99,20 @@ function ModelCatalogList({
       >
         <SelectionHighlight index={selectedIndex} />
         {virtualizer.getVirtualItems().map((item) => {
-          const isDefaultRow = showDefault && item.index === 0;
-          const model = isDefaultRow ? undefined : rows[item.index - firstModelIndex];
+          const model = rows[item.index];
           const selected = item.index === selectedIndex;
           return (
             <div
-              key={model?.id ?? 'default'}
+              key={model.id}
               className="absolute inset-x-0 top-0"
               style={{ transform: `translateY(${String(item.start)}px)` }}
             >
-              {isDefaultRow ? (
-                <ModelRow
-                  label={defaultModel ? `Default · ${defaultModel.displayName}` : 'Default'}
-                  model={defaultModel}
-                  isDefaultRow
-                  selected={selected}
-                  reasoning={selected ? reasoning : undefined}
-                  {...rowProps}
-                />
-              ) : (
-                <ModelRow
-                  label={model?.displayName ?? ''}
-                  model={model}
-                  selected={selected}
-                  reasoning={selected ? reasoning : undefined}
-                  {...rowProps}
-                />
-              )}
+              <ModelRow
+                model={model}
+                selected={selected}
+                reasoning={selected ? reasoning : undefined}
+                {...rowProps}
+              />
             </div>
           );
         })}
@@ -155,9 +125,7 @@ function ModelCatalogList({
 export default memo(ModelCatalogList);
 
 const ModelRow = memo(function ModelRow({
-  label,
   model,
-  isDefaultRow = false,
   selected,
   reasoning,
   pick,
@@ -166,9 +134,7 @@ const ModelRow = memo(function ModelRow({
   reasoningLocked,
   showReasoning,
 }: {
-  label: string;
-  model?: ModelInfo;
-  isDefaultRow?: boolean;
+  model: ModelInfo;
   selected: boolean;
   /** Only set on the selected row; other rows show their model's default. */
   reasoning?: ReasoningEffort;
@@ -178,12 +144,12 @@ const ModelRow = memo(function ModelRow({
   reasoningLocked: boolean;
   showReasoning: boolean;
 }) {
-  const id = isDefaultRow ? undefined : model?.id;
+  const { id, displayName: label } = model;
   // A model whose harness offers no effort for it gets no stepper, the way the
   // composer badge and the context panel already drop the pill for it.
   const offersReasoning = showReasoning && offersReasoningEffort(model);
   const efforts = effortsFor(model, reasoning);
-  const shown = selected ? reasoning : (model?.defaultReasoningEffort ?? efforts.at(-1));
+  const shown = selected ? reasoning : (model.defaultReasoningEffort ?? efforts.at(-1));
   const current = shown === undefined ? -1 : efforts.indexOf(shown);
   const canStep = efforts.length > 1 && !reasoningLocked;
   // The one level with a state of its own: the active row's dots and word go

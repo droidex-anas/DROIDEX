@@ -33,6 +33,7 @@ import { useChatPullRequests } from './hooks/useChatPullRequests';
 import { useDocumentVisible } from './hooks/useDocumentVisible';
 import { applyTheme, findPreset, resolveVariant } from './lib/theme';
 import { useOnboarding, shouldShowOnboarding, hasSetupBlocker } from './hooks/useOnboarding';
+import { useHarnessCliAutoUpdate } from './hooks/useHarnessClis';
 import SetupBanner from './components/onboarding/SetupBanner';
 import { useMeasuredHeight } from './hooks/useMeasuredHeight';
 import { addNativeSurfaceObscurer } from './hooks/useObscuresNativeSurfaces';
@@ -457,6 +458,13 @@ export default function App() {
       updateCli(onboard.onboarding.installChannel);
     }
   }, [embedded, onboard.ready, onboard.onboarding, onboard.env]);
+
+  useHarnessCliAutoUpdate(
+    !embedded &&
+      onboard.ready &&
+      onboard.onboarding?.completed === true &&
+      onboard.onboarding.harnessCliAutoUpdate !== false,
+  );
 
   // Surface the result of a background CLI update.
   useEffect(() => {

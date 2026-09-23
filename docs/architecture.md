@@ -112,7 +112,16 @@ flowchart LR
 - The application default (Medium on first run) is persisted by the renderer and edited only in Settings → Configuration. The composer drafts a per-session override from that default; the draft resets whenever the create target changes.
 - Starting a Mission requires High autonomy. The composer blocks a lower draft behind an explicit choice to raise it; autonomy is never elevated silently.
 - Live changes go provider-first through `session.updateSettings`, serialized per session. The renderer shows a pending state and settles only when the confirmed summary arrives; rejections surface as recoverable `session.autonomy_update_failed` errors, and a settlement that lands after close or provider replacement is discarded.
+- A chat's model and effort change through the same command. Each change carries a `requestId`; the renderer shows the choice immediately and keeps it until `session.model_update_applied` or a recoverable `session.model_update_failed` for that request settles it, so rapid follow-up changes are never overwritten by an earlier confirmation.
+- The default model and effort for new chats are app-owned, one per harness, stored in renderer preferences. Unset fields fall through to the harness's own default; the CLI and SDK settings are never modified.
+- The Droid model catalog is the `availableModels` list a Droid session reports on init: the account's live catalog, Auto and Factory-hosted models included. `droid exec --help` lags it and only stands in until a session reports, so when no session has, the sidecar opens one catalog session to read it. `DroidModelCatalog` caches the result per CLI path in `~/.factory/droidex/model-catalog.json`, and every created or resumed Droid session refreshes it.
 - Child sessions report their confirmed effective autonomy only while their runtime is live. It is read from the provider init result, never persisted, and never inherited from the parent; historical or unopened children report none and the renderer labels them provider managed.
+
+### Harness CLI updates
+
+- DROIDEX runs the Claude Code and Codex CLIs but does not ship them. The sidecar's `HarnessCliUpdater` (`sidecar/src/providers/harnessCli.ts`) resolves each binary the way its provider does, follows it to the real file, and reads the owning installer from that location: a Homebrew `Caskroom`/`Cellar` path updates with that prefix's `brew upgrade`, a global `lib/node_modules` path with that prefix's `npm install --global <package>@latest`, and anything else with the CLI's own `update` command.
+- `harness.cli.check` answers with `harness.cli.report` (path, install source, version, and whether an update is running or last failed). `harness.cli.update` runs one update per harness at a time, emits `harness.cli.update.done` with the before and after versions, and then re-probes providers so a newer CLI's models appear without a restart.
+- The renderer updates both CLIs once per launch unless Settings → Setup & updates turns that off (`harnessCliAutoUpdate` in onboarding state), and toasts only a changed version or a failure.
 
 ## Performance instrumentation
 

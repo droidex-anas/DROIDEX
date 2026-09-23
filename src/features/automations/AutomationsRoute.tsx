@@ -21,7 +21,7 @@ export function AutomationsRoute({
       activeSession: current.activeAppSessionId
         ? current.sessions[current.activeAppSessionId]
         : null,
-      agentConfig: current.agentConfig,
+      droidModel: current.harnessModels.droid,
       automationEditorRequest: current.automationEditorRequest,
       draftChat: current.draftChat,
       models: current.models,
@@ -41,12 +41,12 @@ export function AutomationsRoute({
       sessions={state.sessions}
       defaultModelId={
         activeSession?.modelId ??
-        state.agentConfig.primary.modelId ??
+        state.droidModel.modelId ??
         state.models.find((model) => model.isDefault)?.id ??
         state.models.at(0)?.id ??
         null
       }
-      defaultReasoningEffort={activeSession?.reasoningEffort ?? state.agentConfig.primary.reasoning}
+      defaultReasoningEffort={activeSession?.reasoningEffort ?? state.droidModel.reasoning}
       currentWorkspaceCwd={newChatCwd || null}
       onChatWithDroidex={() => {
         dispatch({

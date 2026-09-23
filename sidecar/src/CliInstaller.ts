@@ -4,6 +4,7 @@ import type { EnvironmentReport, InstallChannel } from './protocol.js';
 export interface ShellCommand {
   command: string;
   args: string[];
+  env?: NodeJS.ProcessEnv;
 }
 
 // Prefer the official script when curl exists, then Homebrew, then npm.
@@ -65,6 +66,7 @@ export function streamingInvocation(
   return {
     command: commandShell?.trim() ? commandShell : 'cmd.exe',
     args: ['/d', '/s', '/c', cmd.command, ...cmd.args],
+    ...(cmd.env ? { env: cmd.env } : {}),
   };
 }
 
@@ -76,7 +78,10 @@ export function runStreaming(
     // Windows npm and Droid `.cmd` shims require cmd.exe. Invoke that executable
     // explicitly; never enable Node's generic shell mode.
     const invocation = streamingInvocation(cmd);
-    const child = spawn(invocation.command, invocation.args, { shell: false, env: process.env });
+    const child = spawn(invocation.command, invocation.args, {
+      shell: false,
+      env: invocation.env ?? process.env,
+    });
 
     const pump = (stream: 'stdout' | 'stderr') => (chunk: Buffer) => {
       for (const line of chunk.toString().split(/\r?\n/)) {
@@ -90,6 +95,6 @@ export function runStreaming(
       onLine({ stream: 'stderr', line: err instanceof Error ? err.message : String(err) });
       resolve(1);
     });
-    child.on('close', (code) => resolve(completedProcessExitCode(code)));
+    child.on('close', (code) => { resolve(completedProcessExitCode(code)); });
   });
 }

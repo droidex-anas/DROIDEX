@@ -4,12 +4,11 @@ import { ModelIcon, providerOf } from './ModelIcon';
 import { ModelListStatus, SelectionHighlight, useModelListVirtualizer } from './modelListParts';
 
 /**
- * The slider popover's model list: a virtualized Default row plus the filtered
- * catalog, with the selected row carrying the "adjust effort" drill chip.
+ * The slider popover's model list: the virtualized, filtered catalog, with the
+ * selected row carrying the "adjust effort" drill chip.
  */
 export default function ModelSliderCatalogList({
   models,
-  defaultModel,
   hasRealModels,
   selectedModelId,
   query,
@@ -19,25 +18,19 @@ export default function ModelSliderCatalogList({
   onDrill,
 }: {
   models: ModelInfo[];
-  defaultModel: ModelInfo | undefined;
   hasRealModels: boolean;
   selectedModelId: string | undefined;
   query: string;
   /** Set when the selected model offers a choice of efforts; opens the slider. */
   drillLabel: string | undefined;
   drillUltra: boolean;
-  onSelectModel: (modelId?: string) => void;
+  onSelectModel: (modelId: string) => void;
   onDrill: () => void;
 }) {
   const rows = hasRealModels ? models : [];
-  const selectedIndex = selectedModelId
-    ? (() => {
-        const index = rows.findIndex((model) => model.id === selectedModelId);
-        return index < 0 ? -1 : index + 1;
-      })()
-    : 0;
+  const selectedIndex = rows.findIndex((model) => model.id === selectedModelId);
 
-  const { scrollRef, virtualizer } = useModelListVirtualizer(rows.length + 1, selectedIndex);
+  const { scrollRef, virtualizer } = useModelListVirtualizer(rows.length, selectedIndex);
 
   return (
     <div ref={scrollRef} className="-mx-1 max-h-[200px] min-h-0 overflow-y-auto px-1">
@@ -49,22 +42,21 @@ export default function ModelSliderCatalogList({
       >
         <SelectionHighlight index={selectedIndex} />
         {virtualizer.getVirtualItems().map((item) => {
-          const isDefaultRow = item.index === 0;
-          const model = isDefaultRow ? defaultModel : rows[item.index - 1];
+          const model = rows[item.index];
+          const selected = item.index === selectedIndex;
           return (
             <div
-              key={isDefaultRow ? 'default' : (model?.id ?? item.index)}
+              key={model.id}
               className="absolute inset-x-0 top-0"
               style={{ transform: `translateY(${String(item.start)}px)` }}
             >
               <SliderRow
                 model={model}
-                label={rowLabel(isDefaultRow, defaultModel, model)}
-                selected={item.index === selectedIndex}
+                selected={selected}
                 drillLabel={drillLabel}
                 drillUltra={drillUltra}
                 onSelect={() => {
-                  onSelectModel(isDefaultRow ? undefined : model?.id);
+                  if (!selected) onSelectModel(model.id);
                 }}
                 onDrill={onDrill}
               />
@@ -77,26 +69,15 @@ export default function ModelSliderCatalogList({
   );
 }
 
-function rowLabel(
-  isDefaultRow: boolean,
-  defaultModel: ModelInfo | undefined,
-  model: ModelInfo | undefined,
-): string {
-  if (!isDefaultRow) return model?.displayName ?? '';
-  return defaultModel ? `Default · ${defaultModel.displayName}` : 'Default';
-}
-
 function SliderRow({
   model,
-  label,
   selected,
   drillLabel,
   drillUltra,
   onSelect,
   onDrill,
 }: {
-  model: ModelInfo | undefined;
-  label: string;
+  model: ModelInfo;
   selected: boolean;
   drillLabel: string | undefined;
   drillUltra: boolean;
@@ -119,7 +100,7 @@ function SliderRow({
         e.preventDefault();
         onSelect();
       }}
-      title={label}
+      title={model.displayName}
       className={`relative flex h-10 cursor-pointer items-center gap-2.5 rounded-lg px-2.5 select-none ${
         selected ? 'cursor-default' : 'hover:bg-droid-surface/60'
       }`}
@@ -134,7 +115,7 @@ function SliderRow({
           selected ? 'text-droid-text' : 'text-droid-text-secondary'
         }`}
       >
-        {label}
+        {model.displayName}
       </span>
       {selected && drillLabel !== undefined && (
         <button

@@ -1,35 +1,23 @@
 import { useEffect, useRef } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
-import { Check, SlidersHorizontal } from 'lucide-react';
-
-export type ModelCategory = 'core' | 'factory' | 'claude' | 'custom';
-
-const CATEGORY_LABEL: Record<ModelCategory, string> = {
-  core: 'Droid core',
-  factory: 'Factory',
-  claude: 'Claude',
-  custom: 'Custom',
-};
+import { Check, ListFilter } from 'lucide-react';
+import type { CategoryOption, ModelCategory } from './modelCategories';
 
 const ACCENT = 'var(--droid-accent)';
-const accentMix = (pct: number) =>
-  `color-mix(in srgb, var(--droid-accent) ${String(pct)}%, transparent)`;
 
-// The model popover's category filter: a button inside the search bar that
+// The model popover's category filter: a button beside the search bar that
 // opens the catalog counts per category. Controlled — the popover owns open
 // state so its global arrow-key handler can yield while the dropdown is up;
 // the filter owns its outside-click dismissal.
 export default function ModelCategoryFilter({
-  cat,
-  total,
-  counts,
+  options,
+  selected,
   open,
   onOpenChange,
   onSelect,
 }: {
-  cat: ModelCategory | 'all';
-  total: number;
-  counts: Record<ModelCategory, number>;
+  options: CategoryOption[];
+  selected: ModelCategory | 'all';
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onSelect: (next: ModelCategory | 'all') => void;
@@ -47,68 +35,67 @@ export default function ModelCategoryFilter({
     };
   }, [open, onOpenChange]);
 
-  const active = open || cat !== 'all';
-  const options: { value: ModelCategory | 'all'; label: string; count: number }[] = [
-    { value: 'all', label: 'All models', count: total },
-    ...(['core', 'factory', 'claude', 'custom'] as const satisfies readonly ModelCategory[]).map(
-      (value) => ({ value, label: CATEGORY_LABEL[value], count: counts[value] }),
-    ),
-  ];
+  const filtered = selected !== 'all';
 
   return (
     <div className="relative shrink-0" ref={rootRef}>
       <button
+        type="button"
         onClick={() => {
           onOpenChange(!open);
         }}
+        aria-label="Filter models by category"
         title="Filter models by category"
         aria-expanded={open}
-        className={`flex h-6 w-6 items-center justify-center rounded-md transition-colors ${
-          active ? 'text-droid-text' : 'text-droid-text-muted hover:text-droid-text'
-        }`}
-        style={
-          active
-            ? {
-                backgroundColor: accentMix(13),
-                boxShadow: `inset 0 0 0 1px ${accentMix(40)}`,
-              }
-            : undefined
-        }
+        className={`relative flex h-8 w-8 items-center justify-center rounded-lg transition-colors ${
+          open
+            ? 'bg-droid-surface text-droid-text'
+            : 'bg-droid-bg/50 hover:bg-droid-surface/60 hover:text-droid-text'
+        } ${filtered ? 'text-droid-text' : 'text-droid-text-muted'}`}
       >
-        <SlidersHorizontal className="w-3.5 h-3.5" />
+        <ListFilter className="h-4 w-4" strokeWidth={1.5} />
+        {filtered && (
+          <span
+            className="absolute right-1.5 top-1.5 h-1.5 w-1.5 rounded-full"
+            style={{ backgroundColor: ACCENT }}
+          />
+        )}
       </button>
 
       <AnimatePresence>
         {open && (
           <motion.div
-            initial={{ opacity: 0, y: 6 }}
+            initial={{ opacity: 0, y: -4 }}
             animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: 6 }}
+            exit={{ opacity: 0, y: -4 }}
             transition={{ duration: 0.14, ease: [0.16, 1, 0.3, 1] }}
-            className="absolute right-0 top-full mt-1.5 w-44 z-50 rounded-xl border border-droid-border bg-droid-elevated shadow-md overflow-hidden p-1"
+            className="absolute right-0 top-full z-50 mt-1.5 w-44 overflow-hidden rounded-xl border border-droid-border bg-droid-elevated p-1 shadow-md"
           >
-            {options.map((opt) => {
-              const on = cat === opt.value;
+            {options.map((option) => {
+              const on = option.value === selected;
               return (
                 <button
-                  key={opt.value}
+                  key={option.value}
+                  type="button"
                   onClick={() => {
-                    onSelect(opt.value);
+                    onSelect(option.value);
                     onOpenChange(false);
                   }}
-                  className={`w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-left text-[12px] transition-colors ${
+                  className={`flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-left text-[12px] transition-colors ${
                     on
                       ? 'bg-droid-surface text-droid-text'
                       : 'text-droid-text-secondary hover:bg-droid-surface/60'
                   }`}
                 >
-                  <span className="w-3.5 h-3.5 shrink-0 flex items-center justify-center">
+                  <span className="flex h-3.5 w-3.5 shrink-0 items-center justify-center">
                     {on && (
-                      <Check className="w-3 h-3" style={{ color: ACCENT }} strokeWidth={3.5} />
+                      <Check className="h-3 w-3" style={{ color: ACCENT }} strokeWidth={3.5} />
                     )}
                   </span>
-                  <span className="flex-1">{opt.label}</span>
-                  <span className="text-[11px] text-droid-text-muted">{opt.count}</span>
+                  <span className="flex-1">{option.label}</span>
+                  <span className="text-[11px] tabular-nums text-droid-text-muted">
+                    {option.count}
+                  </span>
                 </button>
               );
             })}
