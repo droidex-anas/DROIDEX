@@ -95,6 +95,7 @@ jobs:
       - run: npm ci --prefix sidecar
       - run: npm run quality:file-size
       - run: npm run quality:tech-debt
+      - run: npm run lint
       - run: npm run quality:boundaries
       - run: npm run quality:deps
       - run: npm run quality:deadcode
@@ -217,40 +218,6 @@ jobs:
           cache-dependency-path: package-lock.json
       - run: npm ci
       - run: npm run docs:check
-
-  lint:
-    name: Lint (non-blocking)
-    runs-on: ubuntu-latest
-    timeout-minutes: 7
-    steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
-        with:
-          node-version: ${{ env.NODE_VERSION }}
-          cache: npm
-          cache-dependency-path: |
-            package-lock.json
-            sidecar/package-lock.json
-      - run: npm ci
-      - run: npm ci --prefix sidecar
-      - name: Run lint diagnostics
-        run: |
-          set +e
-          npm run lint 2>&1 | tee reports-lint.txt
-          status=${PIPESTATUS[0]}
-          if [ "$status" -ne 0 ]; then
-            {
-              echo "### Lint diagnostics"
-              echo ""
-              echo "\`npm run lint\` exited with status $status. This job is informational while the lint backlog is burned down."
-            } >> "$GITHUB_STEP_SUMMARY"
-          fi
-          exit 0
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
-        if: always()
-        with:
-          name: lint-diagnostics
-          path: reports-lint.txt
 
   strict-typecheck:
     name: Strict typecheck (non-blocking)

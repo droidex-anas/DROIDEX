@@ -35,7 +35,7 @@
     "typecheck": "tsc --noEmit",
     "typecheck:strict": "tsc -p tsconfig.strict.json --noEmit",
     "sidecar:typecheck:strict": "npm --prefix sidecar run typecheck:strict",
-    "lint": "eslint .",
+    "lint": "eslint . --pass-on-unpruned-suppressions",
     "lint:fix": "eslint . --fix",
     "quality:file-size": "node tools/check-file-size.mjs",
     "quality:bundle-budgets": "node tools/check-bundle-budgets.mjs",
@@ -135,7 +135,7 @@
   },
   "lint-staged": {
     "*.{ts,tsx,js,cjs,mjs}": [
-      "eslint --fix"
+      "eslint --fix --pass-on-unpruned-suppressions"
     ],
     "*.{ts,tsx,js,cjs,mjs,json,css,md,html,yml,yaml}": [
       "prettier --write"

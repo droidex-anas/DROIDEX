@@ -15,3 +15,4 @@ package-lock.json
 sidecar/package-lock.json
 *.png
 *.md
+eslint-suppressions.json
