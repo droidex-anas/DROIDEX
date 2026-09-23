@@ -446,6 +446,19 @@ test('parallel spawn reservations cap fanout before provider creation', async (t
   assert.equal(h.projects.list()[0]?.launching, 0);
 });
 
+test('a spawn holds its slot while its checkout is cut', async (t) => {
+  const h = await harness();
+  t.after(() => h.projects.close());
+  const { main } = await h.root();
+  const gate = deferred();
+  h.state.bindGate = gate.promise;
+  const requests = Array.from({ length: 7 }, () => h.projects.spawn(main, input));
+  // Refused on the cap before any worktree is cut for it.
+  await assert.rejects(h.projects.spawn(main, { ...input, workspace: 'worktree' }), /eight/);
+  gate.resolve();
+  await Promise.all(requests);
+});
+
 test('persistence failure fails closed without delivering a queued wake', async (t) => {
   const h = await harness();
   t.after(() => h.projects.close());

@@ -11,6 +11,7 @@ import { randomUUID } from 'node:crypto';
 import type { ProviderStatus, ServerEvent, SessionSummary } from '../protocol.js';
 import type { ProjectPersistence } from './store.js';
 import {
+  discardThreadCheckout,
   inheritSettings,
   LEAD_BRIEF,
   THREAD_BRIEF,
@@ -236,17 +237,31 @@ export class ProjectService {
     // full one would each strand one.
     this.checkAdmission(project);
     const named = requested.step ? this.planStep(project, requested.step).title : undefined;
-    const workspace = await threadCheckout(
-      project,
-      (id) => this.sessions.get(id),
-      owner.cwd,
-      input.title,
-      requested,
-    );
+    // The slot is held while the checkout is cut, so a parallel spawn cannot
+    // pass the same cap, and it is handed to the launch without a gap.
+    project.launching += 1;
+    let workspace: Awaited<ReturnType<typeof threadCheckout>>;
+    try {
+      workspace = await threadCheckout(
+        project,
+        (id) => this.sessions.get(id),
+        owner.cwd,
+        input.title,
+        requested,
+      );
+    } finally {
+      project.launching -= 1;
+    }
     const cwd = workspace?.cwd ?? owner.cwd;
     const prompt = threadPrompt(input.prompt, workspace);
     const title = uniqueTitle(project, input.title);
-    const appSessionId = await this.launch(project, { ...input, title, prompt, cwd }, source);
+    let appSessionId: string;
+    try {
+      appSessionId = await this.launch(project, { ...input, title, prompt, cwd }, source);
+    } catch (error) {
+      if (workspace) await discardThreadCheckout(owner.cwd, workspace);
+      throw error;
+    }
     // Looked up again: plan_set may have replaced the plan while the thread
     // started, and the step resolved with it.
     const step = named ? project.plan.find((candidate) => candidate.title === named) : undefined;

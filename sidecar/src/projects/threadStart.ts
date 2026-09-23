@@ -1,5 +1,5 @@
 import type { ModelInfo, ProviderStatus, SessionSummary } from '../protocol.js';
-import { createThreadWorkspace } from './threadWorkspace.js';
+import { createThreadWorkspace, removeThreadWorkspace } from './threadWorkspace.js';
 import type { Project, ThreadInput, ThreadSpawnInput } from './types.js';
 
 /* Turning a spawn request into something launchable: which model it means,
@@ -148,6 +148,22 @@ export async function threadCheckout(
   // Nobody asked for this one, so a checkout that cannot carry a worktree
   // (no repository, no commit) shares the tree rather than losing the work.
   return await createThreadWorkspace(request).catch(() => undefined);
+}
+
+/**
+ * Removes a checkout cut for a spawn whose thread never started, since nothing
+ * else would ever claim it. A checkout the thread joined belongs to the thread
+ * that made it and is left alone.
+ */
+export async function discardThreadCheckout(cwd: string, checkout: ThreadCheckout): Promise<void> {
+  if (!checkout.branch) return;
+  await removeThreadWorkspace(cwd, checkout).catch((error: unknown) => {
+    console.warn(
+      `Could not remove the checkout at ${checkout.cwd} for a thread that did not start: ${
+        error instanceof Error ? error.message : String(error)
+      }`,
+    );
+  });
 }
 
 /* Threads are named, not numbered, everywhere a person reads them, so two of
