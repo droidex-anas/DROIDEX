@@ -136,6 +136,11 @@ test('a runtime that cannot answer for projects still lets the chat list paint',
   const answered = adaptEvent({ type: 'projects.snapshot', projects: [project] });
   assert.ok(answered);
   assert.equal(reducer(initialState, answered).projectsLoaded, true);
+  // A failure after the first answer still reaches the view, and the next
+  // graph retires it.
+  const later = reducer(reducer(initialState, answered), failed);
+  assert.equal(later.projectsError, 'Project ledger exceeds 8 MiB.');
+  assert.equal(reducer(later, answered).projectsError, '');
 });
 
 test('a streaming thread blocked on an approval shows the block, not the spinner', () => {
