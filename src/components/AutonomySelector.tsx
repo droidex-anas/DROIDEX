@@ -160,7 +160,7 @@ export function AutonomyMenu({
       role="menu"
       aria-label="Autonomy"
       onKeyDown={onMenuKey}
-      className="rounded-2xl border border-droid-border/60 bg-droid-elevated shadow-droid overflow-hidden"
+      className="rounded-2xl border border-droid-border/60 bg-droid-raised shadow-droid overflow-hidden"
     >
       <div className="flex items-center justify-between gap-3 px-3 pt-3 pb-1.5">
         <span className="text-[12px] font-medium text-droid-text-secondary">Autonomy</span>

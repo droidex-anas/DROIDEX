@@ -25,12 +25,12 @@ export function DesignModeComposer({
 }: DesignModeComposerProps) {
   return (
     <div
-      className="absolute z-30 w-[min(420px,calc(100%-24px))] rounded-xl border border-droid-border bg-droid-surface/95 shadow-[0_18px_50px_rgba(0,0,0,0.45)] backdrop-blur"
+      className="absolute z-30 w-[min(420px,calc(100%-24px))] rounded-xl border border-droid-border bg-droid-surface/95 shadow-droid backdrop-blur"
       style={style}
-      onPointerDown={(event) => event.stopPropagation()}
-      onPointerMove={(event) => event.stopPropagation()}
-      onPointerUp={(event) => event.stopPropagation()}
-      onWheel={(event) => event.stopPropagation()}
+      onPointerDown={(event) => { event.stopPropagation(); }}
+      onPointerMove={(event) => { event.stopPropagation(); }}
+      onPointerUp={(event) => { event.stopPropagation(); }}
+      onWheel={(event) => { event.stopPropagation(); }}
     >
       <div className="flex min-h-9 flex-wrap items-center gap-1.5 border-b border-droid-border px-2.5 py-2">
         {references.map((ref, index) => (
@@ -52,7 +52,7 @@ export function DesignModeComposer({
         <input
           autoFocus
           value={instruction}
-          onChange={(event) => onInstructionChange(event.target.value)}
+          onChange={(event) => { onInstructionChange(event.target.value); }}
           onKeyDown={(event) => {
             if (event.key === 'Enter' && !event.shiftKey && canSend) {
               event.preventDefault();

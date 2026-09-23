@@ -160,10 +160,10 @@ function TokenLimitSelect({
         onClick={() => {
           setOpen((v) => !v);
         }}
-        className={`${width} flex items-center justify-between gap-2 rounded-lg border px-2.5 py-1.5 text-[12px] transition-colors ${
+        className={`${width} flex items-center justify-between gap-2 rounded-lg px-2.5 py-1.5 text-[12px] transition-colors ${
           open
-            ? 'border-droid-border-hover bg-droid-elevated text-droid-text'
-            : 'border-droid-border bg-droid-bg/60 text-droid-text hover:border-droid-border-hover'
+            ? 'bg-droid-active text-droid-text'
+            : 'bg-droid-elevated text-droid-text hover:bg-droid-active'
         }`}
       >
         <span className="truncate tabular-nums">{label}</span>
@@ -293,10 +293,10 @@ function CompactionModelPicker({
         onClick={() => {
           setOpen((v) => !v);
         }}
-        className={`flex items-center gap-2 rounded-lg border px-2.5 py-1.5 text-[12px] transition-colors ${
+        className={`flex items-center gap-2 rounded-lg px-2.5 py-1.5 text-[12px] transition-colors ${
           open
-            ? 'border-droid-border-hover bg-droid-elevated text-droid-text'
-            : 'border-droid-border bg-droid-bg/60 text-droid-text hover:border-droid-border-hover'
+            ? 'bg-droid-active text-droid-text'
+            : 'bg-droid-elevated text-droid-text hover:bg-droid-active'
         }`}
       >
         {!isCurrent && <ModelIcon provider={providerOf(selModel, selected)} size={14} />}

@@ -150,7 +150,7 @@ export function WorktreeRemovalDialogContent({
         animate={{ y: 0, scale: 1, opacity: 1 }}
         exit={{ y: 6, scale: 0.99, opacity: 0 }}
         transition={{ duration: 0.18, ease: [0.16, 1, 0.3, 1] }}
-        className="w-full max-w-[440px] overflow-hidden rounded-2xl border border-droid-border bg-droid-surface shadow-[0_28px_90px_rgba(0,0,0,0.58)]"
+        className="w-full max-w-[440px] overflow-hidden rounded-2xl border border-droid-border bg-droid-surface shadow-droid"
       >
         <div className="px-6 pb-5 pt-6">
           <h2

@@ -76,7 +76,7 @@ export default function EffortHelpCard({
           exit={{ opacity: 0, y: 4 }}
           transition={{ duration: 0.14, ease: [0.16, 1, 0.3, 1] }}
           style={place}
-          className="pointer-events-none fixed z-[200] rounded-xl border border-droid-border/60 bg-droid-elevated px-3.5 py-3 shadow-droid"
+          className="pointer-events-none fixed z-[200] rounded-xl border border-droid-border/60 bg-droid-raised px-3.5 py-3 shadow-droid"
         >
           <div className="text-[13px] font-medium text-droid-text">Effort</div>
           <p className="mt-1 text-[12px] leading-5 text-droid-text-muted">

@@ -187,7 +187,7 @@ export default function AddMenu({
             exit={{ opacity: 0, y: 6 }}
             transition={{ duration: 0.14, ease: [0.16, 1, 0.3, 1] }}
             style={fit}
-            className="absolute bottom-full left-0 z-50 mb-2 w-[340px] rounded-xl border border-droid-border bg-droid-elevated p-1.5 shadow-droid"
+            className="absolute bottom-full left-0 z-50 mb-2 w-[340px] rounded-xl border border-droid-border bg-droid-raised p-1.5 shadow-droid"
             role="menu"
             aria-label="Add to this prompt"
           >

@@ -133,7 +133,7 @@ export function ColorPicker({
   const drag = (move: (x: number, y: number) => void) => (e: React.PointerEvent) => {
     e.preventDefault();
     move(e.clientX, e.clientY);
-    const onMove = (ev: PointerEvent) => move(ev.clientX, ev.clientY);
+    const onMove = (ev: PointerEvent) => { move(ev.clientX, ev.clientY); };
     const onUp = () => {
       window.removeEventListener('pointermove', onMove);
       window.removeEventListener('pointerup', onUp);
@@ -146,7 +146,7 @@ export function ColorPicker({
     <div className="w-[236px] select-none touch-none">
       <div
         ref={satRef}
-        onPointerDown={drag((x, y) => updateSat(x, y))}
+        onPointerDown={drag((x, y) => { updateSat(x, y); })}
         className="relative h-[150px] rounded-lg cursor-crosshair overflow-hidden"
         style={{ background: `hsl(${h}, 100%, 50%)` }}
       >
@@ -169,7 +169,7 @@ export function ColorPicker({
       </div>
       <div
         ref={hueRef}
-        onPointerDown={drag((x) => updateHue(x))}
+        onPointerDown={drag((x) => { updateHue(x); })}
         className="relative h-3.5 mt-3 rounded-full cursor-pointer"
         style={{ background: HUE_GRADIENT }}
       >
@@ -186,7 +186,7 @@ export function ColorPicker({
         />
         <input
           value={hexDraft}
-          onChange={(e) => commitHex(e.target.value)}
+          onChange={(e) => { commitHex(e.target.value); }}
           spellCheck={false}
           className="h-7 min-w-0 flex-1 rounded-md border border-droid-border bg-droid-bg/60 px-2 font-mono text-[11px] uppercase text-droid-text focus:border-droid-border-hover focus:outline-none"
         />
@@ -222,7 +222,7 @@ export function ColorPopover({
     if (!r) return;
     const width = 260;
     const height = 268;
-    let left = r.right - width;
+    const left = r.right - width;
     let top = r.bottom + 8;
     if (top + height > window.innerHeight) top = r.top - height - 8;
     setPos({ top: Math.max(8, top), left: Math.max(8, left) });
@@ -263,7 +263,7 @@ export function ColorPopover({
       // Portaled to <body>, so modal hosts (the theme editor's Tab trap)
       // recognize focus inside it via this attribute instead of containment.
       data-color-popover=""
-      className="fixed z-[70] p-3 rounded-xl border border-droid-border bg-droid-elevated shadow-droid"
+      className="fixed z-[70] p-3 rounded-xl border border-droid-border bg-droid-raised shadow-droid"
       style={{ top: pos.top, left: pos.left }}
     >
       {children}
@@ -307,7 +307,7 @@ export function ColorField({
       <div className="flex items-center gap-1.5">
         <button
           ref={swatchRef}
-          onClick={() => setOpen((o) => !o)}
+          onClick={() => { setOpen((o) => !o); }}
           className="w-8 h-8 rounded-lg border border-droid-border cursor-pointer hover:border-droid-border-hover transition-colors"
           style={{ backgroundColor: value }}
           title="Pick color"
@@ -315,12 +315,12 @@ export function ColorField({
         <input
           type="text"
           value={draft}
-          onChange={(e) => commit(e.target.value)}
+          onChange={(e) => { commit(e.target.value); }}
           spellCheck={false}
           className="w-24 bg-droid-elevated border border-droid-border rounded-lg px-2 py-1.5 font-mono text-[11px] text-droid-text-secondary focus:outline-none focus:border-droid-border-hover"
         />
         {open && (
-          <ColorPopover anchor={swatchRef.current} onClose={() => setOpen(false)}>
+          <ColorPopover anchor={swatchRef.current} onClose={() => { setOpen(false); }}>
             <ColorPicker value={value} onChange={onChange} />
           </ColorPopover>
         )}

@@ -32,7 +32,7 @@ export default function VoiceDock({ voice }: { voice: VoiceMode }) {
       initial={reducedMotion ? false : { opacity: 0, y: 8 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.3, ease: [0.16, 1, 0.3, 1] }}
-      className="mb-2 flex items-center gap-3 rounded-2xl border border-droid-border bg-droid-elevated px-3 py-2 shadow-droid"
+      className="mb-2 flex items-center gap-3 rounded-2xl border border-droid-border bg-droid-raised px-3 py-2 shadow-droid"
     >
       <VoiceOrb stream={voice.micStream} size={34} />
       <div className="min-w-0 flex-1">

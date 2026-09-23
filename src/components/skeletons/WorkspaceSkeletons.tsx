@@ -68,7 +68,7 @@ export function CommandPaletteSkeleton() {
       aria-label="Loading command palette"
       className="fixed inset-0 z-50 flex items-start justify-center bg-black/40 px-4 pt-[18vh]"
     >
-      <div className="w-full max-w-xl rounded-2xl border border-droid-border bg-droid-elevated p-4 shadow-2xl">
+      <div className="w-full max-w-xl rounded-2xl border border-droid-border bg-droid-raised p-4 shadow-droid">
         <SkeletonLine width="100%" height="h-10" />
         <div className="mt-3 space-y-2">
           <SkeletonLine width="88%" height="h-8" />

@@ -104,7 +104,7 @@ export default function PlanApprovalInline() {
       <motion.div
         key={req.requestId}
         {...inlineCardMotion(reduceMotion)}
-        className="mb-2.5 overflow-hidden rounded-2xl border border-droid-border bg-droid-elevated shadow-[0_10px_32px_rgba(0,0,0,0.35)]"
+        className="mb-2.5 overflow-hidden rounded-2xl border border-droid-border bg-droid-raised shadow-droid"
       >
         <div className="flex items-center gap-2 px-4 pt-3.5 pb-3">
           <span

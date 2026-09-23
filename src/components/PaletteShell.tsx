@@ -90,7 +90,7 @@ export default function PaletteShell({
         animate={{ scale: 1, opacity: 1 }}
         exit={{ scale: 0.96, opacity: 0 }}
         transition={{ duration: 0.15, ease: [0.16, 1, 0.3, 1] }}
-        className="w-full max-w-[560px] bg-droid-elevated border border-droid-border rounded-xl shadow-2xl overflow-hidden"
+        className="w-full max-w-[560px] bg-droid-raised border border-droid-border rounded-xl shadow-droid overflow-hidden"
         onClick={(e) => {
           e.stopPropagation();
         }}

@@ -43,14 +43,12 @@ export const DEFAULT_THEME_ID = 'droid';
 // (Claude, VS Code, ChatGPT, Catppuccin, Tokyo Night) instead carry their
 // signature accent color, tuned per variant so it reads on its own canvas.
 //
-// Light variants are deliberately NOT white-on-white: a warm grey canvas with
-// near-white surfaces gives the same tonal depth dark mode has (cards and
-// hover states stay visible), keeps near-black text from glaring, and lets the
-// pastel diff palettes read. Each variant carries a hue-matched tint (warm
-// paper for Droid, cool blue for Midnight, etc.) and a softened, slightly
-// warm foreground instead of a harsh neutral, so the whole scale sits gently
-// on the eye — pure-white backgrounds and black text are tiring and flatten
-// every border.
+// Light variants read like paper: a softly tinted near-white canvas (warm for
+// Droid, cool blue for Midnight, etc.), a slightly deeper sidebar, and pure
+// white raised layers. A mid-grey canvas makes the page look like an inverted
+// dark theme and drops text contrast, which is harder on the eyes than a soft
+// white; pure #ffffff everywhere glares and flattens every edge. Foregrounds
+// stay softened rather than black for the same reason.
 // Non-empty tuple so the default entry (index 0) is statically defined.
 export const BUILT_IN_THEMES: [ThemePreset, ...ThemePreset[]] = [
   {
@@ -64,11 +62,11 @@ export const BUILT_IN_THEMES: [ThemePreset, ...ThemePreset[]] = [
       accent: '#f2f2f2',
     },
     light: {
-      bg: '#efede8',
-      fg: '#2e2b26',
-      surface: '#faf8f4',
+      bg: '#f8f7f4',
+      fg: '#2d2a26',
+      surface: '#fdfcfa',
       border: '#e2ded6',
-      accent: '#2e2b26',
+      accent: '#2d2a26',
     },
   },
   {
@@ -82,10 +80,10 @@ export const BUILT_IN_THEMES: [ThemePreset, ...ThemePreset[]] = [
       accent: '#c8d0e0',
     },
     light: {
-      bg: '#e9ecf2',
+      bg: '#f5f6f9',
       fg: '#2a3040',
-      surface: '#f8f9fb',
-      border: '#d9dde6',
+      surface: '#fcfcfd',
+      border: '#dde0e8',
       accent: '#2a3040',
     },
   },
@@ -100,10 +98,10 @@ export const BUILT_IN_THEMES: [ThemePreset, ...ThemePreset[]] = [
       accent: '#d8d0c8',
     },
     light: {
-      bg: '#f1ebe2',
+      bg: '#f9f5ef',
       fg: '#362e26',
-      surface: '#faf5ee',
-      border: '#e4dacb',
+      surface: '#fdfbf7',
+      border: '#e7ded0',
       accent: '#362e26',
     },
   },
@@ -118,10 +116,10 @@ export const BUILT_IN_THEMES: [ThemePreset, ...ThemePreset[]] = [
       accent: '#c2d4dc',
     },
     light: {
-      bg: '#e6edee',
+      bg: '#f4f7f7',
       fg: '#25353c',
-      surface: '#f7fafb',
-      border: '#d5dfe2',
+      surface: '#fbfdfd',
+      border: '#d9e2e4',
       accent: '#25353c',
     },
   },
@@ -136,10 +134,10 @@ export const BUILT_IN_THEMES: [ThemePreset, ...ThemePreset[]] = [
       accent: '#d2cbe8',
     },
     light: {
-      bg: '#edeaf3',
+      bg: '#f7f5fa',
       fg: '#322b44',
-      surface: '#f9f8fb',
-      border: '#dfd9e9',
+      surface: '#fcfbfd',
+      border: '#e2ddea',
       accent: '#322b44',
     },
   },
@@ -157,10 +155,10 @@ export const BUILT_IN_THEMES: [ThemePreset, ...ThemePreset[]] = [
       accent: '#d97757',
     },
     light: {
-      bg: '#edebe3',
-      fg: '#141413',
-      surface: '#f7f5ee',
-      border: '#dcd7ca',
+      bg: '#faf9f5',
+      fg: '#28261f',
+      surface: '#fefdfb',
+      border: '#e4dfd3',
       accent: '#a84a28',
     },
   },
@@ -177,10 +175,10 @@ export const BUILT_IN_THEMES: [ThemePreset, ...ThemePreset[]] = [
       accent: '#3794ff',
     },
     light: {
-      bg: '#ecedf0',
+      bg: '#f7f7f8',
       fg: '#1f1f1f',
-      surface: '#f8f9fb',
-      border: '#d6d8de',
+      surface: '#fdfdfd',
+      border: '#dedfe3',
       accent: '#0066aa',
     },
   },
@@ -197,15 +195,15 @@ export const BUILT_IN_THEMES: [ThemePreset, ...ThemePreset[]] = [
       accent: '#f5f5f5',
     },
     light: {
-      bg: '#ededec',
+      bg: '#f8f8f7',
       fg: '#0d0d0d',
-      surface: '#f9f9f8',
-      border: '#dcdcda',
+      surface: '#fdfdfc',
+      border: '#e1e1df',
       accent: '#0d0d0d',
     },
   },
-  // Catppuccin Mocha/Latte with the signature mauve accent. The Latte text and
-  // canvas are deepened a step so body text keeps >=7:1 on tinted paper.
+  // Catppuccin Mocha/Latte with the signature mauve accent. The Latte text is
+  // deepened a step so body text keeps >=7:1 on tinted paper.
   {
     id: 'catppuccin',
     name: 'Catppuccin',
@@ -217,10 +215,10 @@ export const BUILT_IN_THEMES: [ThemePreset, ...ThemePreset[]] = [
       accent: '#cba6f7',
     },
     light: {
-      bg: '#e8eaf0',
+      bg: '#eff1f5',
       fg: '#40435c',
-      surface: '#f5f6fa',
-      border: '#ccd0dc',
+      surface: '#f8f9fb',
+      border: '#d4d8e2',
       accent: '#8839ef',
     },
   },
@@ -237,10 +235,10 @@ export const BUILT_IN_THEMES: [ThemePreset, ...ThemePreset[]] = [
       accent: '#7aa2f7',
     },
     light: {
-      bg: '#e1e2e7',
+      bg: '#eef0f4',
       fg: '#343b58',
-      surface: '#eceef3',
-      border: '#c4c8d4',
+      surface: '#f8f9fb',
+      border: '#d3d7e1',
       accent: '#0066aa',
     },
   },
@@ -379,15 +377,14 @@ export const LINK_COLORS = {
   light: '#1d4ed8',
 } as const;
 
-// One rung of the surface ramp, `amount` steps away from the canvas.
+// One rung of the tint ramp (hover, selection, user bubbles, code blocks),
+// `amount` steps away from the canvas.
 //
 // Dark presets keep headroom above their surface, so each rung lightens it and
 // the ramp reads bg < surface < elevated < active. Light presets put the
 // surface ABOVE the canvas with nothing left above it, so their rungs step
-// darker — and they must be measured from the canvas, not the surface.
-// Stepping down from a light surface lands the first rung back on the canvas
-// (surface #faf8f4 - 13 = #edebe7 against bg #efede8), which is what made every
-// raised overlay — popovers, menus, fields, buttons — vanish in light mode.
+// darker, measured from the canvas: stepping down from the surface would land
+// the first rung back on the canvas and make every tint vanish.
 export function surfaceStep(theme: Pick<ThemeColors, 'bg' | 'surface'>, amount: number): string {
   return colorLuminance(theme.bg) < 0.4
     ? adjustColor(theme.surface, amount)
@@ -396,6 +393,17 @@ export function surfaceStep(theme: Pick<ThemeColors, 'bg' | 'surface'>, amount: 
 
 export function elevatedSurfaceColor(theme: Pick<ThemeColors, 'bg' | 'surface'>): string {
   return surfaceStep(theme, 13);
+}
+
+// Floating layers (composer, menus, popovers, tooltips, toasts) need the
+// opposite direction from the tint ramp on light themes: a darker rung reads as
+// a grey hole in the page, so they lift to near-white and rely on the hairline
+// border and shadow. Dark themes already lighten upward, so they share the
+// elevated rung.
+export function raisedSurfaceColor(theme: Pick<ThemeColors, 'bg' | 'surface'>): string {
+  return colorLuminance(theme.bg) < 0.4
+    ? elevatedSurfaceColor(theme)
+    : mixHex(theme.surface, '#ffffff', 0.6);
 }
 
 // The light preset as it shipped before the readability pass. A saved theme
@@ -445,6 +453,7 @@ export function applyTheme(theme: ThemeSettings) {
   root.style.setProperty('--droid-field', surfaceStep(theme, 13));
   // The most-raised neutral, for selected/active rows.
   root.style.setProperty('--droid-active', surfaceStep(theme, 26));
+  root.style.setProperty('--droid-raised', raisedSurfaceColor(theme));
   // Soften resting borders by blending toward the background so panel/section
   // separators read as gentle hairlines rather than hard lines. Dark themes need
   // a stronger blend: at low luminance the same edge reads as a harsh outline, so
@@ -478,20 +487,19 @@ export function applyTheme(theme: ThemeSettings) {
   root.style.setProperty('--droid-ultra', bgIsDark ? ULTRA_COLORS.dark : ULTRA_COLORS.light);
   // Floating-card shadow: strong and near-black on dark where it separates
   // surfaces, soft and diffuse on light so cards lift without looking dirty.
-  // Light themes pair the diffuse cast with a tight contact shadow, because a
-  // hairline border alone does not separate a near-white card from near-white
-  // paper.
+  // Light themes lead with a faint 1px ring: a white card on near-white paper
+  // needs an edge, and the ring gives one without drawing a visible outline.
   root.style.setProperty(
     '--droid-shadow',
     bgIsDark
       ? '0 10px 40px rgba(0, 0, 0, 0.35)'
-      : '0 1px 2px rgba(28, 25, 23, 0.08), 0 12px 30px rgba(28, 25, 23, 0.14)',
+      : '0 0 0 1px rgba(28, 25, 23, 0.04), 0 2px 4px rgba(28, 25, 23, 0.04), 0 12px 32px rgba(28, 25, 23, 0.08)',
   );
   root.style.setProperty(
     '--droid-shadow-sm',
     bgIsDark
       ? '0 4px 16px rgba(0, 0, 0, 0.28)'
-      : '0 1px 2px rgba(28, 25, 23, 0.06), 0 6px 16px rgba(28, 25, 23, 0.1)',
+      : '0 0 0 1px rgba(28, 25, 23, 0.04), 0 1px 2px rgba(28, 25, 23, 0.04), 0 6px 16px rgba(28, 25, 23, 0.06)',
   );
   // Semantic status colors are FIXED, never accent-derived, so success/warning
   // and diff add/remove always read as green/amber/red even when the accent is a
@@ -537,9 +545,12 @@ export function applyTheme(theme: ThemeSettings) {
   root.setAttribute('data-translucent', theme.translucentSidebar ? 'true' : 'false');
   const sidebarAlpha = bgIsDark ? '99' : 'f2';
   const sidebarSaturate = bgIsDark ? 'saturate(150%)' : 'saturate(108%)';
+  // A light sidebar sits a shade below the canvas, like paper under a page,
+  // so the near-white reading area stays the brightest region of the window.
+  const sidebarColor = bgIsDark ? theme.surface : adjustColor(theme.bg, -6);
   root.style.setProperty(
     '--sidebar-bg',
-    theme.translucentSidebar ? `${theme.surface}${sidebarAlpha}` : theme.surface,
+    theme.translucentSidebar ? `${sidebarColor}${sidebarAlpha}` : sidebarColor,
   );
   root.style.setProperty(
     '--sidebar-blur',

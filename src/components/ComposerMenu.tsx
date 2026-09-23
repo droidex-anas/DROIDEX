@@ -185,7 +185,7 @@ export default function ComposerMenu({
       {open && (
         <motion.div
           {...motionProps}
-          className="absolute bottom-full left-0 right-0 z-50 mb-2 max-h-80 overflow-y-auto rounded-xl border border-droid-border bg-droid-elevated p-1.5 shadow-droid"
+          className="absolute bottom-full left-0 right-0 z-50 mb-2 max-h-80 overflow-y-auto rounded-xl border border-droid-border bg-droid-raised p-1.5 shadow-droid"
         >
           {/* Keyed entries that mount as the catalog lands: only the new row
               fades in, and initial={false} keeps the rows the panel opened with

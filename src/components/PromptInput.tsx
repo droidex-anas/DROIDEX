@@ -1701,12 +1701,12 @@ export default function PromptInput({
         )}
 
         <div
-          className={`relative z-10 bg-droid-elevated border rounded-[20px] composer-frame ${missionPreview ? '' : boxBorder}`}
+          className={`relative z-10 bg-droid-raised border rounded-[20px] shadow-droid-sm composer-frame ${missionPreview ? '' : boxBorder}`}
           style={
             missionPreview
               ? {
-                  borderColor: accentMix(40),
-                  boxShadow: `0 0 0 1px ${accentMix(13)}, 0 10px 30px -12px ${accentMix(33)}`,
+                  borderColor: accentMix(20),
+                  boxShadow: `var(--droid-shadow-sm), 0 0 0 3px ${accentMix(6)}`,
                 }
               : undefined
           }
