@@ -110,7 +110,6 @@ function threadRow(
 ): ThreadRow {
   const session = sessions[thread.appSessionId];
   const digest = digests[thread.appSessionId];
-  const live = Boolean(session?.streaming);
   const status = session
     ? sessionActivityStatus(session, {
         attention: attention(thread.appSessionId),
@@ -121,6 +120,9 @@ function threadRow(
         awaitingReply: thread.waiting && project.paused,
       })
     : 'ready';
+  // A thread can be generating and still be stopped on the user; that is not
+  // working, so it wears its blocked mark rather than the spinner.
+  const live = Boolean(session?.streaming) && !BLOCKED.includes(status);
   return {
     appSessionId: thread.appSessionId,
     title: thread.title,

@@ -4,6 +4,7 @@ import { adaptEvent, initialState, reducer, type AppState } from '../../hooks/us
 import { serverWireMessage } from '../../lib/bridgeWireValidation';
 import type { SessionSummary } from '../../types/bridge';
 import type { ProjectView } from './types';
+import { threadRows } from './threadBoard';
 import { threadReports } from './threadNotices';
 
 const project: ProjectView = {
@@ -133,4 +134,14 @@ test('a runtime that cannot answer for projects still lets the chat list paint',
   const answered = adaptEvent({ type: 'projects.snapshot', projects: [project] });
   assert.ok(answered);
   assert.equal(reducer(initialState, answered).projectsLoaded, true);
+});
+
+test('a streaming thread blocked on an approval shows the block, not the spinner', () => {
+  const [worker] = threadRows(project, {
+    sessions: { main: session('main'), worker: session('worker') },
+    attention: (id) => (id === 'worker' ? 'approval' : null),
+    digests: {},
+  });
+  assert.equal(worker?.status, 'approval');
+  assert.equal(worker?.live, false);
 });
