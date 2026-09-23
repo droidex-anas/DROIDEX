@@ -212,13 +212,14 @@ export function clearAsk(project: Project, thread: ProjectThread): boolean {
 }
 
 /* The live state of a thread, owned by its session rather than copied here. A
-   question outlives no turn, so an outstanding one is what it is waiting on. */
+   question outlives no turn, so an outstanding one is what it is waiting on,
+   even while the turn that asked it is still streaming. */
 export function threadState(
   thread: ProjectThread,
   session: SessionSummary | undefined,
 ): ThreadState {
-  if (session?.streaming) return 'working';
   if (thread.ask) return 'waiting';
+  if (session?.streaming) return 'working';
   if (session?.phase === 'failed') return 'failed';
   if (session?.phase === 'paused') return 'stopped';
   return 'idle';

@@ -689,6 +689,47 @@ test('a spawn carries a settled plan step, or none at all', async (t) => {
   assert.equal(h.projects.list()[0]?.plan[0]?.threadAppSessionId, started.appSessionId);
 });
 
+test('a spawn keeps the plan step it named when two steps share a title', async (t) => {
+  const h = await harness();
+  t.after(() => h.projects.close());
+  const { main } = await h.root();
+  await h.projects.setPlan(main, [{ title: 'Review' }, { title: 'Review' }]);
+  const started = await h.projects.spawn(main, { ...input, step: '2' });
+  const plan = h.projects.list()[0]?.plan;
+  assert.equal(plan?.[0]?.threadAppSessionId, undefined);
+  assert.equal(plan?.[1]?.threadAppSessionId, started.appSessionId);
+});
+
+test('a question withdrawn while its wake is in flight never reaches the owner', async (t) => {
+  const h = await harness();
+  t.after(() => h.projects.close());
+  const { main } = await h.root();
+  const child = await h.projects.spawn(main, input);
+  h.asking.set(child.appSessionId, 'ask');
+  const gate = deferred();
+  h.state.gate = gate.promise;
+  await h.projects.observe({
+    type: 'question.requested',
+    question: {
+      appSessionId: child.appSessionId,
+      requestId: 'ask',
+      questions: [{ index: 0, question: 'Which API?', options: [] }],
+    },
+  });
+  // Mid-turn, but stopped on its question: the owner is told it is waiting.
+  assert.equal(h.projects.read(main, child.appSessionId).state, 'waiting');
+  await tick();
+  await h.projects.observe({
+    type: 'interaction.cancelled',
+    appSessionId: child.appSessionId,
+    requestId: 'ask',
+  });
+  gate.resolve();
+  await drain();
+  assert.equal(h.sent.length, 0);
+  assert.equal(h.projects.list()[0]?.queued, 0);
+});
+
 test('durable project request identity avoids a duplicate root', async (t) => {
   const h = await harness();
   t.after(() => h.projects.close());

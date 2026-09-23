@@ -147,12 +147,19 @@ export class ProjectWakeQueue {
     project.delivery = claim;
     await this.save();
 
+    // A question its thread stops asking before the owner wakes would have the
+    // owner answer nothing, so it turns the delivery back and is dropped.
+    const stillAsked = () => messages.every((message) => isAsked(project, message));
     let receipt: AutomationDeliveryReceipt;
-    if (!isCurrent()) {
+    if (!isCurrent() || !stillAsked()) {
       receipt = { status: 'busy', retryOn: 'target' };
     } else {
       try {
-        receipt = await this.sessions.deliver(target, wakePrompt(project, messages), isCurrent);
+        receipt = await this.sessions.deliver(
+          target,
+          wakePrompt(project, messages),
+          () => isCurrent() && stillAsked(),
+        );
       } catch (error) {
         receipt = {
           status: 'unavailable',
@@ -168,12 +175,13 @@ export class ProjectWakeQueue {
     // Only this claim is settled. Messages that arrived during admission remain queued.
     if (project.delivery === claim) delete project.delivery;
     if (receipt.status === 'busy') {
-      project.pending.unshift(...messages);
+      project.pending.unshift(...messages.filter((message) => isAsked(project, message)));
       // A recipient that was busy never woke, so it does not count as a lap.
       this.recent.get(project.id)?.pop();
       await this.save();
-      // A cancelled generation cannot put a resumed recipient back to sleep.
-      if (!isCurrent()) return;
+      // A cancelled generation cannot put a resumed recipient back to sleep, and
+      // a dropped question says nothing about whether the recipient is busy.
+      if (!isCurrent() || !stillAsked()) return;
       if (receipt.retryOn === 'capacity') {
         if (this.capacityRevision === capacityRevision) this.capacityWaiting.add(project.id);
       } else if (this.revisions.get(target) === targetRevision) {
@@ -192,6 +200,11 @@ export class ProjectWakeQueue {
     this.active.set(target, settled);
     await this.save();
   }
+}
+
+function isAsked(project: Project, message: ThreadMessage): boolean {
+  if (message.kind !== 'question') return true;
+  return project.threads.some((thread) => thread.appSessionId === message.from && thread.ask);
 }
 
 function batch(pending: readonly ThreadMessage[], to: string): ThreadMessage[] {
