@@ -284,7 +284,13 @@ export class SessionLifecycle {
       this.trackProviderProcess(appSessionId, providerSession, mcp.configs);
       d.childSessions.attachParent(appSessionId);
       d.emit({ type: 'session.created', clientRef: command.clientRef, session: summary });
-      void this.driveInBackground(appSessionId, sessionPrompt(command.goal, command.mentions));
+      // A chat can open with nothing to say: voice mode creates the session so
+      // the conversation has a thread to attach to, and the first request
+      // arrives spoken. Driving an empty prompt would run a turn about nothing.
+      const prompt = sessionPrompt(command.goal, command.mentions);
+      if (prompt.text.trim() || prompt.mentions?.length) {
+        void this.driveInBackground(appSessionId, prompt);
+      }
     } catch (error) {
       await this.cleanupFailedOpen(pendingMcpServers, pendingSession, pendingLiveSession);
       if (!isOpenAdmissionClosed(error)) {

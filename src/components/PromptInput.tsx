@@ -39,7 +39,7 @@ import {
 } from '../lib/desktop';
 import { pathsInSequence, useImageAttachments } from '../hooks/useImageAttachments';
 import { useFileAttachments } from '../hooks/useFileAttachments';
-import { useVoiceMode, VOICE_MODE_ENABLED } from '../features/voice/useVoiceMode';
+import { useVoice } from '../features/voice/useVoice';
 import { useComposerFileDrop } from '../hooks/useComposerFileDrop';
 import { ImageChip } from './composer/ImageChip';
 import { FileChip } from './composer/FileChip';
@@ -143,8 +143,17 @@ const loadModelSelectorPopover = () => import('./ModelSelectorPopover');
 const ModelSliderPopover = lazy(loadModelSliderPopover);
 const ModelSelectorPopover = lazy(loadModelSelectorPopover);
 const VoiceSendSlot = lazy(() => import('../features/voice/VoiceSendSlot'));
-const VoiceDock = lazy(() => import('../features/voice/VoiceDock'));
-const VoiceModeOverlay = lazy(() => import('../features/voice/VoiceModeOverlay'));
+const VoiceOrbDock = lazy(() =>
+  import('../features/voice/VoiceOrbDock').then((m) => ({ default: m.VoiceOrbDock })),
+);
+const VoiceComposerControls = lazy(() =>
+  import('../features/voice/VoiceComposerControls').then((m) => ({
+    default: m.VoiceComposerControls,
+  })),
+);
+const VoiceSurface = lazy(() =>
+  import('../features/voice/VoiceSurface').then((m) => ({ default: m.VoiceSurface })),
+);
 
 // Stable identity for a closed menu, so no trigger means no new object.
 const EMPTY_COMPOSER_MENU: ComposerMenuModel = { entries: [], rows: [] };
@@ -246,6 +255,8 @@ export default function PromptInput({
       draftProvider: current.draftProvider,
       providerStatuses: current.providerStatuses,
       imagePasteQuality: current.imagePasteQuality,
+      defaultVoice: current.defaultVoice,
+      narrationMode: current.narrationMode,
       lastCreatedSessionRequest: current.lastCreatedSessionRequest,
       liveEnterBehavior: current.liveEnterBehavior,
       missionControlMode: current.missionControlMode,
@@ -381,7 +392,6 @@ export default function PromptInput({
   };
   const [sendHintOpen, setSendHintOpen] = useState(false);
   const [turnStarting, setTurnStarting] = useState(false);
-  const voice = useVoiceMode();
   const editorRef = useRef<ComposerHandle>(null);
   // Flips once the lazy editor mounts, so a caret queued for it is applied.
   const [editorReady, setEditorReady] = useState(false);
@@ -1588,7 +1598,60 @@ export default function PromptInput({
   // The action slot morphs between voice and send: a draft with content owns
   // the stage, but a live or starting turn keeps stop/send reachable even on
   // an empty draft. With voice off, send is always on stage.
-  const showSendAction = !VOICE_MODE_ENABLED || hasContent || isLive || turnStarting;
+  const voice = useVoice(activeSession?.appSessionId ?? null, composerProvider, {
+    voice: state.defaultVoice || undefined,
+    narration: state.narrationMode,
+  });
+  // A chat started by voice has no prompt to create it with, so the orb creates
+  // the chat first and opens the conversation once its session exists.
+  const voiceAwaitingSession = useRef(false);
+
+  // The orb: talk to the chat that is open, or start one and talk to that. A
+  // chat created this way opens with no prompt, so the first request is the
+  // spoken one.
+  const startVoice = () => {
+    if (activeSession) {
+      voice.open();
+      return;
+    }
+    if (voiceAwaitingSession.current) return;
+    voiceAwaitingSession.current = true;
+    const clientRef = newClientRef();
+    void (async () => {
+      const preparation = await prepareDraftCwd(
+        state.draftChat?.cwd ?? '',
+        clientRef,
+        'Voice chat',
+      );
+      if (!preparation.ok) {
+        voiceAwaitingSession.current = false;
+        return;
+      }
+      createSession({
+        clientRef,
+        cwd: preparation.path,
+        title: 'Voice chat',
+        goal: '',
+        sessionPurpose: 'chat',
+        provider: draftProvider,
+        interactionMode: isSpecMode ? 'spec' : 'auto',
+        autonomy: draftAutonomy,
+        ...draftModelSettings,
+        compactionModel:
+          state.compactionModel === 'current-model' ? undefined : state.compactionModel,
+        ...compactionSettingsSnapshot(compactionSettingsInput),
+      });
+    })();
+  };
+
+  // The session the orb asked for has arrived: open the conversation on it.
+  useEffect(() => {
+    if (!voiceAwaitingSession.current || !activeSession) return;
+    voiceAwaitingSession.current = false;
+    voice.open();
+  }, [activeSession, voice]);
+
+  const showSendAction = !voice.available || hasContent || isLive || turnStarting;
   // The hint's host swaps (send, stop, spinner) as a turn starts and ends; clear
   // the state with it so the hint never reopens without a hover or focus.
   useEffect(() => {
@@ -1690,9 +1753,9 @@ export default function PromptInput({
 
         <ComposerDock />
 
-        {voice.view === 'compact' && (
+        {voice.view === 'dock' && (
           <Suspense fallback={null}>
-            <VoiceDock voice={voice} />
+            <VoiceOrbDock voice={voice} />
           </Suspense>
         )}
 
@@ -1983,9 +2046,13 @@ export default function PromptInput({
               </div>
 
               <div ref={scheduleAnchorRef} className="shrink-0">
-                {VOICE_MODE_ENABLED ? (
+                {voice.view === 'dock' ? (
+                  <Suspense fallback={null}>
+                    <VoiceComposerControls voice={voice} />
+                  </Suspense>
+                ) : voice.available ? (
                   <Suspense fallback={sendButton}>
-                    <VoiceSendSlot showSend={showSendAction} onVoice={voice.start}>
+                    <VoiceSendSlot showSend={showSendAction} onVoice={startVoice}>
                       {sendButton}
                     </VoiceSendSlot>
                   </Suspense>
@@ -2063,7 +2130,17 @@ export default function PromptInput({
         )}
       {voice.view === 'full' && (
         <Suspense fallback={null}>
-          <VoiceModeOverlay voice={voice} />
+          <VoiceSurface
+            voice={voice}
+            narration={state.narrationMode}
+            selectedVoice={state.defaultVoice || undefined}
+            onNarrationChange={(mode) => {
+              dispatch({ type: 'SET_NARRATION_MODE', mode });
+            }}
+            onVoiceChange={(next) => {
+              dispatch({ type: 'SET_DEFAULT_VOICE', voice: next });
+            }}
+          />
         </Suspense>
       )}
     </div>

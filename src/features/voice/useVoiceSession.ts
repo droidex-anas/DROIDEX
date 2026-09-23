@@ -43,6 +43,8 @@ export interface VoiceSession {
   defaultVoice?: string;
   muted: boolean;
   micDenied: boolean;
+  /** The live microphone, so a surface can show what it hears. */
+  micStream: MediaStream | null;
   start: () => void;
   stop: () => void;
   toggleMuted: () => void;
@@ -233,12 +235,13 @@ export function useVoiceSession(
       defaultVoice: session.defaultVoice,
       muted,
       micDenied: mic.denied,
+      micStream: mic.stream,
       start,
       stop,
       toggleMuted,
       refreshVoices,
     }),
-    [mic.denied, muted, refreshVoices, session, start, stop, toggleMuted],
+    [mic.denied, mic.stream, muted, refreshVoices, session, start, stop, toggleMuted],
   );
 }
 
