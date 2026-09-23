@@ -14,6 +14,12 @@ import {
 import { bridge } from '../lib/bridge';
 import { updateCompactionSettings } from '../lib/commands';
 import { reducePrInbox, type PrInboxAction } from '../features/pull-requests/lib/prInboxState';
+import {
+  reduceVoice,
+  withoutVoiceSession,
+  type VoiceAction,
+  type VoiceSessions,
+} from '../features/voice/voiceSessions';
 import { removeCustomTheme, upsertCustomTheme, type ThemePreset } from '../lib/theme';
 import {
   loadCustomThemes,
@@ -359,6 +365,9 @@ export interface AppState {
   browserErrors: Record<string, string>;
   browserGlobalError?: string;
   designModes: DesignModes;
+  // Live voice conversations, keyed by appSessionId. Never persisted: a voice
+  // session ends with the window that held it.
+  voiceSessions: VoiceSessions;
 
   // Mission Control view
   selectedFeatureId: string | null;
@@ -603,6 +612,7 @@ type Action =
   | { type: 'CLOSE_AUTOMATIONS' }
   | { type: 'AUTOMATION_EDITOR_REQUEST_HANDLED'; requestId: number }
   | PrInboxAction
+  | VoiceAction
   | {
       type: 'START_CHAT';
       cwd: string;
@@ -756,6 +766,7 @@ export const initialState: AppState = {
   browserErrors: {},
   browserGlobalError: undefined,
   designModes: {},
+  voiceSessions: {},
   selectedFeatureId: persistedUiState.selectedFeatureId ?? null,
   selectedChild: null,
   models: [],
@@ -1080,6 +1091,7 @@ function baseReducer(state: AppState, action: Action): AppState {
         agentProcesses: Object.fromEntries(
           Object.entries(state.agentProcesses).filter(([id]) => id !== action.appSessionId),
         ),
+        voiceSessions: withoutVoiceSession(state.voiceSessions, action.appSessionId),
         selectedChild:
           state.selectedChild?.parentAppSessionId === action.appSessionId
             ? null
@@ -1801,6 +1813,15 @@ function baseReducer(state: AppState, action: Action): AppState {
     case 'TOGGLE_MISSION_CONTROL':
       return { ...state, missionControlMode: !state.missionControlMode };
 
+    case 'VOICE_CONNECTING':
+    case 'VOICE_ANSWERED':
+    case 'VOICE_STATE':
+    case 'VOICE_TRANSCRIPT':
+    case 'VOICE_VOICES':
+    case 'VOICE_ERROR':
+    case 'VOICE_ENDED':
+      return reduceVoice(state, action);
+
     case 'OPEN_PULL_REQUESTS':
     case 'CLOSE_PULL_REQUESTS':
     case 'MOVE_PR_TO_BACKLOG':
@@ -2428,6 +2449,32 @@ export function adaptEvent(ev: ServerEvent): Action | null {
       return { type: 'BROWSER_CLOSED', appSessionId: ev.appSessionId };
     case 'browser.error':
       return { type: 'BROWSER_ERROR', appSessionId: ev.appSessionId, message: ev.message };
+    case 'voice.answer':
+      return { type: 'VOICE_ANSWERED', appSessionId: ev.appSessionId, sdp: ev.sdp };
+    case 'voice.state':
+      return {
+        type: 'VOICE_STATE',
+        appSessionId: ev.appSessionId,
+        status: ev.status,
+        reason: ev.reason,
+      };
+    case 'voice.transcript':
+      return {
+        type: 'VOICE_TRANSCRIPT',
+        appSessionId: ev.appSessionId,
+        role: ev.role,
+        text: ev.text,
+        final: ev.final,
+      };
+    case 'voice.voices':
+      return {
+        type: 'VOICE_VOICES',
+        appSessionId: ev.appSessionId,
+        voices: ev.voices,
+        defaultVoice: ev.defaultVoice,
+      };
+    case 'voice.error':
+      return { type: 'VOICE_ERROR', appSessionId: ev.appSessionId, message: ev.message };
     default:
       return null;
   }
