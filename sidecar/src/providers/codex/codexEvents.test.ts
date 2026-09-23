@@ -73,9 +73,10 @@ test('a server that failed before the first turn is still reported in it', async
   await session.open();
   notifications.get('mcpServer/startupStatus/updated')?.(FAILED);
 
-  for await (const event of session.stream('hello')) {
-    assert.equal(event.transcript?.kind, 'status');
-    assert.match(event.transcript?.text ?? '', /broken_probe/);
-    break;
-  }
+  const events = session.stream('hello');
+  const first = await events.next();
+  assert.ok(!first.done, 'the turn ended without reporting the failed server');
+  assert.equal(first.value.transcript?.kind, 'status');
+  assert.match(first.value.transcript?.text ?? '', /broken_probe/);
+  await events.return(undefined);
 });
