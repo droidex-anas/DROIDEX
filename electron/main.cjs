@@ -207,6 +207,7 @@ app.whenReady().then(async () => {
   });
   registerIpc();
   registerLocalImageProtocol();
+  registerMediaPermissions();
   registerFaviconProtocol();
   createMainWindow();
   powerTier.start();
@@ -323,6 +324,23 @@ function createMainWindow() {
     mainWindow = null;
   });
   powerTier.attachWindow(mainWindow);
+}
+
+// Voice mode records only while the user holds a conversation open, and only
+// the app's own window may ask. Every other permission stays denied, and the
+// Browser pane's partition is untouched, so a web page there cannot reach the
+// microphone.
+function registerMediaPermissions() {
+  const isOwnWindow = (contents) =>
+    mainWindow !== null && !mainWindow.isDestroyed() && contents === mainWindow.webContents;
+  session.defaultSession.setPermissionRequestHandler((contents, permission, callback) => {
+    callback((permission === 'media' || permission === 'audioCapture') && isOwnWindow(contents));
+  });
+  session.defaultSession.setPermissionCheckHandler((contents, permission) =>
+    (permission === 'media' || permission === 'audioCapture') && contents !== null
+      ? isOwnWindow(contents)
+      : false,
+  );
 }
 
 // Serves local image files to the renderer (see localImages.cjs). Registered on
