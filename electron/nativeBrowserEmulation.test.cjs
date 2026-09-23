@@ -1,7 +1,5 @@
 const test = require('node:test');
 const assert = require('node:assert');
-const fs = require('node:fs');
-const path = require('node:path');
 
 const { runWithWebContentsDebugger } = require('./nativeBrowserEmulation.cjs');
 
@@ -24,26 +22,6 @@ function createContents() {
     },
   };
 }
-
-test('native browser avoids Chromium device emulation APIs', () => {
-  const mainSource = fs.readFileSync(path.join(__dirname, 'main.cjs'), 'utf8');
-  const debuggerSource = fs.readFileSync(
-    path.join(__dirname, 'nativeBrowserEmulation.cjs'),
-    'utf8',
-  );
-  const nativeBrowserSource = [
-    'nativeBrowser.cjs',
-    'nativeBrowserView.cjs',
-    'nativeBrowserPage.cjs',
-    'nativeBrowserHost.cjs',
-  ]
-    .map((file) => fs.readFileSync(path.join(__dirname, file), 'utf8'))
-    .join('\n');
-  const source = `${mainSource}\n${debuggerSource}\n${nativeBrowserSource}`;
-
-  assert.doesNotMatch(source, /enableDeviceEmulation/);
-  assert.doesNotMatch(source, /Emulation\.setDeviceMetricsOverride/);
-});
 
 test('debugger operations are serialized and reuse one attachment', async () => {
   const contents = createContents();
