@@ -29,7 +29,7 @@ export function VoiceOrbDock({ voice }: { voice: Voice }) {
         onClick={voice.expand}
         className="pointer-events-auto rounded-full focus-visible:outline focus-visible:outline-droid-border-hover"
       >
-        <VoiceOrb stream={session.micStream} size={72} />
+        <VoiceOrb micStream={session.micStream} replyStream={session.replyStream} size={72} />
       </button>
       <span className="text-[11px] text-droid-text-muted">
         {voiceStatusLabel(session.status, session.muted, session.micDenied, session.error)}

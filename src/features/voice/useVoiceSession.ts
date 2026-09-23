@@ -45,6 +45,8 @@ export interface VoiceSession {
   micDenied: boolean;
   /** The live microphone, so a surface can show what it hears. */
   micStream: MediaStream | null;
+  /** What the provider is saying, so a surface can show that too. */
+  replyStream: MediaStream | null;
   start: () => void;
   stop: () => void;
   toggleMuted: () => void;
@@ -64,6 +66,7 @@ export function useVoiceSession(
     ),
   );
   const [wanted, setWanted] = useState(false);
+  const [replyStream, setReplyStream] = useState<MediaStream | null>(null);
   const [muted, setMuted] = useState(false);
   const mic = useMicStream(wanted);
   const negotiationRef = useRef<Negotiation | null>(null);
@@ -81,6 +84,7 @@ export function useVoiceSession(
   const stop = useCallback(() => {
     const held = negotiationRef.current;
     teardown();
+    setReplyStream(null);
     if (held?.offerSent) stopVoice({ appSessionId: held.appSessionId });
     setWanted(false);
     setMuted(false);
@@ -168,7 +172,9 @@ export function useVoiceSession(
     const { pc, audio } = negotiation;
     audio.autoplay = true;
     pc.ontrack = (event) => {
-      audio.srcObject = event.streams[0] ?? new MediaStream([event.track]);
+      const stream = event.streams[0] ?? new MediaStream([event.track]);
+      audio.srcObject = stream;
+      setReplyStream(stream);
       void audio.play().catch(() => {
         // Autoplay can refuse; the element keeps the track and starts on the
         // next gesture. The conversation itself is unaffected.
@@ -236,12 +242,13 @@ export function useVoiceSession(
       muted,
       micDenied: mic.denied,
       micStream: mic.stream,
+      replyStream,
       start,
       stop,
       toggleMuted,
       refreshVoices,
     }),
-    [mic.denied, mic.stream, muted, refreshVoices, session, start, stop, toggleMuted],
+    [mic.denied, mic.stream, muted, refreshVoices, replyStream, session, start, stop, toggleMuted],
   );
 }
 

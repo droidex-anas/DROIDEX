@@ -23,7 +23,10 @@ export interface Voice {
  * Voice for the chat the composer is pointing at: the connection plus the two
  * surfaces it can wear. The view follows the conversation — it opens full, and
  * it closes itself when the conversation ends for any reason, including a
- * failure — so no surface is ever left hanging over a chat that is not talking.
+ * failure — so no surface is left hanging over a chat that is not talking.
+ *
+ * The voice itself is chosen when a conversation opens, so changing it while
+ * one is running reconnects: the surface stays, and the new voice takes over.
  */
 export function useVoice(
   appSessionId: string | null,
@@ -32,6 +35,7 @@ export function useVoice(
 ): Voice {
   const session = useVoiceSession(appSessionId, preferences.voice, preferences.narration);
   const [view, setView] = useState<VoiceView>('off');
+  const [reconnecting, setReconnecting] = useState(false);
   const { status, start, stop } = session;
 
   const open = useCallback(() => {
@@ -40,6 +44,7 @@ export function useVoice(
   }, [start]);
 
   const close = useCallback(() => {
+    setReconnecting(false);
     setView('off');
     stop();
   }, [stop]);
@@ -53,10 +58,33 @@ export function useVoice(
   }, []);
 
   // A conversation that ends on its own (the provider closed it, the mic was
-  // refused, the chat was switched) takes its surface with it.
+  // refused, the chat was switched) takes its surface with it. A reconnect
+  // passes through the same idle state and keeps the surface.
   useEffect(() => {
+    if (reconnecting) return;
     if (status === 'idle' || status === 'closed') setView('off');
-  }, [status]);
+  }, [reconnecting, status]);
+
+  // Switching voices: end the conversation, then open the next one on the
+  // voice now chosen. Only a running conversation reconnects; a change made
+  // while voice is off simply applies the next time it starts.
+  const openedWith = useRef(preferences.voice);
+  useEffect(() => {
+    if (status !== 'live') {
+      if (status === 'idle' && !reconnecting) openedWith.current = preferences.voice;
+      return;
+    }
+    if (openedWith.current === preferences.voice) return;
+    openedWith.current = preferences.voice;
+    setReconnecting(true);
+    stop();
+  }, [preferences.voice, reconnecting, status, stop]);
+
+  useEffect(() => {
+    if (!reconnecting || status !== 'idle') return;
+    setReconnecting(false);
+    start();
+  }, [reconnecting, start, status]);
 
   // The voices are per harness, and the list only answers once a chat is live.
   const asked = useRef<string | null>(null);
