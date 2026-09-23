@@ -68,14 +68,14 @@ export async function createThreadWorkspace(
 
 /**
  * Takes back a worktree cut for a thread that never started. A worktree that
- * holds changes is kept, and Git refuses to delete a branch still checked out,
- * so the branch stays with it.
+ * holds changes is kept, and its branch with it.
  */
 export async function removeThreadWorkspace(
   projectCwd: string,
   workspace: ThreadWorkspace,
 ): Promise<void> {
   await removeManagedWorktree(workspace.cwd);
+  if (existsSync(workspace.cwd)) return;
   await git(projectCwd, ['branch', '-D', workspace.branch]);
 }
 

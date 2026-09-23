@@ -7,7 +7,6 @@ import type { ProjectView, ThreadInput } from './types';
 type Result = Extract<ProjectEvent, { type: 'project.result'; ok: true }>;
 
 let initialized = false;
-let failure = '';
 const pending = new Map<
   string,
   {
@@ -27,7 +26,7 @@ export function useProjects(): { projects: ProjectView[]; loading: boolean; erro
     // spins forever. And being connected is not the same as having heard, so
     // an empty list before the first snapshot is still loading.
     const unreachable = state.connection === 'error' ? runtimeError(state.connectionError) : '';
-    const error = failure || unreachable;
+    const error = state.projectsError || unreachable;
     return {
       projects: state.projects,
       loading: !state.projectsLoaded && !unreachable,
@@ -77,16 +76,6 @@ function handleEvent(event: ServerEvent): void {
   if (event.type === 'connection' && event.status === 'connected') {
     // A reconnect starts from the runtime's own snapshot, not a stale one.
     bridge.send({ type: 'projects.list' });
-    return;
-  }
-  // A graph that arrives is the runtime answering, which retires whatever it
-  // last failed at; without this one bad load reads as broken for good.
-  if (event.type === 'projects.snapshot') {
-    failure = '';
-    return;
-  }
-  if (event.type === 'error' && event.code?.startsWith('project.')) {
-    failure = event.message;
     return;
   }
   if (event.type !== 'project.result') return;

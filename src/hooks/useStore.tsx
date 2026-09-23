@@ -234,6 +234,8 @@ export interface AppState {
   projects: ProjectView[];
   /** True once the runtime has answered with a snapshot, empty or not. */
   projectsLoaded: boolean;
+  /** What projects last failed at; the next snapshot retires it. Empty when fine. */
+  projectsError: string;
   // Ids vouched for by the last authoritative listing: the boot snapshot
   // before the first SESSION_LIST, then the sessions of the most recent
   // SESSION_LIST. A SESSION_LIST prunes confirmed rows it no longer reports,
@@ -458,7 +460,7 @@ type Action =
   | { type: 'SESSION_PROCESSES'; appSessionId: string; processes: AgentProcess[] }
   | { type: 'SESSIONS_PROCESSES'; processes: Record<string, AgentProcess[]> }
   | { type: 'PROJECTS_SNAPSHOT'; projects: ProjectView[] }
-  | { type: 'PROJECTS_UNAVAILABLE' }
+  | { type: 'PROJECTS_UNAVAILABLE'; message: string }
   // App-level chat organization (rename/pin/archive/delete); see lib/chatMetadata.
   // A blank RENAME_CHAT title clears the override back to the generated title.
   | { type: 'LINK_CHATS_PR'; appSessionIds: readonly string[]; cwd: string; pr: ChatPullRequest }
@@ -732,6 +734,7 @@ export const initialState: AppState = {
   sessionOrder: sessionSnapshot?.sessionOrder ?? [],
   projects: [],
   projectsLoaded: false,
+  projectsError: '',
   listConfirmedSessionIds: sessionSnapshot?.sessionOrder ?? null,
   earlierSessionsByCwd: {},
   activeAppSessionId: persistedUiState.activeAppSessionId ?? null,
@@ -1083,10 +1086,10 @@ function baseReducer(state: AppState, action: Action): AppState {
     }
 
     case 'PROJECTS_SNAPSHOT':
-      return { ...state, projects: action.projects, projectsLoaded: true };
+      return { ...state, projects: action.projects, projectsLoaded: true, projectsError: '' };
 
     case 'PROJECTS_UNAVAILABLE':
-      return state.projectsLoaded ? state : { ...state, projectsLoaded: true };
+      return { ...state, projectsLoaded: true, projectsError: action.message };
 
     case 'SESSIONS_PROCESSES':
       return { ...state, agentProcesses: action.processes };
@@ -2443,7 +2446,8 @@ export function adaptEvent(ev: ServerEvent): Action | null {
       }
       // The chat list waits to hear about projects before it paints, so a
       // runtime that cannot answer has to count as having answered.
-      if (ev.code?.startsWith('project.')) return { type: 'PROJECTS_UNAVAILABLE' };
+      if (ev.code?.startsWith('project.'))
+        return { type: 'PROJECTS_UNAVAILABLE', message: ev.message };
       if (ev.code === 'session.create_failed' && ev.clientRef) {
         return {
           type: 'SESSION_CREATE_FAILED',
