@@ -103,16 +103,19 @@ export default function Sidebar({
   // vanish. A runtime that cannot answer counts as having answered.
   const projectsKnown = useStoreSelector((current) => current.projectsLoaded);
   // Counting what the list cannot show would leave unread-only empty with a
-  // badge still on it; a thread's unread belongs to Projects.
+  // badge still on it; a thread's unread belongs to Projects, and until the
+  // graph is known a thread still looks like a chat.
   const unreadCount = useMemo(
     () =>
-      state.sessionOrder
-        .map((id) => state.sessions[id])
-        .filter(Boolean)
-        .filter((m) => !projectThreads.has(m.appSessionId))
-        .filter((m) => !isChatHidden(chatMetadata[m.appSessionId]))
-        .filter(isUnread).length,
-    [state.sessionOrder, state.sessions, chatMetadata, isUnread, projectThreads],
+      !projectsKnown
+        ? 0
+        : state.sessionOrder
+            .map((id) => state.sessions[id])
+            .filter(Boolean)
+            .filter((m) => !projectThreads.has(m.appSessionId))
+            .filter((m) => !isChatHidden(chatMetadata[m.appSessionId]))
+            .filter(isUnread).length,
+    [state.sessionOrder, state.sessions, chatMetadata, isUnread, projectThreads, projectsKnown],
   );
 
   const markAllSessionsRead = useCallback(() => {

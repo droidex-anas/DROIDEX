@@ -7,6 +7,7 @@ import { openReviewAt, type OpenReviewFileHandler } from '../lib/reviewFocus';
 import type { FileChange } from '../lib/diff';
 import type { SessionRestore } from '../hooks/storeChildSession';
 import { useSessionLive } from '../hooks/useSessionLive';
+import { sessionAttention } from '../lib/sessionAttention';
 import { AnimatePresence, motion } from 'framer-motion';
 import { MessageFeed } from './MessageFeed';
 import { RunningProcessesMenu } from './RunningProcessesMenu';
@@ -609,6 +610,16 @@ export default function ChatView({
     (current) => threadOrigin(current.projects, current.activeAppSessionId ?? undefined),
     equalOrigin,
   );
+  // Mid-turn but stopped on the user is not working, so the header drops its shimmer.
+  const blockedOnUser = useStoreSelector(
+    (current) =>
+      current.activeAppSessionId !== null &&
+      sessionAttention(
+        current.activeAppSessionId,
+        current.pendingPermissions,
+        current.pendingQuestions,
+      ) !== null,
+  );
   const chatHeaderSub = viewingChildSession
     ? {
         label: selectedChildLabel,
@@ -622,7 +633,7 @@ export default function ChatView({
     : origin
       ? {
           label: origin.threadTitle,
-          running: live,
+          running: live && !blockedOnUser,
           backTitle: 'Back to the chat that started this thread',
           onBack: () => {
             dispatch({ type: 'SET_ACTIVE_SESSION', id: origin.ownerAppSessionId });

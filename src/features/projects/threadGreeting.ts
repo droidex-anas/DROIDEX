@@ -36,7 +36,7 @@ function mood(
 export interface ThreadCounts {
   attention: number;
   working: number;
-  settled: number;
+  idle: number;
 }
 
 /** The facts under the greeting: only what is actually there, in plain words. */
@@ -45,7 +45,7 @@ export function threadStatusLine(counts: ThreadCounts): string {
   if (counts.attention > 0)
     parts.push(plural(counts.attention, 'thread needs you', 'threads need you'));
   if (counts.working > 0) parts.push(plural(counts.working, 'thread working', 'threads working'));
-  if (counts.settled > 0) parts.push(plural(counts.settled, 'thread settled', 'threads settled'));
+  if (counts.idle > 0) parts.push(plural(counts.idle, 'thread idle', 'threads idle'));
   return parts.join(' · ');
 }
 

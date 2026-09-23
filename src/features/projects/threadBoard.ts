@@ -64,6 +64,12 @@ export function threadRows(project: ProjectView | undefined, signals: ThreadSign
     .sort((a, b) => b.updatedAt - a.updatedAt);
 }
 
+/** The conversation that leads the project, read the way its threads are. */
+export function leadRow(project: ProjectView, signals: ThreadSignals): ThreadRow | undefined {
+  const lead = project.threads.find((thread) => !thread.ownerAppSessionId);
+  return lead ? threadRow(lead, project, signals, 0) : undefined;
+}
+
 /** The inbox's own groups, in its own order, with the empty ones left out. */
 export function threadGroups(rows: readonly ThreadRow[]): ThreadGroup[] {
   return ACTIVITY_GROUPS.map((group) => ({
@@ -77,11 +83,12 @@ export function threadGroups(rows: readonly ThreadRow[]): ThreadGroup[] {
 export function threadCounts(rows: readonly ThreadRow[]): {
   attention: number;
   working: number;
-  settled: number;
+  /** Neither working nor waiting on the user. */
+  idle: number;
 } {
   const attention = rows.filter((row) => needsUser(row.status)).length;
   const working = rows.filter((row) => row.status === 'working').length;
-  return { attention, working, settled: rows.length - attention - working };
+  return { attention, working, idle: rows.length - attention - working };
 }
 
 function needsUser(status: SessionActivityStatus): boolean {

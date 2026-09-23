@@ -4,7 +4,9 @@ import { adaptEvent, initialState, reducer, type AppState } from '../../hooks/us
 import { serverWireMessage } from '../../lib/bridgeWireValidation';
 import type { SessionSummary } from '../../types/bridge';
 import type { ProjectView } from './types';
-import { threadRows } from './threadBoard';
+import { projectPulse } from './projectBoard';
+import { leadRow, threadCounts, threadRows } from './threadBoard';
+import { threadStatusLine } from './threadGreeting';
 import { threadReports } from './threadNotices';
 
 const project: ProjectView = {
@@ -144,4 +146,21 @@ test('a streaming thread blocked on an approval shows the block, not the spinner
   });
   assert.equal(worker?.status, 'approval');
   assert.equal(worker?.live, false);
+});
+
+test('a project reads its lead: working before any thread, and idle threads are not settled', () => {
+  const lead = {
+    ...project,
+    plan: [],
+    threads: project.threads.filter((thread) => !thread.ownerAppSessionId),
+  };
+  const signals = { sessions: { main: session('main') }, attention: () => null, digests: {} };
+  const pulse = projectPulse(lead, [], leadRow(lead, signals));
+  assert.equal(pulse.live, true);
+  assert.equal(pulse.summary, 'Main chat working');
+
+  const idle = { ...session('worker'), streaming: false, phase: 'idle' as const };
+  const rows = threadRows(project, { ...signals, sessions: { worker: idle } });
+  assert.equal(rows[0]?.status, 'ready');
+  assert.equal(threadStatusLine(threadCounts(rows)), '1 thread idle');
 });

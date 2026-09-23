@@ -4,7 +4,7 @@ import { useThreadDigests } from './useThreadDigests';
 import { sessionAttention } from '../../lib/sessionAttention';
 import { useProjects } from './client';
 import { projectPulse, type ProjectPulse } from './projectBoard';
-import { threadRows, type ThreadRow } from './threadBoard';
+import { leadRow, threadRows, type ThreadRow, type ThreadSignals } from './threadBoard';
 import type { ProjectView } from './types';
 
 export interface ProjectBoardEntry {
@@ -39,13 +39,18 @@ export function useProjectBoard(): {
   const entries = useMemo(
     () =>
       snapshot.projects.map((project) => {
-        const rows = threadRows(project, {
+        const threadSignals: ThreadSignals = {
           sessions: signals.sessions,
           attention: (id) =>
             sessionAttention(id, signals.pendingPermissions, signals.pendingQuestions),
           digests,
-        });
-        return { project, rows, pulse: projectPulse(project, rows) };
+        };
+        const rows = threadRows(project, threadSignals);
+        return {
+          project,
+          rows,
+          pulse: projectPulse(project, rows, leadRow(project, threadSignals)),
+        };
       }),
     [snapshot.projects, signals, digests],
   );

@@ -63,6 +63,7 @@ export function ProjectsRoute() {
       return;
     }
     dispatch({ type: 'SET_ACTIVE_SESSION', id: started.appSessionId });
+    dispatch({ type: 'OPEN_UTILITY_TOOL', tool: 'threads' });
   }
 
   const travel = reduceMotion ? 0 : 12;
