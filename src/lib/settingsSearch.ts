@@ -76,6 +76,14 @@ export const SETTINGS_SEARCH_ENTRIES: readonly SettingsSearchEntry[] = [
     'attachment quality',
     'compact image',
   ]),
+  e('General', 'Voice', ['voice mode', 'voice picker', 'speak', 'spoken', 'talk']),
+  e('General', 'While it works', [
+    'narration',
+    'commentary',
+    'brief',
+    'voice narration',
+    'acknowledgement',
+  ]),
   e('General', 'Diff view', ['unified', 'split', 'side by side', 'diff layout']),
   e('General', 'Diff theme', ['soft', 'focused', 'diff contrast', 'diff colors']),
   e('General', 'Hardware acceleration', [

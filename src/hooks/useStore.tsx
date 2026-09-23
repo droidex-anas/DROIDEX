@@ -32,11 +32,13 @@ import {
 import {
   loadAgentConfig,
   loadCompactionModel,
+  loadDefaultVoice,
   loadDiffView,
   loadHarnessModels,
   loadImagePasteQuality,
   loadLiveEnterBehavior,
   loadModelSelectorStyle,
+  loadNarrationMode,
   loadPersistedUiState,
   loadReviewScope,
   loadSessionLastSeen,
@@ -44,11 +46,13 @@ import {
   loadWorkspaceCwds,
   saveAgentConfig,
   saveCompactionModel,
+  saveDefaultVoice,
   saveDiffView,
   saveHarnessModels,
   saveImagePasteQuality,
   saveLiveEnterBehavior,
   saveModelSelectorStyle,
+  saveNarrationMode,
   savePersistedUiState,
   saveReviewScope,
   saveSessionLastSeen,
@@ -91,6 +95,7 @@ import type {
   ContextStatsSnapshot,
   BrowserState,
   DesignReference,
+  VoiceNarration,
 } from '../types/bridge';
 import { addWorkspaceCwd, removeWorkspaceCwd } from '../lib/workspaces';
 import { createOrderedActionBatcher, type OrderedActionBatcher } from './orderedActionBatcher';
@@ -403,6 +408,10 @@ export interface AppState {
   liveEnterBehavior: LiveEnterBehavior;
   // Fidelity tier for images pasted or dropped into the composer.
   imagePasteQuality: ImagePasteQuality;
+  // Voice mode: which voice speaks, and how much of the work it narrates while
+  // the agent runs. An empty voice leaves the choice to the harness.
+  defaultVoice: string;
+  narrationMode: VoiceNarration;
   // Chord bound to each rebindable app action (see lib/shortcuts).
   shortcutBindings: ShortcutBindings;
 
@@ -668,6 +677,8 @@ type Action =
   | { type: 'SET_COMPACTION_TOKEN_LIMIT_FOR_MODEL'; modelId: string; limit?: number }
   | { type: 'SET_LIVE_ENTER_BEHAVIOR'; behavior: LiveEnterBehavior }
   | { type: 'SET_IMAGE_PASTE_QUALITY'; quality: ImagePasteQuality }
+  | { type: 'SET_DEFAULT_VOICE'; voice: string }
+  | { type: 'SET_NARRATION_MODE'; mode: VoiceNarration }
   | { type: 'SET_SHORTCUT_BINDING'; shortcut: ShortcutAction; chord: string }
   | { type: 'SET_DEFAULT_AUTONOMY'; autonomy: Autonomy }
   | { type: 'SET_TOOL_ACTIVITY'; settings: ToolActivitySettings }
@@ -780,6 +791,8 @@ export const initialState: AppState = {
   compactionSettingsRev: 0,
   liveEnterBehavior: loadLiveEnterBehavior(),
   imagePasteQuality: loadImagePasteQuality(),
+  defaultVoice: loadDefaultVoice(),
+  narrationMode: loadNarrationMode(),
   shortcutBindings: loadShortcutBindings(),
   reviewOpenAppSessionId: null,
   reviewScope: loadReviewScope(),
@@ -2206,6 +2219,12 @@ function baseReducer(state: AppState, action: Action): AppState {
       const behavior = saveLiveEnterBehavior(action.behavior);
       return { ...state, liveEnterBehavior: behavior };
     }
+
+    case 'SET_DEFAULT_VOICE':
+      return { ...state, defaultVoice: saveDefaultVoice(action.voice) };
+
+    case 'SET_NARRATION_MODE':
+      return { ...state, narrationMode: saveNarrationMode(action.mode) };
 
     case 'SET_IMAGE_PASTE_QUALITY': {
       const quality = saveImagePasteQuality(action.quality);
