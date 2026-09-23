@@ -133,6 +133,7 @@ export class CodexSession implements ProviderSession {
     this.threadModel = response.model;
     this.mapper.setModel({ ...this.model, modelId: this.model.modelId ?? this.threadModel });
     this.catalog ??= new CodexCatalog(this.client, [this.cwd]);
+    await this.pushThreadSettings();
   }
 
   catalogItems(): Promise<SkillInfo[]> {
@@ -188,7 +189,7 @@ export class CodexSession implements ProviderSession {
     return Promise.resolve();
   }
 
-  setModel(settings: ProviderModelSettings): Promise<void> {
+  async setModel(settings: ProviderModelSettings): Promise<void> {
     // An omitted field keeps its value; only what the caller named changes.
     // A cleared effort leaves `turn/start` to the model's own.
     const model = { ...this.model };
@@ -197,7 +198,28 @@ export class CodexSession implements ProviderSession {
     else if (settings.reasoningEffort) model.reasoningEffort = settings.reasoningEffort;
     this.model = model;
     this.mapper.setModel({ ...this.model, modelId: this.model.modelId ?? this.threadModel });
-    return Promise.resolve();
+    await this.pushThreadSettings();
+  }
+
+  // Every typed turn carries the model and effort on `turn/start`, but a turn
+  // Codex starts by itself — a spoken request from a voice conversation — takes
+  // the thread's own settings. Writing them to the thread keeps both kinds of
+  // turn on the model the chat is set to.
+  private async pushThreadSettings(): Promise<void> {
+    const threadId = this.threadId;
+    if (!threadId) return;
+    const { modelId, reasoningEffort } = this.model;
+    if (!modelId && !reasoningEffort) return;
+    try {
+      await this.client.request('thread/settings/update', {
+        threadId,
+        ...(modelId ? { model: modelId } : {}),
+        ...(reasoningEffort ? { effort: reasoningEffort } : {}),
+      });
+    } catch {
+      // The next `turn/start` carries the same settings, so a typed turn still
+      // runs on the chosen model; only a spoken one would fall back.
+    }
   }
 
   // Codex takes a prompt into the running turn instead of ending it. The turn
@@ -262,9 +284,12 @@ export class CodexSession implements ProviderSession {
 
   private deliver(events: NormalizedEvent[]): void {
     for (const event of events) {
-      if (event.childSession) {
+      // A turn Codex starts by itself — a spoken request delegated from a voice
+      // conversation — has no stream waiting on it, so its work reaches the
+      // chat the same way a child session's does.
+      if (event.childSession || !this.turn) {
         for (const listener of this.backgroundListeners) listener(event);
-      } else this.turn?.push([event]);
+      } else this.turn.push([event]);
     }
   }
 
