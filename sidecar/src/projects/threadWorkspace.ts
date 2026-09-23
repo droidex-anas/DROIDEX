@@ -3,6 +3,7 @@ import {
   addWorktree,
   ensureWorktreeDirectoryIgnored,
   git,
+  removeManagedWorktree,
   repositoryRoot,
   requireDirectory,
   requireRealDirectoryPath,
@@ -63,6 +64,19 @@ export async function createThreadWorkspace(
   await requireRealDirectoryPath(root, target, OUTSIDE_REPOSITORY);
   await addWorktree(root, target, commit, branch);
   return { cwd: target, branch, base: request.base?.trim() ?? 'HEAD' };
+}
+
+/**
+ * Takes back a worktree cut for a thread that never started. A worktree that
+ * holds changes is kept, and Git refuses to delete a branch still checked out,
+ * so the branch stays with it.
+ */
+export async function removeThreadWorkspace(
+  projectCwd: string,
+  workspace: ThreadWorkspace,
+): Promise<void> {
+  await removeManagedWorktree(workspace.cwd);
+  await git(projectCwd, ['branch', '-D', workspace.branch]);
 }
 
 // Threads live under one prefix so a repository's branch list says which
