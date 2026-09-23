@@ -16,6 +16,8 @@ import { updateCompactionSettings } from '../lib/commands';
 import { reducePrInbox, type PrInboxAction } from '../features/pull-requests/lib/prInboxState';
 import {
   reduceVoice,
+  spokenTranscriptEvent,
+  voiceSessionOf,
   withoutVoiceSession,
   type VoiceAction,
   type VoiceSessions,
@@ -1816,11 +1818,26 @@ function baseReducer(state: AppState, action: Action): AppState {
     case 'VOICE_CONNECTING':
     case 'VOICE_ANSWERED':
     case 'VOICE_STATE':
-    case 'VOICE_TRANSCRIPT':
     case 'VOICE_VOICES':
     case 'VOICE_ERROR':
     case 'VOICE_ENDED':
       return reduceVoice(state, action);
+
+    // A finished utterance is also kept as a chat row, so what was said aloud
+    // stays in the conversation after the voice surface closes. Partials are
+    // still being spoken and belong to that surface alone. The row's id comes
+    // from the line, so a repeated closing notification is ingested as the row
+    // it already wrote.
+    case 'VOICE_TRANSCRIPT': {
+      const next = reduceVoice(state, action);
+      if (!action.final) return next;
+      const line = voiceSessionOf(next.voiceSessions, action.appSessionId).lines.at(-1);
+      if (!line?.final) return next;
+      return appendTranscriptEvent(
+        next,
+        spokenTranscriptEvent(action.appSessionId, line, Date.now()),
+      );
+    }
 
     case 'OPEN_PULL_REQUESTS':
     case 'CLOSE_PULL_REQUESTS':

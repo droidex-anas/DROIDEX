@@ -201,6 +201,10 @@ export interface TranscriptEvent {
   files?: string[];
   browserRefs?: BrowserTranscriptReference[];
   steered?: boolean;
+  // Set on a row whose text was said out loud in a voice conversation,
+  // so the row can carry a voice mark. Renderer-authored: the sidecar
+  // never sends it.
+  spoken?: boolean;
   compactType?: 'auto' | 'manual';
   modelSwitch?: { from: string; to: string };
   errorKind?: 'usage_limit';

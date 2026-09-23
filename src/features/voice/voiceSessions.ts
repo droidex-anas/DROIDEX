@@ -1,3 +1,5 @@
+import type { TranscriptEvent } from '../../types/bridge';
+
 // What the renderer knows about a voice conversation while it runs, keyed by
 // the chat holding it. All of it is ephemeral: the conversation itself does not
 // survive a reload, so neither does this.
@@ -5,12 +7,18 @@
 // The reducer lives here rather than in the store so the transitions stay
 // readable next to the hook that drives them; the store owns the slice and
 // delegates, the way it does for the pull-request inbox.
+//
+// What was said is kept elsewhere: every finished utterance also becomes an
+// ordinary chat row (spokenTranscriptEvent), so the transcript reads as one
+// conversation whether a turn was typed or spoken. Only the live, still-growing
+// lines stay here.
 
 export type VoiceStatus = 'idle' | 'connecting' | 'live' | 'closed';
 
 export type VoiceRole = 'user' | 'assistant';
 
 export interface VoiceTranscriptLine {
+  /** Unique within its chat for as long as the app runs, across attempts. */
   id: number;
   role: VoiceRole;
   text: string;
@@ -33,6 +41,12 @@ export interface VoiceSessionState {
    */
   answer?: { sdp: string };
   lines: VoiceTranscriptLine[];
+  /**
+   * How many lines this chat has ever opened. Ids continue across attempts so
+   * the chat row a finished line wrote keeps its identity after the surface
+   * clears its own list.
+   */
+  linesOpened: number;
 }
 
 export type VoiceSessions = Record<string, VoiceSessionState>;
@@ -62,7 +76,7 @@ export type VoiceAction =
 // would actually show.
 const MAX_LINES = 200;
 
-const IDLE: VoiceSessionState = { status: 'idle', voices: [], lines: [] };
+const IDLE: VoiceSessionState = { status: 'idle', voices: [], lines: [], linesOpened: 0 };
 
 /** The chat's voice state, or the shared idle one when it has never spoken. */
 export function voiceSessionOf(
@@ -97,6 +111,7 @@ function nextSession(current: VoiceSessionState, action: VoiceAction): VoiceSess
         voices: current.voices,
         defaultVoice: current.defaultVoice,
         lines: [],
+        linesOpened: current.linesOpened,
       };
     case 'VOICE_ANSWERED':
       return { ...current, answer: { sdp: action.sdp } };
@@ -106,10 +121,8 @@ function nextSession(current: VoiceSessionState, action: VoiceAction): VoiceSess
         status: action.status,
         reason: action.status === 'closed' ? action.reason : undefined,
       };
-    case 'VOICE_TRANSCRIPT': {
-      const lines = withTranscript(current.lines, action.role, action.text, action.final);
-      return lines === current.lines ? current : { ...current, lines };
-    }
+    case 'VOICE_TRANSCRIPT':
+      return withSpokenText(current, action.role, action.text, action.final);
     case 'VOICE_VOICES':
       return { ...current, voices: action.voices, defaultVoice: action.defaultVoice };
     case 'VOICE_ERROR':
@@ -123,26 +136,56 @@ function nextSession(current: VoiceSessionState, action: VoiceAction): VoiceSess
         voices: current.voices,
         defaultVoice: current.defaultVoice,
         lines: [],
+        linesOpened: current.linesOpened,
       };
   }
 }
 
-function withTranscript(
-  lines: VoiceTranscriptLine[],
+function withSpokenText(
+  current: VoiceSessionState,
   role: VoiceRole,
   text: string,
   final: boolean,
-): VoiceTranscriptLine[] {
-  const open = lines.length > 0 ? lines[lines.length - 1] : undefined;
+): VoiceSessionState {
+  const lines = current.lines;
+  const open = lines.at(-1);
   if (open && !open.final && open.role === role) {
     // Deltas extend the line being spoken. The closing notification carries the
     // whole utterance, so it replaces what was accumulated.
-    return [
-      ...lines.slice(0, -1),
-      { ...open, text: final ? text || open.text : open.text + text, final },
-    ];
+    const spoken = { ...open, text: final ? text || open.text : open.text + text, final };
+    return { ...current, lines: [...lines.slice(0, -1), spoken] };
   }
-  if (!text) return lines;
-  const id = (open?.id ?? 0) + 1;
-  return [...lines, { id, role, text, final }].slice(-MAX_LINES);
+  // A closing notification can arrive twice. The line it closed already holds
+  // that utterance, so there is nothing to open and nothing to say again.
+  if (final && open?.final && open.role === role && open.text === text) return current;
+  if (!text) return current;
+  const id = current.linesOpened + 1;
+  return {
+    ...current,
+    lines: [...lines, { id, role, text, final }].slice(-MAX_LINES),
+    linesOpened: id,
+  };
+}
+
+/**
+ * The chat row a finished spoken line becomes. The id is derived from the line
+ * so a repeated closing notification lands on the row it already wrote rather
+ * than a second copy of it.
+ */
+export function spokenTranscriptEvent(
+  appSessionId: string,
+  line: VoiceTranscriptLine,
+  ts: number,
+): TranscriptEvent {
+  return {
+    id: `voice-${String(line.id)}`,
+    appSessionId,
+    sourceSessionId: line.role === 'user' ? 'user' : 'primary',
+    role: 'primary',
+    ts,
+    kind: 'text',
+    text: line.text,
+    ...(line.role === 'user' ? { author: 'user' as const } : {}),
+    spoken: true,
+  };
 }

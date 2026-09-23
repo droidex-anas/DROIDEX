@@ -454,6 +454,12 @@ function getTextDeltaRun(
   if (
     previous !== undefined &&
     !next.author &&
+    // Renderer-only: a spoken line is a whole utterance the voice surface
+    // finished, not a token fragment, so two of them must not run together and
+    // streamed text must not flow into one. The sidecar never sees such an
+    // event, which is why its copy carries no matching condition.
+    !previous.spoken &&
+    !next.spoken &&
     previous.kind === next.kind &&
     previous.sourceSessionId === next.sourceSessionId &&
     previous.author === next.author &&
