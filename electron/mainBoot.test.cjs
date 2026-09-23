@@ -3,6 +3,7 @@ const assert = require('node:assert/strict');
 const { spawnSync } = require('node:child_process');
 const path = require('node:path');
 const { SENTINEL } = require('./mainBootEval.cjs');
+const { SENTINEL: IPC_SENTINEL } = require('./mainIpcEval.cjs');
 
 test('main.cjs evaluates under a stubbed electron without throwing', () => {
   const result = spawnSync(process.execPath, [path.join(__dirname, 'mainBootEval.cjs')], {
@@ -61,4 +62,13 @@ test('main reports an actionable profile directory creation failure', () => {
   assert.equal(result.status, 1);
   assert.match(result.stderr, /Cannot create the DROIDEX profile directory/);
   assert.match(result.stderr, /DROIDEX_USER_DATA_DIR to a writable absolute directory/);
+});
+
+test("privileged IPC handlers reject every sender but the main window's top frame", () => {
+  const result = spawnSync(process.execPath, [path.join(__dirname, 'mainIpcEval.cjs')], {
+    encoding: 'utf8',
+    timeout: 15_000,
+  });
+  assert.equal(result.status, 0, `stdout:\n${result.stdout}\nstderr:\n${result.stderr}`);
+  assert.match(result.stdout, new RegExp(`^${IPC_SENTINEL}$`, 'm'));
 });
