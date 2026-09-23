@@ -2,40 +2,107 @@
 
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
 
-DROIDEX is a macOS desktop workspace for coding agents, including Factory
-Droid, Claude Code, and Codex. It keeps chats, projects, terminals, browser
-sessions, and agent work together in one app.
+DROIDEX is a macOS desktop workspace for coding agents. It brings chat,
+projects, terminals, browser sessions, GitHub pull requests, file review, and
+agent activity into one local app so you can run serious development work
+without losing the thread.
+
+DROIDEX works with supported agent CLIs including Factory Droid, Claude Code,
+and Codex. Factory Droid onboarding can be handled inside the app; other agent
+CLIs can be connected from your local environment.
 
 Website: [droidex.vercel.app](https://droidex.vercel.app)
 
-## License
+## Why DROIDEX
 
-DROIDEX is open source under the [Apache License 2.0](LICENSE). You may use,
-modify, and redistribute it, including commercially, as long as you follow the
-license: keep the copyright and attribution notices, ship the [NOTICE](NOTICE)
-file, and state prominently in any file you changed that you changed it.
+Coding agents are most useful when their context, changes, terminals, and
+reviews stay connected. DROIDEX is built around that workflow:
 
-The DROIDEX name, logo, and visual identity are not covered by the license. If
-you fork DROIDEX, rename your build and say plainly that it is a fork of
-DROIDEX, with a link back here. [TRADEMARKS.md](TRADEMARKS.md) covers what
-that means in practice. Fork it, build on it, sell it if you like; just do not
-present it as though you wrote it.
+- keep multiple agent-driven tasks visible across workspaces;
+- inspect tool activity without digging through raw logs;
+- review changed files and captured diffs where the conversation happened;
+- track linked GitHub pull requests, checks, and review comments;
+- run isolated development profiles beside your main app;
+- preserve local-first control over project files, terminals, history, and
+  diagnostics.
 
-## Contributing
+The goal is not another chat window. DROIDEX is a desktop control center for
+shipping with coding agents.
 
-Contributions are welcome: bugs, fixes, features, and documentation.
-[CONTRIBUTING.md](CONTRIBUTING.md) covers the development setup, the checks to
-run, and the commit sign-off. [AGENTS.md](AGENTS.md) is the engineering guide
-the review holds changes to, and [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md)
-applies to everyone taking part.
+## What you can do
 
-Found a security problem? Do not open an issue. Follow
-[SECURITY.md](SECURITY.md).
+### Run agent work in one place
+
+Create and resume coding sessions across local workspaces. DROIDEX keeps the
+conversation, project context, terminal activity, browser sessions, and file
+changes together so you can switch between tasks without reconstructing state.
+
+### Review changes as the work happens
+
+Open changed files from the Review surface, inspect captured diffs, and jump
+back to live Git changes. Repeated edits show the latest captured change and
+matching line counts, even when the full Git diff has moved on.
+
+### Understand tool activity
+
+Settings -> Tool activity controls how much detail appears inside tool runs:
+compact summaries, balanced expandable rows, or detailed output. Completed
+turns keep one Worked disclosure followed by the final answer at every density.
+Read output remains available inside the disclosure, while compaction markers
+stay visible.
+
+### Track GitHub pull requests
+
+For GitHub repositories, the Context panel shows pull requests, checks, and
+review comments through GitHub CLI. If `gh` is missing or signed out, DROIDEX
+shows a recovery action. It can install `gh` through Homebrew when available,
+or open GitHub's official installation page.
+
+DROIDEX also detects linked pull requests for chat worktrees automatically.
+The sidebar can group conversations by pull request, and PR search works by
+number, URL, title, or branch.
+
+### Manage parallel work
+
+Use **Customize sidebar** to switch between workspace grouping and
+**Activity / status**. Activity separates tasks that need attention, working
+tasks, ready conversations, and settled work. Conversations can be marked
+settled after review and reopened later; new activity brings them back.
+
+## Product highlights
+
+- **Agent workspace**: sessions for supported coding-agent CLIs in one desktop
+  app.
+- **Project context**: workspaces, terminals, browser sessions, files, and
+  chat history stay connected.
+- **Review mode**: captured diffs, changed-file previews, and live Git changes
+  are available from the same task.
+- **GitHub context**: pull requests, checks, and review comments appear inside
+  DROIDEX through GitHub CLI.
+- **Task triage**: activity grouping, unread filters, settled tasks, and PR
+  grouping keep busy sidebars usable.
+- **Local-first defaults**: app state, local history, and agent tooling remain
+  under your macOS profile unless you explicitly connect external services.
+- **Signed updates**: release builds use Sparkle for macOS update checks.
+
+## Install and updates
+
+Official macOS downloads and first-launch instructions live in the
+[public releases repository](https://github.com/droidex-anas/droidex-releases).
+
+DROIDEX checks its signed Sparkle feed for new versions. When an update is
+available, a blue download button appears beside Settings. Clicking it opens
+Sparkle's native update window; nothing downloads or installs until you approve
+it. You can also check manually from the DROIDEX menu.
+
+Permanent website links and the tag-controlled publishing flow are documented
+in [`docs/releasing.md`](docs/releasing.md).
 
 ## Run it locally
 
-You need Node.js 22, npm, and at least one supported agent CLI. DROIDEX can
-install the Factory Droid CLI during onboarding if it is not already available.
+You need macOS, Node.js 22, npm, and at least one supported agent CLI. DROIDEX
+can install the Factory Droid CLI during onboarding if it is not already
+available.
 
 Install dependencies and launch the desktop app:
 
@@ -51,10 +118,11 @@ For renderer-only development, use:
 npm run dev
 ```
 
-To run a second dev instance beside your main app, isolate both its profile and
-history writer (raw Factory transcripts are still discovered). Electron places
-the isolated history database in `<profile>/history`; a bare sidecar can set
-`DROIDEX_HISTORY_DIR` explicitly. The default app keeps `~/.factory/droidex`:
+To run a second development instance beside your main app, isolate both its
+profile and history writer. Raw Factory transcripts are still discovered.
+Electron places the isolated history database in `<profile>/history`; a bare
+sidecar can set `DROIDEX_HISTORY_DIR` explicitly. The default app keeps
+`~/.factory/droidex`:
 
 ```bash
 ELECTRON_START_URL=http://127.0.0.1:1421 BRIDGE_PORT=8766 \
@@ -62,30 +130,7 @@ DROIDEX_USER_DATA_DIR="$HOME/Library/Application Support/DROIDEX-dev" \
 npm run electron
 ```
 
-## Tool activity and review
-
-Settings → Tool activity controls how much detail appears inside tool runs:
-compact summaries, balanced expandable rows, or detailed output. Completed turns
-keep one Worked disclosure followed by the final answer at every density.
-Read output is available inside the disclosure; compaction markers stay visible.
-The streaming caret indicates arriving text, while Working stays visible until
-the turn finishes, including gaps between tokens.
-
-Click a changed file to open Review with its captured diff; its disclosure arrow
-opens an inline preview. Repeated edits show
-the latest captured change and its matching line counts, even when Git has a
-different cumulative diff. Selecting a Review scope returns to its live Git changes. Path-only previews use
-the workspace Files permissions and reject paths or symlinks outside that folder.
-
-## GitHub pull requests
-
-For GitHub repositories, the Context panel shows pull requests, checks, and
-review comments through GitHub CLI. If `gh` is missing or signed out, DROIDEX
-shows the recovery action in Context. It can install `gh` through an existing
-Homebrew installation; otherwise it opens GitHub's official installation page.
-Authentication always completes through GitHub CLI's browser/device flow. The
-Context popover keeps the one-time code visible and copyable until `gh` confirms
-the account is connected.
+Copy `.env.example` to `.env` for local overrides.
 
 ## Useful commands
 
@@ -98,70 +143,90 @@ the account is connected.
 | `npm --prefix sidecar run test` | Run sidecar unit tests |
 | `npm run typecheck` | Check app TypeScript |
 | `npm run sidecar:typecheck` | Check sidecar TypeScript |
+| `npm run electron:check` | Check Electron main-process syntax |
+| `npm run docs:check` | Check generated docs and agent instructions |
 | `npm run format:check` | Check formatting |
-
-## Manage parallel work
-
-Use **Customize sidebar** (the filter-lines button above your workspaces) to switch
-between workspace grouping and **Activity / status**. Activity separates tasks
-that need attention, working tasks, ready conversations, and settled work.
-Workspace rows show the same status indicators.
-
-Choose **Mark as settled** from a chat’s action menu after reviewing a result. The conversation stays available
-under **Settled**, with a **Reopen task** action. New activity brings it back;
-running tasks and tasks awaiting your approval or answer cannot be settled.
-Settling is an organizational action, not cancellation or deletion.
-
-The customize menu also controls ordering, tasks shown per group, and status
-filters. **Last active** keeps resumed older chats near the top, including after
-restarting. Sidebar preferences and the latest 1,000 settled task markers are saved per local profile.
-Markers for hidden chats and newer activity are removed automatically.
-**Pull request** grouping and the search button beside notifications use PRs detected for the chat’s
-worktree automatically, including chats you have not opened. Discovery runs on
-startup and every minute while the app is visible, independently of the Context
-panel. GitHub CLI must be signed in. Lookups stop waiting after 10 seconds. If the underlying operation is still running,
-discovery skips that lookup until it finishes while continuing to refresh other worktrees.
-Restarting the app clears a stuck IPC call.
-Each chat retains its 10 most recently detected PRs. At the 1,000-chat metadata limit,
-opening a chat can replace an older automatic PR entry; names, pins, and hidden-chat markers take priority. Search linked PRs by number, URL, title, or
-branch. Links survive restarts and branch changes; detected PR status refreshes
-automatically. A full PR URL distinguishes repositories that use the same number.
-
-The bell filters unread conversations; selecting one clears that unread filter.
-
-## Updates
-
-DROIDEX checks its signed Sparkle feed for new versions. A blue download button
-appears beside Settings only when a newer version is available. Clicking it
-opens Sparkle's native update window; nothing downloads or installs until the
-user approves it. You can also check manually from the DROIDEX menu.
-
-Official macOS downloads and first-launch instructions live in the
-[public releases repository](https://github.com/droidex-anas/droidex-releases).
-The permanent website links and tag-controlled publishing flow are documented
-in `docs/releasing.md`.
 
 ## Privacy and diagnostics
 
-Automatic crash reports and Sentry Release Health are enabled by default in
-release builds. They use a random local profile ID and can include crash stacks,
+DROIDEX is designed around local development workflows. Project files, local
+history, terminals, and agent CLIs live on your machine. GitHub features use
+GitHub CLI authentication, and agent features use the supported CLI you connect
+or install.
+
+Release builds enable automatic crash reports and Sentry Release Health by
+default. Reports use a random local profile ID and can include crash stacks,
 native crash dumps, and technical device/runtime context. Crash material can
 contain incidental sensitive data; access belongs only to the private DROIDEX
 Sentry project. DROIDEX does not intentionally attach account identity or use
 Sentry for feature analytics.
 
-Users can turn automatic diagnostics off under **Settings → Privacy &
+You can turn automatic diagnostics off under **Settings -> Privacy &
 diagnostics**. Changing the preference restarts DROIDEX. Disabling it stops
 automatic reporting and deletes the local profile ID. `/bug` and `/feedback`
-reports are sent only when the user explicitly submits them; while automatic
+reports are sent only when you explicitly submit them; while automatic
 diagnostics are off, those reports use a non-persisted report-scoped ID.
+
+Found a security problem? Do not open a public issue. Follow
+[`SECURITY.md`](SECURITY.md).
+
+## Project structure
+
+| Area | Path | Role |
+| --- | --- | --- |
+| Renderer | `src/` | React UI, state, hooks, and workspace surfaces |
+| Electron host | `electron/` | Main process, preload, menus, native browser, updater |
+| Sidecar | `sidecar/src/` | Node service that drives supported agent CLIs |
+| Docs | `docs/` | Architecture, generated references, runbooks, release notes |
+
+Read [`docs/architecture.md`](docs/architecture.md) before changing behavior
+that crosses the renderer, Electron, or sidecar boundary.
+
+## Contributing
+
+Contributions are welcome: bugs, fixes, features, and documentation.
+[`CONTRIBUTING.md`](CONTRIBUTING.md) covers setup, validation, pull requests,
+and the required DCO sign-off. [`AGENTS.md`](AGENTS.md) is the engineering
+guide the project uses for review. [`CODE_OF_CONDUCT.md`](CODE_OF_CONDUCT.md)
+applies to everyone taking part.
+
+For most code changes, run the focused checks for the files you touched. For a
+broad change, start with:
+
+```bash
+npm run docs:check
+npm run format:check
+npm run typecheck
+npm run sidecar:typecheck
+npm run electron:check
+```
+
+If you change scripts, environment variables, or onboarding commands, also run:
+
+```bash
+npm run docs:generate
+npm run docs:check
+```
+
+## License and trademark
+
+DROIDEX is open source under the [Apache License 2.0](LICENSE). You may use,
+modify, and redistribute it, including commercially, as long as you follow the
+license: keep the copyright and attribution notices, ship the [NOTICE](NOTICE)
+file, and state prominently in any file you changed that you changed it.
+
+The DROIDEX name, logo, and visual identity are not covered by the license. If
+you fork DROIDEX, rename your build and say plainly that it is a fork of
+DROIDEX, with a link back here. [`TRADEMARKS.md`](TRADEMARKS.md) covers what
+that means in practice. Fork it, build on it, sell it if you like; just do not
+present it as though you wrote it.
 
 ## More documentation
 
-- Scheduled tasks: [Automations](docs/automations.md)
-- Architecture overview: `docs/architecture.md`
-- Command reference: `docs/generated/project-reference.md`
-- Runbooks: `docs/runbooks.md`
-- Team release guide: `docs/releasing.md`
-- Release controls and observability: `docs/deployment-observability.md`
-- Engineering instructions: `AGENTS.md`
+- [Automations](docs/automations.md)
+- [Architecture overview](docs/architecture.md)
+- [Command reference](docs/generated/project-reference.md)
+- [Runbooks](docs/runbooks.md)
+- [Team release guide](docs/releasing.md)
+- [Release controls and observability](docs/deployment-observability.md)
+- [Engineering instructions](AGENTS.md)
