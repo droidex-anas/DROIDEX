@@ -1,5 +1,6 @@
 import { shallowEqual, useStoreSelector } from '../../hooks/useStore';
 import { bridge } from '../../lib/bridge';
+import { projectsAnswered } from '../../lib/projectThreads';
 import type { ServerEvent } from '../../types/bridge';
 import type { ProjectCommand, ProjectEvent } from './protocol';
 import type { ProjectView, ThreadInput } from './types';
@@ -22,14 +23,11 @@ const pending = new Map<
 export function useProjects(): { projects: ProjectView[]; loading: boolean; error?: string } {
   initialize();
   return useStoreSelector((state) => {
-    // An unreachable runtime is an answer, not a wait: without this the view
-    // spins forever. And being connected is not the same as having heard, so
-    // an empty list before the first snapshot is still loading.
     const unreachable = state.connection === 'error' ? runtimeError(state.connectionError) : '';
     const error = state.projectsError || unreachable;
     return {
       projects: state.projects,
-      loading: !state.projectsLoaded && !unreachable,
+      loading: !projectsAnswered(state),
       ...(error ? { error } : {}),
     };
   }, shallowEqual);

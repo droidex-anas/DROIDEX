@@ -1,9 +1,16 @@
 import type { ProjectView } from '../features/projects/types';
+import type { AppState } from '../hooks/useStore';
 
 /* What the app's chrome needs to know about projects, without loading the
    Projects feature or walking a transcript: which sessions are threads (the
    chat list leaves those to Projects) and whether any project is moving or
    waiting on the user. */
+
+/** Whether the runtime has said which sessions are threads. One that cannot
+    answer counts as having answered, or the chat list would never draw. */
+export function projectsAnswered(state: Pick<AppState, 'projectsLoaded' | 'connection'>): boolean {
+  return state.projectsLoaded || state.connection === 'error';
+}
 
 export function projectThreadIds(projects: readonly ProjectView[]): ReadonlySet<string> {
   const ids = new Set<string>();

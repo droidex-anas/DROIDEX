@@ -10,7 +10,7 @@ import {
   type ChatMetadataMap,
 } from '../lib/chatMetadata';
 import { sidebarSearchNotice } from '../lib/sidebarSearchStatus';
-import { projectThreadIds } from '../lib/projectThreads';
+import { projectsAnswered, projectThreadIds } from '../lib/projectThreads';
 import { formatRelativeTime } from '../lib/time';
 import type { SessionSearchMatch, SessionSummary } from '../types/bridge';
 import PaletteShell from './PaletteShell';
@@ -39,7 +39,7 @@ export default function SidebarSearch({
       sessionOrder: current.sessionOrder,
       sessions: current.sessions,
       projectThreads: projectThreadIds(current.projects),
-      projectsKnown: current.projectsLoaded,
+      projectsKnown: projectsAnswered(current),
     }),
     (a, b) =>
       a.projectsKnown === b.projectsKnown &&
