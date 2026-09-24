@@ -20,10 +20,11 @@ export interface Voice {
   activity: VoiceActivity;
   view: VoiceView;
   session: VoiceSession;
-  /** Opens the full surface and connects. */
+  /** Connects, over the composer of the chat the conversation belongs to. */
   open: () => void;
-  /** Keeps talking with the chat in view. */
+  /** Puts the chat back in view, from the full surface. */
   minimize: () => void;
+  /** Takes the conversation full screen. */
   expand: () => void;
   close: () => void;
   /** Reopens the conversation, which is how a new voice takes over. */
@@ -33,9 +34,9 @@ export interface Voice {
 /**
  * One voice conversation and the surfaces it can wear: the connection for the
  * chat that started it, plus where that conversation is currently shown. The
- * view follows the conversation — it opens full, and it closes itself when the
- * conversation ends for any reason, including a failure — so no surface is left
- * hanging over a chat that is not talking.
+ * view follows the conversation: it opens over the chat's composer, and it
+ * closes itself when the conversation ends for any reason, including a
+ * failure, so no surface is left hanging over a chat that is not talking.
  *
  * Reading another chat does not end anything: the conversation keeps running
  * and its view reads `mini` until the chat it belongs to is back on screen.
@@ -56,8 +57,11 @@ export function useVoice(
   const [reconnecting, setReconnecting] = useState(false);
   const { status, start, stop } = session;
 
+  // A conversation opens over the chat, not in front of it: the transcript is
+  // where its work lands, and talking is not a reason to stop reading. The
+  // orb over the composer takes it full screen.
   const open = useCallback(() => {
-    setPlacement('full');
+    setPlacement('dock');
     start();
   }, [start]);
 
