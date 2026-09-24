@@ -155,7 +155,7 @@ function threadDetail(
   // generating and still be stopped on an approval.
   if (BLOCKED.includes(status)) return join(ACTIVITY_LABELS[status], digest?.snippet);
   if (live) return digest?.activity ?? 'Working';
-  if (thread.waiting) return join('Asked the main chat', digest?.snippet);
+  if (thread.waiting) return join('Asked the chat that started it', digest?.snippet);
   return digest?.snippet ?? ACTIVITY_LABELS[status];
 }
 
