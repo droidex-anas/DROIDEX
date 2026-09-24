@@ -18,6 +18,10 @@ export function useMicStream(active: boolean): { stream: MediaStream | null; den
 
   useEffect(() => {
     if (!active) return;
+    // Every attempt asks again from nothing known: a refusal, or a machine with
+    // no microphone at the time, must not decide the next conversation.
+    setDenied(false);
+    setStream(null);
     const devices = mediaDevices();
     if (!devices) {
       setDenied(true);

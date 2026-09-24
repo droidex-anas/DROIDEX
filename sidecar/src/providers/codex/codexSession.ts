@@ -158,6 +158,11 @@ export class CodexSession implements ProviderSession {
     mentions?: ProviderMention[],
   ): AsyncGenerator<NormalizedEvent, void, undefined> {
     if (this.turn) throw new Error('This Codex session is already running a turn.');
+    // Codex runs one turn per thread, and a spoken request is a turn like any
+    // other. Starting a second one here would pull the delegated turn's events
+    // into this stream and leave the spoken request unanswered.
+    if (this.delegatedTurnId)
+      throw new Error('This Codex session is working on a spoken request; it has to finish first.');
     const threadId = this.threadId;
     if (!threadId) throw new Error('This Codex session has no thread to run a turn on.');
     const turn = new TurnStream();
@@ -184,7 +189,6 @@ export class CodexSession implements ProviderSession {
       this.turn = undefined;
       this.turnId = undefined;
       this.pendingInterrupt = false;
-      this.delegatedTurnId = undefined;
     }
   }
 
@@ -359,6 +363,7 @@ export class CodexSession implements ProviderSession {
     this.client.onClose((error) => {
       this.cancelStartupNotice();
       this.catalog?.close();
+      this.delegatedTurnId = undefined;
       this.turn?.fail(error);
       this.prompts.cancel();
       this.resolveClosed(error);

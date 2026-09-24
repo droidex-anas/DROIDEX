@@ -65,10 +65,11 @@ export class CodexVoice implements ProviderVoice {
   // True from the moment a conversation is asked for, not from the moment it
   // connects: a hang-up during the handshake still has to reach Codex.
   private live = false;
-  // Stopping produces a `closed` of its own. The app already knows, and the
-  // next conversation on this thread must not be closed by the last one's
-  // acknowledgement.
-  private stopping = false;
+  // Each stop produces a `closed` of its own. The app already knows, so those
+  // are counted off instead of published: the next conversation on this thread
+  // must not be closed by the last one's acknowledgement, however late it
+  // arrives.
+  private expectedCloses = 0;
 
   // `threadId` is read at call time: the thread opens after the session is
   // constructed, and a resume replaces it.
@@ -81,8 +82,9 @@ export class CodexVoice implements ProviderVoice {
         this.publish({ kind: 'answer', sdp: params.sdp });
     });
     this.client.onNotification('thread/realtime/started', () => {
-      this.live = true;
-      this.publish({ kind: 'started' });
+      // A `started` that lands after the hang-up belongs to a conversation
+      // nobody is holding any more.
+      if (this.live) this.publish({ kind: 'started' });
     });
     this.client.onNotification('thread/realtime/transcript/delta', (params) => {
       if (!isRecord(params)) return;
@@ -103,10 +105,12 @@ export class CodexVoice implements ProviderVoice {
       this.publish({ kind: 'error', message: message || 'The voice session failed.' });
     });
     this.client.onNotification('thread/realtime/closed', () => {
-      const expected = this.stopping;
-      this.stopping = false;
+      if (this.expectedCloses > 0) {
+        this.expectedCloses -= 1;
+        return;
+      }
       this.live = false;
-      if (!expected) this.publish({ kind: 'closed' });
+      this.publish({ kind: 'closed' });
     });
   }
 
@@ -125,7 +129,6 @@ export class CodexVoice implements ProviderVoice {
   async start({ sdp, voice, narration = 'brief' }: ProviderVoiceStart): Promise<void> {
     const threadId = this.requireThread();
     this.live = true;
-    this.stopping = false;
     await this.client
       .request('thread/realtime/start', {
         threadId,
@@ -146,8 +149,14 @@ export class CodexVoice implements ProviderVoice {
   // can be tried again instead of silently doing nothing.
   async stop(): Promise<void> {
     if (!this.live) return;
-    this.stopping = true;
-    await this.client.request('thread/realtime/stop', { threadId: this.requireThread() });
+    this.expectedCloses += 1;
+    try {
+      await this.client.request('thread/realtime/stop', { threadId: this.requireThread() });
+    } catch (error) {
+      // Nothing was stopped, so no close is owed and a real one still counts.
+      this.expectedCloses -= 1;
+      throw error;
+    }
     this.live = false;
   }
 

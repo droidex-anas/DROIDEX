@@ -98,9 +98,16 @@ export function useVoice(
   }, [reconnecting, start, status]);
 
   // The voices are per harness, and the list only answers once a chat is live.
+  // Asked once per conversation rather than once per chat: what the renderer
+  // knows about a chat's voice does not outlive a closed runtime, so a later
+  // conversation would otherwise be left with an empty list.
   const asked = useRef<string | null>(null);
   useEffect(() => {
-    if (!appSessionId || placement === 'off' || asked.current === appSessionId) return;
+    if (!appSessionId || placement === 'off') {
+      asked.current = null;
+      return;
+    }
+    if (asked.current === appSessionId) return;
     asked.current = appSessionId;
     session.refreshVoices();
   }, [appSessionId, placement, session]);
