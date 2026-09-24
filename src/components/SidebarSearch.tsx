@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import { ArrowRight } from 'lucide-react';
 import { useSidebarContentSearch } from '../hooks/useSidebarContentSearch';
-import { useStoreSelector } from '../hooks/useStore';
+import { shallowEqual, useStoreSelector } from '../hooks/useStore';
 import {
   chatDisplayTitle,
   chatMatchesPullRequest,
@@ -41,13 +41,7 @@ export default function SidebarSearch({
       projectThreads: projectThreadIds(current.projects),
       projectsKnown: projectsAnswered(current),
     }),
-    (a, b) =>
-      a.projectsKnown === b.projectsKnown &&
-      a.chatMetadata === b.chatMetadata &&
-      a.sessionOrder === b.sessionOrder &&
-      a.sessions === b.sessions &&
-      a.projectThreads.size === b.projectThreads.size &&
-      [...a.projectThreads].every((id) => b.projectThreads.has(id)),
+    shallowEqual,
   );
   const metadata: Partial<ChatMetadataMap> = state.chatMetadata;
   const [query, setQuery] = useState('');
