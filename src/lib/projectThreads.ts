@@ -31,8 +31,9 @@ export function projectThreadIds(projects: readonly ProjectView[]): ReadonlySet<
 /** Where an open thread came from, so its chat can offer the way back. */
 export interface ThreadOrigin {
   ownerAppSessionId: string;
-  /** The conversation that started it: the project's own name. */
-  projectTitle: string;
+  /** The conversation that started it: the project's name for the lead,
+      otherwise the owning thread's own title. */
+  ownerTitle: string;
   threadTitle: string;
 }
 
@@ -42,14 +43,14 @@ export function threadOrigin(
 ): ThreadOrigin | undefined {
   if (!appSessionId) return undefined;
   for (const project of projects) {
-    for (const thread of project.threads) {
-      if (thread.appSessionId !== appSessionId || !thread.ownerAppSessionId) continue;
-      return {
-        ownerAppSessionId: thread.ownerAppSessionId,
-        projectTitle: project.title,
-        threadTitle: thread.title,
-      };
-    }
+    const thread = project.threads.find((item) => item.appSessionId === appSessionId);
+    if (!thread?.ownerAppSessionId) continue;
+    const owner = project.threads.find((item) => item.appSessionId === thread.ownerAppSessionId);
+    return {
+      ownerAppSessionId: thread.ownerAppSessionId,
+      ownerTitle: owner?.ownerAppSessionId ? owner.title : project.title,
+      threadTitle: thread.title,
+    };
   }
   return undefined;
 }

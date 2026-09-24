@@ -1,7 +1,7 @@
 import { useRef, useEffect, useMemo, useState, useCallback, type ReactNode } from 'react';
 import { GripVertical, ChevronRight, Square } from 'lucide-react';
 import { useStoreDispatch, useStoreSelector } from '../hooks/useStore';
-import { threadOrigin } from '../lib/projectThreads';
+import { threadOrigin, type ThreadOrigin } from '../lib/projectThreads';
 import { WINDOW_CONTROLS_LEAD_PX } from '../lib/windowChrome';
 import { openReviewAt, type OpenReviewFileHandler } from '../lib/reviewFocus';
 import type { FileChange } from '../lib/diff';
@@ -54,14 +54,11 @@ import { TranscriptReachHost } from '../features/transcript-reach/TranscriptReac
 
 const NO_LIVE_PROCESSES: readonly AgentProcess[] = [];
 
-function equalOrigin(
-  left: ReturnType<typeof threadOrigin>,
-  right: ReturnType<typeof threadOrigin>,
-): boolean {
+function equalOrigin(left: ThreadOrigin | undefined, right: ThreadOrigin | undefined): boolean {
   if (!left || !right) return left === right;
   return (
     left.ownerAppSessionId === right.ownerAppSessionId &&
-    left.projectTitle === right.projectTitle &&
+    left.ownerTitle === right.ownerTitle &&
     left.threadTitle === right.threadTitle
   );
 }
@@ -778,9 +775,9 @@ export default function ChatView({
       {activeSession ? (
         <ChatHeader
           title={
-            // A child session's breadcrumb walks back to this thread, not to
-            // the project, so only the thread's own crumb carries the project.
-            (viewingChildSession ? undefined : origin?.projectTitle) ??
+            // A thread's crumb names the chat that started it; a child session's
+            // crumb walks back to this chat instead, so it keeps its own title.
+            (viewingChildSession ? undefined : origin?.ownerTitle) ??
             chatDisplayTitle(activeSession, state.chatMetadata[activeSession.appSessionId])
           }
           live={live}
