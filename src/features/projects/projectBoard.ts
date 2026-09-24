@@ -1,6 +1,5 @@
-import type { ThreadRow } from './threadBoard';
-import { threadCounts } from './threadBoard';
-import type { ThreadCounts } from './threadGreeting';
+import { threadCounts, type ThreadCounts, type ThreadRow } from './threadBoard';
+import { plural } from './threadGreeting';
 import type { ProjectView } from './types';
 
 /* What a project looks like on the Projects list: whether anything is waiting
@@ -46,13 +45,9 @@ function summarize(
   if (counts.attention > 0)
     parts.push(plural(counts.attention, 'thread needs you', 'threads need you'));
   if (counts.working > 0) parts.push(plural(counts.working, 'thread working', 'threads working'));
-  if (project.launching > 0) parts.push('starting a thread');
+  if (project.launching > 0) parts.push('Starting a thread');
   if (parts.length === 0)
     parts.push(total === 0 ? 'No threads yet' : plural(total, 'thread idle', 'threads idle'));
   if (project.queued > 0) parts.push(`${String(project.queued)} queued`);
   return parts.join(' · ');
-}
-
-function plural(count: number, one: string, many: string): string {
-  return count === 1 ? `1 ${one}` : `${String(count)} ${many}`;
 }
