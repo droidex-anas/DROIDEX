@@ -52,6 +52,10 @@
     transition: none !important;
   }
 }
+/* ModelIcon paints its own text colour; sidebar marks follow the row's tone. */
+.harness-mark > svg {
+  color: inherit !important;
+}
 
 @layer base {
   :root {

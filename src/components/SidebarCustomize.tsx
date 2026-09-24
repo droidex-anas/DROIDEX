@@ -246,8 +246,8 @@ export function SidebarCustomize({ preferences, unreadCount, onChange, onMarkAll
   };
 
   return (
-    <div className="mx-4 mb-1 flex items-center justify-between">
-      <span className="text-[11px] font-medium text-droid-text-muted">
+    <div className="mb-1 ml-5 mr-3 flex items-center justify-between">
+      <span className="text-[13px] font-medium text-droid-text-muted">
         {VIEWS.find((view) => view.value === preferences.view)?.label}
       </span>
       <button
@@ -260,7 +260,7 @@ export function SidebarCustomize({ preferences, unreadCount, onChange, onMarkAll
         aria-label="View options"
         aria-haspopup="menu"
         aria-expanded={open}
-        className={`rounded-md p-1.5 transition-colors hover:bg-droid-elevated focus-visible:bg-droid-elevated focus-visible:outline-none ${
+        className={`cursor-pointer rounded-md p-1.5 transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-droid-accent/40 ${
           open || customized ? 'text-droid-text' : 'text-droid-text-muted hover:text-droid-text'
         }`}
       >
@@ -346,6 +346,7 @@ export function SidebarCustomize({ preferences, unreadCount, onChange, onMarkAll
                     ...DEFAULT_SIDEBAR_PREFERENCES,
                     view: preferences.view,
                     settled: preferences.settled,
+                    reopened: preferences.reopened,
                   });
                 }}
               >
