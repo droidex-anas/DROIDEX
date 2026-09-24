@@ -155,10 +155,6 @@ export class ProjectService {
       })),
       queued: project.pending.length,
       uncertain: project.delivery?.state === 'uncertain' ? project.delivery.messages.length : 0,
-      uncertainTargets:
-        project.delivery?.state === 'uncertain'
-          ? [...new Set(project.delivery.messages.map((message) => message.to))]
-          : [],
       ...(project.error ? { error: project.error } : {}),
     };
   }

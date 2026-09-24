@@ -18,15 +18,13 @@ export interface ThreadSettings {
   autonomy?: Autonomy;
 }
 
-/** How a thread's checkout is chosen: the project's own, or one of its own. */
+/** Which checkout a thread works in. */
 interface ThreadWorkspaceChoice {
   workspace?: 'inherit' | 'worktree';
   /** Work in the checkout another thread of this project already has. */
   workspaceOf?: string;
   branch?: string;
   base?: string;
-  /** The plan step this thread carries, by its number or exact title. */
-  step?: string;
 }
 
 /**
@@ -36,7 +34,10 @@ interface ThreadWorkspaceChoice {
  */
 export type ThreadSpawnInput = Omit<ThreadInput, 'cwd' | 'provider' | 'autonomy'> &
   Partial<Pick<ThreadInput, 'provider' | 'autonomy'>> &
-  ThreadWorkspaceChoice;
+  ThreadWorkspaceChoice & {
+    /** The plan step this thread carries, by its number or exact title. */
+    step?: string;
+  };
 
 /* The plan the lead keeps for the user: what this project intends to do, in
    order. A step that names a thread has no state of its own — it reports the
@@ -106,10 +107,9 @@ export interface ProjectView {
   paused: boolean;
   launching: number;
   plan: ProjectStep[];
-  threads: Omit<ProjectThread, 'reply'>[];
+  threads: Pick<ProjectThread, 'appSessionId' | 'title' | 'waiting' | 'ownerAppSessionId'>[];
   queued: number;
   uncertain: number;
-  uncertainTargets: string[];
   error?: string;
 }
 
