@@ -1,17 +1,18 @@
-import { useEffect, useState } from 'react';
-import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
+import { useState } from 'react';
+import { useReducedMotion } from 'framer-motion';
 import { ChevronRight, Plus, Spinner } from '@droidex/icons';
 import { ActivityStatusGlyph } from '../../components/ActivityStatusGlyph';
 import { useStoreDispatch, useStoreSelector } from '../../hooks/useStore';
-import { INLINE_CARD_DURATION_S, INLINE_CARD_EASE } from '../../components/inlineCardMotion';
 import { formatRelativeTime } from '../../lib/time';
 import { toast } from '../../lib/toast';
 import { resolveNewChatCwd, workspaceName } from '../../lib/workspaces';
 import { createProject, resumeProject } from './client';
 import { NewProjectForm } from './NewProjectForm';
+import { PaneTransition } from './PaneTransition';
 import { ProjectThreads } from './ProjectThreads';
 import { projectLead } from './threadBoard';
 import { useProjectBoard, type ProjectBoardEntry } from './useProjectBoard';
+import { useRelativeTimeNow } from './useRelativeTimeNow';
 import type { ThreadInput } from './types';
 
 /* Projects: every project, and one project at a time with the threads it is
@@ -26,16 +27,7 @@ export function ProjectsRoute() {
   const { entries, loading, error } = useProjectBoard();
   const [openId, setOpenId] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
-  // Relative times on the list would otherwise read from the moment it opened.
-  const [now, setNow] = useState(() => Date.now());
-  useEffect(() => {
-    const timer = setInterval(() => {
-      setNow(Date.now());
-    }, 30_000);
-    return () => {
-      clearInterval(timer);
-    };
-  }, []);
+  const now = useRelativeTimeNow();
   // A new project follows the workspace a new chat would, so starting one from
   // the Projects tab lands in the folder the user is already working in.
   const cwd = useStoreSelector((state) =>
@@ -67,59 +59,46 @@ export function ProjectsRoute() {
     else setOpenId(started.projectId);
   }
 
-  const travel = reduceMotion ? 0 : 12;
   return (
     <div className="flex h-full min-h-0 flex-col bg-droid-bg text-droid-text">
       <div data-electron-drag-region className="h-9 shrink-0" />
-      <AnimatePresence initial={false} mode="wait">
-        <motion.div
-          key={open ? `project:${open.project.id}` : 'list'}
-          initial={{ opacity: 0, x: open ? travel : -travel }}
-          animate={{ opacity: 1, x: 0 }}
-          exit={{ opacity: 0, x: open ? -travel : travel }}
-          transition={{
-            duration: reduceMotion ? 0 : INLINE_CARD_DURATION_S,
-            ...(reduceMotion ? {} : { ease: INLINE_CARD_EASE }),
-          }}
-          className="flex min-h-0 flex-1 flex-col"
-        >
-          {open ? (
-            <ProjectThreads
-              entry={open}
-              now={now}
-              onBack={() => {
-                setOpenId(null);
-              }}
-              onOpenChat={() => {
-                openChat(open);
-              }}
-              onResume={() => {
-                resumeProject(open.project.id).catch((error: unknown) => {
-                  toast.error(error instanceof Error ? error.message : String(error));
-                });
-              }}
-              onOpenThread={(appSessionId) => {
-                dispatch({ type: 'SET_ACTIVE_SESSION', id: appSessionId });
-              }}
-            />
-          ) : (
-            <ProjectListView
-              entries={entries}
-              loading={loading}
-              error={error ?? ''}
-              now={now}
-              creating={creating}
-              cwd={cwd}
-              onCreate={create}
-              onToggleCreate={() => {
-                setCreating((value) => !value);
-              }}
-              onOpen={setOpenId}
-              onOpenChat={openChat}
-            />
-          )}
-        </motion.div>
-      </AnimatePresence>
+      <PaneTransition open={Boolean(open)} reduceMotion={reduceMotion} viewKey={open?.project.id}>
+        {open ? (
+          <ProjectThreads
+            entry={open}
+            now={now}
+            onBack={() => {
+              setOpenId(null);
+            }}
+            onOpenChat={() => {
+              openChat(open);
+            }}
+            onResume={() => {
+              resumeProject(open.project.id).catch((error: unknown) => {
+                toast.error(error instanceof Error ? error.message : String(error));
+              });
+            }}
+            onOpenThread={(appSessionId) => {
+              dispatch({ type: 'SET_ACTIVE_SESSION', id: appSessionId });
+            }}
+          />
+        ) : (
+          <ProjectListView
+            entries={entries}
+            loading={loading}
+            error={error ?? ''}
+            now={now}
+            creating={creating}
+            cwd={cwd}
+            onCreate={create}
+            onToggleCreate={() => {
+              setCreating((value) => !value);
+            }}
+            onOpen={setOpenId}
+            onOpenChat={openChat}
+          />
+        )}
+      </PaneTransition>
     </div>
   );
 }
