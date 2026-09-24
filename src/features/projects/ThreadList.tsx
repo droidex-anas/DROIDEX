@@ -43,7 +43,7 @@ export function ThreadList({
     <div className="flex min-h-0 flex-1 flex-col">
       <div className="min-h-0 flex-1 overflow-y-auto">
         <div className="px-4 pb-3 pt-5">
-          <h2 className="text-[21px] font-semibold leading-tight tracking-tight text-droid-text">
+          <h2 className="text-[22px] font-semibold leading-tight tracking-tight text-droid-text">
             {threadGreeting(rows, counts, now)}
           </h2>
           {facts && (
