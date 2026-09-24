@@ -15,51 +15,62 @@ export interface ProjectBoardEntry {
 }
 
 /* Every project with its threads resolved against the live sessions. The
-   Projects view, the Threads pane and a chat's spawn lines all take their rows
-   from here, so a thread reads the same wherever it is shown. */
+   Projects view and the Threads pane take their rows from here, and a chat's
+   spawn line reads its one row through the same threadRows, so a thread reads
+   the same wherever it is shown. */
 export function useProjectBoard(): {
   entries: ProjectBoardEntry[];
   loading: boolean;
   error?: string;
 } {
   const snapshot = useProjects();
-  const signals = useStoreSelector(
-    (current) => ({
-      sessions: current.sessions,
-      pendingPermissions: current.pendingPermissions,
-      pendingQuestions: current.pendingQuestions,
-    }),
-    shallowEqual,
-  );
-  const digests = useThreadDigests(
+  // Only the threads: a lead's digest would feed nothing shown here, and
+  // reading it would redraw every board on each token the lead streams.
+  const signals = useThreadSignals(
     useMemo(
-      () => snapshot.projects.flatMap((project) => project.threads.map((t) => t.appSessionId)),
+      () =>
+        snapshot.projects.flatMap((project) =>
+          project.threads
+            .filter((thread) => thread.ownerAppSessionId)
+            .map((thread) => thread.appSessionId),
+        ),
       [snapshot.projects],
     ),
   );
   const entries = useMemo(
     () =>
       snapshot.projects.map((project) => {
-        const threadSignals: ThreadSignals = {
-          sessions: signals.sessions,
-          attention: (id) =>
-            sessionAttention(id, signals.pendingPermissions, signals.pendingQuestions),
-          digests,
-        };
-        const rows = threadRows(project, threadSignals);
-        return {
-          project,
-          rows,
-          pulse: projectPulse(project, rows, leadRow(project, threadSignals)),
-        };
+        const rows = threadRows(project, signals);
+        return { project, rows, pulse: projectPulse(project, rows, leadRow(project, signals)) };
       }),
-    [snapshot.projects, signals, digests],
+    [snapshot.projects, signals],
   );
   return {
     entries,
     loading: snapshot.loading,
     ...(snapshot.error ? { error: snapshot.error } : {}),
   };
+}
+
+/** What a thread's row is read against, with the last step of the named threads only. */
+export function useThreadSignals(threadIds: readonly string[]): ThreadSignals {
+  const live = useStoreSelector(
+    (state) => ({
+      sessions: state.sessions,
+      pendingPermissions: state.pendingPermissions,
+      pendingQuestions: state.pendingQuestions,
+    }),
+    shallowEqual,
+  );
+  const digests = useThreadDigests(threadIds);
+  return useMemo(
+    () => ({
+      sessions: live.sessions,
+      attention: (id) => sessionAttention(id, live.pendingPermissions, live.pendingQuestions),
+      digests,
+    }),
+    [live, digests],
+  );
 }
 
 /** The entry of the project a conversation belongs to, if it is in one. */

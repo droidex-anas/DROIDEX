@@ -1,13 +1,14 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { ChevronRight } from '@droidex/icons';
-import { useStoreDispatch } from '../../hooks/useStore';
+import { useStoreDispatch, useStoreSelector } from '../../hooks/useStore';
 import { Caret, Expand } from '../../components/transcript/primitives';
 import { ActivityStatusGlyph } from '../../components/ActivityStatusGlyph';
+import { projectForSession } from '../../lib/projectThreads';
 import { toolArgString } from '../../lib/tools';
 import type { TranscriptEvent } from '../../types/bridge';
-import type { ThreadRow } from './threadBoard';
+import { threadRows, type ThreadRow } from './threadBoard';
 import { spawnedThread } from './threadToolNames';
-import { entryForSession, useProjectBoard } from './useProjectBoard';
+import { useThreadSignals } from './useProjectBoard';
 
 /* A thread the chat started, shown in the chat the way a spawned child session
    is: one line in the conversation's own voice, expandable for the task it was
@@ -127,11 +128,19 @@ function SpawnDetail({
   );
 }
 
-/** The row the Threads panel shows for this thread, so both read the same. */
+const NO_THREADS: readonly string[] = [];
+
+/* The row the Threads panel shows for this thread, so both read the same. It
+   reads only this thread's own digest: the line sits in the chat that spawned
+   it, and a board-wide read would redraw it on every token that chat streams. */
 function useThreadRow(appSessionId: string | undefined): ThreadRow | undefined {
-  const { entries } = useProjectBoard();
-  return entryForSession(entries, appSessionId)?.rows.find(
-    (row) => row.appSessionId === appSessionId,
+  const project = useStoreSelector((state) => projectForSession(state.projects, appSessionId));
+  const signals = useThreadSignals(
+    useMemo(() => (appSessionId ? [appSessionId] : NO_THREADS), [appSessionId]),
+  );
+  return useMemo(
+    () => project && threadRows(project, signals).find((row) => row.appSessionId === appSessionId),
+    [project, signals, appSessionId],
   );
 }
 
