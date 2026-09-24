@@ -1,15 +1,9 @@
 import type { AutomationDeliveryReceipt } from '../automations/types.js';
 import { ProjectWakeQueue } from './ProjectWakeQueue.js';
-import {
-  clearAsk,
-  MAX_EARLIER_REPLIES,
-  ProjectTurns,
-  requireThread,
-  threadState,
-} from './projectTurns.js';
+import { clearAsk, ProjectTurns, requireThread, threadState } from './projectTurns.js';
 import { randomUUID } from 'node:crypto';
 import type { ProviderStatus, ServerEvent, SessionSummary } from '../protocol.js';
-import type { ProjectPersistence } from './store.js';
+import { LEDGER_LIMITS, type ProjectPersistence } from './store.js';
 import {
   discardThreadCheckout,
   inheritSettings,
@@ -218,7 +212,7 @@ export class ProjectService {
       project = this.newProject(owner.title);
       project.threads.push({
         appSessionId: source,
-        title: owner.title.slice(0, 120) || 'Main conversation',
+        title: owner.title.slice(0, LEDGER_LIMITS.title) || 'Main conversation',
         reply: '',
         waiting: false,
       });
@@ -307,16 +301,19 @@ export class ProjectService {
     const project = this.requireProjectFor(source);
     if (this.thread(project, source).ownerAppSessionId)
       throw new Error('Only the project’s main chat keeps its plan.');
-    if (steps.length > 60) throw new Error('A project plan holds at most 60 steps.');
+    if (steps.length > LEDGER_LIMITS.planSteps)
+      throw new Error(`A project plan holds at most ${String(LEDGER_LIMITS.planSteps)} steps.`);
     project.plan = steps.map((step, index) => {
       if (step.threadAppSessionId) this.thread(project, step.threadAppSessionId);
       return {
         id: String(index + 1),
-        title: step.title.slice(0, 200),
-        ...(step.milestone ? { milestone: step.milestone.slice(0, 80) } : {}),
+        title: step.title.slice(0, LEDGER_LIMITS.stepTitle),
+        ...(step.milestone
+          ? { milestone: step.milestone.slice(0, LEDGER_LIMITS.stepMilestone) }
+          : {}),
         ...(step.state ? { state: step.state } : {}),
         ...(step.threadAppSessionId ? { threadAppSessionId: step.threadAppSessionId } : {}),
-        ...(step.note ? { note: step.note.slice(0, 400) } : {}),
+        ...(step.note ? { note: step.note.slice(0, LEDGER_LIMITS.stepNote) } : {}),
       };
     });
     await this.save();
@@ -393,7 +390,7 @@ export class ProjectService {
     const thread = this.thread(project, target);
     const session = this.sessions.get(target);
     const kept = thread.reply ? [...(thread.earlierReplies ?? []), thread.reply] : [];
-    const wanted = Math.min(Math.max(replies, 1), MAX_EARLIER_REPLIES + 1);
+    const wanted = Math.min(Math.max(replies, 1), LEDGER_LIMITS.earlierReplies + 1);
     return {
       threadId: target,
       title: thread.title,
@@ -601,18 +598,21 @@ export class ProjectService {
     text: string,
   ): void {
     this.requireOpen();
-    if (!text.trim() || text.length > 8_192)
-      throw new Error('Thread messages must contain 1–8192 characters.');
-    if (project.pending.length + (project.delivery?.messages.length ?? 0) >= 64)
+    if (!text.trim() || text.length > LEDGER_LIMITS.text)
+      throw new Error(
+        `Thread messages must contain 1 to ${String(LEDGER_LIMITS.text)} characters.`,
+      );
+    if (project.pending.length + (project.delivery?.messages.length ?? 0) >= LEDGER_LIMITS.inbox)
       throw new Error('Project inbox is full. Review and resume its threads.');
     project.pending.push({ id: randomUUID(), from, to, kind, text });
   }
 
   private newProject(title: string, id: string = randomUUID()): Project {
-    if (this.projects.size >= 32) throw new Error('The local project limit is 32.');
+    if (this.projects.size >= LEDGER_LIMITS.projects)
+      throw new Error(`The local project limit is ${String(LEDGER_LIMITS.projects)}.`);
     const project: Project = {
       id,
-      title: title.slice(0, 120) || 'Project',
+      title: title.slice(0, LEDGER_LIMITS.title) || 'Project',
       paused: false,
       launching: 0,
       plan: [],
@@ -657,8 +657,10 @@ export class ProjectService {
   /** Whether this project can take another thread at all. */
   private checkAdmission(project: Project): void {
     if (project.paused) throw new Error('Resume project coordination before spawning a thread.');
-    if (project.threads.length + project.launching >= 8)
-      throw new Error('A project supports at most eight threads.');
+    if (project.threads.length + project.launching >= LEDGER_LIMITS.threads)
+      throw new Error(
+        `A project holds at most ${String(LEDGER_LIMITS.threads)} conversations, its main chat included.`,
+      );
   }
 
   private requireOpen(): void {
@@ -668,7 +670,8 @@ export class ProjectService {
   private fail(project: Project, error: unknown): void {
     this.wakes.invalidate(project);
     project.paused = true;
-    project.error = (error instanceof Error ? error.message : String(error)).slice(0, 2_000);
+    const message = error instanceof Error ? error.message : String(error);
+    project.error = message.slice(0, LEDGER_LIMITS.projectError);
     if (project.delivery) project.delivery.state = 'uncertain';
     this.emit({ type: 'projects.snapshot', projects: this.list() });
   }

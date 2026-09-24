@@ -4,11 +4,6 @@ import type { ServerEvent, SessionQuestion, SessionSummary } from '../protocol.j
 import { LEDGER_LIMITS } from './store.js';
 import type { Project, ProjectThread, ThreadMessage } from './types.js';
 
-/* How far back a thread's own answers stay readable. Deep enough that an owner
-   which compacted can pick the conversation up again, shallow enough that the
-   ledger stays a ledger. */
-export const MAX_EARLIER_REPLIES = 9;
-
 export type ThreadState = 'working' | 'waiting' | 'stopped' | 'failed' | 'idle';
 
 interface ProjectTurnsDependencies {
@@ -92,7 +87,7 @@ export class ProjectTurns {
       // A turn that says nothing must not erase what the thread last said.
       if (thread.reply)
         thread.earlierReplies = [...(thread.earlierReplies ?? []), thread.reply].slice(
-          -MAX_EARLIER_REPLIES,
+          -LEDGER_LIMITS.earlierReplies,
         );
       thread.reply = turn.text;
     }
@@ -155,7 +150,7 @@ export class ProjectTurns {
           : item.question,
       )
       .join('\n\n')
-      .slice(0, LEDGER_LIMITS.messageText);
+      .slice(0, LEDGER_LIMITS.text);
     try {
       this.d.enqueue(project, thread.appSessionId, thread.ownerAppSessionId, 'question', asked);
     } catch (error) {

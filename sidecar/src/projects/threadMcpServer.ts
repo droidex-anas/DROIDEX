@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { jsonResult, safeTool } from '../mcpToolUtils.js';
 import { PROVIDER_KINDS } from '../providers/providerKind.js';
 import { requireProjectService } from './service.js';
+import { LEDGER_LIMITS } from './store.js';
 import { THREAD_MCP_SERVER_NAME } from './threadTools.js';
 
 const reasoningSchema = z.enum([
@@ -23,7 +24,7 @@ const spawnSchema = z.object({
     .string()
     .trim()
     .min(1)
-    .max(120)
+    .max(LEDGER_LIMITS.title)
     .describe('Short task name in the user’s words, e.g. "Draft Friday’s release notes".'),
   prompt: z
     .string()
@@ -176,12 +177,12 @@ export function createThreadMcpServer(appSessionIdForTool: () => string | undefi
                   .string()
                   .trim()
                   .min(1)
-                  .max(200)
+                  .max(LEDGER_LIMITS.stepTitle)
                   .describe('One concrete piece of work, in the user’s words.'),
                 milestone: z
                   .string()
                   .trim()
-                  .max(80)
+                  .max(LEDGER_LIMITS.stepMilestone)
                   .optional()
                   .describe('Optional heading a run of steps belongs under.'),
                 state: z
@@ -192,12 +193,12 @@ export function createThreadMcpServer(appSessionIdForTool: () => string | undefi
                 note: z
                   .string()
                   .trim()
-                  .max(400)
+                  .max(LEDGER_LIMITS.stepNote)
                   .optional()
                   .describe('What finishing this step means, or what it is waiting on.'),
               }),
             )
-            .max(60),
+            .max(LEDGER_LIMITS.planSteps),
         },
         safeTool(async (input: { steps: PlanStep[] }) => {
           const projects = await requireProjectService();
@@ -225,7 +226,7 @@ export function createThreadMcpServer(appSessionIdForTool: () => string | undefi
             .number()
             .int()
             .min(1)
-            .max(10)
+            .max(LEDGER_LIMITS.earlierReplies + 1)
             .optional()
             .describe(
               'How many of this thread’s own final replies to read, oldest first. One — its latest — when omitted. Ask for more only when you need the thread of a conversation back, after a compaction or before a decision that turns on what it said earlier; moreReplies tells you how many are still there.',

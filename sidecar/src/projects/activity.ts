@@ -1,4 +1,5 @@
 import type { TranscriptEvent } from '../protocol.js';
+import { LEDGER_LIMITS } from './store.js';
 
 /** The kinds a model produces while answering; the rest are the app talking. */
 const GENERATED = new Set<TranscriptEvent['kind']>([
@@ -46,9 +47,9 @@ export class ProjectActivity {
       // A pre-tool explanation is not the final report.
       turn.text = '';
     } else if (event.kind === 'text') {
-      turn.text = (turn.text + (event.text ?? '')).slice(-8_192);
+      turn.text = (turn.text + (event.text ?? '')).slice(-LEDGER_LIMITS.text);
     } else if (event.kind === 'error') {
-      turn.error = (event.text ?? '').slice(0, 600);
+      turn.error = (event.text ?? '').slice(0, LEDGER_LIMITS.threadError);
     }
   }
 

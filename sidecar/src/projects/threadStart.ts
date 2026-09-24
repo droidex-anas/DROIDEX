@@ -1,4 +1,5 @@
 import type { ModelInfo, ProviderStatus, SessionSummary } from '../protocol.js';
+import { LEDGER_LIMITS } from './store.js';
 import { createThreadWorkspace, removeThreadWorkspace } from './threadWorkspace.js';
 import type { Project, ThreadInput, ThreadSpawnInput } from './types.js';
 
@@ -172,7 +173,7 @@ export function uniqueTitle(project: Project, title: string): string {
   const taken = new Set(project.threads.map((thread) => thread.title));
   if (!taken.has(title)) return title;
   for (let suffix = 2; suffix < 100; suffix += 1) {
-    const candidate = `${title} ${String(suffix)}`.slice(0, 120);
+    const candidate = `${title} ${String(suffix)}`.slice(0, LEDGER_LIMITS.title);
     if (!taken.has(candidate)) return candidate;
   }
   return title;
