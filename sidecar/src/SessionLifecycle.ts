@@ -961,6 +961,10 @@ export class SessionLifecycle {
         });
         return;
       }
+      // A Stop lands before the turn reports itself finished, so the flags it
+      // set are cleared here as they are for a typed turn.
+      liveSession.interrupting = false;
+      liveSession.interruptingForSteer = false;
       const next = liveSession.pendingSends.shift();
       this.publishTurnSettled(liveSession);
       if (next !== undefined) void this.driveInBackground(appSessionId, next);

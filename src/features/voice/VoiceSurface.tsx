@@ -51,10 +51,17 @@ function VoiceSurfaceDialog({ voice }: { voice: Voice }) {
       const stops = [...dialog.querySelectorAll<HTMLElement>(FOCUSABLE)].filter(
         (element) => element.offsetParent !== null || element === dialog,
       );
-      const edge = event.shiftKey ? stops.at(0) : stops.at(-1);
-      if (!edge || document.activeElement !== edge) return;
+      const first = stops.at(0);
+      const last = stops.at(-1);
+      if (!first || !last) return;
+      // Focus starts on the dialog itself, and can sit outside it entirely, so
+      // anything that is not one of the stops enters at the near end rather
+      // than letting Tab walk into the app behind.
+      const active = document.activeElement;
+      const inside = active instanceof HTMLElement && stops.includes(active);
+      if (inside && active !== (event.shiftKey ? first : last)) return;
       event.preventDefault();
-      (event.shiftKey ? stops.at(-1) : stops.at(0))?.focus();
+      (event.shiftKey ? last : first).focus();
     };
     window.addEventListener('keydown', onKeyDown);
     return () => {

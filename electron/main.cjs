@@ -336,7 +336,10 @@ function createMainWindow() {
 function registerMediaPermissions() {
   const isOwnWindow = (contents) =>
     mainWindow !== null && !mainWindow.isDestroyed() && contents === mainWindow.webContents;
-  const isAudioOnly = (types) => types !== undefined && types.every((type) => type === 'audio');
+  // An empty list is not audio: legacy capture requests arrive with no types
+  // and can still end up with a video device once approved.
+  const isAudioOnly = (types) =>
+    Array.isArray(types) && types.length > 0 && types.every((type) => type === 'audio');
   session.defaultSession.setPermissionRequestHandler((contents, permission, callback, details) => {
     if (permission === 'audioCapture') {
       callback(isOwnWindow(contents));

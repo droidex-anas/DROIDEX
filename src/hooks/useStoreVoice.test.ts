@@ -52,6 +52,29 @@ test('both sides of a spoken exchange are kept, and only spoken rows carry the m
   );
 });
 
+test('each speaker keeps its own line while both are talking', () => {
+  let state = initialState as AppState;
+  state = reducer(state, { type: 'VOICE_CONNECTING', appSessionId: 'm1', startedAt: 1 });
+  state = reducer(state, said('m1', 'assistant', 'Let me ', false));
+  // The user starts talking over the reply, and what they said is transcribed
+  // before the reply has finished.
+  state = reducer(state, said('m1', 'user', 'wait', true));
+  state = reducer(state, said('m1', 'assistant', 'check that.', false));
+  state = reducer(state, said('m1', 'assistant', 'Let me check that.', true));
+
+  assert.deepEqual(
+    state.voiceSessions.m1.lines.map((line) => [line.role, line.text, line.final]),
+    [
+      ['assistant', 'Let me check that.', true],
+      ['user', 'wait', true],
+    ],
+  );
+  assert.deepEqual(
+    state.transcripts.m1.map((row) => row.text),
+    ['wait', 'Let me check that.'],
+  );
+});
+
 test('spoken rows stay with their chat across a session switch and a second voice session', () => {
   let state = initialState as AppState;
   state = reducer(state, { type: 'VOICE_CONNECTING', appSessionId: 'm1', startedAt: 1 });

@@ -33,6 +33,7 @@ import {
   loadAgentConfig,
   loadCompactionModel,
   loadDefaultVoice,
+  loadKnownVoices,
   loadDiffView,
   loadHarnessModels,
   loadImagePasteQuality,
@@ -47,6 +48,7 @@ import {
   saveAgentConfig,
   saveCompactionModel,
   saveDefaultVoice,
+  saveKnownVoices,
   saveDiffView,
   saveHarnessModels,
   saveImagePasteQuality,
@@ -411,6 +413,8 @@ export interface AppState {
   // Voice mode: which voice speaks, and how much of the work it narrates while
   // the agent runs. An empty voice leaves the choice to the harness.
   defaultVoice: string;
+  /** The voices the harness last reported, for the picker in Settings. */
+  knownVoices: string[];
   narrationMode: VoiceNarration;
   // Chord bound to each rebindable app action (see lib/shortcuts).
   shortcutBindings: ShortcutBindings;
@@ -792,6 +796,7 @@ export const initialState: AppState = {
   liveEnterBehavior: loadLiveEnterBehavior(),
   imagePasteQuality: loadImagePasteQuality(),
   defaultVoice: loadDefaultVoice(),
+  knownVoices: loadKnownVoices(),
   narrationMode: loadNarrationMode(),
   shortcutBindings: loadShortcutBindings(),
   reviewOpenAppSessionId: null,
@@ -1831,10 +1836,17 @@ function baseReducer(state: AppState, action: Action): AppState {
     case 'VOICE_CONNECTING':
     case 'VOICE_ANSWERED':
     case 'VOICE_STATE':
-    case 'VOICE_VOICES':
     case 'VOICE_ERROR':
     case 'VOICE_ENDED':
       return reduceVoice(state, action);
+
+    // Settings has no conversation to ask what the harness offers, so what it
+    // offers is what the harness last answered here.
+    case 'VOICE_VOICES': {
+      const next = reduceVoice(state, action);
+      if (sameVoices(state.knownVoices, action.voices)) return next;
+      return { ...next, knownVoices: saveKnownVoices(action.voices) };
+    }
 
     // A finished utterance is also kept as a chat row, so what was said aloud
     // stays in the conversation after the voice surface closes. Partials are
@@ -1845,8 +1857,13 @@ function baseReducer(state: AppState, action: Action): AppState {
       const next = reduceVoice(state, action);
       if (!action.final) return next;
       const conversation = voiceSessionOf(next.voiceSessions, action.appSessionId);
-      const line = conversation.lines.at(-1);
-      if (!line?.final) return next;
+      // The line this closed is the newest finished one from that speaker: it
+      // is not always the last line, because the other side can have been
+      // talking at the same time.
+      const line = conversation.lines.findLast(
+        (candidate) => candidate.final && candidate.role === action.role,
+      );
+      if (!line) return next;
       return appendTranscriptEvent(
         next,
         spokenTranscriptEvent(action.appSessionId, conversation, line, Date.now()),
@@ -2314,6 +2331,11 @@ export function toastMessageForEvent(ev: ServerEvent): string | undefined {
     return ev.message;
   }
   return ev.type === 'child.error' && ev.operation !== 'open' ? ev.message : undefined;
+}
+
+// Two lists of the same voices in the same order are the same answer.
+function sameVoices(current: string[], next: string[]): boolean {
+  return current.length === next.length && current.every((voice, at) => voice === next[at]);
 }
 
 export function adaptEvent(ev: ServerEvent): Action | null {

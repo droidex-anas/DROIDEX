@@ -15,6 +15,9 @@ export interface SessionVoiceDependencies {
   // The live session for an app session id, or undefined when none is running.
   liveSession: (appSessionId: string) => ProviderSession | undefined;
   emit: (event: ServerEvent) => void;
+  // A conversation started or ended, which changes whether its chat counts as
+  // idle. Commands say so themselves; this is for the provider's own hang-ups.
+  liveChanged: () => void;
 }
 
 // The provider session a subscription speaks for, so a session swapped under
@@ -114,9 +117,11 @@ export class SessionVoice {
         return;
       case 'started':
         this.d.emit({ type: 'voice.state', appSessionId, status: 'live' });
+        this.d.liveChanged();
         return;
       case 'closed':
         this.d.emit({ type: 'voice.state', appSessionId, status: 'closed' });
+        this.d.liveChanged();
         return;
       case 'transcript':
         this.d.emit({

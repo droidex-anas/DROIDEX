@@ -150,6 +150,7 @@ const IMAGE_PASTE_QUALITY_STORAGE_KEY = 'droid-image-paste-quality';
 const DIFF_VIEW_STORAGE_KEY = 'droid-diff-view';
 const MODEL_SELECTOR_STYLE_STORAGE_KEY = 'droid-model-selector-style';
 const DEFAULT_VOICE_STORAGE_KEY = 'droid-default-voice';
+const KNOWN_VOICES_STORAGE_KEY = 'droid-known-voices';
 const NARRATION_MODE_STORAGE_KEY = 'droid-narration-mode';
 const REVIEW_SCOPE_STORAGE_KEY = 'droid-review-scope';
 const WORKSPACES_STORAGE_KEY = 'droid-workspaces';
@@ -298,6 +299,28 @@ export function saveDefaultVoice(value: string): string {
     /* ignore */
   }
   return value;
+}
+
+// The voices the harness last said it has. Settings has no conversation to ask,
+// and the app must not offer a voice the harness would refuse, so it offers
+// what it was last told and nothing until it has been told once.
+export function loadKnownVoices(): string[] {
+  try {
+    const raw: unknown = JSON.parse(getLocalStorage()?.getItem(KNOWN_VOICES_STORAGE_KEY) ?? '[]');
+    if (!Array.isArray(raw)) return [];
+    return raw.filter((voice): voice is string => typeof voice === 'string');
+  } catch {
+    return [];
+  }
+}
+
+export function saveKnownVoices(voices: string[]): string[] {
+  try {
+    getLocalStorage()?.setItem(KNOWN_VOICES_STORAGE_KEY, JSON.stringify(voices));
+  } catch {
+    /* ignore */
+  }
+  return voices;
 }
 
 // How much of the agent's work is spoken while it runs. Brief is the default;

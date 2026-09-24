@@ -97,34 +97,19 @@ const RECOMMENDED_LIMIT = 250_000;
 // The voices Codex's realtime thread speaks with. A voice session publishes the
 // harness's own list when it opens; this picker only has to name them, and the
 // empty value leaves the choice to the harness.
-const CODEX_VOICES = [
-  'alloy',
-  'arbor',
-  'ash',
-  'ballad',
-  'breeze',
-  'cedar',
-  'coral',
-  'cove',
-  'echo',
-  'ember',
-  'juniper',
-  'maple',
-  'marin',
-  'sage',
-  'sol',
-  'spruce',
-  'vale',
-  'verse',
-];
-
-const VOICE_OPTIONS: DropdownOption[] = [
-  { value: '', label: 'Harness default' },
-  ...CODEX_VOICES.map((voice) => ({
-    value: voice,
-    label: voice.charAt(0).toUpperCase() + voice.slice(1),
-  })),
-];
+// The harness names its own voices, and it only answers while a chat is live,
+// so Settings offers the ones it last reported. A voice chosen before, and no
+// longer offered, stays in the list rather than reading as no choice at all.
+function voiceOptions(known: string[], chosen: string): DropdownOption[] {
+  const voices = chosen && !known.includes(chosen) ? [...known, chosen] : known;
+  return [
+    { value: '', label: 'Harness default' },
+    ...voices.map((voice) => ({
+      value: voice,
+      label: voice.charAt(0).toUpperCase() + voice.slice(1),
+    })),
+  ];
+}
 
 // Themed preset picker for compaction token limits. Empty/"Factory default"
 // lets Droid use its model-dependent compaction threshold.
@@ -387,6 +372,7 @@ function GeneralSection() {
       liveEnterBehavior: current.liveEnterBehavior,
       imagePasteQuality: current.imagePasteQuality,
       defaultVoice: current.defaultVoice,
+      knownVoices: current.knownVoices,
       narrationMode: current.narrationMode,
       diffView: current.diffView,
       theme: current.theme,
@@ -479,7 +465,7 @@ function GeneralSection() {
             ariaLabel="Voice"
             value={state.defaultVoice}
             width="w-44"
-            options={VOICE_OPTIONS}
+            options={voiceOptions(state.knownVoices, state.defaultVoice)}
             onChange={(voice) => {
               dispatch({ type: 'SET_DEFAULT_VOICE', voice });
             }}

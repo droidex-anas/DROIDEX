@@ -160,12 +160,21 @@ function withSpokenText(
   final: boolean,
 ): VoiceSessionState {
   const lines = current.lines;
+  // Both sides can be mid-sentence at once: what the user is saying is
+  // transcribed while the assistant is still talking. Each side extends its
+  // own open line, wherever that line ended up.
+  const openAt = lines.findLastIndex((line) => !line.final && line.role === role);
   const open = lines.at(-1);
-  if (open && !open.final && open.role === role) {
+  if (openAt >= 0) {
+    const speaking = lines[openAt];
     // Deltas extend the line being spoken. The closing notification carries the
     // whole utterance, so it replaces what was accumulated.
-    const spoken = { ...open, text: final ? text || open.text : open.text + text, final };
-    return { ...current, lines: [...lines.slice(0, -1), spoken] };
+    const spoken = {
+      ...speaking,
+      text: final ? text || speaking.text : speaking.text + text,
+      final,
+    };
+    return { ...current, lines: lines.with(openAt, spoken) };
   }
   // The provider closes an utterance more than once, and it closes a short
   // reply before continuing it. Both arrive right after the line they belong

@@ -67,6 +67,9 @@ export class CodexSession implements ProviderSession {
   // conversation. It has no stream of its own, so its id is kept here: Stop has
   // to reach it, and its completion must not settle a turn the user typed.
   private delegatedTurnId?: string;
+  // The chat asked for the model's own effort, which the thread has to be told
+  // explicitly; an omitted effort would leave the previous one in place.
+  private effortCleared = false;
   private readonly prompts: OpenPrompts;
   private readonly startup = new CodexStartup();
   private readonly backgroundListeners = new Set<(event: NormalizedEvent) => void>();
@@ -208,8 +211,15 @@ export class CodexSession implements ProviderSession {
     // A cleared effort leaves `turn/start` to the model's own.
     const model = { ...this.model };
     if (settings.modelId !== undefined) model.modelId = settings.modelId;
-    if (settings.reasoningEffort === null) delete model.reasoningEffort;
-    else if (settings.reasoningEffort) model.reasoningEffort = settings.reasoningEffort;
+    if (settings.reasoningEffort === null) {
+      delete model.reasoningEffort;
+      // Omitting it would leave the thread on the effort it already had, so
+      // the reset has to be said out loud the next time settings are applied.
+      this.effortCleared = true;
+    } else if (settings.reasoningEffort) {
+      model.reasoningEffort = settings.reasoningEffort;
+      this.effortCleared = false;
+    }
     this.model = model;
     this.mapper.setModel({ ...this.model, modelId: this.model.modelId ?? this.threadModel });
     await this.pushThreadSettings();
@@ -226,11 +236,14 @@ export class CodexSession implements ProviderSession {
     const threadId = this.threadId;
     if (!threadId) return;
     const { modelId, reasoningEffort } = this.model;
-    if (!modelId && !reasoningEffort) return;
+    // `null` is how the thread is told to go back to the model's own effort;
+    // leaving the field out keeps whatever it had.
+    const effort = reasoningEffort ?? (this.effortCleared ? null : undefined);
+    if (!modelId && effort === undefined) return;
     await this.client.request('thread/settings/update', {
       threadId,
       ...(modelId ? { model: modelId } : {}),
-      ...(reasoningEffort ? { effort: reasoningEffort } : {}),
+      ...(effort !== undefined ? { effort } : {}),
     });
   }
 

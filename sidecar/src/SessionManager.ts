@@ -575,6 +575,9 @@ export class SessionManager {
       emit: (event) => {
         this.emit(event);
       },
+      liveChanged: () => {
+        this.runtimeRetirement.arm();
+      },
     });
     this.lifecycle = new SessionLifecycle({
       provider: (kind) => this.providerFor(kind),
@@ -854,6 +857,13 @@ export class SessionManager {
         await this.lifecycle.interrupt(cmd.appSessionId);
         return;
       case 'voice.start':
+        // A conversation needs the chat running, and idle retirement may have
+        // released its runtime while the chat stayed open. The orb is on that
+        // chat like any other, so it is resumed the way a prompt resumes it.
+        if (!this.registry.getLive(cmd.appSessionId)) await this.lifecycle.resume(cmd.appSessionId);
+        await this.sessionVoice.handle(cmd);
+        this.runtimeRetirement.arm();
+        return;
       case 'voice.stop':
         await this.sessionVoice.handle(cmd);
         // A chat being talked to is not idle however quiet its transcript is,
