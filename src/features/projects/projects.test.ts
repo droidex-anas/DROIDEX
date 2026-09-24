@@ -21,7 +21,6 @@ const project: ProjectView = {
   ],
   queued: 0,
   uncertain: 0,
-  uncertainTargets: [],
 };
 function wire(event: unknown) {
   return serverWireMessage({
@@ -64,16 +63,12 @@ test('validated project graphs and explicitly acknowledged results cross the bri
   assert.equal(wire({ type: 'project.result', requestId: 'request', ok: false }), null);
 });
 
-test('malformed graphs, bad counts and foreign uncertain targets are rejected', () => {
+test('malformed graphs and bad counts are rejected', () => {
   assert.equal(
     wire({ type: 'projects.snapshot', projects: [{ ...project, threads: [{}] }] }),
     null,
   );
   assert.equal(wire({ type: 'projects.snapshot', projects: [{ ...project, queued: -1 }] }), null);
-  assert.equal(
-    wire({ type: 'projects.snapshot', projects: [{ ...project, uncertainTargets: ['foreign'] }] }),
-    null,
-  );
   const cyclic = structuredClone(project);
   cyclic.threads[1].ownerAppSessionId = 'worker';
   assert.equal(wire({ type: 'projects.snapshot', projects: [cyclic] }), null);

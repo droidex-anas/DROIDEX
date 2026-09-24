@@ -18,12 +18,11 @@ const LEAD: Record<SessionAttentionKind, string> = {
   question: 'asked you a question',
 };
 
-export function useThreadAttentionNotifications(enabled: boolean): void {
+export function useThreadAttentionNotifications(): void {
   const store = useStoreApi();
   const notified = useRef<Set<string>>(new Set());
 
   useEffect(() => {
-    if (!enabled) return undefined;
     const review = () => {
       const state = store.getState();
       // Read from the store, which already holds the snapshot: a copy of its own
@@ -69,5 +68,5 @@ export function useThreadAttentionNotifications(enabled: boolean): void {
       window.removeEventListener('blur', onAway);
       document.removeEventListener('visibilitychange', onAway);
     };
-  }, [enabled, store]);
+  }, [store]);
 }

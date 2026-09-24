@@ -27,7 +27,7 @@ export function NewProjectForm({
   onSubmit: (input: ThreadInput) => Promise<void>;
   onCancel: () => void;
 }) {
-  const selection = useThreadSelection(undefined);
+  const selection = useThreadSelection();
   const [draft, setDraft] = useState({ title: '', prompt: '' });
   const [pending, setPending] = useState(false);
   const [error, setError] = useState('');

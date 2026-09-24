@@ -9,8 +9,6 @@ import type { ProjectView } from './types';
 
 export interface ProjectPulse {
   attention: number;
-  working: number;
-  idle: number;
   live: boolean;
   updatedAt: number;
   summary: string;
@@ -29,7 +27,6 @@ export function projectPulse(
   const live = everyone.some((row) => row.live) || project.launching > 0;
   const updatedAt = everyone.reduce((newest, row) => Math.max(newest, row.updatedAt), 0);
   return {
-    ...counts,
     attention: counts.attention + leadCounts.attention,
     live,
     updatedAt,
