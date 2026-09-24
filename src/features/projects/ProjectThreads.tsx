@@ -1,6 +1,6 @@
 import { ArrowLeft, ExternalLink } from '@droidex/icons';
-import { workspaceName } from '../../lib/workspaces';
 import { ThreadList } from './ThreadList';
+import { threadSubtitle } from './threadGreeting';
 import type { ProjectBoardEntry } from './useProjectBoard';
 
 /* One project: what it is, whether its coordination is held, and the threads it
@@ -23,7 +23,6 @@ export function ProjectThreads({
   onOpenThread: (appSessionId: string) => void;
 }) {
   const { project, rows } = entry;
-  const folder = project.cwd ? workspaceName(project.cwd) : '';
   return (
     <div className="mx-auto flex min-h-0 w-full max-w-3xl flex-1 flex-col px-6 pb-6">
       <div className="flex shrink-0 items-center gap-2 py-3">
@@ -69,7 +68,7 @@ export function ProjectThreads({
         <ThreadList
           rows={rows}
           plan={project.plan}
-          subtitle={[folder, `${String(rows.length)} threads`].filter(Boolean).join(' · ')}
+          subtitle={threadSubtitle(undefined, project.cwd, rows.length)}
           // This view carries its own held banner, with the control to resume.
           held={false}
           now={now}

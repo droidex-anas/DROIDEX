@@ -1,12 +1,12 @@
 import { useReducedMotion } from 'framer-motion';
 import { shallowEqual, useStoreDispatch, useStoreSelector } from '../../hooks/useStore';
-import { workspaceName } from '../../lib/workspaces';
 import type { UtilityTab } from '../../lib/utilityPanel';
 import type { TranscriptEvent } from '../../types/bridge';
 import { PaneTransition } from './PaneTransition';
 import { ThreadDetail } from './ThreadDetail';
 import { ThreadList } from './ThreadList';
 import type { ThreadRow } from './threadBoard';
+import { threadSubtitle } from './threadGreeting';
 import type { ProjectStep } from './types';
 import { entryForSession, useProjectBoard } from './useProjectBoard';
 import { useRelativeTimeNow } from './useRelativeTimeNow';
@@ -67,7 +67,7 @@ export function ThreadsWorkspace({ tab }: { tab: UtilityTab }) {
           <ThreadList
             rows={rows}
             plan={project?.plan ?? EMPTY_PLAN}
-            subtitle={subtitle(project?.title, session?.cwd, rows.length)}
+            subtitle={threadSubtitle(project?.title ?? 'This chat', session?.cwd, rows.length)}
             held={project?.paused === true}
             now={now}
             error={project?.error ?? ''}
@@ -82,9 +82,3 @@ export function ThreadsWorkspace({ tab }: { tab: UtilityTab }) {
 
 const EMPTY_PLAN: ProjectStep[] = [];
 const EMPTY_ROWS: ThreadRow[] = [];
-
-function subtitle(title: string | undefined, cwd: string | undefined, count: number): string {
-  const folder = cwd ? workspaceName(cwd) : '';
-  const threads = count === 1 ? '1 thread' : `${String(count)} threads`;
-  return [title ?? 'This chat', threads, folder].filter(Boolean).join(' · ');
-}
