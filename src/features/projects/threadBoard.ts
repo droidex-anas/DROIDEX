@@ -10,9 +10,9 @@ import type { ProviderKind, SessionSummary } from '../../types/bridge';
 import type { ProjectThread, ProjectView } from './types';
 
 /* What the Threads surfaces show. A thread is an ordinary DROIDEX conversation,
-   so its state is the state the inbox already computes for a chat — the same
-   statuses, the same labels, the same marks — rather than a second status
-   vocabulary invented for Projects. */
+   so its state is the one the inbox already computes for a chat, with the same
+   statuses, labels and marks, rather than a second status vocabulary invented
+   for Projects. */
 
 export interface ThreadRow {
   appSessionId: string;
@@ -112,13 +112,11 @@ function threadRow(
         attention: attention(thread.appSessionId),
         unread: false,
         // A thread that asked its owner is waiting on the project loop, not on
-        // the user — unless coordination is paused, and then nothing moves
-        // until they resume it.
+        // the user. While coordination is paused nothing moves until they
+        // resume it, so then it is waiting on them.
         awaitingReply: thread.waiting && project.paused,
       })
     : 'ready';
-  // A thread can be generating and still be stopped on the user; that is not
-  // working, so it wears its blocked mark rather than the spinner.
   const live = Boolean(session?.streaming) && !BLOCKED.includes(status);
   return {
     appSessionId: thread.appSessionId,

@@ -25,8 +25,6 @@ export function useThreadAttentionNotifications(): void {
   useEffect(() => {
     const review = () => {
       const state = store.getState();
-      // Read from the store, which already holds the snapshot: a copy of its own
-      // would start empty and stay empty until the next snapshot happened by.
       for (const project of state.projects) {
         for (const thread of project.threads) {
           if (!thread.ownerAppSessionId) continue;

@@ -1,10 +1,7 @@
 import { workspaceName } from '../../lib/workspaces';
 import type { ThreadCounts, ThreadRow } from './threadBoard';
 
-/* The line at the top of Threads. It is the panel's voice, not a status: short,
-   dry, a little warm, and it changes through the day so the panel never feels
-   like a dashboard. The sentence under it carries the facts, so this one is
-   free to be light and never has to claim anything. */
+// The panel's greeting, which changes through the day; the line under it has the facts.
 
 const LINES: Record<'attention' | 'working' | 'settled' | 'empty', readonly string[]> = {
   attention: ['Your turn.', 'Someone needs a word.', 'One call to make.', 'A thread is holding.'],

@@ -17,7 +17,7 @@ import type { ThreadInput } from './types';
 
 /* Projects: every project, and one project at a time with the threads it is
    running. A project is one conversation that hands work to others, so this
-   view answers two questions and no more — is anything waiting on me, and what
+   view answers two questions and no more: is anything waiting on me, and what
    is each project doing right now. Everything about a project lives here; the
    chat itself opens in the main pane when the user asks for it. */
 
@@ -262,7 +262,7 @@ function Empty({
       </h2>
       <p className="mx-auto mt-2 max-w-sm text-[13px] leading-6 text-droid-text-muted">
         {error ||
-          'A project is one conversation that leads the work. Give it a goal and it splits the parts that can run at once into threads — each its own chat, reporting back as it finishes.'}
+          'A project is one conversation that leads the work. Give it a goal and it splits the parts that can run at once into threads, each its own chat, reporting back as it finishes.'}
       </p>
       {!loading && !error && (
         <button

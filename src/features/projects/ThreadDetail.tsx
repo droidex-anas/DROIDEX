@@ -9,7 +9,7 @@ import type { TranscriptEvent } from '../../types/bridge';
 import type { ThreadRow } from './threadBoard';
 
 /* One thread, read in place: its own conversation exactly as the chat renders
-   it. There is no composer here on purpose — the chat that started the thread
+   it. There is no composer here on purpose: the chat that started the thread
    steers it with its own tools, and opening the thread gives the user the real
    composer with its model, autonomy and every other session control. */
 

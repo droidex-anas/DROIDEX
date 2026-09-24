@@ -7,8 +7,8 @@ import { ThreadSettings } from './ThreadSettings';
 import { buildThreadInput, useThreadSelection } from './useThreadSelection';
 import type { ThreadInput } from './types';
 
-/* Starting a project asks for one thing: the goal. Everything else — the
-   workspace it runs in and the harness, model and autonomy its lead carries —
+/* Starting a project asks for one thing: the goal. Everything else (the
+   workspace it runs in and the harness, model and autonomy its lead carries)
    sits on one quiet line under the composer, already filled in, because the
    threads the lead spawns inherit those and a person should not have to design
    a team before they can state what they want.
@@ -162,7 +162,7 @@ export function NewProjectForm({
           }}
           disabled={pending}
           maxLength={120}
-          placeholder="Optional — taken from the goal when empty"
+          placeholder="Optional, taken from the goal when empty"
           className="mt-1 w-full rounded-xl border border-droid-border bg-droid-bg px-3 py-2 text-[13px] text-droid-text outline-none transition-colors focus-visible:border-droid-border-hover"
         />
       </label>

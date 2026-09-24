@@ -10,9 +10,9 @@ import type { ProviderStatus } from '../../types/bridge';
 import type { ThreadCatalog, ThreadSelection } from './useThreadSelection';
 
 /* What a project's lead will run with: the app's own catalog list in the app's
-   own popover — the same harness segments, rows, search and effort levels the
-   composer offers — because a second, native picker would neither match the app
-   nor show a harness's real catalog. The harness sits above the models it
+   own popover, with the same harness segments, rows, search and effort levels
+   the composer offers, because a second, native picker would neither match the
+   app nor show a harness's real catalog. The harness sits above the models it
    decides, as it does in the composer. */
 
 export function ThreadSettings({

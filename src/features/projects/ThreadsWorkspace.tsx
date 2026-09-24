@@ -13,7 +13,7 @@ import { useRelativeTimeNow } from './useRelativeTimeNow';
 
 /* The Threads tab of the utility panel: every thread this chat runs, grouped by
    what it needs, and the one thread the user opened. One level deep, like the
-   Subagents tab — a thread never takes over the tab strip.
+   Subagents tab: a thread never takes over the tab strip.
 
    Threads are top-level conversations, so the panel reads the same session
    signals the sidebar does and leaves the chat itself in the main pane. */

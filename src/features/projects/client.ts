@@ -20,9 +20,7 @@ const pending = new Map<
   }
 >();
 
-/* The store owns the snapshot; this module owns the commands and their replies.
-   Keeping one copy means the chat list, the navigation and Projects can never
-   disagree about what is running. */
+// The store owns the snapshot; this module owns the commands and their replies.
 export function useProjects(): { projects: ProjectView[]; loading: boolean; error?: string } {
   return useStoreSelector((state) => {
     const unreachable = state.connection === 'error' ? runtimeError(state.connectionError) : '';
