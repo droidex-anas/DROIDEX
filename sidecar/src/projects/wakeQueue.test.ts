@@ -109,9 +109,10 @@ test('availability arriving during an awaited busy receipt is not lost', async (
   await queue.flush();
 });
 
-test('unacknowledged delivery pauses with a retained claim instead of retrying', async () => {
+test('an unacknowledged delivery keeps its claim and is not retried', async () => {
   const state = project();
   let calls = 0;
+  const failures: unknown[] = [];
   const queue = new ProjectWakeQueue(
     {
       deliver: async () => {
@@ -120,10 +121,8 @@ test('unacknowledged delivery pauses with a retained claim instead of retrying',
       },
     },
     async () => {},
-    (item, error) => {
-      item.paused = true;
-      item.error = String(error);
-      if (item.delivery) item.delivery.state = 'uncertain';
+    (_project, error) => {
+      failures.push(error);
     },
   );
   queue.kick(state);
@@ -132,9 +131,8 @@ test('unacknowledged delivery pauses with a retained claim instead of retrying',
   queue.capacityChanged([state]);
   await tick();
   assert.equal(calls, 1);
-  assert.equal(state.delivery?.state, 'uncertain');
+  assert.equal(failures.length, 1);
   assert.equal(state.delivery?.messages[0]?.id, 'first');
-  assert.equal(state.paused, true);
   queue.close();
   await queue.flush();
 });
