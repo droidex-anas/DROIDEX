@@ -2,10 +2,11 @@ import { shallowEqual, useStoreSelector } from '../../hooks/useStore';
 import { digestTranscript, type ActivityDigest } from '../../lib/activityDigest';
 import type { TranscriptEvent } from '../../types/bridge';
 
-/* The last step of the threads on screen, and only those. The inbox's own
+/* The last step of the threads a caller names, and only those. The inbox's own
    digest hook walks every transcript the window holds, which is the right cost
-   for an inbox and far too much for a row: a chat with a few thread lines in it
-   would pay that walk once per line on every store update.
+   for an inbox and far too much for a thread line or the board. The selection
+   changes only when one of the named transcripts does, so a caller that names
+   a thread is not redrawn while another conversation streams.
    Digests are pure, so one per transcript array is cached by its identity. */
 
 const cache = new WeakMap<readonly TranscriptEvent[], ActivityDigest | null>();
