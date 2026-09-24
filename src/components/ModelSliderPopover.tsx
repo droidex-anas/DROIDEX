@@ -7,7 +7,13 @@ import {
   offersReasoningEffort,
   reasoningEffortLabel,
 } from '../lib/reasoningEffort';
-import { ModelIcon, providerOf } from './ModelIcon';
+import {
+  ModelIcon,
+  DroidProxyMark,
+  isDroidProxyModel,
+  providerOf,
+  shortModelName,
+} from './ModelIcon';
 import HarnessSegments from '../features/providers/HarnessSegments';
 import ModelCategoryFilter from './ModelCategoryFilter';
 import { effortsFor, stepModel } from './ModelCatalogList';
@@ -191,8 +197,13 @@ export default function ModelSliderPopover({ onClose }: { onClose: () => void })
                 <span className="flex h-4 w-4 shrink-0 items-center justify-center">
                   <ModelIcon provider={providerOf(activeModel, resolvedModelId)} size={14} />
                 </span>
+                {isDroidProxyModel(activeModel, resolvedModelId) && (
+                  <span className="shrink-0 flex items-center text-droid-text-muted">
+                    <DroidProxyMark size={12} />
+                  </span>
+                )}
                 <span className="min-w-0 flex-1 truncate text-[13px] font-medium text-droid-text">
-                  {selectedLabel}
+                  {shortModelName(selectedLabel)}
                 </span>
                 {canReset && (
                   <button

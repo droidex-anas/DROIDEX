@@ -1,5 +1,9 @@
 import type { ModelInfo } from '../types/bridge';
 
+const DROIDPROXY_GLYPH_URL = new URL('../assets/droidproxy-glyph.png', import.meta.url).href;
+const DROIDPROXY_ID_PREFIX = 'custom:droidproxy:';
+const DROIDPROXY_NAME_PREFIX = 'DroidProxy: ';
+
 export type Provider =
   | 'anthropic'
   | 'claude'
@@ -41,6 +45,46 @@ function providerForIdentity(hay: string): Provider | undefined {
   if (/junie|jetbrains/.test(hay)) return 'junie';
   if (/glm|deepseek|minimax|qwen|droid core|factory/.test(hay)) return 'factory';
   return undefined;
+}
+
+// A model served through the DroidProxy app's local OAuth proxy. Its display
+// name carries a "DroidProxy: " prefix that the selector replaces with a mark.
+export function isDroidProxyModel(model?: ModelInfo, modelId?: string): boolean {
+  return (model?.id ?? modelId ?? '').startsWith(DROIDPROXY_ID_PREFIX);
+}
+
+// The display name without the proxy prefix (and, for proxy models, without
+// the subscription qualifier), for surfaces that show the DroidProxy mark
+// next to the name instead. The full name stays in tooltips.
+export function shortModelName(displayName: string): string {
+  if (!displayName.startsWith(DROIDPROXY_NAME_PREFIX)) return displayName;
+  const short = displayName.slice(DROIDPROXY_NAME_PREFIX.length);
+  for (const qualifier of ['Meta: ', 'Antigravity: ', 'GitHub Copilot: ']) {
+    if (short.startsWith(qualifier)) return short.slice(qualifier.length);
+  }
+  return short;
+}
+
+// The DroidProxy app's glyph as a theme-adaptive mark: the white glyph masks
+// a currentColor fill so it reads in both modes.
+export function DroidProxyMark({ size = 14 }: { size?: number }) {
+  return (
+    <span
+      role="img"
+      aria-label="via DroidProxy"
+      title="via DroidProxy"
+      className="shrink-0 inline-flex"
+      style={{
+        width: size,
+        height: size,
+        backgroundColor: 'currentColor',
+        maskImage: `url(${DROIDPROXY_GLYPH_URL})`,
+        maskSize: 'contain',
+        maskRepeat: 'no-repeat',
+        maskPosition: 'center',
+      }}
+    />
+  );
 }
 
 function FactoryMark({ size }: { size: number }) {

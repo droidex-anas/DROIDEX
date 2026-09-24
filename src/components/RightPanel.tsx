@@ -13,7 +13,13 @@ import {
 } from '../features/providers/providerIdentity';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Hash, ChevronRight, FileText } from 'lucide-react';
-import { ModelIcon, providerOf } from './ModelIcon';
+import {
+  ModelIcon,
+  DroidProxyMark,
+  isDroidProxyModel,
+  providerOf,
+  shortModelName,
+} from './ModelIcon';
 import NotesSection from './NotesSection';
 import { SubagentsSection } from './SubagentsPanel';
 import { useOpenAgent } from './agents/useOpenAgent';
@@ -122,7 +128,18 @@ export default function RightPanel() {
           size={16}
         />
       }
-      label={<span className="font-medium">{modelLabel}</span>}
+      label={
+        isDroidProxyModel(modelInfo, activeSession.modelId) ? (
+          <span className="flex items-center gap-1.5">
+            <DroidProxyMark size={12} />
+            <span className="min-w-0 flex-1 truncate font-medium">
+              {shortModelName(modelLabel)}
+            </span>
+          </span>
+        ) : (
+          <span className="font-medium">{modelLabel}</span>
+        )
+      }
       title={modelLabel}
       trailing={
         reasoningEffort ? (

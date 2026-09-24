@@ -1,7 +1,13 @@
 import { memo, useCallback, useRef } from 'react';
 import { offersReasoningEffort, reasoningEffortLabel } from '../lib/reasoningEffort';
 import type { ModelInfo, ProviderKind, ReasoningEffort } from '../types/bridge';
-import { ModelIcon, providerOf } from './ModelIcon';
+import {
+  ModelIcon,
+  DroidProxyMark,
+  isDroidProxyModel,
+  providerOf,
+  shortModelName,
+} from './ModelIcon';
 import { ModelListStatus, SelectionHighlight, useModelListVirtualizer } from './modelListParts';
 
 /** The catalog entry Droid CLI falls back to when no model is chosen. */
@@ -209,8 +215,13 @@ const ModelRow = memo(function ModelRow({
       >
         <ModelIcon provider={providerOf(model)} size={16} />
       </span>
+      {isDroidProxyModel(model) && (
+        <span className="shrink-0 flex items-center text-droid-text-muted">
+          <DroidProxyMark size={13} />
+        </span>
+      )}
       <span className="min-w-0 flex-1 truncate text-[14px] font-medium text-droid-text">
-        {label}
+        {shortModelName(label)}
       </span>
       {offersReasoning && (
         <>

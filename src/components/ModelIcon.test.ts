@@ -1,6 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { providerOf } from './ModelIcon';
+import { createElement } from 'react';
+import { renderToStaticMarkup } from 'react-dom/server';
+import { DroidProxyMark, isDroidProxyModel, providerOf, shortModelName } from './ModelIcon';
 import type { ModelInfo } from '../types/bridge';
 
 function custom(id: string, displayName: string, provider = 'openai'): ModelInfo {
@@ -69,4 +71,33 @@ test('built-in models still resolve from the provider field', () => {
     'anthropic',
   );
   assert.equal(providerOf(undefined, undefined), 'default');
+});
+
+test('droidproxy models are detected by id and shown without the text prefix', () => {
+  const proxied = custom('custom:droidproxy:gpt-6-sol', 'DroidProxy: GPT 6 Sol');
+  assert.equal(isDroidProxyModel(proxied), true);
+  assert.equal(isDroidProxyModel(undefined, 'custom:droidproxy:gpt-6-sol'), true);
+  assert.equal(shortModelName(proxied.displayName), 'GPT 6 Sol');
+
+  const plain = { id: 'gpt-4o', displayName: 'GPT 4o', provider: 'openai', isCustom: false };
+  assert.equal(isDroidProxyModel(plain), false);
+  assert.equal(isDroidProxyModel(undefined, undefined), false);
+  assert.equal(shortModelName('GPT 4o'), 'GPT 4o');
+  assert.equal(
+    shortModelName('DroidProxy: Antigravity: Gemini 3.1 Pro (High)'),
+    'Gemini 3.1 Pro (High)',
+  );
+  assert.equal(
+    shortModelName('DroidProxy: Meta: Muse Spark 1.3 Contributor'),
+    'Muse Spark 1.3 Contributor',
+  );
+  // Qualifiers survive without the proxy prefix: they are the only origin
+  // signal a direct custom model has.
+  assert.equal(shortModelName('Meta: Muse Spark 1.3 API'), 'Meta: Muse Spark 1.3 API');
+});
+
+test('the droidproxy mark masks the vendored glyph', () => {
+  const html = renderToStaticMarkup(createElement(DroidProxyMark, { size: 14 }));
+  assert.match(html, /droidproxy-glyph\.png/);
+  assert.match(html, /via DroidProxy/);
 });

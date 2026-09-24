@@ -125,7 +125,13 @@ import {
 import AskUserInline from './AskUserInline';
 import PermissionInline from './PermissionInline';
 import PlanApprovalInline from './PlanApprovalInline';
-import { ModelIcon, providerOf } from './ModelIcon';
+import {
+  ModelIcon,
+  DroidProxyMark,
+  isDroidProxyModel,
+  providerOf,
+  shortModelName,
+} from './ModelIcon';
 import { StartInBar } from './environment/StartInBar';
 import type { Autonomy, SkillInfo } from '../types/bridge';
 import { feedbackDraftFromCommand } from '../lib/feedbackReport';
@@ -2052,8 +2058,13 @@ export default function PromptInput({
                         }
                         size={14}
                       />
+                      {isDroidProxyModel(chipModel, primaryModelId) && (
+                        <span className="shrink-0 flex items-center text-droid-text-muted">
+                          <DroidProxyMark size={12} />
+                        </span>
+                      )}
                       <span className="truncate font-medium text-droid-text">
-                        {selectedModelLabel}
+                        {shortModelName(selectedModelLabel)}
                       </span>
                       {primaryReasoning && (
                         <span

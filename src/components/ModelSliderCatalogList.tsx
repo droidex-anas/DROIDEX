@@ -1,6 +1,12 @@
 import { ChevronRight } from 'lucide-react';
 import type { ModelInfo } from '../types/bridge';
-import { ModelIcon, providerOf } from './ModelIcon';
+import {
+  ModelIcon,
+  DroidProxyMark,
+  isDroidProxyModel,
+  providerOf,
+  shortModelName,
+} from './ModelIcon';
 import { ModelListStatus, SelectionHighlight, useModelListVirtualizer } from './modelListParts';
 
 /**
@@ -110,12 +116,17 @@ function SliderRow({
       >
         <ModelIcon provider={providerOf(model)} size={16} />
       </span>
+      {isDroidProxyModel(model) && (
+        <span className="shrink-0 flex items-center text-droid-text-muted">
+          <DroidProxyMark size={13} />
+        </span>
+      )}
       <span
         className={`min-w-0 flex-1 truncate text-[14px] font-medium ${
           selected ? 'text-droid-text' : 'text-droid-text-secondary'
         }`}
       >
-        {model.displayName}
+        {shortModelName(model.displayName)}
       </span>
       {selected && drillLabel !== undefined && (
         <button
