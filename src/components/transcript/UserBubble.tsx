@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type ComponentType } from 'react';
-import { Blocks, MousePointer2, PenLine } from 'lucide-react';
+import { MousePointer2, PenLine } from 'lucide-react';
 import type { BrowserTranscriptReference, TranscriptEvent } from '../../types/bridge';
 import type { OpenReviewFileHandler } from '../../lib/reviewFocus';
 import { ImageAttachmentChip } from '../media/ImageAttachmentChip';
@@ -7,6 +7,7 @@ import { FileChip } from '../composer/FileChip';
 import { isImagePath } from '../../lib/localImage';
 import { promptDisplayParts } from '../../lib/composePrompt';
 import { userMessageAttachments } from '../../lib/promptMentions';
+import { SkillIcon } from '../icons/SkillIcon';
 import { VisualizeIcon } from '../icons/VisualizeIcon';
 import { Markdown } from '../Markdown';
 import { MessageActions } from './primitives';
@@ -223,7 +224,7 @@ export function UserBubble({
           <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 rounded-2xl rounded-br-sm bg-droid-elevated px-4 py-2.5 text-[14px] leading-[1.6] text-droid-text">
             {display.visualize && <PromptChip icon={VisualizeIcon} label="Visualize" />}
             {display.skills.map((skill) => (
-              <PromptChip key={skill} icon={Blocks} label={skill} title={`Skill: ${skill}`} />
+              <PromptChip key={skill} icon={SkillIcon} label={skill} title={`Skill: ${skill}`} />
             ))}
             {display.text ? (
               <div className="w-full min-w-0">

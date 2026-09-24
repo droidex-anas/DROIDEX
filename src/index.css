@@ -76,6 +76,9 @@
     /* Skill invocations stay blue, with applyTheme selecting the accessible
        light-theme shade. */
     --droid-skill: #93c5fd;
+    /* Chip marks beside the skill label: rose Rosette, pink Visualize. */
+    --droid-skill-mark: #ed4772;
+    --droid-visualize-mark: #f472b6;
     /* Links stay blue for the same reason skills do: the neutral accent is
        near-white in dark themes, so accent-coloured links read as body text. */
     --droid-link: #7cb2ff;

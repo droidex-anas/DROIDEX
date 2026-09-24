@@ -1,6 +1,6 @@
 import { useCallback, useState, type SetStateAction } from 'react';
-import { Blocks } from 'lucide-react';
 import type { SkillInfo } from '../../types/bridge';
+import { SkillIcon } from '../icons/SkillIcon';
 import { VisualizeIcon } from '../icons/VisualizeIcon';
 import type { DraftSelection } from './DraftSelections';
 
@@ -69,7 +69,7 @@ export function useDraftSelections(onDraftEdited: () => void): DraftSelectionsSt
       : []),
     ...activeSkills.map((skill) => ({
       key: skill.filePath,
-      icon: Blocks,
+      icon: SkillIcon,
       label: skill.name,
       removeLabel: `Remove the ${skill.name} skill`,
       onRemove: () => {

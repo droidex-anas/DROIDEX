@@ -5,8 +5,8 @@
 // the active preset into an unsaved custom look until saved as a theme.
 
 import { useEffect, useRef, useState } from 'react';
-import { Check, Download, Pencil, Plus, Trash2, Upload } from 'lucide-react';
-import { Copy } from '@droidex/icons';
+import { Check, Pencil, Plus, Trash2 } from 'lucide-react';
+import { Copy, Download, Upload } from '@droidex/icons';
 import { shallowEqual, useStoreDispatch, useStoreSelector } from '../hooks/useStore';
 import { persistCustomThemes, type ThemeConfig } from '../hooks/persistedThemePreferences';
 import {
