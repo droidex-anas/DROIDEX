@@ -432,3 +432,79 @@ test('rejects object payloads that are actually arrays', () => {
     null,
   );
 });
+
+test('accepts droidproxy reports and rejects unknown providers or shapes', () => {
+  const account = { provider: 'codex', email: 'dev@example.com', disabled: false };
+  const provider = { provider: 'codex', enabled: true, canLoginHere: true, accounts: [account] };
+  const status = {
+    appInstalled: true,
+    proxyRunning: true,
+    backendRunning: true,
+    loginBinaryAvailable: true,
+    metaContributorMode: false,
+    factoryModelCount: 12,
+    factoryModelsInstalled: true,
+    providers: [provider],
+  };
+  assert.ok(serverWireMessage(batch({ type: 'droidproxy.report', status })));
+  assert.equal(
+    serverWireMessage(
+      batch({
+        type: 'droidproxy.report',
+        status: { ...status, providers: [{ ...provider, provider: 'cursor' }] },
+      }),
+    ),
+    null,
+  );
+  assert.equal(
+    serverWireMessage(
+      batch({
+        type: 'droidproxy.report',
+        status: {
+          ...status,
+          providers: [{ ...provider, accounts: [{ ...account, disabled: 'no' }] }],
+        },
+      }),
+    ),
+    null,
+  );
+  assert.equal(
+    serverWireMessage(
+      batch({ type: 'droidproxy.report', status: { ...status, factoryModelCount: undefined } }),
+    ),
+    null,
+  );
+});
+
+test('accepts droidproxy login and apply outcomes, rejects bad shapes', () => {
+  assert.ok(serverWireMessage(batch({ type: 'droidproxy.login.started', provider: 'kimi' })));
+  assert.equal(
+    serverWireMessage(batch({ type: 'droidproxy.login.started', provider: 'cursor' })),
+    null,
+  );
+  assert.ok(
+    serverWireMessage(batch({ type: 'droidproxy.login.done', provider: 'kimi', ok: true })),
+  );
+  assert.ok(
+    serverWireMessage(
+      batch({ type: 'droidproxy.login.done', provider: 'kimi', ok: false, cancelled: true }),
+    ),
+  );
+  assert.equal(
+    serverWireMessage(
+      batch({ type: 'droidproxy.login.done', provider: 'kimi', ok: false, cancelled: 'yes' }),
+    ),
+    null,
+  );
+  assert.ok(
+    serverWireMessage(
+      batch({ type: 'droidproxy.factoryModels.applied', ok: true, applied: 12, removed: 12 }),
+    ),
+  );
+  assert.equal(
+    serverWireMessage(
+      batch({ type: 'droidproxy.factoryModels.applied', ok: true, applied: '12', removed: 0 }),
+    ),
+    null,
+  );
+});

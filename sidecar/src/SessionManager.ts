@@ -109,6 +109,7 @@ import {
   type ProviderKind,
 } from './providers/providerKind.js';
 import { HarnessCliUpdater } from './providers/harnessCli.js';
+import { DroidProxyController } from './droidproxy/droidProxyController.js';
 import { LazyProvider } from './providers/lazyProvider.js';
 import { requireDroidSession } from './providers/droid/DroidProviderSession.js';
 import {
@@ -290,6 +291,9 @@ export class SessionManager {
     },
     () => this.refreshProviderStatus(),
   );
+  private readonly droidProxy = new DroidProxyController((event) => {
+    this.emit(event);
+  });
 
   constructor(
     private readonly emit: Emit,
@@ -799,6 +803,24 @@ export class SessionManager {
         return;
       case 'harness.cli.update':
         await this.harnessClis.update(cmd.provider);
+        return;
+      case 'droidproxy.status':
+        await this.droidProxy.report();
+        return;
+      case 'droidproxy.launch':
+        await this.droidProxy.launchApp();
+        return;
+      case 'droidproxy.login':
+        await this.droidProxy.login(cmd.provider);
+        return;
+      case 'droidproxy.login.cancel':
+        this.droidProxy.cancelLogin();
+        return;
+      case 'droidproxy.factoryModels.apply':
+        await this.droidProxy.applyFactoryModels();
+        // Factory settings changed under the catalog: reload it so the model
+        // picker offers the applied proxy models without a restart.
+        void this.refreshModelCatalog(true);
         return;
       case 'catalog.models': {
         const models = await this.getModels();

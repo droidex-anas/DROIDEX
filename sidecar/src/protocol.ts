@@ -295,6 +295,50 @@ export type HarnessCliState =
       // Why the last update from the app failed; cleared by a successful one.
       updateError?: string;
     };
+// OAuth subscription providers the DroidProxy settings page can report on.
+// Mirrors DroidProxy's provider set, not DROIDEX's harness set.
+export type DroidProxyProviderKey =
+  | 'claude'
+  | 'codex'
+  | 'antigravity'
+  | 'kimi'
+  | 'junie'
+  | 'grok'
+  | 'copilot'
+  | 'meta';
+// One connected OAuth account. Metadata only: emails, expiry, and flags.
+// Tokens and keys never cross the bridge.
+export interface DroidProxyAccount {
+  provider: DroidProxyProviderKey;
+  email?: string;
+  login?: string;
+  // ISO timestamp when the stored credential expires, if the auth file says.
+  expired?: string;
+  disabled: boolean;
+}
+export interface DroidProxyProviderState {
+  provider: DroidProxyProviderKey;
+  // DroidProxy's own per-provider toggle, read from its preferences.
+  enabled: boolean;
+  // Whether DROIDEX can run this provider's browser login itself.
+  canLoginHere: boolean;
+  accounts: DroidProxyAccount[];
+}
+export interface DroidProxyStatus {
+  appInstalled: boolean;
+  // localhost:8317, the endpoint Factory models point at.
+  proxyRunning: boolean;
+  // 127.0.0.1:8318, DroidProxy's OAuth backend.
+  backendRunning: boolean;
+  loginBinaryAvailable: boolean;
+  // DroidProxy's Meta contributor-mode flag: picks the Muse Spark variant.
+  metaContributorMode: boolean;
+  // Enabled catalog size: how many entries Apply writes.
+  factoryModelCount: number;
+  // Whether the proxy catalog is merged into Factory custom models.
+  factoryModelsInstalled: boolean;
+  providers: DroidProxyProviderState[];
+}
 
 export interface FactoryDefaultSettings {
   modelId?: string;
@@ -627,6 +671,11 @@ export type ClientCommand =
   | { type: 'cli.update'; channel?: InstallChannel }
   | { type: 'harness.cli.check' }
   | { type: 'harness.cli.update'; provider: HarnessCliProvider }
+  | { type: 'droidproxy.status' }
+  | { type: 'droidproxy.launch' }
+  | { type: 'droidproxy.login'; provider: DroidProxyProviderKey }
+  | { type: 'droidproxy.login.cancel' }
+  | { type: 'droidproxy.factoryModels.apply' }
   | { type: 'catalog.models' }
   | { type: 'provider.refresh' }
   | { type: 'catalog.tools'; providerSessionId?: string }
@@ -916,6 +965,23 @@ export type ServerEvent =
       ok: boolean;
       previousVersion?: string;
       version?: string;
+    }
+  | { type: 'droidproxy.report'; status: DroidProxyStatus }
+  | { type: 'droidproxy.login.started'; provider: DroidProxyProviderKey }
+  | {
+      type: 'droidproxy.login.done';
+      provider: DroidProxyProviderKey;
+      ok: boolean;
+      cancelled?: boolean;
+      message?: string;
+    }
+  | {
+      type: 'droidproxy.factoryModels.applied';
+      ok: boolean;
+      applied: number;
+      removed: number;
+      backupPath?: string;
+      message?: string;
     }
   | { type: 'session.created'; clientRef: string; session: SessionSummary }
   | { type: 'session.model_update_applied'; appSessionId: string; requestId: string }

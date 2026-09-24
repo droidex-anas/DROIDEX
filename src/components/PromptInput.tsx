@@ -110,6 +110,7 @@ import { DraftSelections } from './composer/DraftSelections';
 import ComposerMenu, { type SlashCommand } from './ComposerMenu';
 import { effectiveProvider } from '../features/providers/providerDraft';
 import {
+  PROVIDER_MARKS,
   providerDefaultModel,
   providerModelCatalog,
   providerModelSelection,
@@ -2043,7 +2044,14 @@ export default function PromptInput({
                     </>
                   ) : (
                     <>
-                      <ModelIcon provider={providerOf(chipModel, primaryModelId)} size={14} />
+                      <ModelIcon
+                        provider={
+                          (chipModel ?? primaryModelId)
+                            ? providerOf(chipModel, primaryModelId)
+                            : PROVIDER_MARKS[composerProvider]
+                        }
+                        size={14}
+                      />
                       <span className="truncate font-medium text-droid-text">
                         {selectedModelLabel}
                       </span>

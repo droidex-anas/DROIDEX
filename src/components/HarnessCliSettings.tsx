@@ -1,7 +1,8 @@
-import { PROVIDER_LABELS } from '../features/providers/providerIdentity';
+import { PROVIDER_LABELS, PROVIDER_MARKS } from '../features/providers/providerIdentity';
 import { useHarnessClis } from '../hooks/useHarnessClis';
 import { updateHarnessCli } from '../lib/commands';
 import type { HarnessCliState, HarnessInstallSource } from '../types/bridge';
+import { ModelIcon } from './ModelIcon';
 import { SettingRow } from './settingsKit';
 import { Switch } from './Switch';
 
@@ -48,7 +49,12 @@ export function HarnessCliSettings({
 }
 
 function HarnessCliRow({ cli }: { cli: HarnessCliState }) {
-  const label = PROVIDER_LABELS[cli.provider];
+  const label = (
+    <span className="inline-flex items-center gap-2">
+      <ModelIcon provider={PROVIDER_MARKS[cli.provider]} size={15} />
+      {PROVIDER_LABELS[cli.provider]}
+    </span>
+  );
   if (!cli.installed) {
     return (
       <SettingRow label={label} description="Not detected on this machine.">
@@ -82,7 +88,7 @@ function HarnessCliRow({ cli }: { cli: HarnessCliState }) {
             updateHarnessCli(cli.provider);
           }}
           disabled={cli.updating}
-          className="px-2.5 h-7 rounded-md bg-droid-elevated border border-droid-border text-[12px] text-droid-text hover:border-droid-border-hover transition-colors disabled:opacity-40"
+          className="px-2.5 h-7 rounded-md bg-droid-elevated text-[12px] text-droid-text hover:bg-droid-active transition-colors disabled:opacity-40"
         >
           {cli.updating ? 'Updating…' : 'Update'}
         </button>
