@@ -2,7 +2,12 @@ import type { McpServerConfig } from '@factory/droid-sdk';
 
 import type { CreateRuntimeSessionOptions } from '../DroidRuntime.js';
 import type { NormalizedEvent } from '../normalize.js';
-import type { Autonomy, ReasoningEffort, SessionInteractionMode } from '../protocol.js';
+import type {
+  Autonomy,
+  ReasoningEffort,
+  SessionInteractionMode,
+  VoiceNarration,
+} from '../protocol.js';
 import type { ProviderMention, SkillInfo } from './catalog.js';
 import type { ProviderInteractions } from './interactions.js';
 import type { ProviderKind } from './providerKind.js';
@@ -45,6 +50,8 @@ export interface ProviderModelSettings {
 // A live voice conversation on the same session: the client negotiates WebRTC
 // with the provider's own service, so audio never reaches the sidecar. The
 // session relays the handshake and reports what was said.
+export type { VoiceNarration };
+
 export interface ProviderVoiceStart {
   // The client's SDP offer, built from its microphone and audio sink.
   sdp: string;
@@ -54,13 +61,11 @@ export interface ProviderVoiceStart {
   narration?: VoiceNarration;
 }
 
-export type VoiceNarration = 'brief' | 'commentary';
-
 export type ProviderVoiceEvent =
   | { kind: 'answer'; sdp: string }
   | { kind: 'started' }
   | { kind: 'transcript'; role: 'user' | 'assistant'; text: string; final: boolean }
-  | { kind: 'closed'; reason: string }
+  | { kind: 'closed' }
   | { kind: 'error'; message: string };
 
 export interface ProviderVoice {

@@ -42,7 +42,6 @@ const HANDOFF_MODE: Record<VoiceNarration, string> = {
 interface VoicesResponse {
   voices: Record<string, string[] | undefined>;
   defaultV1?: string;
-  defaultV2?: string;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -97,10 +96,9 @@ export class CodexVoice implements ProviderVoice {
       const message = isRecord(params) ? textOf(params, 'message') : '';
       this.publish({ kind: 'error', message: message || 'The voice session failed.' });
     });
-    this.client.onNotification('thread/realtime/closed', (params) => {
+    this.client.onNotification('thread/realtime/closed', () => {
       this.live = false;
-      const reason = isRecord(params) ? textOf(params, 'reason') : '';
-      this.publish({ kind: 'closed', reason: reason || 'ended' });
+      this.publish({ kind: 'closed' });
     });
   }
 

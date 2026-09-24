@@ -2488,12 +2488,7 @@ export function adaptEvent(ev: ServerEvent): Action | null {
     case 'voice.answer':
       return { type: 'VOICE_ANSWERED', appSessionId: ev.appSessionId, sdp: ev.sdp };
     case 'voice.state':
-      return {
-        type: 'VOICE_STATE',
-        appSessionId: ev.appSessionId,
-        status: ev.status,
-        reason: ev.reason,
-      };
+      return { type: 'VOICE_STATE', appSessionId: ev.appSessionId, status: ev.status };
     case 'voice.transcript':
       return {
         type: 'VOICE_TRANSCRIPT',

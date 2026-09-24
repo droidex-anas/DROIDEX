@@ -30,8 +30,6 @@ export interface VoiceSessionState {
   status: VoiceStatus;
   /** Why the attempt failed; kept past the end so a surface can explain it. */
   error?: string;
-  /** Why the provider closed the conversation. */
-  reason?: string;
   voices: string[];
   defaultVoice?: string;
   /**
@@ -58,7 +56,7 @@ export interface VoiceSlice {
 export type VoiceAction =
   | { type: 'VOICE_CONNECTING'; appSessionId: string }
   | { type: 'VOICE_ANSWERED'; appSessionId: string; sdp: string }
-  | { type: 'VOICE_STATE'; appSessionId: string; status: 'live' | 'closed'; reason?: string }
+  | { type: 'VOICE_STATE'; appSessionId: string; status: 'live' | 'closed' }
   | {
       type: 'VOICE_TRANSCRIPT';
       appSessionId: string;
@@ -119,7 +117,6 @@ function nextSession(current: VoiceSessionState, action: VoiceAction): VoiceSess
       return {
         ...current,
         status: action.status,
-        reason: action.status === 'closed' ? action.reason : undefined,
       };
     case 'VOICE_TRANSCRIPT':
       return withSpokenText(current, action.role, action.text, action.final);

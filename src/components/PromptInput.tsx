@@ -39,7 +39,7 @@ import {
 } from '../lib/desktop';
 import { pathsInSequence, useImageAttachments } from '../hooks/useImageAttachments';
 import { useFileAttachments } from '../hooks/useFileAttachments';
-import { useVoiceContext } from '../features/voice/VoiceProvider';
+import { useVoiceControls } from '../features/voice/VoiceProvider';
 import { canUseVoice } from '../features/voice/voiceAvailability';
 import { useComposerFileDrop } from '../hooks/useComposerFileDrop';
 import { ImageChip } from './composer/ImageChip';
@@ -1594,7 +1594,7 @@ export default function PromptInput({
   // The app's one conversation, which may belong to another chat entirely. The
   // orb is offered only where this chat's harness can hold a conversation and
   // none is running anywhere; the chat that owns one gets its controls instead.
-  const voice = useVoiceContext();
+  const voice = useVoiceControls();
   const voiceHere = voice.view === 'dock';
   const canStartVoice = canUseVoice(composerProvider) && voice.view === 'off';
   // A chat started by voice has no prompt to create it with, so the orb creates
@@ -1755,7 +1755,7 @@ export default function PromptInput({
 
         {voiceHere && (
           <Suspense fallback={null}>
-            <VoiceOrbDock voice={voice} />
+            <VoiceOrbDock />
           </Suspense>
         )}
 
@@ -2048,7 +2048,7 @@ export default function PromptInput({
               <div ref={scheduleAnchorRef} className="shrink-0">
                 {voiceHere ? (
                   <Suspense fallback={null}>
-                    <VoiceComposerControls voice={voice} />
+                    <VoiceComposerControls />
                   </Suspense>
                 ) : canStartVoice ? (
                   <Suspense fallback={sendButton}>

@@ -29,16 +29,27 @@ const VoiceSurface = lazy(() =>
   import('./VoiceSurface').then((m) => ({ default: m.VoiceSurface })),
 );
 
-export interface VoiceContextValue extends Voice {
+/**
+ * What a chat needs to know about the conversation: whether one is running,
+ * where it is shown, and how to start or end it. Deliberately without the
+ * transcript, which changes with every spoken word: the composer reads this,
+ * and re-rendering it per word would put voice on the app's hot path.
+ */
+export interface VoiceControls {
+  view: Voice['view'];
+  working: boolean;
   /** The chat the conversation belongs to, or null while none is running. */
   appSessionId: string | null;
   /** True when that chat is the one on screen. */
   onScreen: boolean;
   /** Opens a conversation on a chat, ending one running elsewhere first. */
   openOn: (appSessionId: string) => void;
+  close: () => void;
 }
 
-const VoiceContext = createContext<VoiceContextValue | null>(null);
+const VoiceControlsContext = createContext<VoiceControls | null>(null);
+// The conversation itself, for the surfaces that show what is being said.
+const VoiceConversationContext = createContext<Voice | null>(null);
 
 /**
  * The app's one voice conversation.
@@ -122,32 +133,52 @@ export function VoiceProvider({ children }: { children: ReactNode }) {
     setOwner(null);
   }, [opening, voice.view]);
 
-  const value = useMemo<VoiceContextValue>(
-    () => ({ ...voice, close: hangUp, appSessionId: owner, onScreen, openOn }),
-    [hangUp, onScreen, openOn, owner, voice],
+  const conversation = useMemo<Voice>(() => ({ ...voice, close: hangUp }), [hangUp, voice]);
+  // Keyed on the few things that change when the call does, not on the words
+  // being said, so a chat only re-renders when the conversation itself moves.
+  const controls = useMemo<VoiceControls>(
+    () => ({
+      view: voice.view,
+      working: voice.working,
+      appSessionId: owner,
+      onScreen,
+      openOn,
+      close: hangUp,
+    }),
+    [hangUp, onScreen, openOn, owner, voice.view, voice.working],
   );
 
   return (
-    <VoiceContext.Provider value={value}>
-      {children}
-      <AnimatePresence>
-        {value.view === 'full' && (
-          <Suspense fallback={null}>
-            <VoiceSurface key="voice-surface" voice={value} />
-          </Suspense>
-        )}
-        {value.view === 'mini' && owner !== null && (
-          <Suspense fallback={null}>
-            <VoiceMiniBar key="voice-mini" voice={value} appSessionId={owner} />
-          </Suspense>
-        )}
-      </AnimatePresence>
-    </VoiceContext.Provider>
+    <VoiceControlsContext.Provider value={controls}>
+      <VoiceConversationContext.Provider value={conversation}>
+        {children}
+        <AnimatePresence>
+          {conversation.view === 'full' && (
+            <Suspense fallback={null}>
+              <VoiceSurface key="voice-surface" voice={conversation} />
+            </Suspense>
+          )}
+          {conversation.view === 'mini' && owner !== null && (
+            <Suspense fallback={null}>
+              <VoiceMiniBar key="voice-mini" voice={conversation} appSessionId={owner} />
+            </Suspense>
+          )}
+        </AnimatePresence>
+      </VoiceConversationContext.Provider>
+    </VoiceControlsContext.Provider>
   );
 }
 
-export function useVoiceContext(): VoiceContextValue {
-  const value = useContext(VoiceContext);
+/** For a chat: whether a conversation is running, and how to start or end one. */
+export function useVoiceControls(): VoiceControls {
+  const value = useContext(VoiceControlsContext);
+  if (!value) throw new Error('Voice is only available inside VoiceProvider.');
+  return value;
+}
+
+/** For a surface that shows the conversation: the live session behind it. */
+export function useVoiceConversation(): Voice {
+  const value = useContext(VoiceConversationContext);
   if (!value) throw new Error('Voice is only available inside VoiceProvider.');
   return value;
 }

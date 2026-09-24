@@ -73,7 +73,7 @@ export class SessionVoice {
   }
 
   // Resolves the session's voice port and subscribes this app session to it
-  // once. A session without one gets the reason instead.
+  // once. A session without one gets an error saying why instead.
   private voiceFor(appSessionId: string): ProviderVoice | undefined {
     const session = this.d.liveSession(appSessionId);
     if (!session) {
@@ -106,7 +106,7 @@ export class SessionVoice {
         this.d.emit({ type: 'voice.state', appSessionId, status: 'live' });
         return;
       case 'closed':
-        this.d.emit({ type: 'voice.state', appSessionId, status: 'closed', reason: event.reason });
+        this.d.emit({ type: 'voice.state', appSessionId, status: 'closed' });
         return;
       case 'transcript':
         this.d.emit({

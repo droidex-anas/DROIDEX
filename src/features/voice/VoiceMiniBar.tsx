@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState } from 'react';
-import { AnimatePresence, motion, useMotionValue, useReducedMotion } from 'framer-motion';
+import { motion, useMotionValue, useReducedMotion } from 'framer-motion';
 import { ChevronDown, ChevronUp, MessageSquareText, Mic, MicOff, X } from 'lucide-react';
+import { Popover } from '../../components/environment/Popover';
 import { useStoreDispatch } from '../../hooks/useStore';
 import { VoiceOrb } from './VoiceOrb';
 import { voiceStatusLabel } from './voiceStatus';
@@ -23,7 +24,6 @@ const OFFSET_STORAGE_KEY = 'droid-voice-mini-bar-offset';
 // The tail worth reading over a chat. The rest of the conversation is in the
 // chat's own transcript, which is what the first button goes back to.
 const PANEL_LINES = 8;
-const PANEL_MAX_HEIGHT_PX = 220;
 const PANEL_WIDTH_PX = 288;
 
 /** How far the bar has been dragged from that corner. */
@@ -42,15 +42,6 @@ interface DragBounds {
 /** Pinned to the corner until the bar has been measured against the window. */
 const PINNED: DragBounds = { left: 0, right: 0, top: 0, bottom: 0 };
 
-/**
- * Where the panel opens: above or below the bar, and how far it is shifted
- * sideways so it stays inside the window however the bar has been dragged.
- */
-interface PanelPlacement {
-  side: 'above' | 'below';
-  offsetX: number;
-}
-
 const buttonClass =
   'cursor-pointer rounded-full p-1.5 text-droid-text-secondary transition-colors hover:bg-droid-bg/50 hover:text-droid-text';
 
@@ -60,9 +51,8 @@ export function VoiceMiniBar({ voice, appSessionId }: { voice: Voice; appSession
   const { session } = voice;
   const barRef = useRef<HTMLDivElement>(null);
   const feedRef = useRef<HTMLDivElement>(null);
-  const chevronRef = useRef<HTMLButtonElement>(null);
   const panelId = useId();
-  const [panel, setPanel] = useState<PanelPlacement | null>(null);
+  const [panel, setPanel] = useState(false);
   const [bounds, setBounds] = useState<DragBounds>(PINNED);
 
   // Where the bar sits lives in motion values rather than in state, so neither
@@ -106,25 +96,13 @@ export function VoiceMiniBar({ voice, appSessionId }: { voice: Voice; appSession
   }, [panel, session.lines]);
 
   const togglePanel = useCallback(() => {
-    setPanel((current) => {
-      if (current) return null;
-      const bar = barRef.current?.getBoundingClientRect();
-      if (!bar) return { side: 'below', offsetX: 0 };
-      // It opens away from the edge the bar is nearest, so dragging the bar low
-      // does not push what was said off the bottom of the window.
-      const roomBelow = window.innerHeight - bar.bottom;
-      const side = roomBelow < PANEL_MAX_HEIGHT_PX + EDGE_MARGIN_PX ? 'above' : 'below';
-      // It hangs from the bar's right edge, so a bar dragged to the left would
-      // hang off the window. Keep it inside, and let it sit beside the bar
-      // rather than under it when there is no other room.
-      const hanging = bar.right - PANEL_WIDTH_PX;
-      const room = window.innerWidth - PANEL_WIDTH_PX - EDGE_MARGIN_PX;
-      const left = Math.max(EDGE_MARGIN_PX, Math.min(hanging, room));
-      return { side, offsetX: left - hanging };
-    });
+    setPanel((open) => !open);
+  }, []);
+  const closePanel = useCallback(() => {
+    setPanel(false);
   }, []);
 
-  const status = voiceStatusLabel({ ...session, working: voice.working });
+  const status = voiceStatusLabel(voice.activity);
   const lines = session.lines.slice(-PANEL_LINES);
 
   return (
@@ -139,9 +117,9 @@ export function VoiceMiniBar({ voice, appSessionId }: { voice: Voice; appSession
       }}
       onDragStart={() => {
         dragged.current = true;
-        // What was said would follow the bar around and drift off the window;
-        // it opens again where the bar lands.
-        setPanel(null);
+        // What was said would follow the bar around; it opens again where the
+        // bar lands.
+        setPanel(false);
       }}
       onDragEnd={() => {
         writeOffset({ x: x.get(), y: y.get() });
@@ -152,12 +130,6 @@ export function VoiceMiniBar({ voice, appSessionId }: { voice: Voice; appSession
         event.preventDefault();
         event.stopPropagation();
       }}
-      onKeyDown={(event) => {
-        if (event.key !== 'Escape' || !panel) return;
-        event.stopPropagation();
-        setPanel(null);
-        chevronRef.current?.focus();
-      }}
       initial={reducedMotion ? { opacity: 0 } : { opacity: 0, scale: 0.92 }}
       animate={{ opacity: 1, scale: 1 }}
       exit={reducedMotion ? { opacity: 0 } : { opacity: 0, scale: 0.92 }}
@@ -165,57 +137,45 @@ export function VoiceMiniBar({ voice, appSessionId }: { voice: Voice; appSession
       style={{ x, y, top: EDGE_MARGIN_PX, right: EDGE_MARGIN_PX }}
       className="fixed z-[1150] cursor-grab active:cursor-grabbing"
     >
-      <AnimatePresence>
-        {panel && (
-          <motion.div
-            ref={feedRef}
-            id={panelId}
-            tabIndex={0}
-            role="log"
-            aria-label="What was said"
-            // Reading and scrolling the panel is not a drag of the bar under it.
-            onPointerDownCapture={(event) => {
-              event.stopPropagation();
-            }}
-            initial={
-              reducedMotion ? { opacity: 0 } : { opacity: 0, y: panel.side === 'above' ? 6 : -6 }
-            }
-            animate={{ opacity: 1, y: 0 }}
-            exit={
-              reducedMotion ? { opacity: 0 } : { opacity: 0, y: panel.side === 'above' ? 6 : -6 }
-            }
-            transition={{ duration: 0.18, ease: [0.16, 1, 0.3, 1] }}
-            style={{
-              maxHeight: PANEL_MAX_HEIGHT_PX,
-              width: PANEL_WIDTH_PX,
-              marginLeft: panel.offsetX,
-            }}
-            className={`absolute right-0 cursor-auto overflow-y-auto rounded-2xl border border-droid-border bg-droid-raised p-3 shadow-droid ${
-              panel.side === 'above' ? 'bottom-full mb-2' : 'top-full mt-2'
-            }`}
-          >
-            {lines.length === 0 ? (
-              <p className="text-[12px] text-droid-text-muted">Nothing said yet.</p>
-            ) : (
-              <ul className="flex flex-col gap-2">
-                {lines.map((line) => (
-                  <li key={line.id} className={line.role === 'user' ? 'flex justify-end' : ''}>
-                    <span
-                      className={
-                        line.role === 'user'
-                          ? 'max-w-[85%] rounded-xl rounded-br-sm bg-droid-elevated px-2.5 py-1.5 text-[12px] leading-[1.5] text-droid-text'
-                          : 'block text-[12px] leading-[1.5] text-droid-text-secondary'
-                      }
-                    >
-                      {line.text}
-                    </span>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </motion.div>
-        )}
-      </AnimatePresence>
+      {/* The app's own panel: it anchors to the bar wherever it was dragged,
+          clamps itself to the window, and closes on an outside click or
+          Escape. */}
+      <Popover
+        open={panel}
+        onClose={closePanel}
+        anchorRef={barRef}
+        label="What was said"
+        width={PANEL_WIDTH_PX}
+      >
+        <div
+          ref={feedRef}
+          id={panelId}
+          tabIndex={0}
+          role="log"
+          aria-label="What was said"
+          className="max-h-[220px] overflow-y-auto p-3"
+        >
+          {lines.length === 0 ? (
+            <p className="text-[12px] text-droid-text-muted">Nothing said yet.</p>
+          ) : (
+            <ul className="flex flex-col gap-2">
+              {lines.map((line) => (
+                <li key={line.id} className={line.role === 'user' ? 'flex justify-end' : ''}>
+                  <span
+                    className={
+                      line.role === 'user'
+                        ? 'max-w-[85%] rounded-xl rounded-br-sm bg-droid-elevated px-2.5 py-1.5 text-[12px] leading-[1.5] text-droid-text'
+                        : 'block text-[12px] leading-[1.5] text-droid-text-secondary'
+                    }
+                  >
+                    {line.text}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      </Popover>
 
       <div
         role="group"
@@ -266,20 +226,15 @@ export function VoiceMiniBar({ voice, appSessionId }: { voice: Voice; appSession
         </button>
         <Hairline />
         <button
-          ref={chevronRef}
           type="button"
           aria-label={panel ? 'Hide what was said' : 'Show what was said'}
           title={panel ? 'Hide what was said' : 'Show what was said'}
-          aria-expanded={panel !== null}
+          aria-expanded={panel}
           aria-controls={panelId}
           onClick={togglePanel}
           className={buttonClass}
         >
-          {panel?.side === 'above' ? (
-            <ChevronUp className="h-3.5 w-3.5" />
-          ) : (
-            <ChevronDown className="h-3.5 w-3.5" />
-          )}
+          {panel ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
         </button>
       </div>
     </motion.div>

@@ -898,7 +898,7 @@ export type VoiceNarration = 'brief' | 'commentary';
 
 export type ServerEvent =
   | { type: 'voice.answer'; appSessionId: string; sdp: string }
-  | { type: 'voice.state'; appSessionId: string; status: 'live' | 'closed'; reason?: string }
+  | { type: 'voice.state'; appSessionId: string; status: 'live' | 'closed' }
   | {
       type: 'voice.transcript';
       appSessionId: string;

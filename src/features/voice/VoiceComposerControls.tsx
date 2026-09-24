@@ -1,12 +1,13 @@
 import { Mic, MicOff, X } from 'lucide-react';
-import type { Voice } from './useVoice';
+import { useVoiceConversation } from './VoiceProvider';
 
 /**
  * What the composer's action slot becomes while a conversation runs beside the
  * chat: mute, and hang up. Typing still works, so the draft keeps its own
  * controls and only the send button gives way.
  */
-export function VoiceComposerControls({ voice }: { voice: Voice }) {
+export function VoiceComposerControls() {
+  const voice = useVoiceConversation();
   const { session } = voice;
   return (
     <div className="flex items-center gap-1">

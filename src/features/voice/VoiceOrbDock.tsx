@@ -1,7 +1,7 @@
 import { motion, useReducedMotion } from 'framer-motion';
 import { VoiceOrb } from './VoiceOrb';
 import { voiceStatusIsLive, voiceStatusLabel } from './voiceStatus';
-import type { Voice } from './useVoice';
+import { useVoiceConversation } from './VoiceProvider';
 
 /**
  * The conversation with the chat in view: the orb floats above the composer
@@ -9,11 +9,10 @@ import type { Voice } from './useVoice';
  * controls and the transcript keeps what was said. Clicking the orb goes back
  * to the full surface.
  */
-export function VoiceOrbDock({ voice }: { voice: Voice }) {
+export function VoiceOrbDock() {
+  const voice = useVoiceConversation();
   const reducedMotion = useReducedMotion();
-  if (voice.view !== 'dock') return null;
   const { session } = voice;
-  const activity = { ...session, working: voice.working };
 
   return (
     <motion.div
@@ -34,10 +33,10 @@ export function VoiceOrbDock({ voice }: { voice: Voice }) {
       </button>
       <span
         className={`text-[11px] ${
-          voiceStatusIsLive(activity) ? 'shimmer-text font-medium' : 'text-droid-text-muted'
+          voiceStatusIsLive(voice.activity) ? 'shimmer-text font-medium' : 'text-droid-text-muted'
         }`}
       >
-        {voiceStatusLabel(activity)}
+        {voiceStatusLabel(voice.activity)}
       </span>
     </motion.div>
   );

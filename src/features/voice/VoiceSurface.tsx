@@ -4,6 +4,7 @@ import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 import { ChevronDown, Keyboard, Mic, MicOff, Settings2, X } from 'lucide-react';
 import { useObscuresNativeSurfaces } from '../../hooks/useObscuresNativeSurfaces';
 import { WINDOW_CONTROLS_INSET_PX } from '../../lib/windowChrome';
+import { pushEscapeLayer } from '../../components/environment/usePopover';
 import { MessageBody } from '../../components/MessageBody';
 import { SpokenMark } from '../../components/transcript/primitives';
 import { UserBubble } from '../../components/transcript/UserBubble';
@@ -14,7 +15,6 @@ import type { Voice } from './useVoice';
 
 /** Full-window voice surface, portalled like every overlay in the app. */
 export function VoiceSurface({ voice }: { voice: Voice }) {
-  if (voice.view !== 'full') return null;
   return createPortal(<VoiceSurfaceDialog voice={voice} />, document.body);
 }
 
@@ -27,7 +27,6 @@ function VoiceSurfaceDialog({ voice }: { voice: Voice }) {
   const reducedMotion = useReducedMotion();
   const [settingsOpen, setSettingsOpen] = useState(false);
   const { session } = voice;
-  const activity = { ...session, working: voice.working };
   const live = session.status === 'live';
   useObscuresNativeSurfaces();
 
@@ -40,19 +39,16 @@ function VoiceSurfaceDialog({ voice }: { voice: Voice }) {
   }, []);
 
   // Escape closes the settings first, then puts the chat back without hanging
-  // up, the way a call minimises.
+  // up, the way a call minimises. Two layers on the app's Escape stack, so the
+  // keystroke never also reaches the composer underneath.
+  const minimize = voice.minimize;
+  useEffect(() => pushEscapeLayer(minimize), [minimize]);
   useEffect(() => {
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key !== 'Escape') return;
-      event.stopPropagation();
-      if (settingsOpen) setSettingsOpen(false);
-      else voice.minimize();
-    };
-    window.addEventListener('keydown', onKeyDown, true);
-    return () => {
-      window.removeEventListener('keydown', onKeyDown, true);
-    };
-  }, [settingsOpen, voice]);
+    if (!settingsOpen) return;
+    return pushEscapeLayer(() => {
+      setSettingsOpen(false);
+    });
+  }, [settingsOpen]);
 
   useEffect(() => {
     const previousOverflow = document.body.style.overflow;
@@ -129,11 +125,11 @@ function VoiceSurfaceDialog({ voice }: { voice: Voice }) {
         </motion.div>
         <p
           className={`text-[13px] ${
-            voiceStatusIsLive(activity) ? 'shimmer-text font-medium' : 'text-droid-text-muted'
+            voiceStatusIsLive(voice.activity) ? 'shimmer-text font-medium' : 'text-droid-text-muted'
           }`}
           aria-live="polite"
         >
-          {voiceStatusLabel(activity)}
+          {voiceStatusLabel(voice.activity)}
         </p>
       </div>
 

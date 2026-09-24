@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import type { VoiceNarration } from '../../types/bridge';
 import { useSessionLive } from '../../hooks/useSessionLive';
 import { useVoiceSession, type VoiceSession } from './useVoiceSession';
+import type { VoiceActivity } from './voiceStatus';
 
 /**
  * Where the conversation is shown: nowhere, the full window, over the composer
@@ -15,6 +16,8 @@ type VoicePlacement = 'off' | 'full' | 'dock';
 export interface Voice {
   /** The chat's model is running a turn this conversation asked for. */
   working: boolean;
+  /** What the conversation is doing, for the line every surface shows. */
+  activity: VoiceActivity;
   view: VoiceView;
   session: VoiceSession;
   /** Opens the full surface and connects. */
@@ -106,6 +109,7 @@ export function useVoice(
     view: placement === 'dock' && !onScreen ? 'mini' : placement,
     session,
     working,
+    activity: { ...session, working },
     open,
     minimize,
     expand,
