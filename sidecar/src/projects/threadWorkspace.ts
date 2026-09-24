@@ -17,7 +17,7 @@ import {
    already working in the checkout the new one would share, or when the chat
    asks for one, so neither thread ever sees the other's half-finished tree. */
 
-export interface ThreadWorkspaceRequest {
+interface ThreadWorkspaceRequest {
   /** The project's checkout, which the worktree is cut from. */
   cwd: string;
   title: string;
