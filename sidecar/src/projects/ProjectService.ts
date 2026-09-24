@@ -1,15 +1,22 @@
 import type { AutomationDeliveryReceipt } from '../automations/types.js';
 import { ProjectWakeQueue } from './ProjectWakeQueue.js';
-import { clearAsk, ProjectTurns, requireThread, threadState } from './projectTurns.js';
+import {
+  clearAsk,
+  ProjectTurns,
+  requireThread,
+  threadState,
+  type ThreadState,
+} from './projectTurns.js';
 import { randomUUID } from 'node:crypto';
 import type { ProviderStatus, ServerEvent, SessionSummary } from '../protocol.js';
 import { LEDGER_LIMITS, type ProjectPersistence } from './store.js';
 import {
+  checkWithinAutonomy,
   discardThreadCheckout,
   inheritSettings,
   LEAD_BRIEF,
   THREAD_BRIEF,
-  resolveModel,
+  resolveModelId,
   threadCheckout,
   threadPrompt,
   uniqueTitle,
@@ -18,7 +25,6 @@ import {
 import type {
   Project,
   ProjectStep,
-  ProjectThread,
   ProjectView,
   ThreadInput,
   ThreadMessage,
@@ -53,8 +59,6 @@ export interface ProjectPort {
 }
 
 /** What a chat reads back about a thread it owns. */
-type ThreadState = 'working' | 'waiting' | 'stopped' | 'failed' | 'idle';
-
 export interface ThreadReadout {
   threadId: string;
   title: string;
@@ -71,7 +75,6 @@ export interface ThreadReadout {
   autonomy?: string;
 }
 
-const autonomy = ['off', 'low', 'medium', 'high'];
 export class ProjectService {
   private readonly projects = new Map<string, Project>();
   private readonly membership = new Map<string, Project>();
@@ -202,12 +205,15 @@ export class ProjectService {
     const owner = this.requireSession(source);
     if (owner.sessionPurpose !== 'chat')
       throw new Error('Only ordinary chats can own project threads.');
-    const input = resolveModel(
-      await this.sessions.catalog(),
-      owner,
-      inheritSettings(owner, requested),
-    );
-    this.checkAutonomy(owner, input);
+    const input = inheritSettings(owner, requested);
+    if (input.modelId)
+      input.modelId = resolveModelId(
+        await this.sessions.catalog(),
+        owner,
+        input.provider,
+        input.modelId,
+      );
+    checkWithinAutonomy(owner, input.autonomy);
     let project = this.membership.get(source);
     if (!project) {
       project = this.newProject(owner.title);
@@ -223,7 +229,7 @@ export class ProjectService {
     let depth = 0;
     while (ancestor) {
       depth += 1;
-      ancestor = this.thread(project, ancestor).ownerAppSessionId;
+      ancestor = requireThread(project, ancestor).ownerAppSessionId;
     }
     if (depth >= 4) throw new Error('Project thread nesting is limited to three levels.');
     // Everything a spawn can be refused for is checked before its checkout is
@@ -301,12 +307,12 @@ export class ProjectService {
   async setPlan(source: string, steps: readonly Omit<ProjectStep, 'id'>[]): Promise<number> {
     this.requireOpen();
     const project = this.requireProjectFor(source);
-    if (this.thread(project, source).ownerAppSessionId)
+    if (requireThread(project, source).ownerAppSessionId)
       throw new Error('Only the project’s main chat keeps its plan.');
     if (steps.length > LEDGER_LIMITS.planSteps)
       throw new Error(`A project plan holds at most ${String(LEDGER_LIMITS.planSteps)} steps.`);
     project.plan = steps.map((step, index) => {
-      if (step.threadAppSessionId) this.thread(project, step.threadAppSessionId);
+      if (step.threadAppSessionId) requireThread(project, step.threadAppSessionId);
       return {
         id: String(index + 1),
         title: step.title.slice(0, LEDGER_LIMITS.stepTitle),
@@ -345,7 +351,7 @@ export class ProjectService {
     answers?: string[],
   ): Promise<'answered' | 'queued' | 'already-answered'> {
     const project = this.controlledProject(source, target);
-    const thread = this.thread(project, target);
+    const thread = requireThread(project, target);
     const ask = thread.ask;
     if (ask && !answers?.length)
       throw new Error(
@@ -389,7 +395,7 @@ export class ProjectService {
    */
   read(source: string, target: string, replies = 1): ThreadReadout {
     const project = this.controlledProject(source, target);
-    const thread = this.thread(project, target);
+    const thread = requireThread(project, target);
     const session = this.sessions.get(target);
     const kept = thread.reply ? [...(thread.earlierReplies ?? []), thread.reply] : [];
     const wanted = Math.min(Math.max(replies, 1), LEDGER_LIMITS.earlierReplies + 1);
@@ -421,19 +427,12 @@ export class ProjectService {
     const project = this.controlledProject(source, target);
     const owner = this.requireSession(source);
     const session = this.requireSession(target);
-    const wanted = settings.modelId
-      ? resolveModel(await this.sessions.catalog(), owner, {
-          title: '',
-          prompt: '',
-          provider: session.provider,
-          autonomy: session.autonomy,
-          modelId: settings.modelId,
-        }).modelId
+    const modelId = settings.modelId
+      ? resolveModelId(await this.sessions.catalog(), owner, session.provider, settings.modelId)
       : undefined;
-    if (settings.autonomy && autonomy.indexOf(settings.autonomy) > autonomy.indexOf(owner.autonomy))
-      throw new Error('A thread cannot exceed its owner’s autonomy.');
+    if (settings.autonomy) checkWithinAutonomy(owner, settings.autonomy);
     await this.sessions.configure(target, {
-      ...(wanted ? { modelId: wanted } : {}),
+      ...(modelId ? { modelId } : {}),
       ...(settings.reasoningEffort ? { reasoningEffort: settings.reasoningEffort } : {}),
       ...(settings.autonomy ? { autonomy: settings.autonomy } : {}),
     });
@@ -474,7 +473,7 @@ export class ProjectService {
   async userStopped(appSessionId: string): Promise<void> {
     const project = this.membership.get(appSessionId);
     if (!project || this.closed) return;
-    if (!this.thread(project, appSessionId).ownerAppSessionId) {
+    if (!requireThread(project, appSessionId).ownerAppSessionId) {
       await this.setPaused(project.id, true);
       return;
     }
@@ -521,7 +520,7 @@ export class ProjectService {
   /** Drops what was queued for a stopped thread once admission has settled. */
   private async quiet(project: Project, target: string): Promise<void> {
     await this.wakes.settle(project);
-    clearAsk(project, this.thread(project, target));
+    clearAsk(project, requireThread(project, target));
     project.pending = project.pending.filter((message) => message.to !== target);
     await this.save();
     this.wakes.kick(project);
@@ -559,7 +558,8 @@ export class ProjectService {
         { ...input, prompt: `${brief}\n\nTask:\n${input.prompt}` },
         async (created) => {
           if (!isCurrent()) throw new Error('Project launch was cancelled.');
-          if (ownerAppSessionId) this.checkAutonomy(this.requireSession(ownerAppSessionId), input);
+          if (ownerAppSessionId)
+            checkWithinAutonomy(this.requireSession(ownerAppSessionId), input.autonomy);
           if (this.membership.has(created.appSessionId))
             throw new Error('The harness reused an existing thread identity.');
           bound = created.appSessionId;
@@ -628,8 +628,8 @@ export class ProjectService {
   private controlledProject(source: string, target: string): Project {
     this.requireOpen();
     const project = this.requireProjectFor(source);
-    const actor = this.thread(project, source);
-    const thread = this.thread(project, target);
+    const actor = requireThread(project, source);
+    const thread = requireThread(project, target);
     if (source === target || (actor.ownerAppSessionId && thread.ownerAppSessionId !== source))
       throw new Error('Only the main thread or a direct owner can control this thread.');
     return project;
@@ -641,19 +641,10 @@ export class ProjectService {
     return project;
   }
 
-  private thread(project: Project, appSessionId: string): ProjectThread {
-    return requireThread(project, appSessionId);
-  }
-
   private requireSession(appSessionId: string): SessionSummary {
     const session = this.sessions.get(appSessionId);
     if (!session) throw new Error('Session is no longer available.');
     return session;
-  }
-
-  private checkAutonomy(owner: SessionSummary, input: ThreadInput): void {
-    if (autonomy.indexOf(input.autonomy) > autonomy.indexOf(owner.autonomy))
-      throw new Error('A spawned thread cannot exceed its owner’s autonomy.');
   }
 
   /** Whether this project can take another thread at all. */
