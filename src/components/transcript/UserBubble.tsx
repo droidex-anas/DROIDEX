@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ComponentType } from 'react';
+import { useEffect, useRef, useState, type ComponentType, type ReactNode } from 'react';
 import { MousePointer2, PenLine } from 'lucide-react';
 import type { BrowserTranscriptReference, TranscriptEvent } from '../../types/bridge';
 import type { OpenReviewFileHandler } from '../../lib/reviewFocus';
@@ -93,7 +93,7 @@ function ExpandButton({ expanded, onClick }: { expanded: boolean; onClick: () =>
   );
 }
 
-function ClampedPrompt({ source }: { source: string }) {
+function ClampedPrompt({ source, chips }: { source: string; chips: ReactNode }) {
   const [expanded, setExpanded] = useState(false);
   const [contentHeight, setContentHeight] = useState<number | null>(null);
   const contentRef = useRef<HTMLDivElement>(null);
@@ -131,7 +131,17 @@ function ClampedPrompt({ source }: { source: string }) {
         className="overflow-hidden transition-[max-height] duration-300 ease-out motion-reduce:transition-none"
         style={maxHeight === undefined ? undefined : { maxHeight }}
       >
-        <div ref={contentRef} className="flow-root">
+        <div
+          ref={contentRef}
+          className={
+            chips
+              ? // The first paragraph runs inline after the chips, as it does in the
+                // composer draft, so a short prompt shares their line.
+                'flow-root [&>.md-shell>p:first-child]:inline [&>.md-shell]:inline'
+              : 'flow-root'
+          }
+        >
+          {chips}
           <Markdown authored>{source}</Markdown>
         </div>
       </div>
@@ -174,7 +184,19 @@ export function UserBubble({
   const message = userMessageAttachments(event.text, event.files);
   const display = promptDisplayParts(message.text, event.skills);
   const hasAttachments = message.files.length > 0 || browserRefs.length > 0;
-  const hasPrompt = Boolean(display.text) || display.skills.length > 0 || display.visualize;
+  const hasChips = display.skills.length > 0 || display.visualize;
+  const hasPrompt = Boolean(display.text) || hasChips;
+  const chips = hasChips ? (
+    // Top-aligned because the icon, not the label, would set the row's baseline.
+    <span
+      className={`inline-flex flex-wrap items-center gap-x-2 align-top${display.text ? ' mr-2' : ''}`}
+    >
+      {display.visualize && <PromptChip icon={VisualizeIcon} label="Visualize" />}
+      {display.skills.map((skill) => (
+        <PromptChip key={skill} icon={SkillIcon} label={skill} title={`Skill: ${skill}`} />
+      ))}
+    </span>
+  ) : null;
   return (
     <div className="group/msg flex flex-col items-end gap-1.5">
       {event.steered && (
@@ -221,16 +243,8 @@ export function UserBubble({
         // The bubble's actions float in the free space to its left, so a prompt
         // row is exactly its bubble: no reserved action row under it.
         <div className="relative min-w-0 max-w-[80%]">
-          <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 rounded-2xl rounded-br-sm bg-droid-elevated px-4 py-2.5 text-[14px] leading-[1.6] text-droid-text">
-            {display.visualize && <PromptChip icon={VisualizeIcon} label="Visualize" />}
-            {display.skills.map((skill) => (
-              <PromptChip key={skill} icon={SkillIcon} label={skill} title={`Skill: ${skill}`} />
-            ))}
-            {display.text ? (
-              <div className="w-full min-w-0">
-                <ClampedPrompt source={display.text} />
-              </div>
-            ) : null}
+          <div className="min-w-0 rounded-2xl rounded-br-sm bg-droid-elevated px-4 py-2.5 text-[14px] leading-[1.6] text-droid-text">
+            {display.text ? <ClampedPrompt source={display.text} chips={chips} /> : chips}
           </div>
           {message.text ? <MessageActions text={message.text} side="start" /> : null}
         </div>
