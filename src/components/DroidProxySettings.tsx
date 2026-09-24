@@ -1,13 +1,19 @@
 import {
   applyDroidProxyFactoryModels,
+  cancelDroidProxyInstall,
   cancelDroidProxyLogin,
+  installDroidProxy,
   launchDroidProxy,
   requestDroidProxyStatus,
   startDroidProxyLogin,
 } from '../lib/commands';
 import { openExternal } from '../lib/onboarding';
-import { useDroidProxy } from '../hooks/useDroidProxy';
-import type { DroidProxyProviderKey, DroidProxyProviderState } from '../types/bridge';
+import { useDroidProxy, type DroidProxyInstallState } from '../hooks/useDroidProxy';
+import type {
+  DroidProxyInstallPhase,
+  DroidProxyProviderKey,
+  DroidProxyProviderState,
+} from '../types/bridge';
 import { ModelIcon, type Provider } from './ModelIcon';
 import { GroupLabel, SectionTitle, SettingRow } from './settingsKit';
 
@@ -50,6 +56,28 @@ const PROVIDER_ORDER: readonly DroidProxyProviderKey[] = [
 const BUTTON_CLASS =
   'px-2.5 h-7 rounded-md bg-droid-elevated text-[12px] text-droid-text hover:bg-droid-active transition-colors disabled:opacity-40';
 
+const INSTALL_PHASE_LABELS: Record<DroidProxyInstallPhase, string> = {
+  downloading: 'Downloading',
+  verifying: 'Verifying',
+  installing: 'Installing',
+  launching: 'Launching',
+  applying: 'Applying models',
+};
+
+function installLabel(install: DroidProxyInstallState): string {
+  const base = INSTALL_PHASE_LABELS[install.phase];
+  if (install.phase !== 'downloading') return `${base}…`;
+  if (install.totalBytes) {
+    const percent = Math.round(((install.receivedBytes ?? 0) / install.totalBytes) * 100);
+    return `${base}… ${String(percent)}%`;
+  }
+  if (install.receivedBytes) {
+    const mb = install.receivedBytes / 1048576;
+    return `${base}… ${mb.toFixed(mb < 10 ? 1 : 0)} MB`;
+  }
+  return `${base}…`;
+}
+
 function proxyDescription(status: { proxyRunning: boolean; backendRunning: boolean }): string {
   if (status.proxyRunning) return 'Running on localhost:8317.';
   if (status.backendRunning)
@@ -60,7 +88,7 @@ function proxyDescription(status: { proxyRunning: boolean; backendRunning: boole
 // Run coding-subscription models (Claude, Codex, Gemini, Kimi, …) inside Droid
 // sessions through the DroidProxy app's local OAuth proxy.
 export function DroidProxySettings() {
-  const { status, loggingIn } = useDroidProxy();
+  const { status, loggingIn, install, installError } = useDroidProxy();
 
   if (!status) {
     return (
@@ -93,7 +121,9 @@ export function DroidProxySettings() {
           description={
             status.appInstalled
               ? 'Installed. It serves your subscriptions on localhost:8317.'
-              : 'Not installed. It is a free menu-bar app; download it, then connect below.'
+              : installError
+                ? `Install failed: ${installError} Try again, or use manual download.`
+                : 'Not installed. One click installs and launches it; then connect below.'
           }
         >
           {status.appInstalled ? (
@@ -105,15 +135,39 @@ export function DroidProxySettings() {
             >
               {status.proxyRunning ? 'Open app' : 'Launch'}
             </button>
+          ) : install ? (
+            <div className="flex shrink-0 items-center gap-2">
+              <span className="text-[12px] font-mono text-droid-text-muted">
+                {installLabel(install)}
+              </span>
+              <button
+                onClick={() => {
+                  cancelDroidProxyInstall();
+                }}
+                className={BUTTON_CLASS}
+              >
+                Cancel
+              </button>
+            </div>
           ) : (
-            <button
-              onClick={() => {
-                void openExternal(DROIDPROXY_RELEASES_URL);
-              }}
-              className={BUTTON_CLASS}
-            >
-              Download DroidProxy
-            </button>
+            <div className="flex shrink-0 items-center gap-2">
+              <button
+                onClick={() => {
+                  void openExternal(DROIDPROXY_RELEASES_URL);
+                }}
+                className="text-[12px] text-droid-text-muted hover:text-droid-text transition-colors"
+              >
+                manual download
+              </button>
+              <button
+                onClick={() => {
+                  installDroidProxy();
+                }}
+                className={BUTTON_CLASS}
+              >
+                Install DroidProxy
+              </button>
+            </div>
           )}
         </SettingRow>
         <SettingRow label="Local proxy" description={proxyDescription(status)}>

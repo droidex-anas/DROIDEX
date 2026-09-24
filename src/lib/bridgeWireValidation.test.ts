@@ -491,6 +491,23 @@ test('accepts droidproxy reports and rejects unknown providers or shapes', () =>
     ),
     null,
   );
+  assert.ok(
+    serverWireMessage(
+      batch({
+        type: 'droidproxy.report',
+        status: { ...status, installInProgress: 'downloading' },
+      }),
+    ),
+  );
+  assert.equal(
+    serverWireMessage(
+      batch({
+        type: 'droidproxy.report',
+        status: { ...status, installInProgress: 'seeding' },
+      }),
+    ),
+    null,
+  );
 });
 
 test('accepts droidproxy login and apply outcomes, rejects bad shapes', () => {
@@ -524,4 +541,40 @@ test('accepts droidproxy login and apply outcomes, rejects bad shapes', () => {
     ),
     null,
   );
+});
+
+test('accepts droidproxy install progress and outcomes, rejects bad shapes', () => {
+  assert.ok(
+    serverWireMessage(
+      batch({
+        type: 'droidproxy.install.progress',
+        phase: 'downloading',
+        receivedBytes: 1024,
+        totalBytes: 2048,
+      }),
+    ),
+  );
+  assert.ok(serverWireMessage(batch({ type: 'droidproxy.install.progress', phase: 'launching' })));
+  assert.equal(
+    serverWireMessage(batch({ type: 'droidproxy.install.progress', phase: 'seeding' })),
+    null,
+  );
+  assert.equal(
+    serverWireMessage(
+      batch({ type: 'droidproxy.install.progress', phase: 'downloading', receivedBytes: 'lots' }),
+    ),
+    null,
+  );
+  assert.ok(serverWireMessage(batch({ type: 'droidproxy.install.done', ok: true })));
+  assert.ok(
+    serverWireMessage(
+      batch({
+        type: 'droidproxy.install.done',
+        ok: false,
+        cancelled: true,
+        message: 'Install cancelled.',
+      }),
+    ),
+  );
+  assert.equal(serverWireMessage(batch({ type: 'droidproxy.install.done', ok: 'yes' })), null);
 });

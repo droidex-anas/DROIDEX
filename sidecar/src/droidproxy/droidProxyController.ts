@@ -1,12 +1,14 @@
 import { spawn, type ChildProcess } from 'node:child_process';
 
-import type { DroidProxyProviderKey } from '../protocol.js';
+import type { DroidProxyInstallPhase, DroidProxyProviderKey } from '../protocol.js';
 import {
+  droidProxyAppPath,
   loginFlagFor,
   readDroidProxyStatus,
   resolveCliProxyApi,
   type DroidProxyEvent,
 } from './droidProxy.js';
+import { installDroidProxyApp } from './droidProxyInstall.js';
 import {
   applyDroidProxyFactoryModels,
   droidProxyModelsInstalled,
@@ -31,6 +33,8 @@ interface ActiveLogin {
 // the proxy model catalog into Factory settings.
 export class DroidProxyController {
   private activeLogin: ActiveLogin | undefined;
+  private installAbort: AbortController | undefined;
+  private installPhase: DroidProxyInstallPhase | undefined;
 
   constructor(private readonly emit: (event: DroidProxyEvent) => void) {}
 
@@ -39,11 +43,13 @@ export class DroidProxyController {
     const providerEnabled = this.providerEnabledPredicate(status);
     const options = { contributorMode: status.metaContributorMode };
     const running = this.activeLogin;
+    const installing = this.installPhase;
     this.emit({
       type: 'droidproxy.report',
       status: {
         ...status,
         ...(running ? { loginInProgress: running.provider } : {}),
+        ...(installing ? { installInProgress: installing } : {}),
         factoryModelCount: droidProxySettingsModels(providerEnabled, options).length,
         factoryModelsInstalled: droidProxyModelsInstalled(providerEnabled, options),
       },
@@ -141,6 +147,75 @@ export class DroidProxyController {
     if (!this.activeLogin) return;
     this.activeLogin.cancelRequested = true;
     this.activeLogin.child.kill('SIGTERM');
+  }
+
+  // One-click setup: download, verify, install, launch, and apply models,
+  // all behind progress events. A second call while one runs just re-reports.
+  async install(): Promise<void> {
+    if (this.installPhase || droidProxyAppPath()) {
+      await this.report();
+      return;
+    }
+    const abort = new AbortController();
+    this.installAbort = abort;
+    this.installPhase = 'downloading';
+    let lastPhase: DroidProxyInstallPhase | undefined;
+    let lastEmit = 0;
+    const result = await installDroidProxyApp((progress) => {
+      this.installPhase = progress.phase;
+      // Download chunks arrive faster than the UI can use them; phase
+      // changes always go through immediately.
+      const now = Date.now();
+      if (progress.phase === lastPhase && now - lastEmit < 150) return;
+      lastPhase = progress.phase;
+      lastEmit = now;
+      this.emit({
+        type: 'droidproxy.install.progress',
+        phase: progress.phase,
+        ...(progress.receivedBytes === undefined ? {} : { receivedBytes: progress.receivedBytes }),
+        ...(progress.totalBytes === undefined ? {} : { totalBytes: progress.totalBytes }),
+      });
+    }, abort.signal);
+    this.installAbort = undefined;
+    if (!result.ok) {
+      this.installPhase = undefined;
+      this.emit({
+        type: 'droidproxy.install.done',
+        ok: false,
+        ...(result.cancelled ? { cancelled: true } : {}),
+        message: result.message,
+      });
+      await this.report();
+      return;
+    }
+    this.installPhase = 'launching';
+    this.emit({ type: 'droidproxy.install.progress', phase: 'launching' });
+    await this.launchApp();
+    const proxyUp = await this.waitForProxy();
+    this.installPhase = 'applying';
+    this.emit({ type: 'droidproxy.install.progress', phase: 'applying' });
+    await this.applyFactoryModels();
+    this.installPhase = undefined;
+    this.emit({
+      type: 'droidproxy.install.done',
+      ok: true,
+      ...(proxyUp
+        ? {}
+        : { message: 'Installed, but the proxy is not up yet. Open the app if it stays down.' }),
+    });
+    await this.report();
+  }
+
+  cancelInstall(): void {
+    this.installAbort?.abort();
+  }
+
+  private async waitForProxy(): Promise<boolean> {
+    for (let attempt = 0; attempt < 15; attempt++) {
+      if ((await readDroidProxyStatus()).proxyRunning) return true;
+      await new Promise((resolve) => setTimeout(resolve, 1000));
+    }
+    return false;
   }
 
   async applyFactoryModels(): Promise<void> {

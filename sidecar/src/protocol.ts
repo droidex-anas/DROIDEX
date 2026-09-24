@@ -308,6 +308,13 @@ export type DroidProxyProviderKey =
   | 'meta';
 // One connected OAuth account. Metadata only: emails, expiry, and flags.
 // Tokens and keys never cross the bridge.
+// One-click install pipeline stages, in order.
+export type DroidProxyInstallPhase =
+  | 'downloading'
+  | 'verifying'
+  | 'installing'
+  | 'launching'
+  | 'applying';
 export interface DroidProxyAccount {
   provider: DroidProxyProviderKey;
   email?: string;
@@ -334,6 +341,9 @@ export interface DroidProxyStatus {
   // Provider with an assisted login in flight, so a remounted settings page
   // can restore its waiting state instead of offering a dead Connect.
   loginInProgress?: DroidProxyProviderKey;
+  // Install pipeline stage in flight, so a remounted page restores progress
+  // instead of offering Install over a running download.
+  installInProgress?: DroidProxyInstallPhase;
   // DroidProxy's Meta contributor-mode flag: picks the Muse Spark variant.
   metaContributorMode: boolean;
   // Enabled catalog size: how many entries Apply writes.
@@ -678,6 +688,8 @@ export type ClientCommand =
   | { type: 'droidproxy.launch' }
   | { type: 'droidproxy.login'; provider: DroidProxyProviderKey }
   | { type: 'droidproxy.login.cancel' }
+  | { type: 'droidproxy.install' }
+  | { type: 'droidproxy.install.cancel' }
   | { type: 'droidproxy.factoryModels.apply' }
   | { type: 'catalog.models' }
   | { type: 'provider.refresh' }
@@ -974,6 +986,18 @@ export type ServerEvent =
   | {
       type: 'droidproxy.login.done';
       provider: DroidProxyProviderKey;
+      ok: boolean;
+      cancelled?: boolean;
+      message?: string;
+    }
+  | {
+      type: 'droidproxy.install.progress';
+      phase: DroidProxyInstallPhase;
+      receivedBytes?: number;
+      totalBytes?: number;
+    }
+  | {
+      type: 'droidproxy.install.done';
       ok: boolean;
       cancelled?: boolean;
       message?: string;

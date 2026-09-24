@@ -816,6 +816,12 @@ export class SessionManager {
       case 'droidproxy.login.cancel':
         this.droidProxy.cancelLogin();
         return;
+      case 'droidproxy.install':
+        await this.droidProxy.install();
+        return;
+      case 'droidproxy.install.cancel':
+        this.droidProxy.cancelInstall();
+        return;
       case 'droidproxy.factoryModels.apply':
         await this.droidProxy.applyFactoryModels();
         // Factory settings changed under the catalog: reload it so the model

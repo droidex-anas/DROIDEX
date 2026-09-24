@@ -204,7 +204,7 @@ async function readMetaContributorMode(): Promise<boolean> {
   }
 }
 
-function droidProxyAppPath(): string | undefined {
+export function droidProxyAppPath(): string | undefined {
   const candidates = [
     '/Applications/DroidProxy.app',
     join(home(), 'Applications', 'DroidProxy.app'),
@@ -212,12 +212,22 @@ function droidProxyAppPath(): string | undefined {
   return candidates.find((path) => existsSync(path));
 }
 
+// A bundle is only worth installing when it carries the login backend the
+// settings page drives.
+export function droidProxyBundleComplete(appPath: string): boolean {
+  return (
+    existsSync(join(appPath, 'Contents', 'Resources', 'cli-proxy-api')) &&
+    existsSync(join(appPath, 'Contents', 'Resources', 'config.yaml'))
+  );
+}
+
 export function resolveCliProxyApi(): { binary: string; config: string } | undefined {
   const app = droidProxyAppPath();
-  if (app) {
-    const binary = join(app, 'Contents', 'Resources', 'cli-proxy-api');
-    const config = join(app, 'Contents', 'Resources', 'config.yaml');
-    if (existsSync(binary) && existsSync(config)) return { binary, config };
+  if (app && droidProxyBundleComplete(app)) {
+    return {
+      binary: join(app, 'Contents', 'Resources', 'cli-proxy-api'),
+      config: join(app, 'Contents', 'Resources', 'config.yaml'),
+    };
   }
   return undefined;
 }

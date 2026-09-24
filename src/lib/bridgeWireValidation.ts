@@ -177,6 +177,18 @@ function isServerEvent(value: unknown): value is ServerEvent {
         (value.cancelled === undefined || value.cancelled === true) &&
         isOptionalString(value.message)
       );
+    case 'droidproxy.install.progress':
+      return (
+        isDroidProxyInstallPhase(value.phase) &&
+        (value.receivedBytes === undefined || typeof value.receivedBytes === 'number') &&
+        (value.totalBytes === undefined || typeof value.totalBytes === 'number')
+      );
+    case 'droidproxy.install.done':
+      return (
+        typeof value.ok === 'boolean' &&
+        (value.cancelled === undefined || value.cancelled === true) &&
+        isOptionalString(value.message)
+      );
     case 'droidproxy.factoryModels.applied':
       return (
         typeof value.ok === 'boolean' &&
@@ -511,6 +523,15 @@ function isDroidProxyProviderKey(value: unknown): boolean {
     value === 'meta'
   );
 }
+function isDroidProxyInstallPhase(value: unknown): boolean {
+  return (
+    value === 'downloading' ||
+    value === 'verifying' ||
+    value === 'installing' ||
+    value === 'launching' ||
+    value === 'applying'
+  );
+}
 function isDroidProxyAccount(value: unknown): boolean {
   return (
     isRecord(value) &&
@@ -539,6 +560,7 @@ function isDroidProxyStatus(value: unknown): boolean {
     typeof value.backendRunning === 'boolean' &&
     typeof value.loginBinaryAvailable === 'boolean' &&
     (value.loginInProgress === undefined || isDroidProxyProviderKey(value.loginInProgress)) &&
+    (value.installInProgress === undefined || isDroidProxyInstallPhase(value.installInProgress)) &&
     typeof value.metaContributorMode === 'boolean' &&
     typeof value.factoryModelCount === 'number' &&
     typeof value.factoryModelsInstalled === 'boolean' &&
