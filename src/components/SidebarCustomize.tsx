@@ -199,6 +199,13 @@ export function SidebarCustomize({ preferences, unreadCount, onChange, onMarkAll
     if (closeTimer.current) clearTimeout(closeTimer.current);
     closeTimer.current = null;
   };
+  // Backing out of the cascade also drops a row switch still waiting on its
+  // delay, or the flyout just left behind reopens by itself.
+  const closeSubmenu = () => {
+    if (switchTimer.current) clearTimeout(switchTimer.current);
+    switchTimer.current = null;
+    setSubmenu(null);
+  };
   const filtered = preferences.filter !== DEFAULT_SIDEBAR_PREFERENCES.filter;
   const customized =
     filtered ||
@@ -218,7 +225,7 @@ export function SidebarCustomize({ preferences, unreadCount, onChange, onMarkAll
     else if (event.key === 'ArrowLeft') {
       const row = (document.activeElement as HTMLElement | null)?.closest('[data-submenu]');
       row?.querySelector<HTMLElement>('button')?.focus();
-      setSubmenu(null);
+      closeSubmenu();
     } else if (event.key === 'ArrowRight') {
       const row = (document.activeElement as HTMLElement | null)?.closest('[data-submenu]');
       const id = row?.getAttribute('data-submenu') as Submenu | null;
@@ -239,8 +246,8 @@ export function SidebarCustomize({ preferences, unreadCount, onChange, onMarkAll
   };
 
   return (
-    <div className="mx-4 mb-1 flex items-center justify-between">
-      <span className="text-[11px] font-medium text-droid-text-muted">
+    <div className="mb-1 ml-5 mr-3 flex items-center justify-between">
+      <span className="text-[13px] font-medium text-droid-text-muted">
         {VIEWS.find((view) => view.value === preferences.view)?.label}
       </span>
       <button
@@ -253,7 +260,7 @@ export function SidebarCustomize({ preferences, unreadCount, onChange, onMarkAll
         aria-label="View options"
         aria-haspopup="menu"
         aria-expanded={open}
-        className={`rounded-md p-1.5 transition-colors hover:bg-droid-elevated focus-visible:bg-droid-elevated focus-visible:outline-none ${
+        className={`cursor-pointer rounded-md p-1.5 transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-droid-accent/40 ${
           open || customized ? 'text-droid-text' : 'text-droid-text-muted hover:text-droid-text'
         }`}
       >
@@ -339,6 +346,7 @@ export function SidebarCustomize({ preferences, unreadCount, onChange, onMarkAll
                     ...DEFAULT_SIDEBAR_PREFERENCES,
                     view: preferences.view,
                     settled: preferences.settled,
+                    reopened: preferences.reopened,
                   });
                 }}
               >
@@ -365,9 +373,7 @@ export function SidebarCustomize({ preferences, unreadCount, onChange, onMarkAll
           <button
             className={`${ROW} disabled:text-droid-text-muted disabled:hover:bg-transparent`}
             disabled={unreadCount === 0}
-            onMouseEnter={() => {
-              setSubmenu(null);
-            }}
+            onMouseEnter={closeSubmenu}
             onClick={() => {
               onMarkAllRead();
               close();

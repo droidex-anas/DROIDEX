@@ -1,3 +1,4 @@
+import { automationFilesSchema, automationTargetSchema } from './automationSchemas.js';
 import { tool } from '@factory/droid-sdk';
 import { z } from 'zod';
 import { jsonResult, safeTool } from '../mcpToolUtils.js';
@@ -14,6 +15,7 @@ const reasoningSchema = z.enum([
   'high',
   'xhigh',
   'max',
+  'ultra',
   'dynamic',
 ]);
 
@@ -58,10 +60,19 @@ const scheduleSchema = z.discriminatedUnion('kind', [
 const titleSchema = z.string().min(1).max(120);
 const promptSchema = z
   .string()
-  .min(1)
   .max(20_000)
-  .describe('Complete instructions for what DROIDEX should do on every run.');
+  .describe('Instructions for every run. May be empty when files are attached.');
 const sharedInput = {
+  target: automationTargetSchema
+    .optional()
+    .describe(
+      'Use existing-session with the exact appSessionId for a one-time message in that chat. Otherwise each run opens a new chat.',
+    ),
+  files: automationFilesSchema
+    .optional()
+    .describe(
+      'Absolute regular file paths to snapshot with the prompt. Saved attachments survive source removal.',
+    ),
   title: titleSchema
     .optional()
     .describe('Optional short title. DROIDEX derives one from the instructions when omitted.'),
@@ -102,7 +113,9 @@ const sharedInput = {
     .describe("Omit to inherit this chat's autonomy. Defaults to low for unattended runs."),
 };
 
-type ConversationalAutomationInput = Omit<AutomationInput, 'title'> & { title?: string };
+type ConversationalAutomationInput = Omit<AutomationInput, 'title'> & {
+  title?: string | undefined;
+};
 
 export function createAutomationMcpTools(options: { appSessionId: () => string }) {
   return [
@@ -144,6 +157,8 @@ export function createAutomationMcpTools(options: { appSessionId: () => string }
           automations: snapshot.automations.map((automation) => ({
             id: automation.id,
             title: automation.title,
+            target: automation.target,
+            files: automation.files,
             enabled: automation.enabled,
             schedule: automation.schedule,
             timezone: automation.timezone,
@@ -205,6 +220,8 @@ export function createAutomationMcpTools(options: { appSessionId: () => string }
       {
         id: z.string().uuid(),
         title: titleSchema.optional(),
+        target: sharedInput.target,
+        files: sharedInput.files,
         prompt: promptSchema.optional(),
         workspaceCwd: sharedInput.workspaceCwd,
         executionMode: sharedInput.executionMode,
@@ -231,7 +248,7 @@ export function createAutomationMcpTools(options: { appSessionId: () => string }
     ),
     tool(
       'automation_run_now',
-      'Run an existing DROIDEX automation now. It starts automatically when no other automation is active.',
+      'Run an existing DROIDEX automation now. New chats wait for the automation slot; existing-session messages wait until their target is ready.',
       { id: z.string().uuid() },
       safeTool(async (input: { id: string }) => {
         const run = await getAutomationManager().runNow(input.id);

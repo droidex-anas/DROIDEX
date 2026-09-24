@@ -1,6 +1,6 @@
 import { sanitizePersistedPrWorkspace } from '../features/pull-requests/lib/prWorkspaceCwd';
 import { sanitizePersistedPrBacklog } from '../features/pull-requests/lib/prBacklog';
-import type { BrowserState, ModelInfo, ReasoningEffort } from '../types/bridge';
+import type { BrowserState, ModelInfo, ProviderKind, ReasoningEffort } from '../types/bridge';
 import { isReasoningEffort } from '../lib/reasoningEffort';
 import { DIFF_SCOPES, type DiffScope } from '../types/vcs';
 import type { ImagePasteQuality } from '../lib/images';
@@ -21,23 +21,78 @@ import {
   persistBrowsers,
 } from './persistedBrowserSnapshot';
 
-export type AgentKind = 'primary' | 'worker' | 'validator';
+export type MissionRole = 'worker' | 'validator';
+export type AgentKind = 'primary' | MissionRole;
 export type LiveEnterBehavior = 'queue' | 'interrupt';
 export type DiffViewMode = 'unified' | 'split';
+export type ModelSelectorStyle = 'classic' | 'slider';
 
 export interface AgentModelConfig {
   modelId?: string;
   reasoning: ReasoningEffort;
 }
 
-export type AgentConfig = Record<AgentKind, AgentModelConfig>;
+export type AgentConfig = Record<MissionRole, AgentModelConfig>;
 
 const AGENT_CONFIG_STORAGE_KEY = 'droid-agent-config-v2';
 const defaultAgentConfig: AgentConfig = {
-  primary: { modelId: undefined, reasoning: 'high' },
   worker: { modelId: undefined, reasoning: 'medium' },
   validator: { modelId: undefined, reasoning: 'medium' },
 };
+
+// What a new chat on a harness starts with. An unset field defers to the
+// harness's own configured default; DROIDEX never writes that back to the CLI.
+export interface HarnessModel {
+  modelId?: string;
+  reasoning?: ReasoningEffort;
+}
+
+export type HarnessModels = Record<ProviderKind, HarnessModel>;
+
+const HARNESS_MODELS_STORAGE_KEY = 'droid-harness-models-v1';
+
+export function loadHarnessModels(): HarnessModels {
+  const models: HarnessModels = { droid: {}, claude: {}, codex: {} };
+  try {
+    const raw = getLocalStorage()?.getItem(HARNESS_MODELS_STORAGE_KEY);
+    if (!raw) return adoptLegacyPrimaryModel(models);
+    const parsed = JSON.parse(raw) as Partial<Record<ProviderKind, Partial<HarnessModel>>>;
+    for (const provider of Object.keys(models) as ProviderKind[]) {
+      const entry = parsed[provider];
+      if (typeof entry?.modelId === 'string' && entry.modelId) {
+        models[provider].modelId = entry.modelId;
+      }
+      if (isReasoningEffort(entry?.reasoning)) models[provider].reasoning = entry.reasoning;
+    }
+    return models;
+  } catch {
+    return models;
+  }
+}
+
+// A default model picked before per-harness defaults existed lives in the old
+// shared `primary` agent entry; it becomes Droid's default. Saved at once
+// because the next agent-config save drops `primary`, which also retires this
+// path after one launch. An effort saved without a model was the app's own
+// default, not a choice, so it stays behind.
+function adoptLegacyPrimaryModel(models: HarnessModels): HarnessModels {
+  const raw = getLocalStorage()?.getItem(AGENT_CONFIG_STORAGE_KEY);
+  if (!raw) return models;
+  const { primary } = JSON.parse(raw) as { primary?: Partial<AgentModelConfig> };
+  if (typeof primary?.modelId !== 'string' || !primary.modelId) return models;
+  const droid: HarnessModel = { modelId: primary.modelId };
+  if (isReasoningEffort(primary.reasoning)) droid.reasoning = primary.reasoning;
+  return saveHarnessModels({ ...models, droid });
+}
+
+export function saveHarnessModels(models: HarnessModels): HarnessModels {
+  try {
+    getLocalStorage()?.setItem(HARNESS_MODELS_STORAGE_KEY, JSON.stringify(models));
+  } catch {
+    /* ignore */
+  }
+  return models;
+}
 
 function getLocalStorage(): Storage | undefined {
   if (typeof window !== 'undefined') return window.localStorage;
@@ -51,9 +106,8 @@ export function loadAgentConfig(): AgentConfig {
     if (!storage) return defaultAgentConfig;
     const raw = storage.getItem(AGENT_CONFIG_STORAGE_KEY);
     if (!raw) return defaultAgentConfig;
-    const parsed = JSON.parse(raw) as Partial<Record<AgentKind, Partial<AgentModelConfig>>>;
+    const parsed = JSON.parse(raw) as Partial<Record<MissionRole, Partial<AgentModelConfig>>>;
     return {
-      primary: readAgentConfig(parsed.primary, defaultAgentConfig.primary),
       worker: readAgentConfig(parsed.worker, defaultAgentConfig.worker),
       validator: readAgentConfig(parsed.validator, defaultAgentConfig.validator),
     };
@@ -88,6 +142,7 @@ const COMPACTION_MODEL_STORAGE_KEY = 'droid-compaction-model';
 const LIVE_ENTER_BEHAVIOR_STORAGE_KEY = 'droid-live-enter-behavior';
 const IMAGE_PASTE_QUALITY_STORAGE_KEY = 'droid-image-paste-quality';
 const DIFF_VIEW_STORAGE_KEY = 'droid-diff-view';
+const MODEL_SELECTOR_STYLE_STORAGE_KEY = 'droid-model-selector-style';
 const REVIEW_SCOPE_STORAGE_KEY = 'droid-review-scope';
 const WORKSPACES_STORAGE_KEY = 'droid-workspaces';
 const SESSION_LAST_SEEN_STORAGE_KEY = 'droid-session-last-seen-v1';
@@ -190,6 +245,31 @@ export function saveDiffView(value: DiffViewMode): DiffViewMode {
     /* ignore */
   }
   return mode;
+}
+
+// The slider is the default; only someone who chose the classic list keeps it.
+function normalizeModelSelectorStyle(value: unknown): ModelSelectorStyle {
+  return value === 'classic' ? 'classic' : 'slider';
+}
+
+export function loadModelSelectorStyle(): ModelSelectorStyle {
+  try {
+    return normalizeModelSelectorStyle(
+      getLocalStorage()?.getItem(MODEL_SELECTOR_STYLE_STORAGE_KEY),
+    );
+  } catch {
+    return 'slider';
+  }
+}
+
+export function saveModelSelectorStyle(value: ModelSelectorStyle): ModelSelectorStyle {
+  const style = normalizeModelSelectorStyle(value);
+  try {
+    getLocalStorage()?.setItem(MODEL_SELECTOR_STYLE_STORAGE_KEY, style);
+  } catch {
+    /* ignore */
+  }
+  return style;
 }
 
 export function loadReviewScope(): DiffScope {
@@ -313,7 +393,10 @@ export function loadShortcutBindings(): ShortcutBindings {
     const parsed = JSON.parse(raw) as Record<string, unknown>;
     for (const { action } of SHORTCUT_DEFINITIONS) {
       const chord = parsed[action];
-      if (typeof chord === 'string' && parseChord(chord)) bindings[action] = chord;
+      if (typeof chord !== 'string') continue;
+      // A stored chord without the primary modifier would fire on ordinary
+      // typing, so a hand-edited or corrupted entry keeps the default.
+      if (parseChord(chord)?.meta) bindings[action] = chord;
     }
     return bindings;
   } catch {
@@ -356,7 +439,6 @@ export function saveSessionLastSeen(map: Record<string, number>): void {
 export function sanitizeAgentConfig(config: AgentConfig, models: ModelInfo[]): AgentConfig {
   if (models.length === 0) return config;
   return {
-    primary: sanitizeAgent(config.primary, models),
     worker: sanitizeAgent(config.worker, models),
     validator: sanitizeAgent(config.validator, models),
   };

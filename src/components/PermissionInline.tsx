@@ -2,6 +2,7 @@ import { motion, AnimatePresence, useReducedMotion } from 'framer-motion';
 import { shallowEqual, useStoreDispatch, useStoreSelector } from '../hooks/useStore';
 import { respondPermission } from '../lib/commands';
 import type { PermissionKind, PermissionOutcome } from '../types/bridge';
+import { PROVIDER_LABELS } from '../features/providers/providerIdentity';
 import { inlineCardMotion } from './inlineCardMotion';
 
 const ACCENT = 'var(--droid-accent)';
@@ -9,17 +10,18 @@ const ACCENT = 'var(--droid-accent)';
 // while the card itself stays on the standard elevated surface.
 const WARN = 'var(--droid-orange)';
 
-// A plain-language explanation of what Droid is asking to do, so the prompt
-// is never just a bare "Permission required".
+// A plain-language explanation of what the agent is asking to do, so the
+// prompt is never just a bare "Permission required". The subject is the chat's
+// own provider: only it is actually asking.
 const KIND_PROMPT: Record<PermissionKind, string> = {
-  exec: 'Droid wants to run a terminal command',
-  edit: 'Droid wants to edit a file',
-  create: 'Droid wants to create a file',
-  apply_patch: 'Droid wants to apply a code patch',
-  mcp: 'Droid wants to use an external tool',
-  spec: 'Droid wants to finish planning',
-  mission_plan: 'Droid proposed a mission plan',
-  other: 'Droid is requesting permission to proceed',
+  exec: 'wants to run a terminal command',
+  edit: 'wants to edit a file',
+  create: 'wants to create a file',
+  apply_patch: 'wants to apply a code patch',
+  mcp: 'wants to use an external tool',
+  spec: 'wants to finish planning',
+  mission_plan: 'proposed a mission plan',
+  other: 'is requesting permission to proceed',
 };
 
 // Backend titles that only restate the kind add nothing under the reason
@@ -78,13 +80,16 @@ export default function PermissionInline() {
   const reduceMotion = useReducedMotion();
   // Permission requests are session-scoped: only surface the one belonging to
   // the chat the user is looking at.
-  const state = useStoreSelector(
-    (current) => ({
+  const state = useStoreSelector((current) => {
+    const active = current.activeAppSessionId
+      ? current.sessions[current.activeAppSessionId]
+      : undefined;
+    return {
       activeAppSessionId: current.activeAppSessionId,
       pendingPermissions: current.pendingPermissions,
-    }),
-    shallowEqual,
-  );
+      provider: active?.provider,
+    };
+  }, shallowEqual);
   const activeId = state.activeAppSessionId;
   const req = activeId ? state.pendingPermissions[activeId] : undefined;
 
@@ -92,7 +97,7 @@ export default function PermissionInline() {
   if (!req || req.kind === 'spec' || req.kind === 'mission_plan') return null;
 
   const detail = cleanDetail(req.detail);
-  const reason = KIND_PROMPT[req.kind];
+  const reason = `${PROVIDER_LABELS[state.provider ?? 'droid']} ${KIND_PROMPT[req.kind]}`;
   const subtitle = req.title && !GENERIC_TITLES.has(req.title) ? req.title : '';
 
   const respond = (outcome: PermissionOutcome) => {
@@ -105,7 +110,7 @@ export default function PermissionInline() {
       <motion.div
         key={req.requestId}
         {...inlineCardMotion(reduceMotion)}
-        className="mb-2.5 overflow-hidden rounded-2xl border border-droid-border bg-droid-elevated shadow-[0_10px_32px_rgba(0,0,0,0.35)]"
+        className="mb-2.5 overflow-hidden rounded-2xl border border-droid-border bg-droid-raised shadow-droid"
       >
         <div className="px-4 pt-3.5 pb-3">
           <div className="flex items-center gap-2">

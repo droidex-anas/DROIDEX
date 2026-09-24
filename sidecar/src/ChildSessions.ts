@@ -26,6 +26,7 @@ import {
   forgetPendingChildObservation,
   mergeChildObservations,
   newChildState,
+  parentDroidSession,
   persistedChild,
   rememberPendingChildObservation,
   restoredChildStatus,
@@ -162,7 +163,8 @@ export class ChildSessions {
     const spawnLink = observed.spawnLink;
     if (!observed.providerSessionId) {
       const child = spawnLink ? findChildBySpawn(parent, spawnLink) : undefined;
-      if (observed.done && child) this.complete(parent, child);
+      if (observed.done && child)
+        this.complete(child, observed.status === 'failed' ? 'failed' : 'completed');
       else if (spawnLink) rememberPendingChildObservation(parent, pending, observed);
       return undefined;
     }
@@ -170,13 +172,15 @@ export class ChildSessions {
     for (const child of parent.children.values())
       if (child.retiredProviderSessionIds.has(providerSessionId)) return undefined;
 
-    const spawnChild = spawnLink ? findChildBySpawn(parent, spawnLink) : undefined;
+    // State-only children share spawn links; their provider identity stays fixed.
+    const stateOnly = observed.transcriptAvailable === false;
+    const spawnChild = !stateOnly && spawnLink ? findChildBySpawn(parent, spawnLink) : undefined;
     const providerChild = findChildByProvider(parent, providerSessionId);
     if (spawnChild && providerChild && spawnChild !== providerChild) return undefined;
-    if (observed.done && providerChild) {
+    if (observed.done && providerChild && !stateOnly) {
       if (spawnLink && spawnChild !== providerChild) return undefined;
       forgetPendingChildObservation(parent, pending);
-      this.complete(parent, providerChild);
+      this.complete(providerChild, observed.status === 'failed' ? 'failed' : 'completed');
       return undefined;
     }
 
@@ -184,12 +188,12 @@ export class ChildSessions {
     const existingProviderSessionId =
       existingChild?.runtime?.session.sessionId ?? existingChild?.providerSessionId;
     const needsExactSettings =
-      observed.requiresExactLaunchSettings === true &&
+      (stateOnly || observed.requiresExactLaunchSettings === true) &&
       (!existingChild || existingProviderSessionId !== providerSessionId);
     if (needsExactSettings && !observed.modelId) {
       const firstProviderObservation = !pending?.providerSessionId;
       const firstTerminalObservation = observed.done === true && pending?.done !== true;
-      if (firstProviderObservation || firstTerminalObservation) {
+      if (!stateOnly && (firstProviderObservation || firstTerminalObservation)) {
         const launchSettings = this.readLaunchSettings(providerSessionId);
         if (launchSettings) {
           observed.modelId = launchSettings.modelId;
@@ -218,7 +222,7 @@ export class ChildSessions {
       void this.closeRuntime(parent, child, false);
     }
     const apply = () => {
-      if (!this.isCurrentChild(parent, child) || !childAcceptsWork(child)) return;
+      if (!this.isCurrentChild(parent, child) || (!stateOnly && !childAcceptsWork(child))) return;
       if (child.retiredProviderSessionIds.has(providerSessionId)) return;
       if (child.role !== observed.role && child.turn.autoCompacting)
         this.d.compaction.cancel(this.automaticTarget(parent, child));
@@ -229,7 +233,8 @@ export class ChildSessions {
         providerSessionId,
         this.d.now(),
       );
-      if (observed.done) this.complete(parent, child);
+      if (observed.done)
+        this.complete(child, observed.status === 'failed' ? 'failed' : 'completed');
       else this.commit(child);
       if (child.prompt && child.prompt !== previousPrompt)
         this.d.timeline.appendStatus(
@@ -255,6 +260,7 @@ export class ChildSessions {
       for (const pending of parent.pendingSpawns.values()) {
         const providerSessionId = pending.providerSessionId;
         if (
+          pending.transcriptAvailable === false ||
           !pending.requiresExactLaunchSettings ||
           !providerSessionId ||
           pending.modelId ||
@@ -620,7 +626,7 @@ export class ChildSessions {
       return;
     }
     const parent = this.parents.get(parentAppSessionId);
-    if (!parent || record.status === 'completed') {
+    if (!parent || record.status === 'completed' || record.status === 'failed') {
       openChildHistory(record, operation, requestId, {
         emitError: (identity, op, id, code, message) => {
           this.emitError(identity, op, id, code, message);
@@ -866,7 +872,7 @@ export class ChildSessions {
       if (command.modelId === null)
         modelId = this.d.resolveDefaultSettings(
           parent.lease.summary,
-          parent.lease.session.initResult,
+          parentDroidSession(parent.lease).initResult,
           child.role,
         ).modelId;
       if (!modelId) throw new Error(`No Factory default is available for ${child.role}.`);
@@ -906,9 +912,9 @@ export class ChildSessions {
     }
   }
 
-  private complete(parent: ParentChildSessions, child?: ChildSessionState): void {
-    if (!child || child.status === 'completed') return;
-    child.status = 'completed';
+  private complete(child?: ChildSessionState, status: 'completed' | 'failed' = 'completed'): void {
+    if (!child || child.status === 'completed' || child.status === 'failed') return;
+    child.status = status;
     // Activity describes a moment that has passed; keeping the last poll's line
     // would leave a finished subagent reading as still working.
     child.activity = undefined;
@@ -931,7 +937,7 @@ export class ChildSessions {
       : {
           ...this.d.resolveDefaultSettings(
             parent.lease.summary,
-            parent.lease.session.initResult,
+            parentDroidSession(parent.lease).initResult,
             role,
           ),
           ...launchSettings,
@@ -1174,10 +1180,7 @@ export class ChildSessions {
 
   private isSettingsTarget(parent: ParentChildSessions, child: ChildSessionState): boolean {
     return (
-      this.isCurrentChild(parent, child) &&
-      child.runtime !== undefined &&
-      child.status !== 'completed' &&
-      !child.closeWhenIdle
+      this.isCurrentChild(parent, child) && child.runtime !== undefined && childAcceptsWork(child)
     );
   }
 

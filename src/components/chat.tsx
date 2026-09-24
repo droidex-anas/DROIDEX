@@ -11,17 +11,29 @@ import {
   type ChildSessionTarget,
 } from '../lib/childSessions';
 import { DEFAULT_TOOL_ACTIVITY, type ToolActivityDensity } from '../lib/toolActivity';
-import type { TranscriptEvent } from '../types/bridge';
+import type { ChildSessionSummary, TranscriptEvent } from '../types/bridge';
 import { MessageBody } from './MessageBody';
 import { DiffCard } from './DiffView';
-import type { SubagentsDockData } from './SubagentsDock';
+import type { AgentMonitorData } from './agents/AgentMonitorCard';
 import TurnChangesPanel from './TurnChangesPanel';
-import { isCompactionCompleteStatus, sameFeedEvents, type FeedItem } from './chatFeed';
-import { CompactingIndicator, CompactionDivider, MessageActions } from './transcript/primitives';
+import {
+  isCompactionCompleteStatus,
+  isSettingsStatus,
+  sameFeedEvents,
+  type FeedItem,
+} from './chatFeed';
+import {
+  CompactingIndicator,
+  CompactionDivider,
+  MessageActions,
+  TranscriptNotice,
+} from './transcript/primitives';
 import { correlateResults, ErrorLine, ThinkingItem } from './transcript/rows';
 import { DiffGroup, ToolGroupItem, WorkedGroup } from './transcript/groups';
 import { UserBubble } from './transcript/UserBubble';
-import { ChildSessionLine, ChildSessionsWave } from './transcript/ChildSessionLine';
+import { ChildSessionLine } from './transcript/ChildSessionLine';
+import { AgentWaveCard } from './agents/AgentWaveCard';
+import { GeneratedImageCard } from './media/GeneratedImageCard';
 
 // Row chrome and renderers live in the transcript modules; re-export the ones
 // callers and tests historically imported from here.
@@ -115,11 +127,14 @@ export interface FeedItemViewProps {
   onOpenReviewFile?: OpenReviewFileHandler;
   onOpenChildSession?: (target: ChildSessionTarget) => void;
   childSessionActivity?: (target: ChildSessionTarget) => ChildSessionActivity | undefined;
-  // Store child sessions + models for the subagents dock. Every child_sessions
+  // Store child sessions + models for the agent monitor. Every child_sessions
   // wave item resolves its own subset from this list and renders one card per
   // wave. Wave items only exist when this is set; views without it (Mission
   // Control, child-session views) get per-spawn child_session lines instead.
-  subagentsDock?: SubagentsDockData;
+  agentMonitor?: AgentMonitorData;
+  // Opens one agent in the context pane. Distinct from onOpenChildSession,
+  // which navigates the whole view to that child.
+  onOpenAgent?: (child: ChildSessionSummary) => void;
   liveTiming?: boolean;
   specContent?: string;
   isFinalResponse?: boolean;
@@ -165,6 +180,7 @@ export function isSpecEcho(text: string, specContent: string | undefined): boole
 // message so a row never changes height when it settles.
 const AssistantMessage = memo(function AssistantMessage({
   text,
+  streamId,
   live,
   isFinalResponse,
   autoPlayAppBlocks,
@@ -172,6 +188,9 @@ const AssistantMessage = memo(function AssistantMessage({
   specContent,
 }: {
   text: string;
+  // The session this text streams in, so the caret's shared idle record is
+  // never shared with another session whose tail happens to read the same.
+  streamId: string;
   live: boolean;
   isFinalResponse?: boolean;
   autoPlayAppBlocks: boolean;
@@ -182,7 +201,7 @@ const AssistantMessage = memo(function AssistantMessage({
   // A live echo of the pinned spec shows no caret of its own: the feed's
   // Working cue speaks for it, so there is never more than one live cue.
   const echo = isSpecEcho(text, specContent);
-  const typing = useStreamingActivity(text, live && !appOwnsLiveStatus && !echo);
+  const typing = useStreamingActivity(streamId, text, live && !appOwnsLiveStatus && !echo);
   // Only a settled echo yields to the pinned spec card; collapsing a row
   // mid-stream would jolt the virtualized feed.
   if (!live && echo) return null;
@@ -216,7 +235,8 @@ function itemUsesChildSessions(item: FeedItem): boolean {
 function sameChildSessionInputs(prev: FeedItemViewProps, next: FeedItemViewProps): boolean {
   return (
     !itemUsesChildSessions(next.item) ||
-    (prev.subagentsDock === next.subagentsDock &&
+    (prev.agentMonitor === next.agentMonitor &&
+      prev.onOpenAgent === next.onOpenAgent &&
       prev.childSessionActivity === next.childSessionActivity)
   );
 }
@@ -233,8 +253,8 @@ export function feedItemPropsEqual(prev: FeedItemViewProps, next: FeedItemViewPr
     return (
       prev.live === next.live &&
       prev.sessionLive === next.sessionLive &&
-      prev.subagentsDock === next.subagentsDock &&
-      prev.onOpenChildSession === next.onOpenChildSession &&
+      prev.agentMonitor === next.agentMonitor &&
+      prev.onOpenAgent === next.onOpenAgent &&
       prev.childSessionActivity === next.childSessionActivity &&
       sameFeedEvents(prev.item, next.item)
     );
@@ -269,8 +289,9 @@ export const FeedItemView = memo(function FeedItemView({
   onOpenDiff,
   onOpenReviewFile,
   onOpenChildSession,
+  onOpenAgent,
   childSessionActivity,
-  subagentsDock,
+  agentMonitor,
   liveTiming,
   specContent,
   isFinalResponse,
@@ -280,10 +301,17 @@ export const FeedItemView = memo(function FeedItemView({
   switch (item.type) {
     case 'message': {
       if (item.event.author === 'user')
-        return <UserBubble event={item.event} onOpenReviewFile={onOpenReviewFile} />;
+        return (
+          <UserBubble
+            event={item.event}
+            // An attachment chip is a path with no captured diff behind it.
+            onOpenReviewFile={cwd ? onOpenReviewFile : undefined}
+          />
+        );
       return (
         <AssistantMessage
           text={item.event.text ?? ''}
+          streamId={item.event.appSessionId}
           live={live}
           isFinalResponse={isFinalResponse}
           autoPlayAppBlocks={autoPlayAppBlocks}
@@ -313,24 +341,25 @@ export const FeedItemView = memo(function FeedItemView({
       // Wave items are only built when dock data is passed (buildFeed gates on
       // it), so a missing dock here is a wiring bug; views that keep per-spawn
       // lines produce child_session items, never this case.
-      if (!subagentsDock) return null;
+      if (!agentMonitor) return null;
       return (
-        <ChildSessionsWave
+        <AgentWaveCard
           item={item}
-          dock={subagentsDock}
+          monitor={agentMonitor}
           live={sessionLive}
-          onOpen={onOpenChildSession}
+          onOpen={onOpenAgent}
           activity={childSessionActivity}
         />
       );
     }
     case 'status': {
+      if (item.event.modelSwitch) return <TranscriptNotice event={item.event} />;
       const text = item.event.text ?? '';
       if (item.event.kind === 'compaction') return <CompactionDivider compactType="auto" />;
       if (compacting) return <CompactingIndicator />;
       if (isCompactionCompleteStatus(text))
         return <CompactionDivider compactType={item.event.compactType} />;
-      return live ? (
+      return live && !isSettingsStatus(item.event) ? (
         <span className="shimmer-text text-[13px] font-medium">{text}</span>
       ) : (
         <span className="block text-[13px] text-droid-text-muted leading-relaxed break-words">
@@ -339,7 +368,11 @@ export const FeedItemView = memo(function FeedItemView({
       );
     }
     case 'error':
-      return <ErrorLine text={item.event.text ?? ''} />;
+      return item.event.errorKind === 'usage_limit' ? (
+        <TranscriptNotice event={item.event} />
+      ) : (
+        <ErrorLine text={item.event.text ?? ''} />
+      );
     case 'diff':
       return (
         <DiffCard
@@ -358,6 +391,14 @@ export const FeedItemView = memo(function FeedItemView({
           inlineDiffs={inlineDiffs}
         />
       );
+    case 'generated_image':
+      return (
+        <GeneratedImageCard
+          event={item.event}
+          output={item.result?.text}
+          running={live && !item.result}
+        />
+      );
     case 'tools':
       return (
         <AutomationToolGroup
@@ -365,7 +406,9 @@ export const FeedItemView = memo(function FeedItemView({
           active={live}
           sessionLive={sessionLive ?? live}
           density={density}
-          onOpenReviewFile={onOpenReviewFile}
+          // A tool row names a path and carries no captured change, so without a
+          // workspace there is nothing for Review to open: it stays plain text.
+          onOpenReviewFile={cwd ? onOpenReviewFile : undefined}
         />
       );
     case 'turnChanges':
@@ -389,8 +432,9 @@ export const FeedItemView = memo(function FeedItemView({
               onOpenDiff={onOpenDiff}
               onOpenReviewFile={onOpenReviewFile}
               onOpenChildSession={onOpenChildSession}
+              onOpenAgent={onOpenAgent}
               childSessionActivity={childSessionActivity}
-              subagentsDock={subagentsDock}
+              agentMonitor={agentMonitor}
               specContent={specContent}
               density={density}
               inlineDiffs={inlineDiffs}

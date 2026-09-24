@@ -117,106 +117,90 @@ function largeDiff(): string {
   return lines.join('\n');
 }
 
-const coverageInstrumentation = process.execArgv.some(
-  (arg) => arg.includes('experimental-test-coverage') || arg.includes('test-coverage-'),
-);
+test('first-render cost of settled rich content stays in a snappy band', () => {
+  const loadavg = os
+    .loadavg()
+    .map((value) => value.toFixed(2))
+    .join(' ');
+  const mixed = [longProse(), wideTable(), largeCodeFence(), mermaidFence(), appBlockFence()].join(
+    '\n\n',
+  );
+  const jsonSource = largeJsonSpec();
+  const diff = largeDiff();
+  const paste = 'x'.repeat(100_000);
 
-test(
-  'first-render cost of settled rich content stays in a snappy band',
-  {
-    skip: coverageInstrumentation
-      ? 'coverage instrumentation invalidates first-render cost samples'
-      : false,
-  },
-  () => {
-    const loadavg = os
-      .loadavg()
-      .map((value) => value.toFixed(2))
-      .join(' ');
-    const mixed = [
-      longProse(),
-      wideTable(),
-      largeCodeFence(),
-      mermaidFence(),
-      appBlockFence(),
-    ].join('\n\n');
-    const jsonSource = largeJsonSpec();
-    const diff = largeDiff();
-    const paste = 'x'.repeat(100_000);
+  const rows = {
+    loadavg,
+    prose: measure(() => {
+      renderToStaticMarkup(createElement(Markdown, null, longProse()));
+    }),
+    table: measure(() => {
+      renderToStaticMarkup(createElement(Markdown, null, wideTable()));
+    }),
+    codeFence: measure(() => {
+      renderToStaticMarkup(createElement(Markdown, null, largeCodeFence()));
+    }),
+    mermaidFenceParse: measure(() => {
+      renderToStaticMarkup(createElement(Markdown, null, mermaidFence()));
+    }),
+    mixedMessage: measure(() => {
+      renderToStaticMarkup(
+        createElement(MessageBody, {
+          text: mixed,
+          live: false,
+          autoPlayAppBlocks: false,
+          cacheId: 'bench',
+        }),
+      );
+    }),
+    jsonRender: measure(() => {
+      renderToStaticMarkup(createElement(JsonRender, { source: jsonSource }));
+    }),
+    jsonFence: measure(() => {
+      renderToStaticMarkup(createElement(Markdown, null, `\`\`\`json\n${jsonSource}\n\`\`\``));
+    }),
+    diffParse: measure(() => {
+      parseUnifiedDiff(diff);
+    }),
+    compose100kb: measure(() => {
+      composePrompt(paste, [], []);
+    }),
+    stringifySend100kb: measure(() => {
+      JSON.stringify({ type: 'session.send', appSessionId: 's', text: paste });
+    }),
+  };
 
-    const rows = {
-      loadavg,
-      prose: measure(() => {
-        renderToStaticMarkup(createElement(Markdown, null, longProse()));
-      }),
-      table: measure(() => {
-        renderToStaticMarkup(createElement(Markdown, null, wideTable()));
-      }),
-      codeFence: measure(() => {
-        renderToStaticMarkup(createElement(Markdown, null, largeCodeFence()));
-      }),
-      mermaidFenceParse: measure(() => {
-        renderToStaticMarkup(createElement(Markdown, null, mermaidFence()));
-      }),
-      mixedMessage: measure(() => {
-        renderToStaticMarkup(
-          createElement(MessageBody, {
-            text: mixed,
-            live: false,
-            autoPlayAppBlocks: false,
-            cacheId: 'bench',
-          }),
-        );
-      }),
-      jsonRender: measure(() => {
-        renderToStaticMarkup(createElement(JsonRender, { source: jsonSource }));
-      }),
-      jsonFence: measure(() => {
-        renderToStaticMarkup(createElement(Markdown, null, `\`\`\`json\n${jsonSource}\n\`\`\``));
-      }),
-      diffParse: measure(() => {
-        parseUnifiedDiff(diff);
-      }),
-      compose100kb: measure(() => {
-        composePrompt(paste, [], []);
-      }),
-      stringifySend100kb: measure(() => {
-        JSON.stringify({ type: 'session.send', appSessionId: 's', text: paste });
-      }),
-    };
+  console.info('rich-content first render', JSON.stringify(rows, null, 2));
 
-    console.info('rich-content first render', JSON.stringify(rows, null, 2));
-
-    // These are guards against a silent blow-up, not product budgets. GUI numbers
-    // decide whether a deferral is justified; SSR markup is the CPU floor.
-    // GitHub-hosted runners are noisy enough that a 80ms table floor flakes
-    // (ubuntu-latest median ~110ms); keep the ceiling far above local samples.
-    assert.ok(rows.prose.medianMs < 250, `prose first render ${String(rows.prose.medianMs)}ms`);
-    assert.ok(rows.table.medianMs < 250, `table first render ${String(rows.table.medianMs)}ms`);
-    assert.ok(
-      rows.codeFence.medianMs < 250,
-      `code fence first render ${String(rows.codeFence.medianMs)}ms`,
-    );
-    assert.ok(
-      rows.mixedMessage.medianMs < 400,
-      `mixed first render ${String(rows.mixedMessage.medianMs)}ms`,
-    );
-    assert.ok(
-      rows.jsonRender.medianMs < 80,
-      `json-render first render ${String(rows.jsonRender.medianMs)}ms`,
-    );
-    assert.ok(
-      rows.jsonFence.medianMs < 40,
-      `json fence first render ${String(rows.jsonFence.medianMs)}ms`,
-    );
-    assert.ok(rows.diffParse.medianMs < 40, `diff parse ${String(rows.diffParse.medianMs)}ms`);
-    assert.ok(
-      rows.compose100kb.medianMs < 10,
-      `compose 100kb ${String(rows.compose100kb.medianMs)}ms`,
-    );
-    assert.ok(
-      rows.stringifySend100kb.medianMs < 20,
-      `stringify 100kb ${String(rows.stringifySend100kb.medianMs)}ms`,
-    );
-  },
-);
+  // These are guards against a silent blow-up, not product budgets. GUI numbers
+  // decide whether a deferral is justified; SSR markup is the CPU floor.
+  // GitHub-hosted runners are noisy enough that a 80ms table floor flakes
+  // (ubuntu-latest median ~110ms); keep the ceiling far above local samples.
+  assert.ok(rows.prose.medianMs < 250, `prose first render ${String(rows.prose.medianMs)}ms`);
+  assert.ok(rows.table.medianMs < 250, `table first render ${String(rows.table.medianMs)}ms`);
+  assert.ok(
+    rows.codeFence.medianMs < 250,
+    `code fence first render ${String(rows.codeFence.medianMs)}ms`,
+  );
+  assert.ok(
+    rows.mixedMessage.medianMs < 400,
+    `mixed first render ${String(rows.mixedMessage.medianMs)}ms`,
+  );
+  assert.ok(
+    rows.jsonRender.medianMs < 80,
+    `json-render first render ${String(rows.jsonRender.medianMs)}ms`,
+  );
+  assert.ok(
+    rows.jsonFence.medianMs < 40,
+    `json fence first render ${String(rows.jsonFence.medianMs)}ms`,
+  );
+  assert.ok(rows.diffParse.medianMs < 40, `diff parse ${String(rows.diffParse.medianMs)}ms`);
+  assert.ok(
+    rows.compose100kb.medianMs < 10,
+    `compose 100kb ${String(rows.compose100kb.medianMs)}ms`,
+  );
+  assert.ok(
+    rows.stringifySend100kb.medianMs < 20,
+    `stringify 100kb ${String(rows.stringifySend100kb.medianMs)}ms`,
+  );
+});

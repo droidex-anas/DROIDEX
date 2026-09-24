@@ -1,7 +1,9 @@
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 
-function nonEmptyEnv(value: string | undefined, fallback: string): string {
+// Blank and whitespace-only values are treated as unset: .env.example documents
+// empty assignments, and a CLI's own home override reaches us the same way.
+export function nonEmptyEnv(value: string | undefined, fallback: string): string {
   if (!value?.trim()) return fallback;
   return value;
 }
@@ -11,6 +13,14 @@ export function droidexUserDataDir(): string {
     process.env.DROIDEX_USER_DATA_DIR,
     join(homedir(), 'Library', 'Application Support', 'DROIDEX'),
   );
+}
+
+// Transcripts DROIDEX writes itself, for providers that keep no session file of
+// their own. Beside the profile rather than under ~/.factory because the Droid
+// CLI neither writes nor reads them, and a dev instance launched with its own
+// DROIDEX_USER_DATA_DIR gets its own set.
+export function providerSessionsDir(): string {
+  return join(droidexUserDataDir(), 'provider-sessions');
 }
 
 // Instance-private state that cannot be shared between two running instances:

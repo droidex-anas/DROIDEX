@@ -36,8 +36,14 @@ import {
   type TranscriptWindowCursor,
 } from './sessionTranscript.js';
 import { decodeProviderSessionIdList } from './historyProviderIds.js';
+import {
+  CHILD_SESSIONS_TABLE_SCHEMA,
+  migrateChildSessionsToV3,
+} from './historyChildSchemaMigration.js';
+import { DEFAULT_PROVIDER, providerKind } from './providers/providerKind.js';
 import { readSessionFileHead, readSessionStart } from './sessionFileHead.js';
-import { droidexHistoryDir } from './droidexPaths.js';
+import { droidexHistoryDir, providerSessionsDir } from './droidexPaths.js';
+import { removeSessionNotices, sessionNoticesRevision } from './sessionNotices.js';
 
 interface StoredMissionState {
   missionId?: string;
@@ -104,7 +110,7 @@ export interface HistoryPage {
 }
 
 export type PersistedChildRole = 'worker' | 'validator';
-export type PersistedChildStatus = 'pending' | 'running' | 'paused' | 'completed';
+export type PersistedChildStatus = 'pending' | 'running' | 'paused' | 'completed' | 'failed';
 
 export interface PersistedChildSpawnLink {
   kind: 'tool-use' | 'spawn';
@@ -119,6 +125,8 @@ export interface PersistedChildSession {
   role: PersistedChildRole;
   label?: string;
   prompt?: string;
+  group?: string;
+  phase?: string;
   status: PersistedChildStatus;
   modelId: string;
   reasoningEffort?: ReasoningEffort;
@@ -149,7 +157,7 @@ const DEFAULT_HISTORY_WINDOW = 400;
 // (1<<27)/256 = 524,288 lines per segment — multi-GB at the multi-KB lines
 // real sessions store, far beyond any observed file.
 const SEQ_SEGMENT_STRIDE = 1 << 27;
-const HISTORY_SCHEMA_VERSION = 2;
+const HISTORY_SCHEMA_VERSION = 3;
 export const SESSION_INDEX_FILENAME = 'session-index.sqlite';
 export const SESSION_SEARCH_INDEX_FILENAME = 'session-search.sqlite';
 function historySchemaRecovery(): string {
@@ -245,6 +253,17 @@ export function loadSessionPage(
   };
 }
 
+export function sessionOrganizationId(providerSessionId: string): string | undefined {
+  const path = sessionIndex().get(providerSessionId);
+  if (!path) return undefined;
+  try {
+    return readSessionStart(path, statSync(path).size).organizationId;
+  } catch {
+    // The file can be removed between the index update and this read.
+    return undefined;
+  }
+}
+
 export class HistoryIndex {
   private db: DatabaseSync;
   private readonly sessionFiles = new SessionFileMirror();
@@ -323,28 +342,13 @@ export class HistoryIndex {
       HistoryIndex.createSchema(db);
       return;
     }
-    if (version === 1 && hasCanonicalVersionOneHistorySchema(db)) {
-      HistoryIndex.migrateVersionOneHistorySchema(db);
-      if (!hasCanonicalChildSchema(db)) throw new Error(historySchemaRecovery());
-      return;
-    }
-    if (version !== HISTORY_SCHEMA_VERSION || !hasCanonicalChildSchema(db))
+    if (version === 1 || version === 2) {
+      if (!hasCanonicalHistorySchema(db, version)) throw new Error(historySchemaRecovery());
+      migrateChildSessionsToV3(db, version);
+    } else if (version !== HISTORY_SCHEMA_VERSION) {
       throw new Error(historySchemaRecovery());
-  }
-
-  private static migrateVersionOneHistorySchema(db: DatabaseSync): void {
-    // DROIDEX v1.1.0 shipped schema v1, so direct app updates must preserve that
-    // index. The canonical v2 child model needs this column and cannot derive
-    // replacement chains from the old rows. This is the only supported legacy
-    // state. Remove after direct upgrades from v1.1.0 are no longer supported;
-    // PR #103 tracks that release boundary.
-    db.exec(`
-      BEGIN IMMEDIATE;
-      ALTER TABLE child_sessions
-        ADD COLUMN previous_provider_session_ids TEXT NOT NULL DEFAULT '[]';
-      PRAGMA user_version = ${String(HISTORY_SCHEMA_VERSION)};
-      COMMIT;
-    `);
+    }
+    if (!hasCanonicalHistorySchema(db)) throw new Error(historySchemaRecovery());
   }
 
   private static createSchema(db: DatabaseSync): void {
@@ -377,34 +381,10 @@ export class HistoryIndex {
         max_context_tokens INTEGER,
         auto_compactions INTEGER
       );
-      CREATE TABLE IF NOT EXISTS child_sessions (
-        parent_app_session_id TEXT NOT NULL,
-        child_session_id TEXT NOT NULL,
-        provider_session_id TEXT,
-        previous_provider_session_ids TEXT NOT NULL DEFAULT '[]',
-        role TEXT NOT NULL CHECK (role IN ('worker', 'validator')),
-        label TEXT,
-        prompt TEXT,
-        status TEXT NOT NULL CHECK (status IN ('pending', 'running', 'paused', 'completed')),
-        model_id TEXT NOT NULL,
-        reasoning_effort TEXT,
-        spawn_link_kind TEXT CHECK (spawn_link_kind IN ('tool-use', 'spawn')),
-        spawn_link_id TEXT,
-        transcript_available INTEGER NOT NULL CHECK (transcript_available IN (0, 1)),
-        started_at INTEGER,
-        updated_at INTEGER NOT NULL,
-        CHECK (
-          (spawn_link_kind IS NULL AND spawn_link_id IS NULL) OR
-          (spawn_link_kind IS NOT NULL AND spawn_link_id IS NOT NULL)
-        ),
-        PRIMARY KEY (parent_app_session_id, child_session_id)
-      );
+      CREATE TABLE IF NOT EXISTS child_sessions ${CHILD_SESSIONS_TABLE_SCHEMA};
       CREATE UNIQUE INDEX child_sessions_provider_identity
         ON child_sessions (parent_app_session_id, provider_session_id)
         WHERE provider_session_id IS NOT NULL;
-      CREATE UNIQUE INDEX child_sessions_spawn_identity
-        ON child_sessions (parent_app_session_id, spawn_link_kind, spawn_link_id)
-        WHERE spawn_link_id IS NOT NULL;
       CREATE TABLE IF NOT EXISTS events (
         id TEXT PRIMARY KEY,
         source_session_id TEXT NOT NULL,
@@ -531,6 +511,8 @@ const CANONICAL_TABLE_COLUMNS = {
     'role',
     'label',
     'prompt',
+    'group_name',
+    'phase',
     'status',
     'model_id',
     'reasoning_effort',
@@ -549,13 +531,19 @@ const CANONICAL_TABLE_COLUMNS = {
   catalog_cache: ['catalog', 'value_json', 'updated_at'],
 } as const;
 
-const VERSION_ONE_CHILD_SESSION_COLUMNS = CANONICAL_TABLE_COLUMNS.child_sessions.filter(
-  (column) => column !== 'previous_provider_session_ids',
-);
+const CHILD_SESSION_COLUMNS_BY_VERSION = {
+  1: CANONICAL_TABLE_COLUMNS.child_sessions.filter(
+    (column) =>
+      column !== 'previous_provider_session_ids' && column !== 'group_name' && column !== 'phase',
+  ),
+  2: CANONICAL_TABLE_COLUMNS.child_sessions.filter(
+    (column) => column !== 'group_name' && column !== 'phase',
+  ),
+  3: CANONICAL_TABLE_COLUMNS.child_sessions,
+};
 
 const CHILD_SCHEMA_CHECKS = [
   "check (role in ('worker', 'validator'))",
-  "check (status in ('pending', 'running', 'paused', 'completed'))",
   "check (spawn_link_kind in ('tool-use', 'spawn'))",
   'check (transcript_available in (0, 1))',
   '(spawn_link_kind is null and spawn_link_id is null)',
@@ -574,20 +562,13 @@ const CANONICAL_PRIMARY_KEYS = {
   catalog_cache: ['catalog'],
 } as const;
 
-function hasCanonicalChildSchema(db: DatabaseSync): boolean {
-  return hasCanonicalHistorySchema(db, CANONICAL_TABLE_COLUMNS.child_sessions);
-}
-
-function hasCanonicalVersionOneHistorySchema(db: DatabaseSync): boolean {
-  return hasCanonicalHistorySchema(db, VERSION_ONE_CHILD_SESSION_COLUMNS);
-}
-
 function hasCanonicalHistorySchema(
   db: DatabaseSync,
-  expectedChildColumns: readonly string[],
+  version: 1 | 2 | 3 = HISTORY_SCHEMA_VERSION,
 ): boolean {
   for (const [table, expected] of Object.entries(CANONICAL_TABLE_COLUMNS)) {
-    const expectedColumns = table === 'child_sessions' ? expectedChildColumns : expected;
+    const expectedColumns =
+      table === 'child_sessions' ? CHILD_SESSION_COLUMNS_BY_VERSION[version] : expected;
     if (
       !hasExactColumns(db, table, expectedColumns) ||
       !hasPrimaryKey(
@@ -605,13 +586,14 @@ function hasCanonicalHistorySchema(
       ['parent_app_session_id', 'provider_session_id'],
       'provider_session_id is not null',
     ) &&
-    hasPartialUniqueIndex(
-      db,
-      'child_sessions_spawn_identity',
-      ['parent_app_session_id', 'spawn_link_kind', 'spawn_link_id'],
-      'spawn_link_id is not null',
-    ) &&
-    childSchemaHasChecks(db)
+    (version === 3 ||
+      hasPartialUniqueIndex(
+        db,
+        'child_sessions_spawn_identity',
+        ['parent_app_session_id', 'spawn_link_kind', 'spawn_link_id'],
+        'spawn_link_id is not null',
+      )) &&
+    childSchemaHasChecks(db, version)
   );
 }
 
@@ -667,19 +649,25 @@ function hasPartialUniqueIndex(
   );
 }
 
-function childSchemaHasChecks(db: DatabaseSync): boolean {
+function childSchemaHasChecks(db: DatabaseSync, version: 1 | 2 | 3): boolean {
   const row = db
     .prepare("SELECT sql FROM sqlite_schema WHERE type = 'table' AND name = 'child_sessions'")
     .get() as Record<string, unknown> | undefined;
   const sql = stringValue(row?.sql)?.toLowerCase().replace(/\s+/g, ' ');
-  return Boolean(sql && CHILD_SCHEMA_CHECKS.every((check) => sql.includes(check)));
+  const statusCheck =
+    version === 3
+      ? "check (status in ('pending', 'running', 'paused', 'completed', 'failed'))"
+      : "check (status in ('pending', 'running', 'paused', 'completed'))";
+  return Boolean(
+    sql && sql.includes(statusCheck) && CHILD_SCHEMA_CHECKS.every((check) => sql.includes(check)),
+  );
 }
 
 function assertCanonicalHistorySchema(db: DatabaseSync): void {
   const row = db.prepare('PRAGMA user_version').get() as Record<string, unknown> | undefined;
   if (
     (numberValue(row?.user_version) ?? 0) !== HISTORY_SCHEMA_VERSION ||
-    !hasCanonicalChildSchema(db)
+    !hasCanonicalHistorySchema(db)
   )
     throw new Error(historySchemaRecovery());
 }
@@ -706,6 +694,8 @@ function persistedChildSessionFromRow(row: Record<string, unknown>): PersistedCh
     role,
     ...whenString(row.label, (label) => ({ label })),
     ...whenString(row.prompt, (prompt) => ({ prompt })),
+    ...whenString(row.group_name, (group) => ({ group })),
+    ...whenString(row.phase, (phase) => ({ phase })),
     status,
     modelId,
     ...whenReasoning(row.reasoning_effort),
@@ -724,7 +714,13 @@ function persistedChildRole(value: unknown): PersistedChildRole {
 
 function persistedChildStatus(value: unknown): PersistedChildStatus {
   const status = stringValue(value);
-  if (status === 'pending' || status === 'running' || status === 'paused' || status === 'completed')
+  if (
+    status === 'pending' ||
+    status === 'running' ||
+    status === 'paused' ||
+    status === 'completed' ||
+    status === 'failed'
+  )
     return status;
   throw new Error(historySchemaRecovery());
 }
@@ -1008,7 +1004,8 @@ function transcriptReaderFor(
     cached?.mtimeMs === stat.mtimeMs &&
     cached.sizeBytes === stat.size &&
     cached.appSessionId === appSessionId &&
-    cached.role === role
+    cached.role === role &&
+    cached.reader.noticesRevision === sessionNoticesRevision(providerSessionId)
   ) {
     transcriptReaders.delete(path);
     transcriptReaders.set(path, cached);
@@ -1049,9 +1046,16 @@ function parseTranscriptCursor(
     if (parts[2] === 'end' && parts.length === 3) return { ci };
     const line = Number(parts[2]);
     const skip = Number(parts[3]);
-    if (parts.length !== 4 || !Number.isInteger(line) || !Number.isInteger(skip)) return null;
-    if (line < 0 || skip < 0) return null;
-    return { ci, from: { line, skip } };
+    const notice = parts.length === 5 ? Number(parts[4]) : undefined;
+    if (
+      (parts.length !== 4 && parts.length !== 5) ||
+      !Number.isInteger(line) ||
+      !Number.isInteger(skip)
+    )
+      return null;
+    if (notice !== undefined && (!Number.isInteger(notice) || notice < -1)) return null;
+    if (line < (notice === undefined ? 0 : -1) || skip < 0) return null;
+    return { ci, from: { line, skip, ...(notice !== undefined ? { notice } : {}) } };
   }
   const ci = Number(parts[0]);
   if (parts.length === 2 && parts[1] === 'end' && Number.isInteger(ci) && ci >= 0) return { ci };
@@ -1095,11 +1099,12 @@ export function loadSessionTranscriptWindow(
     );
     picked.unshift(...window.events);
     if (window.older) {
-      olderCursor = `v2:${ci}:${window.older.line}:${window.older.skip}`;
+      const notice = window.older.notice;
+      olderCursor = `v2:${String(ci)}:${String(window.older.line)}:${String(window.older.skip)}${notice !== undefined ? `:${String(notice)}` : ''}`;
       break;
     }
     if (picked.length >= limit) {
-      if (ci > 0) olderCursor = `v2:${ci - 1}:end`;
+      if (ci > 0) olderCursor = `v2:${String(ci - 1)}:end`;
       break;
     }
   }
@@ -1184,6 +1189,7 @@ function loadMissionControlSession(dir: string): HistoricalSession & {
       appSessionId: providerSessionId,
       providerSessionId,
       missionId: state.missionId ?? dirId,
+      provider: DEFAULT_PROVIDER,
       sessionPurpose: 'mission-control',
       interactionMode: 'agi',
       role: 'primary',
@@ -1357,11 +1363,13 @@ function shouldIncludeCwd(
   return workspaceCwds.has(cwd);
 }
 
+// Every reader of stored sessions — enumeration, replay, the file cache, the
+// search index, markdown export — bottoms out here. Droid's own files are the
+// first root; the second holds the transcripts DROIDEX writes for providers
+// that keep no file of their own (ProviderTranscriptFile.ts).
 function scanSessionFileTree(): SessionFileScan {
-  const root = join(homedir(), '.factory', 'sessions');
+  const roots = [join(homedir(), '.factory', 'sessions'), providerSessionsDir()];
   const files = new Map<string, SessionFileStat>();
-  if (!existsSync(root)) return { files, isComplete: true };
-
   const settingsMtimes = new Map<string, number>();
   let isComplete = true;
   const walk = (dir: string, depth: number) => {
@@ -1399,7 +1407,7 @@ function scanSessionFileTree(): SessionFileScan {
       }
     }
   };
-  walk(root, 0);
+  for (const root of roots) if (existsSync(root)) walk(root, 0);
   for (const [id, file] of files) {
     file.settingsMtimeMs = settingsMtimes.get(id) ?? null;
   }
@@ -1444,6 +1452,7 @@ function updateSessionIndex(result: SessionFileReconciliation, files: SessionFil
   sessionIndexMemo ??= files.pathIndex();
   for (const providerSessionId of result.removedProviderSessionIds) {
     sessionIndexMemo.delete(providerSessionId);
+    removeSessionNotices(providerSessionId);
   }
   for (const entry of result.upserts) {
     sessionIndexMemo.set(entry.providerSessionId, entry.path);
@@ -1477,6 +1486,7 @@ function summarizeSessionFile(
   // sidebar row, so launch settings are cached independently of admission.
   const launch = launchSettings(settings);
   const cachedLaunch = launch ? { launchSettings: launch } : {};
+  if (!start) return { summary: null, ...cachedLaunch };
   const classification = classifyStoredSession(start);
   // Live sessions are registered separately, so refusing an unfinished
   // exchange here cannot hide a first turn while it is running.
@@ -1487,6 +1497,9 @@ function summarizeSessionFile(
       appSessionId: providerSessionId,
       providerSessionId,
       missionId: classification.missionId,
+      // A Droid file carries no binding, so it reads as Droid without migration.
+      provider: providerKind(start.provider) ?? DEFAULT_PROVIDER,
+      ...(start.resumeId ? { resumeId: start.resumeId } : {}),
       sessionPurpose: classification.sessionPurpose,
       interactionMode: classification.interactionMode,
       role: classification.role,
@@ -1565,18 +1578,24 @@ function sessionInteractionMode(start: StoredSessionStart): string | undefined {
   return stringValue(direct) ?? stringValue(settings?.interactionMode);
 }
 
-function readSessionModelSettings(start: StoredSessionStart, sessionPath: string): FactoryDefaults {
+function readSessionModelSettings(
+  start: StoredSessionStart | undefined,
+  sessionPath: string,
+): FactoryDefaults {
   const raw = objectValue(start) ?? {};
   const settings = objectValue(raw.settings) ?? objectValue(raw.sessionSettings) ?? {};
   const sidecarSettings = readAdjacentSessionSettings(sessionPath);
   return {
-    modelId:
-      stringValue(sidecarSettings.modelId) ||
-      stringValue(sidecarSettings.model) ||
-      stringValue(settings.modelId) ||
-      stringValue(settings.model) ||
-      stringValue(raw.modelId) ||
-      stringValue(raw.model),
+    // Once the sidecar names the model the head line is history, including when
+    // it names none: that is the record of a chat reset to its provider's own
+    // default, not an absent setting to fall back from.
+    modelId: Object.hasOwn(sidecarSettings, 'modelId')
+      ? stringValue(sidecarSettings.modelId)
+      : stringValue(sidecarSettings.model) ||
+        stringValue(settings.modelId) ||
+        stringValue(settings.model) ||
+        stringValue(raw.modelId) ||
+        stringValue(raw.model),
     reasoningEffort: mapReasoning(
       stringValue(sidecarSettings.reasoningEffort) ||
         stringValue(settings.reasoningEffort) ||
@@ -1606,7 +1625,7 @@ function readAdjacentSessionSettings(sessionPath: string): Record<string, unknow
   const settingsPath = sessionPath.replace(/\.jsonl$/, '.settings.json');
   if (!existsSync(settingsPath)) return {};
   try {
-    return readJson<Record<string, unknown>>(settingsPath);
+    return objectValue(readJson<unknown>(settingsPath)) ?? {};
   } catch {
     return {};
   }
@@ -1647,6 +1666,7 @@ function mapReasoning(value?: string): ReasoningEffort | undefined {
     value === 'high' ||
     value === 'xhigh' ||
     value === 'max' ||
+    value === 'ultra' ||
     value === 'dynamic'
   ) {
     return value;

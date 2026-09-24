@@ -1,11 +1,5 @@
-import {
-  DecompSessionType,
-  type AskUserHandler,
-  type McpServerConfig,
-  type MissionFeature,
-  type PermissionHandler,
-} from '@factory/droid-sdk';
-import type { CreateRuntimeSessionOptions } from './DroidRuntime.js';
+import { DecompSessionType, type McpServerConfig, type MissionFeature } from '@factory/droid-sdk';
+import { factoryReasoningEffort, type CreateRuntimeSessionOptions } from './DroidRuntime.js';
 import type {
   Autonomy,
   ClientCommand,
@@ -17,6 +11,7 @@ import type {
 } from './protocol.js';
 import type { CompactionTokenLimitPatch } from './compaction.js';
 import { bridgeFeature } from './missionFeatures.js';
+import { DEFAULT_PROVIDER, type ProviderKind } from './providers/providerKind.js';
 import { stringValue } from './values.js';
 
 export interface SessionInitResult {
@@ -84,6 +79,7 @@ export function reasoningValue(value?: string): ReasoningEffort | undefined {
     value === 'high' ||
     value === 'xhigh' ||
     value === 'max' ||
+    value === 'ultra' ||
     value === 'dynamic'
   ) {
     return value;
@@ -182,6 +178,43 @@ export function requireAutonomyForCommand(command: { autonomy?: Autonomy }): Aut
   return autonomy;
 }
 
+// session.create must never reach the Droid runtime with a reasoning level
+// its SDK cannot represent (Codex's 'ultra', for instance): checked here,
+// before any process or transport opens, the same way autonomy is required
+// up front instead of failing deep inside session creation.
+export function requireDroidReasoningSupported(
+  provider: ProviderKind,
+  command: {
+    reasoningEffort?: ReasoningEffort;
+    workerReasoning?: ReasoningEffort;
+    validatorReasoning?: ReasoningEffort;
+  },
+): void {
+  if (provider !== DEFAULT_PROVIDER) return;
+  for (const effort of [
+    command.reasoningEffort,
+    command.workerReasoning,
+    command.validatorReasoning,
+  ])
+    if (effort !== undefined) factoryReasoningEffort(effort);
+}
+
+// Factory's defaults are the Droid CLI's own, so a session on another provider
+// starts on the model and reasoning effort the command named, or on whatever
+// its own harness is configured with.
+export function createModelDefaultsForProvider(
+  provider: ProviderKind,
+  mode: SessionInteractionMode,
+  command: { modelId?: string; reasoningEffort?: ReasoningEffort },
+  defaults: Parameters<typeof createModelDefaultsForMode>[2],
+): { modelId?: string; reasoningEffort?: ReasoningEffort } {
+  if (provider === DEFAULT_PROVIDER) return createModelDefaultsForMode(mode, command, defaults);
+  return {
+    ...(command.modelId !== undefined ? { modelId: command.modelId } : {}),
+    ...(command.reasoningEffort !== undefined ? { reasoningEffort: command.reasoningEffort } : {}),
+  };
+}
+
 export function createModelDefaultsForMode(
   mode: SessionInteractionMode,
   command: { modelId?: string; reasoningEffort?: ReasoningEffort },
@@ -265,9 +298,7 @@ export function buildCreateRuntimeOptions(input: {
   compactionModel: string;
   compactionTokenLimit: number;
   mcpServers: McpServerConfig[];
-  permissionHandler: PermissionHandler;
-  askUserHandler: AskUserHandler;
-}): CreateRuntimeSessionOptions {
+}): Omit<CreateRuntimeSessionOptions, 'permissionHandler' | 'askUserHandler'> {
   const usePrimaryForSpec =
     input.interactionMode === 'spec' ||
     Boolean(input.command.modelId) ||
@@ -294,8 +325,6 @@ export function buildCreateRuntimeOptions(input: {
     compactionTokenLimit: input.compactionTokenLimit,
     compactionThresholdCheckEnabled: true,
     mcpServers: input.mcpServers,
-    permissionHandler: input.permissionHandler,
-    askUserHandler: input.askUserHandler,
   };
 }
 
@@ -310,6 +339,9 @@ export function buildCreatedSessionSummary(input: {
     'workerModelId' | 'workerReasoningEffort' | 'validatorModelId' | 'validatorReasoningEffort'
   >;
   autonomy: Autonomy;
+  provider: ProviderKind;
+  // The provider's own handle for reopening the conversation, when it keeps one.
+  resumeId?: string;
   maxContextTokens?: number;
   compactionTokenLimit?: number;
   now: number;
@@ -320,6 +352,8 @@ export function buildCreatedSessionSummary(input: {
     appSessionId,
     providerSessionId: appSessionId,
     ...(command.sessionPurpose === 'mission-control' ? { missionId: appSessionId } : {}),
+    provider: input.provider,
+    ...(input.resumeId ? { resumeId: input.resumeId } : {}),
     sessionPurpose: command.sessionPurpose,
     interactionMode: input.interactionMode,
     role: 'primary',
@@ -348,6 +382,26 @@ export function buildCreatedSessionSummary(input: {
   };
 }
 
+// A provider that keeps no session file of its own has no init result to read
+// its state back from: the stored summary is the session's own record. Without
+// one there is nothing to reopen, so the resume fails instead of quietly
+// starting a fresh conversation under the same identity.
+export function buildResumedProviderSummary(
+  historical: SessionSummary | undefined,
+  appSessionId: string,
+): SessionSummary {
+  if (!historical)
+    throw new Error(`Session ${appSessionId} has no stored transcript to reopen from.`);
+  return {
+    ...historical,
+    appSessionId,
+    providerSessionId: appSessionId,
+    phase: historical.phase === 'running' ? 'paused' : historical.phase,
+    streaming: false,
+    queuedSends: 0,
+  };
+}
+
 interface BuildResumedSessionInput {
   init: SessionInitResult;
   historical?: SessionSummary | undefined;
@@ -357,6 +411,18 @@ interface BuildResumedSessionInput {
   maxContextTokensForModel: (modelId?: string) => number | undefined;
   now: number;
 }
+
+// The provider's own resume handle, when a stored summary carries one.
+export const resumeHandle = (summary: SessionSummary | undefined) =>
+  summary?.resumeId ? { resumeId: summary.resumeId } : {};
+
+// The launch settings a provider that keeps no session file of its own cannot
+// read back, handed to it from the stored summary.
+export const resumeSettings = (summary: SessionSummary | undefined) => ({
+  ...(summary?.modelId !== undefined ? { modelId: summary.modelId } : {}),
+  ...(summary?.reasoningEffort !== undefined ? { reasoningEffort: summary.reasoningEffort } : {}),
+  ...(summary?.autonomy !== undefined ? { autonomy: summary.autonomy } : {}),
+});
 
 export function buildResumedSession(input: BuildResumedSessionInput): {
   summary: SessionSummary;
@@ -368,6 +434,8 @@ export function buildResumedSession(input: BuildResumedSessionInput): {
       appSessionId: input.appSessionId,
       providerSessionId: input.providerSessionId,
       compactedFromProviderSessionIds: input.historical?.compactedFromProviderSessionIds ?? [],
+      provider: input.historical?.provider ?? DEFAULT_PROVIDER,
+      ...resumeHandle(input.historical),
       ...classification,
       ...resumedLocation(input),
       ...resumedModelSettings(input),

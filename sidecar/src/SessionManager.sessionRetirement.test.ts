@@ -20,6 +20,7 @@ function historicalSummary(
   return {
     appSessionId,
     providerSessionId,
+    provider: 'droid',
     sessionPurpose: 'chat',
     interactionMode: 'auto',
     role: 'primary',
@@ -318,7 +319,8 @@ test('a session with an unapplied model choice is never retired', async () => {
   const h = createSessionManagerTestContext({ sessionRuntimeIdleMs: 0 });
   try {
     const session = await openIdleSession(h, 'model-pending');
-    await h.handle({
+    const gate = h.provider.deferNextUpdateSettings(session.providerSessionId);
+    const updating = h.handle({
       type: 'settings.agent.update',
       appSessionId: session.appSessionId,
       agent: 'primary',
@@ -329,6 +331,10 @@ test('a session with an unapplied model choice is never retired', async () => {
     await h.retireIdleSessionRuntimes();
 
     assert.deepEqual(providerClosures(h), [], 'a pending model choice would be dropped by a close');
+    gate.resolve();
+    await updating;
+    await h.retireIdleSessionRuntimes();
+    assert.deepEqual(providerClosures(h), [session.providerSessionId]);
   } finally {
     await h.dispose();
   }

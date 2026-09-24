@@ -3,6 +3,9 @@
 
 import type { AutomationBridgeCommand, AutomationBridgeEvent } from './automations/types.js';
 import type { McpClientCommand, McpServerEvent } from './mcpProtocol.js';
+import type { ProviderMention, SkillInfo } from './providers/catalog.js';
+import type { ProviderKind } from './providers/providerKind.js';
+export type { ProviderMention, SkillInfo } from './providers/catalog.js';
 export type {
   McpServerInfo,
   McpServerInput,
@@ -41,6 +44,8 @@ export type ReasoningEffort =
   | 'high'
   | 'xhigh'
   | 'max'
+  // Codex's top level: maximum reasoning with automatic task delegation.
+  | 'ultra'
   | 'dynamic';
 
 export interface BridgeFeature {
@@ -65,7 +70,9 @@ export interface ProgressEntry {
 }
 
 export type ChildRole = 'worker' | 'validator';
-export type ChildStatus = 'pending' | 'running' | 'paused' | 'completed';
+// 'failed' is terminal like 'completed': the agent stopped, but it did not
+// deliver. Never fold the two together in a count, a label, or a tint.
+export type ChildStatus = 'pending' | 'running' | 'paused' | 'completed' | 'failed';
 export type StreamFidelity = 'token' | 'tool' | 'state';
 
 export interface ChildSpawnLink {
@@ -88,6 +95,9 @@ export interface ChildSessionSummary {
   status: ChildStatus;
   label?: string;
   prompt?: string;
+  // Orchestration name and phase title, when reported by the provider.
+  group?: string;
+  phase?: string;
   modelId: string;
   reasoningEffort?: ReasoningEffort;
   // Confirmed effective autonomy, runtime-scoped: present only while the child
@@ -111,6 +121,11 @@ export interface SessionSummary {
   providerSessionId?: string;
   compactedFromProviderSessionIds?: string[];
   missionId?: string;
+  // Agent runtime this session is bound to, fixed at creation.
+  provider: ProviderKind;
+  // Provider-owned handle for resuming this conversation, when the provider
+  // does not let us pin its session id (Codex threads). Absent for Droid.
+  resumeId?: string;
   sessionPurpose: SessionPurpose;
   interactionMode: SessionInteractionMode;
   role: 'primary' | 'user';
@@ -187,6 +202,9 @@ export interface TranscriptEvent {
   browserRefs?: BrowserTranscriptReference[];
   steered?: boolean;
   compactType?: 'auto' | 'manual';
+  modelSwitch?: { from: string; to: string };
+  errorKind?: 'usage_limit';
+  resetsAt?: number;
 }
 
 export type BrowserTranscriptReferenceKind = 'element' | 'region' | 'text';
@@ -238,6 +256,43 @@ export interface ModelInfo {
   supportedReasoningEfforts?: ReasoningEffort[];
   defaultReasoningEffort?: ReasoningEffort;
 }
+
+// What a provider can do for the user right now. Derived from what the sidecar
+// already knows about each runtime; see providers/providerStatus.ts.
+export type ProviderReadiness = 'ready' | 'missing' | 'unauthenticated' | 'unsupported' | 'error';
+
+export interface ProviderStatus {
+  provider: ProviderKind;
+  readiness: ProviderReadiness;
+  version?: string;
+  accountLabel?: string;
+  message?: string;
+  // The model a new chat on this provider starts on when it pins none: what the
+  // harness itself is configured with, so the app can name it instead of
+  // calling it "Default". Absent when the harness reports none.
+  defaultModelId?: string;
+  models: ModelInfo[];
+  items?: SkillInfo[];
+}
+
+// The harnesses whose CLI DROIDEX runs but does not ship: Claude Code and Codex.
+export type HarnessCliProvider = Exclude<ProviderKind, 'droid'>;
+// Where a harness CLI was installed from, read off its resolved binary. It
+// decides which updater owns the binary.
+export type HarnessInstallSource = 'homebrew' | 'npm' | 'native';
+
+export type HarnessCliState =
+  | { provider: HarnessCliProvider; installed: false }
+  | {
+      provider: HarnessCliProvider;
+      installed: true;
+      path: string;
+      source: HarnessInstallSource;
+      version?: string;
+      updating: boolean;
+      // Why the last update from the app failed; cleared by a successful one.
+      updateError?: string;
+    };
 
 export interface FactoryDefaultSettings {
   modelId?: string;
@@ -568,7 +623,10 @@ export type ClientCommand =
   | { type: 'env.detect' }
   | { type: 'cli.install'; channel: InstallChannel }
   | { type: 'cli.update'; channel?: InstallChannel }
+  | { type: 'harness.cli.check' }
+  | { type: 'harness.cli.update'; provider: HarnessCliProvider }
   | { type: 'catalog.models' }
+  | { type: 'provider.refresh' }
   | { type: 'catalog.tools'; providerSessionId?: string }
   | { type: 'catalog.skills'; providerSessionId?: string }
   | { type: 'settings.defaults' }
@@ -578,7 +636,11 @@ export type ClientCommand =
       cwd?: string;
       title: string;
       goal: string;
+      // Catalog rows staged with the first prompt, as on a send.
+      mentions?: ProviderMention[];
       sessionPurpose: SessionPurpose;
+      // Omitted means the default provider.
+      provider?: ProviderKind;
       interactionMode?: SessionInteractionMode;
       modelId?: string;
       reasoningEffort?: ReasoningEffort;
@@ -593,15 +655,31 @@ export type ClientCommand =
       validatorReasoning?: ReasoningEffort;
       responseFormat?: ResponseFormat;
     }
-  | { type: 'session.send'; appSessionId: string; text: string; responseFormat?: ResponseFormat }
-  | { type: 'session.sendNow'; appSessionId: string; text: string; responseFormat?: ResponseFormat }
+  | {
+      type: 'session.send';
+      appSessionId: string;
+      text: string;
+      mentions?: ProviderMention[];
+      responseFormat?: ResponseFormat;
+    }
+  | {
+      type: 'session.sendNow';
+      appSessionId: string;
+      text: string;
+      mentions?: ProviderMention[];
+      responseFormat?: ResponseFormat;
+    }
   | { type: 'session.resume'; appSessionId: string }
   | { type: 'session.interrupt'; appSessionId: string }
   | {
       type: 'session.updateSettings';
       appSessionId: string;
       modelId?: string | null;
-      reasoningEffort?: ReasoningEffort;
+      // null clears the effort: the model chosen offers none.
+      reasoningEffort?: ReasoningEffort | null;
+      // Echoed once the model/effort change settles, by
+      // `session.model_update_applied` or a `session.model_update_failed` error.
+      requestId?: string;
       autonomy?: Autonomy;
       interactionMode?: SessionInteractionMode;
     }
@@ -691,7 +769,7 @@ export type ClientCommand =
       appSessionId?: string;
       agent: ConfigurableSessionRole;
       modelId?: string | null;
-      reasoningEffort?: ReasoningEffort;
+      reasoningEffort?: ReasoningEffort | null;
     }
   | {
       // Snapshot of the app's explicitly configured compaction limits. A null
@@ -804,7 +882,16 @@ export type ServerEvent =
       line: string;
     }
   | { type: 'cli.install.done'; phase: 'install' | 'update'; ok: boolean; exitCode: number }
+  | { type: 'harness.cli.report'; clis: HarnessCliState[] }
+  | {
+      type: 'harness.cli.update.done';
+      provider: HarnessCliProvider;
+      ok: boolean;
+      previousVersion?: string;
+      version?: string;
+    }
   | { type: 'session.created'; clientRef: string; session: SessionSummary }
+  | { type: 'session.model_update_applied'; appSessionId: string; requestId: string }
   | { type: 'session.updated'; session: SessionSummary }
   | { type: 'session.closed'; appSessionId: string }
   | { type: 'session.processes'; appSessionId: string; processes: AgentProcess[] }
@@ -834,6 +921,9 @@ export type ServerEvent =
   | { type: 'event.appended'; event: TranscriptEvent }
   | { type: 'approval.requested'; request: PermissionRequest }
   | { type: 'question.requested'; question: SessionQuestion }
+  // An approval or question the session will never get an answer for, because
+  // the turn that raised it ended first.
+  | { type: 'interaction.cancelled'; appSessionId: string; requestId: string }
   | {
       type: 'context.updated';
       appSessionId: string;
@@ -849,6 +939,7 @@ export type ServerEvent =
       items: unknown[];
       providerSessionId?: string | null;
     }
+  | { type: 'provider.status'; statuses: ProviderStatus[] }
   | { type: 'settings.defaults'; defaults: FactoryDefaultSettings }
   | {
       type: 'error';

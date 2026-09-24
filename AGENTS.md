@@ -99,9 +99,9 @@ Line count is a signal to inspect responsibilities, not a design goal.
 - Leaf UI files usually sit around 50-250 lines; feature modules, hooks,
   reducers, and screens around 150-400.
 - Do not create a production file above 500 lines, take a file across 500, or
-  materially grow one already above it without stopping for review. Justify the
-  exception: the file's single responsibility, why a split would hurt ownership
-  or readability, and the reviewed ceiling.
+  materially grow one already above it without justifying the exception in the
+  pull request: the file's single responsibility, why a split would hurt
+  ownership or readability, and the reviewed ceiling.
 - Existing oversized files are debt. Extract a cohesive responsibility only when
   it belongs to the current task.
 
@@ -169,6 +169,35 @@ A name should communicate the concept at the scope where it is read.
   empty, and error states. Polish does not replace function.
 - Large lists mount only what is visible. Measure render cost with the real
   catalog or transcript before shipping a list-shaped change.
+
+## Visual design
+
+The interface should feel calm and deliberately designed: soft, quiet surfaces
+rather than lines and boxes. Visible hard borders and heavy background panels
+are the most common way a change makes the app look worse.
+
+- Separate layers with tone and soft shadow, not outlines. Use a border only
+  when tone cannot do the job, and then only the resting `--droid-border`
+  hairline. Never use `border-hover`, the accent, or text color as a resting
+  edge: the default light accent is near-black, so accent outlines become hard
+  black boxes.
+- Do not nest outlines. A control inside a bordered card is a borderless tinted
+  fill (`bg-droid-elevated`, `hover:bg-droid-active`), like the settings
+  dropdowns.
+- Floating layers (composer, popovers, menus, tooltips, toasts, dialogs) use
+  `bg-droid-raised` with `shadow-droid` or `shadow-droid-sm`. No fixed black
+  shadows; the theme owns the shadow color.
+- Hover and selected states are soft tint shifts (`elevated` to `active`, or a
+  low-alpha accent mix). Avoid thick rings and high-contrast selection fills;
+  a check mark or text weight carries the meaning.
+- Adjacent surfaces differ by a few percent of lightness, never a visible
+  block. Light mode is a soft warm off-white, not pure white or grey; dark mode
+  is a deep near-black.
+- Tune colors in `src/lib/theme.ts`, not per component, and keep the contrast
+  tests in `src/lib/theme.test.ts` passing.
+- Keep focus visible for keyboard users with a soft ring (the
+  `composer-focus-ring` pattern), not a hard outline.
+- Check both light and dark in the running app before shipping a visual change.
 
 ## DROIDEX identity and runtime contracts
 
@@ -243,7 +272,7 @@ count, coverage targets, or a wish to look thorough.
   rest. Never commit scaffolding to look thorough, and never drop a valuable
   test to look small.
 - Do not weaken assertions or delete failing tests to get a green run. Honor CI
-  gates, including the coverage thresholds in `npm run test:coverage`.
+  gates, including the coverage thresholds in `npm run test:ci`.
 
 Tests are maintained code too. Keep the ones whose protection justifies their
 cost.
@@ -318,9 +347,10 @@ npm run docs:check
 npm run build
 ```
 
-`npm run lint` is non-blocking because of existing backlog; new and changed
-files still own their diagnostics. The pre-commit hook runs lint-staged, file
-size, tech-debt, and typecheck gates.
+`npm run lint` blocks CI on new errors. The existing backlog is recorded in
+`eslint-suppressions.json`; never add to it to get a green run. When you fix old
+errors, prune it with `npx eslint . --prune-suppressions`. The pre-commit hook
+runs lint-staged, file size, tech-debt, and typecheck gates.
 
 Performance changes are validated with the deterministic replay harness
 (`npm run perf:replay -- --scenario <smoke|idle|streaming|multi-agent|agents-4|agents-16|agents-27|long-history|long-tail|session-switch|soak>`),
@@ -350,6 +380,12 @@ Start from `.env.example` for local overrides.
 - `DROIDEX_HISTORY_DIR`: explicit history state directory for a bare sidecar
   running beside the main app
 - `DROID_PATH`: explicit Droid CLI path
+- `CLAUDE_PATH`: explicit Claude Code CLI path
+- `CLAUDE_CONFIG_DIR`: Claude Code's own config directory, read for the default
+  model a new Claude chat starts on
+- `CODEX_PATH`: explicit Codex CLI path
+- `CODEX_HOME`: Codex's own home, read for the default model a new Codex chat
+  starts on
 - `FACTORY_API_KEY`: optional Factory key for Droid child processes
 
 ## Secrets

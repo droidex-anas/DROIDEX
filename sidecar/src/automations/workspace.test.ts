@@ -10,6 +10,7 @@ import {
   createAutomationWorkspace,
   releaseAutomationWorkspace,
   resolveAutomationWorkspace,
+  type PrepareAutomationWorkspaceInput,
 } from './workspace.js';
 
 const execFileAsync = promisify(execFile);
@@ -20,9 +21,9 @@ test('release removes a clean linked worktree', async () => {
 
   try {
     await initializeRepository(repository);
-    const input = {
+    const input: PrepareAutomationWorkspaceInput = {
       cwd: repository,
-      executionMode: 'worktree' as const,
+      executionMode: 'worktree',
       title: 'Clean worktree',
       runId: 'run-123456',
     };

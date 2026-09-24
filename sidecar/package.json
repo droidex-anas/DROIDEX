@@ -8,17 +8,16 @@
     "dev": "tsx watch src/index.ts",
     "start": "tsx src/index.ts",
     "build": "npm run build:main && npm run build:history-worker",
-    "build:main": "esbuild src/index.ts --bundle --platform=node --format=esm --banner:js=\"import{createRequire as __cr}from'module';const require=__cr(import.meta.url);\" --outfile=dist/sidecar.mjs",
+    "build:main": "esbuild src/index.ts --bundle --splitting --platform=node --format=esm --banner:js=\"import{createRequire as __cr}from'module';const require=__cr(import.meta.url);\" --outdir=dist --entry-names=sidecar --chunk-names=chunks/[name]-[hash] --out-extension:.js=.mjs",
     "build:history-worker": "esbuild src/historyPersistenceWorker.ts --bundle --platform=node --format=esm --banner:js=\"import{createRequire as __cr}from'module';const require=__cr(import.meta.url);\" --outfile=dist/historyPersistenceWorker.mjs",
     "test": "node --import tsx --test --test-reporter=spec \"src/**/*.test.ts\"",
-    "test:coverage": "node --import tsx --test --experimental-test-coverage --test-coverage-lines=74 --test-coverage-branches=69 --test-coverage-functions=56 \"src/**/*.test.ts\"",
-    "test:report": "mkdir -p ../reports && node --import tsx --test --test-reporter=spec --test-reporter-destination=stdout --test-reporter=junit --test-reporter-destination=../reports/sidecar-tests.xml \"src/**/*.test.ts\"",
-    "test:flaky": "mkdir -p ../reports && node ../tools/run-flaky-check.mjs ../reports/sidecar-reruns.json -- node --import tsx --test --test-reporter=spec \"src/**/*.test.ts\"",
+    "test:ci": "mkdir -p ../reports && node --import tsx --test --experimental-test-coverage --test-coverage-lines=74 --test-coverage-branches=69 --test-coverage-functions=56 --test-reporter=spec --test-reporter-destination=stdout --test-reporter=junit --test-reporter-destination=../reports/sidecar-tests.xml \"src/**/*.test.ts\"",
     "perf:replay": "tsx src/perf/cli.ts",
     "typecheck": "tsc --noEmit",
     "typecheck:strict": "tsc -p tsconfig.strict.json --noEmit"
   },
   "dependencies": {
+    "@anthropic-ai/claude-agent-sdk": "^0.3.270",
     "@factory/droid-sdk": "^0.6.0",
     "ws": "^8.18.0",
     "zod": "^3.25.76"
@@ -29,5 +28,10 @@
     "esbuild": "^0.24.0",
     "tsx": "^4.19.0",
     "typescript": "^5.6.0"
+  },
+  "overrides": {
+    "@anthropic-ai/claude-agent-sdk": {
+      "zod": "$zod"
+    }
   }
 }

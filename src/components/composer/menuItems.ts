@@ -1,9 +1,13 @@
-import { rankMenuCandidates } from '../../lib/composerMenuRanking';
+import { menuMatchRank, rankMenuCandidates } from '../../lib/composerMenuRanking';
+import { catalogRowKey } from './composerCatalog';
 import type { SkillInfo } from '../../types/bridge';
-import type { MenuItem, SlashCommand } from '../ComposerMenu';
+import type { SlashCommand } from '../ComposerMenu';
 
-const SKILL_LIMIT = 40;
+const CATALOG_LIMIT = 40;
 const FILE_LIMIT = 50;
+// A file whose path matches the query but whose name does not still belongs in
+// the list, below every file named for it.
+const PATH_ONLY_RANK = 5;
 
 export interface ComposerTrigger {
   kind: 'slash' | 'file';
@@ -27,47 +31,247 @@ export function composerTrigger(text: string, caret: number): ComposerTrigger | 
   };
 }
 
+/** A row the menu offers: an app command, a harness catalog entry, or a file. */
+export type MenuItem =
+  | { type: 'command'; command: SlashCommand }
+  | { type: 'catalog'; item: SkillInfo }
+  | { type: 'file'; path: string };
+
+/**
+ * What the open menu paints, in order. Section and group labels are text; rows
+ * are the only things the keyboard and the pointer land on, and each carries its
+ * position among the rows alone so navigation never counts labels.
+ */
+export type MenuEntry =
+  | { kind: 'label'; key: string; text: string; group: boolean }
+  | { kind: 'row'; key: string; index: number; item: MenuItem };
+
+export interface ComposerMenu {
+  entries: MenuEntry[];
+  rows: MenuItem[];
+}
+
+/**
+ * Stable across catalog updates, so a row that lands while the menu is open
+ * neither moves the highlight nor remounts a row that is already painted.
+ */
+export function menuRowKey(item: MenuItem): string {
+  if (item.type === 'command') return `command:${item.command.cmd}`;
+  if (item.type === 'file') return `file:${item.path}`;
+  return `catalog:${catalogRowKey(item.item)}`;
+}
+
+const LOCATION_SCOPE = { project: 'repo', personal: 'user', builtin: 'system' } as const;
+
+/** What a row calls itself: an app names itself for people, a skill by its name. */
+export function catalogLabel(item: SkillInfo): string {
+  return item.displayName ?? item.name;
+}
+
+/** Where a row comes from: `repo`, `user`, `system`, or the plugin that owns it. */
+export function rowScope(item: SkillInfo): string {
+  return item.scope ?? LOCATION_SCOPE[item.location];
+}
+
+// The scopes every harness shares, in the order the menu reads them. Any other
+// scope is a plugin's name, and those rows group under the plugin instead.
+const SHARED_SCOPES = ['repo', 'user', 'system'];
+
 function basename(p: string): string {
   const i = p.lastIndexOf('/');
   return i >= 0 ? p.slice(i + 1) : p;
 }
 
-// The rows the open menu offers for what has been typed so far. An empty result
-// closes the menu, so a query that matches nothing gets out of the way.
-export function menuItemsForTrigger(
-  trigger: ComposerTrigger,
-  { commands, skills, files }: { commands: SlashCommand[]; skills: SkillInfo[]; files: string[] },
-): MenuItem[] {
-  const q = trigger.query.toLowerCase();
-  if (trigger.kind === 'file') {
-    return files
-      .filter((f) => f.toLowerCase().includes(q))
-      .sort((a, b) => {
-        const aw = basename(a).toLowerCase().startsWith(q) ? 0 : 1;
-        const bw = basename(b).toLowerCase().startsWith(q) ? 0 : 1;
-        return aw - bw || a.length - b.length;
-      })
-      .slice(0, FILE_LIMIT)
-      .map<MenuItem>((path) => ({ type: 'file', path }));
+interface Group {
+  /** Absent for the shared scopes, which read under the section label alone. */
+  label?: string;
+  rows: MenuItem[];
+  rank: number;
+}
+
+interface Section {
+  label: string;
+  groups: Group[];
+  rank: number;
+}
+
+// Commands match on their name alone, as they always have; skills, apps and
+// plugins, whose names are terse, are also reachable through their description.
+function rankCommands(query: string, commands: SlashCommand[]): MenuItem[] {
+  return rankMenuCandidates(query, commands, (c) => ({ name: c.cmd.slice(1) }))
+    .items.slice(0, CATALOG_LIMIT)
+    .map((command) => ({ type: 'command', command }));
+}
+
+function rankHarnessCommands(query: string, catalog: SkillInfo[]): MenuItem[] {
+  const commands = offerable(catalog, 'command');
+  return catalogRows(
+    rankMenuCandidates(query, commands, (item) => ({ name: item.name })).items.slice(
+      0,
+      CATALOG_LIMIT,
+    ),
+  );
+}
+
+// A row a prompt cannot invoke is not offered; the catalog still carries it, so
+// a plugin can name the group its skills belong to.
+function offerable(catalog: SkillInfo[], kind: SkillInfo['kind']): SkillInfo[] {
+  return catalog.filter(
+    (item) => item.kind === kind && item.userInvocable !== false && item.enabled !== false,
+  );
+}
+
+function rankCatalog(query: string, items: SkillInfo[]): SkillInfo[] {
+  return rankMenuCandidates(query, items, (item) => ({
+    name: item.name,
+    description: item.description,
+  })).items.slice(0, CATALOG_LIMIT);
+}
+
+function catalogRows(items: SkillInfo[]): MenuItem[] {
+  return items.map((item) => ({ type: 'catalog', item }));
+}
+
+// Rank of the best row in a list. Ranked lists are already sorted, so the first
+// row carries it; an empty list stays out of the way.
+function bestRank(query: string, rows: MenuItem[]): number {
+  const first = rows.at(0);
+  if (!first) return Number.POSITIVE_INFINITY;
+  if (first.type === 'file') return fileRank(query, first.path);
+  if (first.type === 'command') return menuMatchRank(query, { name: first.command.cmd.slice(1) });
+  return menuMatchRank(query, { name: first.item.name, description: first.item.description });
+}
+
+// Files rank on their name the way catalog rows do, so `@` can lead with an app
+// named exactly for the query and otherwise keeps files first.
+function fileRank(query: string, path: string): number {
+  const rank = menuMatchRank(query, { name: basename(path) });
+  return Number.isFinite(rank) ? rank : PATH_ONLY_RANK;
+}
+
+function group(rows: MenuItem[], query: string, label?: string): Group {
+  return { ...(label === undefined ? {} : { label }), rows, rank: bestRank(query, rows) };
+}
+
+function section(label: string, groups: Group[], query: string): Section[] {
+  const filled = orderByRank(
+    query,
+    groups.filter((g) => g.rows.length > 0),
+  );
+  if (filled.length === 0) return [];
+  return [{ label, groups: filled, rank: Math.min(...filled.map((g) => g.rank)) }];
+}
+
+// A query re-orders sections and groups so the best match leads the whole menu;
+// without one the canonical order stands. The sort is stable, so ties keep it.
+function orderByRank<T extends { rank: number }>(query: string, items: T[]): T[] {
+  if (query.trim() === '') return items;
+  return [...items].sort((a, b) => a.rank - b.rank);
+}
+
+/**
+ * Skills read by where they come from: the scopes every harness shares first,
+ * then one sub-labelled group per plugin. Claude's user skills, Codex's repo
+ * skills and Droid's own land in the shared groups; a plugin's skills stay
+ * together under the plugin's display name.
+ */
+function skillGroups(query: string, catalog: SkillInfo[]): Group[] {
+  const ranked = rankCatalog(query, offerable(catalog, 'skill'));
+  const shared = SHARED_SCOPES.map((scope) =>
+    group(catalogRows(ranked.filter((item) => rowScope(item) === scope)), query),
+  );
+  const plugins = new Map<string, SkillInfo[]>();
+  for (const item of ranked) {
+    const scope = rowScope(item);
+    if (SHARED_SCOPES.includes(scope)) continue;
+    plugins.set(scope, [...(plugins.get(scope) ?? []), item]);
   }
-  // Commands match on their name alone, as they always have; only skills, whose
-  // names are terse, are also reachable through their description.
-  const rankedCommands = rankMenuCandidates(q, commands, (c) => ({ name: c.cmd.slice(1) }));
-  const rankedSkills = rankMenuCandidates(q, skills, (s) => ({
-    name: s.name,
-    description: s.description,
-  }));
-  const commandRows = rankedCommands.items.map<MenuItem>((command) => ({
-    type: 'command',
-    command,
-  }));
-  const skillRows = rankedSkills.items
-    .slice(0, SKILL_LIMIT)
-    .map<MenuItem>((skill) => ({ type: 'skill', skill }));
-  // The menu labels its Commands and Skills sections, so the kinds stay grouped
-  // and whichever group holds the better match leads. Typing a skill's exact name
-  // puts it first instead of behind every command.
-  return rankedSkills.bestRank < rankedCommands.bestRank
-    ? [...skillRows, ...commandRows]
-    : [...commandRows, ...skillRows];
+  const byPlugin = [...plugins]
+    .map(([scope, items]) => group(catalogRows(items), query, pluginLabel(scope, catalog)))
+    .sort((a, b) => (a.label ?? '').localeCompare(b.label ?? ''));
+  return [...shared, ...byPlugin];
+}
+
+// A plugin's own display name when the catalog carries the plugin itself,
+// otherwise the name its skills were tagged with.
+function pluginLabel(scope: string, catalog: SkillInfo[]): string {
+  const plugin = catalog.find((item) => item.kind === 'plugin' && item.name === scope);
+  return plugin?.displayName ?? scope;
+}
+
+function flatten(sections: Section[]): ComposerMenu {
+  const entries: MenuEntry[] = [];
+  const rows: MenuItem[] = [];
+  for (const s of sections) {
+    entries.push({ kind: 'label', key: `section:${s.label}`, text: s.label, group: false });
+    for (const g of s.groups) {
+      if (g.label !== undefined) {
+        entries.push({
+          kind: 'label',
+          key: `group:${s.label}:${g.label}`,
+          text: g.label,
+          group: true,
+        });
+      }
+      for (const item of g.rows) {
+        entries.push({ kind: 'row', key: menuRowKey(item), index: rows.length, item });
+        rows.push(item);
+      }
+    }
+  }
+  return { entries, rows };
+}
+
+export interface ComposerMenuSources {
+  /** DROIDEX's own client-run commands, already filtered to the bound harness. */
+  commands: SlashCommand[];
+  /** The bound harness's catalog, as far as it has landed. */
+  catalog: SkillInfo[];
+  files: string[];
+}
+
+/**
+ * The menu for what has been typed so far. An empty result closes the menu, so a
+ * query that matches nothing gets out of the way.
+ */
+export function composerMenu(
+  trigger: ComposerTrigger,
+  { commands, catalog, files }: ComposerMenuSources,
+): ComposerMenu {
+  const { query } = trigger;
+  if (trigger.kind === 'file') return flatten(mentionSections(query, catalog, files));
+  return flatten(slashSections(query, commands, catalog));
+}
+
+function slashSections(query: string, commands: SlashCommand[], catalog: SkillInfo[]): Section[] {
+  return orderByRank(query, [
+    ...section(
+      'Commands',
+      [
+        group(rankCommands(query, commands), query),
+        group(rankHarnessCommands(query, catalog), query),
+      ],
+      query,
+    ),
+    ...section('Skills', skillGroups(query, catalog), query),
+  ]);
+}
+
+function mentionSections(query: string, catalog: SkillInfo[], files: string[]): Section[] {
+  const byKind = (kind: SkillInfo['kind']) =>
+    group(catalogRows(rankCatalog(query, offerable(catalog, kind))), query);
+  return orderByRank(query, [
+    ...section('Files', [group(fileRows(query, files), query)], query),
+    ...section('Apps', [byKind('app')], query),
+    ...section('Plugins', [byKind('plugin')], query),
+  ]);
+}
+
+function fileRows(query: string, files: string[]): MenuItem[] {
+  const q = query.toLowerCase();
+  return files
+    .filter((f) => f.toLowerCase().includes(q))
+    .sort((a, b) => fileRank(query, a) - fileRank(query, b) || a.length - b.length)
+    .slice(0, FILE_LIMIT)
+    .map((path) => ({ type: 'file', path }));
 }

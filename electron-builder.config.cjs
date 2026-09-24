@@ -18,6 +18,18 @@ const sparkleFeedUrl =
 const sentryDsn = process.env.SENTRY_DSN_FILE
   ? fs.readFileSync(process.env.SENTRY_DSN_FILE, 'utf8').trim()
   : process.env.SENTRY_DSN || '';
+// Datadog RUM credentials. The application id and client token are designed for
+// client-side use and are embedded in the build; the Datadog API key is not read
+// here and must never ship inside the app. An absent value simply means the
+// build reports no usage analytics.
+const datadog = {
+  applicationId: (process.env.DATADOG_APPLICATION_ID || '').trim(),
+  clientToken: (process.env.DATADOG_CLIENT_TOKEN || '').trim(),
+  site: (process.env.DATADOG_SITE || '').trim(),
+  // Only the signed release workflow stamps `release`. Local packaged builds
+  // stay `local` so maintainer machines never count as installations.
+  distributionChannel: process.env.DROIDEX_DISTRIBUTION_CHANNEL === 'release' ? 'release' : 'local',
+};
 const hasSigningCredentials = Boolean(process.env.CSC_LINK || process.env.APPLE_SIGNING_IDENTITY);
 const identity = process.env.APPLE_SIGNING_IDENTITY || (process.env.CSC_LINK ? undefined : '-');
 const hasApiKeyCredentials = Boolean(
@@ -57,6 +69,15 @@ if (isReleaseBuild || isUnsignedReleaseBuild) {
   }
 }
 
+if (
+  datadog.distributionChannel === 'release' &&
+  !(datadog.applicationId && datadog.clientToken && datadog.site)
+) {
+  throw new Error(
+    'DROIDEX release-channel builds require DATADOG_APPLICATION_ID, DATADOG_CLIENT_TOKEN and DATADOG_SITE for installation counting.',
+  );
+}
+
 /** @type {import('electron-builder').Configuration} */
 module.exports = {
   appId: 'app.droidex',
@@ -64,6 +85,7 @@ module.exports = {
   forceCodeSigning: isReleaseBuild,
   extraMetadata: {
     sentryDsn,
+    datadog,
     sparkleFeedUrl,
     updateInstallMode: isReleaseBuild ? 'automatic' : 'sparkle',
   },

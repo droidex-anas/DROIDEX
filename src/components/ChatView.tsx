@@ -10,7 +10,7 @@ import { AnimatePresence, motion } from 'framer-motion';
 import { MessageFeed } from './MessageFeed';
 import { RunningProcessesMenu } from './RunningProcessesMenu';
 import { LiveProcessesContext } from './transcript/liveProcessesContext';
-import type { AgentProcess } from '../types/bridge';
+import type { AgentProcess, ChildSessionSummary } from '../types/bridge';
 import { WorkingIndicator, UserBubble, ChatSkeleton, TranscriptSkeleton } from './chat';
 import { readFile } from '../lib/desktop';
 import { interruptChild, loadChildHistory, loadSessionHistory } from '../lib/commands';
@@ -24,6 +24,8 @@ import {
   shouldRequestReleasedChildHistory,
   visibleSessionTarget,
 } from '../lib/childSessions';
+import { useOpenAgent } from './agents/useOpenAgent';
+import { useScrollingAttribute } from '../hooks/useScrollingAttribute';
 import { ConversationTimeline } from './ConversationTimeline';
 import { WelcomeScreen } from './WelcomeScreen';
 import { isChatWorktreePath } from '../lib/chatWorkspace';
@@ -212,11 +214,16 @@ function ChatHeader({
 export default function ChatView({
   rightInset = false,
   isObscured = false,
+  besidePane = false,
 }: {
   rightInset?: boolean;
   isObscured?: boolean;
+  // The utility pane is open beside the chat, so the chat's scrollbar ends
+  // mid-window and shows only while it moves.
+  besidePane?: boolean;
 }) {
   const dispatch = useStoreDispatch();
+  const openAgent = useOpenAgent();
   const equalChatState = useCallback(
     (previous: ChatViewState, next: ChatViewState) =>
       isObscured || equalVisibleChatState(previous, next),
@@ -228,6 +235,7 @@ export default function ChatView({
   // the obscured-gated chat state so a settings change always applies live.
   const toolActivity = useStoreSelector((s) => s.toolActivity);
   const scrollRef = useRef<HTMLDivElement>(null);
+  useScrollingAttribute(scrollRef, besidePane);
   const conversationListRef = useRef<ConversationListHandle>(null);
   const viewportLayoutRef = useRef<ConversationViewportLayout | null>(null);
   const activeSession = state.activeSession;
@@ -309,15 +317,24 @@ export default function ChatView({
     [childSessions, dispatch],
   );
 
+  // A monitor row opens the agent beside the chat instead of navigating to it.
+  const openAgentTab = useCallback(
+    (child: ChildSessionSummary) => {
+      openAgent(child.childSessionId);
+    },
+    [openAgent],
+  );
+
+  const cwd = activeSession?.cwd;
   const openReviewFile = useCallback<OpenReviewFileHandler>(
     (path, change) => {
+      // A captured change carries its own diff and opens anywhere; a bare path
+      // has to be read from the workspace, so a folderless chat has nothing.
+      if (!change && !cwd) return;
       dispatch(openReviewAt(path, change));
     },
-    [dispatch],
+    [cwd, dispatch],
   );
-  // Review previews a file from the workspace; a folderless chat has nothing
-  // to open, so its paths and chips stay plain text.
-  const canOpenFiles = Boolean(activeSession?.cwd);
   const openDiff = useCallback(
     (change: FileChange) => {
       openReviewFile(change.path, change);
@@ -341,10 +358,15 @@ export default function ChatView({
     allTranscript,
     activeSession?.interruptReason,
   );
-  const subagentsDock = useMemo(() => {
+  const agentMonitor = useMemo(() => {
     if (viewingChildSession) return undefined;
-    return { sessions: childSessions, models: state.models, snapshots: streamSnapshots };
-  }, [viewingChildSession, childSessions, state.models, streamSnapshots]);
+    return {
+      sessions: childSessions,
+      models: state.models,
+      snapshots: streamSnapshots,
+      ...(activeSession ? { provider: activeSession.provider } : {}),
+    };
+  }, [viewingChildSession, childSessions, state.models, streamSnapshots, activeSession]);
 
   // Primary and logical-child transcripts each own their persisted cursor even
   // though live child events share the parent's in-memory event array.
@@ -603,8 +625,7 @@ export default function ChatView({
     useStoreSelector((current) =>
       current.activeAppSessionId ? current.agentProcesses[current.activeAppSessionId] : undefined,
     ) ?? NO_LIVE_PROCESSES;
-  const messageFeedCwd = activeSession?.cwd;
-  const messageFeedSubagentsDock = subagentsDock;
+  const messageFeedAgentMonitor = agentMonitor;
   let conversationContent: ReactNode;
   if (activeSession && transcript.length > 0) {
     conversationContent = (
@@ -629,13 +650,14 @@ export default function ChatView({
             updateKind={feedUpdateKind}
             rebuiltFromItemIndex={rebuiltFromFeedItemIndex}
             pending={live}
-            {...(messageFeedCwd !== undefined ? { cwd: messageFeedCwd } : {})}
-            onOpenDiff={canOpenFiles ? openDiff : undefined}
-            onOpenReviewFile={canOpenFiles ? openReviewFile : undefined}
+            {...(cwd !== undefined ? { cwd } : {})}
+            onOpenDiff={openDiff}
+            onOpenReviewFile={openReviewFile}
             onOpenChildSession={openChildSession}
             childSessionActivity={childSessionActivity}
-            {...(messageFeedSubagentsDock !== undefined
-              ? { subagentsDock: messageFeedSubagentsDock }
+            onOpenAgent={openAgentTab}
+            {...(messageFeedAgentMonitor !== undefined
+              ? { agentMonitor: messageFeedAgentMonitor }
               : {})}
             specContent={specContent}
             density={toolActivity.density}
@@ -747,7 +769,9 @@ export default function ChatView({
           <div
             ref={scrollRef}
             onScroll={onScroll}
-            className="flex-1 min-h-0 min-w-0 overflow-y-auto overflow-x-hidden"
+            className={`flex-1 min-h-0 min-w-0 overflow-y-auto overflow-x-hidden ${
+              besidePane ? 'scrollbar-while-scrolling' : ''
+            }`}
             style={{
               paddingRight: rightInset ? 312 : undefined,
               overflowAnchor: 'none',

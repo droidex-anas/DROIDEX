@@ -46,7 +46,13 @@ export function recordMcpCatalog(servers: readonly McpServerInfo[]): void {
   let changed = false;
   for (const server of servers) {
     const key = sourceKey(server.name);
-    if (!server.host || hostsBySource.get(key) === server.host) continue;
+    if (!server.host) {
+      // An explicit hostless report (the same server running over stdio here)
+      // clears the cached host; a server the catalog omits keeps its own.
+      if (hostsBySource.delete(key)) changed = true;
+      continue;
+    }
+    if (hostsBySource.get(key) === server.host) continue;
     hostsBySource.set(key, server.host);
     changed = true;
   }

@@ -61,7 +61,9 @@ function createSchema(path: string): void {
       role TEXT NOT NULL CHECK (role IN ('worker', 'validator')),
       label TEXT,
       prompt TEXT,
-      status TEXT NOT NULL CHECK (status IN ('pending', 'running', 'paused', 'completed')),
+      group_name TEXT,
+      phase TEXT,
+      status TEXT NOT NULL CHECK (status IN ('pending', 'running', 'paused', 'completed', 'failed')),
       model_id TEXT NOT NULL,
       reasoning_effort TEXT,
       spawn_link_kind TEXT CHECK (spawn_link_kind IN ('tool-use', 'spawn')),
@@ -91,6 +93,7 @@ function summary(): SessionSummary {
   return {
     appSessionId: 'app',
     providerSessionId: 'provider',
+    provider: 'droid',
     sessionPurpose: 'chat',
     interactionMode: 'auto',
     role: 'primary',

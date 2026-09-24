@@ -87,7 +87,7 @@ export default tseslint.config(
   },
 
   {
-    files: ['**/*.test.{ts,tsx}', 'vite.config.ts'],
+    files: ['**/*.test.{ts,tsx}', 'tests/integration/automations.spec.ts', 'vite.config.ts'],
     extends: [tseslint.configs.recommended],
     languageOptions: {
       globals: {
@@ -103,6 +103,22 @@ export default tseslint.config(
   },
 
   {
+    files: [
+      'src/features/automations/**/*.{ts,tsx}',
+      'sidecar/src/automations/**/*.ts',
+      'sidecar/src/sessionAutomationDelivery.ts',
+      'sidecar/src/SessionManager.scheduledDelivery.test.ts',
+      'src/components/PromptInput.{tsx,test.ts}',
+      'src/components/composer/**/*.{ts,tsx}',
+      'src/lib/composePrompt.ts',
+      'tests/integration/automations.spec.ts',
+    ],
+    rules: {
+      '@typescript-eslint/consistent-type-assertions': ['error', { assertionStyle: 'never' }],
+    },
+  },
+
+  {
     files: ['packages/icons/gallery/*.js'],
     languageOptions: { globals: globals.browser },
   },
@@ -112,6 +128,19 @@ export default tseslint.config(
     languageOptions: {
       globals: { ...globals.node },
       sourceType: 'commonjs',
+    },
+    rules: {
+      'no-restricted-syntax': [
+        'error',
+        {
+          selector: "MemberExpression[property.name='enableDeviceEmulation']",
+          message: 'Chromium device emulation crashed the Browser pane.',
+        },
+        {
+          selector: "Literal[value='Emulation.setDeviceMetricsOverride']",
+          message: 'Chromium device emulation crashed the Browser pane.',
+        },
+      ],
     },
   },
 

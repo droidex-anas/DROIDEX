@@ -1,6 +1,7 @@
 import { ChevronDown, Search, X } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import ModelCatalogList from '../../components/ModelCatalogList';
+import { isDroidCoreModel } from '../../components/modelCategories';
 import { ModelIcon, providerOf } from '../../components/ModelIcon';
 import { listModels } from '../../lib/commands';
 import type { ModelInfo, ReasoningEffort } from '../../types/bridge';
@@ -16,6 +17,7 @@ const accentMix = (pct: number) =>
 const PANEL_MAX_HEIGHT = 560;
 
 type ModelCategory = 'core' | 'factory' | 'custom';
+const MODEL_CATEGORIES: readonly ModelCategory[] = ['core', 'factory', 'custom'];
 
 const CATEGORY_LABEL: Record<ModelCategory, string> = {
   core: 'Droid core',
@@ -93,8 +95,7 @@ export function AutomationModelPicker({
   // must write the model just picked, not the one the last render knew.
   const pickedModelId = useRef(modelId);
   pickedModelId.current = modelId;
-  const selectModel = (nextModelId?: string) => {
-    if (!nextModelId) return;
+  const selectModel = (nextModelId: string) => {
     const nextModel = models.find((model) => model.id === nextModelId);
     if (!nextModel) return;
     pickedModelId.current = nextModel.id;
@@ -237,7 +238,7 @@ export function AutomationModelPicker({
                     setCategory('all');
                   }}
                 />
-                {(Object.keys(CATEGORY_LABEL) as ModelCategory[]).map((value) =>
+                {MODEL_CATEGORIES.map((value) =>
                   categoryCounts[value] > 0 ? (
                     <CategoryButton
                       key={value}
@@ -254,8 +255,8 @@ export function AutomationModelPicker({
 
               <ModelCatalogList
                 models={filteredModels}
-                defaultModel={undefined}
                 hasRealModels={models.length > 0}
+                provider="droid"
                 selectedModelId={modelId ?? undefined}
                 reasoning={selectedReasoning}
                 query={query}
@@ -263,7 +264,6 @@ export function AutomationModelPicker({
                 onSelectReasoning={selectReasoning}
                 disabled={false}
                 reasoningLocked={false}
-                showDefault={false}
               />
             </div>
           </div>
@@ -320,11 +320,7 @@ function CategoryButton({
 
 function categoryOf(model: ModelInfo): ModelCategory {
   if (model.isCustom || model.id.startsWith('custom:')) return 'custom';
-  const provider = (model.provider ?? '').toLowerCase();
-  if (provider === 'droid-core' || model.displayName.toLowerCase().startsWith('droid core')) {
-    return 'core';
-  }
-  return 'factory';
+  return isDroidCoreModel(model) ? 'core' : 'factory';
 }
 
 function reasoningOptionsForModel(

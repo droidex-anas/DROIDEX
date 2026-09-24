@@ -1,7 +1,9 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { shouldResumeQueuedPromptAfterUpdate, shouldStopTurnStarting } from './PromptInput';
+import { shouldStopTurnStarting } from './PromptInput';
 import type { TranscriptEvent } from '../types/bridge';
+import { hasAppContextForTranscript } from '../lib/composePrompt';
+import { shouldResumeQueuedPromptAfterUpdate } from './composer/useQueuedPromptDelivery';
 
 test('an idle queued prompt resumes only when an update window returns control', () => {
   assert.equal(shouldResumeQueuedPromptAfterUpdate(true, false, false, true, 'presented'), true);
@@ -11,8 +13,8 @@ test('an idle queued prompt resumes only when an update window returns control',
   assert.equal(shouldResumeQueuedPromptAfterUpdate(true, false, false, false, 'presented'), false);
 });
 
-test('queued primary delivery reads App context from the primary transcript', async () => {
-  const events = [
+test('queued primary delivery reads App context from the primary transcript', () => {
+  const events: TranscriptEvent[] = [
     {
       id: 'primary-app',
       appSessionId: 'parent',
@@ -33,17 +35,9 @@ test('queued primary delivery reads App context from the primary transcript', as
       text: 'No app here',
       ts: 2,
     },
-  ] as TranscriptEvent[];
-
-  const promptInput = (await import('./PromptInput')) as unknown as {
-    hasAppContextForTranscript?: (
-      transcript: TranscriptEvent[],
-      childSessionId: string | null,
-    ) => boolean;
-  };
-  assert.equal(typeof promptInput.hasAppContextForTranscript, 'function');
-  assert.equal(promptInput.hasAppContextForTranscript?.(events, null), true);
-  assert.equal(promptInput.hasAppContextForTranscript?.(events, 'child-1'), false);
+  ];
+  assert.equal(hasAppContextForTranscript(events, null), true);
+  assert.equal(hasAppContextForTranscript(events, 'child-1'), false);
 });
 
 test('turn-start feedback settles when creation fails or the visible target changes', () => {

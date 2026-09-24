@@ -24,6 +24,8 @@ export interface ChildSessionLatest {
 export interface ChildSessionTarget {
   toolUseId?: string;
   label?: string;
+  // Several children may share a spawn call.
+  childSessionId?: string;
 }
 
 // Spawn events identify a child by toolUseId once it arrives; until then the
@@ -132,7 +134,8 @@ export function visibleSessionTarget(
   const child = selectedChildForParent(activeAppSessionId, selection, childrenByParent);
   if (!activeAppSessionId || !selection || !child) return { kind: 'primary' };
   const access = accessByParent[activeAppSessionId]?.[selection.childSessionId];
-  const ready = access?.state === 'ready' && child.status !== 'completed';
+  const ready =
+    access?.state === 'ready' && child.status !== 'completed' && child.status !== 'failed';
   return {
     kind: 'child',
     parentAppSessionId: activeAppSessionId,
@@ -150,7 +153,7 @@ function childSettingsReadiness(
   access: ChildAccess | undefined,
   isReady: boolean,
 ): 'failed' | 'opening' | 'ready' {
-  if (child.status === 'completed') return 'failed';
+  if (child.status === 'completed' || child.status === 'failed') return 'failed';
   if (isReady) return 'ready';
   return access === undefined || access.state === 'opening' ? 'opening' : 'failed';
 }
@@ -263,11 +266,13 @@ export function findChildSessionForTarget(
   childSessions: readonly ChildSessionInfo[],
   target: ChildSessionTarget,
 ): ChildSessionInfo | undefined {
+  if (target.childSessionId)
+    return childSessions.find((child) => child.childSessionId === target.childSessionId);
   if (!target.toolUseId) return undefined;
-  return childSessions.find(
-    (childSession) =>
-      childSession.spawnLink?.kind === 'tool-use' && childSession.spawnLink.id === target.toolUseId,
+  const matches = childSessions.filter(
+    (child) => child.spawnLink?.kind === 'tool-use' && child.spawnLink.id === target.toolUseId,
   );
+  return matches.length === 1 ? matches[0] : matches.find((child) => child.label === target.label);
 }
 
 // The spawn-event fields the dock needs to synthesize a placeholder session.
@@ -284,13 +289,17 @@ export function resolveWaveSessions(
   spawns: readonly ChildSessionSpawnRef[],
   childSessions: readonly ChildSessionInfo[],
 ): ChildSessionInfo[] {
-  return spawns.map((spawn) => {
-    const registered = findChildSessionForTarget(childSessions, childSessionTargetFromEvent(spawn));
-    // The store stamps startedAt when the child session registers, which lags
-    // the actual spawn; the wave's spawn event carries the true start time.
-    if (registered?.startedAt != null && registered.startedAt > spawn.ts)
-      return { ...registered, startedAt: spawn.ts };
-    return registered ?? pendingChildSession(spawn);
+  return spawns.flatMap((spawn) => {
+    const toolUseId = spawn.toolUseId ?? spawn.id;
+    const registered = childSessions.filter(
+      (child) => child.spawnLink?.kind === 'tool-use' && child.spawnLink.id === toolUseId,
+    );
+    if (registered.length === 0) return [pendingChildSession(spawn)];
+    return registered.map((child) =>
+      child.startedAt != null && child.startedAt > spawn.ts
+        ? { ...child, startedAt: spawn.ts }
+        : child,
+    );
   });
 }
 
@@ -310,11 +319,8 @@ export function spawnedChildSessions(
   return [...resolved, ...childSessions.filter((child) => !seen.has(child.childSessionId))];
 }
 
-// A placeholder's childSessionId is replaced by the real one when the store
-// registers the session, but its spawn link never changes; keying rows by the
-// link keeps a row — and its creature avatar — identical across that swap.
 export function childSessionKey(child: ChildSessionInfo): string {
-  return child.spawnLink?.kind === 'tool-use' ? child.spawnLink.id : child.childSessionId;
+  return child.childSessionId;
 }
 
 export interface NamedChildSession {

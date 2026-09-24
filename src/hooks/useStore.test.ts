@@ -6,6 +6,7 @@ import type { SessionSummary, TranscriptEvent } from '../types/bridge';
 function session(appSessionId: string, updatedAt: number): SessionSummary {
   return {
     appSessionId,
+    provider: 'droid',
     sessionPurpose: 'chat',
     interactionMode: 'auto',
     role: 'primary',
@@ -323,4 +324,38 @@ test('session seeds preserve live file provenance without claiming background co
     session: { ...session('background-session', 3_000), goal: 'persisted prompt' },
   });
   assert.equal(background.transcripts['background-session']?.[0]?.files, undefined);
+});
+
+test('a model change stays shown until its latest request settles', () => {
+  const chat = session('sess-a', 1_000);
+  let state: AppState = { ...initialState, sessions: { 'sess-a': chat } };
+  for (const [requestId, modelId] of [
+    ['r1', 'model-a'],
+    ['r2', 'model-b'],
+  ])
+    state = reducer(state, {
+      type: 'MODEL_UPDATE_REQUESTED',
+      appSessionId: 'sess-a',
+      requestId,
+      settings: { modelId },
+    });
+
+  // The first request confirms while the second is still in flight.
+  state = reducer(state, { type: 'SESSION_UPDATED', session: { ...chat, modelId: 'model-a' } });
+  state = reducer(state, { type: 'MODEL_UPDATE_SETTLED', appSessionId: 'sess-a', requestId: 'r1' });
+  assert.equal(state.pendingModelUpdates['sess-a']?.settings.modelId, 'model-b');
+
+  state = reducer(state, { type: 'MODEL_UPDATE_SETTLED', appSessionId: 'sess-a', requestId: 'r2' });
+  assert.equal(state.pendingModelUpdates['sess-a'], undefined);
+});
+
+test('a lost bridge drops model changes it can no longer settle', () => {
+  let state = reducer(initialState, {
+    type: 'MODEL_UPDATE_REQUESTED',
+    appSessionId: 'sess-a',
+    requestId: 'r1',
+    settings: { reasoningEffort: 'high' },
+  });
+  state = reducer(state, { type: 'SET_CONNECTION', status: 'error', message: 'Bridge closed' });
+  assert.deepEqual(state.pendingModelUpdates, {});
 });

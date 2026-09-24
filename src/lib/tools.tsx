@@ -109,9 +109,36 @@ function toolObjectKind(
   return 'text';
 }
 
+// A tool search that names its tools (`select:server___tool_a,server___tool_b`)
+// loads those definitions rather than searching, so it reads as the tools it
+// loaded, by their readable names, with the server as the source when they
+// all share one.
+function loadedTools(args: Record<string, unknown>): ToolCallLabel | null {
+  const query = typeof args.query === 'string' ? args.query.trim() : '';
+  const match = /^select:(.+)$/i.exec(query);
+  if (!match) return null;
+  const tools = match[1]
+    .split(',')
+    .map((entry) => entry.trim())
+    .filter(Boolean)
+    .map(splitToolName);
+  if (tools.length === 0) return null;
+  const servers = new Set(tools.map((tool) => tool.server));
+  const [server] = servers;
+  return {
+    verb: 'Loaded',
+    liveVerb: 'Loading',
+    object: tools.map((tool) => humanizeToolName(tool.tool)).join(', '),
+    objectKind: 'text',
+    source: servers.size === 1 && server ? server.replace(/[_-]+/g, ' ') : undefined,
+  };
+}
+
 export function describeToolCall(name?: string, args?: unknown): ToolCallLabel {
   const { cat, detail } = toolMeta(name, args);
   const a = args && typeof args === 'object' ? (args as Record<string, unknown>) : {};
+  const loaded = loadedTools(a);
+  if (loaded) return loaded;
   const objectKind = toolObjectKind(detail, a);
   const { server, tool } = splitToolName(name ?? '');
   // Every namespaced tool names its server, categorised or not, so a GitHub
@@ -222,7 +249,10 @@ export function formatDuration(ms: number): string {
   if (s < 60) return `${String(s)}s`;
   const m = Math.floor(s / 60);
   const rem = s % 60;
-  return rem ? `${String(m)}m ${String(rem)}s` : `${String(m)}m`;
+  if (m < 60) return rem ? `${String(m)}m ${String(rem)}s` : `${String(m)}m`;
+  const h = Math.floor(m / 60);
+  const remM = m % 60;
+  return remM ? `${String(h)}h ${String(remM)}m` : `${String(h)}h`;
 }
 
 // The history reader appends a "[truncated N chars]" sentinel when a single
@@ -243,7 +273,7 @@ function splitToolName(name: string): { server?: string; tool: string } {
   const tri = name.lastIndexOf('___');
   if (tri > 0 && tri + 3 < name.length)
     return { server: name.slice(0, tri), tool: name.slice(tri + 3) };
-  const mcp = /^mcp__(.+?)__(.+)$/.exec(name);
+  const mcp = /^mcp__(.+?)__(.+)$/i.exec(name);
   if (mcp) return { server: mcp[1], tool: mcp[2] };
   return { tool: name };
 }
@@ -286,6 +316,14 @@ export function isWebSearchTool(name?: string): boolean {
   if (tokens.some((t) => SEARCH_ENGINES.has(t))) return true;
   const hasSearch = tokens.some((t) => t === 'search' || t === 'query');
   return hasSearch && tokens.some((t) => WEB_WORDS.has(t));
+}
+
+// The image card renders exactly the call the Codex adapter emits. Matching a
+// family of names would capture a caption or description tool too and hide the
+// text it answered with; an MCP image tool can opt in explicitly when one needs
+// the card.
+export function isImageGenerationTool(name?: string): boolean {
+  return name === 'image_generation';
 }
 
 const FETCH_WORDS = ['fetch', 'scrape', 'crawl', 'browse'];
@@ -486,8 +524,12 @@ export function webSourceName(url: string): string {
   try {
     const host = new URL(url).hostname.replace(/^www\./, '');
     const parts = host.split('.');
+    // Only under a two-letter country TLD: "foo.com.dev" ends in a gTLD, so its
+    // "com" is an ordinary label rather than half of a compound suffix.
     const secondLevelSuffix =
-      parts.length >= 3 && /^(co|com|org|net|ac|gov|edu)$/.test(parts[parts.length - 2]);
+      parts.length >= 3 &&
+      /^[a-z]{2}$/.test(parts[parts.length - 1]) &&
+      /^(co|com|org|net|ac|gov|edu)$/.test(parts[parts.length - 2]);
     const label = parts[Math.max(0, parts.length - (secondLevelSuffix ? 3 : 2))];
     return label.charAt(0).toUpperCase() + label.slice(1);
   } catch {

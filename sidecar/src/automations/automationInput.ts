@@ -1,3 +1,4 @@
+import { automationFilesSchema, automationTargetSchema } from './automationSchemas.js';
 import { randomUUID } from 'node:crypto';
 import { assertTimeZone, nextAutomationRun, validateSchedule } from './schedule.js';
 import type {
@@ -6,38 +7,39 @@ import type {
   AutomationInput,
   AutomationProposalMissingField,
   AutomationReasoningEffort,
+  NormalizedAutomationInput,
 } from './types.js';
 
 export const MODEL_SELECTION_REQUIRED =
   'Choose a model and reasoning level from the DROIDEX model selector before running this automation.';
 
-export const DEFAULT_AUTONOMY: AutomationAutonomy = 'low';
+const DEFAULT_AUTONOMY: AutomationAutonomy = 'low';
 export const PAUSED_AFTER_FAILURES =
   'Paused after 3 consecutive failed runs. Turn it back on after fixing the issue.';
 
 const MAX_TITLE_LENGTH = 120;
 const MAX_PROMPT_LENGTH = 20_000;
 
-/** A validated automation definition: every field is canonical and storable. */
-export type NormalizedAutomationInput = Required<
-  Omit<AutomationInput, 'workspaceCwd' | 'modelId' | 'reasoningEffort'>
-> & {
-  workspaceCwd: string | null;
-  modelId: string | null;
-  reasoningEffort: AutomationReasoningEffort | null;
-};
-
 export interface ModelSelection {
   modelId: string | null;
   reasoningEffort: AutomationReasoningEffort | null;
+  target?: AutomationInput['target'];
 }
 
 export function normalizeAutomationInput(input: AutomationInput): NormalizedAutomationInput {
   const title = clip(input.title.trim(), MAX_TITLE_LENGTH);
-  const prompt = clip(input.prompt.trim(), MAX_PROMPT_LENGTH);
+  const prompt = input.prompt.trim();
   if (!title) throw new Error('Automation title is required.');
-  if (!prompt) throw new Error('Automation instructions are required.');
+  if (!prompt && !input.files?.length)
+    throw new Error('Automation instructions or attachments are required.');
+  if (prompt.length > MAX_PROMPT_LENGTH)
+    throw new Error('Automation instructions must be at most 20,000 characters.');
   validateSchedule(input.schedule);
+  const target = automationTargetSchema.parse(input.target ?? { kind: 'new-session' });
+  const files = automationFilesSchema.parse(input.files ?? []);
+  if (target.kind === 'existing-session' && input.schedule.kind !== 'once') {
+    throw new Error('Messages scheduled for an existing session must run once.');
+  }
   const timezone = (input.timezone ?? Intl.DateTimeFormat().resolvedOptions().timeZone).trim();
   assertTimeZone(timezone);
   const workspaceCwd = nonBlankOrNull(input.workspaceCwd);
@@ -52,6 +54,8 @@ export function normalizeAutomationInput(input: AutomationInput): NormalizedAuto
   return {
     title,
     prompt,
+    target,
+    files,
     workspaceCwd,
     executionMode: workspaceCwd && input.executionMode === 'worktree' ? 'worktree' : 'local',
     enabled: input.enabled !== false,
@@ -118,6 +122,7 @@ export function assertModelSelection(value: ModelSelection): asserts value is {
 }
 
 export function missingProposalFields(value: ModelSelection): AutomationProposalMissingField[] {
+  if (value.target?.kind === 'existing-session') return [];
   const missing: AutomationProposalMissingField[] = [];
   if (!value.modelId) missing.push('modelId');
   if (!value.reasoningEffort) missing.push('reasoningEffort');
@@ -135,6 +140,7 @@ export function isReasoningEffort(value: unknown): value is AutomationReasoningE
     value === 'high' ||
     value === 'xhigh' ||
     value === 'max' ||
+    value === 'ultra' ||
     value === 'dynamic' ||
     value === null
   );

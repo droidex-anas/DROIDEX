@@ -1,8 +1,7 @@
 import type { TranscriptEvent } from '../types/bridge';
 
-/** Factory Task/subagent metadata identifies a child-session spawn. */
 export function isChildSessionTool(name?: string, args?: unknown): boolean {
-  if (/\b(task|subagent|delegate)\b/i.test(name ?? '')) return true;
+  if (/\b(task|agent|subagent|delegate|workflow)\b/i.test(name ?? '')) return true;
   const record = isRecord(args) ? args : {};
   return (
     typeof Reflect.get(record, 'subagent_type') === 'string' ||

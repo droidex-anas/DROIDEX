@@ -12,11 +12,14 @@ export interface RegisteredSession {
   summary: SessionSummary;
 }
 
+// Fixed for the life of a session: its identities, and the provider binding
+// chosen when it was created. A summary patch can never reach them.
 type IdentityField =
   | 'appSessionId'
   | 'providerSessionId'
   | 'compactedFromProviderSessionIds'
-  | 'missionId';
+  | 'missionId'
+  | 'provider';
 
 export type SessionSummaryPatch = Omit<Partial<SessionSummary>, IdentityField>;
 
@@ -141,6 +144,21 @@ export class SessionRegistry<TLive extends RegisteredSession> {
     }
     this.summariesAwaitingDurability.delete(updated.appSessionId);
     this.publishedLiveSummaries.set(updated.appSessionId, updated);
+    this.publish(updated);
+    return updated;
+  }
+
+  // A settings change on a chat nobody has open. The stored summary is what the
+  // sidebar shows and what a later resume launches with, so patching it in place
+  // is what makes the change outlive the run.
+  updateStoredSummary(id: string, patch: SessionSummaryPatch): SessionSummary | undefined {
+    const current = this.resolveCanonicalSummary(id);
+    if (!current || this.sessions.has(current.appSessionId)) return undefined;
+    const updated = this.withPatch(current, patch, false);
+    // Durable before it is published: a closed chat has no live session to
+    // republish it later, so an enqueued-only write must not read as stored.
+    this.persistStrict(updated);
+    this.cacheHistoricalSummary(updated);
     this.publish(updated);
     return updated;
   }
@@ -418,6 +436,7 @@ function withoutIdentityFields(patch: Partial<SessionSummary>): SessionSummaryPa
   delete safePatch.providerSessionId;
   delete safePatch.compactedFromProviderSessionIds;
   delete safePatch.missionId;
+  delete safePatch.provider;
   return safePatch;
 }
 

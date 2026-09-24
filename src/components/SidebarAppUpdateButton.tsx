@@ -27,7 +27,9 @@ export function AppUpdateButtonView({
   onStart: () => void;
 }) {
   if (!latest) return null;
-  const actionLabel = `Review DROIDEX ${latest} update`;
+  const actionLabel = downloading
+    ? `Downloading DROIDEX ${latest} update`
+    : `Review DROIDEX ${latest} update`;
   // The icon slot collapses as the label slot expands, so the resting circle
   // morphs into a pill on hover/focus and into a downloading pill on start;
   // the button width follows the animated max-width of the two slots. The
@@ -47,6 +49,7 @@ export function AppUpdateButtonView({
       disabled={downloading}
       title={actionLabel}
       aria-label={actionLabel}
+      aria-busy={downloading}
       className="group flex h-8 shrink-0 items-center justify-center rounded-full bg-blue-600 px-2 text-white transition-all duration-150 ease-out motion-reduce:transition-none enabled:hover:opacity-90 enabled:active:scale-[0.97]"
     >
       <span className={`flex items-center ${morph} ${iconSlot}`}>

@@ -18,6 +18,7 @@ import type {
   OnboardingState,
 } from './onboarding';
 import type { AppIconMode } from './appIcon';
+import type { UsageAnalyticsBootstrap } from './usageAnalytics';
 import type {
   CommitOptions,
   CreateBranchOptions,
@@ -271,6 +272,10 @@ interface DroidControlApi {
   checkAppUpdate: (options: AppUpdateCheckOptions) => Promise<AppUpdateInfo>;
   downloadAppUpdate: () => Promise<AppUpdateResult>;
   submitFeedbackReport: (report: FeedbackReportRequest) => Promise<FeedbackReportReceipt>;
+  usageAnalyticsBootstrap: () => Promise<UsageAnalyticsBootstrap>;
+  usageAnalyticsFirstLaunchReported: () => Promise<{ recorded: boolean }>;
+  getUsageAnalytics: () => Promise<{ enabled: boolean }>;
+  setUsageAnalytics: (enabled: boolean) => Promise<{ enabled: boolean }>;
   getHardwareAcceleration: () => Promise<{ enabled: boolean }>;
   setHardwareAcceleration: (enabled: boolean) => Promise<{ enabled: boolean }>;
   relaunchApp: () => Promise<void>;

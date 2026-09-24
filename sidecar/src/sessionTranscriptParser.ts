@@ -11,6 +11,7 @@ import { designPromptDisplayFromText } from './browser/designPromptDisplay.js';
 import { appPromptDisplayFromText, hasAppFence } from './appPrompt.js';
 import { parseSkillActivation } from './skillSignals.js';
 import type { SessionRole, TranscriptEvent } from './protocol.js';
+import { parseStoredNotice } from './sessionNotices.js';
 
 // Replayed text is capped so one enormous message cannot dominate a history
 // page. An App answer is the exception: it is a document that only runs when
@@ -41,6 +42,12 @@ export interface StoredSessionStart {
   cwd?: string;
   title?: string;
   sessionTitle?: string;
+  // Written only by DROIDEX's own writer for non-Droid providers; a Droid file
+  // carries neither, which is what keeps every existing session reading as Droid.
+  provider?: string;
+  resumeId?: string;
+  // Droid only loads a session from the Factory organization it was created in.
+  organizationId?: string;
   decompSessionType?: string;
   decompMissionId?: string;
   // Present when this session was spawned by another session's tool call
@@ -161,6 +168,8 @@ export function parseSessionLineEvents(
   role: SessionRole,
   line: StoredMessageLine | StoredSessionStart,
 ): TranscriptEvent[] {
+  const notice = parseStoredNotice(appSessionId, providerSessionId, role, line);
+  if (notice) return [notice];
   // In-place daemon auto-compaction appends a compaction_state marker to the
   // SAME session file, so a mid-file record marks a summarize-away boundary
   // that must replay as a divider (a leading record replays the same way when

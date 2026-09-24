@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {
   BUILT_IN_THEMES,
   SKILL_COLORS,
+  ULTRA_COLORS,
   contrastRatio,
   CUSTOM_THEME_ID,
   DEFAULT_THEME,
@@ -16,6 +17,7 @@ import {
   relativeLuminance,
   removeCustomTheme,
   resolveVariant,
+  statusColorOnLight,
   surfaceStep,
   upsertCustomTheme,
   type ThemeColors,
@@ -54,12 +56,12 @@ describe('BUILT_IN_THEMES', () => {
     assert.equal(DEFAULT_THEME.id, 'droid');
   });
 
-  it('light canvases are tinted (not near-white) with surfaces above them', () => {
+  it('light canvases are soft off-whites with surfaces above them', () => {
     for (const preset of BUILT_IN_THEMES) {
       const { bg, surface } = preset.light;
       assert.ok(
-        relativeLuminance(bg) < 0.86,
-        `${preset.id} light bg ${bg} should sit below searing white`,
+        relativeLuminance(bg) < 0.96,
+        `${preset.id} light bg ${bg} should sit below pure white`,
       );
       assert.ok(
         relativeLuminance(surface) > relativeLuminance(bg),
@@ -96,6 +98,26 @@ describe('BUILT_IN_THEMES', () => {
         }
       }
     }
+  });
+});
+
+describe('statusColorOnLight', () => {
+  it('keeps light status text at WCAG AA on every preset canvas', () => {
+    for (const preset of BUILT_IN_THEMES) {
+      for (const tuned of ['#1f7a4d', '#9a5a0f']) {
+        const shade = statusColorOnLight(tuned, preset.light.bg);
+        assert.ok(
+          contrastRatio(shade, preset.light.bg) >= 4.5,
+          `${preset.id} status ${shade} on ${preset.light.bg} should reach 4.5:1`,
+        );
+      }
+    }
+  });
+
+  it('returns a shade that already reads on its canvas untouched', () => {
+    const { bg } = DEFAULT_THEME.light;
+    assert.equal(statusColorOnLight('#1f7a4d', bg), '#1f7a4d');
+    assert.equal(statusColorOnLight('#9a5a0f', bg), '#9a5a0f');
   });
 });
 
@@ -196,14 +218,18 @@ describe('surfaceStep', () => {
   });
 });
 
-describe('SKILL_COLORS', () => {
-  it('keeps skill labels blue and WCAG AA readable on every built-in user bubble', () => {
+describe('fixed label colors', () => {
+  it('keeps skill and ultra labels WCAG AA readable on every built-in raised surface', () => {
     for (const preset of BUILT_IN_THEMES) {
       for (const scheme of ['light', 'dark'] as const) {
-        const variant = preset[scheme];
+        const elevated = elevatedSurfaceColor(preset[scheme]);
         assert.ok(
-          contrastRatio(SKILL_COLORS[scheme], elevatedSurfaceColor(variant)) >= 4.5,
+          contrastRatio(SKILL_COLORS[scheme], elevated) >= 4.5,
           `${preset.id} ${scheme} skill label should reach 4.5:1`,
+        );
+        assert.ok(
+          contrastRatio(ULTRA_COLORS[scheme], elevated) >= 4.5,
+          `${preset.id} ${scheme} ultra label should reach 4.5:1`,
         );
       }
     }

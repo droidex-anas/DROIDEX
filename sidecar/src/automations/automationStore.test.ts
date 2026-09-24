@@ -12,7 +12,7 @@ import {
   storeHasRunSession,
   trimAutomationStore,
 } from './automationStore.js';
-import type { AutomationInput } from './types.js';
+import type { AutomationInput, AutomationProposal } from './types.js';
 
 function automation(now: number, overrides: Partial<AutomationInput> = {}) {
   return createAutomationRecord(
@@ -42,6 +42,35 @@ test('a store missing proposals is refused instead of silently discarding them',
     () => parseAutomationStore({ version: 1, automations: [], runs: [] }, Date.now()),
     /missing its automations, runs, or proposals list/,
   );
+});
+
+test('saved definitions, run history and proposal drafts default additive target and file fields', () => {
+  const now = 1_000;
+  const definition = automation(now);
+  const run = newQueuedRun(definition, now, now, 'manual');
+  Reflect.deleteProperty(definition, 'target');
+  Reflect.deleteProperty(definition, 'files');
+  Reflect.deleteProperty(run.automation, 'target');
+  Reflect.deleteProperty(run.automation, 'files');
+  const restored = parseAutomationStore(
+    {
+      version: 1,
+      automations: [definition],
+      runs: [run],
+      proposals: [{ id: 'proposal', sourceAppSessionId: 'source', draft: definition }],
+      sessionOrigins: {},
+    },
+    now,
+  );
+  for (const value of [
+    restored.automations[0],
+    restored.runs[0]?.automation,
+    restored.proposals[0]?.draft,
+  ]) {
+    assert.ok(value);
+    assert.deepEqual(value.target, { kind: 'new-session' });
+    assert.deepEqual(value.files, []);
+  }
 });
 
 test('a stored automation with an unknown schedule kind is dropped', () => {
@@ -201,28 +230,33 @@ test('trim keeps every unconfirmed proposal while capping confirmed history', ()
   const definition = automation(now);
   const store = emptyAutomationStore();
   store.automations = [definition];
-  store.proposals = Array.from({ length: 60 }, (_, index) => ({
-    id: `proposal-${String(index)}`,
-    sourceAppSessionId: `session-${String(index)}`,
-    draft: {
-      title: `Task ${String(index)}`,
-      prompt: 'Do the task.',
-      workspaceCwd: null,
-      executionMode: 'local' as const,
-      enabled: false,
-      schedule: { kind: 'daily' as const, time: '23:59' },
-      timezone: 'UTC',
-      modelId: 'model-a',
-      reasoningEffort: 'high' as const,
-      autonomy: 'low' as const,
-    },
-    status: index < 30 ? ('draft' as const) : ('confirmed' as const),
-    missingFields: [],
-    automationId: index < 30 ? null : definition.id,
-    createdAt: now + index,
-    updatedAt: now + index,
-    confirmedAt: index < 30 ? null : now + index,
-  }));
+  store.proposals = Array.from(
+    { length: 60 },
+    (_, index): AutomationProposal => ({
+      id: `proposal-${String(index)}`,
+      sourceAppSessionId: `session-${String(index)}`,
+      draft: {
+        target: { kind: 'new-session' },
+        files: [],
+        title: `Task ${String(index)}`,
+        prompt: 'Do the task.',
+        workspaceCwd: null,
+        executionMode: 'local',
+        enabled: false,
+        schedule: { kind: 'daily', time: '23:59' },
+        timezone: 'UTC',
+        modelId: 'model-a',
+        reasoningEffort: 'high',
+        autonomy: 'low',
+      },
+      status: index < 30 ? 'draft' : 'confirmed',
+      missingFields: [],
+      automationId: index < 30 ? null : definition.id,
+      createdAt: now + index,
+      updatedAt: now + index,
+      confirmedAt: index < 30 ? null : now + index,
+    }),
+  );
 
   trimAutomationStore(store);
 

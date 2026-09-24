@@ -11,6 +11,7 @@ import {
   isAutomationMutationPermission,
 } from './automations/permissionPolicy.js';
 import { bridgeFeature } from './missionFeatures.js';
+import { droidErrorDetails } from './providers/droid/droidErrors.js';
 import type {
   SessionRole,
   BridgeFeature,
@@ -83,7 +84,14 @@ export interface NormalizedEvent {
     exitCode?: number;
   };
   childSession?: ChildSessionSignal;
-  tokens?: { tokensIn: number; tokensOut: number; contextTokens?: number };
+  tokens?: {
+    tokensIn: number;
+    tokensOut: number;
+    contextTokens?: number;
+    // The model's context window, for a provider that reports it with usage
+    // instead of in its model catalog.
+    maxContextTokens?: number;
+  };
   done?: boolean;
 }
 
@@ -231,19 +239,16 @@ export function normalizeStreamEvent(
         // A non-spawn result that merely *references* a subagent (a TaskOutput
         // poll) keeps its transcript: it carries the child's status signal, and
         // the feed, not the bridge, decides whether the body is worth showing.
-        if (!isTask) return { ...signal, transcript: resultTranscript() };
-        if (!ev.isError) return signal;
-        return { ...signal, transcript: resultTranscript() };
+        return isTask && !ev.isError ? signal : { ...signal, transcript: resultTranscript() };
       }
       return { transcript: resultTranscript() };
     }
-    case 'error':
+    case 'error': {
+      const details = droidErrorDetails(ev.message);
       return {
-        transcript: transcript(appSessionId, sourceProviderSessionId, role, 'error', {
-          text: ev.message,
-          isError: true,
-        }),
+        transcript: transcript(appSessionId, sourceProviderSessionId, role, 'error', details),
       };
+    }
     case 'mission_features_changed':
       return { features: ev.features.map(bridgeFeature) };
     case 'mission_progress_entry':
@@ -552,7 +557,7 @@ export function confirmationType(params: RequestPermissionRequestParams): string
 // Hashing keeps the signature bounded and keeps argument values (which may hold
 // secrets) out of the stored grant key. An empty result means the arguments
 // could not be serialized, so the request stays ineligible for always-allow.
-function toolArgumentDigest(input: Record<string, unknown>): string {
+export function toolArgumentDigest(input: Record<string, unknown>): string {
   let serialized: string;
   try {
     serialized = stableJson(input);

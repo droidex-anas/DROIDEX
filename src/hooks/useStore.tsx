@@ -25,8 +25,10 @@ import {
   loadAgentConfig,
   loadCompactionModel,
   loadDiffView,
+  loadHarnessModels,
   loadImagePasteQuality,
   loadLiveEnterBehavior,
+  loadModelSelectorStyle,
   loadPersistedUiState,
   loadReviewScope,
   loadSessionLastSeen,
@@ -35,8 +37,10 @@ import {
   saveAgentConfig,
   saveCompactionModel,
   saveDiffView,
+  saveHarnessModels,
   saveImagePasteQuality,
   saveLiveEnterBehavior,
+  saveModelSelectorStyle,
   savePersistedUiState,
   saveReviewScope,
   saveSessionLastSeen,
@@ -44,10 +48,13 @@ import {
   saveWorkspaceCwds,
   sanitizeAgentConfig,
   type AgentConfig,
-  type AgentKind,
   type DiffViewMode,
+  type HarnessModel,
+  type HarnessModels,
   type LiveEnterBehavior,
   type MainView,
+  type MissionRole,
+  type ModelSelectorStyle,
 } from './persistedUiPreferences';
 import type { ShortcutAction, ShortcutBindings } from '../lib/shortcuts';
 import {
@@ -67,6 +74,9 @@ import type {
   PermissionRequest,
   SessionQuestion,
   ModelInfo,
+  ProviderKind,
+  ProviderMention,
+  ProviderStatus,
   ChildSessionSummary,
   SkillInfo,
   ReasoningEffort,
@@ -78,6 +88,13 @@ import { addWorkspaceCwd, removeWorkspaceCwd } from '../lib/workspaces';
 import { createOrderedActionBatcher, type OrderedActionBatcher } from './orderedActionBatcher';
 import { isHistoryStatusError, applyHistoryServerEvent } from '../lib/historyHealth';
 import { loadDefaultAutonomy, saveDefaultAutonomy } from '../lib/autonomy';
+import {
+  mergePendingModelSettings,
+  type PendingModelSettings,
+  type PendingModelUpdate,
+} from '../lib/pendingModelSettings';
+import { loadDraftProvider, saveDraftProvider } from '../features/providers/providerDraft';
+import { reuseUnchangedStatuses } from '../features/providers/providerIdentity';
 import { loadToolActivity, saveToolActivity, type ToolActivitySettings } from '../lib/toolActivity';
 import {
   applyFactoryCompactionDefaults,
@@ -183,6 +200,10 @@ export interface QueuedPrompt {
   text: string;
   skills: string[];
   files: string[];
+  /** Catalog rows the harness receives beside the text rather than inside it. */
+  mentions?: ProviderMention[];
+  /** The staged rows' catalog identities, so editing restores the same chips. */
+  rowKeys?: string[];
   design?: QueuedDesignContext;
 }
 
@@ -286,6 +307,9 @@ export interface AppState {
   // previous request (a repeated click must re-arm the scope-fallback dedupe).
   reviewFocusRequestId: number;
   diffView: DiffViewMode;
+  // Which picker the composer's model chip opens: the classic list with
+  // per-row effort dots, or the card that drills into the effort slider.
+  modelSelectorStyle: ModelSelectorStyle;
   sidebarCollapsed: boolean;
   mainView: MainView;
   automationEditorRequest: AutomationEditorRequest | null;
@@ -318,6 +342,8 @@ export interface AppState {
   // Live-session autonomy changes awaiting provider confirmation, keyed by
   // appSessionId. The UI keeps showing the confirmed value while pending.
   pendingAutonomy: Record<string, Autonomy>;
+  // Chat model/effort changes shown ahead of confirmation, keyed by appSessionId.
+  pendingModelUpdates: Partial<Record<string, PendingModelUpdate>>;
   // One-shot text seeded into the composer (welcome-screen suggestion cards,
   // saved-note clicks). A fresh id per seed lets re-clicking re-arm the effect.
   composerSeed: { text: string; id: number; replace: boolean } | null;
@@ -338,9 +364,17 @@ export interface AppState {
   selectedFeatureId: string | null;
   selectedChild: ChildSelection | null;
 
-  // Models / per-agent config
+  // Models, the model each harness starts a new chat on, and Mission Control's
+  // worker/validator picks (its primary uses its harness's entry).
   models: ModelInfo[];
+  harnessModels: HarnessModels;
   agentConfig: AgentConfig;
+
+  // What each provider can do for the user right now, as last reported by the
+  // sidecar, and the provider the next new session is created on. The draft
+  // pick is sticky: it survives session switches and restarts.
+  providerStatuses: ProviderStatus[];
+  draftProvider: ProviderKind;
 
   // Global compaction model applied to every session. 'current-model' = use
   // each session's active model; otherwise a specific model id.
@@ -360,11 +394,6 @@ export interface AppState {
   imagePasteQuality: ImagePasteQuality;
   // Chord bound to each rebindable app action (see lib/shortcuts).
   shortcutBindings: ShortcutBindings;
-
-  // Per-session model/reasoning the user picked in the selector. These are
-  // authoritative: a stale server summary (e.g. an in-flight resume) must not
-  // revert the user's choice back to the session default.
-  sessionSettingOverrides: Record<string, { modelId?: string; reasoningEffort?: ReasoningEffort }>;
 
   // Skills catalog (for / invocation)
   skills: SkillInfo[];
@@ -525,6 +554,7 @@ type Action =
     }
   | { type: 'CLEAR_PERMISSION'; appSessionId: string }
   | { type: 'CLEAR_QUESTION'; appSessionId: string }
+  | { type: 'CLEAR_INTERACTION'; appSessionId: string; requestId: string }
 
   // UI
   | { type: 'SET_ACTIVE_SESSION'; id: string | null }
@@ -537,6 +567,7 @@ type Action =
       terminalId?: string;
       cwd?: string;
       filePath?: string;
+      agentId?: string;
     }
   | { type: 'CLOSE_UTILITY_TAB'; tabId: string; appSessionId?: string }
   | { type: 'ACTIVATE_UTILITY_TAB'; tabId: string }
@@ -548,6 +579,7 @@ type Action =
       cwd?: string;
       filePath?: string;
       label?: string;
+      agentId?: string | null;
     }
   | { type: 'SET_UTILITY_PANEL_OPEN'; open: boolean }
   | { type: 'SET_REVIEW_OPEN'; open: boolean }
@@ -555,6 +587,7 @@ type Action =
   | OpenReviewAtAction
   | { type: 'CLEAR_REVIEW_FOCUS' }
   | { type: 'SET_DIFF_VIEW'; mode: DiffViewMode }
+  | { type: 'SET_MODEL_SELECTOR_STYLE'; style: ModelSelectorStyle }
   | { type: 'TOGGLE_COMMAND_PALETTE' }
   | { type: 'CLOSE_COMMAND_PALETTE' }
   | { type: 'TOGGLE_SIDEBAR' }
@@ -607,16 +640,17 @@ type Action =
 
   // Models / per-agent config
   | { type: 'MODELS_LIST'; models: ModelInfo[] }
+  | { type: 'PROVIDER_STATUSES'; statuses: ProviderStatus[] }
+  | { type: 'SET_DRAFT_PROVIDER'; provider: ProviderKind }
   | {
       type: 'SKILLS_LIST';
       skills: SkillInfo[];
       providerSessionId: string | null;
     }
   | { type: 'FACTORY_DEFAULTS'; defaults: FactoryDefaultSettings }
-  | { type: 'SET_AGENT_MODEL'; agent: AgentKind; modelId?: string }
-  | { type: 'SET_AGENT_REASONING'; agent: AgentKind; reasoning: ReasoningEffort }
-  | { type: 'SESSION_SET_MODEL'; appSessionId: string; modelId?: string }
-  | { type: 'SESSION_SET_REASONING'; appSessionId: string; reasoning: ReasoningEffort }
+  | { type: 'SET_HARNESS_MODEL'; provider: ProviderKind; model: HarnessModel }
+  | { type: 'SET_AGENT_MODEL'; agent: MissionRole; modelId?: string }
+  | { type: 'SET_AGENT_REASONING'; agent: MissionRole; reasoning: ReasoningEffort | undefined }
   | { type: 'SET_COMPACTION_MODEL_GLOBAL'; compactionModel: string }
   | { type: 'SET_COMPACTION_TOKEN_LIMIT_GLOBAL'; limit?: number }
   | { type: 'SET_COMPACTION_TOKEN_LIMIT_FOR_MODEL'; modelId: string; limit?: number }
@@ -627,18 +661,14 @@ type Action =
   | { type: 'SET_TOOL_ACTIVITY'; settings: ToolActivitySettings }
   | { type: 'SET_DRAFT_AUTONOMY'; autonomy: Autonomy }
   | { type: 'AUTONOMY_UPDATE_REQUESTED'; appSessionId: string; autonomy: Autonomy }
-  | { type: 'AUTONOMY_UPDATE_SETTLED'; appSessionId: string };
-
-function applySessionOverride(
-  summary: SessionSummary,
-  override?: { modelId?: string; reasoningEffort?: ReasoningEffort },
-): SessionSummary {
-  if (!override) return summary;
-  const next = { ...summary };
-  if ('modelId' in override) next.modelId = override.modelId;
-  if (override.reasoningEffort !== undefined) next.reasoningEffort = override.reasoningEffort;
-  return next;
-}
+  | { type: 'AUTONOMY_UPDATE_SETTLED'; appSessionId: string }
+  | {
+      type: 'MODEL_UPDATE_REQUESTED';
+      appSessionId: string;
+      requestId: string;
+      settings: PendingModelSettings;
+    }
+  | { type: 'MODEL_UPDATE_SETTLED'; appSessionId: string; requestId: string };
 
 // Loaded once at module scope so the theme loader can match saved colors
 // against custom presets when recovering a missing presetId.
@@ -717,6 +747,7 @@ export const initialState: AppState = {
   toolActivity: loadToolActivity(),
   draftAutonomy: null,
   pendingAutonomy: {},
+  pendingModelUpdates: {},
   composerSeed: null,
   workspaceCwds: loadWorkspaceCwds(),
   browserOpen: false,
@@ -728,6 +759,8 @@ export const initialState: AppState = {
   selectedFeatureId: persistedUiState.selectedFeatureId ?? null,
   selectedChild: null,
   models: [],
+  providerStatuses: [],
+  draftProvider: loadDraftProvider(),
   compactionModel: loadCompactionModel(),
   compactionTokenLimit: loadCompactionTokenLimit(),
   compactionTokenLimitPerModel: loadCompactionTokenLimitPerModel(),
@@ -741,9 +774,10 @@ export const initialState: AppState = {
   reviewFocusChange: null,
   reviewFocusRequestId: 0,
   diffView: loadDiffView(),
-  sessionSettingOverrides: {},
+  modelSelectorStyle: loadModelSelectorStyle(),
   skills: [],
   skillsProviderSessionId: undefined,
+  harnessModels: loadHarnessModels(),
   agentConfig: loadAgentConfig(),
   pendingCompose: {},
   lastCreatedSessionRequest: null,
@@ -800,6 +834,20 @@ function closeActiveUtilityPanel(state: AppState): AppState {
     : { ...state, utilityPanels: { ...state.utilityPanels, [appSessionId]: panel } };
 }
 
+// Drops the open request a session was cancelled out of. Keyed on the request
+// id as well as the session so a card raised after the cancellation stays.
+function withoutCancelledRequest<T extends { requestId: string }>(
+  pending: Record<string, T>,
+  appSessionId: string,
+  requestId: string,
+): Record<string, T> {
+  return Object.fromEntries(
+    Object.entries(pending).filter(
+      ([id, request]) => id !== appSessionId || request.requestId !== requestId,
+    ),
+  );
+}
+
 export function reducer(state: AppState, action: Action): AppState {
   if (action.type === 'BATCH') {
     return reduceStoreActionBatch(state, action.actions, reducer, syncBrowserOpen);
@@ -821,6 +869,8 @@ function baseReducer(state: AppState, action: Action): AppState {
         childAccess: {},
         childRuntime: {},
         agentProcesses: {},
+        // A lost bridge never settles in-flight changes, so fall back to the last confirmed values.
+        pendingModelUpdates: {},
         contextStats: { ...next.contextStats, child: {} },
       };
     }
@@ -873,10 +923,7 @@ function baseReducer(state: AppState, action: Action): AppState {
         ...childReset,
         sessions: {
           ...state.sessions,
-          [action.session.appSessionId]: applySessionOverride(
-            action.session,
-            state.sessionSettingOverrides[action.session.appSessionId],
-          ),
+          [action.session.appSessionId]: action.session,
         },
         sessionOrder: order,
         activeAppSessionId: shouldActivate ? action.session.appSessionId : state.activeAppSessionId,
@@ -931,10 +978,7 @@ function baseReducer(state: AppState, action: Action): AppState {
 
     case 'SESSION_UPDATED': {
       const previous = state.sessions[action.session.appSessionId];
-      const incoming = applySessionOverride(
-        action.session,
-        state.sessionSettingOverrides[action.session.appSessionId],
-      );
+      const incoming = action.session;
       // Compaction generations are monotonic. A delayed resume summary must not
       // put a restored session back on generation zero after history already
       // proved that compactions occurred.
@@ -1029,6 +1073,9 @@ function baseReducer(state: AppState, action: Action): AppState {
         contextStats: { ...state.contextStats, child: childContext },
         pendingAutonomy: Object.fromEntries(
           Object.entries(state.pendingAutonomy).filter(([id]) => id !== action.appSessionId),
+        ),
+        pendingModelUpdates: Object.fromEntries(
+          Object.entries(state.pendingModelUpdates).filter(([id]) => id !== action.appSessionId),
         ),
         agentProcesses: Object.fromEntries(
           Object.entries(state.agentProcesses).filter(([id]) => id !== action.appSessionId),
@@ -1366,10 +1413,7 @@ function baseReducer(state: AppState, action: Action): AppState {
         map[id] = summary;
       }
       for (const m of action.sessions) {
-        map[m.appSessionId] = applySessionOverride(
-          m,
-          state.sessionSettingOverrides[m.appSessionId],
-        );
+        map[m.appSessionId] = m;
       }
       const order = [
         ...new Set([
@@ -1460,6 +1504,26 @@ function baseReducer(state: AppState, action: Action): AppState {
       };
     }
 
+    // The sidecar gave up on a request the user never answered. Matched on the
+    // request id so a late cancellation cannot clear a newer card.
+    case 'CLEAR_INTERACTION': {
+      const { appSessionId, requestId } = action;
+      const pendingPermissions = withoutCancelledRequest(
+        state.pendingPermissions,
+        appSessionId,
+        requestId,
+      );
+      const pendingQuestions = withoutCancelledRequest(
+        state.pendingQuestions,
+        appSessionId,
+        requestId,
+      );
+      const cleared =
+        Object.keys(pendingPermissions).length !== Object.keys(state.pendingPermissions).length ||
+        Object.keys(pendingQuestions).length !== Object.keys(state.pendingQuestions).length;
+      return cleared ? { ...state, pendingPermissions, pendingQuestions } : state;
+    }
+
     case 'SET_ACTIVE_SESSION': {
       // Stamp "seen now" on both the session being left (so responses received
       // while it was open count as read) and the one being opened (clears its
@@ -1533,7 +1597,12 @@ function baseReducer(state: AppState, action: Action): AppState {
         state.utilityPanels[appSessionId],
         action.tool,
         () => action.tabId ?? `${action.tool}:${appSessionId}`,
-        { terminalId: action.terminalId, cwd: action.cwd, filePath: action.filePath },
+        {
+          terminalId: action.terminalId,
+          cwd: action.cwd,
+          filePath: action.filePath,
+          agentId: action.agentId,
+        },
       );
       return {
         ...state,
@@ -1593,6 +1662,7 @@ function baseReducer(state: AppState, action: Action): AppState {
         cwd: action.cwd,
         filePath: action.filePath,
         label: action.label,
+        agentId: action.agentId,
       });
       if (panel === current) return state;
       return {
@@ -1695,6 +1765,9 @@ function baseReducer(state: AppState, action: Action): AppState {
 
     case 'SET_DIFF_VIEW':
       return { ...state, diffView: saveDiffView(action.mode) };
+
+    case 'SET_MODEL_SELECTOR_STYLE':
+      return { ...state, modelSelectorStyle: saveModelSelectorStyle(action.style) };
 
     case 'TOGGLE_COMMAND_PALETTE':
       return { ...state, commandPaletteOpen: !state.commandPaletteOpen };
@@ -1988,6 +2061,15 @@ function baseReducer(state: AppState, action: Action): AppState {
         agentConfig: saveAgentConfig(sanitizeAgentConfig(state.agentConfig, action.models)),
       };
 
+    case 'PROVIDER_STATUSES': {
+      const providerStatuses = reuseUnchangedStatuses(state.providerStatuses, action.statuses);
+      return providerStatuses === state.providerStatuses ? state : { ...state, providerStatuses };
+    }
+
+    case 'SET_DRAFT_PROVIDER':
+      saveDraftProvider(action.provider);
+      return { ...state, draftProvider: action.provider };
+
     case 'SKILLS_LIST':
       return {
         ...state,
@@ -1998,12 +2080,6 @@ function baseReducer(state: AppState, action: Action): AppState {
     case 'FACTORY_DEFAULTS': {
       const next = sanitizeAgentConfig(
         {
-          primary: {
-            modelId: state.agentConfig.primary.modelId ?? action.defaults.modelId,
-            reasoning: state.agentConfig.primary.modelId
-              ? state.agentConfig.primary.reasoning
-              : (action.defaults.reasoningEffort ?? state.agentConfig.primary.reasoning),
-          },
           worker: {
             modelId: state.agentConfig.worker.modelId ?? action.defaults.workerModelId,
             reasoning: state.agentConfig.worker.modelId
@@ -2033,6 +2109,15 @@ function baseReducer(state: AppState, action: Action): AppState {
       };
     }
 
+    case 'SET_HARNESS_MODEL':
+      return {
+        ...state,
+        harnessModels: saveHarnessModels({
+          ...state.harnessModels,
+          [action.provider]: action.model,
+        }),
+      };
+
     case 'SET_AGENT_MODEL':
       return {
         ...state,
@@ -2050,37 +2135,6 @@ function baseReducer(state: AppState, action: Action): AppState {
           [action.agent]: { ...state.agentConfig[action.agent], reasoning: action.reasoning },
         }),
       };
-
-    case 'SESSION_SET_MODEL': {
-      const m = state.sessions[action.appSessionId];
-      if (!m) return state;
-      const prevOverride = state.sessionSettingOverrides[action.appSessionId] ?? {};
-      return {
-        ...state,
-        sessions: { ...state.sessions, [action.appSessionId]: { ...m, modelId: action.modelId } },
-        sessionSettingOverrides: {
-          ...state.sessionSettingOverrides,
-          [action.appSessionId]: { ...prevOverride, modelId: action.modelId },
-        },
-      };
-    }
-
-    case 'SESSION_SET_REASONING': {
-      const m = state.sessions[action.appSessionId];
-      if (!m) return state;
-      const prevOverride = state.sessionSettingOverrides[action.appSessionId] ?? {};
-      return {
-        ...state,
-        sessions: {
-          ...state.sessions,
-          [action.appSessionId]: { ...m, reasoningEffort: action.reasoning },
-        },
-        sessionSettingOverrides: {
-          ...state.sessionSettingOverrides,
-          [action.appSessionId]: { ...prevOverride, reasoningEffort: action.reasoning },
-        },
-      };
-    }
 
     case 'SET_COMPACTION_MODEL_GLOBAL': {
       const value = saveCompactionModel(action.compactionModel);
@@ -2155,6 +2209,32 @@ function baseReducer(state: AppState, action: Action): AppState {
       };
     }
 
+    case 'MODEL_UPDATE_REQUESTED':
+      return {
+        ...state,
+        pendingModelUpdates: {
+          ...state.pendingModelUpdates,
+          [action.appSessionId]: {
+            requestId: action.requestId,
+            settings: mergePendingModelSettings(
+              state.pendingModelUpdates[action.appSessionId]?.settings,
+              action.settings,
+            ),
+          },
+        },
+      };
+
+    case 'MODEL_UPDATE_SETTLED': {
+      if (state.pendingModelUpdates[action.appSessionId]?.requestId !== action.requestId)
+        return state;
+      return {
+        ...state,
+        pendingModelUpdates: Object.fromEntries(
+          Object.entries(state.pendingModelUpdates).filter(([id]) => id !== action.appSessionId),
+        ),
+      };
+    }
+
     default:
       return state;
   }
@@ -2170,6 +2250,7 @@ export function toastMessageForEvent(ev: ServerEvent): string | undefined {
       ev.code === 'history.unflushed_work' ||
       ev.code === 'session.interrupted' ||
       ev.code === 'session.autonomy_update_failed' ||
+      ev.code === 'session.model_update_failed' ||
       ev.code === 'session.create_failed')
   ) {
     return ev.message;
@@ -2189,6 +2270,12 @@ export function adaptEvent(ev: ServerEvent): Action | null {
       return { type: 'SESSION_CREATED', clientRef: ev.clientRef, session: ev.session };
     case 'session.updated':
       return { type: 'SESSION_UPDATED', session: ev.session };
+    case 'session.model_update_applied':
+      return {
+        type: 'MODEL_UPDATE_SETTLED',
+        appSessionId: ev.appSessionId,
+        requestId: ev.requestId,
+      };
     case 'session.closed':
       return { type: 'SESSION_CLOSED', appSessionId: ev.appSessionId };
     case 'session.processes':
@@ -2238,6 +2325,12 @@ export function adaptEvent(ev: ServerEvent): Action | null {
       return { type: 'SESSION_PERMISSION', request: ev.request };
     case 'question.requested':
       return { type: 'SESSION_QUESTION', question: ev.question };
+    case 'interaction.cancelled':
+      return {
+        type: 'CLEAR_INTERACTION',
+        appSessionId: ev.appSessionId,
+        requestId: ev.requestId,
+      };
     case 'error':
       if (isHistoryStatusError(ev)) return null;
       if (ev.code === 'bridge.resync_required' && !ev.recoverable) {
@@ -2249,6 +2342,11 @@ export function adaptEvent(ev: ServerEvent): Action | null {
       if (ev.code === 'session.autonomy_update_failed') {
         return ev.appSessionId
           ? { type: 'AUTONOMY_UPDATE_SETTLED', appSessionId: ev.appSessionId }
+          : null;
+      }
+      if (ev.code === 'session.model_update_failed') {
+        return ev.appSessionId && ev.requestId
+          ? { type: 'MODEL_UPDATE_SETTLED', appSessionId: ev.appSessionId, requestId: ev.requestId }
           : null;
       }
       if (ev.code === 'session.create_failed' && ev.clientRef) {
@@ -2320,6 +2418,8 @@ export function adaptEvent(ev: ServerEvent): Action | null {
         };
       }
       return null;
+    case 'provider.status':
+      return { type: 'PROVIDER_STATUSES', statuses: ev.statuses };
     case 'settings.defaults':
       return { type: 'FACTORY_DEFAULTS', defaults: ev.defaults };
     case 'browser.updated':

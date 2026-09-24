@@ -5,6 +5,7 @@ import {
   DroidInteractionMode,
   DroidSession,
   ReasoningEffort as SdkReasoningEffort,
+  SessionNotFoundError,
   type AskUserHandler,
   type DecompSessionType,
   type DroidStreamEvent,
@@ -16,6 +17,7 @@ import {
 } from '@factory/droid-sdk';
 import { createDroidTransport, type ConnectableDroidTransport } from './DroidTransport.js';
 import { buildDroidInvocation, resolveDroidPath } from './Environment.js';
+import { sessionOrganizationId } from './history.js';
 import type { Autonomy, ReasoningEffort, SessionInteractionMode } from './protocol.js';
 
 const EXEC_ARGS = ['exec', '--input-format', 'stream-jsonrpc', '--output-format', 'stream-jsonrpc'];
@@ -149,9 +151,11 @@ export class DroidRuntime implements FactoryRuntime {
 
   async createSession(options: CreateRuntimeSessionOptions): Promise<DroidSession> {
     const { client, transport } = await this.createClient(options.cwd, options);
-    const params = createInitializeSessionParams(options);
 
+    // Built inside the try: a level the SDK cannot represent throws here, and
+    // the process that just started must go with it.
     try {
+      const params = createInitializeSessionParams(options);
       const init = await withTimeout(
         client.initializeSession(params),
         SESSION_INIT_TIMEOUT_MS,
@@ -183,7 +187,7 @@ export class DroidRuntime implements FactoryRuntime {
       return session;
     } catch (err) {
       await transport.close().catch(ignoreError);
-      throw err;
+      throw explainLoadFailure(sessionId, err);
     }
   }
 
@@ -222,6 +226,20 @@ export class DroidRuntime implements FactoryRuntime {
   }
 }
 
+// Droid answers "Session not found" for a session created in another Factory
+// organization even though its file is on disk, which reads like lost history.
+function explainLoadFailure(sessionId: string, error: unknown): unknown {
+  if (!(error instanceof SessionNotFoundError)) return error;
+  const organizationId = sessionOrganizationId(sessionId);
+  if (!organizationId) return error;
+  return new Error(
+    `Droid could not open this session. It was created in Factory organization ${organizationId}, ` +
+      'and Droid only opens sessions from the organization it is signed in to. ' +
+      'Sign Droid in to that organization to continue this session.',
+    { cause: error },
+  );
+}
+
 export function createInitializeSessionParams(
   options: CreateRuntimeSessionOptions,
 ): InitializeSessionRequestParams & Record<string, unknown> {
@@ -254,7 +272,7 @@ export function createInitializeSessionParams(
   return params;
 }
 
-function mapInteractionMode(mode: SessionInteractionMode): DroidInteractionMode {
+export function mapInteractionMode(mode: SessionInteractionMode): DroidInteractionMode {
   if (mode === 'spec') return DroidInteractionMode.Spec;
   if (mode === 'agi') return DroidInteractionMode.AGI;
   return DroidInteractionMode.Auto;
@@ -285,6 +303,11 @@ export function factoryReasoningEffort(reasoning: ReasoningEffort): SdkReasoning
       return SdkReasoningEffort.ExtraHigh;
     case 'max':
       return SdkReasoningEffort.Max;
+    case 'ultra':
+      // Codex's top level; Droid's SDK has nothing to map it to. Silently
+      // running at Medium would diverge from the persisted intent, so this
+      // is rejected instead of coerced.
+      throw new Error("Droid does not support the 'ultra' reasoning effort.");
     case 'medium':
     default:
       return SdkReasoningEffort.Medium;

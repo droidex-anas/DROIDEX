@@ -21,6 +21,8 @@ import { hotPathMetrics } from './telemetry/hotPathMetrics.js';
 interface TimelineHistory {
   recordEvent(event: TranscriptEvent): void;
 }
+
+import { TimelineTranscripts, type TimelineTranscript } from './timelineTranscripts.js';
 type TimelineError = Omit<Extract<ServerEvent, { type: 'error' }>, 'type'>;
 
 export interface SessionTimelineLoaders {
@@ -118,6 +120,9 @@ export class SessionTimeline {
   private readonly loaders: SessionTimelineLoaders;
   private readonly streaming: StreamingDeltaCoalescer;
   private readonly streamingFlushFailures = new Map<string, StreamingTranscriptPersistenceError>();
+  private readonly transcripts = new TimelineTranscripts((id) =>
+    this.dependencies.registry.resolveSummary(id),
+  );
 
   constructor(private readonly dependencies: SessionTimelineDependencies) {
     this.loaders = dependencies.loaders ?? {
@@ -286,6 +291,19 @@ export class SessionTimeline {
     }
   }
 
+  useTranscript(appSessionId: string, transcript: TimelineTranscript): void {
+    this.transcripts.use(appSessionId, transcript);
+  }
+
+  releaseTranscript(appSessionId: string): void {
+    this.transcripts.release(appSessionId);
+  }
+
+  // The renderer already showed the prompt; only persist it here.
+  recordPrompt(appSessionId: string, prompt: string): void {
+    this.transcripts.recordPrompt(appSessionId, prompt);
+  }
+
   append(event: TranscriptEvent): void {
     // Non-streaming appends (status lines, compaction dividers, replay) must
     // never overtake their own source's buffered delta run.
@@ -311,6 +329,9 @@ export class SessionTimeline {
     let flushError: Error | undefined;
     try {
       this.streaming.endTurn(appSessionId, sourceSessionId);
+      // The primary tail is recorded, so its open stored message is complete. A
+      // child's turn settling must not split the parent's message in two.
+      if (sourceSessionId === appSessionId) this.transcripts.flush(appSessionId);
     } catch (error) {
       flushError =
         error instanceof Error
@@ -371,6 +392,13 @@ export class SessionTimeline {
 
   private recordAndEmit(event: TranscriptEvent): void {
     this.dependencies.history.recordEvent(event);
+    this.transcripts.append(event, (message) => {
+      this.dependencies.emitError({
+        appSessionId: event.appSessionId,
+        message: `Could not persist the session transcript: ${message}`,
+        recoverable: true,
+      });
+    });
     this.emitRecordedEvent(event);
   }
 

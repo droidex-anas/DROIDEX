@@ -119,6 +119,7 @@ function patchFor(appSessionId: string, cwd: string): Protocol.SessionSummary {
   return {
     appSessionId,
     providerSessionId: appSessionId,
+    provider: 'droid',
     sessionPurpose: 'chat',
     interactionMode: 'auto',
     role: 'primary',
@@ -550,7 +551,7 @@ test('a corrupt cache row is dropped and rebuilt on the next boot', () => {
     try {
       nullSummary
         .prepare('UPDATE session_file_cache SET summary_json = ? WHERE provider_session_id = ?')
-        .run(JSON.stringify({ cacheVersion: 1, summary: null }), 'corrupt-row');
+        .run(JSON.stringify({ cacheVersion: 2, summary: null }), 'corrupt-row');
     } finally {
       nullSummary.close();
     }

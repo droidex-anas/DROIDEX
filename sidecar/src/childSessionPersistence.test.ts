@@ -54,7 +54,9 @@ test('child persistence preserves exact identity, settings, role, and hierarchy 
       reasoningEffort: 'max',
       spawnLink: { kind: 'spawn', id: 'spawn-validator' },
       transcriptAvailable: false,
-      status: 'pending',
+      group: 'Reviewers',
+      phase: 'Checking changes',
+      status: 'failed',
     }),
   );
   index.close();
@@ -78,7 +80,9 @@ test('child persistence preserves exact identity, settings, role, and hierarchy 
     role: 'validator',
     label: 'Validator',
     prompt: 'Prompt for child-a',
-    status: 'pending',
+    group: 'Reviewers',
+    phase: 'Checking changes',
+    status: 'failed',
     modelId: 'claude-opus-4-1',
     reasoningEffort: 'max',
     spawnLink: { kind: 'spawn', id: 'spawn-validator' },
@@ -147,7 +151,7 @@ test('malformed replacement chains fail with hard-cut index recovery guidance', 
   }
 });
 
-test('canonical indexes reject duplicate provider and spawn ownership within one parent', () => {
+test('canonical indexes reject duplicate providers but allow shared spawn links within one parent', () => {
   const index = new HistoryIndex();
   persistTestChild(
     child('identity-parent', 'child-one', {
@@ -166,15 +170,15 @@ test('canonical indexes reject duplicate provider and spawn ownership within one
       ),
     /UNIQUE constraint failed/,
   );
-  assert.throws(
-    () =>
-      persistTestChild(
-        child('identity-parent', 'child-three', {
-          providerSessionId: 'other-provider',
-          spawnLink: { kind: 'tool-use', id: 'spawn-one' },
-        }),
-      ),
-    /UNIQUE constraint failed/,
+  persistTestChild(
+    child('identity-parent', 'child-three', {
+      providerSessionId: 'other-provider',
+      spawnLink: { kind: 'tool-use', id: 'spawn-one' },
+    }),
+  );
+  assert.deepEqual(
+    index.childSessions('identity-parent').map(({ childSessionId }) => childSessionId),
+    ['child-one', 'child-three'],
   );
   assert.doesNotThrow(() =>
     persistTestChild(
@@ -203,7 +207,7 @@ test('fresh history index uses only the canonical child schema', () => {
   ).map(({ name }) => name);
   db.close();
 
-  assert.equal(version.user_version, 2);
+  assert.equal(version.user_version, 3);
   assert.ok(tables.includes('child_sessions'));
   assert.ok(!tables.includes('child_session_links'));
   assert.ok(!tables.includes('linked_child_sessions'));
@@ -215,6 +219,8 @@ test('fresh history index uses only the canonical child schema', () => {
     'role',
     'label',
     'prompt',
+    'group_name',
+    'phase',
     'status',
     'model_id',
     'reasoning_effort',
@@ -226,98 +232,145 @@ test('fresh history index uses only the canonical child schema', () => {
   ]);
 });
 
-test('v1.1.0 history index upgrades in place without losing existing chats or children', () => {
-  const releasedHome = mkdtempSync(join(tmpdir(), 'droid-history-v1-upgrade-'));
-  process.env.HOME = releasedHome;
-  try {
-    const initial = new HistoryIndex();
-    initial.close();
-    const indexPath = join(releasedHome, '.factory', 'droidex', SESSION_INDEX_FILENAME);
-    const released = new DatabaseSync(indexPath);
-    released.exec(`
-      ALTER TABLE child_sessions DROP COLUMN previous_provider_session_ids;
-      DROP INDEX child_sessions_provider_identity;
-      DROP INDEX child_sessions_spawn_identity;
-      CREATE UNIQUE INDEX child_sessions_provider_identity
-        ON child_sessions (parent_app_session_id, provider_session_id)
-        WHERE provider_session_id IS NOT NULL;
-      CREATE UNIQUE INDEX child_sessions_spawn_identity
-        ON child_sessions (parent_app_session_id, spawn_link_kind, spawn_link_id)
-        WHERE spawn_link_id IS NOT NULL;
-      PRAGMA user_version = 1;
-    `);
-    released
-      .prepare(
-        `INSERT INTO app_sessions (
-          app_session_id,
-          provider_session_id,
-          compacted_from_provider_session_ids,
-          session_purpose,
-          interaction_mode,
-          title,
-          updated_at
-        ) VALUES (?, ?, '[]', 'chat', 'auto', ?, ?)`,
-      )
-      .run('existing-chat', 'existing-provider', 'Existing chat', 123);
-    released
-      .prepare(
-        `INSERT INTO child_sessions (
-          parent_app_session_id,
-          child_session_id,
-          provider_session_id,
-          role,
-          label,
-          prompt,
-          status,
-          model_id,
-          spawn_link_kind,
-          spawn_link_id,
-          transcript_available,
-          updated_at
-        ) VALUES (?, ?, ?, 'worker', ?, ?, 'paused', ?, 'tool-use', ?, 1, ?)`,
-      )
-      .run(
-        'existing-chat',
-        'existing-child',
-        'existing-child-provider',
-        'Existing worker',
-        'Continue the existing chat',
-        'claude-sonnet-4-5',
-        'existing-tool',
-        124,
+for (const releasedVersion of [1, 2]) {
+  test(`schema v${releasedVersion} upgrades without losing existing chats or children`, () => {
+    const releasedHome = mkdtempSync(join(tmpdir(), 'droid-history-upgrade-'));
+    process.env.HOME = releasedHome;
+    try {
+      const initial = new HistoryIndex();
+      initial.close();
+      const indexPath = join(releasedHome, '.factory', 'droidex', SESSION_INDEX_FILENAME);
+      const released = new DatabaseSync(indexPath);
+      released.exec(`
+        DROP TABLE child_sessions;
+        CREATE TABLE child_sessions (
+          parent_app_session_id TEXT NOT NULL,
+          child_session_id TEXT NOT NULL,
+          provider_session_id TEXT,
+          role TEXT NOT NULL CHECK (role IN ('worker', 'validator')),
+          label TEXT,
+          prompt TEXT,
+          status TEXT NOT NULL CHECK (status IN ('pending', 'running', 'paused', 'completed')),
+          model_id TEXT NOT NULL,
+          reasoning_effort TEXT,
+          spawn_link_kind TEXT CHECK (spawn_link_kind IN ('tool-use', 'spawn')),
+          spawn_link_id TEXT,
+          transcript_available INTEGER NOT NULL CHECK (transcript_available IN (0, 1)),
+          started_at INTEGER,
+          updated_at INTEGER NOT NULL,
+          CHECK (
+            (spawn_link_kind IS NULL AND spawn_link_id IS NULL) OR
+            (spawn_link_kind IS NOT NULL AND spawn_link_id IS NOT NULL)
+          ),
+          PRIMARY KEY (parent_app_session_id, child_session_id)
+        );
+        CREATE UNIQUE INDEX child_sessions_provider_identity
+          ON child_sessions (parent_app_session_id, provider_session_id)
+          WHERE provider_session_id IS NOT NULL;
+        CREATE UNIQUE INDEX child_sessions_spawn_identity
+          ON child_sessions (parent_app_session_id, spawn_link_kind, spawn_link_id)
+          WHERE spawn_link_id IS NOT NULL;
+        PRAGMA user_version = ${releasedVersion};
+      `);
+      released
+        .prepare(
+          `INSERT INTO app_sessions (
+            app_session_id,
+            provider_session_id,
+            compacted_from_provider_session_ids,
+            session_purpose,
+            interaction_mode,
+            title,
+            updated_at
+          ) VALUES (?, ?, '[]', 'chat', 'auto', ?, ?)`,
+        )
+        .run('existing-chat', 'existing-provider', 'Existing chat', 123);
+      released
+        .prepare(
+          `INSERT INTO child_sessions (
+            parent_app_session_id,
+            child_session_id,
+            provider_session_id,
+            role,
+            label,
+            prompt,
+            status,
+            model_id,
+            spawn_link_kind,
+            spawn_link_id,
+            transcript_available,
+            updated_at
+          ) VALUES (?, ?, ?, 'worker', ?, ?, 'paused', ?, 'tool-use', ?, 1, ?)`,
+        )
+        .run(
+          'existing-chat',
+          'existing-child',
+          'existing-child-provider',
+          'Existing worker',
+          'Continue the existing chat',
+          'claude-sonnet-4-5',
+          'existing-tool',
+          124,
+        );
+      if (releasedVersion === 2) {
+        released.exec(`
+          ALTER TABLE child_sessions
+            ADD COLUMN previous_provider_session_ids TEXT NOT NULL DEFAULT '[]';
+          UPDATE child_sessions SET previous_provider_session_ids = '["previous-provider"]';
+        `);
+      }
+      const originalChild = released.prepare('SELECT * FROM child_sessions').get();
+      released.exec('CREATE TABLE child_sessions_v3 (reserved INTEGER);');
+      assert.throws(
+        () => HistoryIndex.initializeOrValidateHistorySchema(released),
+        /already exists/,
       );
-    released.close();
+      assert.equal(released.prepare('PRAGMA user_version').get()?.user_version, releasedVersion);
+      assert.deepEqual(released.prepare('SELECT * FROM child_sessions').get(), originalChild);
+      released.exec('BEGIN; DROP TABLE child_sessions_v3; COMMIT;');
+      released.close();
 
-    const upgraded = new HistoryIndex();
-    const restoredChild = upgraded.childSession('existing-chat', 'existing-child');
-    upgraded.close();
+      const upgraded = new HistoryIndex();
+      const restoredChild = upgraded.childSession('existing-chat', 'existing-child');
+      upgraded.close();
 
-    const verified = new DatabaseSync(indexPath);
-    const version = verified.prepare('PRAGMA user_version').get() as { user_version: number };
-    const summary = verified
-      .prepare('SELECT title, provider_session_id FROM app_sessions WHERE app_session_id = ?')
-      .get('existing-chat') as { title: string; provider_session_id: string };
-    const replacementChain = verified
-      .prepare(
-        `SELECT previous_provider_session_ids
-         FROM child_sessions
-         WHERE parent_app_session_id = ? AND child_session_id = ?`,
-      )
-      .get('existing-chat', 'existing-child') as { previous_provider_session_ids: string };
-    verified.close();
+      const verified = new DatabaseSync(indexPath);
+      const version = verified.prepare('PRAGMA user_version').get() as { user_version: number };
+      const summary = verified
+        .prepare('SELECT title, provider_session_id FROM app_sessions WHERE app_session_id = ?')
+        .get('existing-chat') as { title: string; provider_session_id: string };
+      const replacementChain = verified
+        .prepare(
+          `SELECT previous_provider_session_ids
+           FROM child_sessions
+           WHERE parent_app_session_id = ? AND child_session_id = ?`,
+        )
+        .get('existing-chat', 'existing-child') as { previous_provider_session_ids: string };
+      verified.close();
 
-    assert.equal(version.user_version, 2);
-    assert.equal(summary.title, 'Existing chat');
-    assert.equal(summary.provider_session_id, 'existing-provider');
-    assert.equal(replacementChain.previous_provider_session_ids, '[]');
-    assert.equal(restoredChild?.childSessionId, 'existing-child');
-    assert.equal(restoredChild?.providerSessionId, 'existing-child-provider');
-    assert.equal(restoredChild?.prompt, 'Continue the existing chat');
-  } finally {
-    process.env.HOME = home;
-    rmSync(releasedHome, { recursive: true, force: true });
-  }
-});
+      assert.equal(version.user_version, 3);
+      assert.equal(summary.title, 'Existing chat');
+      assert.equal(summary.provider_session_id, 'existing-provider');
+      assert.equal(
+        replacementChain.previous_provider_session_ids,
+        releasedVersion === 1 ? '[]' : '["previous-provider"]',
+      );
+      assert.ok(restoredChild);
+      assert.equal(restoredChild.childSessionId, 'existing-child');
+      assert.equal(restoredChild.providerSessionId, 'existing-child-provider');
+      assert.equal(restoredChild.prompt, 'Continue the existing chat');
+      assert.equal(restoredChild.group, undefined);
+      assert.equal(restoredChild.phase, undefined);
+      persistTestChild({ ...restoredChild, status: 'failed', group: 'Reviewers', phase: 'Done' });
+      persistTestChild(
+        child('existing-chat', 'second-child', { spawnLink: restoredChild.spawnLink }),
+      );
+    } finally {
+      process.env.HOME = home;
+      rmSync(releasedHome, { recursive: true, force: true });
+    }
+  });
+}
 
 test('canonical session index remains isolated from the legacy droid index', () => {
   const isolatedHome = mkdtempSync(join(tmpdir(), 'droid-session-index-isolation-'));
@@ -397,7 +450,6 @@ test('current index missing the canonical spawn-kind check uses hard-cut recover
     db.exec(`
       BEGIN;
       DROP INDEX child_sessions_provider_identity;
-      DROP INDEX child_sessions_spawn_identity;
       ALTER TABLE child_sessions RENAME TO malformed_child_sessions;
       CREATE TABLE child_sessions (
         parent_app_session_id TEXT NOT NULL,
@@ -407,7 +459,9 @@ test('current index missing the canonical spawn-kind check uses hard-cut recover
         role TEXT NOT NULL CHECK (role IN ('worker', 'validator')),
         label TEXT,
         prompt TEXT,
-        status TEXT NOT NULL CHECK (status IN ('pending', 'running', 'paused', 'completed')),
+        group_name TEXT,
+        phase TEXT,
+        status TEXT NOT NULL CHECK (status IN ('pending', 'running', 'paused', 'completed', 'failed')),
         model_id TEXT NOT NULL,
         reasoning_effort TEXT,
         spawn_link_kind TEXT,
@@ -426,9 +480,6 @@ test('current index missing the canonical spawn-kind check uses hard-cut recover
       CREATE UNIQUE INDEX child_sessions_provider_identity
         ON child_sessions (parent_app_session_id, provider_session_id)
         WHERE provider_session_id IS NOT NULL;
-      CREATE UNIQUE INDEX child_sessions_spawn_identity
-        ON child_sessions (parent_app_session_id, spawn_link_kind, spawn_link_id)
-        WHERE spawn_link_id IS NOT NULL;
       COMMIT;
     `);
     db.close();
@@ -449,11 +500,6 @@ test('current indexes with incompatible partial definitions use hard-cut recover
       name: 'child_sessions_provider_identity',
       columns: 'parent_app_session_id, provider_session_id',
       predicate: 'provider_session_id IS NULL',
-    },
-    {
-      name: 'child_sessions_spawn_identity',
-      columns: 'parent_app_session_id, spawn_link_kind, spawn_link_id',
-      predicate: 'spawn_link_id IS NULL',
     },
     {
       name: 'child_sessions_provider_identity',

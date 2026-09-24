@@ -5,7 +5,12 @@
 const v = (name) => `color-mix(in srgb, var(${name}) calc(<alpha-value> * 100%), transparent)`;
 
 export default {
-  content: ['./index.html', './src/**/*.{js,ts,jsx,tsx}'],
+  content: [
+    './index.html',
+    './src/**/*.{js,ts,jsx,tsx}',
+    // Plain CSS for the effort slider's shadow root, not Tailwind markup.
+    '!./src/components/effortSlider/effortSliderStyles.ts',
+  ],
   theme: {
     extend: {
       colors: {
@@ -15,6 +20,7 @@ export default {
           elevated: v('--droid-elevated'),
           field: v('--droid-field'),
           active: v('--droid-active'),
+          raised: v('--droid-raised'),
           border: v('--droid-border'),
           'border-hover': v('--droid-border-hover'),
           text: v('--droid-text'),
@@ -23,6 +29,7 @@ export default {
           accent: v('--droid-accent'),
           skill: v('--droid-skill'),
           'visualize-mark': v('--droid-visualize-mark'),
+          ultra: v('--droid-ultra'),
           green: v('--droid-green'),
           orange: v('--droid-orange'),
           red: v('--droid-red'),

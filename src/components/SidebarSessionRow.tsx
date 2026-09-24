@@ -1,14 +1,16 @@
 import { lazy, memo, Suspense, useEffect, useRef, useState } from 'react';
 import { MoreHorizontal } from 'lucide-react';
+import { Spinner } from '@droidex/icons';
 import { MAX_CHAT_TITLE_LENGTH } from '../lib/chatMetadata';
 import { formatRelativeTime } from '../lib/time';
 import { SESSION_MENU_WIDTH } from './SessionContextMenu';
 import type { SessionSummary } from '../types/bridge';
 import type { SessionAttentionKind } from '../lib/sessionAttention';
 import { ACTIVITY_LABELS, type SessionActivityStatus } from '../lib/sidebarActivity';
-import { SessionAttentionBadge } from './SessionAttentionBadge';
 import { ActivityStatusGlyph, ActivityToggleGlyph } from './ActivityStatusGlyph';
 import { PrStateIcon } from './environment/GithubIcons';
+import { ModelIcon, type Provider } from './ModelIcon';
+import { PROVIDER_LABELS, PROVIDER_MARKS } from '../features/providers/providerIdentity';
 import type { PrKind } from '../lib/github';
 import type { PrChecksRollup } from '../types/vcs';
 
@@ -17,20 +19,31 @@ const AutomationSessionBadge = lazy(async () => {
   return { default: module.AutomationSessionBadge };
 });
 
+// Row controls are bare icons: hover brightens the glyph instead of adding a
+// filled square on top of the row's own hover tint.
 const HOVER_ACTION =
-  'absolute top-1/2 -translate-y-1/2 flex w-6 h-6 items-center justify-center rounded-md text-droid-text-muted opacity-0 pointer-events-none transition-opacity hover:bg-droid-elevated hover:text-droid-text group-hover:pointer-events-auto group-hover:opacity-100 group-focus-within:pointer-events-auto group-focus-within:opacity-100 focus-visible:pointer-events-auto focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-droid-accent/60';
+  'absolute top-1/2 -translate-y-1/2 flex w-6 h-6 cursor-pointer items-center justify-center rounded-md text-droid-text-muted opacity-0 pointer-events-none transition-[opacity,color] hover:text-droid-text group-hover:pointer-events-auto group-hover:opacity-100 group-focus-within:pointer-events-auto group-focus-within:opacity-100 focus-visible:pointer-events-auto focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-droid-accent/60';
 
-// Left-edge dot: red when something broke, accent for unseen output, amber for
-// anything else waiting on the user.
-const STATUS_DOT: Partial<Record<SessionActivityStatus, string>> = {
-  failed: 'bg-droid-red',
-  review: 'bg-droid-accent',
-  approval: 'bg-droid-orange',
-  input: 'bg-droid-orange',
-  plan: 'bg-droid-orange',
-  interrupted: 'bg-droid-orange',
-  reply: 'bg-droid-orange',
-};
+// A blocked chat cannot move until the user acts, so list rows still mark it.
+const WAITING_ON_USER: ReadonlySet<SessionActivityStatus> = new Set(['approval', 'input', 'plan']);
+
+// Hover-swapped slots hide while the row's own hover controls take their place.
+const HIDE_ON_HOVER = 'group-hover:invisible group-focus-within:invisible';
+
+// Sits in the row's trailing slot, where the "..." menu trigger takes its
+// place on hover.
+function HarnessMark({ provider, label }: { provider: Provider; label: string }) {
+  return (
+    <span
+      role="img"
+      aria-label={label}
+      title={label}
+      className={`harness-mark flex shrink-0 text-droid-text-muted ${HIDE_ON_HOVER}`}
+    >
+      <ModelIcon provider={provider} size={14} />
+    </span>
+  );
+}
 
 export interface SessionRowProps {
   session: SessionSummary;
@@ -42,11 +55,10 @@ export interface SessionRowProps {
   running: boolean;
   attention: SessionAttentionKind | null;
   activityStatus: SessionActivityStatus;
-  // Activity view only: a second line saying why the chat is listed. When set
-  // the row is two lines and the attention pill gives way to the time.
+  // Activity view only: a second line saying why the chat is listed.
   detail?: string;
-  // Linked pull request state, shown as a small icon before the time, with
-  // its check rollup as the icon's dot.
+  // Linked pull request state, with its check rollup as the icon's dot. List
+  // rows lead with it; inbox rows show it beside the title.
   pr?: { kind: PrKind; checks?: PrChecksRollup | null };
   renaming: boolean;
   now: number;
@@ -109,15 +121,18 @@ export const SessionRow = memo(function SessionRow({
   const wasRenaming = useRef(false);
   const [marqueePx, setMarqueePx] = useState(0);
   const timeLabel = formatRelativeTime(session.updatedAt, now);
-  // Outside the Activity view the pill already announces approvals/questions.
-  const dot = detail || !attention ? STATUS_DOT[activityStatus] : undefined;
-  // The inbox marks every row with its state; the mark yields to the settle
-  // control on hover when the chat can be settled.
-  const inbox = Boolean(detail);
+  // Every row names the harness in the trailing slot. Inbox rows lead with
+  // their state and add a second line saying why the chat is listed.
+  const inbox = detail !== undefined;
+  const working = running && !attention;
   const settled = activityStatus === 'settled';
-  // On two-line rows the side slots are boxes the height of the title line, so
-  // the dot and the time sit on the first line rather than between the two.
-  const side = detail ? 'h-5' : '';
+  const harnessMark = (
+    <HarnessMark
+      provider={PROVIDER_MARKS[session.provider]}
+      label={`${PROVIDER_LABELS[session.provider]} chat`}
+    />
+  );
+  const timeTone = unread ? 'text-droid-text font-medium' : 'text-droid-text-muted';
 
   // Return focus to the row when the inline editor closes, unless the user
   // already moved focus elsewhere (e.g. clicked another row).
@@ -157,7 +172,7 @@ export const SessionRow = memo(function SessionRow({
   if (renaming) {
     return (
       <div className="flex items-center gap-2.5 pl-3 pr-2 py-1.5">
-        <span className="w-3 shrink-0" />
+        <span className="w-3.5 shrink-0" />
         <input
           autoFocus
           defaultValue={title}
@@ -187,6 +202,66 @@ export const SessionRow = memo(function SessionRow({
     );
   }
 
+  const prIcon = pr && <PrStateIcon kind={pr.kind} size={14} checks={pr.checks} />;
+  const spinner = (
+    <Spinner size={14} className="shrink-0 motion-safe:animate-spin-slow" aria-label="working" />
+  );
+
+  const leadingMark = () => {
+    if (inbox) {
+      if (working) return spinner;
+      // The mark yields to the settle control on hover when the chat can be settled.
+      return (
+        <ActivityStatusGlyph
+          status={activityStatus}
+          className={onToggleSettled ? 'inbox-mark' : ''}
+        />
+      );
+    }
+    // List rows keep the slot for live state and the linked PR: a working
+    // chat spins and reveals its PR on hover; an idle one shows the PR.
+    if (working && prIcon) {
+      return (
+        <span className="relative flex">
+          <span className="flex transition-opacity group-hover:opacity-0">{spinner}</span>
+          <span className="absolute inset-0 flex items-center justify-center opacity-0 transition-opacity group-hover:opacity-100">
+            {prIcon}
+          </span>
+        </span>
+      );
+    }
+    if (working) return spinner;
+    if (WAITING_ON_USER.has(activityStatus)) return <ActivityStatusGlyph status={activityStatus} />;
+    return prIcon;
+  };
+
+  const titleLine = (
+    <span
+      className="block min-w-0 flex-1 overflow-hidden"
+      style={
+        marquee
+          ? // Fade the right edge so the sliding title never collides with
+            // the hover "..." button.
+            {
+              maskImage: `linear-gradient(to right, black calc(100% - ${String(marqueeFade)}px), transparent)`,
+              WebkitMaskImage: `linear-gradient(to right, black calc(100% - ${String(marqueeFade)}px), transparent)`,
+            }
+          : undefined
+      }
+    >
+      <span
+        ref={titleRef}
+        className={`block text-[13px] ${marquee ? 'title-marquee whitespace-nowrap' : 'truncate'} ${
+          active || unread
+            ? 'text-droid-text'
+            : 'text-droid-text-secondary group-hover:text-droid-text'
+        } ${unread && !active ? 'font-semibold' : ''}`}
+      >
+        {title}
+      </span>
+    </span>
+  );
+
   return (
     <div
       className="group relative"
@@ -206,94 +281,57 @@ export const SessionRow = memo(function SessionRow({
           e.preventDefault();
           onMenu(session.appSessionId, { x: e.clientX, y: e.clientY });
         }}
-        className={`w-full flex ${detail ? 'items-start py-2' : 'items-center py-1.5'} gap-2.5 pl-3 pr-3 rounded-xl text-left transition-colors ${
+        className={`w-full flex cursor-pointer ${inbox ? 'items-start py-2.5' : 'items-center py-[7px]'} gap-2.5 pl-3 pr-3 rounded-xl text-left transition-colors ${
           active ? 'bg-droid-active' : 'hover:bg-droid-elevated/40'
         }`}
       >
+        {/* On two-line rows the mark sits in a box the height of the title
+            line, so it aligns with the title rather than between the lines. */}
         <span
-          className={`flex shrink-0 items-center justify-center ${inbox ? 'w-3.5' : 'w-3'} ${side} ${active ? 'text-droid-text' : 'text-droid-text-secondary group-hover:text-droid-text'}`}
+          className={`flex w-3.5 shrink-0 items-center justify-center ${inbox ? 'h-5' : ''} ${
+            active ? 'text-droid-text' : 'text-droid-text-secondary group-hover:text-droid-text'
+          }`}
         >
-          {running && !attention ? (
-            <span
-              className="w-3 h-3 rounded-full border-[1.5px] border-droid-text border-r-transparent motion-safe:animate-spin-slow"
-              aria-label="working"
-            />
-          ) : inbox ? (
-            <ActivityStatusGlyph
-              status={activityStatus}
-              className={onToggleSettled ? 'inbox-mark' : ''}
-            />
-          ) : (
-            dot && <span className={`h-1.5 w-1.5 rounded-full ${dot}`} aria-hidden="true" />
-          )}
+          {leadingMark()}
         </span>
-        {/* Inbox rows are announced by the mark itself. */}
-        {dot && !inbox && <span className="sr-only">{ACTIVITY_LABELS[activityStatus]}:</span>}
         {unread && <span className="sr-only">Unread:</span>}
-        {attention && !detail && (
-          <span className="sr-only">
-            {attention === 'approval' ? 'Waiting for approval:' : 'Waiting for an answer:'}
-          </span>
-        )}
-        <span className="min-w-0 flex-1">
-          <span
-            className="block min-w-0 overflow-hidden"
-            style={
-              marquee
-                ? // Fade the right edge so the sliding title never collides
-                  // with the hover "..." button.
-                  {
-                    maskImage: `linear-gradient(to right, black calc(100% - ${String(marqueeFade)}px), transparent)`,
-                    WebkitMaskImage: `linear-gradient(to right, black calc(100% - ${String(marqueeFade)}px), transparent)`,
-                  }
-                : undefined
-            }
-          >
-            <span
-              ref={titleRef}
-              className={`block text-[13px] ${marquee ? 'title-marquee whitespace-nowrap' : 'truncate'} ${
-                active
-                  ? 'text-droid-text'
-                  : unread
-                    ? 'text-droid-text font-semibold'
-                    : 'text-droid-text-secondary group-hover:text-droid-text'
-              }`}
-            >
-              {title}
+        {inbox ? (
+          <span className="min-w-0 flex-1">
+            <span className="flex h-5 min-w-0 items-center gap-2">
+              {titleLine}
+              <Suspense fallback={null}>
+                <AutomationSessionBadge appSessionId={session.appSessionId} />
+              </Suspense>
+              {prIcon}
+              {harnessMark}
+            </span>
+            {/* While the chat works its live activity shimmers across the whole
+                line; otherwise the reason shares it with the time. */}
+            <span className="mt-1 flex min-w-0 items-center gap-2 text-[12px] leading-4 text-droid-text-muted">
+              <span className={`min-w-0 flex-1 truncate ${working ? 'shimmer-text' : ''}`}>
+                {detail}
+              </span>
+              {!working && <span className={`shrink-0 tabular-nums ${timeTone}`}>{timeLabel}</span>}
             </span>
           </span>
-          {detail && (
-            <span className="mt-0.5 block truncate text-[12px] leading-4 text-droid-text-muted">
-              {detail}
-            </span>
-          )}
-        </span>
-        <Suspense fallback={null}>
-          <AutomationSessionBadge appSessionId={session.appSessionId} />
-        </Suspense>
-        {attention && !detail ? (
-          <SessionAttentionBadge kind={attention} />
         ) : (
-          /* Fixed columns so PR icons and times line up down the list. */
-          <span
-            className={`ml-2 grid shrink-0 grid-cols-[16px_34px] items-center gap-x-2.5 ${side}`}
-          >
-            <span className="flex justify-center">
-              {pr && <PrStateIcon kind={pr.kind} size={14} checks={pr.checks} />}
+          <>
+            {titleLine}
+            <Suspense fallback={null}>
+              <AutomationSessionBadge appSessionId={session.appSessionId} />
+            </Suspense>
+            <span className="ml-1 flex shrink-0 items-center gap-2">
+              <span className={`w-[30px] text-right text-[12px] tabular-nums ${timeTone}`}>
+                {timeLabel}
+              </span>
+              {harnessMark}
             </span>
-            <span
-              className={`text-right text-[12px] tabular-nums group-hover:invisible group-focus-within:invisible ${
-                unread ? 'text-droid-text font-medium' : 'text-droid-text-muted'
-              }`}
-            >
-              {timeLabel}
-            </span>
-          </span>
+          </>
         )}
       </button>
       {/* In the inbox the status mark becomes the settle control on hover: one
           click closes a task without the menu; on a settled row it reopens. */}
-      {onToggleSettled && !(running && !attention) && (
+      {onToggleSettled && !working && (
         <button
           type="button"
           aria-label={settled ? `Reopen ${title}` : `Mark ${title} as settled`}
@@ -302,16 +340,16 @@ export const SessionRow = memo(function SessionRow({
             e.stopPropagation();
             onToggleSettled(session);
           }}
-          className={`${HOVER_ACTION} inbox-mark-control left-[7px] ${detail ? 'top-2 translate-y-0' : ''} ${
+          className={`${HOVER_ACTION} inbox-mark-control left-[7px] ${inbox ? 'top-2 translate-y-0' : ''} ${
             settled ? 'hover:text-droid-text' : 'hover:text-droid-green'
           }`}
         >
           <ActivityToggleGlyph settled={settled} />
         </button>
       )}
-      {/* On hover the timestamp becomes the "..." menu trigger (rename, pin,
-          archive). It stays tabbable while hidden so keyboard users can reach
-          it; opacity (not display) keeps it in the tab order. */}
+      {/* On hover the trailing harness mark becomes the "..." menu trigger.
+          It stays tabbable while hidden so keyboard users can reach it;
+          opacity (not display) keeps it in the tab order. */}
       <button
         type="button"
         aria-label={`Actions for ${title}`}
@@ -321,7 +359,7 @@ export const SessionRow = memo(function SessionRow({
           const rect = e.currentTarget.getBoundingClientRect();
           onMenu(session.appSessionId, { x: rect.right - SESSION_MENU_WIDTH, y: rect.bottom + 4 });
         }}
-        className={`${HOVER_ACTION} right-2 ${detail ? 'top-2 translate-y-0' : ''}`}
+        className={`${HOVER_ACTION} right-[7px] ${inbox ? 'top-2 translate-y-0' : ''}`}
       >
         <MoreHorizontal className="w-4 h-4" />
       </button>

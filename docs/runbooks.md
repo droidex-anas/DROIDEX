@@ -154,4 +154,4 @@ The smoke uses the real Electron main process, preload, and built renderer with 
    npm run build
    ```
 3. Check whether generated docs are stale. If so, run `npm run docs:generate` and commit the generated file.
-4. Known baseline: lint is non-blocking in CI while the strict lint backlog is being paid down.
+4. Known baseline: lint blocks CI on new errors only; existing errors are recorded in `eslint-suppressions.json`.

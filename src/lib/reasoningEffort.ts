@@ -1,4 +1,4 @@
-import type { ModelInfo, ReasoningEffort } from '../types/bridge';
+import type { ModelInfo, ProviderKind, ReasoningEffort } from '../types/bridge';
 
 const REASONING_EFFORTS: Readonly<Record<ReasoningEffort, true>> = {
   off: true,
@@ -9,6 +9,7 @@ const REASONING_EFFORTS: Readonly<Record<ReasoningEffort, true>> = {
   high: true,
   xhigh: true,
   max: true,
+  ultra: true,
   dynamic: true,
 };
 
@@ -16,18 +17,84 @@ export function isReasoningEffort(value: unknown): value is ReasoningEffort {
   return typeof value === 'string' && Object.hasOwn(REASONING_EFFORTS, value);
 }
 
-// Shared rule for the reasoning effort shown next to a model (composer badge
-// and context-panel pill): the session's pinned effort wins, the global
-// default is the fallback, and a model known to support no reasoning efforts
-// hides the indicator entirely. An unknown model (list still loading) keeps
-// showing the effort so the indicator does not flicker out and back in.
+// Whether a model's harness offers a reasoning effort for it at all. A model
+// known to publish none has no control to offer, in the picker or beside the
+// model's name. An unknown model (list still loading) keeps the control so it
+// does not flicker out and back in.
+export function offersReasoningEffort(
+  model: Pick<ModelInfo, 'supportedReasoningEfforts'> | undefined,
+): boolean {
+  return !model || (model.supportedReasoningEfforts?.length ?? 0) > 0;
+}
+
+// Callers choose the session or draft effort. An unset session effort stays
+// provider-managed; display code must not substitute a global or catalog default.
 export function resolveReasoningEffortDisplay(
-  sessionEffort: ReasoningEffort | undefined,
-  globalDefault: ReasoningEffort | undefined,
+  effort: ReasoningEffort | undefined,
   model: Pick<ModelInfo, 'supportedReasoningEfforts'> | undefined,
 ): ReasoningEffort | undefined {
-  const effort = sessionEffort ?? globalDefault;
-  if (effort === undefined) return undefined;
-  if (model && (model.supportedReasoningEfforts?.length ?? 0) === 0) return undefined;
-  return effort;
+  return offersReasoningEffort(model) ? effort : undefined;
+}
+
+export function compatibleReasoningForModel(
+  model: ModelInfo | undefined,
+  currentReasoning: ReasoningEffort | undefined,
+): ReasoningEffort | undefined {
+  if (!model || currentReasoning === undefined) return undefined;
+  const supported = model.supportedReasoningEfforts;
+  if (supported?.length)
+    return supported.includes(currentReasoning)
+      ? undefined
+      : (model.defaultReasoningEffort ?? supported.at(-1));
+  if (model.defaultReasoningEffort && currentReasoning !== model.defaultReasoningEffort)
+    return model.defaultReasoningEffort;
+  return undefined;
+}
+
+// A new chat's effort is one setting shared by every harness, so the harness
+// it is shown on may not offer it (Ultra picked on Codex, then Droid chosen).
+// Read it through the model it would run on: an effort that model cannot run
+// becomes the one it can, and the pick stands for the harness that offers it.
+export function draftEffortFor(
+  model: ModelInfo | undefined,
+  effort: ReasoningEffort | undefined,
+): ReasoningEffort | undefined {
+  return compatibleReasoningForModel(model, effort) ?? effort;
+}
+
+// The effort a model switch carries: a level the new model can run, null when
+// it offers no level and one is set (so the previous model's does not follow
+// it), undefined when the current one stands.
+export function reasoningForModelSwitch(
+  model: ModelInfo | undefined,
+  currentReasoning: ReasoningEffort | undefined,
+): ReasoningEffort | null | undefined {
+  const compatible = compatibleReasoningForModel(model, currentReasoning);
+  if (compatible !== undefined) return compatible;
+  const offersNone =
+    model && !model.supportedReasoningEfforts?.length && !model.defaultReasoningEffort;
+  return offersNone && currentReasoning !== undefined ? null : undefined;
+}
+
+// The saved effort a default keeps after its model changes: snapped to what the
+// new model runs, cleared when it runs none, otherwise unchanged.
+export function reasoningAfterModelSwitch(
+  model: ModelInfo | undefined,
+  currentReasoning: ReasoningEffort | undefined,
+): ReasoningEffort | undefined {
+  const next = reasoningForModelSwitch(model, currentReasoning);
+  if (next === null) return undefined;
+  return next ?? currentReasoning;
+}
+
+// The top rung is the same idea on both harnesses but not the same word: Claude
+// Code calls it ultracode, Codex calls it Ultra. Every surface that names a
+// level goes through here, so the chip, the picker rows, and the context panel
+// always speak the harness's own vocabulary. Callers capitalize for display.
+export function reasoningEffortLabel(
+  effort: ReasoningEffort,
+  provider: ProviderKind | undefined,
+): string {
+  if (effort !== 'ultra') return effort;
+  return provider === 'claude' ? 'ultracode' : 'ultra';
 }

@@ -4,10 +4,9 @@ import { Clock, Spinner } from '@droidex/icons';
 import { useEffect, useMemo, useState } from 'react';
 import type { WorkspaceScope } from '../../lib/workspaces';
 import { toast } from '../../lib/toast';
-import type { ModelInfo, ReasoningEffort } from '../../types/bridge';
+import type { ModelInfo, ReasoningEffort, SessionSummary } from '../../types/bridge';
 import { AutomationEditor } from './AutomationEditor';
-import { AutomationRow } from './AutomationRow';
-import { automationModelSelectionIssue } from './modelSelection';
+import { AutomationList } from './AutomationList';
 import type { AutomationEditorRequest } from '../../hooks/useStore';
 import { AUTOMATION_SUGGESTIONS, type AutomationSuggestion } from './suggestions';
 import {
@@ -39,6 +38,7 @@ interface AutomationsViewProps {
   workspaceScopesReady: boolean;
   currentWorkspaceCwd: string | null;
   models: ModelInfo[];
+  sessions: Partial<Record<string, SessionSummary>>;
   defaultModelId?: string | null;
   defaultReasoningEffort?: ReasoningEffort | null;
   onChatWithDroidex: () => void;
@@ -47,13 +47,20 @@ interface AutomationsViewProps {
   onEditorRequestHandled: (requestId: number) => void;
 }
 
-type Filter = 'all' | 'active' | 'paused';
+type Filter = 'all' | 'prompts' | 'active' | 'paused';
+const FILTERS: { value: Filter; label: string }[] = [
+  { value: 'all', label: 'All' },
+  { value: 'prompts', label: 'Scheduled prompts' },
+  { value: 'active', label: 'Active' },
+  { value: 'paused', label: 'Paused' },
+];
 
 export function AutomationsView({
   workspaceScopes,
   workspaceScopesReady,
   currentWorkspaceCwd,
   models,
+  sessions,
   defaultModelId,
   defaultReasoningEffort,
   onChatWithDroidex,
@@ -80,7 +87,7 @@ export function AutomationsView({
   // a minute for nothing.
   useEffect(() => {
     setNow(Date.now());
-    const active = snapshot.activeRunCount > 0 || snapshot.queuedRunCount > 0;
+    const active = snapshot.activeRunCount > 0;
     const timer = window.setInterval(
       () => {
         setNow(Date.now());
@@ -90,7 +97,7 @@ export function AutomationsView({
     return () => {
       window.clearInterval(timer);
     };
-  }, [snapshot.activeRunCount, snapshot.queuedRunCount]);
+  }, [snapshot.activeRunCount]);
 
   useEffect(() => {
     if (!pendingDeleteId) return;
@@ -124,7 +131,7 @@ export function AutomationsView({
       (candidate) => candidate.id === editorRequest.automationId,
     );
     if (!automation) return;
-    editAutomationFromRequest(automation, modelDefaults, setEditor);
+    setEditor(editAutomationState(automation, modelDefaults));
     onEditorRequestHandled(editorRequest.requestId);
   }, [editorRequest, modelDefaults, onEditorRequestHandled, snapshot.automations]);
 
@@ -148,6 +155,7 @@ export function AutomationsView({
     return snapshot.automations.filter((automation) => {
       if (filter === 'active' && !automation.enabled) return false;
       if (filter === 'paused' && automation.enabled) return false;
+      if (filter === 'prompts' && automation.target.kind !== 'existing-session') return false;
       if (!normalizedQuery) return true;
       return `${automation.title}\n${automation.prompt}\n${automation.workspaceCwd ?? ''}`
         .toLowerCase()
@@ -172,16 +180,7 @@ export function AutomationsView({
   };
 
   const editAutomation = (automation: Automation) => {
-    const draft = automationToDraft(automation);
-    setEditor({
-      mode: 'edit',
-      automation,
-      draft: {
-        ...draft,
-        modelId: draft.modelId ?? modelDefaults.modelId,
-        reasoningEffort: draft.reasoningEffort ?? modelDefaults.reasoningEffort,
-      },
-    });
+    setEditor(editAutomationState(automation, modelDefaults));
   };
 
   const saveEditor = async () => {
@@ -201,7 +200,7 @@ export function AutomationsView({
       else {
         await updateAutomation(editor.automation.id, editor.draft);
       }
-      setEditor(null);
+      setEditor((current) => (current === editor ? null : current));
       toast.success(editor.mode === 'create' ? 'Automation created.' : 'Automation updated.');
     } catch (error) {
       showError(error);
@@ -310,11 +309,15 @@ export function AutomationsView({
                   />
                 </label>
 
-                <div className="mt-5 flex items-center gap-1">
-                  {(['all', 'active', 'paused'] as const).map((value) => (
+                <div
+                  className="mt-5 flex flex-wrap items-center gap-1"
+                  aria-label="Filter automations"
+                >
+                  {FILTERS.map(({ value, label }) => (
                     <button
                       key={value}
                       type="button"
+                      aria-pressed={filter === value}
                       onClick={() => {
                         setFilter(value);
                       }}
@@ -324,57 +327,50 @@ export function AutomationsView({
                           : 'text-droid-text-muted hover:bg-droid-elevated/50 hover:text-droid-text'
                       }`}
                     >
-                      {value}
+                      {label}
                     </button>
                   ))}
                 </div>
 
                 {visible.length > 0 && (
-                  <div className="mt-4 overflow-hidden rounded-2xl border border-droid-border/80 bg-droid-surface/20">
-                    {visible.map((automation, index) => (
-                      <AutomationRow
-                        key={automation.id}
-                        automation={automation}
-                        run={latestRuns.get(automation.id)}
-                        model={models.find((candidate) => candidate.id === automation.modelId)}
-                        modelIssue={automationModelSelectionIssue(
-                          models,
-                          automation.modelId,
-                          automation.reasoningEffort,
-                        )}
-                        now={now}
-                        deleteArmed={pendingDeleteId === automation.id}
-                        last={index === visible.length - 1}
-                        onEdit={() => {
-                          editAutomation(automation);
-                        }}
-                        onToggle={() =>
-                          void setAutomationEnabled(automation.id, !automation.enabled).catch(
-                            showError,
-                          )
-                        }
-                        onRun={() => {
-                          void runAutomationNow(automation.id)
-                            .then((runId) => {
-                              setFollowManualRunId(runId);
-                              toast.success('Starting automation…');
-                            })
-                            .catch((error: unknown) => {
-                              setFollowManualRunId(null);
-                              showError(error);
-                            });
-                        }}
-                        onOpenSession={onOpenSession}
-                        onDelete={() => void deleteRow(automation)}
-                      />
-                    ))}
-                  </div>
+                  <AutomationList
+                    automations={visible}
+                    latestRuns={latestRuns}
+                    models={models}
+                    sessions={sessions}
+                    now={now}
+                    pendingDeleteId={pendingDeleteId}
+                    onEdit={editAutomation}
+                    onToggle={(automation, enabled) =>
+                      void setAutomationEnabled(automation.id, enabled).catch(showError)
+                    }
+                    onRun={(automation) => {
+                      void runAutomationNow(automation.id)
+                        .then((runId) => {
+                          setFollowManualRunId(runId);
+                          toast.success('Starting automation…');
+                        })
+                        .catch((error: unknown) => {
+                          setFollowManualRunId(null);
+                          showError(error);
+                        });
+                    }}
+                    onOpenSession={onOpenSession}
+                    onDelete={(automation) => void deleteRow(automation)}
+                  />
                 )}
 
                 {visible.length === 0 && snapshot.automations.length > 0 && (
                   <div className="py-12 text-center text-[13px] text-droid-text-muted">
                     No automations match this view.
                   </div>
+                )}
+
+                {snapshot.automations.length === 0 && (
+                  <p className="mt-8 text-[12px] leading-5 text-droid-text-muted">
+                    To continue an existing conversation later, choose Schedule prompt beside its
+                    Send button.
+                  </p>
                 )}
 
                 {snapshot.automations.length === 0 && (
@@ -398,13 +394,19 @@ export function AutomationsView({
             animate={{ x: 0, opacity: 1 }}
             exit={reduceMotion ? { opacity: 0 } : { x: 24, opacity: 0 }}
             transition={{ duration: reduceMotion ? 0 : 0.22, ease: [0.16, 1, 0.3, 1] }}
-            className="absolute inset-y-0 right-0 z-20 w-[410px]"
+            className="absolute inset-y-0 right-0 z-20 w-[410px] max-w-full"
           >
             <AutomationEditor
               editor={editor}
               workspaceScopes={workspaceScopes}
               workspaceScopesReady={workspaceScopesReady}
               models={models}
+              saving={saving}
+              targetTitle={
+                editor.draft.target.kind === 'existing-session'
+                  ? sessions[editor.draft.target.appSessionId]?.title
+                  : undefined
+              }
               onChange={(draft) => {
                 setEditor((current) => (current ? { ...current, draft } : current));
               }}
@@ -425,21 +427,16 @@ export function AutomationsView({
   );
 }
 
-function editAutomationFromRequest(
+function editAutomationState(
   automation: Automation,
   defaults: { modelId: string | null; reasoningEffort: ReasoningEffort | null },
-  setEditor: (state: AutomationEditorState) => void,
-) {
+): AutomationEditorState {
   const draft = automationToDraft(automation);
-  setEditor({
-    mode: 'edit',
-    automation,
-    draft: {
-      ...draft,
-      modelId: draft.modelId ?? defaults.modelId,
-      reasoningEffort: draft.reasoningEffort ?? defaults.reasoningEffort,
-    },
-  });
+  if (draft.target.kind === 'new-session') {
+    draft.modelId ??= defaults.modelId;
+    draft.reasoningEffort ??= defaults.reasoningEffort;
+  }
+  return { mode: 'edit', automation, draft };
 }
 
 // The snapshot arrives over the bridge: until the scheduler reports ready and

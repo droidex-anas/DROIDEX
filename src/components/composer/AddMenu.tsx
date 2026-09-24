@@ -9,21 +9,12 @@ import {
 import { AnimatePresence, motion } from 'framer-motion';
 import { FolderOpen, Plus } from 'lucide-react';
 import { VisualizeIcon } from '../icons/VisualizeIcon';
+import { fitToWindow } from './popoverFit';
 
 const ACCENT = 'var(--droid-accent)';
 
-const WINDOW_MARGIN_PX = 12;
 const PREFERRED_WIDTH_PX = 340;
 const MIN_WIDTH_PX = 200;
-
-// The menu opens from the plus button's left edge. On a cramped window that edge
-// leaves too little room, so it narrows to what is left and then slides back from
-// the window edge, rather than putting a row out of reach.
-function fitToWindow(anchorLeft: number, windowWidth: number) {
-  const room = windowWidth - anchorLeft - WINDOW_MARGIN_PX;
-  const width = Math.min(PREFERRED_WIDTH_PX, Math.max(MIN_WIDTH_PX, room));
-  return { width, left: Math.min(0, room - width) };
-}
 
 // One row of the menu. A row with `checked` toggles what it names, so it
 // reports the state its Added marker shows; a row without it runs an action.
@@ -109,11 +100,17 @@ export default function AddMenu({
   const [fit, setFit] = useState<{ width: number; left: number }>();
   useLayoutEffect(() => {
     if (!open) return;
-    // Measured from the trigger, not the menu, so a menu already slid left does
-    // not feed its own offset back in.
     const refit = () => {
       const trigger = triggerRef.current;
-      if (trigger) setFit(fitToWindow(trigger.getBoundingClientRect().left, window.innerWidth));
+      if (!trigger) return;
+      setFit(
+        fitToWindow(
+          trigger.getBoundingClientRect().left,
+          window.innerWidth,
+          PREFERRED_WIDTH_PX,
+          MIN_WIDTH_PX,
+        ),
+      );
     };
     refit();
     window.addEventListener('resize', refit);
@@ -152,7 +149,7 @@ export default function AddMenu({
       // the menu through its own toggle instead of an outside click that reopens
       // it on the way back up.
       const anchor = anchorRef.current;
-      if (anchor && !anchor.contains(e.target as Node)) onOpenChange(false);
+      if (anchor && e.target instanceof Node && !anchor.contains(e.target)) onOpenChange(false);
     };
     window.addEventListener('keydown', onKey);
     window.addEventListener('mousedown', onDown);
@@ -169,7 +166,7 @@ export default function AddMenu({
         onClick={() => {
           onOpenChange(!open);
         }}
-        className={`p-1.5 rounded-lg transition-colors ${
+        className={`flex h-8 w-8 items-center justify-center rounded-full transition-colors ${
           open
             ? 'bg-droid-bg/60 text-droid-text'
             : 'text-droid-text-muted hover:text-droid-text hover:bg-droid-bg/50'
@@ -190,7 +187,7 @@ export default function AddMenu({
             exit={{ opacity: 0, y: 6 }}
             transition={{ duration: 0.14, ease: [0.16, 1, 0.3, 1] }}
             style={fit}
-            className="absolute bottom-full left-0 z-50 mb-2 w-[340px] rounded-xl border border-droid-border bg-droid-elevated p-1.5 shadow-droid"
+            className="absolute bottom-full left-0 z-50 mb-2 w-[340px] rounded-xl border border-droid-border bg-droid-raised p-1.5 shadow-droid"
             role="menu"
             aria-label="Add to this prompt"
           >

@@ -12,6 +12,7 @@ import type { GithubAvailability, GitEnvironment } from '../types/vcs.js';
 const session = (overrides: Partial<SessionSummary>): SessionSummary => ({
   appSessionId: 's1',
   providerSessionId: 'provider-s1',
+  provider: 'droid',
   sessionPurpose: 'chat',
   interactionMode: 'auto',
   role: 'primary',
@@ -48,10 +49,7 @@ function renderPanel(
     sessionOrder: [active.appSessionId],
     activeAppSessionId: active.appSessionId,
     models,
-    agentConfig: {
-      ...initialState.agentConfig,
-      primary: { ...initialState.agentConfig.primary, reasoning: globalReasoning },
-    },
+    harnessModels: { ...initialState.harnessModels, droid: { reasoning: globalReasoning } },
   };
   return renderToStaticMarkup(
     createElement(
@@ -71,13 +69,14 @@ test('model row shows the session-pinned reasoning effort, never autonomy', () =
   assert.doesNotMatch(html, />medium</);
 });
 
-test('model row falls back to the global default effort', () => {
+test('model row leaves unset effort provider-managed instead of using the global default', () => {
   const html = renderPanel(
     { modelId: 'm1' },
-    [model({ supportedReasoningEfforts: ['max'] })],
+    [model({ supportedReasoningEfforts: ['max'], defaultReasoningEffort: 'max' })],
     'max',
   );
-  assert.match(html, />max</);
+  assert.match(html, /Model Alpha/);
+  assert.doesNotMatch(html, />max</);
 });
 
 test('model row hides the pill for a known model without reasoning support', () => {
@@ -90,6 +89,7 @@ test('model row hides the pill for a known model without reasoning support', () 
 
 test('model row keeps the pill while the model list has not loaded', () => {
   const html = renderPanel({ reasoningEffort: 'xhigh', modelId: 'unlisted' }, []);
+  assert.match(html, />unlisted</);
   assert.match(html, />xhigh</);
 });
 

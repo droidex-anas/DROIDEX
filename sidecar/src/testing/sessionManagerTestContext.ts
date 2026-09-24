@@ -10,6 +10,7 @@ import {
   type StartableLocalMcpResource,
 } from '../SessionManager.js';
 import { HistoryIndex } from '../history.js';
+import { NO_PROVIDER_PROBES } from '../providers/providerProbes.js';
 import type * as Protocol from '../protocol.js';
 import type { SessionFileChange } from '../sessionFileCache.js';
 import { FakeBrowserSessionManager } from './browserCharacterizationSupport.js';
@@ -72,6 +73,7 @@ export interface SessionManagerTestContext {
   readonly browsers: FakeBrowserSessionManager;
   readonly home: string;
   readonly mcpServerCloseCalls: number;
+  deliverScheduledMessage: SessionManager['deliverScheduledMessage'];
   handle(command: Protocol.ClientCommand): Promise<void>;
   create(
     command: Omit<Extract<Protocol.ClientCommand, { type: 'session.create' }>, 'type'>,
@@ -98,6 +100,8 @@ export function createSessionManagerTestContext(
     childRuntimeIdleMs?: number;
     sessionRuntimeIdleMs?: number;
     agentProcessHost?: SessionManagerDependencies['agentProcessHost'];
+    onEvent?: (event: Protocol.ServerEvent) => void;
+    onSessionAvailable?: (appSessionId: string) => void;
   } = {},
 ): SessionManagerTestContext {
   const calls: RecordedCall[] = [];
@@ -105,6 +109,7 @@ export function createSessionManagerTestContext(
   const recordEvent = (event: Protocol.ServerEvent): void => {
     events.push(event);
     calls.push({ target: 'protocol', method: 'event', args: [event] });
+    options.onEvent?.(event);
   };
   const home = createTestHome(options.defaults);
   const runtime = new FakeFactoryRuntime(calls);
@@ -168,7 +173,12 @@ export function createSessionManagerTestContext(
   let sessionFileRevision = 0;
   let manager: SessionManager;
   try {
-    manager = new SessionManager(recordEvent, { dependencies, initialModels: INITIAL_MODELS });
+    manager = new SessionManager(recordEvent, {
+      dependencies,
+      initialModels: INITIAL_MODELS,
+      providerProbes: NO_PROVIDER_PROBES,
+      ...(options.onSessionAvailable ? { onSessionAvailable: options.onSessionAvailable } : {}),
+    });
   } catch (error) {
     sessionFileMirror.close();
     unpinTestHome();
@@ -255,6 +265,7 @@ export function createSessionManagerTestContext(
         .length;
     },
     handle,
+    deliverScheduledMessage: manager.deliverScheduledMessage.bind(manager),
     create: (command) => handle({ type: 'session.create', ...command }),
     retireIdleSessionRuntimes: () => manager.retireIdleSessionRuntimes(),
     scanAgentProcesses: () => manager.scanAgentProcesses(),
@@ -293,7 +304,10 @@ export function createNativeBrowserTestContext(): NativeBrowserTestContext {
   }
   let manager: SessionManager;
   try {
-    manager = new SessionManager(recordEvent, { initialModels: INITIAL_MODELS });
+    manager = new SessionManager(recordEvent, {
+      initialModels: INITIAL_MODELS,
+      providerProbes: NO_PROVIDER_PROBES,
+    });
   } catch (error) {
     unpinTestHome();
     rmSync(home, { recursive: true, force: true });
@@ -350,25 +364,32 @@ function createTestHome(defaults?: Protocol.FactoryDefaultSettings): string {
   return home;
 }
 
-let pinnedTestHome: { home: string; previousHome: string | undefined } | undefined;
+let pinnedTestEnvironment: Record<string, string | undefined> | undefined;
 
 // The manager keeps reading $HOME after commands return (context pollers,
 // learned-window retunes, defaults reloads), so the fake home stays pinned for
-// the whole context lifetime. A per-command scope would let that async work
-// read the developer's real ~/.factory/settings.json and leak machine-local
-// compaction overrides into assertions.
+// the whole context lifetime. App-profile overrides also need isolation: an
+// inherited Electron profile would otherwise share adoption and history state.
 function pinTestHome(home: string): void {
-  if (pinnedTestHome) throw new Error('Concurrent SessionManager test homes are not supported.');
-  pinnedTestHome = { home, previousHome: process.env['HOME'] };
+  if (pinnedTestEnvironment)
+    throw new Error('Concurrent SessionManager test homes are not supported.');
+  pinnedTestEnvironment = {
+    HOME: process.env['HOME'],
+    DROIDEX_USER_DATA_DIR: process.env['DROIDEX_USER_DATA_DIR'],
+    DROIDEX_HISTORY_DIR: process.env['DROIDEX_HISTORY_DIR'],
+  };
   process.env['HOME'] = home;
+  delete process.env['DROIDEX_USER_DATA_DIR'];
+  delete process.env['DROIDEX_HISTORY_DIR'];
 }
 
 function unpinTestHome(): void {
-  if (!pinnedTestHome) throw new Error('SessionManager test HOME is not pinned.');
-  const { previousHome } = pinnedTestHome;
-  pinnedTestHome = undefined;
-  if (previousHome === undefined) delete process.env['HOME'];
-  else process.env['HOME'] = previousHome;
+  if (!pinnedTestEnvironment) throw new Error('SessionManager test HOME is not pinned.');
+  for (const [name, value] of Object.entries(pinnedTestEnvironment)) {
+    if (value === undefined) Reflect.deleteProperty(process.env, name);
+    else process.env[name] = value;
+  }
+  pinnedTestEnvironment = undefined;
 }
 
 function writeDefaults(home: string, defaults?: Protocol.FactoryDefaultSettings): void {

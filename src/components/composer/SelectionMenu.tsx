@@ -28,6 +28,7 @@ import {
   TextSelect,
 } from 'lucide-react';
 import type { DraftFormatAction } from '../../lib/composerFormatting';
+import { Clock } from '@droidex/icons';
 
 /* The composer's right-click menu. On a link it leads with opening or copying
    that link; then the editing actions every desktop app has — the draft cancels
@@ -124,11 +125,15 @@ export default function SelectionMenu({
   onFormat,
   onEdit,
   onClose,
+  onSchedule,
+  canSchedule = false,
 }: {
   menu: SelectionMenuState | null;
   onFormat: (action: DraftFormatAction) => void;
   onEdit: (action: DraftEditAction) => void;
   onClose: () => void;
+  onSchedule?: (() => void) | undefined;
+  canSchedule?: boolean;
 }) {
   const menuRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -137,7 +142,9 @@ export default function SelectionMenu({
       if (e.key === 'Escape') onClose();
     };
     const onDown = (e: MouseEvent) => {
-      if (menuRef.current && !menuRef.current.contains(e.target as Node)) onClose();
+      if (menuRef.current && e.target instanceof Node && !menuRef.current.contains(e.target)) {
+        onClose();
+      }
     };
     window.addEventListener('keydown', onKey);
     window.addEventListener('mousedown', onDown);
@@ -177,7 +184,7 @@ export default function SelectionMenu({
         top: above ? y - 4 : y + 4,
         transform: above ? 'translateY(-100%)' : undefined,
       }}
-      className="fixed z-50 max-h-[calc(100vh-5rem)] overflow-y-auto rounded-xl border border-droid-border-hover bg-droid-elevated p-1 shadow-droid"
+      className="fixed z-50 max-h-[calc(100vh-5rem)] overflow-y-auto rounded-xl border border-droid-border-hover bg-droid-raised p-1 shadow-droid"
     >
       {link ? (
         <>
@@ -198,6 +205,17 @@ export default function SelectionMenu({
           <Separator />
         </>
       ) : null}
+      {onSchedule && (
+        <>
+          <TextRow
+            icon={Clock}
+            label="Schedule prompt…"
+            disabled={!canSchedule}
+            onSelect={choose(onSchedule)}
+          />
+          <Separator />
+        </>
+      )}
       {EDIT_ROWS.map(([icon, label, action, hint, needsSelection]) => (
         <TextRow
           key={action}

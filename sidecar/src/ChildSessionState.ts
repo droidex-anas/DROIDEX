@@ -5,6 +5,7 @@ import { publishedStreamFidelity } from './childStreamFidelity.js';
 import type {
   Autonomy,
   ChildActivity,
+  ChildStatus,
   ReasoningEffort,
   SessionSummary,
   StreamFidelity,
@@ -37,12 +38,23 @@ export interface ChildSpawnObservation {
   // it had produced). Live-only: never persisted, since it describes a moment
   // rather than the session.
   activity?: ChildActivity;
+  status?: ChildStatus;
+  group?: string;
+  phase?: string;
+  transcriptAvailable?: boolean;
 }
 export interface ChildParentLease {
   summary: SessionSummary;
-  session: FactorySession;
+  // Opening a child runtime is supported only through the parent's SDK session.
+  droid?: FactorySession;
   mcpConfigs: McpServerConfig[];
   closeMode?: 'discard-pending' | 'preserve-pending';
+}
+
+export function parentDroidSession(lease: ChildParentLease): FactorySession {
+  if (!lease.droid)
+    throw new Error(`Child sessions are not supported for the ${lease.summary.provider} provider.`);
+  return lease.droid;
 }
 export interface ChildRuntimeState {
   session: FactorySession;
@@ -66,6 +78,8 @@ export interface ChildSessionState {
   providerSessionId?: string;
   label?: string;
   prompt?: string;
+  group?: string;
+  phase?: string;
   modelId: string;
   reasoningEffort?: ReasoningEffort;
   // Confirmed effective autonomy reported by the child's init result. Runtime-
@@ -201,18 +215,24 @@ export function applyObservedChild(
     child.configurationGeneration += 1;
   }
   child.providerSessionId = providerSessionId;
-  child.status = 'running';
+  if (observed.transcriptAvailable === false && !observed.done) child.closeWhenIdle = false;
+  // Terminal observations settle through complete(), after metadata is applied.
+  if (observed.done) child.status = 'running';
+  else if (observed.status) child.status = observed.status;
+  else if (observed.transcriptAvailable !== false) child.status = 'running';
   applyChildLaunchSettings(child, {
     modelId: observed.modelId,
     reasoningEffort: observed.reasoningEffort,
   });
-  // First label wins: the spawn call's label is set at admission, and
-  // later poll observations echo the same metadata with different casing.
-  child.label ??= observed.label;
+  // Polled labels keep their original casing; state feeds can add a nickname later.
+  if (observed.transcriptAvailable === false) child.label = observed.label ?? child.label;
+  else child.label ??= observed.label;
+  child.group ??= observed.group;
+  child.phase = observed.phase ?? child.phase;
   child.prompt = observed.prompt ?? child.prompt;
   child.spawnLink = spawnLink ?? child.spawnLink;
   child.activity = observed.activity ?? child.activity;
-  child.transcriptAvailable = true;
+  child.transcriptAvailable = observed.transcriptAvailable ?? true;
   child.startedAt ??= now;
   return { previousPrompt };
 }
@@ -240,6 +260,8 @@ export function persistedChild(child: ChildSessionState): PersistedChildSession 
       : {}),
     ...(child.label ? { label: child.label } : {}),
     ...(child.prompt ? { prompt: child.prompt } : {}),
+    ...(child.group ? { group: child.group } : {}),
+    ...(child.phase ? { phase: child.phase } : {}),
     ...(child.reasoningEffort ? { reasoningEffort: child.reasoningEffort } : {}),
     ...(child.spawnLink ? { spawnLink: child.spawnLink } : {}),
     ...(child.startedAt === undefined ? {} : { startedAt: child.startedAt }),
@@ -299,6 +321,8 @@ export function findChildBySpawn(parent: ParentChildSessions, spawnLink: Persist
 }
 
 function pendingObservationKey(observation: ChildSpawnObservation): string | undefined {
+  if (observation.transcriptAvailable === false && observation.providerSessionId)
+    return `provider:${observation.providerSessionId}`;
   if (observation.spawnLink)
     return `spawn:${observation.spawnLink.kind}:${observation.spawnLink.id}`;
   return observation.providerSessionId ? `provider:${observation.providerSessionId}` : undefined;
@@ -333,7 +357,11 @@ export function mergeChildObservations(
     requiresExactLaunchSettings:
       observation.requiresExactLaunchSettings === true ||
       pending?.requiresExactLaunchSettings === true,
-    done: observation.done === true || pending?.done === true,
+    done:
+      observation.status === 'completed' ||
+      observation.status === 'failed' ||
+      observation.done === true ||
+      pending?.done === true,
     activity: observation.activity ?? pending?.activity,
   };
 }
@@ -358,7 +386,7 @@ export function forgetPendingChildObservation(
 }
 
 export function childAcceptsWork(child: ChildSessionState): boolean {
-  return child.status !== 'completed' && !child.closeWhenIdle;
+  return child.status !== 'completed' && child.status !== 'failed' && !child.closeWhenIdle;
 }
 
 // Work the parent must not close out from under: a running or queued child, a

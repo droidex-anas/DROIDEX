@@ -115,6 +115,22 @@ export const SETTINGS_SEARCH_ENTRIES: readonly SettingsSearchEntry[] = [
   e('Setup & updates', 'Run setup again', ['onboarding', 'first run', 'setup tour', 'wizard']),
 
   // ── Configuration ────────────────────────────────────────────────────────
+  e('Configuration', 'Model selector', [
+    'model picker',
+    'effort slider',
+    'classic list',
+    'composer model',
+    'selector style',
+  ]),
+  e('Configuration', 'Default models', [
+    'default model',
+    'reasoning effort',
+    'harness',
+    'droid',
+    'claude code',
+    'codex',
+    'new chat model',
+  ]),
   e('Configuration', 'Tool activity', [
     'compact',
     'balanced',
@@ -162,6 +178,14 @@ export const SETTINGS_SEARCH_ENTRIES: readonly SettingsSearchEntry[] = [
     'minidump',
     'profile id',
     'ops data',
+  ]),
+  e('Privacy & diagnostics', 'Anonymous usage analytics', [
+    'usage analytics',
+    'analytics',
+    'datadog',
+    'installation id',
+    'active installations',
+    'opt out',
   ]),
 
   // ── Keyboard shortcuts ───────────────────────────────────────────────────

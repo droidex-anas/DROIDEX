@@ -9,6 +9,7 @@ import type {
   AutomationSchedule,
   AutomationSessionOrigin,
   AutomationSnapshot,
+  AutomationTarget,
 } from './types';
 
 const RUN_STATUSES = new Set(['queued', 'starting', 'running', 'completed', 'failed']);
@@ -49,10 +50,13 @@ function isAutomation(value: unknown): value is Automation {
 }
 
 function isAutomationDraft(value: unknown): value is AutomationDraft {
+  if (!isRecord(value)) return false;
+  const { target, files } = value;
   return (
-    isRecord(value) &&
     typeof value.title === 'string' &&
     typeof value.prompt === 'string' &&
+    isAutomationTarget(target) &&
+    isAutomationFiles(files) &&
     nullableString(value.workspaceCwd) &&
     (value.executionMode === 'local' || value.executionMode === 'worktree') &&
     typeof value.enabled === 'boolean' &&
@@ -89,6 +93,16 @@ function isAutomationSchedule(value: unknown): value is AutomationSchedule {
   }
 }
 
+export function isAutomationTarget(value: unknown): value is AutomationTarget {
+  if (!isRecord(value)) return false;
+  const { kind, appSessionId } = value;
+  return kind === 'new-session' || (kind === 'existing-session' && nonEmptyString(appSessionId));
+}
+
+export function isAutomationFiles(value: unknown): value is string[] {
+  return Array.isArray(value) && value.every(nonEmptyString);
+}
+
 function isAutomationRun(value: unknown): value is AutomationRun {
   return (
     isRecord(value) &&
@@ -112,11 +126,14 @@ function isAutomationRun(value: unknown): value is AutomationRun {
 }
 
 function isRunSnapshot(value: unknown): boolean {
+  if (!isRecord(value)) return false;
+  const { target, files } = value;
   return (
-    isRecord(value) &&
     nonEmptyString(value.id) &&
     typeof value.title === 'string' &&
     typeof value.prompt === 'string' &&
+    isAutomationTarget(target) &&
+    isAutomationFiles(files) &&
     nullableString(value.workspaceCwd) &&
     (value.executionMode === 'local' || value.executionMode === 'worktree') &&
     typeof value.timezone === 'string' &&

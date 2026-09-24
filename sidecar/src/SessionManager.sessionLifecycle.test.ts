@@ -3,9 +3,9 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import test from 'node:test';
 
-import { DecompSessionType } from '@factory/droid-sdk';
+import { DecompSessionType, InitializeSessionResultSchema } from '@factory/droid-sdk';
 
-import type { SessionSummary } from './protocol.js';
+import type { ModelInfo, SessionSummary } from './protocol.js';
 import { writeProviderConversation } from './testing/historyCharacterizationSupport.js';
 import { assistantTextDelta, FakeFactorySession } from './testing/fakeFactoryRuntime.js';
 import { createSessionManagerTestContext } from './testing/sessionManagerTestContext.js';
@@ -60,6 +60,55 @@ test('[L1] Ordinary create', { concurrency: false }, async () => {
       'chat',
     );
     assert.deepEqual(h.provider.session('provider-1').prompts, ['hello']);
+  } finally {
+    await h.dispose();
+  }
+});
+
+test("a session's live model catalog replaces the help-text catalog and is cached", async () => {
+  const h = createSessionManagerTestContext();
+  const session = new FakeFactorySession('live-catalog', {}, h.calls);
+  session.initResult = InitializeSessionResultSchema.parse({
+    ...session.initResult,
+    availableModels: [
+      {
+        id: 'auto',
+        displayName: 'Auto',
+        shortDisplayName: 'Auto',
+        modelProvider: 'factory',
+        supportedReasoningEfforts: [],
+        defaultReasoningEffort: 'medium',
+      },
+    ],
+  });
+  h.runtime.createQueue.push(session);
+
+  try {
+    await h.create({
+      sessionPurpose: 'chat',
+      clientRef: 'live-catalog',
+      title: 'catalog',
+      goal: 'hello',
+      interactionMode: 'auto',
+      autonomy: 'low',
+    });
+
+    const catalog = h.events.findLast(
+      (event) => event.type === 'catalog.updated' && event.catalog === 'models',
+    );
+    assert.ok(catalog?.type === 'catalog.updated');
+    assert.deepEqual(
+      (catalog.items as ModelInfo[]).map((model) => model.id),
+      ['auto'],
+    );
+    const cached = JSON.parse(
+      readFileSync(path.join(h.home, '.factory', 'droidex', 'model-catalog.json'), 'utf8'),
+    ) as { source: string; models: { id: string }[] };
+    assert.equal(cached.source, 'session');
+    assert.deepEqual(
+      cached.models.map((model) => model.id),
+      ['auto'],
+    );
   } finally {
     await h.dispose();
   }
@@ -418,7 +467,11 @@ test(
         appSessionId: providerSessionId,
         agent: 'primary',
         modelId: 'model-default',
+        reasoningEffort: 'high',
       });
+      const stored = h.history.summaryPatchesAndHidden().patches.get('app-pending-alias');
+      assert.equal(stored?.modelId, 'model-default', 'closed settings must be durable before send');
+      assert.equal(stored?.reasoningEffort, 'high');
       const provider = new FakeFactorySession(providerSessionId, {}, h.calls, {
         settings: { modelId: 'model-old' },
       });
@@ -850,6 +903,7 @@ function summary(appSessionId: string, providerSessionId: string): SessionSummar
   return {
     appSessionId,
     providerSessionId,
+    provider: 'droid',
     sessionPurpose: 'chat',
     interactionMode: 'auto',
     role: 'primary',

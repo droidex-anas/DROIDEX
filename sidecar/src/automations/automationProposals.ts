@@ -1,3 +1,4 @@
+import type { AutomationAttachments } from './automationAttachments.js';
 import { randomUUID } from 'node:crypto';
 import {
   assertEnabledScheduleHasNextRun,
@@ -37,6 +38,7 @@ export interface AutomationProposalsOptions {
   /** Rejects a model and reasoning pair DROIDEX cannot run. */
   validateSelection: (modelId: string, reasoningEffort: AutomationReasoningEffort) => Promise<void>;
   automations: AutomationsCollection;
+  attachments: AutomationAttachments;
 }
 
 /**
@@ -77,7 +79,8 @@ export class AutomationProposals {
       updatedAt: now,
       confirmedAt: null,
     };
-    await this.options.commit(() => {
+    await this.options.commit(async () => {
+      draft.files = await this.options.attachments.snapshot(draft.files);
       this.store.proposals.unshift(proposal);
     });
     return structuredClone(proposal);
@@ -120,8 +123,11 @@ export class AutomationProposals {
         return structuredClone(this.requireAutomation(proposal.automationId));
       }
       const draft = normalizeAutomationInput(input ?? proposal.draft);
-      assertModelSelection(draft);
-      await this.options.validateSelection(draft.modelId, draft.reasoningEffort);
+      if (draft.target.kind === 'new-session') {
+        assertModelSelection(draft);
+        await this.options.validateSelection(draft.modelId, draft.reasoningEffort);
+      }
+      draft.files = await this.options.attachments.snapshot(draft.files);
       const now = this.options.now();
       const automation = createAutomationRecord(draft, now);
       this.options.automations.add(automation);

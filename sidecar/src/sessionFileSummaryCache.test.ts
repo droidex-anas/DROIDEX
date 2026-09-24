@@ -11,6 +11,7 @@ function summary(): SessionSummary {
   return {
     appSessionId: 'app',
     providerSessionId: 'provider',
+    provider: 'droid',
     sessionPurpose: 'chat',
     interactionMode: 'auto',
     role: 'primary',
@@ -40,16 +41,16 @@ test('cached session summaries reject malformed required arrays and discriminant
   const invalidAccuracy = { ...summary(), contextAccuracy: 'guessed' };
   const invalidWorkspace = { ...summary(), workspaceKind: 'repository' };
   assert.equal(
-    parseCachedSessionSummary(JSON.stringify({ cacheVersion: 1, summary: missingFeatures })),
+    parseCachedSessionSummary(JSON.stringify({ cacheVersion: 2, summary: missingFeatures })),
     undefined,
   );
   assert.equal(
-    parseCachedSessionSummary(JSON.stringify({ cacheVersion: 1, summary: invalidPhase })),
+    parseCachedSessionSummary(JSON.stringify({ cacheVersion: 2, summary: invalidPhase })),
     undefined,
   );
   for (const invalid of [invalidReasoning, invalidAccuracy, invalidWorkspace]) {
     assert.equal(
-      parseCachedSessionSummary(JSON.stringify({ cacheVersion: 1, summary: invalid })),
+      parseCachedSessionSummary(JSON.stringify({ cacheVersion: 2, summary: invalid })),
       undefined,
     );
   }
@@ -58,7 +59,7 @@ test('cached session summaries reject malformed required arrays and discriminant
 test('inherited Object.prototype keys are not restored as reasoning effort', () => {
   const inherited = { ...summary(), reasoningEffort: 'toString' };
   assert.equal(
-    parseCachedSessionSummary(JSON.stringify({ cacheVersion: 1, summary: inherited })),
+    parseCachedSessionSummary(JSON.stringify({ cacheVersion: 2, summary: inherited })),
     undefined,
   );
 });

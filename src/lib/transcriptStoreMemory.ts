@@ -353,11 +353,11 @@ export function pruneRemovedSessionState(
     utilityPanels: pruneSessionRecord(state.utilityPanels, retainedSessionIds),
     reviewOpenAppSessionId,
     pendingAutonomy: pruneSessionRecord(state.pendingAutonomy, retainedSessionIds),
+    pendingModelUpdates: pruneSessionRecord(state.pendingModelUpdates, retainedSessionIds),
     browserOpenKeys: pruneSessionRecord(state.browserOpenKeys, retainedSessionIds),
     browsers: pruneSessionRecord(state.browsers, retainedSessionIds),
     browserErrors: pruneSessionRecord(state.browserErrors, retainedSessionIds),
     designModes: pruneSessionRecord(state.designModes, retainedSessionIds),
-    sessionSettingOverrides: pruneSessionRecord(state.sessionSettingOverrides, retainedSessionIds),
     pendingPermissions: pruneSessionRecord(state.pendingPermissions, retainedSessionIds),
     pendingQuestions: pruneSessionRecord(state.pendingQuestions, retainedSessionIds),
   };

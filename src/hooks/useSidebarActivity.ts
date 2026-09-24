@@ -2,14 +2,14 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { AppState } from './useStore';
 import type { SessionSummary } from '../types/bridge';
 import type { GitDiffStat } from '../types/vcs';
-import type { ChatMetadataMap } from '../lib/chatMetadata';
+import { linkedPrsDone } from '../lib/chatMetadata';
 import { sessionAttention } from '../lib/sessionAttention';
 import { sessionIsLive, sessionIsUnread } from '../lib/sessions';
-import { prKind } from '../lib/github';
 import { toast } from '../lib/toast';
 import { activityReason } from '../lib/activityReason';
 import {
   canSettleSession,
+  pruneReopenedSessions,
   pruneSettledSessions,
   DEFAULT_SIDEBAR_PREFERENCES,
   inActivityScope,
@@ -61,8 +61,9 @@ export function useSidebarActivity(
 
   useEffect(() => {
     const settled = pruneSettledSessions(preferences.settled, state.sessions, state.chatMetadata);
-    if (settled === preferences.settled) return;
-    const next = { ...preferences, settled };
+    const reopened = pruneReopenedSessions(preferences.reopened, state.chatMetadata);
+    if (settled === preferences.settled && reopened === preferences.reopened) return;
+    const next = { ...preferences, settled, reopened };
     // Pruning is authoritative in memory even when persistence is unavailable.
     // This makes the reactive effect converge instead of retrying on every token.
     setPreferences(next);
@@ -115,8 +116,6 @@ export function useSidebarActivity(
     (session: SessionSummary): SessionActivityStatus => {
       const id = session.appSessionId;
       const digest = freshDigest(digests, session);
-      const metadata: Partial<ChatMetadataMap> = state.chatMetadata;
-      const links = metadata[id]?.pullRequests ?? [];
       const owned: Partial<Record<string, GitDiffStat>> = diffs;
       const diff = shipOwners.get(session.cwd) === id ? owned[session.cwd] : undefined;
       return sessionActivityStatus(session, {
@@ -125,20 +124,21 @@ export function useSidebarActivity(
         settledAt: preferences.settled[id],
         awaitingReply: digest?.modelSpokeLast ?? false,
         uncommitted: (diff?.files ?? 0) > 0,
-        prDone:
-          links.length > 0 && links.every((pr) => prKind(pr) !== 'open' && prKind(pr) !== 'draft'),
+        prDone: linkedPrsDone(state.chatMetadata[id]),
+        reopened: preferences.reopened.includes(id),
       });
     },
     [
       digests,
       diffs,
       shipOwners,
-      state.chatMetadata,
       state.pendingPermissions,
       state.pendingQuestions,
       state.activeAppSessionId,
       state.sessionLastSeen,
+      state.chatMetadata,
       preferences.settled,
+      preferences.reopened,
     ],
   );
 
@@ -174,11 +174,17 @@ export function useSidebarActivity(
         settled: { ...preferences.settled, [session.appSessionId]: session.updatedAt },
       });
     },
+    // Clearing the manual marker is not enough for a chat whose pull requests
+    // all closed: without the override it would settle again immediately.
     reopen: (session: SessionSummary) => {
+      const id = session.appSessionId;
       const settled = Object.fromEntries(
-        Object.entries(preferences.settled).filter(([id]) => id !== session.appSessionId),
+        Object.entries(preferences.settled).filter(([settledId]) => settledId !== id),
       );
-      update({ ...preferences, settled });
+      const overridesPrs =
+        linkedPrsDone(state.chatMetadata[id]) && !preferences.reopened.includes(id);
+      const reopened = overridesPrs ? [...preferences.reopened, id] : preferences.reopened;
+      update({ ...preferences, settled, reopened });
     },
   };
 }

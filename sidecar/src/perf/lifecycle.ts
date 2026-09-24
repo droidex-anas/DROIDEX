@@ -12,6 +12,7 @@ import type { ReplayReport } from './report.js';
 import { ReplayFactoryRuntime } from './replayRuntime.js';
 import type { ReplayTickHelpers } from './runner.js';
 import type { PerfScenarioSpec } from './scenario.js';
+import { NO_PROVIDER_PROBES } from '../providers/providerProbes.js';
 
 export function sessionSwitchTick(spec: PerfScenarioSpec): (helpers: ReplayTickHelpers) => void {
   let remaining = spec.switchCount;
@@ -65,6 +66,7 @@ export async function runSoak(spec: PerfScenarioSpec): Promise<ReplayReport> {
     },
     {
       dependencies,
+      providerProbes: NO_PROVIDER_PROBES,
       initialModels: [
         {
           id: 'model-default',

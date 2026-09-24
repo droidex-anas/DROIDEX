@@ -6,10 +6,10 @@ import {
   ToolConfirmationType,
   type AskUserRequestParams,
   type RequestPermissionRequestParams,
-  type UpdateSessionSettingsRequestParams,
 } from '@factory/droid-sdk';
 
 import type { ServerEvent, SessionSummary } from './protocol.js';
+import { droidInteractionHandlers } from './providers/droid/droidInteractions.js';
 import { SessionInteractions, type InteractionLiveSession } from './SessionInteractions.js';
 
 interface HarnessOptions {
@@ -26,14 +26,6 @@ function createHarness(options: HarnessOptions = {}) {
   const addLiveSession = (appSessionId: string, providerSessionId = appSessionId) => {
     const liveSession: InteractionLiveSession = {
       summary: summary(appSessionId, providerSessionId),
-      session: {
-        updateSettings: (settings: Partial<UpdateSessionSettingsRequestParams>) => {
-          trace.push(`provider:${String(settings.interactionMode ?? '')}`);
-          return options.rejectProviderUpdate
-            ? Promise.reject(new Error('provider rejected'))
-            : Promise.resolve({});
-        },
-      },
     };
     liveSessions.set(appSessionId, liveSession);
     return liveSession;
@@ -44,6 +36,12 @@ function createHarness(options: HarnessOptions = {}) {
         (liveSession) =>
           liveSession.summary.appSessionId === id || liveSession.summary.providerSessionId === id,
       ),
+    setProviderSpecMode: (_id, spec) => {
+      trace.push(spec ? 'provider:spec' : 'provider:auto');
+      return !spec && options.rejectProviderUpdate
+        ? Promise.reject(new Error('provider rejected'))
+        : Promise.resolve();
+    },
     updateSummary: (id, patch) => {
       const liveSession = liveSessions.get(id);
       if (!liveSession) return;
@@ -59,13 +57,25 @@ function createHarness(options: HarnessOptions = {}) {
       errors.push(error);
     },
   });
-  return { addLiveSession, emitted, errors, interactions, liveSessions, trace };
+  const handlers = (ref: { id: string }) =>
+    droidInteractionHandlers(ref, interactions.interactionsFor(ref));
+  return {
+    addLiveSession,
+    askUserHandler: (ref: { id: string }) => handlers(ref).askUserHandler,
+    emitted,
+    errors,
+    interactions,
+    liveSessions,
+    permissionHandler: (ref: { id: string }) => handlers(ref).permissionHandler,
+    trace,
+  };
 }
 
 function summary(appSessionId: string, providerSessionId: string): SessionSummary {
   return {
     appSessionId,
     providerSessionId,
+    provider: 'droid',
     sessionPurpose: 'chat',
     interactionMode: 'auto',
     role: 'primary',
@@ -156,7 +166,7 @@ function latestQuestionRequest(events: ServerEvent[]) {
 test('permission requests keep stable identity, exact correlation, and one event', async () => {
   const harness = createHarness();
   harness.addLiveSession('app-1', 'provider-1');
-  const handler = harness.interactions.makePermissionHandler({ id: 'app-1' });
+  const handler = harness.permissionHandler({ id: 'app-1' });
 
   const pending = Promise.resolve(handler(permissionInput('tool-1')));
   const requests = approvalRequests(harness.emitted);
@@ -172,7 +182,7 @@ test('permission requests keep stable identity, exact correlation, and one event
 test('ProceedAlways bypasses only an equivalent later permission signature', async () => {
   const harness = createHarness();
   harness.addLiveSession('app-1');
-  const handler = harness.interactions.makePermissionHandler({ id: 'app-1' });
+  const handler = harness.permissionHandler({ id: 'app-1' });
   const first = Promise.resolve(handler(permissionInput('tool-1', 'pwd')));
   const firstRequestId = latestApprovalRequest(harness.emitted).requestId;
 
@@ -194,7 +204,7 @@ test('ProceedAlways bypasses only an equivalent later permission signature', asy
 test('invalid outcomes emit an error, settle Cancel once, and create no grant', async () => {
   const harness = createHarness();
   harness.addLiveSession('app-1');
-  const handler = harness.interactions.makePermissionHandler({ id: 'app-1' });
+  const handler = harness.permissionHandler({ id: 'app-1' });
   let settlements = 0;
   const first = Promise.resolve(handler(permissionInput('tool-1'))).then((outcome) => {
     settlements += 1;
@@ -219,7 +229,7 @@ test('unknown, duplicate, late, and wrong-session approvals settle at most once'
   const harness = createHarness();
   harness.addLiveSession('app-1');
   harness.addLiveSession('app-2');
-  const handler = harness.interactions.makePermissionHandler({ id: 'app-1' });
+  const handler = harness.permissionHandler({ id: 'app-1' });
   let settlements = 0;
   const pending = Promise.resolve(handler(permissionInput('tool-1'))).then((outcome) => {
     settlements += 1;
@@ -239,11 +249,11 @@ test('unknown, duplicate, late, and wrong-session approvals settle at most once'
   assert.equal(settlements, 1);
 });
 
-test('Spec approval publishes, attempts provider update, then settles the callback', async () => {
+test('Spec approval switches the provider, publishes, then settles the callback', async () => {
   const success = createHarness();
   const liveSession = success.addLiveSession('app-spec');
   liveSession.summary.interactionMode = 'spec';
-  const handler = success.interactions.makePermissionHandler({ id: 'app-spec' });
+  const handler = success.permissionHandler({ id: 'app-spec' });
   const pending = Promise.resolve(handler(specApprovalInput('tool-spec'))).then((outcome) => {
     success.trace.push('callback');
     return outcome;
@@ -253,12 +263,12 @@ test('Spec approval publishes, attempts provider update, then settles the callba
   await success.interactions.respondToApproval('app-spec', requestId, 'proceed_once');
 
   assert.equal(await pending, ToolConfirmationOutcome.ProceedOnce);
-  assert.deepEqual(success.trace, ['publish:auto', 'provider:auto', 'callback']);
+  assert.deepEqual(success.trace, ['provider:auto', 'publish:auto', 'callback']);
   assert.equal(liveSession.summary.phase, 'running');
 
   const rejected = createHarness({ rejectProviderUpdate: true });
   rejected.addLiveSession('app-spec');
-  const rejectedHandler = rejected.interactions.makePermissionHandler({ id: 'app-spec' });
+  const rejectedHandler = rejected.permissionHandler({ id: 'app-spec' });
   const rejectedPending = Promise.resolve(rejectedHandler(specApprovalInput('tool-spec'))).then(
     (outcome) => {
       rejected.trace.push('callback');
@@ -267,19 +277,16 @@ test('Spec approval publishes, attempts provider update, then settles the callba
   );
   const rejectedRequestId = latestApprovalRequest(rejected.emitted).requestId;
   await rejected.interactions.respondToApproval('app-spec', rejectedRequestId, 'proceed_once');
-  assert.equal(await rejectedPending, ToolConfirmationOutcome.ProceedOnce);
-  assert.deepEqual(rejected.trace, [
-    'publish:auto',
-    'provider:auto',
-    'error:spec.exit_failed',
-    'callback',
-  ]);
+  // The provider is still planning, so the plan is declined rather than
+  // approved into a session that never left Spec.
+  assert.equal(await rejectedPending, ToolConfirmationOutcome.Cancel);
+  assert.deepEqual(rejected.trace, ['provider:auto', 'error:spec.exit_failed', 'callback']);
 });
 
-test('Spec approval reports summary failure and still settles the callback once', async () => {
+test('Spec approval declines on a summary failure and settles the callback once', async () => {
   const harness = createHarness({ throwSummaryUpdate: true });
   harness.addLiveSession('app-spec');
-  const handler = harness.interactions.makePermissionHandler({ id: 'app-spec' });
+  const handler = harness.permissionHandler({ id: 'app-spec' });
   let settlements = 0;
   const pending = Promise.resolve(handler(specApprovalInput('tool-spec'))).then((outcome) => {
     settlements += 1;
@@ -290,9 +297,15 @@ test('Spec approval reports summary failure and still settles the callback once'
 
   await harness.interactions.respondToApproval('app-spec', requestId, 'proceed_once');
 
-  assert.equal(await pending, ToolConfirmationOutcome.ProceedOnce);
+  assert.equal(await pending, ToolConfirmationOutcome.Cancel);
   assert.equal(settlements, 1);
-  assert.deepEqual(harness.trace, ['publish:auto', 'error:spec.exit_failed', 'callback']);
+  assert.deepEqual(harness.trace, [
+    'provider:auto',
+    'publish:auto',
+    'provider:spec',
+    'error:spec.exit_failed',
+    'callback',
+  ]);
   assert.equal(harness.errors[0]?.code, 'spec.exit_failed');
   assert.match(harness.errors[0]?.message ?? '', /summary persistence failed/);
 
@@ -303,7 +316,7 @@ test('Spec approval reports summary failure and still settles the callback once'
 test('ask-user normalizes omitted values and preserves identities and answers', async () => {
   const harness = createHarness();
   harness.addLiveSession('app-1');
-  const handler = harness.interactions.makeAskUserHandler({ id: 'app-1' });
+  const handler = harness.askUserHandler({ id: 'app-1' });
   const input = {
     toolCallId: 'question-tool',
     questions: [{ index: 7, topic: 'input', question: 'What should change?' }],
@@ -329,7 +342,7 @@ test('question answers, cancellation, duplicate, late, and wrong-session respons
   const harness = createHarness();
   harness.addLiveSession('app-1');
   harness.addLiveSession('app-2');
-  const handler = harness.interactions.makeAskUserHandler({ id: 'app-1' });
+  const handler = harness.askUserHandler({ id: 'app-1' });
   let settlements = 0;
   const pending = Promise.resolve(handler({ toolCallId: 'question', questions: [] })).then(
     (result) => {
@@ -354,7 +367,7 @@ test('question answers, cancellation, duplicate, late, and wrong-session respons
 test('forgetSession is protocol-silent, resolves nothing, and discards owned state', async () => {
   const harness = createHarness();
   harness.addLiveSession('app-1');
-  const handler = harness.interactions.makePermissionHandler({ id: 'app-1' });
+  const handler = harness.permissionHandler({ id: 'app-1' });
   const granted = Promise.resolve(handler(permissionInput('grant')));
   const grantRequestId = latestApprovalRequest(harness.emitted).requestId;
   await harness.interactions.respondToApproval('app-1', grantRequestId, 'proceed_always');

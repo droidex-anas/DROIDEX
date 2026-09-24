@@ -8,13 +8,17 @@ import {
   collectTurnFiles,
   isCancellationArtifact,
   isCompactionCompleteStatus,
+  isSettingsStatus,
   type BuildFeedOptions,
   type FeedItem,
 } from './chatFeed';
 import { isAutomationProposalCall } from '../features/automations/toolNames';
 
-function isUserMessage(item: FeedItem): boolean {
-  return item.type === 'message' && item.event.author === 'user';
+function isTurnBoundary(item: FeedItem): boolean {
+  return (
+    (item.type === 'message' && item.event.author === 'user') ||
+    (item.type === 'status' && isSettingsStatus(item.event))
+  );
 }
 
 // Short preview of a message for the conversation timeline tooltip: whitespace
@@ -206,8 +210,9 @@ function isCompactionMarker(it: FeedItem): boolean {
 // the prompt and the answer, so a settled turn reads prompt → Worked → final
 // response and expanding the fold replays the whole turn (compaction divider
 // included) at the configured density. Keep top-level: the turn's final answer
-// (its last assistant message, plus earlier fragments split off purely by
-// todo/plan reconciliation, #19) and errors, so failures remain visible.
+// (its last assistant message, plus earlier fragments split off only by
+// todo/plan reconciliation (#19) or by an invisible harness nudge) and errors,
+// so failures remain visible.
 // Invariant (#18): the final answer itself is never nested inside a Worked
 // group, no matter what trailing work or status follows it.
 function collapseRun(run: FeedItem[], specContent?: string): FeedItem[] {
@@ -242,9 +247,12 @@ function collapseRun(run: FeedItem[], specContent?: string): FeedItem[] {
     while (s > 0) {
       let j = s - 1;
       while (j >= 0 && isReconciliationItem(run[j])) j--;
-      // Only a reconciliation gap (at least one reconciliation item) followed
-      // by another answer candidate extends the final answer backwards.
-      if (j === s - 1 || j < 0 || !isAnswerCandidate(run[j])) break;
+      // An empty gap merges too: a harness can re-invoke the model on an
+      // injected system message the transcript never shows, so the nudge reply
+      // lands immediately after the real answer. Without the merge, that
+      // trailing bookkeeping reply becomes "the answer" and the real one
+      // folds into Worked.
+      if (j < 0 || !isAnswerCandidate(run[j])) break;
       for (let k = j + 1; k < s; k++) dropIdx.add(k);
       answerIdx.unshift(j);
       s = j;
@@ -285,6 +293,10 @@ function collapseRun(run: FeedItem[], specContent?: string): FeedItem[] {
       survivors.push(it);
     } else if (it.type === 'tools' && it.events.some(isAutomationProposalCall)) {
       // Proposals are review surfaces, not hidden execution detail.
+      survivors.push(it);
+    } else if (it.type === 'generated_image') {
+      // The image is what the turn produced, not a step along the way: folding
+      // it would hide the thing that was asked for.
       survivors.push(it);
     } else if (isCompactionMarker(it)) {
       // Provisional: the marker moves into the fold when the run has real work.
@@ -327,13 +339,13 @@ export function groupTurns(
   const out: FeedItem[] = [];
   let i = 0;
   while (i < items.length) {
-    if (isUserMessage(items[i])) {
+    if (isTurnBoundary(items[i])) {
       out.push(items[i]);
       i++;
       continue;
     }
     const run: FeedItem[] = [];
-    while (i < items.length && !isUserMessage(items[i])) {
+    while (i < items.length && !isTurnBoundary(items[i])) {
       run.push(items[i]);
       i++;
     }

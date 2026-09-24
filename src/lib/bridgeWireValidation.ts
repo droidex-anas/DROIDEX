@@ -10,6 +10,12 @@ import type {
   StreamFidelity,
 } from '../types/bridge';
 import { isAutomationSnapshot } from '../features/automations/wireValidation';
+import {
+  isModelInfo,
+  isProviderKind,
+  isProviderStatus,
+  isSkillInfo,
+} from '../features/providers/wireValidation';
 
 export function serverWireMessage(value: unknown): ServerWireMessage | null {
   if (!isRecord(value) || typeof value.type !== 'string') return null;
@@ -151,10 +157,21 @@ function isServerEvent(value: unknown): value is ServerEvent {
         typeof value.ok === 'boolean' &&
         typeof value.exitCode === 'number'
       );
+    case 'harness.cli.report':
+      return Array.isArray(value.clis) && value.clis.every(isHarnessCliState);
+    case 'harness.cli.update.done':
+      return (
+        isHarnessCliProvider(value.provider) &&
+        typeof value.ok === 'boolean' &&
+        isOptionalString(value.previousVersion) &&
+        isOptionalString(value.version)
+      );
     case 'session.created':
       return typeof value.clientRef === 'string' && isSessionSummary(value.session);
     case 'session.updated':
       return isSessionSummary(value.session);
+    case 'session.model_update_applied':
+      return hasStrings(value, ['appSessionId', 'requestId']);
     case 'session.closed':
     case 'browser.closed':
       return typeof value.appSessionId === 'string';
@@ -193,13 +210,17 @@ function isServerEvent(value: unknown): value is ServerEvent {
       return isPermissionRequest(value.request);
     case 'question.requested':
       return isSessionQuestion(value.question);
+    case 'interaction.cancelled':
+      return hasStrings(value, ['appSessionId', 'requestId']);
     case 'context.updated':
       return hasStrings(value, ['appSessionId', 'sourceSessionId']) && isContextStats(value.stats);
     case 'catalog.updated':
-      return (
-        (value.catalog === 'models' || value.catalog === 'tools' || value.catalog === 'skills') &&
-        Array.isArray(value.items)
-      );
+      if (!Array.isArray(value.items)) return false;
+      if (value.catalog === 'models') return value.items.every(isModelInfo);
+      if (value.catalog === 'skills') return value.items.every(isSkillInfo);
+      return value.catalog === 'tools';
+    case 'provider.status':
+      return Array.isArray(value.statuses) && value.statuses.every(isProviderStatus);
     case 'settings.defaults':
       return isRecord(value.defaults);
     case 'error':
@@ -283,6 +304,7 @@ function isSessionSummary(value: unknown): boolean {
     isRecord(value) &&
     hasStrings(value, [
       'appSessionId',
+      'provider',
       'sessionPurpose',
       'interactionMode',
       'role',
@@ -292,10 +314,12 @@ function isSessionSummary(value: unknown): boolean {
       'autonomy',
       'phase',
     ]) &&
+    isProviderKind(value.provider) &&
     Array.isArray(value.features) &&
     value.features.every(isBridgeFeature) &&
     hasNumbers(value, ['tokensIn', 'tokensOut', 'contextTokens', 'createdAt', 'updatedAt']) &&
-    (value.interruptReason === undefined || typeof value.interruptReason === 'string')
+    isOptionalString(value.interruptReason) &&
+    isOptionalString(value.resumeId)
   );
 }
 
@@ -307,16 +331,25 @@ function isChildSessionSummary(value: unknown): boolean {
   return (
     isRecord(value) &&
     hasStrings(value, ['parentAppSessionId', 'childSessionId', 'role', 'status', 'modelId']) &&
+    (value.role === 'worker' || value.role === 'validator') &&
+    ['pending', 'running', 'paused', 'completed', 'failed'].includes(value.status as string) &&
     typeof value.transcriptAvailable === 'boolean' &&
-    isStreamFidelity(value.streamFidelity)
+    isStreamFidelity(value.streamFidelity) &&
+    isOptionalString(value.group) &&
+    isOptionalString(value.phase)
   );
 }
 
 function isTranscriptEvent(value: unknown): boolean {
+  if (!isRecord(value)) return false;
+  const switched = value.modelSwitch;
+  if (switched !== undefined && (!isRecord(switched) || !hasStrings(switched, ['from', 'to'])))
+    return false;
   return (
-    isRecord(value) &&
     hasStrings(value, ['id', 'appSessionId', 'sourceSessionId', 'role', 'kind']) &&
-    typeof value.ts === 'number'
+    typeof value.ts === 'number' &&
+    (value.errorKind === undefined || value.errorKind === 'usage_limit') &&
+    (value.resetsAt === undefined || nonNegativeSafeInteger(value.resetsAt))
   );
 }
 
@@ -409,6 +442,23 @@ function isEnvironmentReport(value: unknown): boolean {
   );
 }
 
+function isHarnessCliProvider(value: unknown): boolean {
+  return value === 'claude' || value === 'codex';
+}
+
+function isHarnessCliState(value: unknown): boolean {
+  if (!isRecord(value) || !isHarnessCliProvider(value.provider)) return false;
+  if (value.installed === false) return true;
+  return (
+    value.installed === true &&
+    typeof value.path === 'string' &&
+    (value.source === 'homebrew' || value.source === 'npm' || value.source === 'native') &&
+    isOptionalString(value.version) &&
+    typeof value.updating === 'boolean' &&
+    isOptionalString(value.updateError)
+  );
+}
+
 function isSessionHistoryEntry(value: unknown): boolean {
   return (
     isRecord(value) &&
@@ -436,6 +486,10 @@ function isBrowserNativeRequest(value: unknown): boolean {
 
 function hasStrings(value: Record<string, unknown>, keys: readonly string[]): boolean {
   return keys.every((key) => typeof value[key] === 'string');
+}
+
+function isOptionalString(value: unknown): boolean {
+  return value === undefined || typeof value === 'string';
 }
 
 function hasNumbers(value: Record<string, unknown>, keys: readonly string[]): boolean {

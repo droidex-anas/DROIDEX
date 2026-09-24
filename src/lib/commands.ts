@@ -8,9 +8,12 @@ import type {
   BrowserViewportMode,
   ConfigurableSessionRole,
   DesignReference,
+  HarnessCliProvider,
   InstallChannel,
   McpServerInput,
   PermissionOutcome,
+  ProviderKind,
+  ProviderMention,
   ReasoningEffort,
   ResponseFormat,
   SessionInteractionMode,
@@ -36,7 +39,9 @@ export const createSession = (input: {
   cwd?: string;
   title: string;
   goal: string;
+  mentions?: ProviderMention[];
   sessionPurpose: SessionPurpose;
+  provider?: ProviderKind;
   interactionMode?: SessionInteractionMode;
   modelId?: string;
   reasoningEffort?: ReasoningEffort;
@@ -57,7 +62,8 @@ export const createSession = (input: {
 export const updateSessionSettings = (input: {
   appSessionId: string;
   modelId?: string | null;
-  reasoningEffort?: ReasoningEffort;
+  reasoningEffort?: ReasoningEffort | null;
+  requestId?: string;
   autonomy?: Autonomy;
   interactionMode?: SessionInteractionMode;
 }) => {
@@ -73,12 +79,21 @@ export const installCli = (channel: InstallChannel) => {
 export const updateCli = (channel?: InstallChannel) => {
   bridge.send({ type: 'cli.update', channel });
 };
+export const checkHarnessClis = () => {
+  bridge.send({ type: 'harness.cli.check' });
+};
+export const updateHarnessCli = (provider: HarnessCliProvider) => {
+  bridge.send({ type: 'harness.cli.update', provider });
+};
 export const requestRuntimeStatus = () => {
   bridge.send({ type: 'runtime.status' });
 };
 
 export const listModels = () => {
   bridge.send({ type: 'catalog.models' });
+};
+export const refreshProviders = () => {
+  bridge.send({ type: 'provider.refresh' });
 };
 export const listSkills = (providerSessionId?: string) => {
   bridge.send({ type: 'catalog.skills', providerSessionId });
@@ -111,12 +126,14 @@ export const sendToSession = (
   appSessionId: string,
   text: string,
   responseFormat?: ResponseFormat,
+  mentions?: ProviderMention[],
 ) => {
   requireAgentWorkAvailable();
   bridge.send({
     type: 'session.send',
     appSessionId,
     text,
+    ...(mentions?.length ? { mentions } : {}),
     ...(responseFormat ? { responseFormat } : {}),
   });
 };
@@ -125,12 +142,14 @@ export const sendToSessionNow = (
   appSessionId: string,
   text: string,
   responseFormat?: ResponseFormat,
+  mentions?: ProviderMention[],
 ) => {
   requireAgentWorkAvailable();
   bridge.send({
     type: 'session.sendNow',
     appSessionId,
     text,
+    ...(mentions?.length ? { mentions } : {}),
     ...(responseFormat ? { responseFormat } : {}),
   });
 };
@@ -355,7 +374,7 @@ export const updateAgentSettings = (input: {
   appSessionId?: string;
   agent: ConfigurableSessionRole;
   modelId?: string | null;
-  reasoningEffort?: ReasoningEffort;
+  reasoningEffort?: ReasoningEffort | null;
 }) => {
   bridge.send({ type: 'settings.agent.update', ...input });
 };
