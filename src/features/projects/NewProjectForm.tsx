@@ -49,7 +49,8 @@ export function NewProjectForm({
       if (workspace === undefined) return;
       await onSubmit(buildThreadInput({ ...draft, workspace }, selection.value, selection.catalog));
     } catch (failure) {
-      setError(failure instanceof Error ? failure.message : String(failure));
+      const message = failure instanceof Error ? failure.message : String(failure);
+      setError(`${message} Your draft has been kept.`);
     } finally {
       setPending(false);
     }

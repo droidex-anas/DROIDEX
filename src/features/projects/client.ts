@@ -7,6 +7,9 @@ import type { ProjectView, ThreadInput } from './types';
 
 type Result = Extract<ProjectEvent, { type: 'project.result'; ok: true }>;
 
+const MAX_PENDING_REQUESTS = 32;
+const REQUEST_TIMEOUT_MS = 30_000;
+
 let initialized = false;
 const pending = new Map<
   string,
@@ -80,22 +83,18 @@ function handleEvent(event: ServerEvent): void {
 
 function send(command: Exclude<ProjectCommand, { type: 'projects.list' }>): Promise<Result> {
   initialize();
-  if (pending.size >= 32)
+  if (pending.size >= MAX_PENDING_REQUESTS)
     return Promise.reject(new Error('Wait for the current Projects requests to finish.'));
   return new Promise((resolve, reject) => {
     const timeout = setTimeout(() => {
       pending.delete(command.requestId);
-      reject(
-        new Error(
-          'The request was not acknowledged. Check the project before retrying; the thread may already exist.',
-        ),
-      );
-    }, 30_000);
+      reject(new Error('The runtime did not confirm the request. Check Projects before retrying.'));
+    }, REQUEST_TIMEOUT_MS);
     pending.set(command.requestId, { resolve, reject, timeout });
     // Mutations must not be replayed from the transport's offline queue.
     if (bridge.sendIfConnected(command)) return;
     pending.delete(command.requestId);
     clearTimeout(timeout);
-    reject(new Error('DROIDEX is not connected. Your draft has been kept.'));
+    reject(new Error('DROIDEX is not connected.'));
   });
 }
