@@ -63,9 +63,15 @@ export function NewProjectForm({
       ...(startIn.branch ? { base: startIn.branch } : {}),
       name: chatWorktreeName(draft.title || draft.prompt, 'project'),
     });
-    if (result.ok) return result.path;
-    setError(result.message ?? 'Could not create the project worktree.');
-    return undefined;
+    if (!result.ok) {
+      setError(result.message ?? 'Could not create the project worktree.');
+      return undefined;
+    }
+    // A retry after a failed submit reuses this checkout instead of cutting another.
+    if (startIn.executionMode === 'worktree') {
+      setStartIn({ cwd: result.path, executionMode: 'local' });
+    }
+    return result.path;
   }
 
   async function chooseFolder(): Promise<void> {
