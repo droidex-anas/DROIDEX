@@ -1,17 +1,18 @@
 import type { ModelInfo, ProviderStatus, SessionSummary } from '../protocol.js';
 import { LEDGER_LIMITS } from './store.js';
-import { createThreadWorkspace, removeThreadWorkspace } from './threadWorkspace.js';
+import {
+  createThreadWorkspace,
+  removeThreadWorkspace,
+  type ThreadWorkspace,
+} from './threadWorkspace.js';
 import type { Project, ThreadInput, ThreadSpawnInput } from './types.js';
 
 /* Turning a spawn request into something launchable: which model it means,
    what it inherits from the chat that asked, what to call it, and which
    checkout it works in. Nothing here touches the project graph. */
 
-export interface ThreadCheckout {
-  cwd: string;
-  branch: string;
-  base: string;
-}
+/** A worktree cut for the thread, or the checkout of another thread it joins. */
+export type ThreadCheckout = ThreadWorkspace | { cwd: string; joined: true };
 
 export const THREAD_BRIEF = [
   'You are an independent DROIDEX thread: a separate conversation started to carry one task on its own.',
@@ -122,7 +123,7 @@ export async function threadCheckout(
     if (open.streaming)
       throw new Error(`${target.title} is still working. Review it once it settles.`);
     if (!open.cwd.trim()) throw new Error(`${target.title} has no workspace folder to join.`);
-    return { cwd: open.cwd, branch: '', base: '' };
+    return { cwd: open.cwd, joined: true };
   }
   if (requested.workspace === 'inherit') return undefined;
   // Isolation is not left to a lead remembering to ask: a checkout with work
@@ -157,7 +158,7 @@ export async function threadCheckout(
  * that made it and is left alone.
  */
 export async function discardThreadCheckout(cwd: string, checkout: ThreadCheckout): Promise<void> {
-  if (!checkout.branch) return;
+  if ('joined' in checkout) return;
   await removeThreadWorkspace(cwd, checkout).catch((error: unknown) => {
     console.warn(
       `Could not remove the checkout at ${checkout.cwd} for a thread that did not start: ${
@@ -184,7 +185,8 @@ export function uniqueTitle(project: Project, title: string): string {
    thread that made the changes still owns it. */
 export function threadPrompt(task: string, workspace: ThreadCheckout | undefined): string {
   if (!workspace) return task;
-  if (!workspace.branch) return `${task}\n\nWork in ${workspace.cwd}, where that work was done.`;
+  if ('joined' in workspace)
+    return `${task}\n\nWork in ${workspace.cwd}, where that work was done.`;
   return `${task}\n\nWork in ${workspace.cwd} on branch ${workspace.branch}, cut from ${workspace.base}. It is yours alone; do not touch the project's own checkout.`;
 }
 
