@@ -1,0 +1,88 @@
+/* Default Droid palette from src/lib/theme.ts; derived tones stay monochrome. */
+:root {
+  --droid-bg: #0a0a0a;
+  --droid-fg: #ededed;
+  --droid-surface: #111111;
+  --droid-border: #1f1f1f;
+  --droid-accent: #f2f2f2;
+  --droid-secondary: color-mix(in srgb, var(--droid-fg) 65%, var(--droid-bg));
+  --droid-elevated: color-mix(in srgb, var(--droid-fg) 6%, var(--droid-surface));
+  --droid-active: color-mix(in srgb, var(--droid-fg) 11%, var(--droid-surface));
+}
+@media (prefers-color-scheme: light) {
+  :root {
+    --droid-bg: #f8f7f4;
+    --droid-fg: #2d2a26;
+    --droid-surface: #fdfcfa;
+    --droid-border: #e2ded6;
+    --droid-accent: #2d2a26;
+  }
+}
+:root{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;color:var(--droid-fg);background:var(--droid-bg);font-size:15px;line-height:1.5}
+*{box-sizing:border-box}
+body{margin:0}
+button,input,textarea,select{font:inherit}
+button{cursor:pointer;border:0;background:var(--droid-elevated);color:inherit;border-radius:9px;padding:9px 14px}
+button:hover{background:var(--droid-active)}
+button:disabled{opacity:.4;cursor:default}
+button:focus-visible,input:focus-visible,textarea:focus-visible,select:focus-visible{outline:2px solid var(--droid-secondary);outline-offset:3px}
+.primary{background:var(--droid-accent);color:var(--droid-bg);border-color:transparent;font-weight:600}
+.primary:hover{background:var(--droid-accent)}
+input,textarea,select{background:var(--droid-surface);color:inherit;border:1px solid var(--droid-border);border-radius:10px;padding:12px}
+.muted,.fine{color:var(--droid-secondary)}
+.fine{font-size:12px;max-width:340px}
+.pair{max-width:430px;margin:12vh auto;padding:28px}
+.mark{width:46px;height:46px;background:var(--droid-accent);color:var(--droid-bg);border-radius:14px;display:grid;place-items:center;font-size:26px;font-weight:700}
+.eyebrow{font-size:11px;letter-spacing:.16em;margin-top:26px}
+.pair h1{font-size:38px;line-height:1.14;letter-spacing:-.035em;margin:16px 0}
+.pair form{display:grid;gap:12px;margin:28px 0}
+.pair label{font-size:13px}
+#pair-code{font-size:36px;font-variant-numeric:tabular-nums;letter-spacing:.18em;padding:14px 0}
+header{height:64px;display:flex;align-items:center;gap:16px;padding:0 26px;border-bottom:1px solid var(--droid-border)}
+.brand{font-size:14px;font-weight:650;letter-spacing:.04em;margin-right:auto}
+.brand span{font-weight:400;letter-spacing:0;margin-left:9px;color:var(--droid-secondary)}
+#connection{font-size:12px;color:var(--droid-secondary)}
+.layout{height:calc(100dvh - 64px);display:grid;grid-template-columns:256px minmax(0,1fr)}
+aside{border-right:1px solid var(--droid-border);padding:24px 12px;overflow:auto}
+.section-title{padding:0 12px 18px;font-size:12px;color:var(--droid-secondary);display:flex;justify-content:space-between}
+nav{display:grid;gap:6px}
+nav button{text-align:left;border-color:transparent;background:transparent;padding:12px;display:grid;gap:5px;width:100%}
+nav button[aria-current=true]{background:var(--droid-active);border-color:transparent}
+nav strong{font-size:13px;font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+nav small{font-size:11px;color:var(--droid-secondary)}
+main{min-width:0;display:flex;flex-direction:column;max-width:1100px;width:100%;margin:auto;height:100%;padding:24px 40px}
+.session-head{display:flex;align-items:center;justify-content:space-between;gap:16px}
+.session-head h1{font-size:19px;font-weight:550;letter-spacing:-.025em;margin:0}
+.session-head p{font-size:12px;margin:5px 0 12px}
+#notice{font-size:12px;color:var(--droid-fg);min-height:24px}
+#transcript{flex:1;min-height:0;overflow:auto;scrollbar-gutter:stable;padding:20px 0 30px}
+.message{content-visibility:auto;contain-intrinsic-size:auto 90px;margin:0 0 22px}
+.message .who{font-size:11px;font-weight:600;color:var(--droid-secondary);margin-bottom:7px}
+.message .body{white-space:pre-wrap;overflow-wrap:anywhere;line-height:1.65;font-size:14px}
+.message.user{background:var(--droid-elevated);border:1px solid transparent;border-radius:12px;padding:15px 18px;margin-left:7%}
+.message.status,.message.thinking,.message.tool_call,.message.tool_result{color:var(--droid-secondary);font-size:12px}
+.message details summary{cursor:pointer}
+.empty{margin:15vh auto;max-width:360px;text-align:center;color:var(--droid-secondary)}
+#composer{box-shadow:0 6px 26px color-mix(in srgb,var(--droid-fg) 7%,transparent);border:1px solid transparent;border-radius:14px;background:var(--droid-surface);padding:12px;margin-top:8px}
+#prompt{display:block;width:100%;resize:vertical;max-height:180px;border:0;background:transparent;padding:2px 2px 10px;outline-offset:0}
+.composer-bottom{display:flex;align-items:center;justify-content:space-between;gap:8px}
+.composer-bottom span{font-size:11px;color:var(--droid-secondary)}
+.composer-bottom button{font-size:12px;margin-left:5px}
+#mobile-sessions{display:none}
+.sr-only{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0,0,0,0)}
+[hidden]{display:none!important}
+@media(max-width:700px){header{height:56px;padding:0 16px;gap:10px}
+header button{font-size:11px;padding:7px 9px}
+.layout{height:calc(100dvh - 56px);display:flex;flex-direction:column}
+aside{border-right:0;border-bottom:1px solid var(--droid-border);padding:10px 14px;overflow:visible}
+nav,.section-title{display:none}
+#mobile-sessions{display:block;width:100%;font-size:13px;padding:9px}
+main{padding:16px 16px max(12px,env(safe-area-inset-bottom));min-height:0;flex:1}
+.session-head h1{font-size:17px}
+#older{font-size:11px;padding:7px 8px}
+#transcript{padding-top:14px}
+.pair{margin-top:7vh}
+.pair h1{font-size:34px}
+.message .body{font-size:14px}
+.composer-bottom span{font-size:10px}
+}
