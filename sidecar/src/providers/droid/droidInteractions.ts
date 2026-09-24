@@ -45,12 +45,12 @@ async function requestApproval(
   interactions: ProviderInteractions,
 ): Promise<PermissionOutcome> {
   const signature = permissionSignature(params);
-  const appTool = automationPermissionTarget(params);
+  const mcpTool = automationPermissionTarget(params);
   return await interactions.requestApproval({
     request: classifyPermission(appSessionId, nextInteractionRequestId(), params),
     confirmationType: confirmationType(params),
     ...(signature ? { signature } : {}),
-    ...(appTool ? { appTool } : {}),
+    ...(mcpTool ? { mcpTool } : {}),
   });
 }
 

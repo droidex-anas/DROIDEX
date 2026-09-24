@@ -92,7 +92,7 @@ export class SessionInteractions {
   ): Promise<PermissionOutcome> {
     const liveSession = this.dependencies.getLiveSession(sessionId);
     const autonomy = liveSession?.summary.autonomy;
-    const tool = approval.appTool;
+    const tool = approval.mcpTool;
     const autoApproved = (unattended: boolean) =>
       tool !== undefined &&
       (shouldAutoApproveAutomationTool(tool.serverName, tool.toolName, autonomy, unattended) ||
