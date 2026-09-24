@@ -5,8 +5,9 @@ import { ActivityStatusGlyph } from '../../components/ActivityStatusGlyph';
 import { useStoreDispatch, useStoreSelector } from '../../hooks/useStore';
 import { INLINE_CARD_DURATION_S, INLINE_CARD_EASE } from '../../components/inlineCardMotion';
 import { formatRelativeTime } from '../../lib/time';
+import { toast } from '../../lib/toast';
 import { workspaceName } from '../../lib/workspaces';
-import { createProject, pauseProject } from './client';
+import { createProject, resumeProject } from './client';
 import { NewProjectForm } from './NewProjectForm';
 import { ProjectThreads } from './ProjectThreads';
 import { resolveNewChatCwd } from '../../lib/workspaces';
@@ -93,7 +94,9 @@ export function ProjectsRoute() {
                 openChat(open);
               }}
               onResume={() => {
-                void pauseProject(open.project.id, false, true);
+                resumeProject(open.project.id).catch((error: unknown) => {
+                  toast.error(error instanceof Error ? error.message : String(error));
+                });
               }}
               onOpenThread={(appSessionId) => {
                 dispatch({ type: 'SET_ACTIVE_SESSION', id: appSessionId });

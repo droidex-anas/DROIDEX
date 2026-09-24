@@ -49,17 +49,15 @@ export async function createProject(
   };
 }
 
-export async function pauseProject(
-  projectId: string,
-  paused: boolean,
-  acknowledgeDelivery = false,
-): Promise<void> {
+/** Resumes a held project. Resuming is the user's word that an uncertain
+    delivery is settled, so it is acknowledged rather than sent again. */
+export async function resumeProject(projectId: string): Promise<void> {
   await send({
     type: 'project.pause',
     requestId: crypto.randomUUID(),
     projectId,
-    paused,
-    acknowledgeDelivery,
+    paused: false,
+    acknowledgeDelivery: true,
   });
 }
 
