@@ -7,7 +7,7 @@ import { useVoiceSession, type VoiceSession } from './useVoiceSession';
  * Where the conversation is shown: nowhere, the full window, over the composer
  * of the chat it belongs to, or out of the way while another chat is read.
  */
-export type VoiceView = 'off' | 'full' | 'dock' | 'mini';
+type VoiceView = 'off' | 'full' | 'dock' | 'mini';
 
 /** Where the conversation puts itself. `mini` is this plus the chat on screen. */
 type VoicePlacement = 'off' | 'full' | 'dock';
