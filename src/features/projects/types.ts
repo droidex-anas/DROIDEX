@@ -36,6 +36,5 @@ export interface ProjectView {
   threads: ProjectThread[];
   queued: number;
   uncertain: number;
-  uncertainTargets: string[];
   error?: string;
 }

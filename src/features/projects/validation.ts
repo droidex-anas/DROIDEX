@@ -3,12 +3,10 @@ import type { ProjectStep, ProjectThread, ProjectView } from './types';
 export function isProjectView(value: unknown): value is ProjectView {
   if (!record(value) || !isProjectMetadata(value) || !isThreadList(value.threads)) return false;
   if (!isPlan(value.plan)) return false;
-  if (!Array.isArray(value.uncertainTargets) || value.uncertainTargets.length > 8) return false;
   const owners = new Map(
     value.threads.map((thread) => [thread.appSessionId, thread.ownerAppSessionId]),
   );
-  if (owners.size !== value.threads.length || !validOwnership(owners)) return false;
-  return value.uncertainTargets.every((id: unknown) => typeof id === 'string' && owners.has(id));
+  return owners.size === value.threads.length && validOwnership(owners);
 }
 
 function isProjectMetadata(value: Record<string, unknown>): boolean {

@@ -1,13 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useStoreSelector } from '../../hooks/useStore';
 import { refreshProviders } from '../../lib/commands';
-import type {
-  Autonomy,
-  ProviderKind,
-  ProviderStatus,
-  ReasoningEffort,
-  SessionSummary,
-} from '../../types/bridge';
+import type { Autonomy, ProviderKind, ProviderStatus, ReasoningEffort } from '../../types/bridge';
 import { providerDefaultModel, providerUnavailableReason } from '../providers/providerIdentity';
 import type { ThreadInput } from './types';
 
@@ -18,19 +12,19 @@ export interface ThreadSelection {
   autonomy: Autonomy;
 }
 
-export function useThreadSelection(owner: SessionSummary | undefined) {
+export function useThreadSelection() {
   useEffect(() => {
     refreshProviders();
   }, []);
   const statuses = useStoreSelector((state) => state.providerStatuses);
-  const [value, setValue] = useState<ThreadSelection>(() => ({
-    provider: owner?.provider ?? 'droid',
-    modelId: owner?.modelId ?? '',
+  const [value, setValue] = useState<ThreadSelection>({
+    provider: 'droid',
+    modelId: '',
     reasoning: undefined,
     // The project's chat runs the work and answers to the user, so it starts at
     // full autonomy; a thread it spawns can never exceed what it is set to.
-    autonomy: owner?.autonomy ?? 'high',
-  }));
+    autonomy: 'high',
+  });
   return { value, setValue, statuses, catalog: selectionCatalog(value, statuses) };
 }
 
