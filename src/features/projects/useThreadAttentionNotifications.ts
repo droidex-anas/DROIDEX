@@ -2,6 +2,7 @@ import { useEffect, useRef } from 'react';
 import { notify } from '../../lib/desktop';
 import { isAppInForeground } from '../../lib/finishNotifications';
 import { useStoreApi } from '../../hooks/useStore';
+import { sessionAttention, type SessionAttentionKind } from '../../lib/sessionAttention';
 
 /* A project runs while the user is somewhere else, so a thread that stops for
    an approval or a question would otherwise wait unseen. One banner per block,
@@ -12,9 +13,7 @@ import { useStoreApi } from '../../hooks/useStore';
    renders nothing, and subscribing the whole app to every project snapshot
    would cost a re-render for work no one sees. */
 
-type Blocked = 'approval' | 'question';
-
-const LEAD: Record<Blocked, string> = {
+const LEAD: Record<SessionAttentionKind, string> = {
   approval: 'needs your approval',
   question: 'asked you a question',
 };
@@ -32,7 +31,11 @@ export function useThreadAttentionNotifications(enabled: boolean): void {
       for (const project of state.projects) {
         for (const thread of project.threads) {
           if (!thread.ownerAppSessionId) continue;
-          const kind = blockedOn(state, thread.appSessionId);
+          const kind = sessionAttention(
+            thread.appSessionId,
+            state.pendingPermissions,
+            state.pendingQuestions,
+          );
           const key = `${thread.appSessionId}:${kind ?? ''}`;
           if (!kind) {
             notified.current.delete(`${thread.appSessionId}:approval`);
@@ -67,13 +70,4 @@ export function useThreadAttentionNotifications(enabled: boolean): void {
       document.removeEventListener('visibilitychange', onAway);
     };
   }, [enabled, store]);
-}
-
-function blockedOn(
-  state: { pendingPermissions: object; pendingQuestions: object },
-  appSessionId: string,
-): Blocked | null {
-  if (Object.hasOwn(state.pendingPermissions, appSessionId)) return 'approval';
-  if (Object.hasOwn(state.pendingQuestions, appSessionId)) return 'question';
-  return null;
 }

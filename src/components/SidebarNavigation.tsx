@@ -6,21 +6,21 @@ import { resolvePrWorkspaceCwd } from '../features/pull-requests/lib/prWorkspace
 import { GitPullRequestIcon } from './environment/GithubIcons';
 import { Clock } from '@droidex/icons';
 import { ActivityStatusGlyph } from './ActivityStatusGlyph';
-import { projectsPulse } from '../lib/projectThreads';
+import { projectsNavSignal } from '../lib/projectThreads';
+import { sessionAttention } from '../lib/sessionAttention';
 import type { SessionSummary } from '../types/bridge';
 
 export function SidebarNavigation() {
   const dispatch = useStoreDispatch();
-  const pulse = useStoreSelector(
+  const projectsSignal = useStoreSelector(
     (current) => {
       // A project outlives the window's session map, so a thread it names may
       // not be loaded here.
       const sessions: Partial<Record<string, SessionSummary>> = current.sessions;
-      return projectsPulse(current.projects, {
+      return projectsNavSignal(current.projects, {
         streaming: (id) => Boolean(sessions[id]?.streaming),
         blocked: (id) =>
-          Object.hasOwn(current.pendingPermissions, id) ||
-          Object.hasOwn(current.pendingQuestions, id),
+          sessionAttention(id, current.pendingPermissions, current.pendingQuestions) !== null,
       });
     },
     (a, b) => a.attention === b.attention && a.live === b.live,
@@ -84,7 +84,7 @@ export function SidebarNavigation() {
         Projects
         {/* A project runs while the user is elsewhere, so the entry says when
             one is moving and when one is holding for them. */}
-        <ProjectsPulse attention={pulse.attention} live={pulse.live} />
+        <ProjectsNavBadge attention={projectsSignal.attention} live={projectsSignal.live} />
       </button>
       <button
         ref={automationsButtonRef}
@@ -110,7 +110,7 @@ export function SidebarNavigation() {
   );
 }
 
-function ProjectsPulse({ attention, live }: { attention: number; live: boolean }) {
+function ProjectsNavBadge({ attention, live }: { attention: number; live: boolean }) {
   if (attention > 0) {
     return (
       <span
