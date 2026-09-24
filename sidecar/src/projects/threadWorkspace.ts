@@ -2,6 +2,7 @@ import { existsSync } from 'node:fs';
 import {
   addWorktree,
   ensureWorktreeDirectoryIgnored,
+  freeWorktreePath,
   git,
   removeManagedWorktree,
   repositoryRoot,
@@ -9,7 +10,6 @@ import {
   requireRealDirectoryPath,
   resolveCommit,
   sanitizeSegment,
-  worktreePath,
 } from '../gitWorktrees.js';
 
 /* A thread's own checkout: a worktree on its own branch, cut from a base the
@@ -54,10 +54,7 @@ export async function createThreadWorkspace(
   }
 
   const branch = await freeBranch(root, threadBranchName(request.branch ?? request.title));
-  let target = worktreePath(root, branch.replaceAll('/', '-'));
-  for (let suffix = 2; existsSync(target); suffix += 1) {
-    target = worktreePath(root, `${branch.replaceAll('/', '-')}-${String(suffix)}`);
-  }
+  const target = freeWorktreePath(root, branch.replaceAll('/', '-'));
 
   await ensureWorktreeDirectoryIgnored(root);
   await requireRealDirectoryPath(root, target, OUTSIDE_REPOSITORY);

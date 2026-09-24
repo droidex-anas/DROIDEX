@@ -2,13 +2,13 @@ import { existsSync } from 'node:fs';
 import {
   addWorktree,
   ensureWorktreeDirectoryIgnored,
+  freeWorktreePath,
   removeManagedWorktree,
   repositoryRoot,
   requireDirectory,
   requireRealDirectoryPath,
   resolveCommit,
   sanitizeSegment,
-  worktreePath,
 } from '../gitWorktrees.js';
 import type { AutomationExecutionMode } from './types.js';
 
@@ -53,12 +53,8 @@ export async function resolveAutomationWorkspace(
   await requireDirectory(selected, 'The selected automation workspace no longer exists.');
   if (input.executionMode === 'local') return selected;
 
-  const root = await requireRepository(selected);
-  const name = automationWorktreeName(input.title, input.runId);
-  let target = worktreePath(root, name);
-  for (let suffix = 2; existsSync(target); suffix += 1) {
-    target = worktreePath(root, `${name}-${String(suffix)}`);
-  }
+  const { root } = await requireRepository(selected);
+  const target = freeWorktreePath(root, automationWorktreeName(input.title, input.runId));
 
   await ensureWorktreeDirectoryIgnored(root);
   await requireRealDirectoryPath(root, target, OUTSIDE_REPOSITORY);
@@ -74,9 +70,7 @@ export async function createAutomationWorkspace(
   if (!target.trim() || input.executionMode !== 'worktree') return;
   const selected = input.cwd ?? '';
   if (!selected.trim()) return;
-  const root = await requireRepository(selected);
-  const commit = await resolveCommit(root);
-  if (!commit) throw new Error('The selected repository does not have a commit to run from.');
+  const { root, commit } = await requireRepository(selected);
   await requireRealDirectoryPath(root, target, OUTSIDE_REPOSITORY);
   try {
     await addWorktree(root, target, commit);
@@ -102,14 +96,14 @@ export async function releaseAutomationWorkspace(
   }
 }
 
-async function requireRepository(selected: string): Promise<string> {
+async function requireRepository(selected: string): Promise<{ root: string; commit: string }> {
   const root = await repositoryRoot(selected);
   if (!root) {
     throw new Error('An isolated worktree can only be created for a Git repository.');
   }
   const commit = await resolveCommit(root);
   if (!commit) throw new Error('The selected repository does not have a commit to run from.');
-  return root;
+  return { root, commit };
 }
 
 function automationWorktreeName(title: string, runId: string): string {
