@@ -5,6 +5,7 @@ import { useThreadDigests } from './useThreadDigests';
 import { sessionAttention } from '../../lib/sessionAttention';
 import { Caret, Expand } from '../../components/transcript/primitives';
 import { ActivityStatusGlyph } from '../../components/ActivityStatusGlyph';
+import { toolArgString } from '../../lib/tools';
 import type { TranscriptEvent } from '../../types/bridge';
 import { useProjects } from './client';
 import { projectForSession, threadRows } from './threadBoard';
@@ -151,10 +152,8 @@ function useThreadRow(appSessionId: string | undefined) {
 }
 
 function stringArg(call: TranscriptEvent, key: string): string | undefined {
-  const args: unknown = call.toolArgs;
-  if (typeof args !== 'object' || args === null) return undefined;
-  const value: unknown = (args as Record<string, unknown>)[key];
-  return typeof value === 'string' && value.trim() ? value : undefined;
+  const value = toolArgString(call.toolArgs, key)?.trim();
+  return value === '' ? undefined : value;
 }
 
 const EMPTY_IDS: string[] = [];
