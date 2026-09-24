@@ -94,10 +94,7 @@ export default function Sidebar({
     [activeId, lastSeen],
   );
 
-  const projectThreads = useStoreSelector(
-    (current) => projectThreadIds(current.projects),
-    (a, b) => a.size === b.size && [...a].every((id) => b.has(id)),
-  );
+  const projectThreads = useStoreSelector((current) => projectThreadIds(current.projects));
   // Until the project graph is known, a thread cannot be told from an ordinary
   // chat, and drawing the list first would show threads that then vanish.
   const projectsKnown = useStoreSelector(projectsAnswered);

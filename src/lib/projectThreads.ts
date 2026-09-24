@@ -12,13 +12,19 @@ export function projectsAnswered(state: Pick<AppState, 'projectsLoaded' | 'conne
   return state.projectsLoaded || state.connection === 'error';
 }
 
+// Kept per snapshot so selectors get the same Set until the projects change.
+const threadIdsBySnapshot = new WeakMap<readonly ProjectView[], ReadonlySet<string>>();
+
 export function projectThreadIds(projects: readonly ProjectView[]): ReadonlySet<string> {
+  const cached = threadIdsBySnapshot.get(projects);
+  if (cached) return cached;
   const ids = new Set<string>();
   for (const project of projects) {
     for (const thread of project.threads) {
       if (thread.ownerAppSessionId) ids.add(thread.appSessionId);
     }
   }
+  threadIdsBySnapshot.set(projects, ids);
   return ids;
 }
 
