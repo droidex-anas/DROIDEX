@@ -576,9 +576,7 @@ export class ProjectService {
         },
       );
       if (!session || !bound)
-        throw new Error(
-          'The selected harness could not start this thread. Check its session error.',
-        );
+        throw new Error('The selected harness did not start this thread and reported no reason.');
       return session.appSessionId;
     } catch (error) {
       if (bound) {
@@ -605,7 +603,9 @@ export class ProjectService {
         `Thread messages must contain 1 to ${String(LEDGER_LIMITS.text)} characters.`,
       );
     if (project.pending.length + (project.delivery?.messages.length ?? 0) >= LEDGER_LIMITS.inbox)
-      throw new Error('Project inbox is full. Review and resume its threads.');
+      throw new Error(
+        `The project inbox is full: ${String(LEDGER_LIMITS.inbox)} messages are waiting for their threads, and nothing more can queue until they are delivered.`,
+      );
     project.pending.push({ id: randomUUID(), from, to, kind, text });
   }
 
@@ -649,7 +649,8 @@ export class ProjectService {
 
   /** Whether this project can take another thread at all. */
   private checkAdmission(project: Project): void {
-    if (project.paused) throw new Error('Resume project coordination before spawning a thread.');
+    if (project.paused)
+      throw new Error('This project is held. Ask the user to resume it in Projects first.');
     if (project.threads.length + project.launching >= LEDGER_LIMITS.threads)
       throw new Error(
         `A project holds at most ${String(LEDGER_LIMITS.threads)} conversations, its main chat included.`,
