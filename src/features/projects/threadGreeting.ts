@@ -1,5 +1,5 @@
 import { workspaceName } from '../../lib/workspaces';
-import type { ThreadRow } from './threadBoard';
+import type { ThreadCounts, ThreadRow } from './threadBoard';
 
 /* The line at the top of Threads. It is the panel's voice, not a status: short,
    dry, a little warm, and it changes through the day so the panel never feels
@@ -34,12 +34,6 @@ function mood(
   return rows.length > 0 ? 'settled' : 'empty';
 }
 
-export interface ThreadCounts {
-  attention: number;
-  working: number;
-  idle: number;
-}
-
 /** The facts under the greeting: only what is actually there, in plain words. */
 export function threadStatusLine(counts: ThreadCounts): string {
   const parts: string[] = [];
@@ -60,6 +54,6 @@ export function threadSubtitle(
   return [title, plural(count, 'thread', 'threads'), folder].filter(Boolean).join(' · ');
 }
 
-function plural(count: number, one: string, many: string): string {
+export function plural(count: number, one: string, many: string): string {
   return count === 1 ? `1 ${one}` : `${String(count)} ${many}`;
 }

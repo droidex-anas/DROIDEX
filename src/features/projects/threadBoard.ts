@@ -82,12 +82,14 @@ export function threadGroups(rows: readonly ThreadRow[]): ThreadGroup[] {
 }
 
 /** How many threads are in each of the three states a person acts on. */
-export function threadCounts(rows: readonly ThreadRow[]): {
+export interface ThreadCounts {
   attention: number;
   working: number;
   /** Neither working nor waiting on the user. */
   idle: number;
-} {
+}
+
+export function threadCounts(rows: readonly ThreadRow[]): ThreadCounts {
   const attention = rows.filter((row) => needsUser(row.status)).length;
   const working = rows.filter((row) => row.status === 'working').length;
   return { attention, working, idle: rows.length - attention - working };
