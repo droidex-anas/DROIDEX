@@ -66,19 +66,20 @@ export function threadOrigin(
   return undefined;
 }
 
-export interface ProjectsPulse {
-  /** Threads stopped on an approval or a question. */
+/** What the Projects entry in the navigation shows: a count of threads
+    stopped on an approval or a question, else whether any are working. */
+export interface ProjectsNavSignal {
   attention: number;
   live: boolean;
 }
 
-export function projectsPulse(
+export function projectsNavSignal(
   projects: readonly ProjectView[],
   signals: {
     streaming: (appSessionId: string) => boolean;
     blocked: (appSessionId: string) => boolean;
   },
-): ProjectsPulse {
+): ProjectsNavSignal {
   let attention = 0;
   let live = false;
   for (const project of projects) {

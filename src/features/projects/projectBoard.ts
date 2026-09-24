@@ -3,10 +3,9 @@ import { threadCounts } from './threadBoard';
 import type { ThreadCounts } from './threadGreeting';
 import type { ProjectView } from './types';
 
-/* What a project looks like from outside: whether anything is waiting on the
-   user, whether anything is moving, and when it last did. The list and the
-   navigation both read this, so a project says the same thing wherever it is
-   mentioned. */
+/* What a project looks like on the Projects list: whether anything is waiting
+   on the user, whether anything is moving, and when it last did. The navigation
+   badge is narrower and counts only approvals and questions. */
 
 export interface ProjectPulse {
   attention: number;
