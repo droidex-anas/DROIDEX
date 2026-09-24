@@ -22,7 +22,6 @@ export interface ThreadRow {
   detail: string;
   live: boolean;
   updatedAt: number;
-  /** A saved thread whose conversation this window has not loaded. */
   /** The conversation that started it, so a thread's own spawns nest under it. */
   ownerAppSessionId?: string;
   /** 0 for a thread of the main chat, 1 for a thread that thread started. */
