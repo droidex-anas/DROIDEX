@@ -201,9 +201,12 @@ export class CodexSession implements ProviderSession {
   }
 
   // Both ride on the next `turn/start`, which is where Codex takes them.
-  setAutonomy(autonomy: Autonomy): Promise<void> {
+  async setAutonomy(autonomy: Autonomy): Promise<void> {
     this.autonomy = autonomy;
-    return Promise.resolve();
+    // A typed turn takes this on its own `turn/start`. A turn Codex starts for
+    // a spoken request has none, so the thread is told as well: otherwise a
+    // chat turned down to ask-first would still act unattended when spoken to.
+    await this.pushThreadSettings();
   }
 
   async setModel(settings: ProviderModelSettings): Promise<void> {
@@ -229,9 +232,11 @@ export class CodexSession implements ProviderSession {
   // Codex starts by itself — a spoken request from a voice conversation — takes
   // the thread's own settings. Writing them to the thread keeps both kinds of
   // turn on the model the chat is set to.
-  // The chat's model and effort on the thread itself. A typed turn carries
-  // them on `turn/start` instead, so this only decides what a turn Codex
-  // starts by itself, for a spoken request, runs on.
+  // The chat's settings on the thread itself. A typed turn carries these on
+  // `turn/start` instead, so this is what decides how a turn Codex starts by
+  // itself, for a spoken request, runs: which model, at which effort, and
+  // whether it stops to ask. The sandbox is not settable after `thread/start`,
+  // so a spoken turn keeps the one the chat opened with.
   private async applyThreadSettings(): Promise<void> {
     const threadId = this.threadId;
     if (!threadId) return;
@@ -239,9 +244,9 @@ export class CodexSession implements ProviderSession {
     // `null` is how the thread is told to go back to the model's own effort;
     // leaving the field out keeps whatever it had.
     const effort = reasoningEffort ?? (this.effortCleared ? null : undefined);
-    if (!modelId && effort === undefined) return;
     await this.client.request('thread/settings/update', {
       threadId,
+      approvalPolicy: codexAutonomy(this.autonomy).approvalPolicy,
       ...(modelId ? { model: modelId } : {}),
       ...(effort !== undefined ? { effort } : {}),
     });
@@ -394,6 +399,9 @@ export class CodexSession implements ProviderSession {
       if (!turn) return;
       if (turn.id === this.delegatedTurnId) {
         this.setDelegatedTurn(undefined);
+        // Same as settle() does for a typed turn: an approval nobody can
+        // answer any more leaves the screen with the turn that asked.
+        this.prompts.cancel();
         return;
       }
       this.settle(turn);
@@ -401,7 +409,9 @@ export class CodexSession implements ProviderSession {
     this.onThreadNotification('error', (params) => {
       const failure = errorOf(params);
       if (!failure) return;
-      this.turn?.push([this.mapper.errorEvent(failure.error)]);
+      // Through deliver(), so a turn Codex started for a spoken request
+      // reports its failures in the chat too rather than stopping silently.
+      this.deliver([this.mapper.errorEvent(failure.error)]);
       // A retrying error is a hiccup the turn recovers from on its own.
       if (!failure.willRetry) this.turn?.fail(failure.error);
     });
@@ -414,6 +424,16 @@ export class CodexSession implements ProviderSession {
       this.resolveClosed(error);
     });
     this.prompts.register(this.client, (itemId: string) => this.mapper.toolDetail(itemId));
+    // Codex can ask for things this build has no card for. They are refused at
+    // the transport, and the chat says so: a silent refusal reads as the turn
+    // stopping for no reason.
+    this.client.onUnsupportedRequest((method) => {
+      this.deliver([
+        this.mapper.errorEvent(
+          new Error(`Codex asked for ${method}, which DROIDEX cannot answer yet. It was refused.`),
+        ),
+      ]);
+    });
   }
 
   // The turn's id arrives either on `turn/started` or with the `turn/start`
