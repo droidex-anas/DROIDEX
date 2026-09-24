@@ -9,6 +9,7 @@ import {
 } from './projectTurns.js';
 import { randomUUID } from 'node:crypto';
 import type { ProviderStatus, ServerEvent, SessionSummary } from '../protocol.js';
+import { findPlanStep, planFromSteps } from './plan.js';
 import { LEDGER_LIMITS, type ProjectPersistence } from './store.js';
 import {
   checkWithinAutonomy,
@@ -233,7 +234,7 @@ export class ProjectService {
     // with nothing to say it was ours: a bad step name, a held project or a
     // full one would each strand one.
     this.checkAdmission(project);
-    const named = requested.step ? this.planStep(project, requested.step) : undefined;
+    const named = requested.step ? findPlanStep(project.plan, requested.step) : undefined;
     // The slot is held while the checkout is cut, so a parallel spawn cannot
     // pass the same cap, and it is handed to the launch without a gap.
     project.launching += 1;
@@ -279,27 +280,7 @@ export class ProjectService {
     };
   }
 
-  /** The plan step a spawn says it carries, by its number or its exact title. */
-  private planStep(project: Project, step: string): ProjectStep {
-    const wanted = step.trim();
-    const found = project.plan.find(
-      (candidate) => candidate.id === wanted || candidate.title === wanted,
-    );
-    if (!found) {
-      throw new Error(
-        project.plan.length
-          ? `No plan step called "${wanted}". Call plan_set first, then spawn for a step it holds.`
-          : 'This project has no plan yet. Call plan_set with the steps you mean to take, then spawn for one of them.',
-      );
-    }
-    return found;
-  }
-
-  /**
-   * Replaces the plan the lead keeps for a project. Steps are the lead's words;
-   * a step that names a thread must name one of this project's own, so the table
-   * can follow that conversation's real state instead of a claim.
-   */
+  /** Replaces the plan the lead keeps for a project, in the lead's own words. */
   async setPlan(source: string, steps: readonly Omit<ProjectStep, 'id'>[]): Promise<number> {
     this.requireOpen();
     const project = this.requireProjectFor(source);
@@ -307,19 +288,9 @@ export class ProjectService {
       throw new Error("Only the project's main chat keeps its plan.");
     if (steps.length > LEDGER_LIMITS.planSteps)
       throw new Error(`A project plan holds at most ${String(LEDGER_LIMITS.planSteps)} steps.`);
-    project.plan = steps.map((step, index) => {
-      if (step.threadAppSessionId) requireThread(project, step.threadAppSessionId);
-      return {
-        id: String(index + 1),
-        title: step.title.slice(0, LEDGER_LIMITS.stepTitle),
-        ...(step.milestone
-          ? { milestone: step.milestone.slice(0, LEDGER_LIMITS.stepMilestone) }
-          : {}),
-        ...(step.state ? { state: step.state } : {}),
-        ...(step.threadAppSessionId ? { threadAppSessionId: step.threadAppSessionId } : {}),
-        ...(step.note ? { note: step.note.slice(0, LEDGER_LIMITS.stepNote) } : {}),
-      };
-    });
+    project.plan = planFromSteps(steps, (id) =>
+      project.threads.some((thread) => thread.appSessionId === id),
+    );
     await this.save();
     return project.plan.length;
   }
