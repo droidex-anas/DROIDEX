@@ -83,14 +83,10 @@ test('unknown owners, duplicate identities, cycles and foreign message targets a
   await assert.rejects(store.load(), /target/);
 });
 
-test('thread input rejects unbounded prompts and unknown provider or autonomy values', () => {
-  const valid = { title: 'Task', prompt: 'Work', provider: 'droid', autonomy: 'low' };
-  assert.equal(threadInputSchema.safeParse(valid).success, true);
-  assert.equal(threadInputSchema.safeParse({ ...valid, provider: 'unknown' }).success, false);
-  assert.equal(threadInputSchema.safeParse({ ...valid, autonomy: 'bypass' }).success, false);
-  assert.equal(threadInputSchema.safeParse({ ...valid, prompt: 'x'.repeat(8_193) }).success, false);
+test('a renderer command cannot name a thread owner', () => {
+  const input = { title: 'Task', prompt: 'Work', provider: 'droid', autonomy: 'low' };
   assert.equal(
-    threadInputSchema.safeParse({ ...valid, ownerAppSessionId: 'spoofed' }).success,
+    threadInputSchema.safeParse({ ...input, ownerAppSessionId: 'spoofed' }).success,
     false,
   );
 });

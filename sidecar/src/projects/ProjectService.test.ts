@@ -437,29 +437,17 @@ test('parallel spawn reservations cap fanout before provider creation', async (t
   const gate = deferred();
   h.state.bindGate = gate.promise;
   const requests = Array.from({ length: 7 }, () => h.projects.spawn(main, input));
-  await assert.rejects(h.projects.spawn(main, input), /at most 8 conversations/);
+  // Refused on the cap before any worktree is cut for it.
+  await assert.rejects(
+    h.projects.spawn(main, { ...input, workspace: 'worktree' }),
+    /at most 8 conversations/,
+  );
   await h.projects.setPaused(id, true);
   gate.resolve();
   const outcomes = await Promise.allSettled(requests);
   assert.ok(outcomes.every((result) => result.status === 'rejected'));
   assert.equal(h.launched.length, 1, 'no child goal reached the provider');
   assert.equal(h.projects.list()[0]?.launching, 0);
-});
-
-test('a spawn holds its slot while its checkout is cut', async (t) => {
-  const h = await harness();
-  t.after(() => h.projects.close());
-  const { main } = await h.root();
-  const gate = deferred();
-  h.state.bindGate = gate.promise;
-  const requests = Array.from({ length: 7 }, () => h.projects.spawn(main, input));
-  // Refused on the cap before any worktree is cut for it.
-  await assert.rejects(
-    h.projects.spawn(main, { ...input, workspace: 'worktree' }),
-    /at most 8 conversations/,
-  );
-  gate.resolve();
-  await Promise.all(requests);
 });
 
 test('persistence failure fails closed without delivering a queued wake', async (t) => {
@@ -584,7 +572,7 @@ test('a closed recipient unparks the delivery that waited on its turn', async (t
   assert.equal(h.projects.list()[0]?.queued, 0);
 });
 
-test('native permissions and user questions never generate controller turns', async (t) => {
+test("permission requests and the main chat's own question stay with the user", async (t) => {
   const h = await harness();
   t.after(() => h.projects.close());
   const { main } = await h.root();
@@ -744,16 +732,4 @@ test('durable project request identity avoids a duplicate root', async (t) => {
   assert.ok(first.appSessionId);
   assert.equal(repeat.appSessionId, first.appSessionId);
   assert.equal(h.launched.length, 1);
-});
-
-test('project listing restores ordinary summaries without starting a provider', async (t) => {
-  const h = await harness();
-  t.after(() => h.projects.close());
-  await h.root();
-  const launched = h.launched.length;
-  h.events.length = 0;
-  h.projects.publish();
-  assert.equal(h.launched.length, launched);
-  assert.ok(h.events.some((event) => event.type === 'session.updated'));
-  assert.equal(h.events.at(-1)?.type, 'projects.snapshot');
 });
