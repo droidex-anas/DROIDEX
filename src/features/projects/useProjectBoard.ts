@@ -1,6 +1,7 @@
 import { useMemo } from 'react';
 import { shallowEqual, useStoreSelector } from '../../hooks/useStore';
 import { useThreadDigests } from './useThreadDigests';
+import { projectForSession } from '../../lib/projectThreads';
 import { sessionAttention } from '../../lib/sessionAttention';
 import { useProjects } from './client';
 import { projectPulse, type ProjectPulse } from './projectBoard';
@@ -13,9 +14,9 @@ export interface ProjectBoardEntry {
   pulse: ProjectPulse;
 }
 
-/* Every project with its threads resolved against the live sessions, so the
-   Projects view, its rows and the navigation all read one board rather than
-   each deriving its own. */
+/* Every project with its threads resolved against the live sessions. The
+   Projects view, the Threads pane and a chat's spawn lines all take their rows
+   from here, so a thread reads the same wherever it is shown. */
 export function useProjectBoard(): {
   entries: ProjectBoardEntry[];
   loading: boolean;
@@ -59,4 +60,16 @@ export function useProjectBoard(): {
     loading: snapshot.loading,
     ...(snapshot.error ? { error: snapshot.error } : {}),
   };
+}
+
+/** The entry of the project a conversation belongs to, if it is in one. */
+export function entryForSession(
+  entries: readonly ProjectBoardEntry[],
+  appSessionId: string | null | undefined,
+): ProjectBoardEntry | undefined {
+  const project = projectForSession(
+    entries.map((entry) => entry.project),
+    appSessionId,
+  );
+  return entries.find((entry) => entry.project === project);
 }
