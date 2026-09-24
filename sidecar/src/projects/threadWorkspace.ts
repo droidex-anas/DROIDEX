@@ -44,11 +44,13 @@ export async function createThreadWorkspace(
 
   const root = await repositoryRoot(selected);
   if (!root) throw new Error('A thread worktree can only be created for a Git repository.');
-  const commit = await resolveCommit(root, request.base);
+  // A blank base names nothing, so it means HEAD, as no base does.
+  const base = request.base?.trim() ?? '';
+  const commit = await resolveCommit(root, base);
   if (!commit) {
     throw new Error(
-      request.base?.trim()
-        ? `The base ${request.base.trim()} does not resolve to a commit in this repository.`
+      base
+        ? `The base ${base} does not resolve to a commit in this repository.`
         : 'The project repository does not have a commit to branch from.',
     );
   }
@@ -59,7 +61,7 @@ export async function createThreadWorkspace(
   await ensureWorktreeDirectoryIgnored(root);
   await requireRealDirectoryPath(root, target, OUTSIDE_REPOSITORY);
   await addWorktree(root, target, commit, branch);
-  return { cwd: target, branch, base: request.base?.trim() ?? 'HEAD' };
+  return { cwd: target, branch, base: base || 'HEAD' };
 }
 
 /**
