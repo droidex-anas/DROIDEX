@@ -1,0 +1,66 @@
+name: DROIDEX Remote review build
+on:
+  push:
+    branches: [integration/droidex-remote]
+  workflow_dispatch:
+permissions:
+  contents: write
+concurrency:
+  group: droidex-remote-review
+  cancel-in-progress: false
+jobs:
+  mac-review:
+    if: github.ref == 'refs/heads/integration/droidex-remote'
+    runs-on: macos-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: integration/droidex-remote
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Integrate the real desktop and sidecar paths
+        run: |
+          node tools/integrate-remote.mjs
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add electron/main.cjs sidecar/src/SessionManager.ts sidecar/src/SessionTimeline.ts sidecar/src/protocol.ts src/types/bridge.ts sidecar/src/index.ts
+          if ! git diff --cached --quiet; then
+            git commit -m 'feat(remote): connect desktop controls and canonical session queries'
+            git push origin HEAD:integration/droidex-remote
+          fi
+      - run: npm ci
+      - run: npm --prefix sidecar ci
+      - name: Format feature-local files
+        run: |
+          npx prettier --write 'electron/remote/**/*.cjs' 'electron/remote/web/*' sidecar/src/remote/requests.ts tools/integrate-remote.mjs
+          git add electron/remote sidecar/src/remote/requests.ts tools/integrate-remote.mjs
+          if ! git diff --cached --quiet; then
+            git commit -m 'style(remote): apply repository formatting to feature modules'
+            git push origin HEAD:integration/droidex-remote
+          fi
+      - name: Focused transport/security checks (not live acceptance)
+        run: node --test electron/remote/*.test.cjs
+      - run: npm run sidecar:typecheck
+      - run: for f in electron/remote/*.cjs; do node --check "$f"; done
+      - run: npm run build
+      - name: Package unsigned review build with existing macOS pipeline
+        run: npm run dist:mac:arm64
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+      - name: Identify the built revision
+        if: always()
+        run: |
+          mkdir -p reports/remote
+          git rev-parse HEAD > reports/remote/source-commit.txt
+          printf '%s\n' 'Automated build only. Real provider, desktop UI, phone and cellular acceptance NOT RUN.' > reports/remote/acceptance-status.txt
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: droidex-remote-macos-arm64-review
+          path: |
+            release/droidex-arm64.dmg
+            release/droidex-arm64.zip
+            reports/remote/
+          retention-days: 7
