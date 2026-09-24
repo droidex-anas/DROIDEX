@@ -22,8 +22,6 @@ export interface ThreadRow {
   detail: string;
   live: boolean;
   updatedAt: number;
-  /** The conversation that started it, so a thread's own spawns nest under it. */
-  ownerAppSessionId?: string;
   /** 0 for a thread of the main chat, 1 for a thread that thread started. */
   depth: number;
   provider?: ProviderKind;
@@ -53,14 +51,25 @@ export function projectForSession(
   );
 }
 
+/* In tree order: each thread is followed by the threads it started, and every
+   level lists its newest first. Grouping keeps that order, so an indented row
+   sits under the thread that started it whenever both land in one group. */
 export function threadRows(project: ProjectView | undefined, signals: ThreadSignals): ThreadRow[] {
-  if (!project) return [];
-  const threads = new Map(project.threads.map((thread) => [thread.appSessionId, thread]));
-  const root = project.threads.find((thread) => !thread.ownerAppSessionId);
-  return project.threads
-    .filter((thread) => thread.ownerAppSessionId)
-    .map((thread) => threadRow(thread, project, signals, depthOf(thread, threads, root)))
-    .sort((a, b) => b.updatedAt - a.updatedAt);
+  const lead = project?.threads.find((thread) => !thread.ownerAppSessionId);
+  if (!project || !lead) return [];
+  const rows: ThreadRow[] = [];
+  const addThreadsOf = (ownerAppSessionId: string, depth: number) => {
+    const started = project.threads
+      .filter((thread) => thread.ownerAppSessionId === ownerAppSessionId)
+      .map((thread) => threadRow(thread, project, signals, depth))
+      .sort((a, b) => b.updatedAt - a.updatedAt);
+    for (const row of started) {
+      rows.push(row);
+      addThreadsOf(row.appSessionId, depth + 1);
+    }
+  };
+  addThreadsOf(lead.appSessionId, 0);
+  return rows;
 }
 
 /** The conversation that leads the project, read the way its threads are. */
@@ -94,20 +103,6 @@ function needsUser(status: SessionActivityStatus): boolean {
   return ACTIVITY_GROUPS[0].statuses.includes(status);
 }
 
-function depthOf(
-  thread: ProjectThread,
-  threads: ReadonlyMap<string, ProjectThread>,
-  root: ProjectThread | undefined,
-): number {
-  let depth = 0;
-  let owner = thread.ownerAppSessionId;
-  while (owner && owner !== root?.appSessionId && depth < 8) {
-    depth += 1;
-    owner = threads.get(owner)?.ownerAppSessionId;
-  }
-  return depth;
-}
-
 function threadRow(
   thread: ProjectThread,
   project: ProjectView,
@@ -137,7 +132,6 @@ function threadRow(
     live,
     updatedAt: session?.updatedAt ?? 0,
     depth,
-    ...(thread.ownerAppSessionId ? { ownerAppSessionId: thread.ownerAppSessionId } : {}),
     ...(session?.provider ? { provider: session.provider } : {}),
     ...(session?.modelId ? { modelId: session.modelId } : {}),
   };
