@@ -308,7 +308,8 @@ function isServerEvent(value: unknown): value is ServerEvent {
       return (
         typeof value.appSessionId === 'string' &&
         Array.isArray(value.voices) &&
-        value.voices.every((voice) => typeof voice === 'string')
+        value.voices.every((voice) => typeof voice === 'string') &&
+        isOptionalString(value.defaultVoice)
       );
     case 'voice.error':
       return hasStrings(value, ['appSessionId', 'message']);
