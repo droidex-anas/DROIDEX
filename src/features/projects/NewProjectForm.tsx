@@ -49,8 +49,10 @@ export function NewProjectForm({
       if (workspace === undefined) return;
       await onSubmit(buildThreadInput({ ...draft, workspace }, selection.value, selection.catalog));
     } catch (failure) {
-      const message = failure instanceof Error ? failure.message : String(failure);
-      setError(`${message} Your draft has been kept.`);
+      const message = (failure instanceof Error ? failure.message : String(failure)).trim();
+      // A runtime error is arbitrary text and often ends without a full stop.
+      const sentence = /[.!?]$/.test(message) ? message : `${message}.`;
+      setError(`${sentence} Your draft has been kept.`);
     } finally {
       setPending(false);
     }
