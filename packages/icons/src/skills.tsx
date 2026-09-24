@@ -118,3 +118,17 @@ export const GaugeFilled = createIcon(
     d="M12 2.75a9.25 9.25 0 1 1 0 18.5 9.25 9.25 0 0 1 0-18.5Zm0 3.75A5.5 5.5 0 0 0 6.5 12a.75.75 0 0 0 1.5 0 4 4 0 0 1 4-4 .75.75 0 0 0 0-1.5Zm4.53.97a.75.75 0 0 0-1.06 0l-3.04 3.04a2 2 0 1 0 1.06 1.06l3.04-3.04a.75.75 0 0 0 0-1.06Z"
   />,
 );
+
+const PIE_SLICES = (
+  <>
+    <path d="M11 13V5.25a7.75 7.75 0 1 0 7.75 7.75Z" />
+    <path d="M14 10h6.75A6.75 6.75 0 0 0 14 3.25Z" />
+  </>
+);
+
+export const Visualize = createIcon('visualize', PIE_SLICES);
+
+export const VisualizeFilled = createIcon(
+  'visualize-filled',
+  <g fill="currentColor">{PIE_SLICES}</g>,
+);

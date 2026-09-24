@@ -7,6 +7,6 @@ export * from './layout.js';
 export * from './status.js';
 export * from './skills.js';
 export * from './knowledge.js';
+export * from './voice.js';
 export { ChangesIcon } from './ChangesIcon.js';
-export { VisualizeIcon } from './VisualizeIcon.js';
 export { WorktreeIcon } from './WorktreeIcon.js';
