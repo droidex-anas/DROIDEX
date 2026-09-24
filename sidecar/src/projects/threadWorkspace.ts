@@ -12,11 +12,10 @@ import {
   worktreePath,
 } from '../gitWorktrees.js';
 
-/* Where a thread does its work. Sharing the project's checkout is the default,
-   because most threads read or touch different things. When two threads will
-   write, the chat that starts them asks for a worktree: its own checkout on its
-   own branch, cut from a base it names, so neither thread ever sees the other's
-   half-finished tree. */
+/* A thread's own checkout: a worktree on its own branch, cut from a base the
+   chat names or the checkout's HEAD. DROIDEX cuts one when another thread is
+   already working in the checkout the new one would share, or when the chat
+   asks for one, so neither thread ever sees the other's half-finished tree. */
 
 export interface ThreadWorkspaceRequest {
   /** The project's checkout, which the worktree is cut from. */

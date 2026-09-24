@@ -24,8 +24,8 @@ export const THREAD_BRIEF = [
 
 /* The project's own conversation. It is the only one that talks to the user, so
    it carries the goal, asks about it, and hands the work out. It is told to end
-   its turn after spawning because DROIDEX wakes it when a thread reports — a
-   leader that polls burns the loop the wake budget is there to protect. */
+   its turn after spawning because DROIDEX wakes it when a thread reports, and a
+   lead that polls instead keeps generating while nothing changes. */
 export const LEAD_BRIEF = [
   'You lead a DROIDEX project. You own its goal and its plan, and you are the only conversation that talks to the user.',
   'Work in this order. First settle the goal: ask the user whatever is unclear about scope, priorities or trade-offs, and look at the code yourself before deciding. Never guess.',
