@@ -10,6 +10,7 @@ import { workspaceName } from '../../lib/workspaces';
 import { createProject, resumeProject } from './client';
 import { NewProjectForm } from './NewProjectForm';
 import { ProjectThreads } from './ProjectThreads';
+import { projectLead } from './threadBoard';
 import { resolveNewChatCwd } from '../../lib/workspaces';
 import { projectSession } from './sessions';
 import { useProjectBoard, type ProjectBoardEntry } from './useProjectBoard';
@@ -47,24 +48,22 @@ export function ProjectsRoute() {
   /* Opening a project is opening the conversation that leads it, with its
      threads already beside it: that pairing is the project, and a person should
      not have to reassemble it from two clicks. */
-  function openChat(entry: ProjectBoardEntry): void {
-    const main = entry.project.threads.find((thread) => !thread.ownerAppSessionId);
-    if (!main) return;
-    dispatch({ type: 'SET_ACTIVE_SESSION', id: main.appSessionId });
+  function openLeadChat(appSessionId: string): void {
+    dispatch({ type: 'SET_ACTIVE_SESSION', id: appSessionId });
     dispatch({ type: 'OPEN_UTILITY_TOOL', tool: 'threads' });
   }
 
-  /* Starting a project is starting its conversation, so it opens like any other
-     chat — with its threads beside it — instead of leaving the user on a list. */
+  function openChat(entry: ProjectBoardEntry): void {
+    const lead = projectLead(entry.project);
+    if (lead) openLeadChat(lead.appSessionId);
+  }
+
+  // A new project opens like any other new chat instead of leaving the user on a list.
   async function create(input: ThreadInput): Promise<void> {
     const started = await createProject(input);
     setCreating(false);
-    if (!started.appSessionId) {
-      setOpenId(started.projectId);
-      return;
-    }
-    dispatch({ type: 'SET_ACTIVE_SESSION', id: started.appSessionId });
-    dispatch({ type: 'OPEN_UTILITY_TOOL', tool: 'threads' });
+    if (started.appSessionId) openLeadChat(started.appSessionId);
+    else setOpenId(started.projectId);
   }
 
   const travel = reduceMotion ? 0 : 12;

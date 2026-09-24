@@ -9,7 +9,8 @@ import type { UtilityTab } from '../../lib/utilityPanel';
 import { useProjects } from './client';
 import { ThreadDetail } from './ThreadDetail';
 import { ThreadList } from './ThreadList';
-import { projectForSession, threadRows } from './threadBoard';
+import { projectForSession } from '../../lib/projectThreads';
+import { threadRows } from './threadBoard';
 import type { ProjectStep } from './types';
 
 /* The Threads tab of the utility panel: every thread this chat runs, grouped by

@@ -8,7 +8,8 @@ import { ActivityStatusGlyph } from '../../components/ActivityStatusGlyph';
 import { toolArgString } from '../../lib/tools';
 import type { TranscriptEvent } from '../../types/bridge';
 import { useProjects } from './client';
-import { projectForSession, threadRows } from './threadBoard';
+import { projectForSession } from '../../lib/projectThreads';
+import { threadRows } from './threadBoard';
 import { spawnedThread } from './threadToolNames';
 
 /* A thread the chat started, shown in the chat the way a spawned child session

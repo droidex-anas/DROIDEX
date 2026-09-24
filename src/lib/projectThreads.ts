@@ -28,6 +28,17 @@ export function projectThreadIds(projects: readonly ProjectView[]): ReadonlySet<
   return ids;
 }
 
+/** The project a conversation belongs to, if it is in one. */
+export function projectForSession(
+  projects: readonly ProjectView[],
+  appSessionId: string | null | undefined,
+): ProjectView | undefined {
+  if (!appSessionId) return undefined;
+  return projects.find((project) =>
+    project.threads.some((thread) => thread.appSessionId === appSessionId),
+  );
+}
+
 /** Where an open thread came from, so its chat can offer the way back. */
 export interface ThreadOrigin {
   ownerAppSessionId: string;

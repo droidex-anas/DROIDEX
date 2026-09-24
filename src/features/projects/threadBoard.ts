@@ -40,22 +40,16 @@ export interface ThreadSignals {
   digests: Partial<Record<string, ActivityDigest>>;
 }
 
-/** The project a conversation belongs to, if it is in one. */
-export function projectForSession(
-  projects: readonly ProjectView[],
-  appSessionId: string | null | undefined,
-): ProjectView | undefined {
-  if (!appSessionId) return undefined;
-  return projects.find((project) =>
-    project.threads.some((thread) => thread.appSessionId === appSessionId),
-  );
+/** The conversation that leads the project: the one no other conversation started. */
+export function projectLead(project: ProjectView): ProjectThread | undefined {
+  return project.threads.find((thread) => !thread.ownerAppSessionId);
 }
 
 /* In tree order: each thread is followed by the threads it started, and every
    level lists its newest first. Grouping keeps that order, so an indented row
    sits under the thread that started it whenever both land in one group. */
 export function threadRows(project: ProjectView | undefined, signals: ThreadSignals): ThreadRow[] {
-  const lead = project?.threads.find((thread) => !thread.ownerAppSessionId);
+  const lead = project && projectLead(project);
   if (!project || !lead) return [];
   const rows: ThreadRow[] = [];
   const addThreadsOf = (ownerAppSessionId: string, depth: number) => {
@@ -74,7 +68,7 @@ export function threadRows(project: ProjectView | undefined, signals: ThreadSign
 
 /** The conversation that leads the project, read the way its threads are. */
 export function leadRow(project: ProjectView, signals: ThreadSignals): ThreadRow | undefined {
-  const lead = project.threads.find((thread) => !thread.ownerAppSessionId);
+  const lead = projectLead(project);
   return lead ? threadRow(lead, project, signals, 0) : undefined;
 }
 
