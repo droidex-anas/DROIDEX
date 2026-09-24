@@ -36,7 +36,8 @@ export function ThreadList({
   const reduceMotion = useReducedMotion() === true;
   const groups = threadGroups(rows);
   const counts = threadCounts(rows);
-  const status = threadStatusLine(counts);
+  // With no threads the greeting already says so; the line under it stays empty.
+  const facts = held ? 'Coordination is held. Resume it in Projects.' : threadStatusLine(counts);
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
@@ -45,10 +46,14 @@ export function ThreadList({
           <h2 className="text-[21px] font-semibold leading-tight tracking-tight text-droid-text">
             {threadGreeting(rows, counts, now)}
           </h2>
-          <p className="mt-1.5 text-[13px] leading-5 text-droid-text-secondary">
-            {held ? 'Coordination is held — resume it in Projects.' : status || 'Nothing running.'}
+          {facts && (
+            <p className="mt-1.5 text-[13px] leading-5 text-droid-text-secondary">{facts}</p>
+          )}
+          <p
+            className={`${facts ? 'mt-0.5' : 'mt-1.5'} text-[12px] leading-5 text-droid-text-muted`}
+          >
+            {subtitle}
           </p>
-          <p className="mt-0.5 text-[12px] leading-5 text-droid-text-muted">{subtitle}</p>
         </div>
 
         <ProjectPlan plan={plan} rows={rows} onOpenThread={onOpenThread} />
