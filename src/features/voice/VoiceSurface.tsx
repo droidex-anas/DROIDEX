@@ -18,6 +18,9 @@ export function VoiceSurface({ voice }: { voice: Voice }) {
   return createPortal(<VoiceSurfaceDialog voice={voice} />, document.body);
 }
 
+// What a round of Tab visits inside the surface.
+const FOCUSABLE = 'button:not([disabled]), [href], input, select, textarea, [tabindex="0"]';
+
 const controlClass =
   'rounded-full p-2 text-droid-text-secondary transition-colors hover:bg-droid-bg/50 hover:text-droid-text';
 
@@ -35,6 +38,27 @@ function VoiceSurfaceDialog({ voice }: { voice: Voice }) {
     dialogRef.current?.focus();
     return () => {
       if (opener instanceof HTMLElement) opener.focus();
+    };
+  }, []);
+
+  // The surface covers the app, so Tab stays inside it: `aria-modal` says the
+  // rest is inert but does nothing about the focus ring. The settings sheet is
+  // rendered within the dialog, so its controls are part of the same round.
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      const dialog = dialogRef.current;
+      if (event.key !== 'Tab' || !dialog) return;
+      const stops = [...dialog.querySelectorAll<HTMLElement>(FOCUSABLE)].filter(
+        (element) => element.offsetParent !== null || element === dialog,
+      );
+      const edge = event.shiftKey ? stops.at(0) : stops.at(-1);
+      if (!edge || document.activeElement !== edge) return;
+      event.preventDefault();
+      (event.shiftKey ? stops.at(-1) : stops.at(0))?.focus();
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => {
+      window.removeEventListener('keydown', onKeyDown);
     };
   }, []);
 

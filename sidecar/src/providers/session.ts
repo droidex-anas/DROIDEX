@@ -100,6 +100,14 @@ export interface ProviderSession {
   ): AsyncGenerator<NormalizedEvent, void, undefined>;
   // Events delivered between turns, never duplicated by stream().
   onBackgroundEvent?(listener: (event: NormalizedEvent) => void): () => void;
+
+  /**
+   * A turn the provider started by itself, outside `stream()`, and the moment
+   * it ends. A spoken request is one: the chat is running a turn nobody asked
+   * for through the composer, and the rest of the app has to know so a typed
+   * prompt queues behind it and Stop can reach it.
+   */
+  onDelegatedTurn?(listener: (running: boolean) => void): () => void;
   // Takes a prompt into the turn that is already running, so the turn keeps its
   // work and continues with it. Absent on a provider that can only steer by
   // interrupting and resending, which is what the session layer then does.

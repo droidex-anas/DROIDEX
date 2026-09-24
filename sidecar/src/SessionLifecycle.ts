@@ -940,16 +940,36 @@ export class SessionLifecycle {
 
   private subscribeBackgroundEvents(liveSession: LiveSession): void {
     const appSessionId = liveSession.summary.appSessionId;
-    const unsubscribe = liveSession.session.onBackgroundEvent?.((normalized) => {
-      if (
-        this.dependencies.isShutdownStarted() ||
-        liveSession.closeMode ||
-        this.dependencies.registry.getLive(appSessionId) !== liveSession
-      )
-        return;
+    const isCurrent = () =>
+      !this.dependencies.isShutdownStarted() &&
+      !liveSession.closeMode &&
+      this.dependencies.registry.getLive(appSessionId) === liveSession;
+    const events = liveSession.session.onBackgroundEvent?.((normalized) => {
+      if (!isCurrent()) return;
       this.dependencies.eventFlow.apply(appSessionId, appSessionId, 'primary', normalized);
     });
-    if (unsubscribe) liveSession.unsubscribe = unsubscribe;
+    // A turn the provider started by itself is the session's turn like any
+    // other: it streams, it can be stopped, and a typed prompt waits behind it.
+    const delegated = liveSession.session.onDelegatedTurn?.((running) => {
+      if (!isCurrent()) return;
+      liveSession.streaming = running;
+      if (running) {
+        this.dependencies.registry.updateSummary(appSessionId, {
+          phase: 'running',
+          streaming: true,
+          queuedSends: liveSession.pendingSends.length,
+        });
+        return;
+      }
+      const next = liveSession.pendingSends.shift();
+      this.publishTurnSettled(liveSession);
+      if (next !== undefined) void this.driveInBackground(appSessionId, next);
+    });
+    if (events ?? delegated)
+      liveSession.unsubscribe = () => {
+        events?.();
+        delegated?.();
+      };
   }
 
   private observeProviderClosure(liveSession: LiveSession): void {

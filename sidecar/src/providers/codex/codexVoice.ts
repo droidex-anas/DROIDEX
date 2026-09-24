@@ -12,6 +12,7 @@ import type {
   ProviderVoiceStart,
   VoiceNarration,
 } from '../session.js';
+import { errMsg } from '../../sessionHelpers.js';
 import type { AppServerClient } from './appServer.js';
 
 // Realtime v3 is the version that supports voices, spoken handoffs and the
@@ -76,6 +77,9 @@ export class CodexVoice implements ProviderVoice {
   constructor(
     private readonly client: AppServerClient,
     private readonly threadId: () => string | undefined,
+    // Puts the chat's model and effort on the thread, which is what the turns
+    // this conversation hands over will run on.
+    private readonly applyThreadSettings: () => Promise<void>,
   ) {
     this.client.onNotification('thread/realtime/sdp', (params) => {
       if (isRecord(params) && typeof params.sdp === 'string')
@@ -128,6 +132,11 @@ export class CodexVoice implements ProviderVoice {
 
   async start({ sdp, voice, narration = 'brief' }: ProviderVoiceStart): Promise<void> {
     const threadId = this.requireThread();
+    // A conversation that could not put the chat's model on the thread would
+    // hand its work to a different one, so it does not open.
+    await this.applyThreadSettings().catch((error: unknown) => {
+      throw new Error(`The chat's model could not be set for this conversation: ${errMsg(error)}`);
+    });
     this.live = true;
     await this.client
       .request('thread/realtime/start', {
@@ -145,19 +154,21 @@ export class CodexVoice implements ProviderVoice {
       });
   }
 
-  // Leaves the session marked live until Codex confirms, so a stop that failed
-  // can be tried again instead of silently doing nothing.
+  // Hanging up ends the conversation here whether or not Codex answers: the
+  // renderer has already let go of the microphone and the peer connection, so
+  // nothing on this side is holding one once this is called. The error still
+  // reaches the caller, which reports it.
   async stop(): Promise<void> {
     if (!this.live) return;
+    this.live = false;
     this.expectedCloses += 1;
     try {
       await this.client.request('thread/realtime/stop', { threadId: this.requireThread() });
     } catch (error) {
       // Nothing was stopped, so no close is owed and a real one still counts.
-      this.expectedCloses -= 1;
+      this.expectedCloses = Math.max(0, this.expectedCloses - 1);
       throw error;
     }
-    this.live = false;
   }
 
   onEvent(listener: (event: ProviderVoiceEvent) => void): () => void {

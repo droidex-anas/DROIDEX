@@ -1599,8 +1599,10 @@ export default function PromptInput({
   const canStartVoice = canUseVoice(composerProvider) && voice.view === 'off';
   // A chat started by voice has no prompt to create it with, so the orb creates
   // the chat first and opens the conversation once that chat, and no other,
-  // arrives. Holds the `clientRef` of the create it is waiting for.
-  const voiceAwaitingRef = useRef<string | null>(null);
+  // arrives. `registered` marks the point where the wait can be read from the
+  // store, which is what tells an abandoned create from one still being
+  // prepared.
+  const voiceAwaiting = useRef<{ clientRef: string; registered: boolean } | null>(null);
 
   // The orb: talk to the chat that is open, or start one and talk to that. A
   // chat created this way opens with no prompt, so the first request is the
@@ -1610,9 +1612,9 @@ export default function PromptInput({
       voice.openOn(activeSession.appSessionId);
       return;
     }
-    if (voiceAwaitingRef.current) return;
+    if (voiceAwaiting.current) return;
     const clientRef = newClientRef();
-    voiceAwaitingRef.current = clientRef;
+    voiceAwaiting.current = { clientRef, registered: false };
     void (async () => {
       // Named for now by when it started; the first thing said in it renames it.
       const placeholder = `Voice chat ${new Date().toLocaleTimeString([], {
@@ -1621,13 +1623,14 @@ export default function PromptInput({
       })}`;
       const preparation = await prepareDraftCwd(state.draftChat?.cwd ?? '', clientRef, placeholder);
       if (!preparation.ok) {
-        voiceAwaitingRef.current = null;
+        voiceAwaiting.current = null;
         return;
       }
       // A chat only takes focus when the renderer is waiting for it, and the
       // conversation can only open on the chat that is on screen. There is no
       // prompt to wait for here, so the wait is registered empty.
       dispatch({ type: 'SET_PENDING_COMPOSE', clientRef, text: '', skills: [], files: [] });
+      if (voiceAwaiting.current?.clientRef === clientRef) voiceAwaiting.current.registered = true;
       createSession({
         clientRef,
         cwd: preparation.path,
@@ -1646,7 +1649,7 @@ export default function PromptInput({
       // The chat was never created, so nothing is being waited for and the orb
       // works again. The failure itself is reported by the command that raised
       // it.
-      voiceAwaitingRef.current = null;
+      voiceAwaiting.current = null;
     });
   };
 
@@ -1654,16 +1657,17 @@ export default function PromptInput({
   // conversation on it. A create that never landed releases the wait instead,
   // so the next chat the user opens is not talked to by accident.
   useEffect(() => {
-    const clientRef = voiceAwaitingRef.current;
-    if (!clientRef) return;
+    const waiting = voiceAwaiting.current;
+    if (!waiting) return;
     const created = state.lastCreatedSessionRequest;
-    if (created?.clientRef === clientRef) {
+    if (created?.clientRef === waiting.clientRef) {
       if (activeSession?.appSessionId !== created.appSessionId) return;
-      voiceAwaitingRef.current = null;
+      voiceAwaiting.current = null;
       voice.openOn(created.appSessionId, { nameFromSpeech: true });
       return;
     }
-    if (!state.pendingCompose[clientRef]) voiceAwaitingRef.current = null;
+    if (waiting.registered && !state.pendingCompose[waiting.clientRef])
+      voiceAwaiting.current = null;
   }, [activeSession, state.lastCreatedSessionRequest, state.pendingCompose, voice]);
 
   const showSendAction = !canStartVoice || hasContent || isLive || turnStarting;

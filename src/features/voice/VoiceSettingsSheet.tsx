@@ -62,7 +62,11 @@ export function VoiceSettingsSheet({
         <div className="px-4 pt-3.5 pb-2 text-[12px] font-medium text-droid-text-secondary">
           Voice
         </div>
-        <div className="max-h-[260px] overflow-y-auto px-1.5 pb-1.5">
+        <div
+          role="radiogroup"
+          aria-label="Voice"
+          className="max-h-[260px] overflow-y-auto px-1.5 pb-1.5"
+        >
           <VoiceRow
             label={defaultVoice ? `Default · ${capitalize(defaultVoice)}` : 'Harness default'}
             selected={selectedVoice === HARNESS_DEFAULT}
