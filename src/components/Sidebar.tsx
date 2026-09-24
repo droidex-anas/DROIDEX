@@ -35,7 +35,7 @@ import { prKind } from '../lib/github';
 import { sessionAttention } from '../lib/sessionAttention';
 import type { SessionSummary } from '../types/bridge';
 import { sessionResumeId } from '../features/providers/providerIdentity';
-import { projectThreadIds } from '../lib/projectThreads';
+import { projectsAnswered, projectThreadIds } from '../lib/projectThreads';
 import { SidebarAppUpdateButton } from './SidebarAppUpdateButton';
 import { SidebarNavigation } from './SidebarNavigation';
 
@@ -98,10 +98,9 @@ export default function Sidebar({
     (current) => projectThreadIds(current.projects),
     (a, b) => a.size === b.size && [...a].every((id) => b.has(id)),
   );
-  // Until the project graph has been answered for, a thread cannot be told from
-  // an ordinary chat — and drawing the list first would show threads that then
-  // vanish. A runtime that cannot answer counts as having answered.
-  const projectsKnown = useStoreSelector((current) => current.projectsLoaded);
+  // Until the project graph is known, a thread cannot be told from an ordinary
+  // chat, and drawing the list first would show threads that then vanish.
+  const projectsKnown = useStoreSelector(projectsAnswered);
   // Counting what the list cannot show would leave unread-only empty with a
   // badge still on it; a thread's unread belongs to Projects, and until the
   // graph is known a thread still looks like a chat.
