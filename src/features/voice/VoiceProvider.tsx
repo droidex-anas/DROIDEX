@@ -1,5 +1,7 @@
 import {
   createContext,
+  lazy,
+  Suspense,
   useCallback,
   useContext,
   useEffect,
@@ -12,6 +14,12 @@ import { shallowEqual, useStoreApi, useStoreSelector, type AppState } from '../.
 import { useVoice, type Voice } from './useVoice';
 import { canUseVoice } from './voiceAvailability';
 import { playVoiceChime } from './voiceChime';
+
+// The bar only exists while a conversation is held away from its chat, so it
+// loads then rather than sitting in every window's first bundle.
+const VoiceMiniBar = lazy(() =>
+  import('./VoiceMiniBar').then((m) => ({ default: m.VoiceMiniBar })),
+);
 
 export interface VoiceContextValue extends Voice {
   /** The chat the conversation belongs to, or null while none is running. */
@@ -35,6 +43,10 @@ const VoiceContext = createContext<VoiceContextValue | null>(null);
  *
  * Exactly one conversation exists at a time. Starting another hands the
  * connection to the new chat, which ends the first one cleanly on the way.
+ *
+ * The mini bar is mounted here too: it belongs to the conversation rather than
+ * to any one screen, so it stays in front of settings, automations and every
+ * other view the user leaves the chat for.
  */
 export function VoiceProvider({ children }: { children: ReactNode }) {
   const store = useStoreApi();
@@ -94,7 +106,16 @@ export function VoiceProvider({ children }: { children: ReactNode }) {
     [hangUp, onScreen, openOn, owner, voice],
   );
 
-  return <VoiceContext.Provider value={value}>{children}</VoiceContext.Provider>;
+  return (
+    <VoiceContext.Provider value={value}>
+      {children}
+      {value.view === 'mini' && owner !== null && (
+        <Suspense fallback={null}>
+          <VoiceMiniBar voice={value} appSessionId={owner} />
+        </Suspense>
+      )}
+    </VoiceContext.Provider>
+  );
 }
 
 export function useVoiceContext(): VoiceContextValue {
