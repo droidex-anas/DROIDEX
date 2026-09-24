@@ -39,7 +39,8 @@ import {
 } from '../lib/desktop';
 import { pathsInSequence, useImageAttachments } from '../hooks/useImageAttachments';
 import { useFileAttachments } from '../hooks/useFileAttachments';
-import { useVoice } from '../features/voice/useVoice';
+import { useVoiceContext } from '../features/voice/VoiceProvider';
+import { canUseVoice } from '../features/voice/voiceAvailability';
 import { useComposerFileDrop } from '../hooks/useComposerFileDrop';
 import { ImageChip } from './composer/ImageChip';
 import { FileChip } from './composer/FileChip';
@@ -255,8 +256,6 @@ export default function PromptInput({
       draftProvider: current.draftProvider,
       providerStatuses: current.providerStatuses,
       imagePasteQuality: current.imagePasteQuality,
-      defaultVoice: current.defaultVoice,
-      narrationMode: current.narrationMode,
       lastCreatedSessionRequest: current.lastCreatedSessionRequest,
       liveEnterBehavior: current.liveEnterBehavior,
       missionControlMode: current.missionControlMode,
@@ -1595,13 +1594,12 @@ export default function PromptInput({
     attachedFiles.length > 0 ||
     fileAttachments.files.length > 0 ||
     imageAttachments.images.length > 0;
-  // The action slot morphs between voice and send: a draft with content owns
-  // the stage, but a live or starting turn keeps stop/send reachable even on
-  // an empty draft. With voice off, send is always on stage.
-  const voice = useVoice(activeSession?.appSessionId ?? null, composerProvider, {
-    voice: state.defaultVoice || undefined,
-    narration: state.narrationMode,
-  });
+  // The app's one conversation, which may belong to another chat entirely. The
+  // orb is offered only where this chat's harness can hold a conversation and
+  // none is running anywhere; the chat that owns one gets its controls instead.
+  const voice = useVoiceContext();
+  const voiceHere = voice.view === 'dock';
+  const canStartVoice = canUseVoice(composerProvider) && voice.view === 'off';
   // A chat started by voice has no prompt to create it with, so the orb creates
   // the chat first and opens the conversation once its session exists.
   const voiceAwaitingSession = useRef(false);
@@ -1611,7 +1609,7 @@ export default function PromptInput({
   // spoken one.
   const startVoice = () => {
     if (activeSession) {
-      voice.open();
+      voice.openOn(activeSession.appSessionId);
       return;
     }
     if (voiceAwaitingSession.current) return;
@@ -1648,10 +1646,10 @@ export default function PromptInput({
   useEffect(() => {
     if (!voiceAwaitingSession.current || !activeSession) return;
     voiceAwaitingSession.current = false;
-    voice.open();
+    voice.openOn(activeSession.appSessionId);
   }, [activeSession, voice]);
 
-  const showSendAction = !voice.available || hasContent || isLive || turnStarting;
+  const showSendAction = !canStartVoice || hasContent || isLive || turnStarting;
   // The hint's host swaps (send, stop, spinner) as a turn starts and ends; clear
   // the state with it so the hint never reopens without a hover or focus.
   useEffect(() => {
@@ -1753,7 +1751,7 @@ export default function PromptInput({
 
         <ComposerDock />
 
-        {voice.view === 'dock' && (
+        {voiceHere && (
           <Suspense fallback={null}>
             <VoiceOrbDock voice={voice} />
           </Suspense>
@@ -2046,11 +2044,11 @@ export default function PromptInput({
               </div>
 
               <div ref={scheduleAnchorRef} className="shrink-0">
-                {voice.view === 'dock' ? (
+                {voiceHere ? (
                   <Suspense fallback={null}>
                     <VoiceComposerControls voice={voice} />
                   </Suspense>
-                ) : voice.available ? (
+                ) : canStartVoice ? (
                   <Suspense fallback={sendButton}>
                     <VoiceSendSlot showSend={showSendAction} onVoice={startVoice}>
                       {sendButton}

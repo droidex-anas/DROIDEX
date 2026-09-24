@@ -1,14 +1,17 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import type { ProviderKind, VoiceNarration } from '../../types/bridge';
-import { canUseVoice } from './voiceAvailability';
+import type { VoiceNarration } from '../../types/bridge';
 import { useVoiceSession, type VoiceSession } from './useVoiceSession';
 
-/** Where the conversation is shown: nowhere, the full window, or over the composer. */
-export type VoiceView = 'off' | 'full' | 'dock';
+/**
+ * Where the conversation is shown: nowhere, the full window, over the composer
+ * of the chat it belongs to, or out of the way while another chat is read.
+ */
+export type VoiceView = 'off' | 'full' | 'dock' | 'mini';
+
+/** Where the conversation puts itself. `mini` is this plus the chat on screen. */
+type VoicePlacement = 'off' | 'full' | 'dock';
 
 export interface Voice {
-  /** True where the chat's harness can hold a conversation at all. */
-  available: boolean;
   view: VoiceView;
   session: VoiceSession;
   /** Opens the full surface and connects. */
@@ -22,41 +25,45 @@ export interface Voice {
 }
 
 /**
- * Voice for the chat the composer is pointing at: the connection plus the two
- * surfaces it can wear. The view follows the conversation — it opens full, and
- * it closes itself when the conversation ends for any reason, including a
- * failure — so no surface is left hanging over a chat that is not talking.
+ * One voice conversation and the surfaces it can wear: the connection for the
+ * chat that started it, plus where that conversation is currently shown. The
+ * view follows the conversation — it opens full, and it closes itself when the
+ * conversation ends for any reason, including a failure — so no surface is left
+ * hanging over a chat that is not talking.
+ *
+ * Reading another chat does not end anything: the conversation keeps running
+ * and its view reads `mini` until the chat it belongs to is back on screen.
  *
  * The voice itself is chosen when a conversation opens, so changing it while
  * one is running reconnects: the surface stays, and the new voice takes over.
  */
 export function useVoice(
   appSessionId: string | null,
-  provider: ProviderKind | null | undefined,
   preferences: { voice?: string; narration: VoiceNarration },
+  onScreen: boolean,
 ): Voice {
   const session = useVoiceSession(appSessionId, preferences.voice, preferences.narration);
-  const [view, setView] = useState<VoiceView>('off');
+  const [placement, setPlacement] = useState<VoicePlacement>('off');
   const [reconnecting, setReconnecting] = useState(false);
   const { status, start, stop } = session;
 
   const open = useCallback(() => {
-    setView('full');
+    setPlacement('full');
     start();
   }, [start]);
 
   const close = useCallback(() => {
     setReconnecting(false);
-    setView('off');
+    setPlacement('off');
     stop();
   }, [stop]);
 
   const minimize = useCallback(() => {
-    setView((current) => (current === 'off' ? current : 'dock'));
+    setPlacement((current) => (current === 'off' ? current : 'dock'));
   }, []);
 
   const expand = useCallback(() => {
-    setView((current) => (current === 'off' ? current : 'full'));
+    setPlacement((current) => (current === 'off' ? current : 'full'));
   }, []);
 
   // A voice is chosen when a conversation opens, so taking a new one means
@@ -68,11 +75,11 @@ export function useVoice(
   }, [status, stop]);
 
   // A conversation that ends on its own (the provider closed it, the mic was
-  // refused, the chat was switched) takes its surface with it. A reconnect
-  // passes through the same idle state and keeps the surface.
+  // refused) takes its surface with it. A reconnect passes through the same
+  // idle state and keeps the surface.
   useEffect(() => {
     if (reconnecting) return;
-    if (status === 'idle' || status === 'closed') setView('off');
+    if (status === 'idle' || status === 'closed') setPlacement('off');
   }, [reconnecting, status]);
 
   useEffect(() => {
@@ -84,14 +91,13 @@ export function useVoice(
   // The voices are per harness, and the list only answers once a chat is live.
   const asked = useRef<string | null>(null);
   useEffect(() => {
-    if (!appSessionId || view === 'off' || asked.current === appSessionId) return;
+    if (!appSessionId || placement === 'off' || asked.current === appSessionId) return;
     asked.current = appSessionId;
     session.refreshVoices();
-  }, [appSessionId, session, view]);
+  }, [appSessionId, placement, session]);
 
   return {
-    available: canUseVoice(provider),
-    view,
+    view: placement === 'dock' && !onScreen ? 'mini' : placement,
     session,
     open,
     minimize,

@@ -15,7 +15,10 @@ import { voiceSessionOf, type VoiceStatus, type VoiceTranscriptLine } from './vo
  * chat's thread as an ordinary turn.
  *
  * The hook owns the attempt. Everything it creates is torn down when the user
- * stops, when the chat changes, when the connection fails, and on unmount.
+ * stops, when the conversation is handed to another chat, when the connection
+ * fails, and on unmount. Reading a different chat is none of those: the chat
+ * this hook is given is the one the conversation belongs to, not the one on
+ * screen, so a conversation keeps running while the user works elsewhere.
  */
 
 // Trickle candidates can take a while behind some networks, and the offer is
@@ -219,8 +222,8 @@ export function useVoiceSession(
     });
   }, [appSessionId, dispatch, mic.stream, narration, voice, wanted]);
 
-  // A chat switch or an unmount ends the conversation; nothing else runs this,
-  // so a live attempt survives unrelated re-renders.
+  // Handing the conversation to another chat, or an unmount, ends it; nothing
+  // else runs this, so a live attempt survives unrelated re-renders.
   useEffect(() => {
     return () => {
       const held = negotiationRef.current;
