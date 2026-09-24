@@ -1,3 +1,4 @@
+import { createRemoteRequests } from './remote/requests.js';
 import {
   configureAutomationManager,
   type AutomationManager,
@@ -20,6 +21,7 @@ const server = startBridgeServer({
   token: TOKEN,
   assetToken: ASSET_TOKEN,
   onCommand: async (command) => {
+    if (await remoteRequests(command)) return;
     if (automationManager && (await automationManager.handleBridgeCommand(command))) return;
     await manager.handle(command);
   },
@@ -49,6 +51,8 @@ const manager = new SessionManager(
     },
   },
 );
+
+const remoteRequests = createRemoteRequests(manager, (event) => server.broadcast(event));
 
 automationManager = configureAutomationManager({
   dataDir: droidexUserDataDir(),

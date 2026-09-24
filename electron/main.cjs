@@ -100,6 +100,11 @@ const sidecarSupervisor = createSidecarSupervisor({
 // subscribe() replays the current status synchronously, so mainWindow must
 // already be initialized when this runs.
 let mainWindow = null;
+const remoteControl = require('./remote/control.cjs').createRemoteControl({
+  app, Menu, dialog, clipboard, shell,
+  supervisor: sidecarSupervisor,
+  getMainWindow: () => mainWindow,
+});
 sidecarSupervisor.subscribe((status) => {
   if (mainWindow && !mainWindow.isDestroyed()) {
     mainWindow.webContents.send('sidecar-status', status);
@@ -205,6 +210,7 @@ app.whenReady().then(async () => {
     shell,
     logError: (message) => console.error('[menu] %s', message),
   });
+  remoteControl.installMenu();
   registerIpc();
   registerLocalImageProtocol();
   registerFaviconProtocol();

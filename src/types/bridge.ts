@@ -629,6 +629,17 @@ export type PermissionOutcome =
 
 // ── Frontend -> Sidecar ──────────────────────────────────────────────
 export type ClientCommand =
+  | {
+      type: 'remote.request';
+      requestId: string;
+      op: 'list' | 'history' | 'send' | 'stop';
+      sessionId?: string;
+      cursor?: string;
+      text?: string;
+      epoch?: string;
+      commandId?: string;
+      expiresAt?: number;
+    }
   | AutomationBridgeCommand
   | McpClientCommand
   | { type: 'connect'; apiKey?: string }
@@ -881,6 +892,7 @@ export interface ChildErrorEvent {
 
 // ── Sidecar -> Frontend ──────────────────────────────────────────────
 export type ServerEvent =
+  | { type: 'remote.reply'; requestId: string; ok: boolean; value?: unknown; error?: string }
   | McpServerEvent
   | AutomationBridgeEvent
   | { type: 'connection'; status: 'connected' | 'error'; message?: string }

@@ -712,6 +712,19 @@ export class SessionManager {
     }
   }
 
+  // Read-only remote queries must not change the desktop sidebar filter or
+  // fan history replacements out to unrelated desktop/browser views.
+  async remoteSessions(): Promise<SessionSummary[]> {
+    await this.sessionFiles.whenBootReconciled();
+    await this.adoption.adopt();
+    return this.registry.listSummaries().sessions;
+  }
+
+  async remoteHistory(appSessionId: string, cursor?: string) {
+    await this.sessionFiles.whenBootReconciled();
+    return this.timeline.remoteHistory(appSessionId, cursor);
+  }
+
   async runtimeSnapshot(): Promise<BridgeRuntimeSnapshot> {
     await this.adoption.adopt();
     const persistence = this.history.persistenceRecovery?.() ?? {

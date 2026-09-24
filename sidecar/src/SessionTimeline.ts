@@ -455,6 +455,24 @@ export class SessionTimeline {
     });
   }
 
+  // Same canonical loader as the desktop, with a private reply. Flush the
+  // local transcript writer before taking the snapshot/live-stream boundary.
+  remoteHistory(appSessionId: string, cursor?: string): SessionHistoryPage {
+    const summary = this.dependencies.registry.resolveSummary(appSessionId);
+    if (!summary || summary.appSessionId !== appSessionId) throw new Error('Session is unavailable.');
+    this.streaming.flushSource(appSessionId, appSessionId);
+    this.transcripts.flush(appSessionId);
+    const history = summary.sessionPurpose === 'mission-control'
+      ? this.loaders.hydrateMission(appSessionId, historyWindowOptions(cursor, 80))
+      : this.loadStandard(appSessionId, summary.providerSessionId ?? appSessionId, cursor, 80);
+    return {
+      appSessionId, progress: [],
+      transcripts: history.transcripts.map((event) => ({ ...event, appSessionId })),
+      mode: cursor ? 'prepend' : 'replace',
+      ...(history.olderCursor ? { olderCursor: history.olderCursor } : {}),
+    };
+  }
+
   private loadStandard(
     appSessionId: string,
     providerSessionId: string,
