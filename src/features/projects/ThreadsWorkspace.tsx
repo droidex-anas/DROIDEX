@@ -1,15 +1,15 @@
-import { useEffect, useState, type ReactNode } from 'react';
-import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
+import { useReducedMotion } from 'framer-motion';
 import { shallowEqual, useStoreDispatch, useStoreSelector } from '../../hooks/useStore';
-import { INLINE_CARD_DURATION_S, INLINE_CARD_EASE } from '../../components/inlineCardMotion';
 import { workspaceName } from '../../lib/workspaces';
 import type { UtilityTab } from '../../lib/utilityPanel';
 import type { TranscriptEvent } from '../../types/bridge';
+import { PaneTransition } from './PaneTransition';
 import { ThreadDetail } from './ThreadDetail';
 import { ThreadList } from './ThreadList';
 import type { ThreadRow } from './threadBoard';
 import type { ProjectStep } from './types';
 import { entryForSession, useProjectBoard } from './useProjectBoard';
+import { useRelativeTimeNow } from './useRelativeTimeNow';
 
 /* The Threads tab of the utility panel: every thread this chat runs, grouped by
    what it needs, and the one thread the user opened. One level deep, like the
@@ -22,7 +22,7 @@ export function ThreadsWorkspace({ tab }: { tab: UtilityTab }) {
   const dispatch = useStoreDispatch();
   const reduceMotion = useReducedMotion() === true;
   const { entries } = useProjectBoard();
-  const [now, setNow] = useState(() => Date.now());
+  const now = useRelativeTimeNow();
   const { threadId } = tab;
   const state = useStoreSelector((current) => {
     const session = current.activeAppSessionId
@@ -41,16 +41,6 @@ export function ThreadsWorkspace({ tab }: { tab: UtilityTab }) {
   const entry = entryForSession(entries, session?.appSessionId);
   const project = entry?.project;
   const rows = entry?.rows ?? EMPTY_ROWS;
-
-  // Relative times stay honest without a per-second render of the whole panel.
-  useEffect(() => {
-    const timer = setInterval(() => {
-      setNow(Date.now());
-    }, 30_000);
-    return () => {
-      clearInterval(timer);
-    };
-  }, []);
 
   const open = rows.find((row) => row.appSessionId === threadId);
   const showThread = (threadId: string | null) => {
@@ -87,39 +77,6 @@ export function ThreadsWorkspace({ tab }: { tab: UtilityTab }) {
         )}
       </PaneTransition>
     </div>
-  );
-}
-
-/* Going into a thread and coming back is a lateral move, so the two views slide
-   past each other the way the Subagents pane's do. */
-function PaneTransition({
-  open,
-  reduceMotion,
-  viewKey,
-  children,
-}: {
-  open: boolean;
-  reduceMotion: boolean;
-  viewKey: string | undefined;
-  children: ReactNode;
-}) {
-  const travel = reduceMotion ? 0 : 12;
-  return (
-    <AnimatePresence initial={false} mode="wait">
-      <motion.div
-        key={open ? `detail:${viewKey ?? ''}` : 'list'}
-        initial={{ opacity: 0, x: open ? travel : -travel }}
-        animate={{ opacity: 1, x: 0 }}
-        exit={{ opacity: 0, x: open ? -travel : travel }}
-        transition={{
-          duration: reduceMotion ? 0 : INLINE_CARD_DURATION_S,
-          ...(reduceMotion ? {} : { ease: INLINE_CARD_EASE }),
-        }}
-        className="flex min-h-0 flex-1 flex-col"
-      >
-        {children}
-      </motion.div>
-    </AnimatePresence>
   );
 }
 
