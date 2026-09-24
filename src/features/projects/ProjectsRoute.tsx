@@ -6,13 +6,11 @@ import { useStoreDispatch, useStoreSelector } from '../../hooks/useStore';
 import { INLINE_CARD_DURATION_S, INLINE_CARD_EASE } from '../../components/inlineCardMotion';
 import { formatRelativeTime } from '../../lib/time';
 import { toast } from '../../lib/toast';
-import { workspaceName } from '../../lib/workspaces';
+import { resolveNewChatCwd, workspaceName } from '../../lib/workspaces';
 import { createProject, resumeProject } from './client';
 import { NewProjectForm } from './NewProjectForm';
 import { ProjectThreads } from './ProjectThreads';
 import { projectLead } from './threadBoard';
-import { resolveNewChatCwd } from '../../lib/workspaces';
-import { projectSession } from './sessions';
 import { useProjectBoard, type ProjectBoardEntry } from './useProjectBoard';
 import type { ThreadInput } from './types';
 
@@ -41,7 +39,10 @@ export function ProjectsRoute() {
   // A new project follows the workspace a new chat would, so starting one from
   // the Projects tab lands in the folder the user is already working in.
   const cwd = useStoreSelector((state) =>
-    resolveNewChatCwd(projectSession(state.sessions, state.activeAppSessionId), state.draftChat),
+    resolveNewChatCwd(
+      state.activeAppSessionId ? state.sessions[state.activeAppSessionId] : undefined,
+      state.draftChat,
+    ),
   );
   const open = entries.find((entry) => entry.project.id === openId);
 
