@@ -8,8 +8,8 @@ import type { ThreadRow as ThreadRowModel } from './threadBoard';
 
 /* A thread row reads like a chat row in the inbox, because a thread is a chat:
    the same activity mark, the same title-over-detail, the same trailing model
-   mark and time. What differs is nesting — a thread a thread started sits
-   indented under it — and that the whole row lives inside Projects. */
+   mark and time. What differs is that a thread another thread started is
+   indented one step per level, and that the whole row lives inside Projects. */
 
 export function ThreadRow({
   row,
