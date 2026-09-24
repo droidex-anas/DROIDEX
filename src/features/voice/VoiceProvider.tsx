@@ -9,7 +9,7 @@ import {
   useState,
   type ReactNode,
 } from 'react';
-import { useReducedMotion } from 'framer-motion';
+import { AnimatePresence } from 'framer-motion';
 import { shallowEqual, useStoreApi, useStoreSelector, type AppState } from '../../hooks/useStore';
 import { useVoice, type Voice } from './useVoice';
 import { canUseVoice } from './voiceAvailability';
@@ -19,6 +19,12 @@ import { playVoiceChime } from './voiceChime';
 // loads then rather than sitting in every window's first bundle.
 const VoiceMiniBar = lazy(() =>
   import('./VoiceMiniBar').then((m) => ({ default: m.VoiceMiniBar })),
+);
+
+// The full surface belongs to the conversation rather than to the composer that
+// opened it, so it stays up while the user moves around the app.
+const VoiceSurface = lazy(() =>
+  import('./VoiceSurface').then((m) => ({ default: m.VoiceSurface })),
 );
 
 export interface VoiceContextValue extends Voice {
@@ -51,8 +57,7 @@ const VoiceContext = createContext<VoiceContextValue | null>(null);
 export function VoiceProvider({ children }: { children: ReactNode }) {
   const store = useStoreApi();
   // Opening and hanging up are marked by a chime, so the press is answered
-  // before the connection can be. Reduced motion keeps it silent.
-  const quiet = useReducedMotion() ?? false;
+  // before the connection can be.
   const activeAppSessionId = useStoreSelector((state: AppState) => state.activeAppSessionId);
   const preferences = useStoreSelector(
     (state: AppState) => ({
@@ -75,11 +80,11 @@ export function VoiceProvider({ children }: { children: ReactNode }) {
     (appSessionId: string) => {
       const { sessions } = store.getState();
       if (!(appSessionId in sessions) || !canUseVoice(sessions[appSessionId].provider)) return;
-      playVoiceChime('start', quiet);
+      playVoiceChime('start');
       setOwner(appSessionId);
       setOpening(appSessionId);
     },
-    [quiet, store],
+    [store],
   );
 
   useEffect(() => {
@@ -90,9 +95,9 @@ export function VoiceProvider({ children }: { children: ReactNode }) {
 
   const { close } = voice;
   const hangUp = useCallback(() => {
-    playVoiceChime('end', quiet);
+    playVoiceChime('end');
     close();
-  }, [close, quiet]);
+  }, [close]);
 
   // Whatever ended the conversation — this hang-up, the provider, a failed
   // connection — the chat stops owning one.
@@ -109,11 +114,18 @@ export function VoiceProvider({ children }: { children: ReactNode }) {
   return (
     <VoiceContext.Provider value={value}>
       {children}
-      {value.view === 'mini' && owner !== null && (
-        <Suspense fallback={null}>
-          <VoiceMiniBar voice={value} appSessionId={owner} />
-        </Suspense>
-      )}
+      <AnimatePresence>
+        {value.view === 'full' && (
+          <Suspense fallback={null}>
+            <VoiceSurface key="voice-surface" voice={value} />
+          </Suspense>
+        )}
+        {value.view === 'mini' && owner !== null && (
+          <Suspense fallback={null}>
+            <VoiceMiniBar key="voice-mini" voice={value} appSessionId={owner} />
+          </Suspense>
+        )}
+      </AnimatePresence>
     </VoiceContext.Provider>
   );
 }

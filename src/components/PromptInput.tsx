@@ -152,9 +152,6 @@ const VoiceComposerControls = lazy(() =>
     default: m.VoiceComposerControls,
   })),
 );
-const VoiceSurface = lazy(() =>
-  import('../features/voice/VoiceSurface').then((m) => ({ default: m.VoiceSurface })),
-);
 
 // Stable identity for a closed menu, so no trigger means no new object.
 const EMPTY_COMPOSER_MENU: ComposerMenuModel = { entries: [], rows: [] };
@@ -1625,6 +1622,10 @@ export default function PromptInput({
         voiceAwaitingSession.current = false;
         return;
       }
+      // A chat only takes focus when the renderer is waiting for it, and the
+      // conversation can only open on the chat that is on screen. There is no
+      // prompt to wait for here, so the wait is registered empty.
+      dispatch({ type: 'SET_PENDING_COMPOSE', clientRef, text: '', skills: [], files: [] });
       createSession({
         clientRef,
         cwd: preparation.path,
@@ -2126,11 +2127,6 @@ export default function PromptInput({
             />
           </Suspense>
         )}
-      {voice.view === 'full' && (
-        <Suspense fallback={null}>
-          <VoiceSurface voice={voice} />
-        </Suspense>
-      )}
     </div>
   );
 }

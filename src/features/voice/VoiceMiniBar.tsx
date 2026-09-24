@@ -141,6 +141,7 @@ export function VoiceMiniBar({ voice, appSessionId }: { voice: Voice; appSession
       }}
       initial={reducedMotion ? { opacity: 0 } : { opacity: 0, scale: 0.92 }}
       animate={{ opacity: 1, scale: 1 }}
+      exit={reducedMotion ? { opacity: 0 } : { opacity: 0, scale: 0.92 }}
       transition={{ duration: 0.22, ease: [0.16, 1, 0.3, 1] }}
       style={{ x, y, top: EDGE_MARGIN_PX, right: EDGE_MARGIN_PX }}
       className="fixed z-[1150] cursor-grab active:cursor-grabbing"

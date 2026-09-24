@@ -5,8 +5,9 @@
  * plays. The pair is deliberately mirrored — opening rises, ending falls — so
  * the ear knows which happened without looking.
  *
- * A device with no audio output, a blocked AudioContext, or a user who asked
- * for less motion gets silence instead of an error.
+ * A device with no audio output or a blocked AudioContext gets silence instead
+ * of an error. Reduced motion does not silence these: they are the sound of an
+ * audio feature starting and stopping, not decoration.
  */
 
 type Chime = 'start' | 'end';
@@ -46,8 +47,7 @@ function tone(ctx: AudioContext, frequency: number, startAt: number): void {
   oscillator.stop(startAt + NOTE_MS / 1000 + 0.02);
 }
 
-export function playVoiceChime(chime: Chime, reducedMotion = false): void {
-  if (reducedMotion) return;
+export function playVoiceChime(chime: Chime): void {
   const ctx = audioContext();
   if (!ctx) return;
   // A context created before any gesture starts suspended; a click is what

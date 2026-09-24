@@ -74,9 +74,10 @@ function VoiceSurfaceDialog({ voice }: { voice: Voice }) {
       aria-modal="true"
       aria-label="Voice mode"
       tabIndex={-1}
-      initial={{ opacity: 0 }}
-      animate={{ opacity: 1 }}
-      transition={{ duration: reducedMotion ? 0 : 0.2, ease: [0.16, 1, 0.3, 1] }}
+      initial={reducedMotion ? { opacity: 0 } : { opacity: 0, scale: 1.01 }}
+      animate={{ opacity: 1, scale: 1 }}
+      exit={reducedMotion ? { opacity: 0 } : { opacity: 0, scale: 1.01 }}
+      transition={{ duration: reducedMotion ? 0 : 0.22, ease: [0.16, 1, 0.3, 1] }}
       className="fixed inset-0 z-[1200] flex flex-col bg-droid-bg text-droid-text"
     >
       {/* The window controls sit over this row on macOS, so the label starts
