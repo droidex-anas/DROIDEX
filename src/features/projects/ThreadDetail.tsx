@@ -22,7 +22,7 @@ export function ThreadDetail({
   onOpenInChat,
 }: {
   row: ThreadRow;
-  transcript: readonly TranscriptEvent[] | undefined;
+  transcript: TranscriptEvent[] | undefined;
   /** Why this thread's history could not be read, when it could not. */
   historyError: string;
   toolActivity: ToolActivitySettings;
@@ -30,7 +30,7 @@ export function ThreadDetail({
   onOpenInChat: () => void;
 }) {
   const scrollRef = useRef<HTMLDivElement>(null);
-  const events = useMemo(() => [...(transcript ?? EMPTY)], [transcript]);
+  const events = transcript ?? EMPTY;
   const items = useMemo(() => buildFeed(events, { childSessionCards: true }), [events]);
 
   // The thread may never have been opened in this window; its history loads the
