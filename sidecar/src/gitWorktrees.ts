@@ -1,4 +1,5 @@
 import { execFile } from 'node:child_process';
+import { existsSync } from 'node:fs';
 import {
   appendFile,
   lstat,
@@ -50,8 +51,17 @@ export async function resolveCommit(root: string, base?: string): Promise<string
   return await git(root, ['rev-parse', '--verify', revision]).catch(() => '');
 }
 
-export function worktreePath(root: string, name: string): string {
+function worktreePath(root: string, name: string): string {
   return join(root, '.worktrees', name, basename(root));
+}
+
+/** The worktree path for this name, numbered past any checkout already there. */
+export function freeWorktreePath(root: string, name: string): string {
+  let target = worktreePath(root, name);
+  for (let suffix = 2; existsSync(target); suffix += 1) {
+    target = worktreePath(root, `${name}-${String(suffix)}`);
+  }
+  return target;
 }
 
 export function sanitizeSegment(value: string): string {
