@@ -13,12 +13,11 @@ const cache = new WeakMap<readonly TranscriptEvent[], ActivityDigest | null>();
 export function useThreadDigests(
   appSessionIds: readonly string[],
 ): Partial<Record<string, ActivityDigest>> {
-  const key = appSessionIds.join(' ');
   return useStoreSelector(
     (state) => {
       const digests: Record<string, ActivityDigest> = {};
       const transcripts: Partial<Record<string, readonly TranscriptEvent[]>> = state.transcripts;
-      for (const id of key ? key.split(' ') : []) {
+      for (const id of appSessionIds) {
         const events = transcripts[id];
         if (!events) continue;
         const digest = cache.get(events) ?? digestTranscript(events);
