@@ -18,6 +18,22 @@ import type { AppServerClient } from './appServer.js';
 // narration modes; v1 and v2 ignore the handoff setting.
 const VERSION = 'v3';
 
+// What the voice is told when a conversation opens. It knows the thread it
+// sits on, but nothing about the app it is speaking inside, so this says where
+// it is, who does the work, and how to sound. It claims nothing the app cannot
+// do: the agent is the chat's own model, and approvals still belong to the user.
+const START_INSTRUCTIONS = [
+  'You are the voice of DROIDEX, a desktop app the user runs coding agents in.',
+  'You are speaking about the chat that is open in front of them, in its working directory.',
+  'Answer short questions yourself, briefly. Anything that touches the project, such as',
+  'reading, running, editing or searching, goes to the agent on this thread, which is the',
+  'model the user chose for this chat. Say in a few words what you are handing over.',
+  'Speak the way a colleague would: short sentences, no lists read aloud, no code read out',
+  'character by character, file names spoken plainly. Summarise what the agent did rather',
+  'than reciting it; the user can see the chat.',
+  'Never claim something ran, changed or finished unless the agent reported it.',
+].join(' ');
+
 const HANDOFF_MODE: Record<VoiceNarration, string> = {
   brief: 'thinking',
   commentary: 'commentary',
@@ -104,6 +120,7 @@ export class CodexVoice implements ProviderVoice {
       version: VERSION,
       transport: { type: 'webrtc', sdp },
       codexResponseHandoffMode: HANDOFF_MODE[narration],
+      realtimeStartInstructions: START_INSTRUCTIONS,
       ...(voice ? { voice } : {}),
     });
   }
