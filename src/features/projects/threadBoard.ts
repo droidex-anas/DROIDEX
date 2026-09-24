@@ -48,9 +48,9 @@ export function projectLead(project: ProjectView): ProjectThread | undefined {
 /* In tree order: each thread is followed by the threads it started, and every
    level lists its newest first. Grouping keeps that order, so an indented row
    sits under the thread that started it whenever both land in one group. */
-export function threadRows(project: ProjectView | undefined, signals: ThreadSignals): ThreadRow[] {
-  const lead = project && projectLead(project);
-  if (!project || !lead) return [];
+export function threadRows(project: ProjectView, signals: ThreadSignals): ThreadRow[] {
+  const lead = projectLead(project);
+  if (!lead) return [];
   const rows: ThreadRow[] = [];
   const addThreadsOf = (ownerAppSessionId: string, depth: number) => {
     const started = project.threads

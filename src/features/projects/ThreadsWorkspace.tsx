@@ -1,17 +1,14 @@
-import { useEffect, useMemo, useState, type ReactNode } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 import { shallowEqual, useStoreDispatch, useStoreSelector } from '../../hooks/useStore';
-import { useThreadDigests } from './useThreadDigests';
 import { INLINE_CARD_DURATION_S, INLINE_CARD_EASE } from '../../components/inlineCardMotion';
-import { sessionAttention } from '../../lib/sessionAttention';
 import { workspaceName } from '../../lib/workspaces';
 import type { UtilityTab } from '../../lib/utilityPanel';
-import { useProjects } from './client';
 import { ThreadDetail } from './ThreadDetail';
 import { ThreadList } from './ThreadList';
-import { projectForSession } from '../../lib/projectThreads';
-import { threadRows } from './threadBoard';
+import type { ThreadRow } from './threadBoard';
 import type { ProjectStep } from './types';
+import { entryForSession, useProjectBoard } from './useProjectBoard';
 
 /* The Threads tab of the utility panel: every thread this chat runs, grouped by
    what it needs, and the one thread the user opened. One level deep, like the
@@ -23,7 +20,7 @@ import type { ProjectStep } from './types';
 export function ThreadsWorkspace({ tab }: { tab: UtilityTab }) {
   const dispatch = useStoreDispatch();
   const reduceMotion = useReducedMotion() === true;
-  const snapshot = useProjects();
+  const { entries } = useProjectBoard();
   const [now, setNow] = useState(() => Date.now());
   const state = useStoreSelector((current) => {
     const session = current.activeAppSessionId
@@ -31,29 +28,15 @@ export function ThreadsWorkspace({ tab }: { tab: UtilityTab }) {
       : undefined;
     return {
       session,
-      sessions: current.sessions,
-      pendingPermissions: current.pendingPermissions,
-      pendingQuestions: current.pendingQuestions,
       transcripts: current.transcripts,
       sessionRestore: current.sessionRestore,
       toolActivity: current.toolActivity,
     };
   }, shallowEqual);
   const { session } = state;
-  const project = projectForSession(snapshot.projects, session?.appSessionId);
-  const digests = useThreadDigests(
-    project?.threads.map((thread) => thread.appSessionId) ?? EMPTY_IDS,
-  );
-
-  const rows = useMemo(
-    () =>
-      threadRows(project, {
-        sessions: state.sessions,
-        attention: (id) => sessionAttention(id, state.pendingPermissions, state.pendingQuestions),
-        digests,
-      }),
-    [project, state.sessions, state.pendingPermissions, state.pendingQuestions, digests],
-  );
+  const entry = entryForSession(entries, session?.appSessionId);
+  const project = entry?.project;
+  const rows = entry?.rows ?? EMPTY_ROWS;
 
   // Relative times stay honest without a per-second render of the whole panel.
   useEffect(() => {
@@ -137,7 +120,7 @@ function PaneTransition({
 }
 
 const EMPTY_PLAN: ProjectStep[] = [];
-const EMPTY_IDS: string[] = [];
+const EMPTY_ROWS: ThreadRow[] = [];
 
 function subtitle(title: string | undefined, cwd: string | undefined, count: number): string {
   const folder = cwd ? workspaceName(cwd) : '';

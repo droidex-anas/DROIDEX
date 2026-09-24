@@ -1,16 +1,13 @@
 import { useState } from 'react';
 import { ChevronRight } from '@droidex/icons';
-import { shallowEqual, useStoreDispatch, useStoreSelector } from '../../hooks/useStore';
-import { useThreadDigests } from './useThreadDigests';
-import { sessionAttention } from '../../lib/sessionAttention';
+import { useStoreDispatch } from '../../hooks/useStore';
 import { Caret, Expand } from '../../components/transcript/primitives';
 import { ActivityStatusGlyph } from '../../components/ActivityStatusGlyph';
 import { toolArgString } from '../../lib/tools';
 import type { TranscriptEvent } from '../../types/bridge';
-import { useProjects } from './client';
-import { projectForSession } from '../../lib/projectThreads';
-import { threadRows } from './threadBoard';
+import type { ThreadRow } from './threadBoard';
 import { spawnedThread } from './threadToolNames';
+import { entryForSession, useProjectBoard } from './useProjectBoard';
 
 /* A thread the chat started, shown in the chat the way a spawned child session
    is: one line in the conversation's own voice, expandable for the task it was
@@ -131,30 +128,14 @@ function SpawnDetail({
 }
 
 /** The row the Threads panel shows for this thread, so both read the same. */
-function useThreadRow(appSessionId: string | undefined) {
-  const snapshot = useProjects();
-  const state = useStoreSelector(
-    (current) => ({
-      activeAppSessionId: current.activeAppSessionId,
-      sessions: current.sessions,
-      pendingPermissions: current.pendingPermissions,
-      pendingQuestions: current.pendingQuestions,
-    }),
-    shallowEqual,
+function useThreadRow(appSessionId: string | undefined): ThreadRow | undefined {
+  const { entries } = useProjectBoard();
+  return entryForSession(entries, appSessionId)?.rows.find(
+    (row) => row.appSessionId === appSessionId,
   );
-  const digests = useThreadDigests(appSessionId ? [appSessionId] : EMPTY_IDS);
-  if (!appSessionId) return undefined;
-  const rows = threadRows(projectForSession(snapshot.projects, state.activeAppSessionId), {
-    sessions: state.sessions,
-    attention: (id) => sessionAttention(id, state.pendingPermissions, state.pendingQuestions),
-    digests,
-  });
-  return rows.find((item) => item.appSessionId === appSessionId);
 }
 
 function stringArg(call: TranscriptEvent, key: string): string | undefined {
   const value = toolArgString(call.toolArgs, key)?.trim();
   return value === '' ? undefined : value;
 }
-
-const EMPTY_IDS: string[] = [];
