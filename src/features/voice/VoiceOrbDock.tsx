@@ -1,6 +1,6 @@
 import { motion, useReducedMotion } from 'framer-motion';
 import { VoiceOrb } from './VoiceOrb';
-import { voiceStatusLabel } from './voiceStatus';
+import { voiceStatusIsLive, voiceStatusLabel } from './voiceStatus';
 import type { Voice } from './useVoice';
 
 /**
@@ -31,7 +31,13 @@ export function VoiceOrbDock({ voice }: { voice: Voice }) {
       >
         <VoiceOrb micStream={session.micStream} replyStream={session.replyStream} size={72} />
       </button>
-      <span className="text-[11px] text-droid-text-muted">
+      <span
+        className={`text-[11px] ${
+          voiceStatusIsLive(session.status, session.muted, session.micDenied, session.error)
+            ? 'shimmer-text font-medium'
+            : 'text-droid-text-muted'
+        }`}
+      >
         {voiceStatusLabel(session.status, session.muted, session.micDenied, session.error)}
       </span>
     </motion.div>

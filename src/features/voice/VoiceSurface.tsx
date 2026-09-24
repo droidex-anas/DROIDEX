@@ -9,7 +9,7 @@ import { SpokenMark } from '../../components/transcript/primitives';
 import { UserBubble } from '../../components/transcript/UserBubble';
 import { VoiceOrb } from './VoiceOrb';
 import { VoiceSettingsSheet } from './VoiceSettingsSheet';
-import { voiceStatusLabel } from './voiceStatus';
+import { voiceStatusIsLive, voiceStatusLabel } from './voiceStatus';
 import type { Voice } from './useVoice';
 
 /** Full-window voice surface, portalled like every overlay in the app. */
@@ -128,7 +128,14 @@ function VoiceSurfaceDialog({ voice }: { voice: Voice }) {
         >
           <VoiceOrb micStream={session.micStream} replyStream={session.replyStream} />
         </motion.div>
-        <p className="text-[13px] text-droid-text-muted" aria-live="polite">
+        <p
+          className={`text-[13px] ${
+            voiceStatusIsLive(session.status, session.muted, session.micDenied, session.error)
+              ? 'shimmer-text font-medium'
+              : 'text-droid-text-muted'
+          }`}
+          aria-live="polite"
+        >
           {voiceStatusLabel(session.status, session.muted, session.micDenied, session.error)}
         </p>
       </div>
