@@ -21,7 +21,6 @@ const pending = new Map<
    Keeping one copy means the chat list, the navigation and Projects can never
    disagree about what is running. */
 export function useProjects(): { projects: ProjectView[]; loading: boolean; error?: string } {
-  initialize();
   return useStoreSelector((state) => {
     const unreachable = state.connection === 'error' ? runtimeError(state.connectionError) : '';
     const error = state.projectsError || unreachable;
@@ -61,19 +60,15 @@ export async function resumeProject(projectId: string): Promise<void> {
   });
 }
 
+// App asks for the project list on every connection; this only listens for
+// the replies to its own commands.
 function initialize(): void {
   if (initialized) return;
   initialized = true;
   bridge.subscribe(handleEvent);
-  bridge.send({ type: 'projects.list' });
 }
 
 function handleEvent(event: ServerEvent): void {
-  if (event.type === 'connection' && event.status === 'connected') {
-    // A reconnect starts from the runtime's own snapshot, not a stale one.
-    bridge.send({ type: 'projects.list' });
-    return;
-  }
   if (event.type !== 'project.result') return;
   const waiter = pending.get(event.requestId);
   if (!waiter) return;
