@@ -13,6 +13,7 @@ import type {
   DroidProxyInstallPhase,
   DroidProxyProviderKey,
   DroidProxyProviderState,
+  DroidProxyStatus,
 } from '../types/bridge';
 import { ModelIcon, type Provider } from './ModelIcon';
 import { GroupLabel, SectionTitle, SettingRow } from './settingsKit';
@@ -78,6 +79,22 @@ function installLabel(install: DroidProxyInstallState): string {
   return `${base}…`;
 }
 
+const INSTALL_UNAVAILABLE_COPY: Record<
+  NonNullable<DroidProxyStatus['installUnavailable']>,
+  string
+> = {
+  'unsupported-platform': 'DroidProxy is a macOS app, so it cannot be installed here.',
+  'unsupported-arch':
+    'DroidProxy ships Apple Silicon builds only, so it cannot be installed on this Mac.',
+};
+
+function appDescription(status: DroidProxyStatus, installError: string | null): string {
+  if (status.appInstalled) return 'Installed. It serves your subscriptions on localhost:8317.';
+  if (status.installUnavailable) return INSTALL_UNAVAILABLE_COPY[status.installUnavailable];
+  if (installError) return `Install failed: ${installError} Try again, or use manual download.`;
+  return 'Not installed. One click installs and launches it; then connect below.';
+}
+
 function proxyDescription(status: { proxyRunning: boolean; backendRunning: boolean }): string {
   if (status.proxyRunning) return 'Running on localhost:8317.';
   if (status.backendRunning)
@@ -116,16 +133,7 @@ export function DroidProxySettings() {
       />
 
       <div className="rounded-xl border border-droid-border bg-droid-surface divide-y divide-droid-border mb-8">
-        <SettingRow
-          label="DroidProxy app"
-          description={
-            status.appInstalled
-              ? 'Installed. It serves your subscriptions on localhost:8317.'
-              : installError
-                ? `Install failed: ${installError} Try again, or use manual download.`
-                : 'Not installed. One click installs and launches it; then connect below.'
-          }
-        >
+        <SettingRow label="DroidProxy app" description={appDescription(status, installError)}>
           {status.appInstalled ? (
             <button
               onClick={() => {
@@ -149,6 +157,8 @@ export function DroidProxySettings() {
                 Cancel
               </button>
             </div>
+          ) : status.installUnavailable ? (
+            <span />
           ) : (
             <div className="flex shrink-0 items-center gap-2">
               <button

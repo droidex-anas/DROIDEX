@@ -11,6 +11,7 @@ import {
   parseSha256File,
   sha256FileHex,
 } from './droidProxyInstall.js';
+import { droidProxyInstallUnavailable } from './droidProxy.js';
 
 test('parseSha256File accepts coreutils and bare-hash formats, rejects junk', () => {
   const hash = '1ba65a863cd82cf3a122f78503edf6424a75453c39290df70aceefe1bd4a650e';
@@ -28,6 +29,13 @@ test('sha256FileHex matches the platform hash of file bytes', async () => {
   const bytes = Buffer.from('droidproxy-install-fixture');
   writeFileSync(path, bytes);
   assert.equal(await sha256FileHex(path), createHash('sha256').update(bytes).digest('hex'));
+});
+
+test('droidProxyInstallUnavailable gates on platform and architecture', () => {
+  assert.equal(droidProxyInstallUnavailable('darwin', 'arm64'), undefined);
+  assert.equal(droidProxyInstallUnavailable('darwin', 'x64'), 'unsupported-arch');
+  assert.equal(droidProxyInstallUnavailable('linux', 'arm64'), 'unsupported-platform');
+  assert.equal(droidProxyInstallUnavailable('win32', 'x64'), 'unsupported-platform');
 });
 
 async function withServer(

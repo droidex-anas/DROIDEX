@@ -561,6 +561,9 @@ function isDroidProxyStatus(value: unknown): boolean {
     typeof value.loginBinaryAvailable === 'boolean' &&
     (value.loginInProgress === undefined || isDroidProxyProviderKey(value.loginInProgress)) &&
     (value.installInProgress === undefined || isDroidProxyInstallPhase(value.installInProgress)) &&
+    (value.installUnavailable === undefined ||
+      value.installUnavailable === 'unsupported-platform' ||
+      value.installUnavailable === 'unsupported-arch') &&
     typeof value.metaContributorMode === 'boolean' &&
     typeof value.factoryModelCount === 'number' &&
     typeof value.factoryModelsInstalled === 'boolean' &&

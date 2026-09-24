@@ -508,6 +508,23 @@ test('accepts droidproxy reports and rejects unknown providers or shapes', () =>
     ),
     null,
   );
+  assert.ok(
+    serverWireMessage(
+      batch({
+        type: 'droidproxy.report',
+        status: { ...status, installUnavailable: 'unsupported-arch' },
+      }),
+    ),
+  );
+  assert.equal(
+    serverWireMessage(
+      batch({
+        type: 'droidproxy.report',
+        status: { ...status, installUnavailable: 'windows-rt' },
+      }),
+    ),
+    null,
+  );
 });
 
 test('accepts droidproxy login and apply outcomes, rejects bad shapes', () => {

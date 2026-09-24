@@ -245,6 +245,17 @@ async function probePort(port: number): Promise<boolean> {
   }
 }
 
+// The release pipeline ships Apple Silicon macOS builds only: anything else
+// gets unavailability copy instead of a download that cannot run.
+export function droidProxyInstallUnavailable(
+  platform: string = process.platform,
+  arch: string = process.arch,
+): 'unsupported-platform' | 'unsupported-arch' | undefined {
+  if (platform !== 'darwin') return 'unsupported-platform';
+  if (arch !== 'arm64') return 'unsupported-arch';
+  return undefined;
+}
+
 export async function readDroidProxyStatus(): Promise<
   Omit<DroidProxyStatus, 'factoryModelsInstalled' | 'factoryModelCount'>
 > {
@@ -265,11 +276,13 @@ export async function readDroidProxyStatus(): Promise<
     canLoginHere: CLI_LOGIN_FLAGS[provider] !== undefined,
     accounts: all.filter((account) => account.provider === provider),
   }));
+  const installUnavailable = droidProxyInstallUnavailable();
   return {
     appInstalled: droidProxyAppPath() !== undefined,
     proxyRunning: proxyUp,
     backendRunning: backendUp,
     loginBinaryAvailable: resolveCliProxyApi() !== undefined,
+    ...(installUnavailable ? { installUnavailable } : {}),
     metaContributorMode,
     providers,
   };

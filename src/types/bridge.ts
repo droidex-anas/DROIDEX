@@ -358,6 +358,9 @@ export interface DroidProxyStatus {
   // Install pipeline stage in flight, so a remounted page restores progress
   // instead of offering Install over a running download.
   installInProgress?: DroidProxyInstallPhase;
+  // Why one-click install is off the table on this machine, if it is: the
+  // releases ship Apple Silicon macOS builds only.
+  installUnavailable?: 'unsupported-platform' | 'unsupported-arch';
   // DroidProxy's Meta contributor-mode flag: picks the Muse Spark variant.
   metaContributorMode: boolean;
   // Enabled catalog size: how many entries Apply writes.

@@ -7,7 +7,11 @@ import { join } from 'node:path';
 import { promisify } from 'node:util';
 
 import type { DroidProxyInstallPhase } from '../protocol.js';
-import { droidProxyAppPath, droidProxyBundleComplete } from './droidProxy.js';
+import {
+  droidProxyAppPath,
+  droidProxyBundleComplete,
+  droidProxyInstallUnavailable,
+} from './droidProxy.js';
 
 const execFileAsync = promisify(execFile);
 
@@ -121,8 +125,15 @@ export async function installDroidProxyApp(
   onProgress: (progress: DroidProxyInstallProgress) => void,
   signal?: AbortSignal,
 ): Promise<DroidProxyInstallResult> {
-  if (process.platform !== 'darwin') {
-    return { ok: false, message: 'DroidProxy is a macOS app.' };
+  const unavailable = droidProxyInstallUnavailable();
+  if (unavailable) {
+    return {
+      ok: false,
+      message:
+        unavailable === 'unsupported-arch'
+          ? 'DroidProxy ships Apple Silicon builds only.'
+          : 'DroidProxy is a macOS app.',
+    };
   }
   if (droidProxyAppPath()) return { ok: true };
   const workdir = await mkdtemp(join(tmpdir(), 'droidex-droidproxy-'));
