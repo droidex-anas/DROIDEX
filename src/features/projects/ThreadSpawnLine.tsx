@@ -11,7 +11,7 @@ import { entryForSession, useProjectBoard } from './useProjectBoard';
 
 /* A thread the chat started, shown in the chat the way a spawned child session
    is: one line in the conversation's own voice, expandable for the task it was
-   given and its latest step, with the way into it underneath. No card — the
+   given and its latest step, with the way into it underneath. No card: the
    transcript already has a shape for "this chat started something". */
 
 export function ThreadSpawnLine({

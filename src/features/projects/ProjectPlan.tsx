@@ -6,7 +6,7 @@ import type { ProjectStep } from './types';
 
 /* The plan the project's chat keeps: what it means to do, in order, grouped the
    way a mission groups its features. A step pointed at a thread shows that
-   conversation's real state — the same mark the thread row wears — so the table
+   conversation's real state, the same mark the thread row wears, so the table
    can never report progress the app cannot see. A step with no thread shows
    only what the chat said about it. */
 

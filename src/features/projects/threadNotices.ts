@@ -1,10 +1,10 @@
 /* DROIDEX writes two prompts of its own into project conversations: the brief a
    thread opens with, and a thread's report back to the chat that started it.
-   Neither is something the user said, so neither wears the user's bubble — each
+   Neither is something the user said, so neither wears the user's bubble; each
    reads as a quiet notice carrying only what the reader needs. */
 
-// Written by ProjectWakeQueue's wakePrompt and ProjectService's brief; each
-// pair must stay in step.
+// Written by ProjectWakeQueue's wakePrompt and threadStart's briefs; each pair
+// must stay in step.
 const REPORT_PREFIX = 'From DROIDEX, not the user: your project threads reported.';
 const THREAD_BRIEF_PREFIX = 'You are an independent DROIDEX thread:';
 const LEAD_BRIEF_PREFIX = 'You lead a DROIDEX project.';
@@ -21,8 +21,8 @@ export interface ThreadReport {
   body: string;
 }
 
-/* Each report opens with its own head line — "<thread> reported back (thread
-   <id>):" — and runs to the next one. Splitting on blank lines instead would
+/* Each report opens with its own head line, "<thread> reported back (thread
+   <id>):", and runs to the next one. Splitting on blank lines instead would
    lose every paragraph after the first and merge two threads into one card. */
 const REPORT_HEAD = /^(.+?)\s*\(thread [^)]+\):\s*$/;
 

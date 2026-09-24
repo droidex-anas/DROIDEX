@@ -293,7 +293,7 @@ export default function Sidebar({
       <div data-electron-drag-region className="h-9 shrink-0" />
 
       {/* Brand row: wordmark left; Codex-style ghost icon actions right
-          (session search palette + unread-only filter). No button chrome —
+          (session search palette + unread-only filter). No button chrome,
           hover state only. */}
       <div className="px-3 pb-1 pt-0.5 flex items-center justify-between">
         <BrandMark size={13} className="text-droid-text" />

@@ -98,8 +98,8 @@ export interface StartInSelection {
 
 // The composer's "Start in" controls: pick the repository, choose an isolated
 // worktree or the local checkout, and select the starting ref. It drives the
-// composer's own draft by default; a caller with a draft of its own — starting
-// a project, say — passes it in and gets the same controls over it.
+// composer's own draft by default; a caller with a draft of its own, such as the
+// new-project form, passes it in and gets the same controls over it.
 export function StartInBar({
   value,
   onChange,
@@ -118,7 +118,7 @@ export function StartInBar({
   const draft = value ?? state.draftChat;
   const cwd = draft?.cwd ?? '';
   // 'uncommitted' so the branch-switch warning counts only working-tree changes
-  // that a checkout would carry over — not committed work, which stays put.
+  // that a checkout would carry over, not committed work, which stays put.
   const { env, branches, worktrees, diffStat, refresh } = useGitEnvironment(cwd, 'uncommitted');
 
   const [repoOpen, setRepoOpen] = useState(false);

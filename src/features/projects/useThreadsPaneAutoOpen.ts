@@ -3,7 +3,7 @@ import { shallowEqual, useStoreDispatch, useStoreSelector } from '../../hooks/us
 import { projectForSession } from '../../lib/projectThreads';
 
 /* The Threads panel earns its place the moment a chat has threads to show, so
-   it opens itself then — once per chat. Closing it is the user's decision and
+   it opens itself then, once per chat. Closing it is the user's decision and
    is never undone here, and an empty bench never takes the space. */
 
 export function useThreadsPaneAutoOpen(): void {
