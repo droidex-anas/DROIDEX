@@ -331,6 +331,9 @@ export interface DroidProxyStatus {
   // 127.0.0.1:8318, DroidProxy's OAuth backend.
   backendRunning: boolean;
   loginBinaryAvailable: boolean;
+  // Provider with an assisted login in flight, so a remounted settings page
+  // can restore its waiting state instead of offering a dead Connect.
+  loginInProgress?: DroidProxyProviderKey;
   // DroidProxy's Meta contributor-mode flag: picks the Muse Spark variant.
   metaContributorMode: boolean;
   // Enabled catalog size: how many entries Apply writes.

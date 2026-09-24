@@ -198,7 +198,7 @@ export default function ModelSliderPopover({ onClose }: { onClose: () => void })
                   <ModelIcon provider={providerOf(activeModel, resolvedModelId)} size={14} />
                 </span>
                 {isDroidProxyModel(activeModel, resolvedModelId) && (
-                  <span className="shrink-0 flex items-center text-droid-text-muted">
+                  <span className="shrink-0 flex items-center">
                     <DroidProxyMark size={12} />
                   </span>
                 )}

@@ -474,6 +474,23 @@ test('accepts droidproxy reports and rejects unknown providers or shapes', () =>
     ),
     null,
   );
+  assert.ok(
+    serverWireMessage(
+      batch({
+        type: 'droidproxy.report',
+        status: { ...status, loginInProgress: 'codex' },
+      }),
+    ),
+  );
+  assert.equal(
+    serverWireMessage(
+      batch({
+        type: 'droidproxy.report',
+        status: { ...status, loginInProgress: 'cursor' },
+      }),
+    ),
+    null,
+  );
 });
 
 test('accepts droidproxy login and apply outcomes, rejects bad shapes', () => {

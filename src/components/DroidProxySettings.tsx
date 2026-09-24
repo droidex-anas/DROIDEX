@@ -11,7 +11,8 @@ import type { DroidProxyProviderKey, DroidProxyProviderState } from '../types/br
 import { ModelIcon, type Provider } from './ModelIcon';
 import { GroupLabel, SectionTitle, SettingRow } from './settingsKit';
 
-const DROIDPROXY_RELEASES_URL = 'https://github.com/anand-92/droidproxy/releases/latest';
+const DROIDPROXY_RELEASES_URL =
+  'https://github.com/anand-92/droidproxy/releases/latest/download/DroidProxy-arm64.zip';
 
 const PROVIDER_LABELS: Record<DroidProxyProviderKey, string> = {
   claude: 'Claude Code',
@@ -92,7 +93,7 @@ export function DroidProxySettings() {
           description={
             status.appInstalled
               ? 'Installed. It serves your subscriptions on localhost:8317.'
-              : 'Not installed. It is a free menu-bar app; install it, then connect below.'
+              : 'Not installed. It is a free menu-bar app; download it, then connect below.'
           }
         >
           {status.appInstalled ? (
@@ -111,7 +112,7 @@ export function DroidProxySettings() {
               }}
               className={BUTTON_CLASS}
             >
-              Get DroidProxy
+              Download DroidProxy
             </button>
           )}
         </SettingRow>
@@ -136,7 +137,7 @@ export function DroidProxySettings() {
           label="Proxy models in Droid"
           description={
             status.factoryModelsInstalled
-              ? `${String(status.factoryModelCount)} models applied. Pick them in the Droid model picker under “DroidProxy:”.`
+              ? `${String(status.factoryModelCount)} models applied. They show in the model picker with the DroidProxy mark.`
               : `${String(status.factoryModelCount)} models ready. Droid sessions cannot see them until you apply.`
           }
         >
@@ -145,7 +146,11 @@ export function DroidProxySettings() {
               applyDroidProxyFactoryModels();
             }}
             disabled={status.factoryModelCount === 0}
-            title={status.factoryModelCount === 0 ? 'Connect a subscription first' : undefined}
+            title={
+              status.factoryModelCount === 0
+                ? 'Enable a provider in the DroidProxy app first'
+                : undefined
+            }
             className={BUTTON_CLASS}
           >
             {status.factoryModelsInstalled ? 'Re-apply' : 'Apply'}

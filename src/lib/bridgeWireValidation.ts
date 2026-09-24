@@ -538,6 +538,7 @@ function isDroidProxyStatus(value: unknown): boolean {
     typeof value.proxyRunning === 'boolean' &&
     typeof value.backendRunning === 'boolean' &&
     typeof value.loginBinaryAvailable === 'boolean' &&
+    (value.loginInProgress === undefined || isDroidProxyProviderKey(value.loginInProgress)) &&
     typeof value.metaContributorMode === 'boolean' &&
     typeof value.factoryModelCount === 'number' &&
     typeof value.factoryModelsInstalled === 'boolean' &&

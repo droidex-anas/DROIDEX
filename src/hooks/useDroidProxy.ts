@@ -18,6 +18,9 @@ export function useDroidProxy(): {
     const unsubscribe = bridge.subscribe((event) => {
       if (event.type === 'droidproxy.report') {
         setStatus(event.status);
+        // A remount mid-login restores waiting/Cancel from the sidecar, which
+        // owns the login lifecycle. Clearing stays with login.done.
+        if (event.status.loginInProgress) setLoggingIn(event.status.loginInProgress);
         return;
       }
       if (event.type === 'droidproxy.login.started') {

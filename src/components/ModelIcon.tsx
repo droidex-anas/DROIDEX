@@ -1,3 +1,5 @@
+import { useId } from 'react';
+
 import type { ModelInfo } from '../types/bridge';
 
 const DROIDPROXY_GLYPH_URL = new URL('../assets/droidproxy-glyph.png', import.meta.url).href;
@@ -29,6 +31,19 @@ export function providerOf(model?: ModelInfo, modelId?: string): Provider {
   if (model?.isCustom) return 'default';
   const hay = `${model?.provider ?? ''} ${identity}`;
   return providerForIdentity(hay) ?? 'default';
+}
+
+// The mark for a composer or panel model row: the harness mark when the model
+// is missing or unrecognized (providerOf says 'default' for both), so a
+// Claude Code or Codex chat never shows the Factory mark for an alias or a
+// catalog-missing id.
+export function resolveModelProvider(
+  model: ModelInfo | undefined,
+  modelId: string | undefined,
+  fallback: Provider,
+): Provider {
+  const provider = providerOf(model, modelId);
+  return provider === 'default' ? fallback : provider;
 }
 
 function providerForIdentity(hay: string): Provider | undefined {
@@ -65,24 +80,17 @@ export function shortModelName(displayName: string): string {
   return short;
 }
 
-// The DroidProxy app's glyph as a theme-adaptive mark: the white glyph masks
-// a currentColor fill so it reads in both modes.
+// The DroidProxy app's logo in full color, like the other provider marks.
 export function DroidProxyMark({ size = 14 }: { size?: number }) {
   return (
-    <span
-      role="img"
-      aria-label="via DroidProxy"
+    <img
+      src={DROIDPROXY_GLYPH_URL}
+      width={size}
+      height={size}
+      alt="via DroidProxy"
       title="via DroidProxy"
-      className="shrink-0 inline-flex"
-      style={{
-        width: size,
-        height: size,
-        backgroundColor: 'currentColor',
-        maskImage: `url(${DROIDPROXY_GLYPH_URL})`,
-        maskSize: 'contain',
-        maskRepeat: 'no-repeat',
-        maskPosition: 'center',
-      }}
+      className="shrink-0"
+      draggable={false}
     />
   );
 }
@@ -107,6 +115,12 @@ function FactoryMark({ size }: { size: number }) {
 
 export function ModelIcon({ provider, size = 18 }: { provider: Provider; size?: number }) {
   const s = { width: size, height: size };
+  // Gradient ids must be unique per instance: duplicates resolve every
+  // url(#…) to the first match, which can sit in a hidden subtree and
+  // leave the Meta and Copilot marks unpainted.
+  const uid = useId().replace(/:/g, '');
+  const meta = (n: number) => `droidex-meta-${uid}-${String(n)}`;
+  const copilot = (n: number) => `droidex-copilot-${uid}-${String(n)}`;
 
   if (provider === 'anthropic')
     return (
@@ -178,27 +192,27 @@ export function ModelIcon({ provider, size = 18 }: { provider: Provider; size?: 
       <svg {...s} viewBox="0 0 24 24" className="shrink-0" aria-hidden>
         <path
           d="M6.897 4h-.024l-.031 2.615h.022c1.715 0 3.046 1.357 5.94 6.246l.175.297.012.02 1.62-2.438-.012-.019a48.763 48.763 0 00-1.098-1.716 28.01 28.01 0 00-1.175-1.629C10.413 4.932 8.812 4 6.896 4z"
-          fill="url(#lobe-icons-meta-0-)"
+          fill={`url(#${meta(0)})`}
         ></path>
         <path
           d="M6.873 4C4.95 4.01 3.247 5.258 2.02 7.17a4.352 4.352 0 00-.01.017l2.254 1.231.011-.017c.718-1.083 1.61-1.774 2.568-1.785h.021L6.896 4h-.023z"
-          fill="url(#lobe-icons-meta-1-)"
+          fill={`url(#${meta(1)})`}
         ></path>
         <path
           d="M2.019 7.17l-.011.017C1.2 8.447.598 9.995.274 11.664l-.005.022 2.534.6.004-.022c.27-1.467.786-2.828 1.456-3.845l.011-.017L2.02 7.17z"
-          fill="url(#lobe-icons-meta-2-)"
+          fill={`url(#${meta(2)})`}
         ></path>
         <path
           d="M2.807 12.264l-2.533-.6-.005.022c-.177.918-.267 1.851-.269 2.786v.023l2.598.233v-.023a12.591 12.591 0 01.21-2.44z"
-          fill="url(#lobe-icons-meta-3-)"
+          fill={`url(#${meta(3)})`}
         ></path>
         <path
           d="M2.677 15.537a5.462 5.462 0 01-.079-.813v-.022L0 14.468v.024a8.89 8.89 0 00.146 1.652l2.535-.585a4.106 4.106 0 01-.004-.022z"
-          fill="url(#lobe-icons-meta-4-)"
+          fill={`url(#${meta(4)})`}
         ></path>
         <path
           d="M3.27 16.89c-.284-.31-.484-.756-.589-1.328l-.004-.021-2.535.585.004.021c.192 1.01.568 1.85 1.106 2.487l.014.017 2.018-1.745a2.106 2.106 0 01-.015-.016z"
-          fill="url(#lobe-icons-meta-5-)"
+          fill={`url(#${meta(5)})`}
         ></path>
         <path
           d="M10.78 9.654c-1.528 2.35-2.454 3.825-2.454 3.825-2.035 3.2-2.739 3.917-3.871 3.917a1.545 1.545 0 01-1.186-.508l-2.017 1.744.014.017C2.01 19.518 3.058 20 4.356 20c1.963 0 3.374-.928 5.884-5.33l1.766-3.13a41.283 41.283 0 00-1.227-1.886z"
@@ -206,7 +220,7 @@ export function ModelIcon({ provider, size = 18 }: { provider: Provider; size?: 
         ></path>
         <path
           d="M13.502 5.946l-.016.016c-.4.43-.786.908-1.16 1.416.378.483.768 1.024 1.175 1.63.48-.743.928-1.345 1.367-1.807l.016-.016-1.382-1.24z"
-          fill="url(#lobe-icons-meta-6-)"
+          fill={`url(#${meta(6)})`}
         ></path>
         <path
           d="M20.918 5.713C19.853 4.633 18.583 4 17.225 4c-1.432 0-2.637.787-3.723 1.944l-.016.016 1.382 1.24.016-.017c.715-.747 1.408-1.12 2.176-1.12.826 0 1.6.39 2.27 1.075l.015.016 1.589-1.425-.016-.016z"
@@ -214,145 +228,79 @@ export function ModelIcon({ provider, size = 18 }: { provider: Provider; size?: 
         ></path>
         <path
           d="M23.998 14.125c-.06-3.467-1.27-6.566-3.064-8.396l-.016-.016-1.588 1.424.015.016c1.35 1.392 2.277 3.98 2.361 6.971v.023h2.292v-.022z"
-          fill="url(#lobe-icons-meta-7-)"
+          fill={`url(#${meta(7)})`}
         ></path>
         <path
           d="M23.998 14.15v-.023h-2.292v.022c.004.14.006.282.006.424 0 .815-.121 1.474-.368 1.95l-.011.022 1.708 1.782.013-.02c.62-.96.946-2.293.946-3.91 0-.083 0-.165-.002-.247z"
-          fill="url(#lobe-icons-meta-8-)"
+          fill={`url(#${meta(8)})`}
         ></path>
         <path
           d="M21.344 16.52l-.011.02c-.214.402-.519.67-.917.787l.778 2.462a3.493 3.493 0 00.438-.182 3.558 3.558 0 001.366-1.218l.044-.065.012-.02-1.71-1.784z"
-          fill="url(#lobe-icons-meta-9-)"
+          fill={`url(#${meta(9)})`}
         ></path>
         <path
           d="M19.92 17.393c-.262 0-.492-.039-.718-.14l-.798 2.522c.449.153.927.222 1.46.222.492 0 .943-.073 1.352-.215l-.78-2.462c-.167.05-.341.075-.517.073z"
-          fill="url(#lobe-icons-meta-10-)"
+          fill={`url(#${meta(10)})`}
         ></path>
         <path
           d="M18.323 16.534l-.014-.017-1.836 1.914.016.017c.637.682 1.246 1.105 1.937 1.337l.797-2.52c-.291-.125-.573-.353-.9-.731z"
-          fill="url(#lobe-icons-meta-11-)"
+          fill={`url(#${meta(11)})`}
         ></path>
         <path
           d="M18.309 16.515c-.55-.642-1.232-1.712-2.303-3.44l-1.396-2.336-.011-.02-1.62 2.438.012.02.989 1.668c.959 1.61 1.74 2.774 2.493 3.585l.016.016 1.834-1.914a2.353 2.353 0 01-.014-.017z"
-          fill="url(#lobe-icons-meta-12-)"
+          fill={`url(#${meta(12)})`}
         ></path>
         <defs>
-          <linearGradient
-            id="lobe-icons-meta-0-"
-            x1="75.897%"
-            x2="26.312%"
-            y1="89.199%"
-            y2="12.194%"
-          >
+          <linearGradient id={meta(0)} x1="75.897%" x2="26.312%" y1="89.199%" y2="12.194%">
             <stop offset=".06%" stopColor="#0867DF"></stop>
             <stop offset="45.39%" stopColor="#0668E1"></stop>
             <stop offset="85.91%" stopColor="#0064E0"></stop>
           </linearGradient>
-          <linearGradient
-            id="lobe-icons-meta-1-"
-            x1="21.67%"
-            x2="97.068%"
-            y1="75.874%"
-            y2="23.985%"
-          >
+          <linearGradient id={meta(1)} x1="21.67%" x2="97.068%" y1="75.874%" y2="23.985%">
             <stop offset="13.23%" stopColor="#0064DF"></stop>
             <stop offset="99.88%" stopColor="#0064E0"></stop>
           </linearGradient>
-          <linearGradient
-            id="lobe-icons-meta-2-"
-            x1="38.263%"
-            x2="60.895%"
-            y1="89.127%"
-            y2="16.131%"
-          >
+          <linearGradient id={meta(2)} x1="38.263%" x2="60.895%" y1="89.127%" y2="16.131%">
             <stop offset="1.47%" stopColor="#0072EC"></stop>
             <stop offset="68.81%" stopColor="#0064DF"></stop>
           </linearGradient>
-          <linearGradient id="lobe-icons-meta-3-" x1="47.032%" x2="52.15%" y1="90.19%" y2="15.745%">
+          <linearGradient id={meta(3)} x1="47.032%" x2="52.15%" y1="90.19%" y2="15.745%">
             <stop offset="7.31%" stopColor="#007CF6"></stop>
             <stop offset="99.43%" stopColor="#0072EC"></stop>
           </linearGradient>
-          <linearGradient
-            id="lobe-icons-meta-4-"
-            x1="52.155%"
-            x2="47.591%"
-            y1="58.301%"
-            y2="37.004%"
-          >
+          <linearGradient id={meta(4)} x1="52.155%" x2="47.591%" y1="58.301%" y2="37.004%">
             <stop offset="7.31%" stopColor="#007FF9"></stop>
             <stop offset="100%" stopColor="#007CF6"></stop>
           </linearGradient>
-          <linearGradient
-            id="lobe-icons-meta-5-"
-            x1="37.689%"
-            x2="61.961%"
-            y1="12.502%"
-            y2="63.624%"
-          >
+          <linearGradient id={meta(5)} x1="37.689%" x2="61.961%" y1="12.502%" y2="63.624%">
             <stop offset="7.31%" stopColor="#007FF9"></stop>
             <stop offset="100%" stopColor="#0082FB"></stop>
           </linearGradient>
-          <linearGradient
-            id="lobe-icons-meta-6-"
-            x1="34.808%"
-            x2="62.313%"
-            y1="68.859%"
-            y2="23.174%"
-          >
+          <linearGradient id={meta(6)} x1="34.808%" x2="62.313%" y1="68.859%" y2="23.174%">
             <stop offset="27.99%" stopColor="#007FF8"></stop>
             <stop offset="91.41%" stopColor="#0082FB"></stop>
           </linearGradient>
-          <linearGradient
-            id="lobe-icons-meta-7-"
-            x1="43.762%"
-            x2="57.602%"
-            y1="6.235%"
-            y2="98.514%"
-          >
+          <linearGradient id={meta(7)} x1="43.762%" x2="57.602%" y1="6.235%" y2="98.514%">
             <stop offset="0%" stopColor="#0082FB"></stop>
             <stop offset="99.95%" stopColor="#0081FA"></stop>
           </linearGradient>
-          <linearGradient id="lobe-icons-meta-8-" x1="60.055%" x2="39.88%" y1="4.661%" y2="69.077%">
+          <linearGradient id={meta(8)} x1="60.055%" x2="39.88%" y1="4.661%" y2="69.077%">
             <stop offset="6.19%" stopColor="#0081FA"></stop>
             <stop offset="100%" stopColor="#0080F9"></stop>
           </linearGradient>
-          <linearGradient
-            id="lobe-icons-meta-9-"
-            x1="30.282%"
-            x2="61.081%"
-            y1="59.32%"
-            y2="33.244%"
-          >
+          <linearGradient id={meta(9)} x1="30.282%" x2="61.081%" y1="59.32%" y2="33.244%">
             <stop offset="0%" stopColor="#027AF3"></stop>
             <stop offset="100%" stopColor="#0080F9"></stop>
           </linearGradient>
-          <linearGradient
-            id="lobe-icons-meta-10-"
-            x1="20.433%"
-            x2="82.112%"
-            y1="50.001%"
-            y2="50.001%"
-          >
+          <linearGradient id={meta(10)} x1="20.433%" x2="82.112%" y1="50.001%" y2="50.001%">
             <stop offset="0%" stopColor="#0377EF"></stop>
             <stop offset="99.94%" stopColor="#0279F1"></stop>
           </linearGradient>
-          <linearGradient
-            id="lobe-icons-meta-11-"
-            x1="40.303%"
-            x2="72.394%"
-            y1="35.298%"
-            y2="57.811%"
-          >
+          <linearGradient id={meta(11)} x1="40.303%" x2="72.394%" y1="35.298%" y2="57.811%">
             <stop offset=".19%" stopColor="#0471E9"></stop>
             <stop offset="100%" stopColor="#0377EF"></stop>
           </linearGradient>
-          <linearGradient
-            id="lobe-icons-meta-12-"
-            x1="32.254%"
-            x2="68.003%"
-            y1="19.719%"
-            y2="84.908%"
-          >
+          <linearGradient id={meta(12)} x1="32.254%" x2="68.003%" y1="19.719%" y2="84.908%">
             <stop offset="27.65%" stopColor="#0867DF"></stop>
             <stop offset="100%" stopColor="#0471E9"></stop>
           </linearGradient>
@@ -380,32 +328,32 @@ export function ModelIcon({ provider, size = 18 }: { provider: Provider; size?: 
       <svg {...s} viewBox="0 0 24 24" className="shrink-0" aria-hidden>
         <path
           d="M17.533 1.829A2.528 2.528 0 0015.11 0h-.737a2.531 2.531 0 00-2.484 2.087l-1.263 6.937.314-1.08a2.528 2.528 0 012.424-1.833h4.284l1.797.706 1.731-.706h-.505a2.528 2.528 0 01-2.423-1.829l-.715-2.453z"
-          fill="url(#lobe-icons-copilot-0-)"
+          fill={`url(#${copilot(0)})`}
           transform="translate(0 1)"
         ></path>
         <path
           d="M6.726 20.16A2.528 2.528 0 009.152 22h1.566c1.37 0 2.49-1.1 2.525-2.48l.17-6.69-.357 1.228a2.528 2.528 0 01-2.423 1.83h-4.32l-1.54-.842-1.667.843h.497c1.124 0 2.113.75 2.426 1.84l.697 2.432z"
-          fill="url(#lobe-icons-copilot-1-)"
+          fill={`url(#${copilot(1)})`}
           transform="translate(0 1)"
         ></path>
         <path
           d="M15 0H6.252c-2.5 0-4 3.331-5 6.662-1.184 3.947-2.734 9.225 1.75 9.225H6.78c1.13 0 2.12-.753 2.43-1.847.657-2.317 1.809-6.359 2.713-9.436.46-1.563.842-2.906 1.43-3.742A1.97 1.97 0 0115 0"
-          fill="url(#lobe-icons-copilot-2-)"
+          fill={`url(#${copilot(2)})`}
           transform="translate(0 1)"
         ></path>
         <path
           d="M15 0H6.252c-2.5 0-4 3.331-5 6.662-1.184 3.947-2.734 9.225 1.75 9.225H6.78c1.13 0 2.12-.753 2.43-1.847.657-2.317 1.809-6.359 2.713-9.436.46-1.563.842-2.906 1.43-3.742A1.97 1.97 0 0115 0"
-          fill="url(#lobe-icons-copilot-3-)"
+          fill={`url(#${copilot(3)})`}
           transform="translate(0 1)"
         ></path>
         <path
           d="M9 22h8.749c2.5 0 4-3.332 5-6.663 1.184-3.948 2.734-9.227-1.75-9.227H17.22c-1.129 0-2.12.754-2.43 1.848a1149.2 1149.2 0 01-2.713 9.437c-.46 1.564-.842 2.907-1.43 3.743A1.97 1.97 0 019 22"
-          fill="url(#lobe-icons-copilot-4-)"
+          fill={`url(#${copilot(4)})`}
           transform="translate(0 1)"
         ></path>
         <path
           d="M9 22h8.749c2.5 0 4-3.332 5-6.663 1.184-3.948 2.734-9.227-1.75-9.227H17.22c-1.129 0-2.12.754-2.43 1.848a1149.2 1149.2 0 01-2.713 9.437c-.46 1.564-.842 2.907-1.43 3.743A1.97 1.97 0 019 22"
-          fill="url(#lobe-icons-copilot-5-)"
+          fill={`url(#${copilot(5)})`}
           transform="translate(0 1)"
         ></path>
         <defs>
@@ -415,7 +363,7 @@ export function ModelIcon({ provider, size = 18 }: { provider: Provider; size?: 
             fx="85.44%"
             fy="100.653%"
             gradientTransform="scale(-.8553 -1) rotate(50.927 2.041 -1.946)"
-            id="lobe-icons-copilot-0-"
+            id={copilot(0)}
             r="105.116%"
           >
             <stop offset="9.6%" stopColor="#00AEFF"></stop>
@@ -428,7 +376,7 @@ export function ModelIcon({ provider, size = 18 }: { provider: Provider; size?: 
             fx="18.143%"
             fy="32.928%"
             gradientTransform="scale(.8897 1) rotate(52.069 .193 .352)"
-            id="lobe-icons-copilot-1-"
+            id={copilot(1)}
             r="95.612%"
           >
             <stop offset="0%" stopColor="#FFB657"></stop>
@@ -441,36 +389,24 @@ export function ModelIcon({ provider, size = 18 }: { provider: Provider; size?: 
             fx="82.987%"
             fy="-9.792%"
             gradientTransform="scale(-1 -.9441) rotate(-70.872 .142 1.17)"
-            id="lobe-icons-copilot-4-"
+            id={copilot(4)}
             r="140.622%"
           >
             <stop offset="6.6%" stopColor="#8C48FF"></stop>
             <stop offset="50%" stopColor="#F2598A"></stop>
             <stop offset="89.6%" stopColor="#FFB152"></stop>
           </radialGradient>
-          <linearGradient
-            id="lobe-icons-copilot-2-"
-            x1="39.465%"
-            x2="46.884%"
-            y1="12.117%"
-            y2="103.774%"
-          >
+          <linearGradient id={copilot(2)} x1="39.465%" x2="46.884%" y1="12.117%" y2="103.774%">
             <stop offset="15.6%" stopColor="#0D91E1"></stop>
             <stop offset="48.7%" stopColor="#52B471"></stop>
             <stop offset="65.2%" stopColor="#98BD42"></stop>
             <stop offset="93.7%" stopColor="#FFC800"></stop>
           </linearGradient>
-          <linearGradient id="lobe-icons-copilot-3-" x1="45.949%" x2="50%" y1="0%" y2="100%">
+          <linearGradient id={copilot(3)} x1="45.949%" x2="50%" y1="0%" y2="100%">
             <stop offset="0%" stopColor="#3DCBFF"></stop>
             <stop offset="24.7%" stopColor="#0588F7" stopOpacity="0"></stop>
           </linearGradient>
-          <linearGradient
-            id="lobe-icons-copilot-5-"
-            x1="83.507%"
-            x2="83.453%"
-            y1="-6.106%"
-            y2="21.131%"
-          >
+          <linearGradient id={copilot(5)} x1="83.507%" x2="83.453%" y1="-6.106%" y2="21.131%">
             <stop offset="5.8%" stopColor="#F8ADFA"></stop>
             <stop offset="70.8%" stopColor="#A86EDD" stopOpacity="0"></stop>
           </linearGradient>

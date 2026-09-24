@@ -130,6 +130,7 @@ import {
   DroidProxyMark,
   isDroidProxyModel,
   providerOf,
+  resolveModelProvider,
   shortModelName,
 } from './ModelIcon';
 import { StartInBar } from './environment/StartInBar';
@@ -2051,15 +2052,15 @@ export default function PromptInput({
                   ) : (
                     <>
                       <ModelIcon
-                        provider={
-                          (chipModel ?? primaryModelId)
-                            ? providerOf(chipModel, primaryModelId)
-                            : PROVIDER_MARKS[composerProvider]
-                        }
+                        provider={resolveModelProvider(
+                          chipModel,
+                          primaryModelId,
+                          PROVIDER_MARKS[composerProvider],
+                        )}
                         size={14}
                       />
                       {isDroidProxyModel(chipModel, primaryModelId) && (
-                        <span className="shrink-0 flex items-center text-droid-text-muted">
+                        <span className="shrink-0 flex items-center">
                           <DroidProxyMark size={12} />
                         </span>
                       )}

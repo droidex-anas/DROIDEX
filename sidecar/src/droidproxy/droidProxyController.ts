@@ -17,11 +17,20 @@ import {
 // local callback, so parallel runs would fight over ports and windows.
 const LOGIN_TIMEOUT_MS = 10 * 60 * 1000;
 
+// One login's live state: the child, its provider for status reports, and
+// whether Cancel was requested (a binary that catches SIGTERM exits with a
+// code and no signal, so the signal alone cannot prove cancellation).
+interface ActiveLogin {
+  child: ChildProcess;
+  provider: DroidProxyProviderKey;
+  cancelRequested: boolean;
+}
+
 // Drives the DroidProxy settings page: status snapshots, browser OAuth logins
 // through DroidProxy's bundled cli-proxy-api, launching the app, and merging
 // the proxy model catalog into Factory settings.
 export class DroidProxyController {
-  private loginProcess: ChildProcess | undefined;
+  private activeLogin: ActiveLogin | undefined;
 
   constructor(private readonly emit: (event: DroidProxyEvent) => void) {}
 
@@ -29,10 +38,12 @@ export class DroidProxyController {
     const status = await readDroidProxyStatus();
     const providerEnabled = this.providerEnabledPredicate(status);
     const options = { contributorMode: status.metaContributorMode };
+    const running = this.activeLogin;
     this.emit({
       type: 'droidproxy.report',
       status: {
         ...status,
+        ...(running ? { loginInProgress: running.provider } : {}),
         factoryModelCount: droidProxySettingsModels(providerEnabled, options).length,
         factoryModelsInstalled: droidProxyModelsInstalled(providerEnabled, options),
       },
@@ -54,7 +65,7 @@ export class DroidProxyController {
   }
 
   async login(provider: DroidProxyProviderKey): Promise<void> {
-    if (this.loginProcess) return;
+    if (this.activeLogin) return;
     const flag = loginFlagFor(provider);
     const backend = resolveCliProxyApi();
     if (!flag || !backend) {
@@ -70,7 +81,8 @@ export class DroidProxyController {
     const child = spawn(backend.binary, ['--config', backend.config, flag], {
       stdio: ['pipe', 'pipe', 'pipe'],
     });
-    this.loginProcess = child;
+    const active: ActiveLogin = { child, provider, cancelRequested: false };
+    this.activeLogin = active;
     // Codex pauses on a manual callback prompt; a newline keeps it waiting for
     // the browser instead, the same nudge DroidProxy sends.
     let codexNudge: NodeJS.Timeout | undefined;
@@ -106,10 +118,10 @@ export class DroidProxyController {
     });
     clearTimeout(killTimer);
     if (codexNudge) clearTimeout(codexNudge);
-    // Cancellation is the only SIGTERM this child can receive: the watchdog
-    // uses SIGKILL and a natural exit leaves no signal behind.
-    const cancelled = child.signalCode === 'SIGTERM';
-    this.loginProcess = undefined;
+    // Cancel owns its own bit: a binary that catches SIGTERM exits with a code
+    // and no signal, which would otherwise read as a failed login.
+    const cancelled = active.cancelRequested || child.signalCode === 'SIGTERM';
+    this.activeLogin = undefined;
     if (cancelled) {
       this.emit({ type: 'droidproxy.login.done', provider, ok: false, cancelled: true });
       await this.report();
@@ -126,7 +138,9 @@ export class DroidProxyController {
   }
 
   cancelLogin(): void {
-    this.loginProcess?.kill('SIGTERM');
+    if (!this.activeLogin) return;
+    this.activeLogin.cancelRequested = true;
+    this.activeLogin.child.kill('SIGTERM');
   }
 
   async applyFactoryModels(): Promise<void> {

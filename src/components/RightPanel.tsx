@@ -17,7 +17,7 @@ import {
   ModelIcon,
   DroidProxyMark,
   isDroidProxyModel,
-  providerOf,
+  resolveModelProvider,
   shortModelName,
 } from './ModelIcon';
 import NotesSection from './NotesSection';
@@ -120,11 +120,11 @@ export default function RightPanel() {
     <Row
       icon={
         <ModelIcon
-          provider={
-            (modelInfo ?? activeSession.modelId)
-              ? providerOf(modelInfo, activeSession.modelId)
-              : PROVIDER_MARKS[activeSession.provider]
-          }
+          provider={resolveModelProvider(
+            modelInfo,
+            activeSession.modelId,
+            PROVIDER_MARKS[activeSession.provider],
+          )}
           size={16}
         />
       }

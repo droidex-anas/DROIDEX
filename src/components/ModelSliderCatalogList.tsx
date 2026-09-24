@@ -117,7 +117,7 @@ function SliderRow({
         <ModelIcon provider={providerOf(model)} size={16} />
       </span>
       {isDroidProxyModel(model) && (
-        <span className="shrink-0 flex items-center text-droid-text-muted">
+        <span className="shrink-0 flex items-center">
           <DroidProxyMark size={13} />
         </span>
       )}
