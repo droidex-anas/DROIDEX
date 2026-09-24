@@ -20,9 +20,10 @@ export interface ThreadTurn {
  * The current turn of each project conversation. Only the final primary reply
  * is retained; thinking and tool output never enter it.
  *
- * A turn opens on the first sign of one — the streaming flag or any transcript
- * event — because a summary update and a transcript event can reach here in
- * either order, and a reply that opened no turn would be reported as silence.
+ * A turn opens on the first sign of one, the streaming flag or the first event
+ * the model generates, because a summary update and a transcript event can
+ * reach here in either order, and a reply that opened no turn would be
+ * reported as silence.
  */
 export class ProjectActivity {
   private readonly turns = new Map<string, ThreadTurn>();

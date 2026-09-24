@@ -6,10 +6,10 @@ const MAX_ACTIVE = 2;
 
 /* A project's threads and its lead wake each other as work settles, which is the
    point; two of them answering each other forever is not. There is no allowance
-   to spend — a project runs as long as it is making progress — but a burst this
-   far above the pace of real turns is a loop, and DROIDEX holds the project so a
-   person can look. The marks live in memory: a restart already pauses every
-   project. */
+   to spend, since a project runs as long as it is making progress, but a burst
+   this far above the pace of real turns is a loop, and DROIDEX holds the project
+   so a person can look. The marks live in memory; a restart starts the count
+   again. */
 const LOOP_WINDOW_MS = 5 * 60_000;
 const LOOP_LIMIT = 60;
 
@@ -19,7 +19,8 @@ export class ProjectWakeQueue {
   private readonly queued = new Set<Project>();
   private readonly pumping = new Map<string, Promise<void>>();
   private readonly active = new Map<string, Promise<void>>();
-  private readonly waiting = new Set<string>();
+  /** Recipients a delivery found busy, skipped until they settle. */
+  private readonly busyTargets = new Set<string>();
   private readonly capacityWaiting = new Set<string>();
   private readonly revisions = new Map<string, number>();
   private capacityRevision = 0;
@@ -42,7 +43,7 @@ export class ProjectWakeQueue {
     this.generations.set(project.id, (this.generations.get(project.id) ?? 0) + 1);
     this.queued.delete(project);
     this.capacityWaiting.delete(project.id);
-    for (const thread of project.threads) this.waiting.delete(thread.appSessionId);
+    for (const thread of project.threads) this.busyTargets.delete(thread.appSessionId);
   }
 
   kick(project: Project): void {
@@ -54,7 +55,7 @@ export class ProjectWakeQueue {
   available(project: Project, appSessionId: string): void {
     if (this.closed) return;
     this.revisions.set(appSessionId, (this.revisions.get(appSessionId) ?? 0) + 1);
-    this.waiting.delete(appSessionId);
+    this.busyTargets.delete(appSessionId);
     this.kick(project);
   }
 
@@ -76,7 +77,7 @@ export class ProjectWakeQueue {
     if (this.scheduled) clearImmediate(this.scheduled);
     this.scheduled = undefined;
     this.queued.clear();
-    this.waiting.clear();
+    this.busyTargets.clear();
     this.capacityWaiting.clear();
   }
 
@@ -98,7 +99,7 @@ export class ProjectWakeQueue {
         }
         if (this.pumping.has(project.id) || this.capacityWaiting.has(project.id)) continue;
         const first = project.pending.find(
-          (message) => !this.waiting.has(message.to) && !this.active.has(message.to),
+          (message) => !this.busyTargets.has(message.to) && !this.active.has(message.to),
         );
         if (!first) continue;
         this.queued.delete(project);
@@ -185,7 +186,7 @@ export class ProjectWakeQueue {
       if (receipt.retryOn === 'capacity') {
         if (this.capacityRevision === capacityRevision) this.capacityWaiting.add(project.id);
       } else if (this.revisions.get(target) === targetRevision) {
-        this.waiting.add(target);
+        this.busyTargets.add(target);
       }
       return;
     }
