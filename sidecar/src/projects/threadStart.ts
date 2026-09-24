@@ -1,4 +1,5 @@
-import type { ModelInfo, ProviderStatus, SessionSummary } from '../protocol.js';
+import type { Autonomy, ModelInfo, ProviderStatus, SessionSummary } from '../protocol.js';
+import type { ProviderKind } from '../providers/providerKind.js';
 import { LEDGER_LIMITS } from './store.js';
 import {
   createThreadWorkspace,
@@ -61,44 +62,50 @@ export function inheritSettings(
   };
 }
 
+const AUTONOMY_ORDER: readonly Autonomy[] = ['off', 'low', 'medium', 'high'];
+
+/** A thread never runs with more autonomy than the chat that owns it. */
+export function checkWithinAutonomy(owner: SessionSummary, autonomy: Autonomy): void {
+  if (AUTONOMY_ORDER.indexOf(autonomy) > AUTONOMY_ORDER.indexOf(owner.autonomy))
+    throw new Error("A thread cannot exceed its owner's autonomy.");
+}
+
 /*
  * A harness given a model id it does not know does not fail: it answers with
  * nothing, and the thread comes back empty. So a named model is resolved here
  * against the same catalog the composer offers.
  *
  * A harness can carry one model twice, hosted beside the user's own key for
- * it — `glm-5.3-flash` and `custom:glm-5.3-flash`. A name that fits both
+ * it: `glm-5.3-flash` and `custom:glm-5.3-flash`. A name that fits both
  * resolves to the model this chat is already running, because naming your own
  * model never meant "move this thread onto another account". A name that fits
  * several other models is refused rather than guessed.
  */
-export function resolveModel(
+export function resolveModelId(
   catalog: readonly ProviderStatus[],
   owner: SessionSummary,
-  input: Omit<ThreadInput, 'cwd'>,
-): Omit<ThreadInput, 'cwd'> {
-  const wanted = input.modelId?.trim();
-  if (!wanted) return input;
-  const models = catalog.find((candidate) => candidate.provider === input.provider)?.models ?? [];
+  provider: ProviderKind,
+  modelId: string,
+): string {
+  const wanted = modelId.trim();
+  const models = catalog.find((candidate) => candidate.provider === provider)?.models ?? [];
   // A harness DROIDEX has not probed offers no catalog to check against, and
   // refusing there would block work over something the app cannot know.
-  if (!models.length) return input;
+  if (!wanted || !models.length) return modelId;
   const named = models.filter((model) => modelAnswersTo(model, wanted));
   const own =
-    owner.provider === input.provider
-      ? named.find((model) => model.id === owner.modelId)
-      : undefined;
+    owner.provider === provider ? named.find((model) => model.id === owner.modelId) : undefined;
   const match =
     own ??
     models.find((model) => model.id === wanted) ??
     (named.length === 1 ? named[0] : undefined);
-  if (match) return { ...input, modelId: match.id };
+  if (match) return match.id;
   if (named.length)
     throw new Error(
-      `"${wanted}" names ${String(named.length)} models on ${input.provider}: ${modelList(named)}. Name the one you want by its id.`,
+      `"${wanted}" names ${String(named.length)} models on ${provider}: ${modelList(named)}. Name the one you want by its id.`,
     );
   throw new Error(
-    `${input.provider} has no model "${wanted}". Available here: ${modelList(models.slice(0, 12))}.`,
+    `${provider} has no model "${wanted}". Available here: ${modelList(models.slice(0, 12))}.`,
   );
 }
 
