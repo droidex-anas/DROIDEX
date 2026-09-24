@@ -28,6 +28,7 @@ export default {
           'text-muted': v('--droid-text-muted'),
           accent: v('--droid-accent'),
           skill: v('--droid-skill'),
+          'visualize-mark': v('--droid-visualize-mark'),
           ultra: v('--droid-ultra'),
           green: v('--droid-green'),
           orange: v('--droid-orange'),

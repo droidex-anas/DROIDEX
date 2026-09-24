@@ -360,6 +360,13 @@ export const SKILL_COLORS = {
   light: '#1d4ed8',
 } as const;
 
+// Prompt chip marks keep their own hue beside the blue skill label: rose for a
+// skill's Rosette, pink for the Visualize plugin.
+const MARK_COLORS = {
+  skill: { dark: '#ed4772', light: '#b82950' },
+  visualize: { dark: '#f472b6', light: '#b8307a' },
+} as const;
+
 // The top reasoning level reads by hue on every theme, the way skills and links
 // do: the neutral accent cannot say "this one is different" when it is the same
 // tone the rest of the chrome already uses. Each scheme carries the shade that
@@ -485,6 +492,9 @@ export function applyTheme(theme: ThemeSettings) {
   root.style.setProperty('--droid-skill', bgIsDark ? SKILL_COLORS.dark : SKILL_COLORS.light);
   root.style.setProperty('--droid-link', bgIsDark ? LINK_COLORS.dark : LINK_COLORS.light);
   root.style.setProperty('--droid-ultra', bgIsDark ? ULTRA_COLORS.dark : ULTRA_COLORS.light);
+  const markShade = bgIsDark ? 'dark' : 'light';
+  root.style.setProperty('--droid-skill-mark', MARK_COLORS.skill[markShade]);
+  root.style.setProperty('--droid-visualize-mark', MARK_COLORS.visualize[markShade]);
   // Floating-card shadow: strong and near-black on dark where it separates
   // surfaces, soft and diffuse on light so cards lift without looking dirty.
   // Light themes lead with a faint 1px ring: a white card on near-white paper
