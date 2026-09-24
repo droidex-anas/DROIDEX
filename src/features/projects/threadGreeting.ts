@@ -1,3 +1,4 @@
+import { workspaceName } from '../../lib/workspaces';
 import type { ThreadRow } from './threadBoard';
 
 /* The line at the top of Threads. It is the panel's voice, not a status: short,
@@ -47,6 +48,16 @@ export function threadStatusLine(counts: ThreadCounts): string {
   if (counts.working > 0) parts.push(plural(counts.working, 'thread working', 'threads working'));
   if (counts.idle > 0) parts.push(plural(counts.idle, 'thread idle', 'threads idle'));
   return parts.join(' · ');
+}
+
+/** The quiet line under the facts: whose threads these are, how many, and where. */
+export function threadSubtitle(
+  title: string | undefined,
+  cwd: string | undefined,
+  count: number,
+): string {
+  const folder = cwd ? workspaceName(cwd) : '';
+  return [title, plural(count, 'thread', 'threads'), folder].filter(Boolean).join(' · ');
 }
 
 function plural(count: number, one: string, many: string): string {
