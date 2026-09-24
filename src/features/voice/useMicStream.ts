@@ -3,8 +3,8 @@ import { useEffect, useState } from 'react';
 /**
  * Owns the microphone while voice mode wants it. Tracks stop on mute, close,
  * or unmount, so the OS mic indicator never outlives the feature. Denial is a
- * state, not an error: the packaged app ships without a microphone usage
- * description (see builderConfig.test.cjs), and the browser can simply say no.
+ * state, not an error: the user can refuse at the OS prompt, or the machine
+ * can have no microphone, and the app says so rather than failing.
  */
 // The DOM lib types mediaDevices as always present, but it is undefined in
 // non-secure contexts.

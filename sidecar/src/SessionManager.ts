@@ -855,6 +855,12 @@ export class SessionManager {
         return;
       case 'voice.start':
       case 'voice.stop':
+        await this.sessionVoice.handle(cmd);
+        // A chat being talked to is not idle however quiet its transcript is,
+        // and one that has stopped is idle again. Both move when the next
+        // sweep is due, and nothing else here would say so.
+        this.runtimeRetirement.arm();
+        return;
       case 'voice.voices':
         await this.sessionVoice.handle(cmd);
         return;
