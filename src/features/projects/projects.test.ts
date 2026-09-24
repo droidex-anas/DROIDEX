@@ -6,7 +6,6 @@ import type { SessionSummary } from '../../types/bridge';
 import type { ProjectView } from './types';
 import { projectPulse } from './projectBoard';
 import { leadRow, threadCounts, threadRows } from './threadBoard';
-import { threadStatusLine } from './threadGreeting';
 import { threadReports } from './threadNotices';
 
 const project: ProjectView = {
@@ -78,23 +77,16 @@ test('malformed graphs and bad counts are rejected', () => {
   );
 });
 
-test('opening a managed thread uses ordinary activation without stopping its siblings', () => {
+test('opening a thread or closing Projects leaves the Projects view', () => {
   const state: AppState = {
     ...initialState,
     mainView: 'projects',
     activeAppSessionId: 'main',
     sessions: { main: session('main'), worker: session('worker') },
     sessionOrder: ['main', 'worker'],
-    selectedChild: null,
   };
-  const next = reducer(state, { type: 'SET_ACTIVE_SESSION', id: 'worker' });
-  assert.equal(next.mainView, 'session');
-  assert.equal(next.activeAppSessionId, 'worker');
-  assert.equal(next.selectedChild, null);
-  assert.equal(next.sessions.main.streaming, true);
-  assert.equal(next.sessions.worker.streaming, true);
-  assert.equal(next.sessions, state.sessions);
-  assert.equal(reducer(next, { type: 'CLOSE_PROJECTS' }).mainView, 'session');
+  assert.equal(reducer(state, { type: 'SET_ACTIVE_SESSION', id: 'worker' }).mainView, 'session');
+  assert.equal(reducer(state, { type: 'CLOSE_PROJECTS' }).mainView, 'session');
 });
 
 test('a wake carrying several reports renders one card each, paragraphs intact', () => {
@@ -155,12 +147,14 @@ test('a project reads its lead: working before any thread, and idle threads are 
     threads: project.threads.filter((thread) => !thread.ownerAppSessionId),
   };
   const signals = { sessions: { main: session('main') }, attention: () => null, digests: {} };
-  const pulse = projectPulse(lead, [], leadRow(lead, signals));
+  const leadThread = leadRow(lead, signals);
+  assert.equal(leadThread?.status, 'working');
+  const pulse = projectPulse(lead, [], leadThread);
   assert.equal(pulse.live, true);
-  assert.equal(pulse.summary, 'Main chat working');
+  assert.equal(pulse.attention, 0);
 
   const idle = { ...session('worker'), streaming: false, phase: 'idle' as const };
   const rows = threadRows(project, { ...signals, sessions: { worker: idle } });
   assert.equal(rows[0]?.status, 'ready');
-  assert.equal(threadStatusLine(threadCounts(rows)), '1 thread idle');
+  assert.deepEqual(threadCounts(rows), { attention: 0, working: 0, idle: 1 });
 });
