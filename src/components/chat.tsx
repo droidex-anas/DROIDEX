@@ -67,48 +67,51 @@ const ThreadBriefNotice = lazy(async () => {
   return { default: module.ThreadBriefNotice };
 });
 
+interface CallPair {
+  call: TranscriptEvent;
+  result?: TranscriptEvent;
+}
+
 export function splitAutomationProposals(events: TranscriptEvent[]): {
-  proposals: { call: TranscriptEvent; result?: TranscriptEvent }[];
+  proposals: CallPair[];
   remaining: TranscriptEvent[];
 } {
-  return splitCalls(events, isAutomationProposalCall);
+  const { pairs, remaining } = splitCalls(events, isAutomationProposalCall);
+  return { proposals: pairs, remaining };
 }
 
 /* A spawned thread reads as the thread itself, not as a tool call: the row the
    Threads panel shows, inline where the chat started it. A spawn that was
    refused started nothing, so it stays an ordinary failed tool row. */
 function splitThreadSpawns(events: TranscriptEvent[]): {
-  proposals: { call: TranscriptEvent; result?: TranscriptEvent }[];
+  spawns: CallPair[];
   remaining: TranscriptEvent[];
 } {
-  const split = splitCalls(events, isThreadSpawnCall);
-  const started = split.proposals.filter(({ result }) => !result || spawnedThread(result.text));
-  if (started.length === split.proposals.length) return split;
-  const shown = new Set(started.flatMap(({ call, result }) => (result ? [call, result] : [call])));
-  return { proposals: started, remaining: events.filter((event) => !shown.has(event)) };
+  const spawns = splitCalls(events, isThreadSpawnCall).pairs.filter(
+    ({ result }) => !result || spawnedThread(result.text),
+  );
+  const shown = new Set(spawns.flatMap(({ call, result }) => (result ? [call, result] : [call])));
+  return { spawns, remaining: events.filter((event) => !shown.has(event)) };
 }
 
 function splitCalls(
   events: TranscriptEvent[],
   matches: (event: TranscriptEvent) => boolean,
-): {
-  proposals: { call: TranscriptEvent; result?: TranscriptEvent }[];
-  remaining: TranscriptEvent[];
-} {
+): { pairs: CallPair[]; remaining: TranscriptEvent[] } {
   const calls = events.filter(matches);
-  if (calls.length === 0) return { proposals: [], remaining: events };
+  if (calls.length === 0) return { pairs: [], remaining: events };
   const { resultByCall } = correlateResults(events);
   const shown = new Set<TranscriptEvent>();
-  const proposals = calls.map((call) => {
+  const pairs = calls.map((call) => {
     const result = resultByCall.get(call);
     shown.add(call);
     if (result) shown.add(result);
     return { call, result };
   });
-  return { proposals, remaining: events.filter((event) => !shown.has(event)) };
+  return { pairs, remaining: events.filter((event) => !shown.has(event)) };
 }
 
-function AutomationToolGroup({
+function ToolGroupWithCards({
   events,
   active,
   sessionLive,
@@ -122,7 +125,7 @@ function AutomationToolGroup({
   onOpenReviewFile?: OpenReviewFileHandler;
 }) {
   const { proposals, remaining: withoutProposals } = splitAutomationProposals(events);
-  const { proposals: spawns, remaining } = splitThreadSpawns(withoutProposals);
+  const { spawns, remaining } = splitThreadSpawns(withoutProposals);
   const group = (groupEvents: TranscriptEvent[]) => (
     <ToolGroupItem
       events={groupEvents}
@@ -474,7 +477,7 @@ export const FeedItemView = memo(function FeedItemView({
       );
     case 'tools':
       return (
-        <AutomationToolGroup
+        <ToolGroupWithCards
           events={item.events}
           active={live}
           sessionLive={sessionLive ?? live}
