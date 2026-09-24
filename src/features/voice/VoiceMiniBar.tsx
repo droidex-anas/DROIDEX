@@ -108,7 +108,7 @@ export function VoiceMiniBar({ voice, appSessionId }: { voice: Voice; appSession
     });
   }, []);
 
-  const status = voiceStatusLabel(session.status, session.muted, session.micDenied, session.error);
+  const status = voiceStatusLabel({ ...session, working: voice.working });
   const lines = session.lines.slice(-PANEL_LINES);
 
   return (

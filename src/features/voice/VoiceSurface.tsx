@@ -27,6 +27,7 @@ function VoiceSurfaceDialog({ voice }: { voice: Voice }) {
   const reducedMotion = useReducedMotion();
   const [settingsOpen, setSettingsOpen] = useState(false);
   const { session } = voice;
+  const activity = { ...session, working: voice.working };
   const live = session.status === 'live';
   useObscuresNativeSurfaces();
 
@@ -80,15 +81,13 @@ function VoiceSurfaceDialog({ voice }: { voice: Voice }) {
       transition={{ duration: reducedMotion ? 0 : 0.22, ease: [0.16, 1, 0.3, 1] }}
       className="fixed inset-0 z-[1200] flex flex-col bg-droid-bg text-droid-text"
     >
-      {/* The window controls sit over this row on macOS, so the label starts
-          clear of them and the empty space still drags the window. */}
+      {/* Nothing is titled here: the orb is the subject. The row exists so the
+          window can be dragged and so the macOS controls have their space. */}
       <header
         data-electron-drag-region
-        className="flex items-center py-4 pr-5"
+        className="h-10 shrink-0"
         style={{ paddingLeft: WINDOW_CONTROLS_INSET_PX }}
-      >
-        <span className="text-[12px] font-medium text-droid-text-muted">Voice</span>
-      </header>
+      />
 
       {/* What was said reads the way the chat reads: the same bubble for a
           request, the same message body for an answer, both marked as spoken. */}
@@ -130,13 +129,11 @@ function VoiceSurfaceDialog({ voice }: { voice: Voice }) {
         </motion.div>
         <p
           className={`text-[13px] ${
-            voiceStatusIsLive(session.status, session.muted, session.micDenied, session.error)
-              ? 'shimmer-text font-medium'
-              : 'text-droid-text-muted'
+            voiceStatusIsLive(activity) ? 'shimmer-text font-medium' : 'text-droid-text-muted'
           }`}
           aria-live="polite"
         >
-          {voiceStatusLabel(session.status, session.muted, session.micDenied, session.error)}
+          {voiceStatusLabel(activity)}
         </p>
       </div>
 

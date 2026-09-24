@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { VoiceNarration } from '../../types/bridge';
+import { useSessionLive } from '../../hooks/useSessionLive';
 import { useVoiceSession, type VoiceSession } from './useVoiceSession';
 
 /**
@@ -12,6 +13,8 @@ export type VoiceView = 'off' | 'full' | 'dock' | 'mini';
 type VoicePlacement = 'off' | 'full' | 'dock';
 
 export interface Voice {
+  /** The chat's model is running a turn this conversation asked for. */
+  working: boolean;
   view: VoiceView;
   session: VoiceSession;
   /** Opens the full surface and connects. */
@@ -43,6 +46,9 @@ export function useVoice(
   onScreen: boolean,
 ): Voice {
   const session = useVoiceSession(appSessionId, preferences.voice, preferences.narration);
+  // A spoken request runs as an ordinary turn on the chat, so the chat's own
+  // live state is what "working" means here.
+  const working = useSessionLive(appSessionId);
   const [placement, setPlacement] = useState<VoicePlacement>('off');
   const [reconnecting, setReconnecting] = useState(false);
   const { status, start, stop } = session;
@@ -99,6 +105,7 @@ export function useVoice(
   return {
     view: placement === 'dock' && !onScreen ? 'mini' : placement,
     session,
+    working,
     open,
     minimize,
     expand,

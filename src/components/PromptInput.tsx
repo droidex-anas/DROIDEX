@@ -1613,11 +1613,12 @@ export default function PromptInput({
     voiceAwaitingSession.current = true;
     const clientRef = newClientRef();
     void (async () => {
-      const preparation = await prepareDraftCwd(
-        state.draftChat?.cwd ?? '',
-        clientRef,
-        'Voice chat',
-      );
+      // Named for now by when it started; the first thing said in it renames it.
+      const placeholder = `Voice chat ${new Date().toLocaleTimeString([], {
+        hour: '2-digit',
+        minute: '2-digit',
+      })}`;
+      const preparation = await prepareDraftCwd(state.draftChat?.cwd ?? '', clientRef, placeholder);
       if (!preparation.ok) {
         voiceAwaitingSession.current = false;
         return;
@@ -1629,7 +1630,7 @@ export default function PromptInput({
       createSession({
         clientRef,
         cwd: preparation.path,
-        title: 'Voice chat',
+        title: placeholder,
         goal: '',
         sessionPurpose: 'chat',
         provider: draftProvider,

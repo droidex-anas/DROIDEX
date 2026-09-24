@@ -6,11 +6,13 @@ import {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
   type ReactNode,
 } from 'react';
 import { AnimatePresence } from 'framer-motion';
 import { shallowEqual, useStoreApi, useStoreSelector, type AppState } from '../../hooks/useStore';
+import { renameSession } from '../../lib/commands';
 import { useVoice, type Voice } from './useVoice';
 import { canUseVoice } from './voiceAvailability';
 import { playVoiceChime } from './voiceChime';
@@ -59,6 +61,9 @@ export function VoiceProvider({ children }: { children: ReactNode }) {
   // Opening and hanging up are marked by a chime, so the press is answered
   // before the connection can be.
   const activeAppSessionId = useStoreSelector((state: AppState) => state.activeAppSessionId);
+  // Pull requests, automations and settings are not the chat, so a conversation
+  // held there is held away from its chat and wears the mini bar.
+  const mainView = useStoreSelector((state: AppState) => state.mainView);
   const preferences = useStoreSelector(
     (state: AppState) => ({
       voice: state.defaultVoice || undefined,
@@ -73,7 +78,7 @@ export function VoiceProvider({ children }: { children: ReactNode }) {
   const [owner, setOwner] = useState<string | null>(null);
   const [opening, setOpening] = useState<string | null>(null);
 
-  const onScreen = owner !== null && owner === activeAppSessionId;
+  const onScreen = owner !== null && owner === activeAppSessionId && mainView === 'session';
   const voice = useVoice(owner, preferences, onScreen);
 
   const openOn = useCallback(
@@ -92,6 +97,17 @@ export function VoiceProvider({ children }: { children: ReactNode }) {
     setOpening(null);
     voice.open();
   }, [opening, owner, voice]);
+
+  // A chat opened by voice has no prompt to take its name from, so it wears a
+  // placeholder until the first thing said in it, and takes its name from that.
+  const named = useRef<string | null>(null);
+  const firstRequest = voice.session.lines.find((line) => line.role === 'user' && line.final);
+  useEffect(() => {
+    if (owner === null || !firstRequest || named.current === owner) return;
+    named.current = owner;
+    const title = firstRequest.text.replace(/\s+/g, ' ').trim().slice(0, 48);
+    if (title) renameSession(owner, title);
+  }, [firstRequest, owner]);
 
   const { close } = voice;
   const hangUp = useCallback(() => {

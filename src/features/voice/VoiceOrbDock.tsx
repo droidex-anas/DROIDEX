@@ -13,6 +13,7 @@ export function VoiceOrbDock({ voice }: { voice: Voice }) {
   const reducedMotion = useReducedMotion();
   if (voice.view !== 'dock') return null;
   const { session } = voice;
+  const activity = { ...session, working: voice.working };
 
   return (
     <motion.div
@@ -33,12 +34,10 @@ export function VoiceOrbDock({ voice }: { voice: Voice }) {
       </button>
       <span
         className={`text-[11px] ${
-          voiceStatusIsLive(session.status, session.muted, session.micDenied, session.error)
-            ? 'shimmer-text font-medium'
-            : 'text-droid-text-muted'
+          voiceStatusIsLive(activity) ? 'shimmer-text font-medium' : 'text-droid-text-muted'
         }`}
       >
-        {voiceStatusLabel(session.status, session.muted, session.micDenied, session.error)}
+        {voiceStatusLabel(activity)}
       </span>
     </motion.div>
   );
