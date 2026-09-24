@@ -6,24 +6,42 @@ import { PROVIDER_KINDS } from '../providers/providerKind.js';
 import type { Project, ThreadInput } from './types.js';
 
 const id = z.string().min(1).max(200);
-const text = z.string().max(8_192);
 
-/* What the ledger will accept back. The service bounds a harness's question to
-   these before storing it: the schema is checked on load, and a file it refuses
-   takes every project with it. */
+/* What the ledger will accept back. Every writer bounds what it stores to
+   these, because the schema is checked on load and a file it refuses takes
+   every project with it. */
 export const LEDGER_LIMITS = {
+  projects: 32,
+  /** Conversations in one project, its main chat included. */
+  threads: 8,
+  /** A project's or a thread's title. */
+  title: 120,
+  planSteps: 60,
+  stepTitle: 200,
+  stepMilestone: 80,
+  stepNote: 400,
+  /** A message, a thread's final reply, and each earlier reply kept. */
+  text: 8_192,
+  /** How far back a thread's own answers stay readable: deep enough that an
+      owner which compacted can pick the conversation up again, shallow enough
+      that the ledger stays a ledger. */
+  earlierReplies: 9,
+  threadError: 600,
+  projectError: 2_000,
   /** Queued and claimed messages together, which is what the writer bounds. */
   inbox: 64,
-  messageText: 8_192,
   askQuestions: 16,
   askOptions: 16,
   askQuestionText: 2_000,
   askOptionText: 500,
   askIndex: 64,
 } as const;
+
+const text = z.string().max(LEDGER_LIMITS.text);
+
 export const threadInputSchema = z
   .object({
-    title: z.string().trim().min(1).max(120),
+    title: z.string().trim().min(1).max(LEDGER_LIMITS.title),
     prompt: text.trim().min(1),
     provider: z.enum(PROVIDER_KINDS),
     modelId: z.string().min(1).max(200).optional(),
@@ -70,23 +88,23 @@ const ask = z
 const project = z
   .object({
     id,
-    title: z.string().min(1).max(120),
+    title: z.string().min(1).max(LEDGER_LIMITS.title),
     paused: z.boolean(),
-    launching: z.number().int().min(0).max(8),
+    launching: z.number().int().min(0).max(LEDGER_LIMITS.threads),
     plan: z
       .array(
         z
           .object({
             id,
-            title: z.string().min(1).max(200),
-            milestone: z.string().max(80).optional(),
+            title: z.string().min(1).max(LEDGER_LIMITS.stepTitle),
+            milestone: z.string().max(LEDGER_LIMITS.stepMilestone).optional(),
             state: z.enum(['planned', 'doing', 'done', 'blocked']).optional(),
             threadAppSessionId: id.optional(),
-            note: z.string().max(400).optional(),
+            note: z.string().max(LEDGER_LIMITS.stepNote).optional(),
           })
           .strict(),
       )
-      .max(60)
+      .max(LEDGER_LIMITS.planSteps)
       .optional(),
     threads: z
       .array(
@@ -95,15 +113,15 @@ const project = z
             appSessionId: id,
             ask: ask.optional(),
             ownerAppSessionId: id.optional(),
-            title: z.string().max(120),
+            title: z.string().max(LEDGER_LIMITS.title),
             reply: text,
-            earlierReplies: z.array(text).max(9).optional(),
-            error: z.string().max(600).optional(),
+            earlierReplies: z.array(text).max(LEDGER_LIMITS.earlierReplies).optional(),
+            error: z.string().max(LEDGER_LIMITS.threadError).optional(),
             waiting: z.boolean(),
           })
           .strict(),
       )
-      .max(8),
+      .max(LEDGER_LIMITS.threads),
     pending: z.array(message).max(LEDGER_LIMITS.inbox),
     delivery: z
       .object({
@@ -112,10 +130,10 @@ const project = z
       })
       .strict()
       .optional(),
-    error: z.string().max(2_000).optional(),
+    error: z.string().max(LEDGER_LIMITS.projectError).optional(),
   })
   .strict();
-const ledger = z.array(project).max(32);
+const ledger = z.array(project).max(LEDGER_LIMITS.projects);
 const MAX_BYTES = 8 * 1024 * 1024;
 
 export interface ProjectPersistence {

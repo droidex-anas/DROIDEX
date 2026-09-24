@@ -284,7 +284,7 @@ test('an outsized harness question is bounded to what the ledger will load', asy
     assert.ok(item.options.length <= LEDGER_LIMITS.askOptions);
     for (const option of item.options) assert.ok(option.length <= LEDGER_LIMITS.askOptionText);
   }
-  assert.ok((h.state.saved[0]?.pending[0]?.text.length ?? 0) <= LEDGER_LIMITS.messageText);
+  assert.ok((h.state.saved[0]?.pending[0]?.text.length ?? 0) <= LEDGER_LIMITS.text);
 });
 
 test('a question that dies with its turn takes its wake off the queue', async (t) => {
@@ -437,7 +437,7 @@ test('parallel spawn reservations cap fanout before provider creation', async (t
   const gate = deferred();
   h.state.bindGate = gate.promise;
   const requests = Array.from({ length: 7 }, () => h.projects.spawn(main, input));
-  await assert.rejects(h.projects.spawn(main, input), /eight/);
+  await assert.rejects(h.projects.spawn(main, input), /at most 8 conversations/);
   await h.projects.setPaused(id, true);
   gate.resolve();
   const outcomes = await Promise.allSettled(requests);
@@ -454,7 +454,10 @@ test('a spawn holds its slot while its checkout is cut', async (t) => {
   h.state.bindGate = gate.promise;
   const requests = Array.from({ length: 7 }, () => h.projects.spawn(main, input));
   // Refused on the cap before any worktree is cut for it.
-  await assert.rejects(h.projects.spawn(main, { ...input, workspace: 'worktree' }), /eight/);
+  await assert.rejects(
+    h.projects.spawn(main, { ...input, workspace: 'worktree' }),
+    /at most 8 conversations/,
+  );
   gate.resolve();
   await Promise.all(requests);
 });

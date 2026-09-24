@@ -119,9 +119,10 @@ already handed to a provider. There is no wake allowance: a project reports as
 often as its threads settle, for as long as the work runs. DROIDEX holds it only
 when deliveries run far past the pace real turns could produce — 60 within five
 minutes — which reads as threads talking in circles rather than working.
-Projects allows up to eight threads per project, three levels of descendants,
-32 projects and 64 queued/claimed messages per project. At most two Projects delivery turns run
-at once; ordinary interactive sends keep their existing behavior.
+Projects allows up to eight conversations per project (the main chat and seven
+threads), three levels of descendants, 32 projects and 64 queued/claimed
+messages per project. At most two Projects delivery turns run at once; ordinary
+interactive sends keep their existing behavior.
 
 Threads share their owner's workspace unless the spawn asks for a worktree, or
 DROIDEX gives one its own because another thread is already writing in that
