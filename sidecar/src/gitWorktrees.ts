@@ -12,7 +12,7 @@ import {
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { promisify } from 'node:util';
 
-/* The git plumbing DROIDEX uses whenever it runs work in its own worktree —
+/* The git plumbing DROIDEX uses whenever it runs work in its own worktree:
    automation runs and project threads. Both keep the same shape,
    `<repo>/.worktrees/<name>/<repo>`, so a person can tell at a glance which
    checkouts the app made, and both refuse a path that leaves the repository
@@ -58,7 +58,7 @@ export function sanitizeSegment(value: string): string {
   return value
     .normalize('NFKD')
     .toLowerCase()
-    .replace(/[̀-ͯ]/g, '')
+    .replace(/[\u0300-\u036f]/g, '')
     .replace(new RegExp(`[${escapeRegExp(sep)}]+`, 'g'), '-')
     .replace(/[^a-z0-9._-]+/g, '-')
     .replace(/^[.-]+|[.-]+$/g, '')
@@ -125,14 +125,14 @@ export async function addWorktree(
   await git(root, args, 90_000);
 }
 
-export function parseWorktreePaths(output: string): string[] {
+function parseWorktreePaths(output: string): string[] {
   return output
     .split('\n')
     .filter((line) => line.startsWith('worktree '))
     .map((line) => line.slice('worktree '.length));
 }
 
-export async function registeredWorktreePath(
+async function registeredWorktreePath(
   worktrees: readonly string[],
   target: string,
 ): Promise<string | null> {
@@ -144,7 +144,7 @@ export async function registeredWorktreePath(
 }
 
 /** True when the path is one DROIDEX made: `<repo>/.worktrees/<name>/<repo>`. */
-export async function isManagedWorktreePath(
+async function isManagedWorktreePath(
   worktrees: readonly string[],
   target: string,
 ): Promise<boolean> {
