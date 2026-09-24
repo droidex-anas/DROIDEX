@@ -40,8 +40,8 @@ export type ThreadSpawnInput = Omit<ThreadInput, 'cwd' | 'provider' | 'autonomy'
   };
 
 /* The plan the lead keeps for the user: what this project intends to do, in
-   order. A step that names a thread has no state of its own — it reports the
-   state of that conversation — so the table can never claim progress the app
+   order. A step that names a thread has no state of its own: it reports the
+   state of that conversation, so the table can never claim progress the app
    cannot see. */
 export interface ProjectStep {
   id: string;

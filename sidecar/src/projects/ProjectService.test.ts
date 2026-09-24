@@ -218,7 +218,7 @@ test('busy owners retain messages; sibling completions batch into one later turn
   await h.finish(main);
   await drain();
   assert.equal(h.sent.length, 1);
-  // One wake, carrying both — batching them is the point, so assert the text.
+  // One wake, carrying both: batching them is the point, so assert the text.
   assert.match(h.sent[0]?.prompt ?? '', /\bA\b/);
   assert.match(h.sent[0]?.prompt ?? '', /\bB\b/);
   assert.equal(h.projects.list()[0]?.queued, 0);
