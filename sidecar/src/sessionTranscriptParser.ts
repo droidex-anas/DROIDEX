@@ -46,6 +46,8 @@ export interface StoredSessionStart {
   // carries neither, which is what keeps every existing session reading as Droid.
   provider?: string;
   resumeId?: string;
+  // Droid only loads a session from the Factory organization it was created in.
+  organizationId?: string;
   decompSessionType?: string;
   decompMissionId?: string;
   // Present when this session was spawned by another session's tool call
