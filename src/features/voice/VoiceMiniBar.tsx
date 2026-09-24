@@ -24,6 +24,7 @@ const OFFSET_STORAGE_KEY = 'droid-voice-mini-bar-offset';
 // chat's own transcript, which is what the first button goes back to.
 const PANEL_LINES = 8;
 const PANEL_MAX_HEIGHT_PX = 220;
+const PANEL_WIDTH_PX = 288;
 
 /** How far the bar has been dragged from that corner. */
 interface Offset {
@@ -41,7 +42,14 @@ interface DragBounds {
 /** Pinned to the corner until the bar has been measured against the window. */
 const PINNED: DragBounds = { left: 0, right: 0, top: 0, bottom: 0 };
 
-type PanelPlacement = 'closed' | 'above' | 'below';
+/**
+ * Where the panel opens: above or below the bar, and how far it is shifted
+ * sideways so it stays inside the window however the bar has been dragged.
+ */
+interface PanelPlacement {
+  side: 'above' | 'below';
+  offsetX: number;
+}
 
 const buttonClass =
   'cursor-pointer rounded-full p-1.5 text-droid-text-secondary transition-colors hover:bg-droid-bg/50 hover:text-droid-text';
@@ -54,7 +62,7 @@ export function VoiceMiniBar({ voice, appSessionId }: { voice: Voice; appSession
   const feedRef = useRef<HTMLDivElement>(null);
   const chevronRef = useRef<HTMLButtonElement>(null);
   const panelId = useId();
-  const [panel, setPanel] = useState<PanelPlacement>('closed');
+  const [panel, setPanel] = useState<PanelPlacement | null>(null);
   const [bounds, setBounds] = useState<DragBounds>(PINNED);
 
   // Where the bar sits lives in motion values rather than in state, so neither
@@ -99,12 +107,20 @@ export function VoiceMiniBar({ voice, appSessionId }: { voice: Voice; appSession
 
   const togglePanel = useCallback(() => {
     setPanel((current) => {
-      if (current !== 'closed') return 'closed';
-      // The panel opens away from the edge the bar is nearest, so dragging the
-      // bar low does not push what was said off the bottom of the window.
+      if (current) return null;
       const bar = barRef.current?.getBoundingClientRect();
-      const roomBelow = bar ? window.innerHeight - bar.bottom : 0;
-      return roomBelow < PANEL_MAX_HEIGHT_PX + EDGE_MARGIN_PX ? 'above' : 'below';
+      if (!bar) return { side: 'below', offsetX: 0 };
+      // It opens away from the edge the bar is nearest, so dragging the bar low
+      // does not push what was said off the bottom of the window.
+      const roomBelow = window.innerHeight - bar.bottom;
+      const side = roomBelow < PANEL_MAX_HEIGHT_PX + EDGE_MARGIN_PX ? 'above' : 'below';
+      // It hangs from the bar's right edge, so a bar dragged to the left would
+      // hang off the window. Keep it inside, and let it sit beside the bar
+      // rather than under it when there is no other room.
+      const hanging = bar.right - PANEL_WIDTH_PX;
+      const room = window.innerWidth - PANEL_WIDTH_PX - EDGE_MARGIN_PX;
+      const left = Math.max(EDGE_MARGIN_PX, Math.min(hanging, room));
+      return { side, offsetX: left - hanging };
     });
   }, []);
 
@@ -123,6 +139,9 @@ export function VoiceMiniBar({ voice, appSessionId }: { voice: Voice; appSession
       }}
       onDragStart={() => {
         dragged.current = true;
+        // What was said would follow the bar around and drift off the window;
+        // it opens again where the bar lands.
+        setPanel(null);
       }}
       onDragEnd={() => {
         writeOffset({ x: x.get(), y: y.get() });
@@ -134,9 +153,9 @@ export function VoiceMiniBar({ voice, appSessionId }: { voice: Voice; appSession
         event.stopPropagation();
       }}
       onKeyDown={(event) => {
-        if (event.key !== 'Escape' || panel === 'closed') return;
+        if (event.key !== 'Escape' || !panel) return;
         event.stopPropagation();
-        setPanel('closed');
+        setPanel(null);
         chevronRef.current?.focus();
       }}
       initial={reducedMotion ? { opacity: 0 } : { opacity: 0, scale: 0.92 }}
@@ -147,7 +166,7 @@ export function VoiceMiniBar({ voice, appSessionId }: { voice: Voice; appSession
       className="fixed z-[1150] cursor-grab active:cursor-grabbing"
     >
       <AnimatePresence>
-        {panel !== 'closed' && (
+        {panel && (
           <motion.div
             ref={feedRef}
             id={panelId}
@@ -158,13 +177,21 @@ export function VoiceMiniBar({ voice, appSessionId }: { voice: Voice; appSession
             onPointerDownCapture={(event) => {
               event.stopPropagation();
             }}
-            initial={reducedMotion ? { opacity: 0 } : { opacity: 0, y: panel === 'above' ? 6 : -6 }}
+            initial={
+              reducedMotion ? { opacity: 0 } : { opacity: 0, y: panel.side === 'above' ? 6 : -6 }
+            }
             animate={{ opacity: 1, y: 0 }}
-            exit={reducedMotion ? { opacity: 0 } : { opacity: 0, y: panel === 'above' ? 6 : -6 }}
+            exit={
+              reducedMotion ? { opacity: 0 } : { opacity: 0, y: panel.side === 'above' ? 6 : -6 }
+            }
             transition={{ duration: 0.18, ease: [0.16, 1, 0.3, 1] }}
-            style={{ maxHeight: PANEL_MAX_HEIGHT_PX }}
-            className={`absolute right-0 w-72 cursor-auto overflow-y-auto rounded-2xl border border-droid-border bg-droid-raised p-3 shadow-droid ${
-              panel === 'above' ? 'bottom-full mb-2' : 'top-full mt-2'
+            style={{
+              maxHeight: PANEL_MAX_HEIGHT_PX,
+              width: PANEL_WIDTH_PX,
+              marginLeft: panel.offsetX,
+            }}
+            className={`absolute right-0 cursor-auto overflow-y-auto rounded-2xl border border-droid-border bg-droid-raised p-3 shadow-droid ${
+              panel.side === 'above' ? 'bottom-full mb-2' : 'top-full mt-2'
             }`}
           >
             {lines.length === 0 ? (
@@ -241,14 +268,14 @@ export function VoiceMiniBar({ voice, appSessionId }: { voice: Voice; appSession
         <button
           ref={chevronRef}
           type="button"
-          aria-label={panel === 'closed' ? 'Show what was said' : 'Hide what was said'}
-          title={panel === 'closed' ? 'Show what was said' : 'Hide what was said'}
-          aria-expanded={panel !== 'closed'}
+          aria-label={panel ? 'Hide what was said' : 'Show what was said'}
+          title={panel ? 'Hide what was said' : 'Show what was said'}
+          aria-expanded={panel !== null}
           aria-controls={panelId}
           onClick={togglePanel}
           className={buttonClass}
         >
-          {panel === 'above' ? (
+          {panel?.side === 'above' ? (
             <ChevronUp className="h-3.5 w-3.5" />
           ) : (
             <ChevronDown className="h-3.5 w-3.5" />
