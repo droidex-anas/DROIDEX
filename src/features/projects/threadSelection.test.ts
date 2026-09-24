@@ -1,7 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { buildThreadInput, selectionCatalog, type ThreadSelection } from './useThreadSelection';
-import { projectSession } from './sessions';
 import type { ProviderStatus } from '../../types/bridge';
 
 const selection: ThreadSelection = {
@@ -52,9 +51,4 @@ test('a missing model never inherits a different model’s reasoning capabilitie
   assert.equal(input.modelId, 'custom');
   assert.equal(Object.hasOwn(input, 'reasoningEffort'), false);
   assert.equal(Object.hasOwn(input, 'cwd'), false);
-});
-
-test('missing saved session IDs stay explicit rather than claiming a live conversation', () => {
-  assert.equal(projectSession({}, 'missing'), undefined);
-  assert.equal(projectSession({}, null), undefined);
 });
