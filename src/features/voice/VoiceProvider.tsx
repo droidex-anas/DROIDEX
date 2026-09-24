@@ -15,7 +15,16 @@ import { shallowEqual, useStoreApi, useStoreSelector, type AppState } from '../.
 import { renameSession } from '../../lib/commands';
 import { useVoice, type Voice } from './useVoice';
 import { canUseVoice } from './voiceAvailability';
-import { playVoiceChime } from './voiceChime';
+
+// The chimes are heard when a conversation opens and when it ends, so they are
+// fetched with the first one rather than with the app. Sticky user activation
+// outlives the import, so the sound still plays from the click that asked for
+// it.
+function playVoiceChime(chime: 'start' | 'end'): void {
+  void import('./voiceChime').then((m) => {
+    m.playVoiceChime(chime);
+  });
+}
 
 // The bar only exists while a conversation is held away from its chat, so it
 // loads then rather than sitting in every window's first bundle.
@@ -42,8 +51,12 @@ export interface VoiceControls {
   appSessionId: string | null;
   /** True when that chat is the one on screen. */
   onScreen: boolean;
-  /** Opens a conversation on a chat, ending one running elsewhere first. */
-  openOn: (appSessionId: string) => void;
+  /**
+   * Opens a conversation on a chat, ending one running elsewhere first.
+   * `nameFromSpeech` is for a chat the orb just created, which has no prompt
+   * to take a name from and takes one from the first thing said in it.
+   */
+  openOn: (appSessionId: string, options?: { nameFromSpeech?: boolean }) => void;
   close: () => void;
 }
 
@@ -92,10 +105,14 @@ export function VoiceProvider({ children }: { children: ReactNode }) {
   const onScreen = owner !== null && owner === activeAppSessionId && mainView === 'session';
   const voice = useVoice(owner, preferences, onScreen);
 
+  // The chats the orb created, which are the only ones a conversation renames.
+  const unnamed = useRef(new Set<string>());
+
   const openOn = useCallback(
-    (appSessionId: string) => {
+    (appSessionId: string, options?: { nameFromSpeech?: boolean }) => {
       const { sessions } = store.getState();
       if (!(appSessionId in sessions) || !canUseVoice(sessions[appSessionId].provider)) return;
+      if (options?.nameFromSpeech) unnamed.current.add(appSessionId);
       playVoiceChime('start');
       setOwner(appSessionId);
       setOpening(appSessionId);
@@ -109,15 +126,16 @@ export function VoiceProvider({ children }: { children: ReactNode }) {
     voice.open();
   }, [opening, owner, voice]);
 
-  // A chat opened by voice has no prompt to take its name from, so it wears a
+  // A chat the orb created has no prompt to take its name from, so it wears a
   // placeholder until the first thing said in it, and takes its name from that.
-  const named = useRef<string | null>(null);
+  // A chat that already has a name keeps it.
   const firstRequest = voice.session.lines.find((line) => line.role === 'user' && line.final);
   useEffect(() => {
-    if (owner === null || !firstRequest || named.current === owner) return;
-    named.current = owner;
+    if (owner === null || !firstRequest || !unnamed.current.has(owner)) return;
     const title = firstRequest.text.replace(/\s+/g, ' ').trim().slice(0, 48);
-    if (title) renameSession(owner, title);
+    if (!title) return;
+    unnamed.current.delete(owner);
+    renameSession(owner, title);
   }, [firstRequest, owner]);
 
   const { close } = voice;

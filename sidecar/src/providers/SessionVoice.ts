@@ -57,6 +57,12 @@ export class SessionVoice {
     }
   }
 
+  // True while a conversation is running on this chat, so the rest of the
+  // sidecar can tell a chat that is being talked to from an idle one.
+  isLive(appSessionId: string): boolean {
+    return this.d.liveSession(appSessionId)?.voice?.isLive() ?? false;
+  }
+
   // Ends the conversation a closing session is holding. Runs before the
   // provider session is torn down, because stopping goes through it. Never
   // throws: the session closes either way.
@@ -65,11 +71,15 @@ export class SessionVoice {
     if (!subscription) return;
     this.subscriptions.delete(appSessionId);
     subscription.unsubscribe();
+    const wasLive = subscription.session.voice?.isLive() ?? false;
     try {
       await subscription.session.voice?.stop();
     } catch (error) {
       console.warn(`Voice session cleanup failed: ${errMsg(error)}`);
     }
+    // The subscription is gone, so the provider's own close cannot be
+    // forwarded. Saying so here is what releases the renderer's microphone.
+    if (wasLive) this.d.emit({ type: 'voice.state', appSessionId, status: 'closed' });
   }
 
   // Resolves the session's voice port and subscribes this app session to it

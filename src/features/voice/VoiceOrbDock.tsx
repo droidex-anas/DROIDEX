@@ -32,6 +32,7 @@ export function VoiceOrbDock() {
         <VoiceOrb micStream={session.micStream} replyStream={session.replyStream} size={72} />
       </button>
       <span
+        aria-live="polite"
         className={`text-[11px] ${
           voiceStatusIsLive(voice.activity) ? 'shimmer-text font-medium' : 'text-droid-text-muted'
         }`}

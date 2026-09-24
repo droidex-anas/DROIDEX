@@ -62,7 +62,13 @@ function roleOf(params: Record<string, unknown>): 'user' | 'assistant' {
 
 export class CodexVoice implements ProviderVoice {
   private readonly listeners = new Set<(event: ProviderVoiceEvent) => void>();
+  // True from the moment a conversation is asked for, not from the moment it
+  // connects: a hang-up during the handshake still has to reach Codex.
   private live = false;
+  // Stopping produces a `closed` of its own. The app already knows, and the
+  // next conversation on this thread must not be closed by the last one's
+  // acknowledgement.
+  private stopping = false;
 
   // `threadId` is read at call time: the thread opens after the session is
   // constructed, and a resume replaces it.
@@ -97,8 +103,10 @@ export class CodexVoice implements ProviderVoice {
       this.publish({ kind: 'error', message: message || 'The voice session failed.' });
     });
     this.client.onNotification('thread/realtime/closed', () => {
+      const expected = this.stopping;
+      this.stopping = false;
       this.live = false;
-      this.publish({ kind: 'closed' });
+      if (!expected) this.publish({ kind: 'closed' });
     });
   }
 
@@ -110,23 +118,37 @@ export class CodexVoice implements ProviderVoice {
     };
   }
 
-  async start({ sdp, voice, narration = 'brief' }: ProviderVoiceStart): Promise<void> {
-    const threadId = this.requireThread();
-    await this.client.request('thread/realtime/start', {
-      threadId,
-      outputModality: 'audio',
-      version: VERSION,
-      transport: { type: 'webrtc', sdp },
-      codexResponseHandoffMode: HANDOFF_MODE[narration],
-      realtimeStartInstructions: START_INSTRUCTIONS,
-      ...(voice ? { voice } : {}),
-    });
+  isLive(): boolean {
+    return this.live;
   }
 
+  async start({ sdp, voice, narration = 'brief' }: ProviderVoiceStart): Promise<void> {
+    const threadId = this.requireThread();
+    this.live = true;
+    this.stopping = false;
+    await this.client
+      .request('thread/realtime/start', {
+        threadId,
+        outputModality: 'audio',
+        version: VERSION,
+        transport: { type: 'webrtc', sdp },
+        codexResponseHandoffMode: HANDOFF_MODE[narration],
+        realtimeStartInstructions: START_INSTRUCTIONS,
+        ...(voice ? { voice } : {}),
+      })
+      .catch((error: unknown) => {
+        this.live = false;
+        throw error;
+      });
+  }
+
+  // Leaves the session marked live until Codex confirms, so a stop that failed
+  // can be tried again instead of silently doing nothing.
   async stop(): Promise<void> {
     if (!this.live) return;
-    this.live = false;
+    this.stopping = true;
     await this.client.request('thread/realtime/stop', { threadId: this.requireThread() });
+    this.live = false;
   }
 
   onEvent(listener: (event: ProviderVoiceEvent) => void): () => void {

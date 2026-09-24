@@ -68,7 +68,15 @@ export function useVoiceSession(
       [appSessionId],
     ),
   );
-  const [wanted, setWanted] = useState(false);
+  const [wanted, setWantedState] = useState(false);
+  // Handing the conversation to another chat ends the old attempt and starts
+  // the new one in the same commit, so `start` cannot read `wanted` from a
+  // render that has not seen the end yet.
+  const wantedRef = useRef(false);
+  const setWanted = useCallback((next: boolean) => {
+    wantedRef.current = next;
+    setWantedState(next);
+  }, []);
   const [replyStream, setReplyStream] = useState<MediaStream | null>(null);
   const [muted, setMuted] = useState(false);
   const mic = useMicStream(wanted);
@@ -92,7 +100,7 @@ export function useVoiceSession(
     setWanted(false);
     setMuted(false);
     if (appSessionId) dispatch({ type: 'VOICE_ENDED', appSessionId });
-  }, [appSessionId, dispatch, teardown]);
+  }, [appSessionId, dispatch, setWanted, teardown]);
 
   // Handlers that outlive a render (connection failures, the mic verdict) reach
   // the current stop through this rather than through their own dependencies,
@@ -103,11 +111,11 @@ export function useVoiceSession(
   }, [stop]);
 
   const start = useCallback(() => {
-    if (!appSessionId || wanted) return;
+    if (!appSessionId || wantedRef.current) return;
     setMuted(false);
     setWanted(true);
-    dispatch({ type: 'VOICE_CONNECTING', appSessionId });
-  }, [appSessionId, dispatch, wanted]);
+    dispatch({ type: 'VOICE_CONNECTING', appSessionId, startedAt: Date.now() });
+  }, [appSessionId, dispatch, setWanted]);
 
   const toggleMuted = useCallback(() => {
     setMuted((current) => !current);
@@ -233,7 +241,7 @@ export function useVoiceSession(
       setMuted(false);
       if (appSessionId) dispatch({ type: 'VOICE_ENDED', appSessionId });
     };
-  }, [appSessionId, dispatch, teardown]);
+  }, [appSessionId, dispatch, setWanted, teardown]);
 
   return useMemo(
     () => ({

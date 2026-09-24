@@ -48,8 +48,16 @@ import { join } from 'node:path';
 // generated-image grid and ultra-effort dots already measured ~1.2KB over the
 // old line, and the stack adds ~0.8KB for the files pane chrome. The merged
 // ~98_980 leaves ~1KB of headroom, in line with past CSS raises.
+//
+// Raised from 1_365_000 to 1_375_000 for voice mode: the app owns one
+// conversation above the chat view, so the provider, the WebRTC negotiation,
+// the microphone hook and the conversation's state (~10KB together) are on the
+// entry by construction. Everything a conversation shows stays lazy: the full
+// surface, the mini bar, the composer's orb and controls, the settings sheet
+// and the chimes all load with the first conversation. The merged ~1_365_300
+// leaves the usual ~9KB of headroom.
 const BUDGETS = {
-  initialRendererJsBytes: 1_365_000,
+  initialRendererJsBytes: 1_375_000,
   initialCssBytes: 100_000,
   largestLazyChunkBytes: 700_000,
   duplicatePackageMaxBytes: 120_000,

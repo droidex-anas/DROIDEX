@@ -63,6 +63,10 @@ export class CodexSession implements ProviderSession {
   // Stop pressed before `turn/start` answered: there is a turn to end but no id
   // to name it with yet.
   private pendingInterrupt = false;
+  // A turn Codex started by itself, for a request spoken to a voice
+  // conversation. It has no stream of its own, so its id is kept here: Stop has
+  // to reach it, and its completion must not settle a turn the user typed.
+  private delegatedTurnId?: string;
   private readonly prompts: OpenPrompts;
   private readonly startup = new CodexStartup();
   private readonly backgroundListeners = new Set<(event: NormalizedEvent) => void>();
@@ -180,6 +184,7 @@ export class CodexSession implements ProviderSession {
       this.turn = undefined;
       this.turnId = undefined;
       this.pendingInterrupt = false;
+      this.delegatedTurnId = undefined;
     }
   }
 
@@ -242,8 +247,15 @@ export class CodexSession implements ProviderSession {
   }
 
   async interrupt(): Promise<void> {
+    if (!this.threadId) return;
+    // Stop reaches a delegated turn by its own id: it is running on this
+    // thread, and the user can see its work in the chat.
+    if (!this.turn) {
+      const delegated = this.delegatedTurnId;
+      if (delegated) await this.sendInterrupt(delegated);
+      return;
+    }
     // A stale pair would end a turn that already settled, or none at all.
-    if (!this.threadId || !this.turn) return;
     if (!this.turnId) {
       this.pendingInterrupt = true;
       return;
@@ -324,11 +336,18 @@ export class CodexSession implements ProviderSession {
     });
     this.onThreadNotification('turn/started', (params) => {
       const turn = turnOf(params);
-      if (turn) this.adoptTurn(turn.id);
+      if (!turn) return;
+      if (this.turn) this.adoptTurn(turn.id);
+      else this.delegatedTurnId = turn.id;
     });
     this.onThreadNotification('turn/completed', (params) => {
       const turn = turnOf(params);
-      if (turn) this.settle(turn);
+      if (!turn) return;
+      if (turn.id === this.delegatedTurnId) {
+        this.delegatedTurnId = undefined;
+        return;
+      }
+      this.settle(turn);
     });
     this.onThreadNotification('error', (params) => {
       const failure = errorOf(params);

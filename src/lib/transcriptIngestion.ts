@@ -61,21 +61,40 @@ export function ingestTranscriptEvents(
   };
 
   for (const event of incoming) {
-    if (hasEventId(eventIds, event.id)) continue;
-    const last = events.at(-1);
+    if (hasEventId(eventIds, event.id)) {
+      // Renderer-only: the provider can close a spoken utterance and then
+      // continue it, so the row it already wrote grows in place rather than
+      // keeping the shorter text or appearing twice.
+      const grown = grownSpokenRow(events, event);
+      if (!grown) continue;
+      events = replaceChunkedSequenceAt(events, grown.index, grown.merged);
+      indexes = replaceIndexedEvent(indexes, grown.existing, grown.merged);
+      recordChange(grown.index);
+      estimatedCost = estimateReplacedTranscriptEventCost(
+        estimatedCost,
+        grown.existing,
+        grown.merged,
+      );
+      continue;
+    }
+    // Renderer-only: a spoken row can land between two deltas of the same
+    // written answer. The sidecar never sees one, so its replay coalesces those
+    // deltas; looking past the spoken rows here keeps the two in agreement.
+    const writtenIndex = lastWrittenIndex(events);
+    const last = events.at(writtenIndex);
 
     // Protocol mirror of sidecar/src/streamingDeltaCoalescer.ts
     // mergeStreamingDelta(). Keep both implementations and their behavior
     // tests synchronized.
     const textDelta = getTextDeltaRun(last, event);
     if (textDelta) {
-      const changedIndex = events.length - 1;
+      const changedIndex = events.length + writtenIndex;
       const mergedTail: TranscriptEvent = {
         ...textDelta.previous,
         text: (textDelta.previous.text ?? '') + textDelta.text,
         endTs: event.endTs ?? event.ts,
       };
-      events = replaceChunkedSequenceSuffix(events, changedIndex, [mergedTail]);
+      events = replaceChunkedSequenceAt(events, changedIndex, mergedTail);
       indexes = replaceIndexedEvent(indexes, textDelta.previous, mergedTail);
       recordChange(changedIndex);
       estimatedCost = estimateReplacedTranscriptEventCost(
@@ -445,6 +464,30 @@ function shiftIndexForInsertion(
 ): number | undefined {
   if (index === undefined) return undefined;
   return index >= insertionIndex ? index + insertedCount : index;
+}
+
+// The newest row a written answer could still be streaming into: the last one
+// that is not a spoken line. Normally that is the tail itself.
+function lastWrittenIndex(events: readonly TranscriptEvent[]): number {
+  let index = -1;
+  while (events.at(index)?.spoken) index -= 1;
+  return index;
+}
+
+// The same spoken row, said further. A closing notification can repeat with
+// more text than the one before it; anything else with an id already in the
+// transcript is the duplicate it looks like.
+function grownSpokenRow(
+  events: readonly TranscriptEvent[],
+  event: TranscriptEvent,
+): { index: number; existing: TranscriptEvent; merged: TranscriptEvent } | undefined {
+  if (!event.spoken || !event.text) return undefined;
+  const index = events.findLastIndex((candidate) => candidate.id === event.id);
+  const existing = events.at(index);
+  if (index < 0 || !existing?.spoken) return undefined;
+  const text = existing.text ?? '';
+  if (event.text === text || !event.text.startsWith(text)) return undefined;
+  return { index, existing, merged: { ...existing, text: event.text } };
 }
 
 function getTextDeltaRun(

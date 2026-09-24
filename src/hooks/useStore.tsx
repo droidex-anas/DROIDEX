@@ -1844,11 +1844,12 @@ function baseReducer(state: AppState, action: Action): AppState {
     case 'VOICE_TRANSCRIPT': {
       const next = reduceVoice(state, action);
       if (!action.final) return next;
-      const line = voiceSessionOf(next.voiceSessions, action.appSessionId).lines.at(-1);
+      const conversation = voiceSessionOf(next.voiceSessions, action.appSessionId);
+      const line = conversation.lines.at(-1);
       if (!line?.final) return next;
       return appendTranscriptEvent(
         next,
-        spokenTranscriptEvent(action.appSessionId, line, Date.now()),
+        spokenTranscriptEvent(action.appSessionId, conversation, line, Date.now()),
       );
     }
 

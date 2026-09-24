@@ -330,17 +330,25 @@ function createMainWindow() {
 // the app's own window may ask. Every other permission stays denied, and the
 // Browser pane's partition is untouched, so a web page there cannot reach the
 // microphone.
+// Voice needs the microphone, and nothing in DROIDEX needs the camera, so
+// `media` is granted only for audio: a page that asks for video, or any window
+// that is not the app's own, is refused.
 function registerMediaPermissions() {
   const isOwnWindow = (contents) =>
     mainWindow !== null && !mainWindow.isDestroyed() && contents === mainWindow.webContents;
-  session.defaultSession.setPermissionRequestHandler((contents, permission, callback) => {
-    callback((permission === 'media' || permission === 'audioCapture') && isOwnWindow(contents));
+  const isAudioOnly = (types) => types !== undefined && types.every((type) => type === 'audio');
+  session.defaultSession.setPermissionRequestHandler((contents, permission, callback, details) => {
+    if (permission === 'audioCapture') {
+      callback(isOwnWindow(contents));
+      return;
+    }
+    callback(permission === 'media' && isAudioOnly(details?.mediaTypes) && isOwnWindow(contents));
   });
-  session.defaultSession.setPermissionCheckHandler((contents, permission) =>
-    (permission === 'media' || permission === 'audioCapture') && contents !== null
-      ? isOwnWindow(contents)
-      : false,
-  );
+  session.defaultSession.setPermissionCheckHandler((contents, permission, _origin, details) => {
+    if (contents === null || !isOwnWindow(contents)) return false;
+    if (permission === 'audioCapture') return true;
+    return permission === 'media' && details?.mediaType === 'audio';
+  });
 }
 
 // Serves local image files to the renderer (see localImages.cjs). Registered on

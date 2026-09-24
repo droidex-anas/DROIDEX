@@ -1598,8 +1598,9 @@ export default function PromptInput({
   const voiceHere = voice.view === 'dock';
   const canStartVoice = canUseVoice(composerProvider) && voice.view === 'off';
   // A chat started by voice has no prompt to create it with, so the orb creates
-  // the chat first and opens the conversation once its session exists.
-  const voiceAwaitingSession = useRef(false);
+  // the chat first and opens the conversation once that chat, and no other,
+  // arrives. Holds the `clientRef` of the create it is waiting for.
+  const voiceAwaitingRef = useRef<string | null>(null);
 
   // The orb: talk to the chat that is open, or start one and talk to that. A
   // chat created this way opens with no prompt, so the first request is the
@@ -1609,9 +1610,9 @@ export default function PromptInput({
       voice.openOn(activeSession.appSessionId);
       return;
     }
-    if (voiceAwaitingSession.current) return;
-    voiceAwaitingSession.current = true;
+    if (voiceAwaitingRef.current) return;
     const clientRef = newClientRef();
+    voiceAwaitingRef.current = clientRef;
     void (async () => {
       // Named for now by when it started; the first thing said in it renames it.
       const placeholder = `Voice chat ${new Date().toLocaleTimeString([], {
@@ -1620,7 +1621,7 @@ export default function PromptInput({
       })}`;
       const preparation = await prepareDraftCwd(state.draftChat?.cwd ?? '', clientRef, placeholder);
       if (!preparation.ok) {
-        voiceAwaitingSession.current = false;
+        voiceAwaitingRef.current = null;
         return;
       }
       // A chat only takes focus when the renderer is waiting for it, and the
@@ -1641,15 +1642,29 @@ export default function PromptInput({
           state.compactionModel === 'current-model' ? undefined : state.compactionModel,
         ...compactionSettingsSnapshot(compactionSettingsInput),
       });
-    })();
+    })().catch(() => {
+      // The chat was never created, so nothing is being waited for and the orb
+      // works again. The failure itself is reported by the command that raised
+      // it.
+      voiceAwaitingRef.current = null;
+    });
   };
 
-  // The session the orb asked for has arrived: open the conversation on it.
+  // The chat the orb asked for has arrived and is on screen: open the
+  // conversation on it. A create that never landed releases the wait instead,
+  // so the next chat the user opens is not talked to by accident.
   useEffect(() => {
-    if (!voiceAwaitingSession.current || !activeSession) return;
-    voiceAwaitingSession.current = false;
-    voice.openOn(activeSession.appSessionId);
-  }, [activeSession, voice]);
+    const clientRef = voiceAwaitingRef.current;
+    if (!clientRef) return;
+    const created = state.lastCreatedSessionRequest;
+    if (created?.clientRef === clientRef) {
+      if (activeSession?.appSessionId !== created.appSessionId) return;
+      voiceAwaitingRef.current = null;
+      voice.openOn(created.appSessionId, { nameFromSpeech: true });
+      return;
+    }
+    if (!state.pendingCompose[clientRef]) voiceAwaitingRef.current = null;
+  }, [activeSession, state.lastCreatedSessionRequest, state.pendingCompose, voice]);
 
   const showSendAction = !canStartVoice || hasContent || isLive || turnStarting;
   // The hint's host swaps (send, stop, spinner) as a turn starts and ends; clear

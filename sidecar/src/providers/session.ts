@@ -69,6 +69,8 @@ export type ProviderVoiceEvent =
   | { kind: 'error'; message: string };
 
 export interface ProviderVoice {
+  /** True from the moment a conversation is asked for until it is stopped. */
+  isLive(): boolean;
   // The voices this provider offers, and the one it uses when none is chosen.
   listVoices(): Promise<{ voices: string[]; defaultVoice?: string }>;
   start(input: ProviderVoiceStart): Promise<void>;

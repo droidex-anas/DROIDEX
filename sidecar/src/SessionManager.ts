@@ -655,6 +655,7 @@ export class SessionManager {
       hasOpenBrowser: (id) => this.browsers.hasSession(id),
       hasPendingSettings: (id) => this.modelSettings.hasPending(id),
       hasAgentProcesses: (id) => this.agentProcesses.hasProcesses(id),
+      hasLiveVoice: (id) => this.sessionVoice.isLive(id),
       retire: (id) => this.lifecycle.close(id, 'preserve-pending'),
       emitStatus: (id, text) => {
         this.timeline.appendStatus(id, text);

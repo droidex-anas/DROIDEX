@@ -45,6 +45,13 @@ export interface VoiceSessionState {
    * clears its own list.
    */
   linesOpened: number;
+  /**
+   * When this conversation started. The counter above lives only in memory, so
+   * a chat whose voice state was dropped (a retired runtime, a reload) would
+   * otherwise write `voice-1` again over the rows an earlier conversation left
+   * in the transcript. Stamping the conversation keeps those ids apart.
+   */
+  startedAt: number;
 }
 
 export type VoiceSessions = Record<string, VoiceSessionState>;
@@ -54,7 +61,7 @@ export interface VoiceSlice {
 }
 
 export type VoiceAction =
-  | { type: 'VOICE_CONNECTING'; appSessionId: string }
+  | { type: 'VOICE_CONNECTING'; appSessionId: string; startedAt: number }
   | { type: 'VOICE_ANSWERED'; appSessionId: string; sdp: string }
   | { type: 'VOICE_STATE'; appSessionId: string; status: 'live' | 'closed' }
   | {
@@ -74,7 +81,13 @@ export type VoiceAction =
 // would actually show.
 const MAX_LINES = 200;
 
-const IDLE: VoiceSessionState = { status: 'idle', voices: [], lines: [], linesOpened: 0 };
+const IDLE: VoiceSessionState = {
+  status: 'idle',
+  voices: [],
+  lines: [],
+  linesOpened: 0,
+  startedAt: 0,
+};
 
 /** The chat's voice state, or the shared idle one when it has never spoken. */
 export function voiceSessionOf(
@@ -110,6 +123,7 @@ function nextSession(current: VoiceSessionState, action: VoiceAction): VoiceSess
         defaultVoice: current.defaultVoice,
         lines: [],
         linesOpened: current.linesOpened,
+        startedAt: action.startedAt,
       };
     case 'VOICE_ANSWERED':
       return { ...current, answer: { sdp: action.sdp } };
@@ -134,6 +148,7 @@ function nextSession(current: VoiceSessionState, action: VoiceAction): VoiceSess
         defaultVoice: current.defaultVoice,
         lines: [],
         linesOpened: current.linesOpened,
+        startedAt: current.startedAt,
       };
   }
 }
@@ -173,16 +188,18 @@ function withSpokenText(
 
 /**
  * The chat row a finished spoken line becomes. The id is derived from the line
- * so a repeated closing notification lands on the row it already wrote rather
- * than a second copy of it.
+ * and the conversation it was said in, so a repeated closing notification lands
+ * on the row it already wrote rather than a second copy of it, and a later
+ * conversation never lands on an earlier one's rows.
  */
 export function spokenTranscriptEvent(
   appSessionId: string,
+  conversation: VoiceSessionState,
   line: VoiceTranscriptLine,
   ts: number,
 ): TranscriptEvent {
   return {
-    id: `voice-${String(line.id)}`,
+    id: `voice-${String(conversation.startedAt)}-${String(line.id)}`,
     appSessionId,
     sourceSessionId: line.role === 'user' ? 'user' : 'primary',
     role: 'primary',
