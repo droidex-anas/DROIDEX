@@ -4,6 +4,7 @@ import { shallowEqual, useStoreDispatch, useStoreSelector } from '../../hooks/us
 import { INLINE_CARD_DURATION_S, INLINE_CARD_EASE } from '../../components/inlineCardMotion';
 import { workspaceName } from '../../lib/workspaces';
 import type { UtilityTab } from '../../lib/utilityPanel';
+import type { TranscriptEvent } from '../../types/bridge';
 import { ThreadDetail } from './ThreadDetail';
 import { ThreadList } from './ThreadList';
 import type { ThreadRow } from './threadBoard';
@@ -22,14 +23,17 @@ export function ThreadsWorkspace({ tab }: { tab: UtilityTab }) {
   const reduceMotion = useReducedMotion() === true;
   const { entries } = useProjectBoard();
   const [now, setNow] = useState(() => Date.now());
+  const { threadId } = tab;
   const state = useStoreSelector((current) => {
     const session = current.activeAppSessionId
       ? current.sessions[current.activeAppSessionId]
       : undefined;
+    const transcripts: Partial<Record<string, TranscriptEvent[]>> = current.transcripts;
+    // Only the open thread's entries: the whole maps change on every token of any chat.
     return {
       session,
-      transcripts: current.transcripts,
-      sessionRestore: current.sessionRestore,
+      transcript: threadId ? transcripts[threadId] : undefined,
+      historyError: threadId ? (current.sessionRestore[threadId]?.error ?? '') : '',
       toolActivity: current.toolActivity,
     };
   }, shallowEqual);
@@ -48,7 +52,7 @@ export function ThreadsWorkspace({ tab }: { tab: UtilityTab }) {
     };
   }, []);
 
-  const open = rows.find((row) => row.appSessionId === tab.threadId);
+  const open = rows.find((row) => row.appSessionId === threadId);
   const showThread = (threadId: string | null) => {
     dispatch({ type: 'UPDATE_UTILITY_TAB', tabId: tab.id, threadId });
   };
@@ -59,8 +63,8 @@ export function ThreadsWorkspace({ tab }: { tab: UtilityTab }) {
         {open ? (
           <ThreadDetail
             row={open}
-            transcript={state.transcripts[open.appSessionId]}
-            historyError={state.sessionRestore[open.appSessionId]?.error ?? ''}
+            transcript={state.transcript}
+            historyError={state.historyError}
             toolActivity={state.toolActivity}
             onBack={() => {
               showThread(null);
