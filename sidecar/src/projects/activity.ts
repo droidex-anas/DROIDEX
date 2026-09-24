@@ -38,7 +38,7 @@ export class ProjectActivity {
   append(event: TranscriptEvent): void {
     if (event.role !== 'primary' || event.author === 'user') return;
     // Only generation opens a turn. A status line or a compaction divider
-    // reaches an idle thread — retuning one, or an automatic compaction — and
+    // reaches an idle thread (retuning one, or an automatic compaction), and
     // opening a turn on it would report silence its owner never asked for.
     if (!GENERATED.has(event.kind)) return;
     this.open(event.appSessionId);

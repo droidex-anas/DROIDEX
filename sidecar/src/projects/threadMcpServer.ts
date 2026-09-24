@@ -25,7 +25,7 @@ const spawnSchema = z.object({
     .trim()
     .min(1)
     .max(LEDGER_LIMITS.title)
-    .describe('Short task name in the user’s words, e.g. "Draft Friday’s release notes".'),
+    .describe('Short task name in the user\'s words, e.g. "Draft Friday\'s release notes".'),
   prompt: z
     .string()
     .trim()
@@ -35,20 +35,20 @@ const spawnSchema = z.object({
   provider: z
     .enum(PROVIDER_KINDS)
     .optional()
-    .describe('Harness for the thread. Omit to use this chat’s harness.'),
+    .describe("Harness for the thread. Omit to use this chat's harness."),
   modelId: z
     .string()
     .min(1)
     .max(200)
     .optional()
     .describe(
-      'The model for this thread, by id or display name. Omit to inherit this chat’s model. A name the harness does not know is refused here rather than running empty, and a name your own model also answers to gives the thread your model.',
+      "The model for this thread, by id or display name. Omit to inherit this chat's model. A name the harness does not know is refused here rather than running empty, and a name your own model also answers to gives the thread your model.",
     ),
   reasoningEffort: reasoningSchema.optional(),
   autonomy: z
     .enum(['off', 'low', 'medium', 'high'])
     .optional()
-    .describe('At most this chat’s autonomy. Omit to inherit it.'),
+    .describe("At most this chat's autonomy. Omit to inherit it."),
   workspace: z
     .enum(['inherit', 'worktree'])
     .optional()
@@ -61,7 +61,7 @@ const spawnSchema = z.object({
     .max(200)
     .optional()
     .describe(
-      'Put this thread in the checkout another thread already worked in, by its id — how a review thread reads the work. That thread must have settled.',
+      'Put this thread in the checkout another thread already worked in, by its id. This is how a review thread reads the work. That thread must have settled.',
     ),
   branch: z
     .string()
@@ -75,7 +75,7 @@ const spawnSchema = z.object({
     .max(200)
     .optional()
     .describe(
-      'Commit, branch or tag the worktree branches from. The checkout’s HEAD when omitted.',
+      "Commit, branch or tag the worktree branches from. The checkout's HEAD when omitted.",
     ),
   step: z
     .string()
@@ -83,7 +83,7 @@ const spawnSchema = z.object({
     .max(200)
     .optional()
     .describe(
-      'The plan step this thread carries, by its number or its exact title. DROIDEX then shows the thread’s real state on that row, so you never mark it done yourself.',
+      "The plan step this thread carries, by its number or its exact title. DROIDEX then shows the thread's real state on that row, so you never mark it done yourself.",
     ),
 });
 
@@ -97,7 +97,7 @@ interface PlanStep {
 
 /**
  * The tools that let a chat run work in parallel. A thread is a full DROIDEX
- * conversation of its own — its own history, settings and transcript — not a
+ * conversation of its own (its own history, settings and transcript), not a
  * harness subagent, so the user can open one and steer it like any other chat.
  */
 export function createThreadMcpServer(appSessionIdForTool: () => string | undefined) {
@@ -115,9 +115,9 @@ export function createThreadMcpServer(appSessionIdForTool: () => string | undefi
         'thread_spawn',
         [
           'Hand one settled step of the plan to an independent DROIDEX thread: a separate conversation that carries it on its own and reports back here when it settles.',
-          'Spawn only work you have already decided: name the plan step with `step`, and write a prompt that carries the whole task, because the thread cannot see this conversation — the context it needs, the files or areas involved, and what finishing looks like.',
+          'Spawn only work you have already decided. Name the plan step with `step`, and write a prompt that carries the whole task, because the thread cannot see this conversation: the context it needs, the files or areas involved, and what finishing looks like.',
           'Never spawn to explore an open question, to decide what the task is, or to watch another thread. Investigate here, decide here, then hand out the decided work.',
-          'The thread inherits this chat’s workspace, harness, model, reasoning and autonomy unless you name different ones; it can never exceed this chat’s autonomy.',
+          "The thread inherits this chat's workspace, harness, model, reasoning and autonomy unless you name different ones; it can never exceed this chat's autonomy.",
           'Choose deliberately: a cheap fast model for a mechanical task, a stronger one for judgement, and workspace "worktree" whenever threads will write files at the same time.',
         ].join(' '),
         spawnSchema.shape,
@@ -138,7 +138,7 @@ export function createThreadMcpServer(appSessionIdForTool: () => string | undefi
       ),
       tool(
         'thread_send',
-        'Send a thread this chat started new instructions, a correction, or answers to a question it asked; use the user’s own words when forwarding theirs.',
+        "Send a thread this chat started new instructions, a correction, or answers to a question it asked; use the user's own words when forwarding theirs.",
         {
           threadId: z.string().min(1).max(200),
           text: z.string().trim().max(8_192),
@@ -165,10 +165,10 @@ export function createThreadMcpServer(appSessionIdForTool: () => string | undefi
         'plan_set',
         [
           'Write the plan this project shows the user: the steps it intends to take, in order, once you have settled what the work actually is.',
-          'A step is one concrete piece of work whose finish you could recognise — "Port the payments client to v3", not "look into payments". If you cannot say what done looks like, the step is not settled: find out first, or leave it out.',
+          'A step is one concrete piece of work whose finish you could recognise, such as "Port the payments client to v3" rather than "look into payments". If you cannot say what done looks like, the step is not settled: find out first, or leave it out.',
           'Call it again whenever the shape changes: a step finishes, a new one appears, one turns out to be unnecessary. This replaces the whole plan, so send every step you still intend to take.',
-          'Point a step at the thread carrying it with threadId, or pass the step to thread_spawn; DROIDEX then shows that conversation’s real state instead of a claim, so you never have to mark it done.',
-          'Keep the titles short and in the user’s words. This is what they read to see where the project stands.',
+          "Point a step at the thread carrying it with threadId, or pass the step to thread_spawn; DROIDEX then shows that conversation's real state instead of a claim, so you never have to mark it done.",
+          "Keep the titles short and in the user's words. This is what they read to see where the project stands.",
         ].join(' '),
         {
           steps: z
@@ -179,7 +179,7 @@ export function createThreadMcpServer(appSessionIdForTool: () => string | undefi
                   .trim()
                   .min(1)
                   .max(LEDGER_LIMITS.stepTitle)
-                  .describe('One concrete piece of work, in the user’s words.'),
+                  .describe("One concrete piece of work, in the user's words."),
                 milestone: z
                   .string()
                   .trim()
@@ -189,7 +189,7 @@ export function createThreadMcpServer(appSessionIdForTool: () => string | undefi
                 state: z
                   .enum(['planned', 'doing', 'done', 'blocked'])
                   .optional()
-                  .describe('Only for a step no thread carries; a thread’s own state wins.'),
+                  .describe("Only for a step no thread carries; a thread's own state wins."),
                 threadId: z.string().min(1).max(200).optional(),
                 note: z
                   .string()
@@ -217,8 +217,8 @@ export function createThreadMcpServer(appSessionIdForTool: () => string | undefi
         'thread_read',
         [
           'Read a thread this chat started: its final replies in full, the question it is waiting on, and what it is running as.',
-          'A thread’s report to you is an excerpt. Read the rest here before you tell the user what it found or treat its step as done, and read it again whenever you need its state back — after a compaction, or before deciding what to do next.',
-          'It answers with the thread’s latest reply alone unless you ask for more, so you choose how much of its history you take on.',
+          "A thread's report to you is an excerpt. Read the rest here before you tell the user what it found or treat its step as done, and read it again whenever you need its state back: after a compaction, or before deciding what to do next.",
+          "It answers with the thread's latest reply alone unless you ask for more, so you choose how much of its history you take on.",
           'A thread that is still working has no reply yet. DROIDEX wakes you when it settles; reading it again to see whether it is done is polling.',
         ].join(' '),
         {
@@ -230,7 +230,7 @@ export function createThreadMcpServer(appSessionIdForTool: () => string | undefi
             .max(LEDGER_LIMITS.earlierReplies + 1)
             .optional()
             .describe(
-              'How many of this thread’s own final replies to read, oldest first. One — its latest — when omitted. Ask for more only when you need the thread of a conversation back, after a compaction or before a decision that turns on what it said earlier; moreReplies tells you how many are still there.',
+              "How many of this thread's own final replies to read, oldest first. Only the latest one when omitted. Ask for more only when you need the thread of a conversation back, after a compaction or before a decision that turns on what it said earlier; moreReplies tells you how many are still there.",
             ),
         },
         safeTool(async (input: { threadId: string; replies?: number }) => {
@@ -241,9 +241,9 @@ export function createThreadMcpServer(appSessionIdForTool: () => string | undefi
       tool(
         'thread_configure',
         [
-          'Retune a thread this chat started, the way a person would change a chat’s own controls: its model, its reasoning effort, its autonomy.',
-          'Use it when the work changes shape — a lower effort for a quick back-and-forth, a stronger model for the part that needs judgement — rather than stopping the thread and starting another.',
-          'A thread can never exceed this chat’s autonomy. The thread and its history stay as they are; only what it runs as changes.',
+          "Retune a thread this chat started, the way a person would change a chat's own controls: its model, its reasoning effort, its autonomy.",
+          'Use it when the work changes shape, such as a lower effort for a quick back-and-forth or a stronger model for the part that needs judgement, rather than stopping the thread and starting another.',
+          "A thread can never exceed this chat's autonomy. The thread and its history stay as they are; only what it runs as changes.",
         ].join(' '),
         {
           threadId: z.string().min(1).max(200),
@@ -257,7 +257,7 @@ export function createThreadMcpServer(appSessionIdForTool: () => string | undefi
           autonomy: z
             .enum(['off', 'low', 'medium', 'high'])
             .optional()
-            .describe('At most this chat’s autonomy.'),
+            .describe("At most this chat's autonomy."),
         },
         safeTool(
           async (input: {

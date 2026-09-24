@@ -305,7 +305,7 @@ export class SessionTimeline {
   }
 
   /**
-   * A prompt nobody typed — an automation's or a project thread's — which the
+   * A prompt nobody typed (an automation's or a project thread's), which the
    * renderer therefore never showed. It is announced as well as persisted, so
    * the conversation reads the same live as it does after a reload instead of
    * answering something the reader cannot see.

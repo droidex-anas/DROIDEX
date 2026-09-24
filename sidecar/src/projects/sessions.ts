@@ -50,7 +50,7 @@ export class ProjectSessions implements ProjectPort {
         interactionMode: 'auto',
       });
       if (launch.error) throw new Error(launch.error);
-      // Admission can close after the bind — a shutdown, a cancelled resume —
+      // Admission can close after the bind (a shutdown, a cancelled resume),
       // and that path reports no error at all. Its cleanup can leave a
       // historical row behind, so the question is whether the conversation is
       // open, not whether the manager has heard of it.

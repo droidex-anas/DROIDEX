@@ -224,7 +224,7 @@ export function threadState(
    nothing says so plainly: the owner has to see the difference between a report
    and silence, or it will keep nudging a thread that cannot answer. A long reply
    is excerpted here and read in full with thread_read, so the excerpt says it is
-   one — in words that read the same to the person watching this chat. */
+   one, in words that read the same to the person watching this chat. */
 function threadReport(session: SessionSummary, turn: ThreadTurn): string {
   const reply = turn.text.slice(-1_200);
   const excerpt =

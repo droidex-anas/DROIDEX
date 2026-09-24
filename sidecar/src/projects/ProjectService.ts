@@ -304,7 +304,7 @@ export class ProjectService {
     this.requireOpen();
     const project = this.requireProjectFor(source);
     if (requireThread(project, source).ownerAppSessionId)
-      throw new Error('Only the project’s main chat keeps its plan.');
+      throw new Error("Only the project's main chat keeps its plan.");
     if (steps.length > LEDGER_LIMITS.planSteps)
       throw new Error(`A project plan holds at most ${String(LEDGER_LIMITS.planSteps)} steps.`);
     project.plan = steps.map((step, index) => {
@@ -387,7 +387,7 @@ export class ProjectService {
    * The whole of a thread, for the chat that owns it: what it replied, the
    * question it is waiting on, and what it is running as. A report carries an
    * excerpt, so this is how a lead reads the rest or looks again later. It asks
-   * for how far back it wants to read — one answer by default, never the lot.
+   * for how far back it wants to read: one answer by default, never the lot.
    */
   read(source: string, target: string, replies = 1): ThreadReadout {
     const project = this.controlledProject(source, target);
