@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { Bridge } from './bridge';
-import { BRIDGE_PROTOCOL_VERSION, type ServerEvent } from '../types/bridge';
+import type { ServerEvent } from '../types/bridge';
 
 class FakeWebSocket {
   static readonly OPEN = 1;
@@ -69,10 +69,7 @@ test('bridge refreshes sidecar identity before reconnecting', { concurrency: fal
     await bridge.start();
     const first = FakeWebSocket.instances.at(-1);
     assert.ok(first);
-    assert.equal(
-      first.url,
-      `ws://127.0.0.1:43001?token=first-token&bridgeProtocol=${BRIDGE_PROTOCOL_VERSION}`,
-    );
+    assert.equal(first.url, 'ws://127.0.0.1:43001?token=first-token&bridgeProtocol=5');
     assert.equal(bridge.sendIfConnected({ type: 'runtime.status' }), false);
     assert.deepEqual(first.sent, []);
     first.close();
@@ -83,10 +80,7 @@ test('bridge refreshes sidecar identity before reconnecting', { concurrency: fal
     await Promise.resolve();
     const second = FakeWebSocket.instances.at(-1);
     assert.ok(second);
-    assert.equal(
-      second.url,
-      `ws://127.0.0.1:43002?token=second-token&bridgeProtocol=${BRIDGE_PROTOCOL_VERSION}`,
-    );
+    assert.equal(second.url, 'ws://127.0.0.1:43002?token=second-token&bridgeProtocol=5');
     second.open();
     assert.equal(bridge.sendIfConnected({ type: 'runtime.status' }), true);
     assert.deepEqual(
@@ -149,10 +143,7 @@ test('[R1] Renderer command round trip', { concurrency: false }, async () => {
     await bridge.start();
     const socket = FakeWebSocket.instances.at(-1)!;
 
-    assert.equal(
-      socket.url,
-      `ws://127.0.0.1:43123?token=r1-token&bridgeProtocol=${BRIDGE_PROTOCOL_VERSION}`,
-    );
+    assert.equal(socket.url, 'ws://127.0.0.1:43123?token=r1-token&bridgeProtocol=5');
     assert.deepEqual(socket.sent, []);
     socket.open();
     assert.equal(socket.sent.length, 6);

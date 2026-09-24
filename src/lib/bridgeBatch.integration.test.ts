@@ -1,4 +1,3 @@
-import { BRIDGE_PROTOCOL_VERSION } from '../types/bridge';
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
@@ -170,7 +169,7 @@ test(
       await Promise.resolve();
       const second = required(FakeWebSocket.instances.at(-1));
       const url = new URL(second.url);
-      assert.equal(url.searchParams.get('bridgeProtocol'), String(BRIDGE_PROTOCOL_VERSION));
+      assert.equal(url.searchParams.get('bridgeProtocol'), '5');
       assert.equal(url.searchParams.get('resumeGeneration'), 'generation-1');
       assert.equal(url.searchParams.get('resumeSeq'), '1');
     } finally {
