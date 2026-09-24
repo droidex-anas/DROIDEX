@@ -43,8 +43,8 @@ export function ThreadsWorkspace({ tab }: { tab: UtilityTab }) {
   const rows = entry?.rows ?? EMPTY_ROWS;
 
   const open = rows.find((row) => row.appSessionId === threadId);
-  const showThread = (threadId: string | null) => {
-    dispatch({ type: 'UPDATE_UTILITY_TAB', tabId: tab.id, threadId });
+  const showThread = (id: string | null) => {
+    dispatch({ type: 'UPDATE_UTILITY_TAB', tabId: tab.id, threadId: id });
   };
 
   return (
