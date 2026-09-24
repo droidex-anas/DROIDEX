@@ -13,6 +13,7 @@ import {
   threadCheckout,
   threadPrompt,
   uniqueTitle,
+  type ThreadCheckout,
 } from './threadStart.js';
 import type {
   Project,
@@ -234,7 +235,7 @@ export class ProjectService {
     // The slot is held while the checkout is cut, so a parallel spawn cannot
     // pass the same cap, and it is handed to the launch without a gap.
     project.launching += 1;
-    let workspace: Awaited<ReturnType<typeof threadCheckout>>;
+    let workspace: ThreadCheckout | undefined;
     try {
       workspace = await threadCheckout(
         project,
@@ -270,7 +271,8 @@ export class ProjectService {
     return {
       appSessionId,
       title,
-      ...(workspace ? { cwd: workspace.cwd, branch: workspace.branch } : {}),
+      ...(workspace ? { cwd: workspace.cwd } : {}),
+      ...(workspace && !('joined' in workspace) ? { branch: workspace.branch } : {}),
       ...(step ? { step: step.title } : {}),
     };
   }

@@ -129,7 +129,8 @@ export function createThreadMcpServer(appSessionIdForTool: () => string | undefi
             threadId: started.appSessionId,
             title: started.title,
             state: 'working',
-            ...(started.cwd ? { cwd: started.cwd, branch: started.branch } : {}),
+            ...(started.cwd ? { cwd: started.cwd } : {}),
+            ...(started.branch ? { branch: started.branch } : {}),
             ...(started.step ? { step: started.step } : {}),
             note: 'The thread runs on its own. Its report arrives here as a new turn; do not wait for it.',
           });
