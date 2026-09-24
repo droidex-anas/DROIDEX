@@ -253,6 +253,17 @@ export function loadSessionPage(
   };
 }
 
+export function sessionOrganizationId(providerSessionId: string): string | undefined {
+  const path = sessionIndex().get(providerSessionId);
+  if (!path) return undefined;
+  try {
+    return readSessionStart(path, statSync(path).size).organizationId;
+  } catch {
+    // The file can be removed between the index update and this read.
+    return undefined;
+  }
+}
+
 export class HistoryIndex {
   private db: DatabaseSync;
   private readonly sessionFiles = new SessionFileMirror();
