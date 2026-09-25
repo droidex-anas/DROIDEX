@@ -5,7 +5,7 @@
 
 import { syntaxTree } from '@codemirror/language';
 import { markdown, markdownLanguage, insertNewlineContinueMarkup } from '@codemirror/lang-markdown';
-import { EditorView, keymap } from '@codemirror/view';
+import { drawSelection, EditorView, keymap } from '@codemirror/view';
 import { history, historyKeymap, insertNewline } from '@codemirror/commands';
 import { StateField } from '@codemirror/state';
 import {
@@ -162,6 +162,9 @@ export function liveMarkdown() {
     markdownDecorations,
     linkInteraction(),
     liveMarkdownTheme,
+    // The browser's own caret is a hairline with no width control, so the
+    // editor draws its own and the theme gives it the composer's weight.
+    drawSelection(),
     history(),
     keymap.of([
       ...historyKeymap,

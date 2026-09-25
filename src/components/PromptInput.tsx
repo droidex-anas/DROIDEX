@@ -64,7 +64,7 @@ import {
   parseSlashSkillInvocation,
   promptTextWithVisualize,
   responseFormatForPrompt,
-  submitCommandFor,
+  runsAsCompactCommand,
   VISUALIZE_COMMAND,
 } from '../lib/composePrompt';
 import {
@@ -77,6 +77,7 @@ import { compactionSettingsSnapshot } from '../lib/compactionSettings';
 import { composerTextAfterSeed, resetComposerAfterSubmit } from '../lib/composerReset';
 import { chipRemovedByBackspace } from '../lib/composerChips';
 import {
+  chipNamedBy,
   composerMenu,
   composerTrigger,
   menuRowKey,
@@ -96,6 +97,8 @@ import {
 } from '../lib/childSessions';
 import { commitPrimaryPromptAfterBaseline } from '../lib/promptSend';
 import { SlidersHorizontal } from 'lucide-react';
+import { Bug, FoldVertical, ListTodo, MessageSquareText, Models, Settings } from '@droidex/icons';
+import { VisualizeIcon } from './icons/VisualizeIcon';
 import { ComposerSendButton } from './composer/ComposerSendButton';
 import { useQueuedPromptDelivery } from './composer/useQueuedPromptDelivery';
 import AddMenu from './composer/AddMenu';
@@ -149,7 +152,7 @@ const EMPTY_COMPOSER_MENU: ComposerMenuModel = { entries: [], rows: [] };
 const ACCENT = 'var(--droid-accent)';
 // Slash entries that drive Droid's own subsystems, so they leave the menu with
 // the controls they belong to when the chat runs on another provider.
-const DROID_ONLY_COMMANDS = new Set(['/mission', '/compact']);
+const DROID_ONLY_COMMANDS = new Set(['/compact']);
 const accentMix = (pct: number) =>
   `color-mix(in srgb, var(--droid-accent) ${String(pct)}%, transparent)`;
 type SubmitMode = 'queue' | 'now';
@@ -538,6 +541,7 @@ export default function PromptInput({
   const slashCommands: SlashCommand[] = [
     {
       ...VISUALIZE_COMMAND,
+      icon: VisualizeIcon,
       run: () => {
         setVisualizeSelected(true);
       },
@@ -545,6 +549,7 @@ export default function PromptInput({
     {
       cmd: '/bug',
       desc: 'Send a private bug report',
+      icon: Bug,
       run: () => {
         setFeedbackReport({ category: 'bug', description: '' });
       },
@@ -552,20 +557,15 @@ export default function PromptInput({
     {
       cmd: '/feedback',
       desc: 'Share private product feedback',
+      icon: MessageSquareText,
       run: () => {
         setFeedbackReport({ category: 'other', description: '' });
       },
     },
     {
-      cmd: '/mission',
-      desc: 'Enter Mission Control',
-      run: () => {
-        dispatch({ type: 'TOGGLE_MISSION_CONTROL' });
-      },
-    },
-    {
       cmd: '/model',
       desc: 'Open model selector',
+      icon: Models,
       run: () => {
         setModelsOpen(true);
       },
@@ -573,6 +573,7 @@ export default function PromptInput({
     {
       cmd: '/compact',
       desc: 'Compact current session',
+      icon: FoldVertical,
       run: () => {
         if (primaryActionsEnabled && activeSession) compactSession(activeSession.appSessionId);
       },
@@ -580,6 +581,7 @@ export default function PromptInput({
     {
       cmd: '/spec',
       desc: 'Toggle spec mode',
+      icon: ListTodo,
       run: () => {
         toggleSpec();
       },
@@ -587,6 +589,7 @@ export default function PromptInput({
     {
       cmd: '/settings',
       desc: 'Open settings',
+      icon: Settings,
       run: () => {
         dispatch({ type: 'TOGGLE_SETTINGS' });
       },
@@ -952,18 +955,11 @@ export default function PromptInput({
     replaceTrigger('');
   };
 
-  const runCommand = (s: SlashCommand) => {
-    if (s.replacement !== undefined) {
-      replaceTrigger(s.replacement);
-      return;
-    }
-    replaceTrigger('');
-    s.run();
-  };
-
   const runMenuItem = (item: MenuItem) => {
-    if (item.type === 'command') runCommand(item.command);
-    else if (item.type === 'catalog') runCatalogRow(item.item);
+    if (item.type === 'command') {
+      replaceTrigger('');
+      item.command.run();
+    } else if (item.type === 'catalog') runCatalogRow(item.item);
     else addFile(item.path);
   };
 
@@ -1034,7 +1030,7 @@ export default function PromptInput({
         );
       }
       if (
-        submitCommandFor(text, {
+        runsAsCompactCommand(text, {
           visualizeSelected,
           skillCount: skills.length,
           fileCount: paths.length,
@@ -1141,19 +1137,14 @@ export default function PromptInput({
       return;
     }
 
-    const submitCommand = droidComposer
-      ? submitCommandFor(text, {
-          visualizeSelected,
-          skillCount: activeSkills.length,
-          fileCount: allFiles.length,
-        })
-      : null;
-    if (submitCommand === 'mission') {
-      dispatch({ type: 'TOGGLE_MISSION_CONTROL' });
-      clearAfterSubmit();
-      return;
-    }
-    if (submitCommand === 'compact') {
+    const compacts =
+      droidComposer &&
+      runsAsCompactCommand(text, {
+        visualizeSelected,
+        skillCount: activeSkills.length,
+        fileCount: allFiles.length,
+      });
+    if (compacts) {
       if (!primaryActionsEnabled) return;
       if (activeSession) compactSession(activeSession.appSessionId);
       clearAfterSubmit();
@@ -1488,6 +1479,13 @@ export default function PromptInput({
         runMenuItem(menu.rows[activeIndex]);
         return;
       }
+      const namedChip = e.key === ' ' ? chipNamedBy(trigger, menu) : null;
+      if (namedChip) {
+        e.preventDefault();
+        e.stopPropagation();
+        runMenuItem(namedChip);
+        return;
+      }
       if (e.key === 'Escape') {
         e.preventDefault();
         e.stopPropagation();
@@ -1558,9 +1556,7 @@ export default function PromptInput({
     }
   };
 
-  const boxBorder = isSpecMode
-    ? 'border-droid-orange/40 hover:border-droid-orange/60 focus-within:border-droid-orange/60'
-    : 'border-droid-border hover:border-droid-border-hover focus-within:border-droid-border-hover composer-focus-ring';
+  const boxBorder = isSpecMode ? 'border-droid-orange/40' : 'border-droid-border';
 
   const viewerImage = imageAttachments.images.find((i) => i.id === viewerImageId) ?? null;
   // Files attached as paths (the @ menu, the picker, or a queued prompt brought
@@ -1701,7 +1697,7 @@ export default function PromptInput({
         )}
 
         <div
-          className={`relative z-10 bg-droid-raised border rounded-[20px] shadow-droid-sm composer-frame ${missionPreview ? '' : boxBorder}`}
+          className={`relative z-10 bg-droid-raised border rounded-[20px] shadow-droid-sm transition-colors ${missionPreview ? '' : boxBorder}`}
           style={
             missionPreview
               ? {
@@ -1892,19 +1888,6 @@ export default function PromptInput({
                   dispatch({ type: 'SET_DRAFT_AUTONOMY', autonomy: level });
                 }}
               />
-            )}
-
-            {specComposer && (
-              <button
-                onClick={toggleSpec}
-                className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] transition-colors shrink-0 ${
-                  isSpecMode
-                    ? 'text-droid-accent bg-droid-accent/10 hover:bg-droid-accent/15'
-                    : 'text-droid-text-secondary hover:text-droid-text hover:bg-droid-bg/40'
-                }`}
-              >
-                <span>{isSpecMode ? 'Spec' : 'Chat'}</span>
-              </button>
             )}
 
             {/* Trailing cluster. It wraps to its own row as one unit on

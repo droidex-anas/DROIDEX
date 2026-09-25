@@ -1,4 +1,5 @@
-import { Download, Spinner } from '@droidex/icons';
+import { useEffect, useRef, useState } from 'react';
+import { Download } from '@droidex/icons';
 import { useStoreSelector } from '../hooks/useStore';
 import { requestAppUpdate, useAppUpdate } from '../lib/appUpdate';
 import { hasActiveSessionWork } from '../lib/sessions';
@@ -17,6 +18,15 @@ export function SidebarAppUpdateButton() {
   );
 }
 
+// The resting circle, and the room the label keeps on each side of the open
+// pill. The open width is measured from the rendered label rather than guessed,
+// so "Update" and "Downloading" each get an exact fit at any UI font size.
+const RESTING_SIZE = 20;
+const LABEL_INSET = 9;
+// The label fades out before its text swaps, so the pill never shows the new
+// word sliding in from the old one's position.
+const LABEL_SWAP_MS = 90;
+
 export function AppUpdateButtonView({
   latest,
   downloading,
@@ -26,38 +36,74 @@ export function AppUpdateButtonView({
   downloading: boolean;
   onStart: () => void;
 }) {
+  const [pointerOver, setPointerOver] = useState(false);
+  const [keyboardFocus, setKeyboardFocus] = useState(false);
+  const [swapping, setSwapping] = useState(false);
+  const [openWidth, setOpenWidth] = useState(RESTING_SIZE);
+  const labelRef = useRef<HTMLSpanElement>(null);
+  const swapTimer = useRef<number | null>(null);
+  const label = downloading ? 'Downloading' : 'Update';
+
+  useEffect(() => {
+    const element = labelRef.current;
+    if (element) setOpenWidth(Math.ceil(element.scrollWidth) + LABEL_INSET);
+  }, [label]);
+
+  useEffect(
+    () => () => {
+      if (swapTimer.current !== null) window.clearTimeout(swapTimer.current);
+    },
+    [],
+  );
+
   if (!latest) return null;
   const actionLabel = downloading
     ? `Downloading DROIDEX ${latest} update`
     : `Review DROIDEX ${latest} update`;
-  // The icon slot collapses as the label slot expands, so the resting circle
-  // morphs into a pill on hover/focus and into a downloading pill on start;
-  // the button width follows the animated max-width of the two slots. The
-  // resting state's delay holds the pill open on mouse-leave so it lingers
-  // instead of snapping shut; hover/focus overrides it to expand at once.
-  const morph =
-    'overflow-hidden whitespace-nowrap transition-all duration-300 ease-[cubic-bezier(0.4,0,0.2,1)] motion-reduce:transition-none';
-  const iconSlot = downloading
-    ? 'max-w-0 opacity-0'
-    : 'max-w-4 opacity-100 delay-200 group-hover:max-w-0 group-hover:opacity-0 group-hover:delay-0 group-focus-visible:max-w-0 group-focus-visible:opacity-0 group-focus-visible:delay-0';
-  const labelSlot = downloading
-    ? 'max-w-28 opacity-100'
-    : 'max-w-0 opacity-0 delay-200 group-hover:max-w-28 group-hover:opacity-100 group-hover:delay-0 group-focus-visible:max-w-28 group-focus-visible:opacity-100 group-focus-visible:delay-0';
+  const open = downloading || pointerOver || keyboardFocus;
   return (
     <button
-      onClick={onStart}
+      type="button"
+      onClick={() => {
+        if (swapTimer.current !== null) return;
+        setSwapping(true);
+        swapTimer.current = window.setTimeout(() => {
+          swapTimer.current = null;
+          setSwapping(false);
+          onStart();
+        }, LABEL_SWAP_MS);
+      }}
+      onPointerEnter={() => {
+        setPointerOver(true);
+      }}
+      onPointerLeave={() => {
+        setPointerOver(false);
+      }}
+      onFocus={(event) => {
+        setKeyboardFocus(event.currentTarget.matches(':focus-visible'));
+      }}
+      onBlur={() => {
+        setKeyboardFocus(false);
+      }}
       disabled={downloading}
       title={actionLabel}
       aria-label={actionLabel}
       aria-busy={downloading}
-      className="group flex h-8 shrink-0 items-center justify-center rounded-full bg-blue-600 px-2 text-white transition-all duration-150 ease-out motion-reduce:transition-none enabled:hover:opacity-90 enabled:active:scale-[0.97]"
+      data-open={open}
+      data-swapping={swapping}
+      style={{ width: open ? openWidth : RESTING_SIZE }}
+      className="update-pill relative h-5 shrink-0 cursor-pointer overflow-hidden rounded-full bg-droid-update text-white enabled:hover:bg-droid-update-hover disabled:bg-droid-update-hover"
     >
-      <span className={`flex items-center ${morph} ${iconSlot}`}>
-        <Download className="h-4 w-4 shrink-0" />
+      <span className="update-pill-icon absolute inset-0 grid place-items-center">
+        <Download size={13} strokeWidth={2} />
       </span>
-      <span className={`flex items-center gap-1.5 text-[12px] font-semibold ${morph} ${labelSlot}`}>
-        {downloading && <Spinner className="h-3.5 w-3.5 shrink-0 motion-safe:animate-spin-slow" />}
-        {downloading ? 'Downloading' : 'Update'}
+      <span
+        ref={labelRef}
+        className={`update-pill-label absolute inset-y-0 flex items-center whitespace-nowrap pr-[9px] text-[11px] font-semibold tracking-[0.01em] ${
+          downloading ? 'left-[9px]' : 'right-0'
+        }`}
+      >
+        {label}
       </span>
     </button>
   );

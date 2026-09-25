@@ -114,8 +114,8 @@ export default function SidebarSearch({
           onClick={() => {
             open(entry);
           }}
-          className={`w-full flex items-start gap-3 px-4 py-2.5 text-left transition-colors ${
-            i === selected ? 'bg-droid-accent/10' : 'hover:bg-droid-surface'
+          className={`w-full flex items-start gap-3 rounded-lg px-2.5 py-2.5 text-left transition-colors ${
+            i === selected ? 'bg-droid-accent/[0.07]' : ''
           }`}
         >
           <span className="min-w-0 flex-1">

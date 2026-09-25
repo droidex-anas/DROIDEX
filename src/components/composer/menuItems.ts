@@ -1,4 +1,5 @@
 import { menuMatchRank, rankMenuCandidates } from '../../lib/composerMenuRanking';
+import { VISUALIZE_COMMAND } from '../../lib/composePrompt';
 import { catalogRowKey } from './composerCatalog';
 import type { SkillInfo } from '../../types/bridge';
 import type { SlashCommand } from '../ComposerMenu';
@@ -38,12 +39,14 @@ export type MenuItem =
   | { type: 'file'; path: string };
 
 /**
- * What the open menu paints, in order. Section and group labels are text; rows
- * are the only things the keyboard and the pointer land on, and each carries its
- * position among the rows alone so navigation never counts labels.
+ * What the open menu paints, in order. Section and group headings are text (a
+ * plugin's group also carries the plugin, for its mark); rows are the only
+ * things the keyboard and the pointer land on, and each carries its position
+ * among the rows alone so navigation never counts headings.
  */
 export type MenuEntry =
-  | { kind: 'label'; key: string; text: string; group: boolean }
+  | { kind: 'section'; key: string; text: string }
+  | { kind: 'group'; key: string; text: string; plugin: SkillInfo | null }
   | { kind: 'row'; key: string; index: number; item: MenuItem };
 
 export interface ComposerMenu {
@@ -82,9 +85,14 @@ function basename(p: string): string {
   return i >= 0 ? p.slice(i + 1) : p;
 }
 
+interface GroupHeading {
+  text: string;
+  plugin: SkillInfo | null;
+}
+
 interface Group {
   /** Absent for the shared scopes, which read under the section label alone. */
-  label?: string;
+  heading?: GroupHeading;
   rows: MenuItem[];
   rank: number;
 }
@@ -115,10 +123,12 @@ function rankHarnessCommands(query: string, catalog: SkillInfo[]): MenuItem[] {
 
 // A row a prompt cannot invoke is not offered; the catalog still carries it, so
 // a plugin can name the group its skills belong to.
+function isInvocable(item: SkillInfo): boolean {
+  return item.userInvocable !== false && item.enabled !== false;
+}
+
 function offerable(catalog: SkillInfo[], kind: SkillInfo['kind']): SkillInfo[] {
-  return catalog.filter(
-    (item) => item.kind === kind && item.userInvocable !== false && item.enabled !== false,
-  );
+  return catalog.filter((item) => item.kind === kind && isInvocable(item));
 }
 
 function rankCatalog(query: string, items: SkillInfo[]): SkillInfo[] {
@@ -149,8 +159,8 @@ function fileRank(query: string, path: string): number {
   return Number.isFinite(rank) ? rank : PATH_ONLY_RANK;
 }
 
-function group(rows: MenuItem[], query: string, label?: string): Group {
-  return { ...(label === undefined ? {} : { label }), rows, rank: bestRank(query, rows) };
+function group(rows: MenuItem[], query: string, heading?: GroupHeading): Group {
+  return { ...(heading === undefined ? {} : { heading }), rows, rank: bestRank(query, rows) };
 }
 
 function section(label: string, groups: Group[], query: string): Section[] {
@@ -187,30 +197,30 @@ function skillGroups(query: string, catalog: SkillInfo[]): Group[] {
     plugins.set(scope, [...(plugins.get(scope) ?? []), item]);
   }
   const byPlugin = [...plugins]
-    .map(([scope, items]) => group(catalogRows(items), query, pluginLabel(scope, catalog)))
-    .sort((a, b) => (a.label ?? '').localeCompare(b.label ?? ''));
+    .map(([scope, items]) => group(catalogRows(items), query, pluginHeading(scope, catalog)))
+    .sort((a, b) => (a.heading?.text ?? '').localeCompare(b.heading?.text ?? ''));
   return [...shared, ...byPlugin];
 }
 
-// A plugin's own display name when the catalog carries the plugin itself,
-// otherwise the name its skills were tagged with.
-function pluginLabel(scope: string, catalog: SkillInfo[]): string {
-  const plugin = catalog.find((item) => item.kind === 'plugin' && item.name === scope);
-  return plugin?.displayName ?? scope;
+// A plugin's own display name and mark when the catalog carries the plugin
+// itself, otherwise the name its skills were tagged with.
+function pluginHeading(scope: string, catalog: SkillInfo[]): GroupHeading {
+  const plugin = catalog.find((item) => item.kind === 'plugin' && item.name === scope) ?? null;
+  return { text: plugin?.displayName ?? scope, plugin };
 }
 
 function flatten(sections: Section[]): ComposerMenu {
   const entries: MenuEntry[] = [];
   const rows: MenuItem[] = [];
   for (const s of sections) {
-    entries.push({ kind: 'label', key: `section:${s.label}`, text: s.label, group: false });
+    entries.push({ kind: 'section', key: `section:${s.label}`, text: s.label });
     for (const g of s.groups) {
-      if (g.label !== undefined) {
+      if (g.heading !== undefined) {
         entries.push({
-          kind: 'label',
-          key: `group:${s.label}:${g.label}`,
-          text: g.label,
-          group: true,
+          kind: 'group',
+          key: `group:${s.label}:${g.heading.text}`,
+          text: g.heading.text,
+          plugin: g.heading.plugin,
         });
       }
       for (const item of g.rows) {
@@ -240,7 +250,49 @@ export function composerMenu(
 ): ComposerMenu {
   const { query } = trigger;
   if (trigger.kind === 'file') return flatten(mentionSections(query, catalog, files));
-  return flatten(slashSections(query, commands, catalog));
+  const named = exactlyNamed(query, commands, catalog);
+  return flatten(slashSections(query, named.commands, named.catalog));
+}
+
+function isNamed(name: string, query: string): boolean {
+  return name.toLowerCase() === query.toLowerCase();
+}
+
+// A `/name` typed out in full narrows the menu to the rows it names, so the
+// fuzzy matches around it stop competing once the writer knows what they want.
+function exactlyNamed(
+  query: string,
+  commands: SlashCommand[],
+  catalog: SkillInfo[],
+): { commands: SlashCommand[]; catalog: SkillInfo[] } {
+  const namedCommands = commands.filter((c) => isNamed(c.cmd.slice(1), query));
+  const namedCatalog = catalog.filter(
+    (item) =>
+      (item.kind === 'skill' || item.kind === 'command') &&
+      isInvocable(item) &&
+      isNamed(item.name, query),
+  );
+  if (namedCommands.length === 0 && namedCatalog.length === 0) return { commands, catalog };
+  // Plugins stay so a named plugin skill still groups under its plugin's name.
+  const plugins = catalog.filter((item) => item.kind === 'plugin');
+  return { commands: namedCommands, catalog: [...namedCatalog, ...plugins] };
+}
+
+/**
+ * The chip a space turns a fully typed `/name` into: the one skill it names, or
+ * the Visualize command, which stages a chip too. Other commands keep the space
+ * as text, since what follows them is their argument.
+ */
+export function chipNamedBy(trigger: ComposerTrigger, menu: ComposerMenu): MenuItem | null {
+  if (trigger.kind !== 'slash' || menu.rows.length !== 1) return null;
+  const row = menu.rows[0];
+  if (row.type === 'catalog' && row.item.kind === 'skill') {
+    return isNamed(row.item.name, trigger.query) ? row : null;
+  }
+  if (row.type === 'command' && row.command.cmd === VISUALIZE_COMMAND.cmd) {
+    return isNamed(row.command.cmd.slice(1), trigger.query) ? row : null;
+  }
+  return null;
 }
 
 function slashSections(query: string, commands: SlashCommand[], catalog: SkillInfo[]): Section[] {

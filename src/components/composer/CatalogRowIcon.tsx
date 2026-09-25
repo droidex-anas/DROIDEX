@@ -17,7 +17,7 @@ const missingIcons = new Set<string>();
 const SLOT = 'h-4 w-4 shrink-0';
 
 /** A command's own sigil, the way both harnesses write it. */
-export function CommandSigil({ className = SLOT }: { className?: string }) {
+function CommandSigil({ className }: { className: string }) {
   return (
     <span
       aria-hidden
