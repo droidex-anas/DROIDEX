@@ -1560,8 +1560,9 @@ function baseReducer(state: AppState, action: Action): AppState {
       };
     }
 
-    // The sidecar gave up on a request the user never answered. Matched on the
-    // request id so a late cancellation cannot clear a newer card.
+    // A request that stopped waiting without this window answering it: the
+    // sidecar gave up on it, or another chat answered it. Matched on the request
+    // id so a late event cannot clear a newer card.
     case 'CLEAR_INTERACTION': {
       const { appSessionId, requestId } = action;
       const pendingPermissions = withoutCancelledRequest(
@@ -2424,6 +2425,7 @@ export function adaptEvent(ev: ServerEvent): Action | null {
     case 'question.requested':
       return { type: 'SESSION_QUESTION', question: ev.question };
     case 'interaction.cancelled':
+    case 'question.answered':
       return {
         type: 'CLEAR_INTERACTION',
         appSessionId: ev.appSessionId,
