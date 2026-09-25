@@ -52,6 +52,8 @@ import { droidexUserDataDir } from './droidexPaths.js';
 import type { SessionFileChange } from './sessionFileCache.js';
 import { SessionBrowser, type SessionBrowsers } from './SessionBrowser.js';
 import { SidebarRequests } from './sidebar/sidebarRequests.js';
+import { SidebarSessions } from './sidebar/SidebarSessions.js';
+import { requireProjectService } from './projects/service.js';
 import { SessionHistoryQueries } from './SessionHistoryQueries.js';
 import {
   startSessionFileWatcher,
@@ -263,6 +265,25 @@ export class SessionManager {
   private readonly sidebarRequests = new SidebarRequests((event) => {
     this.emit(event);
   });
+  // Its host reaches the collaborators the constructor builds, and only once
+  // a session tool is called.
+  private readonly sidebarSessions = new SidebarSessions(this.sidebarRequests, {
+    summary: (appSessionId) => this.registry.resolveSummary(appSessionId),
+    projects: async () => (await requireProjectService()).list(),
+    isAutomationRun: (appSessionId) => isUnattendedAutomationSession(appSessionId),
+    isBlocked: (appSessionId) => this.interactions.hasPending(appSessionId),
+    transcriptTail: (appSessionId, limit) => this.timeline.tail(appSessionId, limit),
+    queueBehindTurn: (appSessionId, prompt) => this.lifecycle.queueBehindTurn(appSessionId, prompt),
+    deliver: (appSessionId, prompt) =>
+      this.lifecycle.deliverScheduled(appSessionId, prompt, () => true),
+    answerQuestion: (appSessionId, requestId, answers) =>
+      this.answerQuestion(appSessionId, requestId, answers),
+    note: (appSessionId, text) => {
+      this.timeline.appendStatus(appSessionId, text);
+    },
+    // Not the user's Stop, so it never holds a project the way theirs does.
+    interrupt: (appSessionId) => this.handle({ type: 'session.interrupt', appSessionId }),
+  });
   private readonly sessionVoice: SessionVoice;
   private readonly historyQueries: SessionHistoryQueries;
   private readonly modelSettings: SessionModelSettings;
@@ -334,7 +355,7 @@ export class SessionManager {
         ((appSessionId) => createAutomationMcpServer(appSessionId));
       this.createSessionsMcpResource =
         options.dependencies.createSessionsMcpResource ??
-        ((appSessionId) => createSessionsMcpServer(appSessionId));
+        ((appSessionId) => createSessionsMcpServer(appSessionId, this.sidebarSessions));
       this.mcpConfiguration = options.dependencies.mcpConfiguration;
       this.loadConfiguredMcpServers = options.dependencies.loadConfiguredMcpServers;
       this.factoryDefaultsOverride = options.dependencies.getFactoryDefaults;
@@ -364,7 +385,8 @@ export class SessionManager {
       this.createLocalMcpResource = (appSessionId) =>
         createBrowserMcpServer(browsers, appSessionId);
       this.createAutomationMcpResource = (appSessionId) => createAutomationMcpServer(appSessionId);
-      this.createSessionsMcpResource = (appSessionId) => createSessionsMcpServer(appSessionId);
+      this.createSessionsMcpResource = (appSessionId) =>
+        createSessionsMcpServer(appSessionId, this.sidebarSessions);
       this.mcpConfiguration = new DroidMcpConfiguration();
       this.loadConfiguredMcpServers = loadFactoryMcpServers;
       this.factoryDefaultsOverride = undefined;
