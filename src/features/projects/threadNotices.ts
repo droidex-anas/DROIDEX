@@ -1,13 +1,16 @@
-/* DROIDEX writes two prompts of its own into project conversations: the brief a
-   thread opens with, and a thread's report back to the chat that started it.
-   Neither is something the user said, so neither wears the user's bubble; each
-   reads as a quiet notice carrying only what the reader needs. */
+/* DROIDEX writes prompts of its own into conversations it starts: the brief a
+   lead, a thread or a chat another chat started opens with, and a thread's
+   report back to the chat that started it. None is something the user said,
+   so none wears the user's bubble; each reads as a quiet notice carrying only
+   what the reader needs. */
 
-// Written by ProjectWakeQueue's wakePrompt and threadStart's briefs; each pair
-// must stay in step.
+// Written by ProjectWakeQueue's wakePrompt, threadStart's briefs and
+// SpawnedChats' opening prompt; each pair must stay in step.
 const REPORT_PREFIX = 'From DROIDEX, not the user: your project threads reported.';
 const THREAD_BRIEF_PREFIX = 'You are an independent DROIDEX thread:';
 const LEAD_BRIEF_PREFIX = 'You lead a DROIDEX project.';
+const CHAT_BRIEF_PREFIX = 'Another DROIDEX chat started this conversation';
+const STARTED_BY = /^Started by: (.+)$/m;
 const BRIEF_TASK = '\nTask:\n';
 
 export interface ThreadBrief {
@@ -47,13 +50,17 @@ export function threadReports(text: string | undefined): ThreadReport[] | null {
  */
 export function threadBrief(text: string | undefined): ThreadBrief | null {
   if (text === undefined) return null;
-  const lead = text.startsWith(LEAD_BRIEF_PREFIX)
-    ? 'The goal for this project'
-    : text.startsWith(THREAD_BRIEF_PREFIX)
-      ? 'Task from the chat that started this thread'
-      : '';
-  if (!lead) return null;
   const marker = text.indexOf(BRIEF_TASK);
-  const task = marker < 0 ? '' : text.slice(marker + BRIEF_TASK.length).trim();
-  return task ? { lead, task } : null;
+  if (marker < 0) return null;
+  const lead = briefLead(text.slice(0, marker));
+  const task = text.slice(marker + BRIEF_TASK.length).trim();
+  return lead && task ? { lead, task } : null;
+}
+
+function briefLead(head: string): string {
+  if (head.startsWith(LEAD_BRIEF_PREFIX)) return 'The goal for this project';
+  if (head.startsWith(THREAD_BRIEF_PREFIX)) return 'Task from the chat that started this thread';
+  if (!head.startsWith(CHAT_BRIEF_PREFIX)) return '';
+  const owner = STARTED_BY.exec(head)?.[1].trim();
+  return owner ? `Task from ${owner}` : 'Task from another chat';
 }

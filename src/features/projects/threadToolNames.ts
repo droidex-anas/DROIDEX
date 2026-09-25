@@ -10,12 +10,22 @@ export function isThreadSpawnCall(event: { kind?: string; toolName?: string }): 
   return event.kind === 'tool_call' && threadToolBaseName(event.toolName) === 'thread_spawn';
 }
 
-/** The thread a settled spawn created, as the tool reported it. */
-export function spawnedThread(value: string | undefined): { id: string; title: string } | null {
+export interface SpawnedChat {
+  id: string;
+  title: string;
+  /** A thread of the chat that started it, or an ordinary sidebar chat. */
+  reportBack: boolean;
+}
+
+/** What a settled spawn started, as the tool reported it. */
+export function spawnedThread(value: string | undefined): SpawnedChat | null {
   const result = value ? parseToolResultObject(value) : null;
-  if (result?.ok !== true) return null;
-  if (typeof result.threadId !== 'string' || typeof result.title !== 'string') return null;
-  return { id: result.threadId, title: result.title };
+  if (result?.ok !== true || typeof result.title !== 'string') return null;
+  if (result.reportBack === true && typeof result.threadId === 'string')
+    return { id: result.threadId, title: result.title, reportBack: true };
+  if (result.reportBack === false && typeof result.sessionId === 'string')
+    return { id: result.sessionId, title: result.title, reportBack: false };
+  return null;
 }
 
 function threadToolBaseName(name: string | undefined): string {
