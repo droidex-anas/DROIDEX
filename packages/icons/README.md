@@ -126,9 +126,10 @@ Reference-inspired pairs include Rosette, Hierarchy, Ghost, MessageBubble,
 ConnectedNodes, Gauge, Visualize, Mic, VoiceWave, Lightbulb, AlertTriangle,
 Book, Books, Notebook, FileSearch, Cloud, CirclePlay, Bell, and CircleCheck.
 `VoiceWaveFilled` is the round voice-mode button: a disc with the bars cut out.
-The Modes category holds Lightbulb (plan mode), Brain (reasoning) and Sketch;
-`Mcp` is the Model Context Protocol mark. Single-style glyphs such as Spinner,
-CircleDashed, Brain, Sketch, Mcp and arrows retain their original geometry in
+The Modes category holds Lightbulb (plan mode), Brain (reasoning), Models
+(model picker) and Sketch; `Mcp` is the Model Context Protocol mark.
+Single-style glyphs such as Spinner, CircleDashed, Brain, Models, Sketch, Mcp
+and arrows retain their original geometry in
 filled preview mode.
 
 The gallery and SVGs are generated from `src/`. Edit the source, then rebuild.
