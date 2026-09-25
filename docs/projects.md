@@ -207,7 +207,9 @@ Messages arriving during admission stay queued independently of that claim.
 
 A delivery the runtime could not take holds the project with its claim retained
 as uncertain. After a restart, a project whose delivery was caught mid-flight is
-held the same way; the others carry on. Projects shows a held project with a
+held the same way; the others carry on, delivering what the restart left queued
+once session history has loaded. No delivery goes out before that, because until
+then a thread reads as an unknown session. Projects shows a held project with a
 Resume control, and the Threads panel says to resume it there. Resuming discards
 an uncertain claim **without resending it**; automatic replay could duplicate
 work and is deliberately forbidden.

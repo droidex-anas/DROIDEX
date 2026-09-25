@@ -54,7 +54,7 @@ function summary(id: string, selection: ThreadInput = input): SessionSummary {
   };
 }
 
-async function harness(saved: Project[] = []) {
+async function harness(saved: Project[] = [], historyReady = true) {
   const sessions = new Map<string, SessionSummary>();
   const sent: { id: string; prompt: string }[] = [];
   const launched: ThreadInput[] = [];
@@ -149,6 +149,7 @@ async function harness(saved: Project[] = []) {
     },
   };
   const projects = await ProjectService.open(port, store, (event) => events.push(event));
+  if (historyReady) projects.historyReady();
   async function streaming(id: string, value: boolean) {
     const session = sessions.get(id);
     assert.ok(session);
@@ -676,6 +677,34 @@ test('restart preserves an uncertain delivery and never replays it implicitly', 
   h.projects.close();
   gate.resolve();
   await h.projects.flush();
+});
+
+test('messages a restart left queued go out once session history is ready, and not before', async (t) => {
+  const h = await harness();
+  t.after(() => h.projects.close());
+  const { main } = await h.root();
+  const child = await h.projects.spawn(main, input);
+  // The lead is busy, so the thread's report is still queued when DROIDEX stops.
+  await h.streaming(main, true);
+  await h.finish(child.appSessionId, 'Parsed the config.');
+  await drain();
+  const disk = structuredClone(h.state.saved);
+  assert.equal(disk[0]?.pending.length, 1);
+  assert.equal(disk[0]?.delivery, undefined);
+
+  const recovered = await harness(disk, false);
+  t.after(() => recovered.projects.close());
+  recovered.sessions.set(main, summary(main));
+  // The lead settling would wake it, but history does not know its threads yet.
+  await recovered.streaming(main, false);
+  await drain();
+  assert.equal(recovered.sent.length, 0);
+
+  recovered.projects.historyReady();
+  await drain();
+  assert.equal(recovered.sent.at(-1)?.id, main);
+  assert.match(recovered.sent.at(-1)?.prompt ?? '', /Parsed the config/);
+  assert.equal(recovered.projects.list()[0]?.paused, false);
 });
 
 test('work keeps flowing, and only a runaway loop holds the project', async (t) => {

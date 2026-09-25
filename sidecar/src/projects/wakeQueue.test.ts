@@ -57,6 +57,7 @@ test('acceptance removes only its claim and holds the turn slot until completion
       throw error;
     },
   );
+  queue.start([]);
   queue.kick(state);
   await tick();
   assert.equal(saved?.delivery?.state, 'sending');
@@ -98,6 +99,7 @@ test('availability arriving during an awaited busy receipt is not lost', async (
       throw error;
     },
   );
+  queue.start([]);
   queue.kick(state);
   await tick();
   queue.available(state, 'main');
@@ -125,6 +127,7 @@ test('an unacknowledged delivery keeps its claim and is not retried', async () =
       failures.push(error);
     },
   );
+  queue.start([]);
   queue.kick(state);
   await tick();
   queue.available(state, 'main');
@@ -156,6 +159,7 @@ test('completed callbacks free the global limit of two accepted project turns', 
       throw error;
     },
   );
+  queue.start([]);
   states.forEach((item) => queue.kick(item));
   await tick();
   await tick();
@@ -185,6 +189,7 @@ test('explicit resume rechecks both target and capacity busy markers', async () 
         throw error;
       },
     );
+    queue.start([]);
     queue.kick(state);
     await tick();
     await tick();
@@ -220,6 +225,7 @@ test('a cancelled admission cannot restore a busy marker after resume', async ()
       throw error;
     },
   );
+  queue.start([]);
   queue.kick(state);
   await tick();
   state.paused = true;

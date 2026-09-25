@@ -748,6 +748,14 @@ export class SessionManager {
     this.sessionFiles.start();
   }
 
+  /**
+   * Resolves once session history knows every stored conversation. Call it
+   * after startSessionFileServing, since it starts that work itself otherwise.
+   */
+  whenSessionHistoryReady(): Promise<void> {
+    return this.sessionFiles.whenBootReconciled();
+  }
+
   connect(apiKey?: string): void {
     this.runtime.connect(apiKey);
     this.ready = true;

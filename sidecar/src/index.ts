@@ -122,6 +122,24 @@ server.ready
     setImmediate(() => {
       if (shuttingDown) return;
       manager.startSessionFileServing();
+      // Projects deliver only once history can resolve the threads they wake.
+      void Promise.all([
+        // A ledger that failed to open is reported where it opens.
+        projectsReady.catch(() => undefined),
+        manager.whenSessionHistoryReady(),
+      ]).then(
+        ([service]) => {
+          service?.historyReady();
+        },
+        (error: unknown) => {
+          const reason = error instanceof Error ? error.message : String(error);
+          reportProjectError(
+            new Error(
+              `Session history did not load, so Projects deliver nothing until DROIDEX restarts: ${reason}`,
+            ),
+          );
+        },
+      );
     });
   })
   .catch((error: unknown) => {

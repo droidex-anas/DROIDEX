@@ -25,6 +25,7 @@ export class ProjectWakeQueue {
   private readonly revisions = new Map<string, number>();
   private capacityRevision = 0;
   private scheduled?: NodeJS.Immediate;
+  private started = false;
   private closed = false;
 
   constructor(
@@ -44,6 +45,15 @@ export class ProjectWakeQueue {
     this.queued.delete(project);
     this.capacityWaiting.delete(project.id);
     for (const thread of project.threads) this.busyTargets.delete(thread.appSessionId);
+  }
+
+  /**
+   * Deliveries begin once session history is ready. Before it the registry
+   * cannot resolve a recipient, and a delivery would fail and hold its project.
+   */
+  start(projects: Iterable<Project>): void {
+    this.started = true;
+    for (const project of projects) this.kick(project);
   }
 
   kick(project: Project): void {
@@ -89,7 +99,7 @@ export class ProjectWakeQueue {
   }
 
   private schedule(): void {
-    if (this.closed || this.scheduled || this.running() >= MAX_ACTIVE) return;
+    if (this.closed || !this.started || this.scheduled || this.running() >= MAX_ACTIVE) return;
     this.scheduled = setImmediate(() => {
       this.scheduled = undefined;
       for (const project of this.queued) {
