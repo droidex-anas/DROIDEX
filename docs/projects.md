@@ -164,6 +164,10 @@ a shared checkout does not establish which agent authored each file change.
 
 The project ledger is local `projects.json` under the DROIDEX user-data
 directory. Writes use an atomic replacement and private file permissions.
+No count bounds the ledger, so replies are what keeps it in check: past 6 MiB,
+the threads whose conversations moved longest ago, in any project, give up
+their earlier replies and then their final one. A ledger that still passed
+8 MiB would be refused, and every project held.
 Membership is persisted before a new session receives its first task.
 
 The wake queue writes its claim before dispatch. **Accepted** means the
