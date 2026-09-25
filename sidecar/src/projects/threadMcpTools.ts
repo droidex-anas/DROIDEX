@@ -13,32 +13,32 @@ const spawnSchema = z.object({
     .trim()
     .min(1)
     .max(LEDGER_LIMITS.title)
-    .describe('Short task name in the user\'s words, e.g. "Draft Friday\'s release notes".'),
+    .describe("Short task name in the user's words."),
   prompt: z
     .string()
     .trim()
     .min(1)
     .max(8_192)
-    .describe('The whole task for the thread, including the context it needs to start.'),
-  provider: z
-    .enum(PROVIDER_KINDS)
-    .optional()
-    .describe("Harness for the thread. Omit to use this chat's harness."),
+    .describe('The whole task, with everything it needs to start.'),
+  reportBack: z
+    .boolean()
+    .describe(
+      'true: a thread of this chat that reports here. false: an ordinary sidebar chat. A thread can only pass true.',
+    ),
+  provider: z.enum(PROVIDER_KINDS).optional().describe("Harness. Omit for this chat's."),
   modelId: z
     .string()
     .min(1)
     .max(200)
     .optional()
-    .describe(
-      "The model for this thread, by id or display name. Omit to inherit this chat's model. A name the harness does not know is refused here rather than running empty, and a name your own model also answers to gives the thread your model.",
-    ),
+    .describe("Model id or display name. Omit for this chat's model. An unknown name is refused."),
   reasoningEffort: reasoningSchema.optional(),
-  autonomy: autonomySchema.optional().describe("At most this chat's autonomy. Omit to inherit it."),
+  autonomy: autonomySchema.optional().describe("At most this chat's. Omit to inherit it."),
   workspace: z
     .enum(['inherit', 'worktree'])
     .optional()
     .describe(
-      'Where the thread works. Omit it and DROIDEX decides: a checkout that already has a thread working in it gives the next one its own. "worktree" always isolates; "inherit" always shares, for a read-only task.',
+      "worktree: its own checkout on a new branch. inherit: this chat's folder. Omitted: a thread gets its own worktree when another thread is working in the folder; a chat shares the folder.",
     ),
   workspaceOf: z
     .string()
@@ -46,30 +46,26 @@ const spawnSchema = z.object({
     .max(200)
     .optional()
     .describe(
-      'Put this thread in the checkout another thread already worked in, by its id. This is how a review thread reads the work. That thread must have settled.',
+      'Threads only. Id of a settled thread of this chat whose checkout it joins, to review that work.',
     ),
   branch: z
     .string()
     .min(1)
     .max(80)
     .optional()
-    .describe('Branch for a worktree thread. Named after the task when omitted; prefixed thread/.'),
+    .describe('Worktree branch. Named after the task when omitted, prefixed thread/.'),
   base: z
     .string()
     .min(1)
     .max(200)
     .optional()
-    .describe(
-      "Commit, branch or tag the worktree branches from. The checkout's HEAD when omitted.",
-    ),
+    .describe('Commit, branch or tag the worktree starts from. HEAD when omitted.'),
   step: z
     .string()
     .min(1)
     .max(200)
     .optional()
-    .describe(
-      "The plan step this thread carries, by its number or its exact title. DROIDEX then shows the thread's real state on that row, so you never mark it done yourself.",
-    ),
+    .describe('Threads only. The plan step it carries, by number or exact title.'),
 });
 
 interface PlanStep {
@@ -81,34 +77,49 @@ interface PlanStep {
 }
 
 /**
- * The tools that let a chat run work in parallel. A thread is a full DROIDEX
- * conversation of its own (its own history, settings and transcript), not a
- * harness subagent, so the user can open one and steer it like any other chat.
+ * The tools that let a chat run work in parallel. What it starts is a full
+ * DROIDEX conversation of its own (its own history, settings and transcript),
+ * not a harness subagent, so the user can open one and steer it like any other
+ * chat.
  */
 export function threadTools(appSessionId: () => string) {
   return [
     tool(
       'thread_spawn',
       [
-        'Hand one settled step of the plan to an independent DROIDEX thread: a separate conversation that carries it on its own and reports back here when it settles.',
-        'Spawn only work you have already decided. Name the plan step with `step`, and write a prompt that carries the whole task, because the thread cannot see this conversation: the context it needs, the files or areas involved, and what finishing looks like.',
-        'Never spawn to explore an open question, to decide what the task is, or to watch another thread. Investigate here, decide here, then hand out the decided work.',
-        "The thread inherits this chat's workspace, harness, model, reasoning and autonomy unless you name different ones; it can never exceed this chat's autonomy.",
-        'Choose deliberately: a cheap fast model for a mechanical task, a stronger one for judgement, and workspace "worktree" whenever threads will write files at the same time.',
+        'Start a new DROIDEX chat that carries one decided task alongside this one.',
+        'It cannot see this conversation, so the prompt must hold the whole task: the context, the files or areas involved, and what done looks like.',
+        'With reportBack true it is a thread of this chat, listed under it in Projects: its replies and questions arrive here as new turns, so end your turn after spawning, and steer it with the thread_ tools.',
+        "With reportBack false it is an ordinary chat in the user's sidebar that never reports here.",
+        "It inherits this chat's folder, harness, model, reasoning and autonomy unless you name others.",
+        'Investigate open questions here and spawn only decided work.',
       ].join(' '),
       spawnSchema.shape,
-      safeTool(async (input: z.infer<typeof spawnSchema>) => {
+      safeTool(async ({ reportBack, ...input }: z.infer<typeof spawnSchema>) => {
         const projects = await requireProjectService();
+        if (!reportBack) {
+          const chat = await projects.startChat(appSessionId(), input);
+          return jsonResult({
+            ok: true,
+            reportBack: false,
+            sessionId: chat.appSessionId,
+            title: chat.title,
+            ...(chat.cwd ? { cwd: chat.cwd } : {}),
+            ...(chat.branch ? { branch: chat.branch } : {}),
+            note: "It runs as its own chat in the user's sidebar and will not report here.",
+          });
+        }
         const started = await projects.spawn(appSessionId(), input);
         return jsonResult({
           ok: true,
+          reportBack: true,
           threadId: started.appSessionId,
           title: started.title,
           state: 'working',
           ...(started.cwd ? { cwd: started.cwd } : {}),
           ...(started.branch ? { branch: started.branch } : {}),
           ...(started.step ? { step: started.step } : {}),
-          note: 'The thread runs on its own. Its report arrives here as a new turn; do not wait for it.',
+          note: 'Its replies and questions arrive here as new turns; end your turn instead of waiting.',
         });
       }),
     ),

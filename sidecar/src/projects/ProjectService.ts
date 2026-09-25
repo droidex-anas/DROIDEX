@@ -10,6 +10,7 @@ import {
 import { randomUUID } from 'node:crypto';
 import type { ProviderStatus, ServerEvent, SessionSummary } from '../protocol.js';
 import { findPlanStep, planFromSteps } from './plan.js';
+import { SpawnedChats, type StartedChat } from './spawnedChats.js';
 import { LEDGER_LIMITS, type ProjectPersistence } from './store.js';
 import {
   checkWithinAutonomy,
@@ -97,6 +98,7 @@ export class ProjectService {
   private readonly launches = new Set<Promise<string>>();
   private readonly wakes: ProjectWakeQueue;
   private readonly turns: ProjectTurns;
+  private readonly chats: SpawnedChats;
   private closed = false;
 
   private constructor(
@@ -124,6 +126,7 @@ export class ProjectService {
       },
       wakes: this.wakes,
     });
+    this.chats = new SpawnedChats(sessions);
   }
 
   static async open(
@@ -232,6 +235,15 @@ export class ProjectService {
     } finally {
       if (this.settleAdoption(project)) await this.save();
     }
+  }
+
+  /** A spawn with reportBack false: an ordinary sidebar chat, outside every project. */
+  async startChat(source: string, requested: ThreadSpawnInput): Promise<StartedChat> {
+    this.requireOpen();
+    const project = this.membership.get(source);
+    if (project && requireThread(project, source).ownerAppSessionId)
+      throw new Error("A thread's spawns always report back to it. Pass reportBack true.");
+    return await this.chats.start(source, requested);
   }
 
   /** Admits, checks out and launches one thread of a project, and links the step it carries. */
