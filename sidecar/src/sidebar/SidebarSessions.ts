@@ -29,8 +29,8 @@ export interface SidebarHost {
   interrupt(appSessionId: string): Promise<void>;
 }
 
-export type SidebarShow = 'needs_you' | 'working' | 'all';
-export type SendDelivery = 'started' | 'queued' | 'answered' | 'already-answered';
+type SidebarShow = 'needs_you' | 'working' | 'all';
+type SendDelivery = 'started' | 'queued' | 'answered' | 'already-answered';
 
 /** A chat the window reported, with what the sidecar knows about it. */
 interface SidebarChat {
@@ -84,13 +84,11 @@ export class SidebarSessions {
     const { summary, projects } = await this.admit(caller);
     const { chats } = await this.sidebar(summary, projects);
     const matching = chats
-      .map((chat) => ({ chat, entry: this.entry(chat) }))
-      .map(({ chat, entry }) => ({
-        entry,
-        status: chat.row.status,
-        group: urgency(chat.row.status, entry.blockedThreads ?? 0),
-        updatedAt: chat.summary.updatedAt,
-      }))
+      .map((chat) => {
+        const entry = this.entry(chat);
+        const group = urgency(chat.row.status, entry.blockedThreads ?? 0);
+        return { entry, group, status: chat.row.status, updatedAt: chat.summary.updatedAt };
+      })
       .filter(
         (item) =>
           show === 'all' || (show === 'needs_you' ? item.group === 0 : item.status === 'working'),
