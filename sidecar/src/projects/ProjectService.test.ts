@@ -1,5 +1,10 @@
 import assert from 'node:assert/strict';
+import { execFile } from 'node:child_process';
+import { mkdtemp, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import test from 'node:test';
+import { promisify } from 'node:util';
 import { ProjectService, type ProjectPort } from './ProjectService.js';
 import { LEDGER_LIMITS, type ProjectPersistence } from './store.js';
 import { CHAT_BRIEF } from './threadStart.js';
@@ -60,6 +65,8 @@ async function harness(saved: Project[] = []) {
     gate: undefined as Promise<void> | undefined,
     capacity: 'free' as 'free' | 'busy',
     bindGate: undefined as Promise<void> | undefined,
+    // Holds a bound thread before its first turn, while it is not streaming yet.
+    firstTurnGate: undefined as Promise<void> | undefined,
     createFailure: undefined as 'before-bind' | 'after-bind' | undefined,
   };
   const answered: { id: string; requestId: string; answers: unknown[] }[] = [];
@@ -102,6 +109,7 @@ async function harness(saved: Project[] = []) {
       if (state.createFailure === 'before-bind') throw new Error('The harness refused to start.');
       await bind(session);
       if (state.createFailure === 'after-bind') throw new Error('The harness exited on start.');
+      if (state.firstTurnGate) await state.firstTurnGate;
       launched.push(selection);
       await streaming(session.appSessionId, true);
       return session;
@@ -499,6 +507,39 @@ test('stopping a chat while its first thread starts cancels that spawn', async (
   h.state.bindGate = undefined;
   await h.projects.spawn('ordinary', input);
   assert.equal(h.state.saved[0]?.paused, false);
+});
+
+test('threads started together each get a checkout of their own', async (t) => {
+  const repository = await mkdtemp(join(tmpdir(), 'droidex-project-'));
+  t.after(() => rm(repository, { recursive: true, force: true }));
+  const git = promisify(execFile);
+  await git('git', ['init', '-q', repository]);
+  await git('git', [
+    ...['-C', repository, '-c', 'user.name=Test', '-c', 'user.email=test@example.invalid'],
+    ...['commit', '-q', '--allow-empty', '-m', 'Start'],
+  ]);
+  const h = await harness();
+  t.after(() => h.projects.close());
+  h.sessions.set('ordinary', summary('ordinary', { ...input, cwd: repository }));
+  const spawn = (title: string) => h.projects.spawn('ordinary', { ...input, title });
+  // A start that fails gives the checkout back.
+  h.state.createFailure = 'before-bind';
+  await assert.rejects(spawn('Refused'), /refused to start/);
+  h.state.createFailure = undefined;
+
+  // Two spawns made together, then a third once they are bound but not yet working.
+  const gate = deferred();
+  h.state.firstTurnGate = gate.promise;
+  const together = [spawn('Parser'), spawn('Lexer')];
+  await drain();
+  const later = spawn('Printer');
+  await drain();
+  gate.resolve();
+  const [parser, lexer, printer] = await Promise.all([...together, later]);
+  assert.equal(parser?.cwd, undefined, 'the first shares the checkout');
+  assert.ok(lexer?.branch, 'a thread started beside it gets its own worktree');
+  assert.ok(printer?.branch, 'so does one started before either reports working');
+  assert.notEqual(lexer.cwd, printer.cwd);
 });
 
 test('a failed spawn never removes a project started in Projects', async (t) => {
