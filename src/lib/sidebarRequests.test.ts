@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import type { SessionSummary, SidebarRequest } from '../types/bridge';
+import type { SessionSummary } from '../types/bridge';
+import type { SidebarRequest } from '../types/sidebar';
 import { withLocalStorageMap } from '../test/localStorage';
 import { DEFAULT_SIDEBAR_PREFERENCES } from './sidebarActivity';
 import { answerSidebarRequest } from './sidebarRequests';

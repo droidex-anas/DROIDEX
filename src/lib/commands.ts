@@ -18,9 +18,9 @@ import type {
   ResponseFormat,
   SessionInteractionMode,
   SessionPurpose,
-  SidebarResult,
   VoiceNarration,
 } from '../types/bridge';
+import type { SidebarResult } from '../types/sidebar';
 
 let refCounter = 0;
 
