@@ -15,6 +15,7 @@ import { fitLedger, LEDGER_LIMITS, type ProjectPersistence } from './store.js';
 import {
   checkWithinAutonomy,
   discardThreadCheckout,
+  type CheckoutClaim,
   LEAD_BRIEF,
   THREAD_BRIEF,
   resolveModelId,
@@ -98,6 +99,8 @@ export class ProjectService {
      fails leaves no project behind. */
   private readonly adopting = new Map<string, Project>();
   private readonly launches = new Set<Promise<string>>();
+  /** The folder each thread still starting will share or join; memory only, as a restart starts none. */
+  private readonly checkoutClaims = new Set<CheckoutClaim>();
   private readonly wakes: ProjectWakeQueue;
   private readonly turns: ProjectTurns;
   private readonly chats: SpawnedChats;
@@ -264,13 +267,14 @@ export class ProjectService {
     // The thread counts as starting while its checkout is cut, and the count is
     // handed to the launch without a gap.
     project.launching += 1;
+    const claim: CheckoutClaim = { project };
     let workspace: ThreadCheckout | undefined;
     try {
       workspace = await threadCheckout(
-        project,
+        claim,
+        this.checkoutClaims,
         (id) => this.sessions.get(id),
         owner.cwd,
-        input.title,
         requested,
       );
     } finally {
@@ -285,6 +289,10 @@ export class ProjectService {
     } catch (error) {
       if (workspace) await discardThreadCheckout(owner.cwd, workspace);
       throw error;
+    } finally {
+      // A launch returns once the thread's first turn is running, so from here
+      // its session's own streaming flag says it works in that folder.
+      this.checkoutClaims.delete(claim);
     }
     // The step resolved before the launch, unless plan_set replaced the plan
     // while the thread started; then the new step with its title.

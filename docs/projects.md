@@ -42,14 +42,14 @@ name that fits several others is refused with their ids rather than guessed. A
 harness whose catalog DROIDEX has not read yet takes the name as given.
 
 DROIDEX isolates threads on its own. When another thread of the project is
-working in the same checkout, or waiting on a question it asked there, the next
-one gets its own worktree at `<repo>/.worktrees/thread-<name>/<repo>` on a
-`thread/<name>` branch. When nobody asked for that worktree and the checkout
-cannot carry one, such as a folder that is not a Git repository with a commit,
-the thread shares the checkout instead. `thread_spawn` can override this with
-`workspace`, name the `branch` and `base`, or put a review thread in the
-checkout of a settled thread with `workspaceOf`, so it reads the work where it
-was done.
+working in the same checkout, still starting there, or waiting on a question it
+asked there, the next one gets its own worktree at
+`<repo>/.worktrees/thread-<name>/<repo>` on a `thread/<name>` branch. When
+nobody asked for that worktree and the checkout cannot carry one, such as a
+folder that is not a Git repository with a commit, the thread shares the
+checkout instead. `thread_spawn` can override this with `workspace`, name the
+`branch` and `base`, or put a review thread in the checkout of a settled thread
+with `workspaceOf`, so it reads the work where it was done.
 
 **Projects** lists every local project with what it is doing. Opening a row
 opens the conversation that leads it with its Threads panel already beside it;

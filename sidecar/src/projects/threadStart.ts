@@ -15,6 +15,12 @@ import type { Project, ThreadInput, ThreadSpawnInput } from './types.js';
 /** A worktree cut for the thread, or the checkout of another thread it joins. */
 export type ThreadCheckout = ThreadWorkspace | { cwd: string; joined: true };
 
+/** A thread still starting, and the folder it will share or join. */
+export interface CheckoutClaim {
+  project: Project;
+  cwd?: string;
+}
+
 export const THREAD_BRIEF = [
   'You are an independent DROIDEX thread: a separate conversation started to carry one task on its own.',
   'Do the task, then end your turn with a short final report. DROIDEX delivers that report to the chat that started you.',
@@ -127,15 +133,18 @@ export function resolveModelId(
 
 /**
  * The checkout a thread will work in. Cut before the session exists, so a
- * thread asked to work in isolation never reads the project's own tree.
+ * thread asked to work in isolation never reads the project's own tree. The
+ * folder it will share or join is claimed before anything is awaited, and the
+ * caller releases that claim once the thread's session reports for itself.
  */
 export async function threadCheckout(
-  project: Project,
+  claim: CheckoutClaim,
+  claims: Set<CheckoutClaim>,
   session: (appSessionId: string) => SessionSummary | undefined,
   cwd: string,
-  title: string,
   requested: ThreadSpawnInput,
 ): Promise<ThreadCheckout | undefined> {
+  const { project } = claim;
   // A reviewer reads the work where it was done, so it joins that thread's
   // checkout rather than cutting a tree with none of the changes in it.
   if (requested.workspaceOf) {
@@ -146,26 +155,34 @@ export async function threadCheckout(
     if (open.streaming)
       throw new Error(`${target.title} is still working. Review it once it settles.`);
     if (!open.cwd.trim()) throw new Error(`${target.title} has no workspace folder to join.`);
+    claim.cwd = open.cwd;
+    claims.add(claim);
     return { cwd: open.cwd, joined: true };
   }
-  if (requested.workspace === 'inherit') return undefined;
   // Isolation is not left to a lead remembering to ask: a checkout with work
   // already running in it gets the next thread its own, because two threads
-  // editing one tree see each other's half-finished files.
-  const shared = project.threads.some((thread) => {
-    if (!thread.ownerAppSessionId) return false;
-    const open = session(thread.appSessionId);
-    return open?.cwd === cwd && (open.streaming === true || thread.waiting);
-  });
+  // editing one tree see each other's half-finished files. A thread still
+  // starting is not streaming yet, so its claim is what says it works there.
+  const shared =
+    [...claims].some((other) => other.project === project && other.cwd === cwd) ||
+    project.threads.some((thread) => {
+      if (!thread.ownerAppSessionId) return false;
+      const open = session(thread.appSessionId);
+      return open?.cwd === cwd && (open.streaming === true || thread.waiting);
+    });
   const asked = requested.workspace === 'worktree';
-  if (!asked && !shared) return undefined;
+  if (requested.workspace === 'inherit' || (!asked && !shared)) {
+    claim.cwd = cwd;
+    claims.add(claim);
+    return undefined;
+  }
   if (!cwd.trim()) {
     if (asked) throw new Error('A thread worktree needs the project to have a workspace folder.');
     return undefined;
   }
   const request = {
     cwd,
-    title,
+    title: requested.title,
     ...(requested.branch ? { branch: requested.branch } : {}),
     ...(requested.base ? { base: requested.base } : {}),
   };
