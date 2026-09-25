@@ -152,13 +152,13 @@ export function createThreadMcpServer(appSessionIdForTool: () => string | undefi
         },
         safeTool(async (input: { threadId: string; text: string; answers?: string[] }) => {
           const projects = await requireProjectService();
-          const state = await projects.send(
+          const delivery = await projects.send(
             appSessionId(),
             input.threadId,
             input.text,
             input.answers,
           );
-          return jsonResult({ ok: true, threadId: input.threadId, state });
+          return jsonResult({ ok: true, threadId: input.threadId, delivery });
         }),
       ),
       tool(
@@ -236,7 +236,10 @@ export function createThreadMcpServer(appSessionIdForTool: () => string | undefi
         },
         safeTool(async (input: { threadId: string; replies?: number }) => {
           const projects = await requireProjectService();
-          return jsonResult(projects.read(appSessionId(), input.threadId, input.replies));
+          return jsonResult({
+            ok: true,
+            ...projects.read(appSessionId(), input.threadId, input.replies),
+          });
         }),
       ),
       tool(
@@ -269,7 +272,10 @@ export function createThreadMcpServer(appSessionIdForTool: () => string | undefi
           }) => {
             const { threadId, ...settings } = input;
             const projects = await requireProjectService();
-            return jsonResult(await projects.configure(appSessionId(), threadId, settings));
+            return jsonResult({
+              ok: true,
+              ...(await projects.configure(appSessionId(), threadId, settings)),
+            });
           },
         ),
       ),
