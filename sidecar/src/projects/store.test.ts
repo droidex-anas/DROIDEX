@@ -27,9 +27,14 @@ test('a missing ledger is empty, writes are ordered, and a fresh reader restores
   const first = project();
   const one = store.save([first]);
   first.title = 'Second';
+  first.paused = true;
+  first.leadStopped = true;
   const two = store.save([first]);
   await Promise.all([one, two]);
-  assert.equal((await new ProjectStore(path).load())[0]?.title, 'Second');
+  const [loaded] = await new ProjectStore(path).load();
+  assert.equal(loaded?.title, 'Second');
+  // Why a project is held has to survive a restart, or the lead's spawn could not lift it.
+  assert.equal(loaded?.leadStopped, true);
   if (process.platform !== 'win32') assert.equal((await stat(path)).mode & 0o777, 0o600);
 });
 

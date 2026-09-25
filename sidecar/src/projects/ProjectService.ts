@@ -142,6 +142,7 @@ export class ProjectService {
       if (project.delivery) {
         project.delivery.state = 'uncertain';
         project.paused = true;
+        delete project.leadStopped;
       }
       owner.projects.set(project.id, project);
       for (const thread of project.threads) owner.membership.set(thread.appSessionId, project);
@@ -210,6 +211,7 @@ export class ProjectService {
     const owner = this.requireSession(source);
     if (owner.sessionPurpose !== 'chat')
       throw new Error('Only ordinary chats can own project threads.');
+    await this.resumeAfterLeadStop(source);
     const input = inheritSettings(owner, requested);
     if (input.modelId)
       input.modelId = resolveModelId(
@@ -463,6 +465,7 @@ export class ProjectService {
     }
     this.wakes.invalidate(project);
     project.paused = paused;
+    delete project.leadStopped;
     if (!paused) delete project.error;
     await this.save();
     this.wakes.kick(project);
@@ -477,7 +480,11 @@ export class ProjectService {
     const project = this.membership.get(appSessionId);
     if (!project || this.closed) return;
     if (!requireThread(project, appSessionId).ownerAppSessionId) {
-      await this.setPaused(project.id, true);
+      // A hold already in place for another reason stays the user's to lift.
+      if (!project.paused) project.leadStopped = true;
+      this.wakes.invalidate(project);
+      project.paused = true;
+      await this.save();
       return;
     }
     this.wakes.invalidate(project);
@@ -518,6 +525,20 @@ export class ProjectService {
     await Promise.allSettled(this.launches);
     await this.wakes.flush();
     await this.save();
+  }
+
+  /**
+   * The user's Stop on a project's main chat holds the project, and that chat's
+   * own next spawn resumes it the way Resume in Projects does: the chat is
+   * working again. A hold from a failure, a loop or an uncertain delivery is
+   * never lifted here. This runs as a spawn begins, so a spawn already under
+   * way when the user pressed Stop meets the hold and is refused.
+   */
+  private async resumeAfterLeadStop(source: string): Promise<void> {
+    const project = this.membership.get(source);
+    if (!project?.leadStopped || project.delivery) return;
+    if (requireThread(project, source).ownerAppSessionId) return;
+    await this.setPaused(project.id, false);
   }
 
   /** Drops what was queued for a stopped thread once admission has settled. */
@@ -703,6 +724,7 @@ export class ProjectService {
   private fail(project: Project, error: unknown): void {
     this.wakes.invalidate(project);
     project.paused = true;
+    delete project.leadStopped;
     const message = error instanceof Error ? error.message : String(error);
     project.error = message.slice(0, LEDGER_LIMITS.projectError);
     if (project.delivery) project.delivery.state = 'uncertain';

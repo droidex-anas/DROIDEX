@@ -158,12 +158,18 @@ retry from lifecycle availability or runtime capacity events, not a timer.
 Messages arriving during admission stay queued independently of that claim.
 
 An unavailable or unacknowledged delivery pauses coordination with the claim
-retained as uncertain. After restart, projects are paused, and the Threads
-panel says so with a Resume control. Starting a thread from a live conversation
-resumes coordination the same way that control does, and refuses for the same
-reason: an uncertain delivery must be reviewed first. Resuming discards that
-claim **without resending it**; automatic replay could duplicate work and is
-deliberately forbidden.
+retained as uncertain. After a restart, a project whose delivery was caught
+mid-flight is held the same way; the others carry on. Projects shows a held
+project with a Resume control, and the Threads panel says to resume it there.
+Resuming discards an uncertain claim **without resending it**; automatic replay
+could duplicate work and is deliberately forbidden.
+
+When the user stops a project's main chat, the project is held too. That
+chat's own next `thread_spawn` resumes it, the way Resume in Projects does,
+because the chat is working again. Only a hold the Stop alone put on is lifted
+this way: a hold from a failure, from threads talking in circles or from an
+uncertain delivery stays until the user resumes the project in Projects, and a
+spawn that was already under way when the user pressed Stop is refused.
 
 Malformed or incompatible experimental ledgers fail visibly and are left
 untouched. This draft provides no migration from earlier prototypes. Back up

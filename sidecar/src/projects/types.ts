@@ -91,6 +91,8 @@ export interface Project {
   id: string;
   title: string;
   paused: boolean;
+  /** The hold is the user's Stop on the main chat alone, which that chat's own next spawn lifts. */
+  leadStopped?: true;
   launching: number;
   plan: ProjectStep[];
   threads: ProjectThread[];
