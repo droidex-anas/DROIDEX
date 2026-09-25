@@ -61,6 +61,12 @@ export interface ProjectPort {
   ): boolean;
 }
 
+/** A spawn under way and the chat that asked for it, which the user's Stop on that chat cancels. */
+interface SpawnUnderWay {
+  source: string;
+  stopped: boolean;
+}
+
 /** What a spawn reports back to the chat that made it. */
 interface StartedThread {
   appSessionId: string;
@@ -103,8 +109,7 @@ export class ProjectService {
   private readonly launches = new Set<Promise<string>>();
   /** The folder each thread still starting will share or join; memory only, as a restart starts none. */
   private readonly checkoutClaims = new Set<CheckoutClaim>();
-  /** Spawns under way, by the chat that asked, so the user's Stop on that chat cancels them. */
-  private readonly spawnsUnderWay = new Set<{ source: string; stopped: boolean }>();
+  private readonly spawnsUnderWay = new Set<SpawnUnderWay>();
   private readonly wakes: ProjectWakeQueue;
   private readonly turns: ProjectTurns;
   private readonly chats: SpawnedChats;
@@ -223,28 +228,27 @@ export class ProjectService {
     const owner = this.requireSession(source);
     if (owner.sessionPurpose !== 'chat')
       throw new Error('Only ordinary chats can own project threads.');
-    const underWay = { source, stopped: false };
-    this.spawnsUnderWay.add(underWay);
-    let input: Omit<ThreadInput, 'cwd'>;
+    const spawn: SpawnUnderWay = { source, stopped: false };
+    this.spawnsUnderWay.add(spawn);
     try {
       await this.resumeAfterLeadStop(source);
-      input = await spawnSettings(owner, requested, () => this.sessions.catalog());
+      const input = await spawnSettings(owner, requested, () => this.sessions.catalog());
+      // A chat's first spawn has no project yet for a Stop to hold, so one that
+      // came while the settings resolved is only known here.
+      if (spawn.stopped) throw new Error('Project launch was cancelled.');
+      const joined = this.membership.get(source);
+      if (!joined && requested.step)
+        throw new Error('This chat keeps no plan yet. Call plan_set first, or spawn without step.');
+      if (!joined && requested.workspaceOf)
+        throw new Error('This chat has started no threads to share a checkout with.');
+      const project = joined ?? this.adoption(source, owner);
+      try {
+        return await this.startThread(project, spawn, owner, input, requested);
+      } finally {
+        if (this.settleAdoption(project)) await this.save();
+      }
     } finally {
-      this.spawnsUnderWay.delete(underWay);
-    }
-    // A chat's first spawn has no project yet for a Stop to hold, so one that
-    // came while the settings resolved is only known here.
-    if (underWay.stopped) throw new Error('Project launch was cancelled.');
-    const joined = this.membership.get(source);
-    if (!joined && requested.step)
-      throw new Error('This chat keeps no plan yet. Call plan_set first, or spawn without step.');
-    if (!joined && requested.workspaceOf)
-      throw new Error('This chat has started no threads to share a checkout with.');
-    const project = joined ?? this.adoption(source, owner);
-    try {
-      return await this.startThread(project, source, owner, input, requested);
-    } finally {
-      if (this.settleAdoption(project)) await this.save();
+      this.spawnsUnderWay.delete(spawn);
     }
   }
 
@@ -254,24 +258,24 @@ export class ProjectService {
     const project = this.membership.get(source);
     if (project && requireThread(project, source).ownerAppSessionId)
       throw new Error("A thread's spawns always report back to it. Pass reportBack true.");
-    const underWay = { source, stopped: false };
-    this.spawnsUnderWay.add(underWay);
+    const spawn: SpawnUnderWay = { source, stopped: false };
+    this.spawnsUnderWay.add(spawn);
     try {
-      return await this.chats.start(source, requested, () => underWay.stopped);
+      return await this.chats.start(source, requested, () => spawn.stopped);
     } finally {
-      this.spawnsUnderWay.delete(underWay);
+      this.spawnsUnderWay.delete(spawn);
     }
   }
 
   /** Admits, checks out and launches one thread of a project, and links the step it carries. */
   private async startThread(
     project: Project,
-    source: string,
+    spawn: SpawnUnderWay,
     owner: SessionSummary,
     input: Omit<ThreadInput, 'cwd'>,
     requested: ThreadSpawnInput,
   ): Promise<StartedThread> {
-    let ancestor: string | undefined = source;
+    let ancestor: string | undefined = spawn.source;
     let depth = 0;
     while (ancestor) {
       depth += 1;
@@ -305,7 +309,7 @@ export class ProjectService {
     const title = uniqueTitle(project, input.title);
     let appSessionId: string;
     try {
-      appSessionId = await this.launch(project, { ...input, title, prompt, cwd }, source);
+      appSessionId = await this.launch(project, { ...input, title, prompt, cwd }, spawn);
     } catch (error) {
       if (workspace) await discardThreadCheckout(owner.cwd, workspace);
       throw error;
@@ -606,12 +610,9 @@ export class ProjectService {
     this.wakes.kick(project);
   }
 
-  private launch(
-    project: Project,
-    input: ThreadInput,
-    ownerAppSessionId?: string,
-  ): Promise<string> {
-    const work = this.launchOnce(project, input, ownerAppSessionId);
+  /** Starts a lead, or with `spawn` a thread of the chat that asked for it. */
+  private launch(project: Project, input: ThreadInput, spawn?: SpawnUnderWay): Promise<string> {
+    const work = this.launchOnce(project, input, spawn);
     this.launches.add(work);
     const release = () => {
       this.launches.delete(work);
@@ -623,11 +624,15 @@ export class ProjectService {
   private async launchOnce(
     project: Project,
     input: ThreadInput,
-    ownerAppSessionId?: string,
+    spawn?: SpawnUnderWay,
   ): Promise<string> {
     this.requireOpen();
     this.checkAdmission(project);
-    const isCurrent = this.wakes.guard(project);
+    const ownerAppSessionId = spawn?.source;
+    // The guard is taken here, after the checkout was cut, so a Stop on the
+    // spawning chat meanwhile is known only from its spawn's own record.
+    const guard = this.wakes.guard(project);
+    const isCurrent = () => guard() && !spawn?.stopped;
     let bound: string | undefined;
     project.launching += 1;
     try {

@@ -3,7 +3,7 @@ import { execFile } from 'node:child_process';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import test from 'node:test';
+import test, { type TestContext } from 'node:test';
 import { promisify } from 'node:util';
 import { ProjectService, type ProjectPort } from './ProjectService.js';
 import { LEDGER_LIMITS, type ProjectPersistence } from './store.js';
@@ -52,6 +52,20 @@ function summary(id: string, selection: ThreadInput = input): SessionSummary {
     createdAt: 1,
     updatedAt: 1,
   };
+}
+
+const git = (cwd: string, args: string[]) => promisify(execFile)('git', ['-C', cwd, ...args]);
+
+/** A repository with one commit, so a thread can be given a worktree of its own. */
+async function gitRepository(t: TestContext): Promise<string> {
+  const repository = await mkdtemp(join(tmpdir(), 'droidex-project-'));
+  t.after(() => rm(repository, { recursive: true, force: true }));
+  await git(tmpdir(), ['init', '-q', repository]);
+  await git(repository, [
+    ...['-c', 'user.name=Test', '-c', 'user.email=test@example.invalid'],
+    ...['commit', '-q', '--allow-empty', '-m', 'Start'],
+  ]);
+  return repository;
 }
 
 async function harness(saved: Project[] = [], historyReady = true) {
@@ -549,14 +563,7 @@ test('stopping a chat while its first thread starts cancels that spawn', async (
 });
 
 test('threads started together each get a checkout of their own', async (t) => {
-  const repository = await mkdtemp(join(tmpdir(), 'droidex-project-'));
-  t.after(() => rm(repository, { recursive: true, force: true }));
-  const git = promisify(execFile);
-  await git('git', ['init', '-q', repository]);
-  await git('git', [
-    ...['-C', repository, '-c', 'user.name=Test', '-c', 'user.email=test@example.invalid'],
-    ...['commit', '-q', '--allow-empty', '-m', 'Start'],
-  ]);
+  const repository = await gitRepository(t);
   const h = await harness();
   t.after(() => h.projects.close());
   h.sessions.set('ordinary', summary('ordinary', { ...input, cwd: repository }));
@@ -607,6 +614,33 @@ test('stopping a chat while its spawn resolves the model cancels that spawn', as
   h.state.catalogGate = undefined;
   await h.projects.spawn('ordinary', named);
   assert.equal(h.state.saved[0]?.paused, false);
+});
+
+test('stopping a thread while its own spawn cuts a checkout cancels that spawn', async (t) => {
+  const repository = await gitRepository(t);
+  const h = await harness();
+  t.after(() => h.projects.close());
+  h.sessions.set('ordinary', summary('ordinary', { ...input, cwd: repository }));
+  const thread = await h.projects.spawn('ordinary', input);
+  // The user stops the thread once its spawn is past its settings and choosing a checkout.
+  const get = h.port.get;
+  h.port.get = (id) => {
+    if (id === thread.appSessionId && h.projects.list()[0]?.launching) {
+      h.port.get = get;
+      void h.projects.userStopped(thread.appSessionId);
+    }
+    return get(id);
+  };
+  await assert.rejects(
+    h.projects.spawn(thread.appSessionId, { ...input, title: 'Nested', workspace: 'worktree' }),
+    /cancelled/,
+  );
+  assert.equal(h.launched.length, 1, 'only the thread itself started');
+  // The worktree cut for the cancelled spawn is taken back, branch and all.
+  const { stdout: branches } = await git(repository, ['branch', '--list', 'thread/*']);
+  assert.equal(branches.trim(), '');
+  const { stdout: worktrees } = await git(repository, ['worktree', 'list', '--porcelain']);
+  assert.equal(worktrees.match(/^worktree /gm)?.length, 1);
 });
 
 test('a failed spawn never removes a project started in Projects', async (t) => {

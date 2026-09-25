@@ -121,7 +121,8 @@ and opening it opens that chat in the main pane. In the Projects view, opening a
 thread opens it in the main pane.
 
 Opening a thread does not stop its siblings. The user's Stop on a thread
-interrupts that thread and drops its queued messages.
+interrupts that thread and drops its queued messages, and cancels a thread it
+is still starting, taking back any worktree already cut for it.
 
 ## Reports
 
