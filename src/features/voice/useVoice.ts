@@ -117,7 +117,10 @@ export function useVoice(
   }, [appSessionId, placement, session]);
 
   return {
-    view: placement === 'dock' && !onScreen ? 'mini' : placement,
+    // Reading another chat takes the conversation down to the bar whether it
+    // was docked or full: a surface over someone else's chat would cover the
+    // composer where that chat's own cards and prompts are.
+    view: placement !== 'off' && !onScreen ? 'mini' : placement,
     session,
     working,
     activity: { ...session, working },

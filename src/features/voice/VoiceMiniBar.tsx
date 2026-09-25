@@ -2,7 +2,7 @@ import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState } from
 import { motion, useMotionValue, useReducedMotion } from 'framer-motion';
 import { ChevronDown, ChevronUp, MessageSquareText, Mic, MicOff, X } from 'lucide-react';
 import { Popover } from '../../components/environment/Popover';
-import { useStoreDispatch } from '../../hooks/useStore';
+import { useStoreDispatch, useStoreSelector } from '../../hooks/useStore';
 import { VoiceOrb } from './VoiceOrb';
 import { voiceStatusLabel } from './voiceStatus';
 import type { Voice } from './useVoice';
@@ -52,6 +52,7 @@ export function VoiceMiniBar({ voice, appSessionId }: { voice: Voice; appSession
   const barRef = useRef<HTMLDivElement>(null);
   const feedRef = useRef<HTMLDivElement>(null);
   const panelId = useId();
+  const waiting = useStoreSelector((state) => Boolean(state.pendingPermissions[appSessionId]));
   const [panel, setPanel] = useState(false);
   const [bounds, setBounds] = useState<DragBounds>(PINNED);
 
@@ -102,7 +103,9 @@ export function VoiceMiniBar({ voice, appSessionId }: { voice: Voice; appSession
     setPanel(false);
   }, []);
 
-  const status = voiceStatusLabel(voice.activity);
+  // An ask raised by the conversation lands in its own chat, which is not the
+  // one on screen. The bar says so, and its first button is the way there.
+  const status = waiting ? 'Needs you' : voiceStatusLabel(voice.activity);
   const lines = session.lines.slice(-PANEL_LINES);
 
   return (

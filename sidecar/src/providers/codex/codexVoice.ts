@@ -132,10 +132,11 @@ export class CodexVoice implements ProviderVoice {
 
   async start({ sdp, voice, narration = 'brief' }: ProviderVoiceStart): Promise<void> {
     const threadId = this.requireThread();
-    // A conversation that could not put the chat's model on the thread would
-    // hand its work to a different one, so it does not open.
+    // The turns this conversation hands over run on the thread's own settings,
+    // so a conversation that could not write them would work on the wrong
+    // model, or outside the autonomy the chat is set to. It does not open.
     await this.applyThreadSettings().catch((error: unknown) => {
-      throw new Error(`The chat's model could not be set for this conversation: ${errMsg(error)}`);
+      throw new Error(`The chat's settings could not be applied for voice: ${errMsg(error)}`);
     });
     this.live = true;
     await this.client

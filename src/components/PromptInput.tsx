@@ -1728,8 +1728,14 @@ export default function PromptInput({
         />
 
         <PlanApprovalInline />
-        <PermissionInline />
-        <AskUserInline />
+        {/* The full voice surface covers this composer and shows the same two
+            cards itself, so only one of the two places owns an ask at a time. */}
+        {voice.view !== 'full' && (
+          <>
+            <PermissionInline />
+            <AskUserInline />
+          </>
+        )}
 
         {missionPreview ? (
           <div

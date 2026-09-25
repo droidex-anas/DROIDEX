@@ -38,7 +38,7 @@ export class AppServerClient {
   private readonly notificationHandlers = new Map<string, (params: unknown) => void>();
   private readonly requestHandlers = new Map<string, (params: unknown) => Promise<unknown>>();
   private closed?: (error: Error) => void;
-  private unsupportedRequest?: (method: string) => void;
+  private unsupportedRequest?: (method: string, params: unknown) => void;
   private remainder = '';
   private diagnostics = '';
   private nextRequestId = 1;
@@ -92,7 +92,7 @@ export class AppServerClient {
 
   // Told about a request this build refuses, so the refusal can be reported
   // rather than leaving Codex to stop for a reason nobody can see.
-  onUnsupportedRequest(listener: (method: string) => void): void {
+  onUnsupportedRequest(listener: (method: string, params: unknown) => void): void {
     this.unsupportedRequest = listener;
   }
 
@@ -185,7 +185,7 @@ export class AppServerClient {
   private async serve(id: JsonRpcId, method: string, params: unknown): Promise<void> {
     const handler = this.requestHandlers.get(method);
     if (!handler) {
-      this.unsupportedRequest?.(method);
+      this.unsupportedRequest?.(method, params);
       this.write({ id, error: { code: METHOD_NOT_FOUND, message: `Unsupported: ${method}` } });
       return;
     }

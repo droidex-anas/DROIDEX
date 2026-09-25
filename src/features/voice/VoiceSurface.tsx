@@ -145,7 +145,7 @@ function VoiceSurfaceDialog({ voice }: { voice: Voice }) {
       {/* The agent can stop and ask while the conversation holds the screen.
           It asks with the app's own cards, in the same place the composer
           would have shown them, rather than behind this surface. */}
-      <div className="mx-auto w-full max-w-[680px] shrink-0 px-6">
+      <div className="mx-auto max-h-[35vh] w-full max-w-[680px] shrink-0 overflow-y-auto px-6">
         <PermissionInline />
         <AskUserInline />
       </div>
