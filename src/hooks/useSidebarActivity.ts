@@ -3,12 +3,12 @@ import type { AppState } from './useStore';
 import type { SessionSummary } from '../types/bridge';
 import type { GitDiffStat } from '../types/vcs';
 import { linkedPrsDone } from '../lib/chatMetadata';
-import { sessionAttention } from '../lib/sessionAttention';
-import { sessionIsLive, sessionIsUnread } from '../lib/sessions';
+import { sessionIsLive } from '../lib/sessions';
 import { toast } from '../lib/toast';
 import { activityReason } from '../lib/activityReason';
 import {
   canSettleSession,
+  chatActivitySignals,
   pruneReopenedSessions,
   pruneSettledSessions,
   DEFAULT_SIDEBAR_PREFERENCES,
@@ -112,31 +112,39 @@ export function useSidebarActivity(
   const shipCwds = useMemo(() => [...shipOwners.keys()], [shipOwners]);
   const diffs = useActivityShipSignals(shipCwds, preferences.view === 'activity');
 
+  const {
+    pendingPermissions,
+    pendingQuestions,
+    activeAppSessionId,
+    sessionLastSeen,
+    chatMetadata,
+  } = state;
   const statusFor = useCallback(
     (session: SessionSummary): SessionActivityStatus => {
-      const id = session.appSessionId;
       const digest = freshDigest(digests, session);
       const owned: Partial<Record<string, GitDiffStat>> = diffs;
-      const diff = shipOwners.get(session.cwd) === id ? owned[session.cwd] : undefined;
+      const diff =
+        shipOwners.get(session.cwd) === session.appSessionId ? owned[session.cwd] : undefined;
+      const signals = chatActivitySignals(
+        session,
+        { pendingPermissions, pendingQuestions, activeAppSessionId, sessionLastSeen, chatMetadata },
+        { settled: preferences.settled, reopened: preferences.reopened },
+      );
       return sessionActivityStatus(session, {
-        attention: sessionAttention(id, state.pendingPermissions, state.pendingQuestions),
-        unread: sessionIsUnread(session, state.activeAppSessionId, state.sessionLastSeen[id]),
-        settledAt: preferences.settled[id],
+        ...signals,
         awaitingReply: digest?.modelSpokeLast ?? false,
         uncommitted: (diff?.files ?? 0) > 0,
-        prDone: linkedPrsDone(state.chatMetadata[id]),
-        reopened: preferences.reopened.includes(id),
       });
     },
     [
       digests,
       diffs,
       shipOwners,
-      state.pendingPermissions,
-      state.pendingQuestions,
-      state.activeAppSessionId,
-      state.sessionLastSeen,
-      state.chatMetadata,
+      pendingPermissions,
+      pendingQuestions,
+      activeAppSessionId,
+      sessionLastSeen,
+      chatMetadata,
       preferences.settled,
       preferences.reopened,
     ],
@@ -181,8 +189,7 @@ export function useSidebarActivity(
       const settled = Object.fromEntries(
         Object.entries(preferences.settled).filter(([settledId]) => settledId !== id),
       );
-      const overridesPrs =
-        linkedPrsDone(state.chatMetadata[id]) && !preferences.reopened.includes(id);
+      const overridesPrs = linkedPrsDone(chatMetadata[id]) && !preferences.reopened.includes(id);
       const reopened = overridesPrs ? [...preferences.reopened, id] : preferences.reopened;
       update({ ...preferences, settled, reopened });
     },
