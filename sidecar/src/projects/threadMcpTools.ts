@@ -5,6 +5,8 @@ import { PROVIDER_KINDS } from '../providers/providerKind.js';
 import { requireProjectService } from './service.js';
 import { LEDGER_LIMITS } from './store.js';
 
+const threadId = z.string().min(1).max(200).describe('Id from thread_spawn.');
+
 const spawnSchema = z.object({
   title: z
     .string()
@@ -112,17 +114,19 @@ export function threadTools(appSessionId: () => string) {
     ),
     tool(
       'thread_send',
-      "Send a thread this chat started new instructions, a correction, or answers to a question it asked; use the user's own words when forwarding theirs.",
+      "Send one of this chat's threads new instructions or a correction. When it is waiting on a question it asked, pass answers, one per question in order; they reach it at once. Forward the user's own words when relaying theirs.",
       {
-        threadId: z.string().min(1).max(200),
-        text: z.string().trim().max(8_192),
+        threadId,
+        text: z
+          .string()
+          .trim()
+          .max(8_192)
+          .describe('The message. May be empty when you only send answers.'),
         answers: z
           .array(z.string().max(2_000))
           .max(16)
           .optional()
-          .describe(
-            'One answer per question this thread asked, in the order DROIDEX listed them. They reach the waiting thread at once instead of queueing behind the question.',
-          ),
+          .describe('One answer per question, in the order the thread asked them.'),
       },
       safeTool(async (input: { threadId: string; text: string; answers?: string[] }) => {
         const projects = await requireProjectService();
@@ -138,12 +142,10 @@ export function threadTools(appSessionId: () => string) {
     tool(
       'plan_set',
       [
-        'Write the plan this project shows the user: the steps it intends to take, in order, once you have settled what the work actually is.',
-        'A step is one concrete piece of work whose finish you could recognise, such as "Port the payments client to v3" rather than "look into payments". If you cannot say what done looks like, the step is not settled: find out first, or leave it out.',
-        'Call it again whenever the shape changes: a step finishes, a new one appears, one turns out to be unnecessary. This replaces the whole plan, so send every step you still intend to take.',
-        "Point a step at the thread carrying it with threadId, or pass the step to thread_spawn; DROIDEX then shows that conversation's real state instead of a claim, so you never have to mark it done.",
-        "Keep the titles short and in the user's words. This is what they read to see where the project stands.",
-        'In a chat that is not a project yet, the first plan makes it one, so plan first and then spawn a thread for each step.',
+        "Write the plan this chat shows the user in Projects: the steps it means to take, in order, each concrete enough that its finish is recognisable, in the user's words.",
+        'Each call replaces the whole plan, so send every step still intended.',
+        "Link a step to the thread carrying it with threadId, or name the step in thread_spawn, and Projects shows that thread's real state.",
+        'The first plan makes a chat that is not a project yet into one.',
       ].join(' '),
       {
         steps: z
@@ -160,18 +162,23 @@ export function threadTools(appSessionId: () => string) {
                 .trim()
                 .max(LEDGER_LIMITS.stepMilestone)
                 .optional()
-                .describe('Optional heading a run of steps belongs under.'),
+                .describe('Optional heading for a run of steps.'),
               state: z
                 .enum(['planned', 'doing', 'done', 'blocked'])
                 .optional()
-                .describe("Only for a step no thread carries; a thread's own state wins."),
-              threadId: z.string().min(1).max(200).optional(),
+                .describe("Only for a step no thread carries; a linked thread's state wins."),
+              threadId: z
+                .string()
+                .min(1)
+                .max(200)
+                .optional()
+                .describe('Id of a thread of this chat that carries the step.'),
               note: z
                 .string()
                 .trim()
                 .max(LEDGER_LIMITS.stepNote)
                 .optional()
-                .describe('What finishing this step means, or what it is waiting on.'),
+                .describe('What finishing it means, or what it waits on.'),
             }),
           )
           .max(LEDGER_LIMITS.planSteps),
@@ -191,13 +198,12 @@ export function threadTools(appSessionId: () => string) {
     tool(
       'thread_read',
       [
-        'Read a thread this chat started: its final replies in full, the question it is waiting on, and what it is running as.',
-        "A thread's report to you is an excerpt. Read the rest here before you tell the user what it found or treat its step as done, and read it again whenever you need its state back: after a compaction, or before deciding what to do next.",
-        "It answers with the thread's latest reply alone unless you ask for more, so you choose how much of its history you take on.",
-        'A thread that is still working has no reply yet. DROIDEX wakes you when it settles; reading it again to see whether it is done is polling.',
+        "Read one of this chat's threads: its latest final replies in full, the question it is waiting on, and its settings.",
+        'A report is an excerpt, so read the rest here before acting on it or telling the user.',
+        'A working thread has nothing new yet; DROIDEX wakes you when it settles, so do not poll.',
       ].join(' '),
       {
-        threadId: z.string().min(1).max(200),
+        threadId,
         replies: z
           .number()
           .int()
@@ -205,7 +211,7 @@ export function threadTools(appSessionId: () => string) {
           .max(LEDGER_LIMITS.earlierReplies + 1)
           .optional()
           .describe(
-            "How many of this thread's own final replies to read, oldest first. Only the latest one when omitted. Ask for more only when you need the thread of a conversation back, after a compaction or before a decision that turns on what it said earlier; moreReplies tells you how many are still there.",
+            'How many final replies, oldest first. The latest alone when omitted; moreReplies says how many remain.',
           ),
       },
       safeTool(async (input: { threadId: string; replies?: number }) => {
@@ -218,23 +224,19 @@ export function threadTools(appSessionId: () => string) {
     ),
     tool(
       'thread_configure',
-      [
-        "Retune a thread this chat started, the way a person would change a chat's own controls: its model, its reasoning effort, its autonomy.",
-        'Use it when the work changes shape, such as a lower effort for a quick back-and-forth or a stronger model for the part that needs judgement, rather than stopping the thread and starting another.',
-        'A thread can never exceed the autonomy of the chat that started it. The thread and its history stay as they are; only what it runs as changes.',
-      ].join(' '),
+      "Change a thread's model, reasoning effort or autonomy when the work changes shape, instead of stopping it and starting another. Its history stays.",
       {
-        threadId: z.string().min(1).max(200),
+        threadId,
         modelId: z
           .string()
           .min(1)
           .max(200)
           .optional()
-          .describe('Resolved the same way thread_spawn resolves a model name.'),
+          .describe("Resolved like thread_spawn's modelId."),
         reasoningEffort: reasoningSchema.optional(),
         autonomy: autonomySchema
           .optional()
-          .describe('At most the autonomy of the chat that started the thread.'),
+          .describe('At most that of the chat that started the thread.'),
       },
       safeTool(
         async (input: {
@@ -254,8 +256,8 @@ export function threadTools(appSessionId: () => string) {
     ),
     tool(
       'thread_stop',
-      'Stop a thread this chat started. It interrupts its current turn and drops its queued messages; its conversation stays open.',
-      { threadId: z.string().min(1).max(200) },
+      "Stop one of this chat's threads: end its current turn and drop its queued messages. Its conversation stays open.",
+      { threadId },
       safeTool(async (input: { threadId: string }) => {
         const projects = await requireProjectService();
         await projects.stop(appSessionId(), input.threadId);
