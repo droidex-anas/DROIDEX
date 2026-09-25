@@ -7,7 +7,7 @@ import { LEDGER_LIMITS } from './store.js';
 
 const threadId = z.string().min(1).max(200).describe('Id from thread_spawn.');
 
-const spawnSchema = z.object({
+const spawnInput = z.object({
   title: z
     .string()
     .trim()
@@ -68,13 +68,78 @@ const spawnSchema = z.object({
     .describe('Threads only. The plan step it carries, by number or exact title.'),
 });
 
-interface PlanStep {
-  title: string;
-  milestone?: string;
-  state?: 'planned' | 'doing' | 'done' | 'blocked';
-  threadId?: string;
-  note?: string;
-}
+const sendInput = z.object({
+  threadId,
+  text: z
+    .string()
+    .trim()
+    .max(LEDGER_LIMITS.text)
+    .describe('The message. May be empty when you only send answers.'),
+  answers: z
+    .array(z.string().max(2_000))
+    .max(16)
+    .optional()
+    .describe('One answer per question, in the order the thread asked them.'),
+});
+
+const planInput = z.object({
+  steps: z
+    .array(
+      z.object({
+        title: z
+          .string()
+          .trim()
+          .min(1)
+          .max(LEDGER_LIMITS.stepTitle)
+          .describe("One concrete piece of work, in the user's words."),
+        milestone: z
+          .string()
+          .trim()
+          .max(LEDGER_LIMITS.stepMilestone)
+          .optional()
+          .describe('Optional heading for a run of steps.'),
+        state: z
+          .enum(['planned', 'doing', 'done', 'blocked'])
+          .optional()
+          .describe("Only for a step no thread carries; a linked thread's state wins."),
+        threadId: z
+          .string()
+          .min(1)
+          .max(200)
+          .optional()
+          .describe('Id of a thread of this chat that carries the step.'),
+        note: z
+          .string()
+          .trim()
+          .max(LEDGER_LIMITS.stepNote)
+          .optional()
+          .describe('What finishing it means, or what it waits on.'),
+      }),
+    )
+    .max(LEDGER_LIMITS.planSteps),
+});
+
+const readInput = z.object({
+  threadId,
+  replies: z
+    .number()
+    .int()
+    .min(1)
+    .max(LEDGER_LIMITS.earlierReplies + 1)
+    .optional()
+    .describe(
+      'How many final replies, oldest first. The latest alone when omitted; moreReplies says how many remain.',
+    ),
+});
+
+const configureInput = z.object({
+  threadId,
+  modelId: z.string().min(1).max(200).optional().describe("Resolved like thread_spawn's modelId."),
+  reasoningEffort: reasoningSchema.optional(),
+  autonomy: autonomySchema.optional().describe('At most that of the chat that started the thread.'),
+});
+
+const stopInput = z.object({ threadId });
 
 /**
  * The tools that let a chat run work in parallel. What it starts is a full
@@ -94,8 +159,8 @@ export function threadTools(appSessionId: () => string) {
         "It inherits this chat's folder, harness, model, reasoning and autonomy unless you name others.",
         'Investigate open questions here and spawn only decided work.',
       ].join(' '),
-      spawnSchema.shape,
-      safeTool(async ({ reportBack, ...input }: z.infer<typeof spawnSchema>) => {
+      spawnInput.shape,
+      safeTool(async ({ reportBack, ...input }: z.infer<typeof spawnInput>) => {
         const projects = await requireProjectService();
         if (!reportBack) {
           const chat = await projects.startChat(appSessionId(), input);
@@ -126,20 +191,8 @@ export function threadTools(appSessionId: () => string) {
     tool(
       'thread_send',
       "Send one of this chat's threads new instructions or a correction. When it is waiting on a question it asked, pass answers, one per question in order; they reach it at once. Forward the user's own words when relaying theirs.",
-      {
-        threadId,
-        text: z
-          .string()
-          .trim()
-          .max(LEDGER_LIMITS.text)
-          .describe('The message. May be empty when you only send answers.'),
-        answers: z
-          .array(z.string().max(2_000))
-          .max(16)
-          .optional()
-          .describe('One answer per question, in the order the thread asked them.'),
-      },
-      safeTool(async (input: { threadId: string; text: string; answers?: string[] }) => {
+      sendInput.shape,
+      safeTool(async (input: z.infer<typeof sendInput>) => {
         const projects = await requireProjectService();
         const delivery = await projects.send(
           appSessionId(),
@@ -158,43 +211,8 @@ export function threadTools(appSessionId: () => string) {
         "Link a step to the thread carrying it with threadId, or name the step in thread_spawn, and Projects shows that thread's real state.",
         'The first plan makes a chat that is not a project yet into one.',
       ].join(' '),
-      {
-        steps: z
-          .array(
-            z.object({
-              title: z
-                .string()
-                .trim()
-                .min(1)
-                .max(LEDGER_LIMITS.stepTitle)
-                .describe("One concrete piece of work, in the user's words."),
-              milestone: z
-                .string()
-                .trim()
-                .max(LEDGER_LIMITS.stepMilestone)
-                .optional()
-                .describe('Optional heading for a run of steps.'),
-              state: z
-                .enum(['planned', 'doing', 'done', 'blocked'])
-                .optional()
-                .describe("Only for a step no thread carries; a linked thread's state wins."),
-              threadId: z
-                .string()
-                .min(1)
-                .max(200)
-                .optional()
-                .describe('Id of a thread of this chat that carries the step.'),
-              note: z
-                .string()
-                .trim()
-                .max(LEDGER_LIMITS.stepNote)
-                .optional()
-                .describe('What finishing it means, or what it waits on.'),
-            }),
-          )
-          .max(LEDGER_LIMITS.planSteps),
-      },
-      safeTool(async (input: { steps: PlanStep[] }) => {
+      planInput.shape,
+      safeTool(async (input: z.infer<typeof planInput>) => {
         const projects = await requireProjectService();
         const stepCount = await projects.setPlan(
           appSessionId(),
@@ -213,19 +231,8 @@ export function threadTools(appSessionId: () => string) {
         'A report is an excerpt, so read the rest here before acting on it or telling the user.',
         'A working thread has nothing new yet; DROIDEX wakes you when it settles, so do not poll.',
       ].join(' '),
-      {
-        threadId,
-        replies: z
-          .number()
-          .int()
-          .min(1)
-          .max(LEDGER_LIMITS.earlierReplies + 1)
-          .optional()
-          .describe(
-            'How many final replies, oldest first. The latest alone when omitted; moreReplies says how many remain.',
-          ),
-      },
-      safeTool(async (input: { threadId: string; replies?: number }) => {
+      readInput.shape,
+      safeTool(async (input: z.infer<typeof readInput>) => {
         const projects = await requireProjectService();
         return jsonResult({
           ok: true,
@@ -236,40 +243,20 @@ export function threadTools(appSessionId: () => string) {
     tool(
       'thread_configure',
       "Change a thread's model, reasoning effort or autonomy when the work changes shape, instead of stopping it and starting another. Its history stays.",
-      {
-        threadId,
-        modelId: z
-          .string()
-          .min(1)
-          .max(200)
-          .optional()
-          .describe("Resolved like thread_spawn's modelId."),
-        reasoningEffort: reasoningSchema.optional(),
-        autonomy: autonomySchema
-          .optional()
-          .describe('At most that of the chat that started the thread.'),
-      },
-      safeTool(
-        async (input: {
-          threadId: string;
-          modelId?: string;
-          reasoningEffort?: z.infer<typeof reasoningSchema>;
-          autonomy?: z.infer<typeof autonomySchema>;
-        }) => {
-          const { threadId, ...settings } = input;
-          const projects = await requireProjectService();
-          return jsonResult({
-            ok: true,
-            ...(await projects.configure(appSessionId(), threadId, settings)),
-          });
-        },
-      ),
+      configureInput.shape,
+      safeTool(async ({ threadId, ...settings }: z.infer<typeof configureInput>) => {
+        const projects = await requireProjectService();
+        return jsonResult({
+          ok: true,
+          ...(await projects.configure(appSessionId(), threadId, settings)),
+        });
+      }),
     ),
     tool(
       'thread_stop',
       "Stop one of this chat's threads: end its current turn and drop its queued messages. Its conversation stays open.",
-      { threadId },
-      safeTool(async (input: { threadId: string }) => {
+      stopInput.shape,
+      safeTool(async (input: z.infer<typeof stopInput>) => {
         const projects = await requireProjectService();
         await projects.stop(appSessionId(), input.threadId);
         return jsonResult({ ok: true, threadId: input.threadId, state: 'stopped' });
