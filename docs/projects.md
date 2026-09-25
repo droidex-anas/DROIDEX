@@ -7,18 +7,31 @@ can be opened, steered and reviewed like any other chat.
 
 ## Starting threads
 
-A chat on a harness that runs DROIDEX's in-app tools can start a thread: it is
-given the `droidex-sessions` MCP server — `thread_spawn`, `thread_send`,
+A chat on a harness that runs DROIDEX's in-app tools can start other chats: it
+is given the `droidex-sessions` MCP server with `thread_spawn`, `thread_send`,
 `thread_stop`, `plan_set`, `thread_read` and `thread_configure`. That is Droid
 and Claude Code today. The Codex runtime has no MCP path at all, so a Codex chat
-sees none of DROIDEX's in-app tools and cannot lead a project; its threads can
-still run on any harness a lead names. Asking a chat to run work in
-parallel is enough — it spawns the threads itself, and the chat becomes that
+sees none of DROIDEX's in-app tools and cannot lead a project; what a chat
+starts can still run on any harness it names. Asking a chat to run work in
+parallel is enough: it starts the work itself.
+
+`thread_spawn` takes a required `reportBack`. With `true` it starts a thread,
+which reports back to the chat that started it, and that chat becomes a
 project's main conversation once its first thread starts or it writes its first
-plan. A spawn that fails leaves no project behind. `thread_spawn` follows the
-chat's own autonomy: it is auto-approved at High and asks the user otherwise;
-the rest only read, retune or move text between conversations DROIDEX already
-owns, and none of them can put a thread past the autonomy its owner has.
+plan. A spawn that fails leaves no project behind. With `false` it starts an
+ordinary chat in the user's sidebar that belongs to no project, reports nowhere
+and wakes nobody, and the thread tools do not reach it. It opens with a brief
+telling it that the user follows it in the sidebar. A chat started this way
+cannot start chats of its own, a project thread cannot start one, and one chat
+has at most eight chats it started working at once. DROIDEX keeps those two
+limits in memory, so they reset when it restarts. Such a chat shares the folder
+of the chat that started it unless the spawn asks for `workspace: "worktree"`.
+
+`thread_spawn` follows the chat's own autonomy: it is auto-approved at High and
+asks the user otherwise, and an "Always allow" covers only the kind of chat it
+was given for. The rest only read, retune or move text between conversations
+DROIDEX already owns, and none of them can put a thread past the autonomy its
+owner has.
 
 A thread inherits the workspace, harness, model, reasoning level and autonomy
 of the chat that spawned it unless the call names different ones, and it can
@@ -91,7 +104,9 @@ Opening a row shows that thread's own conversation with a composer that steers
 it in place, **Stop** while it runs, and **Open** to bring it into the main
 pane. In the chat, a spawned thread renders as an inline row with its live step
 that stays visible after the turn folds, and a thread's report back arrives as
-a quiet notice rather than a message wearing the user's bubble.
+a quiet notice rather than a message wearing the user's bubble. A chat started
+with `reportBack` false gets the same inline row without a step, and opening it
+opens that chat in the main pane.
 
 Opening or selecting a thread does not stop its siblings. **Stop** interrupts
 that thread and cancels its queued work.
@@ -165,7 +180,7 @@ Resuming discards an uncertain claim **without resending it**; automatic replay
 could duplicate work and is deliberately forbidden.
 
 When the user stops a project's main chat, the project is held too. That
-chat's own next `thread_spawn` resumes it, the way Resume in Projects does,
+chat's own next `thread_spawn` with `reportBack` true resumes it, the way Resume in Projects does,
 because the chat is working again. Only a hold the Stop alone put on is lifted
 this way: a hold from a failure, from threads talking in circles or from an
 uncertain delivery stays until the user resumes the project in Projects, and a
