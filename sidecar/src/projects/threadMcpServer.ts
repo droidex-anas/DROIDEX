@@ -244,7 +244,7 @@ export function createThreadMcpServer(appSessionIdForTool: () => string | undefi
         [
           "Retune a thread this chat started, the way a person would change a chat's own controls: its model, its reasoning effort, its autonomy.",
           'Use it when the work changes shape, such as a lower effort for a quick back-and-forth or a stronger model for the part that needs judgement, rather than stopping the thread and starting another.',
-          "A thread can never exceed this chat's autonomy. The thread and its history stay as they are; only what it runs as changes.",
+          'A thread can never exceed the autonomy of the chat that started it. The thread and its history stay as they are; only what it runs as changes.',
         ].join(' '),
         {
           threadId: z.string().min(1).max(200),
@@ -258,7 +258,7 @@ export function createThreadMcpServer(appSessionIdForTool: () => string | undefi
           autonomy: z
             .enum(['off', 'low', 'medium', 'high'])
             .optional()
-            .describe("At most this chat's autonomy."),
+            .describe('At most the autonomy of the chat that started the thread.'),
         },
         safeTool(
           async (input: {

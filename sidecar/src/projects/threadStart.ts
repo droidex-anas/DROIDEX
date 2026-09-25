@@ -67,7 +67,7 @@ const AUTONOMY_ORDER: readonly Autonomy[] = ['off', 'low', 'medium', 'high'];
 /** A thread never runs with more autonomy than the chat that owns it. */
 export function checkWithinAutonomy(owner: SessionSummary, autonomy: Autonomy): void {
   if (AUTONOMY_ORDER.indexOf(autonomy) > AUTONOMY_ORDER.indexOf(owner.autonomy))
-    throw new Error("A thread cannot exceed its owner's autonomy.");
+    throw new Error('A thread cannot exceed the autonomy of the chat that started it.');
 }
 
 /*
