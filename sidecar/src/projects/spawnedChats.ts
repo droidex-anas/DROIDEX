@@ -24,8 +24,8 @@ export interface StartedChat {
  * Chats a chat starts with reportBack false: ordinary sidebar chats that belong
  * to no project and report nowhere. What this keeps is only a pair of brakes,
  * in memory and gone when DROIDEX restarts: a chat started this way cannot
- * start chats of its own, and one chat has at most eight it started working at
- * once.
+ * start chats of its own, and one chat has at most eight it started still
+ * working at once.
  */
 export class SpawnedChats {
   /** Each chat started this run, and the chat that started it. */
@@ -63,7 +63,7 @@ export class SpawnedChats {
       );
     if (this.working(source) >= WORKING_CHATS_LIMIT)
       throw new Error(
-        `This chat already has ${String(WORKING_CHATS_LIMIT)} chats it started working. Wait for one to finish.`,
+        `This chat already has ${String(WORKING_CHATS_LIMIT)} chats it started that are still working. Tell the user; another can start once one of them finishes.`,
       );
     return owner;
   }
@@ -93,7 +93,7 @@ export class SpawnedChats {
         },
       );
       if (!session)
-        throw new Error('The selected harness could not start this chat. Check its session error.');
+        throw new Error('The selected harness did not start this chat and reported no reason.');
       return {
         appSessionId: session.appSessionId,
         title: input.title,
