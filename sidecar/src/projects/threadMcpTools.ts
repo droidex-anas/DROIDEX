@@ -80,6 +80,12 @@ const sendInput = z.object({
     .max(16)
     .optional()
     .describe('One answer per question, in the order the thread asked them.'),
+  questionId: z
+    .string()
+    .min(1)
+    .max(200)
+    .optional()
+    .describe('Required with answers: the questionId from thread_read or the question message.'),
 });
 
 const planInput = z.object({
@@ -190,7 +196,7 @@ export function threadTools(appSessionId: () => string) {
     ),
     tool(
       'thread_send',
-      "Send one of this chat's threads new instructions or a correction. When it is waiting on a question it asked, pass answers, one per question in order; they reach it at once. Forward the user's own words when relaying theirs.",
+      "Send one of this chat's threads new instructions or a correction. When it is waiting on a question it asked, pass answers, one per question in order, with its questionId; they reach it at once. Forward the user's own words when relaying theirs.",
       sendInput.shape,
       safeTool(async (input: z.infer<typeof sendInput>) => {
         const projects = await requireProjectService();
@@ -199,6 +205,7 @@ export function threadTools(appSessionId: () => string) {
           input.threadId,
           input.text,
           input.answers,
+          input.questionId,
         );
         return jsonResult({ ok: true, threadId: input.threadId, delivery });
       }),

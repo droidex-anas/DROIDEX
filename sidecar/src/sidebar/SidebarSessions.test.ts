@@ -253,17 +253,24 @@ test('answers reach the question a chat waits on, and a plain message is refused
 
   const read = await sidebar.read('caller', 'asking');
   assert.deepEqual(read.waitingOn, {
+    questionId: 'ask-1',
     questions: [
       { question: 'Which API version?', options: ['v2', 'v3'] },
       { question: 'Keep the old client?', options: ['yes', 'no'] },
     ],
   });
   await assert.rejects(sidebar.send('caller', 'asking', 'Hurry up'), /waiting on the question/);
-  await assert.rejects(sidebar.send('caller', 'asking', '', ['v3']), /asked 2 questions/);
+  await assert.rejects(sidebar.send('caller', 'asking', '', ['v3'], 'ask-1'), /asked 2 questions/);
   await assert.rejects(sidebar.send('caller', 'idle', '', ['v3']), /no question waiting/);
   assert.deepEqual(calls, []);
 
-  const answered = await sidebar.send('caller', 'asking', 'Then update the docs.', ['v3', 'no']);
+  const answered = await sidebar.send(
+    'caller',
+    'asking',
+    'Then update the docs.',
+    ['v3', 'no'],
+    'ask-1',
+  );
   assert.equal(answered.delivery, 'answered');
   // The words go first, so a delivery that fails leaves the question unanswered.
   assert.match(
@@ -274,6 +281,29 @@ test('answers reach the question a chat waits on, and a plain message is refused
     'answer asking ask-1: v3, no',
     'note asking: Release notes, another chat, answered this question.',
   ]);
+});
+
+test('answers name their question, so a late one never lands on a newer question', async () => {
+  const { sidebar, calls } = harness({
+    rows: [
+      row('asking', {
+        status: 'input',
+        label: 'Needs input',
+        question: {
+          requestId: 'ask-2',
+          questions: [{ index: 0, question: 'Delete the old files?', options: ['yes', 'no'] }],
+        },
+      }),
+    ],
+    sessions: [summary('caller'), summary('asking')],
+  });
+  // The caller read ask-1, which the user has since answered in the chat.
+  await assert.rejects(
+    sidebar.send('caller', 'asking', '', ['v3'], 'ask-1'),
+    /no longer waiting on that question/,
+  );
+  await assert.rejects(sidebar.send('caller', 'asking', '', ['yes']), /questionId/);
+  assert.deepEqual(calls, []);
 });
 
 test('a stop is refused to a chat waiting on the user or with no turn, and interrupts a working one', async () => {

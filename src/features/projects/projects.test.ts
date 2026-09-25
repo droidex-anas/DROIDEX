@@ -106,7 +106,7 @@ test('a wake carrying several reports renders one card each, paragraphs intact',
     'Answer with thread_send when a thread needs a reply, and tell the user only what matters. Do not repeat whole conversations or keep generating while idle.',
     '',
     'Port the client reported back (thread abc):\nFirst paragraph.\n\nSecond paragraph.',
-    'Draft the notes needs a decision (thread def):\nWhich format?\n- JSON\n- SQLite',
+    'Draft the notes needs a decision (thread def, question ask-1):\nWhich format?\n- JSON\n- SQLite',
   ].join('\n');
 
   const reports = threadReports(wake);
@@ -116,6 +116,7 @@ test('a wake carrying several reports renders one card each, paragraphs intact',
   assert.doesNotMatch(reports?.[0]?.body ?? '', /Draft the notes/);
   assert.equal(reports?.[1]?.lead, 'Draft the notes needs a decision');
   assert.match(reports?.[1]?.body ?? '', /- SQLite/);
+  assert.doesNotMatch(reports?.[1]?.body ?? '', /ask-1/);
   assert.equal(threadReports('An ordinary user message'), null);
 });
 

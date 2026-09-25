@@ -76,9 +76,11 @@ When a thread asks its harness's own question, the one a person clicks an answer
 to, DROIDEX routes it to the chat that started the thread, options intact, and
 wakes that chat. That chat answers with `thread_send`'s `answers`, one per
 question, which reach the waiting call at once instead of queueing behind the
-question; a send without them is refused while the thread waits. The user can
-still answer inside the thread, and whichever answer comes first wins. A held
-project routes nothing: its threads wait for the user.
+question; a send without them is refused while the thread waits. The answers
+name the question by the `questionId` its wake and `thread_read` give, and are
+refused when the thread now waits on another question. The user can still
+answer inside the thread, and whichever answer comes first wins. A held project
+routes nothing: its threads wait for the user.
 
 Permission requests are never routed. They stay with the user whatever the
 project is doing.
