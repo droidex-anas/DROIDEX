@@ -169,7 +169,7 @@ test(
       await Promise.resolve();
       const second = required(FakeWebSocket.instances.at(-1));
       const url = new URL(second.url);
-      assert.equal(url.searchParams.get('bridgeProtocol'), '5');
+      assert.equal(url.searchParams.get('bridgeProtocol'), '6');
       assert.equal(url.searchParams.get('resumeGeneration'), 'generation-1');
       assert.equal(url.searchParams.get('resumeSeq'), '1');
     } finally {

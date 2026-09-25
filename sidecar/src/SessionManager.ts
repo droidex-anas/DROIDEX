@@ -52,6 +52,7 @@ import { buildRuntimeSnapshot } from './runtimeSnapshot.js';
 import { droidexUserDataDir } from './droidexPaths.js';
 import type { SessionFileChange } from './sessionFileCache.js';
 import { SessionBrowser, type SessionBrowsers } from './SessionBrowser.js';
+import { SidebarRequests } from './sidebar/sidebarRequests.js';
 import { SessionHistoryQueries } from './SessionHistoryQueries.js';
 import {
   startSessionFileWatcher,
@@ -259,6 +260,9 @@ export class SessionManager {
   private readonly agentProcesses: AgentProcessMonitor;
   private readonly sessionFiles: SessionFileServing;
   private readonly sessionBrowser: SessionBrowser;
+  private readonly sidebarRequests = new SidebarRequests((event) => {
+    this.emit(event);
+  });
   private readonly sessionVoice: SessionVoice;
   private readonly historyQueries: SessionHistoryQueries;
   private readonly modelSettings: SessionModelSettings;
@@ -1044,6 +1048,9 @@ export class SessionManager {
         return;
       case 'browser.native.result':
         this.sessionBrowser.resolveNativeBrowserRequest(cmd.result);
+        return;
+      case 'sidebar.result':
+        this.sidebarRequests.answer(cmd.result);
         return;
       default: {
         // Wire commands are JSON-parsed without runtime validation, so a
@@ -1932,6 +1939,7 @@ export class SessionManager {
 
   private async performShutdown(): Promise<void> {
     this.historyQueries.forget();
+    this.sidebarRequests.close();
     this.runtimeRetirement.stop();
     this.providerProbes.cancel();
     let firstError: unknown;

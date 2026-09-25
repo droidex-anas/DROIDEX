@@ -277,6 +277,8 @@ function isServerEvent(value: unknown): value is ServerEvent {
       return isBrowserState(value.state);
     case 'browser.native.request':
       return isBrowserNativeRequest(value.request);
+    case 'sidebar.request':
+      return isSidebarRequest(value.request);
     case 'mcp.authRequested':
       return typeof value.requestId === 'string';
     case 'mcp.catalog':
@@ -508,6 +510,25 @@ function isBrowserNativeRequest(value: unknown): boolean {
   return (
     isRecord(value) &&
     hasStrings(value, ['requestId', 'appSessionId', 'browserSessionId', 'action'])
+  );
+}
+
+function isSidebarRequest(value: unknown): boolean {
+  if (!isRecord(value) || typeof value.requestId !== 'string') return false;
+  if (!hasNumbers(value, ['expiresAt']) || !isRecord(value.query)) return false;
+  const query = value.query;
+  if (query.kind === 'rows')
+    return query.appSessionIds === undefined || stringArray(query.appSessionIds);
+  return (
+    query.kind === 'mark' &&
+    (query.mark === 'settled' || query.mark === 'reopened' || query.mark === 'archived') &&
+    Array.isArray(query.targets) &&
+    query.targets.every(
+      (target) =>
+        isRecord(target) &&
+        typeof target.appSessionId === 'string' &&
+        hasNumbers(target, ['updatedAt']),
+    )
   );
 }
 
