@@ -1,23 +1,10 @@
 import { createSdkMcpServer, tool } from '@factory/droid-sdk';
 import { z } from 'zod';
-import { jsonResult, safeTool } from '../mcpToolUtils.js';
+import { autonomySchema, jsonResult, reasoningSchema, safeTool } from '../mcpToolUtils.js';
 import { PROVIDER_KINDS } from '../providers/providerKind.js';
 import { requireProjectService } from './service.js';
 import { LEDGER_LIMITS } from './store.js';
 import { THREAD_MCP_SERVER_NAME } from './threadTools.js';
-
-const reasoningSchema = z.enum([
-  'off',
-  'none',
-  'minimal',
-  'low',
-  'medium',
-  'high',
-  'xhigh',
-  'max',
-  'ultra',
-  'dynamic',
-]);
 
 const spawnSchema = z.object({
   title: z
@@ -45,10 +32,7 @@ const spawnSchema = z.object({
       "The model for this thread, by id or display name. Omit to inherit this chat's model. A name the harness does not know is refused here rather than running empty, and a name your own model also answers to gives the thread your model.",
     ),
   reasoningEffort: reasoningSchema.optional(),
-  autonomy: z
-    .enum(['off', 'low', 'medium', 'high'])
-    .optional()
-    .describe("At most this chat's autonomy. Omit to inherit it."),
+  autonomy: autonomySchema.optional().describe("At most this chat's autonomy. Omit to inherit it."),
   workspace: z
     .enum(['inherit', 'worktree'])
     .optional()
@@ -258,8 +242,7 @@ export function createThreadMcpServer(appSessionIdForTool: () => string | undefi
             .optional()
             .describe('Resolved the same way thread_spawn resolves a model name.'),
           reasoningEffort: reasoningSchema.optional(),
-          autonomy: z
-            .enum(['off', 'low', 'medium', 'high'])
+          autonomy: autonomySchema
             .optional()
             .describe('At most the autonomy of the chat that started the thread.'),
         },
@@ -268,7 +251,7 @@ export function createThreadMcpServer(appSessionIdForTool: () => string | undefi
             threadId: string;
             modelId?: string;
             reasoningEffort?: z.infer<typeof reasoningSchema>;
-            autonomy?: 'off' | 'low' | 'medium' | 'high';
+            autonomy?: z.infer<typeof autonomySchema>;
           }) => {
             const { threadId, ...settings } = input;
             const projects = await requireProjectService();
