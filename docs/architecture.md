@@ -61,27 +61,30 @@ flowchart LR
 
 ### Local Projects
 
-`projects/ProjectService` owns membership and bounded task reports over ordinary
-sessions. `ProjectWakeQueue` owns wake admission and a two-turn concurrency
-limit; it reuses the scheduled-delivery receipt rather than inventing another
-runtime queue. The session bridge binds membership durably before the first
-goal can execute. `SessionLifecycle` remains the sole runtime owner.
+`projects/ProjectService` owns the project graph over ordinary sessions:
+membership, plans and holds. `ProjectTurns` reads each settled thread turn and
+writes one bounded report to the chat that started it. `ProjectWakeQueue` owns
+wake admission and a two-turn concurrency limit; it reuses the scheduled-delivery
+receipt rather than inventing another runtime queue. The session bridge binds
+membership durably before the first goal can execute. `SessionLifecycle`
+remains the sole runtime owner.
 
-A settled primary reply produces one bounded report to its direct owner.
-Thinking and tool output are never forwarded. Busy recipients wait for session
-availability or capacity events. Interrupted delivery is retained as uncertain
-and requires review, rather than being silently replayed. Native permission
-requests and user questions stay with the human.
+Thinking and tool output are never forwarded in a report. Busy recipients wait
+for session availability or capacity events. Interrupted delivery is retained
+as uncertain and requires review, rather than being silently replayed.
+Permission requests stay with the human. A thread's own question goes to the
+chat that started it, and the human can still answer it in the thread.
 
-The Projects route owns its snapshot outside the streaming chat store and
-opens conversations through the normal chat/composer. A chat's own tools for
+The renderer keeps the projects snapshot once in its app store and opens
+conversations through the normal chat and composer. A chat's own tools for
 starting and steering other chats arrive the way the browser's and automations'
 do: an in-app MCP server, `droidex-sessions`, started per session alongside
-them. Its session tools never keep a copy of the sidebar: each call asks the
-window with `sidebar.request` and reads its `sidebar.result`, answered in the
-app root from one read of the store, so it works with the sidebar collapsed.
-See [Session tools](session-tools.md).
-See [Projects](projects.md) for current capabilities and limitations.
+them and never for an unattended automation run. Its sidebar tools never keep a
+copy of the sidebar: each call sends the window a `sidebar.request` and waits up
+to three seconds for its `sidebar.result`, which the app root answers from one
+read of the store, so it works with the sidebar collapsed. See
+[Session tools](session-tools.md) for the eleven tools, and
+[Projects](projects.md) for current capabilities and limitations.
 
 ### Child runtime residency
 
@@ -173,10 +176,10 @@ performance change.
 The sidecar assigns process-generation sequence numbers at the single outbound
 bridge boundary and groups ordinary events into short bounded batches. Only
 replaceable session/context telemetry can collapse, and never across a
-non-replaceable event. Approvals, questions, errors, lifecycle boundaries,
-history responses, and turn settlement flush immediately.
+non-replaceable event. Approvals, questions, sidebar requests, errors,
+lifecycle boundaries, history responses, and turn settlement flush immediately.
 
-Renderers must advertise bridge protocol 4, apply one wire batch as one
+Renderers must advertise bridge protocol 6, apply one wire batch as one
 ordered store transition, and reconnect with the last fully applied generation
 and sequence. Same-generation reconnects replay the retained buffer. A new
 process generation or a replay gap delivers a compact `bridge.snapshot` of
