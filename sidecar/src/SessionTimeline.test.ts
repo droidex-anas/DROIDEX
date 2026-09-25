@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
@@ -29,6 +29,7 @@ interface HarnessOptions {
   onRecordEvent?: (event: TranscriptEvent) => boolean | void;
   streamingCoalesceMs?: number;
   streamingCoalesceMaxBytes?: number;
+  liveSessionFile?: (providerSessionId: string) => string | undefined;
 }
 
 function createHarness(options: HarnessOptions = {}) {
@@ -77,6 +78,7 @@ function createHarness(options: HarnessOptions = {}) {
     },
     loaders,
     ...(options.now ? { now: options.now } : {}),
+    ...(options.liveSessionFile ? { liveSessionFile: options.liveSessionFile } : {}),
     ...(options.streamingCoalesceMs !== undefined
       ? { streamingCoalesceMs: options.streamingCoalesceMs }
       : {}),
@@ -641,6 +643,41 @@ test('an open session reads its own transcript before the history index knows th
   file.flush();
 
   const tail = harness.timeline.tail('claude-live', 10);
+  assert.deepEqual(
+    tail.map((event) => event.text),
+    ['Port the client.', 'Ported it to v3.'],
+  );
+});
+
+test('an open Droid session reads the file its runtime writes before the index knows it', (t) => {
+  const dir = mkdtempSync(join(tmpdir(), 'droidex-droid-live-'));
+  t.after(() => {
+    rmSync(dir, { recursive: true, force: true });
+  });
+  const file = join(dir, 'droid-live.jsonl');
+  const line = (role: 'user' | 'assistant', id: string, text: string) =>
+    JSON.stringify({
+      type: 'message',
+      id,
+      timestamp: new Date(1).toISOString(),
+      message: { role, content: [{ type: 'text', text }] },
+    });
+  writeFileSync(
+    file,
+    [
+      JSON.stringify({ type: 'session_start', id: 'droid-live', cwd: '/workspace', title: 'Live' }),
+      line('user', 'prompt', 'Port the client.'),
+      line('assistant', 'reply', 'Ported it to v3.'),
+    ].join('\n') + '\n',
+  );
+  const harness = createHarness({
+    summaries: [summary('droid-live', 'droid-live')],
+    liveAppSessionIds: ['droid-live'],
+    loaders: { resolveChain: () => [], openTranscriptTail: loadOpenTranscriptTail },
+    liveSessionFile: (providerSessionId) => (providerSessionId === 'droid-live' ? file : undefined),
+  });
+
+  const tail = harness.timeline.tail('droid-live', 10);
   assert.deepEqual(
     tail.map((event) => event.text),
     ['Port the client.', 'Ported it to v3.'],
