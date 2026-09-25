@@ -101,6 +101,8 @@ export class ProjectService {
   private readonly launches = new Set<Promise<string>>();
   /** The folder each thread still starting will share or join; memory only, as a restart starts none. */
   private readonly checkoutClaims = new Set<CheckoutClaim>();
+  /** Spawns under way, by the chat that asked, so the user's Stop on that chat cancels them. */
+  private readonly spawnsUnderWay = new Set<{ source: string; stopped: boolean }>();
   private readonly wakes: ProjectWakeQueue;
   private readonly turns: ProjectTurns;
   private readonly chats: SpawnedChats;
@@ -219,8 +221,18 @@ export class ProjectService {
     const owner = this.requireSession(source);
     if (owner.sessionPurpose !== 'chat')
       throw new Error('Only ordinary chats can own project threads.');
-    await this.resumeAfterLeadStop(source);
-    const input = await spawnSettings(owner, requested, () => this.sessions.catalog());
+    const underWay = { source, stopped: false };
+    this.spawnsUnderWay.add(underWay);
+    let input: Omit<ThreadInput, 'cwd'>;
+    try {
+      await this.resumeAfterLeadStop(source);
+      input = await spawnSettings(owner, requested, () => this.sessions.catalog());
+    } finally {
+      this.spawnsUnderWay.delete(underWay);
+    }
+    // A chat's first spawn has no project yet for a Stop to hold, so one that
+    // came while the settings resolved is only known here.
+    if (underWay.stopped) throw new Error('Project launch was cancelled.');
     const joined = this.membership.get(source);
     if (!joined && requested.step)
       throw new Error('This chat keeps no plan yet. Call plan_set first, or spawn without step.');
@@ -240,7 +252,13 @@ export class ProjectService {
     const project = this.membership.get(source);
     if (project && requireThread(project, source).ownerAppSessionId)
       throw new Error("A thread's spawns always report back to it. Pass reportBack true.");
-    return await this.chats.start(source, requested);
+    const underWay = { source, stopped: false };
+    this.spawnsUnderWay.add(underWay);
+    try {
+      return await this.chats.start(source, requested, () => underWay.stopped);
+    } finally {
+      this.spawnsUnderWay.delete(underWay);
+    }
   }
 
   /** Admits, checks out and launches one thread of a project, and links the step it carries. */
@@ -496,6 +514,8 @@ export class ProjectService {
    * the rest of the project keeps working.
    */
   async userStopped(appSessionId: string): Promise<void> {
+    for (const spawn of this.spawnsUnderWay)
+      if (spawn.source === appSessionId) spawn.stopped = true;
     // A chat's first project is still being adopted until its thread binds,
     // and a Stop then has to cancel that spawn like any other.
     const project = this.membership.get(appSessionId) ?? this.adopting.get(appSessionId);

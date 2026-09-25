@@ -184,9 +184,7 @@ computer.
 Automatic integration of thread branches and per-thread diff attribution remain
 outside this draft. Review still uses the ordinary conversation and workspace
 facilities; a shared checkout does not establish which agent authored each file
-change. A Stop that reaches a chat while its first thread spawn is still
-resolving the model, before DROIDEX has built its project, does not cancel that
-spawn.
+change.
 
 ## Delivery and recovery
 
@@ -220,7 +218,8 @@ Resume in Projects does, because the chat is working again. Only a hold the Stop
 alone put on is lifted this way: a hold from a failure, from threads talking in
 circles or from an uncertain delivery stays until the user resumes the project
 in Projects, and a spawn that was already under way when the user pressed Stop
-is refused.
+is refused. So is a chat's first spawn, though no project exists yet for the
+Stop to hold.
 
 Malformed or incompatible experimental ledgers fail visibly and are left
 untouched. This draft provides no migration from earlier prototypes. Back up any

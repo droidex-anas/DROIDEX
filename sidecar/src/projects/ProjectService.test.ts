@@ -64,6 +64,7 @@ async function harness(saved: Project[] = []) {
     failSave: false,
     gate: undefined as Promise<void> | undefined,
     capacity: 'free' as 'free' | 'busy',
+    catalogGate: undefined as Promise<void> | undefined,
     bindGate: undefined as Promise<void> | undefined,
     // Holds a bound thread before its first turn, while it is not streaming yet.
     firstTurnGate: undefined as Promise<void> | undefined,
@@ -86,8 +87,9 @@ async function harness(saved: Project[] = []) {
   };
   const port: ProjectPort = {
     get: (id) => sessions.get(id),
-    catalog: () =>
-      Promise.resolve([
+    catalog: async () => {
+      if (state.catalogGate) await state.catalogGate;
+      return [
         {
           provider: 'droid' as const,
           readiness: 'ready' as const,
@@ -101,7 +103,8 @@ async function harness(saved: Project[] = []) {
             },
           ],
         },
-      ]),
+      ];
+    },
     create: async (selection, bind) => {
       const session = summary(`session-${++next}`, selection);
       sessions.set(session.appSessionId, session);
@@ -542,6 +545,34 @@ test('threads started together each get a checkout of their own', async (t) => {
   assert.notEqual(lexer.cwd, printer.cwd);
 });
 
+test('stopping a chat while its spawn resolves the model cancels that spawn', async (t) => {
+  const h = await harness();
+  t.after(() => h.projects.close());
+  h.sessions.set('ordinary', summary('ordinary'));
+  const named = { ...input, modelId: 'droid-core' };
+  // No project exists yet for the Stop to hold, and neither kind of spawn has
+  // one: a thread's first spawn and a chat started without reportBack.
+  for (const start of [
+    () => h.projects.spawn('ordinary', named),
+    () => h.projects.startChat('ordinary', named),
+  ]) {
+    const catalog = deferred();
+    h.state.catalogGate = catalog.promise;
+    const spawning = start();
+    await tick();
+    await h.projects.userStopped('ordinary');
+    catalog.resolve();
+    await assert.rejects(spawning, /cancelled/);
+  }
+  assert.equal(h.launched.length, 0);
+  assert.deepEqual(h.projects.list(), []);
+
+  // The Stop cancelled those spawns only.
+  h.state.catalogGate = undefined;
+  await h.projects.spawn('ordinary', named);
+  assert.equal(h.state.saved[0]?.paused, false);
+});
+
 test('a failed spawn never removes a project started in Projects', async (t) => {
   const h = await harness();
   t.after(() => h.projects.close());
@@ -718,7 +749,7 @@ test("the main chat's next spawn lifts the hold its Stop put on, and no other ho
   // A spawn already under way when the user pressed Stop does not undo it.
   const underway = h.projects.spawn(main, input);
   await h.projects.userStopped(main);
-  await assert.rejects(underway, /held/);
+  await assert.rejects(underway, /cancelled/);
   assert.equal(h.state.saved[0]?.leadStopped, true);
 
   const child = await h.projects.spawn(main, input);
