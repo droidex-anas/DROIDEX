@@ -9,8 +9,9 @@ can be opened, steered and reviewed like any other chat.
 
 A chat on a harness that runs DROIDEX's in-app tools can start other chats: it
 is given the `droidex-sessions` MCP server with `thread_spawn`, `thread_send`,
-`thread_stop`, `plan_set`, `thread_read` and `thread_configure`. That is Droid
-and Claude Code today. The Codex runtime has no MCP path at all, so a Codex chat
+`thread_stop`, `plan_set`, `thread_read` and `thread_configure`, beside the
+[session tools](session-tools.md) for the other chats in the sidebar. That is
+Droid and Claude Code today. The Codex runtime has no MCP path at all, so a Codex chat
 sees none of DROIDEX's in-app tools and cannot lead a project; what a chat
 starts can still run on any harness it names. Asking a chat to run work in
 parallel is enough: it starts the work itself.
@@ -20,8 +21,9 @@ which reports back to the chat that started it, and that chat becomes a
 project's main conversation once its first thread starts or it writes its first
 plan. A spawn that fails leaves no project behind. With `false` it starts an
 ordinary chat in the user's sidebar that belongs to no project, reports nowhere
-and wakes nobody, and the thread tools do not reach it. It opens with a brief
-telling it that the user follows it in the sidebar. A chat started this way
+and wakes nobody, and the thread tools do not reach it; the chat that started it
+follows it with `session_read`. It opens with a brief telling it that the user
+follows it in the sidebar. A chat started this way
 cannot start chats of its own, a project thread cannot start one, and one chat
 has at most eight chats it started still working at once. DROIDEX keeps those two
 limits in memory, so they reset when it restarts. Such a chat shares the folder
@@ -131,8 +133,10 @@ hundred characters. Tool output and thinking never enter
 that report. A thread that reports nothing twice is not working, and the lead is
 briefed to stop it and tell the user rather than nudge it again.
 An owner receives an ordinary new turn when it becomes available; no model
-polls or stays running to wait for another model. Ordinary user questions and
-permission requests still require the human, not approval by another agent.
+polls or stays running to wait for another model. Permission requests still
+require the human, never approval by another agent. A question can be answered
+by another chat: a thread's by the chat that started it, and any sidebar chat's
+by a chat that sends it answers with `session_send`.
 
 **Holding a project** stops new automatic deliveries and launches, not turns
 already handed to a provider. There is no wake allowance: a project reports as
@@ -166,7 +170,8 @@ The project ledger is local `projects.json` under the DROIDEX user-data
 directory. Writes use an atomic replacement and private file permissions.
 No count bounds the ledger, so replies are what keeps it in check: past 6 MiB,
 the threads whose conversations moved longest ago, in any project, give up
-their earlier replies and then their final one. A ledger that still passed
+their earlier replies and then their final one. `thread_read` on a thread that
+lost its final reply this way says so rather than returning nothing. A ledger that still passed
 8 MiB would be refused, and every project held.
 Membership is persisted before a new session receives its first task.
 
