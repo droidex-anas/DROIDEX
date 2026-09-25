@@ -88,11 +88,11 @@ export interface ThreadReadout {
 export class ProjectService {
   private readonly projects = new Map<string, Project>();
   private readonly membership = new Map<string, Project>();
-  /* The project a chat's first spawns build, keyed by that chat. It joins the
-     ledger when a thread binds to it or the chat writes a plan, and leaves this
-     map once no spawn for it is still starting: kept when it holds a thread or
-     a plan, forgotten when it holds nothing, so a spawn that fails leaves no
-     project behind. */
+  /* The project a chat builds with its first spawn or plan, keyed by that chat.
+     It joins the ledger when a thread binds to it or the chat writes a plan,
+     and leaves this map once no spawn for it is still starting: kept when it
+     holds a thread or a plan, forgotten when it holds nothing, so a spawn that
+     fails leaves no project behind. */
   private readonly adopting = new Map<string, Project>();
   private readonly launches = new Set<Promise<string>>();
   private readonly wakes: ProjectWakeQueue;
@@ -647,7 +647,7 @@ export class ProjectService {
     };
   }
 
-  /** The project a chat's first spawn builds, shared by first spawns made in parallel. */
+  /** The project a chat builds with its first spawn or plan, shared by first spawns made in parallel. */
   private adoption(source: string, owner: SessionSummary): Project {
     const pending = this.adopting.get(source);
     if (pending) return pending;
