@@ -87,6 +87,7 @@ const project = z
     id,
     title: z.string().min(1).max(LEDGER_LIMITS.title),
     paused: z.boolean(),
+    leadStopped: z.literal(true).optional(),
     launching: z.number().int().min(0),
     plan: z
       .array(

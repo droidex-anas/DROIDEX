@@ -605,6 +605,28 @@ test('stopping one thread by hand quiets that thread, not the project', async (t
   assert.equal(h.projects.list()[0]?.paused, true);
 });
 
+test("the main chat's next spawn lifts the hold its Stop put on, and no other hold", async (t) => {
+  const h = await harness();
+  t.after(() => h.projects.close());
+  const { main } = await h.root();
+  // A spawn already under way when the user pressed Stop does not undo it.
+  const underway = h.projects.spawn(main, input);
+  await h.projects.userStopped(main);
+  await assert.rejects(underway, /held/);
+  assert.equal(h.state.saved[0]?.leadStopped, true);
+
+  const child = await h.projects.spawn(main, input);
+  assert.equal(h.projects.list()[0]?.paused, false);
+  assert.equal(h.state.saved[0]?.leadStopped, undefined);
+
+  // A failure's hold stays the user's to lift, even after a later Stop.
+  h.state.failSave = true;
+  await assert.rejects(h.projects.send(main, child.appSessionId, 'Work'), /Disk full/);
+  h.state.failSave = false;
+  await h.projects.userStopped(main);
+  await assert.rejects(h.projects.spawn(main, input), /held/);
+});
+
 test('a closed recipient unparks the delivery that waited on its turn', async (t) => {
   const h = await harness();
   t.after(() => h.projects.close());
