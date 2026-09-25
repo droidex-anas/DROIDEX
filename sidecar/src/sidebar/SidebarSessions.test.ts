@@ -62,6 +62,8 @@ function harness(options: {
   sessions: SessionSummary[];
   silentWindow?: boolean;
   runningTurns?: string[];
+  // What the sidecar's own interactions say is waiting on the user.
+  blocked?: string[];
 }) {
   const sessions = new Map(options.sessions.map((item) => [item.appSessionId, item]));
   const calls: string[] = [];
@@ -84,7 +86,7 @@ function harness(options: {
     summary: (id) => sessions.get(id),
     projects: () => Promise.resolve([PROJECT]),
     isAutomationRun: () => Promise.resolve(false),
-    isBlocked: (id) => id === 'thread',
+    isBlocked: (id) => (options.blocked ?? ['thread']).includes(id),
     transcriptTail: () => [],
     queueBehindTurn: (id, prompt) => {
       if (!options.runningTurns?.includes(id)) return false;
@@ -312,11 +314,21 @@ test('a stop is refused to a chat waiting on the user or with no turn, and inter
       row('asking', { status: 'input', label: 'Needs input' }),
       row('idle'),
       row('working', { status: 'working', label: 'Working' }),
+      row('asked-since', { status: 'working', label: 'Working' }),
     ],
-    sessions: [summary('caller'), summary('asking'), summary('idle'), summary('working')],
+    sessions: [
+      summary('caller'),
+      summary('asking'),
+      summary('idle'),
+      summary('working'),
+      summary('asked-since'),
+    ],
+    blocked: ['asked-since'],
   });
   await assert.rejects(sidebar.stop('caller', 'asking'), /waiting on the user/);
   await assert.rejects(sidebar.stop('caller', 'idle'), /has no turn running/);
+  // The window still reports it working, but an approval reached it since.
+  await assert.rejects(sidebar.stop('caller', 'asked-since'), /waiting on the user/);
   assert.deepEqual(await sidebar.stop('caller', 'working'), {
     sessionId: 'working',
     title: 'Chat working',
