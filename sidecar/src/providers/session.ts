@@ -55,6 +55,8 @@ export type { VoiceNarration };
 export interface ProviderVoiceStart {
   // The client's SDP offer, built from its microphone and audio sink.
   sdp: string;
+  /** Names this negotiation, so its answer is not taken by the next one. */
+  attempt: string;
   // One of the voices `listVoices` published; absent takes the provider default.
   voice?: string;
   // How much the agent's work is spoken while it runs.
@@ -62,7 +64,7 @@ export interface ProviderVoiceStart {
 }
 
 export type ProviderVoiceEvent =
-  | { kind: 'answer'; sdp: string }
+  | { kind: 'answer'; sdp: string; attempt: string }
   | { kind: 'started' }
   | { kind: 'transcript'; role: 'user' | 'assistant'; text: string; final: boolean }
   | { kind: 'closed' }

@@ -2488,7 +2488,12 @@ export function adaptEvent(ev: ServerEvent): Action | null {
     case 'browser.error':
       return { type: 'BROWSER_ERROR', appSessionId: ev.appSessionId, message: ev.message };
     case 'voice.answer':
-      return { type: 'VOICE_ANSWERED', appSessionId: ev.appSessionId, sdp: ev.sdp };
+      return {
+        type: 'VOICE_ANSWERED',
+        appSessionId: ev.appSessionId,
+        sdp: ev.sdp,
+        attempt: ev.attempt,
+      };
     case 'voice.state':
       return { type: 'VOICE_STATE', appSessionId: ev.appSessionId, status: ev.status };
     case 'voice.transcript':

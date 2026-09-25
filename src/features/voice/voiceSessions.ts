@@ -32,7 +32,7 @@ export interface VoiceSessionState {
    * attempt clears it, so whoever is waiting can take the next one it sees as
    * its own; the wrapper object makes each answer a distinct value.
    */
-  answer?: { sdp: string };
+  answer?: { sdp: string; attempt: string };
   lines: VoiceTranscriptLine[];
   /** How many lines this chat has ever opened. */
   linesOpened: number;
@@ -46,7 +46,7 @@ export interface VoiceSlice {
 
 export type VoiceAction =
   | { type: 'VOICE_CONNECTING'; appSessionId: string }
-  | { type: 'VOICE_ANSWERED'; appSessionId: string; sdp: string }
+  | { type: 'VOICE_ANSWERED'; appSessionId: string; sdp: string; attempt: string }
   | { type: 'VOICE_STATE'; appSessionId: string; status: 'live' | 'closed' }
   | {
       type: 'VOICE_TRANSCRIPT';
@@ -108,7 +108,7 @@ function nextSession(current: VoiceSessionState, action: VoiceAction): VoiceSess
         linesOpened: current.linesOpened,
       };
     case 'VOICE_ANSWERED':
-      return { ...current, answer: { sdp: action.sdp } };
+      return { ...current, answer: { sdp: action.sdp, attempt: action.attempt } };
     case 'VOICE_STATE':
       // Connecting clears what went wrong on the way: a chat whose runtime had
       // to be resumed refuses the first request and answers the second.

@@ -218,6 +218,7 @@ export const compactSession = (appSessionId: string, customInstructions?: string
 export const startVoice = (input: {
   appSessionId: string;
   sdp: string;
+  attempt: string;
   voice?: string;
   narration?: VoiceNarration;
 }) => {

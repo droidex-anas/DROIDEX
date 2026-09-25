@@ -126,6 +126,26 @@ export function VoiceProvider({ children }: { children: ReactNode }) {
     voice.open();
   }, [opening, owner, voice]);
 
+  // The voice and the narration are chosen when a conversation opens, so
+  // changing either while one is running reopens it on the new choice. Both
+  // the in-call sheet and the Settings panel write the same preferences, and
+  // this is the one place that acts on them.
+  const running = useRef(voice.restart);
+  running.current = voice.restart;
+  const held = useRef<typeof preferences | null>(null);
+  useEffect(() => {
+    if (owner === null) {
+      held.current = null;
+      return;
+    }
+    const previous = held.current;
+    held.current = preferences;
+    if (!previous) return;
+    if (previous.voice === preferences.voice && previous.narration === preferences.narration)
+      return;
+    running.current();
+  }, [owner, preferences]);
+
   // A chat the orb created has no prompt to take its name from, so it wears a
   // placeholder until the first thing said in it, and takes its name from that.
   // A chat that already has a name keeps it.

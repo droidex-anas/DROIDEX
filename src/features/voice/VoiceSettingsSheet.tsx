@@ -21,13 +21,10 @@ const capitalize = (word: string) => word.charAt(0).toUpperCase() + word.slice(1
 export function VoiceSettingsSheet({
   voices,
   defaultVoice,
-  onSettingChanged,
   onClose,
 }: {
   voices: string[];
   defaultVoice?: string;
-  /** Called when a setting only a new conversation can take is changed. */
-  onSettingChanged: () => void;
   onClose: () => void;
 }) {
   const dispatch = useStoreDispatch();
@@ -38,13 +35,11 @@ export function VoiceSettingsSheet({
   const chooseVoice = (voice: string) => {
     if (voice === selectedVoice) return;
     dispatch({ type: 'SET_DEFAULT_VOICE', voice });
-    onSettingChanged();
   };
 
   const chooseNarration = (mode: VoiceNarration) => {
     if (mode === narration) return;
     dispatch({ type: 'SET_NARRATION_MODE', mode });
-    onSettingChanged();
   };
 
   return (

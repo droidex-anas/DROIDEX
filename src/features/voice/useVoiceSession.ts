@@ -30,6 +30,8 @@ const ANSWER_TIMEOUT_MS = 20_000;
 /** Everything one negotiation attempt created, so it can all be closed at once. */
 interface Negotiation {
   appSessionId: string;
+  /** Names this negotiation on the wire, so its answer is only taken by it. */
+  name: string;
   pc: RTCPeerConnection;
   audio: HTMLAudioElement;
   /** True once the offer went out, so stopping tells the provider too. */
@@ -131,7 +133,9 @@ export function useVoiceSession(
   useEffect(() => {
     const waiter = answerRef.current;
     if (!waiter) return;
-    if (answer) {
+    // An answer for an attempt that has been replaced belongs to nobody: the
+    // conversation it was negotiating is already gone.
+    if (answer && answer.attempt === negotiationRef.current?.name) {
       answerRef.current = null;
       waiter.resolve(answer.sdp);
       return;
@@ -174,6 +178,7 @@ export function useVoiceSession(
 
     const negotiation: Negotiation = {
       appSessionId,
+      name: crypto.randomUUID(),
       pc: new RTCPeerConnection(),
       audio: new Audio(),
       offerSent: false,
@@ -213,7 +218,7 @@ export function useVoiceSession(
       const offer = pc.localDescription?.sdp;
       if (!offer) throw new Error('The browser produced no voice offer.');
       negotiation.offerSent = true;
-      startVoice({ appSessionId, sdp: offer, voice, narration });
+      startVoice({ appSessionId, sdp: offer, attempt: negotiation.name, voice, narration });
       const sdp = await waitForAnswer(answerRef);
       if (!current()) {
         closeNegotiation(negotiation);

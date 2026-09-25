@@ -969,8 +969,12 @@ export class SessionLifecycle {
       // set are cleared here as they are for a typed turn.
       liveSession.interrupting = false;
       liveSession.interruptingForSteer = false;
-      const next = liveSession.pendingSends.shift();
       this.publishTurnSettled(liveSession);
+      // A runtime that has gone takes the queue with it through the close
+      // path, which reopens and redelivers. Taking a prompt off it here would
+      // spend it on a client that cannot run it.
+      if (liveSession.session.isClosed) return;
+      const next = liveSession.pendingSends.shift();
       if (next !== undefined) void this.driveInBackground(appSessionId, next);
     });
     if (events ?? delegated)

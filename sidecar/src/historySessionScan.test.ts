@@ -294,8 +294,15 @@ test('voice finals append once and extend under the same id across runtime repla
     emit: () => undefined,
     appendTranscript: (event) => appended.push(event),
     liveChanged: () => undefined,
+    ensureRunning: () => Promise.resolve(),
   });
-  const start = () => relay.handle({ type: 'voice.start', appSessionId: 'app-1', sdp: 'offer' });
+  const start = () =>
+    relay.handle({
+      type: 'voice.start',
+      attempt: 'attempt-1',
+      appSessionId: 'app-1',
+      sdp: 'offer',
+    });
   await start();
   assert.ok(listener);
   listener({ kind: 'transcript', role: 'user', text: 'help', final: false });

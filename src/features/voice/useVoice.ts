@@ -87,13 +87,15 @@ export function useVoice(
     stop();
   }, [status, stop]);
 
-  // A conversation that ends on its own (the provider closed it, the mic was
-  // refused) takes its surface with it. A reconnect passes through the same
-  // idle state and keeps the surface.
+  // A conversation that ends on its own takes its surface with it, unless it
+  // ended badly: the surface is the only thing that says why, so it stays
+  // until the user closes it. A reconnect passes through the same idle state
+  // and keeps the surface either way.
+  const failed = session.error !== undefined || session.micDenied;
   useEffect(() => {
-    if (reconnecting) return;
+    if (reconnecting || failed) return;
     if (status === 'idle' || status === 'closed') setPlacement('off');
-  }, [reconnecting, status]);
+  }, [failed, reconnecting, status]);
 
   useEffect(() => {
     if (!reconnecting || status !== 'idle') return;
@@ -111,10 +113,10 @@ export function useVoice(
       asked.current = null;
       return;
     }
-    if (asked.current === appSessionId) return;
+    if (status !== 'live' || asked.current === appSessionId) return;
     asked.current = appSessionId;
     session.refreshVoices();
-  }, [appSessionId, placement, session]);
+  }, [appSessionId, placement, session, status]);
 
   return {
     // Reading another chat takes the conversation down to the bar whether it

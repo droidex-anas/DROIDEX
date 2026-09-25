@@ -52,7 +52,11 @@ export function VoiceMiniBar({ voice, appSessionId }: { voice: Voice; appSession
   const barRef = useRef<HTMLDivElement>(null);
   const feedRef = useRef<HTMLDivElement>(null);
   const panelId = useId();
-  const waiting = useStoreSelector((state) => Boolean(state.pendingPermissions[appSessionId]));
+  const waiting = useStoreSelector(
+    (state) =>
+      Boolean(state.pendingPermissions[appSessionId]) ||
+      Boolean(state.pendingQuestions[appSessionId]),
+  );
   const [panel, setPanel] = useState(false);
   const [bounds, setBounds] = useState<DragBounds>(PINNED);
 

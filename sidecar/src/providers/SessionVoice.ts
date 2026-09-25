@@ -17,6 +17,8 @@ export interface SessionVoiceDependencies {
   liveSession: (appSessionId: string) => ProviderSession | undefined;
   emit: (event: ServerEvent) => void;
   appendTranscript: (event: TranscriptEvent) => void;
+  // Brings a chat whose runtime was released back up, so it can be talked to.
+  ensureRunning: (appSessionId: string) => Promise<void>;
   // A conversation started or ended, which changes whether its chat counts as
   // idle. Commands say so themselves; this is for the provider's own hang-ups.
   liveChanged: () => void;
@@ -40,23 +42,62 @@ interface SpokenLine {
 
 interface VoiceConversation {
   open: Map<SpokenRole, string>;
-  lastFinal?: SpokenLine;
+  // Per speaker: the other one can finish a line in between, and an expansion
+  // still belongs to the row its own speaker last wrote.
+  lastFinal: Map<SpokenRole, SpokenLine>;
+}
+
+// Long enough for a healthy round trip, short enough that closing a chat
+// never feels stuck on it.
+const STOP_DEADLINE_MS = 3_000;
+
+function withDeadline(work: Promise<void> | undefined, ms: number): Promise<void> {
+  if (!work) return Promise.resolve();
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => {
+      reject(new Error('Codex did not answer the request to end the conversation.'));
+    }, ms);
+    timer.unref();
+    work.then(resolve, reject).finally(() => {
+      clearTimeout(timer);
+    });
+  });
 }
 
 export class SessionVoice {
   private readonly subscriptions = new Map<string, VoiceSubscription>();
   private readonly conversations = new Map<string, VoiceConversation>();
+  // The chats a conversation is wanted on. A start that is still opening reads
+  // this after every await, so a hang-up in between is honoured.
+  private readonly wanted = new Set<string>();
 
   constructor(private readonly d: SessionVoiceDependencies) {}
 
   async handle(cmd: VoiceCommand): Promise<void> {
-    const voice = this.voiceFor(cmd.appSessionId);
-    if (!voice) return;
+    if (cmd.type === 'voice.start') this.wanted.add(cmd.appSessionId);
+    if (cmd.type === 'voice.stop') this.wanted.delete(cmd.appSessionId);
     try {
+      if (cmd.type === 'voice.start') {
+        // The chat has to be running before it can be talked to, and idle
+        // retirement may have released it. Resuming takes long enough for the
+        // user to change their mind, so what they want now is what decides.
+        await this.d.ensureRunning(cmd.appSessionId);
+        if (!this.wanted.has(cmd.appSessionId)) return;
+      }
+      const voice = this.voiceFor(cmd.appSessionId);
+      if (!voice) return;
       switch (cmd.type) {
         case 'voice.start':
-          this.conversations.set(cmd.appSessionId, { open: new Map() });
-          await voice.start({ sdp: cmd.sdp, voice: cmd.voice, narration: cmd.narration });
+          this.conversations.set(cmd.appSessionId, { open: new Map(), lastFinal: new Map() });
+          await voice.start({
+            sdp: cmd.sdp,
+            attempt: cmd.attempt,
+            voice: cmd.voice,
+            narration: cmd.narration,
+          });
+          // Hung up while it was opening: the conversation exists now, so it
+          // is closed rather than left with nobody holding it.
+          if (!this.wanted.has(cmd.appSessionId)) await voice.stop();
           return;
         case 'voice.stop':
           await voice.stop();
@@ -91,10 +132,13 @@ export class SessionVoice {
     if (!subscription) return;
     this.subscriptions.delete(appSessionId);
     this.conversations.delete(appSessionId);
+    this.wanted.delete(appSessionId);
     subscription.unsubscribe();
     const wasLive = subscription.session.voice?.isLive() ?? false;
     try {
-      await subscription.session.voice?.stop();
+      // Bounded: everything after this frees the runtime, and a stop Codex
+      // never answers would otherwise hold the whole close open.
+      await withDeadline(subscription.session.voice?.stop(), STOP_DEADLINE_MS);
     } catch (error) {
       console.warn(`Voice session cleanup failed: ${errMsg(error)}`);
     }
@@ -132,7 +176,7 @@ export class SessionVoice {
   private forward(appSessionId: string, event: ProviderVoiceEvent): void {
     switch (event.kind) {
       case 'answer':
-        this.d.emit({ type: 'voice.answer', appSessionId, sdp: event.sdp });
+        this.d.emit({ type: 'voice.answer', appSessionId, sdp: event.sdp, attempt: event.attempt });
         return;
       case 'started':
         this.d.emit({ type: 'voice.state', appSessionId, status: 'live' });
@@ -173,8 +217,8 @@ export class SessionVoice {
     if (!finalText) return;
 
     let line: SpokenLine;
-    if (open === undefined && conversation.lastFinal?.role === role) {
-      const previous = conversation.lastFinal;
+    const previous = conversation.lastFinal.get(role);
+    if (open === undefined && previous) {
       if (finalText === previous.text) return;
       line = finalText.startsWith(previous.text)
         ? { ...previous, text: finalText }
@@ -193,7 +237,7 @@ export class SessionVoice {
       ...(role === 'user' ? { author: 'user' as const } : {}),
       spoken: true,
     });
-    conversation.lastFinal = line;
+    conversation.lastFinal.set(role, line);
   }
 
   // What is being said, per chat. `voice.start` replaces it so a new
@@ -202,7 +246,7 @@ export class SessionVoice {
   private conversationFor(appSessionId: string): VoiceConversation {
     const existing = this.conversations.get(appSessionId);
     if (existing) return existing;
-    const created: VoiceConversation = { open: new Map() };
+    const created: VoiceConversation = { open: new Map(), lastFinal: new Map() };
     this.conversations.set(appSessionId, created);
     return created;
   }

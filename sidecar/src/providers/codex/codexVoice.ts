@@ -75,7 +75,7 @@ export class CodexVoice implements ProviderVoice {
   // an attempt still on its way up finds itself replaced and stands down
   // wherever it had got to. `opened` says whether Codex has been asked for the
   // conversation yet, which is when there starts to be something to close.
-  private attempt?: { opened: boolean };
+  private attempt?: { name: string; opened: boolean };
 
   // `threadId` is read at call time: the thread opens after the session is
   // constructed, and a resume replaces it.
@@ -87,8 +87,12 @@ export class CodexVoice implements ProviderVoice {
     private readonly applyThreadSettings: () => Promise<void>,
   ) {
     this.client.onNotification('thread/realtime/sdp', (params) => {
-      if (isRecord(params) && typeof params.sdp === 'string')
-        this.publish({ kind: 'answer', sdp: params.sdp });
+      // Codex's answer names no attempt, so the one still being opened is
+      // whose it is. A late answer for an attempt already replaced is
+      // published under that attempt's name and ignored by the renderer.
+      const attempt = this.attempt?.name;
+      if (attempt && isRecord(params) && typeof params.sdp === 'string')
+        this.publish({ kind: 'answer', sdp: params.sdp, attempt });
     });
     this.client.onNotification('thread/realtime/started', () => {
       // A `started` that lands after the hang-up belongs to a conversation
@@ -140,13 +144,18 @@ export class CodexVoice implements ProviderVoice {
     this.attempt = undefined;
   }
 
-  async start({ sdp, voice, narration = 'brief' }: ProviderVoiceStart): Promise<void> {
+  async start({
+    sdp,
+    attempt: name,
+    voice,
+    narration = 'brief',
+  }: ProviderVoiceStart): Promise<void> {
     const threadId = this.requireThread();
     // Held from here, not from the moment Codex answers: a hang-up during the
     // settings round trip below has to be able to stop this attempt, and
     // without something to cancel it would open a conversation the renderer
     // has already let go of.
-    const attempt = { opened: false };
+    const attempt = { name, opened: false };
     this.attempt = attempt;
     this.live = true;
     // The turns this conversation hands over run on the thread's own settings,

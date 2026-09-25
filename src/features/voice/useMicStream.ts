@@ -37,6 +37,13 @@ export function useMicStream(active: boolean): { stream: MediaStream | null; den
           return;
         }
         acquired = next;
+        // A device can be unplugged or taken by another app while the call is
+        // up. The conversation stops hearing anything, and saying so is the
+        // difference between a silent microphone and one that looks fine.
+        for (const track of next.getAudioTracks())
+          track.addEventListener('ended', () => {
+            if (!cancelled) setDenied(true);
+          });
         setStream(next);
       })
       .catch(() => {

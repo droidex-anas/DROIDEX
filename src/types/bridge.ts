@@ -691,6 +691,8 @@ export type ClientCommand =
       type: 'voice.start';
       appSessionId: string;
       sdp: string;
+      /** Names this negotiation, so its answer is not taken by the next one. */
+      attempt: string;
       voice?: string;
       narration?: VoiceNarration;
     }
@@ -895,7 +897,7 @@ export interface ChildErrorEvent {
 export type VoiceNarration = 'brief' | 'commentary';
 
 export type ServerEvent =
-  | { type: 'voice.answer'; appSessionId: string; sdp: string }
+  | { type: 'voice.answer'; appSessionId: string; sdp: string; attempt: string }
   | { type: 'voice.state'; appSessionId: string; status: 'live' | 'closed' }
   | {
       type: 'voice.transcript';

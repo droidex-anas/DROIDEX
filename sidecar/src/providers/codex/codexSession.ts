@@ -417,8 +417,11 @@ export class CodexSession implements ProviderSession {
     this.onThreadNotification('turn/started', (params) => {
       const turn = turnOf(params);
       if (!turn) return;
-      if (this.turn) this.adoptTurn(turn.id);
-      else this.setDelegatedTurn(turn.id);
+      // A typed turn owns this only while it is still waiting to be told its
+      // id. Once it has one, a different id belongs to a turn Codex started
+      // for itself, however close behind the typed one it arrives.
+      if (this.turn && this.turnId === undefined) this.adoptTurn(turn.id);
+      else if (turn.id !== this.turnId) this.setDelegatedTurn(turn.id);
     });
     this.onThreadNotification('turn/completed', (params) => {
       const turn = turnOf(params);
@@ -444,7 +447,9 @@ export class CodexSession implements ProviderSession {
     this.client.onClose((error) => {
       this.cancelStartupNotice();
       this.catalog?.close();
-      this.setDelegatedTurn(undefined);
+      // Not announced: the close path owns what happens to the queue, and a
+      // settlement here would start the next prompt on a client that is gone.
+      this.delegatedTurnId = undefined;
       this.turn?.fail(error);
       this.prompts.cancel();
       this.resolveClosed(error);

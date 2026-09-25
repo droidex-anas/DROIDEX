@@ -292,7 +292,7 @@ function isServerEvent(value: unknown): value is ServerEvent {
           (value.ok === false && typeof value.error === 'string'))
       );
     case 'voice.answer':
-      return hasStrings(value, ['appSessionId', 'sdp']);
+      return hasStrings(value, ['appSessionId', 'sdp', 'attempt']);
     case 'voice.state':
       return (
         typeof value.appSessionId === 'string' &&
