@@ -201,9 +201,11 @@ persisted before a new session receives its first task.
 
 The wake queue writes its claim before dispatch. **Accepted** means the provider
 acknowledged the prompt, not that the model finished. The concurrency slot stays
-held until that turn settles. Busy targets retain messages and retry from
-lifecycle availability or runtime capacity events, not a timer. Messages
-arriving during admission stay queued independently of that claim.
+held until that turn settles, except while the turn waits on a question routed
+to the chat that started it: it runs nothing then, and holding the slot could
+keep that chat from ever being woken to answer. Busy targets retain messages and
+retry from lifecycle availability or runtime capacity events, not a timer.
+Messages arriving during admission stay queued independently of that claim.
 
 A delivery the runtime could not take holds the project with its claim retained
 as uncertain. After a restart, a project whose delivery was caught mid-flight is

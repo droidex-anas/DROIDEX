@@ -66,6 +66,8 @@ async function harness(saved: Project[] = []) {
   const configured: { id: string; settings: unknown }[] = [];
   // What each session is actually blocked on, the way the harness would know.
   const asking = new Map<string, string>();
+  // A delivered turn settles when its session stops streaming, as the lifecycle's does.
+  const turnEnds = new Map<string, () => void>();
   let next = 0;
   let clock = 1;
   const store: ProjectPersistence = {
@@ -111,8 +113,9 @@ async function harness(saved: Project[] = []) {
       if (!isCurrent() || !session || session.streaming)
         return { status: 'busy', retryOn: 'target' };
       sent.push({ id, prompt });
+      const settled = new Promise<void>((resolve) => turnEnds.set(id, resolve));
       await streaming(id, true);
-      return { status: 'accepted', settled: Promise.resolve() };
+      return { status: 'accepted', settled };
     },
     isAsking: (id, requestId) => asking.get(id) === requestId,
     configure: async (id, settings) => {
@@ -140,7 +143,11 @@ async function harness(saved: Project[] = []) {
     assert.ok(session);
     session.streaming = value;
     // A session's updatedAt moves when its turn settles, as the lifecycle's does.
-    if (!value) session.updatedAt = ++clock;
+    if (!value) {
+      session.updatedAt = ++clock;
+      turnEnds.get(id)?.();
+      turnEnds.delete(id);
+    }
     await projects.observe({ type: 'session.updated', session: { ...session } });
   }
   async function finish(id: string, text = 'Done') {
@@ -261,6 +268,41 @@ test('a thread’s own question reaches its lead with its options, and the answe
   assert.equal(h.answered.at(-1)?.requestId, 'ask-1');
   assert.equal(h.projects.list()[0]?.threads[1]?.waiting, false);
   assert.equal(h.projects.list()[0]?.queued, 0);
+});
+
+test('threads stopped on questions for their lead leave it a delivery slot', async (t) => {
+  const h = await harness();
+  t.after(() => h.projects.close());
+  const { main } = await h.root();
+  const threads = [
+    (await h.projects.spawn(main, input)).appSessionId,
+    (await h.projects.spawn(main, input)).appSessionId,
+  ];
+  for (const id of threads) await h.finish(id);
+  await drain();
+  await h.finish(main);
+  // The lead hands both threads more work, and those two turns take both slots.
+  for (const id of threads) await h.projects.send(main, id, 'Carry on.');
+  await drain();
+  assert.deepEqual(
+    h.sent.slice(-2).map((item) => item.id),
+    threads,
+  );
+  // Each stops on a question only the lead can answer, so neither runs anything.
+  for (const [index, id] of threads.entries()) {
+    h.asking.set(id, `ask-${String(index)}`);
+    await h.projects.observe({
+      type: 'question.requested',
+      question: {
+        appSessionId: id,
+        requestId: `ask-${String(index)}`,
+        questions: [{ index: 0, question: 'Which format?', options: [] }],
+      },
+    });
+  }
+  await drain();
+  assert.equal(h.sent.at(-1)?.id, main, 'the lead is woken to answer them');
+  assert.match(h.sent.at(-1)?.prompt ?? '', /Which format/);
 });
 
 test('an outsized harness question is bounded to what the ledger will load', async (t) => {
