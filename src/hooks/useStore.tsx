@@ -992,13 +992,16 @@ function baseReducer(state: AppState, action: Action): AppState {
         lastCreatedSessionRequest: shouldActivate
           ? { clientRef: action.clientRef, appSessionId: action.session.appSessionId }
           : state.lastCreatedSessionRequest,
-        // A foreground chat just created by this renderer is already seen.
-        sessionLastSeen: shouldActivate
-          ? {
-              ...state.sessionLastSeen,
-              [action.session.appSessionId]: action.session.updatedAt,
-            }
-          : state.sessionLastSeen,
+        // A foreground chat just created by this renderer is already seen. A
+        // chat this client just learned of starts seen at its creation, so its
+        // first reply reads as unread.
+        sessionLastSeen:
+          shouldActivate || !Object.hasOwn(state.sessionLastSeen, action.session.appSessionId)
+            ? {
+                ...state.sessionLastSeen,
+                [action.session.appSessionId]: action.session.updatedAt,
+              }
+            : state.sessionLastSeen,
       };
       return seed
         ? withUpdatedTranscript(
