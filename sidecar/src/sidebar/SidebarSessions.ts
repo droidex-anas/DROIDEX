@@ -307,7 +307,7 @@ export class SidebarSessions {
     if (receipt.status === 'accepted') return 'started';
     if (receipt.status === 'unavailable')
       throw new Error(`${title} could not be reached: ${receipt.error}`);
-    if (receipt.retryOn === 'capacity')
+    if (receipt.status === 'busy' && receipt.retryOn === 'capacity')
       throw new Error(
         `${title} is not open, and DROIDEX already has as many chats open as it opens on its own. It can be reached once one is released, or when the user opens it.`,
       );

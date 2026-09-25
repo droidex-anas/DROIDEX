@@ -1521,7 +1521,7 @@ test('scheduled delivery rejects unknown IDs and discards settings results after
   const canceled = harness.lifecycle.deliverScheduled('scheduled-race', 'canceled', () => current);
   current = false;
   apply(true);
-  assert.equal((await canceled).status, 'unavailable');
+  assert.equal((await canceled).status, 'cancelled');
   const replaced = harness.lifecycle.deliverScheduled('scheduled-race', 'stale', () => true);
   const live = requireLive(harness, 'scheduled-race');
   live.session = new DroidProviderSession(

@@ -118,11 +118,13 @@ async function harness(saved: Project[] = [], historyReady = true) {
       return session;
     },
     deliver: async (id, prompt, isCurrent) => {
+      // The gate stands for the target's resume and settings, which the real
+      // delivery awaits before it checks that its caller still wants it.
       if (state.gate) await state.gate;
+      if (!isCurrent()) return { status: 'cancelled' };
       if (state.capacity === 'busy') return { status: 'busy', retryOn: 'capacity' };
       const session = sessions.get(id);
-      if (!isCurrent() || !session || session.streaming)
-        return { status: 'busy', retryOn: 'target' };
+      if (!session || session.streaming) return { status: 'busy', retryOn: 'target' };
       sent.push({ id, prompt });
       const settled = new Promise<void>((resolve) => turnEnds.set(id, resolve));
       await streaming(id, true);
@@ -631,6 +633,78 @@ test('pause cancels a pending wake after asynchronous admission work', async (t)
   await drain();
   assert.equal(h.sent.length, 0);
   assert.equal(h.projects.list()[0]?.queued, 1);
+});
+
+test('a delivery withdrawn before dispatch holds nothing and keeps what is still wanted', async (t) => {
+  const h = await harness();
+  t.after(() => h.projects.close());
+  const { id, main } = await h.root();
+  const reporter = await h.projects.spawn(main, input);
+  const asker = await h.projects.spawn(main, input);
+  const gate = deferred();
+  h.state.gate = gate.promise;
+  // A report and a question are claimed together for the lead.
+  await h.finish(reporter.appSessionId, 'Parsed the config.');
+  h.asking.set(asker.appSessionId, 'ask');
+  await h.projects.observe({
+    type: 'question.requested',
+    question: {
+      appSessionId: asker.appSessionId,
+      requestId: 'ask',
+      questions: [{ index: 0, question: 'Which format?', options: [] }],
+    },
+  });
+  await tick();
+  // While the lead's setup is awaited, the question is withdrawn and the user
+  // stops the lead: no turn was dispatched, so nothing is uncertain.
+  await h.projects.observe({
+    type: 'interaction.cancelled',
+    appSessionId: asker.appSessionId,
+    requestId: 'ask',
+  });
+  await h.projects.userStopped(main);
+  gate.resolve();
+  await drain();
+  const project = h.projects.list()[0];
+  assert.equal(project?.uncertain, 0);
+  assert.equal(project?.error, undefined);
+  assert.equal(project?.queued, 1, 'the report waits; the withdrawn question is gone');
+
+  await h.projects.setPaused(id, false);
+  await drain();
+  assert.match(h.sent.at(-1)?.prompt ?? '', /Parsed the config/);
+  assert.doesNotMatch(h.sent.at(-1)?.prompt ?? '', /Which format/);
+});
+
+test('a question the thread replaced during admission never reaches the owner', async (t) => {
+  const h = await harness();
+  t.after(() => h.projects.close());
+  const { main } = await h.root();
+  const child = await h.projects.spawn(main, input);
+  const ask = async (requestId: string, question: string) => {
+    h.asking.set(child.appSessionId, requestId);
+    await h.projects.observe({
+      type: 'question.requested',
+      question: {
+        appSessionId: child.appSessionId,
+        requestId,
+        questions: [{ index: 0, question, options: [] }],
+      },
+    });
+  };
+  const gate = deferred();
+  h.state.gate = gate.promise;
+  await ask('ask-1', 'Which format?');
+  await tick();
+  // Answered in the thread while its wake waits, then a different question.
+  h.asking.delete(child.appSessionId);
+  await h.streaming(child.appSessionId, true);
+  await ask('ask-2', 'Delete the old files?');
+  gate.resolve();
+  await drain();
+  assert.equal(h.sent.length, 1);
+  assert.doesNotMatch(h.sent[0]?.prompt ?? '', /Which format/);
+  assert.match(h.sent[0]?.prompt ?? '', /question ask-2\):\nDelete the old files/);
 });
 
 test('stop waits for a cancelled claim before removing target messages', async (t) => {
