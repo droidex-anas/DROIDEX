@@ -9,6 +9,7 @@ import {
   listModels,
   loadSessionHistory,
   sendNativeBrowserResult,
+  sendSidebarResult,
   openChild,
   newChildOpenRequestId,
   updateCli,
@@ -16,6 +17,7 @@ import {
 import { isEmbedded } from './lib/embed';
 import { getApiKey, setAppIcon, terminalHasChildren } from './lib/desktop';
 import { performNativeBrowserRequest } from './lib/nativeBrowserAgent';
+import { answerSidebarRequest } from './lib/sidebarRequests';
 import {
   browserKeyForSession,
   nativeBrowserRequestTargetsActiveSession,
@@ -533,6 +535,14 @@ export default function App() {
   useEffect(() => {
     if (embedded) return;
     const unsub = bridge.subscribe((event) => {
+      // Answered here rather than in the Sidebar, which unmounts when collapsed.
+      if (event.type === 'sidebar.request') {
+        const result = answerSidebarRequest(event.request, store.getState(), (appSessionId) => {
+          dispatch({ type: 'ARCHIVE_CHAT', appSessionId });
+        });
+        if (result) sendSidebarResult(result);
+        return;
+      }
       if (event.type !== 'browser.native.request') return;
       const current = store.getState();
       const activeBrowserKey = browserKeyForSession(

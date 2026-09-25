@@ -19,6 +19,7 @@ import type {
   ResponseFormat,
   SessionInteractionMode,
   SessionPurpose,
+  SidebarResult,
   VoiceNarration,
 } from '../types/bridge';
 
@@ -530,4 +531,8 @@ export const sendDesignPrompt = (
 
 export const sendNativeBrowserResult = (result: BrowserNativeResult) => {
   bridge.send({ type: 'browser.native.result', result });
+};
+
+export const sendSidebarResult = (result: SidebarResult) => {
+  bridge.send({ type: 'sidebar.result', result });
 };
