@@ -51,22 +51,29 @@ export const LEAD_BRIEF = [
   'Never print thread ids or session ids to the user. Name the thread; DROIDEX shows them the rest.',
 ].join('\n');
 
-/** A spawn names the task; everything else follows the conversation it came from. */
-export function inheritSettings(
+/**
+ * What a spawn launches with, for a thread or a started chat alike. It names
+ * the task; everything else follows the chat it came from. Its model is
+ * resolved against the catalog, and its autonomy is no more than that chat's.
+ */
+export async function spawnSettings(
   owner: SessionSummary,
-  input: ThreadSpawnInput,
-): Omit<ThreadInput, 'cwd'> {
-  const provider = input.provider ?? owner.provider;
+  requested: ThreadSpawnInput,
+  catalog: () => Promise<readonly ProviderStatus[]>,
+): Promise<Omit<ThreadInput, 'cwd'>> {
+  const provider = requested.provider ?? owner.provider;
   const sameHarness = provider === owner.provider;
-  const modelId = input.modelId ?? (sameHarness ? owner.modelId : undefined);
+  const modelId = requested.modelId ?? (sameHarness ? owner.modelId : undefined);
   const reasoningEffort =
-    input.reasoningEffort ?? (sameHarness ? owner.reasoningEffort : undefined);
+    requested.reasoningEffort ?? (sameHarness ? owner.reasoningEffort : undefined);
+  const autonomy = requested.autonomy ?? owner.autonomy;
+  checkWithinAutonomy(owner, autonomy);
   return {
-    title: input.title,
-    prompt: input.prompt,
+    title: requested.title,
+    prompt: requested.prompt,
     provider,
-    autonomy: input.autonomy ?? owner.autonomy,
-    ...(modelId ? { modelId } : {}),
+    autonomy,
+    ...(modelId ? { modelId: resolveModelId(await catalog(), owner, provider, modelId) } : {}),
     ...(reasoningEffort ? { reasoningEffort } : {}),
   };
 }

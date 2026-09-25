@@ -15,10 +15,10 @@ import { fitLedger, LEDGER_LIMITS, type ProjectPersistence } from './store.js';
 import {
   checkWithinAutonomy,
   discardThreadCheckout,
-  inheritSettings,
   LEAD_BRIEF,
   THREAD_BRIEF,
   resolveModelId,
+  spawnSettings,
   threadCheckout,
   threadPrompt,
   uniqueTitle,
@@ -215,15 +215,7 @@ export class ProjectService {
     if (owner.sessionPurpose !== 'chat')
       throw new Error('Only ordinary chats can own project threads.');
     await this.resumeAfterLeadStop(source);
-    const input = inheritSettings(owner, requested);
-    if (input.modelId)
-      input.modelId = resolveModelId(
-        await this.sessions.catalog(),
-        owner,
-        input.provider,
-        input.modelId,
-      );
-    checkWithinAutonomy(owner, input.autonomy);
+    const input = await spawnSettings(owner, requested, () => this.sessions.catalog());
     const joined = this.membership.get(source);
     if (!joined && requested.step)
       throw new Error('This chat keeps no plan yet. Call plan_set first, or spawn without step.');
