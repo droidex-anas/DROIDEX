@@ -11,7 +11,6 @@ import type {
   InstallChannel,
   HistorySearchReply,
   PersistenceRecovery,
-  ProviderMention,
   ProviderStatus,
   SessionSummary,
   ModelInfo,
@@ -87,6 +86,7 @@ import {
 import {
   SessionLifecycle,
   type LiveSession,
+  type SessionPrompt,
   type StartedLocalMcpResources,
 } from './SessionLifecycle.js';
 import { ChildSessions } from './ChildSessions.js';
@@ -623,8 +623,8 @@ export class SessionManager {
       applyPendingSettingsToSummary: (summary) => this.modelSettings.project(summary),
       applyPendingSessionSettings: (appSessionId) => this.modelSettings.applyPending(appSessionId),
       waitForSettingsMutations: (appSessionId) => this.modelSettings.waitForMutations(appSessionId),
-      runPrimaryTurn: (liveSession, prompt, mentions, delivery) =>
-        this.runPrimaryTurn(liveSession, prompt, mentions, delivery),
+      runPrimaryTurn: (liveSession, prompt, delivery) =>
+        this.runPrimaryTurn(liveSession, prompt, delivery),
       eventFlow: this.eventFlow,
       hasPendingInteractions: (appSessionId) => this.interactions.hasPending(appSessionId),
       hasActiveSettingsChanges: (appSessionId) =>
@@ -1426,8 +1426,7 @@ export class SessionManager {
 
   private async runPrimaryTurn(
     liveSession: LiveSession,
-    prompt: string,
-    mentions?: ProviderMention[],
+    prompt: SessionPrompt,
     delivery?: ScheduledTurnDelivery,
   ): Promise<void> {
     await runPrimaryTurn(
@@ -1447,7 +1446,6 @@ export class SessionManager {
       },
       liveSession,
       prompt,
-      mentions,
       delivery,
     );
   }

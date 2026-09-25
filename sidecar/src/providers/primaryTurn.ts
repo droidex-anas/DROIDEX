@@ -5,8 +5,7 @@ import type { ServerEvent, SessionSummary } from '../protocol.js';
 import type { LiveOperationTarget, SessionContext } from '../SessionContext.js';
 import type { SessionEventFlow } from '../SessionEventFlow.js';
 import { errMsg, isUserCancellation } from '../sessionHelpers.js';
-import type { ProviderMention } from './catalog.js';
-import type { LiveSession } from '../SessionLifecycle.js';
+import type { LiveSession, SessionPrompt } from '../SessionLifecycle.js';
 import type { ScheduledTurnDelivery } from '../sessionAutomationDelivery.js';
 import { isReportedStreamingTranscriptError, type SessionTimeline } from '../SessionTimeline.js';
 import { usageLimitDetails } from './usageLimit.js';
@@ -31,8 +30,7 @@ export interface PrimaryTurnDependencies {
 export async function runPrimaryTurn(
   d: PrimaryTurnDependencies,
   liveSession: LiveSession,
-  prompt: string,
-  mentions?: ProviderMention[],
+  { text: prompt, mentions, announce }: SessionPrompt,
   delivery?: ScheduledTurnDelivery,
 ): Promise<void> {
   const appSessionId = liveSession.summary.appSessionId;
@@ -46,8 +44,7 @@ export async function runPrimaryTurn(
     : undefined;
   if (delivery && (!d.isCurrent(liveSession) || !preflight || !delivery.isCurrent())) return;
   d.eventFlow.beginTurn(appSessionId, appSessionId);
-  // Nobody typed a scheduled delivery, so the renderer has not shown it.
-  if (delivery) d.timeline.announcePrompt(appSessionId, prompt);
+  if (announce) d.timeline.announcePrompt(appSessionId, prompt);
   else d.timeline.recordPrompt(appSessionId, prompt);
   d.context.beginTurn(appSessionId);
   context.startPolling();
