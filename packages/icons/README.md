@@ -128,8 +128,12 @@ Book, Books, Notebook, FileSearch, Cloud, CirclePlay, Bell, and CircleCheck.
 `VoiceWaveFilled` is the round voice-mode button: a disc with the bars cut out.
 The Modes category holds Lightbulb (plan mode), Brain (reasoning), Models
 (model picker) and Sketch; `Mcp` is the Model Context Protocol mark.
-Single-style glyphs such as Spinner, CircleDashed, Brain, Models, Sketch, Mcp
-and arrows retain their original geometry in
+The Git category covers pull requests: GitPullRequest, GitPullRequestCreate,
+GitFork, CodeReview and Repository are outline; the status glyphs
+GitPullRequestDraft, GitPullRequestMerged, GitPullRequestClosed, Issue and
+IssueClosed carry a soft tint on their state node.
+Single-style glyphs such as Spinner, CircleDashed, Brain, Models, Sketch, Mcp,
+the Git status glyphs and arrows retain their original geometry in
 filled preview mode.
 
 The gallery and SVGs are generated from `src/`. Edit the source, then rebuild.
