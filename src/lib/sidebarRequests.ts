@@ -1,13 +1,13 @@
 import type { AppState } from '../hooks/useStore';
+import type { SessionSummary } from '../types/bridge';
 import {
   SIDEBAR_ROW_LIMITS as LIMITS,
-  type SessionSummary,
   type SidebarMark,
   type SidebarMarkOutcome,
   type SidebarRequest,
   type SidebarResult,
   type SidebarRow,
-} from '../types/bridge';
+} from '../types/sidebar';
 import { chatDisplayTitle, isChatHidden, isChatPinned, type ChatMetadataMap } from './chatMetadata';
 import { projectThreadIds } from './projectThreads';
 import {

@@ -1,15 +1,15 @@
 import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
+import type { ServerEvent } from '../protocol.js';
 import {
   SESSION_ACTIVITY_STATUSES,
   SIDEBAR_ROW_LIMITS as LIMITS,
-  type ServerEvent,
   type SidebarMark,
   type SidebarMarkOutcome,
   type SidebarRequest,
   type SidebarResult,
   type SidebarRow,
-} from '../protocol.js';
+} from './protocol.js';
 
 export const SIDEBAR_REQUEST_TIMEOUT_MS = 3_000;
 const MAX_WAITING = 16;
