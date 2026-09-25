@@ -78,7 +78,7 @@ export async function spawnSettings(
   };
 }
 
-const AUTONOMY_ORDER: readonly Autonomy[] = ['off', 'low', 'medium', 'high'];
+export const AUTONOMY_ORDER: readonly Autonomy[] = ['off', 'low', 'medium', 'high'];
 
 /** A thread or a started chat never runs with more autonomy than the chat that started it. */
 export function checkWithinAutonomy(owner: SessionSummary, autonomy: Autonomy): void {
