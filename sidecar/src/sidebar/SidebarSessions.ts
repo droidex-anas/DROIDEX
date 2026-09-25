@@ -17,7 +17,12 @@ export interface SidebarHost {
   transcriptTail(appSessionId: string, limit: number): TranscriptEvent[];
   /** Queues the prompt behind a running turn; false when no turn is running. */
   queueBehindTurn(appSessionId: string, prompt: string): boolean;
-  deliver(appSessionId: string, prompt: string): Promise<AutomationDeliveryReceipt>;
+  /** Starts a turn; `isCurrent` turning false before dispatch cancels it. */
+  deliver(
+    appSessionId: string,
+    prompt: string,
+    isCurrent: () => boolean,
+  ): Promise<AutomationDeliveryReceipt>;
   /** False when the question was already settled. */
   answerQuestion(
     appSessionId: string,
@@ -134,14 +139,20 @@ export class SidebarSessions {
     const { chat, callerTitle } = await this.target(from, projects, target);
     await this.requireManageable(chat);
     const { title } = chat.row;
-    const question = this.checkSendable(chat, from, answers, questionId);
+    const question = this.checkSendable(chat, answers, questionId);
+    this.requireWithinAutonomy(caller, target, title);
     this.countMessage(target, title);
     const prompt = messagePrompt(callerTitle, caller, text);
     if (!question)
-      return { sessionId: target, title, delivery: await this.deliver(target, title, prompt) };
+      return {
+        sessionId: target,
+        title,
+        delivery: await this.deliver(caller, target, title, prompt),
+      };
     // Words sent with answers are instructions of their own. They go first,
     // because a delivery that fails must leave the question unanswered.
-    if (text.trim()) await this.deliver(target, title, prompt);
+    if (text.trim()) await this.deliver(caller, target, title, prompt);
+    this.requireWithinAutonomy(caller, target, title);
     const landed = this.host.answerQuestion(
       target,
       question.requestId,
@@ -267,11 +278,10 @@ export class SidebarSessions {
   /** The question a send answers, or nothing for a plain message; throws when it may not go. */
   private checkSendable(
     chat: SidebarChat,
-    from: SessionSummary,
     answers: readonly string[],
     questionId: string | undefined,
   ) {
-    const { row, summary } = chat;
+    const { row } = chat;
     if (row.status === 'approval' || row.status === 'plan')
       throw new Error(`${row.title} is waiting on the user; tell them instead.`);
     const question = row.status === 'input' ? row.question : undefined;
@@ -279,11 +289,24 @@ export class SidebarSessions {
       throw new Error(`${row.title} is waiting on the user; tell them instead.`);
     if (question) checkAnswers(row.title, question, answers, questionId);
     else if (answers.length) throw new Error(`${row.title} has no question waiting for an answer.`);
-    if (AUTONOMY_ORDER.indexOf(summary.autonomy) > AUTONOMY_ORDER.indexOf(from.autonomy))
-      throw new Error(
-        `${row.title} runs at ${summary.autonomy} autonomy, above this chat's ${from.autonomy}; the user has to message it.`,
-      );
     return question;
+  }
+
+  /* Either chat's autonomy can change while a send waits on the window or on a
+     delivery, so the rule is read fresh right before each step that reaches the
+     chat, with nothing awaited in between. */
+  private autonomyRefusal(caller: string, target: string, title: string): string | undefined {
+    const from = this.host.summary(caller);
+    const to = this.host.summary(target);
+    if (!from || !to) return 'Session is no longer available.';
+    if (AUTONOMY_ORDER.indexOf(to.autonomy) <= AUTONOMY_ORDER.indexOf(from.autonomy))
+      return undefined;
+    return `${title} runs at ${to.autonomy} autonomy, above this chat's ${from.autonomy}; the user has to message it.`;
+  }
+
+  private requireWithinAutonomy(caller: string, target: string, title: string): void {
+    const refusal = this.autonomyRefusal(caller, target, title);
+    if (refusal) throw new Error(refusal);
   }
 
   /** Counts a message to this chat, and refuses one past the loop brake. */
@@ -301,16 +324,28 @@ export class SidebarSessions {
   /* A running turn takes the message on its queue. Otherwise it starts a turn
      now, waking the chat if it was released; that waits for the runtime to
      take the prompt, never for the turn. */
-  private async deliver(target: string, title: string, prompt: string) {
+  private async deliver(caller: string, target: string, title: string, prompt: string) {
+    this.requireWithinAutonomy(caller, target, title);
     if (this.host.queueBehindTurn(target, prompt)) return 'queued';
-    const receipt = await this.host.deliver(target, prompt);
+    const receipt = await this.host.deliver(
+      target,
+      prompt,
+      () => this.autonomyRefusal(caller, target, title) === undefined,
+    );
     if (receipt.status === 'accepted') return 'started';
     if (receipt.status === 'unavailable')
       throw new Error(`${title} could not be reached: ${receipt.error}`);
-    if (receipt.status === 'busy' && receipt.retryOn === 'capacity')
+    // The autonomy rule is the only thing that withdraws this delivery.
+    if (receipt.status === 'cancelled')
+      throw new Error(
+        this.autonomyRefusal(caller, target, title) ??
+          `${title} changed while this message waited; send it again.`,
+      );
+    if (receipt.retryOn === 'capacity')
       throw new Error(
         `${title} is not open, and DROIDEX already has as many chats open as it opens on its own. It can be reached once one is released, or when the user opens it.`,
       );
+    this.requireWithinAutonomy(caller, target, title);
     if (this.host.queueBehindTurn(target, prompt)) return 'queued';
     throw new Error(`${title} is busy; try again in a moment.`);
   }
