@@ -77,7 +77,9 @@ refuse an automation run.
 `session_send` is refused to a chat waiting on an approval or a plan, to one at
 a higher autonomy than the caller, and past ten messages to one chat in five
 minutes from any chats, because chats messaging each other in a loop would keep
-it busy forever. A chat waiting on its own question needs answers, one per
+it busy forever. Both chats' autonomy is read again as the message or the
+answers reach the chat, and while its delivery waits to start, so lowering the
+caller or raising the target during the call still refuses it. A chat waiting on its own question needs answers, one per
 question in order, and answers where no question waits are refused. Answers
 carry the `questionId` that `session_read` gave, and are refused when the chat
 now waits on a different question, so answers written for a question the user

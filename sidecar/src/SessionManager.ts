@@ -274,8 +274,8 @@ export class SessionManager {
     isBlocked: (appSessionId) => this.interactions.hasPending(appSessionId),
     transcriptTail: (appSessionId, limit) => this.timeline.tail(appSessionId, limit),
     queueBehindTurn: (appSessionId, prompt) => this.lifecycle.queueBehindTurn(appSessionId, prompt),
-    deliver: (appSessionId, prompt) =>
-      this.lifecycle.deliverScheduled(appSessionId, prompt, () => true),
+    deliver: (appSessionId, prompt, isCurrent) =>
+      this.lifecycle.deliverScheduled(appSessionId, prompt, isCurrent),
     answerQuestion: (appSessionId, requestId, answers) =>
       this.answerQuestion(appSessionId, requestId, answers),
     note: (appSessionId, text) => {

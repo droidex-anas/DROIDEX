@@ -64,6 +64,9 @@ function harness(options: {
   runningTurns?: string[];
   // What the sidecar's own interactions say is waiting on the user.
   blocked?: string[];
+  // Changes made while the window is asked for rows, or while a delivery waits to start.
+  whileWindowAnswers?: (sessions: Map<string, SessionSummary>) => void;
+  whileDelivering?: (sessions: Map<string, SessionSummary>) => void;
 }) {
   const sessions = new Map(options.sessions.map((item) => [item.appSessionId, item]));
   const calls: string[] = [];
@@ -71,6 +74,7 @@ function harness(options: {
     if (event.type !== 'sidebar.request' || options.silentWindow) return;
     const { requestId, query } = event.request;
     if (query.kind === 'rows') {
+      options.whileWindowAnswers?.(sessions);
       const wanted = query.appSessionIds;
       const rows = options.rows.filter((item) => !wanted || wanted.includes(item.appSessionId));
       requests.answer({ requestId, kind: 'rows', rows });
@@ -93,7 +97,10 @@ function harness(options: {
       calls.push(`queue ${id}: ${prompt}`);
       return true;
     },
-    deliver: (id): Promise<AutomationDeliveryReceipt> => {
+    deliver: (id, _prompt, isCurrent): Promise<AutomationDeliveryReceipt> => {
+      options.whileDelivering?.(sessions);
+      // The real delivery checks its caller's guard again before it dispatches.
+      if (!isCurrent()) return Promise.resolve({ status: 'cancelled' });
       calls.push(`deliver ${id}`);
       return Promise.resolve({ status: 'accepted', settled: new Promise<void>(() => undefined) });
     },
@@ -233,6 +240,36 @@ test('a message is refused to a chat waiting on the user, above this chat, or pa
   // The brake counts the last five minutes only.
   t.mock.timers.tick(5 * 60_000);
   assert.equal((await sidebar.send('caller', 'target', 'Later')).delivery, 'started');
+});
+
+test("a send reads both chats' autonomy when it reaches the chat, not when it began", async () => {
+  // The caller is lowered while the window is asked for its rows.
+  const lowered = harness({
+    rows: [row('target')],
+    sessions: [summary('caller'), summary('target')],
+    whileWindowAnswers: (sessions) => {
+      sessions.set('caller', summary('caller', { autonomy: 'low' }));
+    },
+  });
+  await assert.rejects(
+    lowered.sidebar.send('caller', 'target', 'Go'),
+    /runs at medium autonomy, above this chat's low/,
+  );
+  assert.deepEqual(lowered.calls, []);
+
+  // The target is raised while its delivery waits to start.
+  const raised = harness({
+    rows: [row('target')],
+    sessions: [summary('caller'), summary('target')],
+    whileDelivering: (sessions) => {
+      sessions.set('target', summary('target', { autonomy: 'high' }));
+    },
+  });
+  await assert.rejects(
+    raised.sidebar.send('caller', 'target', 'Go'),
+    /runs at high autonomy, above this chat's medium/,
+  );
+  assert.deepEqual(raised.calls, []);
 });
 
 test('answers reach the question a chat waits on, and a plain message is refused while it waits', async () => {
