@@ -18,7 +18,7 @@ export class ProjectWakeQueue {
   private readonly generations = new Map<string, number>();
   private readonly queued = new Set<Project>();
   private readonly pumping = new Map<string, Promise<void>>();
-  private readonly active = new Map<string, Promise<void>>();
+  private readonly active = new Map<string, { project: Project; settled: Promise<void> }>();
   /** Recipients a delivery found busy, skipped until they settle. */
   private readonly busyTargets = new Set<string>();
   private readonly capacityWaiting = new Set<string>();
@@ -83,16 +83,17 @@ export class ProjectWakeQueue {
 
   async flush(): Promise<void> {
     while (this.pumping.size || this.active.size) {
-      await Promise.allSettled([...this.pumping.values(), ...this.active.values()]);
+      const turns = [...this.active.values()].map((turn) => turn.settled);
+      await Promise.allSettled([...this.pumping.values(), ...turns]);
     }
   }
 
   private schedule(): void {
-    if (this.closed || this.scheduled || this.pumping.size + this.active.size >= MAX_ACTIVE) return;
+    if (this.closed || this.scheduled || this.running() >= MAX_ACTIVE) return;
     this.scheduled = setImmediate(() => {
       this.scheduled = undefined;
       for (const project of this.queued) {
-        if (this.pumping.size + this.active.size >= MAX_ACTIVE) break;
+        if (this.running() >= MAX_ACTIVE) break;
         if (project.paused || project.delivery || !project.pending.length) {
           this.queued.delete(project);
           continue;
@@ -115,6 +116,13 @@ export class ProjectWakeQueue {
         this.pumping.set(project.id, work);
       }
     });
+  }
+
+  private running(): number {
+    let count = this.pumping.size;
+    // A thread stopped on a question for its owner runs nothing until answered, so it frees its slot.
+    for (const [target, turn] of this.active) if (!isAskingOwner(turn.project, target)) count += 1;
+    return count;
   }
 
   /** False when this project has woken far more often than work could explain. */
@@ -198,7 +206,7 @@ export class ProjectWakeQueue {
     };
     // Acceptance and turn completion are different. Hold the slot until settlement.
     const settled = receipt.settled.then(release, release);
-    this.active.set(target, settled);
+    this.active.set(target, { project, settled });
     await this.save();
   }
 }
@@ -206,6 +214,10 @@ export class ProjectWakeQueue {
 function isAsked(project: Project, message: ThreadMessage): boolean {
   if (message.kind !== 'question') return true;
   return project.threads.some((thread) => thread.appSessionId === message.from && thread.ask);
+}
+
+function isAskingOwner(project: Project, appSessionId: string): boolean {
+  return project.threads.some((thread) => thread.appSessionId === appSessionId && thread.ask);
 }
 
 function batch(pending: readonly ThreadMessage[], to: string): ThreadMessage[] {
