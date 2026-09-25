@@ -76,9 +76,12 @@ export interface StartedLocalMcpResources {
   servers: LocalMcpResource[];
   configs: McpServerConfig[];
 }
-interface SessionPrompt {
+export interface SessionPrompt {
   text: string;
   mentions?: ProviderMention[];
+  /** Nobody typed it (a scheduled delivery, a message from another chat), so
+      the window has not shown it and the turn announces it. */
+  announce?: true;
 }
 
 interface LiveTurnState {
@@ -146,8 +149,7 @@ export interface SessionLifecycleDependencies {
   waitForSettingsMutations?: (appSessionId: string) => Promise<void>;
   runPrimaryTurn: (
     liveSession: LiveSession,
-    prompt: string,
-    mentions?: ProviderMention[],
+    prompt: SessionPrompt,
     delivery?: ScheduledTurnDelivery,
   ) => Promise<void>;
   eventFlow: Pick<SessionEventFlow, 'apply' | 'beginTurn'>;
@@ -530,12 +532,28 @@ export class SessionLifecycle {
           this.dependencies.registry.liveSessionsSnapshot().length + this.resumeOperations.size <
           MAX_SCHEDULED_SESSION_RUNTIMES,
         resume: (id) => this.resume(id),
-        start: (id, text, delivery) => this.driveInBackground(id, text, delivery),
+        start: (id, text, delivery) =>
+          this.driveInBackground(id, { text, announce: true }, delivery),
       },
       appSessionId,
       prompt,
       isCurrent,
     );
+  }
+
+  /**
+   * Queues a prompt nobody typed behind the turn a live session is running,
+   * the way a send does, without waiting for that turn. False when no turn is
+   * running, so the caller delivers it another way.
+   */
+  queueBehindTurn(appSessionId: string, text: string): boolean {
+    const liveSession = this.dependencies.registry.getLive(appSessionId);
+    if (!liveSession || liveSession.closeMode) return false;
+    if (!liveSession.streaming && !liveSession.compacting && !liveSession.autoCompacting)
+      return false;
+    liveSession.pendingSends.push({ text, announce: true });
+    this.updateQueuedSends(liveSession);
+    return true;
   }
 
   async send(
@@ -1140,12 +1158,7 @@ export class SessionLifecycle {
         streaming: true,
         queuedSends: liveSession.pendingSends.length,
       });
-      liveSession.turnPromise = d.runPrimaryTurn(
-        liveSession,
-        prompt.text,
-        prompt.mentions,
-        delivery,
-      );
+      liveSession.turnPromise = d.runPrimaryTurn(liveSession, prompt, delivery);
       await liveSession.turnPromise;
     } finally {
       liveSession.turnPromise = undefined;

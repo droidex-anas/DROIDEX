@@ -238,9 +238,9 @@ function createHarness(
     hasActiveSettingsChanges: () => false,
     applyPendingSettingsToSummary: (item) => ({ ...item, ...projection }),
     applyPendingSessionSettings: (appSessionId) => applyPending(appSessionId),
-    runPrimaryTurn: async (live, prompt, _mentions, delivery) => {
+    runPrimaryTurn: async (live, prompt, delivery) => {
       if (delivery && !delivery.isCurrent()) return;
-      for await (const event of live.session.stream(prompt)) {
+      for await (const event of live.session.stream(prompt.text)) {
         delivery?.accepted();
         void event;
       }
@@ -784,6 +784,26 @@ test('queued sends stay FIFO while send-now prompts are newest first', async () 
   // The second send-now lands while the first interrupt is still in flight and
   // rides the queue instead of interrupting the turn that redelivers it.
   assert.equal(interruptCount(steered), 1);
+});
+
+test('a prompt from another chat queues behind the running turn without waiting for it', async () => {
+  const harness = createHarness();
+  const provider = queueCreate(harness, 'target');
+  const gate = provider.deferNextStream();
+  await harness.lifecycle.create(createCommand('first'));
+  await provider.waitForPrompts(1);
+  assert.equal(harness.lifecycle.queueBehindTurn('unknown', 'nowhere to go'), false);
+
+  assert.equal(harness.lifecycle.queueBehindTurn('target', 'from another chat'), true);
+  // Nobody typed it, so the turn that runs it announces it to the window.
+  assert.deepEqual(requireLive(harness, 'target').pendingSends, [
+    { text: 'from another chat', announce: true },
+  ]);
+  assert.equal(harness.registry.getCanonicalSummary('target')?.queuedSends, 1);
+
+  gate.resolve();
+  await provider.waitForPrompts(2);
+  assert.deepEqual(provider.prompts, ['first', 'from another chat']);
 });
 
 test('send-now queues without interrupting compaction and reports interrupt rejection', async () => {
