@@ -227,7 +227,7 @@ export function threadTools(appSessionId: () => string) {
     tool(
       'thread_read',
       [
-        `Read one of this chat's threads: its latest final replies (the last ${String(LEDGER_LIMITS.text)} characters of each), the question it is waiting on, and its settings.`,
+        `Read one of this chat's threads: its latest final replies (the last ${String(LEDGER_LIMITS.text)} characters of each; an old thread may keep only its final one), the question it is waiting on, and its settings.`,
         'A report is an excerpt, so read the rest here before acting on it or telling the user.',
         'A working thread has nothing new yet; DROIDEX wakes you when it settles, so do not poll.',
       ].join(' '),

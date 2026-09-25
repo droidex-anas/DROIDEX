@@ -78,6 +78,8 @@ export interface ThreadReadout {
   replies: string[];
   /** Older replies DROIDEX still holds, for an owner that wants more context. */
   moreReplies: number;
+  /** Why replies is empty when the thread did reply. */
+  note?: string;
   error?: string;
   question?: { index: number; question: string; options: string[] }[];
   cwd?: string;
@@ -411,6 +413,11 @@ export class ProjectService {
       state: threadState(thread, session),
       replies: kept.slice(-wanted),
       moreReplies: Math.max(kept.length - wanted, 0),
+      ...(thread.repliesShed
+        ? {
+            note: 'DROIDEX dropped its replies to keep the project ledger small. Its whole conversation stays in its own transcript, which the user can open.',
+          }
+        : {}),
       ...(thread.error ? { error: thread.error } : {}),
       ...(thread.ask ? { question: thread.ask.questions } : {}),
       ...(session

@@ -73,6 +73,40 @@ test('a ledger past its budget sheds the oldest replies first and still saves', 
   assert.equal(newest?.earlierReplies?.length, LEDGER_LIMITS.earlierReplies);
 });
 
+test('a thread whose final reply was shed says so after a reload', async (t) => {
+  const directory = await mkdtemp(join(tmpdir(), 'droidex-projects-'));
+  t.after(() => rm(directory, { recursive: true, force: true }));
+  const path = join(directory, 'projects.json');
+  const reply = 'x'.repeat(LEDGER_LIMITS.text);
+  // Final replies alone past the budget, with no earlier replies left to shed.
+  const projects: Project[] = [
+    {
+      ...project(),
+      threads: [
+        { appSessionId: 'main', title: 'Main', reply: '', waiting: false },
+        ...Array.from({ length: 800 }, (_, position) => ({
+          appSessionId: `thread-${String(position)}`,
+          ownerAppSessionId: 'main',
+          title: 'Thread',
+          reply,
+          waiting: false,
+        })),
+      ],
+    },
+  ];
+  fitLedger(projects, (appSessionId) => Number(appSessionId.split('-')[1] ?? -1));
+  await new ProjectStore(path).save(projects);
+  const threads = (await new ProjectStore(path).load()).flatMap((item) => item.threads);
+  const oldest = threads.find((thread) => thread.appSessionId === 'thread-0');
+  assert.equal(oldest?.reply, '');
+  assert.equal(oldest?.repliesShed, true);
+  const newest = threads.find((thread) => thread.appSessionId === 'thread-799');
+  assert.equal(newest?.reply, reply);
+  assert.equal(newest?.repliesShed, undefined);
+  // The lead stores no reply, so it has none to shed.
+  assert.equal(threads.find((thread) => thread.appSessionId === 'main')?.repliesShed, undefined);
+});
+
 test('corruption is reported without overwriting the user’s saved data', async (t) => {
   const directory = await mkdtemp(join(tmpdir(), 'droidex-projects-'));
   t.after(() => rm(directory, { recursive: true, force: true }));

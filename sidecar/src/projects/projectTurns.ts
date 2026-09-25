@@ -131,6 +131,7 @@ export class ProjectTurns {
       this.forgetOlderReplies(project);
     }
     thread.reply = text;
+    delete thread.repliesShed;
   }
 
   private forgetOlderReplies(project: Project): void {
