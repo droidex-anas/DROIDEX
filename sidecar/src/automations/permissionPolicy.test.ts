@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
   AUTOMATION_MCP_SERVER_NAME,
-  automationPermissionTarget,
+  mcpPermissionTarget,
   shouldAttachAutomationMcp,
   shouldAutoApproveAutomationTool,
 } from './permissionPolicy.js';
@@ -61,5 +61,5 @@ test('conflicting explicit and namespaced MCP server names are rejected', () => 
     ],
   };
 
-  assert.equal(automationPermissionTarget(params), null);
+  assert.equal(mcpPermissionTarget(params), null);
 });
