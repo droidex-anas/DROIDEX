@@ -23,7 +23,7 @@ ordinary chat in the user's sidebar that belongs to no project, reports nowhere
 and wakes nobody, and the thread tools do not reach it. It opens with a brief
 telling it that the user follows it in the sidebar. A chat started this way
 cannot start chats of its own, a project thread cannot start one, and one chat
-has at most eight chats it started working at once. DROIDEX keeps those two
+has at most eight chats it started still working at once. DROIDEX keeps those two
 limits in memory, so they reset when it restarts. Such a chat shares the folder
 of the chat that started it unless the spawn asks for `workspace: "worktree"`.
 

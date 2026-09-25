@@ -80,10 +80,10 @@ export async function spawnSettings(
 
 const AUTONOMY_ORDER: readonly Autonomy[] = ['off', 'low', 'medium', 'high'];
 
-/** A thread never runs with more autonomy than the chat that owns it. */
+/** A thread or a started chat never runs with more autonomy than the chat that started it. */
 export function checkWithinAutonomy(owner: SessionSummary, autonomy: Autonomy): void {
   if (AUTONOMY_ORDER.indexOf(autonomy) > AUTONOMY_ORDER.indexOf(owner.autonomy))
-    throw new Error('A thread cannot exceed the autonomy of the chat that started it.');
+    throw new Error('A chat cannot exceed the autonomy of the chat that started it.');
 }
 
 /*
