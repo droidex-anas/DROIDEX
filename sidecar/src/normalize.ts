@@ -10,7 +10,7 @@ import {
   automationToolDisplayTitle,
   isAutomationMutationPermission,
 } from './automations/permissionPolicy.js';
-import { threadToolDisplayTitle } from './projects/threadTools.js';
+import { sessionsToolDisplayTitle } from './sessionsMcpPolicy.js';
 import { bridgeFeature } from './missionFeatures.js';
 import { droidErrorDetails } from './providers/droid/droidErrors.js';
 import type {
@@ -536,7 +536,7 @@ export function classifyPermission(
       const toolName = splitTool;
       const droidexTitle =
         automationToolDisplayTitle(serverName, toolName) ??
-        threadToolDisplayTitle(serverName, toolName);
+        sessionsToolDisplayTitle(serverName, toolName);
       if (droidexTitle) title = droidexTitle;
       else if (toolName && serverName) title = `${serverName} · ${toolName}`;
       else if (toolName) title = toolName;

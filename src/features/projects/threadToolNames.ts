@@ -1,10 +1,10 @@
 import { parseToolResultObject } from '../automations/toolNames';
 
 /* The thread tools arrive namespaced by the harness that ran them
-   (`droidex_threads___thread_spawn`, `mcp__droidex-threads__thread_spawn`), so
+   (`droidex_sessions___thread_spawn`, `mcp__droidex-sessions__thread_spawn`), so
    the chat matches on the bare tool name. */
 
-const THREAD_SERVER_PREFIXES: readonly string[] = ['droidex_threads', 'mcp_droidex_threads'];
+const THREAD_SERVER_PREFIXES: readonly string[] = ['droidex_sessions', 'mcp_droidex_sessions'];
 
 export function isThreadSpawnCall(event: { kind?: string; toolName?: string }): boolean {
   return event.kind === 'tool_call' && threadToolBaseName(event.toolName) === 'thread_spawn';

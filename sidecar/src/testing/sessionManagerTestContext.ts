@@ -45,10 +45,10 @@ const AUTOMATION_MCP_CONFIG = McpServerConfigSchema.parse({
   url: 'http://127.0.0.1/automations',
 });
 
-const THREAD_MCP_CONFIG = McpServerConfigSchema.parse({
+const SESSIONS_MCP_CONFIG = McpServerConfigSchema.parse({
   type: 'http',
-  name: 'droidex-threads',
-  url: 'http://127.0.0.1/threads',
+  name: 'droidex-sessions',
+  url: 'http://127.0.0.1/sessions',
 });
 
 const CLI_MCP_CONFIG = McpServerConfigSchema.parse({
@@ -128,7 +128,7 @@ export function createSessionManagerTestContext(
     browsers,
     createLocalMcpResource: () => new FakeLocalMcpResource(calls),
     createAutomationMcpResource: () => new FakeAutomationMcpResource(),
-    createThreadMcpResource: () => new FakeInAppMcpResource(THREAD_MCP_CONFIG),
+    createSessionsMcpResource: () => new FakeInAppMcpResource(SESSIONS_MCP_CONFIG),
     loadConfiguredMcpServers: () => [CLI_MCP_CONFIG],
     mcpConfiguration: {
       add: (server, cwd) => {
