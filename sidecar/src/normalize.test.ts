@@ -300,6 +300,28 @@ test('automation permission signatures hash the complete argument payload', () =
   assert.notEqual(permissionSignature(params('a')), permissionSignature(params('b')));
 });
 
+test('a thread_spawn grant key names the kind of chat it starts', () => {
+  const params = (input: Record<string, unknown>) =>
+    ({
+      toolUses: [
+        {
+          details: { type: 'mcp_tool', toolName: 'droidex_sessions___thread_spawn' },
+          toolUse: { input },
+        },
+      ],
+    }) as never;
+
+  assert.equal(
+    permissionSignature(params({ reportBack: true })),
+    'mcp::::droidex_sessions___thread_spawn::thread',
+  );
+  assert.equal(
+    permissionSignature(params({ reportBack: false })),
+    'mcp::::droidex_sessions___thread_spawn::chat',
+  );
+  assert.equal(permissionSignature(params({})), '');
+});
+
 test('captures Task prompt metadata before the subagent session id exists', () => {
   const normalized = normalizeStreamEvent('app-session-1', 'app-session-1', 'primary', {
     type: 'tool_call',

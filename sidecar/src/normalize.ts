@@ -10,7 +10,7 @@ import {
   automationToolDisplayTitle,
   isAutomationMutationPermission,
 } from './automations/permissionPolicy.js';
-import { sessionsToolDisplayTitle } from './sessionsMcpPolicy.js';
+import { sessionsGrantScope, sessionsToolDisplayTitle } from './sessionsMcpPolicy.js';
 import { bridgeFeature } from './missionFeatures.js';
 import { droidErrorDetails } from './providers/droid/droidErrors.js';
 import type {
@@ -594,14 +594,8 @@ export function permissionSignature(params: RequestPermissionRequestParams): str
       const command = typeof c.command === 'string' ? c.command : '';
       return `exec::${fullCommand || command}`;
     }
-    case 'mcp_tool': {
-      const serverName = typeof c.serverName === 'string' ? c.serverName : '';
-      const toolName = typeof c.toolName === 'string' ? c.toolName : '';
-      const key = `mcp::${serverName}::${toolName}`;
-      if (!isAutomationMutationPermission(params)) return key;
-      const args = toolArgumentDigest(primaryToolInput(params));
-      return args ? `${key}::${args}` : '';
-    }
+    case 'mcp_tool':
+      return mcpToolSignature(params, c);
     case 'edit':
     case 'create':
     case 'apply_patch': {
@@ -618,4 +612,18 @@ export function permissionSignature(params: RequestPermissionRequestParams): str
     default:
       return '';
   }
+}
+
+// An MCP grant covers the server and tool, narrowed for the tools whose one
+// call must not authorize a different later one: a DROIDEX automation mutation
+// by its arguments, thread_spawn by the kind of chat it starts.
+function mcpToolSignature(params: RequestPermissionRequestParams, c: ConfirmationDetail): string {
+  const serverName = typeof c.serverName === 'string' ? c.serverName : '';
+  const toolName = typeof c.toolName === 'string' ? c.toolName : '';
+  const key = `mcp::${serverName}::${toolName}`;
+  const scope = sessionsGrantScope(serverName, toolName, primaryToolInput(params));
+  if (scope !== undefined) return scope ? `${key}::${scope}` : '';
+  if (!isAutomationMutationPermission(params)) return key;
+  const args = toolArgumentDigest(primaryToolInput(params));
+  return args ? `${key}::${args}` : '';
 }

@@ -6,6 +6,7 @@ import type { CanUseTool, PermissionMode, PermissionResult } from '@anthropic-ai
 
 import { isAutomationMutationTool } from '../../automations/permissionPolicy.js';
 import { toolArgumentDigest } from '../../normalize.js';
+import { sessionsGrantScope } from '../../sessionsMcpPolicy.js';
 import type { Autonomy, PermissionKind } from '../../protocol.js';
 import { nextInteractionRequestId, type ProviderInteractions } from '../interactions.js';
 
@@ -119,9 +120,12 @@ async function approveTool(
   if (outcome === 'cancel')
     return { behavior: 'deny', message: 'The user stopped this tool.', interrupt: true };
   if (!outcome.startsWith('proceed')) return deny('The user declined this tool.');
+  // A grant narrower than the whole MCP tool stays DROIDEX's to match: the
+  // CLI's own rule would name the tool and allow every later call of it.
+  const cliMayRemember = !mcp || signature === `mcp::${mcp.serverName}::${mcp.toolName}`;
   return {
     behavior: 'allow',
-    ...(outcome === 'proceed_always' && options.suggestions
+    ...(outcome === 'proceed_always' && cliMayRemember && options.suggestions
       ? { updatedPermissions: options.suggestions }
       : {}),
   };
@@ -188,9 +192,10 @@ function mcpTarget(toolName: string): { serverName: string; toolName: string } {
 
 // The key an "always allow" grant is stored under, scoped exactly the way Droid
 // scopes its own (normalize.ts): a command, a file path, or an MCP server and
-// tool — and, for a DROIDEX automation mutation, the arguments too, so one
-// grant cannot authorize a later call that changes something else. An empty
-// result leaves the request ineligible for always-allow.
+// tool. A DROIDEX automation mutation adds its arguments and thread_spawn the
+// kind of chat it starts, so one grant cannot authorize a later call that does
+// something else. An empty result leaves the request ineligible for
+// always-allow.
 function permissionSignature(
   kind: PermissionKind,
   mcp: { serverName: string; toolName: string } | undefined,
@@ -203,6 +208,8 @@ function permissionSignature(
   }
   if (!mcp) return undefined;
   const key = `mcp::${mcp.serverName}::${mcp.toolName}`;
+  const scope = sessionsGrantScope(mcp.serverName, mcp.toolName, input);
+  if (scope !== undefined) return scope ? `${key}::${scope}` : undefined;
   if (!isAutomationMutationTool(mcp.serverName, mcp.toolName)) return key;
   const args = toolArgumentDigest(input);
   return args ? `${key}::${args}` : undefined;
