@@ -155,7 +155,7 @@ export function threadTools(appSessionId: () => string) {
         'Start a new DROIDEX chat that carries one decided task alongside this one.',
         'It cannot see this conversation, so the prompt must hold the whole task: the context, the files or areas involved, and what done looks like.',
         'With reportBack true it is a thread of this chat, listed under it in Projects: its replies and questions arrive here as new turns, so end your turn after spawning, and steer it with the thread_ tools.',
-        "With reportBack false it is an ordinary chat in the user's sidebar that never reports here.",
+        "With reportBack false it is an ordinary chat in the user's sidebar that never reports here; follow it with session_read.",
         "It inherits this chat's folder, harness, model, reasoning and autonomy unless you name others.",
         'Investigate open questions here and spawn only decided work.',
       ].join(' '),
@@ -171,7 +171,7 @@ export function threadTools(appSessionId: () => string) {
             title: chat.title,
             ...(chat.cwd ? { cwd: chat.cwd } : {}),
             ...(chat.branch ? { branch: chat.branch } : {}),
-            note: "It runs as its own chat in the user's sidebar and will not report here.",
+            note: "It runs as its own chat in the user's sidebar and will not report here. Check on it with session_read.",
           });
         }
         const started = await projects.spawn(appSessionId(), input);
