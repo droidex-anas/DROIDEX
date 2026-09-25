@@ -437,6 +437,28 @@ test('a first spawn that fails leaves no project behind, wherever it failed', as
   );
 });
 
+test('stopping a chat while its first thread starts cancels that spawn', async (t) => {
+  const h = await harness();
+  t.after(() => h.projects.close());
+  h.sessions.set('ordinary', summary('ordinary'));
+  const gate = deferred();
+  h.state.bindGate = gate.promise;
+  const spawning = h.projects.spawn('ordinary', input);
+  await tick();
+  await h.projects.userStopped('ordinary');
+  gate.resolve();
+  await assert.rejects(spawning, /cancelled/);
+  await drain();
+  assert.equal(h.launched.length, 0);
+  assert.equal(h.state.saved.length, 0);
+  assert.equal(h.sent.length, 0);
+
+  // The Stop cancelled that spawn only; the chat's next one starts unheld.
+  h.state.bindGate = undefined;
+  await h.projects.spawn('ordinary', input);
+  assert.equal(h.state.saved[0]?.paused, false);
+});
+
 test('a failed spawn never removes a project started in Projects', async (t) => {
   const h = await harness();
   t.after(() => h.projects.close());

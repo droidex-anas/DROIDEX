@@ -489,7 +489,9 @@ export class ProjectService {
    * the rest of the project keeps working.
    */
   async userStopped(appSessionId: string): Promise<void> {
-    const project = this.membership.get(appSessionId);
+    // A chat's first project is still being adopted until its thread binds,
+    // and a Stop then has to cancel that spawn like any other.
+    const project = this.membership.get(appSessionId) ?? this.adopting.get(appSessionId);
     if (!project || this.closed) return;
     if (!requireThread(project, appSessionId).ownerAppSessionId) {
       // A hold already in place for another reason stays the user's to lift.
@@ -725,8 +727,11 @@ export class ProjectService {
      running away is the nesting limit, the approval a spawn needs below High,
      and the hold on threads talking in circles, not a count. */
   private checkAdmission(project: Project): void {
-    if (project.paused)
-      throw new Error('This project is held. Ask the user to resume it in Projects first.');
+    if (!project.paused) return;
+    // Only the user's Stop holds a project still being adopted, and Projects
+    // does not list it yet, so there is nothing there to resume.
+    if (!this.projects.has(project.id)) throw new Error('Project launch was cancelled.');
+    throw new Error('This project is held. Ask the user to resume it in Projects first.');
   }
 
   private requireOpen(): void {
