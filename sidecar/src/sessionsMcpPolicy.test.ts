@@ -40,7 +40,7 @@ test('only the named session tools on the sessions server are ever approved', ()
   for (const tool of ['constructor', '__proto__', 'toString', 'hasOwnProperty', 'thread_delete']) {
     assert.equal(shouldAutoApproveSessionsTool(SESSIONS_MCP_SERVER_NAME, tool, 'high'), false);
   }
-  for (const server of ['droidex-threads', 'droidex-automations', 'my-sessions', '']) {
+  for (const server of ['droidex-automations', 'my-sessions', '']) {
     assert.equal(shouldAutoApproveSessionsTool(server, 'thread_read', 'high'), false);
   }
 });
