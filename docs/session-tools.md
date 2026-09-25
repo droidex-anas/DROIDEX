@@ -84,8 +84,10 @@ now waits on a different question, so answers written for a question the user
 already settled never land on the next one.
 
 `session_stop` is refused to a chat waiting on the user, because an interrupt
-would throw away the user's decision, and to one with no turn running. It is not
-the user's Stop, so it never holds a project.
+would throw away the user's decision, and to one with no turn running. It checks
+DROIDEX's own record of pending approvals and questions at the moment it
+interrupts, so one that arrived after the window last reported the chat stays
+with the user. It is not the user's Stop, so it never holds a project.
 
 `session_mark` reports each chat as done or refused with a reason. The window
 applies the sidebar's own rules as the change lands: a chat working or waiting

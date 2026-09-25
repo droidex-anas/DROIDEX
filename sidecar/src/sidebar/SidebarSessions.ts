@@ -165,6 +165,10 @@ export class SidebarSessions {
     if (status === 'approval' || status === 'input' || status === 'plan')
       throw new Error(`${title} is waiting on the user; tell them instead.`);
     if (status !== 'working') throw new Error(`${title} has no turn running.`);
+    // The window's status is a round trip old. The sidecar's own record, read
+    // with nothing awaited before the interrupt, says what waits on the user now.
+    if (this.host.isBlocked(target))
+      throw new Error(`${title} is waiting on the user; tell them instead.`);
     await this.host.interrupt(target);
     return { sessionId: target, title };
   }
