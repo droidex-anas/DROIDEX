@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useSyncExternalStore } from 'react';
 import type { AppState } from './useStore';
 import type { SessionSummary } from '../types/bridge';
 import type { GitDiffStat } from '../types/vcs';
@@ -11,14 +11,16 @@ import {
   chatActivitySignals,
   pruneReopenedSessions,
   pruneSettledSessions,
-  DEFAULT_SIDEBAR_PREFERENCES,
   inActivityScope,
-  loadSidebarActivity,
-  saveSidebarActivity,
   sessionActivityStatus,
   type SessionActivityStatus,
   type SidebarActivityPreferences,
 } from '../lib/sidebarActivity';
+import {
+  sidebarPreferences,
+  subscribeSidebarPreferences,
+  updateSidebarPreferences,
+} from '../lib/sidebarPreferences';
 import { useActivityDigests } from './useActivityDigests';
 import type { ActivityDigest } from '../lib/activityDigest';
 import { useActivityShipSignals } from './useActivityShipSignals';
@@ -35,6 +37,10 @@ function freshDigest(
 }
 const SHIP_WINDOW_MS = 14 * 86_400_000;
 
+function toastSaveFailed(): void {
+  toast.error('Could not save sidebar preferences. Check available disk space and try again.');
+}
+
 // Sidebar preferences stay local to this profile; runtime status comes from the store.
 export function useSidebarActivity(
   state: Pick<
@@ -49,38 +55,26 @@ export function useSidebarActivity(
   >,
   now: number,
 ) {
-  const [preferences, setPreferences] = useState<SidebarActivityPreferences>(() => {
-    if (typeof window === 'undefined') return { ...DEFAULT_SIDEBAR_PREFERENCES, settled: {} };
-    try {
-      return loadSidebarActivity(window.localStorage);
-    } catch (error) {
-      console.error('Unable to load sidebar activity preferences', error);
-      return { ...DEFAULT_SIDEBAR_PREFERENCES, settled: {} };
-    }
-  });
+  const preferences = useSyncExternalStore(
+    subscribeSidebarPreferences,
+    sidebarPreferences,
+    sidebarPreferences,
+  );
 
   useEffect(() => {
-    const settled = pruneSettledSessions(preferences.settled, state.sessions, state.chatMetadata);
-    const reopened = pruneReopenedSessions(preferences.reopened, state.chatMetadata);
-    if (settled === preferences.settled && reopened === preferences.reopened) return;
-    const next = { ...preferences, settled, reopened };
+    // Read the owner, not this render's copy: a sidebar request may have
+    // settled or reopened a chat since this render.
+    const latest = sidebarPreferences();
+    const settled = pruneSettledSessions(latest.settled, state.sessions, state.chatMetadata);
+    const reopened = pruneReopenedSessions(latest.reopened, state.chatMetadata);
+    if (settled === latest.settled && reopened === latest.reopened) return;
     // Pruning is authoritative in memory even when persistence is unavailable.
     // This makes the reactive effect converge instead of retrying on every token.
-    setPreferences(next);
-    try {
-      saveSidebarActivity(window.localStorage, next);
-    } catch {
-      toast.error('Could not save sidebar preferences. Check available disk space and try again.');
-    }
+    if (!updateSidebarPreferences({ ...latest, settled, reopened }, 'keep')) toastSaveFailed();
   }, [preferences, state.sessions, state.chatMetadata]);
 
   function update(next: SidebarActivityPreferences) {
-    try {
-      saveSidebarActivity(window.localStorage, next);
-      setPreferences(next);
-    } catch {
-      toast.error('Could not save sidebar preferences. Check available disk space and try again.');
-    }
+    if (!updateSidebarPreferences(next)) toastSaveFailed();
   }
 
   const digests = useActivityDigests(preferences.view === 'activity');
@@ -177,21 +171,23 @@ export function useSidebarActivity(
     settle: (session: SessionSummary) => {
       const status = statusFor(session);
       if (!canSettleSession(status)) return;
+      const latest = sidebarPreferences();
       update({
-        ...preferences,
-        settled: { ...preferences.settled, [session.appSessionId]: session.updatedAt },
+        ...latest,
+        settled: { ...latest.settled, [session.appSessionId]: session.updatedAt },
       });
     },
     // Clearing the manual marker is not enough for a chat whose pull requests
     // all closed: without the override it would settle again immediately.
     reopen: (session: SessionSummary) => {
       const id = session.appSessionId;
+      const latest = sidebarPreferences();
       const settled = Object.fromEntries(
-        Object.entries(preferences.settled).filter(([settledId]) => settledId !== id),
+        Object.entries(latest.settled).filter(([settledId]) => settledId !== id),
       );
-      const overridesPrs = linkedPrsDone(chatMetadata[id]) && !preferences.reopened.includes(id);
-      const reopened = overridesPrs ? [...preferences.reopened, id] : preferences.reopened;
-      update({ ...preferences, settled, reopened });
+      const overridesPrs = linkedPrsDone(chatMetadata[id]) && !latest.reopened.includes(id);
+      const reopened = overridesPrs ? [...latest.reopened, id] : latest.reopened;
+      update({ ...latest, settled, reopened });
     },
   };
 }
