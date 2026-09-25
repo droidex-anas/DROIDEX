@@ -43,7 +43,7 @@ caller's folder unless the call asks for `workspace: "worktree"`, and `step` and
 can start one, and one chat has at most eight it started still working, counting
 those starting. Both kinds inherit the caller's harness, model, reasoning effort
 and autonomy unless the call names others, and neither runs above the caller's
-autonomy.
+autonomy. The user's Stop on the caller cancels a chat it is still starting.
 
 ## What the session tools read
 

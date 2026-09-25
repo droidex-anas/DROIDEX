@@ -35,13 +35,18 @@ export class SpawnedChats {
 
   constructor(private readonly sessions: Pick<ProjectPort, 'get' | 'catalog' | 'create'>) {}
 
-  async start(source: string, requested: ThreadSpawnInput): Promise<StartedChat> {
+  /** `isStopped` says the user stopped the chat that asked, which cancels the start. */
+  async start(
+    source: string,
+    requested: ThreadSpawnInput,
+    isStopped: () => boolean,
+  ): Promise<StartedChat> {
     const owner = this.admit(source, requested);
     // Counted before the first await, so spawns made in parallel cannot all
     // pass the limit.
     this.starting.set(source, (this.starting.get(source) ?? 0) + 1);
     try {
-      return await this.launch(source, owner, requested);
+      return await this.launch(source, owner, requested, isStopped);
     } finally {
       const left = (this.starting.get(source) ?? 1) - 1;
       if (left > 0) this.starting.set(source, left);
@@ -72,6 +77,7 @@ export class SpawnedChats {
     source: string,
     owner: SessionSummary,
     requested: ThreadSpawnInput,
+    isStopped: () => boolean,
   ): Promise<StartedChat> {
     const input = await spawnSettings(owner, requested, () => this.sessions.catalog());
     const workspace =
@@ -86,7 +92,9 @@ export class SpawnedChats {
           cwd: workspace?.cwd ?? owner.cwd,
         },
         (created) => {
-          // The chat that asked may have lowered its autonomy while this one started.
+          // The chat that asked may have been stopped, or lowered its autonomy,
+          // while this one started; this is the last point before its first turn.
+          if (isStopped()) throw new Error('Chat launch was cancelled.');
           checkWithinAutonomy(this.requireSession(source), input.autonomy);
           this.startedBy.set(created.appSessionId, source);
           return Promise.resolve();
