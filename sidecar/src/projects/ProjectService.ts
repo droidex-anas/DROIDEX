@@ -547,6 +547,11 @@ export class ProjectService {
     this.capacityChanged();
   }
 
+  /** Session history knows every thread now, so what a restart left queued can go out. */
+  historyReady(): void {
+    this.wakes.start(this.projects.values());
+  }
+
   sessionAvailable(appSessionId: string): void {
     const project = this.membership.get(appSessionId);
     if (project) this.wakes.available(project, appSessionId);
