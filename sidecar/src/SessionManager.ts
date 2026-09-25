@@ -62,7 +62,7 @@ import { SessionFileServing } from './SessionFileServing.js';
 import { DroidModelCatalog } from './DroidModelCatalog.js';
 import { BrowserSessionManager } from './browser/BrowserSessionManager.js';
 import { createAutomationMcpServer } from './automations/automationMcpServer.js';
-import { createThreadMcpServer } from './projects/threadMcpServer.js';
+import { createSessionsMcpServer } from './sessionsMcpServer.js';
 import { isUnattendedAutomationSession } from './automations/AutomationManager.js';
 import {
   normalizeMcpServerName,
@@ -166,7 +166,7 @@ export interface SessionManagerDependencies {
   browsers: SessionBrowsers;
   createLocalMcpResource: (appSessionId: () => string) => StartableLocalMcpResource;
   createAutomationMcpResource?: (appSessionId: () => string) => StartableLocalMcpResource;
-  createThreadMcpResource?: (appSessionId: () => string) => StartableLocalMcpResource;
+  createSessionsMcpResource?: (appSessionId: () => string) => StartableLocalMcpResource;
   mcpConfiguration: McpConfiguration;
   loadConfiguredMcpServers: (cwd: string | undefined) => McpServerConfig[];
   getFactoryDefaults?: () => Promise<FactoryDefaultSettings>;
@@ -272,8 +272,8 @@ export class SessionManager {
   private readonly createAutomationMcpResource: NonNullable<
     SessionManagerDependencies['createAutomationMcpResource']
   >;
-  private readonly createThreadMcpResource: NonNullable<
-    SessionManagerDependencies['createThreadMcpResource']
+  private readonly createSessionsMcpResource: NonNullable<
+    SessionManagerDependencies['createSessionsMcpResource']
   >;
   private readonly mcpConfiguration: McpConfiguration;
   private readonly loadConfiguredMcpServers: SessionManagerDependencies['loadConfiguredMcpServers'];
@@ -328,9 +328,9 @@ export class SessionManager {
       this.createAutomationMcpResource =
         options.dependencies.createAutomationMcpResource ??
         ((appSessionId) => createAutomationMcpServer(appSessionId));
-      this.createThreadMcpResource =
-        options.dependencies.createThreadMcpResource ??
-        ((appSessionId) => createThreadMcpServer(appSessionId));
+      this.createSessionsMcpResource =
+        options.dependencies.createSessionsMcpResource ??
+        ((appSessionId) => createSessionsMcpServer(appSessionId));
       this.mcpConfiguration = options.dependencies.mcpConfiguration;
       this.loadConfiguredMcpServers = options.dependencies.loadConfiguredMcpServers;
       this.factoryDefaultsOverride = options.dependencies.getFactoryDefaults;
@@ -360,7 +360,7 @@ export class SessionManager {
       this.createLocalMcpResource = (appSessionId) =>
         createBrowserMcpServer(browsers, appSessionId);
       this.createAutomationMcpResource = (appSessionId) => createAutomationMcpServer(appSessionId);
-      this.createThreadMcpResource = (appSessionId) => createThreadMcpServer(appSessionId);
+      this.createSessionsMcpResource = (appSessionId) => createSessionsMcpServer(appSessionId);
       this.mcpConfiguration = new DroidMcpConfiguration();
       this.loadConfiguredMcpServers = loadFactoryMcpServers;
       this.factoryDefaultsOverride = undefined;
@@ -1277,9 +1277,9 @@ export class SessionManager {
     const unattended = await isUnattendedAutomationSession(ref.id);
     if (shouldAttachAutomationMcp(ref.clientRef, unattended)) {
       servers.push(this.createAutomationMcpResource(() => ref.id));
-      // Threads coordinate conversations a person watches; an unattended run has
-      // nobody to report to, so it never gets the tools that start one.
-      servers.push(this.createThreadMcpResource(() => ref.id));
+      // The session tools start and steer chats a person watches; an unattended
+      // run has nobody watching, so it never gets them.
+      servers.push(this.createSessionsMcpResource(() => ref.id));
     }
     // A folderless session has no project scope: user-level config only, the
     // same rule the MCP settings flows follow.

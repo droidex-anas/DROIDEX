@@ -8,7 +8,7 @@ can be opened, steered and reviewed like any other chat.
 ## Starting threads
 
 A chat on a harness that runs DROIDEX's in-app tools can start a thread: it is
-given the `droidex-threads` MCP server — `thread_spawn`, `thread_send`,
+given the `droidex-sessions` MCP server — `thread_spawn`, `thread_send`,
 `thread_stop`, `plan_set`, `thread_read` and `thread_configure`. That is Droid
 and Claude Code today. The Codex runtime has no MCP path at all, so a Codex chat
 sees none of DROIDEX's in-app tools and cannot lead a project; its threads can
