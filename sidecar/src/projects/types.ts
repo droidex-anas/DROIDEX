@@ -82,6 +82,8 @@ export interface ThreadMessage {
   to: string;
   kind: 'result' | 'question' | 'message';
   text: string;
+  /** The harness question a routed question carries, which its answers must name. */
+  questionId?: string;
 }
 
 /** A harness question a thread is blocked on, routed to the chat that owns it. */

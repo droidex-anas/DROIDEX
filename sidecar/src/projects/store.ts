@@ -61,6 +61,7 @@ const message = z
     to: id,
     kind: z.enum(['result', 'question', 'message']),
     text,
+    questionId: id.optional(),
   })
   .strict();
 

@@ -127,13 +127,14 @@ export class SidebarSessions {
     target: string,
     text: string,
     answers: readonly string[] = [],
+    questionId?: string,
   ): Promise<{ sessionId: string; title: string; delivery: SendDelivery }> {
     if (!text.trim() && !answers.length) throw new Error('Send text, answers or both.');
     const { summary: from, projects } = await this.admit(caller);
     const { chat, callerTitle } = await this.target(from, projects, target);
     await this.requireManageable(chat);
     const { title } = chat.row;
-    const question = this.checkSendable(chat, from, answers);
+    const question = this.checkSendable(chat, from, answers, questionId);
     this.countMessage(target, title);
     const prompt = messagePrompt(callerTitle, caller, text);
     if (!question)
@@ -260,23 +261,20 @@ export class SidebarSessions {
   }
 
   /** The question a send answers, or nothing for a plain message; throws when it may not go. */
-  private checkSendable(chat: SidebarChat, from: SessionSummary, answers: readonly string[]) {
+  private checkSendable(
+    chat: SidebarChat,
+    from: SessionSummary,
+    answers: readonly string[],
+    questionId: string | undefined,
+  ) {
     const { row, summary } = chat;
     if (row.status === 'approval' || row.status === 'plan')
       throw new Error(`${row.title} is waiting on the user; tell them instead.`);
     const question = row.status === 'input' ? row.question : undefined;
     if (row.status === 'input' && !question)
       throw new Error(`${row.title} is waiting on the user; tell them instead.`);
-    if (question && !answers.length)
-      throw new Error(
-        `${row.title} is waiting on the question it asked. Send its answers with answers, or tell the user.`,
-      );
-    if (!question && answers.length)
-      throw new Error(`${row.title} has no question waiting for an answer.`);
-    if (question && answers.length !== question.questions.length)
-      throw new Error(
-        `${row.title} asked ${String(question.questions.length)} questions; answer them all, in order.`,
-      );
+    if (question) checkAnswers(row.title, question, answers, questionId);
+    else if (answers.length) throw new Error(`${row.title} has no question waiting for an answer.`);
     if (AUTONOMY_ORDER.indexOf(summary.autonomy) > AUTONOMY_ORDER.indexOf(from.autonomy))
       throw new Error(
         `${row.title} runs at ${summary.autonomy} autonomy, above this chat's ${from.autonomy}; the user has to message it.`,
@@ -362,6 +360,29 @@ function messagePrompt(fromTitle: string, from: string, text: string): string {
   ].join('\n');
 }
 
+/** Answers must name the question the chat waits on now, and answer all of it. */
+function checkAnswers(
+  title: string,
+  question: NonNullable<SidebarRow['question']>,
+  answers: readonly string[],
+  questionId: string | undefined,
+): void {
+  if (!answers.length)
+    throw new Error(
+      `${title} is waiting on the question it asked. Send its answers with answers, or tell the user.`,
+    );
+  if (!questionId) throw new Error('Pass the questionId of the question these answers are for.');
+  // The chat may have moved on to another question since the caller read this one.
+  if (questionId !== question.requestId)
+    throw new Error(
+      `${title} is no longer waiting on that question. Read it again with session_read.`,
+    );
+  if (answers.length !== question.questions.length)
+    throw new Error(
+      `${title} asked ${String(question.questions.length)} questions; answer them all, in order.`,
+    );
+}
+
 function requireChat({ row, summary }: SidebarChat): void {
   if (summary.sessionPurpose !== 'chat')
     throw new Error(`${row.title} is not a chat, so only the user works with it.`);
@@ -382,6 +403,7 @@ function waitingOn(row: SidebarRow) {
       ...(row.permission ? { approval: row.permission } : {}),
       ...(row.question
         ? {
+            questionId: row.question.requestId,
             questions: row.question.questions.map(({ question, options }) => ({
               question,
               options,

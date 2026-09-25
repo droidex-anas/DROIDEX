@@ -18,13 +18,7 @@ interface ProjectTurnsDependencies {
   session: (appSessionId: string) => SessionSummary | undefined;
   /** Whether the question a thread was routed from is still waiting. */
   isAsking: (appSessionId: string, requestId: string) => boolean;
-  enqueue: (
-    project: Project,
-    from: string,
-    to: string,
-    kind: ThreadMessage['kind'],
-    text: string,
-  ) => void;
+  enqueue: (project: Project, message: Omit<ThreadMessage, 'id'>) => void;
   save: () => Promise<void>;
   fail: (project: Project, error: unknown) => void;
   wakes: ProjectWakeQueue;
@@ -104,13 +98,12 @@ export class ProjectTurns {
     } else {
       try {
         // The wake already names the thread; this is how its turn ended.
-        this.d.enqueue(
-          project,
-          thread.appSessionId,
-          thread.ownerAppSessionId,
-          'result',
-          threadReport(session, turn),
-        );
+        this.d.enqueue(project, {
+          from: thread.appSessionId,
+          to: thread.ownerAppSessionId,
+          kind: 'result',
+          text: threadReport(session, turn),
+        });
       } catch (error) {
         this.d.fail(project, error);
       }
@@ -176,7 +169,15 @@ export class ProjectTurns {
       .join('\n\n')
       .slice(0, LEDGER_LIMITS.text);
     try {
-      this.d.enqueue(project, thread.appSessionId, thread.ownerAppSessionId, 'question', asked);
+      // The id travels with the question, so an answer written for it can
+      // never settle a later question the thread asks instead.
+      this.d.enqueue(project, {
+        from: thread.appSessionId,
+        to: thread.ownerAppSessionId,
+        kind: 'question',
+        text: asked,
+        questionId: question.requestId,
+      });
     } catch (error) {
       // Holding a project is a decision the ledger has to carry: without this
       // the hold and its reason live only in memory until something else saves.

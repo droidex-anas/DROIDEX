@@ -259,7 +259,8 @@ function wakePrompt(project: Project, to: string, messages: readonly ThreadMessa
   const threads = new Map(project.threads.map((thread) => [thread.appSessionId, thread]));
   const lines = messages.map((message) => {
     const from = threads.get(message.from)?.title ?? 'A thread';
-    return `${from} ${VERB[message.kind]} (thread ${message.from}):\n${message.text}`;
+    const question = message.questionId ? `, question ${message.questionId}` : '';
+    return `${from} ${VERB[message.kind]} (thread ${message.from}${question}):\n${message.text}`;
   });
   const guidance = threads.get(to)?.ownerAppSessionId
     ? 'A message from the chat that started you is part of your task: do it, then end your turn with your report, which DROIDEX delivers to that chat. Answer your own threads with thread_send.'

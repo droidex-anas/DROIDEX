@@ -8,14 +8,14 @@ called.
 | Tool | What it does | Below High | One Always allow covers |
 | --- | --- | --- | --- |
 | `thread_spawn` | Starts a chat that carries one task; `reportBack` is required | asks | one kind: threads or chats |
-| `thread_send` | Sends one of this chat's threads a message, or `answers` to its question | runs | never asks |
-| `thread_read` | Reads a thread: its latest replies (the last 8,192 characters of each), its question, its settings | runs | never asks |
+| `thread_send` | Sends one of this chat's threads a message, or `answers` to the question `questionId` names | runs | never asks |
+| `thread_read` | Reads a thread: its latest replies (the last 8,192 characters of each), its question and its id, its settings | runs | never asks |
 | `thread_configure` | Changes a thread's model, reasoning effort or autonomy | runs | never asks |
 | `thread_stop` | Ends a thread's turn and drops its queued messages | runs | never asks |
 | `plan_set` | Writes the plan the chat shows in Projects | runs | never asks |
 | `session_list` | Lists the sidebar's chats, most urgent first; `show` narrows it, `limit` caps it (30, at most 100) | runs | never asks |
-| `session_read` | Reads one chat: its status, the approval or questions it waits on word for word, its settings, the last 4,000 characters of its latest reply | runs | never asks |
-| `session_send` | Sends one chat a message, or `answers` to its question | asks | that one chat |
+| `session_read` | Reads one chat: its status, the approval or questions it waits on word for word with the question's id, its settings, the last 4,000 characters of its latest reply | runs | never asks |
+| `session_send` | Sends one chat a message, or `answers` to the question `questionId` names | asks | that one chat |
 | `session_stop` | Stops the turn one chat is running and drops its queued messages | asks | that one chat |
 | `session_mark` | Settles, reopens or archives up to 20 chats | asks | that mark on exactly those chats |
 
@@ -78,7 +78,10 @@ refuse an automation run.
 a higher autonomy than the caller, and past ten messages to one chat in five
 minutes from any chats, because chats messaging each other in a loop would keep
 it busy forever. A chat waiting on its own question needs answers, one per
-question in order, and answers where no question waits are refused.
+question in order, and answers where no question waits are refused. Answers
+carry the `questionId` that `session_read` gave, and are refused when the chat
+now waits on a different question, so answers written for a question the user
+already settled never land on the next one.
 
 `session_stop` is refused to a chat waiting on the user, because an interrupt
 would throw away the user's decision, and to one with no turn running. It is not

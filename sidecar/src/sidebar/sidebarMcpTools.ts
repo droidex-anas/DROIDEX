@@ -35,6 +35,12 @@ const sendInput = z.object({
     .max(16)
     .optional()
     .describe('One answer per question, in the order the chat asked them.'),
+  questionId: z
+    .string()
+    .min(1)
+    .max(200)
+    .optional()
+    .describe('Required with answers: the questionId session_read gave.'),
 });
 
 const stopInput = z.object({ sessionId });
@@ -80,14 +86,20 @@ export function sidebarTools(appSessionId: () => string, sidebar: SidebarSession
       'session_send',
       [
         'Send a chat from session_list a message from this chat. It starts a turn now or queues behind the running one, and wakes a released chat.',
-        'The chat sees it as coming from this chat, not the user. When it waits on a question, pass answers, one per question in order.',
+        'The chat sees it as coming from this chat, not the user. When it waits on a question, pass answers, one per question in order, with its questionId.',
         'Approvals stay with the user.',
       ].join(' '),
       sendInput.shape,
       safeTool(async (input: z.infer<typeof sendInput>) =>
         jsonResult({
           ok: true,
-          ...(await sidebar.send(appSessionId(), input.sessionId, input.text, input.answers)),
+          ...(await sidebar.send(
+            appSessionId(),
+            input.sessionId,
+            input.text,
+            input.answers,
+            input.questionId,
+          )),
         }),
       ),
     ),

@@ -266,7 +266,7 @@ test('a thread’s own question reaches its lead with its options, and the answe
   });
   await drain();
   assert.equal(h.sent.length, 1, 'the lead is woken once, with the question');
-  assert.match(h.sent[0]?.prompt ?? '', /Which storage format/);
+  assert.match(h.sent[0]?.prompt ?? '', /\(thread [^)]+, question ask-1\):\nWhich storage format/);
   assert.match(h.sent[0]?.prompt ?? '', /- JSON/);
   assert.equal(h.projects.list()[0]?.threads[1]?.waiting, true);
 
@@ -276,10 +276,43 @@ test('a thread’s own question reaches its lead with its options, and the answe
     /waiting on the question/,
   );
   // Answering must reach the waiting harness call, not the delivery queue.
-  assert.equal(await h.projects.send(main, child.appSessionId, '', ['JSON']), 'answered');
+  assert.equal(await h.projects.send(main, child.appSessionId, '', ['JSON'], 'ask-1'), 'answered');
   assert.equal(h.answered.at(-1)?.requestId, 'ask-1');
   assert.equal(h.projects.list()[0]?.threads[1]?.waiting, false);
   assert.equal(h.projects.list()[0]?.queued, 0);
+});
+
+test('a late answer never lands on a newer question', async (t) => {
+  const h = await harness();
+  t.after(() => h.projects.close());
+  const { main } = await h.root();
+  const child = await h.projects.spawn(main, input);
+  const ask = async (requestId: string, question: string) => {
+    h.asking.set(child.appSessionId, requestId);
+    await h.projects.observe({
+      type: 'question.requested',
+      question: {
+        appSessionId: child.appSessionId,
+        requestId,
+        questions: [{ index: 0, question, options: [] }],
+      },
+    });
+  };
+  await ask('ask-1', 'Which format?');
+  assert.equal(h.projects.read(main, child.appSessionId).questionId, 'ask-1');
+  // The person answers in the thread itself, and the thread asks something else.
+  h.asking.delete(child.appSessionId);
+  await h.streaming(child.appSessionId, true);
+  await ask('ask-2', 'Delete the old files?');
+
+  // The lead decided the first question, so its answer must not settle the second.
+  await assert.rejects(
+    h.projects.send(main, child.appSessionId, '', ['JSON'], 'ask-1'),
+    /no longer waiting on that question/,
+  );
+  await assert.rejects(h.projects.send(main, child.appSessionId, '', ['yes']), /questionId/);
+  assert.deepEqual(h.answered, []);
+  assert.equal(await h.projects.send(main, child.appSessionId, '', ['no'], 'ask-2'), 'answered');
 });
 
 test('threads stopped on questions for their lead leave it a delivery slot', async (t) => {

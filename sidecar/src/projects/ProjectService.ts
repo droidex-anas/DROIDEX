@@ -82,6 +82,8 @@ export interface ThreadReadout {
   /** Why replies is empty when the thread did reply. */
   note?: string;
   error?: string;
+  /** The id answers to `question` must name. */
+  questionId?: string;
   question?: { index: number; question: string; options: string[] }[];
   cwd?: string;
   modelId?: string;
@@ -124,8 +126,8 @@ export class ProjectService {
       project: (appSessionId) => this.membership.get(appSessionId),
       session: (appSessionId) => sessions.get(appSessionId),
       isAsking: (appSessionId, requestId) => sessions.isAsking(appSessionId, requestId),
-      enqueue: (project, from, to, kind, text) => {
-        this.enqueue(project, from, to, kind, text);
+      enqueue: (project, message) => {
+        this.enqueue(project, message);
       },
       save: () => this.save(),
       fail: (project, error) => {
@@ -383,6 +385,7 @@ export class ProjectService {
     target: string,
     text: string,
     answers?: string[],
+    questionId?: string,
   ): Promise<'answered' | 'queued' | 'already-answered'> {
     const project = this.controlledProject(source, target);
     const thread = requireThread(project, target);
@@ -393,6 +396,13 @@ export class ProjectService {
       );
     if (answers?.length) {
       if (!ask) throw new Error(`${thread.title} has no question waiting for an answer.`);
+      if (!questionId)
+        throw new Error('Pass the questionId of the question these answers are for.');
+      // The thread may have moved on to another question since the caller read this one.
+      if (questionId !== ask.requestId)
+        throw new Error(
+          `${thread.title} is no longer waiting on that question. Read it again with thread_read.`,
+        );
       if (answers.length !== ask.questions.length)
         throw new Error(
           `${thread.title} asked ${String(ask.questions.length)} questions; answer them all, in order.`,
@@ -410,12 +420,12 @@ export class ProjectService {
       // Words sent with an answer are instructions of their own and reach the
       // thread either way: alongside an answer that landed, or in place of one
       // the thread had already settled without.
-      if (text.trim()) this.enqueue(project, source, target, 'message', text);
+      if (text.trim()) this.enqueue(project, { from: source, to: target, kind: 'message', text });
       await this.save();
       this.wakes.kick(project);
       return landed ? 'answered' : 'already-answered';
     }
-    this.enqueue(project, source, target, 'message', text);
+    this.enqueue(project, { from: source, to: target, kind: 'message', text });
     await this.save();
     this.wakes.kick(project);
     return 'queued';
@@ -445,7 +455,7 @@ export class ProjectService {
           }
         : {}),
       ...(thread.error ? { error: thread.error } : {}),
-      ...(thread.ask ? { question: thread.ask.questions } : {}),
+      ...(thread.ask ? { questionId: thread.ask.requestId, question: thread.ask.questions } : {}),
       ...(session
         ? {
             cwd: session.cwd,
@@ -662,15 +672,9 @@ export class ProjectService {
     }
   }
 
-  private enqueue(
-    project: Project,
-    from: string,
-    to: string,
-    kind: ThreadMessage['kind'],
-    text: string,
-  ): void {
+  private enqueue(project: Project, message: Omit<ThreadMessage, 'id'>): void {
     this.requireOpen();
-    if (!text.trim() || text.length > LEDGER_LIMITS.text)
+    if (!message.text.trim() || message.text.length > LEDGER_LIMITS.text)
       throw new Error(
         `Thread messages must contain 1 to ${String(LEDGER_LIMITS.text)} characters.`,
       );
@@ -678,7 +682,7 @@ export class ProjectService {
       throw new Error(
         `The project inbox is full: ${String(LEDGER_LIMITS.inbox)} messages are waiting for their threads, and nothing more can queue until they are delivered.`,
       );
-    project.pending.push({ id: randomUUID(), from, to, kind, text });
+    project.pending.push({ id: randomUUID(), ...message });
   }
 
   private blankProject(title: string, id: string = randomUUID()): Project {
