@@ -1,5 +1,11 @@
 import assert from 'node:assert/strict';
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import test from 'node:test';
+
+import { loadOpenTranscriptTail } from './history.js';
+import { ProviderTranscriptFile } from './providers/ProviderTranscriptFile.js';
 
 import type {
   ChildSessionSummary,
@@ -38,6 +44,7 @@ function createHarness(options: HarnessOptions = {}) {
     hydrateMission: () => ({ progress: [], transcripts: [] }),
     resolveChain: (_appSessionId, providerSessionId) => [providerSessionId],
     transcriptWindow: () => ({ events: [] }),
+    openTranscriptTail: () => [],
     ...options.loaders,
   };
   const registry: SessionTimelineRegistry = {
@@ -570,6 +577,7 @@ test('older restore prepends only transcripts and preserves page telemetry', () 
         assert.deepEqual(options, { cursor: 'cursor-1' });
         return { events: [event], olderCursor: 'cursor-2' };
       },
+      openTranscriptTail: () => [],
     },
   });
 
@@ -608,6 +616,35 @@ test('older failure emits an empty terminal prepend without an error', () => {
   assert.deepEqual(page.transcripts, []);
   assert.equal(page.olderCursor, undefined);
   assert.equal(page.hasMore, false);
+});
+
+test('an open session reads its own transcript before the history index knows the file', (t) => {
+  const profile = mkdtempSync(join(tmpdir(), 'droidex-profile-'));
+  const previous = process.env.DROIDEX_USER_DATA_DIR;
+  process.env.DROIDEX_USER_DATA_DIR = profile;
+  t.after(() => {
+    if (previous === undefined) delete process.env.DROIDEX_USER_DATA_DIR;
+    else process.env.DROIDEX_USER_DATA_DIR = previous;
+    rmSync(profile, { recursive: true, force: true });
+  });
+  const started = summary('claude-live', 'claude-live', { provider: 'claude' });
+  const harness = createHarness({
+    summaries: [started],
+    liveAppSessionIds: ['claude-live'],
+    // The index learns of an open session's file only when the session closes.
+    loaders: { resolveChain: () => [], openTranscriptTail: loadOpenTranscriptTail },
+  });
+  const file = new ProviderTranscriptFile('claude-live', () => started);
+  harness.timeline.useTranscript('claude-live', file);
+  file.appendPrompt('Port the client.');
+  file.append({ ...transcript('reply', 'claude-live'), text: 'Ported it to v3.' });
+  file.flush();
+
+  const tail = harness.timeline.tail('claude-live', 10);
+  assert.deepEqual(
+    tail.map((event) => event.text),
+    ['Port the client.', 'Ported it to v3.'],
+  );
 });
 
 test('missing live history emits an authoritative empty replace page', () => {

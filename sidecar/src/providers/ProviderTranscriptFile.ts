@@ -46,7 +46,7 @@ interface PendingMessage {
 }
 
 export class ProviderTranscriptFile {
-  private readonly path: string;
+  readonly path: string;
   private pending: PendingMessage | null = null;
   private headWritten = false;
   private promptSeq = 0;
