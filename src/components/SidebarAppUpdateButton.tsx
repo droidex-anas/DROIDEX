@@ -44,10 +44,22 @@ export function AppUpdateButtonView({
   const swapTimer = useRef<number | null>(null);
   const label = downloading ? 'Downloading' : 'Update';
 
+  // Observed rather than measured once: the label only exists from the render a
+  // release is found, and its box also changes when the UI font setting does,
+  // neither of which the word itself reports.
   useEffect(() => {
     const element = labelRef.current;
-    if (element) setOpenWidth(Math.ceil(element.scrollWidth) + LABEL_INSET);
-  }, [label]);
+    if (!element) return;
+    const measure = () => {
+      setOpenWidth(Math.ceil(element.scrollWidth) + LABEL_INSET);
+    };
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(element);
+    return () => {
+      observer.disconnect();
+    };
+  }, [latest]);
 
   useEffect(
     () => () => {
