@@ -739,6 +739,23 @@ test('only the threads that moved most recently keep earlier replies in the ledg
   assert.equal(h.projects.read(main, threads[9] ?? '', 5).replies.length, 2);
 });
 
+test("a lead cannot retune a thread's own thread past the chat that started it", async (t) => {
+  const h = await harness();
+  t.after(() => h.projects.close());
+  const { main } = await h.root();
+  const lead = h.sessions.get(main);
+  assert.ok(lead);
+  lead.autonomy = 'high';
+  const child = await h.projects.spawn(main, { ...input, autonomy: 'low' });
+  const grandchild = await h.projects.spawn(child.appSessionId, input);
+  await assert.rejects(
+    h.projects.configure(main, grandchild.appSessionId, { autonomy: 'medium' }),
+    /chat that started it/,
+  );
+  await h.projects.configure(main, child.appSessionId, { autonomy: 'medium' });
+  assert.equal(h.sessions.get(child.appSessionId)?.autonomy, 'medium');
+});
+
 test('a spawn carries a settled plan step, or none at all', async (t) => {
   const h = await harness();
   t.after(() => h.projects.close());

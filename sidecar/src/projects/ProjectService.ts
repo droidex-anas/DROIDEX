@@ -418,19 +418,22 @@ export class ProjectService {
     };
   }
 
-  /** Retunes a thread within the owner's own limits, and reads back what took. */
+  /** Retunes a thread within the limits of the chat that started it, and reads back what took. */
   async configure(
     source: string,
     target: string,
     settings: ThreadSettings,
   ): Promise<ThreadReadout> {
     const project = this.controlledProject(source, target);
-    const owner = this.requireSession(source);
+    const caller = this.requireSession(source);
     const session = this.requireSession(target);
     const modelId = settings.modelId
-      ? resolveModelId(await this.sessions.catalog(), owner, session.provider, settings.modelId)
+      ? resolveModelId(await this.sessions.catalog(), caller, session.provider, settings.modelId)
       : undefined;
-    if (settings.autonomy) checkWithinAutonomy(owner, settings.autonomy);
+    // A lead can retune a thread its own thread started, and that thread is the
+    // ceiling, not the lead.
+    const owner = requireThread(project, target).ownerAppSessionId ?? source;
+    if (settings.autonomy) checkWithinAutonomy(this.requireSession(owner), settings.autonomy);
     await this.sessions.configure(target, {
       ...(modelId ? { modelId } : {}),
       ...(settings.reasoningEffort ? { reasoningEffort: settings.reasoningEffort } : {}),
