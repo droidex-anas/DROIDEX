@@ -90,16 +90,7 @@ export class ProjectTurns {
       this.d.wakes.kick(project);
       return;
     }
-    if (turn.text) {
-      // A turn that says nothing must not erase what the thread last said.
-      if (thread.reply) {
-        thread.earlierReplies = [...(thread.earlierReplies ?? []), thread.reply].slice(
-          -LEDGER_LIMITS.earlierReplies,
-        );
-        this.forgetOlderReplies(project);
-      }
-      thread.reply = turn.text;
-    }
+    this.keepReply(project, thread, turn.text);
     if (turn.error) thread.error = turn.error;
     else delete thread.error;
     // A question the turn ended on will never be answered now.
@@ -126,6 +117,20 @@ export class ProjectTurns {
     }
     await this.d.save();
     this.d.wakes.kick(project);
+  }
+
+  /* Only a thread's owner reads its replies back. The lead's go to the user,
+     and nothing reads them from the ledger. A turn that says nothing must not
+     erase what the thread last said. */
+  private keepReply(project: Project, thread: ProjectThread, text: string): void {
+    if (!text || !thread.ownerAppSessionId) return;
+    if (thread.reply) {
+      thread.earlierReplies = [...(thread.earlierReplies ?? []), thread.reply].slice(
+        -LEDGER_LIMITS.earlierReplies,
+      );
+      this.forgetOlderReplies(project);
+    }
+    thread.reply = text;
   }
 
   private forgetOlderReplies(project: Project): void {

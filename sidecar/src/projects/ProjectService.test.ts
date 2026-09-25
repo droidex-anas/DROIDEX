@@ -775,8 +775,18 @@ test('only the threads that moved most recently keep earlier replies in the ledg
   for (let index = 0; index < 10; index += 1)
     threads.push((await h.projects.spawn(main, input)).appSessionId);
   for (const id of threads) await h.finish(id, `First from ${id}`);
-  for (const id of threads) await h.finish(id, `Second from ${id}`);
-  assert.equal(h.state.saved[0]?.threads.filter((thread) => thread.earlierReplies).length, 8);
+  for (const id of threads) {
+    await h.finish(id, `Second from ${id}`);
+    // The lead settles after every thread, so it is always the most recent,
+    // yet it holds none of the eight places: nothing reads its replies back.
+    await h.finish(main, 'Told the user.');
+  }
+  const saved = h.state.saved[0]?.threads ?? [];
+  assert.equal(
+    saved.filter((thread) => thread.ownerAppSessionId && thread.earlierReplies).length,
+    8,
+  );
+  assert.equal(saved.find((thread) => thread.appSessionId === main)?.reply, '');
   // The two that settled longest ago keep only their final reply.
   const oldest = h.projects.read(main, threads[0] ?? '', 5);
   assert.deepEqual(oldest.replies, [`Second from ${threads[0] ?? ''}`]);
