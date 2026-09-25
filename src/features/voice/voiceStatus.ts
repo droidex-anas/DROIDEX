@@ -13,8 +13,9 @@ export interface VoiceActivity {
 
 /** True while the assistant's own words are still arriving, which is it talking. */
 function isSpeaking(lines: VoiceTranscriptLine[]): boolean {
-  const last = lines.at(-1);
-  return last?.role === 'assistant' && !last.final;
+  // Not only the last line: the user can be transcribed while the assistant is
+  // still talking, which leaves the assistant's open line behind theirs.
+  return lines.some((line) => line.role === 'assistant' && !line.final);
 }
 
 /**

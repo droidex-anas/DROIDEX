@@ -259,8 +259,12 @@ export class CodexSession implements ProviderSession {
   private async applyThreadSettings(): Promise<void> {
     const threadId = this.threadId;
     if (!threadId) return;
-    const { modelId, reasoningEffort } = this.model;
+    const { reasoningEffort } = this.model;
     const { approvalPolicy, sandbox } = codexAutonomy(this.autonomy);
+    // A cleared pin means the thread's own model, which is what the mapper and
+    // `turn/start` already read it as. Omitting it would leave the thread on
+    // the model the chat no longer names.
+    const model = this.model.modelId ?? this.threadModel;
     // `null` is how the thread is told to go back to the model's own effort;
     // leaving the field out keeps whatever it had.
     const effort = reasoningEffort ?? (this.effortCleared ? null : undefined);
@@ -268,7 +272,7 @@ export class CodexSession implements ProviderSession {
       threadId,
       approvalPolicy,
       sandboxPolicy: codexSandboxPolicy(sandbox),
-      ...(modelId ? { model: modelId } : {}),
+      ...(model ? { model } : {}),
       ...(effort !== undefined ? { effort } : {}),
     });
   }
