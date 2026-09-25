@@ -89,9 +89,10 @@ export class ProjectService {
   private readonly projects = new Map<string, Project>();
   private readonly membership = new Map<string, Project>();
   /* The project a chat's first spawns build, keyed by that chat. It joins the
-     ledger when a thread binds to it, and leaves this map once no spawn for it
-     is still starting: kept when it holds a thread, forgotten when it holds
-     nothing, so a spawn that fails leaves no project behind. */
+     ledger when a thread binds to it or the chat writes a plan, and leaves this
+     map once no spawn for it is still starting: kept when it holds a thread or
+     a plan, forgotten when it holds nothing, so a spawn that fails leaves no
+     project behind. */
   private readonly adopting = new Map<string, Project>();
   private readonly launches = new Set<Promise<string>>();
   private readonly wakes: ProjectWakeQueue;
@@ -297,17 +298,32 @@ export class ProjectService {
     };
   }
 
-  /** Replaces the plan the lead keeps for a project, in the lead's own words. */
+  /**
+   * Replaces the plan a chat keeps for its project, in its own words. A chat
+   * that leads no project yet becomes one with its first plan, so it can plan
+   * first and then spawn a thread for each step.
+   */
   async setPlan(source: string, steps: readonly Omit<ProjectStep, 'id'>[]): Promise<number> {
     this.requireOpen();
-    const project = this.requireProjectFor(source);
-    if (requireThread(project, source).ownerAppSessionId)
-      throw new Error("Only the project's main chat keeps its plan.");
     if (steps.length > LEDGER_LIMITS.planSteps)
       throw new Error(`A project plan holds at most ${String(LEDGER_LIMITS.planSteps)} steps.`);
-    project.plan = planFromSteps(steps, (id) =>
-      project.threads.some((thread) => thread.appSessionId === id),
-    );
+    let project = this.membership.get(source);
+    if (project && requireThread(project, source).ownerAppSessionId)
+      throw new Error('Only the chat that leads a project keeps its plan.');
+    if (!project) {
+      // With no project there is no plan to clear.
+      if (!steps.length) return 0;
+      const owner = this.requireSession(source);
+      if (owner.sessionPurpose !== 'chat')
+        throw new Error('Only ordinary chats can keep a project plan.');
+      if (steps.some((step) => step.threadAppSessionId))
+        throw new Error('This chat has started no threads yet; leave threadId out.');
+      project = this.adoption(source, owner);
+      this.commitAdoption(source, project);
+    }
+    const members = new Set(project.threads.map((thread) => thread.appSessionId));
+    project.plan = planFromSteps(steps, (id) => members.has(id));
+    this.settleAdoption(project);
     await this.save();
     return project.plan.length;
   }
@@ -622,7 +638,7 @@ export class ProjectService {
     return project;
   }
 
-  /** Puts an adoption in the ledger, as its first thread binds. */
+  /** Puts an adoption in the ledger, as its first thread binds or it writes a plan. */
   private commitAdoption(source: string, project: Project): void {
     if (this.adopting.get(source) !== project || this.projects.has(project.id)) return;
     this.projects.set(project.id, project);
@@ -631,16 +647,17 @@ export class ProjectService {
 
   /**
    * Once no spawn is still starting a thread for it, an adoption is settled:
-   * kept as an ordinary project when it holds a thread, forgotten when it holds
-   * nothing. True when the forgotten one was in the ledger, which the caller
-   * then saves without it.
+   * kept as an ordinary project when it holds a thread or a plan, forgotten
+   * when it holds nothing. True when the forgotten one was in the ledger, which
+   * the caller then saves without it.
    */
   private settleAdoption(project: Project): boolean {
     const lead = project.threads.find((thread) => !thread.ownerAppSessionId);
     if (!lead || project.launching > 0 || this.adopting.get(lead.appSessionId) !== project)
       return false;
     this.adopting.delete(lead.appSessionId);
-    if (project.threads.length > 1 || !this.projects.has(project.id)) return false;
+    if (project.threads.length > 1 || project.plan.length || !this.projects.has(project.id))
+      return false;
     this.projects.delete(project.id);
     this.membership.delete(lead.appSessionId);
     return true;

@@ -14,8 +14,8 @@ and Claude Code today. The Codex runtime has no MCP path at all, so a Codex chat
 sees none of DROIDEX's in-app tools and cannot lead a project; its threads can
 still run on any harness a lead names. Asking a chat to run work in
 parallel is enough — it spawns the threads itself, and the chat becomes that
-project's main conversation once its first thread starts. A spawn that fails
-leaves no project behind. `thread_spawn` follows the
+project's main conversation once its first thread starts or it writes its first
+plan. A spawn that fails leaves no project behind. `thread_spawn` follows the
 chat's own autonomy: it is auto-approved at High and asks the user otherwise;
 the rest only read, retune or move text between conversations DROIDEX already
 owns, and none of them can put a thread past the autonomy its owner has.
@@ -68,7 +68,9 @@ project is doing.
 ## The plan
 
 The lead keeps a plan with `plan_set`: the steps it means to take, optionally
-grouped under milestones, each one able to name the thread carrying it.
+grouped under milestones, each one able to name the thread carrying it. A chat
+that is not a project yet becomes one with its first plan, so it can plan first
+and then spawn a thread for each step.
 `thread_spawn` takes the step it carries, so starting the work is what links the
 row to its conversation. A step
 with a thread shows that conversation's real state and its own last step, so the

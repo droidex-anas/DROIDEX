@@ -169,6 +169,7 @@ export function createThreadMcpServer(appSessionIdForTool: () => string | undefi
           'Call it again whenever the shape changes: a step finishes, a new one appears, one turns out to be unnecessary. This replaces the whole plan, so send every step you still intend to take.',
           "Point a step at the thread carrying it with threadId, or pass the step to thread_spawn; DROIDEX then shows that conversation's real state instead of a claim, so you never have to mark it done.",
           "Keep the titles short and in the user's words. This is what they read to see where the project stands.",
+          'In a chat that is not a project yet, the first plan makes it one, so plan first and then spawn a thread for each step.',
         ].join(' '),
         {
           steps: z
