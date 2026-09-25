@@ -4,8 +4,7 @@ import {
   CHAT_BRIEF,
   checkWithinAutonomy,
   discardThreadCheckout,
-  inheritSettings,
-  resolveModelId,
+  spawnSettings,
   threadPrompt,
 } from './threadStart.js';
 import { createThreadWorkspace, type ThreadWorkspace } from './threadWorkspace.js';
@@ -74,15 +73,7 @@ export class SpawnedChats {
     owner: SessionSummary,
     requested: ThreadSpawnInput,
   ): Promise<StartedChat> {
-    const input = inheritSettings(owner, requested);
-    if (input.modelId)
-      input.modelId = resolveModelId(
-        await this.sessions.catalog(),
-        owner,
-        input.provider,
-        input.modelId,
-      );
-    checkWithinAutonomy(owner, input.autonomy);
+    const input = await spawnSettings(owner, requested, () => this.sessions.catalog());
     const workspace =
       requested.workspace === 'worktree'
         ? await cutWorktree(owner.cwd, input.title, requested)
