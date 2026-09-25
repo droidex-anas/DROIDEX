@@ -572,6 +572,9 @@ export class SessionManager {
     });
     this.sessionVoice = new SessionVoice({
       liveSession: (appSessionId) => this.registry.getLive(appSessionId)?.session,
+      appendTranscript: (event) => {
+        this.timeline.append(event);
+      },
       emit: (event) => {
         this.emit(event);
       },

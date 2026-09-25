@@ -62,9 +62,8 @@ export function ingestTranscriptEvents(
 
   for (const event of incoming) {
     if (hasEventId(eventIds, event.id)) {
-      // Renderer-only: the provider can close a spoken utterance and then
-      // continue it, so the row it already wrote grows in place rather than
-      // keeping the shorter text or appearing twice.
+      // The sidecar can correct a finished utterance with more text under the
+      // same id, including when both versions arrive from durable history.
       const grown = grownSpokenRow(events, event);
       if (!grown) continue;
       events = replaceChunkedSequenceAt(events, grown.index, grown.merged);
@@ -485,10 +484,8 @@ function getTextDeltaRun(
   if (
     previous !== undefined &&
     !next.author &&
-    // Renderer-only: a spoken line is a whole utterance the voice surface
-    // finished, not a token fragment, so two of them must not run together and
-    // streamed text must not flow into one. The sidecar never sees such an
-    // event, which is why its copy carries no matching condition.
+    // A spoken line is a whole utterance, not a token fragment. Keep it
+    // separate from adjacent spoken rows and streamed provider text.
     !previous.spoken &&
     !next.spoken &&
     previous.kind === next.kind &&

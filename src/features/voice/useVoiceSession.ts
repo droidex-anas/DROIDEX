@@ -114,7 +114,7 @@ export function useVoiceSession(
     if (!appSessionId || wantedRef.current) return;
     setMuted(false);
     setWanted(true);
-    dispatch({ type: 'VOICE_CONNECTING', appSessionId, startedAt: Date.now() });
+    dispatch({ type: 'VOICE_CONNECTING', appSessionId });
   }, [appSessionId, dispatch, setWanted]);
 
   const toggleMuted = useCallback(() => {

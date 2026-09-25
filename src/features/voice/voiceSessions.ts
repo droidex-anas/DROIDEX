@@ -1,5 +1,3 @@
-import type { TranscriptEvent } from '../../types/bridge';
-
 // What the renderer knows about a voice conversation while it runs, keyed by
 // the chat holding it. All of it is ephemeral: the conversation itself does not
 // survive a reload, so neither does this.
@@ -8,10 +6,7 @@ import type { TranscriptEvent } from '../../types/bridge';
 // readable next to the hook that drives them; the store owns the slice and
 // delegates, the way it does for the pull-request inbox.
 //
-// What was said is kept elsewhere: every finished utterance also becomes an
-// ordinary chat row (spokenTranscriptEvent), so the transcript reads as one
-// conversation whether a turn was typed or spoken. Only the live, still-growing
-// lines stay here.
+// Finished utterances arrive separately as durable chat rows from the sidecar.
 
 export type VoiceStatus = 'idle' | 'connecting' | 'live' | 'closed';
 
@@ -39,19 +34,8 @@ export interface VoiceSessionState {
    */
   answer?: { sdp: string };
   lines: VoiceTranscriptLine[];
-  /**
-   * How many lines this chat has ever opened. Ids continue across attempts so
-   * the chat row a finished line wrote keeps its identity after the surface
-   * clears its own list.
-   */
+  /** How many lines this chat has ever opened. */
   linesOpened: number;
-  /**
-   * When this conversation started. The counter above lives only in memory, so
-   * a chat whose voice state was dropped (a retired runtime, a reload) would
-   * otherwise write `voice-1` again over the rows an earlier conversation left
-   * in the transcript. Stamping the conversation keeps those ids apart.
-   */
-  startedAt: number;
 }
 
 export type VoiceSessions = Record<string, VoiceSessionState>;
@@ -61,7 +45,7 @@ export interface VoiceSlice {
 }
 
 export type VoiceAction =
-  | { type: 'VOICE_CONNECTING'; appSessionId: string; startedAt: number }
+  | { type: 'VOICE_CONNECTING'; appSessionId: string }
   | { type: 'VOICE_ANSWERED'; appSessionId: string; sdp: string }
   | { type: 'VOICE_STATE'; appSessionId: string; status: 'live' | 'closed' }
   | {
@@ -86,7 +70,6 @@ const IDLE: VoiceSessionState = {
   voices: [],
   lines: [],
   linesOpened: 0,
-  startedAt: 0,
 };
 
 /** The chat's voice state, or the shared idle one when it has never spoken. */
@@ -123,7 +106,6 @@ function nextSession(current: VoiceSessionState, action: VoiceAction): VoiceSess
         defaultVoice: current.defaultVoice,
         lines: [],
         linesOpened: current.linesOpened,
-        startedAt: action.startedAt,
       };
     case 'VOICE_ANSWERED':
       return { ...current, answer: { sdp: action.sdp } };
@@ -149,7 +131,6 @@ function nextSession(current: VoiceSessionState, action: VoiceAction): VoiceSess
         defaultVoice: current.defaultVoice,
         lines: [],
         linesOpened: current.linesOpened,
-        startedAt: current.startedAt,
       };
   }
 }
@@ -193,30 +174,5 @@ function withSpokenText(
     ...current,
     lines: [...lines, { id, role, text, final }].slice(-MAX_LINES),
     linesOpened: id,
-  };
-}
-
-/**
- * The chat row a finished spoken line becomes. The id is derived from the line
- * and the conversation it was said in, so a repeated closing notification lands
- * on the row it already wrote rather than a second copy of it, and a later
- * conversation never lands on an earlier one's rows.
- */
-export function spokenTranscriptEvent(
-  appSessionId: string,
-  conversation: VoiceSessionState,
-  line: VoiceTranscriptLine,
-  ts: number,
-): TranscriptEvent {
-  return {
-    id: `voice-${String(conversation.startedAt)}-${String(line.id)}`,
-    appSessionId,
-    sourceSessionId: line.role === 'user' ? 'user' : 'primary',
-    role: 'primary',
-    ts,
-    kind: 'text',
-    text: line.text,
-    ...(line.role === 'user' ? { author: 'user' as const } : {}),
-    spoken: true,
   };
 }

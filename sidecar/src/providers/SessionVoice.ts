@@ -2,7 +2,8 @@
 // provider's handshake and transcript out. Audio never passes through here —
 // the renderer negotiates WebRTC with the provider's own service, and a spoken
 // request becomes an ordinary turn on the chat's model.
-import type { ClientCommand, ServerEvent } from '../protocol.js';
+import { randomUUID } from 'node:crypto';
+import type { ClientCommand, ServerEvent, TranscriptEvent } from '../protocol.js';
 import { errMsg } from '../sessionHelpers.js';
 import type { ProviderSession, ProviderVoice, ProviderVoiceEvent } from './session.js';
 
@@ -15,6 +16,7 @@ export interface SessionVoiceDependencies {
   // The live session for an app session id, or undefined when none is running.
   liveSession: (appSessionId: string) => ProviderSession | undefined;
   emit: (event: ServerEvent) => void;
+  appendTranscript: (event: TranscriptEvent) => void;
   // A conversation started or ended, which changes whether its chat counts as
   // idle. Commands say so themselves; this is for the provider's own hang-ups.
   liveChanged: () => void;
@@ -28,8 +30,22 @@ interface VoiceSubscription {
   unsubscribe: () => void;
 }
 
+type SpokenRole = 'user' | 'assistant';
+
+interface SpokenLine {
+  id: string;
+  role: SpokenRole;
+  text: string;
+}
+
+interface VoiceConversation {
+  open: Map<SpokenRole, string>;
+  lastFinal?: SpokenLine;
+}
+
 export class SessionVoice {
   private readonly subscriptions = new Map<string, VoiceSubscription>();
+  private readonly conversations = new Map<string, VoiceConversation>();
 
   constructor(private readonly d: SessionVoiceDependencies) {}
 
@@ -39,6 +55,7 @@ export class SessionVoice {
     try {
       switch (cmd.type) {
         case 'voice.start':
+          this.conversations.set(cmd.appSessionId, { open: new Map() });
           await voice.start({ sdp: cmd.sdp, voice: cmd.voice, narration: cmd.narration });
           return;
         case 'voice.stop':
@@ -73,6 +90,7 @@ export class SessionVoice {
     const subscription = this.subscriptions.get(appSessionId);
     if (!subscription) return;
     this.subscriptions.delete(appSessionId);
+    this.conversations.delete(appSessionId);
     subscription.unsubscribe();
     const wasLive = subscription.session.voice?.isLive() ?? false;
     try {
@@ -100,6 +118,7 @@ export class SessionVoice {
     const existing = this.subscriptions.get(appSessionId);
     if (existing?.session !== session) {
       existing?.unsubscribe();
+      this.conversations.delete(appSessionId);
       this.subscriptions.set(appSessionId, {
         session,
         unsubscribe: session.voice.onEvent((event) => {
@@ -131,11 +150,61 @@ export class SessionVoice {
           text: event.text,
           final: event.final,
         });
+        if (event.final) this.finishLine(appSessionId, event.role, event.text);
+        else this.extendLine(appSessionId, event.role, event.text);
         return;
       case 'error':
         this.emitError(appSessionId, event.message);
         return;
     }
+  }
+
+  private extendLine(appSessionId: string, role: SpokenRole, text: string): void {
+    if (!text) return;
+    const conversation = this.conversationFor(appSessionId);
+    conversation.open.set(role, (conversation.open.get(role) ?? '') + text);
+  }
+
+  private finishLine(appSessionId: string, role: SpokenRole, text: string): void {
+    const conversation = this.conversationFor(appSessionId);
+    const open = conversation.open.get(role);
+    conversation.open.delete(role);
+    const finalText = text || open;
+    if (!finalText) return;
+
+    let line: SpokenLine;
+    if (open === undefined && conversation.lastFinal?.role === role) {
+      const previous = conversation.lastFinal;
+      if (finalText === previous.text) return;
+      line = finalText.startsWith(previous.text)
+        ? { ...previous, text: finalText }
+        : { id: `voice-${randomUUID()}`, role, text: finalText };
+    } else {
+      line = { id: `voice-${randomUUID()}`, role, text: finalText };
+    }
+    this.d.appendTranscript({
+      id: line.id,
+      appSessionId,
+      sourceSessionId: role === 'user' ? 'user' : 'primary',
+      role: 'primary',
+      ts: Date.now(),
+      kind: 'text',
+      text: line.text,
+      ...(role === 'user' ? { author: 'user' as const } : {}),
+      spoken: true,
+    });
+    conversation.lastFinal = line;
+  }
+
+  // What is being said, per chat. `voice.start` replaces it so a new
+  // conversation begins with nothing open and no previous final to extend;
+  // a transcript that arrives without one is still written rather than lost.
+  private conversationFor(appSessionId: string): VoiceConversation {
+    const existing = this.conversations.get(appSessionId);
+    if (existing) return existing;
+    const created: VoiceConversation = { open: new Map() };
+    this.conversations.set(appSessionId, created);
+    return created;
   }
 
   private emitError(appSessionId: string, message: string): void {

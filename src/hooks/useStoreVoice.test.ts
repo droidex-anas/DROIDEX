@@ -8,27 +8,51 @@ function said(appSessionId: string, role: VoiceRole, text: string, final: boolea
   return { type: 'VOICE_TRANSCRIPT', appSessionId, role, text, final } as const;
 }
 
-test('a finished utterance becomes a chat row, once, however often it is announced', () => {
+test('voice transcript updates the live surface without making a chat row', () => {
   let state = initialState as AppState;
   state = reducer(state, said('m1', 'user', 'ship ', false));
   state = reducer(state, said('m1', 'user', 'it', false));
-  // Nothing lands in the chat while the speaker is still talking.
   assert.equal(state.transcripts.m1, undefined);
 
   state = reducer(state, said('m1', 'user', 'ship it', true));
   state = reducer(state, said('m1', 'user', 'ship it', true));
 
-  const rows = state.transcripts.m1;
-  assert.equal(rows.length, 1);
-  assert.equal(rows[0].text, 'ship it');
-  assert.equal(rows[0].author, 'user');
-  assert.equal(rows[0].spoken, true);
+  assert.equal(state.transcripts.m1, undefined);
+  assert.deepEqual(
+    state.voiceSessions.m1.lines.map((line) => line.text),
+    ['ship it'],
+  );
 });
 
-test('both sides of a spoken exchange are kept, and only spoken rows carry the mark', () => {
+test('sidecar transcript rows keep both speakers and their spoken mark', () => {
   let state = initialState as AppState;
-  state = reducer(state, said('m1', 'user', 'what changed?', true));
-  state = reducer(state, said('m1', 'assistant', 'the composer', true));
+  state = reducer(state, {
+    type: 'SESSION_TRANSCRIPT',
+    event: {
+      id: 'voice-user',
+      appSessionId: 'm1',
+      sourceSessionId: 'user',
+      role: 'primary',
+      ts: 1,
+      kind: 'text',
+      text: 'what changed?',
+      author: 'user',
+      spoken: true,
+    },
+  });
+  state = reducer(state, {
+    type: 'SESSION_TRANSCRIPT',
+    event: {
+      id: 'voice-assistant',
+      appSessionId: 'm1',
+      sourceSessionId: 'primary',
+      role: 'primary',
+      ts: 2,
+      kind: 'text',
+      text: 'the composer',
+      spoken: true,
+    },
+  });
   state = reducer(state, {
     type: 'SESSION_TRANSCRIPT',
     event: {
@@ -52,9 +76,32 @@ test('both sides of a spoken exchange are kept, and only spoken rows carry the m
   );
 });
 
+test('a corrected sidecar spoken row grows in place', () => {
+  const event = {
+    id: 'voice-user',
+    appSessionId: 'm1',
+    sourceSessionId: 'user',
+    role: 'primary' as const,
+    ts: 1,
+    kind: 'text' as const,
+    text: 'please',
+    author: 'user' as const,
+    spoken: true,
+  };
+  let state = reducer(initialState as AppState, { type: 'SESSION_TRANSCRIPT', event });
+  state = reducer(state, {
+    type: 'SESSION_TRANSCRIPT',
+    event: { ...event, text: 'please check' },
+  });
+  assert.deepEqual(
+    state.transcripts.m1.map((row) => row.text),
+    ['please check'],
+  );
+});
+
 test('each speaker keeps its own line while both are talking', () => {
   let state = initialState as AppState;
-  state = reducer(state, { type: 'VOICE_CONNECTING', appSessionId: 'm1', startedAt: 1 });
+  state = reducer(state, { type: 'VOICE_CONNECTING', appSessionId: 'm1' });
   state = reducer(state, said('m1', 'assistant', 'Let me ', false));
   // The user starts talking over the reply, and what they said is transcribed
   // before the reply has finished.
@@ -69,39 +116,25 @@ test('each speaker keeps its own line while both are talking', () => {
       ['user', 'wait', true],
     ],
   );
-  assert.deepEqual(
-    state.transcripts.m1.map((row) => row.text),
-    ['wait', 'Let me check that.'],
-  );
+  assert.equal(state.transcripts.m1, undefined);
 });
 
-test('spoken rows stay with their chat across a session switch and a second voice session', () => {
+test('voice surface starts fresh after a session switch and a second conversation', () => {
   let state = initialState as AppState;
-  state = reducer(state, { type: 'VOICE_CONNECTING', appSessionId: 'm1', startedAt: 1 });
+  state = reducer(state, { type: 'VOICE_CONNECTING', appSessionId: 'm1' });
   state = reducer(state, said('m1', 'user', 'first', true));
   state = reducer(state, { type: 'VOICE_ENDED', appSessionId: 'm1' });
   state = reducer(state, { type: 'SET_ACTIVE_SESSION', id: 'm2' });
   state = reducer(state, said('m2', 'user', 'elsewhere', true));
   state = reducer(state, { type: 'SET_ACTIVE_SESSION', id: 'm1' });
-  // Retiring the idle runtime drops what the renderer knew about the chat's
-  // voice, so the next conversation counts its lines from one again while the
-  // transcript keeps the rows the first one wrote.
   state = reducer(state, { type: 'SESSION_CLOSED', appSessionId: 'm1' });
-  state = reducer(state, { type: 'VOICE_CONNECTING', appSessionId: 'm1', startedAt: 2 });
+  state = reducer(state, { type: 'VOICE_CONNECTING', appSessionId: 'm1' });
   state = reducer(state, said('m1', 'user', 'second', true));
 
-  // The new conversation starts with an empty surface but keeps writing new
-  // rows, so the reopened chat shows everything that was ever said in it.
   assert.deepEqual(
     state.voiceSessions.m1.lines.map((line) => line.text),
     ['second'],
   );
-  assert.deepEqual(
-    state.transcripts.m1.map((row) => row.text),
-    ['first', 'second'],
-  );
-  assert.deepEqual(
-    state.transcripts.m2.map((row) => row.text),
-    ['elsewhere'],
-  );
+  assert.equal(state.transcripts.m1, undefined);
+  assert.equal(state.transcripts.m2, undefined);
 });

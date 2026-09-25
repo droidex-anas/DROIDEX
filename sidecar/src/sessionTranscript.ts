@@ -108,9 +108,24 @@ export function parseFullSessionTranscript(
     }
   }
   const notices = readSessionNotices(appSessionId, providerSessionId, role);
-  return notices.length
-    ? [...events, ...notices].sort((left, right) => left.ts - right.ts)
+  // Corrections append to JSONL; replay exposes only the latest text per row
+  // id. Most chats have never been spoken to, and they pay one scan for that
+  // rather than two rebuilds of the whole transcript.
+  const latestSpoken = new Set<string>();
+  const uniqueEvents = events.some((event) => event.spoken)
+    ? events
+        .toReversed()
+        .filter((event) => {
+          if (!event.spoken) return true;
+          if (latestSpoken.has(event.id)) return false;
+          latestSpoken.add(event.id);
+          return true;
+        })
+        .reverse()
     : events;
+  return notices.length
+    ? [...uniqueEvents, ...notices].sort((left, right) => left.ts - right.ts)
+    : uniqueEvents;
 }
 
 // Byte offset of every line start in the file, bounded to `size` so bytes
@@ -209,6 +224,8 @@ export class SessionTranscriptReader {
     from?: TranscriptWindowCursor,
   ): { collected: TranscriptEvent[]; older?: TranscriptWindowCursor } {
     const collected: TranscriptEvent[] = []; // newest first
+    // This walk starts at the tail, where a spoken row's latest correction lives.
+    const seenSpoken = new Set<string>();
     let line = from ? from.line : this.lineStarts.length - 1;
     let skip = from?.skip ?? 0;
     let notice = from ? (from.notice ?? -1) : this.notices.length - 1;
@@ -230,7 +247,10 @@ export class SessionTranscriptReader {
         });
         notice -= 1;
       } else if (candidate) {
-        collected.push(candidate);
+        if (!candidate.spoken || !seenSpoken.has(candidate.id)) {
+          collected.push(candidate);
+          if (candidate.spoken) seenSpoken.add(candidate.id);
+        }
         skip += 1;
         if (skip === events.length) {
           line -= 1;
