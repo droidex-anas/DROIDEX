@@ -8,5 +8,7 @@ export * from './status.js';
 export * from './skills.js';
 export * from './knowledge.js';
 export * from './voice.js';
+export * from './modes.js';
+export * from './computer.js';
 export { ChangesIcon } from './ChangesIcon.js';
 export { WorktreeIcon } from './WorktreeIcon.js';

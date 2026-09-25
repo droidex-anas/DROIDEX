@@ -123,11 +123,20 @@ the surrounding page's color; set a color inside the file in that case.
 The raw SVG spinner is static.
 
 Reference-inspired pairs include Rosette, Hierarchy, Ghost, MessageBubble,
-ConnectedNodes, Gauge, Visualize, Mic, VoiceWave, AlertTriangle, Book, Books,
-Notebook, FileSearch, Cloud, CirclePlay, Bell, and CircleCheck. `VoiceWaveFilled`
-is the round voice-mode button: a disc with the bars cut out. Single-style
-glyphs such as Spinner, CircleDashed and arrows retain their original geometry
-in filled preview mode.
+ConnectedNodes, Gauge, Visualize, Mic, VoiceWave, Lightbulb, AlertTriangle,
+Book, Books, Notebook, FileSearch, Cloud, CirclePlay, Bell, and CircleCheck.
+`VoiceWaveFilled` is the round voice-mode button: a disc with the bars cut out.
+The Modes category holds Lightbulb (plan mode), Brain (reasoning), Models
+(model picker) and Sketch; `Mcp` is the Model Context Protocol mark.
+The Git category covers pull requests: GitPullRequest, GitPullRequestCreate,
+GitFork, CodeReview and Repository are outline; the status glyphs
+GitPullRequestDraft, GitPullRequestMerged, GitPullRequestClosed, Issue and
+IssueClosed carry a soft tint on their state node.
+The Computer category holds ComputerUse, ComputerHistory, Appshots, Plugins
+and Browser.
+Single-style glyphs such as Spinner, CircleDashed, Brain, Models, Sketch, Mcp,
+the Git status glyphs and arrows retain their original geometry in
+filled preview mode.
 
 The gallery and SVGs are generated from `src/`. Edit the source, then rebuild.
 Gallery layout and controls live in `gallery/gallery.css` and `gallery/gallery.js`;

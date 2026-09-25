@@ -33,6 +33,8 @@ export default {
           green: v('--droid-green'),
           orange: v('--droid-orange'),
           red: v('--droid-red'),
+          update: v('--droid-update'),
+          'update-hover': v('--droid-update-hover'),
         },
       },
       // Floating surfaces take their cast from the theme (see applyTheme):

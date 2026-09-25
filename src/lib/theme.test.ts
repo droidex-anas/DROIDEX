@@ -4,6 +4,7 @@ import {
   BUILT_IN_THEMES,
   SKILL_COLORS,
   ULTRA_COLORS,
+  UPDATE_COLORS,
   contrastRatio,
   CUSTOM_THEME_ID,
   DEFAULT_THEME,
@@ -232,6 +233,15 @@ describe('fixed label colors', () => {
           `${preset.id} ${scheme} ultra label should reach 4.5:1`,
         );
       }
+    }
+  });
+
+  it('keeps the update pill label readable on both of its blues', () => {
+    for (const blue of [UPDATE_COLORS.base, UPDATE_COLORS.hover]) {
+      assert.ok(
+        contrastRatio('#ffffff', blue) >= 4.5,
+        `update pill label should reach 4.5:1 on ${blue}`,
+      );
     }
   });
 });

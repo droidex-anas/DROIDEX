@@ -360,6 +360,14 @@ export const SKILL_COLORS = {
   light: '#1d4ed8',
 } as const;
 
+// The sidebar's update pill is a system signal, not chrome, so it keeps a fixed
+// blue in both schemes the way the status colors do: a monochrome accent must
+// never tint "an update is waiting" into the surrounding UI.
+export const UPDATE_COLORS = {
+  base: '#005fc8',
+  hover: '#0054b2',
+} as const;
+
 // Prompt chip marks keep their own hue beside the blue skill label: rose for a
 // skill's Rosette, pink for the Visualize plugin.
 const MARK_COLORS = {
@@ -526,6 +534,8 @@ export function applyTheme(theme: ThemeSettings) {
     bgIsDark ? '#d9913a' : statusColorOnLight('#9a5a0f', theme.bg),
   );
   root.style.setProperty('--droid-red', bgIsDark ? '#cf5d54' : '#b3312a');
+  root.style.setProperty('--droid-update', UPDATE_COLORS.base);
+  root.style.setProperty('--droid-update-hover', UPDATE_COLORS.hover);
   root.setAttribute('data-diff-style', theme.diffStyle);
   const diffPalette = diffPaletteForTheme(bgIsDark, theme.diffStyle);
   root.style.setProperty('--diff-add-fg', diffPalette.addFg);

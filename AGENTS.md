@@ -195,8 +195,8 @@ are the most common way a change makes the app look worse.
   is a deep near-black.
 - Tune colors in `src/lib/theme.ts`, not per component, and keep the contrast
   tests in `src/lib/theme.test.ts` passing.
-- Keep focus visible for keyboard users with a soft ring (the
-  `composer-focus-ring` pattern), not a hard outline.
+- Keep focus visible for keyboard users with a soft cue, such as a tint shift or
+  a low-alpha ring, not a hard outline.
 - Check both light and dark in the running app before shipping a visual change.
 
 ## DROIDEX identity and runtime contracts
