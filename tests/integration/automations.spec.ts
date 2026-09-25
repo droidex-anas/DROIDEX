@@ -108,6 +108,11 @@ async function automationBridge(
             transcripts: [],
           });
         }
+        // The chat list waits for the project graph before it draws, as it
+        // does against the real sidecar.
+        if (command.type === 'projects.list') {
+          emit({ type: 'projects.snapshot', projects: [] });
+        }
         if (command.type === 'automations.list') {
           emit({ type: 'automations.snapshot', snapshot });
         }
