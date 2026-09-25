@@ -71,6 +71,11 @@ export class CodexVoice implements ProviderVoice {
   // must not be closed by the last one's acknowledgement, however late it
   // arrives.
   private expectedCloses = 0;
+  // The attempt currently being opened or held. A hang-up lets go of it, so
+  // an attempt still on its way up finds itself replaced and stands down
+  // wherever it had got to. `opened` says whether Codex has been asked for the
+  // conversation yet, which is when there starts to be something to close.
+  private attempt?: { opened: boolean };
 
   // `threadId` is read at call time: the thread opens after the session is
   // constructed, and a resume replaces it.
@@ -130,15 +135,28 @@ export class CodexVoice implements ProviderVoice {
     return this.live;
   }
 
+  private forget(): void {
+    this.live = false;
+    this.attempt = undefined;
+  }
+
   async start({ sdp, voice, narration = 'brief' }: ProviderVoiceStart): Promise<void> {
     const threadId = this.requireThread();
+    // Held from here, not from the moment Codex answers: a hang-up during the
+    // settings round trip below has to be able to stop this attempt, and
+    // without something to cancel it would open a conversation the renderer
+    // has already let go of.
+    const attempt = { opened: false };
+    this.attempt = attempt;
+    this.live = true;
     // The turns this conversation hands over run on the thread's own settings,
     // so a conversation that could not write them would work on the wrong
     // model, or outside the autonomy the chat is set to. It does not open.
     await this.applyThreadSettings().catch((error: unknown) => {
+      if (this.attempt === attempt) this.forget();
       throw new Error(`The chat's settings could not be applied for voice: ${errMsg(error)}`);
     });
-    this.live = true;
+    if (this.attempt !== attempt) return;
     await this.client
       .request('thread/realtime/start', {
         threadId,
@@ -150,9 +168,13 @@ export class CodexVoice implements ProviderVoice {
         ...(voice ? { voice } : {}),
       })
       .catch((error: unknown) => {
-        this.live = false;
+        if (this.attempt === attempt) this.forget();
         throw error;
       });
+    attempt.opened = true;
+    // Hung up while Codex was answering: the conversation exists now, so it is
+    // closed rather than left running with nobody listening.
+    if (this.attempt !== attempt) await this.closeConversation();
   }
 
   // Hanging up ends the conversation here whether or not Codex answers: the
@@ -160,8 +182,18 @@ export class CodexVoice implements ProviderVoice {
   // nothing on this side is holding one once this is called. The error still
   // reaches the caller, which reports it.
   async stop(): Promise<void> {
-    if (!this.live) return;
-    this.live = false;
+    const opened = this.attempt?.opened ?? true;
+    if (!this.live) {
+      this.attempt = undefined;
+      return;
+    }
+    this.forget();
+    // An attempt that has not asked Codex for the conversation yet has nothing
+    // to close; cancelling it is the whole of stopping it.
+    if (opened) await this.closeConversation();
+  }
+
+  private async closeConversation(): Promise<void> {
     this.expectedCloses += 1;
     try {
       await this.client.request('thread/realtime/stop', { threadId: this.requireThread() });

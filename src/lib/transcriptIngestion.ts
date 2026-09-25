@@ -77,18 +77,14 @@ export function ingestTranscriptEvents(
       );
       continue;
     }
-    // Renderer-only: a spoken row can land between two deltas of the same
-    // written answer. The sidecar never sees one, so its replay coalesces those
-    // deltas; looking past the spoken rows here keeps the two in agreement.
-    const writtenIndex = lastWrittenIndex(events);
-    const last = events.at(writtenIndex);
+    const last = events.at(-1);
 
     // Protocol mirror of sidecar/src/streamingDeltaCoalescer.ts
     // mergeStreamingDelta(). Keep both implementations and their behavior
     // tests synchronized.
     const textDelta = getTextDeltaRun(last, event);
     if (textDelta) {
-      const changedIndex = events.length + writtenIndex;
+      const changedIndex = events.length - 1;
       const mergedTail: TranscriptEvent = {
         ...textDelta.previous,
         text: (textDelta.previous.text ?? '') + textDelta.text,
@@ -464,14 +460,6 @@ function shiftIndexForInsertion(
 ): number | undefined {
   if (index === undefined) return undefined;
   return index >= insertionIndex ? index + insertedCount : index;
-}
-
-// The newest row a written answer could still be streaming into: the last one
-// that is not a spoken line. Normally that is the tail itself.
-function lastWrittenIndex(events: readonly TranscriptEvent[]): number {
-  let index = -1;
-  while (events.at(index)?.spoken) index -= 1;
-  return index;
 }
 
 // The same spoken row, said further. A closing notification can repeat with

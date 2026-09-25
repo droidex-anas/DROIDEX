@@ -149,7 +149,7 @@ export interface SessionLifecycleDependencies {
     mentions?: ProviderMention[],
     delivery?: ScheduledTurnDelivery,
   ) => Promise<void>;
-  eventFlow: Pick<SessionEventFlow, 'apply'>;
+  eventFlow: Pick<SessionEventFlow, 'apply' | 'beginTurn'>;
   context: Pick<SessionContext, 'refresh' | 'stopPolling' | 'stopSession' | 'forgetSession'>;
   hasPendingInteractions: (appSessionId: string) => boolean;
   hasActiveSettingsChanges: (appSessionId: string) => boolean;
@@ -954,6 +954,10 @@ export class SessionLifecycle {
       if (!isCurrent()) return;
       liveSession.streaming = running;
       if (running) {
+        // A settled turn leaves the chat's own source closed, and nothing else
+        // reopens it for a turn the provider started: without this the spoken
+        // request's work is dropped as post-turn noise.
+        this.dependencies.eventFlow.beginTurn(appSessionId, appSessionId);
         this.dependencies.registry.updateSummary(appSessionId, {
           phase: 'running',
           streaming: true,

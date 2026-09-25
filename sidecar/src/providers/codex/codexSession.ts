@@ -194,8 +194,12 @@ export class CodexSession implements ProviderSession {
       // Releases a waiter left parked when the consumer stops reading early.
       this.cancelStartupNotice();
       turn.finish();
-      this.turn = undefined;
-      this.turnId = undefined;
+      // Settlement may already have let go, and a later turn may already own
+      // these; only the turn that set them takes them away.
+      if (this.turn === turn) {
+        this.turn = undefined;
+        this.turnId = undefined;
+      }
       this.pendingInterrupt = false;
     }
   }
@@ -230,9 +234,19 @@ export class CodexSession implements ProviderSession {
       model.reasoningEffort = settings.reasoningEffort;
       this.effortCleared = false;
     }
+    const previous = this.model;
     this.model = model;
     this.mapper.setModel({ ...this.model, modelId: this.model.modelId ?? this.threadModel });
-    await this.pushThreadSettings();
+    try {
+      // Not swallowed: a turn Codex starts for a spoken request runs on what
+      // the thread has, so a rejected write means the selection the chat shows
+      // is not the one that would run.
+      await this.applyThreadSettings();
+    } catch (error) {
+      this.model = previous;
+      this.mapper.setModel({ ...this.model, modelId: this.model.modelId ?? this.threadModel });
+      throw error;
+    }
   }
 
   // The chat's settings on the thread itself. A typed turn carries these on
@@ -490,12 +504,17 @@ export class CodexSession implements ProviderSession {
 
   private settle(turn: CodexTurn): void {
     this.prompts.cancel();
-    if (turn.status === 'failed') {
+    if (turn.status === 'failed')
       this.turn?.fail(turn.error ?? new Error('Codex ended the turn with an error.'));
-      return;
+    else {
+      // An interrupted turn settles quietly; the user asked for it.
+      if (turn.status === 'completed') this.turn?.push([{ done: true }]);
+      this.turn?.finish();
     }
-    // An interrupted turn settles quietly; the user asked for it.
-    if (turn.status === 'completed') this.turn?.push([{ done: true }]);
-    this.turn?.finish();
+    // The stream is over, and its generator clears these when it unwinds a
+    // tick later. Letting go now is what tells a `turn/started` arriving in
+    // this same batch that the turn it announces is Codex's own.
+    this.turn = undefined;
+    this.turnId = undefined;
   }
 }

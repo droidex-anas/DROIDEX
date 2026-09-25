@@ -236,7 +236,7 @@ function VoiceSurfaceDialog({ voice }: { voice: Voice }) {
           <VoiceSettingsSheet
             voices={session.voices}
             defaultVoice={session.defaultVoice}
-            onVoiceChanged={voice.restart}
+            onSettingChanged={voice.restart}
             onClose={() => {
               setSettingsOpen(false);
             }}

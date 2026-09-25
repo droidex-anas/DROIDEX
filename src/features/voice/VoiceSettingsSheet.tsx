@@ -14,20 +14,20 @@ const capitalize = (word: string) => word.charAt(0).toUpperCase() + word.slice(1
 
 /**
  * The conversation's settings, reachable without leaving it. They are the same
- * two the Settings panel holds, so a change here is a change there. The voice
- * is chosen when a conversation opens, so switching it reconnects: the sheet
- * says so rather than letting the old voice keep talking.
+ * two the Settings panel holds, so a change here is a change there. Both are
+ * chosen when a conversation opens, so changing either reconnects: the sheet
+ * says so rather than letting the old voice, or the old narration, carry on.
  */
 export function VoiceSettingsSheet({
   voices,
   defaultVoice,
-  onVoiceChanged,
+  onSettingChanged,
   onClose,
 }: {
   voices: string[];
   defaultVoice?: string;
-  /** Called when a different voice is chosen, to reopen on it. */
-  onVoiceChanged: () => void;
+  /** Called when a setting only a new conversation can take is changed. */
+  onSettingChanged: () => void;
   onClose: () => void;
 }) {
   const dispatch = useStoreDispatch();
@@ -38,7 +38,13 @@ export function VoiceSettingsSheet({
   const chooseVoice = (voice: string) => {
     if (voice === selectedVoice) return;
     dispatch({ type: 'SET_DEFAULT_VOICE', voice });
-    onVoiceChanged();
+    onSettingChanged();
+  };
+
+  const chooseNarration = (mode: VoiceNarration) => {
+    if (mode === narration) return;
+    dispatch({ type: 'SET_NARRATION_MODE', mode });
+    onSettingChanged();
   };
 
   return (
@@ -100,7 +106,7 @@ export function VoiceSettingsSheet({
                   role="radio"
                   aria-checked={selected}
                   onClick={() => {
-                    dispatch({ type: 'SET_NARRATION_MODE', mode: option.value });
+                    chooseNarration(option.value);
                   }}
                   className={`flex items-center justify-between gap-3 rounded-lg px-2.5 py-2 text-left transition-colors ${
                     selected ? 'bg-droid-surface' : 'hover:bg-droid-surface/60'
@@ -118,7 +124,7 @@ export function VoiceSettingsSheet({
             })}
           </div>
           <p className="mt-3 text-[11px] leading-snug text-droid-text-muted">
-            A new voice takes over after a short reconnect. Narration applies to the next request.
+            A new voice, or a new way of narrating, takes over after a short reconnect.
           </p>
         </div>
       </motion.div>

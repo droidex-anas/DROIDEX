@@ -128,10 +128,11 @@ function nextSession(current: VoiceSessionState, action: VoiceAction): VoiceSess
     case 'VOICE_ANSWERED':
       return { ...current, answer: { sdp: action.sdp } };
     case 'VOICE_STATE':
-      return {
-        ...current,
-        status: action.status,
-      };
+      // Connecting clears what went wrong on the way: a chat whose runtime had
+      // to be resumed refuses the first request and answers the second.
+      return action.status === 'live'
+        ? { ...current, status: action.status, error: undefined }
+        : { ...current, status: action.status };
     case 'VOICE_TRANSCRIPT':
       return withSpokenText(current, action.role, action.text, action.final);
     case 'VOICE_VOICES':
