@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { ProjectService, type ProjectPort } from './ProjectService.js';
 import { LEDGER_LIMITS, type ProjectPersistence } from './store.js';
+import { CHAT_BRIEF } from './threadStart.js';
 import type { Project, ThreadInput } from './types.js';
 import type { ServerEvent, SessionSummary } from '../protocol.js';
 
@@ -808,6 +809,49 @@ test('an ordinary chat that writes a plan becomes a project and spawns for its s
     h.projects.setPlan(started.appSessionId, [{ title: 'Its own plan' }]),
     /leads a project/,
   );
+});
+
+test('a chat started without reportBack belongs to no project and reports nowhere', async (t) => {
+  const h = await harness();
+  t.after(() => h.projects.close());
+  h.sessions.set('ordinary', summary('ordinary', { ...input, title: 'Payments' }));
+  const chat = await h.projects.startChat('ordinary', { ...input, prompt: 'Port the client.' });
+  assert.equal(
+    h.launched.at(-1)?.prompt,
+    `${CHAT_BRIEF}\n\nStarted by: Payments\n\nTask:\nPort the client.`,
+  );
+  await h.finish(chat.appSessionId, 'Ported.');
+  await drain();
+  assert.equal(h.sent.length, 0);
+  assert.deepEqual(h.projects.list(), []);
+  assert.deepEqual(h.state.saved, []);
+  // Nobody's thread, so the thread tools do not reach it.
+  assert.throws(() => h.projects.read('ordinary', chat.appSessionId), /has not spawned/);
+});
+
+test('threads and started chats cannot start chats, and one chat runs at most eight', async (t) => {
+  const h = await harness();
+  t.after(() => h.projects.close());
+  const { main } = await h.root();
+  const thread = await h.projects.spawn(main, input);
+  await assert.rejects(h.projects.startChat(thread.appSessionId, input), /always report back/);
+
+  // Starts still in flight count, so a burst cannot run past the limit.
+  const gate = deferred();
+  h.state.bindGate = gate.promise;
+  const burst = Array.from({ length: 8 }, () => h.projects.startChat(main, input));
+  await assert.rejects(h.projects.startChat(main, input), /already has 8 chats/);
+  gate.resolve();
+  h.state.bindGate = undefined;
+  const chats = await Promise.all(burst);
+  await assert.rejects(h.projects.startChat(main, input), /already has 8 chats/);
+  await assert.rejects(
+    h.projects.startChat(chats[0]?.appSessionId ?? '', input),
+    /cannot start chats of its own/,
+  );
+  // One that finished no longer counts.
+  await h.finish(chats[0]?.appSessionId ?? '');
+  await h.projects.startChat(main, input);
 });
 
 test('a spawn keeps the plan step it named when two steps share a title', async (t) => {
