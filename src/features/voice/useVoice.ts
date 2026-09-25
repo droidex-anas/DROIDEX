@@ -87,15 +87,14 @@ export function useVoice(
     stop();
   }, [status, stop]);
 
-  // A conversation that ends on its own takes its surface with it, unless it
-  // ended badly: the surface is the only thing that says why, so it stays
-  // until the user closes it. A reconnect passes through the same idle state
-  // and keeps the surface either way.
-  const failed = session.error !== undefined || session.micDenied;
+  // A conversation that ends takes its surfaces with it, however it ended: one
+  // that never connected must leave the composer as it found it, and must not
+  // follow the user to the next chat as a bar. A reconnect passes through the
+  // same idle state and keeps them.
   useEffect(() => {
-    if (reconnecting || failed) return;
+    if (reconnecting) return;
     if (status === 'idle' || status === 'closed') setPlacement('off');
-  }, [failed, reconnecting, status]);
+  }, [reconnecting, status]);
 
   useEffect(() => {
     if (!reconnecting || status !== 'idle') return;

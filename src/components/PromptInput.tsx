@@ -144,6 +144,7 @@ const loadModelSelectorPopover = () => import('./ModelSelectorPopover');
 const ModelSliderPopover = lazy(loadModelSliderPopover);
 const ModelSelectorPopover = lazy(loadModelSelectorPopover);
 const VoiceSendSlot = lazy(() => import('../features/voice/VoiceSendSlot'));
+const VoiceTakeoverPopover = lazy(() => import('../features/voice/VoiceTakeoverPopover'));
 const VoiceOrbDock = lazy(() =>
   import('../features/voice/VoiceOrbDock').then((m) => ({ default: m.VoiceOrbDock })),
 );
@@ -1596,7 +1597,15 @@ export default function PromptInput({
   // none is running anywhere; the chat that owns one gets its controls instead.
   const voice = useVoiceControls();
   const voiceHere = voice.view === 'dock';
-  const canStartVoice = canUseVoice(composerProvider) && voice.view === 'off';
+  const canStartVoice = canUseVoice(composerProvider) && !voiceHere;
+  // The chat currently being talked to, when it is not this one.
+  const voiceRunningOn = useStoreSelector((state) => {
+    const owner =
+      voice.view !== 'off' && voice.appSessionId ? state.sessions[voice.appSessionId] : undefined;
+    return owner ? owner.title : null;
+  });
+  const [takeoverOpen, setTakeoverOpen] = useState(false);
+  const voiceSlotRef = useRef<HTMLDivElement>(null);
   // A chat started by voice has no prompt to create it with, so the orb creates
   // the chat first and opens the conversation once that chat, and no other,
   // arrives. `registered` marks the point where the wait can be read from the
@@ -1607,7 +1616,7 @@ export default function PromptInput({
   // The orb: talk to the chat that is open, or start one and talk to that. A
   // chat created this way opens with no prompt, so the first request is the
   // spoken one.
-  const startVoice = () => {
+  const startHere = () => {
     if (activeSession) {
       voice.openOn(activeSession.appSessionId);
       return;
@@ -1651,6 +1660,16 @@ export default function PromptInput({
       // it.
       voiceAwaiting.current = null;
     });
+  };
+
+  const startVoice = () => {
+    // One conversation at a time: the one that is running is ended by asking,
+    // never by starting another on top of it.
+    if (voiceRunningOn) {
+      setTakeoverOpen(true);
+      return;
+    }
+    startHere();
   };
 
   // The chat the orb asked for has arrived and is on screen: open the
@@ -2076,11 +2095,29 @@ export default function PromptInput({
                     <VoiceComposerControls />
                   </Suspense>
                 ) : canStartVoice ? (
-                  <Suspense fallback={sendButton}>
-                    <VoiceSendSlot showSend={showSendAction} onVoice={startVoice}>
-                      {sendButton}
-                    </VoiceSendSlot>
-                  </Suspense>
+                  <div ref={voiceSlotRef}>
+                    <Suspense fallback={sendButton}>
+                      <VoiceSendSlot showSend={showSendAction} onVoice={startVoice}>
+                        {sendButton}
+                      </VoiceSendSlot>
+                    </Suspense>
+                    {voiceRunningOn !== null && (
+                      <Suspense fallback={null}>
+                        <VoiceTakeoverPopover
+                          open={takeoverOpen}
+                          onClose={() => {
+                            setTakeoverOpen(false);
+                          }}
+                          anchorRef={voiceSlotRef}
+                          runningOn={voiceRunningOn}
+                          onTakeOver={() => {
+                            voice.close();
+                            startHere();
+                          }}
+                        />
+                      </Suspense>
+                    )}
+                  </div>
                 ) : (
                   sendButton
                 )}
