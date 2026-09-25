@@ -48,6 +48,9 @@ export interface SessionTimelineDependencies {
   emitError: (error: TimelineError) => void;
   now?: () => number;
   loaders?: SessionTimelineLoaders;
+  // Where an open session writes its own file when DROIDEX does not write it
+  // (Droid), so a session opened this run can be read before it closes.
+  liveSessionFile?: (providerSessionId: string) => string | undefined;
   // Streaming deltas buffered longer than this are flushed as one event.
   // 0 disables coalescing (every delta records and emits immediately).
   streamingCoalesceMs?: number;
@@ -302,9 +305,11 @@ export class SessionTimeline {
     const summary = this.dependencies.registry.resolveSummary(appSessionId);
     if (!summary) throw new Error(`Session history not found for ${appSessionId}`);
     const providerSessionId = summary.providerSessionId ?? summary.appSessionId;
-    // The file DROIDEX writes for an open session joins the history index only
-    // when the session closes, so until then it is read where it is written.
-    const openFile = this.transcripts.path(summary.appSessionId);
+    // An open session's file joins the history index only when the session
+    // closes, so until then it is read where it is written.
+    const openFile =
+      this.transcripts.path(summary.appSessionId) ??
+      this.dependencies.liveSessionFile?.(providerSessionId);
     if (openFile && !this.loaders.resolveChain(summary.appSessionId, providerSessionId).length)
       return this.loaders.openTranscriptTail(summary.appSessionId, openFile, limit);
     return this.loadStandard(summary.appSessionId, providerSessionId, undefined, limit).transcripts;

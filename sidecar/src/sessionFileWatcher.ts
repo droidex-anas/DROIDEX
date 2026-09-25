@@ -22,6 +22,8 @@ export interface SessionFileWatcher {
   // path uses this to reconcile one finalized file instead of walking the
   // whole sessions tree.
   consumeLiveSessionFile(providerSessionId: string): string | undefined;
+  // The same path, left in place: where an open session is writing right now.
+  liveSessionFile(providerSessionId: string): string | undefined;
   close(): void;
 }
 
@@ -239,6 +241,9 @@ export function startSessionFileWatcher(
       const path = liveSessionFiles.get(providerSessionId);
       liveSessionFiles.delete(providerSessionId);
       return path;
+    },
+    liveSessionFile(providerSessionId) {
+      return liveSessionFiles.get(providerSessionId);
     },
     close() {
       closed = true;

@@ -471,6 +471,7 @@ export class SessionManager {
         this.emitError(error);
       },
       now: Date.now,
+      liveSessionFile: (providerSessionId) => this.sessionFiles.liveSessionFile(providerSessionId),
       ...(options.dependencies?.streamingCoalesceMs !== undefined
         ? { streamingCoalesceMs: options.dependencies.streamingCoalesceMs }
         : {}),
