@@ -59,6 +59,7 @@ async function harness(saved: Project[] = []) {
     gate: undefined as Promise<void> | undefined,
     capacity: 'free' as 'free' | 'busy',
     bindGate: undefined as Promise<void> | undefined,
+    createFailure: undefined as 'before-bind' | 'after-bind' | undefined,
   };
   const answered: { id: string; requestId: string; answers: unknown[] }[] = [];
   const configured: { id: string; settings: unknown }[] = [];
@@ -95,7 +96,9 @@ async function harness(saved: Project[] = []) {
       const session = summary(`session-${++next}`, selection);
       sessions.set(session.appSessionId, session);
       if (state.bindGate) await state.bindGate;
+      if (state.createFailure === 'before-bind') throw new Error('The harness refused to start.');
       await bind(session);
+      if (state.createFailure === 'after-bind') throw new Error('The harness exited on start.');
       launched.push(selection);
       await streaming(session.appSessionId, true);
       return session;
@@ -392,6 +395,55 @@ test('ordinary chats adopt a project, with scoped ownership and no autonomy esca
     /autonomy/,
   );
   await h.projects.send('ordinary', grandchild.appSessionId, 'Main can coordinate all members.');
+});
+
+test('a first spawn that fails leaves no project behind, wherever it failed', async (t) => {
+  const h = await harness();
+  t.after(() => h.projects.close());
+  h.sessions.set('ordinary', summary('ordinary'));
+  await assert.rejects(h.projects.spawn('ordinary', { ...input, step: '1' }), /keeps no plan yet/);
+  // Its checkout cannot be cut, so nothing launches.
+  await assert.rejects(
+    h.projects.spawn('ordinary', { ...input, workspace: 'worktree' }),
+    /no longer exists/,
+  );
+  h.state.createFailure = 'before-bind';
+  await assert.rejects(h.projects.spawn('ordinary', input), /refused to start/);
+  // Nothing before a thread binds reaches the ledger or the Projects view.
+  assert.ok(
+    h.events.every((event) => event.type !== 'projects.snapshot' || !event.projects.length),
+  );
+
+  // A thread that binds and then fails takes its project with it, including
+  // when a parallel first spawn is still starting as the first one fails.
+  h.state.createFailure = 'after-bind';
+  const gate = deferred();
+  h.state.bindGate = gate.promise;
+  const both = [h.projects.spawn('ordinary', input), h.projects.spawn('ordinary', input)];
+  gate.resolve();
+  const outcomes = await Promise.allSettled(both);
+  assert.ok(outcomes.every((outcome) => outcome.status === 'rejected'));
+  assert.deepEqual(h.projects.list(), []);
+  assert.equal(h.state.saved.length, 0);
+
+  // The chat can still spawn, and that project holds the thread.
+  h.state.createFailure = undefined;
+  h.state.bindGate = undefined;
+  const started = await h.projects.spawn('ordinary', input);
+  assert.deepEqual(
+    h.state.saved[0]?.threads.map((thread) => thread.appSessionId),
+    ['ordinary', started.appSessionId],
+  );
+});
+
+test('a failed spawn never removes a project started in Projects', async (t) => {
+  const h = await harness();
+  t.after(() => h.projects.close());
+  const { main } = await h.root();
+  h.state.createFailure = 'after-bind';
+  await assert.rejects(h.projects.spawn(main, input), /exited on start/);
+  assert.equal(h.projects.list().length, 1);
+  assert.equal(h.state.saved[0]?.threads.length, 1);
 });
 
 test('pause cancels a pending wake after asynchronous admission work', async (t) => {
