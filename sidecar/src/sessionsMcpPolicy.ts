@@ -41,6 +41,24 @@ export function shouldAutoApproveSessionsTool(
   return autonomy === 'high';
 }
 
+/**
+ * How far one "Always allow" reaches for a session tool, as a suffix of its
+ * grant key: undefined when it covers the whole tool, as for any other tool,
+ * and an empty string when the request cannot be granted at all. Allowing a
+ * chat to start threads for the rest of its run must not also let it start
+ * sidebar chats.
+ */
+export function sessionsGrantScope(
+  serverName: string,
+  toolName: string,
+  input: Record<string, unknown>,
+): string | undefined {
+  if (sessionsTool(serverName, toolName) !== 'thread_spawn') return undefined;
+  if (input.reportBack === true) return 'thread';
+  if (input.reportBack === false) return 'chat';
+  return '';
+}
+
 /** The bare tool name when this is one of DROIDEX's session tools, or an empty string. */
 function sessionsTool(serverName: string, toolName: string): string {
   const split = splitNamespacedTool(toolName.trim());
