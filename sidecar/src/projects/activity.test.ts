@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { ProjectActivity } from './activity.js';
+import { ProjectActivity, transcriptEnding } from './activity.js';
 import type { TranscriptEvent } from '../protocol.js';
 
 test('only the bounded final primary reply survives a turn, never thinking or tool output', () => {
@@ -42,4 +42,41 @@ test('only the bounded final primary reply survives a turn, never thinking or to
   const recovered = activity.finish('thread');
   assert.equal(recovered?.text, 'Replied without a streaming update');
   assert.equal(recovered?.error, 'Provider refused the request');
+});
+
+test("a stored transcript ends with its last turn's final reply, read the way a live turn is", () => {
+  let id = 0;
+  const event = (
+    kind: TranscriptEvent['kind'],
+    text: string,
+    extra: Partial<TranscriptEvent> = {},
+  ): TranscriptEvent => ({
+    id: String((id += 1)),
+    appSessionId: 'chat',
+    sourceSessionId: 'chat',
+    role: 'primary',
+    ts: id,
+    kind,
+    text,
+    ...extra,
+  });
+  const answered = [
+    event('text', 'First question', { author: 'user' }),
+    event('text', 'An old answer'),
+    event('text', 'Second question', { author: 'user' }),
+    event('text', 'Let me look'),
+    event('tool_call', 'Read'),
+    event('text', 'A worker aside', { role: 'worker' }),
+    event('text', 'The final answer'),
+  ];
+  assert.deepEqual(transcriptEnding(answered), { reply: 'The final answer', last: 'reply' });
+  // A prompt still waiting on its reply shows no reply from an earlier turn.
+  assert.deepEqual(
+    transcriptEnding([...answered, event('text', 'And then?', { author: 'user' })]),
+    {
+      reply: '',
+      last: 'prompt',
+    },
+  );
+  assert.deepEqual(transcriptEnding([]), { reply: '' });
 });

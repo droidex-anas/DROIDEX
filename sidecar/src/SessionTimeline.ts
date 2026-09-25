@@ -291,6 +291,21 @@ export class SessionTimeline {
     }
   }
 
+  /**
+   * The newest events of a conversation's stored transcript, for a caller that
+   * only looks at it: nothing is recorded or sent to the window.
+   */
+  tail(appSessionId: string, limit: number): TranscriptEvent[] {
+    const summary = this.dependencies.registry.resolveSummary(appSessionId);
+    if (!summary) throw new Error(`Session history not found for ${appSessionId}`);
+    return this.loadStandard(
+      summary.appSessionId,
+      summary.providerSessionId ?? summary.appSessionId,
+      undefined,
+      limit,
+    ).transcripts;
+  }
+
   useTranscript(appSessionId: string, transcript: TimelineTranscript): void {
     this.transcripts.use(appSessionId, transcript);
   }

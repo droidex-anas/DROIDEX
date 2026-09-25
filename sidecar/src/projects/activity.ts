@@ -43,15 +43,7 @@ export class ProjectActivity {
     if (!GENERATED.has(event.kind)) return;
     this.open(event.appSessionId);
     const turn = this.turns.get(event.appSessionId);
-    if (!turn) return;
-    if (event.kind === 'tool_call') {
-      // A pre-tool explanation is not the final report.
-      turn.text = '';
-    } else if (event.kind === 'text') {
-      turn.text = (turn.text + (event.text ?? '')).slice(-LEDGER_LIMITS.text);
-    } else if (event.kind === 'error') {
-      turn.error = (event.text ?? '').slice(0, LEDGER_LIMITS.threadError);
-    }
+    if (turn) applyGenerated(turn, event);
   }
 
   /** The settled turn, or nothing when this conversation had none open. */
@@ -63,5 +55,42 @@ export class ProjectActivity {
 
   clear(): void {
     this.turns.clear();
+  }
+}
+
+/** How a stored conversation ends: its last turn's final reply, and whether
+    the newest message in it is that reply or a prompt. */
+export interface TranscriptEnding {
+  reply: string;
+  last?: 'reply' | 'prompt';
+}
+
+export function transcriptEnding(events: readonly TranscriptEvent[]): TranscriptEnding {
+  let turn: ThreadTurn = { text: '' };
+  let last: TranscriptEnding['last'];
+  for (const event of events) {
+    if (event.role !== 'primary') continue;
+    if (event.author === 'user') {
+      turn = { text: '' };
+      last = 'prompt';
+    } else if (GENERATED.has(event.kind)) {
+      applyGenerated(turn, event);
+      if (event.kind === 'text') last = 'reply';
+    }
+  }
+  return { reply: turn.text, ...(last ? { last } : {}) };
+}
+
+/* One generated event applied to the turn it belongs to. A live thread's turn
+   and the end of a stored transcript both go through here, so a final reply
+   means the same thing in both: the text after the turn's last tool call. */
+function applyGenerated(turn: ThreadTurn, event: TranscriptEvent): void {
+  if (event.kind === 'tool_call') {
+    // A pre-tool explanation is not the final report.
+    turn.text = '';
+  } else if (event.kind === 'text') {
+    turn.text = (turn.text + (event.text ?? '')).slice(-LEDGER_LIMITS.text);
+  } else if (event.kind === 'error') {
+    turn.error = (event.text ?? '').slice(0, LEDGER_LIMITS.threadError);
   }
 }
