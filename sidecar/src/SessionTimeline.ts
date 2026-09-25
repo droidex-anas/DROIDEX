@@ -1,6 +1,7 @@
 import {
   hydrateHistoricalSession,
   loadSessionHistory,
+  loadOpenTranscriptTail,
   loadSessionPage,
   loadSessionTranscriptWindow,
   resolveSessionChain,
@@ -31,6 +32,7 @@ export interface SessionTimelineLoaders {
   hydrateMission: typeof hydrateHistoricalSession;
   resolveChain: typeof resolveSessionChain;
   transcriptWindow: typeof loadSessionTranscriptWindow;
+  openTranscriptTail: typeof loadOpenTranscriptTail;
 }
 
 export interface SessionTimelineRegistry {
@@ -131,6 +133,7 @@ export class SessionTimeline {
       hydrateMission: hydrateHistoricalSession,
       resolveChain: resolveSessionChain,
       transcriptWindow: loadSessionTranscriptWindow,
+      openTranscriptTail: loadOpenTranscriptTail,
     };
     this.streaming = new StreamingDeltaCoalescer({
       windowMs: dependencies.streamingCoalesceMs ?? DEFAULT_STREAMING_COALESCE_MS,
@@ -298,12 +301,13 @@ export class SessionTimeline {
   tail(appSessionId: string, limit: number): TranscriptEvent[] {
     const summary = this.dependencies.registry.resolveSummary(appSessionId);
     if (!summary) throw new Error(`Session history not found for ${appSessionId}`);
-    return this.loadStandard(
-      summary.appSessionId,
-      summary.providerSessionId ?? summary.appSessionId,
-      undefined,
-      limit,
-    ).transcripts;
+    const providerSessionId = summary.providerSessionId ?? summary.appSessionId;
+    // The file DROIDEX writes for an open session joins the history index only
+    // when the session closes, so until then it is read where it is written.
+    const openFile = this.transcripts.path(summary.appSessionId);
+    if (openFile && !this.loaders.resolveChain(summary.appSessionId, providerSessionId).length)
+      return this.loaders.openTranscriptTail(summary.appSessionId, openFile, limit);
+    return this.loadStandard(summary.appSessionId, providerSessionId, undefined, limit).transcripts;
   }
 
   useTranscript(appSessionId: string, transcript: TimelineTranscript): void {

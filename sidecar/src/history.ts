@@ -1111,6 +1111,22 @@ export function loadSessionTranscriptWindow(
   return { events: picked, olderCursor };
 }
 
+/**
+ * The newest events of the transcript DROIDEX is writing for a session still
+ * open. The history index learns of that file only when the session closes.
+ */
+export function loadOpenTranscriptTail(
+  appSessionId: string,
+  path: string,
+  limit: number,
+): TranscriptEvent[] {
+  if (!existsSync(path)) return [];
+  return transcriptReaderFor(appSessionId, appSessionId, path, 'primary').windowBackward(
+    Math.max(1, limit),
+    0,
+  ).events;
+}
+
 export function readFactoryDefaults(): FactoryDefaults {
   const path = join(homedir(), '.factory', 'settings.json');
   if (!existsSync(path)) return {};
