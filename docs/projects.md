@@ -14,7 +14,8 @@ and Claude Code today. The Codex runtime has no MCP path at all, so a Codex chat
 sees none of DROIDEX's in-app tools and cannot lead a project; its threads can
 still run on any harness a lead names. Asking a chat to run work in
 parallel is enough — it spawns the threads itself, and the chat becomes that
-project's main conversation on the first spawn. `thread_spawn` follows the
+project's main conversation once its first thread starts. A spawn that fails
+leaves no project behind. `thread_spawn` follows the
 chat's own autonomy: it is auto-approved at High and asks the user otherwise;
 the rest only read, retune or move text between conversations DROIDEX already
 owns, and none of them can put a thread past the autonomy its owner has.

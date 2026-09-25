@@ -59,6 +59,15 @@ export interface ProjectPort {
   ): boolean;
 }
 
+/** What a spawn reports back to the chat that made it. */
+interface StartedThread {
+  appSessionId: string;
+  title: string;
+  cwd?: string;
+  branch?: string;
+  step?: string;
+}
+
 /** What a chat reads back about a thread it owns. */
 export interface ThreadReadout {
   threadId: string;
@@ -79,6 +88,11 @@ export interface ThreadReadout {
 export class ProjectService {
   private readonly projects = new Map<string, Project>();
   private readonly membership = new Map<string, Project>();
+  /* The project a chat's first spawns build, keyed by that chat. It joins the
+     ledger when a thread binds to it, and leaves this map once no spawn for it
+     is still starting: kept when it holds a thread, forgotten when it holds
+     nothing, so a spawn that fails leaves no project behind. */
+  private readonly adopting = new Map<string, Project>();
   private readonly launches = new Set<Promise<string>>();
   private readonly wakes: ProjectWakeQueue;
   private readonly turns: ProjectTurns;
@@ -175,7 +189,8 @@ export class ProjectService {
       const main = existing.threads.find((thread) => !thread.ownerAppSessionId);
       return { projectId: existing.id, ...(main ? { appSessionId: main.appSessionId } : {}) };
     }
-    const project = this.newProject(input.title, requestId);
+    const project = this.blankProject(input.title, requestId);
+    this.projects.set(project.id, project);
     try {
       const appSessionId = await this.launch(project, input);
       return { projectId: project.id, appSessionId };
@@ -189,16 +204,7 @@ export class ProjectService {
     }
   }
 
-  async spawn(
-    source: string,
-    requested: ThreadSpawnInput,
-  ): Promise<{
-    appSessionId: string;
-    title: string;
-    cwd?: string;
-    branch?: string;
-    step?: string;
-  }> {
+  async spawn(source: string, requested: ThreadSpawnInput): Promise<StartedThread> {
     this.requireOpen();
     const owner = this.requireSession(source);
     if (owner.sessionPurpose !== 'chat')
@@ -212,17 +218,27 @@ export class ProjectService {
         input.modelId,
       );
     checkWithinAutonomy(owner, input.autonomy);
-    let project = this.membership.get(source);
-    if (!project) {
-      project = this.newProject(owner.title);
-      project.threads.push({
-        appSessionId: source,
-        title: owner.title.slice(0, LEDGER_LIMITS.title) || 'Main conversation',
-        reply: '',
-        waiting: false,
-      });
-      this.membership.set(source, project);
+    const joined = this.membership.get(source);
+    if (!joined && requested.step)
+      throw new Error('This chat keeps no plan yet. Call plan_set first, or spawn without step.');
+    if (!joined && requested.workspaceOf)
+      throw new Error('This chat has started no threads to share a checkout with.');
+    const project = joined ?? this.adoption(source, owner);
+    try {
+      return await this.startThread(project, source, owner, input, requested);
+    } finally {
+      if (this.settleAdoption(project)) await this.save();
     }
+  }
+
+  /** Admits, checks out and launches one thread of a project, and links the step it carries. */
+  private async startThread(
+    project: Project,
+    source: string,
+    owner: SessionSummary,
+    input: Omit<ThreadInput, 'cwd'>,
+    requested: ThreadSpawnInput,
+  ): Promise<StartedThread> {
     let ancestor: string | undefined = source;
     let depth = 0;
     while (ancestor) {
@@ -530,6 +546,7 @@ export class ProjectService {
             checkWithinAutonomy(this.requireSession(ownerAppSessionId), input.autonomy);
           if (this.membership.has(created.appSessionId))
             throw new Error('The harness reused an existing thread identity.');
+          if (ownerAppSessionId) this.commitAdoption(ownerAppSessionId, project);
           bound = created.appSessionId;
           project.threads.push({
             appSessionId: bound,
@@ -554,6 +571,7 @@ export class ProjectService {
       throw error;
     } finally {
       project.launching -= 1;
+      this.settleAdoption(project);
       await this.save();
     }
   }
@@ -577,8 +595,8 @@ export class ProjectService {
     project.pending.push({ id: randomUUID(), from, to, kind, text });
   }
 
-  private newProject(title: string, id: string = randomUUID()): Project {
-    const project: Project = {
+  private blankProject(title: string, id: string = randomUUID()): Project {
+    return {
       id,
       title: title.slice(0, LEDGER_LIMITS.title) || 'Project',
       paused: false,
@@ -587,8 +605,45 @@ export class ProjectService {
       threads: [],
       pending: [],
     };
-    this.projects.set(project.id, project);
+  }
+
+  /** The project a chat's first spawn builds, shared by first spawns made in parallel. */
+  private adoption(source: string, owner: SessionSummary): Project {
+    const pending = this.adopting.get(source);
+    if (pending) return pending;
+    const project = this.blankProject(owner.title);
+    project.threads.push({
+      appSessionId: source,
+      title: owner.title.slice(0, LEDGER_LIMITS.title) || 'Main conversation',
+      reply: '',
+      waiting: false,
+    });
+    this.adopting.set(source, project);
     return project;
+  }
+
+  /** Puts an adoption in the ledger, as its first thread binds. */
+  private commitAdoption(source: string, project: Project): void {
+    if (this.adopting.get(source) !== project || this.projects.has(project.id)) return;
+    this.projects.set(project.id, project);
+    this.membership.set(source, project);
+  }
+
+  /**
+   * Once no spawn is still starting a thread for it, an adoption is settled:
+   * kept as an ordinary project when it holds a thread, forgotten when it holds
+   * nothing. True when the forgotten one was in the ledger, which the caller
+   * then saves without it.
+   */
+  private settleAdoption(project: Project): boolean {
+    const lead = project.threads.find((thread) => !thread.ownerAppSessionId);
+    if (!lead || project.launching > 0 || this.adopting.get(lead.appSessionId) !== project)
+      return false;
+    this.adopting.delete(lead.appSessionId);
+    if (project.threads.length > 1 || !this.projects.has(project.id)) return false;
+    this.projects.delete(project.id);
+    this.membership.delete(lead.appSessionId);
+    return true;
   }
 
   private controlledProject(source: string, target: string): Project {
