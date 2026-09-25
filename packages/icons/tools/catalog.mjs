@@ -8,6 +8,7 @@ import * as skills from '../dist/skills.js';
 import * as knowledge from '../dist/knowledge.js';
 import * as voice from '../dist/voice.js';
 import * as modes from '../dist/modes.js';
+import * as computer from '../dist/computer.js';
 import { ChangesIcon, WorktreeIcon } from '../dist/index.js';
 
 const groups = {
@@ -15,6 +16,7 @@ const groups = {
   Knowledge: knowledge,
   Voice: voice,
   Modes: modes,
+  Computer: computer,
   Status: status,
   Actions: actions,
   Arrows: arrows,

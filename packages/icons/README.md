@@ -132,6 +132,8 @@ The Git category covers pull requests: GitPullRequest, GitPullRequestCreate,
 GitFork, CodeReview and Repository are outline; the status glyphs
 GitPullRequestDraft, GitPullRequestMerged, GitPullRequestClosed, Issue and
 IssueClosed carry a soft tint on their state node.
+The Computer category holds ComputerUse, ComputerHistory, Appshots, Plugins
+and Browser.
 Single-style glyphs such as Spinner, CircleDashed, Brain, Models, Sketch, Mcp,
 the Git status glyphs and arrows retain their original geometry in
 filled preview mode.
