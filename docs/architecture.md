@@ -77,7 +77,10 @@ The Projects route owns its snapshot outside the streaming chat store and
 opens conversations through the normal chat/composer. A chat's own tools for
 starting and steering other chats arrive the way the browser's and automations'
 do: an in-app MCP server, `droidex-sessions`, started per session alongside
-them.
+them. Its session tools never keep a copy of the sidebar: each call asks the
+window with `sidebar.request` and reads its `sidebar.result`, answered in the
+app root from one read of the store, so it works with the sidebar collapsed.
+See [Session tools](session-tools.md).
 See [Projects](projects.md) for current capabilities and limitations.
 
 ### Child runtime residency
