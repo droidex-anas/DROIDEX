@@ -216,6 +216,7 @@ function isServerEvent(value: unknown): value is ServerEvent {
     case 'question.requested':
       return isSessionQuestion(value.question);
     case 'interaction.cancelled':
+    case 'question.answered':
       return hasStrings(value, ['appSessionId', 'requestId']);
     case 'context.updated':
       return hasStrings(value, ['appSessionId', 'sourceSessionId']) && isContextStats(value.stats);

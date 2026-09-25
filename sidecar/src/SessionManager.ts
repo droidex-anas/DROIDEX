@@ -1121,13 +1121,16 @@ export class SessionManager {
   /**
    * Answers a question a session is blocked on, for callers that must know
    * whether it landed: false when the question was already settled elsewhere.
+   * The window asking it did not answer, so it is told to stop asking.
    */
   answerQuestion(
     appSessionId: string,
     requestId: string,
     answers: { index: number; question: string; answer: string }[],
   ): boolean {
-    return this.interactions.respondToQuestion(appSessionId, requestId, false, answers);
+    const landed = this.interactions.respondToQuestion(appSessionId, requestId, false, answers);
+    if (landed) this.emit({ type: 'question.answered', appSessionId, requestId });
+    return landed;
   }
 
   /** What each provider can run right now, for callers that must validate a choice. */
