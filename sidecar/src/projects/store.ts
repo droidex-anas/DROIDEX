@@ -132,6 +132,35 @@ const project = z
 const ledger = z.array(project);
 // The backstop on the ledger's size, since no count bounds its projects or threads.
 const MAX_BYTES = 8 * 1024 * 1024;
+/* What keeps the ledger short of that backstop, which refuses the save and so
+   holds every project. Replies are what grows without bound, so past this
+   budget the threads whose conversations moved longest ago give up their
+   earlier replies, then their final one. Each thread's whole conversation
+   stays in its own transcript. */
+const BUDGET_BYTES = 6 * 1024 * 1024;
+
+/** Sheds the oldest threads' replies until the ledger fits its budget. */
+export function fitLedger(
+  projects: readonly Project[],
+  movedAt: (appSessionId: string) => number,
+): void {
+  let bytes = Buffer.byteLength(JSON.stringify(projects));
+  if (bytes <= BUDGET_BYTES) return;
+  const oldestFirst = projects
+    .flatMap((item) => item.threads)
+    .sort((a, b) => movedAt(a.appSessionId) - movedAt(b.appSessionId));
+  for (const thread of oldestFirst) {
+    if (bytes <= BUDGET_BYTES) return;
+    if (!thread.earlierReplies) continue;
+    bytes -= Buffer.byteLength(JSON.stringify(thread.earlierReplies));
+    delete thread.earlierReplies;
+  }
+  for (const thread of oldestFirst) {
+    if (bytes <= BUDGET_BYTES) return;
+    bytes -= Buffer.byteLength(JSON.stringify(thread.reply)) - 2;
+    thread.reply = '';
+  }
+}
 
 export interface ProjectPersistence {
   load(): Promise<Project[]>;

@@ -3,7 +3,7 @@ import { mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
-import { ProjectStore, threadInputSchema } from './store.js';
+import { fitLedger, LEDGER_LIMITS, ProjectStore, threadInputSchema } from './store.js';
 import type { Project } from './types.js';
 
 function project(): Project {
@@ -36,6 +36,41 @@ test('a missing ledger is empty, writes are ordered, and a fresh reader restores
   // Why a project is held has to survive a restart, or the lead's spawn could not lift it.
   assert.equal(loaded?.leadStopped, true);
   if (process.platform !== 'win32') assert.equal((await stat(path)).mode & 0o777, 0o600);
+});
+
+test('a ledger past its budget sheds the oldest replies first and still saves', async (t) => {
+  const directory = await mkdtemp(join(tmpdir(), 'droidex-projects-'));
+  t.after(() => rm(directory, { recursive: true, force: true }));
+  const path = join(directory, 'projects.json');
+  const reply = 'x'.repeat(LEDGER_LIMITS.text);
+  // Fifteen projects whose nine threads each hold every reply the ledger keeps.
+  const projects: Project[] = Array.from({ length: 15 }, (_, index) => ({
+    ...project(),
+    id: `project-${String(index)}`,
+    threads: [
+      { appSessionId: `main-${String(index)}`, title: 'Main', reply: '', waiting: false },
+      ...Array.from({ length: 9 }, (_, position) => ({
+        appSessionId: `thread-${String(index * 9 + position)}`,
+        ownerAppSessionId: `main-${String(index)}`,
+        title: 'Thread',
+        reply,
+        earlierReplies: Array.from({ length: LEDGER_LIMITS.earlierReplies }, () => reply),
+        waiting: false,
+      })),
+    ],
+  }));
+  const store = new ProjectStore(path);
+  await assert.rejects(store.save(projects), /exceeds 8 MiB/);
+
+  // A higher number moved more recently.
+  fitLedger(projects, (appSessionId) => Number(appSessionId.split('-')[1]));
+  await store.save(projects);
+  const threads = (await new ProjectStore(path).load()).flatMap((item) => item.threads);
+  const oldest = threads.find((thread) => thread.appSessionId === 'thread-0');
+  assert.equal(oldest?.earlierReplies, undefined);
+  assert.equal(oldest?.reply, reply);
+  const newest = threads.find((thread) => thread.appSessionId === 'thread-134');
+  assert.equal(newest?.earlierReplies?.length, LEDGER_LIMITS.earlierReplies);
 });
 
 test('corruption is reported without overwriting the user’s saved data', async (t) => {

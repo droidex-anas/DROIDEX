@@ -11,7 +11,7 @@ import { randomUUID } from 'node:crypto';
 import type { ProviderStatus, ServerEvent, SessionSummary } from '../protocol.js';
 import { findPlanStep, planFromSteps } from './plan.js';
 import { SpawnedChats, type StartedChat } from './spawnedChats.js';
-import { LEDGER_LIMITS, type ProjectPersistence } from './store.js';
+import { fitLedger, LEDGER_LIMITS, type ProjectPersistence } from './store.js';
 import {
   checkWithinAutonomy,
   discardThreadCheckout,
@@ -749,8 +749,10 @@ export class ProjectService {
   }
 
   private async save(): Promise<void> {
+    const projects = [...this.projects.values()];
+    fitLedger(projects, (appSessionId) => this.sessions.get(appSessionId)?.updatedAt ?? 0);
     try {
-      await this.store.save([...this.projects.values()]);
+      await this.store.save(projects);
     } catch (error) {
       for (const project of this.projects.values()) this.fail(project, error);
       throw error;
