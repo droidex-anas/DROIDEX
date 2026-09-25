@@ -193,9 +193,15 @@ async function automationBridge(
   };
 }
 
+// The chat's own sidebar row, not the first text that happens to match: the
+// open chat's header carries the same title.
+async function openChat(page: Page, title: string) {
+  await page.getByTestId('session-row').filter({ hasText: title }).first().click();
+}
+
 async function openConversation(page: Page) {
   await page.goto('/');
-  await page.getByText(session.title, { exact: true }).first().click();
+  await openChat(page, session.title);
   await expect(page.getByRole('textbox', { name: 'Prompt', exact: true })).toBeVisible();
 }
 
@@ -344,12 +350,12 @@ test('the composer keeps scheduled prompts scoped to each chat and cancels pendi
   });
   await expect(scheduled).not.toContainText('Waiting for this conversation to be ready');
   await expect(scheduled.getByRole('button', { name: '1 more in Automations' })).toHaveCount(0);
-  await page.getByText(otherSession.title, { exact: true }).first().click();
+  await openChat(page, otherSession.title);
   await expect(scheduled).toContainText(otherPrompt.prompt);
   await expect(scheduled).toContainText('design-notes.md');
   await expect(scheduled).not.toContainText('Continue once the limit resets');
   await page.reload();
-  await page.getByText(otherSession.title, { exact: true }).first().click();
+  await openChat(page, otherSession.title);
   await expect(scheduled).toContainText(otherPrompt.prompt);
   await scheduled.getByRole('button', { name: 'Edit scheduled prompt' }).click();
   await expect(page.getByRole('button', { name: 'Save changes' })).toBeVisible();
