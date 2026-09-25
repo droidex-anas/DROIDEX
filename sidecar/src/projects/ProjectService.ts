@@ -98,6 +98,7 @@ export class ProjectService {
     );
     this.turns = new ProjectTurns({
       project: (appSessionId) => this.membership.get(appSessionId),
+      session: (appSessionId) => sessions.get(appSessionId),
       isAsking: (appSessionId, requestId) => sessions.isAsking(appSessionId, requestId),
       enqueue: (project, from, to, kind, text) => {
         this.enqueue(project, from, to, kind, text);
@@ -231,12 +232,12 @@ export class ProjectService {
     if (depth >= 4) throw new Error('Project thread nesting is limited to three levels.');
     // Everything a spawn can be refused for is checked before its checkout is
     // cut, because a worktree for a thread that never starts is left on disk
-    // with nothing to say it was ours: a bad step name, a held project or a
-    // full one would each strand one.
+    // with nothing to say it was ours: a bad step name or a held project would
+    // each strand one.
     this.checkAdmission(project);
     const named = requested.step ? findPlanStep(project.plan, requested.step) : undefined;
-    // The slot is held while the checkout is cut, so a parallel spawn cannot
-    // pass the same cap, and it is handed to the launch without a gap.
+    // The thread counts as starting while its checkout is cut, and the count is
+    // handed to the launch without a gap.
     project.launching += 1;
     let workspace: ThreadCheckout | undefined;
     try {
@@ -577,8 +578,6 @@ export class ProjectService {
   }
 
   private newProject(title: string, id: string = randomUUID()): Project {
-    if (this.projects.size >= LEDGER_LIMITS.projects)
-      throw new Error(`The local project limit is ${String(LEDGER_LIMITS.projects)}.`);
     const project: Project = {
       id,
       title: title.slice(0, LEDGER_LIMITS.title) || 'Project',
@@ -614,14 +613,12 @@ export class ProjectService {
     return session;
   }
 
-  /** Whether this project can take another thread at all. */
+  /* A project takes as many threads as its work needs. What keeps one from
+     running away is the nesting limit, the approval a spawn needs below High,
+     and the hold on threads talking in circles, not a count. */
   private checkAdmission(project: Project): void {
     if (project.paused)
       throw new Error('This project is held. Ask the user to resume it in Projects first.');
-    if (project.threads.length + project.launching >= LEDGER_LIMITS.threads)
-      throw new Error(
-        `A project holds at most ${String(LEDGER_LIMITS.threads)} conversations, its main chat included.`,
-      );
   }
 
   private requireOpen(): void {

@@ -11,9 +11,6 @@ const id = z.string().min(1).max(200);
    these, because the schema is checked on load and a file it refuses takes
    every project with it. */
 export const LEDGER_LIMITS = {
-  projects: 32,
-  /** Conversations in one project, its main chat included. */
-  threads: 8,
   /** A project's or a thread's title. */
   title: 120,
   planSteps: 60,
@@ -90,7 +87,7 @@ const project = z
     id,
     title: z.string().min(1).max(LEDGER_LIMITS.title),
     paused: z.boolean(),
-    launching: z.number().int().min(0).max(LEDGER_LIMITS.threads),
+    launching: z.number().int().min(0),
     plan: z
       .array(
         z
@@ -106,22 +103,20 @@ const project = z
       )
       .max(LEDGER_LIMITS.planSteps)
       .optional(),
-    threads: z
-      .array(
-        z
-          .object({
-            appSessionId: id,
-            ask: ask.optional(),
-            ownerAppSessionId: id.optional(),
-            title: z.string().max(LEDGER_LIMITS.title),
-            reply: text,
-            earlierReplies: z.array(text).max(LEDGER_LIMITS.earlierReplies).optional(),
-            error: z.string().max(LEDGER_LIMITS.threadError).optional(),
-            waiting: z.boolean(),
-          })
-          .strict(),
-      )
-      .max(LEDGER_LIMITS.threads),
+    threads: z.array(
+      z
+        .object({
+          appSessionId: id,
+          ask: ask.optional(),
+          ownerAppSessionId: id.optional(),
+          title: z.string().max(LEDGER_LIMITS.title),
+          reply: text,
+          earlierReplies: z.array(text).max(LEDGER_LIMITS.earlierReplies).optional(),
+          error: z.string().max(LEDGER_LIMITS.threadError).optional(),
+          waiting: z.boolean(),
+        })
+        .strict(),
+    ),
     pending: z.array(message).max(LEDGER_LIMITS.inbox),
     delivery: z
       .object({
@@ -133,7 +128,8 @@ const project = z
     error: z.string().max(LEDGER_LIMITS.projectError).optional(),
   })
   .strict();
-const ledger = z.array(project).max(LEDGER_LIMITS.projects);
+const ledger = z.array(project);
+// The backstop on the ledger's size, since no count bounds its projects or threads.
 const MAX_BYTES = 8 * 1024 * 1024;
 
 export interface ProjectPersistence {

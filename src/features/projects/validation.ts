@@ -15,7 +15,8 @@ function isProjectMetadata(value: Record<string, unknown>): boolean {
     text(value.title, 120) &&
     (value.cwd === undefined || text(value.cwd, 4_096)) &&
     typeof value.paused === 'boolean' &&
-    count(value.launching, 8) &&
+    // A project starts as many threads as its work needs; only its queues are bounded.
+    count(value.launching) &&
     count(value.queued, 64) &&
     count(value.uncertain, 64) &&
     (value.error === undefined || text(value.error, 2_000))
@@ -43,7 +44,6 @@ function isPlan(value: unknown): value is ProjectStep[] {
 function isThreadList(value: unknown): value is ProjectThread[] {
   return (
     Array.isArray(value) &&
-    value.length <= 8 &&
     value.every(
       (thread: unknown) =>
         record(thread) &&
@@ -86,6 +86,6 @@ function record(value: unknown): value is Record<string, unknown> {
 function text(value: unknown, max: number): value is string {
   return typeof value === 'string' && value.length > 0 && value.length <= max;
 }
-function count(value: unknown, max: number): boolean {
+function count(value: unknown, max = Number.MAX_SAFE_INTEGER): boolean {
   return typeof value === 'number' && Number.isSafeInteger(value) && value >= 0 && value <= max;
 }

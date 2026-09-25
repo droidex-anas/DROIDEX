@@ -141,11 +141,7 @@ function isServerEvent(value: unknown): value is ServerEvent {
   const type = value.type as ServerEvent['type'];
   switch (type) {
     case 'projects.snapshot':
-      return (
-        Array.isArray(value.projects) &&
-        value.projects.length <= 32 &&
-        value.projects.every(isProjectView)
-      );
+      return Array.isArray(value.projects) && value.projects.every(isProjectView);
     case 'project.result':
       return isProjectResult(value);
     case 'connection':
