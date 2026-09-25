@@ -68,7 +68,7 @@ export function shouldAutoApproveAutomationTool(
  * mutation can still be surfaced instead of executing invisibly.
  */
 export function isAutomationMutationPermission(params: unknown): boolean {
-  const target = automationPermissionTarget(params);
+  const target = mcpPermissionTarget(params);
   return target ? isAutomationMutationTool(target.serverName, target.toolName) : false;
 }
 
@@ -80,7 +80,8 @@ export function isAutomationMutationTool(serverName: string, toolName: string): 
   return Boolean(tool) && !ALWAYS_SAFE.has(tool);
 }
 
-export function automationPermissionTarget(
+/** The server and tool a Droid permission request names, for a tool on any MCP server. */
+export function mcpPermissionTarget(
   params: unknown,
 ): { serverName: string; toolName: string } | null {
   const raw = recordValue(params);
