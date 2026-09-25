@@ -750,6 +750,27 @@ test('a spawn carries a settled plan step, or none at all', async (t) => {
   assert.equal(h.projects.list()[0]?.plan[0]?.threadAppSessionId, started.appSessionId);
 });
 
+test('an ordinary chat that writes a plan becomes a project and spawns for its steps', async (t) => {
+  const h = await harness();
+  t.after(() => h.projects.close());
+  h.sessions.set('ordinary', summary('ordinary'));
+  await assert.rejects(
+    h.projects.setPlan('ordinary', [{ title: 'Port', threadAppSessionId: 'someone' }]),
+    /started no threads yet/,
+  );
+  assert.equal(await h.projects.setPlan('ordinary', []), 0);
+  assert.equal(h.projects.list().length, 0);
+
+  await h.projects.setPlan('ordinary', [{ title: 'Port the payments client' }]);
+  assert.equal(h.state.saved[0]?.plan[0]?.title, 'Port the payments client');
+  const started = await h.projects.spawn('ordinary', { ...input, step: '1' });
+  assert.equal(h.projects.list()[0]?.plan[0]?.threadAppSessionId, started.appSessionId);
+  await assert.rejects(
+    h.projects.setPlan(started.appSessionId, [{ title: 'Its own plan' }]),
+    /leads a project/,
+  );
+});
+
 test('a spawn keeps the plan step it named when two steps share a title', async (t) => {
   const h = await harness();
   t.after(() => h.projects.close());
