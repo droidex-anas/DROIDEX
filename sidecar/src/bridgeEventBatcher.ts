@@ -24,6 +24,7 @@ const IMMEDIATE_EVENT_TYPES = new Set<ServerEvent['type']>([
   'sessions.searchResults',
   'history.persistenceRecovered',
   'browser.native.request',
+  'sidebar.request',
   'browser.closed',
   'browser.error',
   'mcp.authRequested',
