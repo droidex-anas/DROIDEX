@@ -69,6 +69,8 @@ export interface ProjectThread {
   /** The final replies before that one, oldest first, so an owner that lost the
       thread of a conversation can read further back than its last answer. */
   earlierReplies?: string[];
+  /** Its final reply was shed to keep the ledger small, and no reply has come since. */
+  repliesShed?: true;
   /** Why that turn failed. The session summary keeps the phase, not the reason. */
   error?: string;
   waiting: boolean;

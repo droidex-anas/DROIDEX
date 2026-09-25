@@ -113,6 +113,7 @@ const project = z
           title: z.string().max(LEDGER_LIMITS.title),
           reply: text,
           earlierReplies: z.array(text).max(LEDGER_LIMITS.earlierReplies).optional(),
+          repliesShed: z.literal(true).optional(),
           error: z.string().max(LEDGER_LIMITS.threadError).optional(),
           waiting: z.boolean(),
         })
@@ -157,8 +158,11 @@ export function fitLedger(
   }
   for (const thread of oldestFirst) {
     if (bytes <= BUDGET_BYTES) return;
+    if (!thread.reply) continue;
     bytes -= Buffer.byteLength(JSON.stringify(thread.reply)) - 2;
     thread.reply = '';
+    // Without this, thread_read could not tell a shed reply from none at all.
+    thread.repliesShed = true;
   }
 }
 
