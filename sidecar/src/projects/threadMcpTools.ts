@@ -18,7 +18,7 @@ const spawnSchema = z.object({
     .string()
     .trim()
     .min(1)
-    .max(8_192)
+    .max(LEDGER_LIMITS.text)
     .describe('The whole task, with everything it needs to start.'),
   reportBack: z
     .boolean()
@@ -131,7 +131,7 @@ export function threadTools(appSessionId: () => string) {
         text: z
           .string()
           .trim()
-          .max(8_192)
+          .max(LEDGER_LIMITS.text)
           .describe('The message. May be empty when you only send answers.'),
         answers: z
           .array(z.string().max(2_000))
@@ -209,7 +209,7 @@ export function threadTools(appSessionId: () => string) {
     tool(
       'thread_read',
       [
-        "Read one of this chat's threads: its latest final replies in full, the question it is waiting on, and its settings.",
+        `Read one of this chat's threads: its latest final replies (the last ${String(LEDGER_LIMITS.text)} characters of each), the question it is waiting on, and its settings.`,
         'A report is an excerpt, so read the rest here before acting on it or telling the user.',
         'A working thread has nothing new yet; DROIDEX wakes you when it settles, so do not poll.',
       ].join(' '),
