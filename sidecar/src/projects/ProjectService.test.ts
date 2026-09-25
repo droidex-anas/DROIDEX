@@ -65,6 +65,7 @@ async function harness(saved: Project[] = []) {
   // What each session is actually blocked on, the way the harness would know.
   const asking = new Map<string, string>();
   let next = 0;
+  let clock = 1;
   const store: ProjectPersistence = {
     load: async () => structuredClone(state.saved),
     save: async (value) => {
@@ -134,6 +135,8 @@ async function harness(saved: Project[] = []) {
     const session = sessions.get(id);
     assert.ok(session);
     session.streaming = value;
+    // A session's updatedAt moves when its turn settles, as the lifecycle's does.
+    if (!value) session.updatedAt = ++clock;
     await projects.observe({ type: 'session.updated', session: { ...session } });
   }
   async function finish(id: string, text = 'Done') {
@@ -430,18 +433,16 @@ test('stop waits for a cancelled claim before removing target messages', async (
   );
 });
 
-test('parallel spawn reservations cap fanout before provider creation', async (t) => {
+test('holding a project cancels every spawn still starting before it reaches the provider', async (t) => {
   const h = await harness();
   t.after(() => h.projects.close());
   const { id, main } = await h.root();
   const gate = deferred();
   h.state.bindGate = gate.promise;
-  const requests = Array.from({ length: 7 }, () => h.projects.spawn(main, input));
-  // Refused on the cap before any worktree is cut for it.
-  await assert.rejects(
-    h.projects.spawn(main, { ...input, workspace: 'worktree' }),
-    /at most 8 conversations/,
-  );
+  // No count caps a project: all twelve are admitted and starting at once.
+  const requests = Array.from({ length: 12 }, () => h.projects.spawn(main, input));
+  await tick();
+  assert.equal(h.projects.list()[0]?.launching, 12);
   await h.projects.setPaused(id, true);
   gate.resolve();
   const outcomes = await Promise.allSettled(requests);
@@ -667,6 +668,23 @@ test('a lead reads a thread in full and retunes it within its own autonomy', asy
   );
   // Reading and retuning stay inside the project, like every other control.
   assert.throws(() => h.projects.read('ordinary', child.appSessionId), /has not spawned/);
+});
+
+test('only the threads that moved most recently keep earlier replies in the ledger', async (t) => {
+  const h = await harness();
+  t.after(() => h.projects.close());
+  const { main } = await h.root();
+  const threads: string[] = [];
+  for (let index = 0; index < 10; index += 1)
+    threads.push((await h.projects.spawn(main, input)).appSessionId);
+  for (const id of threads) await h.finish(id, `First from ${id}`);
+  for (const id of threads) await h.finish(id, `Second from ${id}`);
+  assert.equal(h.state.saved[0]?.threads.filter((thread) => thread.earlierReplies).length, 8);
+  // The two that settled longest ago keep only their final reply.
+  const oldest = h.projects.read(main, threads[0] ?? '', 5);
+  assert.deepEqual(oldest.replies, [`Second from ${threads[0] ?? ''}`]);
+  assert.equal(oldest.moreReplies, 0);
+  assert.equal(h.projects.read(main, threads[9] ?? '', 5).replies.length, 2);
 });
 
 test('a spawn carries a settled plan step, or none at all', async (t) => {

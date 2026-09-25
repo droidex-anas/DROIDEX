@@ -71,10 +71,20 @@ test('malformed graphs and bad counts are rejected', () => {
   const cyclic = structuredClone(project);
   cyclic.threads[1].ownerAppSessionId = 'worker';
   assert.equal(wire({ type: 'projects.snapshot', projects: [cyclic] }), null);
-  assert.equal(
-    wire({ type: 'projects.snapshot', projects: Array.from({ length: 33 }, () => project) }),
-    null,
-  );
+});
+
+test('a snapshot crosses the bridge whatever number of projects and threads it holds', () => {
+  const busy = structuredClone(project);
+  busy.launching = 12;
+  for (let index = 0; index < 40; index += 1)
+    busy.threads.push({
+      appSessionId: `thread-${String(index)}`,
+      ownerAppSessionId: 'main',
+      title: `Thread ${String(index)}`,
+      waiting: false,
+    });
+  const projects = Array.from({ length: 50 }, (_, index) => ({ ...busy, id: String(index) }));
+  assert.ok(wire({ type: 'projects.snapshot', projects }));
 });
 
 test('opening a thread or closing Projects leaves the Projects view', () => {

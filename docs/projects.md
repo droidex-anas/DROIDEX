@@ -100,9 +100,11 @@ when it is one. `thread_read` gives the owner the whole reply, the question the
 thread is waiting on, and what it is running as, so a lead can look again —
 after a compaction, or before deciding a step is done — instead of acting on
 what it happened to be handed. It answers with the thread's latest reply alone
-unless the lead asks for more, and DROIDEX keeps the last ten, so an owner that
-lost the thread of a conversation can read as far back as it needs and no
-further. A turn that ends without a reply never erases the last real one. `thread_configure` retunes a thread's model,
+unless the lead asks for more. DROIDEX keeps the last ten for the eight settled
+threads whose conversations moved most recently, so an owner that lost the
+thread of a conversation can read as far back as it needs and no further; an
+older thread keeps only its final reply, and its whole conversation stays in its
+own transcript. A turn that ends without a reply never erases the last real one. `thread_configure` retunes a thread's model,
 reasoning effort and autonomy in place, for the same reason a person reaches for
 the composer's own controls: a quick back-and-forth does not need the effort the
 original work did. The wake stays a push, because a report is the thing the
@@ -119,10 +121,12 @@ already handed to a provider. There is no wake allowance: a project reports as
 often as its threads settle, for as long as the work runs. DROIDEX holds it only
 when deliveries run far past the pace real turns could produce — 60 within five
 minutes — which reads as threads talking in circles rather than working.
-Projects allows up to eight conversations per project (the main chat and seven
-threads), three levels of descendants, 32 projects and 64 queued/claimed
-messages per project. At most two Projects delivery turns run at once; ordinary
-interactive sends keep their existing behavior.
+A project runs as many threads as its work needs, and there is no limit on the
+number of projects. What keeps one from running away is the limit of three
+levels of descendants, the approval a spawn needs below High, and that hold on
+threads talking in circles. A project queues at most 64 messages, counting the
+ones a delivery has claimed. At most two Projects delivery turns run at once;
+ordinary interactive sends keep their existing behavior.
 
 Threads share their owner's workspace unless the spawn asks for a worktree, or
 DROIDEX gives one its own because another thread is already writing in that

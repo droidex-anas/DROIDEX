@@ -6,9 +6,16 @@ import type { Project, ProjectThread, ThreadMessage } from './types.js';
 
 export type ThreadState = 'working' | 'waiting' | 'stopped' | 'failed' | 'idle';
 
+/* A project runs as many threads as its work needs, so the ledger cannot keep
+   every thread's history. The settled threads whose conversations moved most
+   recently keep their earlier replies for thread_read; an older one keeps only
+   its final reply. Its whole conversation stays in its own transcript. */
+const THREADS_KEEPING_EARLIER_REPLIES = 8;
+
 interface ProjectTurnsDependencies {
   /** The project a conversation belongs to, if it belongs to one. */
   project: (appSessionId: string) => Project | undefined;
+  session: (appSessionId: string) => SessionSummary | undefined;
   /** Whether the question a thread was routed from is still waiting. */
   isAsking: (appSessionId: string, requestId: string) => boolean;
   enqueue: (
@@ -85,10 +92,12 @@ export class ProjectTurns {
     }
     if (turn.text) {
       // A turn that says nothing must not erase what the thread last said.
-      if (thread.reply)
+      if (thread.reply) {
         thread.earlierReplies = [...(thread.earlierReplies ?? []), thread.reply].slice(
           -LEDGER_LIMITS.earlierReplies,
         );
+        this.forgetOlderReplies(project);
+      }
       thread.reply = turn.text;
     }
     if (turn.error) thread.error = turn.error;
@@ -117,6 +126,15 @@ export class ProjectTurns {
     }
     await this.d.save();
     this.d.wakes.kick(project);
+  }
+
+  private forgetOlderReplies(project: Project): void {
+    const settled = project.threads
+      .map((thread) => ({ thread, session: this.d.session(thread.appSessionId) }))
+      .filter(({ thread, session }) => thread.earlierReplies && !session?.streaming)
+      .sort((a, b) => (b.session?.updatedAt ?? 0) - (a.session?.updatedAt ?? 0));
+    for (const { thread } of settled.slice(THREADS_KEEPING_EARLIER_REPLIES))
+      delete thread.earlierReplies;
   }
 
   /*
