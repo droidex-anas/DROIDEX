@@ -17,7 +17,7 @@ import {
 import { MessageFeed } from './MessageFeed';
 import { DiffCard } from './DiffView';
 import { buildFeed, collectTurnFiles, isResultFor, type FeedItem } from './chatFeed';
-import { conversationAnchors, groupTurns } from './chatFeedTurns';
+import { conversationAnchors, groupTurns, tailTimestamp } from './chatFeedTurns';
 import {
   appendedFeedItemKeys,
   appendedFeedItemKeysFromProjection,
@@ -81,6 +81,11 @@ test('parent liveness cannot make paused historical child activity look running'
   assert.equal(childSessionLineIsRunning({ status: 'paused' }), false);
   assert.equal(childSessionLineIsRunning({ status: 'completed' }), false);
   assert.equal(childSessionLineIsRunning({ status: 'running' }), true);
+});
+
+test('tailTimestamp returns undefined for empty tool and diff groups', () => {
+  assert.equal(tailTimestamp({ type: 'tools', key: 'tools', events: [] }), undefined);
+  assert.equal(tailTimestamp({ type: 'diffs', key: 'diffs', changes: [] }), undefined);
 });
 
 test('a sent prompt shows Visualize and skill chips instead of slash text', () => {
