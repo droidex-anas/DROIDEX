@@ -42,7 +42,10 @@ export async function runPrimaryTurn(
   const preflight = delivery
     ? await d.applyDesignToolPolicy(liveSession, isDesignPrompt(prompt))
     : undefined;
-  if (delivery && (!d.isCurrent(liveSession) || !preflight || !delivery.isCurrent())) return;
+  if (delivery && (!d.isCurrent(liveSession) || !preflight || !delivery.isCurrent())) {
+    delivery.declined();
+    return;
+  }
   d.eventFlow.beginTurn(appSessionId, appSessionId);
   if (announce) d.timeline.announcePrompt(appSessionId, prompt);
   else d.timeline.recordPrompt(appSessionId, prompt);

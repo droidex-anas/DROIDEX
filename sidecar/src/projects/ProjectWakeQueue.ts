@@ -170,22 +170,20 @@ export class ProjectWakeQueue {
     // owner answer nothing, so it turns the delivery back and is dropped.
     const stillAsked = () => messages.every((message) => isAsked(project, message));
     let receipt: AutomationDeliveryReceipt;
-    if (!isCurrent() || !stillAsked()) {
-      receipt = { status: 'busy', retryOn: 'target' };
-    } else {
-      try {
-        receipt = await this.sessions.deliver(
-          target,
-          wakePrompt(project, target, messages),
-          () => isCurrent() && stillAsked(),
-        );
-      } catch (error) {
-        receipt = {
-          status: 'unavailable',
-          error: error instanceof Error ? error.message : String(error),
-        };
-      }
+    try {
+      receipt = await this.sessions.deliver(
+        target,
+        wakePrompt(project, target, messages),
+        () => isCurrent() && stillAsked(),
+      );
+    } catch (error) {
+      receipt = {
+        status: 'unavailable',
+        error: error instanceof Error ? error.message : String(error),
+      };
     }
+    // Only a delivery that may have reached the runtime is uncertain; one
+    // withdrawn before dispatch gives its messages back like a busy recipient.
     if (receipt.status === 'unavailable') {
       this.fail(project, new Error(receipt.error));
       await this.save();
@@ -193,14 +191,14 @@ export class ProjectWakeQueue {
     }
     // Only this claim is settled. Messages that arrived during admission remain queued.
     if (project.delivery === claim) delete project.delivery;
-    if (receipt.status === 'busy') {
+    if (receipt.status !== 'accepted') {
       project.pending.unshift(...messages.filter((message) => isAsked(project, message)));
-      // A recipient that was busy never woke, so it does not count as a lap.
+      // A recipient that never woke does not count as a lap.
       this.recent.get(project.id)?.pop();
       await this.save();
       // A cancelled generation cannot put a resumed recipient back to sleep, and
       // a dropped question says nothing about whether the recipient is busy.
-      if (!isCurrent() || !stillAsked()) return;
+      if (receipt.status === 'cancelled' || !isCurrent() || !stillAsked()) return;
       if (receipt.retryOn === 'capacity') {
         if (this.capacityRevision === capacityRevision) this.capacityWaiting.add(project.id);
       } else if (this.revisions.get(target) === targetRevision) {
@@ -221,9 +219,13 @@ export class ProjectWakeQueue {
   }
 }
 
+/** A question is still asked only while its thread waits on that same question. */
 function isAsked(project: Project, message: ThreadMessage): boolean {
   if (message.kind !== 'question') return true;
-  return project.threads.some((thread) => thread.appSessionId === message.from && thread.ask);
+  return project.threads.some(
+    (thread) =>
+      thread.appSessionId === message.from && thread.ask?.requestId === message.questionId,
+  );
 }
 
 function isAskingOwner(project: Project, appSessionId: string): boolean {
