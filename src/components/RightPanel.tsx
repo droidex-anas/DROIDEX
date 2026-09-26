@@ -6,10 +6,20 @@ import { useSessionWorkingDirectory } from '../hooks/useSessionWorkingDirectory'
 import { usePullRequest } from '../hooks/usePullRequest';
 import { useGithubSetup } from '../hooks/useGithubSetup';
 import { reasoningEffortLabel, resolveReasoningEffortDisplay } from '../lib/reasoningEffort';
-import { providerDefaultModel, providerModelCatalog } from '../features/providers/providerIdentity';
+import {
+  PROVIDER_MARKS,
+  providerDefaultModel,
+  providerModelCatalog,
+} from '../features/providers/providerIdentity';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Hash, ChevronRight, FileText } from 'lucide-react';
-import { ModelIcon, providerOf } from './ModelIcon';
+import {
+  ModelIcon,
+  DroidProxyMark,
+  isDroidProxyModel,
+  resolveModelProvider,
+  shortModelName,
+} from './ModelIcon';
 import NotesSection from './NotesSection';
 import { SubagentsSection } from './SubagentsPanel';
 import { useOpenAgent } from './agents/useOpenAgent';
@@ -108,8 +118,28 @@ export default function RightPanel() {
   // its own section when the chat has no folder at all.
   const modelRow = activeSession ? (
     <Row
-      icon={<ModelIcon provider={providerOf(modelInfo, activeSession.modelId)} size={16} />}
-      label={<span className="font-medium">{modelLabel}</span>}
+      icon={
+        <ModelIcon
+          provider={resolveModelProvider(
+            modelInfo,
+            activeSession.modelId,
+            PROVIDER_MARKS[activeSession.provider],
+          )}
+          size={16}
+        />
+      }
+      label={
+        isDroidProxyModel(modelInfo, activeSession.modelId) ? (
+          <span className="flex items-center gap-1.5">
+            <DroidProxyMark size={12} />
+            <span className="min-w-0 flex-1 truncate font-medium">
+              {shortModelName(modelLabel)}
+            </span>
+          </span>
+        ) : (
+          <span className="font-medium">{modelLabel}</span>
+        )
+      }
       title={modelLabel}
       trailing={
         reasoningEffort ? (

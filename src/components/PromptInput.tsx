@@ -110,6 +110,7 @@ import { DraftSelections } from './composer/DraftSelections';
 import ComposerMenu, { type SlashCommand } from './ComposerMenu';
 import { effectiveProvider } from '../features/providers/providerDraft';
 import {
+  PROVIDER_MARKS,
   providerDefaultModel,
   providerModelCatalog,
   providerModelSelection,
@@ -124,7 +125,14 @@ import {
 import AskUserInline from './AskUserInline';
 import PermissionInline from './PermissionInline';
 import PlanApprovalInline from './PlanApprovalInline';
-import { ModelIcon, providerOf } from './ModelIcon';
+import {
+  ModelIcon,
+  DroidProxyMark,
+  isDroidProxyModel,
+  providerOf,
+  resolveModelProvider,
+  shortModelName,
+} from './ModelIcon';
 import { StartInBar } from './environment/StartInBar';
 import type { Autonomy, SkillInfo } from '../types/bridge';
 import { feedbackDraftFromCommand } from '../lib/feedbackReport';
@@ -2043,9 +2051,21 @@ export default function PromptInput({
                     </>
                   ) : (
                     <>
-                      <ModelIcon provider={providerOf(chipModel, primaryModelId)} size={14} />
+                      <ModelIcon
+                        provider={resolveModelProvider(
+                          chipModel,
+                          primaryModelId,
+                          PROVIDER_MARKS[composerProvider],
+                        )}
+                        size={14}
+                      />
+                      {isDroidProxyModel(chipModel, primaryModelId) && (
+                        <span className="shrink-0 flex items-center">
+                          <DroidProxyMark size={12} />
+                        </span>
+                      )}
                       <span className="truncate font-medium text-droid-text">
-                        {selectedModelLabel}
+                        {shortModelName(selectedModelLabel)}
                       </span>
                       {primaryReasoning && (
                         <span

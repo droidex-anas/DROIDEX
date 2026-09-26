@@ -109,6 +109,7 @@ import {
   type ProviderKind,
 } from './providers/providerKind.js';
 import { HarnessCliUpdater } from './providers/harnessCli.js';
+import { DroidProxyController } from './droidproxy/droidProxyController.js';
 import { LazyProvider } from './providers/lazyProvider.js';
 import { requireDroidSession } from './providers/droid/DroidProviderSession.js';
 import {
@@ -290,6 +291,9 @@ export class SessionManager {
     },
     () => this.refreshProviderStatus(),
   );
+  private readonly droidProxy = new DroidProxyController((event) => {
+    this.emit(event);
+  });
 
   constructor(
     private readonly emit: Emit,
@@ -800,6 +804,27 @@ export class SessionManager {
       case 'harness.cli.update':
         await this.harnessClis.update(cmd.provider);
         return;
+      case 'droidproxy.status':
+        await this.droidProxy.report();
+        return;
+      case 'droidproxy.launch':
+        await this.droidProxy.launchApp();
+        return;
+      case 'droidproxy.login':
+        await this.droidProxy.login(cmd.provider);
+        return;
+      case 'droidproxy.login.cancel':
+        this.droidProxy.cancelLogin();
+        return;
+      case 'droidproxy.install':
+        if (await this.droidProxy.install()) void this.refreshModelsAfterFactoryChange();
+        return;
+      case 'droidproxy.install.cancel':
+        this.droidProxy.cancelInstall();
+        return;
+      case 'droidproxy.factoryModels.apply':
+        if (await this.droidProxy.applyFactoryModels()) void this.refreshModelsAfterFactoryChange();
+        return;
       case 'catalog.models': {
         const models = await this.getModels();
         this.emit({ type: 'catalog.updated', catalog: 'models', items: models });
@@ -1117,6 +1142,12 @@ export class SessionManager {
       }
     })();
     return this.modelRefresh;
+  }
+
+  private async refreshModelsAfterFactoryChange(): Promise<void> {
+    if (this.modelRefresh) await this.modelRefresh;
+    this.droidModels.invalidate();
+    await this.refreshModelCatalog(true);
   }
 
   // The help text lags the account's catalog (no Auto model), so until any

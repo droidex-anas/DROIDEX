@@ -8,6 +8,7 @@ import type {
   BrowserViewportMode,
   ConfigurableSessionRole,
   DesignReference,
+  DroidProxyProviderKey,
   HarnessCliProvider,
   InstallChannel,
   McpServerInput,
@@ -85,6 +86,27 @@ export const checkHarnessClis = () => {
 };
 export const updateHarnessCli = (provider: HarnessCliProvider) => {
   bridge.send({ type: 'harness.cli.update', provider });
+};
+export const requestDroidProxyStatus = () => {
+  bridge.send({ type: 'droidproxy.status' });
+};
+export const launchDroidProxy = () => {
+  bridge.send({ type: 'droidproxy.launch' });
+};
+export const startDroidProxyLogin = (provider: DroidProxyProviderKey) => {
+  bridge.send({ type: 'droidproxy.login', provider });
+};
+export const cancelDroidProxyLogin = () => {
+  bridge.send({ type: 'droidproxy.login.cancel' });
+};
+export const installDroidProxy = () => {
+  bridge.send({ type: 'droidproxy.install' });
+};
+export const cancelDroidProxyInstall = () => {
+  bridge.send({ type: 'droidproxy.install.cancel' });
+};
+export const applyDroidProxyFactoryModels = () => {
+  bridge.send({ type: 'droidproxy.factoryModels.apply' });
 };
 export const requestRuntimeStatus = () => {
   bridge.send({ type: 'runtime.status' });

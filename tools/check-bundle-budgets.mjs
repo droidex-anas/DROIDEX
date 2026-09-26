@@ -55,9 +55,13 @@ import { join } from 'node:path';
 // entry by construction. Everything a conversation shows stays lazy: the full
 // surface, the mini bar, the composer's orb and controls, the settings sheet
 // and the chimes all load with the first conversation. The merged ~1_365_300
-// leaves the usual ~9KB of headroom.
+// left ~9KB of headroom before DroidProxy was merged.
+//
+// Raised from 1_375_000 to 1_390_000 for the DroidProxy provider marks in the
+// composer and picker, plus bridge validation. The settings page stays lazy.
+// The merged entry is ~1_381_450 bytes, leaving ~8.5KB of headroom.
 const BUDGETS = {
-  initialRendererJsBytes: 1_375_000,
+  initialRendererJsBytes: 1_390_000,
   initialCssBytes: 100_000,
   largestLazyChunkBytes: 700_000,
   duplicatePackageMaxBytes: 120_000,
