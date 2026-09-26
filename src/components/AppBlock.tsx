@@ -11,7 +11,7 @@ import {
 } from 'react';
 import { AnimatePresence, motion, useReducedMotion, type Transition } from 'framer-motion';
 import { Play, Square } from 'lucide-react';
-import { VisualizeIcon } from './icons/VisualizeIcon';
+import { VisualizeTile } from './icons/VisualizeIcon';
 import { AppBlockErrorFallback } from './AppBlockErrorFallback';
 import {
   APP_BUILD_TIMEOUT_MS,
@@ -49,7 +49,7 @@ function AppLoadingSurface({
       aria-label={title}
       className="flex w-full items-center gap-3 rounded-xl border border-droid-border bg-droid-surface/55 p-3"
     >
-      <VisualizeIcon className="h-10 w-10 shrink-0" />
+      <VisualizeTile />
       <span className="min-w-0 flex-1">
         <span className="shimmer-text block text-[13px] font-medium">{title}</span>
         <span className="block text-[12px] text-droid-text-muted">{subtitle}</span>
@@ -359,7 +359,7 @@ export function AppBlock({
             transition={transition}
             className="group my-3 flex w-full items-center gap-3 rounded-xl border border-droid-border bg-droid-surface/55 p-3 text-left transition-colors hover:border-droid-border-hover hover:bg-droid-surface focus-visible:border-droid-border-hover focus-visible:outline-none"
           >
-            <VisualizeIcon className="h-10 w-10 shrink-0" />
+            <VisualizeTile />
             <span className="min-w-0 flex-1">
               <span className="block text-[13px] font-medium text-droid-text">Interactive App</span>
               <span className="block text-[12px] text-droid-text-muted">

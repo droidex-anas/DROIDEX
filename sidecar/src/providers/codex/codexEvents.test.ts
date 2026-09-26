@@ -47,6 +47,7 @@ test('a server that failed before the first turn is still reported in it', async
       notifications.set(method, handler);
     },
     onRequest: () => undefined,
+    onUnsupportedRequest: () => undefined,
     onClose: () => undefined,
     notify: () => undefined,
     request: (method: string) => {

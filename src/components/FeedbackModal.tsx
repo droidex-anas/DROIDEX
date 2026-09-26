@@ -163,7 +163,7 @@ export function FeedbackModal({ initialReport, onClose }: FeedbackModalProps) {
         initial={{ y: 18, scale: 0.975, opacity: 0 }}
         animate={{ y: 0, scale: 1, opacity: 1 }}
         transition={{ type: 'spring', stiffness: 430, damping: 34 }}
-        className="max-h-[calc(100vh-2.5rem)] w-full max-w-[680px] overflow-y-auto rounded-2xl border border-droid-border bg-droid-surface shadow-[0_28px_90px_rgba(0,0,0,0.58)]"
+        className="max-h-[calc(100vh-2.5rem)] w-full max-w-[680px] overflow-y-auto rounded-2xl border border-droid-border bg-droid-surface shadow-droid"
       >
         {reportId ? (
           <div className="px-8 py-9 text-center" aria-live="polite">

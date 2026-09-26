@@ -157,10 +157,21 @@ function isServerEvent(value: unknown): value is ServerEvent {
         typeof value.ok === 'boolean' &&
         typeof value.exitCode === 'number'
       );
+    case 'harness.cli.report':
+      return Array.isArray(value.clis) && value.clis.every(isHarnessCliState);
+    case 'harness.cli.update.done':
+      return (
+        isHarnessCliProvider(value.provider) &&
+        typeof value.ok === 'boolean' &&
+        isOptionalString(value.previousVersion) &&
+        isOptionalString(value.version)
+      );
     case 'session.created':
       return typeof value.clientRef === 'string' && isSessionSummary(value.session);
     case 'session.updated':
       return isSessionSummary(value.session);
+    case 'session.model_update_applied':
+      return hasStrings(value, ['appSessionId', 'requestId']);
     case 'session.closed':
     case 'browser.closed':
       return typeof value.appSessionId === 'string';
@@ -280,6 +291,28 @@ function isServerEvent(value: unknown): value is ServerEvent {
         ((value.ok === true && (value.runId === undefined || typeof value.runId === 'string')) ||
           (value.ok === false && typeof value.error === 'string'))
       );
+    case 'voice.answer':
+      return hasStrings(value, ['appSessionId', 'sdp', 'attempt']);
+    case 'voice.state':
+      return (
+        typeof value.appSessionId === 'string' &&
+        (value.status === 'live' || value.status === 'closed')
+      );
+    case 'voice.transcript':
+      return (
+        hasStrings(value, ['appSessionId', 'text']) &&
+        (value.role === 'user' || value.role === 'assistant') &&
+        typeof value.final === 'boolean'
+      );
+    case 'voice.voices':
+      return (
+        typeof value.appSessionId === 'string' &&
+        Array.isArray(value.voices) &&
+        value.voices.every((voice) => typeof voice === 'string') &&
+        isOptionalString(value.defaultVoice)
+      );
+    case 'voice.error':
+      return hasStrings(value, ['appSessionId', 'message']);
     default: {
       const unexpected: never = type;
       void unexpected;
@@ -433,6 +466,23 @@ function isEnvironmentReport(value: unknown): boolean {
     isRecord(value.packageManagers) &&
     isRecord(value.auth) &&
     stringArray(value.availableChannels)
+  );
+}
+
+function isHarnessCliProvider(value: unknown): boolean {
+  return value === 'claude' || value === 'codex';
+}
+
+function isHarnessCliState(value: unknown): boolean {
+  if (!isRecord(value) || !isHarnessCliProvider(value.provider)) return false;
+  if (value.installed === false) return true;
+  return (
+    value.installed === true &&
+    typeof value.path === 'string' &&
+    (value.source === 'homebrew' || value.source === 'npm' || value.source === 'native') &&
+    isOptionalString(value.version) &&
+    typeof value.updating === 'boolean' &&
+    isOptionalString(value.updateError)
   );
 }
 

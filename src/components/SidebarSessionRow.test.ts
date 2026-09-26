@@ -175,28 +175,27 @@ test('SessionRow: the active row exposes aria-current, an unread row exposes a h
   assert.doesNotMatch(render(makeProps({ unread: false })), /Unread:/);
 });
 
-test('SessionRow: a running row shows the spinner alongside the timestamp', () => {
+test('SessionRow: a running row leads with the library spinner and keeps the time', () => {
   const html = render(makeProps({ running: true, now: 60_000 }));
   // motion-safe keeps the spinner still for reduced-motion users.
+  assert.match(html, /data-icon="spinner"/);
   assert.match(html, /motion-safe:animate-spin-slow/);
   assert.match(html, /aria-label="working"/);
-  assert.match(
-    html,
-    /w-3 h-3 rounded-full border-\[1\.5px\] border-current border-r-transparent transition-colors duration-300 text-droid-text/,
-  );
+  assert.match(html, /transition-colors duration-300/);
+  assert.doesNotMatch(html, /droid-ultra/);
   assert.match(html, />now</);
 });
 
 test('SessionRow: an ultracode session spins in the ultra colour with the effort shimmer', () => {
   // Its main agent can idle while its agents work, so the mark has to say more
-  // than "running" — and it must say so in the harness's own word, not colour alone.
+  // than "running", and it must say so in the harness's own word, not colour alone.
   const html = render(
     makeProps({
       running: true,
       session: makeSession({ provider: 'claude', reasoningEffort: 'ultra' }),
     }),
   );
-  assert.match(html, /border-current [^"]*text-droid-ultra/);
+  assert.match(html, /transition-colors duration-300 text-droid-ultra/);
   assert.match(html, /effort-dot-ultra/);
   assert.match(html, /aria-label="working on ultracode"/);
 
@@ -212,7 +211,7 @@ test('SessionRow: a sleeping chat whose agents work keeps the ultra mark', () =>
   // has to stay alive without claiming the chat's own turn is running.
   const html = render(makeProps({ running: false, agentsWorking: true, now: 60_000 }));
   assert.match(html, /motion-safe:animate-spin-slow/);
-  assert.match(html, /border-current [^"]*text-droid-ultra/);
+  assert.match(html, /transition-colors duration-300 text-droid-ultra/);
   assert.match(html, /effort-dot-ultra/);
   assert.match(html, /aria-label="agents working"/);
 
@@ -229,20 +228,49 @@ test('areSessionRowPropsEqual: an agents-working change is not equal', () => {
   );
 });
 
-test('SessionRow: attention replaces both the working spinner and timestamp', () => {
-  const html = render(makeProps({ running: true, attention: 'approval', now: 60_000 }));
-  assert.match(html, /Waiting for approval:/);
-  assert.match(html, />Awaiting approval</);
-  assert.match(html, /bg-droid-green\/15/);
-  assert.match(html, /text-droid-green/);
-  assert.doesNotMatch(html, /animate-spin/);
+test('SessionRow: idle list rows lead with the linked PR, not a status glyph', () => {
+  const html = render(
+    makeProps({
+      session: makeSession({ provider: 'codex' }),
+      activityStatus: 'failed',
+      pr: { kind: 'open', checks: 'fail' },
+    }),
+  );
+  const pr = html.indexOf('aria-label="Open, checks failing"');
+  const harness = html.indexOf('aria-label="Codex chat"');
+  assert.ok(pr >= 0 && harness > pr);
+  assert.doesNotMatch(html, /aria-label="Failed"/);
+});
+
+test('SessionRow: a working list row spins and reveals its PR on hover', () => {
+  const html = render(makeProps({ running: true, pr: { kind: 'open', checks: 'pending' } }));
+  const spinner = html.indexOf('aria-label="working"');
+  const pr = html.indexOf('aria-label="Open, checks running"');
+  assert.ok(spinner >= 0 && pr > spinner);
+  assert.match(html, /opacity-0 transition-opacity group-hover:opacity-100/);
+});
+
+test('SessionRow: inbox rows name the harness and show the reason beside the time', () => {
+  const html = render(makeProps({ detail: 'Ready to start', activityStatus: 'plan', now: 60_000 }));
+  assert.match(html, /aria-label="Droid chat"/);
+  assert.match(html, />Ready to start</);
+  assert.match(html, />now</);
+});
+
+test('SessionRow: a working inbox row shimmers its activity instead of the time', () => {
+  const html = render(
+    makeProps({ detail: 'Editing files', activityStatus: 'working', running: true, now: 60_000 }),
+  );
+  assert.match(html, /shimmer-text">Editing files</);
   assert.doesNotMatch(html, />now</);
 });
 
-test('SessionRow: question attention uses the question label', () => {
-  const html = render(makeProps({ attention: 'question' }));
-  assert.match(html, /Waiting for an answer:/);
-  assert.match(html, />Awaiting answer</);
+test('SessionRow: a blocked running row shows its waiting status instead of the spinner', () => {
+  const html = render(
+    makeProps({ running: true, attention: 'approval', activityStatus: 'approval', now: 60_000 }),
+  );
+  assert.match(html, /aria-label="Needs approval"/);
+  assert.doesNotMatch(html, /animate-spin/);
 });
 
 test('SessionRow: an idle row shows the relative timestamp and no spinner', () => {
@@ -261,7 +289,8 @@ test('SessionRow: the title rests truncated inside an overflow viewport, marquee
 });
 
 test('activity status changes invalidate the row memo and expose readable status text', () => {
-  const props = makeProps({ ...STABLE });
+  // Inbox rows (with a detail line) are the ones that draw a status glyph.
+  const props = makeProps({ ...STABLE, detail: 'Finished' });
   assert.equal(areSessionRowPropsEqual(props, { ...props }), true);
   for (const activityStatus of ['review', 'failed'] as const) {
     const next = { ...props, activityStatus };
@@ -269,7 +298,6 @@ test('activity status changes invalidate the row memo and expose readable status
     const label = activityStatus === 'review' ? 'Needs review' : 'Failed';
     const html = render(next);
     assert.ok(html.includes(`title="Build the thing · ${label}"`));
-    assert.ok(html.includes(`sr-only">${label}:</span>`));
-    assert.doesNotMatch(html, /aria-label="(?:Needs review|Failed)"/);
+    assert.ok(html.includes(`aria-label="${label}"`));
   }
 });

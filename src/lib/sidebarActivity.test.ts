@@ -2,8 +2,10 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import type { SessionAttentionKind } from './sessionAttention';
 import type { SessionSummary } from '../types/bridge';
+import type { ChatMetadata } from './chatMetadata';
 import {
   canSettleSession,
+  pruneReopenedSessions,
   pruneSettledSessions,
   isSidebarFilter,
   DEFAULT_SIDEBAR_PREFERENCES,
@@ -76,6 +78,33 @@ test('settling survives reload, while new activity and requests return the task 
       .map((row) => row.appSessionId),
     ['newer-chat', 'older-chat'],
   );
+});
+
+test('a chat reopened after its pull requests closed stays open until a linked PR opens again', () => {
+  const signals = { attention: null, unread: false, prDone: true };
+  assert.equal(sessionActivityStatus(session, signals), 'settled');
+  assert.equal(sessionActivityStatus(session, { ...signals, reopened: true }), 'ready');
+
+  const pr = {
+    number: 1,
+    url: 'https://github.com/o/r/pull/1',
+    title: 'Fix',
+    isDraft: false,
+    headRefName: null,
+  };
+  const merged: ChatMetadata = { pullRequests: [{ ...pr, state: 'MERGED' }] };
+  const reopened = ['merged', 'reopened-pr', 'archived', 'unknown'];
+  const kept = pruneReopenedSessions(reopened, {
+    merged,
+    'reopened-pr': { pullRequests: [{ ...pr, state: 'OPEN' }] },
+    archived: { ...merged, archivedAt: 10 },
+  });
+  assert.deepEqual(kept, ['merged']);
+  assert.equal(pruneReopenedSessions(kept, { merged }), kept);
+
+  const saved = { view: 'activity', settled: {}, order: 'recent', filter: 'all', limit: 5 };
+  const storage = { getItem: () => JSON.stringify(saved) };
+  assert.deepEqual(loadSidebarActivity(storage).reopened, []);
 });
 
 test('name ordering uses displayed titles and a stable identity tie-break', () => {

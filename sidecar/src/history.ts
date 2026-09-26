@@ -255,6 +255,17 @@ export function loadSessionPage(
   };
 }
 
+export function sessionOrganizationId(providerSessionId: string): string | undefined {
+  const path = sessionIndex().get(providerSessionId);
+  if (!path) return undefined;
+  try {
+    return readSessionStart(path, statSync(path).size).organizationId;
+  } catch {
+    // The file can be removed between the index update and this read.
+    return undefined;
+  }
+}
+
 export class HistoryIndex {
   private db: DatabaseSync;
   private readonly sessionFiles = new SessionFileMirror();
@@ -1488,6 +1499,7 @@ function summarizeSessionFile(
   // sidebar row, so launch settings are cached independently of admission.
   const launch = launchSettings(settings);
   const cachedLaunch = launch ? { launchSettings: launch } : {};
+  if (!start) return { summary: null, ...cachedLaunch };
   const classification = classifyStoredSession(start);
   // Live sessions are registered separately, so refusing an unfinished
   // exchange here cannot hide a first turn while it is running.
@@ -1579,7 +1591,10 @@ function sessionInteractionMode(start: StoredSessionStart): string | undefined {
   return stringValue(direct) ?? stringValue(settings?.interactionMode);
 }
 
-function readSessionModelSettings(start: StoredSessionStart, sessionPath: string): FactoryDefaults {
+function readSessionModelSettings(
+  start: StoredSessionStart | undefined,
+  sessionPath: string,
+): FactoryDefaults {
   const raw = objectValue(start) ?? {};
   const settings = objectValue(raw.settings) ?? objectValue(raw.sessionSettings) ?? {};
   const sidecarSettings = readAdjacentSessionSettings(sessionPath);

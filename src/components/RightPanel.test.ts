@@ -49,10 +49,7 @@ function renderPanel(
     sessionOrder: [active.appSessionId],
     activeAppSessionId: active.appSessionId,
     models,
-    agentConfig: {
-      ...initialState.agentConfig,
-      primary: { ...initialState.agentConfig.primary, reasoning: globalReasoning },
-    },
+    harnessModels: { ...initialState.harnessModels, droid: { reasoning: globalReasoning } },
   };
   return renderToStaticMarkup(
     createElement(
