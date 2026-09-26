@@ -329,7 +329,7 @@ export type DroidProxyInstallPhase =
   | 'installing'
   | 'launching'
   | 'applying';
-export interface DroidProxyAccount {
+interface DroidProxyAccount {
   provider: DroidProxyProviderKey;
   email?: string;
   login?: string;
