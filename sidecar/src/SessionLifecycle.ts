@@ -3,7 +3,7 @@ import {
   type ScheduledTurnDelivery,
 } from './sessionAutomationDelivery.js';
 import type { AutomationDeliveryReceipt } from './automations/types.js';
-import { type McpServerConfig } from '@factory/droid-sdk';
+import { type McpServerConfig, type SdkMcpServer } from '@factory/droid-sdk';
 import { mkdir } from 'node:fs/promises';
 import { join } from 'node:path';
 import type { FactorySession } from './DroidRuntime.js';
@@ -75,6 +75,7 @@ interface CloseOperation {
 export interface StartedLocalMcpResources {
   servers: LocalMcpResource[];
   configs: McpServerConfig[];
+  inAppServers?: SdkMcpServer[];
 }
 export interface SessionPrompt {
   text: string;
@@ -131,6 +132,7 @@ export interface SessionLifecycleDependencies {
   maxContextTokensForModel: (modelId?: string) => number | undefined;
   startLocalMcpServers: (
     ref: { id: string; clientRef?: string },
+    kind: ProviderKind,
     cwd?: string,
   ) => Promise<StartedLocalMcpResources>;
   interactionsFor: (ref: { id: string }) => ProviderInteractions;
@@ -224,7 +226,7 @@ export class SessionLifecycle {
       });
       const runtimeCwd = await sessionRuntimeCwd(appCwd);
       this.requireOpenAdmission();
-      const mcp = await d.startLocalMcpServers(ref, appCwd);
+      const mcp = await d.startLocalMcpServers(ref, kind, appCwd);
       pendingMcpServers = mcp.servers;
       const providerSession = await provider.create({
         ...buildCreateRuntimeOptions({
@@ -243,6 +245,7 @@ export class SessionLifecycle {
           ? { modelId: d.providerDefaultModelId?.(kind) }
           : {}),
         interactions: d.interactionsFor(ref),
+        ...(mcp.inAppServers ? { inAppMcpServers: mcp.inAppServers } : {}),
       });
       pendingSession = providerSession;
       const droid = droidSessionOf(providerSession);
@@ -384,7 +387,7 @@ export class SessionLifecycle {
       // this build cannot route fails before it costs anything.
       const kind = requireProviderKind(boundProvider(historical));
       const provider = d.provider(kind);
-      const mcp = await d.startLocalMcpServers(ref, historical?.cwd);
+      const mcp = await d.startLocalMcpServers(ref, kind, historical?.cwd);
       pendingMcpServers = mcp.servers;
       const runtimeCwd = await sessionRuntimeCwd(historical?.cwd ?? '');
       requireCurrentResume();
@@ -392,6 +395,7 @@ export class SessionLifecycle {
         appSessionId,
         ...resumeHandle(historical),
         interactions: d.interactionsFor(ref),
+        ...(mcp.inAppServers ? { inAppMcpServers: mcp.inAppServers } : {}),
         cwd: runtimeCwd,
         ...resumeSettings(historical),
         ...(kind !== 'droid' && !historical?.modelId
