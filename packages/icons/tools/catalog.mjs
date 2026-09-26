@@ -6,18 +6,24 @@ import * as layout from '../dist/layout.js';
 import * as status from '../dist/status.js';
 import * as skills from '../dist/skills.js';
 import * as knowledge from '../dist/knowledge.js';
-import { ChangesIcon, VisualizeIcon, WorktreeIcon } from '../dist/index.js';
+import * as voice from '../dist/voice.js';
+import * as modes from '../dist/modes.js';
+import * as computer from '../dist/computer.js';
+import { ChangesIcon, WorktreeIcon } from '../dist/index.js';
 
 const groups = {
   Skills: skills,
   Knowledge: knowledge,
+  Voice: voice,
+  Modes: modes,
+  Computer: computer,
   Status: status,
   Actions: actions,
   Arrows: arrows,
   Files: files,
   Git: git,
   Layout: layout,
-  Identity: { ChangesIcon, VisualizeIcon, WorktreeIcon },
+  Identity: { ChangesIcon, WorktreeIcon },
 };
 
 export const catalog = Object.entries(groups).flatMap(([category, icons]) =>
@@ -40,4 +46,7 @@ export const featured = [
   { name: 'ConnectedNodes', label: 'Connections', tone: 'sand' },
   { name: 'Gauge', label: 'Performance', tone: 'violet' },
   { name: 'AlertTriangle', label: 'Attention', tone: 'amber' },
+  { name: 'Visualize', label: 'Visualize', tone: 'pink' },
+  { name: 'Mic', label: 'Dictation', tone: 'teal' },
+  { name: 'VoiceWave', label: 'Voice mode', tone: 'teal' },
 ];

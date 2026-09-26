@@ -392,6 +392,18 @@ export function pullRequestMatchesQuery(pr: ChatPullRequest, query: string): boo
   );
 }
 
+// Every linked pull request is merged or closed.
+export function linkedPrsDone(metadata: ChatMetadata | undefined): boolean {
+  const links = metadata?.pullRequests ?? [];
+  return (
+    links.length > 0 &&
+    links.every((link) => {
+      const kind = prKind(link);
+      return kind === 'merged' || kind === 'closed';
+    })
+  );
+}
+
 // The PR a chat row represents: the first still-open link, else the first.
 export function linkedPr(metadata: ChatMetadata | undefined): ChatPullRequest | undefined {
   const links = metadata?.pullRequests ?? [];

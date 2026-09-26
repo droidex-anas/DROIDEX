@@ -1,6 +1,6 @@
 import { useState } from 'react';
-import { Blocks } from 'lucide-react';
 import { ModelIcon } from '../ModelIcon';
+import { SkillIcon } from '../icons/SkillIcon';
 import { PROVIDER_MARKS } from '../../features/providers/providerIdentity';
 import { faviconUrl } from '../../lib/linkPresentation';
 import type { SkillInfo } from '../../types/bridge';
@@ -17,7 +17,7 @@ const missingIcons = new Set<string>();
 const SLOT = 'h-4 w-4 shrink-0';
 
 /** A command's own sigil, the way both harnesses write it. */
-export function CommandSigil({ className = SLOT }: { className?: string }) {
+function CommandSigil({ className }: { className: string }) {
   return (
     <span
       aria-hidden
@@ -74,8 +74,7 @@ export function CatalogRowIcon({
     );
   }
   if (item.kind === 'command') return <CommandSigil className={className} />;
-  if (item.kind === 'skill')
-    return <Blocks aria-hidden className={`text-droid-text-muted ${className}`} />;
+  if (item.kind === 'skill') return <SkillIcon className={className} />;
   return (
     <span aria-hidden className={`flex items-center justify-center ${className}`}>
       <ModelIcon provider={PROVIDER_MARKS[item.provider]} size={14} />

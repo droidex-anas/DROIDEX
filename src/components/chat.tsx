@@ -26,6 +26,7 @@ import {
   CompactingIndicator,
   CompactionDivider,
   MessageActions,
+  SpokenMark,
   TranscriptNotice,
 } from './transcript/primitives';
 import { correlateResults, ErrorLine, ThinkingItem } from './transcript/rows';
@@ -186,6 +187,7 @@ const AssistantMessage = memo(function AssistantMessage({
   autoPlayAppBlocks,
   cacheId,
   specContent,
+  spoken,
 }: {
   text: string;
   // The session this text streams in, so the caret's shared idle record is
@@ -196,6 +198,8 @@ const AssistantMessage = memo(function AssistantMessage({
   autoPlayAppBlocks: boolean;
   cacheId: string;
   specContent?: string;
+  /** The reply was said out loud in a voice conversation. */
+  spoken?: boolean;
 }) {
   const appOwnsLiveStatus = live && hasAppBlock(text);
   // A live echo of the pinned spec shows no caret of its own: the feed's
@@ -209,6 +213,11 @@ const AssistantMessage = memo(function AssistantMessage({
     // min-w-0 so a wide table or a long unbroken URL scrolls inside the message
     // rather than widening the row past the transcript.
     <div className={`group/msg relative min-w-0${typing ? ' md-typing' : ''}`}>
+      {spoken && (
+        <div className="mb-1.5">
+          <SpokenMark />
+        </div>
+      )}
       <MessageBody
         text={text}
         live={live}
@@ -317,6 +326,7 @@ export const FeedItemView = memo(function FeedItemView({
           autoPlayAppBlocks={autoPlayAppBlocks}
           cacheId={item.key}
           specContent={specContent}
+          spoken={item.event.spoken}
         />
       );
     }

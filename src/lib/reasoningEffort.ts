@@ -51,6 +51,17 @@ export function compatibleReasoningForModel(
   return undefined;
 }
 
+// A new chat's effort is one setting shared by every harness, so the harness
+// it is shown on may not offer it (Ultra picked on Codex, then Droid chosen).
+// Read it through the model it would run on: an effort that model cannot run
+// becomes the one it can, and the pick stands for the harness that offers it.
+export function draftEffortFor(
+  model: ModelInfo | undefined,
+  effort: ReasoningEffort | undefined,
+): ReasoningEffort | undefined {
+  return compatibleReasoningForModel(model, effort) ?? effort;
+}
+
 // The effort a model switch carries: a level the new model can run, null when
 // it offers no level and one is set (so the previous model's does not follow
 // it), undefined when the current one stands.
@@ -63,6 +74,17 @@ export function reasoningForModelSwitch(
   const offersNone =
     model && !model.supportedReasoningEfforts?.length && !model.defaultReasoningEffort;
   return offersNone && currentReasoning !== undefined ? null : undefined;
+}
+
+// The saved effort a default keeps after its model changes: snapped to what the
+// new model runs, cleared when it runs none, otherwise unchanged.
+export function reasoningAfterModelSwitch(
+  model: ModelInfo | undefined,
+  currentReasoning: ReasoningEffort | undefined,
+): ReasoningEffort | undefined {
+  const next = reasoningForModelSwitch(model, currentReasoning);
+  if (next === null) return undefined;
+  return next ?? currentReasoning;
 }
 
 // The top rung is the same idea on both harnesses but not the same word: Claude

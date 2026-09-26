@@ -76,6 +76,14 @@ export const SETTINGS_SEARCH_ENTRIES: readonly SettingsSearchEntry[] = [
     'attachment quality',
     'compact image',
   ]),
+  e('General', 'Voice', ['voice mode', 'voice picker', 'speak', 'spoken', 'talk']),
+  e('General', 'While it works', [
+    'narration',
+    'commentary',
+    'brief',
+    'voice narration',
+    'acknowledgement',
+  ]),
   e('General', 'Diff view', ['unified', 'split', 'side by side', 'diff layout']),
   e('General', 'Diff theme', ['soft', 'focused', 'diff contrast', 'diff colors']),
   e('General', 'Hardware acceleration', [
@@ -115,6 +123,22 @@ export const SETTINGS_SEARCH_ENTRIES: readonly SettingsSearchEntry[] = [
   e('Setup & updates', 'Run setup again', ['onboarding', 'first run', 'setup tour', 'wizard']),
 
   // ── Configuration ────────────────────────────────────────────────────────
+  e('Configuration', 'Model selector', [
+    'model picker',
+    'effort slider',
+    'classic list',
+    'composer model',
+    'selector style',
+  ]),
+  e('Configuration', 'Default models', [
+    'default model',
+    'reasoning effort',
+    'harness',
+    'droid',
+    'claude code',
+    'codex',
+    'new chat model',
+  ]),
   e('Configuration', 'Tool activity', [
     'compact',
     'balanced',

@@ -69,6 +69,15 @@ if (isReleaseBuild || isUnsignedReleaseBuild) {
   }
 }
 
+if (
+  datadog.distributionChannel === 'release' &&
+  !(datadog.applicationId && datadog.clientToken && datadog.site)
+) {
+  throw new Error(
+    'DROIDEX release-channel builds require DATADOG_APPLICATION_ID, DATADOG_CLIENT_TOKEN and DATADOG_SITE for installation counting.',
+  );
+}
+
 /** @type {import('electron-builder').Configuration} */
 module.exports = {
   appId: 'app.droidex',
@@ -108,6 +117,8 @@ module.exports = {
         'DROIDEX accesses Documents projects only when you choose them for an agent session.',
       NSDownloadsFolderUsageDescription:
         'DROIDEX accesses downloaded project files only when you choose them for an agent session.',
+      NSMicrophoneUsageDescription:
+        'DROIDEX uses the microphone only while you hold a voice conversation with an agent.',
       SUFeedURL: sparkleFeedUrl,
       SUPublicEDKey: sparklePublicKey,
       SUEnableAutomaticChecks: true,

@@ -54,7 +54,7 @@ export function TerminalCloseConfirm({
       onKeyDown={onKeyDown}
       className="absolute inset-0 z-10 flex animate-fade-in items-center justify-center bg-droid-bg/70 p-4"
     >
-      <div className="w-[280px] rounded-2xl border border-droid-border bg-droid-surface p-4 shadow-2xl shadow-black/50">
+      <div className="w-[280px] rounded-2xl border border-droid-border bg-droid-surface p-4 shadow-droid">
         <p className="text-[12px] leading-relaxed text-droid-text">
           A process is still running in this terminal.
         </p>

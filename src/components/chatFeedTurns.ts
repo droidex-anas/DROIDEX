@@ -114,12 +114,14 @@ export function tailTimestamp(item?: FeedItem): number | undefined {
   if (!item) return undefined;
   if (item.type === 'worked' || item.type === 'turnChanges') return undefined;
   if (item.type === 'tools') {
+    if (item.events.length === 0) return undefined;
     const e = item.events[item.events.length - 1];
-    return e?.endTs ?? e?.ts;
+    return e.endTs ?? e.ts;
   }
   if (item.type === 'diffs') {
+    if (item.changes.length === 0) return undefined;
     const c = item.changes[item.changes.length - 1];
-    return c?.event.endTs ?? c?.event.ts;
+    return c.event.endTs ?? c.event.ts;
   }
   if (item.type === 'child_sessions') {
     const e = item.events.at(-1);
@@ -178,6 +180,12 @@ function isReconciliationItem(it: FeedItem): boolean {
   return hasPlan;
 }
 
+// What the voice read out, not the turn's written answer: it never becomes the
+// answer, never merges into one, and never folds away.
+function isSpokenLine(it: FeedItem): boolean {
+  return it.type === 'message' && it.event.spoken === true;
+}
+
 // Join a trailing assistant fragment back onto the running final answer.
 function mergeAssistantMessages(
   prev: Extract<FeedItem, { type: 'message' }>,
@@ -230,7 +238,10 @@ function collapseRun(run: FeedItem[], specContent?: string): FeedItem[] {
   const spec = specContent?.trim();
   const isSpecBody = (text: string | undefined) => !!spec && (text ?? '').trim() === spec;
   const isAnswerCandidate = (it: FeedItem): it is Extract<FeedItem, { type: 'message' }> =>
-    it.type === 'message' && it.event.author !== 'user' && !isSpecBody(it.event.text);
+    it.type === 'message' &&
+    it.event.author !== 'user' &&
+    !isSpokenLine(it) &&
+    !isSpecBody(it.event.text);
 
   // Find the final answer: the run's last answer candidate, extended backwards
   // across gaps holding only todo/plan reconciliation — the model emitted its
@@ -298,6 +309,10 @@ function collapseRun(run: FeedItem[], specContent?: string): FeedItem[] {
       survivors.push(it);
     } else if (it.type === 'tools' && it.events.some(isAutomationProposalCall)) {
       // Proposals are review surfaces, not hidden execution detail.
+      survivors.push(it);
+    } else if (isSpokenLine(it)) {
+      // The user heard this. Folding it into "Worked for …" would hide half of
+      // the conversation they just had.
       survivors.push(it);
     } else if (it.type === 'generated_image') {
       // The image is what the turn produced, not a step along the way: folding
