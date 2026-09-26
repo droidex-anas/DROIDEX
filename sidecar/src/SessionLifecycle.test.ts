@@ -1615,6 +1615,7 @@ test('an unindexed Droid resume preserves its native selection before applying c
   await harness.lifecycle.resume('external-session');
   assert.deepEqual(session.settings[0], { autonomyLevel: 'off' });
   assert.equal(harness.registry.getLive('external-session')?.summary.autonomy, 'low');
+});
 
 test('agent completion cannot start a turn while Stop or steer interruption is outstanding', async () => {
   const h = createHarness([summary('app-1', 'provider-1')]);
