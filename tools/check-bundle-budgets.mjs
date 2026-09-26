@@ -68,8 +68,16 @@ import { join } from 'node:path';
 // initialCssBytes raised from 100_000 to 101_500: that same base already
 // measured 100_629, over the old line before any of this work, and Projects
 // lands ~0.3KB under it. The raise covers main's drift, not the feature.
+//
+// Raised from 1_380_000 to 1_390_000 when Projects landed on top of voice mode.
+// Each fit its own line against their shared base (1_356_068 at b28af864):
+// main with voice mode measured 1_369_293 and Projects 1_368_883. Both keep
+// their state on the entry by design, so together they measure 1_382_099.
+// Nothing moved off the entry to make room; the new headroom is ~8KB. The
+// merged CSS of 100_276 is over main's 100_000 line, so Projects' 101_500
+// stays.
 const BUDGETS = {
-  initialRendererJsBytes: 1_380_000,
+  initialRendererJsBytes: 1_390_000,
   initialCssBytes: 101_500,
   largestLazyChunkBytes: 700_000,
   duplicatePackageMaxBytes: 120_000,
