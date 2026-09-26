@@ -103,6 +103,7 @@ test('edits-only checks workspace paths and keeps the running turn permission sn
       notifications.set(method, handler),
     onRequest: (method: string, handler: (params: unknown) => Promise<unknown>) =>
       requests.set(method, handler),
+    onUnsupportedRequest: () => undefined,
     onClose: () => undefined,
     notify: () => undefined,
     close: async () => undefined,
