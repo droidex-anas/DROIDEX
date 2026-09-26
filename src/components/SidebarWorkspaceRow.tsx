@@ -17,7 +17,7 @@ function WorkspaceFolderIcon({ open }: { open: boolean }) {
   const reduceMotion = useReducedMotion();
   const duration = reduceMotion ? 0 : 0.15;
   return (
-    <span className="relative block h-4 w-4 shrink-0 text-droid-text-muted">
+    <span className="relative block h-4 w-4 shrink-0 text-droid-text-muted transition-colors group-hover:text-droid-text-secondary">
       <motion.span
         className="absolute inset-0 flex items-center justify-center"
         initial={false}
@@ -160,7 +160,7 @@ export function SidebarWorkspaceRow({
 
   return (
     <div>
-      <div className="group flex items-center gap-1 px-1 py-1">
+      <div className="group flex items-center gap-1 py-1.5 pl-3 pr-2.5">
         <button
           type="button"
           onClick={onToggle}
@@ -169,7 +169,7 @@ export function SidebarWorkspaceRow({
             setMenu({ x: event.clientX, y: event.clientY });
           }}
           aria-expanded={open}
-          className="flex min-w-0 flex-1 items-center gap-2 rounded-lg px-1 py-0.5 text-left transition-colors hover:bg-droid-elevated/40"
+          className="flex min-w-0 flex-1 cursor-pointer items-center gap-2.5 rounded-md text-left focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-droid-accent/40"
         >
           <WorkspaceFolderIcon open={open} />
           <span title={name} className="min-w-0 flex-1 truncate text-[13px] text-droid-text">
@@ -180,7 +180,8 @@ export function SidebarWorkspaceRow({
           type="button"
           onClick={onNewChat}
           title="New chat here"
-          className="shrink-0 rounded-md p-0.5 text-droid-text-muted/0 transition-colors focus-visible:text-droid-text group-hover:text-droid-text-muted hover:bg-droid-elevated/60 hover:text-droid-text"
+          aria-label={`New chat in ${name}`}
+          className="shrink-0 cursor-pointer rounded-md p-0.5 text-droid-text-muted/0 transition-colors focus-visible:text-droid-text focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-droid-accent/40 group-hover:text-droid-text-muted hover:text-droid-text"
         >
           <Plus className="h-3.5 w-3.5" />
         </button>

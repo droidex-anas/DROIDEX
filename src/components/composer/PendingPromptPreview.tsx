@@ -84,7 +84,7 @@ function PendingImages({ paths }: { paths: [string, ...string[]] }) {
         )}
       </span>
       {paths.length > 1 && (
-        <span className="absolute -right-1 -top-1 flex h-3.5 min-w-3.5 items-center justify-center rounded-full border border-droid-border bg-droid-elevated px-0.5 text-[11px] font-semibold leading-none text-droid-text">
+        <span className="absolute -right-1 -top-1 flex h-3.5 min-w-3.5 items-center justify-center rounded-full border border-droid-border bg-droid-raised px-0.5 text-[11px] font-semibold leading-none text-droid-text">
           {paths.length}
         </span>
       )}

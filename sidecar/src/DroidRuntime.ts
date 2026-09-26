@@ -5,6 +5,7 @@ import {
   DroidInteractionMode,
   DroidSession,
   ReasoningEffort as SdkReasoningEffort,
+  SessionNotFoundError,
   type AskUserHandler,
   type DecompSessionType,
   type DroidStreamEvent,
@@ -16,6 +17,7 @@ import {
 } from '@factory/droid-sdk';
 import { createDroidTransport, type ConnectableDroidTransport } from './DroidTransport.js';
 import { buildDroidInvocation, resolveDroidPath } from './Environment.js';
+import { sessionOrganizationId } from './history.js';
 import type { Autonomy, ReasoningEffort, SessionInteractionMode } from './protocol.js';
 
 const EXEC_ARGS = ['exec', '--input-format', 'stream-jsonrpc', '--output-format', 'stream-jsonrpc'];
@@ -185,7 +187,7 @@ export class DroidRuntime implements FactoryRuntime {
       return session;
     } catch (err) {
       await transport.close().catch(ignoreError);
-      throw err;
+      throw explainLoadFailure(sessionId, err);
     }
   }
 
@@ -222,6 +224,20 @@ export class DroidRuntime implements FactoryRuntime {
   private resolveDroidPath(): string {
     return resolveDroidPath();
   }
+}
+
+// Droid answers "Session not found" for a session created in another Factory
+// organization even though its file is on disk, which reads like lost history.
+function explainLoadFailure(sessionId: string, error: unknown): unknown {
+  if (!(error instanceof SessionNotFoundError)) return error;
+  const organizationId = sessionOrganizationId(sessionId);
+  if (!organizationId) return error;
+  return new Error(
+    `Droid could not open this session. It was created in Factory organization ${organizationId}, ` +
+      'and Droid only opens sessions from the organization it is signed in to. ' +
+      'Sign Droid in to that organization to continue this session.',
+    { cause: error },
+  );
 }
 
 export function createInitializeSessionParams(

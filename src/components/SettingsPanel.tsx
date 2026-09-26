@@ -5,12 +5,16 @@ import {
   type ImagePasteQuality,
 } from '../hooks/useStore';
 import type { DiffStyle } from '../hooks/persistedThemePreferences';
-import type { DiffViewMode, LiveEnterBehavior } from '../hooks/persistedUiPreferences';
+import type {
+  DiffViewMode,
+  LiveEnterBehavior,
+  ModelSelectorStyle,
+} from '../hooks/persistedUiPreferences';
 import { ChevronLeft, ChevronDown, Search, Check, X, Plus } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import AutonomySelector from './AutonomySelector';
 import { ModelIcon, providerOf } from './ModelIcon';
-import type { ModelInfo } from '../types/bridge';
+import type { ModelInfo, VoiceNarration } from '../types/bridge';
 import { useOnboarding } from '../hooks/useOnboarding';
 import { Switch } from './Switch';
 import { getAppVersion, type AppUpdateInfo } from '../lib/onboarding';
@@ -23,8 +27,10 @@ import { KeyboardShortcutsSettings } from './KeyboardShortcutsSettings';
 import { McpServersSettings } from './McpServersSettings';
 import { NotificationsSettings } from './NotificationsSettings';
 import { WorktreesSettings } from './WorktreesSettings';
-import { Dropdown, GroupLabel, SectionTitle, SettingRow } from './settingsKit';
+import { Dropdown, GroupLabel, SectionTitle, SettingRow, type DropdownOption } from './settingsKit';
 import { HardwareAccelerationSetting } from './HardwareAccelerationSetting';
+import { HarnessCliSettings } from './HarnessCliSettings';
+import { HarnessModelSettings } from './HarnessModelSettings';
 import { ArchivedChatsSettings } from './ArchivedChatsSettings';
 import {
   bestTabForQuery,
@@ -86,6 +92,24 @@ const TOKEN_PRESETS = [
   1_000_000,
 ];
 const RECOMMENDED_LIMIT = 250_000;
+
+/* ── voice ── */
+// The voices Codex's realtime thread speaks with. A voice session publishes the
+// harness's own list when it opens; this picker only has to name them, and the
+// empty value leaves the choice to the harness.
+// The harness names its own voices, and it only answers while a chat is live,
+// so Settings offers the ones it last reported. A voice chosen before, and no
+// longer offered, stays in the list rather than reading as no choice at all.
+function voiceOptions(known: string[], chosen: string): DropdownOption[] {
+  const voices = chosen && !known.includes(chosen) ? [...known, chosen] : known;
+  return [
+    { value: '', label: 'Harness default' },
+    ...voices.map((voice) => ({
+      value: voice,
+      label: voice.charAt(0).toUpperCase() + voice.slice(1),
+    })),
+  ];
+}
 
 // Themed preset picker for compaction token limits. Empty/"Factory default"
 // lets Droid use its model-dependent compaction threshold.
@@ -154,10 +178,10 @@ function TokenLimitSelect({
         onClick={() => {
           setOpen((v) => !v);
         }}
-        className={`${width} flex items-center justify-between gap-2 rounded-lg border px-2.5 py-1.5 text-[12px] transition-colors ${
+        className={`${width} flex items-center justify-between gap-2 rounded-lg px-2.5 py-1.5 text-[12px] transition-colors ${
           open
-            ? 'border-droid-border-hover bg-droid-elevated text-droid-text'
-            : 'border-droid-border bg-droid-bg/60 text-droid-text hover:border-droid-border-hover'
+            ? 'bg-droid-active text-droid-text'
+            : 'bg-droid-elevated text-droid-text hover:bg-droid-active'
         }`}
       >
         <span className="truncate tabular-nums">{label}</span>
@@ -287,10 +311,10 @@ function CompactionModelPicker({
         onClick={() => {
           setOpen((v) => !v);
         }}
-        className={`flex items-center gap-2 rounded-lg border px-2.5 py-1.5 text-[12px] transition-colors ${
+        className={`flex items-center gap-2 rounded-lg px-2.5 py-1.5 text-[12px] transition-colors ${
           open
-            ? 'border-droid-border-hover bg-droid-elevated text-droid-text'
-            : 'border-droid-border bg-droid-bg/60 text-droid-text hover:border-droid-border-hover'
+            ? 'bg-droid-active text-droid-text'
+            : 'bg-droid-elevated text-droid-text hover:bg-droid-active'
         }`}
       >
         {!isCurrent && <ModelIcon provider={providerOf(selModel, selected)} size={14} />}
@@ -347,6 +371,9 @@ function GeneralSection() {
       models: current.models,
       liveEnterBehavior: current.liveEnterBehavior,
       imagePasteQuality: current.imagePasteQuality,
+      defaultVoice: current.defaultVoice,
+      knownVoices: current.knownVoices,
+      narrationMode: current.narrationMode,
       diffView: current.diffView,
       theme: current.theme,
     }),
@@ -423,6 +450,41 @@ function GeneralSection() {
                 type: 'SET_IMAGE_PASTE_QUALITY',
                 quality: quality as ImagePasteQuality,
               });
+            }}
+          />
+        </SettingRow>
+      </div>
+
+      <GroupLabel>Voice</GroupLabel>
+      <div className="rounded-xl border border-droid-border bg-droid-surface divide-y divide-droid-border mb-8">
+        <SettingRow
+          label="Voice"
+          description="Which voice speaks in voice mode. The harness offers the list; leave this on its default to take whichever voice it picks."
+        >
+          <Dropdown
+            ariaLabel="Voice"
+            value={state.defaultVoice}
+            width="w-44"
+            options={voiceOptions(state.knownVoices, state.defaultVoice)}
+            onChange={(voice) => {
+              dispatch({ type: 'SET_DEFAULT_VOICE', voice });
+            }}
+          />
+        </SettingRow>
+        <SettingRow
+          label="While it works"
+          description="What you hear once a spoken request starts a turn — a short acknowledgement, or a running account of the work."
+        >
+          <Dropdown
+            ariaLabel="While it works"
+            value={state.narrationMode}
+            width="w-52"
+            options={[
+              { value: 'brief', label: 'Brief acknowledgement' },
+              { value: 'commentary', label: 'Narrate the work' },
+            ]}
+            onChange={(mode) => {
+              dispatch({ type: 'SET_NARRATION_MODE', mode: mode as VoiceNarration });
             }}
           />
         </SettingRow>
@@ -604,7 +666,7 @@ function SetupSection({ onClose }: { onClose: () => void }) {
     <div className="max-w-2xl mx-auto">
       <SectionTitle
         title="Setup & updates"
-        sub="Manage the Droid CLI, your sign-in, and app updates."
+        sub="Manage the Droid, Claude Code, and Codex CLIs, your sign-in, and app updates."
       />
 
       <GroupLabel>Droid CLI</GroupLabel>
@@ -659,6 +721,12 @@ function SetupSection({ onClose }: { onClose: () => void }) {
           )}
         </SettingRow>
       </div>
+
+      <GroupLabel>Claude Code and Codex</GroupLabel>
+      <HarnessCliSettings
+        autoUpdate={onboarding?.harnessCliAutoUpdate ?? true}
+        onAutoUpdateChange={(enabled) => void onboard.patch({ harnessCliAutoUpdate: enabled })}
+      />
 
       <GroupLabel>DROIDEX app</GroupLabel>
       <div className="rounded-xl border border-droid-border bg-droid-surface divide-y divide-droid-border mb-8">
@@ -719,9 +787,35 @@ function SetupSection({ onClose }: { onClose: () => void }) {
 function ConfigurationSection() {
   const dispatch = useStoreDispatch();
   const defaultAutonomy = useStoreSelector((state) => state.defaultAutonomy);
+  const modelSelectorStyle = useStoreSelector((state) => state.modelSelectorStyle);
   return (
     <div className="max-w-2xl mx-auto">
       <SectionTitle title="Configuration" />
+      <GroupLabel>Default models</GroupLabel>
+      <HarnessModelSettings />
+      <GroupLabel>Composer</GroupLabel>
+      <div className="rounded-xl border border-droid-border bg-droid-surface divide-y divide-droid-border mb-8">
+        <SettingRow
+          label="Model selector"
+          description="How the composer's model chip picks a model: a card that drills into an effort slider, or the classic list with per-row effort dots."
+        >
+          <Dropdown
+            ariaLabel="Model selector"
+            value={modelSelectorStyle}
+            width="w-44"
+            options={[
+              { value: 'slider', label: 'Effort slider' },
+              { value: 'classic', label: 'Classic list' },
+            ]}
+            onChange={(style) => {
+              dispatch({
+                type: 'SET_MODEL_SELECTOR_STYLE',
+                style: style as ModelSelectorStyle,
+              });
+            }}
+          />
+        </SettingRow>
+      </div>
       <GroupLabel>Transcript</GroupLabel>
       <ToolActivitySettings />
       <GroupLabel>Sessions</GroupLabel>
@@ -820,7 +914,7 @@ export default function SettingsPanel() {
       mcpCwd: activeSession?.cwd ?? state.workspaceCwds[0],
     };
   }, shallowEqual);
-  const [active, setActive] = useState('Appearance');
+  const [active, setActive] = useState('General');
   const [query, setQuery] = useState('');
 
   useEffect(() => {

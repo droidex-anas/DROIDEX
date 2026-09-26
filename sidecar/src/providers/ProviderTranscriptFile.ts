@@ -78,6 +78,10 @@ export class ProviderTranscriptFile {
   append(event: TranscriptEvent): void {
     // Child sessions keep their own transcripts; this file is one conversation.
     if (event.role !== 'primary') return;
+    if (event.spoken) {
+      this.appendSpoken(event);
+      return;
+    }
     const notice = storedNoticeLine(event);
     if (notice) {
       this.flush();
@@ -112,6 +116,22 @@ export class ProviderTranscriptFile {
     if (!message) return;
     this.writeMessage('assistant', message.blocks, message.id, message.ts);
     this.pending = null;
+  }
+
+  private appendSpoken(event: TranscriptEvent): void {
+    if (event.kind !== 'text' || !event.text)
+      throw new Error('A spoken transcript row must contain text.');
+    this.flush();
+    this.writeLine({
+      type: 'message',
+      id: event.id,
+      timestamp: new Date(event.ts).toISOString(),
+      spoken: true,
+      message: {
+        role: event.author === 'user' ? 'user' : 'assistant',
+        content: [{ type: 'text', text: event.text }],
+      },
+    });
   }
 
   private nextPromptId(ts: number): string {

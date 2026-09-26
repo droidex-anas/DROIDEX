@@ -94,10 +94,10 @@ import '@droidex/icons/styles.css';
 ```
 
 Omit the tone attribute for neutral icons. Available tones: `rose`, `green`,
-`orange`, `blue`, `sand`, `violet`, `amber`. Override `--droid-icon-rose`, etc.
-with your theme tokens. Set `--droid-icon-badge-size` to change the 36px badge.
-These classes only style the elements you opt into; they do not theme the app.
-The existing `VisualizeIcon` brand mark is the one fixed-palette exception.
+`orange`, `blue`, `sand`, `violet`, `amber`, `pink`, `teal`. Override
+`--droid-icon-rose`, etc. with your theme tokens. Set `--droid-icon-badge-size`
+to change the 36px badge. These classes only style the elements you opt into;
+they do not theme the app.
 
 ## Status and loading
 
@@ -123,9 +123,20 @@ the surrounding page's color; set a color inside the file in that case.
 The raw SVG spinner is static.
 
 Reference-inspired pairs include Rosette, Hierarchy, Ghost, MessageBubble,
-ConnectedNodes, Gauge, AlertTriangle, Book, Books, Notebook, FileSearch, Cloud,
-CirclePlay, Bell, and CircleCheck. Single-style glyphs such as Spinner,
-CircleDashed and arrows retain their original geometry in filled preview mode.
+ConnectedNodes, Gauge, Visualize, Mic, VoiceWave, Lightbulb, AlertTriangle,
+Book, Books, Notebook, FileSearch, Cloud, CirclePlay, Bell, and CircleCheck.
+`VoiceWaveFilled` is the round voice-mode button: a disc with the bars cut out.
+The Modes category holds Lightbulb (plan mode), Brain (reasoning), Models
+(model picker) and Sketch; `Mcp` is the Model Context Protocol mark.
+The Git category covers pull requests: GitPullRequest, GitPullRequestCreate,
+GitFork, CodeReview and Repository are outline; the status glyphs
+GitPullRequestDraft, GitPullRequestMerged, GitPullRequestClosed, Issue and
+IssueClosed carry a soft tint on their state node.
+The Computer category holds ComputerUse, ComputerHistory, Appshots, Plugins
+and Browser.
+Single-style glyphs such as Spinner, CircleDashed, Brain, Models, Sketch, Mcp,
+the Git status glyphs and arrows retain their original geometry in
+filled preview mode.
 
 The gallery and SVGs are generated from `src/`. Edit the source, then rebuild.
 Gallery layout and controls live in `gallery/gallery.css` and `gallery/gallery.js`;

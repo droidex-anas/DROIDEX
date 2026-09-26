@@ -8,6 +8,7 @@ import {
   startRendererPerfObservers,
 } from './lib/rendererPerf';
 import { applyTheme } from './lib/theme';
+import { VoiceProvider } from './features/voice/VoiceProvider';
 import App from './App';
 import './index.css';
 
@@ -32,7 +33,9 @@ if (!root) throw new Error('DROIDEX root element is missing.');
 createRoot(root).render(
   <StrictMode>
     <StoreProvider>
-      <App />
+      <VoiceProvider>
+        <App />
+      </VoiceProvider>
     </StoreProvider>
   </StrictMode>,
 );
