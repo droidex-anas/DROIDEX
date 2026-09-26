@@ -212,7 +212,7 @@ test('a transcript DROIDEX writes for a non-Droid session is enumerated and repl
   await assert.rejects(blocked.appendPrompt('must not overtake the missing row'), /EISDIR/);
 });
 
-test('spoken rows replay with their mark, speaker, and latest corrected text', () => {
+test('spoken rows replay with their mark, speaker, and latest corrected text', async () => {
   const appSessionId = 'spoken-transcript-scan';
   const summary: SessionSummary = {
     appSessionId,
@@ -242,7 +242,7 @@ test('spoken rows replay with their mark, speaker, and latest corrected text', (
   });
   transcript.append(spokenUser);
   transcript.append({ ...spokenUser, text: 'please check' });
-  transcript.append(
+  await transcript.append(
     transcriptEvent(appSessionId, 'text', {
       id: 'voice-assistant',
       sourceSessionId: 'primary',
