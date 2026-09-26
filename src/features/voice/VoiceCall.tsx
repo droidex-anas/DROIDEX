@@ -1,6 +1,7 @@
 import { useEffect, useLayoutEffect, useRef } from 'react';
 import { shallowEqual, useStoreSelector, type AppState } from '../../hooks/useStore';
 import { useVoice, type Voice } from './useVoice';
+import { closeVoiceAnalysis } from './voiceAnalysis';
 
 /**
  * The running call: the microphone, the connection to the provider, and where
@@ -59,6 +60,15 @@ export function VoiceCall({
       return;
     running.current();
   }, [preferences]);
+
+  // The orbs hear the call through one shared audio graph. Once the call holds
+  // neither a microphone nor a reply, the graph has nothing left to hear and
+  // closes. Moving between surfaces keeps both streams, so it keeps the graph.
+  const { micStream, replyStream } = voice.session;
+  const hearing = micStream !== null || replyStream !== null;
+  useEffect(() => {
+    if (!hearing) closeVoiceAnalysis();
+  }, [hearing]);
 
   // Whatever ended the conversation, a hang-up, the provider, or a failed
   // connection, the chat stops owning one.

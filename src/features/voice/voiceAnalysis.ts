@@ -7,29 +7,39 @@
  * milliseconds and happens on exactly the frames the user is watching the view
  * change, which is what made the swap stutter.
  *
- * The context is made once and kept: an idle one is cheap, and the alternative
- * is paying for it again the next time someone speaks. Analysers are held
- * weakly against their stream, so they are collected with the conversation that
- * owned them rather than accumulating.
+ * So the graph is built once per conversation and shared: every orb that hears
+ * a stream reads the same analyser. It is closed when the conversation lets go
+ * of its audio, because a running context keeps the audio thread working for
+ * as long as the app runs, whether or not anything is being said.
  */
 
 let context: AudioContext | null = null;
-const analysers = new WeakMap<MediaStream, AnalyserNode>();
+const taps = new Map<MediaStream, { source: MediaStreamAudioSourceNode; analyser: AnalyserNode }>();
 
 export function analyserFor(stream: MediaStream | null): AnalyserNode | null {
   if (!stream) return null;
-  const existing = analysers.get(stream);
-  if (existing) return existing;
+  const existing = taps.get(stream);
+  if (existing) return existing.analyser;
   try {
     context ??= new AudioContext();
     const analyser = context.createAnalyser();
     analyser.fftSize = 512;
-    context.createMediaStreamSource(stream).connect(analyser);
-    analysers.set(stream, analyser);
+    const source = context.createMediaStreamSource(stream);
+    source.connect(analyser);
+    taps.set(stream, { source, analyser });
     return analyser;
   } catch {
     // No audio output, or a blocked context: the orb breathes instead of
     // reacting, which is the same thing it does in silence.
     return null;
   }
+}
+
+/** Lets go of every stream the orbs were hearing, and the context behind them. */
+export function closeVoiceAnalysis(): void {
+  for (const { source } of taps.values()) source.disconnect();
+  taps.clear();
+  const closing = context;
+  context = null;
+  void closing?.close();
 }
