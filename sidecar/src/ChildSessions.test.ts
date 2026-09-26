@@ -38,6 +38,8 @@ interface Harness {
 function createHarness(
   records: PersistedChildSession[],
   options: {
+    acceptAgentWave?: () => boolean;
+    parentProvider?: SessionSummary['provider'];
     maxOpenSessions?: number;
     maxLiveRuntimes?: number;
     maxQueuedRuntimes?: number;
@@ -82,6 +84,11 @@ function createHarness(
   };
   history.seedChildSessions(records);
   let parent = parentLease(parentId, calls);
+  if (options.parentProvider) {
+    parent.summary.provider = options.parentProvider;
+    parent.summary.modelId = 'parent-model';
+    parent.droid = undefined;
+  }
   const dependencies: ChildSessionsDependencies = {
     runtime,
     agentProcesses: {
@@ -196,8 +203,10 @@ function createHarness(
         args: [
           parentAppSessionId,
           agents.map((agent) => `${agent.name}:${agent.status}`).join(','),
+          ...agents.flatMap((agent) => (agent.step ? [agent.step] : [])),
         ],
       });
+      return options.acceptAgentWave?.() ?? true;
     },
     resolveDefaultSettings: () => ({
       modelId: 'model-default',
@@ -529,11 +538,8 @@ test('a settled state-only child keeps the moment it stopped', () => {
   assert.equal(child?.settledAt, 100);
 });
 
-// A state-only child has no provider session file to read a model from and is
-// never retried, so one observed before the parent knows its own model would be
-// parked out of sight forever. It is admitted on the parent's defaults instead.
 test('a state-only child with no model is admitted rather than parked', () => {
-  const h = createHarness([]);
+  const h = createHarness([], { parentProvider: 'codex' });
   const identity = h.owner.admitChildObservation({
     parentAppSessionId: h.parentId,
     providerSessionId: 'agent-1',
@@ -547,7 +553,7 @@ test('a state-only child with no model is admitted rather than parked', () => {
   assert.ok(identity);
   assert.deepEqual(
     h.owner.list(h.parentId).map((child) => [child.label, child.status, child.modelId]),
-    [['echo:ONE', 'running', 'model-default']],
+    [['echo:ONE', 'running', 'parent-model']],
   );
 });
 
@@ -658,6 +664,42 @@ test('poll observations never rekey a child away from its spawn link', () => {
   assert.equal(children[0]?.label, 'worker');
   assert.equal(children[0]?.status, 'running');
   assert.equal(children[0]?.streamFidelity, 'state');
+  assert.deepEqual(h.owner.childScopeForSpawn(h.parentId, { kind: 'tool-use', id: 'tool-spawn' }), {
+    childSessionId: children[0].childSessionId,
+    role: 'worker',
+  });
+  assert.equal(
+    h.owner.childScopeForSpawn(h.parentId, { kind: 'tool-use', id: 'tool-poll' }),
+    undefined,
+  );
+});
+
+test('spawn routing indexes hydrated siblings and moves a late spawn link', async () => {
+  const h = createHarness([
+    childRecord('a', 'provider-a', 'shared'),
+    childRecord('b', 'provider-b', 'shared'),
+    childRecord('c', 'provider-c', 'original'),
+  ]);
+  const scope = (id: string) => h.owner.childScopeForSpawn(h.parentId, { kind: 'tool-use', id });
+  assert.equal(scope('shared'), 'ambiguous');
+  assert.deepEqual(scope('original'), { childSessionId: 'c', role: 'worker' });
+
+  h.owner.admitChildObservation({
+    parentAppSessionId: h.parentId,
+    role: 'validator',
+    spawnLink: { kind: 'tool-use', id: 'replacement' },
+  });
+  h.owner.admitChildObservation({
+    parentAppSessionId: h.parentId,
+    providerSessionId: 'provider-c',
+    role: 'validator',
+    spawnLink: { kind: 'tool-use', id: 'replacement' },
+    modelId: 'model-default',
+  });
+  await new Promise<void>((resolve) => setImmediate(resolve));
+  assert.equal(scope('original'), undefined);
+  assert.deepEqual(scope('replacement'), { childSessionId: 'c', role: 'validator' });
+  assert.equal(scope('shared'), 'ambiguous');
 });
 
 test('polled Task children keep state fidelity even when a preview arrives', () => {
@@ -2270,5 +2312,83 @@ test('opening a child arms the retirement wakeup that later releases it', async 
       .filter((call) => call.target === 'cleanup' && call.method === 'session.close')
       .map((call) => call.args[0]),
     ['provider'],
+  );
+});
+
+test('a refused completion wave is retained until acceptance and cancelled on parent close', async () => {
+  let accepted = false;
+  const h = createHarness([], { acceptAgentWave: () => accepted });
+  const observation = {
+    parentAppSessionId: h.parentId,
+    providerSessionId: 'agent-1',
+    role: 'worker' as const,
+    modelId: 'model-default',
+    transcriptAvailable: false,
+    done: true,
+  };
+  h.owner.admitChildObservation(observation);
+  assert.equal(h.calls.filter((call) => call.method === 'agents.waveSettled').length, 1);
+  accepted = true;
+  h.owner.retryAgentWave(h.parentId);
+  h.owner.retryAgentWave(h.parentId);
+  h.owner.admitChildObservation(observation);
+  assert.equal(h.calls.filter((call) => call.method === 'agents.waveSettled').length, 2);
+  accepted = false;
+  h.owner.admitChildObservation({ ...observation, status: 'running', done: false });
+  h.owner.admitChildObservation(observation);
+  const attempts = h.calls.filter((call) => call.method === 'agents.waveSettled').length;
+  await h.owner.closeParent(h.parentId);
+  accepted = true;
+  h.owner.retryAgentWave(h.parentId);
+  assert.equal(h.calls.filter((call) => call.method === 'agents.waveSettled').length, attempts);
+});
+
+test('a pending sibling blocks a completion wave until it settles', () => {
+  const h = createHarness([childRecord('child-a', 'agent-a'), childRecord('child-b', 'agent-b')]);
+  const observe = (providerSessionId: string, status: 'pending' | 'running' | 'completed') =>
+    h.owner.admitChildObservation({
+      parentAppSessionId: h.parentId,
+      providerSessionId,
+      role: 'worker',
+      transcriptAvailable: false,
+      status,
+      done: status === 'completed',
+    });
+  observe('agent-a', 'running');
+  observe('agent-b', 'pending');
+  observe('agent-a', 'completed');
+  assert.equal(h.calls.filter((call) => call.method === 'agents.waveSettled').length, 0);
+  observe('agent-b', 'completed');
+  assert.deepEqual(
+    h.calls.filter((call) => call.method === 'agents.waveSettled').map((call) => call.args),
+    [['parent', 'Worker 1:completed,Worker 2:completed']],
+  );
+});
+
+test('a terminal observation preserves its result preview across deferred delivery', () => {
+  let accept = false;
+  const h = createHarness([], { acceptAgentWave: () => accept });
+  const observation = {
+    parentAppSessionId: h.parentId,
+    providerSessionId: 'agent-result',
+    role: 'worker' as const,
+    transcriptAvailable: false,
+    modelId: 'model-default',
+  };
+  h.owner.admitChildObservation({ ...observation, status: 'running' });
+  h.owner.admitChildObservation({
+    ...observation,
+    done: true,
+    activity: { preview: 'The race is in the compaction callback.' },
+  });
+  assert.equal(h.owner.list(h.parentId)[0]?.activity, undefined);
+  accept = true;
+  h.owner.retryAgentWave(h.parentId);
+  assert.deepEqual(
+    h.calls.filter((call) => call.method === 'agents.waveSettled').map((call) => call.args),
+    [
+      ['parent', 'Worker 1:completed', 'The race is in the compaction callback.'],
+      ['parent', 'Worker 1:completed', 'The race is in the compaction callback.'],
+    ],
   );
 });

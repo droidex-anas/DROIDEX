@@ -33,13 +33,22 @@ interface ProviderSessionStart extends StoredSessionStart {
 type ContentBlock =
   | { type: 'text'; text: string }
   | { type: 'thinking'; thinking: string }
-  | { type: 'tool_use'; id?: string; name: string; input: unknown }
+  | {
+      type: 'tool_use';
+      id?: string;
+      name: string;
+      input: unknown;
+      pollsChildSessionId?: string;
+      interrupted?: true;
+    }
   | {
       type: 'tool_result';
       tool_use_id?: string;
       name?: string;
       content: string;
       is_error?: boolean;
+      pollsChildSessionId?: string;
+      interrupted?: true;
     };
 
 interface PendingMessage {
@@ -53,6 +62,7 @@ export class ProviderTranscriptFile {
   private pending: PendingMessage | null = null;
   private headWritten = false;
   private promptSeq = 0;
+  private readonly children = new Map<string, ProviderTranscriptFile>();
 
   // Reads the summary when it writes rather than holding a copy: the registry
   // replaces the summary object on every update, and the head line goes out
@@ -60,10 +70,11 @@ export class ProviderTranscriptFile {
   // resume handle minted during create both land on it. A session abandoned
   // before its first turn leaves no file.
   constructor(
-    appSessionId: string,
+    private readonly sessionId: string,
     private readonly summary: () => SessionSummary,
+    private readonly parentAppSessionId?: string,
   ) {
-    this.path = join(providerSessionsDir(), `${appSessionId}.jsonl`);
+    this.path = join(providerSessionsDir(), `${sessionId}.jsonl`);
   }
 
   // A turn's prompt. The renderer already showed it, so it is persisted here
@@ -76,8 +87,23 @@ export class ProviderTranscriptFile {
   }
 
   append(event: TranscriptEvent): void {
-    // Child sessions keep their own transcripts; this file is one conversation.
-    if (event.role !== 'primary') return;
+    if (event.role !== 'primary' && !this.parentAppSessionId) {
+      let child = this.children.get(event.sourceSessionId);
+      if (!child) {
+        child = new ProviderTranscriptFile(event.sourceSessionId, this.summary, this.sessionId);
+        this.children.set(event.sourceSessionId, child);
+      }
+      child.append(event);
+      // Routed children have no independent turn-settlement callback. Persist
+      // each coalesced run so replay can read it while the parent is still busy.
+      child.flush();
+      return;
+    }
+    if (event.kind === 'text' && event.author === 'user' && !event.spoken) {
+      this.flush();
+      this.writeMessage('user', [{ type: 'text', text: event.text ?? '' }], event.id, event.ts);
+      return;
+    }
     if (event.spoken) {
       this.appendSpoken(event);
       return;
@@ -112,6 +138,7 @@ export class ProviderTranscriptFile {
   // Closes the open assistant message. Called when a turn settles and when the
   // session closes, so one stored line is one settled message.
   flush(): void {
+    for (const child of this.children.values()) child.flush();
     const message = this.pending;
     if (!message) return;
     this.writeMessage('assistant', message.blocks, message.id, message.ts);
@@ -158,7 +185,19 @@ export class ProviderTranscriptFile {
       mkdirSync(providerSessionsDir(), { recursive: true });
       // A resumed session appends to the transcript it already has: one head
       // line per file, written with the session's first message.
-      if (!existsSync(this.path)) appendFileSync(this.path, serialize(headLine(this.summary())));
+      if (!existsSync(this.path)) {
+        const summary = this.summary();
+        const head: ProviderSessionStart = this.parentAppSessionId
+          ? {
+              type: 'session_start',
+              id: this.sessionId,
+              provider: summary.provider,
+              cwd: summary.cwd,
+              callingSessionId: this.parentAppSessionId,
+            }
+          : headLine(summary);
+        appendFileSync(this.path, serialize(head));
+      }
       this.headWritten = true;
     }
     appendFileSync(this.path, serialize(line));
@@ -188,6 +227,8 @@ function assistantBlock(event: TranscriptEvent): ContentBlock | null {
       ...(event.toolUseId ? { id: event.toolUseId } : {}),
       name: event.toolName ?? 'tool',
       input: event.toolArgs,
+      ...(event.pollsChildSessionId ? { pollsChildSessionId: event.pollsChildSessionId } : {}),
+      ...(event.interrupted ? { interrupted: true } : {}),
     };
   }
   if (!event.text) return null;
@@ -204,6 +245,8 @@ function toolResultBlock(event: TranscriptEvent): ContentBlock | null {
     ...(event.toolName ? { name: event.toolName } : {}),
     content: event.text ?? '',
     ...(event.isError ? { is_error: true } : {}),
+    ...(event.pollsChildSessionId ? { pollsChildSessionId: event.pollsChildSessionId } : {}),
+    ...(event.interrupted ? { interrupted: true } : {}),
   };
 }
 

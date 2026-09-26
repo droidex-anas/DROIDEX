@@ -11,7 +11,10 @@ import {
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
-import type { SessionSummary, TranscriptEvent } from './protocol.js';
+import { DatabaseSync } from 'node:sqlite';
+import type { ServerEvent, SessionSummary, TranscriptEvent } from './protocol.js';
+import { SessionEventFlow } from './SessionEventFlow.js';
+import { SessionTimeline } from './SessionTimeline.js';
 import type { ProviderSession, ProviderVoiceEvent } from './providers/session.js';
 import { providerSessionJsonl } from './testing/providerSessionFixtures.js';
 
@@ -23,7 +26,8 @@ process.env.HOME = home;
 // developer's environment would aim this suite at their real session files.
 delete process.env.DROIDEX_USER_DATA_DIR;
 
-const { loadHistoricalSessions } = await import('./history.js');
+const { loadHistoricalSessions, HistoryIndex, createHistorySessionFileCache } =
+  await import('./history.js');
 const { parseFullSessionTranscript, SessionTranscriptReader } =
   await import('./sessionTranscript.js');
 const { ProviderTranscriptFile } = await import('./providers/ProviderTranscriptFile.js');
@@ -155,10 +159,16 @@ test('a transcript DROIDEX writes for a non-Droid session is enumerated and repl
       toolName: 'Read',
       toolUseId: 'toolu_1',
       toolArgs: { path: '.' },
+      pollsChildSessionId: 'polled-child',
     }),
   );
   transcript.append(
-    transcriptEvent(appSessionId, 'tool_result', { toolUseId: 'toolu_1', text: 'AGENTS.md' }),
+    transcriptEvent(appSessionId, 'tool_result', {
+      toolUseId: 'toolu_1',
+      text: 'AGENTS.md',
+      pollsChildSessionId: 'polled-child',
+      interrupted: true,
+    }),
   );
   transcript.append(transcriptEvent(appSessionId, 'thinking', { text: 'Found' }));
   transcript.append(transcriptEvent(appSessionId, 'thinking', { text: ' the file.' }));
@@ -194,6 +204,24 @@ test('a transcript DROIDEX writes for a non-Droid session is enumerated and repl
     join(providerSessionsDir(), `${appSessionId}.jsonl`),
     'primary',
   );
+  const paged = new SessionTranscriptReader(
+    appSessionId,
+    appSessionId,
+    join(providerSessionsDir(), `${appSessionId}.jsonl`),
+    'primary',
+  ).windowBackward(20, 0).events;
+  for (const replay of [events, paged]) {
+    assert.equal(
+      replay.find((event) => event.kind === 'tool_call')?.pollsChildSessionId,
+      'polled-child',
+    );
+    assert.equal(
+      replay.find((event) => event.kind === 'tool_result')?.pollsChildSessionId,
+      'polled-child',
+    );
+    assert.equal(replay.find((event) => event.kind === 'tool_result')?.interrupted, true);
+    assert.equal(replay.find((event) => event.kind === 'tool_call')?.interrupted, undefined);
+  }
   assert.deepEqual(
     events.map((event) => [event.kind, event.author ?? event.text, event.toolUseId]),
     [
@@ -208,6 +236,96 @@ test('a transcript DROIDEX writes for a non-Droid session is enumerated and repl
       ['error', 'Session process was killed (SIGKILL).', undefined],
     ],
   );
+
+  const emitted: ServerEvent[] = [];
+  const timeline = new SessionTimeline({
+    registry: { resolveSummary: () => summary, getLive: () => undefined },
+    history: { recordEvent: () => undefined },
+    getChildSessions: () => [],
+    emit: (event) => emitted.push(event),
+    emitError: (error) => assert.fail(error.message),
+    streamingCoalesceMs: 0,
+  });
+  timeline.useTranscript(appSessionId, transcript);
+  const flow = new SessionEventFlow({
+    appendTranscript: (event) => timeline.appendStreaming(event),
+    flushTranscript: (parent, child) => timeline.flushStreamingFor(parent, child),
+    applySideEffects: () => undefined,
+    recordUsage: () => undefined,
+    resolveChildScope: (_parent, spawn) => ({
+      childSessionId: spawn.id,
+      role: spawn.id === 'child-a' ? 'worker' : 'validator',
+    }),
+  });
+  for (const childSessionId of ['child-a', 'child-b']) {
+    timeline.appendPrompt(
+      appSessionId,
+      'Review the file.',
+      childSessionId,
+      childSessionId === 'child-a' ? 'worker' : 'validator',
+    );
+    for (const event of [
+      transcriptEvent(appSessionId, 'text', { text: `Answer from ${childSessionId}` }),
+      transcriptEvent(appSessionId, 'tool_call', { toolUseId: 'read', toolName: 'Read' }),
+      transcriptEvent(appSessionId, 'tool_result', { toolUseId: 'read', text: 'File contents' }),
+      transcriptEvent(appSessionId, 'text', { text: 'Finished reviewing.' }),
+    ]) {
+      flow.apply(appSessionId, 'parent-provider', 'primary', {
+        transcript: event,
+        childOwner: { kind: 'tool-use', id: childSessionId },
+      });
+    }
+  }
+  // Reconcile files as restart does, then exercise the child pane's real loader.
+  const db = new DatabaseSync(':memory:');
+  const index = new HistoryIndex();
+  try {
+    const cache = createHistorySessionFileCache(db);
+    cache.reconcileChanges();
+    index.replaceSessionFileSnapshot(cache.snapshot());
+    for (const childSessionId of ['child-a', 'child-b']) {
+      timeline.loadChildHistory({
+        appSessionId,
+        childSessionId,
+        childProviderSessionIds: [`provider-${childSessionId}`],
+        role: childSessionId === 'child-a' ? 'worker' : 'validator',
+      });
+      const page = emitted.at(-1);
+      assert.equal(page?.type, 'session.history');
+      if (page?.type !== 'session.history') assert.fail('Expected child history');
+      assert.deepEqual(
+        page.transcripts.map((event) => event.kind),
+        ['text', 'text', 'tool_call', 'tool_result', 'text'],
+      );
+      assert.equal(page.transcripts[0].author, 'user');
+      assert.equal(page.transcripts[0].text, 'Review the file.');
+      assert.equal(page.transcripts[1].text, `Answer from ${childSessionId}`);
+      assert.ok(
+        page.transcripts.every(
+          (event) =>
+            event.appSessionId === appSessionId &&
+            event.sourceSessionId === childSessionId &&
+            event.role === (childSessionId === 'child-a' ? 'worker' : 'validator'),
+        ),
+      );
+    }
+    assert.ok(
+      !loadHistoricalSessions().some((row) => row.summary.appSessionId.startsWith('child-')),
+    );
+    assert.deepEqual(
+      parseFullSessionTranscript(
+        appSessionId,
+        appSessionId,
+        join(providerSessionsDir(), `${appSessionId}.jsonl`),
+        'primary',
+      ),
+      events,
+    );
+  } finally {
+    timeline.releaseTranscript(appSessionId);
+    index.close();
+    db.close();
+  }
 });
 
 test('spoken rows replay with their mark, speaker, and latest corrected text', () => {
