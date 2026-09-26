@@ -1,44 +1,52 @@
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
-import { useLayoutEffect, useRef, type MouseEvent, type ReactNode } from 'react';
+import {
+  useLayoutEffect,
+  useRef,
+  type ComponentType,
+  type MouseEvent,
+  type ReactNode,
+} from 'react';
 
-import { FileText } from 'lucide-react';
+import { Check, FileText } from '@droidex/icons';
 
-import { CatalogRowIcon, CommandSigil } from './composer/CatalogRowIcon';
+import { CatalogRowIcon } from './composer/CatalogRowIcon';
 import { catalogLabel, rowScope, type MenuEntry, type MenuItem } from './composer/menuItems';
-import { inlineCardMotion, INLINE_CARD_EASE } from './inlineCardMotion';
+import { inlineCardMotion } from './inlineCardMotion';
+import type { SkillInfo } from '../types/bridge';
 
-const ACCENT = 'var(--droid-accent)';
+/** One of DROIDEX's own commands, run on the client instead of sent to the agent. */
+export interface SlashCommand {
+  /** Stored with its `/` trigger for matching; the menu shows the bare name. */
+  cmd: string;
+  desc: string;
+  icon: ComponentType<{ className?: string }>;
+  run: () => void;
+}
 
-export type SlashCommand =
-  | { cmd: string; desc: string; replacement: string; run?: never }
-  | { cmd: string; desc: string; replacement?: never; run: () => void };
+const ICON = 'h-4 w-4 shrink-0 text-droid-text-muted';
 
 function basename(p: string): string {
   const i = p.lastIndexOf('/');
   return i >= 0 ? p.slice(i + 1) : p;
 }
 
-// Commands are stored with their '/' trigger for matching and insertion; the
-// menu shows the bare name.
-function commandLabel(cmd: string): string {
-  return cmd.startsWith('/') ? cmd.slice(1) : cmd;
-}
-
-function Label({ text, group, first }: { text: string; group: boolean; first: boolean }) {
-  if (group) {
-    return (
-      <div className="px-2.5 pb-1 pt-2 text-[11px] font-medium text-droid-text-muted/60">
-        {text}
-      </div>
-    );
-  }
+function SectionHeading({ text, first }: { text: string; first: boolean }) {
   return (
     <div
-      className={`px-2.5 pb-1 text-[11px] font-medium uppercase tracking-[0.08em] text-droid-text-muted/50 ${
-        first ? 'pt-1' : 'pt-2.5'
-      }`}
+      className={`px-2.5 pb-1 text-[11px] font-medium text-droid-text-muted ${first ? 'pt-1' : 'pt-3'}`}
     >
       {text}
+    </div>
+  );
+}
+
+// A plugin's skills sit under its name and mark, so the rows themselves can keep
+// the skill glyph and still read as the plugin's.
+function GroupHeading({ text, plugin }: { text: string; plugin: SkillInfo | null }) {
+  return (
+    <div className="flex items-center gap-1.5 px-2.5 pb-1 pt-2 text-[11px] text-droid-text-muted">
+      {plugin && <CatalogRowIcon item={plugin} className="h-3.5 w-3.5 shrink-0" />}
+      <span className="truncate">{text}</span>
     </div>
   );
 }
@@ -81,16 +89,12 @@ function Row({
         onRun();
       }}
       onClick={runOnKeyboardClick}
-      className={`flex w-full min-w-0 items-center gap-2.5 rounded-lg px-2.5 py-2 text-left transition-colors ${
-        active ? 'bg-droid-surface' : 'hover:bg-droid-surface/55'
+      className={`flex h-8 w-full min-w-0 items-center gap-2.5 rounded-lg px-2.5 text-left transition-colors ${
+        active ? 'bg-droid-accent/[0.07]' : ''
       }`}
     >
       {children}
-      {marked && (
-        <span className="shrink-0 text-[11px] font-medium" style={{ color: ACCENT }}>
-          Added
-        </span>
-      )}
+      {marked && <Check aria-label="Added" className="h-3.5 w-3.5 shrink-0 text-droid-accent" />}
     </button>
   );
 }
@@ -101,22 +105,21 @@ function Name({ children }: { children: ReactNode }) {
 
 function Detail({ children }: { children: ReactNode }) {
   return (
-    <span className="ml-auto min-w-0 truncate text-right text-[12px] text-droid-text-muted/75">
-      {children}
-    </span>
+    <span className="min-w-0 flex-1 truncate text-[12px] text-droid-text-muted">{children}</span>
   );
 }
 
 function Scope({ children }: { children: string }) {
-  return <span className="shrink-0 text-[11px] text-droid-text-muted/55">{children}</span>;
+  return <span className="shrink-0 text-[11px] text-droid-text-muted/70">{children}</span>;
 }
 
 function RowBody({ item, staged }: { item: MenuItem; staged: boolean }) {
   if (item.type === 'command') {
+    const Icon = item.command.icon;
     return (
       <>
-        <CommandSigil />
-        <Name>{commandLabel(item.command.cmd)}</Name>
+        <Icon className={ICON} />
+        <Name>{item.command.cmd.slice(1)}</Name>
         <Detail>{item.command.desc}</Detail>
       </>
     );
@@ -124,11 +127,7 @@ function RowBody({ item, staged }: { item: MenuItem; staged: boolean }) {
   if (item.type === 'file') {
     return (
       <>
-        {/* One shared glyph, as the attachment chips already use: the per-type
-            Lucide file icons live in lazily loaded surfaces, and pulling that
-            set into the composer costs the initial bundle more than the rows
-            gain. */}
-        <FileText aria-hidden className="h-4 w-4 shrink-0 text-droid-text-muted" />
+        <FileText className={ICON} />
         <Name>{basename(item.path)}</Name>
         <Detail>{staged ? `Attached · ${item.path}` : item.path}</Detail>
       </>
@@ -140,7 +139,9 @@ function RowBody({ item, staged }: { item: MenuItem; staged: boolean }) {
       <CatalogRowIcon item={row} />
       <Name>{catalogLabel(row)}</Name>
       {row.argumentHint && (
-        <span className="shrink-0 text-[12px] text-droid-text-muted/60">{row.argumentHint}</span>
+        <span className="shrink-0 font-mono text-[11px] text-droid-text-muted/70">
+          {row.argumentHint}
+        </span>
       )}
       <Detail>{row.description}</Detail>
       {/* Where a command or skill comes from is worth saying; an app or a
@@ -168,8 +169,10 @@ interface ComposerMenuProps {
 // harness offers, and keyboard handling stay in PromptInput and menuItems.
 //
 // The panel stays mounted while a harness's catalog lands in pieces: entries are
-// keyed, so a row that arrives fades in where it belongs without disturbing the
-// query, the highlight, or the rows already painted.
+// keyed, so a row that arrives lands where it belongs without disturbing the
+// query, the highlight, or the rows already painted. Rows paint at once — a
+// per-row fade left rows blank and the panel looking empty whenever a query
+// narrowed the list.
 export default function ComposerMenu({
   open,
   entries,
@@ -185,41 +188,32 @@ export default function ComposerMenu({
       {open && (
         <motion.div
           {...motionProps}
-          className="absolute bottom-full left-0 right-0 z-50 mb-2 max-h-80 overflow-y-auto rounded-xl border border-droid-border bg-droid-elevated p-1.5 shadow-droid"
+          className="absolute bottom-full left-0 right-0 z-50 mb-2 max-h-80 overflow-y-auto overscroll-contain rounded-2xl bg-droid-raised p-1.5 shadow-droid"
         >
-          {/* Keyed entries that mount as the catalog lands: only the new row
-              fades in, and initial={false} keeps the rows the panel opened with
-              from animating one by one. */}
-          <AnimatePresence initial={false}>
-            {entries.map((entry, i) => {
-              const staged = entry.kind === 'row' && stagedKeys.has(entry.key);
-              return (
-                <motion.div
-                  key={entry.key}
-                  initial={{ opacity: 0 }}
-                  animate={{ opacity: 1 }}
-                  transition={{ duration: reduceMotion ? 0 : 0.14, ease: INLINE_CARD_EASE }}
-                >
-                  {entry.kind === 'label' ? (
-                    <Label text={entry.text} group={entry.group} first={i === 0} />
-                  ) : (
-                    <Row
-                      active={entry.key === activeKey}
-                      marked={staged && entry.item.type !== 'file'}
-                      onHover={() => {
-                        onHoverRow(entry.key);
-                      }}
-                      onRun={() => {
-                        onRunRow(entry.item);
-                      }}
-                    >
-                      <RowBody item={entry.item} staged={staged} />
-                    </Row>
-                  )}
-                </motion.div>
-              );
-            })}
-          </AnimatePresence>
+          {entries.map((entry, i) => {
+            if (entry.kind === 'section') {
+              return <SectionHeading key={entry.key} text={entry.text} first={i === 0} />;
+            }
+            if (entry.kind === 'group') {
+              return <GroupHeading key={entry.key} text={entry.text} plugin={entry.plugin} />;
+            }
+            const staged = stagedKeys.has(entry.key);
+            return (
+              <Row
+                key={entry.key}
+                active={entry.key === activeKey}
+                marked={staged && entry.item.type !== 'file'}
+                onHover={() => {
+                  onHoverRow(entry.key);
+                }}
+                onRun={() => {
+                  onRunRow(entry.item);
+                }}
+              >
+                <RowBody item={entry.item} staged={staged} />
+              </Row>
+            );
+          })}
         </motion.div>
       )}
     </AnimatePresence>

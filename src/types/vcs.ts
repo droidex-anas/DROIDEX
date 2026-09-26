@@ -70,7 +70,7 @@ export interface GitEnvironment {
   isGitHub?: boolean;
 }
 
-export interface GitBranch {
+interface GitBranch {
   name: string;
   upstream: string | null;
   ahead: number;
@@ -151,7 +151,7 @@ export interface PushOptions {
   force?: boolean;
 }
 
-export interface PullRequestReviewRef {
+interface PullRequestReviewRef {
   author: string;
   state: string;
 }
@@ -236,7 +236,7 @@ export interface DetectPrResult {
 // when gh omits the bucket, so other strings are possible at runtime. The
 // `string & {}` arm keeps the literals suggested without collapsing the union
 // to plain string.
-export type PrCheckBucket = 'pass' | 'fail' | 'pending' | 'skipping' | 'cancel' | (string & {});
+type PrCheckBucket = 'pass' | 'fail' | 'pending' | 'skipping' | 'cancel' | (string & {});
 
 export interface PrCheck {
   name: string;
@@ -274,7 +274,7 @@ export interface PrComment {
   resolvedBy?: string | null;
 }
 
-export interface PrReaction {
+interface PrReaction {
   content: string;
   count: number;
 }
@@ -291,7 +291,7 @@ export type GithubAvailability =
   | { installed: false; authenticated: false; installMethod: 'homebrew' | 'manual' }
   | { installed: true; authenticated: boolean; installMethod: null };
 
-export type GithubSetupFailureReason =
+type GithubSetupFailureReason =
   | 'busy'
   | 'installer_missing'
   | 'install_failed'

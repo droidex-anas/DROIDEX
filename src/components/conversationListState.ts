@@ -4,8 +4,6 @@ import { feedRowId } from '../hooks/conversationViewportAnchor';
 export const CONVERSATION_LIST_OVERSCAN = 8;
 export const CONVERSATION_LIST_ESTIMATE_PX = 96;
 export const CONVERSATION_LIST_GAP_PX = 16;
-// Twice the designed row gap: larger holes are missing or still-estimated rows, not spacing.
-export const CONVERSATION_VISIBLE_HOLE_PX = CONVERSATION_LIST_GAP_PX * 2;
 export const CONVERSATION_LIST_PIN_THRESHOLD_PX = 80;
 // A width change arrives as a stream of resize entries: the context panel
 // animates the transcript's right inset for 200ms, and a window drag emits one

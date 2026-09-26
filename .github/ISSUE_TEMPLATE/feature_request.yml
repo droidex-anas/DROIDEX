@@ -1,0 +1,38 @@
+name: Feature request
+description: Propose a change or a new capability.
+labels: [enhancement]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Describe the problem before the solution. The clearest requests explain
+        what you were trying to do and where DROIDEX got in the way.
+  - type: textarea
+    id: problem
+    attributes:
+      label: The problem
+      description: What are you trying to do, and what makes it hard or impossible today?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: What you would like to see
+      description: Describe the behaviour you want. Sketches and screenshots help for UI changes.
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives you considered
+      description: Including workarounds you use now.
+  - type: dropdown
+    id: contributing
+    attributes:
+      label: Would you like to implement this?
+      options:
+        - I would like to work on it
+        - I would like to help, with guidance
+        - I am only requesting it
+    validations:
+      required: true

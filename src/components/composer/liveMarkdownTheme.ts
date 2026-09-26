@@ -23,10 +23,11 @@ export const liveMarkdownTheme = EditorView.theme({
   // CodeMirror ships a fixed #888 placeholder, which is unreadable on a light
   // canvas; the muted token is derived to stay legible in either scheme.
   '.cm-placeholder': { color: 'var(--droid-text-muted)' },
-  '.cm-cursor, .cm-dropCursor': { borderLeftColor: 'var(--droid-accent)', borderLeftWidth: '2px' },
-  '.cm-selectionBackground, &.cm-focused .cm-selectionBackground': {
-    backgroundColor: textTint(14),
-  },
+  '.cm-cursor, .cm-dropCursor': { borderLeftColor: 'var(--droid-accent)', borderLeftWidth: '3px' },
+  // CodeMirror's own focused-selection rule walks the whole layer path, so the
+  // themed tint has to match that path to beat its default lavender.
+  '.cm-selectionBackground, &.cm-focused > .cm-scroller > .cm-selectionLayer .cm-selectionBackground':
+    { backgroundColor: textTint(14) },
   '.cm-md-strong': { fontWeight: '600' },
   '.cm-md-em': { fontStyle: 'italic' },
   '.cm-md-strike': { textDecoration: 'line-through', opacity: '0.65' },

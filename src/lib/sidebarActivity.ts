@@ -1,5 +1,10 @@
 import type { SessionSummary } from '../types/bridge';
-import { chatDisplayTitle, isChatHidden, type ChatMetadataMap } from './chatMetadata';
+import {
+  chatDisplayTitle,
+  isChatHidden,
+  linkedPrsDone,
+  type ChatMetadataMap,
+} from './chatMetadata';
 import type { SessionAttentionKind } from './sessionAttention';
 import { sessionIsLive } from './sessions';
 
@@ -40,6 +45,8 @@ export interface ActivitySignals {
   uncommitted?: boolean;
   // Every linked pull request is merged or closed.
   prDone?: boolean;
+  // The user reopened the chat after its pull requests closed.
+  reopened?: boolean;
 }
 
 // Ordered from "blocked on the user" down to "nothing to do": the first rule
@@ -58,7 +65,7 @@ export function sessionActivityStatus(
   if (session.phase === 'failed') return 'failed';
   if (session.interruptReason) return 'interrupted';
   if (signals.unread) return 'review';
-  if (signals.prDone) return 'settled';
+  if (signals.prDone && !signals.reopened) return 'settled';
   if (signals.awaitingReply) return 'reply';
   if (signals.uncommitted) return 'ship';
   return 'ready';
@@ -111,6 +118,9 @@ export function inActivityScope(
 export interface SidebarActivityPreferences {
   view: 'activity' | 'workspaces' | 'pull-requests';
   settled: Record<string, number>;
+  // Chats reopened after every linked PR closed, so PR completion no longer
+  // settles them. See pruneReopenedSessions for when the override ends.
+  reopened: string[];
   order: 'recent' | 'oldest' | 'title';
   filter: 'all' | 'attention' | 'working' | 'ship' | 'ready' | 'settled';
   limit: number;
@@ -119,6 +129,7 @@ export interface SidebarActivityPreferences {
 export const DEFAULT_SIDEBAR_PREFERENCES: SidebarActivityPreferences = {
   view: 'workspaces',
   settled: {},
+  reopened: [],
   order: 'recent',
   filter: 'all',
   limit: 5,
@@ -126,7 +137,7 @@ export const DEFAULT_SIDEBAR_PREFERENCES: SidebarActivityPreferences = {
 
 const STORAGE_KEY = 'droid-sidebar-activity';
 
-export function isSidebarOrder(value: unknown): value is SidebarActivityPreferences['order'] {
+function isSidebarOrder(value: unknown): value is SidebarActivityPreferences['order'] {
   return value === 'recent' || value === 'oldest' || value === 'title';
 }
 
@@ -175,9 +186,15 @@ export function loadSidebarActivity(storage: Pick<Storage, 'getItem'>): SidebarA
     }
     settled[id] = timestamp;
   }
+  // Preferences saved before reopening existed have no list.
+  const reopened: unknown = 'reopened' in value ? value.reopened : [];
+  if (!Array.isArray(reopened) || !reopened.every((id): id is string => typeof id === 'string')) {
+    throw new Error('Invalid reopened session list.');
+  }
   return {
     view: value.view,
     settled: pruneSettledSessions(settled, {}, {}),
+    reopened,
     order: value.order,
     filter: value.filter,
     limit: value.limit,
@@ -233,4 +250,12 @@ export function pruneSettledSessions(
   );
   if (entries.length === Object.keys(settled).length && entries.length <= 1000) return settled;
   return Object.fromEntries(entries.sort((a, b) => b[1] - a[1]).slice(0, 1000));
+}
+
+// A reopen only overrides the pull requests that had closed when it was made:
+// once a linked PR is open again (or the chat is hidden) the override ends, so
+// the next merge settles the chat as usual.
+export function pruneReopenedSessions(reopened: string[], metadata: ChatMetadataMap): string[] {
+  const kept = reopened.filter((id) => !isChatHidden(metadata[id]) && linkedPrsDone(metadata[id]));
+  return kept.length === reopened.length ? reopened : kept;
 }

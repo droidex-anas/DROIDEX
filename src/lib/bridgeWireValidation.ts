@@ -157,10 +157,21 @@ function isServerEvent(value: unknown): value is ServerEvent {
         typeof value.ok === 'boolean' &&
         typeof value.exitCode === 'number'
       );
+    case 'harness.cli.report':
+      return Array.isArray(value.clis) && value.clis.every(isHarnessCliState);
+    case 'harness.cli.update.done':
+      return (
+        isHarnessCliProvider(value.provider) &&
+        typeof value.ok === 'boolean' &&
+        isOptionalString(value.previousVersion) &&
+        isOptionalString(value.version)
+      );
     case 'session.created':
       return typeof value.clientRef === 'string' && isSessionSummary(value.session);
     case 'session.updated':
       return isSessionSummary(value.session);
+    case 'session.model_update_applied':
+      return hasStrings(value, ['appSessionId', 'requestId']);
     case 'session.closed':
     case 'browser.closed':
       return typeof value.appSessionId === 'string';
@@ -280,6 +291,28 @@ function isServerEvent(value: unknown): value is ServerEvent {
         ((value.ok === true && (value.runId === undefined || typeof value.runId === 'string')) ||
           (value.ok === false && typeof value.error === 'string'))
       );
+    case 'voice.answer':
+      return hasStrings(value, ['appSessionId', 'sdp', 'attempt']);
+    case 'voice.state':
+      return (
+        typeof value.appSessionId === 'string' &&
+        (value.status === 'live' || value.status === 'closed')
+      );
+    case 'voice.transcript':
+      return (
+        hasStrings(value, ['appSessionId', 'text']) &&
+        (value.role === 'user' || value.role === 'assistant') &&
+        typeof value.final === 'boolean'
+      );
+    case 'voice.voices':
+      return (
+        typeof value.appSessionId === 'string' &&
+        Array.isArray(value.voices) &&
+        value.voices.every((voice) => typeof voice === 'string') &&
+        isOptionalString(value.defaultVoice)
+      );
+    case 'voice.error':
+      return hasStrings(value, ['appSessionId', 'message']);
     default: {
       const unexpected: never = type;
       void unexpected;
@@ -327,7 +360,8 @@ function isChildSessionSummary(value: unknown): boolean {
     isOptionalString(value.group) &&
     isOptionalString(value.phase) &&
     isOptionalTimestamp(value.startedAt) &&
-    isOptionalTimestamp(value.settledAt)
+    isOptionalTimestamp(value.settledAt) &&
+    isOptionalCount(value.tokensUsed)
   );
 }
 
@@ -340,7 +374,9 @@ function isTranscriptEvent(value: unknown): boolean {
     hasStrings(value, ['id', 'appSessionId', 'sourceSessionId', 'role', 'kind']) &&
     typeof value.ts === 'number' &&
     (value.errorKind === undefined || value.errorKind === 'usage_limit') &&
-    (value.resetsAt === undefined || nonNegativeSafeInteger(value.resetsAt))
+    (value.resetsAt === undefined || nonNegativeSafeInteger(value.resetsAt)) &&
+    isOptionalString(value.pollsChildSessionId) &&
+    (value.interrupted === undefined || value.interrupted === true)
   );
 }
 
@@ -433,6 +469,23 @@ function isEnvironmentReport(value: unknown): boolean {
   );
 }
 
+function isHarnessCliProvider(value: unknown): boolean {
+  return value === 'claude' || value === 'codex';
+}
+
+function isHarnessCliState(value: unknown): boolean {
+  if (!isRecord(value) || !isHarnessCliProvider(value.provider)) return false;
+  if (value.installed === false) return true;
+  return (
+    value.installed === true &&
+    typeof value.path === 'string' &&
+    (value.source === 'homebrew' || value.source === 'npm' || value.source === 'native') &&
+    isOptionalString(value.version) &&
+    typeof value.updating === 'boolean' &&
+    isOptionalString(value.updateError)
+  );
+}
+
 function isSessionHistoryEntry(value: unknown): boolean {
   return (
     isRecord(value) &&
@@ -467,6 +520,11 @@ function isOptionalString(value: unknown): boolean {
 }
 
 function isOptionalTimestamp(value: unknown): boolean {
+  return value === undefined || nonNegativeSafeInteger(value);
+}
+
+// A tally the sidecar reports, absent when it has nothing to report.
+function isOptionalCount(value: unknown): boolean {
   return value === undefined || nonNegativeSafeInteger(value);
 }
 

@@ -4,7 +4,6 @@ import { homedir, tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import { nonEmptyEnv } from '../../droidexPaths.js';
-import { isExecutable, resolveOnPathSync } from '../../Environment.js';
 import type { ModelInfo, ProviderStatus, SkillInfo } from '../../protocol.js';
 import type {
   Provider,
@@ -14,6 +13,7 @@ import type {
 } from '../session.js';
 import { AppServerClient } from './appServer.js';
 import { CodexCatalog } from './codexCatalog.js';
+import { resolveCodexPath } from './codexExecutable.js';
 import { listModels } from './codexModels.js';
 import { CodexSession, type CodexSessionInput } from './codexSession.js';
 
@@ -37,28 +37,14 @@ const INSTALL_HINT = 'Codex CLI not found. Install it, then refresh.';
 const LOGIN_HINT = 'Run `codex login` in a terminal and sign in, then refresh.';
 const PROBE_CANCELLED = 'Codex was not checked.';
 
-// Mirrors the Droid and Claude CLI resolution order (Environment.ts): an
-// explicit override first, then the locations the installers use, then PATH.
-const CLI_CANDIDATES = [
-  join(homedir(), '.local', 'bin', 'codex'),
-  '/opt/homebrew/bin/codex',
-  '/usr/local/bin/codex',
-];
-
-function resolveCodexPath(): string | undefined {
-  const override = process.env.CODEX_PATH;
-  if (override && isExecutable(override)) return override;
-  return CLI_CANDIDATES.find((candidate) => isExecutable(candidate)) ?? resolveOnPathSync('codex');
-}
-
-export interface InitializeResponse {
+interface InitializeResponse {
   userAgent: string;
 }
 
 // Every connection starts here, after its handlers are registered: the
 // capability opt-in that exposes the thread and turn API, then the bare
 // `initialized` notification Codex waits for before serving anything else.
-export async function initialize(client: AppServerClient): Promise<InitializeResponse> {
+async function initialize(client: AppServerClient): Promise<InitializeResponse> {
   const response = await client.request<InitializeResponse>('initialize', {
     clientInfo: CLIENT_INFO,
     capabilities: { experimentalApi: true },

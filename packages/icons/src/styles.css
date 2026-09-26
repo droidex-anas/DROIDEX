@@ -26,6 +26,14 @@
   color: var(--droid-icon-amber, #efc544);
 }
 
+:where([data-droid-icon-tone='pink']) {
+  color: var(--droid-icon-pink, #f472b6);
+}
+
+:where([data-droid-icon-tone='teal']) {
+  color: var(--droid-icon-teal, #3ec6b4);
+}
+
 .droid-icon-badge {
   display: inline-grid;
   place-items: center;

@@ -16,7 +16,7 @@
 import type { SessionSummary } from '../types/bridge';
 import { markdownToPlainText } from './markdownText';
 import { toast } from './toast';
-import { prKind, type PrKind } from './github';
+import { prKind } from './github';
 import type { PrChecksRollup, PullRequest } from '../types/vcs';
 
 export type ChatPullRequest = Pick<
@@ -392,11 +392,16 @@ export function pullRequestMatchesQuery(pr: ChatPullRequest, query: string): boo
   );
 }
 
-// The state a row badges when a chat has linked pull requests: the live one
-// wins, otherwise the most recently linked outcome.
-export function linkedPrKind(metadata: ChatMetadata | undefined): PrKind | undefined {
-  const pr = linkedPr(metadata);
-  return pr ? prKind(pr) : undefined;
+// Every linked pull request is merged or closed.
+export function linkedPrsDone(metadata: ChatMetadata | undefined): boolean {
+  const links = metadata?.pullRequests ?? [];
+  return (
+    links.length > 0 &&
+    links.every((link) => {
+      const kind = prKind(link);
+      return kind === 'merged' || kind === 'closed';
+    })
+  );
 }
 
 // The PR a chat row represents: the first still-open link, else the first.

@@ -118,7 +118,7 @@ export function AddMcpServerDialog({
         animate={{ y: 0, scale: 1, opacity: 1 }}
         exit={{ y: 8, scale: 0.99, opacity: 0 }}
         transition={{ duration: 0.2, ease: [0.16, 1, 0.3, 1] }}
-        className="max-h-[calc(100vh-2rem)] w-full max-w-[620px] overflow-y-auto rounded-2xl border border-droid-border bg-droid-surface shadow-[0_28px_90px_rgba(0,0,0,0.58)]"
+        className="max-h-[calc(100vh-2rem)] w-full max-w-[620px] overflow-y-auto rounded-2xl border border-droid-border bg-droid-surface shadow-droid"
       >
         <form
           onSubmit={(event) => {

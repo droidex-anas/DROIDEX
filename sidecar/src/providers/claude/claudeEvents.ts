@@ -11,7 +11,8 @@ import type { SDKMessage, SDKRateLimitInfo } from '@anthropic-ai/claude-agent-sd
 
 import type { NormalizedEvent } from '../../normalize.js';
 import type { TranscriptEvent } from '../../protocol.js';
-import { ClaudeSubagents } from './claudeSubagents.js';
+import { slimChildSessionArgs } from '../../subagentSignals.js';
+import { ClaudeSubagents, isSpawnToolName } from './claudeSubagents.js';
 import { resetAtMillis, UsageLimitError, usageLimitDetails } from '../usageLimit.js';
 
 const TOOL_BLOCK_TYPES = new Set(['tool_use', 'server_tool_use', 'mcp_tool_use']);
@@ -96,7 +97,12 @@ export class ClaudeEventMapper {
       case 'tool_use_summary':
       case 'auth_status':
       case 'prompt_suggestion':
+        return [];
+      // /clear starts a fresh conversation, and the CLI's own usage counting
+      // starts again with it, so the session's totals follow.
       case 'conversation_reset':
+        this.totals.tokensIn = 0;
+        this.totals.tokensOut = 0;
         return [];
       default:
         // Fails the build when the SDK adds a top-level message type.
@@ -241,28 +247,33 @@ export class ClaudeEventMapper {
     return content.flatMap((block) => {
       if (block.type !== 'tool_result') return [];
       this.reportedResults.add(block.tool_use_id);
+      const text = toolResultText(block.content);
+      // A call the user steered or stopped away from is not a failure, and the
+      // CLI says so in this one sentence. Reading it here keeps the renderer
+      // free of text matching, and the row quiet instead of red.
+      const interrupted = block.is_error === true && isInterruptionNotice(text);
       return {
         ...owner,
         transcript: this.transcript('tool_result', {
-          text: toolResultText(block.content),
-          isError: block.is_error === true,
+          text,
+          isError: block.is_error === true && !interrupted,
           toolUseId: block.tool_use_id,
+          ...(interrupted ? { interrupted: true } : {}),
         }),
       };
     });
   }
 
-  // modelUsage covers the main loop, subagents and compaction, and is cumulative
-  // for the whole query(). Settlement itself is the session's call: a result left
+  // The session's own spend. `modelUsage` would be cumulative for the whole
+  // query(), but it counts subagents and compaction too, and a subagent's tokens
+  // belong to its own row; `usage` is the main loop alone and per turn, so the
+  // turns are summed here. Settlement itself is the session's call: a result left
   // behind by an interrupted turn contributes usage and nothing else.
   private result(message: Extract<SDKMessage, { type: 'result' }>): NormalizedEvent[] {
-    this.totals.tokensIn = 0;
-    this.totals.tokensOut = 0;
-    for (const usage of Object.values(message.modelUsage)) {
-      this.totals.tokensIn +=
-        usage.inputTokens + usage.cacheReadInputTokens + usage.cacheCreationInputTokens;
-      this.totals.tokensOut += usage.outputTokens;
-    }
+    const { usage } = message;
+    this.totals.tokensIn +=
+      usage.input_tokens + usage.cache_read_input_tokens + usage.cache_creation_input_tokens;
+    this.totals.tokensOut += usage.output_tokens;
     // The denial list is the turn's authoritative record; a refusal usually
     // reaches the model as a tool result too, and that row is the one the
     // transcript keeps. What is left never streamed at all.
@@ -289,12 +300,6 @@ export class ClaudeEventMapper {
     return { transcript: this.transcript('status', { text }) };
   }
 
-  // What the CLI is doing before it can answer. Only true while the turn waits,
-  // so it is shown live and never stored.
-  progressEvent(text: string): NormalizedEvent {
-    return { transcript: this.transcript('status', { text, transient: true }) };
-  }
-
   private rateLimit(info: SDKRateLimitInfo): NormalizedEvent[] {
     const refusal = rateLimitRefusal(info);
     if (!refusal) return [];
@@ -317,9 +322,19 @@ export class ClaudeEventMapper {
   ): NormalizedEvent {
     // Nested tool calls must not change the parent's spawn correlation.
     if (!parentToolUseId) this.subagents.noteToolUse(name, id);
+    // A spawn's input is the subagent's whole brief. The subagent's own pane
+    // already receives that brief as a prompt row, so the parent's transcript
+    // keeps only the fields that label the call.
+    const toolArgs = isSpawnToolName(name) && isRecord(input) ? slimChildSessionArgs(input) : input;
+    const pollsChildSessionId = this.subagents.pollsChildSessionId(name, input);
     return {
       ...this.childOwner(parentToolUseId),
-      transcript: this.transcript('tool_call', { toolName: name, toolArgs: input, toolUseId: id }),
+      transcript: this.transcript('tool_call', {
+        toolName: name,
+        toolArgs,
+        toolUseId: id,
+        ...(pollsChildSessionId ? { pollsChildSessionId } : {}),
+      }),
     };
   }
 
@@ -368,6 +383,15 @@ export class ClaudeEventMapper {
   }
 }
 
+// What the CLI puts in a tool result when the user steers or stops the turn
+// before the tool runs. It is the harness's own wording, so it belongs here
+// with the rest of this adapter's knowledge of the SDK, never in the renderer.
+const INTERRUPTION_NOTICE = /the user (?:doesn't|does not) want to proceed with this tool use/i;
+
+function isInterruptionNotice(text: string): boolean {
+  return INTERRUPTION_NOTICE.test(text);
+}
+
 // The tool-use block shapes share id/name; the SDK's own union splits them by
 // server/mcp provenance, which the transcript does not distinguish.
 function toolBlock(block: { type: string }): { id: string; name: string } | undefined {
@@ -379,6 +403,9 @@ function toolBlock(block: { type: string }): { id: string; name: string } | unde
 // A tool whose input never finished streaming (an interrupt, or a block the
 // model left open) still deserves its row, so a partial payload reads as no
 // arguments rather than failing the turn.
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  typeof value === 'object' && value !== null;
+
 function parseToolInput(json: string): unknown {
   if (!json) return {};
   try {

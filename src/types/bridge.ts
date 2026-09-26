@@ -8,15 +8,7 @@ import type {
 import type { McpClientCommand, McpServerEvent } from './mcp.js';
 import type { ProviderMention, SkillInfo } from './catalog.js';
 export type { ProviderMention, SkillInfo } from './catalog.js';
-export type {
-  McpServerInfo,
-  McpServerInput,
-  McpServerSource,
-  McpServerStatus,
-  McpServerType,
-  McpStatusSummary,
-  McpToolInfo,
-} from './mcp.js';
+export type { McpServerInfo, McpServerInput, McpStatusSummary, McpToolInfo } from './mcp.js';
 
 // Which agent runtime a session runs on. Bound once when the session is
 // created and never changed afterwards.
@@ -40,7 +32,6 @@ export type SessionRole = 'primary' | 'worker' | 'validator';
 export type SessionPurpose = 'chat' | 'design' | 'mission-control';
 export type SessionInteractionMode = 'auto' | 'spec' | 'agi';
 export type ResponseFormat = 'app-create' | 'app-followup';
-export type RunStatus = 'pending' | 'running' | 'paused' | 'done' | 'failed' | 'blocked';
 export type Autonomy = 'off' | 'low' | 'medium' | 'high';
 export type ReasoningEffort =
   | 'off'
@@ -122,6 +113,10 @@ export interface ChildSessionSummary {
   // Live-only (never persisted) and absent unless the parent actually polled the
   // child; autonomous children stream nothing to the parent themselves.
   activity?: ChildActivity;
+  // What this child alone has spent, as its own provider reports it. Live-only,
+  // and absent for a provider that reports no per-child usage. The parent's
+  // tokensIn/tokensOut never include it.
+  tokensUsed?: number;
   // Live-only: waiting for a runtime slot. Never persisted; never means running.
   queued?: boolean;
 }
@@ -203,6 +198,15 @@ export interface TranscriptEvent {
   toolArgs?: unknown;
   toolUseId?: string;
   isError?: boolean;
+  // A 'tool_call' the provider knows is about a child session it is already
+  // tracking: polling that agent for output, or stopping it. The same tool
+  // names also read and stop background shell commands, so only the provider
+  // can tell the two apart, and the feed must not guess from the name.
+  pollsChildSessionId?: string;
+  // A 'tool_result' for a call that never ran because the user steered or
+  // stopped the turn. Reported by the harness, not inferred from the text: it
+  // is not a failure and must not read as one.
+  interrupted?: true;
   // For a 'compaction' divider: how many messages the compaction summarized away.
   removedCount?: number;
   author?: 'user';
@@ -211,6 +215,8 @@ export interface TranscriptEvent {
   files?: string[];
   browserRefs?: BrowserTranscriptReference[];
   steered?: boolean;
+  // Set on a row whose text was said out loud in a voice conversation.
+  spoken?: boolean;
   compactType?: 'auto' | 'manual';
   modelSwitch?: { from: string; to: string };
   errorKind?: 'usage_limit';
@@ -221,7 +227,7 @@ export interface TranscriptEvent {
   transient?: true;
 }
 
-export type BrowserTranscriptReferenceKind = 'element' | 'region' | 'text';
+type BrowserTranscriptReferenceKind = 'element' | 'region' | 'text';
 
 export interface BrowserTranscriptReference {
   id: string;
@@ -296,6 +302,25 @@ export interface ProviderStatus {
   items?: SkillInfo[];
 }
 
+// The harnesses whose CLI DROIDEX runs but does not ship: Claude Code and Codex.
+export type HarnessCliProvider = Exclude<ProviderKind, 'droid'>;
+// Where a harness CLI was installed from, read off its resolved binary. It
+// decides which updater owns the binary.
+export type HarnessInstallSource = 'homebrew' | 'npm' | 'native';
+
+export type HarnessCliState =
+  | { provider: HarnessCliProvider; installed: false }
+  | {
+      provider: HarnessCliProvider;
+      installed: true;
+      path: string;
+      source: HarnessInstallSource;
+      version?: string;
+      updating: boolean;
+      // Why the last update from the app failed; cleared by a successful one.
+      updateError?: string;
+    };
+
 export interface FactoryDefaultSettings {
   modelId?: string;
   reasoningEffort?: ReasoningEffort;
@@ -323,7 +348,7 @@ export interface PackageManagers {
   pnpm: boolean;
 }
 
-export interface CliInfo {
+interface CliInfo {
   present: boolean;
   path: string;
   version?: string;
@@ -352,7 +377,7 @@ export interface ContextStatsSnapshot {
   compactions?: number;
 }
 
-export interface ContextBreakdownCategory {
+interface ContextBreakdownCategory {
   name: string;
   tokens: number;
   colorKey?: string;
@@ -390,11 +415,6 @@ export interface SessionSearchMatch {
 export interface SessionSearchResult {
   appSessionId: string;
   matches: SessionSearchMatch[];
-}
-
-export interface HistorySearchReply {
-  results: SessionSearchResult[];
-  indexingIncomplete: boolean;
 }
 
 export interface BrowserViewport {
@@ -539,7 +559,7 @@ export interface BrowserNativeResult {
   error?: string;
 }
 
-export interface ElementSource {
+interface ElementSource {
   framework?: 'react' | 'vue' | 'svelte' | 'unknown';
   component?: string;
   componentChain?: string[];
@@ -549,7 +569,7 @@ export interface ElementSource {
   confidence: 'exact' | 'attribute' | 'heuristic' | 'none';
 }
 
-export interface DesignAnchorAncestor {
+interface DesignAnchorAncestor {
   tag: string;
   component?: string;
   selector?: string;
@@ -625,6 +645,8 @@ export type ClientCommand =
   | { type: 'env.detect' }
   | { type: 'cli.install'; channel: InstallChannel }
   | { type: 'cli.update'; channel?: InstallChannel }
+  | { type: 'harness.cli.check' }
+  | { type: 'harness.cli.update'; provider: HarnessCliProvider }
   | { type: 'catalog.models' }
   | { type: 'provider.refresh' }
   | { type: 'catalog.tools'; providerSessionId?: string }
@@ -672,11 +694,25 @@ export type ClientCommand =
   | { type: 'session.resume'; appSessionId: string }
   | { type: 'session.interrupt'; appSessionId: string }
   | {
+      type: 'voice.start';
+      appSessionId: string;
+      sdp: string;
+      /** Names this negotiation, so its answer is not taken by the next one. */
+      attempt: string;
+      voice?: string;
+      narration?: VoiceNarration;
+    }
+  | { type: 'voice.stop'; appSessionId: string }
+  | { type: 'voice.voices'; appSessionId: string }
+  | {
       type: 'session.updateSettings';
       appSessionId: string;
       modelId?: string | null;
       // null clears the effort: the model chosen offers none.
       reasoningEffort?: ReasoningEffort | null;
+      // Echoed once the model/effort change settles, by
+      // `session.model_update_applied` or a `session.model_update_failed` error.
+      requestId?: string;
       autonomy?: Autonomy;
       interactionMode?: SessionInteractionMode;
     }
@@ -826,7 +862,7 @@ export type ClientCommand =
     }
   | { type: 'browser.native.result'; result: BrowserNativeResult };
 
-export type ChildUpdatedEvent =
+type ChildUpdatedEvent =
   | {
       type: 'child.updated';
       parentAppSessionId: string;
@@ -843,7 +879,7 @@ export type ChildUpdatedEvent =
       access: 'history';
     };
 
-export interface SessionChildEvent {
+interface SessionChildEvent {
   type: 'session.child';
   event: 'upserted';
   child: ChildSessionSummary;
@@ -851,7 +887,7 @@ export interface SessionChildEvent {
   runtimeGeneration: number;
 }
 
-export interface ChildErrorEvent {
+interface ChildErrorEvent {
   type: 'child.error';
   parentAppSessionId: string;
   childSessionId: string;
@@ -863,7 +899,21 @@ export interface ChildErrorEvent {
 }
 
 // ── Sidecar -> Frontend ──────────────────────────────────────────────
+// How much of the agent's work a voice session speaks while it runs.
+export type VoiceNarration = 'brief' | 'commentary';
+
 export type ServerEvent =
+  | { type: 'voice.answer'; appSessionId: string; sdp: string; attempt: string }
+  | { type: 'voice.state'; appSessionId: string; status: 'live' | 'closed' }
+  | {
+      type: 'voice.transcript';
+      appSessionId: string;
+      role: 'user' | 'assistant';
+      text: string;
+      final: boolean;
+    }
+  | { type: 'voice.voices'; appSessionId: string; voices: string[]; defaultVoice?: string }
+  | { type: 'voice.error'; appSessionId: string; message: string }
   | McpServerEvent
   | AutomationBridgeEvent
   | { type: 'connection'; status: 'connected' | 'error'; message?: string }
@@ -879,7 +929,16 @@ export type ServerEvent =
       line: string;
     }
   | { type: 'cli.install.done'; phase: 'install' | 'update'; ok: boolean; exitCode: number }
+  | { type: 'harness.cli.report'; clis: HarnessCliState[] }
+  | {
+      type: 'harness.cli.update.done';
+      provider: HarnessCliProvider;
+      ok: boolean;
+      previousVersion?: string;
+      version?: string;
+    }
   | { type: 'session.created'; clientRef: string; session: SessionSummary }
+  | { type: 'session.model_update_applied'; appSessionId: string; requestId: string }
   | { type: 'session.updated'; session: SessionSummary }
   | { type: 'session.closed'; appSessionId: string }
   | { type: 'session.processes'; appSessionId: string; processes: AgentProcess[] }

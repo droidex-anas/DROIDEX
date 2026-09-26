@@ -81,10 +81,7 @@ export type AutomationPatch = {
   [Key in keyof AutomationInput]?: AutomationInput[Key] | undefined;
 };
 
-export interface AutomationRunSnapshot extends Omit<
-  NormalizedAutomationInput,
-  'enabled' | 'schedule'
-> {
+interface AutomationRunSnapshot extends Omit<NormalizedAutomationInput, 'enabled' | 'schedule'> {
   id: string;
 }
 
@@ -107,7 +104,7 @@ export interface AutomationRun {
   selectionVerified: boolean | null;
 }
 
-export type AutomationProposalStatus = 'draft' | 'confirmed';
+type AutomationProposalStatus = 'draft' | 'confirmed';
 export type AutomationProposalMissingField = 'modelId' | 'reasoningEffort';
 
 export interface AutomationProposal {
@@ -122,14 +119,14 @@ export interface AutomationProposal {
   confirmedAt: number | null;
 }
 
-export interface AutomationSessionOrigin {
+interface AutomationSessionOrigin {
   automationId: string;
   automationTitle: string;
   runId: string;
   trigger: AutomationTrigger;
 }
 
-export interface AutomationSchedulerStatus {
+interface AutomationSchedulerStatus {
   ready: boolean;
   nextWakeAt: number | null;
   activeRunId: string | null;

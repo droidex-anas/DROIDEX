@@ -11,9 +11,9 @@ import { closeTerminalForTab, ensureTerminalForTab } from './terminal';
 import { createTerminalOutputPump } from './terminalOutputPump';
 import { isTerminalTabShortcut } from './keyboardShortcuts';
 
-export type TerminalStatus = 'starting' | 'running' | 'exited' | 'error';
+type TerminalStatus = 'starting' | 'running' | 'exited' | 'error';
 
-export interface TerminalInstanceState {
+interface TerminalInstanceState {
   terminalId: string | null;
   shellName: string;
   status: TerminalStatus;

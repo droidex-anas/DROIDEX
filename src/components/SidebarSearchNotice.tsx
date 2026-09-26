@@ -19,7 +19,7 @@ export default function SidebarSearchNotice({
       <div
         role="status"
         data-testid={testId}
-        className="px-4 py-2 text-[12px] text-droid-text-muted"
+        className="px-2.5 py-2 text-[12px] text-droid-text-muted"
       >
         {message}
       </div>

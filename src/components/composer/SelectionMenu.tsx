@@ -184,7 +184,7 @@ export default function SelectionMenu({
         top: above ? y - 4 : y + 4,
         transform: above ? 'translateY(-100%)' : undefined,
       }}
-      className="fixed z-50 max-h-[calc(100vh-5rem)] overflow-y-auto rounded-xl border border-droid-border-hover bg-droid-elevated p-1 shadow-droid"
+      className="fixed z-50 max-h-[calc(100vh-5rem)] overflow-y-auto rounded-xl border border-droid-border-hover bg-droid-raised p-1 shadow-droid"
     >
       {link ? (
         <>

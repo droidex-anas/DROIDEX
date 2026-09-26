@@ -11,7 +11,6 @@ export type ToolCat =
   | 'web'
   | 'skill'
   | 'task'
-  | 'subagent'
   | 'other';
 
 export const CAT_LABEL: Record<ToolCat, string> = {
@@ -23,43 +22,83 @@ export const CAT_LABEL: Record<ToolCat, string> = {
   web: 'Fetch',
   skill: 'Skill',
   task: 'Child session',
-  subagent: 'Subagent',
   other: 'Tool',
 };
 
-const READ_RE = /read|cat|view|open|list|ls/;
+// The words that name a read. `open` reads a file for a first-party tool but
+// names a browser action for an MCP server, so it is not a head word there.
+const READ_WORDS = new Set(['read', 'cat', 'view', 'open', 'list', 'ls']);
 const READ_HEADS = new Set(['read', 'cat', 'view', 'list', 'ls']);
 
-export function toolMeta(name?: string, args?: unknown): { cat: ToolCat; detail: string } {
+// The arguments a category can be read off: each one is the object of an
+// action, and a category is claimed only when its own object is there.
+interface ToolObjects {
+  file?: string;
+  cmd?: string;
+  pattern?: string;
+  query?: string;
+  url?: string;
+  childSession?: string;
+  skill?: string;
+}
+
+function toolObjects(args: Record<string, unknown>): ToolObjects {
+  const s = (k: string) => (typeof args[k] === 'string' ? args[k] : undefined);
+  return {
+    file: s('file_path') ?? s('path') ?? s('filename') ?? s('target_file'),
+    cmd: s('command') ?? s('cmd') ?? s('script'),
+    pattern: s('pattern') ?? s('glob'),
+    query: s('query'),
+    url: s('url'),
+    childSession: s('subagent_type') ?? s('subagentType') ?? s('description'),
+    skill: s('skill'),
+  };
+}
+
+function toolCategory(name: string | undefined, args: unknown, objects: ToolObjects): ToolCat {
   const { server, tool } = splitToolName(name ?? '');
   const n = tool.toLowerCase();
-  const a = args && typeof args === 'object' ? (args as Record<string, unknown>) : {};
-  const s = (k: string) => (typeof a[k] === 'string' ? a[k] : undefined);
-  const file = s('file_path') ?? s('path') ?? s('filename') ?? s('target_file');
-  const cmd = s('command') ?? s('cmd') ?? s('script');
-  const pattern = s('pattern') ?? s('query');
-  const url = s('url');
-  const childSessionDetail = s('subagent_type') ?? s('subagentType') ?? s('description');
-  const skill = s('skill');
-
-  let cat: ToolCat = 'other';
-  if (/create|write|new/.test(n)) cat = 'create';
-  else if (/edit|patch|replace|modify|update|insert/.test(n)) cat = 'edit';
-  else if (/exec|run|bash|shell|command|terminal/.test(n)) cat = 'exec';
-  else if (/grep|search|glob|find/.test(n)) cat = 'search';
-  else if (/fetch|web|url|http/.test(n)) cat = 'web';
+  if (/create|write|new/.test(n)) return 'create';
+  if (/edit|patch|replace|modify|update|insert/.test(n)) return 'edit';
+  if (/exec|run|bash|shell|command|terminal/.test(n)) return 'exec';
+  // A search verb is claimed only when the call carries something to search
+  // with. A bare `query` is what tools of every kind take (searching skills,
+  // docs, the tool list itself), so a name containing "search" proves nothing:
+  // without a pattern, or a query aimed at a path, the tool keeps its own name.
+  if (/grep|search|glob|find/.test(n) && (objects.pattern ?? (objects.query && objects.file)))
+    return 'search';
+  if (/fetch|web|url|http/.test(n)) return 'web';
   // Only a real spawn is a child session. The Task *family* (TaskOutput,
   // TaskStop) merely inspects or ends an existing subagent, so it must not
   // borrow the "Child session" label and read like a new spawn.
-  else if (isChildSessionTool(name, args)) cat = 'task';
-  else if (/^task/i.test(n)) cat = 'subagent';
-  else if (n.includes('skill')) cat = 'skill';
-  // The read fallback is broad ("open", "ls") and only safe for first-party
-  // tools; an MCP server's tool is a read when its name leads with one
-  // (`read_file`, `list_directory`), so `browser_open` keeps its own name.
-  else if (server ? READ_HEADS.has(toolNameTokens(tool)[0] ?? '') : READ_RE.test(n)) cat = 'read';
+  if (isChildSessionTool(name, args)) return 'task';
+  if (n.includes('skill')) return 'skill';
+  // An MCP server's tool is a read when its name leads with one (`read_file`,
+  // `list_directory`), so `browser_open` keeps its own name. A first-party tool
+  // may put the verb last (`NotebookRead`), so any word counts there — but it
+  // must be a whole word: "ToolSearch" merely contains the letters of "ls".
+  const tokens = toolNameTokens(tool);
+  const reads = server
+    ? READ_HEADS.has(tokens[0] ?? '')
+    : tokens.some((token) => READ_WORDS.has(token));
+  return reads ? 'read' : 'other';
+}
 
-  return { cat, detail: file ?? cmd ?? pattern ?? url ?? childSessionDetail ?? skill ?? '' };
+export function toolMeta(name?: string, args?: unknown): { cat: ToolCat; detail: string } {
+  const a = args && typeof args === 'object' ? (args as Record<string, unknown>) : {};
+  const objects = toolObjects(a);
+  return {
+    cat: toolCategory(name, args, objects),
+    detail:
+      objects.file ??
+      objects.cmd ??
+      objects.pattern ??
+      objects.query ??
+      objects.url ??
+      objects.childSession ??
+      objects.skill ??
+      '',
+  };
 }
 
 export interface ToolCallLabel {
@@ -84,7 +123,6 @@ const CAT_VERBS: Record<Exclude<ToolCat, 'other'>, [done: string, live: string]>
   web: ['Fetched', 'Fetching'],
   skill: ['Skill', 'Skill'],
   task: ['Child session', 'Child session'],
-  subagent: ['Subagent', 'Subagent'],
 };
 
 // `mcp__claude_browser__navigate` → "Navigate"; `preview_start` → "Preview
@@ -109,17 +147,53 @@ function toolObjectKind(
   return 'text';
 }
 
+// A tool search that names its tools (`select:server___tool_a,server___tool_b`)
+// loads those definitions rather than searching, so it reads as the tools it
+// loaded, by their readable names, with the server as the source when they
+// all share one.
+function loadedTools(args: Record<string, unknown>): ToolCallLabel | null {
+  const query = typeof args.query === 'string' ? args.query.trim() : '';
+  const match = /^select:(.+)$/i.exec(query);
+  if (!match) return null;
+  const tools = match[1]
+    .split(',')
+    .map((entry) => entry.trim())
+    .filter(Boolean)
+    .map(splitToolName);
+  if (tools.length === 0) return null;
+  const servers = new Set(tools.map((tool) => tool.server));
+  const [server] = servers;
+  return {
+    verb: 'Loaded',
+    liveVerb: 'Loading',
+    object: tools.map((tool) => humanizeToolName(tool.tool)).join(', '),
+    objectKind: 'text',
+    source: servers.size === 1 && server ? server.replace(/[_-]+/g, ' ') : undefined,
+  };
+}
+
 export function describeToolCall(name?: string, args?: unknown): ToolCallLabel {
   const { cat, detail } = toolMeta(name, args);
   const a = args && typeof args === 'object' ? (args as Record<string, unknown>) : {};
+  const loaded = loadedTools(a);
+  if (loaded) return loaded;
   const objectKind = toolObjectKind(detail, a);
   const { server, tool } = splitToolName(name ?? '');
   // Every namespaced tool names its server, categorised or not, so a GitHub
   // server's create call can wear the octocat like its uncategorised siblings.
   const source = server ? server.replace(/[_-]+/g, ' ') : undefined;
   if (cat === 'other') {
+    // No card, no borrowed verb: the tool says its own name, and one argument
+    // stands in for what it was asked to do.
     const label = humanizeToolName(tool) || 'Tool';
-    return { verb: label, liveVerb: label, object: detail, objectKind, source };
+    const object = detail || toolArgumentSummary(a);
+    return {
+      verb: label,
+      liveVerb: label,
+      object,
+      objectKind: detail ? objectKind : 'text',
+      source,
+    };
   }
   const [verb, liveVerb] = CAT_VERBS[cat];
   return { verb, liveVerb, object: detail, objectKind, source };
@@ -187,12 +261,27 @@ export function hasTodoPayload(args: unknown): boolean {
   return typeof a.todos === 'string';
 }
 
-// Factory Task/subagent metadata identifies a child-session spawn.
-// TaskOutput/TaskStop are the harness polling and stopping subagents it already
-// spawned, not work of their own. The Subagents card reports that status, so
-// these calls and their echoed poll bodies are noise wherever the card renders.
-export function isSubagentBookkeepingTool(name?: string): boolean {
-  return /^task_?(output|stop)\b/i.test(name ?? '');
+const ARG_SUMMARY_LIMIT = 80;
+
+// One line saying what an uncategorised call was asked to do: the first
+// argument that carries a value, named the way the row names the tool. Nested
+// payloads stay in the expanded body, where the full arguments already live.
+function toolArgumentSummary(args: Record<string, unknown>): string {
+  let fallback = '';
+  for (const [key, value] of Object.entries(args)) {
+    // Words say more than a flag or a timeout, so a string wins outright and a
+    // number or boolean is only kept in case nothing better turns up.
+    if (typeof value === 'string' && value.trim()) return namedArgument(key, value.trim());
+    if (!fallback && (typeof value === 'number' || typeof value === 'boolean'))
+      fallback = namedArgument(key, String(value));
+  }
+  return fallback;
+}
+
+function namedArgument(key: string, value: string): string {
+  const shown =
+    value.length > ARG_SUMMARY_LIMIT ? `${value.slice(0, ARG_SUMMARY_LIMIT - 1)}\u2026` : value;
+  return `${humanizeToolName(key).toLowerCase()} ${shown}`;
 }
 
 // The droid name and short description carried by a Task spawn's arguments.

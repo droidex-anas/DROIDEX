@@ -404,7 +404,7 @@ export async function runReplay(options: ReplayRunOptions): Promise<ReplayReport
   }
 }
 
-export { acceptReplayWireMessage, type ReplayWireCursor } from './replayWire.js';
+export { acceptReplayWireMessage } from './replayWire.js';
 
 function sendCommand(client: WebSocket, command: Parameters<SessionManager['handle']>[0]): void {
   client.send(JSON.stringify(command));

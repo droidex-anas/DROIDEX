@@ -39,6 +39,7 @@ import {
 } from './sessionHelpers.js';
 import type { ProviderInteractions } from './providers/interactions.js';
 import { requireProviderKind, type ProviderKind } from './providers/providerKind.js';
+import type { PrimaryTurnRequest } from './providers/primaryTurn.js';
 import { droidSessionOf } from './providers/droid/DroidProviderSession.js';
 import type { Provider, ProviderSession } from './providers/session.js';
 
@@ -79,6 +80,8 @@ export interface StartedLocalMcpResources {
 interface SessionPrompt {
   text: string;
   mentions?: ProviderMention[];
+  // See PrimaryTurnRequest.notice: set for a turn the app owes the chat.
+  notice?: string;
 }
 
 interface LiveTurnState {
@@ -143,13 +146,8 @@ export interface SessionLifecycleDependencies {
   applyPendingSettingsToSummary: (summary: SessionSummary) => SessionSummary;
   applyPendingSessionSettings: (appSessionId: string) => Promise<boolean>;
   waitForSettingsMutations?: (appSessionId: string) => Promise<void>;
-  runPrimaryTurn: (
-    liveSession: LiveSession,
-    prompt: string,
-    mentions?: ProviderMention[],
-    delivery?: ScheduledTurnDelivery,
-  ) => Promise<void>;
-  eventFlow: Pick<SessionEventFlow, 'apply'>;
+  runPrimaryTurn: (liveSession: LiveSession, request: PrimaryTurnRequest) => Promise<void>;
+  eventFlow: Pick<SessionEventFlow, 'apply' | 'beginTurn'>;
   context: Pick<SessionContext, 'refresh' | 'stopPolling' | 'stopSession' | 'forgetSession'>;
   hasPendingInteractions: (appSessionId: string) => boolean;
   hasActiveSettingsChanges: (appSessionId: string) => boolean;
@@ -162,6 +160,9 @@ export interface SessionLifecycleDependencies {
   forgetMissionControl: (appSessionId: string) => void;
   forgetPendingSettings: (appSessionId: string) => void;
   closeBrowserSession: (appSessionId: string) => Promise<void>;
+  // Ends a live voice conversation before the provider session it runs on is
+  // torn down, so no realtime session is left open.
+  stopVoiceSession: (appSessionId: string) => Promise<void>;
   emit: (event: ServerEvent) => void;
   emitError: (error: LifecycleError) => void;
   // A live progress row while the steer is applied; it is not stored.
@@ -284,7 +285,13 @@ export class SessionLifecycle {
       this.trackProviderProcess(appSessionId, providerSession, mcp.configs);
       d.childSessions.attachParent(appSessionId);
       d.emit({ type: 'session.created', clientRef: command.clientRef, session: summary });
-      void this.driveInBackground(appSessionId, sessionPrompt(command.goal, command.mentions));
+      // A chat can open with nothing to say: voice mode creates the session so
+      // the conversation has a thread to attach to, and the first request
+      // arrives spoken. Driving an empty prompt would run a turn about nothing.
+      const prompt = sessionPrompt(command.goal, command.mentions);
+      if (prompt.text.trim() || prompt.mentions?.length) {
+        void this.driveInBackground(appSessionId, prompt);
+      }
     } catch (error) {
       await this.cleanupFailedOpen(pendingMcpServers, pendingSession, pendingLiveSession);
       if (!isOpenAdmissionClosed(error)) {
@@ -365,12 +372,13 @@ export class SessionLifecycle {
       const provider = d.provider(kind);
       const mcp = await d.startLocalMcpServers(ref, historical?.cwd);
       pendingMcpServers = mcp.servers;
+      const runtimeCwd = await sessionRuntimeCwd(historical?.cwd ?? '');
       requireCurrentResume();
       const providerSession = await provider.resume(providerSessionId, {
         appSessionId,
         ...resumeHandle(historical),
         interactions: d.interactionsFor(ref),
-        cwd: historical?.cwd,
+        cwd: runtimeCwd,
         ...resumeSettings(historical),
         ...(kind !== 'droid' && !historical?.modelId
           ? { modelId: d.providerDefaultModelId?.(kind) }
@@ -619,6 +627,21 @@ export class SessionLifecycle {
     return 'taken';
   }
 
+  /** One turn the app owes a chat whose agents have all stopped. No harness
+      wakes an idle parent when a background agent finishes, so without this the
+      results reach nobody and the chat sleeps on. The turn is dropped rather
+      than queued: a chat that is busy, or that already has a prompt waiting,
+      learns the same thing from the turn it is about to run. Mission control
+      drives its own agents and needs no nudge. */
+  async wakeForSettledAgents(appSessionId: string, prompt: string, notice: string): Promise<void> {
+    const liveSession = this.dependencies.registry.getLive(appSessionId);
+    if (!liveSession || liveSession.closeMode) return;
+    if (liveSession.summary.sessionPurpose === 'mission-control') return;
+    if (liveSession.streaming || liveSession.compacting || liveSession.autoCompacting) return;
+    if (liveSession.pendingSends.length > 0) return;
+    await this.drive(liveSession.summary.appSessionId, { text: prompt, notice });
+  }
+
   async interrupt(requestedAppSessionId: string): Promise<void> {
     const liveSession = this.dependencies.registry.getLive(requestedAppSessionId);
     if (!liveSession) return;
@@ -763,6 +786,8 @@ export class SessionLifecycle {
         firstError ??= error;
       }
     };
+
+    await run(() => d.stopVoiceSession(liveSession.summary.appSessionId));
 
     // First, while every provider process of this session is still alive and
     // still the parent of what it spawned: the dev servers are descendants of
@@ -931,16 +956,48 @@ export class SessionLifecycle {
 
   private subscribeBackgroundEvents(liveSession: LiveSession): void {
     const appSessionId = liveSession.summary.appSessionId;
-    const unsubscribe = liveSession.session.onBackgroundEvent?.((normalized) => {
-      if (
-        this.dependencies.isShutdownStarted() ||
-        liveSession.closeMode ||
-        this.dependencies.registry.getLive(appSessionId) !== liveSession
-      )
-        return;
+    const isCurrent = () =>
+      !this.dependencies.isShutdownStarted() &&
+      !liveSession.closeMode &&
+      this.dependencies.registry.getLive(appSessionId) === liveSession;
+    const events = liveSession.session.onBackgroundEvent?.((normalized) => {
+      if (!isCurrent()) return;
       this.dependencies.eventFlow.apply(appSessionId, appSessionId, 'primary', normalized);
     });
-    if (unsubscribe) liveSession.unsubscribe = unsubscribe;
+    // A turn the provider started by itself is the session's turn like any
+    // other: it streams, it can be stopped, and a typed prompt waits behind it.
+    const delegated = liveSession.session.onDelegatedTurn?.((running) => {
+      if (!isCurrent()) return;
+      liveSession.streaming = running;
+      if (running) {
+        // A settled turn leaves the chat's own source closed, and nothing else
+        // reopens it for a turn the provider started: without this the spoken
+        // request's work is dropped as post-turn noise.
+        this.dependencies.eventFlow.beginTurn(appSessionId, appSessionId);
+        this.dependencies.registry.updateSummary(appSessionId, {
+          phase: 'running',
+          streaming: true,
+          queuedSends: liveSession.pendingSends.length,
+        });
+        return;
+      }
+      // A Stop lands before the turn reports itself finished, so the flags it
+      // set are cleared here as they are for a typed turn.
+      liveSession.interrupting = false;
+      liveSession.interruptingForSteer = false;
+      this.publishTurnSettled(liveSession);
+      // A runtime that has gone takes the queue with it through the close
+      // path, which reopens and redelivers. Taking a prompt off it here would
+      // spend it on a client that cannot run it.
+      if (liveSession.session.isClosed) return;
+      const next = liveSession.pendingSends.shift();
+      if (next !== undefined) void this.driveInBackground(appSessionId, next);
+    });
+    if (events ?? delegated)
+      liveSession.unsubscribe = () => {
+        events?.();
+        delegated?.();
+      };
   }
 
   private observeProviderClosure(liveSession: LiveSession): void {
@@ -1091,12 +1148,12 @@ export class SessionLifecycle {
         streaming: true,
         queuedSends: liveSession.pendingSends.length,
       });
-      liveSession.turnPromise = d.runPrimaryTurn(
-        liveSession,
-        prompt.text,
-        prompt.mentions,
-        delivery,
-      );
+      liveSession.turnPromise = d.runPrimaryTurn(liveSession, {
+        prompt: prompt.text,
+        ...(prompt.mentions ? { mentions: prompt.mentions } : {}),
+        ...(delivery ? { delivery } : {}),
+        ...(prompt.notice ? { notice: prompt.notice } : {}),
+      });
       await liveSession.turnPromise;
     } finally {
       liveSession.turnPromise = undefined;

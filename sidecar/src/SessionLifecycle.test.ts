@@ -134,8 +134,8 @@ function createHarness(ordinarySummaries: SessionSummary[] = []) {
     interactionMode: 'auto',
   };
   const lifecycle = new SessionLifecycle({
-    eventFlow: { apply: () => undefined },
-    provider: () => new DroidProvider(runtime),
+    eventFlow: { apply: () => undefined, beginTurn: () => undefined },
+    provider: () => new DroidProvider(runtime, () => undefined),
     registry,
     ensureConnected: () => {
       calls.push({ target: 'runtime', method: 'ensureConnected', args: [] });
@@ -234,7 +234,7 @@ function createHarness(ordinarySummaries: SessionSummary[] = []) {
     hasActiveSettingsChanges: () => false,
     applyPendingSettingsToSummary: (item) => ({ ...item, ...projection }),
     applyPendingSessionSettings: (appSessionId) => applyPending(appSessionId),
-    runPrimaryTurn: async (live, prompt, _mentions, delivery) => {
+    runPrimaryTurn: async (live, { prompt, delivery }) => {
       if (delivery && !delivery.isCurrent()) return;
       for await (const event of live.session.stream(prompt)) {
         delivery?.accepted();
@@ -298,6 +298,10 @@ function createHarness(ordinarySummaries: SessionSummary[] = []) {
     },
     closeBrowserSession: (appSessionId) => {
       calls.push({ target: 'browser', method: 'browser.close', args: [appSessionId] });
+      return Promise.resolve();
+    },
+    stopVoiceSession: (appSessionId) => {
+      calls.push({ target: 'cleanup', method: 'voice.stop', args: [appSessionId] });
       return Promise.resolve();
     },
     emit: recordEvent,
@@ -466,7 +470,7 @@ test('create and cold resume publish only after registration', async () => {
   assert.equal(resumed.publicationRegistration.every(Boolean), true);
 });
 
-test('folder-less chats run in the DROIDEX chats directory', async (t) => {
+test('folder-less chats run and resume in the DROIDEX chats directory', async (t) => {
   const userDataDir = await mkdtemp(join(tmpdir(), 'droidex-user-data-'));
   const previousUserDataDir = process.env.DROIDEX_USER_DATA_DIR;
   process.env.DROIDEX_USER_DATA_DIR = userDataDir;
@@ -491,6 +495,13 @@ test('folder-less chats run in the DROIDEX chats directory', async (t) => {
     },
     { cwd: '', workspaceKind: 'none' },
   );
+
+  const resumed = createHarness([
+    summary('old-chat', 'provider-old', { cwd: '', workspaceKind: 'none' }),
+  ]);
+  queueLoad(resumed, 'provider-old');
+  await resumed.lifecycle.resume('old-chat');
+  assert.equal(resumed.runtime.loadCalls[0]?.handlers.cwd, chatCwd);
 });
 
 test('create omits an unarmed daemon compaction limit from its summary', async () => {

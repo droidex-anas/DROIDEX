@@ -1,12 +1,11 @@
 import type { ChildSessionSummary, ContextStatsSnapshot, TranscriptEvent } from '../types/bridge';
+import { isWorkingAgent } from '../lib/childSessions';
 import { releaseSessionChildTranscriptWindow } from '../lib/transcriptStoreMemory';
 import type { TranscriptMutation } from '../lib/transcriptMutation';
 import { INACTIVE_TRANSCRIPT_POLICY, VIEWPORT_TRANSCRIPT_POLICY } from '../lib/transcriptWindow';
 
 /* eslint-disable @typescript-eslint/no-unnecessary-condition -- sparse keyed renderer maps */
 /* eslint-disable @typescript-eslint/no-dynamic-delete -- sparse childAccess parent keys */
-
-export type ChildSettingsReadiness = 'opening' | 'ready' | 'failed';
 
 export type ChildSessionInfo = ChildSessionSummary;
 
@@ -48,6 +47,11 @@ export interface ChildSessionStore {
   childRuntime: Record<string, Record<string, ChildRuntimeState>>;
   childHistory: Record<string, Record<string, ChildHistoryState>>;
   childSessions: Record<string, Record<string, ChildSessionInfo>>;
+  // Chats with at least one agent working right now. Its own map so the sidebar
+  // can read a chat's agent state without selecting the child sessions
+  // themselves, whose entries are replaced on every activity preview and token
+  // tick; only a crossing into or out of `running` rewrites this one.
+  agentsWorkingByParent: Partial<Record<string, true>>;
   selectedChild: ChildSelection | null;
   activeAppSessionId: string | null;
   contextStats: {
@@ -165,6 +169,16 @@ export function invalidateSelectedChildOpening<S extends ChildSessionStore>(stat
     : state;
 }
 
+function withAgentsWorking<S extends ChildSessionStore>(state: S, parentAppSessionId: string): S {
+  const children = state.childSessions[parentAppSessionId];
+  const working = Object.values(children ?? {}).some((child) => isWorkingAgent(child, false));
+  if (working === (state.agentsWorkingByParent[parentAppSessionId] ?? false)) return state;
+  const agentsWorkingByParent: Partial<Record<string, true>> = { ...state.agentsWorkingByParent };
+  if (working) agentsWorkingByParent[parentAppSessionId] = true;
+  else delete agentsWorkingByParent[parentAppSessionId];
+  return { ...state, agentsWorkingByParent };
+}
+
 export function reduceSessionChild<S extends ChildSessionStore>(
   state: S,
   action: {
@@ -250,9 +264,14 @@ export function reduceSessionChild<S extends ChildSessionStore>(
         runtimeGeneration: action.runtimeGeneration,
       });
   }
-  return settledWhileInactive
+  const resolved = settledWhileInactive
     ? releaseInactiveChildTranscript(next, child.parentAppSessionId, child.childSessionId)
     : next;
+  // Only a crossing into or out of work can change the chat's flag, so an
+  // activity preview or a token tick leaves the sidebar's map untouched.
+  const crossedWorking =
+    !previousChild || isWorkingAgent(previousChild, false) !== isWorkingAgent(child, false);
+  return crossedWorking ? withAgentsWorking(resolved, child.parentAppSessionId) : resolved;
 }
 
 export function reduceChildUpdated<S extends ChildSessionStore>(

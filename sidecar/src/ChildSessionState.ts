@@ -41,6 +41,8 @@ export interface ChildSpawnObservation {
   status?: ChildStatus;
   group?: string;
   phase?: string;
+  // See ChildSessionSummary.tokensUsed: this child's own spend, live-only.
+  tokensUsed?: number;
   transcriptAvailable?: boolean;
 }
 export interface ChildParentLease {
@@ -62,7 +64,7 @@ export interface ChildRuntimeState {
   lastUsedAt: number;
   unsubscribe?: () => void;
 }
-export interface ChildTurnState {
+interface ChildTurnState {
   generation: number;
   phase: 'idle' | 'streaming';
   autoCompacting: boolean;
@@ -93,6 +95,8 @@ export interface ChildSessionState {
   // See ChildSpawnObservation.activity: live-only, so it is absent after a
   // restart even though the child itself is restored from history.
   activity?: ChildActivity;
+  // This child's own spend, live-only for the same reason.
+  tokensUsed?: number;
   // Live-only. Absent until a token/tool stream is opened; summaries publish `state`.
   streamFidelity?: StreamFidelity;
   runtimeGeneration: number;
@@ -119,6 +123,9 @@ export interface ParentChildSessions {
   generation: number;
   lease: ChildParentLease;
   children: Map<string, ChildSessionState>;
+  // Agents that have settled since this parent was last told about a finished
+  // wave. Emptied when the wave is reported, so no agent is carried twice.
+  settledSinceWake: Set<string>;
   pendingSpawns: Map<string, ChildSpawnObservation>;
   openAttempts: Map<string, ChildOpenAttempt>;
   reservedOpenSlots: Set<string>;
@@ -219,10 +226,11 @@ export function applyObservedChild(
   spawnLink: PersistedChildSpawnLink | undefined,
   providerSessionId: string,
   now: number,
-): { previousPrompt: string | undefined } {
+): { previousPrompt: string | undefined; previousStatus: ChildStatus } {
   if (child.providerSessionId && child.providerSessionId !== providerSessionId)
     child.retiredProviderSessionIds.add(child.providerSessionId);
   const previousPrompt = child.prompt;
+  const previousStatus = child.status;
   if (child.role !== observed.role) {
     child.role = observed.role;
     child.configurationGeneration += 1;
@@ -249,12 +257,13 @@ export function applyObservedChild(
   child.prompt = observed.prompt ?? child.prompt;
   child.spawnLink = spawnLink ?? child.spawnLink;
   child.activity = observed.activity ?? child.activity;
+  child.tokensUsed = observed.tokensUsed ?? child.tokensUsed;
   child.transcriptAvailable = observed.transcriptAvailable ?? true;
   child.startedAt ??= now;
-  return { previousPrompt };
+  return { previousPrompt, previousStatus };
 }
 
-export function applyChildLaunchSettings(child: ChildSessionState, settings: ChildSettings): void {
+function applyChildLaunchSettings(child: ChildSessionState, settings: ChildSettings): void {
   if (!settings.modelId) return;
   if (child.modelId === settings.modelId && child.reasoningEffort === settings.reasoningEffort)
     return;
@@ -302,6 +311,7 @@ export function childSummary(child: ChildSessionState | PersistedChildSession) {
     // Autonomy is runtime-scoped: only a live child reports its confirmed value.
     ...(live?.runtime && live.autonomy ? { autonomy: live.autonomy } : {}),
     ...(live?.activity ? { activity: live.activity } : {}),
+    ...(live?.tokensUsed === undefined ? {} : { tokensUsed: live.tokensUsed }),
     ...(live?.queued ? { queued: true } : {}),
     streamFidelity: publishedStreamFidelity(live?.streamFidelity),
   };

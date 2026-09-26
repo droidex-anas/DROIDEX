@@ -126,7 +126,7 @@ The app has no traditional user authentication; it is a single-user desktop appl
 
 #### IPC Channels (Renderer -> Main)
 
-- **`get-api-key` / `set-api-key` / `clear-api-key`** - Manage encrypted FACTORY_API_KEY
+- **`get-api-key` / `set-api-key`** - Manage encrypted FACTORY_API_KEY
   - **Risk:** No sender validation; compromised renderer can read/overwrite/destroy the key
 - **`list-files` / `read-file`** (legacy) - Arbitrary path filesystem access
   - **Risk:** No root confinement, no token gate; arbitrary file read from any path
@@ -1391,7 +1391,7 @@ if (!safeRegex(PACK_PATH_RE)) throw new Error('unsafe regex detected');
 | Tool | Purpose | Frequency |
 | --- | --- | --- |
 | `commit-security-scan` (Factory) | LLM-based static analysis with STRIDE patterns | Every commit |
-| `npm run lint` (ESLint + typescript-eslint) | Static analysis, React hooks, TypeScript issues | Every commit (non-blocking baseline) |
+| `npm run lint` (ESLint + typescript-eslint) | Static analysis, React hooks, TypeScript issues | Every commit (blocks new errors; baseline in `eslint-suppressions.json`) |
 | `npm run typecheck` / `sidecar:typecheck` | TypeScript type safety | Every commit |
 | `electron:check` | Syntax check Electron CommonJS entrypoints | Every commit |
 | `npm test` + `sidecar:test` | Unit tests including security-relevant tests (files confinement, URL validation, git sanitization) | Every commit |

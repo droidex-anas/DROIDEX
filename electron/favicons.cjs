@@ -25,14 +25,18 @@ const path = require('node:path');
 
 const FAVICON_SCHEME = 'droidex-favicon';
 const MAX_PAGE_BYTES = 256 * 1024;
-const MAX_ICON_BYTES = 128 * 1024;
+// A product logo is sometimes a megabyte of PNG: a cap that refuses one costs
+// the row its real icon and leaves a placeholder glyph in its place.
+const MAX_ICON_BYTES = 2 * 1024 * 1024;
 const REQUEST_TIMEOUT_MS = 5_000;
 const MAX_REDIRECTS = 3;
 const FOUND_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 const MISSING_TTL_MS = 24 * 60 * 60 * 1000;
 const RETRY_AFTER_MS = 5 * 60 * 1000;
-// Icons kept in memory; older hosts fall back to the disk cache.
+// Icons kept in memory; older hosts fall back to the disk cache. Both bounds
+// hold, so neither many small icons nor a few large ones can grow the cache.
 const SETTLED_LIMIT = 256;
+const SETTLED_BYTES = 32 * 1024 * 1024;
 const RESERVED_TLDS = new Set([
   'localhost',
   'local',
@@ -261,6 +265,7 @@ function createFaviconStore({
   now = Date.now,
 }) {
   const settled = new Map();
+  let settledBytes = 0;
   const inFlight = new Map();
   const retryAfter = new Map();
   const request = { fetchImpl, lookup, userAgent };
@@ -351,6 +356,18 @@ function createFaviconStore({
     return found;
   }
 
+  // Newest in, oldest out, until both bounds hold again.
+  function remember(key, found) {
+    settled.set(key, found);
+    settledBytes += found?.data.byteLength ?? 0;
+    while (settled.size > SETTLED_LIMIT || settledBytes > SETTLED_BYTES) {
+      const oldest = settled.keys().next().value;
+      if (oldest === undefined || oldest === key) break;
+      settledBytes -= settled.get(oldest)?.data.byteLength ?? 0;
+      settled.delete(oldest);
+    }
+  }
+
   /** A host's favicon or an exact public HTTPS image, fetched lazily. */
   function load(target) {
     const key =
@@ -363,8 +380,7 @@ function createFaviconStore({
     if (!pending) {
       pending = resolveIcon(target, key)
         .then((found) => {
-          settled.set(key, found);
-          if (settled.size > SETTLED_LIMIT) settled.delete(settled.keys().next().value);
+          remember(key, found);
           return found;
         })
         .catch(() => {

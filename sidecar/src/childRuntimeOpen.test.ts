@@ -36,6 +36,7 @@ function parentWith(open?: ChildOpenAttempt): ParentChildSessions {
     generation: 1,
     lease: {} as ParentChildSessions['lease'],
     children: new Map([[state.identity.childSessionId, state]]),
+    settledSinceWake: new Set(),
     pendingSpawns: new Map(),
     openAttempts: open ? new Map([[state.identity.childSessionId, open]]) : new Map(),
     reservedOpenSlots: new Set(),

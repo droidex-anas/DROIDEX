@@ -40,7 +40,7 @@ function readBrowserRefsFromPack(packPath: string): BrowserTranscriptReference[]
   }
 }
 
-export function browserTranscriptReferenceFromDesignReference(
+function browserTranscriptReferenceFromDesignReference(
   reference: Partial<DesignReference>,
 ): BrowserTranscriptReference | null {
   const anchor = reference.anchor;
@@ -68,10 +68,7 @@ export function browserTranscriptReferenceFromDesignReference(
   };
 }
 
-export function normalizeBrowserReferenceLabel(
-  value: string | undefined,
-  fallback: string,
-): string {
+function normalizeBrowserReferenceLabel(value: string | undefined, fallback: string): string {
   const cleaned = (value ?? fallback).replace(/^@+/, '').replace(/\s+/g, ' ').trim();
   const readable = cleaned || fallback;
   const compact = readable

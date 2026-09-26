@@ -2,7 +2,7 @@ import type { ChildSessionSummary, ModelInfo, ReasoningEffort } from '../types/b
 import type { VisibleSessionTarget } from './childSessions';
 import { compatibleReasoningForModel } from './reasoningEffort';
 
-export type ExactChildRole = 'worker' | 'validator';
+type ExactChildRole = 'worker' | 'validator';
 export type ExactChildSettingsReadiness = 'opening' | 'ready' | 'failed';
 
 export interface ExactChildSettingsTarget {

@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
-import { Check, ChevronRight, FoldVertical, Info } from 'lucide-react';
+import { AudioLines, Check, ChevronRight, FoldVertical, Info } from 'lucide-react';
 import { Copy } from '@droidex/icons';
 import { useDocumentVisible } from '../../hooks/useDocumentVisible';
 import { formatDuration } from '../../lib/tools';
@@ -152,6 +152,21 @@ export function ErrorTag({ emphasis = false }: { emphasis?: boolean }) {
   );
 }
 
+// A call the user steered or stopped away from. It did not fail, so it wears
+// the row's own muted tone rather than the error red; `emphasis` matches the
+// row-level form ErrorTag uses at a line's right edge.
+export function InterruptedTag({ emphasis = false }: { emphasis?: boolean }) {
+  return (
+    <span
+      className={`shrink-0 rounded-md bg-droid-elevated/60 text-[10px] font-medium uppercase tracking-[0.08em] text-droid-text-muted ${
+        emphasis ? 'ml-auto px-2 py-0.5' : 'px-1.5 py-px'
+      }`}
+    >
+      Interrupted
+    </span>
+  );
+}
+
 export function firstLine(text: string): string {
   const line = text.split('\n').find((l) => l.trim()) ?? text;
   return line.trim();
@@ -257,6 +272,18 @@ export function MessageActions({ text, side }: { text: string; side: 'end' | 'st
     >
       <CopyButton text={text} />
     </div>
+  );
+}
+
+/* ── Voice mark for a row whose text was said out loud, so a spoken turn reads
+   as part of the conversation without claiming to be a typed one. Sits above
+   the message the way the steering mark does. ── */
+export function SpokenMark() {
+  return (
+    <span className="flex items-center gap-1 text-[11px] font-medium tracking-wide text-droid-text-muted">
+      <AudioLines className="h-3 w-3" aria-hidden />
+      Spoken
+    </span>
   );
 }
 

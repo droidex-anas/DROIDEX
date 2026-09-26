@@ -41,6 +41,7 @@ export class AppServerClient {
   private closed?: (error: Error, cleanExit: boolean) => void;
   // Whether the process ended on its own terms rather than dying.
   private cleanExit = false;
+  private unsupportedRequest?: (method: string, params: unknown) => void;
   private remainder = '';
   private diagnostics = '';
   private nextRequestId = 1;
@@ -98,6 +99,12 @@ export class AppServerClient {
 
   onRequest(method: string, handler: (params: unknown) => Promise<unknown>): void {
     this.requestHandlers.set(method, handler);
+  }
+
+  // Told about a request this build refuses, so the refusal can be reported
+  // rather than leaving Codex to stop for a reason nobody can see.
+  onUnsupportedRequest(listener: (method: string, params: unknown) => void): void {
+    this.unsupportedRequest = listener;
   }
 
   // Called once when the process is gone, so a turn waiting on notifications
@@ -189,6 +196,7 @@ export class AppServerClient {
   private async serve(id: JsonRpcId, method: string, params: unknown): Promise<void> {
     const handler = this.requestHandlers.get(method);
     if (!handler) {
+      this.unsupportedRequest?.(method, params);
       this.write({ id, error: { code: METHOD_NOT_FOUND, message: `Unsupported: ${method}` } });
       return;
     }

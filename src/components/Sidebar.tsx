@@ -1,8 +1,4 @@
-import {
-  ACTIVITY_LABELS,
-  canSettleSession,
-  type SessionActivityStatus,
-} from '../lib/sidebarActivity';
+import { ACTIVITY_LABELS, canSettleSession } from '../lib/sidebarActivity';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AnimatePresence } from 'framer-motion';
 import { shallowEqual, useStoreDispatch, useStoreSelector } from '../hooks/useStore';
@@ -53,6 +49,9 @@ export default function Sidebar({
   const state = useStoreSelector(
     (current) => ({
       activeAppSessionId: current.activeAppSessionId,
+      // A chat's own map of running agents, not the child sessions themselves:
+      // this one is rewritten only when an agent starts or stops.
+      agentsWorkingByParent: current.agentsWorkingByParent,
       chatMetadata: current.chatMetadata,
       draftChat: current.draftChat,
       earlierSessionsByCwd: current.earlierSessionsByCwd,
@@ -234,10 +233,6 @@ export default function Sidebar({
     if (current.statusFor(m) === 'settled') current.reopen(m);
     else current.settle(m);
   }, []);
-  // A settled row offers "reopen" only when a manual settle is what holds it
-  // there; a chat settled because its PRs closed has nothing to reopen.
-  const canToggleSettled = (m: SessionSummary, status: SessionActivityStatus) =>
-    status === 'settled' ? activity.canReopen(m) : canSettleSession(status);
   const rowPr = (link: ChatPullRequest | undefined) =>
     link ? { kind: prKind(link), checks: link.checks ?? null } : undefined;
   const renderRow = (m: SessionSummary) => {
@@ -251,6 +246,7 @@ export default function Sidebar({
         active={state.activeAppSessionId === m.appSessionId}
         unread={isUnread(m)}
         running={sessionIsLive(m)}
+        agentsWorking={Boolean(state.agentsWorkingByParent[m.appSessionId])}
         activityStatus={status}
         detail={inbox ? reasonFor(m, status) || ACTIVITY_LABELS[status] : undefined}
         // The PR view already names the PR in its group header.
@@ -266,7 +262,7 @@ export default function Sidebar({
         onMenu={handleRowMenu}
         onRenameCommit={handleRenameCommit}
         onRenameCancel={handleRenameCancel}
-        {...(inbox && canToggleSettled(m, status) ? { onToggleSettled: toggleSettled } : {})}
+        {...(inbox && canSettleSession(status) ? { onToggleSettled: toggleSettled } : {})}
       />
     );
   };
@@ -296,7 +292,7 @@ export default function Sidebar({
             }}
             title="Search chats, messages, and PRs"
             aria-label="Search chats, messages, and PRs"
-            className="rounded-md p-1.5 text-droid-text-muted transition-colors hover:bg-droid-elevated hover:text-droid-text"
+            className="cursor-pointer rounded-md p-1.5 text-droid-text-muted transition-colors hover:text-droid-text"
           >
             <Search className="w-4 h-4" strokeWidth={1.75} />
           </button>
@@ -319,7 +315,7 @@ export default function Sidebar({
         <div className="group relative">
           <button
             onClick={newChat}
-            className="flex w-full items-center gap-2.5 rounded-xl py-1.5 pr-8 pl-2.5 text-left text-[13px] font-medium text-droid-text transition-colors hover:bg-droid-elevated"
+            className="flex w-full cursor-pointer items-center gap-2.5 rounded-xl py-1.5 pr-8 pl-2.5 text-left text-[13px] font-medium text-droid-text"
           >
             <SquarePen className="h-4 w-4 shrink-0 text-droid-text-secondary transition-colors group-hover:text-droid-text" />
             New chat
@@ -331,7 +327,7 @@ export default function Sidebar({
             }}
             title="New chat without a workspace"
             aria-label="New chat without a workspace"
-            className="absolute top-1/2 right-1.5 flex h-6 w-6 -translate-y-1/2 items-center justify-center rounded-md text-droid-text-muted transition-colors hover:bg-droid-elevated/60 hover:text-droid-text"
+            className="absolute top-1/2 right-1.5 flex h-6 w-6 -translate-y-1/2 cursor-pointer items-center justify-center rounded-md text-droid-text-muted transition-colors hover:text-droid-text"
           >
             <MessageCirclePlus className="h-4 w-4" />
           </button>
@@ -410,7 +406,7 @@ export default function Sidebar({
             onClick={() => {
               dispatch({ type: 'TOGGLE_SETTINGS' });
             }}
-            className="flex min-w-0 flex-1 items-center gap-2.5 px-2 py-2 rounded-lg text-droid-text-secondary hover:text-droid-text hover:bg-droid-elevated transition-colors text-left"
+            className="flex min-w-0 flex-1 cursor-pointer items-center gap-2.5 px-2 py-2 rounded-lg text-droid-text-secondary hover:text-droid-text transition-colors text-left"
             title="Open settings"
           >
             <Settings className="w-4 h-4 shrink-0" />
@@ -437,10 +433,9 @@ export default function Sidebar({
           y={rowMenu.y}
           settled={rowMenuSession ? statusFor(rowMenuSession) === 'settled' : false}
           onToggleSettled={
-            rowMenuSession && canToggleSettled(rowMenuSession, statusFor(rowMenuSession))
+            rowMenuSession && canSettleSession(statusFor(rowMenuSession))
               ? () => {
-                  if (statusFor(rowMenuSession) === 'settled') activity.reopen(rowMenuSession);
-                  else activity.settle(rowMenuSession);
+                  toggleSettled(rowMenuSession);
                 }
               : undefined
           }

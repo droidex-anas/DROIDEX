@@ -8,7 +8,7 @@ import { generatedImage, type GeneratedImage } from './codexImages.js';
 
 // The tool name the transcript renders as an image card. Shared with the
 // renderer by convention, the way every other tool row is matched by name.
-export const IMAGE_TOOL_NAME = 'image_generation';
+const IMAGE_TOOL_NAME = 'image_generation';
 export interface FileUpdateChange {
   path: string;
   kind: { type: string };
@@ -136,12 +136,22 @@ export interface ToolCall {
   detail: string;
   args: unknown;
   failed: boolean;
+  // The turn was steered or stopped before this call finished. Codex reports it
+  // as an item status, so it is a fact, not a failure.
+  interrupted: boolean;
 }
 
 // Tool names follow the conventions the transcript already classifies by:
 // a shell name for commands, an edit name for patches, and Claude's `mcp__`
 // prefix for an MCP tool.
 export function toolCall(item: ThreadItem): ToolCall | undefined {
+  const call = describeCall(item);
+  // Codex reports a steer or a stop as the item's own status, whatever kind of
+  // call it is, so one read covers them all.
+  return call && { ...call, interrupted: 'status' in item && item.status === 'interrupted' };
+}
+
+function describeCall(item: ThreadItem): Omit<ToolCall, 'interrupted'> | undefined {
   if (item.type === 'commandExecution')
     return {
       id: item.id,
@@ -185,8 +195,10 @@ export function toolCall(item: ThreadItem): ToolCall | undefined {
       id: item.id,
       name: 'Subagent',
       detail: item.prompt ?? '',
-      args: { prompt: item.prompt ?? undefined },
-      failed: item.status === 'failed' || item.status === 'interrupted',
+      // The brief reaches the agent's own pane as a prompt row through
+      // collabChildSignals; the parent's transcript does not keep a second copy.
+      args: {},
+      failed: item.status === 'failed',
     };
   return undefined;
 }
@@ -197,10 +209,10 @@ export function toolOutput(item: ThreadItem, streamed: string, appSessionId: str
   // is the line shown in its place.
   if (item.type === 'imageGeneration') return generatedImage(appSessionId, item);
   if (item.type === 'fileChange') return patchText(item.changes);
-  if (item.type === 'collabAgentToolCall')
-    return item.status === 'failed' || item.status === 'interrupted'
-      ? 'Subagent spawn failed.'
-      : '';
+  if (item.type === 'collabAgentToolCall') {
+    if (item.status === 'failed') return 'Subagent spawn failed.';
+    return item.status === 'interrupted' ? 'The turn was stopped before the agent started.' : '';
+  }
   if (item.type === 'mcpToolCall')
     return item.error ? item.error.message : mcpContent(item.result?.content ?? []);
   return streamed;

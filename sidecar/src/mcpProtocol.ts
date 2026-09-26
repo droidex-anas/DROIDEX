@@ -1,15 +1,8 @@
 // Mirrored in src/types/mcp.ts — keep both files in sync.
 
-export type McpServerType = 'http' | 'sse' | 'stdio';
-export type McpServerStatus = 'connecting' | 'connected' | 'disconnected' | 'failed' | 'disabled';
-export type McpServerSource =
-  | 'org'
-  | 'runtime'
-  | 'user'
-  | 'project'
-  | 'folder'
-  | 'dynamic'
-  | 'builtin';
+type McpServerType = 'http' | 'sse' | 'stdio';
+type McpServerStatus = 'connecting' | 'connected' | 'disconnected' | 'failed' | 'disabled';
+type McpServerSource = 'org' | 'runtime' | 'user' | 'project' | 'folder' | 'dynamic' | 'builtin';
 
 export interface McpServerInfo {
   name: string;

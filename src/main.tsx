@@ -8,6 +8,7 @@ import {
   startRendererPerfObservers,
 } from './lib/rendererPerf';
 import { applyTheme } from './lib/theme';
+import { VoiceProvider } from './features/voice/VoiceProvider';
 import App from './App';
 import './index.css';
 
@@ -32,7 +33,17 @@ if (!root) throw new Error('DROIDEX root element is missing.');
 createRoot(root).render(
   <StrictMode>
     <StoreProvider>
-      <App />
+      <VoiceProvider>
+        <App />
+      </VoiceProvider>
     </StoreProvider>
   </StrictMode>,
 );
+
+// Anonymous installation counting, loaded after the first render so neither the
+// module nor the Datadog SDK sits in the initial bundle. It no-ops outside
+// packaged builds, and the SDK is only fetched once the main process confirms
+// reporting is configured and consented to.
+if (window.droidControl) {
+  void import('./lib/usageAnalytics').then((module) => module.startUsageAnalytics());
+}

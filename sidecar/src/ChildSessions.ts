@@ -1,6 +1,6 @@
 import { factoryReasoningEffort } from './DroidRuntime.js';
 import type { PersistedChildSession, PersistedChildSpawnLink } from './history.js';
-import type { ChildRole, ChildSessionSummary, ClientCommand } from './protocol.js';
+import type { ChildRole, ChildSessionSummary, ChildStatus, ClientCommand } from './protocol.js';
 import type { ChildOperationTarget } from './SessionContext.js';
 import {
   matchesChildGenerationSnapshot,
@@ -66,6 +66,7 @@ import {
 import { RuntimeRetirementTimer } from './runtimeRetirementTimer.js';
 import { ChildProviderCleanup } from './childProviderCleanup.js';
 import { childTokenStream } from './childStreamFidelity.js';
+import { isSettledChildStatus, settledAgent, type SettledAgent } from './childWaveWake.js';
 import { dequeueQueuedChild, prepareChildInterrupt } from './childTurnCancellation.js';
 
 type ChildSettingsCommand = Extract<ClientCommand, { type: 'child.updateSettings' }>;
@@ -108,6 +109,7 @@ export class ChildSessions {
       generation: ++this.nextParentGeneration,
       lease,
       children: new Map(),
+      settledSinceWake: new Set(),
       pendingSpawns: new Map(),
       openAttempts: new Map(),
       reservedOpenSlots: new Set(),
@@ -220,16 +222,23 @@ export class ChildSessions {
           observed.reasoningEffort = launchSettings.reasoningEffort;
         }
       }
-      if (!observed.modelId) {
+      // A state-only feed has no provider session file to read settings from,
+      // and retryPendingLaunchSettings skips it on purpose, so parking one here
+      // would hide that agent for good. Admit it on the parent's own defaults
+      // instead: a row carrying the model the parent launched it with is honest,
+      // an agent nobody can see is not.
+      if (!observed.modelId && !stateOnly) {
         rememberPendingChildObservation(parent, pending, observed);
         return undefined;
       }
     }
 
+    // Exact settings need a model to be exact about.
+    const exactLaunchSettings = needsExactSettings && observed.modelId !== undefined;
     const child =
       spawnChild ??
       providerChild ??
-      this.createChild(parent, observed.role, spawnLink, observed, needsExactSettings);
+      this.createChild(parent, observed.role, spawnLink, observed, exactLaunchSettings);
     forgetPendingChildObservation(parent, pending);
     // Poll-style observations (TaskOutput) carry their own call's tool_use id,
     // not the spawn's; only a link that matched an observed spawn call (pending)
@@ -246,7 +255,7 @@ export class ChildSessions {
       if (child.retiredProviderSessionIds.has(providerSessionId)) return;
       if (child.role !== observed.role && child.turn.autoCompacting)
         this.d.compaction.cancel(this.automaticTarget(parent, child));
-      const { previousPrompt } = applyObservedChild(
+      const { previousPrompt, previousStatus } = applyObservedChild(
         child,
         observed,
         linkForApply,
@@ -255,7 +264,10 @@ export class ChildSessions {
       );
       if (observed.done)
         this.complete(child, observed.status === 'failed' ? 'failed' : 'completed');
-      else this.commit(child);
+      else {
+        this.commit(child);
+        this.noteWaveSettlement(child, previousStatus);
+      }
       // The parent agent is the sender, so the brief reads as a prompt in the
       // agent's pane rather than as a status line.
       if (child.prompt && child.prompt !== previousPrompt)
@@ -940,6 +952,7 @@ export class ChildSessions {
 
   private complete(child?: ChildSessionState, status: 'completed' | 'failed' = 'completed'): void {
     if (!child || child.status === 'completed' || child.status === 'failed') return;
+    const previousStatus = child.status;
     setChildStatus(child, status, this.d.now());
     // Activity describes a moment that has passed; keeping the last poll's line
     // would leave a finished subagent reading as still working.
@@ -949,6 +962,31 @@ export class ChildSessions {
       const pending = this.childrenAwaitingDurability.get(childDurabilityKey(child.identity));
       if (pending) pending.closeAfterPublish = true;
     }
+    this.noteWaveSettlement(child, previousStatus);
+  }
+
+  /** An agent stopped. When it was the last one working, the chat is owed one
+      turn carrying the whole wave: no harness wakes an idle parent when a
+      background agent finishes, so the results would otherwise reach nobody.
+      Only a crossing into a settled status counts, so a repeated observation of
+      an agent that already stopped can never wake the chat a second time, and
+      agents the wake's own turn spawns settle into the next wave. */
+  private noteWaveSettlement(child: ChildSessionState, previousStatus: ChildStatus): void {
+    if (previousStatus === child.status || !isSettledChildStatus(child.status)) return;
+    const parent = this.parents.get(child.identity.parentAppSessionId);
+    if (!parent || !this.isCurrentParent(parent)) return;
+    parent.settledSinceWake.add(child.identity.childSessionId);
+    for (const candidate of parent.children.values())
+      if (candidate.status === 'running' || candidate.queued) return;
+    const agents: SettledAgent[] = [];
+    let index = 0;
+    for (const candidate of parent.children.values()) {
+      if (parent.settledSinceWake.has(candidate.identity.childSessionId))
+        agents.push(settledAgent(candidate, index));
+      index += 1;
+    }
+    parent.settledSinceWake.clear();
+    if (agents.length > 0) this.d.onAgentWaveSettled(parent.parentAppSessionId, agents);
   }
 
   private createChild(
@@ -958,16 +996,18 @@ export class ChildSessions {
     launchSettings: ChildSettings = {},
     exactLaunchSettings = false,
   ): ChildSessionState {
-    const settings = exactLaunchSettings
-      ? launchSettings
-      : {
-          ...this.d.resolveDefaultSettings(
+    // An observation carries both launch fields together, absent ones as an
+    // explicit undefined, and a model belongs with the effort it was launched
+    // at, so the pair is taken whole: the child's own when it named a model,
+    // the parent's defaults when it did not.
+    const settings =
+      exactLaunchSettings || launchSettings.modelId
+        ? launchSettings
+        : this.d.resolveDefaultSettings(
             parent.lease.summary,
             parentDroidSession(parent.lease).initResult,
             role,
-          ),
-          ...launchSettings,
-        };
+          );
     if (!settings.modelId) throw new Error(`No accepted model is available for ${role}.`);
     const child = newChildState({
       parentAppSessionId: parent.parentAppSessionId,
