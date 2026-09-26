@@ -1,6 +1,12 @@
 import { sanitizePersistedPrWorkspace } from '../features/pull-requests/lib/prWorkspaceCwd';
 import { sanitizePersistedPrBacklog } from '../features/pull-requests/lib/prBacklog';
-import type { BrowserState, ModelInfo, ProviderKind, ReasoningEffort } from '../types/bridge';
+import type {
+  BrowserState,
+  ModelInfo,
+  ProviderKind,
+  ReasoningEffort,
+  VoiceNarration,
+} from '../types/bridge';
 import { isReasoningEffort } from '../lib/reasoningEffort';
 import { DIFF_SCOPES, type DiffScope } from '../types/vcs';
 import type { ImagePasteQuality } from '../lib/images';
@@ -143,6 +149,9 @@ const LIVE_ENTER_BEHAVIOR_STORAGE_KEY = 'droid-live-enter-behavior';
 const IMAGE_PASTE_QUALITY_STORAGE_KEY = 'droid-image-paste-quality';
 const DIFF_VIEW_STORAGE_KEY = 'droid-diff-view';
 const MODEL_SELECTOR_STYLE_STORAGE_KEY = 'droid-model-selector-style';
+const DEFAULT_VOICE_STORAGE_KEY = 'droid-default-voice';
+const KNOWN_VOICES_STORAGE_KEY = 'droid-known-voices';
+const NARRATION_MODE_STORAGE_KEY = 'droid-narration-mode';
 const REVIEW_SCOPE_STORAGE_KEY = 'droid-review-scope';
 const WORKSPACES_STORAGE_KEY = 'droid-workspaces';
 const SESSION_LAST_SEEN_STORAGE_KEY = 'droid-session-last-seen-v1';
@@ -270,6 +279,72 @@ export function saveModelSelectorStyle(value: ModelSelectorStyle): ModelSelector
     /* ignore */
   }
   return style;
+}
+
+// Which voice speaks in voice mode. The harness publishes its own voices when a
+// voice session opens; an empty value leaves the choice to it.
+export function loadDefaultVoice(): string {
+  try {
+    // eslint-disable-next-line @typescript-eslint/prefer-nullish-coalescing -- empty string means use the harness default
+    return getLocalStorage()?.getItem(DEFAULT_VOICE_STORAGE_KEY) || '';
+  } catch {
+    return '';
+  }
+}
+
+export function saveDefaultVoice(value: string): string {
+  try {
+    getLocalStorage()?.setItem(DEFAULT_VOICE_STORAGE_KEY, value);
+  } catch {
+    /* ignore */
+  }
+  return value;
+}
+
+// The voices the harness last said it has. Settings has no conversation to ask,
+// and the app must not offer a voice the harness would refuse, so it offers
+// what it was last told and nothing until it has been told once.
+export function loadKnownVoices(): string[] {
+  try {
+    const raw: unknown = JSON.parse(getLocalStorage()?.getItem(KNOWN_VOICES_STORAGE_KEY) ?? '[]');
+    if (!Array.isArray(raw)) return [];
+    return raw.filter((voice): voice is string => typeof voice === 'string');
+  } catch {
+    return [];
+  }
+}
+
+export function saveKnownVoices(voices: string[]): string[] {
+  try {
+    getLocalStorage()?.setItem(KNOWN_VOICES_STORAGE_KEY, JSON.stringify(voices));
+  } catch {
+    /* ignore */
+  }
+  return voices;
+}
+
+// How much of the agent's work is spoken while it runs. Brief is the default;
+// only someone who asked for the running account keeps commentary.
+function normalizeNarrationMode(value: unknown): VoiceNarration {
+  return value === 'commentary' ? 'commentary' : 'brief';
+}
+
+export function loadNarrationMode(): VoiceNarration {
+  try {
+    return normalizeNarrationMode(getLocalStorage()?.getItem(NARRATION_MODE_STORAGE_KEY));
+  } catch {
+    return 'brief';
+  }
+}
+
+export function saveNarrationMode(value: VoiceNarration): VoiceNarration {
+  const mode = normalizeNarrationMode(value);
+  try {
+    getLocalStorage()?.setItem(NARRATION_MODE_STORAGE_KEY, mode);
+  } catch {
+    /* ignore */
+  }
+  return mode;
 }
 
 export function loadReviewScope(): DiffScope {

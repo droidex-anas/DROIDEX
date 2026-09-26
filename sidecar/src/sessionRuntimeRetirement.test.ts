@@ -33,6 +33,7 @@ function facts(
     hasOpenBrowser: false,
     hasPendingSettings: false,
     hasAgentProcesses: false,
+    hasLiveVoice: false,
     ...patch,
   };
 }
@@ -147,6 +148,7 @@ function ownerHarness(overrides: Partial<SessionRuntimeRetirementDependencies> =
     hasOpenBrowser: () => false,
     hasPendingSettings: () => false,
     hasAgentProcesses: () => false,
+    hasLiveVoice: () => false,
     retire: (appSessionId) => {
       retired.push(appSessionId);
       live.delete(appSessionId);

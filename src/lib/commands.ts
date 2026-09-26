@@ -18,6 +18,7 @@ import type {
   ResponseFormat,
   SessionInteractionMode,
   SessionPurpose,
+  VoiceNarration,
 } from '../types/bridge';
 
 let refCounter = 0;
@@ -209,6 +210,30 @@ export const interruptSession = (appSessionId: string) => {
 
 export const compactSession = (appSessionId: string, customInstructions?: string) => {
   bridge.send({ type: 'session.compact', appSessionId, customInstructions });
+};
+
+// Voice runs on the chat's own thread and model: this relays the WebRTC
+// handshake the renderer negotiated, never the audio. The answer arrives as a
+// `voice.answer` event for the same chat.
+export const startVoice = (input: {
+  appSessionId: string;
+  sdp: string;
+  attempt: string;
+  voice?: string;
+  narration?: VoiceNarration;
+}) => {
+  requireAgentWorkAvailable();
+  bridge.send({ type: 'voice.start', ...input });
+};
+
+export const stopVoice = (input: { appSessionId: string }) => {
+  bridge.send({ type: 'voice.stop', ...input });
+};
+
+// The spoken voices the chat's provider offers; answered by a `voice.voices`
+// event for the same chat.
+export const requestVoices = (input: { appSessionId: string }) => {
+  bridge.send({ type: 'voice.voices', ...input });
 };
 
 export const interruptChild = (parentAppSessionId: string, childSessionId: string) => {

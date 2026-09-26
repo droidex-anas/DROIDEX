@@ -109,6 +109,27 @@ test('#20 a TodoWrite update does not add a chat message and answer stays single
   assert.ok(inWorked, 'TodoWrite activity should be inside the Worked group');
 });
 
+test('a spoken line stays its own marked row beside the turn it was said in', () => {
+  const spokenAsk = ev({ kind: 'text', author: 'user', text: 'what changed?', spoken: true });
+  const spokenReply = ev({ kind: 'text', text: 'the composer', spoken: true });
+  const grouped = groupTurns(
+    buildFeed([spokenAsk, grep(), asst('I changed the composer.'), spokenReply]),
+    false,
+  );
+  // The written answer stays the answer; the spoken reply neither merges into
+  // it nor disappears into the Worked fold.
+  assert.deepEqual(topLevelAnswers(grouped), ['I changed the composer.', 'the composer']);
+  assert.equal(
+    workedChildren(grouped).some((it) => it.type === 'message'),
+    false,
+  );
+
+  const html = renderToStaticMarkup(
+    createElement(UserBubble, { event: { text: 'what changed?', spoken: true } }),
+  );
+  assert.ok(html.includes('Spoken'));
+});
+
 test('conversation timeline anchors one dot per user prompt', () => {
   const events = [
     userMsg('first question'),

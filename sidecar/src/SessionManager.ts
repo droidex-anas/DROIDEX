@@ -117,6 +117,7 @@ import {
   type ProviderProbeMap,
 } from './providers/providerProbes.js';
 import { ProviderTranscriptFile } from './providers/ProviderTranscriptFile.js';
+import { SessionVoice } from './providers/SessionVoice.js';
 import { SessionModelSettings } from './SessionModelSettings.js';
 import { providerStatuses } from './providers/providerStatus.js';
 import type { Provider } from './providers/session.js';
@@ -254,6 +255,7 @@ export class SessionManager {
   private readonly agentProcesses: AgentProcessMonitor;
   private readonly sessionFiles: SessionFileServing;
   private readonly sessionBrowser: SessionBrowser;
+  private readonly sessionVoice: SessionVoice;
   private readonly historyQueries: SessionHistoryQueries;
   private readonly modelSettings: SessionModelSettings;
   private shutdownPromise?: Promise<void>;
@@ -568,6 +570,21 @@ export class SessionManager {
         this.emitError(error);
       },
     });
+    this.sessionVoice = new SessionVoice({
+      liveSession: (appSessionId) => this.registry.getLive(appSessionId)?.session,
+      appendTranscript: (event) => {
+        this.timeline.append(event);
+      },
+      ensureRunning: async (appSessionId) => {
+        if (!this.registry.getLive(appSessionId)) await this.lifecycle.resume(appSessionId);
+      },
+      emit: (event) => {
+        this.emit(event);
+      },
+      liveChanged: () => {
+        this.runtimeRetirement.arm();
+      },
+    });
     this.lifecycle = new SessionLifecycle({
       provider: (kind) => this.providerFor(kind),
       providerDefaultModelId: (kind) => this.providerProbes.status(kind)?.defaultModelId,
@@ -614,6 +631,7 @@ export class SessionManager {
         this.modelSettings.forget(appSessionId);
       },
       closeBrowserSession: (appSessionId) => this.browsers.close(appSessionId),
+      stopVoiceSession: (appSessionId) => this.sessionVoice.closeSession(appSessionId),
       emit: (event) => {
         this.emit(event);
       },
@@ -646,6 +664,7 @@ export class SessionManager {
       hasOpenBrowser: (id) => this.browsers.hasSession(id),
       hasPendingSettings: (id) => this.modelSettings.hasPending(id),
       hasAgentProcesses: (id) => this.agentProcesses.hasProcesses(id),
+      hasLiveVoice: (id) => this.sessionVoice.isLive(id),
       retire: (id) => this.lifecycle.close(id, 'preserve-pending'),
       emitStatus: (id, text) => {
         this.timeline.appendStatus(id, text);
@@ -842,6 +861,20 @@ export class SessionManager {
         return;
       case 'session.interrupt':
         await this.lifecycle.interrupt(cmd.appSessionId);
+        return;
+      case 'voice.start':
+        await this.sessionVoice.handle(cmd);
+        this.runtimeRetirement.arm();
+        return;
+      case 'voice.stop':
+        await this.sessionVoice.handle(cmd);
+        // A chat being talked to is not idle however quiet its transcript is,
+        // and one that has stopped is idle again. Both move when the next
+        // sweep is due, and nothing else here would say so.
+        this.runtimeRetirement.arm();
+        return;
+      case 'voice.voices':
+        await this.sessionVoice.handle(cmd);
         return;
       case 'child.open':
         await this.childSessions.open(cmd);

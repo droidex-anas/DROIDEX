@@ -14,6 +14,12 @@ import {
 import { bridge } from '../lib/bridge';
 import { updateCompactionSettings } from '../lib/commands';
 import { reducePrInbox, type PrInboxAction } from '../features/pull-requests/lib/prInboxState';
+import {
+  reduceVoice,
+  withoutVoiceSession,
+  type VoiceAction,
+  type VoiceSessions,
+} from '../features/voice/voiceSessions';
 import { removeCustomTheme, upsertCustomTheme, type ThemePreset } from '../lib/theme';
 import {
   loadCustomThemes,
@@ -24,11 +30,14 @@ import {
 import {
   loadAgentConfig,
   loadCompactionModel,
+  loadDefaultVoice,
+  loadKnownVoices,
   loadDiffView,
   loadHarnessModels,
   loadImagePasteQuality,
   loadLiveEnterBehavior,
   loadModelSelectorStyle,
+  loadNarrationMode,
   loadPersistedUiState,
   loadReviewScope,
   loadSessionLastSeen,
@@ -36,11 +45,14 @@ import {
   loadWorkspaceCwds,
   saveAgentConfig,
   saveCompactionModel,
+  saveDefaultVoice,
+  saveKnownVoices,
   saveDiffView,
   saveHarnessModels,
   saveImagePasteQuality,
   saveLiveEnterBehavior,
   saveModelSelectorStyle,
+  saveNarrationMode,
   savePersistedUiState,
   saveReviewScope,
   saveSessionLastSeen,
@@ -83,6 +95,7 @@ import type {
   ContextStatsSnapshot,
   BrowserState,
   DesignReference,
+  VoiceNarration,
 } from '../types/bridge';
 import { addWorkspaceCwd, removeWorkspaceCwd } from '../lib/workspaces';
 import { createOrderedActionBatcher, type OrderedActionBatcher } from './orderedActionBatcher';
@@ -359,6 +372,9 @@ export interface AppState {
   browserErrors: Record<string, string>;
   browserGlobalError?: string;
   designModes: DesignModes;
+  // Live voice conversations, keyed by appSessionId. Never persisted: a voice
+  // session ends with the window that held it.
+  voiceSessions: VoiceSessions;
 
   // Mission Control view
   selectedFeatureId: string | null;
@@ -392,6 +408,12 @@ export interface AppState {
   liveEnterBehavior: LiveEnterBehavior;
   // Fidelity tier for images pasted or dropped into the composer.
   imagePasteQuality: ImagePasteQuality;
+  // Voice mode: which voice speaks, and how much of the work it narrates while
+  // the agent runs. An empty voice leaves the choice to the harness.
+  defaultVoice: string;
+  /** The voices the harness last reported, for the picker in Settings. */
+  knownVoices: string[];
+  narrationMode: VoiceNarration;
   // Chord bound to each rebindable app action (see lib/shortcuts).
   shortcutBindings: ShortcutBindings;
 
@@ -603,6 +625,7 @@ type Action =
   | { type: 'CLOSE_AUTOMATIONS' }
   | { type: 'AUTOMATION_EDITOR_REQUEST_HANDLED'; requestId: number }
   | PrInboxAction
+  | VoiceAction
   | {
       type: 'START_CHAT';
       cwd: string;
@@ -656,6 +679,8 @@ type Action =
   | { type: 'SET_COMPACTION_TOKEN_LIMIT_FOR_MODEL'; modelId: string; limit?: number }
   | { type: 'SET_LIVE_ENTER_BEHAVIOR'; behavior: LiveEnterBehavior }
   | { type: 'SET_IMAGE_PASTE_QUALITY'; quality: ImagePasteQuality }
+  | { type: 'SET_DEFAULT_VOICE'; voice: string }
+  | { type: 'SET_NARRATION_MODE'; mode: VoiceNarration }
   | { type: 'SET_SHORTCUT_BINDING'; shortcut: ShortcutAction; chord: string }
   | { type: 'SET_DEFAULT_AUTONOMY'; autonomy: Autonomy }
   | { type: 'SET_TOOL_ACTIVITY'; settings: ToolActivitySettings }
@@ -756,6 +781,7 @@ export const initialState: AppState = {
   browserErrors: {},
   browserGlobalError: undefined,
   designModes: {},
+  voiceSessions: {},
   selectedFeatureId: persistedUiState.selectedFeatureId ?? null,
   selectedChild: null,
   models: [],
@@ -767,6 +793,9 @@ export const initialState: AppState = {
   compactionSettingsRev: 0,
   liveEnterBehavior: loadLiveEnterBehavior(),
   imagePasteQuality: loadImagePasteQuality(),
+  defaultVoice: loadDefaultVoice(),
+  knownVoices: loadKnownVoices(),
+  narrationMode: loadNarrationMode(),
   shortcutBindings: loadShortcutBindings(),
   reviewOpenAppSessionId: null,
   reviewScope: loadReviewScope(),
@@ -1080,6 +1109,7 @@ function baseReducer(state: AppState, action: Action): AppState {
         agentProcesses: Object.fromEntries(
           Object.entries(state.agentProcesses).filter(([id]) => id !== action.appSessionId),
         ),
+        voiceSessions: withoutVoiceSession(state.voiceSessions, action.appSessionId),
         selectedChild:
           state.selectedChild?.parentAppSessionId === action.appSessionId
             ? null
@@ -1801,6 +1831,24 @@ function baseReducer(state: AppState, action: Action): AppState {
     case 'TOGGLE_MISSION_CONTROL':
       return { ...state, missionControlMode: !state.missionControlMode };
 
+    case 'VOICE_CONNECTING':
+    case 'VOICE_ANSWERED':
+    case 'VOICE_STATE':
+    case 'VOICE_ERROR':
+    case 'VOICE_ENDED':
+      return reduceVoice(state, action);
+
+    // Settings has no conversation to ask what the harness offers, so what it
+    // offers is what the harness last answered here.
+    case 'VOICE_VOICES': {
+      const next = reduceVoice(state, action);
+      if (sameVoices(state.knownVoices, action.voices)) return next;
+      return { ...next, knownVoices: saveKnownVoices(action.voices) };
+    }
+
+    case 'VOICE_TRANSCRIPT':
+      return reduceVoice(state, action);
+
     case 'OPEN_PULL_REQUESTS':
     case 'CLOSE_PULL_REQUESTS':
     case 'MOVE_PR_TO_BACKLOG':
@@ -2169,6 +2217,12 @@ function baseReducer(state: AppState, action: Action): AppState {
       return { ...state, liveEnterBehavior: behavior };
     }
 
+    case 'SET_DEFAULT_VOICE':
+      return { ...state, defaultVoice: saveDefaultVoice(action.voice) };
+
+    case 'SET_NARRATION_MODE':
+      return { ...state, narrationMode: saveNarrationMode(action.mode) };
+
     case 'SET_IMAGE_PASTE_QUALITY': {
       const quality = saveImagePasteQuality(action.quality);
       return { ...state, imagePasteQuality: quality };
@@ -2256,6 +2310,11 @@ export function toastMessageForEvent(ev: ServerEvent): string | undefined {
     return ev.message;
   }
   return ev.type === 'child.error' && ev.operation !== 'open' ? ev.message : undefined;
+}
+
+// Two lists of the same voices in the same order are the same answer.
+function sameVoices(current: string[], next: string[]): boolean {
+  return current.length === next.length && current.every((voice, at) => voice === next[at]);
 }
 
 export function adaptEvent(ev: ServerEvent): Action | null {
@@ -2428,6 +2487,32 @@ export function adaptEvent(ev: ServerEvent): Action | null {
       return { type: 'BROWSER_CLOSED', appSessionId: ev.appSessionId };
     case 'browser.error':
       return { type: 'BROWSER_ERROR', appSessionId: ev.appSessionId, message: ev.message };
+    case 'voice.answer':
+      return {
+        type: 'VOICE_ANSWERED',
+        appSessionId: ev.appSessionId,
+        sdp: ev.sdp,
+        attempt: ev.attempt,
+      };
+    case 'voice.state':
+      return { type: 'VOICE_STATE', appSessionId: ev.appSessionId, status: ev.status };
+    case 'voice.transcript':
+      return {
+        type: 'VOICE_TRANSCRIPT',
+        appSessionId: ev.appSessionId,
+        role: ev.role,
+        text: ev.text,
+        final: ev.final,
+      };
+    case 'voice.voices':
+      return {
+        type: 'VOICE_VOICES',
+        appSessionId: ev.appSessionId,
+        voices: ev.voices,
+        defaultVoice: ev.defaultVoice,
+      };
+    case 'voice.error':
+      return { type: 'VOICE_ERROR', appSessionId: ev.appSessionId, message: ev.message };
     default:
       return null;
   }

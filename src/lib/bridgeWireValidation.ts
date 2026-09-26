@@ -291,6 +291,28 @@ function isServerEvent(value: unknown): value is ServerEvent {
         ((value.ok === true && (value.runId === undefined || typeof value.runId === 'string')) ||
           (value.ok === false && typeof value.error === 'string'))
       );
+    case 'voice.answer':
+      return hasStrings(value, ['appSessionId', 'sdp', 'attempt']);
+    case 'voice.state':
+      return (
+        typeof value.appSessionId === 'string' &&
+        (value.status === 'live' || value.status === 'closed')
+      );
+    case 'voice.transcript':
+      return (
+        hasStrings(value, ['appSessionId', 'text']) &&
+        (value.role === 'user' || value.role === 'assistant') &&
+        typeof value.final === 'boolean'
+      );
+    case 'voice.voices':
+      return (
+        typeof value.appSessionId === 'string' &&
+        Array.isArray(value.voices) &&
+        value.voices.every((voice) => typeof voice === 'string') &&
+        isOptionalString(value.defaultVoice)
+      );
+    case 'voice.error':
+      return hasStrings(value, ['appSessionId', 'message']);
     default: {
       const unexpected: never = type;
       void unexpected;

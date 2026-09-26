@@ -117,6 +117,8 @@ module.exports = {
         'DROIDEX accesses Documents projects only when you choose them for an agent session.',
       NSDownloadsFolderUsageDescription:
         'DROIDEX accesses downloaded project files only when you choose them for an agent session.',
+      NSMicrophoneUsageDescription:
+        'DROIDEX uses the microphone only while you hold a voice conversation with an agent.',
       SUFeedURL: sparkleFeedUrl,
       SUPublicEDKey: sparklePublicKey,
       SUEnableAutomaticChecks: true,

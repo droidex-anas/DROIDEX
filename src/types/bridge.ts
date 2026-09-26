@@ -208,6 +208,8 @@ export interface TranscriptEvent {
   files?: string[];
   browserRefs?: BrowserTranscriptReference[];
   steered?: boolean;
+  // Set on a row whose text was said out loud in a voice conversation.
+  spoken?: boolean;
   compactType?: 'auto' | 'manual';
   modelSwitch?: { from: string; to: string };
   errorKind?: 'usage_limit';
@@ -686,6 +688,17 @@ export type ClientCommand =
   | { type: 'session.resume'; appSessionId: string }
   | { type: 'session.interrupt'; appSessionId: string }
   | {
+      type: 'voice.start';
+      appSessionId: string;
+      sdp: string;
+      /** Names this negotiation, so its answer is not taken by the next one. */
+      attempt: string;
+      voice?: string;
+      narration?: VoiceNarration;
+    }
+  | { type: 'voice.stop'; appSessionId: string }
+  | { type: 'voice.voices'; appSessionId: string }
+  | {
       type: 'session.updateSettings';
       appSessionId: string;
       modelId?: string | null;
@@ -880,7 +893,21 @@ export interface ChildErrorEvent {
 }
 
 // ── Sidecar -> Frontend ──────────────────────────────────────────────
+// How much of the agent's work a voice session speaks while it runs.
+export type VoiceNarration = 'brief' | 'commentary';
+
 export type ServerEvent =
+  | { type: 'voice.answer'; appSessionId: string; sdp: string; attempt: string }
+  | { type: 'voice.state'; appSessionId: string; status: 'live' | 'closed' }
+  | {
+      type: 'voice.transcript';
+      appSessionId: string;
+      role: 'user' | 'assistant';
+      text: string;
+      final: boolean;
+    }
+  | { type: 'voice.voices'; appSessionId: string; voices: string[]; defaultVoice?: string }
+  | { type: 'voice.error'; appSessionId: string; message: string }
   | McpServerEvent
   | AutomationBridgeEvent
   | { type: 'connection'; status: 'connected' | 'error'; message?: string }

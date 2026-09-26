@@ -29,6 +29,7 @@ export interface StoredMessageLine {
   type?: string;
   id?: string;
   timestamp?: string;
+  spoken?: boolean;
   message?: {
     role?: string;
     content?: unknown[];
@@ -198,6 +199,24 @@ export function parseSessionLineEvents(
   if (isLlmOnlyMessage(message)) return [];
   const content = Array.isArray(message?.content) ? message.content : [];
   const ts = dateMs(line.timestamp) || Date.now();
+  if (line.spoken === true) {
+    const spokenRole = message?.role;
+    const text = stringValue(objectValue(content[0])?.text);
+    if (!line.id || !text || (spokenRole !== 'user' && spokenRole !== 'assistant')) return [];
+    return [
+      {
+        id: line.id,
+        appSessionId,
+        sourceSessionId: spokenRole === 'user' ? 'user' : 'primary',
+        role: 'primary',
+        ts,
+        kind: 'text',
+        text,
+        ...(spokenRole === 'user' ? { author: 'user' } : {}),
+        spoken: true,
+      },
+    ];
+  }
   const base: EventBase = {
     appSessionId,
     sourceProviderSessionId: providerSessionId,

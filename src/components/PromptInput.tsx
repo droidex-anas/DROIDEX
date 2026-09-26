@@ -39,7 +39,8 @@ import {
 } from '../lib/desktop';
 import { pathsInSequence, useImageAttachments } from '../hooks/useImageAttachments';
 import { useFileAttachments } from '../hooks/useFileAttachments';
-import { useVoiceMode, VOICE_MODE_ENABLED } from '../features/voice/useVoiceMode';
+import { useVoiceControls } from '../features/voice/VoiceProvider';
+import { canUseVoice } from '../features/voice/voiceAvailability';
 import { useComposerFileDrop } from '../hooks/useComposerFileDrop';
 import { ImageChip } from './composer/ImageChip';
 import { FileChip } from './composer/FileChip';
@@ -143,8 +144,15 @@ const loadModelSelectorPopover = () => import('./ModelSelectorPopover');
 const ModelSliderPopover = lazy(loadModelSliderPopover);
 const ModelSelectorPopover = lazy(loadModelSelectorPopover);
 const VoiceSendSlot = lazy(() => import('../features/voice/VoiceSendSlot'));
-const VoiceDock = lazy(() => import('../features/voice/VoiceDock'));
-const VoiceModeOverlay = lazy(() => import('../features/voice/VoiceModeOverlay'));
+const VoiceTakeoverPopover = lazy(() => import('../features/voice/VoiceTakeoverPopover'));
+const VoiceOrbDock = lazy(() =>
+  import('../features/voice/VoiceOrbDock').then((m) => ({ default: m.VoiceOrbDock })),
+);
+const VoiceComposerControls = lazy(() =>
+  import('../features/voice/VoiceComposerControls').then((m) => ({
+    default: m.VoiceComposerControls,
+  })),
+);
 
 // Stable identity for a closed menu, so no trigger means no new object.
 const EMPTY_COMPOSER_MENU: ComposerMenuModel = { entries: [], rows: [] };
@@ -381,7 +389,6 @@ export default function PromptInput({
   };
   const [sendHintOpen, setSendHintOpen] = useState(false);
   const [turnStarting, setTurnStarting] = useState(false);
-  const voice = useVoiceMode();
   const editorRef = useRef<ComposerHandle>(null);
   // Flips once the lazy editor mounts, so a caret queued for it is applied.
   const [editorReady, setEditorReady] = useState(false);
@@ -1585,10 +1592,104 @@ export default function PromptInput({
     attachedFiles.length > 0 ||
     fileAttachments.files.length > 0 ||
     imageAttachments.images.length > 0;
-  // The action slot morphs between voice and send: a draft with content owns
-  // the stage, but a live or starting turn keeps stop/send reachable even on
-  // an empty draft. With voice off, send is always on stage.
-  const showSendAction = !VOICE_MODE_ENABLED || hasContent || isLive || turnStarting;
+  // The app's one conversation, which may belong to another chat entirely. The
+  // orb is offered only where this chat's harness can hold a conversation and
+  // none is running anywhere; the chat that owns one gets its controls instead.
+  const voice = useVoiceControls();
+  const voiceHere = voice.view === 'dock';
+  const canStartVoice = canUseVoice(composerProvider) && !voiceHere;
+  // The chat currently being talked to, when it is not this one.
+  const voiceRunningOn = useStoreSelector((state) => {
+    const owner =
+      voice.view !== 'off' && voice.appSessionId ? state.sessions[voice.appSessionId] : undefined;
+    return owner ? owner.title : null;
+  });
+  const [takeoverOpen, setTakeoverOpen] = useState(false);
+  const voiceSlotRef = useRef<HTMLDivElement>(null);
+  // A chat started by voice has no prompt to create it with, so the orb creates
+  // the chat first and opens the conversation once that chat, and no other,
+  // arrives. `registered` marks the point where the wait can be read from the
+  // store, which is what tells an abandoned create from one still being
+  // prepared.
+  const voiceAwaiting = useRef<{ clientRef: string; registered: boolean } | null>(null);
+
+  // The orb: talk to the chat that is open, or start one and talk to that. A
+  // chat created this way opens with no prompt, so the first request is the
+  // spoken one.
+  const startHere = () => {
+    if (activeSession) {
+      voice.openOn(activeSession.appSessionId);
+      return;
+    }
+    if (voiceAwaiting.current) return;
+    const clientRef = newClientRef();
+    voiceAwaiting.current = { clientRef, registered: false };
+    void (async () => {
+      // Named for now by when it started; the first thing said in it renames it.
+      const placeholder = `Voice chat ${new Date().toLocaleTimeString([], {
+        hour: '2-digit',
+        minute: '2-digit',
+      })}`;
+      const preparation = await prepareDraftCwd(state.draftChat?.cwd ?? '', clientRef, placeholder);
+      if (!preparation.ok) {
+        voiceAwaiting.current = null;
+        return;
+      }
+      // A chat only takes focus when the renderer is waiting for it, and the
+      // conversation can only open on the chat that is on screen. There is no
+      // prompt to wait for here, so the wait is registered empty.
+      dispatch({ type: 'SET_PENDING_COMPOSE', clientRef, text: '', skills: [], files: [] });
+      if (voiceAwaiting.current?.clientRef === clientRef) voiceAwaiting.current.registered = true;
+      createSession({
+        clientRef,
+        cwd: preparation.path,
+        title: placeholder,
+        goal: '',
+        sessionPurpose: 'chat',
+        provider: draftProvider,
+        interactionMode: isSpecMode ? 'spec' : 'auto',
+        autonomy: draftAutonomy,
+        ...draftModelSettings,
+        compactionModel:
+          state.compactionModel === 'current-model' ? undefined : state.compactionModel,
+        ...compactionSettingsSnapshot(compactionSettingsInput),
+      });
+    })().catch(() => {
+      // The chat was never created, so nothing is being waited for and the orb
+      // works again. The failure itself is reported by the command that raised
+      // it.
+      voiceAwaiting.current = null;
+    });
+  };
+
+  const startVoice = () => {
+    // One conversation at a time: the one that is running is ended by asking,
+    // never by starting another on top of it.
+    if (voiceRunningOn) {
+      setTakeoverOpen(true);
+      return;
+    }
+    startHere();
+  };
+
+  // The chat the orb asked for has arrived and is on screen: open the
+  // conversation on it. A create that never landed releases the wait instead,
+  // so the next chat the user opens is not talked to by accident.
+  useEffect(() => {
+    const waiting = voiceAwaiting.current;
+    if (!waiting) return;
+    const created = state.lastCreatedSessionRequest;
+    if (created?.clientRef === waiting.clientRef) {
+      if (activeSession?.appSessionId !== created.appSessionId) return;
+      voiceAwaiting.current = null;
+      voice.openOn(created.appSessionId, { nameFromSpeech: true });
+      return;
+    }
+    if (waiting.registered && !state.pendingCompose[waiting.clientRef])
+      voiceAwaiting.current = null;
+  }, [activeSession, state.lastCreatedSessionRequest, state.pendingCompose, voice]);
+
+  const showSendAction = !canStartVoice || hasContent || isLive || turnStarting;
   // The hint's host swaps (send, stop, spinner) as a turn starts and ends; clear
   // the state with it so the hint never reopens without a hover or focus.
   useEffect(() => {
@@ -1646,8 +1747,14 @@ export default function PromptInput({
         />
 
         <PlanApprovalInline />
-        <PermissionInline />
-        <AskUserInline />
+        {/* The full voice surface covers this composer and shows the same two
+            cards itself, so only one of the two places owns an ask at a time. */}
+        {voice.view !== 'full' && (
+          <>
+            <PermissionInline />
+            <AskUserInline />
+          </>
+        )}
 
         {missionPreview ? (
           <div
@@ -1690,9 +1797,9 @@ export default function PromptInput({
 
         <ComposerDock />
 
-        {voice.view === 'compact' && (
+        {voiceHere && (
           <Suspense fallback={null}>
-            <VoiceDock voice={voice} />
+            <VoiceOrbDock />
           </Suspense>
         )}
 
@@ -1983,12 +2090,34 @@ export default function PromptInput({
               </div>
 
               <div ref={scheduleAnchorRef} className="shrink-0">
-                {VOICE_MODE_ENABLED ? (
-                  <Suspense fallback={sendButton}>
-                    <VoiceSendSlot showSend={showSendAction} onVoice={voice.start}>
-                      {sendButton}
-                    </VoiceSendSlot>
+                {voiceHere ? (
+                  <Suspense fallback={null}>
+                    <VoiceComposerControls />
                   </Suspense>
+                ) : canStartVoice ? (
+                  <div ref={voiceSlotRef}>
+                    <Suspense fallback={sendButton}>
+                      <VoiceSendSlot showSend={showSendAction} onVoice={startVoice}>
+                        {sendButton}
+                      </VoiceSendSlot>
+                    </Suspense>
+                    {voiceRunningOn !== null && (
+                      <Suspense fallback={null}>
+                        <VoiceTakeoverPopover
+                          open={takeoverOpen}
+                          onClose={() => {
+                            setTakeoverOpen(false);
+                          }}
+                          anchorRef={voiceSlotRef}
+                          runningOn={voiceRunningOn}
+                          onTakeOver={() => {
+                            voice.close();
+                            startHere();
+                          }}
+                        />
+                      </Suspense>
+                    )}
+                  </div>
                 ) : (
                   sendButton
                 )}
@@ -2061,11 +2190,6 @@ export default function PromptInput({
             />
           </Suspense>
         )}
-      {voice.view === 'full' && (
-        <Suspense fallback={null}>
-          <VoiceModeOverlay voice={voice} />
-        </Suspense>
-      )}
     </div>
   );
 }

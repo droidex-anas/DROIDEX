@@ -3,8 +3,8 @@ import { useEffect, useState } from 'react';
 /**
  * Owns the microphone while voice mode wants it. Tracks stop on mute, close,
  * or unmount, so the OS mic indicator never outlives the feature. Denial is a
- * state, not an error: the packaged app ships without a microphone usage
- * description (see builderConfig.test.cjs), and the browser can simply say no.
+ * state, not an error: the user can refuse at the OS prompt, or the machine
+ * can have no microphone, and the app says so rather than failing.
  */
 // The DOM lib types mediaDevices as always present, but it is undefined in
 // non-secure contexts.
@@ -18,6 +18,10 @@ export function useMicStream(active: boolean): { stream: MediaStream | null; den
 
   useEffect(() => {
     if (!active) return;
+    // Every attempt asks again from nothing known: a refusal, or a machine with
+    // no microphone at the time, must not decide the next conversation.
+    setDenied(false);
+    setStream(null);
     const devices = mediaDevices();
     if (!devices) {
       setDenied(true);
@@ -33,6 +37,13 @@ export function useMicStream(active: boolean): { stream: MediaStream | null; den
           return;
         }
         acquired = next;
+        // A device can be unplugged or taken by another app while the call is
+        // up. The conversation stops hearing anything, and saying so is the
+        // difference between a silent microphone and one that looks fine.
+        for (const track of next.getAudioTracks())
+          track.addEventListener('ended', () => {
+            if (!cancelled) setDenied(true);
+          });
         setStream(next);
       })
       .catch(() => {

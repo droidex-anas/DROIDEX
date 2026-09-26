@@ -134,7 +134,7 @@ function createHarness(ordinarySummaries: SessionSummary[] = []) {
     interactionMode: 'auto',
   };
   const lifecycle = new SessionLifecycle({
-    eventFlow: { apply: () => undefined },
+    eventFlow: { apply: () => undefined, beginTurn: () => undefined },
     provider: () => new DroidProvider(runtime, () => undefined),
     registry,
     ensureConnected: () => {
@@ -298,6 +298,10 @@ function createHarness(ordinarySummaries: SessionSummary[] = []) {
     },
     closeBrowserSession: (appSessionId) => {
       calls.push({ target: 'browser', method: 'browser.close', args: [appSessionId] });
+      return Promise.resolve();
+    },
+    stopVoiceSession: (appSessionId) => {
+      calls.push({ target: 'cleanup', method: 'voice.stop', args: [appSessionId] });
       return Promise.resolve();
     },
     emit: recordEvent,

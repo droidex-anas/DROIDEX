@@ -11,7 +11,7 @@ import { userMessageAttachments } from '../../lib/promptMentions';
 import { SkillIcon } from '../icons/SkillIcon';
 import { VisualizeIcon } from '../icons/VisualizeIcon';
 import { Markdown } from '../Markdown';
-import { MessageActions } from './primitives';
+import { MessageActions, SpokenMark } from './primitives';
 
 function BrowserReferenceChip({ reference }: { reference: BrowserTranscriptReference }) {
   const Icon = reference.kind === 'element' ? MousePointer2 : PenLine;
@@ -178,7 +178,7 @@ export function UserBubble({
   event,
   onOpenReviewFile,
 }: {
-  event: Pick<TranscriptEvent, 'text' | 'skills' | 'files' | 'browserRefs' | 'steered'>;
+  event: Pick<TranscriptEvent, 'text' | 'skills' | 'files' | 'browserRefs' | 'steered' | 'spoken'>;
   onOpenReviewFile?: OpenReviewFileHandler;
 }) {
   const browserRefs = event.browserRefs ?? [];
@@ -202,6 +202,7 @@ export function UserBubble({
   ) : null;
   return (
     <div className="group/msg flex flex-col items-end gap-1.5">
+      {event.spoken && <SpokenMark />}
       {event.steered && (
         <span className="flex items-center gap-1 text-[11px] font-medium tracking-wide text-droid-text-muted">
           <svg
