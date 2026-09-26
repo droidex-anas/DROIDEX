@@ -1631,7 +1631,7 @@ function readSessionModelSettings(
       tokenLimitRecordValue(raw.compactionTokenLimitPerModel),
     autonomy: migrateTranscriptPermissions(
       sessionPath,
-      providerKind(start.provider) ?? DEFAULT_PROVIDER,
+      providerKind(start?.provider) ?? DEFAULT_PROVIDER,
       mapAutonomy(
         stringValue(sidecarSettings.autonomyLevel) ??
           stringValue(settings.autonomyLevel) ??

@@ -91,17 +91,26 @@ test('a fallback notice is withdrawn when the user selects another mode before d
   assert.equal(modes.takeNotice(), undefined);
 });
 
-
 test('reopening Spec keeps plan mode even when Full access is selected', () => {
-  const options = sessionOptions({
-    appSessionId: 'app-spec', executable: '/unused', cwd: '/workspace',
-    autonomy: 'high', interactionMode: 'spec', resume: true, mcpServers: {},
-    interactions: {
-      requestApproval: async () => 'cancel',
-      requestQuestion: async () => ({ cancelled: true, answers: [] }),
-      cancelPending: () => undefined,
+  const options = sessionOptions(
+    {
+      appSessionId: 'app-spec',
+      executable: '/unused',
+      cwd: '/workspace',
+      autonomy: 'high',
+      interactionMode: 'spec',
+      resume: true,
+      mcpServers: {},
+      interactions: {
+        requestApproval: async () => 'cancel',
+        requestQuestion: async () => ({ cancelled: true, answers: [] }),
+        cancelPending: () => undefined,
+      },
     },
-  }, new AbortController(), () => true, () => undefined);
+    new AbortController(),
+    () => true,
+    () => undefined,
+  );
   assert.equal(options.permissionMode, 'plan');
   assert.equal(options.resume, 'app-spec');
 });

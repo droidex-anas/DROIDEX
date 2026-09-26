@@ -54,7 +54,15 @@ export class ClaudeProvider implements Provider {
 
   async resume(
     providerSessionId: string,
-    { interactions, cwd, modelId, reasoningEffort, autonomy, interactionMode, mcpServers }: ProviderResumeInput,
+    {
+      interactions,
+      cwd,
+      modelId,
+      reasoningEffort,
+      autonomy,
+      interactionMode,
+      mcpServers,
+    }: ProviderResumeInput,
   ): Promise<ProviderSession> {
     return await this.open({
       appSessionId: providerSessionId,

@@ -71,9 +71,10 @@ export function migrateTranscriptPermissions(
     ? objectValue(JSON.parse(readFileSync(settingsPath, 'utf8')))
     : {};
   if (!settings) throw new Error('Provider permission settings must be an object.');
-  const revision = settings.permissionSemanticsRevision !== undefined
-    ? settings.permissionSemanticsRevision
-    : headRevision;
+  const revision =
+    settings.permissionSemanticsRevision !== undefined
+      ? settings.permissionSemanticsRevision
+      : headRevision;
   if (revision === PERMISSION_SEMANTICS_REVISION) return autonomy ?? 'off';
   if (revision !== undefined) throw new Error('Unsupported stored permission semantics revision.');
   const migrated = migrateAutonomy(provider, autonomy ?? 'off');
