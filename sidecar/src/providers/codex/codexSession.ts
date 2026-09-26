@@ -66,6 +66,7 @@ export class CodexSession implements ProviderSession {
   // Stop pressed before `turn/start` answered: there is a turn to end but no id
   // to name it with yet.
   private pendingInterrupt = false;
+  private interruptedTurnId?: string;
   // A turn Codex started by itself, for a request spoken to a voice
   // conversation. It has no stream of its own, so its id is kept here: Stop has
   // to reach it, and its completion must not settle a turn the user typed.
@@ -100,13 +101,17 @@ export class CodexSession implements ProviderSession {
       () => this.applyThreadSettings(),
     );
     this.prompts = new OpenPrompts(input.appSessionId, input.interactions);
-    this.tools = new CodexToolBridge(
-      input.inAppMcpServers ?? [],
-      input.appSessionId,
-      input.interactions,
-      () => this.threadId,
-      () => !this.hasClosed,
-    );
+    this.tools = new CodexToolBridge(input.inAppMcpServers ?? [], {
+      appSessionId: input.appSessionId,
+      interactions: input.interactions,
+      threadId: () => this.threadId,
+      turnId: () => {
+        const turnId = this.turnId ?? this.delegatedTurnId;
+        return this.pendingInterrupt || turnId === this.interruptedTurnId ? undefined : turnId;
+      },
+      isLive: () => !this.hasClosed && input.interactions.isActive(),
+      prompts: this.prompts,
+    });
     // Registered before `initialize`, so nothing the server sends can arrive
     // before its handler exists. Requests left unregistered — the legacy exec
     // and patch callbacks, additional permissions, MCP elicitation — are
@@ -190,6 +195,7 @@ export class CodexSession implements ProviderSession {
     const turn = new TurnStream();
     this.turn = turn;
     this.pendingInterrupt = false;
+    this.interruptedTurnId = undefined;
     try {
       // The thread's own startup may still be running behind this turn; what is
       // left of it is announced now rather than leaving the chat silent.
@@ -211,6 +217,7 @@ export class CodexSession implements ProviderSession {
       // Settlement may already have let go, and a later turn may already own
       // these; only the turn that set them takes them away.
       if (this.turn === turn) {
+        this.prompts.cancel();
         this.turn = undefined;
         this.turnId = undefined;
       }
@@ -325,11 +332,15 @@ export class CodexSession implements ProviderSession {
 
   async interrupt(): Promise<void> {
     if (!this.threadId) return;
+    this.prompts.cancel();
     // Stop reaches a delegated turn by its own id: it is running on this
     // thread, and the user can see its work in the chat.
     if (!this.turn) {
       const delegated = this.delegatedTurnId;
-      if (delegated) await this.sendInterrupt(delegated);
+      if (delegated) {
+        this.interruptedTurnId = delegated;
+        await this.sendInterrupt(delegated);
+      }
       return;
     }
     // A stale pair would end a turn that already settled, or none at all.
@@ -337,11 +348,13 @@ export class CodexSession implements ProviderSession {
       this.pendingInterrupt = true;
       return;
     }
+    this.interruptedTurnId = this.turnId;
     await this.sendInterrupt(this.turnId);
   }
 
   close(): Promise<void> {
     this.resolveClosed();
+    this.prompts.cancel();
     this.catalog?.close();
     this.cancelStartupNotice();
     return (this.closePromise ??= this.client.close());
@@ -376,6 +389,7 @@ export class CodexSession implements ProviderSession {
   private setDelegatedTurn(turnId: string | undefined): void {
     const was = this.delegatedTurnId !== undefined;
     this.delegatedTurnId = turnId;
+    if (turnId && turnId !== this.interruptedTurnId) this.interruptedTurnId = undefined;
     const running = turnId !== undefined;
     if (running === was) return;
     for (const listener of this.delegatedListeners) listener(running);

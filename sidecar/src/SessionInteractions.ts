@@ -36,6 +36,7 @@ interface InteractionScope {
 
 export interface InteractionLiveSession {
   summary: SessionSummary;
+  closePromise?: Promise<void>;
 }
 
 type InteractionError = Omit<Extract<ServerEvent, { type: 'error' }>, 'type'>;
@@ -60,6 +61,10 @@ export class SessionInteractions {
     return {
       requestApproval: (approval) => this.decideApproval(ref.id, approval),
       requestQuestion: (questions) => this.askQuestion(ref.id, questions),
+      isActive: () => {
+        const live = this.dependencies.getLiveSession(ref.id);
+        return live !== undefined && live.closePromise === undefined;
+      },
       cancelPending: () => {
         this.cancelPending(ref.id);
       },

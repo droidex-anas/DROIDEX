@@ -6,6 +6,7 @@ import { mcpGrantSignature } from '../../mcpGrant.js';
 import { nextInteractionRequestId, type ProviderInteractions } from '../interactions.js';
 import { SESSIONS_MCP_SERVER_NAME, sessionsToolDisplayTitle } from '../../sessionsMcpPolicy.js';
 import { objectValue } from '../../values.js';
+import type { OpenPrompts } from './codexApprovals.js';
 
 interface CodexTool {
   type: 'function';
@@ -27,6 +28,18 @@ interface ToolReply {
   success: boolean;
 }
 
+/** What the bridge needs from the Codex session it answers for. */
+export interface CodexToolSession {
+  appSessionId: string;
+  interactions: ProviderInteractions;
+  /** The prompts of the running turn, so its approvals end with it. */
+  prompts: OpenPrompts;
+  threadId: () => string | undefined;
+  /** The turn a call may still run in; undefined while none is, or it is being stopped. */
+  turnId: () => string | undefined;
+  isLive: () => boolean;
+}
+
 const TOOL_NAME = /^[a-zA-Z0-9_-]+$/;
 
 export class CodexToolBridge {
@@ -38,10 +51,7 @@ export class CodexToolBridge {
 
   constructor(
     servers: SdkMcpServer[],
-    private readonly appSessionId: string,
-    private readonly interactions: ProviderInteractions,
-    private readonly currentThreadId: () => string | undefined,
-    private readonly isLive: () => boolean,
+    private readonly session: CodexToolSession,
   ) {
     this.declarations = servers.map((server) => {
       const namespace = server.name.replaceAll('-', '_');
@@ -75,29 +85,39 @@ export class CodexToolBridge {
   }
 
   async call(params: unknown): Promise<ToolReply> {
-    const threadId = this.currentThreadId();
+    const threadId = this.session.threadId();
+    const turnId = this.session.turnId();
     const found = this.resolve(params, threadId);
     if ('contentItems' in found) return found;
+    const call = objectValue(params);
+    if (!turnId || call?.turnId !== turnId)
+      return reply('This DROIDEX turn is no longer active.', false);
     const { serverName, tool, input } = found;
     const signature = mcpGrantSignature(serverName, tool.name, input);
-    const outcome = await this.interactions.requestApproval({
-      request: {
-        appSessionId: this.appSessionId,
-        requestId: nextInteractionRequestId(),
-        kind: 'mcp',
-        title:
-          sessionsToolDisplayTitle(serverName, tool.name) ??
-          automationToolDisplayTitle(serverName, tool.name) ??
-          tool.name,
-        detail: JSON.stringify(input),
-        raw: { toolName: `mcp__${serverName}__${tool.name}`, input },
-      },
-      confirmationType: 'mcp_tool',
-      mcpTool: { serverName, toolName: tool.name },
-      ...(signature ? { signature } : {}),
-    });
-    if (!this.isLive() || this.currentThreadId() !== threadId)
-      return reply('This DROIDEX chat closed before the tool ran.', false);
+    const outcome = await this.session.prompts.ask(() =>
+      this.session.interactions.requestApproval({
+        request: {
+          appSessionId: this.session.appSessionId,
+          requestId: nextInteractionRequestId(),
+          kind: 'mcp',
+          title:
+            sessionsToolDisplayTitle(serverName, tool.name) ??
+            automationToolDisplayTitle(serverName, tool.name) ??
+            tool.name,
+          detail: JSON.stringify(input),
+          raw: { toolName: `mcp__${serverName}__${tool.name}`, input },
+        },
+        confirmationType: 'mcp_tool',
+        mcpTool: { serverName, toolName: tool.name },
+        ...(signature ? { signature } : {}),
+      }),
+    );
+    if (
+      !this.session.isLive() ||
+      this.session.threadId() !== threadId ||
+      this.session.turnId() !== turnId
+    )
+      return reply('This DROIDEX turn ended before the tool ran.', false);
     if (!outcome.startsWith('proceed')) return reply('The user declined this tool.', false);
     return await run(tool, input);
   }
@@ -108,7 +128,7 @@ export class CodexToolBridge {
     threadId: string | undefined,
   ): ToolReply | { serverName: string; tool: DroidTool; input: Record<string, unknown> } {
     const call = objectValue(params);
-    if (!call || !threadId || call.threadId !== threadId || !this.isLive())
+    if (!call || !threadId || call.threadId !== threadId || !this.session.isLive())
       return reply('This DROIDEX chat is no longer available.', false);
     const entry =
       typeof call.namespace === 'string' && typeof call.tool === 'string'

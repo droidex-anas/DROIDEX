@@ -7,6 +7,7 @@ import { mcpGrantSignature } from '../../mcpGrant.js';
 import { SessionInteractions } from '../../SessionInteractions.js';
 import type { ProviderApprovalRequest } from '../interactions.js';
 import type { AppServerClient } from './appServer.js';
+import { OpenPrompts } from './codexApprovals.js';
 import { CodexEventMapper } from './codexEvents.js';
 import { CodexSession } from './codexSession.js';
 import { CodexToolBridge } from './codexTools.js';
@@ -15,6 +16,7 @@ function harness() {
   let calls = 0;
   let outcome: PermissionOutcome = 'proceed_once';
   let threadId = 'thread-one';
+  let turnId = 'turn-one';
   let live = true;
   const approvals: ProviderApprovalRequest[] = [];
   const server = createSdkMcpServer({
@@ -30,20 +32,23 @@ function harness() {
     name: 'droidex-automations',
     tools: [tool('automation_list', 'List automations.', {}, () => 'No automations.')],
   });
-  const bridge = new CodexToolBridge(
-    [server, automations],
-    'chat-one',
-    {
-      requestApproval: async (approval) => {
-        approvals.push(approval);
-        return outcome;
-      },
-      requestQuestion: async () => ({ cancelled: true, answers: [] }),
-      cancelPending: () => {},
+  const interactions = {
+    requestApproval: async (approval: ProviderApprovalRequest) => {
+      approvals.push(approval);
+      return outcome;
     },
-    () => threadId,
-    () => live,
-  );
+    requestQuestion: async () => ({ cancelled: true, answers: [] }),
+    isActive: () => live,
+    cancelPending: () => {},
+  };
+  const bridge = new CodexToolBridge([server, automations], {
+    appSessionId: 'chat-one',
+    interactions: interactions,
+    threadId: () => threadId,
+    turnId: () => turnId,
+    isLive: () => live,
+    prompts: new OpenPrompts('chat-one', interactions),
+  });
   return {
     bridge,
     approvals,
@@ -57,11 +62,15 @@ function harness() {
     switchThread: () => {
       threadId = 'thread-two';
     },
+    endTurn: () => {
+      turnId = 'turn-two';
+    },
   };
 }
 
 const spawn = {
   threadId: 'thread-one',
+  turnId: 'turn-one',
   namespace: 'droidex_sessions',
   tool: 'thread_spawn',
   arguments: { reportBack: true },
@@ -108,6 +117,7 @@ test('a new Codex thread declares its tools and a resumed thread keeps its store
   const interactions = {
     requestApproval: async () => 'cancel' as const,
     requestQuestion: async () => ({ cancelled: true, answers: [] }),
+    isActive: () => true,
     cancelPending: () => {},
   };
   const input = {
@@ -156,6 +166,19 @@ test('shared MCP grant keys retain Droid and Claude scopes', () => {
   assert.equal(mcpGrantSignature('droidex-sessions', 'thread_spawn', {}), '');
 });
 
+test('Droid combined automation mutations keep argument-scoped grants', () => {
+  const first = mcpGrantSignature('', 'droidex_automations___automation_update', {
+    automationId: 'one',
+    prompt: 'first',
+  });
+  const second = mcpGrantSignature('', 'droidex_automations___automation_update', {
+    automationId: 'one',
+    prompt: 'second',
+  });
+  assert.match(first, /^mcp::::droidex_automations___automation_update::[a-f0-9]{32}$/);
+  assert.notEqual(first, second);
+});
+
 test('executes a known tool through approval and returns Codex content items', async () => {
   const { bridge, approvals, calls } = harness();
   assert.deepEqual(await bridge.call(spawn), {
@@ -191,6 +214,15 @@ test('a chat closed while approval is pending never runs the tool', async () => 
   let decide: ((outcome: PermissionOutcome) => void) | undefined;
   let calls = 0;
   let live = true;
+  const interactions = {
+    requestApproval: () =>
+      new Promise<PermissionOutcome>((resolve) => {
+        decide = resolve;
+      }),
+    requestQuestion: async () => ({ cancelled: true, answers: [] }),
+    isActive: () => live,
+    cancelPending: () => {},
+  };
   const bridge = new CodexToolBridge(
     [
       createSdkMcpServer({
@@ -203,23 +235,118 @@ test('a chat closed while approval is pending never runs the tool', async () => 
         ],
       }),
     ],
-    'chat-one',
     {
-      requestApproval: () =>
-        new Promise((resolve) => {
-          decide = resolve;
-        }),
-      requestQuestion: async () => ({ cancelled: true, answers: [] }),
-      cancelPending: () => {},
+      appSessionId: 'chat-one',
+      interactions: interactions,
+      threadId: () => 'thread-one',
+      turnId: () => 'turn-one',
+      isLive: () => live,
+      prompts: new OpenPrompts('chat-one', interactions),
     },
-    () => 'thread-one',
-    () => live,
   );
   const pending = bridge.call(spawn);
   live = false;
   assert.ok(decide);
   decide('proceed_once');
   assert.equal((await pending).success, false);
+  assert.equal(calls, 0);
+});
+
+test('turn settlement cancels a dynamic-tool approval and refuses a late allow', async () => {
+  let resolveApproval: ((outcome: PermissionOutcome) => void) | undefined;
+  let activeTurn = 'turn-one';
+  let calls = 0;
+  let cancellations = 0;
+  const interactions = {
+    requestApproval: () =>
+      new Promise<PermissionOutcome>((resolve) => {
+        resolveApproval = resolve;
+      }),
+    requestQuestion: async () => ({ cancelled: true, answers: [] }),
+    isActive: () => true,
+    cancelPending: () => {
+      cancellations += 1;
+      resolveApproval?.('cancel');
+    },
+  };
+  const prompts = new OpenPrompts('chat-one', interactions);
+  const bridge = new CodexToolBridge(
+    [
+      createSdkMcpServer({
+        name: 'droidex-sessions',
+        tools: [
+          tool('thread_spawn', 'Start a thread.', { reportBack: z.boolean() }, () => {
+            calls += 1;
+            return 'started';
+          }),
+        ],
+      }),
+    ],
+    {
+      appSessionId: 'chat-one',
+      interactions: interactions,
+      threadId: () => 'thread-one',
+      turnId: () => activeTurn,
+      isLive: () => true,
+      prompts: prompts,
+    },
+  );
+
+  const pending = bridge.call(spawn);
+  assert.ok(resolveApproval);
+  activeTurn = 'turn-two';
+  prompts.cancel();
+  resolveApproval('proceed_once');
+  assert.equal((await pending).success, false);
+  assert.equal(cancellations, 1);
+  assert.equal(calls, 0);
+  assert.equal((await bridge.call(spawn)).success, false);
+});
+
+test('a tool is refused before approval and after approval when teardown begins', async () => {
+  let active = true;
+  let resolveApproval: ((outcome: PermissionOutcome) => void) | undefined;
+  let approvals = 0;
+  let calls = 0;
+  const interactions = {
+    requestApproval: () => {
+      approvals += 1;
+      return new Promise<PermissionOutcome>((resolve) => {
+        resolveApproval = resolve;
+      });
+    },
+    requestQuestion: async () => ({ cancelled: true, answers: [] }),
+    isActive: () => active,
+    cancelPending: () => {},
+  };
+  const bridge = new CodexToolBridge(
+    [
+      createSdkMcpServer({
+        name: 'droidex-sessions',
+        tools: [
+          tool('thread_spawn', 'Start a thread.', { reportBack: z.boolean() }, () => {
+            calls += 1;
+            return 'started';
+          }),
+        ],
+      }),
+    ],
+    {
+      appSessionId: 'chat-one',
+      interactions: interactions,
+      threadId: () => 'thread-one',
+      turnId: () => 'turn-one',
+      isLive: () => interactions.isActive(),
+      prompts: new OpenPrompts('chat-one', interactions),
+    },
+  );
+  const pending = bridge.call(spawn);
+  assert.ok(resolveApproval);
+  active = false;
+  resolveApproval('proceed_once');
+  assert.equal((await pending).success, false);
+  assert.equal((await bridge.call(spawn)).success, false);
+  assert.equal(approvals, 1);
   assert.equal(calls, 0);
 });
 
@@ -268,10 +395,14 @@ test('below High, DROIDEX asks before a spawn and a denial never runs it', async
         ],
       }),
     ],
-    'chat-one',
-    interactions.interactionsFor({ id: 'chat-one' }),
-    () => 'thread-one',
-    () => true,
+    {
+      appSessionId: 'chat-one',
+      interactions: interactions.interactionsFor({ id: 'chat-one' }),
+      threadId: () => 'thread-one',
+      turnId: () => 'turn-one',
+      isLive: () => true,
+      prompts: new OpenPrompts('chat-one', interactions.interactionsFor({ id: 'chat-one' })),
+    },
   );
   const pending = bridge.call(spawn);
   const request = events.find((event) => event.type === 'approval.requested');

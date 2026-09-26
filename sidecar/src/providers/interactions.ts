@@ -23,6 +23,7 @@ export interface ProviderQuestionAnswers {
 export interface ProviderInteractions {
   requestApproval(approval: ProviderApprovalRequest): Promise<PermissionOutcome>;
   requestQuestion(questions: SessionQuestion['questions']): Promise<ProviderQuestionAnswers>;
+  isActive(): boolean;
   // The turn that raised them ended before the user answered: settle every
   // request this session is still waiting on and take its card off the screen.
   cancelPending(): void;

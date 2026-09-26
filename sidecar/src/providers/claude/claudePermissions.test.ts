@@ -15,6 +15,7 @@ test("an Always allow narrower than its tool never becomes the CLI's rule for th
       },
       requestQuestion: () => Promise.resolve({ cancelled: true, answers: [] }),
       cancelPending: () => {},
+      isActive: () => true,
     },
     () => false,
   );
