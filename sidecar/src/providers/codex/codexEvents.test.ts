@@ -81,3 +81,65 @@ test('a server that failed before the first turn is still reported in it', async
   assert.match(first.value.transcript?.text ?? '', /broken_probe/);
   await events.return(undefined);
 });
+
+test('thread start, resume and every turn carry the requested service tier including explicit off', async () => {
+  const requests: { method: string; params: Record<string, unknown> }[] = [];
+  const notifications = new Map<string, (params: unknown) => void>();
+  const client = {
+    onNotification: (method: string, handler: (params: unknown) => void) =>
+      notifications.set(method, handler),
+    onRequest: () => undefined,
+    onUnsupportedRequest: () => undefined,
+    onClose: () => undefined,
+    request: (method: string, params: Record<string, unknown>) => {
+      if (method === 'skills/list') return Promise.resolve({ data: [] });
+      if (method === 'plugin/installed') return Promise.resolve({ marketplaces: [] });
+      if (method === 'app/list') return Promise.resolve({ data: [], nextCursor: null });
+      // The model and effort travel separately; only the tier is under test here.
+      if (method === 'thread/settings/update') return Promise.resolve({});
+      requests.push({ method, params });
+      if (method === 'thread/start' || method === 'thread/resume')
+        return Promise.resolve({ thread: { id: 'thread-fast' }, model: 'model' });
+      if (method === 'turn/start') {
+        notifications.get('turn/completed')?.({
+          threadId: 'thread-fast',
+          turn: { id: 'turn-fast', status: 'completed' },
+        });
+        return Promise.resolve({ turn: { id: 'turn-fast' } });
+      }
+      return Promise.reject(new Error(`Unexpected request: ${method}`));
+    },
+  } as unknown as AppServerClient;
+  const session = new CodexSession({
+    appSessionId: 'app-fast',
+    client,
+    cwd: '/tmp',
+    autonomy: 'low',
+    model: {},
+    interactions: {
+      requestApproval: () => Promise.reject(new Error('unused')),
+      requestQuestion: () => Promise.reject(new Error('unused')),
+      cancelPending: () => undefined,
+    },
+  });
+  await session.open();
+  await session.setModel({ fastMode: true });
+  await session.open('thread-fast');
+  for await (const event of session.stream('first')) assert.equal(event.done, true);
+  await session.setModel({ reasoningEffort: 'high' });
+  for await (const event of session.stream('second')) assert.equal(event.done, true);
+  await session.setModel({ fastMode: false });
+  for await (const event of session.stream('third')) assert.equal(event.done, true);
+  await session.open('thread-fast');
+  assert.deepEqual(
+    requests.map(({ method, params }) => [method, params.serviceTier]),
+    [
+      ['thread/start', 'default'],
+      ['thread/resume', 'priority'],
+      ['turn/start', 'priority'],
+      ['turn/start', 'priority'],
+      ['turn/start', 'default'],
+      ['thread/resume', 'default'],
+    ],
+  );
+});

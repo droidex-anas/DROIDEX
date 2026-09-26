@@ -437,14 +437,14 @@ export class HistoryIndex {
   }
 
   summaryPatchesAndHidden(): SummaryPatchesAndHidden {
-    const rows = this.db.prepare('SELECT * FROM app_sessions').all() as Record<string, unknown>[];
+    const rows = readSummaryRows(this.db);
     const patches = summaryPatchesFromRows(rows);
     applyStoredCompactionGenerations(this.db, patches);
     return { patches, hiddenProviderSessionIds: hiddenProviderSessionIdsFromRows(rows) };
   }
 
   private summaryPatches(): Map<string, Partial<SessionSummary>> {
-    const rows = this.db.prepare('SELECT * FROM app_sessions').all() as Record<string, unknown>[];
+    const rows = readSummaryRows(this.db);
     const patches = summaryPatchesFromRows(rows);
     applyStoredCompactionGenerations(this.db, patches);
     return patches;
@@ -777,7 +777,7 @@ function readStoredSummaryPatches(): Map<string, Partial<SessionSummary>> {
   const db = new DatabaseSync(path);
   try {
     assertCanonicalHistorySchema(db);
-    const rows = db.prepare('SELECT * FROM app_sessions').all() as Record<string, unknown>[];
+    const rows = readSummaryRows(db);
     const patches = summaryPatchesFromRows(rows);
     applyStoredCompactionGenerations(db, patches);
     return patches;
@@ -829,6 +829,29 @@ function readStoredChildSessions(parentAppSessionId: string): PersistedChildSess
   }
 }
 
+function readSummaryRows(db: DatabaseSync): Record<string, unknown>[] {
+  return db
+    .prepare(
+      `
+    SELECT app_sessions.*, settings.value_json AS session_preferences
+    FROM app_sessions LEFT JOIN settings ON settings.scope = 'session:' || app_session_id
+  `,
+    )
+    .all();
+}
+
+function sessionPreferences(raw: unknown): Pick<SessionSummary, 'fastMode'> {
+  if (raw === null) return {};
+  if (typeof raw !== 'string') throw new Error('Stored session preferences must be JSON.');
+  const preferences = objectValue(JSON.parse(raw));
+  if (
+    !preferences ||
+    (preferences.fastMode !== undefined && typeof preferences.fastMode !== 'boolean')
+  )
+    throw new Error('Stored fastMode must be a boolean.');
+  return preferences.fastMode === undefined ? {} : { fastMode: preferences.fastMode };
+}
+
 function summaryPatchesFromRows(
   rows: Record<string, unknown>[],
 ): Map<string, Partial<SessionSummary>> {
@@ -851,6 +874,7 @@ function summaryPatchesFromRows(
       workspaceKind: workspaceKind(stringValue(row.workspace_kind)),
       modelId: stringValue(row.model_id),
       reasoningEffort: mapReasoning(stringValue(row.reasoning_effort)),
+      ...sessionPreferences(row.session_preferences),
       compactionModel: stringValue(row.compaction_model),
       workerModelId: stringValue(row.worker_model_id),
       workerReasoningEffort: mapReasoning(stringValue(row.worker_reasoning_effort)),
@@ -1594,11 +1618,15 @@ function sessionInteractionMode(start: StoredSessionStart): string | undefined {
 function readSessionModelSettings(
   start: StoredSessionStart | undefined,
   sessionPath: string,
-): FactoryDefaults {
+): FactoryDefaults & Pick<SessionSummary, 'fastMode'> {
   const raw = objectValue(start) ?? {};
   const settings = objectValue(raw.settings) ?? objectValue(raw.sessionSettings) ?? {};
   const sidecarSettings = readAdjacentSessionSettings(sessionPath);
+  const fastMode = sidecarSettings.fastMode !== undefined ? sidecarSettings.fastMode : raw.fastMode;
+  if (fastMode !== undefined && typeof fastMode !== 'boolean')
+    throw new Error('Stored fastMode must be a boolean.');
   return {
+    ...(fastMode !== undefined ? { fastMode } : {}),
     // Once the sidecar names the model the head line is history, including when
     // it names none: that is the record of a chat reset to its provider's own
     // default, not an absent setting to fall back from.

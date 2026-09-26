@@ -3,42 +3,23 @@
 // same process and the permission mode and model can change while it runs.
 import {
   query,
-  type EffortLevel,
-  type McpServerConfig,
-  type Options,
   type Query,
   type SDKMessage,
   type SDKUserMessage,
 } from '@anthropic-ai/claude-agent-sdk';
-import { spawn, type ChildProcess } from 'node:child_process';
+import type { ChildProcess } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 
 import type { NormalizedEvent } from '../../normalize.js';
-import type { Autonomy, ReasoningEffort, SessionInteractionMode } from '../../protocol.js';
+import type { Autonomy, SessionInteractionMode } from '../../protocol.js';
 import { errMsg } from '../../sessionHelpers.js';
 import type { SkillInfo } from '../catalog.js';
-import type { ProviderInteractions } from '../interactions.js';
 import type { ProviderModelSettings, ProviderSession } from '../session.js';
 import { ClaudeCatalog } from './claudeCatalog.js';
 import { ClaudeEventMapper, rateLimitRefusal } from './claudeEvents.js';
 import { MessageQueue } from './claudeMessages.js';
-import { claudeCanUseTool, claudePermissionMode } from './claudePermissions.js';
-
-export interface ClaudeSessionInput {
-  // Claude pins the session id it is given, so DROIDEX's own identity is also
-  // the provider's: there is no separate resume handle.
-  appSessionId: string;
-  executable: string;
-  cwd: string;
-  autonomy: Autonomy;
-  interactionMode: SessionInteractionMode;
-  modelId?: string;
-  reasoningEffort?: ReasoningEffort;
-  mcpServers: Record<string, McpServerConfig>;
-  interactions: ProviderInteractions;
-  // Set when reopening a stored session instead of starting a new one.
-  resume?: boolean;
-}
+import { sessionOptions, claudeEffort, type ClaudeSessionInput } from './claudeSessionOptions.js';
+import { claudePermissionMode } from './claudePermissions.js';
 
 export class ClaudeSession implements ProviderSession {
   readonly provider = 'claude' as const;
@@ -61,6 +42,7 @@ export class ClaudeSession implements ProviderSession {
   private child?: ChildProcess;
   private autonomy: Autonomy;
   private modelId: string | undefined;
+  private fastMode: boolean;
   // Spec mode is Claude Code's plan mode, and both reach the CLI as the one
   // permission mode, so the session owns which of the two is in force.
   private planning: boolean;
@@ -76,6 +58,7 @@ export class ClaudeSession implements ProviderSession {
     this.providerSessionId = input.appSessionId;
     this.autonomy = input.autonomy;
     this.modelId = input.modelId;
+    this.fastMode = input.fastMode ?? false;
     this.planning = input.interactionMode === 'spec';
     this.mapper = new ClaudeEventMapper(input.appSessionId, input.modelId);
     this.closed = new Promise((resolve) => {
@@ -270,7 +253,7 @@ export class ClaudeSession implements ProviderSession {
   private dispatch(message: SDKMessage): void {
     this.catalog.observe(message);
     // Mapping stays in wire order, including model and spawn-link observations.
-    const events = this.mapper.map(message);
+    const events = this.mapper.map(message, this.fastMode);
     const turnEvents: NormalizedEvent[] = [];
     for (const event of events) {
       if (event.childSession) {
@@ -316,7 +299,7 @@ export class ClaudeSession implements ProviderSession {
 
   // Model and effort stay on this process, never in the user's settings files.
   // Replaying an already-applied model needs no API validation request.
-  async setModel({ modelId, reasoningEffort }: ProviderModelSettings): Promise<void> {
+  async setModel({ modelId, reasoningEffort, fastMode }: ProviderModelSettings): Promise<void> {
     await this.waitUntilInitialized();
     if (modelId !== undefined && (modelId ?? undefined) !== this.modelId) {
       await this.query.setModel(modelId ?? undefined);
@@ -324,7 +307,12 @@ export class ClaudeSession implements ProviderSession {
       this.modelId = modelId ?? undefined;
       this.mapper.setModel(this.modelId);
     }
-    this.abort.signal.throwIfAborted();
+    this.requireOpen();
+    if (fastMode !== undefined) {
+      await this.query.applyFlagSettings({ fastMode });
+      this.requireOpen();
+      this.fastMode = fastMode;
+    }
     // Leaving ultra clears the flag instead of writing `false`, which is what
     // turns ultracode off while keeping the level chosen alongside it. A model
     // without levels clears both, so the previous model's do not follow it.
@@ -405,80 +393,6 @@ export class ClaudeSession implements ProviderSession {
       this.resolveClosed(error);
     }
   }
-}
-
-function sessionOptions(
-  input: ClaudeSessionInput,
-  abortController: AbortController,
-  isPlanning: () => boolean,
-  onSpawn: (process: ChildProcess) => void,
-): Options {
-  const effort = claudeEffort(input.reasoningEffort);
-  return {
-    abortController,
-    cwd: input.cwd,
-    pathToClaudeCodeExecutable: input.executable,
-    ...(input.modelId ? { model: input.modelId } : {}),
-    // The flag is written both ways: a settings file may carry ultracode too,
-    // and the level the chip shows is the one the session must run at.
-    ...(effort ? { effort: effort.effortLevel, settings: { ultracode: effort.ultracode } } : {}),
-    ...(input.resume ? { resume: input.appSessionId } : { sessionId: input.appSessionId }),
-    systemPrompt: { type: 'preset', preset: 'claude_code' },
-    // 'project' is what loads the repository's CLAUDE.md.
-    settingSources: ['user', 'project', 'local'],
-    includePartialMessages: true,
-    mcpServers: input.mcpServers,
-    // The Spec toggle owns plan mode, so the model may not enter it on its own:
-    // at high autonomy bypassPermissions skips canUseTool altogether and a
-    // refusal there would never run. ExitPlanMode stays available because it is
-    // how the model hands its plan over, and plan mode always asks the callback.
-    disallowedTools: ['EnterPlanMode'],
-    permissionMode:
-      input.interactionMode === 'spec' ? 'plan' : claudePermissionMode(input.autonomy),
-    // Consent to the bypass mode, not the mode itself: the CLI reads this flag
-    // only as "this host may use bypassPermissions" and takes the mode from
-    // permissionMode. Raising autonomy to high mid-session switches the mode
-    // with setPermissionMode, which the CLI refuses without this.
-    allowDangerouslySkipPermissions: true,
-    canUseTool: claudeCanUseTool(input.appSessionId, input.interactions, isPlanning),
-    // The SDK would otherwise own the subprocess privately; spawning it here is
-    // what gives the session a pid for the agent-process monitor to track and
-    // kill, the way it tracks Droid's.
-    spawnClaudeCodeProcess: ({ command, args, cwd, env, signal }) => {
-      const child = spawn(command, args, {
-        ...(cwd !== undefined ? { cwd } : {}),
-        env,
-        signal,
-        stdio: ['pipe', 'pipe', 'pipe'],
-        windowsHide: true,
-      });
-      // Nothing else reads stderr on this path, and a full pipe would stall the
-      // CLI mid-turn.
-      child.stderr.resume();
-      onSpawn(child);
-      return child;
-    },
-    // HOME is never overridden: on macOS it also relocates the login keychain,
-    // and the CLI then reports the user as signed out.
-  };
-}
-
-// DROIDEX's effort vocabulary is the union of every harness's; Claude Code
-// takes the five levels it publishes and nothing else, so a level from another
-// harness leaves the session on its own default rather than being coerced.
-const CLAUDE_EFFORTS: readonly EffortLevel[] = ['low', 'medium', 'high', 'xhigh', 'max'];
-
-// Ultra is the CLI's ultracode: xhigh effort plus standing workflow
-// orchestration, carried as a session setting rather than a sixth level.
-interface ClaudeEffort {
-  effortLevel: EffortLevel;
-  ultracode: boolean;
-}
-
-function claudeEffort(effort: ReasoningEffort | undefined): ClaudeEffort | undefined {
-  if (effort === 'ultra') return { effortLevel: 'xhigh', ultracode: true };
-  const level = CLAUDE_EFFORTS.find((candidate) => candidate === effort);
-  return level ? { effortLevel: level, ultracode: false } : undefined;
 }
 
 function matchesModel(selected: string, actual: string): boolean {

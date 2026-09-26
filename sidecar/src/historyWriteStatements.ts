@@ -8,6 +8,7 @@ export class HistoryWriteStatements {
   private readonly insertEvent: StatementSync;
   private readonly readSearchIdentity: StatementSync;
   private readonly upsertSummary: StatementSync;
+  private readonly upsertSessionPreferences: StatementSync;
   private readonly upsertChild: StatementSync;
   private readonly advanceSearchIdentityRevision: StatementSync;
 
@@ -75,6 +76,12 @@ export class HistoryWriteStatements {
         context_updated_at = excluded.context_updated_at,
         max_context_tokens = excluded.max_context_tokens,
         auto_compactions = excluded.auto_compactions
+    `);
+    this.upsertSessionPreferences = db.prepare(`
+      INSERT INTO settings (scope, value_json, updated_at) VALUES (?, ?, ?)
+      ON CONFLICT(scope) DO UPDATE SET
+        value_json = excluded.value_json,
+        updated_at = excluded.updated_at
     `);
     this.upsertChild = db.prepare(`
       INSERT INTO child_sessions (
@@ -178,6 +185,12 @@ export class HistoryWriteStatements {
       sqlValue(summary.maxContextTokens),
       sqlValue(summary.autoCompactions),
     );
+    if (summary.fastMode !== undefined)
+      this.upsertSessionPreferences.run(
+        `session:${summary.appSessionId}`,
+        JSON.stringify({ fastMode: summary.fastMode }),
+        summary.updatedAt,
+      );
     return searchIdentityChanged;
   }
 

@@ -200,6 +200,8 @@ export class SessionLifecycle {
       // Resolved here so an unroutable provider fails before any resource starts.
       const kind = requireProviderKind(command.provider);
       requireDroidReasoningSupported(kind, command);
+      if (kind === 'droid' && command.fastMode !== undefined)
+        throw new Error('Droid does not support fast mode.');
       const provider = d.provider(kind);
       const defaults = await d.getFactoryDefaults();
       const interactionMode = createInteractionModeForCommand(command, defaults);

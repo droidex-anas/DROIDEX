@@ -19,6 +19,8 @@ const { loadHistoricalSessions } = await import('./history.js');
 const { parseFullSessionTranscript, SessionTranscriptReader } =
   await import('./sessionTranscript.js');
 const { ProviderTranscriptFile } = await import('./providers/ProviderTranscriptFile.js');
+const { writeProviderSessionSettings } = await import('./providers/providerSessionSettings.js');
+const { resumeSettings } = await import('./sessionHelpers.js');
 const { SessionVoice } = await import('./providers/SessionVoice.js');
 const { providerSessionsDir } = await import('./droidexPaths.js');
 
@@ -129,6 +131,7 @@ test('a transcript DROIDEX writes for a non-Droid session is enumerated and repl
     goal: 'Claude session',
     cwd: '',
     modelId: 'claude-sonnet-4-5',
+    fastMode: true,
     autonomy: 'medium',
     phase: 'paused',
     queuedSends: 0,
@@ -179,6 +182,14 @@ test('a transcript DROIDEX writes for a non-Droid session is enumerated and repl
   // Without a model on the head line the restored session cannot be resumed.
   assert.equal(listed?.summary.modelId, 'claude-sonnet-4-5');
   assert.equal(listed?.summary.title, 'Claude session');
+  assert.equal(listed?.summary.fastMode, true);
+  writeProviderSessionSettings(appSessionId, { fastMode: false });
+  writeProviderSessionSettings(appSessionId, { reasoningEffort: 'high' });
+  const restored = loadHistoricalSessions().find(
+    (row) => row.summary.appSessionId === appSessionId,
+  );
+  assert.equal(restored?.summary.fastMode, false);
+  assert.equal(resumeSettings(restored?.summary).fastMode, false);
 
   const events = parseFullSessionTranscript(
     appSessionId,

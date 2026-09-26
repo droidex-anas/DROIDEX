@@ -216,11 +216,20 @@ function isServerEvent(value: unknown): value is ServerEvent {
       return hasStrings(value, ['appSessionId', 'sourceSessionId']) && isContextStats(value.stats);
     case 'catalog.updated':
       if (!Array.isArray(value.items)) return false;
-      if (value.catalog === 'models') return value.items.every(isModelInfo);
+      if (value.catalog === 'models') return value.items.every(isModelWithFastMode);
       if (value.catalog === 'skills') return value.items.every(isSkillInfo);
       return value.catalog === 'tools';
     case 'provider.status':
-      return Array.isArray(value.statuses) && value.statuses.every(isProviderStatus);
+      return (
+        Array.isArray(value.statuses) &&
+        value.statuses.every(
+          (status) =>
+            isProviderStatus(status) &&
+            isRecord(status) &&
+            Array.isArray(status.models) &&
+            status.models.every(isModelWithFastMode),
+        )
+      );
     case 'settings.defaults':
       return isRecord(value.defaults);
     case 'error':
@@ -321,6 +330,14 @@ function isServerEvent(value: unknown): value is ServerEvent {
   }
 }
 
+function isModelWithFastMode(value: unknown): boolean {
+  return (
+    isModelInfo(value) &&
+    isRecord(value) &&
+    (value.supportsFastMode === undefined || typeof value.supportsFastMode === 'boolean')
+  );
+}
+
 function isSessionSummary(value: unknown): boolean {
   return (
     isRecord(value) &&
@@ -341,7 +358,8 @@ function isSessionSummary(value: unknown): boolean {
     value.features.every(isBridgeFeature) &&
     hasNumbers(value, ['tokensIn', 'tokensOut', 'contextTokens', 'createdAt', 'updatedAt']) &&
     isOptionalString(value.interruptReason) &&
-    isOptionalString(value.resumeId)
+    isOptionalString(value.resumeId) &&
+    (value.fastMode === undefined || typeof value.fastMode === 'boolean')
   );
 }
 

@@ -61,6 +61,7 @@ export class ClaudeEventMapper {
   private readonly subagents = new ClaudeSubagents();
   // Unpinned sessions learn their model from the main conversation.
   private observedModelId?: string;
+  private reportedFastModeUnavailable = false;
 
   constructor(
     private readonly appSessionId: string,
@@ -77,7 +78,7 @@ export class ClaudeEventMapper {
     this.subagents.beginTurn();
   }
 
-  map(message: SDKMessage): NormalizedEvent[] {
+  map(message: SDKMessage, fastMode = false): NormalizedEvent[] {
     switch (message.type) {
       case 'stream_event':
         return this.streamEvent(message.event, message.parent_tool_use_id);
@@ -86,7 +87,7 @@ export class ClaudeEventMapper {
       case 'user':
         return this.toolResults(message);
       case 'result':
-        return this.result(message);
+        return [...this.fastModeNotice(message, fastMode), ...this.result(message)];
       case 'rate_limit_event':
         return this.rateLimit(message.rate_limit_info);
       case 'system':
@@ -262,6 +263,21 @@ export class ClaudeEventMapper {
         }),
       };
     });
+  }
+
+  private fastModeNotice(
+    message: Extract<SDKMessage, { type: 'result' }>,
+    requested: boolean,
+  ): NormalizedEvent[] {
+    if (!requested || this.reportedFastModeUnavailable) return [];
+    const reason =
+      message.fast_mode_disabled_reason ??
+      (message.fast_mode_state !== 'on' ? message.fast_mode_state : undefined);
+    if (!reason) return [];
+    this.reportedFastModeUnavailable = true;
+    return [
+      this.statusEvent(`Fast mode is unavailable for this model: ${reason.replaceAll('_', ' ')}`),
+    ];
   }
 
   // The session's own spend. `modelUsage` would be cumulative for the whole

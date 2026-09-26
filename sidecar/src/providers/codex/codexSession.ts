@@ -129,6 +129,7 @@ export class CodexSession implements ProviderSession {
       cwd: this.cwd,
       approvalPolicy,
       sandbox,
+      serviceTier: this.model.fastMode ? 'priority' : 'default',
       ...(this.model.modelId ? { model: this.model.modelId } : {}),
     };
     const response = await (resumeId
@@ -231,6 +232,7 @@ export class CodexSession implements ProviderSession {
       model.reasoningEffort = settings.reasoningEffort;
       this.effortCleared = false;
     }
+    if (settings.fastMode !== undefined) model.fastMode = settings.fastMode;
     const previous = this.model;
     this.model = model;
     this.mapper.setModel({ ...this.model, modelId: this.model.modelId ?? this.threadModel });

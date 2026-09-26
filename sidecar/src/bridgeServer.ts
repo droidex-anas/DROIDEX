@@ -253,6 +253,14 @@ export function startBridgeServer(options: {
       if (typeof parsed === 'object' && parsed !== null && 'mentions' in parsed) {
         assertValidMentions(parsed);
       }
+      if (typeof parsed === 'object' && parsed !== null && 'fastMode' in parsed) {
+        if (typeof parsed.fastMode !== 'boolean') throw new Error('fastMode must be a boolean.');
+        if (
+          !('type' in parsed) ||
+          (parsed.type !== 'session.create' && parsed.type !== 'session.updateSettings')
+        )
+          throw new Error('Fast mode only applies to top-level session settings.');
+      }
       await options.onCommand(parsed as ClientCommand);
     } catch (err) {
       sendDirectWire(ws, {

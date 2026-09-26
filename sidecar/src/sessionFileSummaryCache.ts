@@ -111,6 +111,7 @@ function hasOptionalSummaryFields(summary: Record<string, unknown>): boolean {
       'autoCompactions',
     ]) &&
     (streaming === undefined || typeof streaming === 'boolean') &&
+    (summary.fastMode === undefined || typeof summary.fastMode === 'boolean') &&
     (compactedFromProviderSessionIds === undefined || stringArray(compactedFromProviderSessionIds))
   );
 }

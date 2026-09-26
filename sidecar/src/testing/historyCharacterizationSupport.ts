@@ -28,6 +28,7 @@ type PersistedSummaryPatch = Pick<
   | 'workspaceKind'
   | 'modelId'
   | 'reasoningEffort'
+  | 'fastMode'
   | 'compactionModel'
   | 'workerModelId'
   | 'workerReasoningEffort'
@@ -259,6 +260,7 @@ function materializePersistedSummaryPatch(summary: Protocol.SessionSummary): Per
     ...whenDefined(summary.workspaceKind, (workspaceKind) => ({ workspaceKind })),
     ...whenDefined(summary.modelId, (modelId) => ({ modelId })),
     ...whenDefined(summary.reasoningEffort, (reasoningEffort) => ({ reasoningEffort })),
+    ...whenDefined(summary.fastMode, (fastMode) => ({ fastMode })),
     ...whenDefined(summary.compactionModel, (compactionModel) => ({ compactionModel })),
     ...whenDefined(summary.workerModelId, (workerModelId) => ({ workerModelId })),
     ...whenDefined(summary.workerReasoningEffort, (workerReasoningEffort) => ({

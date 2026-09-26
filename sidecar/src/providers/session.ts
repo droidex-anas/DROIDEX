@@ -34,6 +34,7 @@ export interface ProviderResumeInput {
   // its own and therefore cannot read them back. Droid reads its own.
   modelId?: string;
   reasoningEffort?: ReasoningEffort;
+  fastMode?: boolean;
   autonomy?: Autonomy;
   interactions: ProviderInteractions;
 }
@@ -45,6 +46,7 @@ export interface ProviderModelSettings {
   // A level selects it; null clears the level a previous model carried, for a
   // model that offers none; absent leaves it alone.
   reasoningEffort?: ReasoningEffort | null;
+  fastMode?: boolean;
 }
 
 // A live voice conversation on the same session: the client negotiates WebRTC

@@ -24,6 +24,7 @@ import { storedNoticeLine } from '../sessionNotices.js';
 interface ProviderSessionStart extends StoredSessionStart {
   modelId?: string;
   reasoningEffort?: string;
+  fastMode?: boolean;
   autonomyLevel?: string;
 }
 
@@ -170,6 +171,7 @@ function headLine(summary: SessionSummary): ProviderSessionStart {
     cwd: summary.cwd,
     title: summary.title,
     autonomyLevel: summary.autonomy,
+    ...(summary.fastMode !== undefined ? { fastMode: summary.fastMode } : {}),
     ...(summary.resumeId ? { resumeId: summary.resumeId } : {}),
     ...(summary.modelId ? { modelId: summary.modelId } : {}),
     ...(summary.reasoningEffort ? { reasoningEffort: summary.reasoningEffort } : {}),

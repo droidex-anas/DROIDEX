@@ -472,3 +472,36 @@ test("the session's totals count the main loop, not its subagents", () => {
   assert.deepEqual(tokens(message({ type: 'conversation_reset' })), []);
   assert.deepEqual(tokens(turn(7, 3)), [{ tokensIn: 7, tokensOut: 3, contextTokens: 0 }]);
 });
+
+test('requested fast mode reports unavailability once without marking the row as an error', () => {
+  const mapper = new ClaudeEventMapper('app-fast');
+  const result = message({
+    type: 'result',
+    subtype: 'success',
+    usage: mainLoopUsage(1, 1),
+    permission_denials: [],
+    fast_mode_state: 'off',
+    fast_mode_disabled_reason: 'model_not_allowed',
+  });
+  assert.equal(mapper.map(result).filter((event) => event.transcript).length, 0);
+  const rows = mapper
+    .map(result, true)
+    .flatMap((event) => (event.transcript ? [event.transcript] : []));
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0].kind, 'status');
+  assert.equal(rows[0].isError, undefined);
+  assert.equal(rows[0].text, 'Fast mode is unavailable for this model: model not allowed');
+  assert.equal(mapper.map(result, true).filter((event) => event.transcript).length, 0);
+  const cooldown = new ClaudeEventMapper('app-cooldown');
+  const cooldownRows = cooldown.map(
+    message({
+      type: 'result',
+      subtype: 'success',
+      usage: mainLoopUsage(1, 1),
+      permission_denials: [],
+      fast_mode_state: 'cooldown',
+    }),
+    true,
+  );
+  assert.match(cooldownRows[0].transcript?.text ?? '', /cooldown/);
+});
