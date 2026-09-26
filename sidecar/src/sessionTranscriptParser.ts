@@ -120,6 +120,8 @@ function assistantBlockEvent(
       // Carry the tool_use id so persisted child-session links resolve exactly
       // (duplicate-label spawns would otherwise fall back to label match).
       toolUseId: stringValue(block.id),
+      pollsChildSessionId: stringValue(block.pollsChildSessionId),
+      ...(block.interrupted === true ? { interrupted: true } : {}),
     });
   }
   return null;
@@ -142,6 +144,8 @@ function nonAssistantBlockEvent(
       // result to its tool_call exactly (result blocks have no name and
       // may not be adjacent to their call after replay/batching).
       toolUseId: stringValue(block.tool_use_id ?? block.toolUseId) ?? undefined,
+      pollsChildSessionId: stringValue(block.pollsChildSessionId),
+      ...(block.interrupted === true ? { interrupted: true } : {}),
     });
   }
   if (messageRole === 'user' && type === 'text') {

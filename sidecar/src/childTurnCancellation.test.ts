@@ -51,6 +51,7 @@ function parentWith(
     generation: 1,
     lease: {} as ParentChildSessions['lease'],
     children: new Map([[id, childState]]),
+    spawnChildren: new Map(),
     settledSinceWake: new Set(),
     pendingSpawns: new Map(),
     openAttempts: open ? new Map([[id, open]]) : new Map(),

@@ -658,6 +658,42 @@ test('poll observations never rekey a child away from its spawn link', () => {
   assert.equal(children[0]?.label, 'worker');
   assert.equal(children[0]?.status, 'running');
   assert.equal(children[0]?.streamFidelity, 'state');
+  assert.deepEqual(h.owner.childScopeForSpawn(h.parentId, { kind: 'tool-use', id: 'tool-spawn' }), {
+    childSessionId: children[0].childSessionId,
+    role: 'worker',
+  });
+  assert.equal(
+    h.owner.childScopeForSpawn(h.parentId, { kind: 'tool-use', id: 'tool-poll' }),
+    undefined,
+  );
+});
+
+test('spawn routing indexes hydrated siblings and moves a late spawn link', async () => {
+  const h = createHarness([
+    childRecord('a', 'provider-a', 'shared'),
+    childRecord('b', 'provider-b', 'shared'),
+    childRecord('c', 'provider-c', 'original'),
+  ]);
+  const scope = (id: string) => h.owner.childScopeForSpawn(h.parentId, { kind: 'tool-use', id });
+  assert.equal(scope('shared'), 'ambiguous');
+  assert.deepEqual(scope('original'), { childSessionId: 'c', role: 'worker' });
+
+  h.owner.admitChildObservation({
+    parentAppSessionId: h.parentId,
+    role: 'validator',
+    spawnLink: { kind: 'tool-use', id: 'replacement' },
+  });
+  h.owner.admitChildObservation({
+    parentAppSessionId: h.parentId,
+    providerSessionId: 'provider-c',
+    role: 'validator',
+    spawnLink: { kind: 'tool-use', id: 'replacement' },
+    modelId: 'model-default',
+  });
+  await new Promise<void>((resolve) => setImmediate(resolve));
+  assert.equal(scope('original'), undefined);
+  assert.deepEqual(scope('replacement'), { childSessionId: 'c', role: 'validator' });
+  assert.equal(scope('shared'), 'ambiguous');
 });
 
 test('polled Task children keep state fidelity even when a preview arrives', () => {

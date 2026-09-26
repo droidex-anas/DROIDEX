@@ -123,6 +123,7 @@ export interface ParentChildSessions {
   generation: number;
   lease: ChildParentLease;
   children: Map<string, ChildSessionState>;
+  spawnChildren: Map<string, ChildSessionState[]>;
   // Agents that have settled since this parent was last told about a finished
   // wave. Emptied when the wave is reported, so no agent is carried twice.
   settledSinceWake: Set<string>;
@@ -221,6 +222,7 @@ export function setChildStatus(child: ChildSessionState, status: ChildStatus, no
 }
 
 export function applyObservedChild(
+  parent: ParentChildSessions,
   child: ChildSessionState,
   observed: ChildSpawnObservation,
   spawnLink: PersistedChildSpawnLink | undefined,
@@ -255,7 +257,7 @@ export function applyObservedChild(
   child.group ??= observed.group;
   child.phase = observed.phase ?? child.phase;
   child.prompt = observed.prompt ?? child.prompt;
-  child.spawnLink = spawnLink ?? child.spawnLink;
+  if (spawnLink) setChildSpawn(parent, child, spawnLink);
   child.activity = observed.activity ?? child.activity;
   child.tokensUsed = observed.tokensUsed ?? child.tokensUsed;
   child.transcriptAvailable = observed.transcriptAvailable ?? true;
@@ -346,16 +348,39 @@ export function findChildBySpawn(parent: ParentChildSessions, spawnLink: Persist
   return childrenBySpawn(parent, spawnLink)[0];
 }
 
-// Every child that carries this spawn. A workflow gives all of its agents the
-// same spawn link, so a caller that needs one child has to say what it means by
-// "the" child rather than take whichever comes first.
+export function addChild(parent: ParentChildSessions, child: ChildSessionState): void {
+  parent.children.set(child.identity.childSessionId, child);
+  if (child.spawnLink) setChildSpawn(parent, child, child.spawnLink);
+}
+
+function setChildSpawn(
+  parent: ParentChildSessions,
+  child: ChildSessionState,
+  spawnLink: PersistedChildSpawnLink,
+): void {
+  const key = `${spawnLink.kind}:${spawnLink.id}`;
+  const previous = child.spawnLink;
+  const previousKey = previous ? `${previous.kind}:${previous.id}` : undefined;
+  if (previousKey && previousKey !== key) {
+    const siblings = parent.spawnChildren.get(previousKey);
+    if (siblings) {
+      const index = siblings.indexOf(child);
+      if (index !== -1) siblings.splice(index, 1);
+      if (siblings.length === 0) parent.spawnChildren.delete(previousKey);
+    }
+  }
+  child.spawnLink = spawnLink;
+  const siblings = parent.spawnChildren.get(key);
+  if (!siblings) parent.spawnChildren.set(key, [child]);
+  else if (!siblings.includes(child)) siblings.push(child);
+}
+
+// Shared workflow spawns retain all siblings so routing can report ambiguity.
 export function childrenBySpawn(
   parent: ParentChildSessions,
   spawnLink: PersistedChildSpawnLink,
-): ChildSessionState[] {
-  return [...parent.children.values()].filter(
-    (child) => child.spawnLink?.kind === spawnLink.kind && child.spawnLink.id === spawnLink.id,
-  );
+): readonly ChildSessionState[] {
+  return parent.spawnChildren.get(`${spawnLink.kind}:${spawnLink.id}`) ?? [];
 }
 
 function pendingObservationKey(observation: ChildSpawnObservation): string | undefined {
