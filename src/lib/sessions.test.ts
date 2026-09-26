@@ -1,6 +1,11 @@
 import test from 'node:test';
 import assert from 'node:assert';
-import { activeSessionCwds, sessionIsLive, sessionIsUnread } from './sessions';
+import {
+  activeSessionCwds,
+  hasActiveSessionWork,
+  sessionIsLive,
+  sessionIsUnread,
+} from './sessions';
 import type { SessionSummary } from '../types/bridge';
 
 function session(over: Partial<SessionSummary>): SessionSummary {
@@ -111,19 +116,9 @@ test('activeSessionCwds includes directories pinned by embedded terminals', () =
   assert.deepEqual(cwds, ['/repo/terminal']);
 });
 
-test('update restart protection sees primary turns and live child sessions as active work', async () => {
-  const module = (await import('./sessions')) as unknown as {
-    hasActiveSessionWork?: (options: {
-      sessions: Record<string, SessionSummary>;
-      childSessions: Record<string, Record<string, { status: string }>>;
-      childRuntime: Record<string, Record<string, { available: boolean }>>;
-    }) => boolean;
-  };
-  assert.equal(typeof module.hasActiveSessionWork, 'function');
-  if (!module.hasActiveSessionWork) return;
-
+test('update restart protection sees primary turns and live child sessions as active work', () => {
   assert.equal(
-    module.hasActiveSessionWork({
+    hasActiveSessionWork({
       sessions: { primary: session({ phase: 'running', streaming: true }) },
       childSessions: {},
       childRuntime: {},
@@ -131,7 +126,7 @@ test('update restart protection sees primary turns and live child sessions as ac
     true,
   );
   assert.equal(
-    module.hasActiveSessionWork({
+    hasActiveSessionWork({
       sessions: { parent: session({ phase: 'completed', streaming: false }) },
       childSessions: { parent: { worker: { status: 'running' } } },
       childRuntime: { parent: { worker: { available: true } } },
@@ -139,11 +134,38 @@ test('update restart protection sees primary turns and live child sessions as ac
     true,
   );
   assert.equal(
-    module.hasActiveSessionWork({
+    hasActiveSessionWork({
       sessions: { done: session({ phase: 'completed', streaming: false }) },
       childSessions: { done: { worker: { status: 'running' } } },
       childRuntime: {},
     }),
     false,
   );
+});
+
+test('active work follows immutable session and child runtime changes between transcript revisions', () => {
+  const idle = {
+    sessions: { parent: session({ phase: 'completed', streaming: false }) },
+    childSessions: { parent: { worker: { status: 'running' as const } } },
+    childRuntime: { parent: { worker: { available: false } } },
+  };
+  assert.equal(hasActiveSessionWork(idle), false);
+  assert.equal(hasActiveSessionWork({ ...idle }), false);
+  assert.equal(
+    hasActiveSessionWork({
+      ...idle,
+      sessions: { parent: session({ phase: 'running', streaming: true }) },
+    }),
+    true,
+  );
+  const liveChild = { ...idle, childRuntime: { parent: { worker: { available: true } } } };
+  assert.equal(hasActiveSessionWork(liveChild), true);
+  assert.equal(
+    hasActiveSessionWork({
+      ...liveChild,
+      childSessions: { parent: { worker: { status: 'completed' } } },
+    }),
+    false,
+  );
+  assert.equal(hasActiveSessionWork(idle), false);
 });

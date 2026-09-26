@@ -57,19 +57,35 @@ export function appendTranscriptEvents(
   }
 
   let next = state;
+  let ownsMaps = false;
   for (const [appSessionId, sessionEvents] of eventsBySession) {
     const previous = next.transcripts[appSessionId] ?? [];
     const previousCost =
       next.transcriptRetainedCost[appSessionId] ?? estimateTranscriptCost(previous);
     if (couldReachEmergencyWindow(previous, previousCost, sessionEvents)) {
       next = sessionEvents.reduce(appendTranscriptEvent, next);
+      ownsMaps = false;
       continue;
     }
     const ingested = ingestTranscriptEvents(previous, previousCost, sessionEvents);
     if (!ingested.change) continue;
-    next = withUpdatedTranscript(next, appSessionId, ingested.events, ingested.estimatedCost, {
-      mutation: ingested.change,
-    });
+    // Below the emergency ceiling, ingestion has already normalized the window.
+    // These copies remain private until the entire contiguous run is returned.
+    if (!ownsMaps) {
+      next = {
+        ...next,
+        transcripts: { ...next.transcripts },
+        transcriptMutations: { ...next.transcriptMutations },
+        transcriptRetainedCost: { ...next.transcriptRetainedCost },
+      };
+      ownsMaps = true;
+    }
+    next.transcripts[appSessionId] = ingested.events;
+    next.transcriptMutations[appSessionId] = nextTranscriptMutation(
+      next.transcriptMutations[appSessionId],
+      ingested.change,
+    );
+    next.transcriptRetainedCost[appSessionId] = ingested.estimatedCost;
   }
   return next;
 }
