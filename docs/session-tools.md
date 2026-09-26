@@ -1,7 +1,9 @@
 # Session tools
 
-A chat on Droid or Claude Code is given DROIDEX's in-app MCP server,
-`droidex-sessions`, which carries all eleven tools on one listener per session.
+A chat on Droid, Claude Code or Codex is given DROIDEX's in-app session tools.
+On Droid and Claude Code, `droidex-sessions` carries all eleven tools on one
+listener per session. Codex receives the same tools as deferred dynamic tools
+in the `droidex_sessions` namespace, with no local MCP listener.
 Unattended automation runs never get it, and nothing in it runs until a tool is
 called.
 
@@ -127,12 +129,13 @@ it does not apply a change the tool already reported as failed.
 
 ## Codex
 
-The Codex runtime does not connect to DROIDEX's in-app servers, so a Codex chat
-has none of these tools. As a target it is like any other chat, and its
-approvals and questions pass through the same interactions, so every status
-means the same on each harness. `thread_spawn` can start a Codex chat of either
-kind; a Codex thread still reports back and its questions still reach the chat
-that started it, but it cannot start chats of its own.
+Codex declares the session and automation tools in the deferred
+`droidex_sessions` and `droidex_automations` namespaces when a new thread starts.
+It loads a tool when needed, calls DROIDEX's handler, and follows the same
+approval and Always allow rules as Droid and Claude Code. Typed and spoken turns
+share the thread and its tools. Codex restores the declarations on resume, but
+cannot add them to a thread started before this feature; that chat keeps working
+without in-app tools. Start a new Codex chat to use them.
 
 ## Known gaps
 
@@ -140,7 +143,5 @@ that started it, but it cannot start chats of its own.
   Uncommitted changes, so these tools call such a chat Recent and say so.
 - The message loop brake and both limits on started chats live in memory and
   reset when DROIDEX restarts.
-- DROIDEX still starts its in-app servers for a Codex session, which never
-  connects to them.
 - On Droid a card appears only when Droid asks DROIDEX, and an Always allow is
   passed on to Droid, which decides whether it stops asking for the whole tool.

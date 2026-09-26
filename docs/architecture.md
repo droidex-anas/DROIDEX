@@ -78,9 +78,11 @@ chat that started it, and the human can still answer it in the thread.
 The renderer keeps the projects snapshot once in its app store and opens
 conversations through the normal chat and composer. A chat's own tools for
 starting and steering other chats arrive the way the browser's and automations'
-do: an in-app MCP server, `droidex-sessions`, started per session alongside
-them and never for an unattended automation run. Its sidebar tools never keep a
-copy of the sidebar: each call sends the window a `sidebar.request` and waits up
+do: the `droidex-sessions` in-app MCP server for Droid and Claude Code, or
+deferred dynamic tools using the same handlers for Codex. Codex does not start
+local MCP listeners, and unattended automation runs receive neither set. The
+sidebar tools never keep a copy of the sidebar: each call sends the window a
+`sidebar.request` and waits up
 to three seconds for its `sidebar.result`, which the app root answers from one
 read of the store, so it works with the sidebar collapsed. See
 [Session tools](session-tools.md) for the eleven tools, and
