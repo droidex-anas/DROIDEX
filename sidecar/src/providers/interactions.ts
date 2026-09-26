@@ -1,4 +1,9 @@
-import type { PermissionOutcome, PermissionRequest, SessionQuestion } from '../protocol.js';
+import type {
+  PermissionOutcome,
+  PermissionRequest,
+  QuestionAnswer,
+  SessionQuestion,
+} from '../protocol.js';
 
 // An approval a provider runtime needs from the user, in DROIDEX's own terms:
 // the request the renderer receives, plus what the session layer decides with.
@@ -14,7 +19,7 @@ export interface ProviderApprovalRequest {
 
 export interface ProviderQuestionAnswers {
   cancelled: boolean;
-  answers: { index: number; question: string; answer: string }[];
+  answers: QuestionAnswer[];
 }
 
 // A session's side of the user interactions a provider runtime needs. Provider

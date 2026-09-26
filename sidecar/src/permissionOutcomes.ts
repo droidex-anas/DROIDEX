@@ -12,24 +12,17 @@ const PERMISSION_OUTCOMES: Record<PermissionOutcome, true> = {
   proceed_new_session_medium: true,
   proceed_new_session_high: true,
   proceed_edit: true,
+  refuse: true,
   cancel: true,
 };
 
-// An MCP always-allow the renderer may still send; DROIDEX records it as a plain
-// always-allow grant.
-const OUTCOME_ALIASES = new Map<string, PermissionOutcome>([
-  ['proceed_always_tools', 'proceed_always'],
-]);
-
 export function normalizePermissionOutcome(outcome: string): PermissionOutcome {
-  const alias = OUTCOME_ALIASES.get(outcome);
-  if (alias) return alias;
   if (Object.hasOwn(PERMISSION_OUTCOMES, outcome)) return outcome as PermissionOutcome;
   throw new Error(`Unsupported permission outcome: ${outcome}`);
 }
 
 export function isApprovalOutcome(outcome: string): boolean {
-  return normalizePermissionOutcome(outcome) !== 'cancel';
+  return normalizePermissionOutcome(outcome).startsWith('proceed');
 }
 
 // True only for a valid "always allow" outcome. Invalid/unknown outcomes return

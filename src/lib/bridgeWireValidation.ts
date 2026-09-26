@@ -385,6 +385,8 @@ function isPermissionRequest(value: unknown): boolean {
     isRecord(value) &&
     hasStrings(value, ['appSessionId', 'requestId', 'kind', 'title', 'detail']) &&
     isPermissionKind(value.kind) &&
+    typeof value.canAlwaysAllow === 'boolean' &&
+    (value.diff === undefined || typeof value.diff === 'string') &&
     'raw' in value
   );
 }
@@ -428,7 +430,15 @@ function isSessionQuestion(value: unknown): boolean {
         isRecord(question) &&
         typeof question.index === 'number' &&
         typeof question.question === 'string' &&
-        stringArray(question.options),
+        (question.header === undefined || typeof question.header === 'string') &&
+        (question.multiSelect === undefined || typeof question.multiSelect === 'boolean') &&
+        Array.isArray(question.options) &&
+        question.options.every(
+          (option) =>
+            isRecord(option) &&
+            typeof option.label === 'string' &&
+            (option.description === undefined || typeof option.description === 'string'),
+        ),
     )
   );
 }

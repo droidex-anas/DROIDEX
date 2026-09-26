@@ -57,6 +57,7 @@ export interface CodexApproval {
   kind: Extract<PermissionKind, 'exec' | 'edit'>;
   title: string;
   detail: string;
+  diff?: string;
   // The key an always-allow grant is stored under; absent leaves the request
   // ineligible for one.
   signature?: string;
@@ -86,18 +87,23 @@ function commandApproval(params: CommandApproval): CodexApproval {
   const grant = params.command ?? (actions.length > 0 ? JSON.stringify(actions) : '');
   return {
     kind: 'exec',
-    title: 'Bash',
-    detail: params.reason ? `${command}\n\n${params.reason}` : command,
+    title: params.reason ?? 'Bash',
+    detail: command,
     ...(grant ? { signature: `exec::${grant}` } : {}),
     raw: params,
   };
 }
 
-function fileChangeApproval(params: FileChangeApproval, files: string | undefined): CodexApproval {
+function fileChangeApproval(
+  params: FileChangeApproval,
+  change: { detail: string; diff?: string } | undefined,
+): CodexApproval {
+  const files = change?.detail;
   return {
     kind: 'edit',
-    title: 'Edit',
-    detail: params.reason ? `${files ?? ''}\n\n${params.reason}` : (files ?? 'File changes'),
+    title: params.reason ?? 'Edit',
+    detail: files ?? '',
+    ...(change?.diff !== undefined ? { diff: change.diff } : {}),
     ...(files ? { signature: `edit::${files}` } : {}),
     raw: params,
   };
@@ -115,6 +121,8 @@ async function decideApproval(
       kind: approval.kind,
       title: approval.title,
       detail: approval.detail,
+      canAlwaysAllow: Boolean(approval.signature),
+      ...(approval.diff !== undefined ? { diff: approval.diff } : {}),
       raw: approval.raw,
     },
     confirmationType: approval.kind,
@@ -132,11 +140,13 @@ function approvalDecision(outcome: PermissionOutcome): ApprovalDecision {
 interface RequestedQuestion {
   id: string;
   question: string;
-  options: { label: string }[] | null;
+  header?: string;
+  multiSelect?: boolean;
+  options: { label: string; description?: string }[] | null;
 }
 
-// Codex keys answers by question id and accepts several per question; DROIDEX
-// asks one answer per question, in order. An empty map is the cancellation.
+// Codex keys answers by question id and preserves each selection.
+// An empty map is the cancellation.
 async function answerQuestions(
   interactions: ProviderInteractions,
   questions: RequestedQuestion[],
@@ -145,14 +155,16 @@ async function answerQuestions(
     questions.map((asked, index) => ({
       index,
       question: asked.question,
-      options: (asked.options ?? []).map((option) => option.label),
+      options: asked.options ?? [],
+      ...(asked.header !== undefined ? { header: asked.header } : {}),
+      ...(asked.multiSelect !== undefined ? { multiSelect: asked.multiSelect } : {}),
     })),
   );
   if (cancelled) return {};
   const byId: Record<string, { answers: string[] }> = {};
   for (const answer of answers) {
     const id = questions[answer.index]?.id;
-    if (id) byId[id] = { answers: [answer.answer] };
+    if (id) byId[id] = { answers: [...answer.selected, ...(answer.custom ? [answer.custom] : [])] };
   }
   return byId;
 }
@@ -169,11 +181,10 @@ export class OpenPrompts {
     private readonly interactions: ProviderInteractions,
   ) {}
 
-  // A file-change request carries no description of its own, so `fileDetail`
-  // names the files from the item the event mapper is tracking.
+  // File-change requests take their paths and diff from the tracked item.
   register(
     client: Pick<AppServerClient, 'onRequest'>,
-    fileDetail: (itemId: string) => string | undefined,
+    fileDetail: (itemId: string) => { detail: string; diff?: string } | undefined,
   ): void {
     client.onRequest('item/commandExecution/requestApproval', (params) =>
       this.decide(commandApproval(params as CommandApproval)),

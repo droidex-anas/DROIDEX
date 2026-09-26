@@ -229,6 +229,7 @@ test('priority events flush queued work before their immediate batch', () => {
       appSessionId: 'app',
       requestId: 'approval',
       kind: 'exec',
+      canAlwaysAllow: true,
       title: 'Run command',
       detail: 'npm test',
       raw: {},

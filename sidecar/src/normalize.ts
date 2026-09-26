@@ -552,7 +552,17 @@ export function classifyPermission(
       detail = JSON.stringify(c);
   }
 
-  return { appSessionId: appSessionId, requestId, kind, title, detail, plan, options, raw: params };
+  return {
+    appSessionId,
+    requestId,
+    kind,
+    title,
+    detail,
+    canAlwaysAllow: Boolean(permissionSignature(params)),
+    plan,
+    options,
+    raw: params,
+  };
 }
 
 export function confirmationType(params: RequestPermissionRequestParams): string {
@@ -595,11 +605,13 @@ export function permissionSignature(params: RequestPermissionRequestParams): str
     case 'exec': {
       const fullCommand = typeof c.fullCommand === 'string' ? c.fullCommand : '';
       const command = typeof c.command === 'string' ? c.command : '';
-      return `exec::${fullCommand || command}`;
+      const concreteCommand = fullCommand || command;
+      return concreteCommand ? `exec::${concreteCommand}` : '';
     }
     case 'mcp_tool': {
       const serverName = typeof c.serverName === 'string' ? c.serverName : '';
       const toolName = typeof c.toolName === 'string' ? c.toolName : '';
+      if (!toolName) return '';
       const key = `mcp::${serverName}::${toolName}`;
       if (!isAutomationMutationPermission(params)) return key;
       const args = toolArgumentDigest(primaryToolInput(params));

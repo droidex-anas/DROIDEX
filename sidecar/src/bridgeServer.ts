@@ -8,6 +8,7 @@ import { stat } from 'node:fs/promises';
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 import { pipeline } from 'node:stream/promises';
 
+import { assertValidInteractionResponse } from './interactionResponses.js';
 import { assertValidResponseFormat } from './appPrompt.js';
 import { assertValidMentions } from './providers/catalog.js';
 import { BridgeEventBatcher, type BridgeEventBatchMetadata } from './bridgeEventBatcher.js';
@@ -253,6 +254,7 @@ export function startBridgeServer(options: {
       if (typeof parsed === 'object' && parsed !== null && 'mentions' in parsed) {
         assertValidMentions(parsed);
       }
+      assertValidInteractionResponse(parsed);
       await options.onCommand(parsed as ClientCommand);
     } catch (err) {
       sendDirectWire(ws, {

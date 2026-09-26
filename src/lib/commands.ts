@@ -11,6 +11,7 @@ import type {
   InstallChannel,
   McpServerInput,
   PermissionOutcome,
+  QuestionAnswer,
   ProviderKind,
   ProviderMention,
   ReasoningEffort,
@@ -194,7 +195,7 @@ export const respondQuestion = (
   appSessionId: string,
   requestId: string,
   cancelled: boolean,
-  answers: { index: number; question: string; answer: string }[],
+  answers: QuestionAnswer[],
 ) => {
   bridge.send({ type: 'question.respond', appSessionId, requestId, cancelled, answers });
 };

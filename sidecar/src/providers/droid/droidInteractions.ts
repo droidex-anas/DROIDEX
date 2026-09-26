@@ -23,6 +23,8 @@ const DROID_OUTCOMES: Record<PermissionOutcome, ToolConfirmationOutcome> = {
   proceed_new_session_medium: ToolConfirmationOutcome.ProceedNewSessionMedium,
   proceed_new_session_high: ToolConfirmationOutcome.ProceedNewSessionHigh,
   proceed_edit: ToolConfirmationOutcome.ProceedEdit,
+  // The Droid SDK exposes Cancel as its only refusal outcome.
+  refuse: ToolConfirmationOutcome.Cancel,
   cancel: ToolConfirmationOutcome.Cancel,
 };
 
@@ -35,7 +37,17 @@ export function droidInteractionHandlers(
   return {
     permissionHandler: async (params) =>
       DROID_OUTCOMES[await requestApproval(ref.id, params, interactions)],
-    askUserHandler: async (params) => await interactions.requestQuestion(askedQuestions(params)),
+    askUserHandler: async (params) => {
+      const result = await interactions.requestQuestion(askedQuestions(params));
+      return {
+        cancelled: result.cancelled,
+        answers: result.answers.map(({ index, question, selected, custom }) => ({
+          index,
+          question,
+          answer: [...selected, ...(custom ? [custom] : [])].join('\n'),
+        })),
+      };
+    },
   };
 }
 
@@ -61,6 +73,6 @@ function askedQuestions(params: AskUserRequestParams): SessionQuestion['question
   return (asked.questions ?? []).map((question) => ({
     index: question.index,
     question: question.question,
-    options: question.options ?? [],
+    options: (question.options ?? []).map((label) => ({ label })),
   }));
 }

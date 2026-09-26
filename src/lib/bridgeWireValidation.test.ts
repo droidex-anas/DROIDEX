@@ -24,6 +24,7 @@ test('rejects approval requests with unknown permission kinds', () => {
           kind: 'unknown-permission',
           title: 'Approve action',
           detail: 'Run the requested action.',
+          canAlwaysAllow: true,
           raw: {},
         },
       }),
@@ -427,6 +428,49 @@ test('rejects object payloads that are actually arrays', () => {
         requestId: 'req-1',
         results: [[]],
         indexingIncomplete: false,
+      }),
+    ),
+    null,
+  );
+});
+
+test('interaction wire validation preserves rich questions and approval eligibility', () => {
+  const request = {
+    appSessionId: 'app',
+    requestId: 'approval',
+    kind: 'edit',
+    title: 'Update file',
+    detail: '/a.ts',
+    diff: '-old\n+new',
+    canAlwaysAllow: false,
+    raw: {},
+  };
+  assert.notEqual(serverWireMessage(batch({ type: 'approval.requested', request })), null);
+  assert.equal(
+    serverWireMessage(
+      batch({ type: 'approval.requested', request: { ...request, canAlwaysAllow: undefined } }),
+    ),
+    null,
+  );
+  const question = {
+    appSessionId: 'app',
+    requestId: 'question',
+    questions: [
+      {
+        index: 0,
+        question: 'Choose',
+        header: 'Features',
+        multiSelect: true,
+        options: [{ label: 'Search', description: 'Find records' }],
+      },
+    ],
+  };
+  assert.notEqual(serverWireMessage(batch({ type: 'question.requested', question })), null);
+  assert.equal(
+    serverWireMessage(
+      batch({
+        type: 'question.requested',
+        question: { ...question, questions: [{ ...question.questions[0], options: ['Search'] }] },
       }),
     ),
     null,

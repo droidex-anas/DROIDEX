@@ -8,6 +8,7 @@ import {
   type RequestPermissionRequestParams,
 } from '@factory/droid-sdk';
 
+import { claudeCanUseTool } from './providers/claude/claudePermissions.js';
 import type { ServerEvent, SessionSummary } from './protocol.js';
 import { droidInteractionHandlers } from './providers/droid/droidInteractions.js';
 import { SessionInteractions, type InteractionLiveSession } from './SessionInteractions.js';
@@ -327,9 +328,14 @@ test('ask-user normalizes omitted values and preserves identities and answers', 
   assert.equal(request.appSessionId, 'app-1');
   assert.match(request.requestId, /^req-/);
   assert.deepEqual(request.questions, [{ index: 7, question: 'What should change?', options: [] }]);
-  const answers = [{ index: 7, question: 'What should change?', answer: 'The title' }];
+  const answers = [
+    { index: 7, question: 'What should change?', selected: [], custom: 'The title' },
+  ];
   harness.interactions.respondToQuestion('app-1', request.requestId, false, answers);
-  assert.deepEqual(await pending, { cancelled: false, answers });
+  assert.deepEqual(await pending, {
+    cancelled: false,
+    answers: [{ index: 7, question: 'What should change?', answer: 'The title' }],
+  });
 
   const empty = Promise.resolve(handler({ toolCallId: 'empty' } as AskUserRequestParams));
   assert.deepEqual(questionRequests(harness.emitted).at(-1)?.question.questions, []);
@@ -395,4 +401,101 @@ test('forgetSession is protocol-silent, resolves nothing, and discards owned sta
   assert.ok(request);
   await harness.interactions.respondToApproval('app-1', request.request.requestId, 'cancel');
   assert.equal(await afterResume, ToolConfirmationOutcome.Cancel);
+});
+
+test('Claude answers allow the tool with original question keys and structured selections', async () => {
+  const harness = createHarness();
+  harness.addLiveSession('claude');
+  const callback = claudeCanUseTool(
+    'claude',
+    harness.interactions.interactionsFor({ id: 'claude' }),
+    () => false,
+  );
+  const input = {
+    questions: [
+      {
+        question: 'Which features?',
+        header: 'Features',
+        multiSelect: true,
+        options: [{ label: 'Search', description: 'Find records' }, { label: 'Export' }],
+      },
+    ],
+  };
+  const options = { signal: new AbortController().signal, toolUseID: 'ask', requestId: 'sdk-ask' };
+  const pending = callback('AskUserQuestion', input, options);
+  const request = latestQuestionRequest(harness.emitted);
+  assert.deepEqual(request.questions, [{ index: 0, ...input.questions[0] }]);
+  harness.interactions.respondToQuestion('claude', request.requestId, false, [
+    {
+      index: 0,
+      question: 'Untrusted echoed text',
+      selected: ['Search', 'Export'],
+      custom: 'Offline',
+    },
+  ]);
+  assert.deepEqual(await pending, {
+    behavior: 'allow',
+    updatedInput: { ...input, answers: { 'Which features?': 'Search, Export, Offline' } },
+  });
+  const dismissed = callback('AskUserQuestion', input, options);
+  harness.interactions.respondToQuestion(
+    'claude',
+    latestQuestionRequest(harness.emitted).requestId,
+    true,
+    [],
+  );
+  assert.deepEqual(await dismissed, {
+    behavior: 'deny',
+    message: 'The user dismissed the question.',
+  });
+});
+
+test('Claude always-allow suppression prevents grant reuse, caching, and SDK rule updates', async () => {
+  const harness = createHarness();
+  harness.addLiveSession('claude');
+  const callback = claudeCanUseTool(
+    'claude',
+    harness.interactions.interactionsFor({ id: 'claude' }),
+    () => false,
+  );
+  const options = {
+    signal: new AbortController().signal,
+    toolUseID: 'bash',
+    requestId: 'sdk-bash',
+    title: 'Inspect directory',
+  };
+  const granted = callback('Bash', { command: 'pwd' }, options);
+  const request = latestApprovalRequest(harness.emitted);
+  assert.equal(request.detail, 'pwd');
+  assert.equal(request.title, 'Inspect directory');
+  assert.equal(request.canAlwaysAllow, true);
+  await harness.interactions.respondToApproval('claude', request.requestId, 'proceed_always');
+  assert.deepEqual(await granted, { behavior: 'allow' });
+  for (const command of ['pwd', 'ls']) {
+    const suppressed = callback('Bash', { command }, { ...options, suppressAlwaysAllowRule: true });
+    const asked = latestApprovalRequest(harness.emitted);
+    assert.notEqual(asked.requestId, request.requestId);
+    assert.equal(asked.canAlwaysAllow, false);
+    await harness.interactions.respondToApproval('claude', asked.requestId, 'proceed_always');
+    assert.deepEqual(await suppressed, { behavior: 'allow' });
+  }
+  const uncached = callback('Bash', { command: 'ls' }, options);
+  await harness.interactions.respondToApproval(
+    'claude',
+    latestApprovalRequest(harness.emitted).requestId,
+    'refuse',
+  );
+  assert.deepEqual(await uncached, { behavior: 'deny', message: 'The user declined this tool.' });
+  const unsigned = callback('UnknownTool', {}, options);
+  assert.equal(latestApprovalRequest(harness.emitted).canAlwaysAllow, false);
+  await harness.interactions.respondToApproval(
+    'claude',
+    latestApprovalRequest(harness.emitted).requestId,
+    'cancel',
+  );
+  assert.deepEqual(await unsigned, {
+    behavior: 'deny',
+    message: 'The user stopped this tool.',
+    interrupt: true,
+  });
 });

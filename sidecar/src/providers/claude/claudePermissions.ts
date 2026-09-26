@@ -10,7 +10,7 @@ import {
   normalizeMcpServerName,
 } from '../../automations/permissionPolicy.js';
 import { toolArgumentDigest } from '../../normalize.js';
-import type { Autonomy, PermissionKind } from '../../protocol.js';
+import type { Autonomy, PermissionKind, SessionQuestion } from '../../protocol.js';
 import { nextInteractionRequestId, type ProviderInteractions } from '../interactions.js';
 
 // Off and Low share 'default': the CLI cannot ask for reads, but tools it has
@@ -86,6 +86,7 @@ async function reviewPlan(
       appSessionId,
       requestId: nextInteractionRequestId(),
       kind: 'spec',
+      canAlwaysAllow: false,
       title: 'Plan ready for review',
       detail: plan,
       plan,
@@ -107,13 +108,15 @@ async function approveTool(
   const kind = permissionKind(toolName);
   const mcp = kind === 'mcp' ? mcpTarget(toolName) : undefined;
   const signature = permissionSignature(kind, mcp, input);
+  const canAlwaysAllow = Boolean(signature) && !options.suppressAlwaysAllowRule;
   const outcome = await interactions.requestApproval({
     request: {
       appSessionId,
       requestId: nextInteractionRequestId(),
       kind,
-      title: options.displayName ?? toolName,
-      detail: options.title ?? options.description ?? describeInput(input),
+      canAlwaysAllow,
+      title: options.title ?? options.description ?? options.displayName ?? toolName,
+      detail: describeInput(input),
       raw: { toolName, input },
     },
     confirmationType: CONFIRMATION_TYPES[kind],
@@ -127,15 +130,12 @@ async function approveTool(
   if (!outcome.startsWith('proceed')) return deny('The user declined this tool.');
   return {
     behavior: 'allow',
-    ...(outcome === 'proceed_always' && options.suggestions
+    ...(outcome === 'proceed_always' && canAlwaysAllow && options.suggestions
       ? { updatedPermissions: options.suggestions }
       : {}),
   };
 }
 
-// The questions dialog belongs to the CLI's own UI, and `updatedInput` may only
-// relabel the questions, never answer them. Asking in DROIDEX and handing the
-// answers back as the tool's result is the only way the model hears them.
 async function askUserQuestion(
   input: Record<string, unknown>,
   interactions: ProviderInteractions,
@@ -144,17 +144,26 @@ async function askUserQuestion(
   if (asked.length === 0) return deny('No question was asked.');
   const { cancelled, answers } = await interactions.requestQuestion(asked);
   if (cancelled) return deny('The user dismissed the question.');
-  return deny(answers.map((answer) => `${answer.question}\n${answer.answer}`).join('\n\n'));
+  const byQuestion: Record<string, string> = {};
+  for (const answer of answers) {
+    const question = asked.find((question) => question.index === answer.index);
+    if (!question) continue;
+    byQuestion[question.question] = [
+      ...answer.selected,
+      ...(answer.custom ? [answer.custom] : []),
+    ].join(', ');
+  }
+  return { behavior: 'allow', updatedInput: { ...input, answers: byQuestion } };
 }
 
 interface AskedQuestion {
   question?: unknown;
-  options?: { label?: unknown }[];
+  header?: unknown;
+  multiSelect?: unknown;
+  options?: { label?: unknown; description?: unknown }[];
 }
 
-function askedQuestions(
-  input: Record<string, unknown>,
-): { index: number; question: string; options: string[] }[] {
+function askedQuestions(input: Record<string, unknown>): SessionQuestion['questions'] {
   const questions = Array.isArray(input.questions) ? (input.questions as AskedQuestion[]) : [];
   return questions.flatMap((asked, index) =>
     typeof asked.question === 'string'
@@ -162,8 +171,19 @@ function askedQuestions(
           {
             index,
             question: asked.question,
+            ...(typeof asked.header === 'string' ? { header: asked.header } : {}),
+            ...(typeof asked.multiSelect === 'boolean' ? { multiSelect: asked.multiSelect } : {}),
             options: (asked.options ?? []).flatMap((option) =>
-              typeof option.label === 'string' ? [option.label] : [],
+              typeof option.label === 'string'
+                ? [
+                    {
+                      label: option.label,
+                      ...(typeof option.description === 'string'
+                        ? { description: option.description }
+                        : {}),
+                    },
+                  ]
+                : [],
             ),
           },
         ]
@@ -215,6 +235,8 @@ function permissionSignature(
 }
 
 function describeInput(input: Record<string, unknown>): string {
+  const concrete = text(input.command) ?? text(input.file_path) ?? text(input.notebook_path);
+  if (concrete) return concrete;
   return Object.entries(input)
     .map(([key, value]) => `${key}: ${typeof value === 'string' ? value : JSON.stringify(value)}`)
     .join('\n');

@@ -5,6 +5,7 @@ import test from 'node:test';
 
 import { WebSocket } from 'ws';
 
+import { assertValidInteractionResponse } from './interactionResponses.js';
 import { startBridgeServer } from './bridgeServer.js';
 import { droidexUserDataDir } from './droidexPaths.js';
 import {
@@ -412,3 +413,42 @@ function waitFor(predicate: () => boolean, timeoutMs = 2_000): Promise<void> {
     }, 10);
   });
 }
+
+test('interaction responses require correlation and structured answers at the command boundary', () => {
+  const approval = {
+    type: 'approval.respond',
+    appSessionId: 'app',
+    requestId: 'approval',
+    outcome: 'refuse',
+  };
+  assert.doesNotThrow(() => assertValidInteractionResponse(approval));
+  assert.throws(() => assertValidInteractionResponse({ ...approval, requestId: '' }), /requestId/);
+  assert.throws(
+    () => assertValidInteractionResponse({ ...approval, outcome: 'unknown' }),
+    /Unsupported permission outcome/,
+  );
+  const question = {
+    type: 'question.respond',
+    appSessionId: 'app',
+    requestId: 'question',
+    cancelled: false,
+    answers: [{ index: 0, question: 'Choose', selected: ['A', 'B'], custom: 'C' }],
+  };
+  assert.doesNotThrow(() => assertValidInteractionResponse(question));
+  assert.throws(
+    () =>
+      assertValidInteractionResponse({
+        ...question,
+        answers: [{ index: 0, question: 'Choose', answer: 'A' }],
+      }),
+    /structured answers/,
+  );
+  assert.throws(
+    () =>
+      assertValidInteractionResponse({
+        ...question,
+        answers: [{ ...question.answers[0], selected: [42] }],
+      }),
+    /structured answers/,
+  );
+});

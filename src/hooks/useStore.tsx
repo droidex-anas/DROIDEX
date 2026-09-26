@@ -279,9 +279,9 @@ export interface AppState {
   childRuntime: Record<string, Record<string, ChildRuntimeState>>;
   // Pending permission requests are scoped to the session that asked, so a
   // request from one chat never appears (or gets answered) in another.
-  pendingPermissions: Record<string, PermissionRequest>;
+  pendingPermissions: Partial<Record<string, PermissionRequest[]>>;
   // Same scoping for AskUser questions: keyed by the asking session.
-  pendingQuestions: Record<string, SessionQuestion>;
+  pendingQuestions: Partial<Record<string, SessionQuestion[]>>;
   contextStats: {
     primary: Record<string, ContextStatsSnapshot>;
     child: Record<string, Record<string, ContextStatsSnapshot>>;
@@ -575,8 +575,8 @@ type Action =
       parentAppSessionId: string;
       childSessionId: string;
     }
-  | { type: 'CLEAR_PERMISSION'; appSessionId: string }
-  | { type: 'CLEAR_QUESTION'; appSessionId: string }
+  | { type: 'CLEAR_PERMISSION'; appSessionId: string; requestId: string }
+  | { type: 'CLEAR_QUESTION'; appSessionId: string; requestId: string }
   | { type: 'CLEAR_INTERACTION'; appSessionId: string; requestId: string }
 
   // UI
@@ -865,18 +865,17 @@ function closeActiveUtilityPanel(state: AppState): AppState {
     : { ...state, utilityPanels: { ...state.utilityPanels, [appSessionId]: panel } };
 }
 
-// Drops the open request a session was cancelled out of. Keyed on the request
-// id as well as the session so a card raised after the cancellation stays.
-function withoutCancelledRequest<T extends { requestId: string }>(
-  pending: Record<string, T>,
+// Settle only the matching request, retaining the order of everything still pending.
+function withoutPendingRequest<T extends { requestId: string }>(
+  pending: Partial<Record<string, T[]>>,
   appSessionId: string,
   requestId: string,
-): Record<string, T> {
-  return Object.fromEntries(
-    Object.entries(pending).filter(
-      ([id, request]) => id !== appSessionId || request.requestId !== requestId,
-    ),
-  );
+): Partial<Record<string, T[]>> {
+  const requests = pending[appSessionId];
+  if (!requests?.some((request) => request.requestId === requestId)) return pending;
+  const remaining = requests.filter((request) => request.requestId !== requestId);
+  if (remaining.length) return { ...pending, [appSessionId]: remaining };
+  return Object.fromEntries(Object.entries(pending).filter(([id]) => id !== appSessionId));
 }
 
 export function reducer(state: AppState, action: Action): AppState {
@@ -1366,6 +1365,12 @@ function baseReducer(state: AppState, action: Action): AppState {
 
     case 'SESSION_PERMISSION': {
       const r = action.request;
+      if (
+        state.pendingPermissions[r.appSessionId]?.some(
+          (request) => request.requestId === r.requestId,
+        )
+      )
+        return state;
       const specPlans =
         r.kind === 'spec' && r.plan
           ? { ...state.specPlans, [r.appSessionId]: r.plan }
@@ -1387,18 +1392,30 @@ function baseReducer(state: AppState, action: Action): AppState {
           : state.sessionSpecs;
       return {
         ...state,
-        pendingPermissions: { ...state.pendingPermissions, [r.appSessionId]: r },
+        pendingPermissions: {
+          ...state.pendingPermissions,
+          [r.appSessionId]: [...(state.pendingPermissions[r.appSessionId] ?? []), r],
+        },
         specPlans,
         sessionSpecs,
       };
     }
 
     case 'SESSION_QUESTION':
+      if (
+        state.pendingQuestions[action.question.appSessionId]?.some(
+          (question) => question.requestId === action.question.requestId,
+        )
+      )
+        return state;
       return {
         ...state,
         pendingQuestions: {
           ...state.pendingQuestions,
-          [action.question.appSessionId]: action.question,
+          [action.question.appSessionId]: [
+            ...(state.pendingQuestions[action.question.appSessionId] ?? []),
+            action.question,
+          ],
         },
       };
 
@@ -1518,41 +1535,43 @@ function baseReducer(state: AppState, action: Action): AppState {
     case 'SESSION_HISTORY':
       return reduceSessionHistory(state, action);
 
-    case 'CLEAR_PERMISSION': {
+    case 'CLEAR_PERMISSION':
       return {
         ...state,
-        pendingPermissions: Object.fromEntries(
-          Object.entries(state.pendingPermissions).filter(([id]) => id !== action.appSessionId),
+        pendingPermissions: withoutPendingRequest(
+          state.pendingPermissions,
+          action.appSessionId,
+          action.requestId,
         ),
       };
-    }
 
-    case 'CLEAR_QUESTION': {
+    case 'CLEAR_QUESTION':
       return {
         ...state,
-        pendingQuestions: Object.fromEntries(
-          Object.entries(state.pendingQuestions).filter(([id]) => id !== action.appSessionId),
+        pendingQuestions: withoutPendingRequest(
+          state.pendingQuestions,
+          action.appSessionId,
+          action.requestId,
         ),
       };
-    }
 
     // The sidecar gave up on a request the user never answered. Matched on the
     // request id so a late cancellation cannot clear a newer card.
     case 'CLEAR_INTERACTION': {
       const { appSessionId, requestId } = action;
-      const pendingPermissions = withoutCancelledRequest(
+      const pendingPermissions = withoutPendingRequest(
         state.pendingPermissions,
         appSessionId,
         requestId,
       );
-      const pendingQuestions = withoutCancelledRequest(
+      const pendingQuestions = withoutPendingRequest(
         state.pendingQuestions,
         appSessionId,
         requestId,
       );
       const cleared =
-        Object.keys(pendingPermissions).length !== Object.keys(state.pendingPermissions).length ||
-        Object.keys(pendingQuestions).length !== Object.keys(state.pendingQuestions).length;
+        pendingPermissions !== state.pendingPermissions ||
+        pendingQuestions !== state.pendingQuestions;
       return cleared ? { ...state, pendingPermissions, pendingQuestions } : state;
     }
 

@@ -142,6 +142,7 @@ function tokenUsageOf(params: Record<string, unknown>): ThreadTokenUsage | undef
 interface OpenTool {
   detail: string;
   output: string;
+  diff?: string;
 }
 
 let sequence = 0;
@@ -232,8 +233,8 @@ export class CodexEventMapper {
 
   // What a pending approval is about. A file-change approval carries no detail
   // of its own, so the open item it belongs to is the only description there is.
-  toolDetail(itemId: string): string | undefined {
-    return this.tools.get(itemId)?.detail;
+  toolDetail(itemId: string): { detail: string; diff?: string } | undefined {
+    return this.tools.get(itemId);
   }
 
   // A server the user did not ask for in this turn failing is not the turn's
@@ -271,14 +272,21 @@ export class CodexEventMapper {
   private replacePatch(params: PatchParams | undefined): NormalizedEvent[] {
     if (!params) return [];
     const tool = this.tools.get(params.itemId);
-    if (tool) tool.output = patchText(params.changes);
+    if (tool) {
+      tool.detail = params.changes.map((change) => change.path).join('\n');
+      tool.diff = patchText(params.changes);
+    }
     return [];
   }
 
   private started(item: ThreadItem): NormalizedEvent[] {
     const call = toolCall(item);
     if (!call) return [];
-    this.tools.set(call.id, { detail: call.detail, output: '' });
+    this.tools.set(call.id, {
+      detail: call.detail,
+      output: '',
+      ...(item.type === 'fileChange' ? { diff: patchText(item.changes) } : {}),
+    });
     return [
       {
         transcript: this.transcript('tool_call', {
