@@ -2027,6 +2027,7 @@ export default function PromptInput({
               <AutonomySelector
                 align="start"
                 scope="session"
+                provider={activeSession.provider}
                 value={activeSession.autonomy}
                 pending={activeSession.appSessionId in state.pendingAutonomy}
                 onSelect={(level) => {
@@ -2045,6 +2046,7 @@ export default function PromptInput({
               <AutonomySelector
                 align="start"
                 scope="draft"
+                provider={composerProvider}
                 value={draftAutonomy}
                 onSelect={(level) => {
                   dispatch({ type: 'SET_DRAFT_AUTONOMY', autonomy: level });

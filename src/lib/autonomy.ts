@@ -1,27 +1,40 @@
-import type { Autonomy } from '../types/bridge';
+import type { Autonomy, ProviderKind } from '../types/bridge';
 
-// Autonomy levels, labels, and consequence descriptions mirror the Factory
-// SDK's AutonomyLevel contract. The persisted app default lives in
-// localStorage, initializes to Medium on first run, and is edited only from
-// Settings; per-draft and per-session values never rewrite it.
+// The four autonomy levels are the app's four permission modes, in one
+// vocabulary every harness speaks. The persisted app default lives in
+// localStorage, initializes on first run, and is edited only from Settings;
+// per-draft and per-session values never rewrite it.
 
 export const AUTONOMY_LEVELS: readonly Autonomy[] = ['off', 'low', 'medium', 'high'];
 
 export const FIRST_RUN_DEFAULT_AUTONOMY: Autonomy = 'medium';
 
 export const AUTONOMY_LABELS: Record<Autonomy, string> = {
-  off: 'Off',
-  low: 'Low',
-  medium: 'Medium',
-  high: 'High',
+  off: 'Supervised',
+  low: 'Auto-accept edits',
+  medium: 'Auto',
+  high: 'Full access',
 };
 
 export const AUTONOMY_DESCRIPTIONS: Record<Autonomy, string> = {
-  off: 'You confirm every action before it runs.',
-  low: 'File edits and read-only commands run without asking.',
-  medium: 'Reversible commands run without asking.',
-  high: 'All commands run without asking.',
+  off: 'Ask before commands and file changes.',
+  low: 'Auto-approve edits, ask before other actions.',
+  medium: 'Supported providers approve routine actions; others still ask.',
+  high: 'Allow commands and edits without prompts.',
 };
+
+// What the chosen mode means on the chat's own harness, where the harness
+// makes it mean something in particular. Absent when it means nothing extra,
+// so the menu never invents a consequence to fill the line.
+export function autonomyConsequence(
+  provider: ProviderKind | undefined,
+  level: Autonomy,
+): string | undefined {
+  if (provider === 'claude' && level === 'medium') return "Auto uses Claude Code's classifier.";
+  if (provider === 'codex') return 'Applies from the next turn.';
+  if (provider === 'droid' && level === 'high') return "Droid's safety checks can still ask.";
+  return undefined;
+}
 
 const DEFAULT_AUTONOMY_STORAGE_KEY = 'droid-default-autonomy';
 
