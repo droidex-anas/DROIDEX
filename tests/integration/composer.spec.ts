@@ -32,7 +32,7 @@ test('the plus button offers plugins and Visualize joins the prompt as a selecti
   // The plugin rides along as a selection: the draft stays the user's own words.
   await expect(composer).toHaveText('');
   // The selection is the command, so it can be sent on its own.
-  await expect(page.getByTitle(/Enter: send/)).toBeEnabled();
+  await expect(page.getByRole('button', { name: 'Send prompt' })).toBeEnabled();
 
   // It sits on the draft's own first line, so that line starts after it and
   // typing continues from there.

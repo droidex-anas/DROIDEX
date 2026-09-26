@@ -295,7 +295,7 @@ async function smokePackagedRuntime(architecture) {
       { env: { ...process.env, ELECTRON_RUN_AS_NODE: '1' } },
     ).trim();
     const sqliteState = JSON.parse(sqliteResult);
-    assert(sqliteState.version === 2, `${name} SQLite schema version is not canonical`);
+    assert(sqliteState.version === 3, `${name} SQLite schema version is not canonical`);
     assert(sqliteState.tables.includes('app_sessions'), `${name} SQLite app_sessions table is missing`);
     assert(sqliteState.tables.includes('child_sessions'), `${name} SQLite child_sessions table is missing`);
 
@@ -392,6 +392,14 @@ for (const architecture of architectures) {
     assert(
       typeof packagedMetadata.sentryDsn === 'string' && packagedMetadata.sentryDsn.length > 0,
       `${name} package is missing Sentry reporting configuration`,
+    );
+    const { datadog } = packagedMetadata;
+    assert(
+      datadog?.distributionChannel === 'release' &&
+        [datadog.applicationId, datadog.clientToken, datadog.site].every(
+          (value) => typeof value === 'string' && value.length > 0,
+        ),
+      `${name} package is missing Datadog installation counting configuration`,
     );
   }
 

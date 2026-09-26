@@ -13,8 +13,8 @@ const MAX_LINE_SHARE = 0.55;
 
 export interface DraftSelection {
   key: string;
-  // Sized through className by the row; the glyph itself may be a lucide
-  // outline or a self-coloured brand tile like the Visualize mark.
+  // Sized through className by the row; a mark may carry its own colour, like
+  // the skill Rosette and the Visualize pie.
   icon: ComponentType<{ className?: string }>;
   label: string;
   removeLabel: string;

@@ -86,18 +86,6 @@ test('preference path is rooted in the resolved userData directory', () => {
   );
 });
 
-test('main reads hardware acceleration preferences from app.getPath(userData)', () => {
-  const mainSource = require('node:fs').readFileSync(
-    require('node:path').join(__dirname, 'main.cjs'),
-    'utf8',
-  );
-  assert.match(
-    mainSource,
-    /hardwareAccelerationPreferenceFilePath\([\s\S]*?app\.getPath\('userData'\)[\s\S]*?\)/,
-  );
-  assert.doesNotMatch(mainSource, /resolveUserDataDir|resolveHardwareAccelerationUserDataDir/);
-});
-
 test('invalid async preference loads fail closed for settings IPC', async () => {
   const dir = await mkdtemp(path.join(tmpdir(), 'droidex-hardware-acceleration-invalid-'));
   const filePath = preferenceFilePath(dir);

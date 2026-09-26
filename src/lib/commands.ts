@@ -7,6 +7,7 @@ import type {
   BrowserViewportMode,
   ConfigurableSessionRole,
   DesignReference,
+  HarnessCliProvider,
   InstallChannel,
   McpServerInput,
   PermissionOutcome,
@@ -16,6 +17,7 @@ import type {
   ResponseFormat,
   SessionInteractionMode,
   SessionPurpose,
+  VoiceNarration,
 } from '../types/bridge';
 
 let refCounter = 0;
@@ -61,6 +63,7 @@ export const updateSessionSettings = (input: {
   appSessionId: string;
   modelId?: string | null;
   reasoningEffort?: ReasoningEffort | null;
+  requestId?: string;
   autonomy?: Autonomy;
   interactionMode?: SessionInteractionMode;
 }) => {
@@ -75,6 +78,12 @@ export const installCli = (channel: InstallChannel) => {
 };
 export const updateCli = (channel?: InstallChannel) => {
   bridge.send({ type: 'cli.update', channel });
+};
+export const checkHarnessClis = () => {
+  bridge.send({ type: 'harness.cli.check' });
+};
+export const updateHarnessCli = (provider: HarnessCliProvider) => {
+  bridge.send({ type: 'harness.cli.update', provider });
 };
 export const listModels = () => {
   bridge.send({ type: 'catalog.models' });
@@ -196,6 +205,30 @@ const interruptSession = (appSessionId: string) => {
 
 export const compactSession = (appSessionId: string, customInstructions?: string) => {
   bridge.send({ type: 'session.compact', appSessionId, customInstructions });
+};
+
+// Voice runs on the chat's own thread and model: this relays the WebRTC
+// handshake the renderer negotiated, never the audio. The answer arrives as a
+// `voice.answer` event for the same chat.
+export const startVoice = (input: {
+  appSessionId: string;
+  sdp: string;
+  attempt: string;
+  voice?: string;
+  narration?: VoiceNarration;
+}) => {
+  requireAgentWorkAvailable();
+  bridge.send({ type: 'voice.start', ...input });
+};
+
+export const stopVoice = (input: { appSessionId: string }) => {
+  bridge.send({ type: 'voice.stop', ...input });
+};
+
+// The spoken voices the chat's provider offers; answered by a `voice.voices`
+// event for the same chat.
+export const requestVoices = (input: { appSessionId: string }) => {
+  bridge.send({ type: 'voice.voices', ...input });
 };
 
 export const interruptChild = (parentAppSessionId: string, childSessionId: string) => {

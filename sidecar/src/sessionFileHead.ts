@@ -9,11 +9,13 @@ import { objectValue } from './values.js';
 // sidebar row must never depend on the transcript body, so this is the only
 // read the discovery path performs per file.
 export interface SessionFileHead {
-  start: StoredSessionStart;
-  // A provider writes session_start before the first prompt, so an abandoned
-  // turn leaves a valid file with no completed exchange. Those are not durable
-  // conversations and must not become permanent sidebar rows. A prompt answered
-  // only by a stored error row is one: that is how a crashed chat ended.
+  // Absent when the head has no session_start; Droid cannot load such a file.
+  start?: StoredSessionStart;
+  // A provider writes session_start before the first prompt, so an interrupted
+  // or abandoned turn leaves a valid file with no completed exchange. Those are
+  // not durable conversations and must not become permanent sidebar rows. A
+  // prompt answered only by a stored error row is one: that is how a crashed
+  // chat ended.
   hasCompletedConversation: boolean;
 }
 
@@ -46,7 +48,7 @@ export function readSessionFileHead(path: string, sizeBytes: number): SessionFil
   }
 
   return {
-    start: start ?? {},
+    start,
     hasCompletedConversation: hasPrompt && hasAnswer,
   };
 }

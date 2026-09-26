@@ -343,7 +343,7 @@ export function WorktreesSettings() {
                   {linkedWorktrees.length === 1 ? 'worktree' : 'worktrees'}
                 </span>
               </div>
-              <div className="divide-y divide-droid-border/80 overflow-hidden rounded-xl border border-droid-border bg-droid-surface shadow-[0_10px_30px_rgba(0,0,0,0.08)]">
+              <div className="divide-y divide-droid-border/80 overflow-hidden rounded-xl border border-droid-border bg-droid-surface shadow-droid-sm">
                 <AnimatePresence initial={false}>
                   {visibleWorktrees.map((details) => {
                     const { worktree } = details;

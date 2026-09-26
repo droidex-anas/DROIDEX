@@ -1,9 +1,10 @@
 import { useSidebarPagination } from '../hooks/useSidebarPagination';
 import { useState, type ReactNode } from 'react';
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
-import { ChevronRight, Plus, FolderOpen } from 'lucide-react';
+import { Plus, FolderOpen } from 'lucide-react';
 import { SIDEBAR_VISIBLE_SESSION_LIMIT, type WorkspaceSection } from '../lib/workspaces';
 import type { SessionSummary } from '../types/bridge';
+import { SidebarSectionHeading } from './SidebarSectionHeading';
 import { SidebarWorkspaceRow } from './SidebarWorkspaceRow';
 import { SidebarSessionList } from './SidebarSessionList';
 
@@ -109,22 +110,14 @@ export function SidebarWorkspaceList({
           const open = !collapsed.has('__pinned__');
           return (
             <div>
-              <div className="group/header flex items-center gap-1 px-1 pt-1 pb-1.5">
-                <button
-                  onClick={() => {
-                    toggleCollapse('__pinned__');
-                  }}
-                  aria-expanded={open}
-                  className="flex items-center gap-2 min-w-0 flex-1 text-left rounded-lg px-1 py-0.5 hover:bg-droid-elevated/40 transition-colors"
-                >
-                  <ChevronRight
-                    className={`w-3 h-3 text-droid-text-muted/70 shrink-0 transition-transform ${open ? 'rotate-90' : ''}`}
-                  />
-                  <span className="text-[11px] font-medium tracking-wide text-droid-text-muted">
-                    Pinned
-                  </span>
-                </button>
-              </div>
+              <SidebarSectionHeading
+                label="Pinned"
+                open={open}
+                count={pinnedSessions.length}
+                onToggle={() => {
+                  toggleCollapse('__pinned__');
+                }}
+              />
               <Expand open={open}>{renderSessionList('__pinned__', pinnedSessions)}</Expand>
             </div>
           );
@@ -137,31 +130,27 @@ export function SidebarWorkspaceList({
         const open = !collapsed.has('__workspaces__');
         return (
           <div>
-            <div className="group/header flex items-center gap-1 px-1 pt-1 pb-1.5">
-              <button
-                onClick={() => {
-                  toggleCollapse('__workspaces__');
-                }}
-                aria-expanded={open}
-                className="flex items-center gap-2 min-w-0 flex-1 text-left rounded-lg px-1 py-0.5 hover:bg-droid-elevated/40 transition-colors"
-              >
-                <ChevronRight
-                  className={`w-3 h-3 text-droid-text-muted/70 shrink-0 transition-transform ${open ? 'rotate-90' : ''}`}
-                />
-                <span className="text-[11px] font-medium tracking-wide text-droid-text-muted">
-                  Workspaces
-                </span>
-              </button>
-              <button
-                onClick={() => {
-                  void onAddWorkspace();
-                }}
-                title="Add workspace"
-                className="p-1 rounded-md text-droid-text-muted hover:text-droid-text hover:bg-droid-elevated/60 transition-colors shrink-0"
-              >
-                <Plus className="w-3.5 h-3.5" />
-              </button>
-            </div>
+            <SidebarSectionHeading
+              label="Workspaces"
+              open={open}
+              count={workspaces.length}
+              onToggle={() => {
+                toggleCollapse('__workspaces__');
+              }}
+              action={
+                <button
+                  type="button"
+                  onClick={() => {
+                    void onAddWorkspace();
+                  }}
+                  title="Add workspace"
+                  aria-label="Add workspace"
+                  className="shrink-0 cursor-pointer rounded-md p-0.5 text-droid-text-muted transition-colors hover:text-droid-text focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-droid-accent/40"
+                >
+                  <Plus className="h-3.5 w-3.5" />
+                </button>
+              }
+            />
 
             <Expand open={open}>
               <div className="space-y-2.5">
@@ -199,7 +188,7 @@ export function SidebarWorkspaceList({
                     onClick={() => {
                       void onAddWorkspace();
                     }}
-                    className="group w-full flex items-center gap-2.5 px-2 py-1.5 rounded-lg text-left text-droid-text-muted hover:text-droid-text hover:bg-droid-elevated/40 transition-colors"
+                    className="flex w-full cursor-pointer items-center gap-2.5 py-1.5 pl-3 pr-2 text-left text-droid-text-muted transition-colors hover:text-droid-text"
                   >
                     <FolderOpen className="w-4 h-4 shrink-0" />
                     <span className="text-[13px]">Open workspace</span>
@@ -217,22 +206,14 @@ export function SidebarWorkspaceList({
         const open = !collapsed.has('__chats__');
         return (
           <div>
-            <div className="group/header flex items-center gap-1 px-1 pt-1 pb-1.5">
-              <button
-                onClick={() => {
-                  toggleCollapse('__chats__');
-                }}
-                aria-expanded={open}
-                className="flex items-center gap-2 min-w-0 flex-1 text-left rounded-lg px-1 py-0.5 hover:bg-droid-elevated/40 transition-colors"
-              >
-                <ChevronRight
-                  className={`w-3 h-3 text-droid-text-muted/70 shrink-0 transition-transform ${open ? 'rotate-90' : ''}`}
-                />
-                <span className="text-[11px] font-medium tracking-wide text-droid-text-muted">
-                  Chats
-                </span>
-              </button>
-            </div>
+            <SidebarSectionHeading
+              label="Chats"
+              open={open}
+              count={chatSessions.length}
+              onToggle={() => {
+                toggleCollapse('__chats__');
+              }}
+            />
             <Expand open={open}>
               {chatSessions.length === 0 ? (
                 <div className="mt-0.5 px-3 py-2 text-[12px] text-droid-text-muted">

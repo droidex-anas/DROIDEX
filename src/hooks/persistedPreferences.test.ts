@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { DEFAULT_THEME, type ThemeColors, type ThemePreset } from '../lib/theme';
 import { loadTheme } from './persistedThemePreferences';
-import { loadAgentConfig, sanitizeAgentConfig } from './persistedUiPreferences';
+import { loadAgentConfig, loadHarnessModels, sanitizeAgentConfig } from './persistedUiPreferences';
 import type { ModelInfo } from '../types/bridge';
 
 const LEGACY_LIGHT: ThemeColors = {
@@ -77,17 +77,38 @@ test('malformed agent config sanitizes to defaults', () => {
   withLocalStorageMap(
     {
       'droid-agent-config-v2': JSON.stringify({
-        primary: { modelId: 42, reasoning: 'bogus' },
         worker: null,
         validator: { modelId: '', reasoning: 'high' },
       }),
     },
     () => {
       assert.deepEqual(loadAgentConfig(), {
-        primary: { modelId: undefined, reasoning: 'high' },
         worker: { modelId: undefined, reasoning: 'medium' },
         validator: { modelId: undefined, reasoning: 'high' },
       });
+    },
+  );
+});
+
+test("a legacy primary default model becomes Droid's saved harness default", () => {
+  withLocalStorageMap(
+    {
+      'droid-agent-config-v2': JSON.stringify({
+        primary: { modelId: 'model-a', reasoning: 'low' },
+        worker: { modelId: undefined, reasoning: 'medium' },
+      }),
+    },
+    () => {
+      const expected = {
+        droid: { modelId: 'model-a', reasoning: 'low' },
+        claude: {},
+        codex: {},
+      };
+      assert.deepEqual(loadHarnessModels(), expected);
+      assert.deepEqual(
+        JSON.parse(globalThis.localStorage?.getItem('droid-harness-models-v1') ?? '{}'),
+        expected,
+      );
     },
   );
 });
@@ -103,14 +124,12 @@ test('sanitizeAgentConfig drops unknown models and coerces unsupported reasoning
     },
   ];
   const config = {
-    primary: { modelId: 'model-a', reasoning: 'max' as const },
     worker: { modelId: 'missing', reasoning: 'medium' as const },
-    validator: { modelId: undefined, reasoning: 'medium' as const },
+    validator: { modelId: 'model-a', reasoning: 'max' as const },
   };
   assert.deepEqual(sanitizeAgentConfig(config, models), {
-    primary: { modelId: 'model-a', reasoning: 'low' },
     worker: { modelId: undefined, reasoning: 'medium' },
-    validator: { modelId: undefined, reasoning: 'medium' },
+    validator: { modelId: 'model-a', reasoning: 'low' },
   });
 });
 

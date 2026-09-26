@@ -6,6 +6,7 @@ export interface OnboardingState {
   defaultEditor?: string;
   installChannel?: 'script' | 'brew' | 'npm';
   cliAutoUpdate?: boolean;
+  harnessCliAutoUpdate?: boolean;
   appAutoUpdate?: boolean;
 }
 
@@ -18,19 +19,25 @@ export interface AppUpdateInfo {
   installMode: 'automatic' | 'sparkle';
 }
 
+function bridge(): NonNullable<Window['droidControl']> {
+  const api = window.droidControl;
+  if (!api) throw new Error('droidControl bridge unavailable');
+  return api;
+}
+
 export async function getOnboarding(): Promise<OnboardingState> {
   if (!isDesktop()) return { completed: true, version: 1 };
-  return window.droidControl!.getOnboarding();
+  return bridge().getOnboarding();
 }
 
 export async function setOnboarding(patch: Partial<OnboardingState>): Promise<OnboardingState> {
   if (!isDesktop()) return { completed: true, version: 1, ...patch };
-  return window.droidControl!.setOnboarding(patch);
+  return bridge().setOnboarding(patch);
 }
 
 export async function getAppVersion(): Promise<string> {
   if (!isDesktop()) return '0.0.0';
-  return window.droidControl!.appVersion();
+  return bridge().appVersion();
 }
 
 export interface AppUpdateCheckOptions {
@@ -44,7 +51,7 @@ export async function checkAppUpdate(
 ): Promise<AppUpdateInfo | null> {
   if (!isDesktop()) return null;
   try {
-    return await window.droidControl!.checkAppUpdate(options);
+    return await bridge().checkAppUpdate(options);
   } catch {
     return null;
   }
@@ -56,12 +63,12 @@ export interface AppUpdateResult {
 
 export async function downloadAppUpdate(): Promise<AppUpdateResult | null> {
   if (!isDesktop()) return null;
-  return window.droidControl!.downloadAppUpdate();
+  return bridge().downloadAppUpdate();
 }
 
 export async function relaunchApp(): Promise<void> {
   if (!isDesktop()) return;
-  await window.droidControl!.relaunchApp();
+  await bridge().relaunchApp();
 }
 
 export async function openExternal(url: string): Promise<void> {
@@ -69,5 +76,5 @@ export async function openExternal(url: string): Promise<void> {
     window.open(url, '_blank', 'noopener');
     return;
   }
-  await window.droidControl!.openExternal(url);
+  await bridge().openExternal(url);
 }

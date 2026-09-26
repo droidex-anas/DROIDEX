@@ -1391,7 +1391,7 @@ if (!safeRegex(PACK_PATH_RE)) throw new Error('unsafe regex detected');
 | Tool | Purpose | Frequency |
 | --- | --- | --- |
 | `commit-security-scan` (Factory) | LLM-based static analysis with STRIDE patterns | Every commit |
-| `npm run lint` (ESLint + typescript-eslint) | Static analysis, React hooks, TypeScript issues | Every commit (non-blocking baseline) |
+| `npm run lint` (ESLint + typescript-eslint) | Static analysis, React hooks, TypeScript issues | Every commit (blocks new errors; baseline in `eslint-suppressions.json`) |
 | `npm run typecheck` / `sidecar:typecheck` | TypeScript type safety | Every commit |
 | `electron:check` | Syntax check Electron CommonJS entrypoints | Every commit |
 | `npm test` + `sidecar:test` | Unit tests including security-relevant tests (files confinement, URL validation, git sanitization) | Every commit |

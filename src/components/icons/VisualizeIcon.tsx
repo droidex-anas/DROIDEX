@@ -1,15 +1,17 @@
-// The Visualize plugin's mark in the brand icon language: a dark tinted
-// squircle tile carrying one bright, fully filled glyph. Ascending bars say
-// "your data, drawn", which is what a Visualize app is. Unlike the lucide
-// outline icons it replaces, the tile owns its colours, so callers only set
-// the box size through className.
+import { Visualize } from '@droidex/icons';
+
+// The Visualize plugin's mark keeps its pink wherever it sits, including muted
+// menu rows, so callers only set the size through className.
 export function VisualizeIcon({ className }: { className?: string }) {
+  return <Visualize className={className} style={{ color: 'var(--droid-visualize-mark)' }} />;
+}
+
+// The mark on a pink-tinted squircle, for app cards where it stands in for an
+// app icon.
+export function VisualizeTile() {
   return (
-    <svg viewBox="0 0 24 24" className={className} aria-hidden="true">
-      <rect width="24" height="24" rx="7" fill="#3E0B4D" />
-      <rect x="5.8" y="13" width="3.6" height="5.4" rx="1.8" fill="#D946EF" />
-      <rect x="10.2" y="9.4" width="3.6" height="9" rx="1.8" fill="#D946EF" />
-      <rect x="14.6" y="5.8" width="3.6" height="12.6" rx="1.8" fill="#D946EF" />
-    </svg>
+    <span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-droid-visualize-mark/15">
+      <VisualizeIcon className="h-5 w-5" />
+    </span>
   );
 }
