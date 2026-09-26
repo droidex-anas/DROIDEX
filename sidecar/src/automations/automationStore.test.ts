@@ -8,10 +8,10 @@ import { newQueuedRun } from './automationRunRecord.js';
 import {
   AutomationStoreFile,
   emptyAutomationStore,
-  parseAutomationStore,
   storeHasRunSession,
   trimAutomationStore,
 } from './automationStore.js';
+import { parseAutomationStore } from './automationStoreParsing.js';
 import type { AutomationInput, AutomationProposal } from './types.js';
 
 function automation(now: number, overrides: Partial<AutomationInput> = {}) {
@@ -304,4 +304,26 @@ test('an unreadable store is quarantined with a recoverable path', async () => {
   } finally {
     await rm(directory, { recursive: true, force: true });
   }
+});
+
+test('permission semantics stamp existing Droid automations before scheduling without changing their levels', () => {
+  const definitions = (['off', 'low', 'medium', 'high'] as const).map((autonomy) =>
+    automation(1000, { autonomy }),
+  );
+  const migrated = parseAutomationStore(
+    {
+      version: 1,
+      automations: definitions,
+      runs: [],
+      proposals: [],
+      sessionOrigins: {},
+    },
+    1000,
+  );
+  assert.equal(migrated.permissionSemanticsRevision, 1);
+  assert.deepEqual(
+    migrated.automations.map((entry) => entry.autonomy),
+    ['off', 'low', 'medium', 'high'],
+  );
+  assert.deepEqual(parseAutomationStore(migrated, 1000), migrated);
 });

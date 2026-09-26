@@ -30,6 +30,7 @@ export interface ProviderResumeInput {
   modelId?: string;
   reasoningEffort?: ReasoningEffort;
   autonomy?: Autonomy;
+  interactionMode?: SessionInteractionMode;
   interactions: ProviderInteractions;
 }
 

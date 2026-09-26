@@ -1322,7 +1322,7 @@ test('accepted settings stay durable through resume and precede first-send appli
     return true;
   });
   await harness.lifecycle.send('app-pending', 'apply now');
-  assert.deepEqual(provider.settings, [pending]);
+  assert.deepEqual(provider.settings, [{ autonomyLevel: 'off' }, pending]);
   assert.deepEqual(provider.prompts, ['apply now']);
   const settingsCall = harness.calls.findIndex((call) => call.method === 'updateSettings');
   const streamCall = harness.calls.findIndex(
@@ -1580,4 +1580,25 @@ test('closing a scheduled target during cold resume invalidates its provisional 
   assert.ok(
     harness.calls.some((call) => call.method === 'session.close' && call.args[0] === 'cold-close'),
   );
+});
+
+test('Droid resume reapplies canonical edits-only before publishing the stored session', async () => {
+  const harness = createHarness([
+    summary('app-permissions', 'provider-permissions', { autonomy: 'low' }),
+  ]);
+  const session = queueLoad(harness, 'provider-permissions');
+  await harness.lifecycle.resume('app-permissions');
+  assert.deepEqual(session.settings[0], { autonomyLevel: 'off' });
+  assert.equal(harness.registry.getLive('app-permissions')?.summary.autonomy, 'low');
+});
+
+test('an unindexed Droid resume preserves its native selection before applying current semantics', async () => {
+  const harness = createHarness();
+  const session = new FakeFactorySession('external-session', {}, harness.calls, {
+    settings: { autonomyLevel: 'low' },
+  });
+  queueLoad(harness, 'external-session', session);
+  await harness.lifecycle.resume('external-session');
+  assert.deepEqual(session.settings[0], { autonomyLevel: 'off' });
+  assert.equal(harness.registry.getLive('external-session')?.summary.autonomy, 'low');
 });

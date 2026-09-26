@@ -25,3 +25,19 @@ test('passes current-model compaction sentinel when initializing a session', () 
 
   assert.equal(params.compactionModel, 'current-model');
 });
+
+test('edits-only uses native Off so commands still reach the permission callback', () => {
+  for (const [autonomyLevel, expected] of [
+    ['off', 'off'],
+    ['low', 'off'],
+    ['medium', 'medium'],
+    ['high', 'high'],
+  ] as const) {
+    const params = createInitializeSessionParams({
+      cwd: '/tmp/project',
+      interactionMode: 'auto',
+      autonomyLevel,
+    });
+    assert.equal(params.autonomyLevel, expected);
+  }
+});

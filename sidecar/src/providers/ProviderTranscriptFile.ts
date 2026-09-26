@@ -14,6 +14,7 @@ import { appendFileSync, existsSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { providerSessionsDir } from '../droidexPaths.js';
+import { PERMISSION_SEMANTICS_REVISION } from '../permissionSemantics.js';
 import type { SessionSummary, TranscriptEvent } from '../protocol.js';
 import type { StoredMessageLine, StoredSessionStart } from '../sessionTranscriptParser.js';
 import { storedNoticeLine } from '../sessionNotices.js';
@@ -25,6 +26,8 @@ interface ProviderSessionStart extends StoredSessionStart {
   modelId?: string;
   reasoningEffort?: string;
   autonomyLevel?: string;
+  interactionMode: SessionSummary['interactionMode'];
+  permissionSemanticsRevision: number;
 }
 
 type ContentBlock =
@@ -150,6 +153,8 @@ function headLine(summary: SessionSummary): ProviderSessionStart {
     cwd: summary.cwd,
     title: summary.title,
     autonomyLevel: summary.autonomy,
+    interactionMode: summary.interactionMode,
+    permissionSemanticsRevision: PERMISSION_SEMANTICS_REVISION,
     ...(summary.resumeId ? { resumeId: summary.resumeId } : {}),
     ...(summary.modelId ? { modelId: summary.modelId } : {}),
     ...(summary.reasoningEffort ? { reasoningEffort: summary.reasoningEffort } : {}),

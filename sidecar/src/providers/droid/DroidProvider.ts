@@ -1,3 +1,5 @@
+import type { Autonomy } from '../../protocol.js';
+import { normalizeAutonomy } from '../../sessionHelpers.js';
 import type { FactoryRuntime } from '../../DroidRuntime.js';
 import type {
   Provider,
@@ -17,25 +19,43 @@ export class DroidProvider implements Provider {
     // A created session mints the identity DROIDEX adopts as its own, and the
     // daemon can ask for permission before it is known, so the handlers read it
     // lazily from this holder.
-    const ref = { id: '' };
+    const ref: { id: string; autonomy: Autonomy } = {
+      id: '',
+      autonomy: options.autonomyLevel ?? 'off',
+    };
     const session = await this.runtime.createSession({
       ...options,
+      autonomyLevel: ref.autonomy,
       ...droidInteractionHandlers(ref, interactions),
     });
     ref.id = session.sessionId;
-    return new DroidProviderSession(session.sessionId, session, this.runtime);
+    return new DroidProviderSession(session.sessionId, session, this.runtime, ref);
   }
 
   async resume(
     providerSessionId: string,
-    { appSessionId, interactions, cwd, mcpServers }: ProviderResumeInput,
+    { appSessionId, interactions, cwd, mcpServers, autonomy }: ProviderResumeInput,
   ): Promise<ProviderSession> {
     // Droid resumes by session id, so the generic resume handle is not needed.
+    const ref: { id: string; autonomy: Autonomy } = {
+      id: appSessionId,
+      autonomy: autonomy ?? 'off',
+    };
     const session = await this.runtime.loadSession(providerSessionId, {
       cwd,
       mcpServers,
-      ...droidInteractionHandlers({ id: appSessionId }, interactions),
+      ...droidInteractionHandlers(ref, interactions),
     });
-    return new DroidProviderSession(appSessionId, session, this.runtime);
+    const providerSession = new DroidProviderSession(appSessionId, session, this.runtime, ref);
+    try {
+      // The SDK's stored level cannot distinguish Supervised from edits-only.
+      await providerSession.setAutonomy(
+        autonomy ?? normalizeAutonomy(session.initResult.settings?.autonomyLevel) ?? 'off',
+      );
+      return providerSession;
+    } catch (error) {
+      await providerSession.close();
+      throw error;
+    }
   }
 }

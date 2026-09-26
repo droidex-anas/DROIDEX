@@ -80,7 +80,8 @@ import type {
 import { addWorkspaceCwd, removeWorkspaceCwd } from '../lib/workspaces';
 import { createOrderedActionBatcher, type OrderedActionBatcher } from './orderedActionBatcher';
 import { isHistoryStatusError, applyHistoryServerEvent } from '../lib/historyHealth';
-import { loadDefaultAutonomy, saveDefaultAutonomy } from '../lib/autonomy';
+import { saveDefaultAutonomy } from '../lib/autonomy';
+import { loadDefaultPermissionMode } from '../lib/permissionSemantics';
 import { loadDraftProvider, saveDraftProvider } from '../features/providers/providerDraft';
 import { loadToolActivity, saveToolActivity, type ToolActivitySettings } from '../lib/toolActivity';
 import {
@@ -716,7 +717,7 @@ export const initialState: AppState = {
   customThemes: initialCustomThemes,
   missionControlMode: persistedUiState.missionControlMode ?? false,
   draftChat: null,
-  defaultAutonomy: loadDefaultAutonomy(),
+  defaultAutonomy: loadDefaultPermissionMode(),
   toolActivity: loadToolActivity(),
   draftAutonomy: null,
   pendingAutonomy: {},

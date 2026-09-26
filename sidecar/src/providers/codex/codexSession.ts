@@ -9,6 +9,7 @@ import type { ProviderModelSettings, ProviderSession } from '../session.js';
 import type { AppServerClient } from './appServer.js';
 import { codexAutonomy, OpenPrompts } from './codexApprovals.js';
 import { CodexCatalog } from './codexCatalog.js';
+import { canApproveWorkspaceEdits } from './codexEditPermissions.js';
 import {
   CodexEventMapper,
   errorOf,
@@ -49,6 +50,7 @@ export class CodexSession implements ProviderSession {
   private readonly mapper: CodexEventMapper;
   private readonly cwd: string;
   private autonomy: Autonomy;
+  private turnAutonomy?: Autonomy;
   private model: ProviderModelSettings;
   private threadId?: string;
   private threadModel?: string;
@@ -150,7 +152,9 @@ export class CodexSession implements ProviderSession {
     const threadId = this.threadId;
     if (!threadId) throw new Error('This Codex session has no thread to run a turn on.');
     const turn = new TurnStream();
+    this.mapper.beginTurn();
     this.turn = turn;
+    this.turnAutonomy = this.autonomy;
     this.pendingInterrupt = false;
     try {
       const started = await this.client.request<{ turn: CodexTurn }>(
@@ -169,6 +173,7 @@ export class CodexSession implements ProviderSession {
     } finally {
       turn.finish();
       this.turn = undefined;
+      this.turnAutonomy = undefined;
       this.turnId = undefined;
       this.pendingInterrupt = false;
     }
@@ -306,7 +311,17 @@ export class CodexSession implements ProviderSession {
       this.prompts.cancel();
       this.resolveClosed(cleanExit ? undefined : error);
     });
-    this.prompts.register(this.client, (itemId: string) => this.mapper.toolDetail(itemId));
+    this.prompts.register(
+      this.client,
+      (itemId) => this.mapper.toolDetail(itemId),
+      (request) =>
+        !this.hasClosed &&
+        this.turnAutonomy === 'low' &&
+        this.turnId !== undefined &&
+        request.threadId === this.threadId &&
+        request.turnId === this.turnId &&
+        canApproveWorkspaceEdits(this.cwd, this.mapper.fileChanges(request.itemId)),
+    );
   }
 
   // The turn's id arrives either on `turn/started` or with the `turn/start`
