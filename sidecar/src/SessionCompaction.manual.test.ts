@@ -60,11 +60,11 @@ class TestRegistry {
     return live.summary;
   }
 
-  replaceProvider(
+  async replaceProvider(
     id: string,
     providerSessionId: string,
     patch: SessionSummaryPatch = {},
-  ): SessionSummary | undefined {
+  ): Promise<SessionSummary | undefined> {
     const error = this.nextReplaceError;
     delete this.nextReplaceError;
     if (error) throw error;

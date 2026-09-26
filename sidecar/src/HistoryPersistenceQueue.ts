@@ -30,12 +30,10 @@ export {
 const DEFAULT_FLUSH_DELAY_MS = 25;
 const DEFAULT_RETRY_DELAY_MS = 250;
 const MAX_RETRY_DELAY_MS = 5_000;
-const DEFAULT_SYNC_TIMEOUT_MS = 10_000;
 export class HistoryPersistenceQueue {
   private readonly client: HistoryPersistenceClient;
   private readonly flushDelayMs: number;
   private readonly retryDelayMs: number;
-  private readonly syncTimeoutMs: number;
   private readonly schedule: NonNullable<HistoryPersistenceQueueOptions['schedule']>;
   private readonly cancel: NonNullable<HistoryPersistenceQueueOptions['cancel']>;
   private readonly onCommitted: NonNullable<HistoryPersistenceQueueOptions['onCommitted']>;
@@ -58,6 +56,9 @@ export class HistoryPersistenceQueue {
   private failures = 0;
   private retries = 0;
   private consecutiveFailures = 0;
+  private flushTail: Promise<void> = Promise.resolve();
+  private closing: Promise<void> | null = null;
+  private flushing = false;
   constructor(options: HistoryPersistenceQueueOptions) {
     this.client =
       options.client ??
@@ -66,7 +67,6 @@ export class HistoryPersistenceQueue {
       });
     this.flushDelayMs = options.flushDelayMs ?? DEFAULT_FLUSH_DELAY_MS;
     this.retryDelayMs = options.retryDelayMs ?? DEFAULT_RETRY_DELAY_MS;
-    this.syncTimeoutMs = options.syncTimeoutMs ?? DEFAULT_SYNC_TIMEOUT_MS;
     this.schedule =
       options.schedule ??
       ((callback, delayMs) => {
@@ -85,30 +85,43 @@ export class HistoryPersistenceQueue {
   }
 
   enqueueEvent(event: TranscriptEvent): void {
-    this.assertOpen();
+    this.assertAccepting();
     this.pending.enqueueEvent(eventMetadata(event));
     this.afterEnqueue();
   }
 
   enqueueSummaries(summaries: readonly SessionSummary[]): SessionSummary[] {
-    this.assertOpen();
+    this.assertAccepting();
     const copies = this.pending.enqueueSummaries(summaries);
     if (copies.length > 0) this.afterEnqueue();
     return copies;
   }
 
   enqueueChild(child: PersistedChildSession): PersistedChildSession {
-    this.assertOpen();
+    this.assertAccepting();
     const value = this.pending.enqueueChild(child);
     this.afterEnqueue();
     return value;
   }
 
-  flushSync(): void {
-    this.settleActiveDurabilityBarrierSync();
-    this.durabilityBarrierPending = true;
-    this.drainSync();
-    this.runDurabilityBarrier();
+  flush(): Promise<void> {
+    const operation = this.flushTail.then(async () => {
+      this.assertOpen();
+      this.flushing = true;
+      try {
+        await this.durabilityBarrierInFlight?.promise;
+        this.durabilityBarrierPending = true;
+        await this.drain();
+        const barrier = this.startDurabilityBarrier();
+        if (!barrier)
+          throw this.lastFailure ?? new Error('History durability barrier did not start.');
+        await barrier.promise;
+      } finally {
+        this.flushing = false;
+      }
+    });
+    this.flushTail = operation.catch(() => undefined);
+    return operation;
   }
 
   async drain(): Promise<void> {
@@ -131,41 +144,27 @@ export class HistoryPersistenceQueue {
     }
   }
 
-  drainSync(): void {
-    this.assertOpen();
-    this.clearTimers();
-    while (!this.isDrained()) {
-      if (!this.inFlight) this.startNext();
-      const current = this.inFlight;
-      if (!current) throw this.lastFailure ?? new Error('History persistence did not start.');
-      try {
-        const result = current.call.waitSync(this.syncTimeoutMs);
-        this.finishSuccess(current, result);
-      } catch (error) {
-        const resolved = asError(error);
-        this.finishFailure(current, resolved);
-        throw resolved;
-      }
-    }
+  close(): Promise<void> {
+    this.closing ??= this.performClose();
+    return this.closing;
   }
 
-  close(): void {
-    if (this.closed) return;
+  private async performClose(): Promise<void> {
     this.clearTimers();
     let firstError: Error | undefined;
     try {
-      this.flushSync();
+      await this.flush();
       this.dirtyMarker?.markClean();
     } catch (error) {
       firstError = asError(error);
     }
+    this.closed = true;
+    this.clearTimers();
     try {
-      this.client.closeSync();
+      await this.client.close();
     } catch (error) {
       firstError ??= asError(error);
     }
-    this.closed = true;
-    this.clearTimers();
     if (firstError) throw firstError;
   }
 
@@ -218,7 +217,6 @@ export class HistoryPersistenceQueue {
     }
     const current: InFlightPersistenceBatch = {
       batch,
-      call,
       settled: Promise.resolve(),
       minimumSequence,
     };
@@ -251,8 +249,8 @@ export class HistoryPersistenceQueue {
       console.error('History persistence commit bookkeeping failed:', error);
     }
     if (this.pending.rowCount > 0) this.startNext();
-    else if (this.durabilityBarrierPending) this.startDurabilityBarrier();
-    else this.dirtyMarker?.markClean();
+    else if (this.durabilityBarrierPending && !this.flushing) this.startDurabilityBarrier();
+    else if (!this.durabilityBarrierPending) this.dirtyMarker?.markClean();
   }
 
   private finishFailure(current: InFlightPersistenceBatch, error: Error): void {
@@ -305,7 +303,7 @@ export class HistoryPersistenceQueue {
       this.retryTimer = null;
       this.retries += 1;
       if (this.pending.rowCount > 0 || this.inFlight) this.startNext();
-      else if (this.durabilityBarrierPending) this.startDurabilityBarrier();
+      else if (this.durabilityBarrierPending && !this.flushing) this.startDurabilityBarrier();
     }, this.nextRetryDelayMs());
   }
 
@@ -324,19 +322,6 @@ export class HistoryPersistenceQueue {
     if (!this.retryTimer) return;
     this.cancel(this.retryTimer);
     this.retryTimer = null;
-  }
-
-  private runDurabilityBarrier(): void {
-    const barrier = this.startDurabilityBarrier();
-    if (!barrier) throw this.lastFailure ?? new Error('History durability barrier did not start.');
-    try {
-      barrier.waitSync(this.syncTimeoutMs);
-      this.finishDurabilityBarrierSuccess(barrier);
-    } catch (error) {
-      const resolved = asError(error);
-      this.finishDurabilityBarrierFailure(barrier, resolved);
-      throw resolved;
-    }
   }
 
   private startDurabilityBarrier(): HistoryPersistenceCall<{ durable: true }> | null {
@@ -359,17 +344,6 @@ export class HistoryPersistenceQueue {
       },
     );
     return barrier;
-  }
-
-  private settleActiveDurabilityBarrierSync(): void {
-    const barrier = this.durabilityBarrierInFlight;
-    if (!barrier) return;
-    try {
-      barrier.waitSync(this.syncTimeoutMs);
-      this.finishDurabilityBarrierSuccess(barrier);
-    } catch (error) {
-      this.finishDurabilityBarrierFailure(barrier, asError(error));
-    }
   }
 
   private finishDurabilityBarrierSuccess(barrier: HistoryPersistenceCall<{ durable: true }>): void {
@@ -424,6 +398,11 @@ export class HistoryPersistenceQueue {
     } catch (reportError) {
       console.error('History persistence recovery reporting failed:', reportError);
     }
+  }
+
+  private assertAccepting(): void {
+    this.assertOpen();
+    if (this.closing) throw new Error('History persistence queue is closing.');
   }
 
   private assertOpen(): void {

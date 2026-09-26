@@ -24,7 +24,7 @@ interface Dependencies {
   maxContextTokensForModel: (modelId?: string) => number | undefined;
   isShutdownStarted: () => boolean;
   refreshPrimary: (live: LiveSession, modelChanged: boolean) => Promise<void>;
-  onPrimaryModelChanged: (summary: SessionSummary, from: string, to: string) => void;
+  onPrimaryModelChanged: (summary: SessionSummary, from: string, to: string) => void | Promise<void>;
   onSettled: (appSessionId: string) => void;
   emitError: (error: SettingsError) => void;
 }
@@ -120,10 +120,12 @@ export class SessionModelSettings {
         if (!isCurrent()) return;
         await this.applyProvider(summary, live, agent, runtimeSettings, isCurrent);
         if (!isCurrent()) return;
-        this.persistAccepted(summary, live, agent, selection);
+        await this.persistAccepted(summary, live, agent, selection);
+        if (!isCurrent()) return;
         if (agent !== 'primary') return;
         // Only a model change earns a row; a new effort shows on the chip.
-        if (change) this.d.onPrimaryModelChanged(next, change.from, change.to);
+        if (change) await this.d.onPrimaryModelChanged(next, change.from, change.to);
+        if (!isCurrent()) return;
         if (live) await this.d.refreshPrimary(live, selected.modelId !== undefined);
       },
       undefined,
@@ -207,12 +209,12 @@ export class SessionModelSettings {
     if (from && to && from !== to) return { from, to };
   }
 
-  private persistAccepted(
+  private async persistAccepted(
     summary: SessionSummary,
     live: LiveSession | undefined,
     agent: ConfigurableSessionRole,
     settings: ProviderModelSettings,
-  ): void {
+  ): Promise<void> {
     const appSessionId = summary.appSessionId;
     // Droid's daemon owns its adjacent settings. Other providers need our
     // file as well as the registry row, so a file-only rebuild keeps the choice.
@@ -229,7 +231,7 @@ export class SessionModelSettings {
     try {
       const patch = this.summaryPatch(agent, settings);
       if (live) this.d.registry.updateSummary(appSessionId, patch);
-      else this.d.registry.updateStoredSummary(appSessionId, patch);
+      else await this.d.registry.updateStoredSummary(appSessionId, patch);
     } catch (error) {
       if (previousPending) this.pending.set(appSessionId, previousPending);
       else this.pending.delete(appSessionId);

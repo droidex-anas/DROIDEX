@@ -42,18 +42,24 @@ export async function runPrimaryTurn(
 ): Promise<void> {
   const { prompt, mentions, delivery, notice } = request;
   const appSessionId = liveSession.summary.appSessionId;
+  const providerSession = liveSession.session;
+  const isCurrent = () => d.isCurrent(liveSession) && liveSession.session === providerSession;
   const context = turnContext(d, d.contextTarget(liveSession));
-  if (!d.isCurrent(liveSession)) return;
+  if (!isCurrent()) return;
   // A scheduled delivery that cannot go ahead must leave no trace, and
   // recordPrompt below writes to the durable transcript. So its preflight runs
   // before the turn is opened; an interactive turn keeps its existing order.
   const preflight = delivery
     ? await d.applyDesignToolPolicy(liveSession, isDesignPrompt(prompt))
     : undefined;
-  if (delivery && (!d.isCurrent(liveSession) || !preflight || !delivery.isCurrent())) return;
+  if (delivery && (!isCurrent() || !preflight || !delivery.isCurrent())) return;
   d.eventFlow.beginTurn(appSessionId, appSessionId);
   if (notice) d.timeline.appendStatus(appSessionId, notice);
-  else d.timeline.recordPrompt(appSessionId, prompt);
+  else {
+    const writing = d.timeline.recordPrompt(appSessionId, prompt);
+    if (writing) await writing;
+  }
+  if (!isCurrent()) return;
   d.context.beginTurn(appSessionId);
   context.startPolling();
   let turnError: unknown;
@@ -62,15 +68,15 @@ export async function runPrimaryTurn(
   try {
     const configured =
       preflight ?? (await d.applyDesignToolPolicy(liveSession, isDesignPrompt(prompt)));
-    if (!d.isCurrent(liveSession) || (delivery && (!configured || !delivery.isCurrent()))) {
+    if (!isCurrent() || (delivery && (!configured || !delivery.isCurrent()))) {
       context.stopPolling();
       return;
     }
-    for await (const normalized of liveSession.session.stream(prompt, mentions)) {
+    for await (const normalized of providerSession.stream(prompt, mentions)) {
       // The runtime answered, so the prompt is accepted even if this turn stops
       // applying events; acknowledgement must never depend on the turn's outcome.
       delivery?.accepted();
-      if (!d.isCurrent(liveSession)) break;
+      if (!isCurrent()) break;
       d.eventFlow.apply(appSessionId, appSessionId, 'primary', normalized);
       if (normalized.transcript?.kind === 'error') {
         reportedError = true;
@@ -84,13 +90,13 @@ export async function runPrimaryTurn(
   }
   try {
     // Deliver any buffered streaming tail before the turn reads as settled.
-    d.timeline.settleStreaming(appSessionId, appSessionId);
+    if (isCurrent()) await d.timeline.settleStreaming(appSessionId, appSessionId);
   } catch (err) {
     turnError ??= err;
   } finally {
     context.stopPolling();
   }
-  if (!d.isCurrent(liveSession)) return;
+  if (!isCurrent()) return;
   if (turnError) settleTurnFailure(d, liveSession, turnError, reportedError, reportedUsageLimit);
   // Keep streaming=true while the context refresh is in flight so concurrent
   // sends queue instead of racing a second lifecycle turn.

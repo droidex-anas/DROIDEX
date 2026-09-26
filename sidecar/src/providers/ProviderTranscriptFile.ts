@@ -10,8 +10,8 @@
 // sessionTranscriptParser.ts maps the content blocks below back to transcript
 // events. Changing a shape here without reading those three is a silent
 // "session is empty after restart" bug.
-import { appendFileSync, existsSync, mkdirSync } from 'node:fs';
-import { join } from 'node:path';
+import { appendFile, mkdir, stat } from 'node:fs/promises';
+import { dirname, join } from 'node:path';
 
 import { providerSessionsDir } from '../droidexPaths.js';
 import type { SessionSummary, TranscriptEvent } from '../protocol.js';
@@ -48,8 +48,9 @@ interface PendingMessage {
 export class ProviderTranscriptFile {
   private readonly path: string;
   private pending: PendingMessage | null = null;
-  private headWritten = false;
+  private headQueued = false;
   private promptSeq = 0;
+  private writes: Promise<void> = Promise.resolve();
 
   // Reads the summary when it writes rather than holding a copy: the registry
   // replaces the summary object on every update, and the head line goes out
@@ -65,21 +66,22 @@ export class ProviderTranscriptFile {
 
   // A turn's prompt. The renderer already showed it, so it is persisted here
   // rather than replayed as a live event.
-  appendPrompt(text: string): void {
-    if (!text) return;
-    this.flush();
+  appendPrompt(text: string): Promise<void> {
+    if (!text) return this.writes;
+    this.sealMessage();
     const ts = Date.now();
     this.writeMessage('user', [{ type: 'text', text }], `prompt-${this.nextPromptId(ts)}`, ts);
+    return this.writes;
   }
 
-  append(event: TranscriptEvent): void {
+  append(event: TranscriptEvent): void | Promise<void> {
     // Child sessions keep their own transcripts; this file is one conversation.
     if (event.role !== 'primary') return;
     const notice = storedNoticeLine(event);
     if (notice) {
-      this.flush();
+      this.sealMessage();
       this.writeLine(notice);
-      return;
+      return this.writes;
     }
     const block = assistantBlock(event);
     if (block) {
@@ -98,13 +100,19 @@ export class ProviderTranscriptFile {
     const result = toolResultBlock(event);
     if (!result) return;
     // A result belongs after the call that produced it.
-    this.flush();
+    this.sealMessage();
     this.writeMessage('user', [result], event.id, event.ts);
+    return this.writes;
   }
 
   // Closes the open assistant message. Called when a turn settles and when the
   // session closes, so one stored line is one settled message.
-  flush(): void {
+  flush(): Promise<void> {
+    this.sealMessage();
+    return this.writes;
+  }
+
+  private sealMessage(): void {
     const message = this.pending;
     if (!message) return;
     this.writeMessage('assistant', message.blocks, message.id, message.ts);
@@ -131,14 +139,25 @@ export class ProviderTranscriptFile {
   }
 
   private writeLine(line: object): void {
-    if (!this.headWritten) {
-      mkdirSync(providerSessionsDir(), { recursive: true });
-      // A resumed session appends to the transcript it already has: one head
-      // line per file, written with the session's first message.
-      if (!existsSync(this.path)) appendFileSync(this.path, serialize(headLine(this.summary())));
-      this.headWritten = true;
-    }
-    appendFileSync(this.path, serialize(line));
+    const contents = serialize(line);
+    const head = this.headQueued ? undefined : serialize(headLine(this.summary()));
+    this.headQueued = true;
+    this.writes = this.writes.then(async () => {
+      if (head !== undefined) {
+        await mkdir(dirname(this.path), { recursive: true });
+        const exists = await stat(this.path).then(
+          () => true,
+          (error: unknown) => {
+            if (error instanceof Error && 'code' in error && error.code === 'ENOENT') return false;
+            throw error;
+          },
+        );
+        if (!exists) await appendFile(this.path, head);
+      }
+      await appendFile(this.path, contents);
+    });
+    // Retain a failed chain for flush to reject; never append past a missing row.
+    void this.writes.catch(() => undefined);
   }
 }
 
