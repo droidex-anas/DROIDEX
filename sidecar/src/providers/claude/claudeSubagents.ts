@@ -61,9 +61,8 @@ function workflowAgentStatus(state: string | undefined): ChildStatus {
 
 // A task that was killed stopped because something asked it to; only a real
 // failure wears the failed status.
-function endedStatus(status: string): ChildStatus {
-  if (status === 'completed') return 'completed';
-  return status === 'killed' ? 'paused' : 'failed';
+function taskStatus(status: NonNullable<TaskUpdated['patch']['status']>): ChildStatus {
+  return status === 'killed' ? 'paused' : status;
 }
 
 // Whether every field this patch would write already holds that value, so the
@@ -189,11 +188,11 @@ export class ClaudeSubagents {
     if (workflow) {
       if (status !== 'completed' && status !== 'failed' && status !== 'killed') return [];
       this.workflows.delete(message.task_id);
-      return this.settleWorkflowAgents(workflow, endedStatus(status));
+      return this.settleWorkflowAgents(workflow, taskStatus(status));
     }
     if (!this.children.has(message.task_id)) return [];
     return this.update(message.task_id, {
-      ...(status ? { status: endedStatus(status) } : {}),
+      ...(status ? { status: taskStatus(status) } : {}),
       ...(description ? { activity: { preview: description } } : {}),
     });
   }

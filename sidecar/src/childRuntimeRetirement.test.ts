@@ -55,7 +55,7 @@ function parentOf(...children: ChildSessionState[]): ParentChildSessions {
       mcpConfigs: [],
     },
     children: new Map(children.map((child) => [child.identity.childSessionId, child])),
-    settledSinceWake: new Set(),
+    settledSinceWake: new Map(),
     pendingSpawns: new Map(),
     openAttempts: new Map(),
     reservedOpenSlots: new Set(),

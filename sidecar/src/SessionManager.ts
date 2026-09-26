@@ -508,13 +508,12 @@ export class SessionManager {
       interactions: this.interactions,
       context: this.context,
       compaction: this.compaction,
-      onAgentWaveSettled: (parentAppSessionId, agents) => {
-        void this.lifecycle.wakeForSettledAgents(
+      onAgentWaveSettled: (parentAppSessionId, agents) =>
+        this.lifecycle.wakeForSettledAgents(
           parentAppSessionId,
           agentWakePrompt(agents),
           AGENT_WAKE_NOTICE,
-        );
-      },
+        ),
       resolveDefaultSettings: (summary, initResult, role) =>
         this.resolveChildDefaultSettings(summary, initResult, role),
       isShutdownStarted: () => this.shutdownPromise !== undefined,
