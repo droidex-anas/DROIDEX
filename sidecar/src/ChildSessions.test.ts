@@ -140,6 +140,7 @@ function createHarness(
         requestApproval: () => new Promise<PermissionOutcome>(() => undefined),
         requestQuestion: () => new Promise<ProviderQuestionAnswers>(() => undefined),
         cancelPending: () => undefined,
+        isActive: () => true,
       }),
     },
     context: {
