@@ -47,6 +47,7 @@ export interface SessionRetirementFacts {
   hasOpenBrowser: boolean;
   hasPendingSettings: boolean;
   hasAgentProcesses: boolean;
+  hasLiveVoice: boolean;
 }
 
 // Every path that could still produce output, own unsaved user intent, or lose
@@ -67,7 +68,10 @@ function isRetirableSession(facts: SessionRetirementFacts): boolean {
     !facts.hasPendingSettings &&
     // Retiring would kill the dev server or build watcher the agent started
     // and the user is still using.
-    !facts.hasAgentProcesses
+    !facts.hasAgentProcesses &&
+    // A conversation can run for a long time without a turn: the user is
+    // talking to this chat, however idle its transcript looks.
+    !facts.hasLiveVoice
   );
 }
 
@@ -109,6 +113,7 @@ export function adoptedSessionFacts(identity: {
     hasPendingSettings: false,
     // A restart took every process the previous run had spawned with it.
     hasAgentProcesses: false,
+    hasLiveVoice: false,
   };
 }
 
@@ -144,6 +149,7 @@ export interface SessionRuntimeRetirementDependencies {
   hasOpenBrowser: (appSessionId: string) => boolean;
   hasPendingSettings: (appSessionId: string) => boolean;
   hasAgentProcesses: (appSessionId: string) => boolean;
+  hasLiveVoice: (appSessionId: string) => boolean;
   retire: (appSessionId: string) => Promise<void>;
   // The released line is only true until the next prompt restores the
   // runtime, so it is a live progress row rather than stored history.
@@ -266,6 +272,7 @@ export class SessionRuntimeRetirement {
       hasOpenBrowser: d.hasOpenBrowser(appSessionId),
       hasPendingSettings: d.hasPendingSettings(appSessionId),
       hasAgentProcesses: d.hasAgentProcesses(appSessionId),
+      hasLiveVoice: d.hasLiveVoice(appSessionId),
     };
   }
 

@@ -48,6 +48,46 @@ export function providerUnavailableReason(status: ProviderStatus | undefined): s
   return READINESS_REASONS[status.readiness];
 }
 
+// How one harness reads in a harness picker. A new draft switches freely; once
+// the chat exists its harness is fixed, so the others stay visible but inert.
+export function harnessChoice(
+  provider: ProviderKind,
+  current: ProviderKind,
+  statuses: ProviderStatus[],
+  locked: boolean,
+): { selected: boolean; disabled: boolean; title: string } {
+  const selected = provider === current;
+  const label = PROVIDER_LABELS[provider];
+  if (locked) {
+    return {
+      selected,
+      disabled: !selected,
+      title: selected
+        ? `${label} — this chat's harness`
+        : `${label} — a chat keeps the harness it was created on`,
+    };
+  }
+  const reason = providerUnavailableReason(statuses.find((entry) => entry.provider === provider));
+  return { selected, disabled: reason !== null, title: reason ?? `Run this chat on ${label}` };
+}
+
+// The sidecar republishes every status on each probe round, usually unchanged.
+// Keeping the previous object for an unchanged status (and the previous array
+// when nothing changed) spares the composer and an open picker a full re-render
+// of their catalogs.
+export function reuseUnchangedStatuses(
+  previous: ProviderStatus[],
+  next: ProviderStatus[],
+): ProviderStatus[] {
+  const merged = next.map((status) => {
+    const prior = previous.find((entry) => entry.provider === status.provider);
+    return prior && JSON.stringify(prior) === JSON.stringify(status) ? prior : status;
+  });
+  const unchanged =
+    merged.length === previous.length && merged.every((status, i) => status === previous[i]);
+  return unchanged ? previous : merged;
+}
+
 // Shared so a provider with no status yet keeps a stable identity across
 // renders and the popover's memos are not invalidated every frame.
 const NO_MODELS: ModelInfo[] = [];

@@ -14,6 +14,12 @@ import {
 import { bridge } from '../lib/bridge';
 import { updateCompactionSettings } from '../lib/commands';
 import { reducePrInbox, type PrInboxAction } from '../features/pull-requests/lib/prInboxState';
+import {
+  reduceVoice,
+  withoutVoiceSession,
+  type VoiceAction,
+  type VoiceSessions,
+} from '../features/voice/voiceSessions';
 import { removeCustomTheme, upsertCustomTheme, type ThemePreset } from '../lib/theme';
 import {
   loadCustomThemes,
@@ -24,9 +30,14 @@ import {
 import {
   loadAgentConfig,
   loadCompactionModel,
+  loadDefaultVoice,
+  loadKnownVoices,
   loadDiffView,
+  loadHarnessModels,
   loadImagePasteQuality,
   loadLiveEnterBehavior,
+  loadModelSelectorStyle,
+  loadNarrationMode,
   loadPersistedUiState,
   loadReviewScope,
   loadSessionLastSeen,
@@ -34,9 +45,14 @@ import {
   loadWorkspaceCwds,
   saveAgentConfig,
   saveCompactionModel,
+  saveDefaultVoice,
+  saveKnownVoices,
   saveDiffView,
+  saveHarnessModels,
   saveImagePasteQuality,
   saveLiveEnterBehavior,
+  saveModelSelectorStyle,
+  saveNarrationMode,
   savePersistedUiState,
   saveReviewScope,
   saveSessionLastSeen,
@@ -44,10 +60,13 @@ import {
   saveWorkspaceCwds,
   sanitizeAgentConfig,
   type AgentConfig,
-  type AgentKind,
   type DiffViewMode,
+  type HarnessModel,
+  type HarnessModels,
   type LiveEnterBehavior,
   type MainView,
+  type MissionRole,
+  type ModelSelectorStyle,
 } from './persistedUiPreferences';
 import type { ShortcutAction, ShortcutBindings } from '../lib/shortcuts';
 import {
@@ -76,12 +95,19 @@ import type {
   ContextStatsSnapshot,
   BrowserState,
   DesignReference,
+  VoiceNarration,
 } from '../types/bridge';
 import { addWorkspaceCwd, removeWorkspaceCwd } from '../lib/workspaces';
 import { createOrderedActionBatcher, type OrderedActionBatcher } from './orderedActionBatcher';
 import { isHistoryStatusError, applyHistoryServerEvent } from '../lib/historyHealth';
 import { loadDefaultAutonomy, saveDefaultAutonomy } from '../lib/autonomy';
+import {
+  mergePendingModelSettings,
+  type PendingModelSettings,
+  type PendingModelUpdate,
+} from '../lib/pendingModelSettings';
 import { loadDraftProvider, saveDraftProvider } from '../features/providers/providerDraft';
+import { reuseUnchangedStatuses } from '../features/providers/providerIdentity';
 import { loadToolActivity, saveToolActivity, type ToolActivitySettings } from '../lib/toolActivity';
 import {
   applyFactoryCompactionDefaults,
@@ -295,6 +321,9 @@ export interface AppState {
   // previous request (a repeated click must re-arm the scope-fallback dedupe).
   reviewFocusRequestId: number;
   diffView: DiffViewMode;
+  // Which picker the composer's model chip opens: the classic list with
+  // per-row effort dots, or the card that drills into the effort slider.
+  modelSelectorStyle: ModelSelectorStyle;
   sidebarCollapsed: boolean;
   mainView: MainView;
   automationEditorRequest: AutomationEditorRequest | null;
@@ -327,6 +356,8 @@ export interface AppState {
   // Live-session autonomy changes awaiting provider confirmation, keyed by
   // appSessionId. The UI keeps showing the confirmed value while pending.
   pendingAutonomy: Record<string, Autonomy>;
+  // Chat model/effort changes shown ahead of confirmation, keyed by appSessionId.
+  pendingModelUpdates: Partial<Record<string, PendingModelUpdate>>;
   // One-shot text seeded into the composer (welcome-screen suggestion cards,
   // saved-note clicks). A fresh id per seed lets re-clicking re-arm the effect.
   composerSeed: { text: string; id: number; replace: boolean } | null;
@@ -342,13 +373,18 @@ export interface AppState {
   browserErrors: Record<string, string>;
   browserGlobalError?: string;
   designModes: DesignModes;
+  // Live voice conversations, keyed by appSessionId. Never persisted: a voice
+  // session ends with the window that held it.
+  voiceSessions: VoiceSessions;
 
   // Mission Control view
   selectedFeatureId: string | null;
   selectedChild: ChildSelection | null;
 
-  // Models / per-agent config
+  // Models, the model each harness starts a new chat on, and Mission Control's
+  // worker/validator picks (its primary uses its harness's entry).
   models: ModelInfo[];
+  harnessModels: HarnessModels;
   agentConfig: AgentConfig;
 
   // What each provider can do for the user right now, as last reported by the
@@ -373,6 +409,12 @@ export interface AppState {
   liveEnterBehavior: LiveEnterBehavior;
   // Fidelity tier for images pasted or dropped into the composer.
   imagePasteQuality: ImagePasteQuality;
+  // Voice mode: which voice speaks, and how much of the work it narrates while
+  // the agent runs. An empty voice leaves the choice to the harness.
+  defaultVoice: string;
+  /** The voices the harness last reported, for the picker in Settings. */
+  knownVoices: string[];
+  narrationMode: VoiceNarration;
   // Chord bound to each rebindable app action (see lib/shortcuts).
   shortcutBindings: ShortcutBindings;
 
@@ -568,6 +610,7 @@ export type Action =
   | OpenReviewAtAction
   | { type: 'CLEAR_REVIEW_FOCUS' }
   | { type: 'SET_DIFF_VIEW'; mode: DiffViewMode }
+  | { type: 'SET_MODEL_SELECTOR_STYLE'; style: ModelSelectorStyle }
   | { type: 'TOGGLE_COMMAND_PALETTE' }
   | { type: 'CLOSE_COMMAND_PALETTE' }
   | { type: 'TOGGLE_SIDEBAR' }
@@ -583,6 +626,7 @@ export type Action =
   | { type: 'CLOSE_AUTOMATIONS' }
   | { type: 'AUTOMATION_EDITOR_REQUEST_HANDLED'; requestId: number }
   | PrInboxAction
+  | VoiceAction
   | {
       type: 'START_CHAT';
       cwd: string;
@@ -628,19 +672,29 @@ export type Action =
       providerSessionId: string | null;
     }
   | { type: 'FACTORY_DEFAULTS'; defaults: FactoryDefaultSettings }
-  | { type: 'SET_AGENT_MODEL'; agent: AgentKind; modelId?: string }
-  | { type: 'SET_AGENT_REASONING'; agent: AgentKind; reasoning: ReasoningEffort | undefined }
+  | { type: 'SET_HARNESS_MODEL'; provider: ProviderKind; model: HarnessModel }
+  | { type: 'SET_AGENT_MODEL'; agent: MissionRole; modelId?: string }
+  | { type: 'SET_AGENT_REASONING'; agent: MissionRole; reasoning: ReasoningEffort | undefined }
   | { type: 'SET_COMPACTION_MODEL_GLOBAL'; compactionModel: string }
   | { type: 'SET_COMPACTION_TOKEN_LIMIT_GLOBAL'; limit?: number }
   | { type: 'SET_COMPACTION_TOKEN_LIMIT_FOR_MODEL'; modelId: string; limit?: number }
   | { type: 'SET_LIVE_ENTER_BEHAVIOR'; behavior: LiveEnterBehavior }
   | { type: 'SET_IMAGE_PASTE_QUALITY'; quality: ImagePasteQuality }
+  | { type: 'SET_DEFAULT_VOICE'; voice: string }
+  | { type: 'SET_NARRATION_MODE'; mode: VoiceNarration }
   | { type: 'SET_SHORTCUT_BINDING'; shortcut: ShortcutAction; chord: string }
   | { type: 'SET_DEFAULT_AUTONOMY'; autonomy: Autonomy }
   | { type: 'SET_TOOL_ACTIVITY'; settings: ToolActivitySettings }
   | { type: 'SET_DRAFT_AUTONOMY'; autonomy: Autonomy }
   | { type: 'AUTONOMY_UPDATE_REQUESTED'; appSessionId: string; autonomy: Autonomy }
-  | { type: 'AUTONOMY_UPDATE_SETTLED'; appSessionId: string };
+  | { type: 'AUTONOMY_UPDATE_SETTLED'; appSessionId: string }
+  | {
+      type: 'MODEL_UPDATE_REQUESTED';
+      appSessionId: string;
+      requestId: string;
+      settings: PendingModelSettings;
+    }
+  | { type: 'MODEL_UPDATE_SETTLED'; appSessionId: string; requestId: string };
 
 // Loaded once at module scope so the theme loader can match saved colors
 // against custom presets when recovering a missing presetId.
@@ -720,6 +774,7 @@ export const initialState: AppState = {
   toolActivity: loadToolActivity(),
   draftAutonomy: null,
   pendingAutonomy: {},
+  pendingModelUpdates: {},
   composerSeed: null,
   workspaceCwds: loadWorkspaceCwds(),
   browserOpen: false,
@@ -728,6 +783,7 @@ export const initialState: AppState = {
   browserErrors: {},
   browserGlobalError: undefined,
   designModes: {},
+  voiceSessions: {},
   selectedFeatureId: persistedUiState.selectedFeatureId ?? null,
   selectedChild: null,
   models: [],
@@ -739,6 +795,9 @@ export const initialState: AppState = {
   compactionSettingsRev: 0,
   liveEnterBehavior: loadLiveEnterBehavior(),
   imagePasteQuality: loadImagePasteQuality(),
+  defaultVoice: loadDefaultVoice(),
+  knownVoices: loadKnownVoices(),
+  narrationMode: loadNarrationMode(),
   shortcutBindings: loadShortcutBindings(),
   reviewOpenAppSessionId: null,
   reviewScope: loadReviewScope(),
@@ -746,8 +805,10 @@ export const initialState: AppState = {
   reviewFocusChange: null,
   reviewFocusRequestId: 0,
   diffView: loadDiffView(),
+  modelSelectorStyle: loadModelSelectorStyle(),
   skills: [],
   skillsProviderSessionId: undefined,
+  harnessModels: loadHarnessModels(),
   agentConfig: loadAgentConfig(),
   pendingCompose: {},
   lastCreatedSessionRequest: null,
@@ -839,6 +900,8 @@ function baseReducer(state: AppState, action: Action): AppState {
         childAccess: {},
         childRuntime: {},
         agentProcesses: {},
+        // A lost bridge never settles in-flight changes, so fall back to the last confirmed values.
+        pendingModelUpdates: {},
         contextStats: { ...next.contextStats, child: {} },
       };
     }
@@ -1042,9 +1105,13 @@ function baseReducer(state: AppState, action: Action): AppState {
         pendingAutonomy: Object.fromEntries(
           Object.entries(state.pendingAutonomy).filter(([id]) => id !== action.appSessionId),
         ),
+        pendingModelUpdates: Object.fromEntries(
+          Object.entries(state.pendingModelUpdates).filter(([id]) => id !== action.appSessionId),
+        ),
         agentProcesses: Object.fromEntries(
           Object.entries(state.agentProcesses).filter(([id]) => id !== action.appSessionId),
         ),
+        voiceSessions: withoutVoiceSession(state.voiceSessions, action.appSessionId),
         selectedChild:
           state.selectedChild?.parentAppSessionId === action.appSessionId
             ? null
@@ -1731,6 +1798,9 @@ function baseReducer(state: AppState, action: Action): AppState {
     case 'SET_DIFF_VIEW':
       return { ...state, diffView: saveDiffView(action.mode) };
 
+    case 'SET_MODEL_SELECTOR_STYLE':
+      return { ...state, modelSelectorStyle: saveModelSelectorStyle(action.style) };
+
     case 'TOGGLE_COMMAND_PALETTE':
       return { ...state, commandPaletteOpen: !state.commandPaletteOpen };
 
@@ -1762,6 +1832,24 @@ function baseReducer(state: AppState, action: Action): AppState {
 
     case 'TOGGLE_MISSION_CONTROL':
       return { ...state, missionControlMode: !state.missionControlMode };
+
+    case 'VOICE_CONNECTING':
+    case 'VOICE_ANSWERED':
+    case 'VOICE_STATE':
+    case 'VOICE_ERROR':
+    case 'VOICE_ENDED':
+      return reduceVoice(state, action);
+
+    // Settings has no conversation to ask what the harness offers, so what it
+    // offers is what the harness last answered here.
+    case 'VOICE_VOICES': {
+      const next = reduceVoice(state, action);
+      if (sameVoices(state.knownVoices, action.voices)) return next;
+      return { ...next, knownVoices: saveKnownVoices(action.voices) };
+    }
+
+    case 'VOICE_TRANSCRIPT':
+      return reduceVoice(state, action);
 
     case 'OPEN_PULL_REQUESTS':
     case 'CLOSE_PULL_REQUESTS':
@@ -2023,8 +2111,10 @@ function baseReducer(state: AppState, action: Action): AppState {
         agentConfig: saveAgentConfig(sanitizeAgentConfig(state.agentConfig, action.models)),
       };
 
-    case 'PROVIDER_STATUSES':
-      return { ...state, providerStatuses: action.statuses };
+    case 'PROVIDER_STATUSES': {
+      const providerStatuses = reuseUnchangedStatuses(state.providerStatuses, action.statuses);
+      return providerStatuses === state.providerStatuses ? state : { ...state, providerStatuses };
+    }
 
     case 'SET_DRAFT_PROVIDER':
       saveDraftProvider(action.provider);
@@ -2040,12 +2130,6 @@ function baseReducer(state: AppState, action: Action): AppState {
     case 'FACTORY_DEFAULTS': {
       const next = sanitizeAgentConfig(
         {
-          primary: {
-            modelId: state.agentConfig.primary.modelId ?? action.defaults.modelId,
-            reasoning: state.agentConfig.primary.modelId
-              ? state.agentConfig.primary.reasoning
-              : (action.defaults.reasoningEffort ?? state.agentConfig.primary.reasoning),
-          },
           worker: {
             modelId: state.agentConfig.worker.modelId ?? action.defaults.workerModelId,
             reasoning: state.agentConfig.worker.modelId
@@ -2074,6 +2158,15 @@ function baseReducer(state: AppState, action: Action): AppState {
         compactionSettingsRev: state.compactionSettingsRev + 1,
       };
     }
+
+    case 'SET_HARNESS_MODEL':
+      return {
+        ...state,
+        harnessModels: saveHarnessModels({
+          ...state.harnessModels,
+          [action.provider]: action.model,
+        }),
+      };
 
     case 'SET_AGENT_MODEL':
       return {
@@ -2126,6 +2219,12 @@ function baseReducer(state: AppState, action: Action): AppState {
       return { ...state, liveEnterBehavior: behavior };
     }
 
+    case 'SET_DEFAULT_VOICE':
+      return { ...state, defaultVoice: saveDefaultVoice(action.voice) };
+
+    case 'SET_NARRATION_MODE':
+      return { ...state, narrationMode: saveNarrationMode(action.mode) };
+
     case 'SET_IMAGE_PASTE_QUALITY': {
       const quality = saveImagePasteQuality(action.quality);
       return { ...state, imagePasteQuality: quality };
@@ -2166,6 +2265,32 @@ function baseReducer(state: AppState, action: Action): AppState {
       };
     }
 
+    case 'MODEL_UPDATE_REQUESTED':
+      return {
+        ...state,
+        pendingModelUpdates: {
+          ...state.pendingModelUpdates,
+          [action.appSessionId]: {
+            requestId: action.requestId,
+            settings: mergePendingModelSettings(
+              state.pendingModelUpdates[action.appSessionId]?.settings,
+              action.settings,
+            ),
+          },
+        },
+      };
+
+    case 'MODEL_UPDATE_SETTLED': {
+      if (state.pendingModelUpdates[action.appSessionId]?.requestId !== action.requestId)
+        return state;
+      return {
+        ...state,
+        pendingModelUpdates: Object.fromEntries(
+          Object.entries(state.pendingModelUpdates).filter(([id]) => id !== action.appSessionId),
+        ),
+      };
+    }
+
     default:
       return state;
   }
@@ -2181,11 +2306,17 @@ export function toastMessageForEvent(ev: ServerEvent): string | undefined {
       ev.code === 'history.unflushed_work' ||
       ev.code === 'session.interrupted' ||
       ev.code === 'session.autonomy_update_failed' ||
+      ev.code === 'session.model_update_failed' ||
       ev.code === 'session.create_failed')
   ) {
     return ev.message;
   }
   return ev.type === 'child.error' && ev.operation !== 'open' ? ev.message : undefined;
+}
+
+// Two lists of the same voices in the same order are the same answer.
+function sameVoices(current: string[], next: string[]): boolean {
+  return current.length === next.length && current.every((voice, at) => voice === next[at]);
 }
 
 export function adaptEvent(ev: ServerEvent): Action | null {
@@ -2200,6 +2331,12 @@ export function adaptEvent(ev: ServerEvent): Action | null {
       return { type: 'SESSION_CREATED', clientRef: ev.clientRef, session: ev.session };
     case 'session.updated':
       return { type: 'SESSION_UPDATED', session: ev.session };
+    case 'session.model_update_applied':
+      return {
+        type: 'MODEL_UPDATE_SETTLED',
+        appSessionId: ev.appSessionId,
+        requestId: ev.requestId,
+      };
     case 'session.closed':
       return { type: 'SESSION_CLOSED', appSessionId: ev.appSessionId };
     case 'session.processes':
@@ -2266,6 +2403,11 @@ export function adaptEvent(ev: ServerEvent): Action | null {
       if (ev.code === 'session.autonomy_update_failed') {
         return ev.appSessionId
           ? { type: 'AUTONOMY_UPDATE_SETTLED', appSessionId: ev.appSessionId }
+          : null;
+      }
+      if (ev.code === 'session.model_update_failed') {
+        return ev.appSessionId && ev.requestId
+          ? { type: 'MODEL_UPDATE_SETTLED', appSessionId: ev.appSessionId, requestId: ev.requestId }
           : null;
       }
       if (ev.code === 'session.create_failed' && ev.clientRef) {
@@ -2347,6 +2489,32 @@ export function adaptEvent(ev: ServerEvent): Action | null {
       return { type: 'BROWSER_CLOSED', appSessionId: ev.appSessionId };
     case 'browser.error':
       return { type: 'BROWSER_ERROR', appSessionId: ev.appSessionId, message: ev.message };
+    case 'voice.answer':
+      return {
+        type: 'VOICE_ANSWERED',
+        appSessionId: ev.appSessionId,
+        sdp: ev.sdp,
+        attempt: ev.attempt,
+      };
+    case 'voice.state':
+      return { type: 'VOICE_STATE', appSessionId: ev.appSessionId, status: ev.status };
+    case 'voice.transcript':
+      return {
+        type: 'VOICE_TRANSCRIPT',
+        appSessionId: ev.appSessionId,
+        role: ev.role,
+        text: ev.text,
+        final: ev.final,
+      };
+    case 'voice.voices':
+      return {
+        type: 'VOICE_VOICES',
+        appSessionId: ev.appSessionId,
+        voices: ev.voices,
+        defaultVoice: ev.defaultVoice,
+      };
+    case 'voice.error':
+      return { type: 'VOICE_ERROR', appSessionId: ev.appSessionId, message: ev.message };
     default:
       return null;
   }

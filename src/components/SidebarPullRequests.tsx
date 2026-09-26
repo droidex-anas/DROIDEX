@@ -5,7 +5,11 @@ import type { SessionSummary } from '../types/bridge';
 import type { ChatMetadataMap, ChatPullRequest } from '../lib/chatMetadata';
 import { prKind, prKindLabel } from '../lib/github';
 import { PrStateIcon } from './environment/GithubIcons';
+import { SidebarSectionHeading } from './SidebarSectionHeading';
 import { SidebarSessionList } from './SidebarSessionList';
+
+// PR urls key the other groups, so this cannot collide with one.
+const UNLINKED = 'unlinked';
 
 interface Props {
   sessions: SessionSummary[];
@@ -24,6 +28,12 @@ export function SidebarPullRequests({
 }: Props) {
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
   const { defaultVisibleCount, visibleCountFor, showMore, showLess } = useSidebarPagination(limit);
+  const toggle = (key: string) => {
+    const next = new Set(collapsed);
+    if (next.has(key)) next.delete(key);
+    else next.add(key);
+    setCollapsed(next);
+  };
   const groups = new Map<string, { pr: ChatPullRequest; sessions: SessionSummary[] }>();
   const unlinked: SessionSummary[] = [];
   for (const session of sessions) {
@@ -63,25 +73,26 @@ export function SidebarPullRequests({
         return (
           <section key={url} aria-label={`PR #${String(pr.number)} ${pr.title}`}>
             <button
-              className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-[12px] text-droid-text-secondary hover:bg-droid-elevated/40"
+              type="button"
+              className="group/heading flex w-full cursor-pointer items-center gap-2.5 rounded-md py-1.5 pl-3 pr-3 text-left text-[13px] font-medium text-droid-text-secondary transition-colors hover:text-droid-text focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-droid-accent/40"
               title={`${url} · ${prKindLabel(kind)} (last detected)`}
               aria-expanded={open}
               onClick={() => {
-                const next = new Set(collapsed);
-                if (open) next.add(url);
-                else next.delete(url);
-                setCollapsed(next);
+                toggle(url);
               }}
             >
-              <ChevronRight
-                className={`h-3 w-3 shrink-0 ${open ? 'rotate-90' : ''}`}
-                strokeWidth={1.5}
-              />
               <PrStateIcon kind={kind} size={14} checks={pr.checks} />
-              <span className="min-w-0 flex-1 truncate">
-                #{pr.number} {pr.title}
+              <span className="flex min-w-0 flex-1 items-center gap-1">
+                <span className="truncate">
+                  #{pr.number} {pr.title}
+                </span>
+                <ChevronRight
+                  className={`h-3 w-3 shrink-0 opacity-50 transition-[transform,opacity] group-hover/heading:opacity-100 ${open ? 'rotate-90' : ''}`}
+                  strokeWidth={2}
+                  aria-hidden="true"
+                />
               </span>
-              <span className="shrink-0 text-[11px] text-droid-text-muted">
+              <span className="shrink-0 text-[11px] font-normal text-droid-text-muted">
                 {prKindLabel(kind)}
               </span>
             </button>
@@ -91,10 +102,15 @@ export function SidebarPullRequests({
       })}
       {unlinked.length > 0 && (
         <section aria-label="No linked PR">
-          <h3 className="px-2 py-1.5 text-[12px] font-medium text-droid-text-muted">
-            No linked PR
-          </h3>
-          {list('unlinked', unlinked)}
+          <SidebarSectionHeading
+            label="No linked PR"
+            open={!collapsed.has(UNLINKED)}
+            count={unlinked.length}
+            onToggle={() => {
+              toggle(UNLINKED);
+            }}
+          />
+          {!collapsed.has(UNLINKED) && list(UNLINKED, unlinked)}
         </section>
       )}
     </div>

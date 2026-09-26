@@ -300,9 +300,13 @@ test('only a real spawn is labeled a child session', () => {
 test('a tool with no card keeps its own name instead of borrowing a verb', () => {
   // "Searched" belongs to a codebase search; a tool that merely has "search" in
   // its name and a bare query is not one, so it says what it is.
-  const search = describeToolCall('ToolSearch', { query: 'select:Read,Edit', max_results: 5 });
+  const search = describeToolCall('ToolSearch', { query: 'notebook jupyter', max_results: 5 });
   assert.equal(search.verb, 'Tool search');
-  assert.equal(search.object, 'select:Read,Edit');
+  assert.equal(search.object, 'notebook jupyter');
+  // A search that names its tools loads them, and says so by their own names.
+  const loaded = describeToolCall('ToolSearch', { query: 'select:Read,Edit', max_results: 5 });
+  assert.equal(loaded.verb, 'Loaded');
+  assert.equal(loaded.object, 'Read, Edit');
   // A real codebase search still reads as one: it carries a pattern.
   assert.equal(describeToolCall('Grep', { pattern: 'foo', path: 'src' }).verb, 'Searched');
   assert.equal(describeToolCall('Glob', { pattern: '**/*.ts' }).verb, 'Searched');

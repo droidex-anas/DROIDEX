@@ -129,8 +129,9 @@ npm run docs:check          # Generated docs are in sync
 npm run build               # Production build
 ```
 
-`npm run lint` is non-blocking because of an existing backlog, but files you add
-or change own their diagnostics, so leave them clean.
+`npm run lint` blocks CI on new errors. The existing backlog is recorded in
+`eslint-suppressions.json`; never add to it to get a green run. When you fix old
+errors, prune it with `npx eslint . --prune-suppressions`.
 
 If you changed scripts, environment variables, or onboarding commands,
 regenerate the docs:

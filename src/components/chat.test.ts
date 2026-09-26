@@ -17,7 +17,7 @@ import {
 import { MessageFeed } from './MessageFeed';
 import { DiffCard } from './DiffView';
 import { buildFeed, collectTurnFiles, isResultFor, type FeedItem } from './chatFeed';
-import { conversationAnchors, groupTurns } from './chatFeedTurns';
+import { conversationAnchors, groupTurns, tailTimestamp } from './chatFeedTurns';
 import {
   appendedFeedItemKeys,
   appendedFeedItemKeysFromProjection,
@@ -83,6 +83,11 @@ test('parent liveness cannot make paused historical child activity look running'
   assert.equal(childSessionLineIsRunning({ status: 'running' }), true);
 });
 
+test('tailTimestamp returns undefined for empty tool and diff groups', () => {
+  assert.equal(tailTimestamp({ type: 'tools', key: 'tools', events: [] }), undefined);
+  assert.equal(tailTimestamp({ type: 'diffs', key: 'diffs', changes: [] }), undefined);
+});
+
 test('a sent prompt shows Visualize and skill chips instead of slash text', () => {
   const html = renderToStaticMarkup(
     createElement(UserBubble, {
@@ -107,6 +112,27 @@ test('#20 a TodoWrite update does not add a chat message and answer stays single
   assert.ok(planAtTop); // sanity: message exists
   const inWorked = workedChildren(grouped).some((c) => c.type === 'tools');
   assert.ok(inWorked, 'TodoWrite activity should be inside the Worked group');
+});
+
+test('a spoken line stays its own marked row beside the turn it was said in', () => {
+  const spokenAsk = ev({ kind: 'text', author: 'user', text: 'what changed?', spoken: true });
+  const spokenReply = ev({ kind: 'text', text: 'the composer', spoken: true });
+  const grouped = groupTurns(
+    buildFeed([spokenAsk, grep(), asst('I changed the composer.'), spokenReply]),
+    false,
+  );
+  // The written answer stays the answer; the spoken reply neither merges into
+  // it nor disappears into the Worked fold.
+  assert.deepEqual(topLevelAnswers(grouped), ['I changed the composer.', 'the composer']);
+  assert.equal(
+    workedChildren(grouped).some((it) => it.type === 'message'),
+    false,
+  );
+
+  const html = renderToStaticMarkup(
+    createElement(UserBubble, { event: { text: 'what changed?', spoken: true } }),
+  );
+  assert.ok(html.includes('Spoken'));
 });
 
 test('conversation timeline anchors one dot per user prompt', () => {

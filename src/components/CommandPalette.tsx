@@ -1,12 +1,13 @@
 import { useState } from 'react';
-import { useStoreDispatch } from '../hooks/useStore';
-import { Plus, Folder, Settings, Zap, GitBranch, Terminal, ArrowRight } from 'lucide-react';
+import { ArrowRight, Folder, Settings, SquarePen, SquareTerminal } from '@droidex/icons';
+import { shallowEqual, useStoreDispatch, useStoreSelector } from '../hooks/useStore';
+import { resolvePrWorkspaceCwd } from '../features/pull-requests/lib/prWorkspaceCwd';
+import { GitPullRequestIcon } from './environment/GithubIcons';
 import PaletteShell from './PaletteShell';
 import { usePaletteNavigation } from './usePaletteNavigation';
 
 const commands = [
-  { id: 'new-thread', label: 'New Thread', shortcut: 'Ctrl+T', icon: Plus, action: 'thread' },
-  { id: 'new-mission', label: 'New Mission', shortcut: 'Ctrl+M', icon: Zap, action: 'mission' },
+  { id: 'new-thread', label: 'New Thread', shortcut: 'Ctrl+T', icon: SquarePen, action: 'thread' },
   {
     id: 'switch-project',
     label: 'Switch Project',
@@ -18,15 +19,31 @@ const commands = [
     id: 'toggle-terminal',
     label: 'Toggle Terminal',
     shortcut: 'Ctrl+`',
-    icon: Terminal,
+    icon: SquareTerminal,
     action: 'terminal',
   },
-  { id: 'git-status', label: 'Git Status', shortcut: 'Ctrl+G', icon: GitBranch, action: 'git' },
+  {
+    id: 'pull-requests',
+    label: 'Pull Requests',
+    icon: GitPullRequestIcon,
+    action: 'pull-requests',
+  },
   { id: 'settings', label: 'Settings', shortcut: 'Ctrl+,', icon: Settings, action: 'settings' },
 ];
 
 export default function CommandPalette() {
   const dispatch = useStoreDispatch();
+  const prWorkspace = useStoreSelector((current) => {
+    const activeSession = current.activeAppSessionId
+      ? current.sessions[current.activeAppSessionId]
+      : null;
+    return {
+      boundCwd: current.prWorkspaceCwd,
+      activeCwd: activeSession?.cwd,
+      workspaceKind: activeSession?.workspaceKind,
+      workspaceCwds: current.workspaceCwds,
+    };
+  }, shallowEqual);
   const [query, setQuery] = useState('');
 
   const close = () => {
@@ -44,8 +61,8 @@ export default function CommandPalette() {
       case 'settings':
         dispatch({ type: 'TOGGLE_SETTINGS' });
         break;
-      case 'mission':
-        dispatch({ type: 'TOGGLE_MISSION_CONTROL' });
+      case 'pull-requests':
+        dispatch({ type: 'OPEN_PULL_REQUESTS', cwd: resolvePrWorkspaceCwd(prWorkspace) });
         break;
       // other actions can be wired here
     }
@@ -67,7 +84,6 @@ export default function CommandPalette() {
       placeholder="Type a command or search..."
       inputAriaLabel="Command palette"
       enterHint="Select"
-      footerRight="Droid Control v0.1.0"
     >
       {filtered.length === 0 && (
         <div className="px-4 py-8 text-center text-sm text-droid-text-muted">No commands found</div>
@@ -83,13 +99,17 @@ export default function CommandPalette() {
             onClick={() => {
               runCommand(cmd);
             }}
-            className={`w-full flex items-center gap-3 px-4 py-2.5 text-left transition-colors ${
-              i === selected ? 'bg-droid-accent/10' : 'hover:bg-droid-surface'
+            className={`w-full flex items-center gap-3 rounded-lg px-2.5 py-2.5 text-left transition-colors ${
+              i === selected ? 'bg-droid-accent/[0.07]' : ''
             }`}
           >
-            <Icon className="w-4 h-4 text-droid-text-muted" />
+            <span className="flex h-4 w-4 shrink-0 items-center justify-center text-droid-text-muted">
+              <Icon size={16} />
+            </span>
             <span className="flex-1 text-sm text-droid-text">{cmd.label}</span>
-            <span className="text-[11px] text-droid-text-muted font-mono">{cmd.shortcut}</span>
+            {cmd.shortcut && (
+              <span className="text-[11px] text-droid-text-muted font-mono">{cmd.shortcut}</span>
+            )}
             {i === selected && <ArrowRight className="w-3.5 h-3.5 text-droid-accent" />}
           </button>
         );

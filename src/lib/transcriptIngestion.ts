@@ -62,7 +62,21 @@ export function ingestTranscriptEvents(
   };
 
   for (const event of incoming) {
-    if (hasEventId(eventIds, event.id)) continue;
+    if (hasEventId(eventIds, event.id)) {
+      // The sidecar can correct a finished utterance with more text under the
+      // same id, including when both versions arrive from durable history.
+      const grown = grownSpokenRow(events, event);
+      if (!grown) continue;
+      events = replaceChunkedSequenceAt(events, grown.index, grown.merged);
+      indexes = replaceIndexedEvent(indexes, grown.existing, grown.merged);
+      recordChange(grown.index);
+      estimatedCost = estimateReplacedTranscriptEventCost(
+        estimatedCost,
+        grown.existing,
+        grown.merged,
+      );
+      continue;
+    }
     const last = events.at(-1);
 
     // Protocol mirror of sidecar/src/streamingDeltaCoalescer.ts
@@ -76,7 +90,7 @@ export function ingestTranscriptEvents(
         textDelta.text,
         event.endTs ?? event.ts,
       );
-      events = replaceChunkedSequenceSuffix(events, changedIndex, [mergedTail]);
+      events = replaceChunkedSequenceAt(events, changedIndex, mergedTail);
       indexes = replaceIndexedEvent(indexes, textDelta.previous, mergedTail);
       recordChange(changedIndex);
       estimatedCost = estimateReplacedTranscriptEventCost(
@@ -448,6 +462,22 @@ function shiftIndexForInsertion(
   return index >= insertionIndex ? index + insertedCount : index;
 }
 
+// The same spoken row, said further. A closing notification can repeat with
+// more text than the one before it; anything else with an id already in the
+// transcript is the duplicate it looks like.
+function grownSpokenRow(
+  events: readonly TranscriptEvent[],
+  event: TranscriptEvent,
+): { index: number; existing: TranscriptEvent; merged: TranscriptEvent } | undefined {
+  if (!event.spoken || !event.text) return undefined;
+  const index = events.findLastIndex((candidate) => candidate.id === event.id);
+  const existing = events.at(index);
+  if (index < 0 || !existing?.spoken) return undefined;
+  const text = existing.text ?? '';
+  if (event.text === text || !event.text.startsWith(text)) return undefined;
+  return { index, existing, merged: { ...existing, text: event.text } };
+}
+
 function getTextDeltaRun(
   previous: TranscriptEvent | undefined,
   next: TranscriptEvent,
@@ -455,6 +485,10 @@ function getTextDeltaRun(
   if (
     previous !== undefined &&
     !next.author &&
+    // A spoken line is a whole utterance, not a token fragment. Keep it
+    // separate from adjacent spoken rows and streamed provider text.
+    !previous.spoken &&
+    !next.spoken &&
     previous.kind === next.kind &&
     previous.sourceSessionId === next.sourceSessionId &&
     previous.author === next.author &&
