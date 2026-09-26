@@ -77,6 +77,12 @@ import { join } from 'node:path';
 // merged CSS of 100_276 is over main's 100_000 line, so Projects' 101_500
 // stays.
 //
+// Lowered from 1_390_000 to 1_385_000 when the voice call left the entry.
+// VoiceProvider keeps only the controls a chat reads; the WebRTC negotiation,
+// the microphone hook and the call's view logic now load with the first
+// conversation (the VoiceCall chunk, ~6KB). The entry measured 1_377_273
+// against 1_382_099 before, so the headroom stays ~8KB.
+//
 // Main meanwhile raised its own line from 1_375_000 to 1_390_000 for the
 // DroidProxy provider marks in the composer and picker, plus bridge
 // validation, with the settings page lazy; main alone measured ~1_381_450.
