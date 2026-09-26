@@ -683,6 +683,8 @@ export class SessionLifecycle {
       streaming: false,
       queuedSends: 0,
     });
+    // A wave that finished during the Stop was held back; the Stop is over.
+    if (!liveSession.interrupting) this.dependencies.childSessions.retryAgentWave(appSessionId);
   }
 
   async settleAfterCompaction(
@@ -983,9 +985,11 @@ export class SessionLifecycle {
       }
       // A Stop lands before the turn reports itself finished, so the flags it
       // set are cleared here as they are for a typed turn.
+      const stopped = liveSession.interrupting || liveSession.interruptingForSteer;
       liveSession.interrupting = false;
       liveSession.interruptingForSteer = false;
       this.publishTurnSettled(liveSession);
+      if (stopped) this.dependencies.childSessions.retryAgentWave(liveSession.summary.appSessionId);
       // A runtime that has gone takes the queue with it through the close
       // path, which reopens and redelivers. Taking a prompt off it here would
       // spend it on a client that cannot run it.
@@ -1157,9 +1161,12 @@ export class SessionLifecycle {
       await liveSession.turnPromise;
     } finally {
       liveSession.turnPromise = undefined;
+      const stopped = liveSession.interrupting || liveSession.interruptingForSteer;
       liveSession.interruptingForSteer = false;
       liveSession.interrupting = false;
       liveSession.streaming = false;
+      // A wave held back while the Stop was outstanding is owed once it is over.
+      if (stopped) d.childSessions.retryAgentWave(stableAppSessionId);
       // Let the closure observer claim cleanup before advancing the queue.
       if (liveSession.session.isClosed) await liveSession.session.closed;
       if (liveSession.providerClosePromise) {

@@ -143,7 +143,9 @@ function createHarness(ordinarySummaries: SessionSummary[] = []) {
     getFactoryDefaults: () => Promise.resolve(defaults),
     maxContextTokensForModel: () => 1_000,
     childSessions: {
-      retryAgentWave: () => undefined,
+      retryAgentWave: (appSessionId) => {
+        calls.push({ target: 'cleanup', method: 'children.retryWave', args: [appSessionId] });
+      },
       attachParent: (appSessionId) => {
         calls.push({ target: 'cleanup', method: 'children.attach', args: [appSessionId] });
       },
@@ -1611,8 +1613,20 @@ test('agent completion cannot start a turn while Stop or steer interruption is o
   assert.equal(h.lifecycle.wakeForSettledAgents('app-1', 'agent result', 'Agents finished'), true);
   await live.turnPromise;
   assert.deepEqual(provider.prompts, ['agent result']);
+  // A wave held back by a Stop is owed once the Stop is over: the lifecycle
+  // asks the child sessions to try again as soon as the flag clears.
+  const retriesBefore = retryWaveCount(h);
+  await h.lifecycle.interrupt('app-1');
+  assert.equal(live.interrupting, false);
+  assert.equal(retryWaveCount(h), retriesBefore + 1);
   await h.lifecycle.close('app-1');
 });
+
+function retryWaveCount(harness: Harness): number {
+  return harness.calls.filter(
+    (call) => call.target === 'cleanup' && call.method === 'children.retryWave',
+  ).length;
+}
 
 test('agent wake setup failures reach the background-turn error owner', async () => {
   const h = createHarness([summary('app-1', 'provider-1')]);
