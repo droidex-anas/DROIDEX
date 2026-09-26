@@ -38,6 +38,7 @@ function fakeRum() {
   let config: Record<string, unknown> = {};
   let user: { id: string } | null = null;
   let stopped = false;
+  let views = 0;
   return {
     api: {
       init: (value: Record<string, unknown>) => {
@@ -46,7 +47,9 @@ function fakeRum() {
       setUser: (value: { id: string }) => {
         user = value;
       },
-      startView: () => undefined,
+      startView: () => {
+        views += 1;
+      },
       addAction: (name: string, context?: Record<string, unknown>) => {
         actions.push({ name, context });
       },
@@ -55,6 +58,7 @@ function fakeRum() {
       },
     },
     stopped: () => stopped,
+    views: () => views,
     actions,
     config: () => config,
     user: () => user,
@@ -237,5 +241,42 @@ test('opting out stops a running client for the rest of the launch', async () =>
   }
   assert.equal(rum.stopped(), true);
   assert.equal(sanitizeRumEvent({ type: 'action', context: {} }), false);
+  __resetUsageAnalyticsForTest();
+});
+
+test('opting out while the SDK is loading never starts a view', async () => {
+  __resetUsageAnalyticsForTest();
+  const rum = fakeRum();
+  let finishLoading = (): void => undefined;
+  const loading = new Promise<void>((resolve) => {
+    finishLoading = resolve;
+  });
+  // The round trip that stores the preference is slower than the SDK load, so
+  // the opt-out has to count from the click, not from the bridge's answer.
+  Reflect.set(globalThis, 'window', {
+    droidControl: {
+      setUsageAnalytics: () =>
+        new Promise((resolve) => setTimeout(() => resolve({ enabled: false }), 20)),
+    },
+  });
+  try {
+    const launch = startUsageAnalytics({
+      bootstrap: async () => ENABLED,
+      loadRum: async () => {
+        await loading;
+        return rum.api;
+      },
+    });
+    const optOut = setUsageAnalyticsPreference(false);
+    finishLoading();
+    assert.equal(await launch, 'disabled');
+    await optOut;
+  } finally {
+    Reflect.deleteProperty(globalThis, 'window');
+  }
+  // A view event cannot be discarded by beforeSend, so none may be created.
+  assert.equal(rum.views(), 0);
+  assert.deepEqual(rum.config(), {});
+  assert.deepEqual(rum.actions, []);
   __resetUsageAnalyticsForTest();
 });
