@@ -78,7 +78,10 @@ class RejectingCloseSession extends FakeFactorySession {
   }
 }
 
-function createHarness(ordinarySummaries: SessionSummary[] = []) {
+function createHarness(
+  ordinarySummaries: SessionSummary[] = [],
+  beforeFirstTurn?: (session: SessionSummary, clientRef: string) => Promise<void>,
+) {
   const calls: RecordedCall[] = [];
   const events: ServerEvent[] = [];
   const publicationRegistration: boolean[] = [];
@@ -134,6 +137,7 @@ function createHarness(ordinarySummaries: SessionSummary[] = []) {
     interactionMode: 'auto',
   };
   const lifecycle = new SessionLifecycle({
+    beforeFirstTurn,
     eventFlow: { apply: () => undefined, beginTurn: () => undefined },
     provider: () => new DroidProvider(runtime, () => undefined),
     registry,
@@ -171,6 +175,7 @@ function createHarness(ordinarySummaries: SessionSummary[] = []) {
       requestApproval: () => new Promise<PermissionOutcome>(() => undefined),
       requestQuestion: () => new Promise<ProviderQuestionAnswers>(() => undefined),
       cancelPending: () => undefined,
+      isActive: () => true,
     }),
     compaction: {
       resolveLimit: () => compactionLimit(),
@@ -234,9 +239,9 @@ function createHarness(ordinarySummaries: SessionSummary[] = []) {
     hasActiveSettingsChanges: () => false,
     applyPendingSettingsToSummary: (item) => ({ ...item, ...projection }),
     applyPendingSessionSettings: (appSessionId) => applyPending(appSessionId),
-    runPrimaryTurn: async (live, prompt, _mentions, delivery) => {
+    runPrimaryTurn: async (live, prompt, delivery) => {
       if (delivery && !delivery.isCurrent()) return;
-      for await (const event of live.session.stream(prompt)) {
+      for await (const event of live.session.stream(prompt.text)) {
         delivery?.accepted();
         void event;
       }
@@ -780,6 +785,26 @@ test('queued sends stay FIFO while send-now prompts are newest first', async () 
   // The second send-now lands while the first interrupt is still in flight and
   // rides the queue instead of interrupting the turn that redelivers it.
   assert.equal(interruptCount(steered), 1);
+});
+
+test('a prompt from another chat queues behind the running turn without waiting for it', async () => {
+  const harness = createHarness();
+  const provider = queueCreate(harness, 'target');
+  const gate = provider.deferNextStream();
+  await harness.lifecycle.create(createCommand('first'));
+  await provider.waitForPrompts(1);
+  assert.equal(harness.lifecycle.queueBehindTurn('unknown', 'nowhere to go'), false);
+
+  assert.equal(harness.lifecycle.queueBehindTurn('target', 'from another chat'), true);
+  // Nobody typed it, so the turn that runs it announces it to the window.
+  assert.deepEqual(requireLive(harness, 'target').pendingSends, [
+    { text: 'from another chat', announce: true },
+  ]);
+  assert.equal(harness.registry.getCanonicalSummary('target')?.queuedSends, 1);
+
+  gate.resolve();
+  await provider.waitForPrompts(2);
+  assert.deepEqual(provider.prompts, ['first', 'from another chat']);
 });
 
 test('send-now queues without interrupting compaction and reports interrupt rejection', async () => {
@@ -1497,7 +1522,7 @@ test('scheduled delivery rejects unknown IDs and discards settings results after
   const canceled = harness.lifecycle.deliverScheduled('scheduled-race', 'canceled', () => current);
   current = false;
   apply(true);
-  assert.equal((await canceled).status, 'unavailable');
+  assert.equal((await canceled).status, 'cancelled');
   const replaced = harness.lifecycle.deliverScheduled('scheduled-race', 'stale', () => true);
   const live = requireLive(harness, 'scheduled-race');
   live.session = new DroidProviderSession(
@@ -1587,5 +1612,51 @@ test('closing a scheduled target during cold resume invalidates its provisional 
   assert.deepEqual(provider.prompts, []);
   assert.ok(
     harness.calls.some((call) => call.method === 'session.close' && call.args[0] === 'cold-close'),
+  );
+});
+
+test('dependent ownership is committed before the first provider turn', async () => {
+  let release = () => {};
+  let entered = () => {};
+  const gate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const binding = new Promise<void>((resolve) => {
+    entered = resolve;
+  });
+  const h = createHarness([], async (session, clientRef) => {
+    assert.equal(session.appSessionId, 'bound');
+    assert.equal(clientRef, 'client-1');
+    entered();
+    await gate;
+  });
+  const provider = queueCreate(h, 'bound');
+  const creating = h.lifecycle.create(createCommand());
+  await binding;
+  assert.equal(
+    h.calls.some((call) => call.method === 'stream'),
+    false,
+  );
+  release();
+  await creating;
+  await provider.waitForPrompts(1);
+  await h.lifecycle.closeAll();
+});
+
+test('a failed ownership commit releases the session without executing its goal', async () => {
+  const h = createHarness([], async () => {
+    throw new Error('Project ledger is full');
+  });
+  queueCreate(h, 'failed-bind');
+  await h.lifecycle.create(createCommand());
+  assert.equal(
+    h.calls.some((call) => call.method === 'stream'),
+    false,
+  );
+  assert.equal(h.registry.getLive('failed-bind'), undefined);
+  assert.ok(
+    h.events.some(
+      (event) => event.type === 'error' && event.message.includes('Project ledger is full'),
+    ),
   );
 });

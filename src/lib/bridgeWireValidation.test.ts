@@ -432,3 +432,13 @@ test('rejects object payloads that are actually arrays', () => {
     null,
   );
 });
+
+test('accepts the sidebar requests the sidecar sends and rejects unknown marks', () => {
+  const request = (query: unknown) =>
+    batch({ type: 'sidebar.request', request: { requestId: 'r-1', expiresAt: 4_000, query } });
+  assert.notEqual(serverWireMessage(request({ kind: 'rows' })), null);
+  assert.notEqual(serverWireMessage(request({ kind: 'rows', appSessionIds: ['chat-a'] })), null);
+  const targets = [{ appSessionId: 'chat-a', updatedAt: 100 }];
+  assert.notEqual(serverWireMessage(request({ kind: 'mark', mark: 'archived', targets })), null);
+  assert.equal(serverWireMessage(request({ kind: 'mark', mark: 'deleted', targets })), null);
+});

@@ -11,7 +11,7 @@ import type {
   InstallChannel,
   HistorySearchReply,
   PersistenceRecovery,
-  ProviderMention,
+  ProviderStatus,
   SessionSummary,
   ModelInfo,
   ReasoningEffort,
@@ -51,6 +51,9 @@ import { buildRuntimeSnapshot } from './runtimeSnapshot.js';
 import { droidexUserDataDir } from './droidexPaths.js';
 import type { SessionFileChange } from './sessionFileCache.js';
 import { SessionBrowser, type SessionBrowsers } from './SessionBrowser.js';
+import { SidebarRequests } from './sidebar/sidebarRequests.js';
+import { SidebarSessions } from './sidebar/SidebarSessions.js';
+import { requireProjectService } from './projects/service.js';
 import { SessionHistoryQueries } from './SessionHistoryQueries.js';
 import {
   startSessionFileWatcher,
@@ -61,6 +64,7 @@ import { SessionFileServing } from './SessionFileServing.js';
 import { DroidModelCatalog } from './DroidModelCatalog.js';
 import { BrowserSessionManager } from './browser/BrowserSessionManager.js';
 import { createAutomationMcpServer } from './automations/automationMcpServer.js';
+import { createSessionsMcpServer } from './sessionsMcpServer.js';
 import { isUnattendedAutomationSession } from './automations/AutomationManager.js';
 import {
   normalizeMcpServerName,
@@ -84,6 +88,7 @@ import {
 import {
   SessionLifecycle,
   type LiveSession,
+  type SessionPrompt,
   type StartedLocalMcpResources,
 } from './SessionLifecycle.js';
 import { ChildSessions } from './ChildSessions.js';
@@ -164,6 +169,7 @@ export interface SessionManagerDependencies {
   browsers: SessionBrowsers;
   createLocalMcpResource: (appSessionId: () => string) => StartableLocalMcpResource;
   createAutomationMcpResource?: (appSessionId: () => string) => StartableLocalMcpResource;
+  createSessionsMcpResource?: (appSessionId: () => string) => StartableLocalMcpResource;
   mcpConfiguration: McpConfiguration;
   loadConfiguredMcpServers: (cwd: string | undefined) => McpServerConfig[];
   getFactoryDefaults?: () => Promise<FactoryDefaultSettings>;
@@ -184,6 +190,7 @@ export interface SessionManagerDependencies {
 }
 
 export interface SessionManagerOptions {
+  beforeFirstTurn?: ((session: SessionSummary, clientRef: string) => Promise<void>) | undefined;
   assetUrlFor?: (path: string) => string;
   onSessionAvailable?: (appSessionId: string) => void;
   onScheduledCapacityChanged?: () => void;
@@ -255,6 +262,28 @@ export class SessionManager {
   private readonly agentProcesses: AgentProcessMonitor;
   private readonly sessionFiles: SessionFileServing;
   private readonly sessionBrowser: SessionBrowser;
+  private readonly sidebarRequests = new SidebarRequests((event) => {
+    this.emit(event);
+  });
+  // Its host reaches the collaborators the constructor builds, and only once
+  // a session tool is called.
+  private readonly sidebarSessions = new SidebarSessions(this.sidebarRequests, {
+    summary: (appSessionId) => this.registry.resolveSummary(appSessionId),
+    projects: async () => (await requireProjectService()).list(),
+    isAutomationRun: (appSessionId) => isUnattendedAutomationSession(appSessionId),
+    isBlocked: (appSessionId) => this.interactions.hasPending(appSessionId),
+    transcriptTail: (appSessionId, limit) => this.timeline.tail(appSessionId, limit),
+    queueBehindTurn: (appSessionId, prompt) => this.lifecycle.queueBehindTurn(appSessionId, prompt),
+    deliver: (appSessionId, prompt, isCurrent) =>
+      this.lifecycle.deliverScheduled(appSessionId, prompt, isCurrent),
+    answerQuestion: (appSessionId, requestId, answers) =>
+      this.answerQuestion(appSessionId, requestId, answers),
+    note: (appSessionId, text) => {
+      this.timeline.appendStatus(appSessionId, text);
+    },
+    // Not the user's Stop, so it never holds a project the way theirs does.
+    interrupt: (appSessionId) => this.handle({ type: 'session.interrupt', appSessionId }),
+  });
   private readonly sessionVoice: SessionVoice;
   private readonly historyQueries: SessionHistoryQueries;
   private readonly modelSettings: SessionModelSettings;
@@ -267,6 +296,9 @@ export class SessionManager {
   private readonly createLocalMcpResource: SessionManagerDependencies['createLocalMcpResource'];
   private readonly createAutomationMcpResource: NonNullable<
     SessionManagerDependencies['createAutomationMcpResource']
+  >;
+  private readonly createSessionsMcpResource: NonNullable<
+    SessionManagerDependencies['createSessionsMcpResource']
   >;
   private readonly mcpConfiguration: McpConfiguration;
   private readonly loadConfiguredMcpServers: SessionManagerDependencies['loadConfiguredMcpServers'];
@@ -321,6 +353,9 @@ export class SessionManager {
       this.createAutomationMcpResource =
         options.dependencies.createAutomationMcpResource ??
         ((appSessionId) => createAutomationMcpServer(appSessionId));
+      this.createSessionsMcpResource =
+        options.dependencies.createSessionsMcpResource ??
+        ((appSessionId) => createSessionsMcpServer(appSessionId, this.sidebarSessions));
       this.mcpConfiguration = options.dependencies.mcpConfiguration;
       this.loadConfiguredMcpServers = options.dependencies.loadConfiguredMcpServers;
       this.factoryDefaultsOverride = options.dependencies.getFactoryDefaults;
@@ -350,6 +385,8 @@ export class SessionManager {
       this.createLocalMcpResource = (appSessionId) =>
         createBrowserMcpServer(browsers, appSessionId);
       this.createAutomationMcpResource = (appSessionId) => createAutomationMcpServer(appSessionId);
+      this.createSessionsMcpResource = (appSessionId) =>
+        createSessionsMcpServer(appSessionId, this.sidebarSessions);
       this.mcpConfiguration = new DroidMcpConfiguration();
       this.loadConfiguredMcpServers = loadFactoryMcpServers;
       this.factoryDefaultsOverride = undefined;
@@ -434,6 +471,7 @@ export class SessionManager {
         this.emitError(error);
       },
       now: Date.now,
+      liveSessionFile: (providerSessionId) => this.sessionFiles.liveSessionFile(providerSessionId),
       ...(options.dependencies?.streamingCoalesceMs !== undefined
         ? { streamingCoalesceMs: options.dependencies.streamingCoalesceMs }
         : {}),
@@ -586,6 +624,7 @@ export class SessionManager {
       },
     });
     this.lifecycle = new SessionLifecycle({
+      beforeFirstTurn: options.beforeFirstTurn,
       provider: (kind) => this.providerFor(kind),
       providerDefaultModelId: (kind) => this.providerProbes.status(kind)?.defaultModelId,
       registry: this.registry,
@@ -594,7 +633,7 @@ export class SessionManager {
       },
       getFactoryDefaults: () => this.getFactoryDefaults(),
       maxContextTokensForModel: (modelId) => this.maxContextTokensForModel(modelId),
-      startLocalMcpServers: (ref, cwd) => this.startLocalMcpServers(ref, cwd),
+      startLocalMcpServers: (ref, kind, cwd) => this.startLocalMcpServers(ref, kind, cwd),
       interactionsFor: (ref) => this.interactions.interactionsFor(ref),
       compaction: this.compaction,
       isShutdownStarted: () => this.shutdownPromise !== undefined,
@@ -603,8 +642,8 @@ export class SessionManager {
       applyPendingSettingsToSummary: (summary) => this.modelSettings.project(summary),
       applyPendingSessionSettings: (appSessionId) => this.modelSettings.applyPending(appSessionId),
       waitForSettingsMutations: (appSessionId) => this.modelSettings.waitForMutations(appSessionId),
-      runPrimaryTurn: (liveSession, prompt, mentions, delivery) =>
-        this.runPrimaryTurn(liveSession, prompt, mentions, delivery),
+      runPrimaryTurn: (liveSession, prompt, delivery) =>
+        this.runPrimaryTurn(liveSession, prompt, delivery),
       eventFlow: this.eventFlow,
       hasPendingInteractions: (appSessionId) => this.interactions.hasPending(appSessionId),
       hasActiveSettingsChanges: (appSessionId) =>
@@ -708,6 +747,14 @@ export class SessionManager {
 
   startSessionFileServing(): void {
     this.sessionFiles.start();
+  }
+
+  /**
+   * Resolves once session history knows every stored conversation. Call it
+   * after startSessionFileServing, since it starts that work itself otherwise.
+   */
+  whenSessionHistoryReady(): Promise<void> {
+    return this.sessionFiles.whenBootReconciled();
   }
 
   connect(apiKey?: string): void {
@@ -866,13 +913,14 @@ export class SessionManager {
         await this.sessionVoice.handle(cmd);
         this.runtimeRetirement.arm();
         return;
-      case 'voice.stop':
-        await this.sessionVoice.handle(cmd);
-        // A chat being talked to is not idle however quiet its transcript is,
-        // and one that has stopped is idle again. Both move when the next
-        // sweep is due, and nothing else here would say so.
+      case 'voice.stop': {
+        // Stopping clears the live flag before Codex acknowledges the request.
+        // Recheck retirement now so a missing acknowledgement cannot pin it.
+        const stoppingVoice = this.sessionVoice.handle(cmd);
         this.runtimeRetirement.arm();
+        await stoppingVoice;
         return;
+      }
       case 'voice.voices':
         await this.sessionVoice.handle(cmd);
         return;
@@ -1033,6 +1081,9 @@ export class SessionManager {
       case 'browser.native.result':
         this.sessionBrowser.resolveNativeBrowserRequest(cmd.result);
         return;
+      case 'sidebar.result':
+        this.sidebarRequests.answer(cmd.result);
+        return;
       default: {
         // Wire commands are JSON-parsed without runtime validation, so a
         // renderer running newer code than this sidecar (e.g. a dev app that
@@ -1083,6 +1134,45 @@ export class SessionManager {
       reasoningEffort: resolveAutomationReasoningEffort(summary, modelId, defaultReasoning, models),
       autonomy: summary.autonomy,
     };
+  }
+
+  sessionSummary(appSessionId: string): SessionSummary | undefined {
+    return this.registry.resolveSummary(appSessionId);
+  }
+
+  /** Whether a question a conversation was asked is still waiting for an answer. */
+  isQuestionPending(appSessionId: string, requestId: string): boolean {
+    return this.interactions.isQuestionPending(appSessionId, requestId);
+  }
+
+  /** Whether this conversation is open right now, rather than merely known. */
+  isSessionLive(appSessionId: string): boolean {
+    return this.registry.getLive(appSessionId) !== undefined;
+  }
+
+  /**
+   * Answers a question a session is blocked on, for callers that must know
+   * whether it landed: false when the question was already settled elsewhere.
+   * The window asking it did not answer, so it is told to stop asking.
+   */
+  answerQuestion(
+    appSessionId: string,
+    requestId: string,
+    answers: { index: number; question: string; answer: string }[],
+  ): boolean {
+    const landed = this.interactions.respondToQuestion(appSessionId, requestId, false, answers);
+    if (landed) this.emit({ type: 'question.answered', appSessionId, requestId });
+    return landed;
+  }
+
+  /** What each provider can run right now, for callers that must validate a choice. */
+  async providerCatalog(): Promise<ProviderStatus[]> {
+    return providerStatuses(
+      this.runtime.status().droidPath,
+      await this.getModels(),
+      undefined,
+      (provider) => this.providerProbes.status(provider),
+    );
   }
 
   async validateAutomationSelection(
@@ -1223,11 +1313,26 @@ export class SessionManager {
 
   private async startLocalMcpServers(
     ref: { id: string; clientRef?: string },
+    kind: ProviderKind,
     cwd?: string,
   ): Promise<StartedLocalMcpResources> {
+    if (kind === 'codex') {
+      const unattended = await isUnattendedAutomationSession(ref.id);
+      const inAppServers = shouldAttachAutomationMcp(ref.clientRef, unattended)
+        ? [
+            createSessionsMcpServer(() => ref.id, this.sidebarSessions),
+            createAutomationMcpServer(() => ref.id),
+          ]
+        : [];
+      return { servers: [], configs: [], inAppServers };
+    }
     const servers = [this.createLocalMcpResource(() => ref.id)];
-    if (shouldAttachAutomationMcp(ref.clientRef, await isUnattendedAutomationSession(ref.id))) {
+    const unattended = await isUnattendedAutomationSession(ref.id);
+    if (shouldAttachAutomationMcp(ref.clientRef, unattended)) {
       servers.push(this.createAutomationMcpResource(() => ref.id));
+      // The session tools start and steer chats a person watches; an unattended
+      // run has nobody watching, so it never gets them.
+      servers.push(this.createSessionsMcpResource(() => ref.id));
     }
     // A folderless session has no project scope: user-level config only, the
     // same rule the MCP settings flows follow.
@@ -1332,8 +1437,7 @@ export class SessionManager {
 
   private async runPrimaryTurn(
     liveSession: LiveSession,
-    prompt: string,
-    mentions?: ProviderMention[],
+    prompt: SessionPrompt,
     delivery?: ScheduledTurnDelivery,
   ): Promise<void> {
     await runPrimaryTurn(
@@ -1353,7 +1457,6 @@ export class SessionManager {
       },
       liveSession,
       prompt,
-      mentions,
       delivery,
     );
   }
@@ -1880,6 +1983,7 @@ export class SessionManager {
 
   private async performShutdown(): Promise<void> {
     this.historyQueries.forget();
+    this.sidebarRequests.close();
     this.runtimeRetirement.stop();
     this.providerProbes.cancel();
     let firstError: unknown;

@@ -83,6 +83,15 @@ export class SessionFileServing {
     return this.watchers.length;
   }
 
+  /** Where an open session's own file is being written, once a watcher has seen it. */
+  liveSessionFile(providerSessionId: string): string | undefined {
+    for (const watcher of this.watchers) {
+      const path = watcher.liveSessionFile(providerSessionId);
+      if (path) return path;
+    }
+    return undefined;
+  }
+
   // The session whose file was just finalized lives under exactly one root.
   private consumeLiveSessionFile(providerSessionId: string): string | undefined {
     for (const watcher of this.watchers) {

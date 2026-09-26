@@ -56,9 +56,35 @@ import { join } from 'node:path';
 // surface, the mini bar, the composer's orb and controls, the settings sheet
 // and the chimes all load with the first conversation. The merged ~1_365_300
 // leaves the usual ~9KB of headroom.
+//
+// Raised from 1_365_000 to 1_380_000 for Projects: the sidebar has to know
+// which sessions are project threads before it paints, or threads flash into
+// the chat list on every load, so the snapshot reducer and its wire validation,
+// the sidebar filter and nav pulse, and the Threads pane's auto-open all sit in
+// the entry. That is ~8.4KB measured against the pre-Projects base (1_362_540
+// at fba7e24a); the route, the threads panel, the plan table and the attention
+// notifier stay lazy. Headroom above the current ~1_371_000 is ~9KB.
+//
+// initialCssBytes raised from 100_000 to 101_500: that same base already
+// measured 100_629, over the old line before any of this work, and Projects
+// lands ~0.3KB under it. The raise covers main's drift, not the feature.
+//
+// Raised from 1_380_000 to 1_390_000 when Projects landed on top of voice mode.
+// Each fit its own line against their shared base (1_356_068 at b28af864):
+// main with voice mode measured 1_369_293 and Projects 1_368_883. Both keep
+// their state on the entry by design, so together they measure 1_382_099.
+// Nothing moved off the entry to make room; the new headroom is ~8KB. The
+// merged CSS of 100_276 is over main's 100_000 line, so Projects' 101_500
+// stays.
+//
+// Lowered from 1_390_000 to 1_385_000 when the voice call left the entry.
+// VoiceProvider keeps only the controls a chat reads; the WebRTC negotiation,
+// the microphone hook and the call's view logic now load with the first
+// conversation (the VoiceCall chunk, ~6KB). The entry measured 1_377_273
+// against 1_382_099 before, so the headroom stays ~8KB.
 const BUDGETS = {
-  initialRendererJsBytes: 1_375_000,
-  initialCssBytes: 100_000,
+  initialRendererJsBytes: 1_385_000,
+  initialCssBytes: 101_500,
   largestLazyChunkBytes: 700_000,
   duplicatePackageMaxBytes: 120_000,
 };

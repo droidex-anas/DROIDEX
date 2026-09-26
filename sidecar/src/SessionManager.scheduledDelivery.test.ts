@@ -95,7 +95,8 @@ for (const action of ['cancel', 'close', 'interrupt']) {
         await h.handle({ type: 'session.interrupt', appSessionId: 'provider-1' });
       else await h.handle({ type: 'session.close', appSessionId: 'provider-1' });
       settings.resolve();
-      assert.equal((await delivery).status, 'unavailable');
+      // Nothing was dispatched, and only the caller withdrawing it is a cancellation.
+      assert.equal((await delivery).status, action === 'cancel' ? 'cancelled' : 'unavailable');
       assert.deepEqual(provider.prompts, ['Initial user prompt']);
       if (action === 'cancel') {
         assert.equal(

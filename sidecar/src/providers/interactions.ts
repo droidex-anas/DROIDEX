@@ -8,8 +8,9 @@ export interface ProviderApprovalRequest {
   confirmationType: string;
   // Stable key for an always-allow grant; absent when the request cannot earn one.
   signature?: string;
-  // Set when the request targets a DROIDEX automation MCP tool.
-  automationTool?: { serverName: string; toolName: string };
+  // The MCP server and tool, when the request is for one. The policies for
+  // DROIDEX's own servers approve their tools by the chat's autonomy.
+  mcpTool?: { serverName: string; toolName: string };
 }
 
 export interface ProviderQuestionAnswers {
@@ -22,6 +23,7 @@ export interface ProviderQuestionAnswers {
 export interface ProviderInteractions {
   requestApproval(approval: ProviderApprovalRequest): Promise<PermissionOutcome>;
   requestQuestion(questions: SessionQuestion['questions']): Promise<ProviderQuestionAnswers>;
+  isActive(): boolean;
   // The turn that raised them ended before the user answered: settle every
   // request this session is still waiting on and take its card off the screen.
   cancelPending(): void;

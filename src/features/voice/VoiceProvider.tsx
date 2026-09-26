@@ -11,10 +11,11 @@ import {
   type ReactNode,
 } from 'react';
 import { AnimatePresence } from 'framer-motion';
-import { shallowEqual, useStoreApi, useStoreSelector, type AppState } from '../../hooks/useStore';
+import { useStoreApi, useStoreSelector, type AppState } from '../../hooks/useStore';
 import { renameSession } from '../../lib/commands';
-import { useVoice, type Voice } from './useVoice';
+import type { Voice } from './useVoice';
 import { canUseVoice } from './voiceAvailability';
+import { voiceSessionOf } from './voiceSessions';
 
 // The chimes are heard when a conversation opens and when it ends, so they are
 // fetched with the first one rather than with the app. Sticky user activation
@@ -37,6 +38,10 @@ const VoiceMiniBar = lazy(() =>
 const VoiceSurface = lazy(() =>
   import('./VoiceSurface').then((m) => ({ default: m.VoiceSurface })),
 );
+
+// The call itself, the microphone and the connection to the provider, is only
+// needed once someone talks, so it loads with the first conversation too.
+const VoiceCall = lazy(() => import('./VoiceCall').then((m) => ({ default: m.VoiceCall })));
 
 /**
  * What a chat needs to know about the conversation: whether one is running,
@@ -61,7 +66,8 @@ export interface VoiceControls {
 }
 
 const VoiceControlsContext = createContext<VoiceControls | null>(null);
-// The conversation itself, for the surfaces that show what is being said.
+// The conversation itself, for the surfaces that show what is being said. Null
+// while none is running.
 const VoiceConversationContext = createContext<Voice | null>(null);
 
 /**
@@ -79,6 +85,10 @@ const VoiceConversationContext = createContext<Voice | null>(null);
  * The mini bar is mounted here too: it belongs to the conversation rather than
  * to any one screen, so it stays in front of settings, automations and every
  * other view the user leaves the chat for.
+ *
+ * The call that carries the conversation is VoiceCall, mounted while a chat
+ * owns one. This provider decides which chat that is and hands what the call
+ * reports to the chat and the surfaces.
  */
 export function VoiceProvider({ children }: { children: ReactNode }) {
   const store = useStoreApi();
@@ -88,22 +98,15 @@ export function VoiceProvider({ children }: { children: ReactNode }) {
   // Pull requests, automations and settings are not the chat, so a conversation
   // held there is held away from its chat and wears the mini bar.
   const mainView = useStoreSelector((state: AppState) => state.mainView);
-  const preferences = useStoreSelector(
-    (state: AppState) => ({
-      voice: state.defaultVoice || undefined,
-      narration: state.narrationMode,
-    }),
-    shallowEqual,
-  );
 
-  // The chat the conversation belongs to, and the chat it has been asked to
-  // move to. Opening waits a commit, because the connection can only start once
-  // the session hook below is bound to the new chat.
+  // The chat the conversation belongs to, and whether it has been asked to open
+  // there and not started yet.
   const [owner, setOwner] = useState<string | null>(null);
-  const [opening, setOpening] = useState<string | null>(null);
+  const [opening, setOpening] = useState(false);
+  // The call as it last reported itself, or null while none is running.
+  const [call, setCall] = useState<Voice | null>(null);
 
   const onScreen = owner !== null && owner === activeAppSessionId && mainView === 'session';
-  const voice = useVoice(owner, preferences, onScreen);
 
   // The chats the orb created, which are the only ones a conversation renames.
   const unnamed = useRef(new Set<string>());
@@ -115,88 +118,83 @@ export function VoiceProvider({ children }: { children: ReactNode }) {
       if (options?.nameFromSpeech) unnamed.current.add(appSessionId);
       playVoiceChime('start');
       setOwner(appSessionId);
-      setOpening(appSessionId);
+      setOpening(true);
     },
     [store],
   );
-
-  useEffect(() => {
-    if (opening === null || opening !== owner) return;
-    setOpening(null);
-    voice.open();
-  }, [opening, owner, voice]);
-
-  // The voice and the narration are chosen when a conversation opens, so
-  // changing either while one is running reopens it on the new choice. Both
-  // the in-call sheet and the Settings panel write the same preferences, and
-  // this is the one place that acts on them.
-  const running = useRef(voice.restart);
-  running.current = voice.restart;
-  const held = useRef<typeof preferences | null>(null);
-  useEffect(() => {
-    if (owner === null) {
-      held.current = null;
-      return;
-    }
-    const previous = held.current;
-    held.current = preferences;
-    if (!previous) return;
-    if (previous.voice === preferences.voice && previous.narration === preferences.narration)
-      return;
-    running.current();
-  }, [owner, preferences]);
+  const opened = useCallback(() => {
+    setOpening(false);
+  }, []);
+  const ended = useCallback(() => {
+    setOwner(null);
+  }, []);
 
   // A chat the orb created has no prompt to take its name from, so it wears a
   // placeholder until the first thing said in it, and takes its name from that.
   // A chat that already has a name keeps it.
-  const firstRequest = voice.session.lines.find((line) => line.role === 'user' && line.final);
+  const firstRequest = useStoreSelector(
+    useCallback(
+      (state: AppState) =>
+        voiceSessionOf(state.voiceSessions, owner).lines.find(
+          (line) => line.role === 'user' && line.final,
+        )?.text,
+      [owner],
+    ),
+  );
   useEffect(() => {
     if (owner === null || !firstRequest || !unnamed.current.has(owner)) return;
-    const title = firstRequest.text.replace(/\s+/g, ' ').trim().slice(0, 48);
+    const title = firstRequest.replace(/\s+/g, ' ').trim().slice(0, 48);
     if (!title) return;
     unnamed.current.delete(owner);
     renameSession(owner, title);
   }, [firstRequest, owner]);
 
-  const { close } = voice;
+  const close = call?.close;
   const hangUp = useCallback(() => {
     playVoiceChime('end');
-    close();
+    close?.();
   }, [close]);
 
-  // Whatever ended the conversation — this hang-up, the provider, a failed
-  // connection — the chat stops owning one.
-  useEffect(() => {
-    if (opening !== null || voice.view !== 'off') return;
-    setOwner(null);
-  }, [opening, voice.view]);
-
-  const conversation = useMemo<Voice>(() => ({ ...voice, close: hangUp }), [hangUp, voice]);
+  const conversation = useMemo(() => (call ? { ...call, close: hangUp } : null), [call, hangUp]);
   // Keyed on the few things that change when the call does, not on the words
   // being said, so a chat only re-renders when the conversation itself moves.
+  const view = call?.view ?? 'off';
+  const working = call?.working ?? false;
   const controls = useMemo<VoiceControls>(
     () => ({
-      view: voice.view,
-      working: voice.working,
+      view,
+      working,
       appSessionId: owner,
       onScreen,
       openOn,
       close: hangUp,
     }),
-    [hangUp, onScreen, openOn, owner, voice.view, voice.working],
+    [hangUp, onScreen, openOn, owner, view, working],
   );
 
   return (
     <VoiceControlsContext.Provider value={controls}>
       <VoiceConversationContext.Provider value={conversation}>
         {children}
+        {owner !== null && (
+          <Suspense fallback={null}>
+            <VoiceCall
+              appSessionId={owner}
+              opening={opening}
+              onScreen={onScreen}
+              onOpened={opened}
+              onEnded={ended}
+              onChange={setCall}
+            />
+          </Suspense>
+        )}
         <AnimatePresence>
-          {conversation.view === 'full' && (
+          {conversation?.view === 'full' && owner !== null && (
             <Suspense fallback={null}>
-              <VoiceSurface key="voice-surface" voice={conversation} />
+              <VoiceSurface key="voice-surface" voice={conversation} appSessionId={owner} />
             </Suspense>
           )}
-          {conversation.view === 'mini' && owner !== null && (
+          {conversation?.view === 'mini' && owner !== null && (
             <Suspense fallback={null}>
               <VoiceMiniBar key="voice-mini" voice={conversation} appSessionId={owner} />
             </Suspense>
@@ -217,6 +215,6 @@ export function useVoiceControls(): VoiceControls {
 /** For a surface that shows the conversation: the live session behind it. */
 export function useVoiceConversation(): Voice {
   const value = useContext(VoiceConversationContext);
-  if (!value) throw new Error('Voice is only available inside VoiceProvider.');
+  if (!value) throw new Error('A voice surface needs a running conversation.');
   return value;
 }

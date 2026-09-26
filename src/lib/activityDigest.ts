@@ -67,7 +67,14 @@ export function lastSentence(text: string): string {
     .trim();
   if (!plain) return '';
   const sentences = plain.match(/[^.!?]+[.!?]+|[^.!?]+$/g) ?? [plain];
-  const pick = [...sentences].reverse().find((s) => s.trim().endsWith('?')) ?? sentences.at(-1);
+  // A period inside code or brackets ("`.` and `..`)") cuts a sentence in two,
+  // and either half alone reads as noise. Drop the leading punctuation such a
+  // cut leaves behind and keep only pieces long enough to say something.
+  const readable = sentences
+    .map((sentence) => sentence.replace(/^[^A-Za-z0-9"'([]+/, '').trim())
+    .filter((sentence) => sentence.split(/\s+/).length >= 3);
+  const candidates = readable.length > 0 ? readable : [plain];
+  const pick = [...candidates].reverse().find((s) => s.endsWith('?')) ?? candidates.at(-1);
   return clip((pick ?? plain).trim());
 }
 

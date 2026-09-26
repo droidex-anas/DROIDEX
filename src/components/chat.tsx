@@ -1,6 +1,8 @@
 import { lazy, memo, Suspense } from 'react';
 import { hasAppBlock } from './appBlockRuntime';
 import { isAutomationProposalCall } from '../features/automations/toolNames';
+import { isThreadSpawnCall, spawnedThread } from '../features/projects/threadToolNames';
+import { threadBrief, threadReports } from '../features/projects/threadNotices';
 import type { FileChange } from '../lib/diff';
 import type { OpenReviewFileHandler } from '../lib/reviewFocus';
 import { copyTextForMessage } from '../features/transcript-reach/transcriptCopy';
@@ -50,24 +52,66 @@ const AutomationProposalCard = lazy(async () => {
   return { default: module.AutomationProposalCard };
 });
 
+const ThreadSpawnLine = lazy(async () => {
+  const module = await import('../features/projects/ThreadSpawnLine');
+  return { default: module.ThreadSpawnLine };
+});
+
+const ThreadReportNotice = lazy(async () => {
+  const module = await import('../features/projects/ThreadNoticeCards');
+  return { default: module.ThreadReportNotice };
+});
+
+const ThreadBriefNotice = lazy(async () => {
+  const module = await import('../features/projects/ThreadNoticeCards');
+  return { default: module.ThreadBriefNotice };
+});
+
+interface CallPair {
+  call: TranscriptEvent;
+  result?: TranscriptEvent;
+}
+
 export function splitAutomationProposals(events: TranscriptEvent[]): {
-  proposals: { call: TranscriptEvent; result?: TranscriptEvent }[];
+  proposals: CallPair[];
   remaining: TranscriptEvent[];
 } {
-  const calls = events.filter(isAutomationProposalCall);
-  if (calls.length === 0) return { proposals: [], remaining: events };
+  const { pairs, remaining } = splitCalls(events, isAutomationProposalCall);
+  return { proposals: pairs, remaining };
+}
+
+/* A spawned thread reads as the thread itself, not as a tool call: the row the
+   Threads panel shows, inline where the chat started it. A spawn that was
+   refused started nothing, so it stays an ordinary failed tool row. */
+function splitThreadSpawns(events: TranscriptEvent[]): {
+  spawns: CallPair[];
+  remaining: TranscriptEvent[];
+} {
+  const spawns = splitCalls(events, isThreadSpawnCall).pairs.filter(
+    ({ result }) => !result || spawnedThread(result.text),
+  );
+  const shown = new Set(spawns.flatMap(({ call, result }) => (result ? [call, result] : [call])));
+  return { spawns, remaining: events.filter((event) => !shown.has(event)) };
+}
+
+function splitCalls(
+  events: TranscriptEvent[],
+  matches: (event: TranscriptEvent) => boolean,
+): { pairs: CallPair[]; remaining: TranscriptEvent[] } {
+  const calls = events.filter(matches);
+  if (calls.length === 0) return { pairs: [], remaining: events };
   const { resultByCall } = correlateResults(events);
   const shown = new Set<TranscriptEvent>();
-  const proposals = calls.map((call) => {
+  const pairs = calls.map((call) => {
     const result = resultByCall.get(call);
     shown.add(call);
     if (result) shown.add(result);
     return { call, result };
   });
-  return { proposals, remaining: events.filter((event) => !shown.has(event)) };
+  return { pairs, remaining: events.filter((event) => !shown.has(event)) };
 }
 
-function AutomationToolGroup({
+function ToolGroupWithCards({
   events,
   active,
   sessionLive,
@@ -80,7 +124,8 @@ function AutomationToolGroup({
   density: ToolActivityDensity;
   onOpenReviewFile?: OpenReviewFileHandler;
 }) {
-  const { proposals, remaining } = splitAutomationProposals(events);
+  const { proposals, remaining: withoutProposals } = splitAutomationProposals(events);
+  const { spawns, remaining } = splitThreadSpawns(withoutProposals);
   const group = (groupEvents: TranscriptEvent[]) => (
     <ToolGroupItem
       events={groupEvents}
@@ -90,9 +135,14 @@ function AutomationToolGroup({
       onOpenReviewFile={onOpenReviewFile}
     />
   );
-  if (proposals.length === 0) return group(events);
+  if (proposals.length === 0 && spawns.length === 0) return group(events);
   return (
     <div className="space-y-2.5">
+      {spawns.map(({ call, result }) => (
+        <Suspense key={call.id} fallback={null}>
+          <ThreadSpawnLine call={call} sessionLive={sessionLive} {...(result ? { result } : {})} />
+        </Suspense>
+      ))}
       {proposals.map(({ call, result }) => (
         <Suspense
           key={call.id}
@@ -309,7 +359,22 @@ export const FeedItemView = memo(function FeedItemView({
 }: FeedItemViewProps) {
   switch (item.type) {
     case 'message': {
-      if (item.event.author === 'user')
+      if (item.event.author === 'user') {
+        // A thread's brief and its reports are DROIDEX speaking, not the user.
+        const reports = threadReports(item.event.text);
+        if (reports)
+          return (
+            <Suspense fallback={null}>
+              <ThreadReportNotice reports={reports} />
+            </Suspense>
+          );
+        const brief = threadBrief(item.event.text);
+        if (brief)
+          return (
+            <Suspense fallback={null}>
+              <ThreadBriefNotice brief={brief} />
+            </Suspense>
+          );
         return (
           <UserBubble
             event={item.event}
@@ -317,6 +382,7 @@ export const FeedItemView = memo(function FeedItemView({
             onOpenReviewFile={cwd ? onOpenReviewFile : undefined}
           />
         );
+      }
       return (
         <AssistantMessage
           text={item.event.text ?? ''}
@@ -411,7 +477,7 @@ export const FeedItemView = memo(function FeedItemView({
       );
     case 'tools':
       return (
-        <AutomationToolGroup
+        <ToolGroupWithCards
           events={item.events}
           active={live}
           sessionLive={sessionLive ?? live}

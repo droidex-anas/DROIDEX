@@ -1,7 +1,24 @@
+import { z } from 'zod';
+
 export type ToolContent =
   | { type: 'text'; text: string }
   | { type: 'image'; data: string; mimeType: string };
 export type ToolHandlerResult = string | { content: ToolContent[]; isError?: boolean };
+
+export const reasoningSchema = z.enum([
+  'off',
+  'none',
+  'minimal',
+  'low',
+  'medium',
+  'high',
+  'xhigh',
+  'max',
+  'ultra',
+  'dynamic',
+]);
+
+export const autonomySchema = z.enum(['off', 'low', 'medium', 'high']);
 
 export function safeTool<T>(
   handler: (input: T) => Promise<ToolHandlerResult> | ToolHandlerResult,

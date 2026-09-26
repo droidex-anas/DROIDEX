@@ -13,6 +13,7 @@ import {
   type FeedItem,
 } from './chatFeed';
 import { isAutomationProposalCall } from '../features/automations/toolNames';
+import { isThreadSpawnCall } from '../features/projects/threadToolNames';
 
 function isTurnBoundary(item: FeedItem): boolean {
   return (
@@ -302,8 +303,12 @@ function collapseRun(run: FeedItem[], specContent?: string): FeedItem[] {
       // A failed tool/result must stay visible after the turn completes instead
       // of being buried in a collapsed "Worked for …" group (classifier intent).
       survivors.push(it);
-    } else if (it.type === 'tools' && it.events.some(isAutomationProposalCall)) {
-      // Proposals are review surfaces, not hidden execution detail.
+    } else if (
+      it.type === 'tools' &&
+      (it.events.some(isAutomationProposalCall) || it.events.some(isThreadSpawnCall))
+    ) {
+      // Proposals are review surfaces, and a spawned thread is work that keeps
+      // running after the turn: neither is hidden execution detail.
       survivors.push(it);
     } else if (isSpokenLine(it)) {
       // The user heard this. Folding it into "Worked for …" would hide half of

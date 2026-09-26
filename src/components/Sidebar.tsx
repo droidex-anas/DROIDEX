@@ -35,6 +35,7 @@ import { prKind } from '../lib/github';
 import { sessionAttention } from '../lib/sessionAttention';
 import type { SessionSummary } from '../types/bridge';
 import { sessionResumeId } from '../features/providers/providerIdentity';
+import { projectsAnswered, projectThreadIds } from '../lib/projectThreads';
 import { SidebarAppUpdateButton } from './SidebarAppUpdateButton';
 import { SidebarNavigation } from './SidebarNavigation';
 
@@ -93,14 +94,24 @@ export default function Sidebar({
     [activeId, lastSeen],
   );
 
+  const projectThreads = useStoreSelector((current) => projectThreadIds(current.projects));
+  // Until the project graph is known, a thread cannot be told from an ordinary
+  // chat, and drawing the list first would show threads that then vanish.
+  const projectsKnown = useStoreSelector(projectsAnswered);
+  // Counting what the list cannot show would leave unread-only empty with a
+  // badge still on it; a thread's unread belongs to Projects, and until the
+  // graph is known a thread still looks like a chat.
   const unreadCount = useMemo(
     () =>
-      state.sessionOrder
-        .map((id) => state.sessions[id])
-        .filter(Boolean)
-        .filter((m) => !isChatHidden(chatMetadata[m.appSessionId]))
-        .filter(isUnread).length,
-    [state.sessionOrder, state.sessions, chatMetadata, isUnread],
+      !projectsKnown
+        ? 0
+        : state.sessionOrder
+            .map((id) => state.sessions[id])
+            .filter(Boolean)
+            .filter((m) => !projectThreads.has(m.appSessionId))
+            .filter((m) => !isChatHidden(chatMetadata[m.appSessionId]))
+            .filter(isUnread).length,
+    [state.sessionOrder, state.sessions, chatMetadata, isUnread, projectThreads, projectsKnown],
   );
 
   const markAllSessionsRead = useCallback(() => {
@@ -144,9 +155,12 @@ export default function Sidebar({
   // The Activity view is an inbox, so it also drops chats that aged out of
   // scope; the count feeds a footer pointing at Workspaces.
   const { visibleSessions, agedOutCount } = useMemo(() => {
+    if (!projectsKnown) return { visibleSessions: [], agedOutCount: 0 };
     const listed = state.sessionOrder
       .map((id) => state.sessions[id])
       .filter(Boolean)
+      // A project thread is read inside Projects, with its project around it.
+      .filter((m) => !projectThreads.has(m.appSessionId))
       .filter((m) => !isChatHidden(chatMetadata[m.appSessionId]) && (!unreadOnly || isUnread(m)))
       .filter((m) => matchesActivityFilter(statusFor(m), preferences.filter));
     const inScope = view === 'activity' ? listed.filter((m) => activity.inScope(m, now)) : listed;
@@ -158,6 +172,8 @@ export default function Sidebar({
     state.sessionOrder,
     state.sessions,
     chatMetadata,
+    projectThreads,
+    projectsKnown,
     unreadOnly,
     isUnread,
     statusFor,
@@ -277,7 +293,7 @@ export default function Sidebar({
       <div data-electron-drag-region className="h-9 shrink-0" />
 
       {/* Brand row: wordmark left; Codex-style ghost icon actions right
-          (session search palette + unread-only filter). No button chrome —
+          (session search palette + unread-only filter). No button chrome,
           hover state only. */}
       <div className="px-3 pb-1 pt-0.5 flex items-center justify-between">
         <BrandMark size={13} className="text-droid-text" />

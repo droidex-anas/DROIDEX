@@ -1,5 +1,6 @@
 import { isUnattendedAutomationSession } from './automations/AutomationManager.js';
 import { shouldAutoApproveAutomationTool } from './automations/permissionPolicy.js';
+import { shouldAutoApproveSessionsTool } from './sessionsMcpPolicy.js';
 import {
   isAlwaysOutcome,
   isApprovalOutcome,
@@ -35,6 +36,7 @@ interface InteractionScope {
 
 export interface InteractionLiveSession {
   summary: SessionSummary;
+  closePromise?: Promise<void>;
 }
 
 type InteractionError = Omit<Extract<ServerEvent, { type: 'error' }>, 'type'>;
@@ -59,6 +61,10 @@ export class SessionInteractions {
     return {
       requestApproval: (approval) => this.decideApproval(ref.id, approval),
       requestQuestion: (questions) => this.askQuestion(ref.id, questions),
+      isActive: () => {
+        const live = this.dependencies.getLiveSession(ref.id);
+        return live !== undefined && live.closePromise === undefined;
+      },
       cancelPending: () => {
         this.cancelPending(ref.id);
       },
@@ -91,13 +97,13 @@ export class SessionInteractions {
   ): Promise<PermissionOutcome> {
     const liveSession = this.dependencies.getLiveSession(sessionId);
     const autonomy = liveSession?.summary.autonomy;
-    const tool = approval.automationTool;
-    const safeForUnattended =
+    const tool = approval.mcpTool;
+    const autoApproved = (unattended: boolean) =>
       tool !== undefined &&
-      shouldAutoApproveAutomationTool(tool.serverName, tool.toolName, autonomy, true);
-    const safeForInteractive =
-      tool !== undefined &&
-      shouldAutoApproveAutomationTool(tool.serverName, tool.toolName, autonomy);
+      (shouldAutoApproveAutomationTool(tool.serverName, tool.toolName, autonomy, unattended) ||
+        shouldAutoApproveSessionsTool(tool.serverName, tool.toolName, autonomy, unattended));
+    const safeForUnattended = autoApproved(true);
+    const safeForInteractive = autoApproved(false);
     if (
       safeForUnattended ||
       (safeForInteractive &&
@@ -192,21 +198,30 @@ export class SessionInteractions {
     settle(normalized);
   }
 
+  /** False when nothing was waiting on this request, so no answer was taken. */
   respondToQuestion(
     appSessionId: string,
     requestId: string,
     cancelled: boolean,
     answers: { index: number; question: string; answer: string }[],
-  ): void {
+  ): boolean {
     const liveSession = this.dependencies.getLiveSession(appSessionId);
-    if (!liveSession) return;
+    if (!liveSession) return false;
     const scope = this.scopes.get(liveSession.summary.appSessionId);
     const resolve = scope?.pendingQuestions.get(requestId);
-    if (!scope || !resolve) return;
+    if (!scope || !resolve) return false;
     scope.pendingQuestions.delete(requestId);
     resolve({ cancelled, answers });
     if (!this.hasPending(liveSession.summary.appSessionId))
       this.dependencies.onSessionAvailable?.(liveSession.summary.appSessionId);
+    return true;
+  }
+
+  /** Whether this exact question is still waiting for an answer. */
+  isQuestionPending(appSessionId: string, requestId: string): boolean {
+    const liveSession = this.dependencies.getLiveSession(appSessionId);
+    const scope = liveSession ? this.scopes.get(liveSession.summary.appSessionId) : undefined;
+    return scope?.pendingQuestions.has(requestId) === true;
   }
 
   hasPending(appSessionId: string): boolean {

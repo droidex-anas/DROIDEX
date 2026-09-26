@@ -16,6 +16,9 @@ export const LAZY_SURFACE_LOADERS = {
     const module = await import('../features/automations/AutomationsRoute');
     return { default: module.AutomationsRoute };
   },
+  projects: async () => ({
+    default: (await import('../features/projects/ProjectsRoute')).ProjectsRoute,
+  }),
   review: async () => {
     const module = await import('../components/environment/ReviewPanel');
     return { default: module.ReviewPanel };
@@ -36,6 +39,14 @@ export const LAZY_SURFACE_LOADERS = {
     const module = await import('../components/agents/AgentsWorkspace');
     return { default: module.AgentsWorkspace };
   },
+  threads: async () => {
+    const module = await import('../features/projects/ThreadsWorkspace');
+    return { default: module.ThreadsWorkspace };
+  },
+  threadNotifier: async () => {
+    const module = await import('../features/projects/ThreadAttentionNotifier');
+    return { default: module.ThreadAttentionNotifier };
+  },
 };
 
 export type LazySurface = keyof typeof LAZY_SURFACE_LOADERS;
@@ -47,11 +58,14 @@ export const LazyOnboardingWizard = lazy(LAZY_SURFACE_LOADERS.onboarding);
 export const LazyMissionControl = lazy(LAZY_SURFACE_LOADERS.missionControl);
 export const LazyPullRequestsView = lazy(LAZY_SURFACE_LOADERS.pullRequests);
 export const LazyAutomationsRoute = lazy(LAZY_SURFACE_LOADERS.automations);
+export const LazyProjectsRoute = lazy(LAZY_SURFACE_LOADERS.projects);
 export const LazyReviewPanel = lazy(LAZY_SURFACE_LOADERS.review);
 export const LazyBrowserFocusWorkspace = lazy(LAZY_SURFACE_LOADERS.browser);
 export const LazyTerminalWorkspace = lazy(LAZY_SURFACE_LOADERS.terminal);
 export const LazyFilesWorkspace = lazy(LAZY_SURFACE_LOADERS.files);
 export const LazyAgentsWorkspace = lazy(LAZY_SURFACE_LOADERS.agents);
+export const LazyThreadsWorkspace = lazy(LAZY_SURFACE_LOADERS.threads);
+export const LazyThreadAttentionNotifier = lazy(LAZY_SURFACE_LOADERS.threadNotifier);
 
 export function utilityToolFallback(tool: UtilityTool) {
   switch (tool) {
@@ -64,6 +78,7 @@ export function utilityToolFallback(tool: UtilityTool) {
     case 'files':
       return <PanelSkeleton title="files" />;
     case 'agents':
+    case 'threads':
       return <UtilityPaneSkeleton />;
   }
 }

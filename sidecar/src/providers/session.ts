@@ -1,4 +1,4 @@
-import type { McpServerConfig } from '@factory/droid-sdk';
+import type { McpServerConfig, SdkMcpServer } from '@factory/droid-sdk';
 
 import type { CreateRuntimeSessionOptions } from '../DroidRuntime.js';
 import type { NormalizedEvent } from '../normalize.js';
@@ -19,7 +19,7 @@ import type { ProviderProbe } from './providerProbes.js';
 export type ProviderOpenInput = Omit<
   CreateRuntimeSessionOptions,
   'permissionHandler' | 'askUserHandler'
-> & { interactions: ProviderInteractions };
+> & { interactions: ProviderInteractions; inAppMcpServers?: SdkMcpServer[] };
 
 export interface ProviderResumeInput {
   // DROIDEX's own identity for the session, which a resumed provider session
@@ -30,6 +30,7 @@ export interface ProviderResumeInput {
   resumeId?: string;
   cwd?: string;
   mcpServers?: McpServerConfig[];
+  inAppMcpServers?: SdkMcpServer[];
   // The stored launch settings, for a provider that keeps no session file of
   // its own and therefore cannot read them back. Droid reads its own.
   modelId?: string;

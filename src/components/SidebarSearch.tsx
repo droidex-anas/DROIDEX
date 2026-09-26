@@ -10,6 +10,7 @@ import {
   type ChatMetadataMap,
 } from '../lib/chatMetadata';
 import { sidebarSearchNotice } from '../lib/sidebarSearchStatus';
+import { projectsAnswered, projectThreadIds } from '../lib/projectThreads';
 import { formatRelativeTime } from '../lib/time';
 import type { SessionSearchMatch, SessionSummary } from '../types/bridge';
 import PaletteShell from './PaletteShell';
@@ -37,6 +38,8 @@ export default function SidebarSearch({
       chatMetadata: current.chatMetadata,
       sessionOrder: current.sessionOrder,
       sessions: current.sessions,
+      projectThreads: projectThreadIds(current.projects),
+      projectsKnown: projectsAnswered(current),
     }),
     shallowEqual,
   );
@@ -46,9 +49,13 @@ export default function SidebarSearch({
     useSidebarContentSearch(query);
 
   const entries = useMemo<SearchEntry[]>(() => {
+    // A thread cannot be told from a chat until the project graph is known.
+    if (!state.projectsKnown) return [];
     const sessions = state.sessionOrder
       .map((id) => state.sessions[id])
       .filter((s): s is SessionSummary => Boolean(s))
+      // A project thread is read inside Projects, like the list beneath this.
+      .filter((s) => !state.projectThreads.has(s.appSessionId))
       .filter((s) => !isChatHidden(state.chatMetadata[s.appSessionId]))
       .map((s) => {
         const title = chatDisplayTitle(s, state.chatMetadata[s.appSessionId]);
@@ -68,7 +75,15 @@ export default function SidebarSearch({
       byId.set(session.appSessionId, { session, matches: contentMatches ?? [] });
     }
     return [...byId.values()].slice(0, MAX_ENTRIES);
-  }, [query, state.sessionOrder, state.sessions, state.chatMetadata, contentResults]);
+  }, [
+    query,
+    state.sessionOrder,
+    state.sessions,
+    state.chatMetadata,
+    state.projectThreads,
+    state.projectsKnown,
+    contentResults,
+  ]);
 
   const open = (entry: SearchEntry) => {
     onOpen(entry.session.appSessionId);

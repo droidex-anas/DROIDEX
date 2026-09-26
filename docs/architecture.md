@@ -59,6 +59,35 @@ flowchart LR
 - `SessionLifecycle` owns primary-session create, resume, lazy resume, send queueing, steering, interruption, and ordered cleanup. Parent close calls one semantic `ChildSessions.closeParent()` operation rather than maintaining another child map.
 - Workspace sessions pass their selected folder to Factory unchanged. Folder-less sessions remain `workspaceKind: none` in navigation, while their Factory runtime uses the app-owned `chats/` directory under `DROIDEX_USER_DATA_DIR`; DROIDEX creates it before opening the session, resumes the session from it (Claude Code files sessions under the directory they ran from), and never uses the user's home directory as an implicit workspace.
 
+### Local Projects
+
+`projects/ProjectService` owns the project graph over ordinary sessions:
+membership, plans and holds. `ProjectTurns` reads each settled thread turn and
+writes one bounded report to the chat that started it. `ProjectWakeQueue` owns
+wake admission and a two-turn concurrency limit; it reuses the scheduled-delivery
+receipt rather than inventing another runtime queue. The session bridge binds
+membership durably before the first goal can execute. `SessionLifecycle`
+remains the sole runtime owner.
+
+Thinking and tool output are never forwarded in a report. Busy recipients wait
+for session availability or capacity events. Interrupted delivery is retained
+as uncertain and requires review, rather than being silently replayed.
+Permission requests stay with the human. A thread's own question goes to the
+chat that started it, and the human can still answer it in the thread.
+
+The renderer keeps the projects snapshot once in its app store and opens
+conversations through the normal chat and composer. A chat's own tools for
+starting and steering other chats arrive the way the browser's and automations'
+do: the `droidex-sessions` in-app MCP server for Droid and Claude Code, or
+deferred dynamic tools using the same handlers for Codex. Codex does not start
+local MCP listeners, and unattended automation runs receive neither set. The
+sidebar tools never keep a copy of the sidebar: each call sends the window a
+`sidebar.request` and waits up
+to three seconds for its `sidebar.result`, which the app root answers from one
+read of the store, so it works with the sidebar collapsed. See
+[Session tools](session-tools.md) for the eleven tools, and
+[Projects](projects.md) for current capabilities and limitations.
+
 ### Child runtime residency
 
 - Every live child runtime is a provider operating-system process. One measures roughly 350 MiB resident while doing nothing, so the four concurrently live child runtimes the budget allows are the largest single memory cost in the application.
@@ -149,15 +178,18 @@ performance change.
 The sidecar assigns process-generation sequence numbers at the single outbound
 bridge boundary and groups ordinary events into short bounded batches. Only
 replaceable session/context telemetry can collapse, and never across a
-non-replaceable event. Approvals, questions, errors, lifecycle boundaries,
-history responses, and turn settlement flush immediately.
+non-replaceable event. Approvals, questions, sidebar requests, errors,
+lifecycle boundaries, history responses, and turn settlement flush immediately.
 
-Renderers must advertise bridge protocol 4, apply one wire batch as one
+Renderers must advertise bridge protocol 6, apply one wire batch as one
 ordered store transition, and reconnect with the last fully applied generation
 and sequence. Same-generation reconnects replay the retained buffer. A new
 process generation or a replay gap delivers a compact `bridge.snapshot` of
 live sessions, runtime state, and the authoritative agent-process map instead
 of a hard resync; `bridge.reset` is reserved for an invalid resume cursor.
+Each renderer page also sends a stable page ID across socket reconnects. Voice
+sessions owned by a disconnected page stop after a ten-second reclaim window;
+a reload creates a new ID because its WebRTC peer is gone.
 Electron owns sidecar health
 (`starting`, `healthy`, `degraded`, `restarting`, `recovery-required`,
 `stopped`) and bounded restart; `GET /health` is a cheap liveness probe, not a
