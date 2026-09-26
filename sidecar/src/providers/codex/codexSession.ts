@@ -112,6 +112,7 @@ export class CodexSession implements ProviderSession {
       cwd: this.cwd,
       approvalPolicy,
       sandbox,
+      serviceTier: this.model.fastMode ? 'priority' : 'default',
       ...(this.model.modelId ? { model: this.model.modelId } : {}),
     };
     const response = await (resumeId
@@ -187,6 +188,7 @@ export class CodexSession implements ProviderSession {
     if (settings.modelId !== undefined) model.modelId = settings.modelId;
     if (settings.reasoningEffort === null) delete model.reasoningEffort;
     else if (settings.reasoningEffort) model.reasoningEffort = settings.reasoningEffort;
+    if (settings.fastMode !== undefined) model.fastMode = settings.fastMode;
     this.model = model;
     this.mapper.setModel({ ...this.model, modelId: this.model.modelId ?? this.threadModel });
     return Promise.resolve();

@@ -239,3 +239,22 @@ test('summaryPatchesAndHidden derives patches and hidden ids from one read', () 
     index.close();
   }
 });
+
+test('fast mode survives canonical history writes and explicit-off overwrites', () => {
+  const cwd = join(home, 'workspace-fast');
+  writeSession('fast-chat', cwd, { provider: 'codex', fastMode: true });
+  const stored = { ...summary('fast-chat', cwd), provider: 'codex' as const, fastMode: true };
+  const index = new HistoryIndex();
+  try {
+    persistTestSummaries([stored]);
+    assert.equal(index.summaryPatchesAndHidden().patches.get('fast-chat')?.fastMode, true);
+    persistTestSummaries([{ ...stored, fastMode: false }]);
+    assert.equal(index.summaryPatchesAndHidden().patches.get('fast-chat')?.fastMode, false);
+  } finally {
+    index.close();
+  }
+  const restored = loadHistoricalSessions({ workspaceCwds: [cwd] }).find(
+    (row) => row.summary.appSessionId === 'fast-chat',
+  );
+  assert.equal(restored?.summary.fastMode, false);
+});

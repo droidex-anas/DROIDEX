@@ -432,3 +432,47 @@ test('rejects object payloads that are actually arrays', () => {
     null,
   );
 });
+
+test('fast mode preference and capability must be booleans on the wire', () => {
+  const summary = {
+    appSessionId: 'app-fast',
+    provider: 'codex',
+    sessionPurpose: 'chat',
+    interactionMode: 'auto',
+    role: 'primary',
+    title: 'Fast',
+    goal: '',
+    cwd: '',
+    autonomy: 'low',
+    phase: 'paused',
+    features: [],
+    tokensIn: 0,
+    tokensOut: 0,
+    contextTokens: 0,
+    createdAt: 1,
+    updatedAt: 1,
+  };
+  const model = { id: 'model', displayName: 'Model', isCustom: false };
+  for (const value of [true, false, undefined, 'true', 1, null]) {
+    const valid = value === undefined || typeof value === 'boolean';
+    const events = [
+      { type: 'session.updated', session: { ...summary, fastMode: value } },
+      {
+        type: 'catalog.updated',
+        catalog: 'models',
+        items: [{ ...model, supportsFastMode: value }],
+      },
+      {
+        type: 'provider.status',
+        statuses: [
+          {
+            provider: 'codex',
+            readiness: 'ready',
+            models: [{ ...model, supportsFastMode: value }],
+          },
+        ],
+      },
+    ];
+    for (const event of events) assert.equal(serverWireMessage(batch(event)) !== null, valid);
+  }
+});

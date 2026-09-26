@@ -34,6 +34,7 @@ export interface CreateRuntimeSessionOptions extends RuntimeHandlers {
   interactionMode: SessionInteractionMode;
   modelId?: string;
   reasoningEffort?: ReasoningEffort;
+  fastMode?: boolean;
   compactionModel?: string;
   compactionTokenLimit?: number;
   compactionThresholdCheckEnabled?: boolean;

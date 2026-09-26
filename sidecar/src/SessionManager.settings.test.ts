@@ -3,7 +3,10 @@ import test from 'node:test';
 
 import { startupFactoryDefaults, validateFactoryDefaults } from './SessionManager.js';
 import { createSessionSettingsForAgent } from './SessionModelSettings.js';
-import type { ModelInfo } from './protocol.js';
+import { createSessionManagerTestContext } from './testing/sessionManagerTestContext.js';
+import { ProviderTranscriptFile } from './providers/ProviderTranscriptFile.js';
+import { resumeSettings } from './sessionHelpers.js';
+import type { ModelInfo, SessionSummary } from './protocol.js';
 
 const models: ModelInfo[] = [
   {
@@ -137,4 +140,85 @@ test('saved model defaults remain intact while the catalog is unavailable', () =
       compactionTokenLimitPerModel: { 'saved-model': 150_000 },
     },
   );
+});
+
+test('closed provider sessions preserve fast-only, explicit off and omitted settings updates', async () => {
+  const h = createSessionManagerTestContext();
+  const stored: SessionSummary = {
+    appSessionId: 'stored-fast',
+    providerSessionId: 'stored-fast',
+    provider: 'codex',
+    resumeId: 'thread-fast',
+    sessionPurpose: 'chat',
+    interactionMode: 'auto',
+    role: 'primary',
+    title: 'Fast settings',
+    goal: '',
+    cwd: '',
+    autonomy: 'low',
+    phase: 'paused',
+    modelId: 'model-default',
+    reasoningEffort: 'high',
+    fastMode: false,
+    features: [],
+    tokensIn: 0,
+    tokensOut: 0,
+    contextTokens: 0,
+    createdAt: 1,
+    updatedAt: 1,
+  };
+  try {
+    const transcript = new ProviderTranscriptFile(stored.appSessionId, () => stored);
+    transcript.appendPrompt('hello');
+    transcript.append({
+      id: 'reply',
+      appSessionId: stored.appSessionId,
+      sourceSessionId: stored.appSessionId,
+      role: 'primary',
+      kind: 'text',
+      text: 'hello',
+      ts: 1,
+    });
+    transcript.flush();
+    h.fixture.seedHistorySummaries([stored]);
+    await h.handle({
+      type: 'session.updateSettings',
+      appSessionId: stored.appSessionId,
+      fastMode: true,
+    });
+    assert.equal(
+      h.history.summaryPatchesAndHidden().patches.get(stored.appSessionId)?.fastMode,
+      true,
+    );
+    await h.handle({
+      type: 'session.updateSettings',
+      appSessionId: stored.appSessionId,
+      fastMode: false,
+    });
+    await h.handle({
+      type: 'session.updateSettings',
+      appSessionId: stored.appSessionId,
+      reasoningEffort: 'low',
+    });
+    const patch = h.history.summaryPatchesAndHidden().patches.get(stored.appSessionId);
+    assert.equal(patch?.fastMode, false);
+    assert.equal(patch?.reasoningEffort, 'low');
+    assert.equal(resumeSettings({ ...stored, ...patch }).fastMode, false);
+    await h.create({
+      clientRef: 'unsupported-fast',
+      sessionPurpose: 'chat',
+      title: 'Droid',
+      goal: '',
+      autonomy: 'low',
+      fastMode: true,
+    });
+    assert.equal(h.runtime.createCalls.length, 0);
+    assert.ok(
+      h.events.some(
+        (event) => event.type === 'error' && /does not support fast mode/.test(event.message),
+      ),
+    );
+  } finally {
+    await h.dispose();
+  }
 });

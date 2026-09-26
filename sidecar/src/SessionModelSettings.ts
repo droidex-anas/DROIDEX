@@ -93,7 +93,11 @@ export class SessionModelSettings {
     agent: ConfigurableSessionRole,
     settings: ProviderModelSettings,
   ): Promise<void> {
-    if (settings.modelId === undefined && settings.reasoningEffort === undefined)
+    if (
+      settings.modelId === undefined &&
+      settings.reasoningEffort === undefined &&
+      settings.fastMode === undefined
+    )
       return Promise.resolve();
     return this.serialize(
       requestedId,
@@ -107,6 +111,13 @@ export class SessionModelSettings {
           });
           return;
         }
+        if (
+          settings.fastMode !== undefined &&
+          (agent !== 'primary' || !summary || summary.provider === DEFAULT_PROVIDER)
+        )
+          throw new Error(
+            'Fast mode is supported only for top-level Claude Code and Codex sessions.',
+          );
         if (!summary) {
           this.remember(appSessionId, agent, settings);
           return;
@@ -342,6 +353,7 @@ export class SessionModelSettings {
         patch.maxContextTokens = this.d.maxContextTokensForModel(settings.modelId ?? undefined);
       }
       if (settings.reasoningEffort !== undefined) patch.reasoningEffort = effort;
+      if (settings.fastMode !== undefined) patch.fastMode = settings.fastMode;
     } else if (agent === 'worker') {
       if (settings.modelId !== undefined) patch.workerModelId = settings.modelId ?? undefined;
       if (settings.reasoningEffort !== undefined) patch.workerReasoningEffort = effort;
@@ -387,5 +399,6 @@ function mergeSettings(
     ...previous,
     ...(patch.modelId !== undefined ? { modelId: patch.modelId } : {}),
     ...(patch.reasoningEffort !== undefined ? { reasoningEffort: patch.reasoningEffort } : {}),
+    ...(patch.fastMode !== undefined ? { fastMode: patch.fastMode } : {}),
   };
 }

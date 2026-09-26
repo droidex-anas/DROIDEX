@@ -138,6 +138,7 @@ export interface SessionSummary {
   workspaceKind?: 'folder' | 'none';
   modelId?: string;
   reasoningEffort?: ReasoningEffort;
+  fastMode?: boolean;
   compactionModel?: string;
   workerModelId?: string;
   workerReasoningEffort?: ReasoningEffort;
@@ -267,6 +268,7 @@ export interface ModelInfo {
   displayName: string;
   provider?: string;
   isCustom: boolean;
+  supportsFastMode?: boolean;
   isDefault?: boolean;
   maxContextTokens?: number;
   supportedReasoningEfforts?: ReasoningEffort[];
@@ -639,6 +641,7 @@ export type ClientCommand =
       interactionMode?: SessionInteractionMode;
       modelId?: string;
       reasoningEffort?: ReasoningEffort;
+      fastMode?: boolean;
       compactionModel?: string;
       compactionTokenLimit?: number | null;
       compactionTokenLimitPerModel?: Record<string, number>;
@@ -672,6 +675,7 @@ export type ClientCommand =
       modelId?: string | null;
       // null clears the effort: the model chosen offers none.
       reasoningEffort?: ReasoningEffort | null;
+      fastMode?: boolean;
       autonomy?: Autonomy;
       interactionMode?: SessionInteractionMode;
     }

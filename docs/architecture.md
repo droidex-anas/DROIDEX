@@ -58,6 +58,22 @@ flowchart LR
 - `SessionLifecycle` owns primary-session create, resume, lazy resume, send queueing, steering, interruption, and ordered cleanup. Parent close calls one semantic `ChildSessions.closeParent()` operation rather than maintaining another child map.
 - Workspace sessions pass their selected folder to Factory unchanged. Folder-less sessions remain `workspaceKind: none` in navigation, while their Factory runtime uses the app-owned `chats/` directory under `DROIDEX_USER_DATA_DIR`; DROIDEX creates it before opening the session and never uses the user's home directory as an implicit workspace.
 
+### Fast-mode requests
+
+`fastMode` is a per-chat request, independent of reasoning effort. Claude Code and
+Codex chats start explicitly off; omitted settings updates leave the request
+unchanged. The summary, provider transcript head and adjacent settings preserve
+both true and false across resume and history reconstruction. Canonical history
+writes the preference into the existing `settings` table under `session:<appSessionId>`
+in the same transaction as its summary; this needs no schema migration. Droid does not
+support this preference. Model catalogs publish `supportsFastMode` when known.
+
+Claude Code receives `settings.fastMode` at launch and `applyFlagSettings` live.
+A contradictory result adds one quiet unavailability status row per runtime.
+Codex receives `serviceTier: priority | default` on thread start, resume and every
+turn start; changes affect the next turn. This records requested routing, not a
+promise of delivered speed. Codex 0.157.1 accepts and echoes both tier values.
+
 ### Child runtime residency
 
 - Every live child runtime is a provider operating-system process. One measures roughly 350 MiB resident while doing nothing, so the four concurrently live child runtimes the budget allows are the largest single memory cost in the application.

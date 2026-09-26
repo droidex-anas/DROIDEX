@@ -21,7 +21,8 @@ import type {
 } from '../session.js';
 import { resolveClaudePath } from './claudeExecutable.js';
 import { claudeCatalogItems } from './claudeCatalog.js';
-import { ClaudeSession, type ClaudeSessionInput } from './claudeSession.js';
+import { ClaudeSession } from './claudeSession.js';
+import type { ClaudeSessionInput } from './claudeSessionOptions.js';
 
 const PROBE_TIMEOUT_MS = 25_000;
 const INSTALL_HINT = 'Claude Code CLI not found. Install it, then refresh.';
@@ -34,6 +35,7 @@ export class ClaudeProvider implements Provider {
     cwd,
     modelId,
     reasoningEffort,
+    fastMode,
     autonomyLevel,
     interactionMode,
     mcpServers,
@@ -47,6 +49,7 @@ export class ClaudeProvider implements Provider {
       interactionMode,
       ...(modelId ? { modelId } : {}),
       ...(reasoningEffort ? { reasoningEffort } : {}),
+      fastMode: fastMode ?? false,
       mcpServers: sdkMcpServers(mcpServers),
       interactions,
     });
@@ -54,7 +57,15 @@ export class ClaudeProvider implements Provider {
 
   async resume(
     providerSessionId: string,
-    { interactions, cwd, modelId, reasoningEffort, autonomy, mcpServers }: ProviderResumeInput,
+    {
+      interactions,
+      cwd,
+      modelId,
+      reasoningEffort,
+      fastMode,
+      autonomy,
+      mcpServers,
+    }: ProviderResumeInput,
   ): Promise<ProviderSession> {
     // A stored chat carries no interaction mode of its own, so a reopened one
     // starts in Chat the way the sidebar shows it.
@@ -65,6 +76,7 @@ export class ClaudeProvider implements Provider {
       interactionMode: 'auto',
       ...(modelId ? { modelId } : {}),
       ...(reasoningEffort ? { reasoningEffort } : {}),
+      fastMode: fastMode ?? false,
       mcpServers: sdkMcpServers(mcpServers),
       interactions,
       resume: true,
@@ -178,6 +190,7 @@ interface ClaudeModel {
   displayName: string;
   resolvedModel?: string;
   supportedEffortLevels?: EffortLevel[];
+  supportsFastMode?: boolean;
 }
 
 // The model a new Claude Code session starts on, named the way the catalog names
@@ -242,6 +255,7 @@ function providerModel(model: ClaudeModel, configured: ReasoningEffort | undefin
       id,
       displayName,
       provider: 'anthropic',
+      ...(model.supportsFastMode !== undefined ? { supportsFastMode: model.supportsFastMode } : {}),
       isCustom: false,
       ...(efforts.length > 0
         ? {

@@ -26,6 +26,7 @@ export function turnStartParams(
   const model = settings.model.modelId ?? settings.threadModel;
   return {
     threadId,
+    serviceTier: settings.model.fastMode ? 'priority' : 'default',
     input: turnInput(prompt, mentions),
     approvalPolicy,
     sandboxPolicy: codexSandboxPolicy(sandbox),

@@ -312,6 +312,9 @@ export function buildCreateRuntimeOptions(input: {
     interactionMode: input.interactionMode,
     ...(input.primary.modelId !== undefined ? { modelId: input.primary.modelId } : {}),
     autonomyLevel: input.autonomy,
+    ...(input.command.provider && input.command.provider !== DEFAULT_PROVIDER
+      ? { fastMode: input.command.fastMode ?? false }
+      : {}),
     ...(input.primary.reasoningEffort !== undefined
       ? { reasoningEffort: input.primary.reasoningEffort }
       : {}),
@@ -353,6 +356,7 @@ export function buildCreatedSessionSummary(input: {
     providerSessionId: appSessionId,
     ...(command.sessionPurpose === 'mission-control' ? { missionId: appSessionId } : {}),
     provider: input.provider,
+    ...(input.provider !== DEFAULT_PROVIDER ? { fastMode: command.fastMode ?? false } : {}),
     ...(input.resumeId ? { resumeId: input.resumeId } : {}),
     sessionPurpose: command.sessionPurpose,
     interactionMode: input.interactionMode,
@@ -422,6 +426,9 @@ export const resumeSettings = (summary: SessionSummary | undefined) => ({
   ...(summary?.modelId !== undefined ? { modelId: summary.modelId } : {}),
   ...(summary?.reasoningEffort !== undefined ? { reasoningEffort: summary.reasoningEffort } : {}),
   ...(summary?.autonomy !== undefined ? { autonomy: summary.autonomy } : {}),
+  ...(summary && summary.provider !== DEFAULT_PROVIDER
+    ? { fastMode: summary.fastMode ?? false }
+    : {}),
 });
 
 export function buildResumedSession(input: BuildResumedSessionInput): {
@@ -489,6 +496,7 @@ type ResumedModelSettings = Pick<SessionSummary, 'autonomy' | 'compactionModel'>
       SessionSummary,
       | 'modelId'
       | 'reasoningEffort'
+      | 'fastMode'
       | 'workerModelId'
       | 'workerReasoningEffort'
       | 'validatorModelId'
@@ -536,6 +544,8 @@ function resumedPrimaryModelSettings(
   const settings: Partial<ResumedModelSettings> = {};
   if (modelId !== undefined) settings.modelId = modelId;
   if (reasoningEffort !== undefined) settings.reasoningEffort = reasoningEffort;
+  if (historical && historical.provider !== DEFAULT_PROVIDER)
+    settings.fastMode = historical.fastMode ?? false;
   if (maxContextTokens !== undefined) settings.maxContextTokens = maxContextTokens;
   return settings;
 }
