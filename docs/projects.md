@@ -7,15 +7,16 @@ steered and reviewed like any other chat.
 
 ## Starting threads
 
-A chat on Droid or Claude Code is given DROIDEX's in-app MCP server,
-`droidex-sessions`. Six of its tools run a project: `thread_spawn`,
-`thread_send`, `thread_read`, `thread_configure`, `thread_stop` and `plan_set`.
+A chat on Droid, Claude Code or Codex is given DROIDEX's in-app session tools.
+Droid and Claude Code receive the `droidex-sessions` MCP server; Codex receives
+the same tools as deferred dynamic tools in `droidex_sessions`. Six run a
+project: `thread_spawn`, `thread_send`, `thread_read`, `thread_configure`,
+`thread_stop` and `plan_set`.
 The other five are the [session tools](session-tools.md) for the chats in the
-user's sidebar. The Codex runtime does not connect to DROIDEX's in-app servers,
-so a Codex chat has none of these tools and cannot start threads, though a
-thread can run on Codex when the chat that starts it names that harness. Asking
-a chat to run work in parallel is enough; it has the tools to start the work
-itself.
+user's sidebar. A Codex chat started before these tools were added resumes
+without them because Codex cannot add dynamic tools to an existing thread;
+start a new Codex chat to use them. Asking a chat to run work in parallel is
+enough; it has the tools to start the work itself.
 
 `thread_spawn` takes a required `reportBack`. With `true` it starts a thread,
 which reports back to the chat that started it. That chat becomes a project's
