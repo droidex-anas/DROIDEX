@@ -4,9 +4,7 @@
 // the worker's whole deadline.
 import type { CanUseTool, PermissionMode, PermissionResult } from '@anthropic-ai/claude-agent-sdk';
 
-import { isAutomationMutationTool } from '../../automations/permissionPolicy.js';
-import { toolArgumentDigest } from '../../normalize.js';
-import { sessionsGrantScope } from '../../sessionsMcpPolicy.js';
+import { mcpGrantSignature } from '../../mcpGrant.js';
 import type { Autonomy, PermissionKind } from '../../protocol.js';
 import { nextInteractionRequestId, type ProviderInteractions } from '../interactions.js';
 
@@ -207,12 +205,7 @@ function permissionSignature(
     return path ? `${kind}::${path}` : undefined;
   }
   if (!mcp) return undefined;
-  const key = `mcp::${mcp.serverName}::${mcp.toolName}`;
-  const scope = sessionsGrantScope(mcp.serverName, mcp.toolName, input);
-  if (scope !== undefined) return scope ? `${key}::${scope}` : undefined;
-  if (!isAutomationMutationTool(mcp.serverName, mcp.toolName)) return key;
-  const args = toolArgumentDigest(input);
-  return args ? `${key}::${args}` : undefined;
+  return mcpGrantSignature(mcp.serverName, mcp.toolName, input) || undefined;
 }
 
 function describeInput(input: Record<string, unknown>): string {
