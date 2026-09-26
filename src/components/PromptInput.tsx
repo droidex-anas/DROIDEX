@@ -75,6 +75,11 @@ import {
 } from '../lib/reasoningEffort';
 import { displayedModelSettings } from '../lib/pendingModelSettings';
 import { FAST_MODE_HINT, offersFastMode } from '../lib/fastMode';
+import {
+  CONTEXT_WINDOW_LABEL,
+  contextWindowLabel,
+  offersContextWindow,
+} from '../lib/contextWindow';
 import { compactionSettingsSnapshot } from '../lib/compactionSettings';
 import { composerTextAfterSeed, resetComposerAfterSubmit } from '../lib/composerReset';
 import { chipRemovedByBackspace } from '../lib/composerChips';
@@ -140,6 +145,7 @@ import { feedbackDraftFromCommand } from '../lib/feedbackReport';
 import { useSessionWorkingDirectory } from '../hooks/useSessionWorkingDirectory';
 import { useRuntimeHealth } from '../hooks/useRuntimeHealth';
 import useFastMode from '../hooks/useFastMode';
+import useContextWindow from '../hooks/useContextWindow';
 import { toast } from '../lib/toast';
 
 // The live-markdown editor is a heavy chunk of the bundle, so it loads on
@@ -261,6 +267,8 @@ export default function PromptInput({
       defaultAutonomy: current.defaultAutonomy,
       draftAutonomy: current.draftAutonomy,
       draftChat: current.draftChat,
+      draftContextWindowTokens: current.draftContextWindowTokens,
+      draftFastMode: current.draftFastMode,
       draftProvider: current.draftProvider,
       providerStatuses: current.providerStatuses,
       imagePasteQuality: current.imagePasteQuality,
@@ -284,6 +292,7 @@ export default function PromptInput({
   );
   const store = useStoreApi();
   const { fastMode, setFastMode } = useFastMode(state.activeAppSessionId ?? undefined);
+  const { contextWindowTokens } = useContextWindow(state.activeAppSessionId ?? undefined);
   const composerRevisionRef = useRef(0);
   const [input, setInputState] = useState('');
   const setInput = (value: SetStateAction<string>) => {
@@ -950,6 +959,10 @@ export default function PromptInput({
   const draftModelSettings = {
     ...(primaryModelId ? { modelId: primaryModelId } : {}),
     ...(draftReasoning ? { reasoningEffort: draftReasoning } : {}),
+    ...(state.draftFastMode ? { fastMode: true } : {}),
+    ...(state.draftContextWindowTokens !== null
+      ? { contextWindowTokens: state.draftContextWindowTokens }
+      : {}),
   };
 
   const replaceTrigger = (replacement: string) => {
@@ -2109,6 +2122,15 @@ export default function PromptInput({
                           {reasoningEffortLabel(primaryReasoning, composerProvider)}
                         </span>
                       )}
+                      {contextWindowTokens !== undefined &&
+                        offersContextWindow(composerProvider) && (
+                          <span
+                            className="shrink-0 text-droid-text-muted"
+                            title={`${CONTEXT_WINDOW_LABEL}: ${contextWindowLabel(contextWindowTokens)}`}
+                          >
+                            · {contextWindowLabel(contextWindowTokens)}
+                          </span>
+                        )}
                     </>
                   )}
                 </button>

@@ -284,6 +284,7 @@ export default function useModelPicker({
     effReasoning,
     fastMode,
     setFastMode,
+    scopedAppSessionId,
     updateModel,
     updateReasoning,
   };

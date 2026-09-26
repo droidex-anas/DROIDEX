@@ -14,6 +14,8 @@ import {
   fastModeBlockedReason,
   offersFastMode,
 } from '../lib/fastMode';
+import { contextWindowOptions, offersContextWindow } from '../lib/contextWindow';
+import useContextWindow from '../hooks/useContextWindow';
 import { ModelIcon, providerOf } from './ModelIcon';
 import HarnessSegments from '../features/providers/HarnessSegments';
 import ModelCategoryFilter from './ModelCategoryFilter';
@@ -21,6 +23,7 @@ import { effortsFor, stepModel } from './ModelCatalogList';
 import { useTriggerAnchor } from './composer/useTriggerAnchor';
 import useModelPicker from './useModelPicker';
 import ModelSliderCatalogList from './ModelSliderCatalogList';
+import ContextWindowMenu from './ContextWindowMenu';
 import EffortSlider from './effortSlider/EffortSlider';
 import type { EffortSliderElement, EffortSliderLevel } from './effortSlider/effortSliderElement';
 
@@ -77,9 +80,12 @@ export default function ModelSliderPopover({ onClose }: { onClose: () => void })
     effReasoning,
     fastMode,
     setFastMode,
+    scopedAppSessionId,
     updateModel,
     updateReasoning,
   } = useModelPicker({ singleAgent: true });
+  const { contextWindowTokens, providerWindow, setContextWindow } =
+    useContextWindow(scopedAppSessionId);
   const efforts = effortsFor(activeModel, effReasoning);
   const canDrill =
     activeModel !== undefined &&
@@ -111,6 +117,10 @@ export default function ModelSliderPopover({ onClose }: { onClose: () => void })
       : effortDisplay(shownEffort, provider);
 
   const fastModeBlocked = fastModeBlockedReason(activeModel);
+  const windowOptions = useMemo(
+    () => contextWindowOptions(activeModel, providerWindow),
+    [activeModel, providerWindow],
+  );
   const defaultEffort = activeModel?.defaultReasoningEffort;
   const canReset =
     defaultEffort !== undefined &&
@@ -124,7 +134,12 @@ export default function ModelSliderPopover({ onClose }: { onClose: () => void })
 
   useEffect(() => {
     const onDown = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) onClose();
+      const target = e.target;
+      if (!(target instanceof Node)) return;
+      // Menus this popover owns float in a portal, so a click in one of them
+      // is not a click outside the popover.
+      if (target instanceof Element && target.closest('[data-popover-layer]')) return;
+      if (ref.current && !ref.current.contains(target)) onClose();
     };
     window.addEventListener('mousedown', onDown);
     return () => {
@@ -227,6 +242,13 @@ export default function ModelSliderPopover({ onClose }: { onClose: () => void })
                 <span className="min-w-0 flex-1 truncate text-[13px] font-medium text-droid-text">
                   {selectedLabel}
                 </span>
+                {offersContextWindow(provider) && (
+                  <ContextWindowMenu
+                    options={windowOptions}
+                    selected={contextWindowTokens}
+                    onSelect={setContextWindow}
+                  />
+                )}
                 {canReset && (
                   <button
                     type="button"

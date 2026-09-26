@@ -342,7 +342,8 @@ function isSessionSummary(value: unknown): boolean {
     hasNumbers(value, ['tokensIn', 'tokensOut', 'contextTokens', 'createdAt', 'updatedAt']) &&
     isOptionalString(value.interruptReason) &&
     isOptionalString(value.resumeId) &&
-    isOptionalBoolean(value.fastMode)
+    isOptionalBoolean(value.fastMode) &&
+    isOptionalContextWindow(value.contextWindowTokens)
   );
 }
 
@@ -518,6 +519,10 @@ function hasStrings(value: Record<string, unknown>, keys: readonly string[]): bo
 
 function isOptionalString(value: unknown): boolean {
   return value === undefined || typeof value === 'string';
+}
+
+function isOptionalContextWindow(value: unknown): boolean {
+  return value === undefined || value === 200000 || value === 1000000;
 }
 
 function isOptionalBoolean(value: unknown): boolean {
