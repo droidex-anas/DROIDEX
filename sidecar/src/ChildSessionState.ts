@@ -124,8 +124,8 @@ export interface ParentChildSessions {
   lease: ChildParentLease;
   children: Map<string, ChildSessionState>;
   // Agents that have settled since this parent was last told about a finished
-  // wave. Emptied when the wave is reported, so no agent is carried twice.
-  settledSinceWake: Set<string>;
+  // wave. Emptied only when delivery is accepted, or when the parent is closed.
+  settledSinceWake: Map<string, ChildActivity | undefined>;
   pendingSpawns: Map<string, ChildSpawnObservation>;
   openAttempts: Map<string, ChildOpenAttempt>;
   reservedOpenSlots: Set<string>;

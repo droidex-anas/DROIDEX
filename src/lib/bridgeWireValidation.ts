@@ -376,7 +376,8 @@ function isTranscriptEvent(value: unknown): boolean {
     (value.errorKind === undefined || value.errorKind === 'usage_limit') &&
     (value.resetsAt === undefined || nonNegativeSafeInteger(value.resetsAt)) &&
     isOptionalString(value.pollsChildSessionId) &&
-    (value.interrupted === undefined || value.interrupted === true)
+    (value.interrupted === undefined || value.interrupted === true) &&
+    (value.transient === undefined || value.transient === true)
   );
 }
 

@@ -432,3 +432,23 @@ test('rejects object payloads that are actually arrays', () => {
     null,
   );
 });
+
+test('transient transcript events accept only the literal true or an absent flag', () => {
+  const event = {
+    id: 'event-1',
+    appSessionId: 'app-1',
+    sourceSessionId: 'provider-1',
+    role: 'primary',
+    kind: 'status',
+    ts: 1,
+  };
+  for (const transient of [undefined, true]) {
+    assert.ok(serverWireMessage(batch({ type: 'event.appended', event: { ...event, transient } })));
+  }
+  for (const transient of ['false', false, 1, null]) {
+    assert.equal(
+      serverWireMessage(batch({ type: 'event.appended', event: { ...event, transient } })),
+      null,
+    );
+  }
+});

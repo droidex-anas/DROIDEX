@@ -8,6 +8,7 @@ import {
   successfulResultEvent,
   type RecordedCall,
 } from './testing/fakeFactoryRuntime.js';
+import { notifyCompaction } from './testing/compactionCharacterizationScenarios.js';
 import { createSessionManagerTestContext } from './testing/sessionManagerTestContext.js';
 
 function appendedTexts(events: ServerEvent[]): string[] {
@@ -481,115 +482,130 @@ test('current SDK Task result persists and opens the exact completed child', asy
   }
 });
 
-test('background Task completion notification settles a child without TaskOutput', async () => {
-  const context = createSessionManagerTestContext();
-  try {
-    await context.create({
-      sessionPurpose: 'chat',
-      clientRef: 'event-background-task-completion',
-      title: 'Background task completion',
-      goal: 'initial',
-      interactionMode: 'auto',
-      autonomy: 'low',
-    });
-    const provider = context.provider.session('provider-1');
-    await provider.waitForPrompts(1);
-    await context.waitForIdle();
-    context.events.length = 0;
-    context.history.seedSessionLaunchSettings('provider-child-background', {
-      modelId: 'custom:glm-5.2',
-      reasoningEffort: 'max',
-    });
+for (const compaction of ['none', 'manual', 'automatic'] as const)
+  test(`background Task completion wakes once after ${compaction} compaction`, async () => {
+    const context = createSessionManagerTestContext();
+    try {
+      await context.create({
+        sessionPurpose: 'chat',
+        clientRef: 'event-background-task-completion',
+        title: 'Background task completion',
+        goal: 'initial',
+        interactionMode: 'auto',
+        autonomy: 'low',
+      });
+      const provider = context.provider.session('provider-1');
+      await provider.waitForPrompts(1);
+      await context.waitForIdle();
+      context.events.length = 0;
+      context.history.seedSessionLaunchSettings('provider-child-background', {
+        modelId: 'custom:glm-5.2',
+        reasoningEffort: 'max',
+      });
 
-    provider.queueStreamEvents([
-      {
-        type: 'tool_call',
-        toolUse: {
-          type: 'tool_use',
-          id: 'task-background',
-          name: 'Task',
-          input: { subagent_type: 'worker-2', description: 'background work' },
-        },
-      },
-      {
-        type: 'tool_result',
-        toolName: 'Task',
-        toolUseId: 'task-background',
-        content:
-          'Task launched in background.\ntask_id: provider-child-background\nsession_id: provider-child-background',
-        isError: false,
-      },
-    ]);
-    await context.handle({
-      type: 'session.send',
-      appSessionId: 'provider-1',
-      text: 'launch background worker',
-    });
-
-    const launched = context.history.childSessions('provider-1')[0];
-    assert.equal(launched?.status, 'running');
-    assert.equal(launched?.label, 'worker-2');
-    assert.equal(launched?.modelId, 'custom:glm-5.2');
-    assert.equal(launched?.reasoningEffort, 'max');
-
-    context.provider.emitNotification('provider-1', {
-      jsonrpc: '2.0',
-      method: 'droid.session_notification',
-      params: {
-        notification: {
-          type: 'create_message',
-          message: {
-            id: 'background-completion-message',
-            role: 'user',
-            content: [
-              {
-                type: 'text',
-                text: 'Background task completed.\ntask_id: provider-child-background\noutput: done',
-              },
-            ],
-            createdAt: Date.now(),
-            updatedAt: Date.now(),
+      provider.queueStreamEvents([
+        {
+          type: 'tool_call',
+          toolUse: {
+            type: 'tool_use',
+            id: 'task-background',
+            name: 'Task',
+            input: { subagent_type: 'worker-2', description: 'background work' },
           },
         },
-      },
-    });
+        {
+          type: 'tool_result',
+          toolName: 'Task',
+          toolUseId: 'task-background',
+          content:
+            'Task launched in background.\ntask_id: provider-child-background\nsession_id: provider-child-background',
+          isError: false,
+        },
+      ]);
+      await context.handle({
+        type: 'session.send',
+        appSessionId: 'provider-1',
+        text: 'launch background worker',
+      });
 
-    assert.equal(context.history.childSessions('provider-1')[0]?.status, 'completed');
-    assert.equal(
-      context.events.some(
-        (event) =>
-          event.type === 'session.child' &&
-          event.child.childSessionId === 'child-1' &&
-          event.child.status === 'completed',
-      ),
-      true,
-    );
+      const launched = context.history.childSessions('provider-1')[0];
+      assert.equal(launched?.status, 'running');
+      assert.equal(launched?.label, 'worker-2');
+      assert.equal(launched?.modelId, 'custom:glm-5.2');
+      assert.equal(launched?.reasoningEffort, 'max');
 
-    // The parent sat idle through the agent's whole run and nothing would have
-    // told it the agent finished, so the app owes it one turn carrying the
-    // result — as a quiet status row, because nobody typed the prompt.
-    await provider.waitForPrompts(3);
-    await context.waitForIdle();
-    assert.deepEqual(provider.prompts.slice(2), [
-      [
-        'The agents you started have finished while this chat was idle.',
-        '- worker-2: completed',
-        'Continue from these results.',
-      ].join('\n'),
-    ]);
-    const appended = context.events.filter((event) => event.type === 'event.appended');
-    assert.deepEqual(
-      appended.filter((event) => event.event.kind === 'status').map((event) => event.event.text),
-      ['Agents finished; continuing'],
-    );
-    assert.equal(
-      appended.some((event) => event.event.role === 'primary' && event.event.author === 'user'),
-      false,
-    );
-  } finally {
-    await context.dispose();
-  }
-});
+      const compactGate =
+        compaction === 'manual' ? context.provider.deferNextCompaction('provider-1') : undefined;
+      const compacting =
+        compaction === 'manual'
+          ? context.handle({ type: 'session.compact', appSessionId: 'provider-1' })
+          : undefined;
+      if (compaction === 'automatic') notifyCompaction(context, 'provider-1', 'started');
+      await context.waitForIdle();
+      context.provider.emitNotification('provider-1', {
+        jsonrpc: '2.0',
+        method: 'droid.session_notification',
+        params: {
+          notification: {
+            type: 'create_message',
+            message: {
+              id: 'background-completion-message',
+              role: 'user',
+              content: [
+                {
+                  type: 'text',
+                  text: 'Background task completed.\ntask_id: provider-child-background\noutput: done',
+                },
+              ],
+              createdAt: Date.now(),
+              updatedAt: Date.now(),
+            },
+          },
+        },
+      });
+
+      assert.equal(context.history.childSessions('provider-1')[0]?.status, 'completed');
+      assert.equal(
+        context.events.some(
+          (event) =>
+            event.type === 'session.child' &&
+            event.child.childSessionId === 'child-1' &&
+            event.child.status === 'completed',
+        ),
+        true,
+      );
+
+      if (compaction !== 'none') assert.equal(provider.prompts.length, 2);
+      compactGate?.resolve();
+      await compacting;
+      if (compaction === 'automatic') notifyCompaction(context, 'provider-1', 'completed');
+      await provider.waitForPrompts(3);
+      await context.waitForIdle();
+      assert.deepEqual(provider.prompts.slice(2), [
+        [
+          'The agents you started have finished while this chat was idle.',
+          '- worker-2: completed',
+          'Continue from these results.',
+        ].join('\n'),
+      ]);
+      const appended = context.events.filter((event) => event.type === 'event.appended');
+      assert.deepEqual(
+        appended
+          .filter(
+            (event) =>
+              event.event.kind === 'status' && event.event.text === 'Agents finished; continuing',
+          )
+          .map((event) => event.event.text),
+        ['Agents finished; continuing'],
+      );
+      assert.equal(
+        appended.some((event) => event.event.role === 'primary' && event.event.author === 'user'),
+        false,
+      );
+    } finally {
+      await context.dispose();
+    }
+  });
 
 test('an agent that settles inside the parent turn does not wake it a second time', async () => {
   const context = createSessionManagerTestContext();
