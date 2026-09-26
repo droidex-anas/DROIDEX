@@ -11,6 +11,7 @@ import {
 import type { ChildProcess } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 
+import { childEnv } from '../../childEnv.js';
 import type { NormalizedEvent } from '../../normalize.js';
 import type { Autonomy, ReasoningEffort, SessionInteractionMode } from '../../protocol.js';
 import { errMsg } from '../../sessionHelpers.js';

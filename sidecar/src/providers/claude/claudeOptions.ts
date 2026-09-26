@@ -3,6 +3,7 @@ import type { EffortLevel, Options } from '@anthropic-ai/claude-agent-sdk';
 
 import type { ReasoningEffort } from '../../protocol.js';
 import type { ClaudeSessionInput } from './claudeSession.js';
+import { childEnv } from '../../childEnv.js';
 import { claudeCanUseTool, claudePermissionMode } from './claudePermissions.js';
 
 export function sessionOptions(
@@ -44,6 +45,11 @@ export function sessionOptions(
     // The SDK would otherwise own the subprocess privately; spawning it here is
     // what gives the session a pid for the agent-process monitor to track and
     // kill, the way it tracks Droid's.
+    // This replaces the subprocess environment rather than adding to it, which
+    // is why childEnv copies process.env: the CLI needs the user's PATH, HOME
+    // and login, and only the app's own variables are left behind.
+    env: childEnv(),
+    // `env` below is the one set above, handed back unchanged.
     spawnClaudeCodeProcess: ({ command, args, cwd, env, signal }) => {
       const child = spawn(command, args, {
         ...(cwd !== undefined ? { cwd } : {}),

@@ -1,5 +1,4 @@
 import type { ChildSessionSummary, ContextStatsSnapshot, TranscriptEvent } from '../types/bridge';
-import { isWorkingAgent } from '../lib/childSessions';
 import { releaseSessionChildTranscriptWindow } from '../lib/transcriptStoreMemory';
 import type { TranscriptMutation } from '../lib/transcriptMutation';
 import { INACTIVE_TRANSCRIPT_POLICY, VIEWPORT_TRANSCRIPT_POLICY } from '../lib/transcriptWindow';
@@ -167,111 +166,6 @@ export function invalidateSelectedChildOpening<S extends ChildSessionStore>(stat
         requestId: null,
       })
     : state;
-}
-
-function withAgentsWorking<S extends ChildSessionStore>(state: S, parentAppSessionId: string): S {
-  const children = state.childSessions[parentAppSessionId];
-  const working = Object.values(children ?? {}).some((child) => isWorkingAgent(child, false));
-  if (working === (state.agentsWorkingByParent[parentAppSessionId] ?? false)) return state;
-  const agentsWorkingByParent: Partial<Record<string, true>> = { ...state.agentsWorkingByParent };
-  if (working) agentsWorkingByParent[parentAppSessionId] = true;
-  else delete agentsWorkingByParent[parentAppSessionId];
-  return { ...state, agentsWorkingByParent };
-}
-
-export function reduceSessionChild<S extends ChildSessionStore>(
-  state: S,
-  action: {
-    child: ChildSessionSummary;
-    runtimeAvailable: boolean;
-    runtimeGeneration: number;
-  },
-): S {
-  const child = action.child;
-  const parent = state.childSessions[child.parentAppSessionId] ?? {};
-  const previousChild = parent[child.childSessionId];
-  const runtimeParent = state.childRuntime[child.parentAppSessionId] ?? {};
-  const previousRuntime = runtimeParent[child.childSessionId];
-  if (previousRuntime && action.runtimeGeneration < previousRuntime.runtimeGeneration) return state;
-  const settledWhileInactive =
-    previousChild?.status === 'running' &&
-    previousRuntime?.available &&
-    (child.status !== 'running' || !action.runtimeAvailable) &&
-    (state.activeAppSessionId !== child.parentAppSessionId ||
-      state.selectedChild?.parentAppSessionId !== child.parentAppSessionId ||
-      state.selectedChild.childSessionId !== child.childSessionId);
-  const clearContext =
-    !action.runtimeAvailable ||
-    (previousRuntime !== undefined && action.runtimeGeneration > previousRuntime.runtimeGeneration);
-  const contextParent = state.contextStats.child[child.parentAppSessionId] ?? {};
-  let next = {
-    ...state,
-    childSessions: {
-      ...state.childSessions,
-      [child.parentAppSessionId]: {
-        ...parent,
-        [child.childSessionId]: child,
-      },
-    },
-    contextStats: clearContext
-      ? {
-          ...state.contextStats,
-          child: {
-            ...state.contextStats.child,
-            [child.parentAppSessionId]: Object.fromEntries(
-              Object.entries(contextParent).filter(
-                ([childSessionId]) => childSessionId !== child.childSessionId,
-              ),
-            ),
-          },
-        }
-      : state.contextStats,
-  };
-  const runtimeUnchanged =
-    // Keep the existence guard because the following comparison dereferences previousRuntime.
-    // eslint-disable-next-line @typescript-eslint/prefer-optional-chain
-    previousRuntime &&
-    action.runtimeGeneration === previousRuntime.runtimeGeneration &&
-    action.runtimeAvailable === previousRuntime.available;
-  if (!runtimeUnchanged) {
-    next = {
-      ...next,
-      childRuntime: {
-        ...state.childRuntime,
-        [child.parentAppSessionId]: {
-          ...runtimeParent,
-          [child.childSessionId]: {
-            available: action.runtimeAvailable,
-            runtimeGeneration: action.runtimeGeneration,
-          },
-        },
-      },
-    };
-    const access = state.childAccess[child.parentAppSessionId]?.[child.childSessionId];
-    // Queued is waiting for a slot, not a finished open.
-    if (
-      !action.runtimeAvailable &&
-      !child.queued &&
-      (access?.state === 'opening' || access?.state === 'ready')
-    )
-      next = withChildAccess(next, child.parentAppSessionId, child.childSessionId, {
-        state: 'closed',
-        requestId: null,
-      });
-    else if (action.runtimeAvailable && access?.state === 'ready')
-      next = withChildAccess(next, child.parentAppSessionId, child.childSessionId, {
-        ...access,
-        runtimeGeneration: action.runtimeGeneration,
-      });
-  }
-  const resolved = settledWhileInactive
-    ? releaseInactiveChildTranscript(next, child.parentAppSessionId, child.childSessionId)
-    : next;
-  // Only a crossing into or out of work can change the chat's flag, so an
-  // activity preview or a token tick leaves the sidebar's map untouched.
-  const crossedWorking =
-    !previousChild || isWorkingAgent(previousChild, false) !== isWorkingAgent(child, false);
-  return crossedWorking ? withAgentsWorking(resolved, child.parentAppSessionId) : resolved;
 }
 
 export function reduceChildUpdated<S extends ChildSessionStore>(

@@ -7,18 +7,16 @@ import { Virtualizer } from '@tanstack/virtual-core';
 import { MessageFeed } from './MessageFeed';
 import type { FeedItem } from './chatFeed';
 import {
-  buildConversationRowLookup,
+  updateConversationRowLookup,
   CONVERSATION_LIST_ESTIMATE_PX,
   CONVERSATION_LIST_GAP_PX,
   CONVERSATION_LIST_INITIAL_RECT,
   CONVERSATION_LIST_OVERSCAN,
   CONVERSATION_LIST_PIN_THRESHOLD_PX,
-  conversationRowViewportId,
   estimatedListEndOffset,
   estimatedListSize,
   findConversationRowIndex,
   isConversationAtLatest,
-  measuredConversationRowSize,
   shouldAdjustConversationRowOnSizeChange,
   syncMeasureConversationList,
   shouldAnimateFeedRow,
@@ -32,7 +30,10 @@ import {
 } from '../hooks/conversationViewportAnchor';
 import type { TranscriptEvent } from '../types/bridge';
 
-function messageItem(id: string, author: 'user' | 'assistant' = 'assistant'): FeedItem {
+function messageItem(
+  id: string,
+  author: 'user' | 'assistant' = 'assistant',
+): Extract<FeedItem, { type: 'message' }> {
   const event: TranscriptEvent = {
     id,
     appSessionId: 'm',
@@ -175,27 +176,44 @@ test('first measure above the fold does not write scrollTop while scrolling', ()
   assert.equal(virtualizer.measurementsCache[0]?.size, 19);
 });
 
-test('sync measure skips resize when the cached size already matches', () => {
-  const calls: Array<[number, number]> = [];
-  const list = {
+test('streamed commits read only changed or newly mounted row heights', () => {
+  const items = history(3);
+  const reads: number[] = [];
+  const rows = items.map((_, index) => ({
+    dataset: { index: String(index) },
+    get offsetHeight() {
+      reads.push(index);
+      return 40;
+    },
+    nextElementSibling: null as unknown,
+  }));
+  rows.forEach((row, index) => {
+    row.nextElementSibling = rows[index + 1] ?? null;
+  });
+  const list = { firstElementChild: rows[0] } as unknown as HTMLElement;
+  const changedRows = { items, measured: new WeakMap<Element, FeedItem>() };
+  const resize = () => {};
+  syncMeasureConversationList(list, resize, changedRows);
+  assert.deepEqual(reads.splice(0), [0, 1, 2]);
+  changedRows.items = [...items.slice(0, 2), messageItem('row-2')];
+  syncMeasureConversationList(list, resize, changedRows);
+  assert.deepEqual(reads.splice(0), [2]);
+  syncMeasureConversationList(list, resize, changedRows);
+  assert.deepEqual(reads, []);
+
+  // Scrolling a cached item back into view still measures its new DOM node.
+  const remounted = {
     firstElementChild: {
-      dataset: { index: '3' },
-      offsetHeight: 40,
+      dataset: { index: '0' },
+      get offsetHeight() {
+        reads.push(0);
+        return 40;
+      },
       nextElementSibling: null,
     },
   } as unknown as HTMLElement;
-  syncMeasureConversationList(
-    list,
-    (index, size) => calls.push([index, size]),
-    () => 40,
-  );
-  assert.deepEqual(calls, []);
-  syncMeasureConversationList(
-    list,
-    (index, size) => calls.push([index, size]),
-    () => 96,
-  );
-  assert.deepEqual(calls, [[3, 40]]);
+  syncMeasureConversationList(remounted, resize, changedRows);
+  assert.deepEqual(reads, [0]);
 });
 
 test('a width change re-measures the mounted rows and keeps the rest', () => {
@@ -222,13 +240,16 @@ test('a width change re-measures the mounted rows and keeps the rest', () => {
 });
 
 test('row measure reads the index attribute and rounds layout height', () => {
-  const row = {
-    dataset: { index: '12' },
-    offsetHeight: 19.4,
+  const measured: Array<[number, number]> = [];
+  const list = {
+    firstElementChild: {
+      dataset: { index: '12' },
+      offsetHeight: 19.4,
+      nextElementSibling: { dataset: {}, offsetHeight: 40, nextElementSibling: null },
+    },
   } as unknown as HTMLElement;
-  assert.deepEqual(measuredConversationRowSize(row), { index: 12, size: 19 });
-  const missing = { dataset: {}, offsetHeight: 40 } as unknown as HTMLElement;
-  assert.equal(measuredConversationRowSize(missing), null);
+  syncMeasureConversationList(list, (index, size) => measured.push([index, size]));
+  assert.deepEqual(measured, [[12, 19]]);
 });
 
 test('measuring a short row packs the next row to the list gap', () => {
@@ -292,7 +313,7 @@ test('prepending older history preserves the viewport anchor through virtual off
   });
   const anchorItem = visible[2];
   assert.ok(anchorItem);
-  const lookupBefore = buildConversationRowLookup(visible);
+  const lookupBefore = updateConversationRowLookup(null, visible);
   const anchorIndex = findConversationRowIndex(lookupBefore, feedRowId(anchorItem));
   assert.equal(anchorIndex, 2);
   virtualizer.getVirtualItems();
@@ -310,7 +331,7 @@ test('prepending older history preserves the viewport anchor through virtual off
   virtualizer.setOptions({ ...virtualizer.options, count: itemsRef.current.length });
   virtualizer.getVirtualItems();
 
-  const lookupAfter = buildConversationRowLookup(itemsRef.current);
+  const lookupAfter = updateConversationRowLookup(lookupBefore, itemsRef.current);
   const nextIndex = findConversationRowIndex(lookupAfter, feedRowId(anchorItem));
   assert.equal(nextIndex, 42);
   const nextStart = virtualizer.measurementsCache[nextIndex]?.start;
@@ -353,15 +374,59 @@ test('scroll-to-row lookup remains accurate for prompt, tool, and turn identitie
     },
   };
   const items = [prompt, tools, child, answer];
-  const lookup = buildConversationRowLookup(items);
+  const lookup = updateConversationRowLookup(null, items);
 
   assert.equal(findConversationRowIndex(lookup, prompt.key), 0);
-  assert.equal(findConversationRowIndex(lookup, conversationRowViewportId(prompt)), 0);
+  assert.equal(findConversationRowIndex(lookup, feedRowId(prompt)), 0);
   assert.equal(findConversationRowIndex(lookup, tools.key), 1);
   assert.equal(findConversationRowIndex(lookup, feedRowId(tools)), 1);
   assert.equal(findConversationRowIndex(lookup, child.key), 2);
   assert.equal(findConversationRowIndex(lookup, feedRowId(child)), 2);
   assert.equal(findConversationRowIndex(lookup, 'missing'), undefined);
+});
+
+test('suffix lookup removes obsolete group anchors and rows without replacing settled indexes', () => {
+  const settled = messageItem('prompt', 'user');
+  const firstTool = { ...messageItem('tool-1').event, kind: 'tool_call' as const };
+  const secondTool = { ...firstTool, id: 'tool-2' };
+  const tools: FeedItem = { type: 'tools', key: 'tools', events: [firstTool] };
+  const items = [settled, tools, messageItem('removed')];
+  const lookup = updateConversationRowLookup(null, items);
+  const mountKeys = lookup.byMountKey;
+  const viewportIds = lookup.byViewportId;
+  const regrouped: FeedItem = { ...tools, events: [firstTool, secondTool] };
+  updateConversationRowLookup(lookup, [settled, regrouped], 1);
+  assert.equal(lookup.byMountKey, mountKeys);
+  assert.equal(lookup.byViewportId, viewportIds);
+  assert.equal(findConversationRowIndex(lookup, feedRowId(settled)), 0);
+  assert.equal(findConversationRowIndex(lookup, 'tools'), 1);
+  assert.equal(findConversationRowIndex(lookup, feedRowId(regrouped)), 1);
+  assert.equal(findConversationRowIndex(lookup, feedRowId(tools)), undefined);
+  assert.equal(findConversationRowIndex(lookup, 'removed'), undefined);
+  updateConversationRowLookup(lookup, []);
+  assert.equal(lookup.byMountKey.size, 0);
+  assert.equal(lookup.byViewportId.size, 0);
+});
+
+test('lookup rewinds past an uncommitted projection before applying the latest suffix', () => {
+  const initial = history(5);
+  const lookup = updateConversationRowLookup(null, initial);
+  const skipped = [...initial.slice(0, 2), messageItem('replacement'), messageItem('new-turn')];
+  const latest = [...skipped, messageItem('live-answer')];
+  updateConversationRowLookup(lookup, latest, skipped.length);
+  assert.equal(findConversationRowIndex(lookup, 'row-2'), undefined);
+  assert.equal(findConversationRowIndex(lookup, 'replacement'), 2);
+  assert.equal(findConversationRowIndex(lookup, 'new-turn'), 3);
+  assert.equal(findConversationRowIndex(lookup, 'live-answer'), 4);
+  assert.deepEqual(lookup, updateConversationRowLookup(null, latest));
+
+  // A skipped prepend can extend just the first group without shifting rows.
+  const prepended = [messageItem('older-group'), ...latest.slice(1)];
+  const appended = [...prepended, messageItem('after-prepend')];
+  updateConversationRowLookup(lookup, appended, prepended.length);
+  assert.equal(findConversationRowIndex(lookup, 'row-0'), undefined);
+  assert.equal(findConversationRowIndex(lookup, 'older-group'), 0);
+  assert.deepEqual(lookup, updateConversationRowLookup(null, appended));
 });
 
 test('bottom-follow is a cheap end-threshold, not full geometry', () => {
@@ -599,7 +664,7 @@ test('restored unpinned offset lands on the same captured row after varied measu
   const layout: ConversationViewportLayout = {
     rowContentOffset: (rowId) => {
       engine.virtualizer.getVirtualItems();
-      const index = findConversationRowIndex(buildConversationRowLookup(items), rowId);
+      const index = findConversationRowIndex(updateConversationRowLookup(null, items), rowId);
       return index === undefined ? undefined : engine.virtualizer.measurementsCache[index]?.start;
     },
   };

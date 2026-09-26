@@ -52,3 +52,12 @@ test('configured directory names preserve surrounding whitespace', () => {
   assert.equal(droidexUserDataDir(), '/tmp/profile ');
   assert.equal(droidexHistoryDir(), ' history ');
 });
+
+// isolatedTestEnv.ts, preloaded by the test script, is what makes this true
+// however the run was started. Without it a run inherits the app's profile and
+// these tests read and write the user's live history.
+test('the test process has no app profile or history directory in its environment', () => {
+  assert.equal(originalUserData, undefined);
+  assert.equal(originalState, undefined);
+  assert.equal(droidexHistoryDir(), join(homedir(), '.factory', 'droidex'));
+});

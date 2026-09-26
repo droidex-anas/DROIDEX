@@ -4,6 +4,7 @@ import { appendFile, lstat, mkdir, readFile, realpath, rmdir, stat } from 'node:
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { promisify } from 'node:util';
 import type { AutomationExecutionMode } from './types.js';
+import { childEnv } from '../childEnv.js';
 
 const execFileAsync = promisify(execFile);
 const GIT_TIMEOUT_MS = 30_000;
@@ -225,6 +226,8 @@ async function git(cwd: string, args: string[], timeout = GIT_TIMEOUT_MS): Promi
     timeout,
     maxBuffer: MAX_BUFFER,
     windowsHide: true,
+    // Git runs the user's hooks and aliases, so it starts from their environment.
+    env: childEnv(),
   });
   return result.stdout.trim();
 }

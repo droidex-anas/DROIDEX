@@ -1,6 +1,14 @@
 const assert = require('node:assert/strict');
 const test = require('node:test');
-const { createTerminalManager, MAX_COLS, MAX_REPLAY_BYTES, MAX_ROWS } = require('./terminal.cjs');
+const { readFileSync } = require('node:fs');
+const { join } = require('node:path');
+const {
+  buildPtyEnv,
+  createTerminalManager,
+  MAX_COLS,
+  MAX_REPLAY_BYTES,
+  MAX_ROWS,
+} = require('./terminal.cjs');
 
 function fixture(options = {}) {
   const instances = [];
@@ -356,4 +364,42 @@ test('hasChildren propagates a child-pid lookup failure so the caller can confir
   });
   const info = await manager.create({ appSessionId: 's1', cwd: '/w' });
   await assert.rejects(() => manager.hasChildren(info.id), /pgrep/);
+});
+
+test('a spawned shell does not inherit the app-private variables', () => {
+  const env = buildPtyEnv('darwin', {
+    PATH: '/usr/bin',
+    HOME: '/Users/someone',
+    SHELL: '/bin/zsh',
+    DROIDEX_USER_DATA_DIR: '/profile',
+    DROIDEX_HISTORY_DIR: '/profile/history',
+    BRIDGE_PORT: '1234',
+    BRIDGE_TOKEN: 'secret',
+    BROWSER_ASSET_TOKEN: 'secret',
+    BRIDGE_EXIT_ON_STDIN_CLOSE: '1',
+    ELECTRON_RUN_AS_NODE: '1',
+    ELECTRON_START_URL: 'http://localhost:5173',
+    SIDECAR_ENTRY: '/sidecar/dist/index.js',
+  });
+
+  assert.deepEqual(env, {
+    PATH: '/usr/bin',
+    HOME: '/Users/someone',
+    SHELL: '/bin/zsh',
+    TERM: 'xterm-256color',
+    COLORTERM: 'truecolor',
+  });
+});
+
+// The main process and the sidecar each carry the list because they cannot
+// import each other. This is what stops one copy drifting from the other.
+test('both copies of the app-private key list are identical', () => {
+  const keys = (file) => {
+    const source = readFileSync(join(__dirname, file), 'utf8');
+    const literal = /APP_ONLY_ENV_KEYS\s*(?::[^=]+)?=\s*\[([^\]]*)\]/.exec(source);
+    assert.ok(literal, `no key list found in ${file}`);
+    return literal[1].match(/'[^']+'/g).map((quoted) => quoted.slice(1, -1));
+  };
+
+  assert.deepEqual(keys('childEnv.cjs'), keys('../sidecar/src/childEnv.ts'));
 });

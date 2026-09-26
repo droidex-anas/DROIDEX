@@ -1,7 +1,16 @@
-import { Suspense, useCallback, useEffect, useRef, useState, useLayoutEffect } from 'react';
+import {
+  Suspense,
+  useMemo,
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  useLayoutEffect,
+} from 'react';
 import { shallowEqual, useStoreApi, useStoreDispatch, useStoreSelector } from './hooks/useStore';
 import { AnimatePresence, motion } from 'framer-motion';
 import { PanelLeft, PanelRight } from '@droidex/icons';
+import { hasActiveSessionWork } from './lib/sessions';
 import { bridge } from './lib/bridge';
 import {
   connect,
@@ -42,10 +51,11 @@ import RuntimeStatusBanner from './components/RuntimeStatusBanner';
 import { checkForAppUpdateAutomatically, startAutomaticAppUpdateChecks } from './lib/appUpdate';
 import { toast } from './lib/toast';
 import { UtilityPane } from './components/utility/UtilityPane';
-import { peekTerminalInstance, releaseTerminalInstancesExcept } from './lib/terminalInstances';
+import { terminalInstances, releaseTerminalInstancesExcept } from './lib/terminalInstanceRegistry';
 import {
   isExpandableTool,
   utilityPanelForSession,
+  terminalTabIds,
   type UtilityTab,
   type UtilityTool,
 } from './lib/utilityPanel';
@@ -266,12 +276,10 @@ export default function App() {
   // sidecar retires idle runtimes while the chat and its PTYs stay live), which removes
   // any terminal tabs it held. Release the matching xterm/pty instances so
   // they don't keep running in the background with nothing to reopen them.
-  const liveTerminalTabIds = useStoreSelector((current) =>
-    Object.values(current.utilityPanels)
-      .flatMap((panel) => panel.tabs)
-      .filter((tab) => tab.tool === 'terminal')
-      .map((tab) => tab.id)
-      .join('\n'),
+  const hasActiveWork = useStoreSelector(hasActiveSessionWork);
+  const liveTerminalTabIds = useMemo(
+    () => terminalTabIds(state.utilityPanels),
+    [state.utilityPanels],
   );
   useEffect(() => {
     void releaseTerminalInstancesExcept(
@@ -283,17 +291,18 @@ export default function App() {
   }, [liveTerminalTabIds]);
 
   useEffect(() => {
-    if (shellPaintMarked.current) return;
-    shellPaintMarked.current = true;
-    const raf = requestAnimationFrame;
-    raf(() => {
-      noteFirstMeaningfulShellPaint();
-      scheduleIdleLazyWarmup();
+    const frame = requestAnimationFrame(() => {
+      if (!shellPaintMarked.current) {
+        shellPaintMarked.current = true;
+        noteFirstMeaningfulShellPaint();
+      }
+      if (!hasActiveWork) scheduleIdleLazyWarmup(() => hasActiveSessionWork(store.getState()));
     });
     return () => {
+      cancelAnimationFrame(frame);
       cancelIdleLazyWarmup();
     };
-  }, []);
+  }, [hasActiveWork, store]);
 
   useEffect(() => {
     if (composerStartupResolved.current) return;
@@ -763,7 +772,7 @@ export default function App() {
                     }}
                     onCloseTab={(tab) => {
                       if (tab.tool === 'terminal') {
-                        const status = peekTerminalInstance(tab.id)?.getState().status;
+                        const status = terminalInstances.get(tab.id)?.getState().status;
                         if (!tab.terminalId || status !== 'running') {
                           closeTerminalTab(tab);
                           return;
