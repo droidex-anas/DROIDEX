@@ -69,6 +69,14 @@ import { join } from 'node:path';
 // measured 100_629, over the old line before any of this work, and Projects
 // lands ~0.3KB under it. The raise covers main's drift, not the feature.
 //
+// Raised from 1_380_000 to 1_390_000 when Projects landed on top of voice mode.
+// Each fit its own line against their shared base (1_356_068 at b28af864):
+// main with voice mode measured 1_369_293 and Projects 1_368_883. Both keep
+// their state on the entry by design, so together they measure 1_382_099.
+// Nothing moved off the entry to make room; the new headroom is ~8KB. The
+// merged CSS of 100_276 is over main's 100_000 line, so Projects' 101_500
+// stays.
+//
 // Main meanwhile raised its own line from 1_375_000 to 1_390_000 for the
 // DroidProxy provider marks in the composer and picker, plus bridge
 // validation, with the settings page lazy; main alone measured ~1_381_450.
