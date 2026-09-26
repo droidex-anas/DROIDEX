@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { isAutomationMutationTool } from './automations/permissionPolicy.js';
+import { isAutomationMutationTool, splitNamespacedTool } from './automations/permissionPolicy.js';
 import { sessionsGrantScope } from './sessionsMcpPolicy.js';
 
 // Keep the names as the provider supplied them: existing grants use that exact
@@ -12,7 +12,8 @@ export function mcpGrantSignature(
   const key = `mcp::${serverName}::${toolName}`;
   const scope = sessionsGrantScope(serverName, toolName, input);
   if (scope !== undefined) return scope ? `${key}::${scope}` : '';
-  if (!isAutomationMutationTool(serverName, toolName)) return key;
+  const split = splitNamespacedTool(toolName);
+  if (!isAutomationMutationTool(serverName || split.serverName, split.toolName)) return key;
   const args = toolArgumentDigest(input);
   return args ? `${key}::${args}` : '';
 }
