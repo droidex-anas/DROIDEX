@@ -63,17 +63,6 @@ export function shouldAutoApproveAutomationTool(
   return autonomy === 'high' && HIGH_AUTONOMY_SAFE.has(tool);
 }
 
-/**
- * True when the request changes saved automation state, so an auto-approved
- * mutation can still be surfaced instead of executing invisibly.
- */
-export function isAutomationMutationPermission(params: unknown): boolean {
-  const target = mcpPermissionTarget(params);
-  return target ? isAutomationMutationTool(target.serverName, target.toolName) : false;
-}
-
-// The name-level form, for a provider whose permission callback carries the
-// namespaced tool name instead of Droid's confirmation params.
 export function isAutomationMutationTool(serverName: string, toolName: string): boolean {
   if (!isAutomationServer(serverName)) return false;
   const tool = automationToolName(toolName);

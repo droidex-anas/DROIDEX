@@ -5,12 +5,9 @@ import type {
   RequestPermissionRequestParams,
 } from '@factory/droid-sdk';
 import { convertNotificationToStreamMessage } from '@factory/droid-sdk';
-import { createHash } from 'node:crypto';
-import {
-  automationToolDisplayTitle,
-  isAutomationMutationPermission,
-} from './automations/permissionPolicy.js';
-import { sessionsGrantScope, sessionsToolDisplayTitle } from './sessionsMcpPolicy.js';
+import { automationToolDisplayTitle } from './automations/permissionPolicy.js';
+import { mcpGrantSignature } from './mcpGrant.js';
+import { sessionsToolDisplayTitle } from './sessionsMcpPolicy.js';
 import { bridgeFeature } from './missionFeatures.js';
 import { droidErrorDetails } from './providers/droid/droidErrors.js';
 import type {
@@ -557,31 +554,6 @@ export function confirmationType(params: RequestPermissionRequestParams): string
   return typeof type === 'string' ? type : 'other';
 }
 
-// Hashing keeps the signature bounded and keeps argument values (which may hold
-// secrets) out of the stored grant key. An empty result means the arguments
-// could not be serialized, so the request stays ineligible for always-allow.
-export function toolArgumentDigest(input: Record<string, unknown>): string {
-  let serialized: string;
-  try {
-    serialized = stableJson(input);
-  } catch {
-    return '';
-  }
-  return createHash('sha256').update(serialized).digest('hex').slice(0, 32);
-}
-
-function stableJson(value: unknown): string {
-  if (value === undefined) return 'null';
-  if (Array.isArray(value)) return `[${value.map(stableJson).join(',')}]`;
-  if (value !== null && typeof value === 'object') {
-    const entries = Object.entries(value as Record<string, unknown>)
-      .filter(([, entryValue]) => entryValue !== undefined)
-      .sort(([left], [right]) => (left < right ? -1 : left > right ? 1 : 0));
-    return `{${entries.map(([key, entryValue]) => `${JSON.stringify(key)}:${stableJson(entryValue)}`).join(',')}}`;
-  }
-  return JSON.stringify(value);
-}
-
 // Stable key identifying "the same action" so an app-level allowlist can honor
 // "Always allow" even when the underlying agent does not persist the grant.
 // An empty string means the request is not eligible for always-allow caching.
@@ -620,10 +592,5 @@ export function permissionSignature(params: RequestPermissionRequestParams): str
 function mcpToolSignature(params: RequestPermissionRequestParams, c: ConfirmationDetail): string {
   const serverName = typeof c.serverName === 'string' ? c.serverName : '';
   const toolName = typeof c.toolName === 'string' ? c.toolName : '';
-  const key = `mcp::${serverName}::${toolName}`;
-  const scope = sessionsGrantScope(serverName, toolName, primaryToolInput(params));
-  if (scope !== undefined) return scope ? `${key}::${scope}` : '';
-  if (!isAutomationMutationPermission(params)) return key;
-  const args = toolArgumentDigest(primaryToolInput(params));
-  return args ? `${key}::${args}` : '';
+  return mcpGrantSignature(serverName, toolName, primaryToolInput(params));
 }
