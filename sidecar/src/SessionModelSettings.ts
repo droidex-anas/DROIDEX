@@ -130,7 +130,7 @@ export class SessionModelSettings {
         if (agent !== 'primary') return true;
         // Only a model change earns a row; a new effort shows on the chip.
         if (change) await this.d.onPrimaryModelChanged(next, change.from, change.to);
-        if (!isCurrent()) return;
+        if (!isCurrent()) return false;
         if (live) await this.d.refreshPrimary(live, selected.modelId !== undefined);
         return true;
       },

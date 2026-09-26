@@ -147,7 +147,11 @@ export class SessionAdoption {
         interruptReason: TURN_INTERRUPTED,
       };
       await this.dependencies.persistSummaries([updated]);
-      if (this.dependencies.registry.getLive(identity.appSessionId) !== live || live.summary !== previous) return;
+      if (
+        this.dependencies.registry.getLive(identity.appSessionId) !== live ||
+        live.summary !== previous
+      )
+        return;
       live.summary = updated;
       this.interrupted.push({
         appSessionId: identity.appSessionId,
@@ -180,7 +184,11 @@ export class SessionAdoption {
       interruptReason: reason,
     };
     await this.dependencies.persistSummaries([updated]);
-    if (this.dependencies.registry.getLive(identity.appSessionId) !== live || live?.summary !== previous) return;
+    if (
+      this.dependencies.registry.getLive(identity.appSessionId) !== live ||
+      live?.summary !== previous
+    )
+      return;
     this.interrupted.push({ appSessionId: identity.appSessionId, reason });
     this.dependencies.appendStatus(identity.appSessionId, reason);
   }
