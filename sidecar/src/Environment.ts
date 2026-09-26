@@ -185,7 +185,7 @@ async function commandExists(command: string): Promise<boolean> {
 async function commandPath(command: string): Promise<string | null> {
   const probe = process.platform === 'win32' ? 'where' : 'which';
   try {
-    const { stdout } = await execFileAsync(probe, [command], { timeout: 4000 });
+    const { stdout } = await execFileAsync(probe, [command], { timeout: 4000, env: childEnv() });
     const first = stdout
       .split(/\r?\n/)
       .map((line) => line.trim())
