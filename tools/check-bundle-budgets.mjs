@@ -76,8 +76,14 @@ import { join } from 'node:path';
 // Nothing moved off the entry to make room; the new headroom is ~8KB. The
 // merged CSS of 100_276 is over main's 100_000 line, so Projects' 101_500
 // stays.
+//
+// Lowered from 1_390_000 to 1_385_000 when the voice call left the entry.
+// VoiceProvider keeps only the controls a chat reads; the WebRTC negotiation,
+// the microphone hook and the call's view logic now load with the first
+// conversation (the VoiceCall chunk, ~6KB). The entry measured 1_377_273
+// against 1_382_099 before, so the headroom stays ~8KB.
 const BUDGETS = {
-  initialRendererJsBytes: 1_390_000,
+  initialRendererJsBytes: 1_385_000,
   initialCssBytes: 101_500,
   largestLazyChunkBytes: 700_000,
   duplicatePackageMaxBytes: 120_000,
