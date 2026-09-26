@@ -15,6 +15,7 @@ import { shallowEqual, useStoreApi, useStoreSelector, type AppState } from '../.
 import { renameSession } from '../../lib/commands';
 import { useVoice, type Voice } from './useVoice';
 import { canUseVoice } from './voiceAvailability';
+import { voiceSessionOf } from './voiceSessions';
 
 // The chimes are heard when a conversation opens and when it ends, so they are
 // fetched with the first one rather than with the app. Sticky user activation
@@ -149,10 +150,18 @@ export function VoiceProvider({ children }: { children: ReactNode }) {
   // A chat the orb created has no prompt to take its name from, so it wears a
   // placeholder until the first thing said in it, and takes its name from that.
   // A chat that already has a name keeps it.
-  const firstRequest = voice.session.lines.find((line) => line.role === 'user' && line.final);
+  const firstRequest = useStoreSelector(
+    useCallback(
+      (state: AppState) =>
+        voiceSessionOf(state.voiceSessions, owner).lines.find(
+          (line) => line.role === 'user' && line.final,
+        )?.text,
+      [owner],
+    ),
+  );
   useEffect(() => {
     if (owner === null || !firstRequest || !unnamed.current.has(owner)) return;
-    const title = firstRequest.text.replace(/\s+/g, ' ').trim().slice(0, 48);
+    const title = firstRequest.replace(/\s+/g, ' ').trim().slice(0, 48);
     if (!title) return;
     unnamed.current.delete(owner);
     renameSession(owner, title);
@@ -191,9 +200,9 @@ export function VoiceProvider({ children }: { children: ReactNode }) {
       <VoiceConversationContext.Provider value={conversation}>
         {children}
         <AnimatePresence>
-          {conversation.view === 'full' && (
+          {conversation.view === 'full' && owner !== null && (
             <Suspense fallback={null}>
-              <VoiceSurface key="voice-surface" voice={conversation} />
+              <VoiceSurface key="voice-surface" voice={conversation} appSessionId={owner} />
             </Suspense>
           )}
           {conversation.view === 'mini' && owner !== null && (

@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { memo, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 import { ChevronDown, Keyboard, Mic, MicOff, Settings2, X } from 'lucide-react';
@@ -13,11 +13,16 @@ import { UserBubble } from '../../components/transcript/UserBubble';
 import { VoiceOrb } from './VoiceOrb';
 import { VoiceSettingsSheet } from './VoiceSettingsSheet';
 import { voiceStatusIsLive, voiceStatusLabel } from './voiceStatus';
+import { useVoiceTranscript } from './useVoiceTranscript';
 import type { Voice } from './useVoice';
+import type { VoiceTranscriptLine } from './voiceSessions';
 
 /** Full-window voice surface, portalled like every overlay in the app. */
-export function VoiceSurface({ voice }: { voice: Voice }) {
-  return createPortal(<VoiceSurfaceDialog voice={voice} />, document.body);
+export function VoiceSurface({ voice, appSessionId }: { voice: Voice; appSessionId: string }) {
+  return createPortal(
+    <VoiceSurfaceDialog voice={voice} appSessionId={appSessionId} />,
+    document.body,
+  );
 }
 
 // What a round of Tab visits inside the surface.
@@ -26,9 +31,8 @@ const FOCUSABLE = 'button:not([disabled]), [href], input, select, textarea, [tab
 const controlClass =
   'rounded-full p-2 text-droid-text-secondary transition-colors hover:bg-droid-bg/50 hover:text-droid-text';
 
-function VoiceSurfaceDialog({ voice }: { voice: Voice }) {
+function VoiceSurfaceDialog({ voice, appSessionId }: { voice: Voice; appSessionId: string }) {
   const dialogRef = useRef<HTMLDivElement>(null);
-  const feedRef = useRef<HTMLDivElement>(null);
   const reducedMotion = useReducedMotion();
   const [settingsOpen, setSettingsOpen] = useState(false);
   const { session } = voice;
@@ -91,12 +95,6 @@ function VoiceSurfaceDialog({ voice }: { voice: Voice }) {
     };
   }, []);
 
-  // The newest line stays in view as the conversation runs.
-  useLayoutEffect(() => {
-    const feed = feedRef.current;
-    if (feed) feed.scrollTop = feed.scrollHeight;
-  }, [session.lines]);
-
   return (
     <motion.div
       ref={dialogRef}
@@ -118,29 +116,7 @@ function VoiceSurfaceDialog({ voice }: { voice: Voice }) {
         style={{ paddingLeft: WINDOW_CONTROLS_INSET_PX }}
       />
 
-      {/* What was said reads the way the chat reads: the same bubble for a
-          request, the same message body for an answer, both marked as spoken. */}
-      <div ref={feedRef} className="min-h-0 flex-1 overflow-y-auto px-6 pb-2 pt-4">
-        <div className="mx-auto flex w-full max-w-[680px] flex-col gap-6">
-          {session.lines.map((line) =>
-            line.role === 'user' ? (
-              <UserBubble key={line.id} event={{ text: line.text, spoken: true }} />
-            ) : (
-              <div key={line.id} className="min-w-0">
-                <div className="mb-1.5">
-                  <SpokenMark />
-                </div>
-                <MessageBody
-                  text={line.text}
-                  live={!line.final}
-                  autoPlayAppBlocks={false}
-                  cacheId={`voice-${String(line.id)}`}
-                />
-              </div>
-            ),
-          )}
-        </div>
-      </div>
+      <SpokenFeed appSessionId={appSessionId} />
 
       {/* The agent can stop and ask while the conversation holds the screen.
           It asks with the app's own cards, in the same place the composer
@@ -245,3 +221,48 @@ function VoiceSurfaceDialog({ voice }: { voice: Voice }) {
     </motion.div>
   );
 }
+
+/**
+ * What was said reads the way the chat reads: the same bubble for a request,
+ * the same message body for an answer, both marked as spoken. Only this part
+ * of the surface re-renders as the words arrive.
+ */
+function SpokenFeed({ appSessionId }: { appSessionId: string }) {
+  const lines = useVoiceTranscript(appSessionId);
+  const feedRef = useRef<HTMLDivElement>(null);
+
+  // The newest line stays in view as the conversation runs.
+  useLayoutEffect(() => {
+    const feed = feedRef.current;
+    if (feed) feed.scrollTop = feed.scrollHeight;
+  }, [lines]);
+
+  return (
+    <div ref={feedRef} className="min-h-0 flex-1 overflow-y-auto px-6 pb-2 pt-4">
+      <div className="mx-auto flex w-full max-w-[680px] flex-col gap-6">
+        {lines.map((line) => (
+          <SpokenLine key={line.id} line={line} />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// A line keeps its object until its own words change, so the lines already
+// said skip rendering while the newest one grows.
+const SpokenLine = memo(function SpokenLine({ line }: { line: VoiceTranscriptLine }) {
+  if (line.role === 'user') return <UserBubble event={{ text: line.text, spoken: true }} />;
+  return (
+    <div className="min-w-0">
+      <div className="mb-1.5">
+        <SpokenMark />
+      </div>
+      <MessageBody
+        text={line.text}
+        live={!line.final}
+        autoPlayAppBlocks={false}
+        cacheId={`voice-${String(line.id)}`}
+      />
+    </div>
+  );
+});

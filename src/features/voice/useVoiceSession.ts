@@ -1,9 +1,14 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { requestVoices, startVoice, stopVoice } from '../../lib/commands';
-import { useStoreDispatch, useStoreSelector, type AppState } from '../../hooks/useStore';
+import {
+  shallowEqual,
+  useStoreDispatch,
+  useStoreSelector,
+  type AppState,
+} from '../../hooks/useStore';
 import type { VoiceNarration } from '../../types/bridge';
 import { useMicStream } from './useMicStream';
-import { voiceSessionOf, type VoiceStatus, type VoiceTranscriptLine } from './voiceSessions';
+import { isAssistantSpeaking, voiceSessionOf, type VoiceStatus } from './voiceSessions';
 
 /**
  * One voice conversation for one chat.
@@ -43,7 +48,8 @@ export interface VoiceSession {
   status: VoiceStatus;
   /** Why the conversation failed, kept until the next attempt starts. */
   error?: string;
-  lines: VoiceTranscriptLine[];
+  /** The assistant is still saying its current line. */
+  speaking: boolean;
   voices: string[];
   defaultVoice?: string;
   muted: boolean;
@@ -64,11 +70,28 @@ export function useVoiceSession(
   narration: VoiceNarration = 'brief',
 ): VoiceSession {
   const dispatch = useStoreDispatch();
+  // The call follows the conversation's state, not its words: those change many
+  // times a second and are read, at their own pace, by the surfaces that show
+  // them. All the call needs from them is whether the reply is being spoken.
   const session = useStoreSelector(
     useCallback(
-      (state: AppState) => voiceSessionOf(state.voiceSessions, appSessionId),
+      (state: AppState) => {
+        const { status, error, voices, defaultVoice, answer, lines } = voiceSessionOf(
+          state.voiceSessions,
+          appSessionId,
+        );
+        return {
+          status,
+          error,
+          voices,
+          defaultVoice,
+          answer,
+          speaking: isAssistantSpeaking(lines),
+        };
+      },
       [appSessionId],
     ),
+    shallowEqual,
   );
   const [wanted, setWantedState] = useState(false);
   // Handing the conversation to another chat ends the old attempt and starts
@@ -252,7 +275,7 @@ export function useVoiceSession(
     () => ({
       status: session.status,
       error: session.error,
-      lines: session.lines,
+      speaking: session.speaking,
       voices: session.voices,
       defaultVoice: session.defaultVoice,
       muted,

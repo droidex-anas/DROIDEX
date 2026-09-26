@@ -5,6 +5,7 @@ import { Popover } from '../../components/environment/Popover';
 import { useStoreDispatch, useStoreSelector } from '../../hooks/useStore';
 import { VoiceOrb } from './VoiceOrb';
 import { voiceStatusLabel } from './voiceStatus';
+import { useVoiceTranscript } from './useVoiceTranscript';
 import type { Voice } from './useVoice';
 
 /**
@@ -49,6 +50,7 @@ export function VoiceMiniBar({ voice, appSessionId }: { voice: Voice; appSession
   const dispatch = useStoreDispatch();
   const reducedMotion = useReducedMotion();
   const { session } = voice;
+  const transcript = useVoiceTranscript(appSessionId);
   const barRef = useRef<HTMLDivElement>(null);
   const feedRef = useRef<HTMLDivElement>(null);
   const panelId = useId();
@@ -98,7 +100,7 @@ export function VoiceMiniBar({ voice, appSessionId }: { voice: Voice; appSession
   useEffect(() => {
     const feed = feedRef.current;
     if (feed) feed.scrollTop = feed.scrollHeight;
-  }, [panel, session.lines]);
+  }, [panel, transcript]);
 
   const togglePanel = useCallback(() => {
     setPanel((open) => !open);
@@ -110,7 +112,7 @@ export function VoiceMiniBar({ voice, appSessionId }: { voice: Voice; appSession
   // An ask raised by the conversation lands in its own chat, which is not the
   // one on screen. The bar says so, and its first button is the way there.
   const status = waiting ? 'Needs you' : voiceStatusLabel(voice.activity);
-  const lines = session.lines.slice(-PANEL_LINES);
+  const lines = transcript.slice(-PANEL_LINES);
 
   return (
     <motion.div
