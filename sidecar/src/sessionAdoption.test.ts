@@ -127,7 +127,6 @@ test('a resumed in-flight session is paused with an interrupt reason', async () 
       reapProcesses: () => Promise.resolve(),
       persistSummaries: (sessions) => {
         persisted.push(...sessions);
-        live.summary = sessions[0] ?? live.summary;
       },
       appendStatus: () => undefined,
       sessionRuntimeIdleMs: SESSION_RUNTIME_IDLE_RETIREMENT_MS,

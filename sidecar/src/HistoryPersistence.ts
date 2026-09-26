@@ -42,7 +42,6 @@ export interface HistoryPersistenceOptions {
   searchClient?: HistorySearchClient;
   createSearchClient?: () => HistorySearchClient;
   onStatusChanged?: (status: HistoryPersistenceStatus) => void;
-  onDurabilityRecovered?: () => void;
 }
 
 export type HistoryPersistenceStatus =
@@ -63,6 +62,12 @@ export class HistoryPersistence {
   private historyRevision = 0;
   private lastFailureLogAt = 0;
   private indexingIdle = false;
+  private writeRevision = 0;
+  private boundary: Promise<void> | null = null;
+  private closed = false;
+  private degraded = false;
+  onDurable: (() => void) | undefined;
+  private closing: Promise<void> | null = null;
   private searchUnavailable: Error | null = null;
   private searchUnavailableReported = false;
 
@@ -97,6 +102,7 @@ export class HistoryPersistence {
         this.noteCommitted(batch);
       },
       onFailure: (error) => {
+        this.degraded = true;
         hotPathMetrics.recordPersistenceFailure();
         options.onStatusChanged?.({ state: 'degraded', message: error.message });
         const now = Date.now();
@@ -105,21 +111,9 @@ export class HistoryPersistence {
         console.error(`History persistence worker failed: ${error.message}`);
       },
       onRecovered: () => {
-        if (this.durability.isBlocked) {
-          try {
-            // New writes can arrive after the retrying checkpoint was posted.
-            // Drain and checkpoint once more before releasing held owner state.
-            this.measurePersistenceBoundary(() => {
-              this.queue.flushSync();
-            });
-            this.durability.noteDurable();
-          } catch {
-            return;
-          }
-        }
-        hotPathMetrics.recordPersistenceRecovery();
-        options.onStatusChanged?.({ state: 'healthy' });
-        queueMicrotask(() => options.onDurabilityRecovered?.());
+        if (this.durability.isBlocked && !this.boundary && !this.closed) {
+          void this.flush().catch(() => undefined);
+        } else if (!this.durability.isBlocked) this.reportRecovery();
       },
     });
   }
@@ -200,8 +194,10 @@ export class HistoryPersistence {
   }
 
   syncSummaries(summaries: SessionSummary[]): boolean {
+    if (this.closed) throw new Error('History persistence is closed.');
     if (summaries.some((summary) => summary.streaming)) this.pauseBackgroundIndexing();
     const copies = this.queue.enqueueSummaries(summaries);
+    this.writeRevision += 1;
     for (const summary of copies) {
       this.runtimeSummaries.set(summary.appSessionId, summary);
     }
@@ -220,15 +216,19 @@ export class HistoryPersistence {
   }
 
   recordEvent(event: TranscriptEvent): void {
+    if (this.closed) throw new Error('History persistence is closed.');
     this.pauseBackgroundIndexing();
     this.queue.enqueueEvent(event);
+    this.writeRevision += 1;
     if (event.kind === 'compaction' && !this.durability.isBlocked) this.requestDurability();
   }
 
   upsertChildSession(child: PersistedChildSession): boolean {
+    if (this.closed) throw new Error('History persistence is closed.');
     if (child.status === 'pending' || child.status === 'running') this.pauseBackgroundIndexing();
     const key = persistenceChildKey(child.parentAppSessionId, child.childSessionId);
     const copy = this.queue.enqueueChild(child);
+    this.writeRevision += 1;
     const decision = this.durability.acceptChild(copy);
     this.runtimeChildren.set(key, copy);
     if (this.durability.isBlocked) return !decision.holdWhileBlocked;
@@ -261,8 +261,23 @@ export class HistoryPersistence {
     return persisted;
   }
 
-  flushSync(): void {
-    this.flushPendingSync();
+  flush(): Promise<void> {
+    if (this.closed) return Promise.reject(new Error('History persistence is closed.'));
+    if (this.boundary) return this.boundary;
+    this.durability.holdUntilDurable();
+    this.boundary = this.flushPending().then(
+      () => {
+        this.boundary = null;
+        this.durability.noteDurable();
+        this.reportRecovery();
+        this.onDurable?.();
+      },
+      (error: unknown) => {
+        this.boundary = null;
+        throw error;
+      },
+    );
+    return this.boundary;
   }
 
   warmSearchWorker(): void {
@@ -278,15 +293,22 @@ export class HistoryPersistence {
     }
   }
 
-  close(): void {
+  close(): Promise<void> {
+    this.closing ??= this.performClose();
+    return this.closing;
+  }
+
+  private async performClose(): Promise<void> {
+    this.closed = true;
     let persistenceError: Error | undefined;
     try {
-      this.queue.close();
+      await this.boundary?.catch(() => undefined);
+      await this.queue.close();
     } catch (error) {
       persistenceError = asError(error);
     } finally {
       try {
-        this.searchClient?.closeSync();
+        await this.searchClient?.close();
       } catch (error) {
         persistenceError ??= asError(error);
       } finally {
@@ -371,32 +393,31 @@ export class HistoryPersistence {
     return this.durability.hasActiveWork();
   }
 
-  private flushPendingSync(): void {
-    this.measurePersistenceBoundary(() => {
-      this.queue.flushSync();
-    });
-    this.durability.noteDurable();
-  }
-
-  private requestDurability(): boolean {
-    try {
-      this.flushPendingSync();
-      return true;
-    } catch {
-      // The bounded queue retained the accepted state and owns backoff. Its
-      // owner holds renderer publication until the confirmed recovery callback.
-      this.durability.noteFailure();
-      return false;
-    }
-  }
-
-  private measurePersistenceBoundary(operation: () => void): void {
+  private async flushPending(): Promise<void> {
     const startedAt = performance.now();
     try {
-      operation();
+      let revision: number;
+      do {
+        revision = this.writeRevision;
+        await this.queue.flush();
+      } while (revision !== this.writeRevision);
     } finally {
       hotPathMetrics.recordPersistenceBoundary(performance.now() - startedAt);
     }
+  }
+
+  private reportRecovery(): void {
+    if (!this.degraded) return;
+    this.degraded = false;
+    hotPathMetrics.recordPersistenceRecovery();
+    this.onStatusChanged?.({ state: 'healthy' });
+  }
+
+  private requestDurability(): boolean {
+    // Owners retain the current summary until the awaited boundary releases it.
+    // The queue reports failures and retries accepted writes with bounded backoff.
+    void this.flush().catch(() => undefined);
+    return false;
   }
 }
 

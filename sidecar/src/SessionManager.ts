@@ -138,11 +138,13 @@ type SessionHistoryBase = Pick<
   | 'sessionLaunchSettings'
   | 'childSessions'
   | 'childSession'
-  | 'close'
 > & {
+  close(): void | Promise<void>;
+  onDurable?: (() => void) | undefined;
   syncSummaries(summaries: SessionSummary[]): boolean | undefined;
   upsertChildSession(child: PersistedChildSession): boolean | undefined;
   recordEvent(event: TranscriptEvent): void;
+  flush?: () => Promise<void>;
   persistenceRecovery?(): PersistenceRecovery;
 };
 
@@ -333,11 +335,6 @@ export class SessionManager {
         onStatusChanged: (status) => {
           this.emit(serverEventForHistoryStatus(status));
         },
-        onDurabilityRecovered: () => {
-          if (this.shutdownPromise) return;
-          this.registry.retryPendingDurability();
-          this.childSessions.retryPendingDurability();
-        },
       });
       const browsers = new BrowserSessionManager({
         assetUrlFor: options.assetUrlFor,
@@ -388,6 +385,11 @@ export class SessionManager {
         this.emit(event);
       },
     );
+    this.history.onDurable = () => {
+      if (this.shutdownPromise) return;
+      this.registry.retryPendingDurability();
+      this.childSessions.retryPendingDurability();
+    };
     this.registry = new SessionRegistry({
       history: this.history,
       loadOrdinarySessions: (options) => this.history.listHistoricalSessions(options),
@@ -568,7 +570,7 @@ export class SessionManager {
         if (target) await this.context.refresh(target);
       },
       onPrimaryModelChanged: (summary, from, to) => {
-        this.appendSettingsStatus(summary, `Model switched: ${from} → ${to}`, { from, to });
+        return this.appendSettingsStatus(summary, `Model switched: ${from} → ${to}`, { from, to });
       },
       onSettled: (appSessionId) => {
         this.runtimeRetirement.arm();
@@ -631,7 +633,7 @@ export class SessionManager {
         this.openProviderTranscript(summary);
       },
       forgetProviderTranscript: (appSessionId) => {
-        this.timeline.releaseTranscript(appSessionId);
+        return this.timeline.releaseTranscript(appSessionId);
       },
       forgetMissionControl: (appSessionId) => {
         this.missionControlPolicy.forget(appSessionId);
@@ -654,7 +656,7 @@ export class SessionManager {
         this.timeline.appendError(appSessionId, message);
       },
       recordPrompt: (appSessionId, text) => {
-        this.timeline.recordPrompt(appSessionId, text);
+        return this.timeline.recordPrompt(appSessionId, text);
       },
       catalogUpdated: (liveSession, items) => {
         if (this.registry.getLive(liveSession.summary.appSessionId) !== liveSession) return;
@@ -705,9 +707,17 @@ export class SessionManager {
         })),
       recordedProcesses: () => this.agentProcesses.snapshotPids(),
       reapProcesses: (entries) => this.agentProcesses.killRecorded(entries),
-      persistSummaries: (summaries) => {
+      persistSummaries: async (summaries) => {
+        const owners = summaries.map((summary) => this.registry.getLive(summary.appSessionId));
+        const previous = owners.map((owner) => owner?.summary);
         this.history.syncSummaries(summaries);
-        for (const session of summaries) this.emit({ type: 'session.updated', session });
+        await this.history.flush?.();
+        if (this.shutdownPromise) return;
+        for (const [index, session] of summaries.entries()) {
+          const live = this.registry.getLive(session.appSessionId);
+          if (live === owners[index] && live?.summary === previous[index])
+            this.emit({ type: 'session.updated', session });
+        }
       },
       appendStatus: (appSessionId, text) => {
         this.timeline.appendStatus(appSessionId, text);
@@ -944,7 +954,7 @@ export class SessionManager {
         return;
       case 'sessions.reanchorCwd':
         try {
-          const sessions = this.registry.reanchorHistoricalCwd(cmd.fromCwd, cmd.toCwd);
+          const sessions = await this.registry.reanchorHistoricalCwd(cmd.fromCwd, cmd.toCwd);
           this.emit({
             type: 'sessions.cwdReanchored',
             requestId: cmd.requestId,
@@ -1319,11 +1329,11 @@ export class SessionManager {
     return targets;
   }
 
-  private appendSettingsStatus(
+  private async appendSettingsStatus(
     summary: SessionSummary,
     text: string,
     modelSwitch?: TranscriptEvent['modelSwitch'],
-  ): void {
+  ): Promise<void> {
     const id = summary.appSessionId;
     const closed = !this.registry.getLive(id);
     if (closed) this.openProviderTranscript(summary);
@@ -1339,7 +1349,7 @@ export class SessionManager {
         ...(modelSwitch ? { modelSwitch } : {}),
       });
     } finally {
-      if (closed) this.timeline.releaseTranscript(id);
+      if (closed) await this.timeline.releaseTranscript(id);
     }
   }
 
@@ -1903,6 +1913,7 @@ export class SessionManager {
   }
 
   private async performShutdown(): Promise<void> {
+    this.history.onDurable = undefined;
     this.historyQueries.forget();
     this.runtimeRetirement.stop();
     this.runtimeWarmUp.stop();
@@ -1936,9 +1947,7 @@ export class SessionManager {
     await run(() => {
       this.timeline.flushStreaming();
     });
-    await run(() => {
-      this.history.close();
-    });
+    await run(() => this.history.close());
     if (firstError !== undefined)
       throw firstError instanceof Error ? firstError : new Error(errMsg(firstError));
   }

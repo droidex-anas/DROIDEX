@@ -36,6 +36,7 @@ const IMMEDIATE_EVENT_TYPES = new Set<ServerEvent['type']>([
 
 interface PendingEvent extends SequencedServerEvent {
   estimatedBytes: number;
+  serialized: string;
 }
 
 export interface BridgeEventBatchMetadata {
@@ -56,7 +57,7 @@ export interface BridgeEventQueueSnapshot {
 }
 
 export interface BridgeEventBatcherOptions<Timer = ReturnType<typeof setTimeout>> {
-  sendBatch: (batch: ServerEventBatch, metadata: BridgeEventBatchMetadata) => void;
+  sendBatch: (batch: ServerEventBatch, metadata: BridgeEventBatchMetadata, data: string) => void;
   generation?: string;
   batchWindowMs?: number;
   pressuredBatchWindowMs?: number;
@@ -126,24 +127,28 @@ export class BridgeEventBatcher<Timer = ReturnType<typeof setTimeout>> {
   enqueue(event: ServerEvent): number {
     if (this.isClosed) throw new Error('Bridge event batcher is closed.');
 
+    const serialized = JSON.stringify(event);
+    const estimatedBytes = Buffer.byteLength(serialized, 'utf8') + 48;
     const seq = ++this.nextSeq;
     if (isImmediateEvent(event)) {
       this.flush();
+      const batch: ServerEventBatch = {
+        type: 'events.batch',
+        generation: this.generation,
+        firstSeq: seq,
+        lastSeq: seq,
+        events: [{ seq, event }],
+      };
       this.sendBatch(
-        {
-          type: 'events.batch',
-          generation: this.generation,
-          firstSeq: seq,
-          lastSeq: seq,
-          events: [{ seq, event }],
-        },
+        batch,
         {
           logicalEvents: 1,
           deliveredEvents: 1,
-          estimatedBytes: estimateEventBytes(event),
+          estimatedBytes,
           queueDelayMs: 0,
           immediate: true,
         },
+        serializeBatch(batch, [`{"seq":${String(seq)},"event":${serialized}}`]),
       );
       this.publishQueueState();
       return seq;
@@ -159,7 +164,8 @@ export class BridgeEventBatcher<Timer = ReturnType<typeof setTimeout>> {
     const queued: PendingEvent = {
       seq,
       event,
-      estimatedBytes: estimateEventBytes(event),
+      estimatedBytes,
+      serialized,
     };
     const replacementKey = telemetryReplacementKey(event);
     if (replacementKey !== null) this.replaceTelemetry(replacementKey, queued);
@@ -191,8 +197,11 @@ export class BridgeEventBatcher<Timer = ReturnType<typeof setTimeout>> {
     }
 
     const events: SequencedServerEvent[] = [];
+    const serializedEntries: string[] = [];
     for (const queued of this.pending) {
-      if (queued !== null) events.push({ seq: queued.seq, event: queued.event });
+      if (queued === null) continue;
+      events.push({ seq: queued.seq, event: queued.event });
+      serializedEntries.push(`{"seq":${String(queued.seq)},"event":${queued.serialized}}`);
     }
     const queuedAt = this.firstQueuedAt;
     const logicalEvents = this.pendingLogicalEvents;
@@ -210,13 +219,17 @@ export class BridgeEventBatcher<Timer = ReturnType<typeof setTimeout>> {
     // instants. The transport batch histogram records the same duration.
     this.publishQueueState();
     this.resetPending();
-    this.sendBatch(batch, {
-      logicalEvents,
-      deliveredEvents: events.length,
-      estimatedBytes,
-      queueDelayMs: Math.max(0, this.now() - queuedAt),
-      immediate: false,
-    });
+    this.sendBatch(
+      batch,
+      {
+        logicalEvents,
+        deliveredEvents: events.length,
+        estimatedBytes,
+        queueDelayMs: Math.max(0, this.now() - queuedAt),
+        immediate: false,
+      },
+      serializeBatch(batch, serializedEntries),
+    );
     this.publishQueueState();
   }
 
@@ -308,8 +321,8 @@ function isImmediateEvent(event: ServerEvent): boolean {
   );
 }
 
-function estimateEventBytes(event: ServerEvent): number {
-  // Include the complete event rather than sampling known text fields. The
-  // small fixed allowance covers the sequenced entry wrapper and batch JSON.
-  return Buffer.byteLength(JSON.stringify(event), 'utf8') + 48;
+function serializeBatch(batch: ServerEventBatch, entries: string[]): string {
+  const { type, generation, firstSeq, lastSeq } = batch;
+  const header = { type, generation, firstSeq, lastSeq };
+  return `${JSON.stringify(header).slice(0, -1)},"events":[${entries.join(',')}]}`;
 }

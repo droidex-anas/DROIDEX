@@ -77,9 +77,12 @@ export function startBridgeServer(options: {
     batcher.enqueue(event);
   }
 
-  function sendBatch(batch: ServerEventBatch, metadata: BridgeEventBatchMetadata): void {
+  function sendBatch(
+    batch: ServerEventBatch,
+    metadata: BridgeEventBatchMetadata,
+    batchData: string,
+  ): void {
     const startedAt = performance.now();
-    const batchData = JSON.stringify(batch);
     const replayEntry = replay.push(batch, batchData);
     if (replayEntry.bytes >= HARD_CLIENT_BUFFER_BYTES) replay.markHistoryUnavailable();
     let bytesSent = 0;

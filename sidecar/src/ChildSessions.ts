@@ -845,7 +845,16 @@ export class ChildSessions {
     if (!this.isCurrentTurn(parent, child, runtime, turnGeneration)) return;
     // Deliver only this runtime generation's buffered tail before it reads as
     // settled. A retired turn must not settle its replacement's shared source.
-    this.settleStreaming(child.identity);
+    try {
+      await this.d.timeline.settleStreaming(
+        parent.parentAppSessionId,
+        child.identity.childSessionId,
+      );
+    } catch (error) {
+      if (this.isCurrentTurn(parent, child, runtime, turnGeneration))
+        this.reportStreamingPersistenceFailure(child.identity, error);
+    }
+    if (!this.isCurrentTurn(parent, child, runtime, turnGeneration)) return;
     this.d.context.stopPolling(this.contextTarget(parent, child, runtime));
     child.turn.interruptingForSteer = false;
     child.turn.interrupting = false;
@@ -874,14 +883,6 @@ export class ChildSessions {
   private flushStreaming(identity: ChildIdentity): void {
     try {
       this.d.timeline.flushStreamingFor(identity.parentAppSessionId, identity.childSessionId);
-    } catch (error) {
-      this.reportStreamingPersistenceFailure(identity, error);
-    }
-  }
-
-  private settleStreaming(identity: ChildIdentity): void {
-    try {
-      this.d.timeline.settleStreaming(identity.parentAppSessionId, identity.childSessionId);
     } catch (error) {
       this.reportStreamingPersistenceFailure(identity, error);
     }

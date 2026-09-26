@@ -82,7 +82,7 @@ test('historical summaries and provider aliases reload only when the history rev
   assert.equal(loads, 2);
 });
 
-test('reanchored historical cwd survives a read at a stable history revision', () => {
+test('reanchored historical cwd survives a read at a stable history revision', async () => {
   const source = summary('app', 'provider', { cwd: '/repo/.worktrees/feature' });
   const history = {
     revision: 1,
@@ -102,14 +102,16 @@ test('reanchored historical cwd survives a read at a stable history revision', (
   });
 
   assert.deepEqual(
-    registry.reanchorHistoricalCwd('/repo/.worktrees/feature', '/repo').map((item) => item.cwd),
+    (await registry.reanchorHistoricalCwd('/repo/.worktrees/feature', '/repo')).map(
+      (item) => item.cwd,
+    ),
     ['/repo'],
   );
 
   assert.equal(registry.resolveSummary('app')?.cwd, '/repo');
 });
 
-test('historical provider replacement preserves aliases at a stable history revision', () => {
+test('historical provider replacement preserves aliases at a stable history revision', async () => {
   const source = summary('app', 'provider-current', {
     compactedFromProviderSessionIds: ['provider-old'],
   });
@@ -130,7 +132,7 @@ test('historical provider replacement preserves aliases at a stable history revi
     now: () => 2,
   });
 
-  registry.replaceProvider('provider-old', 'provider-next');
+  await registry.replaceProvider('provider-old', 'provider-next');
 
   assert.equal(registry.resolveSummary('provider-next')?.providerSessionId, 'provider-next');
   assert.equal(registry.resolveSummary('provider-current')?.providerSessionId, 'provider-next');
@@ -176,7 +178,7 @@ test('Mission Control history is cached until the history revision changes', () 
   assert.equal(missionLoads, 2);
 });
 
-test('a removed Mission row is not retained by a direct historical mutation', () => {
+test('a removed Mission row is not retained by a direct historical mutation', async () => {
   let revision = 1;
   let missions = [
     summary('mission-one', 'mission-provider-current', {
@@ -202,14 +204,14 @@ test('a removed Mission row is not retained by a direct historical mutation', ()
     now: () => 2,
   });
 
-  registry.replaceProvider('mission-provider-old', 'mission-provider-next');
+  await registry.replaceProvider('mission-provider-old', 'mission-provider-next');
   missions = [];
   revision += 1;
 
   assert.deepEqual(registry.listSummaries().sessions, []);
 });
 
-test('unregister flushes persistence before exposing the session as closed', () => {
+test('unregister flushes persistence before exposing the session as closed', async () => {
   const trace: string[] = [];
   const history = {
     revision: 0,
@@ -217,7 +219,7 @@ test('unregister flushes persistence before exposing the session as closed', () 
       trace.push('enqueue');
       return undefined;
     },
-    flushSync: () => {
+    flush: async () => {
       trace.push('flush');
     },
     forgetSession: () => {
@@ -237,9 +239,44 @@ test('unregister flushes persistence before exposing the session as closed', () 
     now: () => 2,
   });
   const live = { marker: 'live', summary: summary('app', 'provider') };
-  registry.register(live);
+  await registry.register(live);
 
-  assert.equal(registry.unregister('provider'), live);
-  assert.deepEqual(trace, ['enqueue', 'flush', 'forget']);
+  assert.equal(await registry.unregister('provider'), live);
+  assert.deepEqual(trace, ['enqueue', 'flush', 'flush', 'forget']);
   assert.equal(registry.getLive('app'), undefined);
+});
+
+test('a close awaiting durability cannot unregister a replacement session', async () => {
+  let flush = () => Promise.resolve();
+  const forgotten: string[] = [];
+  const registry = new SessionRegistry<LiveSession>({
+    history: {
+      syncSummaries: () => true,
+      flush: () => flush(),
+      forgetSession: (id) => {
+        forgotten.push(id);
+      },
+      summaryPatchesAndHidden: () => ({ patches: new Map(), hiddenProviderSessionIds: new Set() }),
+    },
+    loadOrdinarySessions: () => [],
+    loadMissionControlSessions: () => [],
+    projectSummary: (value) => ({ ...value }),
+    onSummaryUpdated: () => undefined,
+    now: () => 2,
+  });
+  await registry.register({ marker: 'original', summary: summary('app', 'old') });
+  let release: (() => void) | undefined;
+  flush = () =>
+    new Promise<void>((resolve) => {
+      release = resolve;
+    });
+  const closing = registry.unregister('app');
+  assert.ok(release);
+  flush = () => Promise.resolve();
+  const replacement = { marker: 'replacement', summary: summary('app', 'new') };
+  await registry.register(replacement);
+  release();
+  assert.equal(await closing, undefined);
+  assert.equal(registry.getLive('app'), replacement);
+  assert.deepEqual(forgotten, []);
 });

@@ -1324,7 +1324,7 @@ test('accepted settings stay durable through resume and precede first-send appli
     harness.events.find((event) => event.type === 'session.created')?.session.modelId,
     'model-pending',
   );
-  const replaced = harness.registry.replaceProvider('app-pending', 'provider-next');
+  const replaced = await harness.registry.replaceProvider('app-pending', 'provider-next');
   assert.equal(replaced?.modelId, 'model-pending');
   assert.equal(harness.history.persisted.at(-1)?.modelId, 'model-pending');
   harness.setPendingApply(async (appSessionId) => {

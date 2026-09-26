@@ -154,7 +154,7 @@ export interface SessionLifecycleDependencies {
   // Durable transcript for a provider that keeps no session file of its own.
   // Opened with the live session, released when it closes.
   openProviderTranscript: (summary: SessionSummary) => void;
-  forgetProviderTranscript: (appSessionId: string) => void;
+  forgetProviderTranscript: (appSessionId: string) => void | Promise<void>;
   forgetInteractions: (appSessionId: string) => void;
   forgetEventFlow: (appSessionId: string) => void;
   forgetMissionControl: (appSessionId: string) => void;
@@ -171,7 +171,7 @@ export interface SessionLifecycleDependencies {
   appendError: (appSessionId: string, message: string) => void;
   // A steered prompt joins the durable transcript without a new turn to record
   // it; the renderer already showed it from the send.
-  recordPrompt: (appSessionId: string, text: string) => void;
+  recordPrompt: (appSessionId: string, text: string) => void | Promise<void>;
   catalogUpdated: (liveSession: LiveSession, items: SkillInfo[]) => void;
   emitSessionList: (closedProviderSessionId: string) => void | Promise<void>;
 }
@@ -277,7 +277,9 @@ export class SessionLifecycle {
       pendingLiveSession = liveSession;
       this.subscribeAutomaticCompaction(liveSession);
       this.subscribeBackgroundEvents(liveSession);
-      d.registry.register(liveSession);
+      await d.registry.register(liveSession, () => {
+        this.requireOpenAdmission();
+      });
       this.subscribeCatalog(liveSession);
       this.observeProviderClosure(liveSession);
       // Registered first, so the failed-open path that unregisters also releases it.
@@ -403,7 +405,7 @@ export class SessionLifecycle {
       pendingLiveSession = liveSession;
       this.subscribeAutomaticCompaction(liveSession);
       this.subscribeBackgroundEvents(liveSession);
-      d.registry.register(liveSession);
+      await d.registry.register(liveSession, requireCurrentResume);
       this.subscribeCatalog(liveSession);
       this.observeProviderClosure(liveSession);
       // Registered first, so the failed-open path that unregisters also releases it.
@@ -623,7 +625,7 @@ export class SessionLifecycle {
     // The session may have been replaced while the steer was in flight; only
     // the one that took the prompt records it.
     if (this.dependencies.registry.getLive(appSessionId) === liveSession)
-      this.dependencies.recordPrompt(appSessionId, prompt.text);
+      await this.dependencies.recordPrompt(appSessionId, prompt.text);
     return 'taken';
   }
 
@@ -825,7 +827,10 @@ export class SessionLifecycle {
     });
     let unregistered: LiveSession | undefined;
     try {
-      unregistered = d.registry.unregister(liveSession.summary.appSessionId);
+      await d.forgetProviderTranscript(liveSession.summary.appSessionId);
+      if (d.registry.getLive(liveSession.summary.appSessionId) === liveSession) {
+        unregistered = await d.registry.unregister(liveSession.summary.appSessionId);
+      }
     } catch (error) {
       firstError ??= error;
     }
@@ -835,11 +840,6 @@ export class SessionLifecycle {
       });
       await run(() => {
         d.forgetPendingSettings(liveSession.summary.appSessionId);
-      });
-      // Flushes the open stored message, so the file is complete before the
-      // renderer hears the session closed.
-      await run(() => {
-        d.forgetProviderTranscript(liveSession.summary.appSessionId);
       });
       d.emit({ type: 'session.closed', appSessionId: liveSession.summary.appSessionId });
       await run(() => {
@@ -1119,10 +1119,10 @@ export class SessionLifecycle {
       this.dependencies.registry.getLive(liveSession.summary.appSessionId) === liveSession
     ) {
       this.dependencies.context.forgetSession(liveSession);
-      if (this.dependencies.registry.unregister(liveSession.summary.appSessionId)) {
+      if (await this.dependencies.registry.unregister(liveSession.summary.appSessionId)) {
         this.dependencies.forgetInteractions(liveSession.summary.appSessionId);
         this.dependencies.forgetEventFlow(liveSession.summary.appSessionId);
-        this.dependencies.forgetProviderTranscript(liveSession.summary.appSessionId);
+        await this.dependencies.forgetProviderTranscript(liveSession.summary.appSessionId);
         this.dependencies.forgetMissionControl(liveSession.summary.appSessionId);
         this.dependencies.forgetPendingSettings(liveSession.summary.appSessionId);
       }

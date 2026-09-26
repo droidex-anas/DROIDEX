@@ -162,7 +162,7 @@ function feature(id: string): BridgeFeature {
   };
 }
 
-test('register persists once and resolves stable, current, and superseded identities', () => {
+test('register persists once and resolves stable, current, and superseded identities', async () => {
   const { history, published, registry } = createHarness();
   const first = live(
     summary('app-a', {
@@ -172,8 +172,8 @@ test('register persists once and resolves stable, current, and superseded identi
   );
   const directAppId = live(summary('provider-a', { providerSessionId: 'provider-b' }));
 
-  registry.register(first);
-  registry.register(directAppId);
+  await registry.register(first);
+  await registry.register(directAppId);
 
   assert.equal(registry.getLive('app-a'), first);
   assert.equal(registry.getLive('provider-a-old'), first);
@@ -185,17 +185,17 @@ test('register persists once and resolves stable, current, and superseded identi
   assert.equal(published.length, 0);
 });
 
-test('register rejects a runtime child shape at the top-level boundary', () => {
+test('register rejects a runtime child shape at the top-level boundary', async () => {
   const { history, registry } = createHarness();
   const child = live(summary('child-shape'));
   Reflect.set(child.summary, 'role', 'worker');
 
-  assert.throws(() => registry.register(child), /top-level sessions only/);
+  await assert.rejects(async () => await registry.register(child), /top-level sessions only/);
   assert.deepEqual(history.persisted, []);
   assert.equal(registry.getLive('child-shape'), undefined);
 });
 
-test('failed registration leaves the previous live identity intact', () => {
+test('failed registration leaves the previous live identity intact', async () => {
   const { history, registry } = createHarness();
   const previous = live(
     summary('stable', {
@@ -203,11 +203,14 @@ test('failed registration leaves the previous live identity intact', () => {
       compactedFromProviderSessionIds: ['provider-old'],
     }),
   );
-  registry.register(previous);
+  await registry.register(previous);
 
   history.nextSyncError = new Error('persist failed');
-  assert.throws(
-    () => registry.register(live(summary('stable', { providerSessionId: 'provider-replacement' }))),
+  await assert.rejects(
+    async () =>
+      await registry.register(
+        live(summary('stable', { providerSessionId: 'provider-replacement' })),
+      ),
     /persist failed/,
   );
 
@@ -217,7 +220,7 @@ test('failed registration leaves the previous live identity intact', () => {
   assert.equal(registry.getLive('provider-replacement'), undefined);
 });
 
-test('updateSummary persists canonical state before one publication and protects identity', () => {
+test('updateSummary persists canonical state before one publication and protects identity', async () => {
   const { history, published, registry } = createHarness({ now: () => 42 });
   const session = live(
     summary('stable-app', {
@@ -226,7 +229,7 @@ test('updateSummary persists canonical state before one publication and protects
       missionId: 'mission-stable',
     }),
   );
-  registry.register(session);
+  await registry.register(session);
   history.persisted.length = 0;
   history.trace.length = 0;
 
@@ -253,10 +256,10 @@ test('updateSummary persists canonical state before one publication and protects
   assert.equal(registry.getLive('provider-old'), session);
 });
 
-test('updateSummary with touchActivity false keeps the activity timestamp', () => {
+test('updateSummary with touchActivity false keeps the activity timestamp', async () => {
   const { history, published, registry } = createHarness({ now: () => 42 });
   const session = live(summary('stable-app', { updatedAt: 7, tokensIn: 1 }));
-  registry.register(session);
+  await registry.register(session);
   history.persisted.length = 0;
   history.trace.length = 0;
 
@@ -277,10 +280,10 @@ test('updateSummary with touchActivity false keeps the activity timestamp', () =
   assert.deepEqual(published, [updated]);
 });
 
-test('failed summary persistence leaves live state unchanged and unpublished', () => {
+test('failed summary persistence leaves live state unchanged and unpublished', async () => {
   const { history, published, registry } = createHarness({ now: () => 42 });
   const session = live(summary('stable-app', { title: 'Original title' }));
-  registry.register(session);
+  await registry.register(session);
   history.nextSyncError = new Error('persist failed');
 
   assert.throws(
@@ -294,10 +297,10 @@ test('failed summary persistence leaves live state unchanged and unpublished', (
   assert.deepEqual(published, []);
 });
 
-test('a retained settlement publishes only after durability recovery', () => {
+test('a retained settlement publishes only after durability recovery', async () => {
   const { history, published, registry } = createHarness();
   const session = live(summary('durable-app', { streaming: true, phase: 'running' }));
-  registry.register(session);
+  await registry.register(session);
   history.trace.length = 0;
   published.length = 0;
   history.nextDurabilityPending = true;
@@ -321,10 +324,10 @@ test('a retained settlement publishes only after durability recovery', () => {
   assert.deepEqual(streamingStates(published), [false]);
 });
 
-test('new live state supersedes a held settlement without replaying it later', () => {
+test('new live state supersedes a held settlement without replaying it later', async () => {
   const { history, published, registry } = createHarness();
   const session = live(summary('continued-app', { streaming: true, phase: 'running' }));
-  registry.register(session);
+  await registry.register(session);
   published.length = 0;
   history.nextDurabilityPending = true;
   registry.updateSummary('continued-app', { streaming: false, phase: 'paused' });
@@ -336,7 +339,7 @@ test('new live state supersedes a held settlement without replaying it later', (
   assert.equal(registry.listSummaries().sessions[0]?.streaming, true);
 });
 
-test('reanchorHistoricalCwd moves idle sessions and preserves nested directories', () => {
+test('reanchorHistoricalCwd moves idle sessions and preserves nested directories', async () => {
   const historical = [
     summary('at-root', { cwd: '/repo/.worktrees/feature', updatedAt: 7 }),
     summary('nested', { cwd: '/repo/.worktrees/feature/packages/app', updatedAt: 8 }),
@@ -344,7 +347,7 @@ test('reanchorHistoricalCwd moves idle sessions and preserves nested directories
   ];
   const { history, published, registry } = createHarness({ ordinary: historical });
 
-  const updated = registry.reanchorHistoricalCwd('/repo/.worktrees/feature', '/repo');
+  const updated = await registry.reanchorHistoricalCwd('/repo/.worktrees/feature', '/repo');
 
   assert.deepEqual(
     updated.map((session) => [session.appSessionId, session.cwd, session.updatedAt]),
@@ -360,14 +363,14 @@ test('reanchorHistoricalCwd moves idle sessions and preserves nested directories
   assert.deepEqual(history.persisted, updated);
 });
 
-test('reanchorHistoricalCwd refuses to move a worktree used by a live session', () => {
+test('reanchorHistoricalCwd refuses to move a worktree used by a live session', async () => {
   const historical = summary('historical', { cwd: '/repo/.worktrees/feature' });
   const { history, published, registry } = createHarness({ ordinary: [historical] });
-  registry.register(live(summary('live', { cwd: '/repo/.worktrees/feature/subdir' })));
+  await registry.register(live(summary('live', { cwd: '/repo/.worktrees/feature/subdir' })));
   history.persisted.length = 0;
 
-  assert.throws(
-    () => registry.reanchorHistoricalCwd('/repo/.worktrees/feature', '/repo'),
+  await assert.rejects(
+    async () => await registry.reanchorHistoricalCwd('/repo/.worktrees/feature', '/repo'),
     /live session is still using/i,
   );
   assert.deepEqual(history.persisted, []);
@@ -375,7 +378,7 @@ test('reanchorHistoricalCwd refuses to move a worktree used by a live session', 
   assert.equal(registry.resolveSummary('historical')?.cwd, '/repo/.worktrees/feature');
 });
 
-test('replaceProvider retains the alias chain and supports live and historical sessions', () => {
+test('replaceProvider retains the alias chain and supports live and historical sessions', async () => {
   let timestamp = 10;
   const retiredProviders: string[] = [];
   const historical = summary('historical-app', {
@@ -395,16 +398,16 @@ test('replaceProvider retains the alias chain and supports live and historical s
       compactedFromProviderSessionIds: ['live-provider-old'],
     }),
   );
-  registry.register(session);
+  await registry.register(session);
   history.trace.length = 0;
 
-  const unchanged = registry.replaceProvider('live-provider-old', 'live-provider');
+  const unchanged = await registry.replaceProvider('live-provider-old', 'live-provider');
 
   assert.equal(unchanged, session.summary);
   assert.deepEqual(history.trace, []);
   assert.equal(published.length, 0);
 
-  const liveUpdated = registry.replaceProvider('live-provider-old', 'live-provider-next', {
+  const liveUpdated = await registry.replaceProvider('live-provider-old', 'live-provider-next', {
     title: 'Live compacted',
   });
 
@@ -423,7 +426,7 @@ test('replaceProvider retains the alias chain and supports live and historical s
   assert.equal(registry.isCurrentLiveProvider('live-provider'), false);
   assert.deepEqual(retiredProviders, ['live-provider']);
 
-  const historicalUpdated = registry.replaceProvider(
+  const historicalUpdated = await registry.replaceProvider(
     'historical-provider-old',
     'historical-provider-next',
   );
@@ -446,7 +449,7 @@ test('replaceProvider retains the alias chain and supports live and historical s
   assert.equal(published.length, 2);
 });
 
-test('failed provider replacement preserves the live summary and aliases', () => {
+test('failed provider replacement preserves the live summary and aliases', async () => {
   const { history, published, registry } = createHarness({ now: () => 42 });
   const session = live(
     summary('stable-app', {
@@ -454,11 +457,12 @@ test('failed provider replacement preserves the live summary and aliases', () =>
       compactedFromProviderSessionIds: ['provider-old'],
     }),
   );
-  registry.register(session);
+  await registry.register(session);
   history.nextSyncError = new Error('persist failed');
 
-  assert.throws(
-    () => registry.replaceProvider('provider-old', 'provider-next', { title: 'Uncommitted' }),
+  await assert.rejects(
+    async () =>
+      await registry.replaceProvider('provider-old', 'provider-next', { title: 'Uncommitted' }),
     /persist failed/,
   );
 
@@ -470,7 +474,7 @@ test('failed provider replacement preserves the live summary and aliases', () =>
   assert.deepEqual(published, []);
 });
 
-test('historical provider replacement is applied before hidden-provider filtering', () => {
+test('historical provider replacement is applied before hidden-provider filtering', async () => {
   const mission = summary('historical-mission', {
     providerSessionId: 'mission-provider-old',
     sessionPurpose: 'mission-control',
@@ -478,7 +482,7 @@ test('historical provider replacement is applied before hidden-provider filterin
   });
   const { history, registry } = createHarness({ missionControl: [mission] });
 
-  registry.replaceProvider('mission-provider-old', 'mission-provider-current');
+  await registry.replaceProvider('mission-provider-old', 'mission-provider-current');
   history.hiddenProviderIds.add('mission-provider-old');
 
   const listed = registry.listSummaries().sessions;
@@ -487,7 +491,7 @@ test('historical provider replacement is applied before hidden-provider filterin
   assert.equal(listed[0]?.providerSessionId, 'mission-provider-current');
 });
 
-test('resolve and list project copies after ordinary, Mission Control, and live merging', () => {
+test('resolve and list project copies after ordinary, Mission Control, and live merging', async () => {
   const ordinary = [
     summary('ordinary-only', { title: 'ordinary', updatedAt: 10 }),
     summary('mission-wins', { title: 'ordinary shadowed', updatedAt: 20 }),
@@ -536,7 +540,7 @@ test('resolve and list project copies after ordinary, Mission Control, and live 
       updatedAt: 70,
     }),
   );
-  registry.register(liveSession);
+  await registry.register(liveSession);
   history.clearPatches();
 
   const listed = registry.listSummaries().sessions;
@@ -586,7 +590,7 @@ test('resolve and list project copies after ordinary, Mission Control, and live 
   assert.equal(registry.resolveSummary('live-wins')?.title, 'projected: canonical update');
 });
 
-test('projected and caller-owned feature state cannot mutate canonical summaries', () => {
+test('projected and caller-owned feature state cannot mutate canonical summaries', async () => {
   const sourceFeature = feature('feature-a');
   const { registry } = createHarness({
     projectSummary: (canonical) => {
@@ -598,7 +602,7 @@ test('projected and caller-owned feature state cannot mutate canonical summaries
     },
   });
   const liveSession = live(summary('isolated', { features: [sourceFeature] }));
-  registry.register(liveSession);
+  await registry.register(liveSession);
 
   const resolved = registry.resolveSummary('isolated');
   const resolvedFeature = resolved?.features[0];
@@ -624,9 +628,9 @@ test('projected and caller-owned feature state cannot mutate canonical summaries
   assert.deepEqual(registry.getCanonicalSummary('isolated')?.features, [sourceFeature]);
 });
 
-test('summary patches copy caller-owned feature state', () => {
+test('summary patches copy caller-owned feature state', async () => {
   const { registry } = createHarness();
-  registry.register(live(summary('patched')));
+  await registry.register(live(summary('patched')));
 
   const updatedFeature = feature('updated');
   registry.updateSummary('patched', { features: [updatedFeature] });
@@ -636,7 +640,7 @@ test('summary patches copy caller-owned feature state', () => {
   ]);
 
   const replacedFeature = feature('replaced');
-  registry.replaceProvider('patched', 'provider-replaced', { features: [replacedFeature] });
+  await registry.replaceProvider('patched', 'provider-replaced', { features: [replacedFeature] });
   replacedFeature.expectedBehavior.push('caller-replacement');
   assert.deepEqual(registry.getCanonicalSummary('patched')?.features[0]?.expectedBehavior, [
     'source-behavior',
@@ -688,7 +692,7 @@ test('a persisted app-session row keeps an old session listed past the pre-exist
   assert.deepEqual(revealed.earlierSessionsByCwd, {});
 });
 
-test('snapshot permits sequential unregister without skipping sessions', () => {
+test('snapshot permits sequential unregister without skipping sessions', async () => {
   const { registry } = createHarness();
   const first = live(summary('first', { providerSessionId: 'provider-first' }));
   const second = live(
@@ -697,18 +701,18 @@ test('snapshot permits sequential unregister without skipping sessions', () => {
       compactedFromProviderSessionIds: ['provider-second-old'],
     }),
   );
-  registry.register(first);
-  registry.register(second);
+  await registry.register(first);
+  await registry.register(second);
 
   const snapshot = registry.liveSessionsSnapshot();
-  assert.equal(registry.unregister('provider-first'), first);
-  assert.equal(registry.unregister('provider-second-old'), second);
+  assert.equal(await registry.unregister('provider-first'), first);
+  assert.equal(await registry.unregister('provider-second-old'), second);
 
   assert.deepEqual(snapshot, [first, second]);
   assert.deepEqual(registry.liveSessionsSnapshot(), []);
   assert.equal(registry.getLive('provider-first'), undefined);
   assert.equal(registry.getLive('provider-second-old'), undefined);
-  assert.equal(registry.unregister('missing'), undefined);
+  assert.equal(await registry.unregister('missing'), undefined);
 });
 
 test('listSummaries reads patches and hidden ids through a single history call', () => {
@@ -719,9 +723,9 @@ test('listSummaries reads patches and hidden ids through a single history call',
   assert.equal(history.summaryReadCount, 1);
 });
 
-test('activity timestamps advance within the same clock tick while passive updates preserve them', () => {
+test('activity timestamps advance within the same clock tick while passive updates preserve them', async () => {
   const { registry, history, published } = createHarness({ now: () => 100 });
-  registry.register(live(summary('same-tick', { updatedAt: 100 })));
+  await registry.register(live(summary('same-tick', { updatedAt: 100 })));
   registry.updateSummary('same-tick', { streaming: true });
   assert.equal(registry.getCanonicalSummary('same-tick')?.updatedAt, 101);
   registry.updateSummary('same-tick', { streaming: false });

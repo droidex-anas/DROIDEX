@@ -116,7 +116,7 @@ test('an unreadable subdirectory is skipped without aborting the scan', () => {
 // writes for a non-Droid session is what the scan admits and the parser
 // replays. Nothing types can check — a drifted head key or content block reads
 // as "the session is missing, and empty when reopened".
-test('a transcript DROIDEX writes for a non-Droid session is enumerated and replays', () => {
+test('a transcript DROIDEX writes for a non-Droid session is enumerated and replays', async () => {
   const appSessionId = 'provider-transcript-scan';
   const summary: SessionSummary = {
     appSessionId,
@@ -140,7 +140,7 @@ test('a transcript DROIDEX writes for a non-Droid session is enumerated and repl
     updatedAt: 1,
   };
   const transcript = new ProviderTranscriptFile(summary.appSessionId, () => summary);
-  transcript.appendPrompt('what is here?');
+  await transcript.appendPrompt('what is here?');
   transcript.append(transcriptEvent(appSessionId, 'text', { text: 'Looking.' }));
   transcript.append(
     transcriptEvent(appSessionId, 'tool_call', {
@@ -171,7 +171,7 @@ test('a transcript DROIDEX writes for a non-Droid session is enumerated and repl
       isError: true,
     }),
   );
-  transcript.flush();
+  await transcript.flush();
 
   const listed = loadHistoricalSessions().find((row) => row.summary.appSessionId === appSessionId);
   assert.equal(listed?.summary.provider, 'claude');
@@ -200,9 +200,19 @@ test('a transcript DROIDEX writes for a non-Droid session is enumerated and repl
       ['error', 'Session process was killed (SIGKILL).', undefined],
     ],
   );
+
+  const blockedId = 'blocked-transcript';
+  mkdirSync(join(providerSessionsDir(), `${blockedId}.jsonl`));
+  const blocked = new ProviderTranscriptFile(blockedId, () => ({
+    ...summary,
+    appSessionId: blockedId,
+  }));
+  await assert.rejects(blocked.appendPrompt('must fail'), /EISDIR/);
+  await assert.rejects(blocked.flush(), /EISDIR/);
+  await assert.rejects(blocked.appendPrompt('must not overtake the missing row'), /EISDIR/);
 });
 
-test('spoken rows replay with their mark, speaker, and latest corrected text', () => {
+test('spoken rows replay with their mark, speaker, and latest corrected text', async () => {
   const appSessionId = 'spoken-transcript-scan';
   const summary: SessionSummary = {
     appSessionId,
@@ -232,7 +242,7 @@ test('spoken rows replay with their mark, speaker, and latest corrected text', (
   });
   transcript.append(spokenUser);
   transcript.append({ ...spokenUser, text: 'please check' });
-  transcript.append(
+  await transcript.append(
     transcriptEvent(appSessionId, 'text', {
       id: 'voice-assistant',
       sourceSessionId: 'primary',
