@@ -14,7 +14,7 @@ Before cutting or promoting a desktop build, verify the latest default-branch CI
 - Sidecar tests
 - Frontend typecheck
 - Sidecar typecheck
-- Electron syntax
+- Electron checks
 - Production build
 - Format check
 - Documentation check

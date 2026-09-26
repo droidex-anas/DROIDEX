@@ -4,11 +4,6 @@ const fs = require('node:fs');
 const fsp = require('node:fs/promises');
 const os = require('node:os');
 const path = require('node:path');
-require('./browserDiagnostics.test.cjs');
-require('./nativeBrowserEmulation.test.cjs');
-require('./nativeBrowserHost.test.cjs');
-require('./nativeBrowserPreload.test.cjs');
-require('./mainRegression.test.cjs');
 
 const {
   listDirectory,

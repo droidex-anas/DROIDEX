@@ -60,21 +60,23 @@ export const Trash = createIcon(
   </>,
 );
 
+const TRAY = <path d="M5 14.5v.5a4.5 4.5 0 0 0 4.5 4.5h5a4.5 4.5 0 0 0 4.5-4.5v-.5" />;
+
 export const Download = createIcon(
   'download',
   <>
-    <path d="M12 4v10.5" />
-    <path d="m7.75 10.25 4.25 4.25 4.25-4.25" />
-    <path d="M4.5 16.5v1a3 3 0 0 0 3 3h9a3 3 0 0 0 3-3v-1" />
+    <path d="M12 4.75v9" />
+    <path d="m8.75 10.5 3.25 3.25 3.25-3.25" />
+    {TRAY}
   </>,
 );
 
 export const Upload = createIcon(
   'upload',
   <>
-    <path d="M12 14.5V4" />
-    <path d="m7.75 8.25 4.25-4.25 4.25 4.25" />
-    <path d="M4.5 16.5v1a3 3 0 0 0 3 3h9a3 3 0 0 0 3-3v-1" />
+    <path d="M12 13.75v-9" />
+    <path d="m8.75 8 3.25-3.25L15.25 8" />
+    {TRAY}
   </>,
 );
 

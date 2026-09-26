@@ -56,8 +56,7 @@ import {
   type SessionFileWatcherOptions,
 } from './sessionFileWatcher.js';
 import { SessionFileServing } from './SessionFileServing.js';
-import { mergeModelCatalog } from './modelCatalog.js';
-import { readDroidCliModelCatalog, readDroidCliModelCatalogCache } from './DroidCliCatalog.js';
+import { DroidModelCatalog } from './DroidModelCatalog.js';
 import { BrowserSessionManager } from './browser/BrowserSessionManager.js';
 import { createAutomationMcpServer } from './automations/automationMcpServer.js';
 import { isUnattendedAutomationSession } from './automations/AutomationManager.js';
@@ -109,6 +108,7 @@ import {
   DEFAULT_PROVIDER,
   type ProviderKind,
 } from './providers/providerKind.js';
+import { HarnessCliUpdater } from './providers/harnessCli.js';
 import { LazyProvider } from './providers/lazyProvider.js';
 import { requireDroidSession } from './providers/droid/DroidProviderSession.js';
 import {
@@ -117,6 +117,7 @@ import {
   type ProviderProbeMap,
 } from './providers/providerProbes.js';
 import { ProviderTranscriptFile } from './providers/ProviderTranscriptFile.js';
+import { SessionVoice } from './providers/SessionVoice.js';
 import { SessionModelSettings } from './SessionModelSettings.js';
 import { providerStatuses } from './providers/providerStatus.js';
 import type { Provider } from './providers/session.js';
@@ -236,7 +237,7 @@ const mcpSettingsCwd = (cwd?: string): string => (cwd === undefined || cwd === '
 
 export class SessionManager {
   private ready = false;
-  private cachedModels: ModelInfo[] | null = null;
+  private readonly droidModels: DroidModelCatalog;
   private modelRefresh: Promise<ModelInfo[] | null> | null = null;
   // Context windows observed from provider stats for catalog-missing models.
   private readonly learnedModelContextWindows = new Map<string, number>();
@@ -257,6 +258,7 @@ export class SessionManager {
   private readonly agentProcesses: AgentProcessMonitor;
   private readonly sessionFiles: SessionFileServing;
   private readonly sessionBrowser: SessionBrowser;
+  private readonly sessionVoice: SessionVoice;
   private readonly historyQueries: SessionHistoryQueries;
   private readonly modelSettings: SessionModelSettings;
   private shutdownPromise?: Promise<void>;
@@ -285,6 +287,12 @@ export class SessionManager {
     return new CodexProvider();
   });
   private readonly providerProbes: ProviderProbes;
+  private readonly harnessClis = new HarnessCliUpdater(
+    (event) => {
+      this.emit(event);
+    },
+    () => this.refreshProviderStatus(),
+  );
 
   constructor(
     private readonly emit: Emit,
@@ -346,7 +354,10 @@ export class SessionManager {
       this.nextChildSessionId = nextChildSessionId;
       startWatcher = startSessionFileWatcher;
     }
-    this.cachedModels = options.initialModels ? [...options.initialModels] : null;
+    this.droidModels = new DroidModelCatalog(
+      () => this.runtime.status().droidPath,
+      options.initialModels,
+    );
     this.agentProcesses = createAgentProcessMonitor({
       ...options.dependencies?.agentProcessHost,
       onSnapshotChanged: () => {
@@ -430,7 +441,9 @@ export class SessionManager {
         ? { streamingCoalesceMs: options.dependencies.streamingCoalesceMs }
         : {}),
     });
-    this.droidProvider = new DroidProvider(this.runtime);
+    this.droidProvider = new DroidProvider(this.runtime, (models) => {
+      this.adoptSessionModels(models);
+    });
     this.interactions = new SessionInteractions({
       onSessionAvailable: options.onSessionAvailable,
       getLiveSession: (id) => this.registry.getLive(id),
@@ -569,6 +582,21 @@ export class SessionManager {
         this.emitError(error);
       },
     });
+    this.sessionVoice = new SessionVoice({
+      liveSession: (appSessionId) => this.registry.getLive(appSessionId)?.session,
+      appendTranscript: (event) => {
+        this.timeline.append(event);
+      },
+      ensureRunning: async (appSessionId) => {
+        if (!this.registry.getLive(appSessionId)) await this.lifecycle.resume(appSessionId);
+      },
+      emit: (event) => {
+        this.emit(event);
+      },
+      liveChanged: () => {
+        this.runtimeRetirement.arm();
+      },
+    });
     this.lifecycle = new SessionLifecycle({
       provider: (kind) => this.providerFor(kind),
       providerDefaultModelId: (kind) => this.providerProbes.status(kind)?.defaultModelId,
@@ -614,6 +642,7 @@ export class SessionManager {
         this.modelSettings.forget(appSessionId);
       },
       closeBrowserSession: (appSessionId) => this.browsers.close(appSessionId),
+      stopVoiceSession: (appSessionId) => this.sessionVoice.closeSession(appSessionId),
       emit: (event) => {
         this.emit(event);
       },
@@ -649,6 +678,7 @@ export class SessionManager {
       hasOpenBrowser: (id) => this.browsers.hasSession(id),
       hasPendingSettings: (id) => this.modelSettings.hasPending(id),
       hasAgentProcesses: (id) => this.agentProcesses.hasProcesses(id),
+      hasLiveVoice: (id) => this.sessionVoice.isLive(id),
       retire: (id) => this.lifecycle.close(id, 'preserve-pending'),
       appendProgress: (id, text) => {
         this.timeline.appendProgress(id, text);
@@ -798,6 +828,12 @@ export class SessionManager {
       case 'cli.update':
         await this.runCliUpdate(cmd.channel);
         return;
+      case 'harness.cli.check':
+        await this.harnessClis.report();
+        return;
+      case 'harness.cli.update':
+        await this.harnessClis.update(cmd.provider);
+        return;
       case 'catalog.models': {
         const models = await this.getModels();
         this.emit({ type: 'catalog.updated', catalog: 'models', items: models });
@@ -860,6 +896,20 @@ export class SessionManager {
       case 'session.interrupt':
         await this.lifecycle.interrupt(cmd.appSessionId);
         return;
+      case 'voice.start':
+        await this.sessionVoice.handle(cmd);
+        this.runtimeRetirement.arm();
+        return;
+      case 'voice.stop':
+        await this.sessionVoice.handle(cmd);
+        // A chat being talked to is not idle however quiet its transcript is,
+        // and one that has stopped is idle again. Both move when the next
+        // sweep is due, and nothing else here would say so.
+        this.runtimeRetirement.arm();
+        return;
+      case 'voice.voices':
+        await this.sessionVoice.handle(cmd);
+        return;
       case 'child.open':
         await this.childSessions.open(cmd);
         return;
@@ -881,7 +931,7 @@ export class SessionManager {
         return;
       case 'session.updateSettings':
         assertProviderUnchanged(cmd);
-        await this.modelSettings.update(cmd.appSessionId, 'primary', cmd);
+        await this.updatePrimaryModel(cmd);
         if (cmd.autonomy !== undefined) {
           await this.setAutonomy(cmd.appSessionId, cmd.autonomy);
         }
@@ -1081,13 +1131,8 @@ export class SessionManager {
   }
 
   private async getModels(): Promise<ModelInfo[]> {
-    if (this.cachedModels) return this.cachedModels;
-    const droidPath = this.runtime.status().droidPath;
-    const cached = readDroidCliModelCatalogCache(droidPath);
-    if (cached.length > 0) {
-      this.cachedModels = mergeModelCatalog(cached);
-      return this.cachedModels;
-    }
+    const known = this.droidModels.known();
+    if (known.length > 0) return known;
     return (await this.refreshModelCatalog(false)) ?? [];
   }
 
@@ -1095,15 +1140,13 @@ export class SessionManager {
     if (this.modelRefresh) return this.modelRefresh;
     this.modelRefresh = (async () => {
       try {
-        const models = mergeModelCatalog(
-          await readDroidCliModelCatalog(this.runtime.status().droidPath),
-        );
-        this.cachedModels = models;
+        const models = await this.droidModels.readHelp();
         if (emit) {
           this.emit({ type: 'catalog.updated', catalog: 'models', items: models });
           await this.emitProviderStatus();
         }
-        return models;
+        if (!this.droidModels.hasSessionCatalog()) await this.adoptCatalogSessionModels();
+        return this.droidModels.known();
       } catch (err) {
         this.emitError({ message: `catalog.models failed: ${errMsg(err)}` });
         return null;
@@ -1112,6 +1155,23 @@ export class SessionManager {
       }
     })();
     return this.modelRefresh;
+  }
+
+  // The help text lags the account's catalog (no Auto model), so until any
+  // session has reported the live one, a catalog session stands in once.
+  private async adoptCatalogSessionModels(): Promise<void> {
+    const { session, close } = await this.catalogSession();
+    try {
+      this.adoptSessionModels(session.initResult.availableModels ?? []);
+    } finally {
+      await close();
+    }
+  }
+
+  private adoptSessionModels(available: readonly Record<string, unknown>[]): void {
+    if (!this.droidModels.adoptSession(available)) return;
+    this.emit({ type: 'catalog.updated', catalog: 'models', items: this.droidModels.known() });
+    void this.emitProviderStatus();
   }
 
   // Droid's readiness follows the resolved CLI path and the catalog this
@@ -1136,7 +1196,7 @@ export class SessionManager {
       type: 'provider.status',
       statuses: providerStatuses(
         this.runtime.status().droidPath,
-        this.cachedModels ?? [],
+        this.droidModels.known(),
         defaultModelId,
         (provider) => this.providerProbes.status(provider),
       ),
@@ -1195,9 +1255,7 @@ export class SessionManager {
 
   private emitFactoryDefaults(): void {
     const defaults = readFactoryDefaults();
-    const droidPath = this.runtime.status().droidPath;
-    const models = this.cachedModels ?? mergeModelCatalog(readDroidCliModelCatalogCache(droidPath));
-    if (!this.cachedModels && models.length > 0) this.cachedModels = models;
+    const models = this.droidModels.known();
     this.emit({ type: 'settings.defaults', defaults: startupFactoryDefaults(defaults, models) });
   }
 
@@ -1244,7 +1302,7 @@ export class SessionManager {
   private maxContextTokensForModel(modelId?: string): number | undefined {
     if (!modelId) return undefined;
     return (
-      this.cachedModels?.find((model) => model.id === modelId)?.maxContextTokens ??
+      this.droidModels.known().find((model) => model.id === modelId)?.maxContextTokens ??
       this.learnedModelContextWindows.get(modelId)
     );
   }
@@ -1255,7 +1313,8 @@ export class SessionManager {
   private noteModelContextWindow(modelId: string, contextWindowTokens: number): void {
     if (!Number.isFinite(contextWindowTokens) || contextWindowTokens <= 0) return;
     const window = Math.floor(contextWindowTokens);
-    if (this.cachedModels?.some((model) => model.id === modelId && model.maxContextTokens)) return;
+    if (this.droidModels.known().some((model) => model.id === modelId && model.maxContextTokens))
+      return;
     if (this.learnedModelContextWindows.get(modelId) === window) return;
     this.learnedModelContextWindows.set(modelId, window);
     void this.compaction.retuneAll(this.compactionRetuneTargets());
@@ -1435,10 +1494,11 @@ export class SessionManager {
   }
 
   private resolveCatalogDefaultSettings(): ChildSettings {
+    const models = this.droidModels.known();
     const model =
-      this.cachedModels?.find((candidate) => candidate.isDefault && !candidate.isCustom) ??
-      this.cachedModels?.find((candidate) => !candidate.isCustom) ??
-      this.cachedModels?.at(0);
+      models.find((candidate) => candidate.isDefault && !candidate.isCustom) ??
+      models.find((candidate) => !candidate.isCustom) ??
+      models.at(0);
     return {
       modelId: model?.id,
       reasoningEffort: model?.defaultReasoningEffort,
@@ -1536,6 +1596,31 @@ export class SessionManager {
     } catch (error) {
       return { error };
     }
+  }
+
+  // The renderer shows a model change before it is confirmed and holds it until
+  // its latest request settles, so every outcome echoes the request id.
+  private async updatePrimaryModel(
+    cmd: Extract<ClientCommand, { type: 'session.updateSettings' }>,
+  ): Promise<void> {
+    const { appSessionId, requestId } = cmd;
+    let message: string;
+    try {
+      if (await this.modelSettings.update(appSessionId, 'primary', cmd)) {
+        if (requestId) this.emit({ type: 'session.model_update_applied', appSessionId, requestId });
+        return;
+      }
+      message = 'Model change was interrupted by a session restart or close.';
+    } catch (error) {
+      message = `Could not change the model: ${errMsg(error)}`;
+    }
+    this.emitError({
+      code: 'session.model_update_failed',
+      appSessionId,
+      requestId,
+      message,
+      recoverable: true,
+    });
   }
 
   private setAutonomy(appSessionId: string, autonomy: Autonomy): Promise<void> {

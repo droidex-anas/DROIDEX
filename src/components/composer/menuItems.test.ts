@@ -1,14 +1,18 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { composerMenu, composerTrigger, type MenuEntry } from './menuItems';
+import { chipNamedBy, composerMenu, composerTrigger, type MenuEntry } from './menuItems';
+import { VISUALIZE_COMMAND } from '../../lib/composePrompt';
 import type { SlashCommand } from '../ComposerMenu';
 import type { ProviderKind, SkillInfo } from '../../types/bridge';
 
-const commands: SlashCommand[] = [
-  { cmd: '/compact', desc: 'Compact current session', run: () => undefined },
-  { cmd: '/model', desc: 'Open model selector', run: () => undefined },
-  { cmd: '/review', desc: 'Review the working tree', replacement: '/review ' },
-];
+const command = (cmd: string): SlashCommand => ({
+  cmd,
+  desc: '',
+  icon: () => null,
+  run: () => undefined,
+});
+
+const commands = [command('/compact'), command('/model'), command('/review')];
 
 const row = (
   name: string,
@@ -28,7 +32,7 @@ const row = (
 // assertion; rows read as their own name.
 const painted = (entries: MenuEntry[]) =>
   entries.map((entry) => {
-    if (entry.kind === 'label') return `${entry.text}:`;
+    if (entry.kind !== 'row') return `${entry.text}:`;
     switch (entry.item.type) {
       case 'command':
         return entry.item.command.cmd;
@@ -71,17 +75,34 @@ test('the section holding the better match leads, and each section stays ranked'
     row('roast', { description: 'Review code and roast it' }),
     row('review', { description: 'Review code changes' }),
   ];
-  // Named exactly by both kinds, commands keep the lead they have always had,
-  // and the skill named for the query leads the ones that only mention it.
-  assert.deepEqual(rowsFor('/review', catalog), ['/review', 'review', 'roast']);
-  // A skill named exactly for the query leads a command the query only prefixes.
-  assert.deepEqual(rowsFor('/mod', [row('mod', { description: 'Modify a file' })]), [
-    'mod',
-    '/model',
-  ]);
+  // Prefixed by both kinds, commands keep the lead they have always had, and
+  // the skill named for the query leads the ones that only mention it.
+  assert.deepEqual(rowsFor('/rev', catalog), ['/review', 'review', 'roast']);
   // Commands match on their name alone, so a description mentioning the query
   // does not put a command in the list.
-  assert.deepEqual(rowsFor('/compact', catalog), ['/compact']);
+  assert.deepEqual(rowsFor('/comp', catalog), ['/compact']);
+});
+
+test('a fully typed name narrows the menu to it, and a space stages a named skill', () => {
+  const catalog = [
+    row('roast', { description: 'Review code and roast it' }),
+    row('mod', { description: 'Modify a file' }),
+  ];
+  assert.deepEqual(rowsFor('/mod', catalog), ['mod']);
+  assert.deepEqual(rowsFor('/Model', catalog), ['/model']);
+
+  const chipFor = (text: string, extra: SlashCommand[] = []) => {
+    const trigger = composerTrigger(text, text.length);
+    assert.ok(trigger);
+    const menu = composerMenu(trigger, { commands: [...commands, ...extra], catalog, files: [] });
+    return chipNamedBy(trigger, menu);
+  };
+  assert.deepEqual(chipFor('/mod'), { type: 'catalog', item: catalog[1] });
+  const visualize = command(VISUALIZE_COMMAND.cmd);
+  assert.deepEqual(chipFor('/visualize', [visualize]), { type: 'command', command: visualize });
+  // Other commands keep the space as text, and a partial name is not a choice yet.
+  assert.equal(chipFor('/model'), null);
+  assert.equal(chipFor('/roa'), null);
 });
 
 test("a harness's commands follow the app's own, and skills read by scope", () => {

@@ -11,7 +11,11 @@ import { DroidProviderSession } from './DroidProviderSession.js';
 export class DroidProvider implements Provider {
   readonly kind = 'droid' as const;
 
-  constructor(private readonly runtime: FactoryRuntime) {}
+  constructor(
+    private readonly runtime: FactoryRuntime,
+    /** Receives the account's live model catalog each session reports on init. */
+    private readonly onAvailableModels: (models: readonly Record<string, unknown>[]) => void,
+  ) {}
 
   async create({ interactions, ...options }: ProviderOpenInput): Promise<ProviderSession> {
     // A created session mints the identity DROIDEX adopts as its own, and the
@@ -23,6 +27,7 @@ export class DroidProvider implements Provider {
       ...droidInteractionHandlers(ref, interactions),
     });
     ref.id = session.sessionId;
+    this.onAvailableModels(session.initResult.availableModels ?? []);
     return new DroidProviderSession(session.sessionId, session, this.runtime);
   }
 
@@ -36,6 +41,7 @@ export class DroidProvider implements Provider {
       mcpServers,
       ...droidInteractionHandlers({ id: appSessionId }, interactions),
     });
+    this.onAvailableModels(session.initResult.availableModels ?? []);
     return new DroidProviderSession(appSessionId, session, this.runtime);
   }
 }

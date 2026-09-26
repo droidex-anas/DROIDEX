@@ -1,9 +1,9 @@
 import { useSidebarPagination } from '../hooks/useSidebarPagination';
 import { useState, type ReactNode } from 'react';
 import { LayoutGroup, MotionConfig, motion } from 'framer-motion';
-import { ChevronRight } from 'lucide-react';
 import type { SessionSummary } from '../types/bridge';
 import { ACTIVITY_GROUPS, type SessionActivityStatus } from '../lib/sidebarActivity';
+import { SidebarSectionHeading } from './SidebarSectionHeading';
 import { SidebarSessionList } from './SidebarSessionList';
 
 interface Props {
@@ -28,7 +28,7 @@ export function SidebarActivity({
   showSettled,
   hiddenCount,
 }: Props) {
-  const [settledOpen, setSettledOpen] = useState(false);
+  const [openGroups, setOpenGroups] = useState<Partial<Record<string, boolean>>>({});
   const { defaultVisibleCount, visibleCountFor, showMore, showLess } = useSidebarPagination(limit);
   // A chat that changes state moves to another group. The groups are separate
   // lists, so the row would unmount in one and mount in the other and read as
@@ -57,37 +57,18 @@ export function SidebarActivity({
           {ACTIVITY_GROUPS.map((group) => {
             const rows = sessions.filter((session) => group.statuses.includes(statusFor(session)));
             if (rows.length === 0) return null;
-            const isSettled = group.label === 'Settled';
-            const open = !isSettled || settledOpen || showSettled;
-            const heading = (
-              <>
-                <span className="flex-1">{group.label}</span>
-                <span className="tabular-nums">{rows.length}</span>
-              </>
-            );
+            // Settled starts folded away unless the view asks to show it.
+            const open = openGroups[group.label] ?? (group.label !== 'Settled' || showSettled);
             return (
               <section key={group.label} aria-label={group.label}>
-                {isSettled && !showSettled ? (
-                  <button
-                    onClick={() => {
-                      setSettledOpen(!settledOpen);
-                    }}
-                    aria-expanded={open}
-                    className="flex w-full items-center gap-2 rounded-lg px-2 py-1 text-left text-[11px] font-medium text-droid-text-muted hover:text-droid-text"
-                  >
-                    <ChevronRight
-                      className={`h-3 w-3 transition-transform ${open ? 'rotate-90' : ''}`}
-                      strokeWidth={1.5}
-                    />
-                    {heading}
-                  </button>
-                ) : (
-                  <h3 className="flex items-center gap-2 px-2 py-1 text-[11px] font-medium text-droid-text-muted">
-                    {/* Empty chevron slot so static labels line up with the collapsible one. */}
-                    <span className="h-3 w-3 shrink-0" aria-hidden="true" />
-                    {heading}
-                  </h3>
-                )}
+                <SidebarSectionHeading
+                  label={group.label}
+                  open={open}
+                  count={rows.length}
+                  onToggle={() => {
+                    setOpenGroups({ ...openGroups, [group.label]: !open });
+                  }}
+                />
                 {open && (
                   <SidebarSessionList
                     sessions={rows}

@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
 import type { SessionSummary, TranscriptEvent } from './protocol.js';
+import type { ProviderSession, ProviderVoiceEvent } from './providers/session.js';
 import { providerSessionJsonl } from './testing/providerSessionFixtures.js';
 
 const originalHome = process.env.HOME;
@@ -15,8 +16,10 @@ process.env.HOME = home;
 delete process.env.DROIDEX_USER_DATA_DIR;
 
 const { loadHistoricalSessions } = await import('./history.js');
-const { parseFullSessionTranscript } = await import('./sessionTranscript.js');
+const { parseFullSessionTranscript, SessionTranscriptReader } =
+  await import('./sessionTranscript.js');
 const { ProviderTranscriptFile } = await import('./providers/ProviderTranscriptFile.js');
+const { SessionVoice } = await import('./providers/SessionVoice.js');
 const { providerSessionsDir } = await import('./droidexPaths.js');
 
 test.after(() => {
@@ -207,6 +210,156 @@ test('a transcript DROIDEX writes for a non-Droid session is enumerated and repl
   await assert.rejects(blocked.appendPrompt('must fail'), /EISDIR/);
   await assert.rejects(blocked.flush(), /EISDIR/);
   await assert.rejects(blocked.appendPrompt('must not overtake the missing row'), /EISDIR/);
+});
+
+test('spoken rows replay with their mark, speaker, and latest corrected text', () => {
+  const appSessionId = 'spoken-transcript-scan';
+  const summary: SessionSummary = {
+    appSessionId,
+    provider: 'codex',
+    sessionPurpose: 'chat',
+    interactionMode: 'auto',
+    role: 'primary',
+    title: 'Voice chat',
+    goal: 'Voice chat',
+    cwd: '',
+    autonomy: 'medium',
+    phase: 'paused',
+    features: [],
+    tokensIn: 0,
+    tokensOut: 0,
+    contextTokens: 0,
+    createdAt: 1,
+    updatedAt: 1,
+  };
+  const transcript = new ProviderTranscriptFile(appSessionId, () => summary);
+  const spokenUser = transcriptEvent(appSessionId, 'text', {
+    id: 'voice-user',
+    sourceSessionId: 'user',
+    author: 'user',
+    text: 'please',
+    spoken: true,
+  });
+  transcript.append(spokenUser);
+  transcript.append({ ...spokenUser, text: 'please check' });
+  transcript.append(
+    transcriptEvent(appSessionId, 'text', {
+      id: 'voice-assistant',
+      sourceSessionId: 'primary',
+      text: 'I will.',
+      spoken: true,
+    }),
+  );
+
+  const path = join(providerSessionsDir(), `${appSessionId}.jsonl`);
+  const eager = parseFullSessionTranscript(appSessionId, appSessionId, path, 'primary');
+  const lazy = new SessionTranscriptReader(
+    appSessionId,
+    appSessionId,
+    path,
+    'primary',
+  ).windowBackward(20, 0).events;
+  for (const events of [eager, lazy]) {
+    assert.deepEqual(
+      events.map(({ id, sourceSessionId, text, author, spoken }) => ({
+        id,
+        sourceSessionId,
+        text,
+        author,
+        spoken,
+      })),
+      [
+        {
+          id: 'voice-user',
+          sourceSessionId: 'user',
+          text: 'please check',
+          author: 'user',
+          spoken: true,
+        },
+        {
+          id: 'voice-assistant',
+          sourceSessionId: 'primary',
+          text: 'I will.',
+          author: undefined,
+          spoken: true,
+        },
+      ],
+    );
+  }
+  assert.ok(loadHistoricalSessions().some((row) => row.summary.appSessionId === appSessionId));
+});
+
+test('voice finals append once and extend under the same id across runtime replacement', async () => {
+  let listener: ((event: ProviderVoiceEvent) => void) | undefined;
+  const voice = {
+    isLive: () => true,
+    start: async () => undefined,
+    stop: async () => undefined,
+    listVoices: async () => ({ voices: [] }),
+    onEvent: (next: (event: ProviderVoiceEvent) => void) => {
+      listener = next;
+      return () => {
+        listener = undefined;
+      };
+    },
+  };
+  const session: ProviderSession = {
+    provider: 'codex',
+    providerSessionId: 'provider-1',
+    voice,
+    async *stream() {},
+    setAutonomy: async () => undefined,
+    setModel: async () => undefined,
+    interrupt: async () => undefined,
+    close: async () => undefined,
+  };
+  let currentSession = session;
+  const appended: TranscriptEvent[] = [];
+  const relay = new SessionVoice({
+    liveSession: () => currentSession,
+    emit: () => undefined,
+    appendTranscript: (event) => appended.push(event),
+    liveChanged: () => undefined,
+    ensureRunning: () => Promise.resolve(),
+  });
+  const start = () =>
+    relay.handle({
+      type: 'voice.start',
+      attempt: 'attempt-1',
+      appSessionId: 'app-1',
+      sdp: 'offer',
+    });
+  await start();
+  assert.ok(listener);
+  listener({ kind: 'transcript', role: 'user', text: 'help', final: false });
+  assert.equal(appended.length, 0);
+  listener({ kind: 'transcript', role: 'user', text: 'help', final: true });
+  listener({ kind: 'transcript', role: 'user', text: 'help', final: true });
+  listener({ kind: 'transcript', role: 'user', text: 'help me', final: true });
+  listener({ kind: 'transcript', role: 'assistant', text: 'Sure.', final: true });
+  listener({ kind: 'transcript', role: 'assistant', text: 'Sure. Checking.', final: true });
+
+  assert.deepEqual(
+    appended.map((event) => event.text),
+    ['help', 'help me', 'Sure.', 'Sure. Checking.'],
+  );
+  assert.equal(appended[0].id, appended[1].id);
+  assert.equal(appended[2].id, appended[3].id);
+  assert.deepEqual(
+    appended.map(({ sourceSessionId, author, spoken }) => ({ sourceSessionId, author, spoken })),
+    [
+      { sourceSessionId: 'user', author: 'user', spoken: true },
+      { sourceSessionId: 'user', author: 'user', spoken: true },
+      { sourceSessionId: 'primary', author: undefined, spoken: true },
+      { sourceSessionId: 'primary', author: undefined, spoken: true },
+    ],
+  );
+
+  currentSession = { ...session, providerSessionId: 'provider-2' };
+  await start();
+  assert.ok(listener);
+  listener({ kind: 'transcript', role: 'user', text: 'after resume', final: true });
+  assert.notEqual(appended[0].id, appended[4].id);
 });
 
 function transcriptEvent(
