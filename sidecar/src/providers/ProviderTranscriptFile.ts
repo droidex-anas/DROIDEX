@@ -194,6 +194,8 @@ export class ProviderTranscriptFile {
               provider: summary.provider,
               cwd: summary.cwd,
               callingSessionId: this.parentAppSessionId,
+              interactionMode: summary.interactionMode,
+              permissionSemanticsRevision: PERMISSION_SEMANTICS_REVISION,
             }
           : headLine(summary);
         appendFileSync(this.path, serialize(head));
