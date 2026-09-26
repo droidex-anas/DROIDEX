@@ -13,12 +13,9 @@ export const CONVERSATION_LIST_WIDTH_SETTLE_MS = 240;
 export const CONVERSATION_LIST_INITIAL_RECT = { width: 720, height: 900 } as const;
 
 export interface ConversationRowLookup {
-  byMountKey: ReadonlyMap<string, number>;
-  byViewportId: ReadonlyMap<string, number>;
-}
-
-export function conversationRowViewportId(item: FeedItem): string {
-  return feedRowId(item);
+  items: readonly FeedItem[];
+  byMountKey: Map<string, number>;
+  byViewportId: Map<string, number>;
 }
 
 export function estimatedListSize(count: number): number {
@@ -42,16 +39,39 @@ export function isConversationAtLatest(
   return scrollHeight - scrollTop - clientHeight < thresholdPx;
 }
 
-export function buildConversationRowLookup(items: readonly FeedItem[]): ConversationRowLookup {
-  const byMountKey = new Map<string, number>();
-  const byViewportId = new Map<string, number>();
-  for (let index = 0; index < items.length; index += 1) {
+// Mutate only during commit: interrupted renders must not change find or anchor targets.
+export function updateConversationRowLookup(
+  previous: ConversationRowLookup | null,
+  items: readonly FeedItem[],
+  rebuiltFromIndex = 0,
+): ConversationRowLookup {
+  if (previous?.items === items) return previous;
+  const lookup = previous ?? { items: [], byMountKey: new Map(), byViewportId: new Map() };
+  const { byMountKey, byViewportId } = lookup;
+  let start = Math.min(rebuiltFromIndex, lookup.items.length, items.length);
+  if (lookup.items.at(0) !== items.at(0)) start = 0;
+  // Projection can run more than once before a commit. Its rebuilt suffix has
+  // new item identities; rewind through any earlier, uncommitted suffix too.
+  while (start > 0 && lookup.items.at(start - 1) !== items.at(start - 1)) start -= 1;
+  if (start === 0) {
+    byMountKey.clear();
+    byViewportId.clear();
+  } else {
+    for (let index = start; index < lookup.items.length; index += 1) {
+      const item = lookup.items.at(index);
+      if (!item) continue;
+      byMountKey.delete(item.key);
+      byViewportId.delete(feedRowId(item));
+    }
+  }
+  for (let index = start; index < items.length; index += 1) {
     const item = items.at(index);
     if (!item) continue;
     byMountKey.set(item.key, index);
     byViewportId.set(feedRowId(item), index);
   }
-  return { byMountKey, byViewportId };
+  lookup.items = items;
+  return lookup;
 }
 
 export function findConversationRowIndex(
@@ -63,14 +83,6 @@ export function findConversationRowIndex(
 
 export function scrollMarginBetween(list: HTMLElement, scroll: HTMLElement): number {
   return list.getBoundingClientRect().top - scroll.getBoundingClientRect().top + scroll.scrollTop;
-}
-
-export function measuredConversationRowSize(
-  row: HTMLElement,
-): { index: number; size: number } | null {
-  const index = Number(row.dataset.index);
-  if (!Number.isInteger(index) || index < 0) return null;
-  return { index, size: Math.round(row.offsetHeight) };
 }
 
 export interface ConversationRowSizeChange {
@@ -104,13 +116,19 @@ export function shouldAdjustConversationRowOnSizeChange(
 export function syncMeasureConversationList(
   list: HTMLElement,
   resizeItem: (index: number, size: number) => void,
-  cachedSize?: (index: number) => number | undefined,
+  changedRows?: { items: readonly FeedItem[]; measured: WeakMap<Element, FeedItem> },
 ): void {
   for (let node = list.firstElementChild; node; node = node.nextElementSibling) {
-    const measured = measuredConversationRowSize(node as HTMLElement);
-    if (!measured) continue;
-    if (cachedSize?.(measured.index) === measured.size) continue;
-    resizeItem(measured.index, measured.size);
+    const row = node as HTMLElement;
+    const index = Number(row.dataset.index);
+    if (!Number.isInteger(index) || index < 0) continue;
+    if (changedRows) {
+      const item = changedRows.items.at(index);
+      if (!item || changedRows.measured.get(node) === item) continue;
+      changedRows.measured.set(node, item);
+    }
+    const size = Math.round(row.offsetHeight);
+    resizeItem(index, size);
   }
 }
 

@@ -1,4 +1,5 @@
 const { execFile } = require('node:child_process');
+const { childEnv } = require('./childEnv.cjs');
 const fs = require('node:fs');
 const path = require('node:path');
 
@@ -10,7 +11,7 @@ function runFile(file, args, { cwd, timeout = DEFAULT_TIMEOUT } = {}) {
     execFile(
       file,
       args,
-      { ...(cwd ? { cwd } : {}), timeout, maxBuffer: MAX_BUFFER },
+      { ...(cwd ? { cwd } : {}), timeout, maxBuffer: MAX_BUFFER, env: childEnv() },
       (err, stdout, stderr) => {
         resolve({
           code: err ? (typeof err.code === 'number' ? err.code : 1) : 0,

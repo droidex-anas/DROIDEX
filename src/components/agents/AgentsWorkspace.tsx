@@ -31,8 +31,8 @@ export function AgentsWorkspace({
     return {
       session,
       transcript: session ? current.transcripts[session.appSessionId] : undefined,
-      childSessions: current.childSessions,
-      childRuntime: current.childRuntime,
+      childSessions: session ? current.childSessions[session.appSessionId] : undefined,
+      childRuntime: session ? current.childRuntime[session.appSessionId] : undefined,
       models: current.models,
       toolActivity: current.toolActivity,
     };
@@ -45,12 +45,10 @@ export function AgentsWorkspace({
   // pane lists a new agent at the moment the card does.
   const childSessions = useMemo(() => {
     if (!session) return [];
-    const registered: Partial<typeof state.childSessions> = state.childSessions;
-    return spawnedChildSessions(transcript, Object.values(registered[session.appSessionId] ?? {}));
+    return spawnedChildSessions(transcript, Object.values(state.childSessions ?? {}));
   }, [session, transcript, state.childSessions]);
-  const childRuntime: Partial<typeof state.childRuntime> = state.childRuntime;
   const childSessionsRunning = childSessions.some((child) =>
-    childSessionIsLive(child, childRuntime[child.parentAppSessionId]?.[child.childSessionId]),
+    childSessionIsLive(child, state.childRuntime?.[child.childSessionId]),
   );
   const snapshots = useChildStreamSnapshots(childSessions, transcript, session?.interruptReason);
 
