@@ -126,12 +126,18 @@ test('the session list is bounded to the most recent entries', () => {
 });
 
 test('the transcript is capped to the newest events and the byte budget', () => {
-  const many = Array.from({ length: MAX_SNAPSHOT_TRANSCRIPT_EVENTS + 20 }, (_, i) =>
-    event(`e${i}`, i),
-  );
-  const counted = saveAndLoad([summary('s1')], { appSessionId: 's1', events: many });
+  const many = Array.from({ length: 20_000 }, (_, i) => event(`e${i}`, i));
+  let inspected = 0;
+  const tail = new Proxy(many, {
+    get(target, property, receiver) {
+      if (typeof property === 'string' && /^\d+$/.test(property)) inspected += 1;
+      return Reflect.get(target, property, receiver);
+    },
+  });
+  const counted = saveAndLoad([summary('s1')], { appSessionId: 's1', events: tail });
   assert.equal(counted?.transcript?.events.length, MAX_SNAPSHOT_TRANSCRIPT_EVENTS);
-  assert.equal(counted?.transcript?.events[0]?.id, 'e20');
+  assert.equal(counted?.transcript?.events[0]?.id, 'e19960');
+  assert.equal(inspected, MAX_SNAPSHOT_TRANSCRIPT_EVENTS);
 
   const bulky = Array.from({ length: MAX_SNAPSHOT_TRANSCRIPT_EVENTS }, (_, i) =>
     event(`big-${i}`, i, 'x'.repeat(64 * 1024)),

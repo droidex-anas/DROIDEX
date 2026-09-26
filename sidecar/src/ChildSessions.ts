@@ -19,6 +19,7 @@ import {
 import { errMsg, isUserCancellation } from './sessionHelpers.js';
 import { isReportedStreamingTranscriptError } from './SessionTimeline.js';
 import {
+  addChild,
   applyObservedChild,
   childAcceptsWork,
   childDurabilityKey,
@@ -115,6 +116,7 @@ export class ChildSessions {
       generation: ++this.nextParentGeneration,
       lease,
       children: new Map(),
+      spawnChildren: new Map(),
       settledSinceWake: new Map(),
       pendingSpawns: new Map(),
       openAttempts: new Map(),
@@ -123,7 +125,7 @@ export class ChildSessions {
       closing: false,
     };
     for (const record of this.d.history.childSessions(parentAppSessionId))
-      parent.children.set(record.childSessionId, childStateFromRecord(record));
+      addChild(parent, childStateFromRecord(record));
     this.parents.set(parentAppSessionId, parent);
   }
 
@@ -267,6 +269,7 @@ export class ChildSessions {
       if (child.role !== observed.role && child.turn.autoCompacting)
         this.d.compaction.cancel(this.automaticTarget(parent, child));
       const { previousPrompt, previousStatus } = applyObservedChild(
+        parent,
         child,
         observed,
         linkForApply,
@@ -695,7 +698,7 @@ export class ChildSessions {
     let child = parent.children.get(childSessionId);
     if (!child) {
       child = childStateFromRecord(record);
-      parent.children.set(childSessionId, child);
+      addChild(parent, child);
     }
     if (!this.isCurrentParent(parent)) return;
     if (child.mutationTail) {
@@ -1056,7 +1059,7 @@ export class ChildSessions {
       reasoningEffort: settings.reasoningEffort,
       updatedAt: this.d.now(),
     });
-    parent.children.set(child.identity.childSessionId, child);
+    addChild(parent, child);
     return child;
   }
 
