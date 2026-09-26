@@ -341,7 +341,8 @@ function isSessionSummary(value: unknown): boolean {
     value.features.every(isBridgeFeature) &&
     hasNumbers(value, ['tokensIn', 'tokensOut', 'contextTokens', 'createdAt', 'updatedAt']) &&
     isOptionalString(value.interruptReason) &&
-    isOptionalString(value.resumeId)
+    isOptionalString(value.resumeId) &&
+    isOptionalBoolean(value.fastMode)
   );
 }
 
@@ -517,6 +518,10 @@ function hasStrings(value: Record<string, unknown>, keys: readonly string[]): bo
 
 function isOptionalString(value: unknown): boolean {
   return value === undefined || typeof value === 'string';
+}
+
+function isOptionalBoolean(value: unknown): boolean {
+  return value === undefined || typeof value === 'boolean';
 }
 
 function isOptionalTimestamp(value: unknown): boolean {

@@ -74,6 +74,7 @@ import {
   resolveReasoningEffortDisplay,
 } from '../lib/reasoningEffort';
 import { displayedModelSettings } from '../lib/pendingModelSettings';
+import { FAST_MODE_HINT, offersFastMode } from '../lib/fastMode';
 import { compactionSettingsSnapshot } from '../lib/compactionSettings';
 import { composerTextAfterSeed, resetComposerAfterSubmit } from '../lib/composerReset';
 import { chipRemovedByBackspace } from '../lib/composerChips';
@@ -98,7 +99,15 @@ import {
 } from '../lib/childSessions';
 import { commitPrimaryPromptAfterBaseline } from '../lib/promptSend';
 import { SlidersHorizontal } from 'lucide-react';
-import { Bug, FoldVertical, ListTodo, MessageSquareText, Models, Settings } from '@droidex/icons';
+import {
+  Bug,
+  FoldVertical,
+  ListTodo,
+  MessageSquareText,
+  Models,
+  Settings,
+  Zap,
+} from '@droidex/icons';
 import { VisualizeIcon } from './icons/VisualizeIcon';
 import { ComposerSendButton } from './composer/ComposerSendButton';
 import { useQueuedPromptDelivery } from './composer/useQueuedPromptDelivery';
@@ -130,6 +139,7 @@ import type { Autonomy, SkillInfo } from '../types/bridge';
 import { feedbackDraftFromCommand } from '../lib/feedbackReport';
 import { useSessionWorkingDirectory } from '../hooks/useSessionWorkingDirectory';
 import { useRuntimeHealth } from '../hooks/useRuntimeHealth';
+import useFastMode from '../hooks/useFastMode';
 import { toast } from '../lib/toast';
 
 // The live-markdown editor is a heavy chunk of the bundle, so it loads on
@@ -273,6 +283,7 @@ export default function PromptInput({
     shallowEqual,
   );
   const store = useStoreApi();
+  const { fastMode, setFastMode } = useFastMode(state.activeAppSessionId ?? undefined);
   const composerRevisionRef = useRef(0);
   const [input, setInputState] = useState('');
   const setInput = (value: SetStateAction<string>) => {
@@ -603,9 +614,38 @@ export default function PromptInput({
         dispatch({ type: 'TOGGLE_SETTINGS' });
       },
     },
-  ].filter((command) =>
-    command.cmd === '/spec' ? specComposer : droidComposer || !DROID_ONLY_COMMANDS.has(command.cmd),
-  );
+    {
+      cmd: '/fast',
+      desc: 'Toggle fast mode',
+      icon: Zap,
+      // The app owns this setting now, so the harness's own /fast stays out of
+      // the menu rather than offering a second, unsynced switch.
+      supersedesHarnessCommand: true,
+      run: () => {
+        setFastMode(!fastMode);
+      },
+    },
+    {
+      cmd: '/fast on',
+      desc: FAST_MODE_HINT,
+      icon: Zap,
+      run: () => {
+        setFastMode(true);
+      },
+    },
+    {
+      cmd: '/fast off',
+      desc: 'Normal speed and usage',
+      icon: Zap,
+      run: () => {
+        setFastMode(false);
+      },
+    },
+  ].filter((command) => {
+    if (command.cmd === '/spec') return specComposer;
+    if (command.cmd.startsWith('/fast')) return offersFastMode(composerProvider);
+    return droidComposer || !DROID_ONLY_COMMANDS.has(command.cmd);
+  });
 
   // Typing, and every edit that behaves like typing, leaves history recall.
   const editDraft = (text: string) => {
@@ -2049,6 +2089,14 @@ export default function PromptInput({
                       <span className="truncate font-medium text-droid-text">
                         {selectedModelLabel}
                       </span>
+                      {fastMode && offersFastMode(composerProvider) && (
+                        <Zap
+                          size={11}
+                          fill="currentColor"
+                          className="shrink-0 text-droid-accent"
+                          aria-label={`Fast mode: ${FAST_MODE_HINT}`}
+                        />
+                      )}
                       {primaryReasoning && (
                         <span
                           className={`shrink-0 capitalize ${

@@ -181,3 +181,19 @@ test('catalog rows stay within the row cap', () => {
   const rows = rowsFor('/skill-', many);
   assert.equal(rows.filter((label) => label.startsWith('skill-')).length, 40);
 });
+
+test("a command that supersedes the harness's own hides that catalog row", () => {
+  const harnessFast = row('fast', { kind: 'command', provider: 'claude', scope: 'system' });
+  const trigger = composerTrigger('/fast', 5);
+  assert.ok(trigger);
+  const menu = composerMenu(trigger, {
+    commands: [{ ...command('/fast'), supersedesHarnessCommand: true }],
+    catalog: [harnessFast],
+    files: [],
+  });
+
+  assert.deepEqual(
+    painted(menu.entries).filter((label) => !label.endsWith(':')),
+    ['/fast'],
+  );
+});

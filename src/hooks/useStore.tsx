@@ -353,6 +353,9 @@ export interface AppState {
   // Autonomy override for the current unsent draft. Null means the draft
   // follows `defaultAutonomy`; reset whenever the draft lifecycle resets.
   draftAutonomy: Autonomy | null;
+  // Fast mode the current unsent draft will be created with. A new chat never
+  // inherits it, so it resets with the rest of the draft lifecycle.
+  draftFastMode: boolean;
   // Live-session autonomy changes awaiting provider confirmation, keyed by
   // appSessionId. The UI keeps showing the confirmed value while pending.
   pendingAutonomy: Record<string, Autonomy>;
@@ -686,6 +689,14 @@ type Action =
   | { type: 'SET_DEFAULT_AUTONOMY'; autonomy: Autonomy }
   | { type: 'SET_TOOL_ACTIVITY'; settings: ToolActivitySettings }
   | { type: 'SET_DRAFT_AUTONOMY'; autonomy: Autonomy }
+  | { type: 'SET_DRAFT_FAST_MODE'; fastMode: boolean }
+  | {
+      // Optimistic echo of a session.updateSettings just sent, so the popover
+      // and the chip read the new value before the sidecar confirms it.
+      type: 'SESSION_SETTINGS_CHANGED';
+      appSessionId: string;
+      settings: Pick<SessionSummary, 'fastMode'>;
+    }
   | { type: 'AUTONOMY_UPDATE_REQUESTED'; appSessionId: string; autonomy: Autonomy }
   | { type: 'AUTONOMY_UPDATE_SETTLED'; appSessionId: string }
   | {
@@ -773,6 +784,7 @@ export const initialState: AppState = {
   defaultAutonomy: loadDefaultAutonomy(),
   toolActivity: loadToolActivity(),
   draftAutonomy: null,
+  draftFastMode: false,
   pendingAutonomy: {},
   pendingModelUpdates: {},
   composerSeed: null,
@@ -960,6 +972,7 @@ function baseReducer(state: AppState, action: Action): AppState {
         activeAppSessionId: shouldActivate ? action.session.appSessionId : state.activeAppSessionId,
         draftChat: shouldActivate ? null : state.draftChat,
         draftAutonomy: shouldActivate ? null : state.draftAutonomy,
+        draftFastMode: shouldActivate ? false : state.draftFastMode,
         selectedChild: shouldActivate || targetIsActive ? null : childReset.selectedChild,
         // A pending review-focus request belongs to the session that issued
         // it; a different session becoming active must not inherit it.
@@ -1590,6 +1603,7 @@ function baseReducer(state: AppState, action: Action): AppState {
         sessionLastSeen,
         draftChat: null,
         draftAutonomy: null,
+        draftFastMode: false,
         selectedChild: null,
         // A pending review-focus request belongs to the session that issued
         // it; never let it fire in another session's panel after a switch.
@@ -1897,6 +1911,7 @@ function baseReducer(state: AppState, action: Action): AppState {
           branch: action.branch,
         },
         draftAutonomy: null,
+        draftFastMode: false,
         activeAppSessionId: null,
         missionControlMode: false,
         selectedChild: null,
@@ -2248,6 +2263,21 @@ function baseReducer(state: AppState, action: Action): AppState {
 
     case 'SET_DRAFT_AUTONOMY':
       return { ...state, draftAutonomy: action.autonomy };
+
+    case 'SET_DRAFT_FAST_MODE':
+      return { ...state, draftFastMode: action.fastMode };
+
+    case 'SESSION_SETTINGS_CHANGED': {
+      const session = state.sessions[action.appSessionId];
+      if (!session) return state;
+      return {
+        ...state,
+        sessions: {
+          ...state.sessions,
+          [action.appSessionId]: { ...session, ...action.settings },
+        },
+      };
+    }
 
     case 'AUTONOMY_UPDATE_REQUESTED':
       return {

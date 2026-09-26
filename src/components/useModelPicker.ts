@@ -22,6 +22,7 @@ import {
   providerModelCatalog,
   providerModelSelection,
 } from '../features/providers/providerIdentity';
+import useFastMode from '../hooks/useFastMode';
 import { defaultModelOf } from './ModelCatalogList';
 import { categoryOf, categoryOptions, type ModelCategory } from './modelCategories';
 
@@ -190,6 +191,10 @@ export default function useModelPicker({
     [agent, dispatch, state.provider],
   );
 
+  // Fast mode belongs to the chat this composer writes into; the mission and
+  // child pickers never offer it, so they read the draft's and leave it alone.
+  const { fastMode, setFastMode } = useFastMode(scopedAppSessionId);
+
   const updateReasoning = useCallback(
     (reasoning: ReasoningEffort) => {
       if (childTarget) return;
@@ -277,6 +282,8 @@ export default function useModelPicker({
     selectedLabel,
     activeModel,
     effReasoning,
+    fastMode,
+    setFastMode,
     updateModel,
     updateReasoning,
   };

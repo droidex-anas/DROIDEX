@@ -1,12 +1,19 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { ChevronLeft, RotateCcw, Search } from 'lucide-react';
+import { Zap } from '@droidex/icons';
 import type { ProviderKind, ReasoningEffort } from '../types/bridge';
 import {
   isReasoningEffort,
   offersReasoningEffort,
   reasoningEffortLabel,
 } from '../lib/reasoningEffort';
+import {
+  FAST_MODE_HINT,
+  FAST_MODE_LABEL,
+  fastModeBlockedReason,
+  offersFastMode,
+} from '../lib/fastMode';
 import { ModelIcon, providerOf } from './ModelIcon';
 import HarnessSegments from '../features/providers/HarnessSegments';
 import ModelCategoryFilter from './ModelCategoryFilter';
@@ -68,6 +75,8 @@ export default function ModelSliderPopover({ onClose }: { onClose: () => void })
     selectedLabel,
     activeModel,
     effReasoning,
+    fastMode,
+    setFastMode,
     updateModel,
     updateReasoning,
   } = useModelPicker({ singleAgent: true });
@@ -101,6 +110,7 @@ export default function ModelSliderPopover({ onClose }: { onClose: () => void })
       ? 'Default'
       : effortDisplay(shownEffort, provider);
 
+  const fastModeBlocked = fastModeBlockedReason(activeModel);
   const defaultEffort = activeModel?.defaultReasoningEffort;
   const canReset =
     defaultEffort !== undefined &&
@@ -188,6 +198,29 @@ export default function ModelSliderPopover({ onClose }: { onClose: () => void })
                 >
                   <ChevronLeft className="h-4 w-4" />
                 </button>
+                {offersFastMode(provider) && (
+                  <button
+                    type="button"
+                    aria-pressed={fastMode}
+                    aria-label={FAST_MODE_LABEL}
+                    disabled={fastModeBlocked !== undefined}
+                    title={fastModeBlocked ?? FAST_MODE_HINT}
+                    onClick={() => {
+                      setFastMode(!fastMode);
+                    }}
+                    className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-md transition-colors disabled:opacity-40 ${
+                      fastMode
+                        ? 'bg-droid-surface text-droid-accent'
+                        : 'text-droid-text-muted enabled:hover:bg-droid-surface/60 enabled:hover:text-droid-text'
+                    }`}
+                  >
+                    <Zap
+                      size={14}
+                      className="transition-colors"
+                      fill={fastMode ? 'currentColor' : 'transparent'}
+                    />
+                  </button>
+                )}
                 <span className="flex h-4 w-4 shrink-0 items-center justify-center">
                   <ModelIcon provider={providerOf(activeModel, resolvedModelId)} size={14} />
                 </span>

@@ -83,7 +83,8 @@ export function isModelInfo(value: unknown): boolean {
     nonEmptyString(value.displayName) &&
     typeof value.isCustom === 'boolean' &&
     (value.supportedReasoningEfforts === undefined ||
-      isStringArray(value.supportedReasoningEfforts))
+      isStringArray(value.supportedReasoningEfforts)) &&
+    (value.supportsFastMode === undefined || typeof value.supportsFastMode === 'boolean')
   );
 }
 

@@ -140,6 +140,8 @@ export interface SessionSummary {
   workspaceKind?: 'folder' | 'none';
   modelId?: string;
   reasoningEffort?: ReasoningEffort;
+  // The fast mode the chat asked for, never a claim about delivered speed.
+  fastMode?: boolean;
   compactionModel?: string;
   workerModelId?: string;
   workerReasoningEffort?: ReasoningEffort;
@@ -275,6 +277,9 @@ export interface ModelInfo {
   maxContextTokens?: number;
   supportedReasoningEfforts?: ReasoningEffort[];
   defaultReasoningEffort?: ReasoningEffort;
+  // Whether the harness can run this model faster for more usage. Absent while
+  // the catalog has not said; only an explicit false disables the toggle.
+  supportsFastMode?: boolean;
 }
 
 // What a provider can do for the user right now. Derived in the sidecar from
@@ -666,6 +671,7 @@ export type ClientCommand =
       interactionMode?: SessionInteractionMode;
       modelId?: string;
       reasoningEffort?: ReasoningEffort;
+      fastMode?: boolean;
       compactionModel?: string;
       compactionTokenLimit?: number | null;
       compactionTokenLimitPerModel?: Record<string, number>;
@@ -710,6 +716,8 @@ export type ClientCommand =
       modelId?: string | null;
       // null clears the effort: the model chosen offers none.
       reasoningEffort?: ReasoningEffort | null;
+      // Omitted leaves the chat's fast mode as it is.
+      fastMode?: boolean;
       // Echoed once the model/effort change settles, by
       // `session.model_update_applied` or a `session.model_update_failed` error.
       requestId?: string;

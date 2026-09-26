@@ -111,10 +111,19 @@ function rankCommands(query: string, commands: SlashCommand[]): MenuItem[] {
     .map((command) => ({ type: 'command', command }));
 }
 
-function rankHarnessCommands(query: string, catalog: SkillInfo[]): MenuItem[] {
-  const commands = offerable(catalog, 'command');
+function rankHarnessCommands(
+  query: string,
+  commands: SlashCommand[],
+  catalog: SkillInfo[],
+): MenuItem[] {
+  const superseded = new Set(
+    commands.filter((c) => c.supersedesHarnessCommand).map((c) => c.cmd.slice(1).toLowerCase()),
+  );
+  const offered = offerable(catalog, 'command').filter(
+    (item) => !superseded.has(item.name.toLowerCase()),
+  );
   return catalogRows(
-    rankMenuCandidates(query, commands, (item) => ({ name: item.name })).items.slice(
+    rankMenuCandidates(query, offered, (item) => ({ name: item.name })).items.slice(
       0,
       CATALOG_LIMIT,
     ),
@@ -301,7 +310,7 @@ function slashSections(query: string, commands: SlashCommand[], catalog: SkillIn
       'Commands',
       [
         group(rankCommands(query, commands), query),
-        group(rankHarnessCommands(query, catalog), query),
+        group(rankHarnessCommands(query, commands, catalog), query),
       ],
       query,
     ),
