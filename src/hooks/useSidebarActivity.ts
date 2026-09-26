@@ -146,8 +146,8 @@ export function useSidebarActivity(
     (session: SessionSummary, status: SessionActivityStatus) =>
       activityReason(status, {
         session,
-        permission: state.pendingPermissions[session.appSessionId],
-        question: state.pendingQuestions[session.appSessionId],
+        permission: state.pendingPermissions[session.appSessionId]?.[0],
+        question: state.pendingQuestions[session.appSessionId]?.[0],
         digest: freshDigest(digests, session),
         diff: diffs[session.cwd],
       }),

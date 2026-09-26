@@ -42,6 +42,28 @@ export function DiffLines({ ops }: { ops: DiffOp[] }) {
   );
 }
 
+// The rows of a change, capped so a long patch cannot take over the surface it
+// sits on, with a line saying what was left out. Shared by the transcript's
+// diff card and the approval card so both read the same way.
+export function DiffPreview({ ops, className }: { ops: DiffOp[]; className?: string }) {
+  const preview = ops.slice(0, PREVIEW_LINES);
+  const more = ops.length - preview.length;
+  return (
+    <ToolPanel className={className}>
+      <div className="max-h-56 overflow-auto py-1">
+        <DiffLines ops={preview} />
+        {more > 0 && (
+          <div className="border-t border-droid-border/60 px-3 py-1.5 text-[11px] text-droid-text-muted">
+            +{more} more lines
+          </div>
+        )}
+      </div>
+    </ToolPanel>
+  );
+}
+
+const PREVIEW_LINES = 14;
+
 const VERB_LABEL: Record<FileChange['verb'], string> = {
   edit: 'Edit',
   create: 'Create',
@@ -78,8 +100,6 @@ export function DiffCard({
   onOpen?: () => void;
 }) {
   const [open, setOpen] = useState(false);
-  const preview = change.ops.slice(0, 14);
-  const more = change.ops.length - preview.length;
   const label = displayPath(change.path, cwd);
 
   return (
@@ -122,18 +142,7 @@ export function DiffCard({
         </button>
       </div>
       <Expand open={open}>
-        {open ? (
-          <ToolPanel className="mt-1.5">
-            <div className="max-h-56 overflow-auto py-1">
-              <DiffLines ops={preview} />
-              {more > 0 && (
-                <div className="border-t border-droid-border/60 px-3 py-1.5 text-[11px] text-droid-text-muted">
-                  +{more} more lines
-                </div>
-              )}
-            </div>
-          </ToolPanel>
-        ) : null}
+        {open ? <DiffPreview ops={change.ops} className="mt-1.5" /> : null}
       </Expand>
     </div>
   );

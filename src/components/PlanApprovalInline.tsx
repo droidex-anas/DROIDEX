@@ -36,7 +36,7 @@ export default function PlanApprovalInline() {
     shallowEqual,
   );
   const activeId = state.activeAppSessionId;
-  const req = activeId ? state.pendingPermissions[activeId] : undefined;
+  const req = activeId ? state.pendingPermissions[activeId]?.[0] : undefined;
   const [autonomy, setAutonomy] = useState<Autonomy>('high');
   const [comment, setComment] = useState('');
   const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -65,7 +65,11 @@ export default function PlanApprovalInline() {
   const text = comment.trim();
 
   const finish = () => {
-    dispatch({ type: 'CLEAR_PERMISSION', appSessionId: req.appSessionId });
+    dispatch({
+      type: 'CLEAR_PERMISSION',
+      appSessionId: req.appSessionId,
+      requestId: req.requestId,
+    });
   };
 
   // Implement: approve at the chosen autonomy (spec) or proceed once (mission),
