@@ -157,8 +157,10 @@ export class SessionModelSettings {
         // Only a model change earns a row; a new effort shows on the chip.
         if (change) this.d.onPrimaryModelChanged(next, change.from, change.to);
         if (live)
-          await this.d.refreshPrimary(live,
-            selected.modelId !== undefined || selected.contextWindowTokens !== undefined);
+          await this.d.refreshPrimary(
+            live,
+            selected.modelId !== undefined || selected.contextWindowTokens !== undefined,
+          );
         return true;
       },
       false,

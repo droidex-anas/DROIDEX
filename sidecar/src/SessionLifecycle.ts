@@ -1174,7 +1174,13 @@ export class SessionLifecycle {
       if (!liveSession || liveSession.closeMode) return;
       const session = liveSession.session;
       await session.setInteractionMode?.(previous.summary.interactionMode);
-      if (d.isShutdownStarted() || liveSession.closeMode || d.registry.getLive(appSessionId) !== liveSession || liveSession.session !== session) return;
+      if (
+        d.isShutdownStarted() ||
+        liveSession.closeMode ||
+        d.registry.getLive(appSessionId) !== liveSession ||
+        liveSession.session !== session
+      )
+        return;
       d.context.preserveUsage(appSessionId, carryover);
       liveSession.pendingSends.push(...previous.pendingSends.splice(0));
       if (liveSession.streaming) {

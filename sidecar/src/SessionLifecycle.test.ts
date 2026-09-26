@@ -1630,7 +1630,9 @@ test('a context switch waits for the turn and resumes the same chat before queue
       return {
         provider: 'claude',
         providerSessionId: id,
-        setInteractionMode: async (mode) => { assert.equal(mode, 'spec'); },
+        setInteractionMode: async (mode) => {
+          assert.equal(mode, 'spec');
+        },
         stream: resumed.stream.bind(resumed),
         setModel: resumed.setModel.bind(resumed),
         setAutonomy: resumed.setAutonomy.bind(resumed),
