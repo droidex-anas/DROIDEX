@@ -191,7 +191,13 @@ async function automationBridge(
 async function openConversation(page: Page) {
   await page.goto('/');
   await page.getByText(session.title, { exact: true }).first().click();
-  await expect(page.getByRole('button', { name: 'Schedule prompt', exact: true })).toBeVisible();
+  await expect(page.getByRole('textbox', { name: 'Prompt', exact: true })).toBeVisible();
+}
+
+// Scheduling lives in the draft's right-click menu.
+async function openSchedule(page: Page) {
+  await page.getByRole('textbox', { name: 'Prompt', exact: true }).click({ button: 'right' });
+  await page.getByRole('menuitem', { name: 'Schedule prompt…' }).click();
 }
 
 test('scheduling targets the original conversation and preserves drafts until acknowledged', async ({
@@ -242,9 +248,9 @@ test('date editing keeps the schedule open and Escape restores focus on a narrow
   await openConversation(page);
   await page.setViewportSize({ width: 420, height: 820 });
   await page.emulateMedia({ reducedMotion: 'reduce' });
-  await page.getByRole('textbox', { name: 'Prompt', exact: true }).fill('Continue later');
-  const trigger = page.getByRole('button', { name: 'Schedule prompt', exact: true });
-  await trigger.click();
+  const composer = page.getByRole('textbox', { name: 'Prompt', exact: true });
+  await composer.fill('Continue later');
+  await openSchedule(page);
   const dialog = page.getByRole('dialog', { name: 'Schedule prompt', exact: true });
   await expect(dialog).toBeVisible();
   const bounds = await dialog.boundingBox();
@@ -262,7 +268,7 @@ test('date editing keeps the schedule open and Escape restores focus on a narrow
   await expect(dialog).toBeVisible();
   await page.keyboard.press('Escape');
   await expect(dialog).toHaveCount(0);
-  await expect(trigger).toBeFocused();
+  await expect(composer).toBeFocused();
 });
 
 test('an unacknowledged save preserves the draft and requires checking Automations before retrying', async ({
@@ -273,7 +279,7 @@ test('an unacknowledged save preserves the draft and requires checking Automatio
   await openConversation(page);
   const composer = page.getByRole('textbox', { name: 'Prompt', exact: true });
   await composer.fill('Continue after reset');
-  await page.getByRole('button', { name: 'Schedule prompt', exact: true }).click();
+  await openSchedule(page);
   const dialog = page.getByRole('dialog', { name: 'Schedule prompt', exact: true });
   await dialog.getByRole('button', { name: 'Schedule prompt', exact: true }).click();
   await expect.poll(() => backend.requests.length).toBe(1);

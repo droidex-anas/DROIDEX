@@ -19,7 +19,7 @@ export function UnreadFilterActions({
         <button
           type="button"
           onClick={onMarkAllRead}
-          className="rounded-md px-2 py-1.5 text-[11px] font-medium text-droid-text-muted transition-colors hover:bg-droid-elevated hover:text-droid-text"
+          className="cursor-pointer rounded-md px-2 py-1.5 text-[11px] font-medium text-droid-text-muted transition-colors hover:text-droid-text"
         >
           Mark all as read
         </button>
@@ -30,7 +30,7 @@ export function UnreadFilterActions({
         title={unreadOnly ? 'Show all sessions' : 'Show unread only'}
         aria-label={unreadOnly ? 'Show all sessions' : 'Show unread only'}
         aria-pressed={unreadOnly}
-        className={`relative rounded-md p-1.5 transition-colors hover:bg-droid-elevated ${
+        className={`relative cursor-pointer rounded-md p-1.5 transition-colors ${
           unreadOnly ? 'text-droid-accent' : 'text-droid-text-muted hover:text-droid-text'
         }`}
       >

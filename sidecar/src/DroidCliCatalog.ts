@@ -1,14 +1,13 @@
 import { execFile } from 'node:child_process';
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { homedir } from 'node:os';
-import { dirname, join } from 'node:path';
+import { join } from 'node:path';
 import { promisify } from 'node:util';
 import { wrapDroidInvocation } from './Environment.js';
 import { reasoningValue } from './modelCatalog.js';
 import type { ModelInfo, ReasoningEffort } from './protocol.js';
 
 const execFileAsync = promisify(execFile);
-const CACHE_PATH = join(homedir(), '.factory', 'droidex', 'model-catalog.json');
 
 type Section = 'available' | 'custom' | 'details' | null;
 
@@ -19,33 +18,7 @@ export async function readDroidCliModelCatalog(droidPath: string): Promise<Model
     maxBuffer: 1024 * 1024,
     env: process.env,
   });
-  const models = parseDroidExecHelp(stdout);
-  writeDroidCliModelCatalogCache(droidPath, models);
-  return models;
-}
-
-export function readDroidCliModelCatalogCache(droidPath: string): ModelInfo[] {
-  try {
-    if (!existsSync(CACHE_PATH)) return [];
-    const raw = JSON.parse(readFileSync(CACHE_PATH, 'utf8')) as Record<string, unknown>;
-    if (raw.version !== 1 || raw.droidPath !== droidPath || !Array.isArray(raw.models)) return [];
-    return raw.models.map(modelInfoValue).filter((model): model is ModelInfo => Boolean(model));
-  } catch {
-    return [];
-  }
-}
-
-function writeDroidCliModelCatalogCache(droidPath: string, models: ModelInfo[]): void {
-  try {
-    mkdirSync(dirname(CACHE_PATH), { recursive: true });
-    writeFileSync(
-      CACHE_PATH,
-      JSON.stringify({ version: 1, droidPath, updatedAt: Date.now(), models }),
-      'utf8',
-    );
-  } catch {
-    /* cache is best-effort */
-  }
+  return parseDroidExecHelp(stdout);
 }
 
 function parseDroidExecHelp(help: string): ModelInfo[] {
@@ -136,43 +109,9 @@ function stripDefaultSuffix(value: string): string {
   return value.replace(/\s+\(default\)$/, '').trim();
 }
 
-function modelInfoValue(value: unknown): ModelInfo | undefined {
-  if (!value || typeof value !== 'object') return undefined;
-  const raw = value as Record<string, unknown>;
-  const id = stringValue(raw.id);
-  const displayName = stringValue(raw.displayName);
-  if (!id || !displayName) return undefined;
-  const supportedReasoningEfforts = Array.isArray(raw.supportedReasoningEfforts)
-    ? raw.supportedReasoningEfforts
-        .map((item) => reasoningValue(item))
-        .filter((item): item is ReasoningEffort => item !== undefined)
-    : undefined;
-  return {
-    id,
-    displayName,
-    provider: stringValue(raw.provider),
-    isCustom: raw.isCustom === true,
-    isDefault: raw.isDefault === true,
-    maxContextTokens: numberValue(raw.maxContextTokens),
-    supportedReasoningEfforts: supportedReasoningEfforts?.length
-      ? supportedReasoningEfforts
-      : undefined,
-    defaultReasoningEffort: reasoningValue(raw.defaultReasoningEffort),
-  };
-}
-
-function stringValue(value: unknown): string | undefined {
-  return typeof value === 'string' && value.trim() ? value : undefined;
-}
-
-function numberValue(value: unknown): number | undefined {
-  return typeof value === 'number' && Number.isFinite(value) && value > 0 ? value : undefined;
-}
-
 function providerFor(id: string, displayName: string, isCustom: boolean): string {
   const hay = `${id} ${displayName}`.toLowerCase();
   if (isCustom) return 'custom';
-  if (displayName.startsWith('Droid Core')) return 'droid-core';
   if (
     hay.includes('claude') ||
     hay.includes('opus') ||
@@ -182,6 +121,7 @@ function providerFor(id: string, displayName: string, isCustom: boolean): string
     return 'anthropic';
   if (hay.includes('gpt') || hay.includes('codex')) return 'openai';
   if (hay.includes('gemini')) return 'google';
+  if (hay.includes('grok')) return 'xai';
   return 'factory';
 }
 

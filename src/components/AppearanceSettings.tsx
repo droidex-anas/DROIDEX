@@ -146,9 +146,10 @@ function SchemeCard({
       aria-pressed={active}
       onClick={onClick}
       className={`rounded-xl border p-2 text-left transition-colors ${
-        active ? 'border-droid-accent' : 'border-droid-border hover:border-droid-border-hover'
+        active
+          ? 'border-droid-accent/50 bg-droid-elevated'
+          : 'border-droid-border hover:border-droid-border-hover'
       }`}
-      style={active ? { boxShadow: '0 0 0 1px var(--droid-accent)' } : undefined}
     >
       <div className="h-24 overflow-hidden rounded-lg border border-droid-border">{children}</div>
       <div className="mt-2 flex items-center justify-between px-0.5 pb-0.5">

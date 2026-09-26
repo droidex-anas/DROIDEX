@@ -28,7 +28,7 @@ export default function PaletteShell({
   placeholder: string;
   inputAriaLabel: string;
   enterHint: string;
-  footerRight: string;
+  footerRight?: string;
   children: ReactNode;
 }) {
   const panelRef = useRef<HTMLDivElement>(null);
@@ -90,13 +90,12 @@ export default function PaletteShell({
         animate={{ scale: 1, opacity: 1 }}
         exit={{ scale: 0.96, opacity: 0 }}
         transition={{ duration: 0.15, ease: [0.16, 1, 0.3, 1] }}
-        className="w-full max-w-[560px] bg-droid-elevated border border-droid-border rounded-xl shadow-2xl overflow-hidden"
+        className="w-full max-w-[560px] bg-droid-raised rounded-2xl shadow-droid overflow-hidden"
         onClick={(e) => {
           e.stopPropagation();
         }}
       >
-        {/* Search input */}
-        <div className="flex items-center gap-3 px-4 py-3 border-b border-droid-border">
+        <div className="flex items-center gap-3 px-4 pt-3.5 pb-2.5">
           <Search className="w-4 h-4 text-droid-text-muted" />
           <input
             ref={inputRef}
@@ -113,32 +112,26 @@ export default function PaletteShell({
             onClick={onClose}
             title="Close"
             aria-label="Close"
-            className="p-1 rounded-md text-droid-text-muted hover:text-droid-text hover:bg-droid-surface transition-colors"
+            className="p-1 rounded-md text-droid-text-muted hover:text-droid-text hover:bg-droid-active transition-colors"
           >
             <X className="w-4 h-4" />
           </button>
         </div>
 
-        {/* Results */}
-        <div className="py-2 max-h-[400px] overflow-y-auto">{children}</div>
+        <div className="px-1.5 max-h-[400px] overflow-y-auto">{children}</div>
 
-        {/* Footer */}
-        <div className="flex items-center justify-between px-4 py-2 border-t border-droid-border bg-droid-surface/50">
+        <div className="flex items-center justify-between px-4 pt-2.5 pb-3">
           <div className="flex items-center gap-3 text-[11px] text-droid-text-muted">
-            <span className="flex items-center gap-1">
-              <span className="px-1 py-0.5 rounded bg-droid-elevated border border-droid-border text-[11px]">
-                ↑↓
-              </span>
+            <span className="flex items-center gap-1.5">
+              <kbd className="px-1 py-0.5 rounded bg-droid-active font-sans text-[11px]">↑↓</kbd>
               Navigate
             </span>
-            <span className="flex items-center gap-1">
-              <span className="px-1 py-0.5 rounded bg-droid-elevated border border-droid-border text-[11px]">
-                ↵
-              </span>
+            <span className="flex items-center gap-1.5">
+              <kbd className="px-1 py-0.5 rounded bg-droid-active font-sans text-[11px]">↵</kbd>
               {enterHint}
             </span>
           </div>
-          <div className="text-[11px] text-droid-text-muted">{footerRight}</div>
+          {footerRight && <div className="text-[11px] text-droid-text-muted">{footerRight}</div>}
         </div>
       </motion.div>
     </motion.div>,

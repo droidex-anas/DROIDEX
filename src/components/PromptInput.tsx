@@ -39,6 +39,8 @@ import {
 } from '../lib/desktop';
 import { pathsInSequence, useImageAttachments } from '../hooks/useImageAttachments';
 import { useFileAttachments } from '../hooks/useFileAttachments';
+import { useVoiceControls } from '../features/voice/VoiceProvider';
+import { canUseVoice } from '../features/voice/voiceAvailability';
 import { useComposerFileDrop } from '../hooks/useComposerFileDrop';
 import { ImageChip } from './composer/ImageChip';
 import { FileChip } from './composer/FileChip';
@@ -63,14 +65,20 @@ import {
   parseSlashSkillInvocation,
   promptTextWithVisualize,
   responseFormatForPrompt,
-  submitCommandFor,
+  runsAsCompactCommand,
   VISUALIZE_COMMAND,
 } from '../lib/composePrompt';
-import { reasoningEffortLabel, resolveReasoningEffortDisplay } from '../lib/reasoningEffort';
+import {
+  draftEffortFor,
+  reasoningEffortLabel,
+  resolveReasoningEffortDisplay,
+} from '../lib/reasoningEffort';
+import { displayedModelSettings } from '../lib/pendingModelSettings';
 import { compactionSettingsSnapshot } from '../lib/compactionSettings';
 import { composerTextAfterSeed, resetComposerAfterSubmit } from '../lib/composerReset';
 import { chipRemovedByBackspace } from '../lib/composerChips';
 import {
+  chipNamedBy,
   composerMenu,
   composerTrigger,
   menuRowKey,
@@ -89,8 +97,9 @@ import {
   type VisibleSessionTarget,
 } from '../lib/childSessions';
 import { commitPrimaryPromptAfterBaseline } from '../lib/promptSend';
-import { ChevronDown, SlidersHorizontal } from 'lucide-react';
-import { Clock } from '@droidex/icons';
+import { SlidersHorizontal } from 'lucide-react';
+import { Bug, FoldVertical, ListTodo, MessageSquareText, Models, Settings } from '@droidex/icons';
+import { VisualizeIcon } from './icons/VisualizeIcon';
 import { ComposerSendButton } from './composer/ComposerSendButton';
 import { useQueuedPromptDelivery } from './composer/useQueuedPromptDelivery';
 import AddMenu from './composer/AddMenu';
@@ -99,8 +108,6 @@ import { useDraftEditing } from './composer/useDraftEditing';
 import type { ComposerHandle } from './composer/ComposerEditor';
 import { DraftSelections } from './composer/DraftSelections';
 import ComposerMenu, { type SlashCommand } from './ComposerMenu';
-import ModelSelectorPopover from './ModelSelectorPopover';
-import ProviderPicker from '../features/providers/ProviderPicker';
 import { effectiveProvider } from '../features/providers/providerDraft';
 import {
   providerDefaultModel,
@@ -130,6 +137,22 @@ import { toast } from '../lib/toast';
 const ComposerEditor = lazy(() => import('./composer/ComposerEditor'));
 const SchedulePromptPopover = lazy(() => import('../features/automations/SchedulePromptPopover'));
 const ScheduledPrompts = lazy(() => import('../features/automations/ScheduledPrompts'));
+// The model pickers open on demand; hovering the chip starts the download so
+// the first open does not wait on it.
+const loadModelSliderPopover = () => import('./ModelSliderPopover');
+const loadModelSelectorPopover = () => import('./ModelSelectorPopover');
+const ModelSliderPopover = lazy(loadModelSliderPopover);
+const ModelSelectorPopover = lazy(loadModelSelectorPopover);
+const VoiceSendSlot = lazy(() => import('../features/voice/VoiceSendSlot'));
+const VoiceTakeoverPopover = lazy(() => import('../features/voice/VoiceTakeoverPopover'));
+const VoiceOrbDock = lazy(() =>
+  import('../features/voice/VoiceOrbDock').then((m) => ({ default: m.VoiceOrbDock })),
+);
+const VoiceComposerControls = lazy(() =>
+  import('../features/voice/VoiceComposerControls').then((m) => ({
+    default: m.VoiceComposerControls,
+  })),
+);
 
 // Stable identity for a closed menu, so no trigger means no new object.
 const EMPTY_COMPOSER_MENU: ComposerMenuModel = { entries: [], rows: [] };
@@ -137,7 +160,7 @@ const EMPTY_COMPOSER_MENU: ComposerMenuModel = { entries: [], rows: [] };
 const ACCENT = 'var(--droid-accent)';
 // Slash entries that drive Droid's own subsystems, so they leave the menu with
 // the controls they belong to when the chat runs on another provider.
-const DROID_ONLY_COMMANDS = new Set(['/mission', '/compact']);
+const DROID_ONLY_COMMANDS = new Set(['/compact']);
 const accentMix = (pct: number) =>
   `color-mix(in srgb, var(--droid-accent) ${String(pct)}%, transparent)`;
 type SubmitMode = 'queue' | 'now';
@@ -218,6 +241,7 @@ export default function PromptInput({
         ? current.sessions[current.activeAppSessionId]
         : null,
       agentConfig: current.agentConfig,
+      harnessModels: current.harnessModels,
       childAccess: current.childAccess,
       childSessions: current.childSessions,
       compactionModel: current.compactionModel,
@@ -233,8 +257,12 @@ export default function PromptInput({
       lastCreatedSessionRequest: current.lastCreatedSessionRequest,
       liveEnterBehavior: current.liveEnterBehavior,
       missionControlMode: current.missionControlMode,
+      modelSelectorStyle: current.modelSelectorStyle,
       models: current.models,
       pendingAutonomy: current.pendingAutonomy,
+      pendingActiveModelUpdate: current.activeAppSessionId
+        ? current.pendingModelUpdates[current.activeAppSessionId]
+        : undefined,
       pendingCompose: current.pendingCompose,
       promptQueue: current.promptQueue,
       selectedChild: current.selectedChild,
@@ -257,10 +285,11 @@ export default function PromptInput({
   const [historyIndex, setHistoryIndex] = useState<number | null>(null);
   const draftBeforeHistory = useRef('');
   const [modelsOpen, setModelsOpen] = useState(false);
-  const [providerOpen, setProviderOpen] = useState(false);
   const [activeRowKey, setActiveRowKey] = useState<string | null>(null);
   const [scheduleTarget, setScheduleTarget] = useState<{ appSessionId: string } | null>(null);
-  const scheduleAnchorRef = useRef<HTMLButtonElement>(null);
+  // Scheduling lives in the draft's right-click menu; its popover opens from the
+  // send button, where the prompt would otherwise go.
+  const scheduleAnchorRef = useRef<HTMLDivElement>(null);
   const scheduleGeneration = useRef(0);
   const [files, setFiles] = useState<string[]>([]);
   const [filesCwd, setFilesCwd] = useState<string | null>(null);
@@ -521,6 +550,7 @@ export default function PromptInput({
   const slashCommands: SlashCommand[] = [
     {
       ...VISUALIZE_COMMAND,
+      icon: VisualizeIcon,
       run: () => {
         setVisualizeSelected(true);
       },
@@ -528,6 +558,7 @@ export default function PromptInput({
     {
       cmd: '/bug',
       desc: 'Send a private bug report',
+      icon: Bug,
       run: () => {
         setFeedbackReport({ category: 'bug', description: '' });
       },
@@ -535,20 +566,15 @@ export default function PromptInput({
     {
       cmd: '/feedback',
       desc: 'Share private product feedback',
+      icon: MessageSquareText,
       run: () => {
         setFeedbackReport({ category: 'other', description: '' });
       },
     },
     {
-      cmd: '/mission',
-      desc: 'Enter Mission Control',
-      run: () => {
-        dispatch({ type: 'TOGGLE_MISSION_CONTROL' });
-      },
-    },
-    {
       cmd: '/model',
       desc: 'Open model selector',
+      icon: Models,
       run: () => {
         setModelsOpen(true);
       },
@@ -556,6 +582,7 @@ export default function PromptInput({
     {
       cmd: '/compact',
       desc: 'Compact current session',
+      icon: FoldVertical,
       run: () => {
         if (primaryActionsEnabled && activeSession) compactSession(activeSession.appSessionId);
       },
@@ -563,6 +590,7 @@ export default function PromptInput({
     {
       cmd: '/spec',
       desc: 'Toggle spec mode',
+      icon: ListTodo,
       run: () => {
         toggleSpec();
       },
@@ -570,6 +598,7 @@ export default function PromptInput({
     {
       cmd: '/settings',
       desc: 'Open settings',
+      icon: Settings,
       run: () => {
         dispatch({ type: 'TOGGLE_SETTINGS' });
       },
@@ -590,19 +619,12 @@ export default function PromptInput({
   const overlayOpen = [
     trigger,
     modelsOpen,
-    providerOpen,
     addMenuOpen,
     feedbackReport,
     draftEditing.menu,
     scheduleTarget !== null && scheduleTarget.appSessionId === activeSession?.appSessionId,
-    isLive && sendHintOpen,
+    sendHintOpen,
   ].some(Boolean);
-
-  // The provider chip turns into a plain mark once a session exists, so a menu
-  // left open by the activation must not keep the overlay flag raised.
-  useEffect(() => {
-    if (state.activeAppSessionId) setProviderOpen(false);
-  }, [state.activeAppSessionId]);
 
   // Switching conversations abandons any schedule in progress; the bumped
   // generation also stops an in-flight save from clearing the new draft.
@@ -612,10 +634,6 @@ export default function PromptInput({
       scheduleGeneration.current += 1;
     };
   }, [visibleTargetKey]);
-
-  useEffect(() => {
-    if (!isLive) setSendHintOpen(false);
-  }, [isLive]);
 
   useEffect(() => {
     if (
@@ -847,15 +865,19 @@ export default function PromptInput({
   // A single chat carries its own model/reasoning; only fall back to the global
   // default while composing a brand-new chat that has no session yet.
   const chatScoped = !missionPreview && !!activeSession;
+  const chatModelSettings = activeSession
+    ? displayedModelSettings(activeSession, state.pendingActiveModelUpdate)
+    : undefined;
   const composerModels = providerModelCatalog(
     composerProvider,
     state.models,
     state.providerStatuses,
   );
+  const harnessModel = state.harnessModels[composerProvider];
   // Catalog validation applies to draft preferences, never to saved chat settings.
   const primaryModelId = chatScoped
-    ? activeSession.modelId
-    : providerModelSelection(composerProvider, state.agentConfig.primary.modelId, composerModels);
+    ? chatModelSettings?.modelId
+    : providerModelSelection(composerProvider, harnessModel.modelId, composerModels);
   const selectedModel = primaryModelId
     ? composerModels.find((m) => m.id === primaryModelId)
     : undefined;
@@ -876,11 +898,11 @@ export default function PromptInput({
   // on the chip and is created with none. That is the provider default when
   // nothing is pinned, the same model the chip's icon and label already use.
   const draftReasoning = resolveReasoningEffortDisplay(
-    state.agentConfig.primary.reasoning,
+    draftEffortFor(chipModel, harnessModel.reasoning),
     chipModel,
   );
   const primaryReasoning = chatScoped
-    ? resolveReasoningEffortDisplay(activeSession.reasoningEffort, chipModel)
+    ? resolveReasoningEffortDisplay(chatModelSettings?.reasoningEffort, chipModel)
     : draftReasoning;
   // The one model selection a new chat is created with. Built from the
   // validated id so no path can send a model the chat's provider never
@@ -942,18 +964,11 @@ export default function PromptInput({
     replaceTrigger('');
   };
 
-  const runCommand = (s: SlashCommand) => {
-    if (s.replacement !== undefined) {
-      replaceTrigger(s.replacement);
-      return;
-    }
-    replaceTrigger('');
-    s.run();
-  };
-
   const runMenuItem = (item: MenuItem) => {
-    if (item.type === 'command') runCommand(item.command);
-    else if (item.type === 'catalog') runCatalogRow(item.item);
+    if (item.type === 'command') {
+      replaceTrigger('');
+      item.command.run();
+    } else if (item.type === 'catalog') runCatalogRow(item.item);
     else addFile(item.path);
   };
 
@@ -1024,7 +1039,7 @@ export default function PromptInput({
         );
       }
       if (
-        submitCommandFor(text, {
+        runsAsCompactCommand(text, {
           visualizeSelected,
           skillCount: skills.length,
           fileCount: paths.length,
@@ -1131,19 +1146,14 @@ export default function PromptInput({
       return;
     }
 
-    const submitCommand = droidComposer
-      ? submitCommandFor(text, {
-          visualizeSelected,
-          skillCount: activeSkills.length,
-          fileCount: allFiles.length,
-        })
-      : null;
-    if (submitCommand === 'mission') {
-      dispatch({ type: 'TOGGLE_MISSION_CONTROL' });
-      clearAfterSubmit();
-      return;
-    }
-    if (submitCommand === 'compact') {
+    const compacts =
+      droidComposer &&
+      runsAsCompactCommand(text, {
+        visualizeSelected,
+        skillCount: activeSkills.length,
+        fileCount: allFiles.length,
+      });
+    if (compacts) {
       if (!primaryActionsEnabled) return;
       if (activeSession) compactSession(activeSession.appSessionId);
       clearAfterSubmit();
@@ -1478,6 +1488,13 @@ export default function PromptInput({
         runMenuItem(menu.rows[activeIndex]);
         return;
       }
+      const namedChip = e.key === ' ' ? chipNamedBy(trigger, menu) : null;
+      if (namedChip) {
+        e.preventDefault();
+        e.stopPropagation();
+        runMenuItem(namedChip);
+        return;
+      }
       if (e.key === 'Escape') {
         e.preventDefault();
         e.stopPropagation();
@@ -1548,9 +1565,7 @@ export default function PromptInput({
     }
   };
 
-  const boxBorder = isSpecMode
-    ? 'border-droid-orange/40 focus-within:border-droid-orange/60'
-    : 'border-droid-border focus-within:border-droid-border-hover';
+  const boxBorder = isSpecMode ? 'border-droid-orange/40' : 'border-droid-border';
 
   const viewerImage = imageAttachments.images.find((i) => i.id === viewerImageId) ?? null;
   // Files attached as paths (the @ menu, the picker, or a queued prompt brought
@@ -1563,9 +1578,6 @@ export default function PromptInput({
   // new chat; it renders as the top section of the composer card.
   const showStartIn = !activeSession && !missionPreview && !!cwd;
   const enterSteers = state.liveEnterBehavior === 'interrupt';
-  const idleSendTooltip = childActionsEnabled
-    ? 'Enter: send\nShift+Enter: newline'
-    : 'This child transcript is read-only';
   const promptPlaceholder = missionPreview
     ? activeSession
       ? targetChildSessionId
@@ -1582,11 +1594,134 @@ export default function PromptInput({
     attachedFiles.length > 0 ||
     fileAttachments.files.length > 0 ||
     imageAttachments.images.length > 0;
-  // The hint's host unmounts while a turn starts or the draft is empty; clear
+  // The app's one conversation, which may belong to another chat entirely. The
+  // orb is offered only where this chat's harness can hold a conversation and
+  // none is running anywhere; the chat that owns one gets its controls instead.
+  const voice = useVoiceControls();
+  const voiceHere = voice.view === 'dock';
+  const canStartVoice = canUseVoice(composerProvider) && !voiceHere;
+  // The chat currently being talked to, when it is not this one.
+  const voiceRunningOn = useStoreSelector((state) => {
+    const owner =
+      voice.view !== 'off' && voice.appSessionId ? state.sessions[voice.appSessionId] : undefined;
+    return owner ? owner.title : null;
+  });
+  const [takeoverOpen, setTakeoverOpen] = useState(false);
+  const voiceSlotRef = useRef<HTMLDivElement>(null);
+  // A chat started by voice has no prompt to create it with, so the orb creates
+  // the chat first and opens the conversation once that chat, and no other,
+  // arrives. `registered` marks the point where the wait can be read from the
+  // store, which is what tells an abandoned create from one still being
+  // prepared.
+  const voiceAwaiting = useRef<{ clientRef: string; registered: boolean } | null>(null);
+
+  // The orb: talk to the chat that is open, or start one and talk to that. A
+  // chat created this way opens with no prompt, so the first request is the
+  // spoken one.
+  const startHere = () => {
+    if (activeSession) {
+      voice.openOn(activeSession.appSessionId);
+      return;
+    }
+    if (voiceAwaiting.current) return;
+    const clientRef = newClientRef();
+    voiceAwaiting.current = { clientRef, registered: false };
+    void (async () => {
+      // Named for now by when it started; the first thing said in it renames it.
+      const placeholder = `Voice chat ${new Date().toLocaleTimeString([], {
+        hour: '2-digit',
+        minute: '2-digit',
+      })}`;
+      const preparation = await prepareDraftCwd(state.draftChat?.cwd ?? '', clientRef, placeholder);
+      if (!preparation.ok) {
+        voiceAwaiting.current = null;
+        return;
+      }
+      // A chat only takes focus when the renderer is waiting for it, and the
+      // conversation can only open on the chat that is on screen. There is no
+      // prompt to wait for here, so the wait is registered empty.
+      dispatch({ type: 'SET_PENDING_COMPOSE', clientRef, text: '', skills: [], files: [] });
+      if (voiceAwaiting.current?.clientRef === clientRef) voiceAwaiting.current.registered = true;
+      createSession({
+        clientRef,
+        cwd: preparation.path,
+        title: placeholder,
+        goal: '',
+        sessionPurpose: 'chat',
+        provider: draftProvider,
+        interactionMode: isSpecMode ? 'spec' : 'auto',
+        autonomy: draftAutonomy,
+        ...draftModelSettings,
+        compactionModel:
+          state.compactionModel === 'current-model' ? undefined : state.compactionModel,
+        ...compactionSettingsSnapshot(compactionSettingsInput),
+      });
+    })().catch(() => {
+      // The chat was never created, so nothing is being waited for and the orb
+      // works again. The failure itself is reported by the command that raised
+      // it.
+      voiceAwaiting.current = null;
+    });
+  };
+
+  const startVoice = () => {
+    // One conversation at a time: the one that is running is ended by asking,
+    // never by starting another on top of it.
+    if (voiceRunningOn) {
+      setTakeoverOpen(true);
+      return;
+    }
+    startHere();
+  };
+
+  // The chat the orb asked for has arrived and is on screen: open the
+  // conversation on it. A create that never landed releases the wait instead,
+  // so the next chat the user opens is not talked to by accident.
+  useEffect(() => {
+    const waiting = voiceAwaiting.current;
+    if (!waiting) return;
+    const created = state.lastCreatedSessionRequest;
+    if (created?.clientRef === waiting.clientRef) {
+      if (activeSession?.appSessionId !== created.appSessionId) return;
+      voiceAwaiting.current = null;
+      voice.openOn(created.appSessionId, { nameFromSpeech: true });
+      return;
+    }
+    if (waiting.registered && !state.pendingCompose[waiting.clientRef])
+      voiceAwaiting.current = null;
+  }, [activeSession, state.lastCreatedSessionRequest, state.pendingCompose, voice]);
+
+  const showSendAction = !canStartVoice || hasContent || isLive || turnStarting;
+  // The hint's host swaps (send, stop, spinner) as a turn starts and ends; clear
   // the state with it so the hint never reopens without a hover or focus.
   useEffect(() => {
-    if (!isLive || !hasContent || turnStarting) setSendHintOpen(false);
-  }, [isLive, hasContent, turnStarting]);
+    setSendHintOpen(false);
+  }, [isLive, turnStarting]);
+
+  const sendButton = (
+    <ComposerSendButton
+      parked={!showSendAction}
+      starting={turnStarting}
+      live={isLive}
+      hasContent={hasContent}
+      disabled={!childActionsEnabled || runtimeActionsBlocked}
+      title={
+        appUpdateInstalling
+          ? 'Installing DROIDEX update'
+          : runtimeReady
+            ? 'This child transcript is read-only'
+            : 'Agent runtime is unavailable'
+      }
+      enterSteers={enterSteers}
+      hintOpen={sendHintOpen}
+      onHintOpenChange={setSendHintOpen}
+      onSend={() => void handleSubmit(isLive && enterSteers ? 'now' : 'queue')}
+      onStop={() => {
+        if (activeSession)
+          interruptVisibleSession(activeSession.appSessionId, targetChildSessionId);
+      }}
+    />
+  );
 
   return (
     <div
@@ -1614,8 +1749,14 @@ export default function PromptInput({
         />
 
         <PlanApprovalInline />
-        <PermissionInline />
-        <AskUserInline />
+        {/* The full voice surface covers this composer and shows the same two
+            cards itself, so only one of the two places owns an ask at a time. */}
+        {voice.view !== 'full' && (
+          <>
+            <PermissionInline />
+            <AskUserInline />
+          </>
+        )}
 
         {missionPreview ? (
           <div
@@ -1647,20 +1788,30 @@ export default function PromptInput({
         )}
 
         {showStartIn && (
-          <div className="relative z-0 mx-[6%] -mb-3 min-w-0 rounded-t-2xl border border-droid-border bg-droid-surface px-4 pb-4 pt-1.5">
+          <div
+            className="relative z-0 mx-[6%] -mb-3 min-w-0 border border-droid-border bg-droid-surface px-4 pb-4 pt-1.5"
+            // The composer's own 20px corner, carried onto the tab above it.
+            style={{ borderTopLeftRadius: 20, borderTopRightRadius: 20 }}
+          >
             <StartInBar />
           </div>
         )}
 
         <ComposerDock />
 
+        {voiceHere && (
+          <Suspense fallback={null}>
+            <VoiceOrbDock />
+          </Suspense>
+        )}
+
         <div
-          className={`relative z-10 bg-droid-elevated border rounded-2xl transition-colors ${missionPreview ? '' : boxBorder}`}
+          className={`relative z-10 bg-droid-raised border rounded-[20px] shadow-droid-sm transition-colors ${missionPreview ? '' : boxBorder}`}
           style={
             missionPreview
               ? {
-                  borderColor: accentMix(40),
-                  boxShadow: `0 0 0 1px ${accentMix(13)}, 0 10px 30px -12px ${accentMix(33)}`,
+                  borderColor: accentMix(20),
+                  boxShadow: `var(--droid-shadow-sm), 0 0 0 3px ${accentMix(6)}`,
                 }
               : undefined
           }
@@ -1785,7 +1936,7 @@ export default function PromptInput({
 
           {/* Toolbar — one seamless surface with the draft, no divider line.
               It wraps on narrow windows rather than pushing controls offscreen. */}
-          <div className="flex flex-wrap items-center gap-1.5 px-2.5 pb-2.5 pt-1">
+          <div className="flex flex-wrap items-center gap-1 px-2 pb-2 pt-1">
             <AddMenu
               open={addMenuOpen}
               onOpenChange={setAddMenuOpen}
@@ -1802,186 +1953,177 @@ export default function PromptInput({
               }}
             />
 
-            <ProviderPicker
-              value={activeSession ? activeSession.provider : draftProvider}
-              locked={activeSession !== null}
-              open={providerOpen}
-              onOpenChange={setProviderOpen}
-              onSelect={(provider) => {
-                dispatch({ type: 'SET_DRAFT_PROVIDER', provider });
-              }}
-            />
-
-            <div className="relative shrink-0">
-              <button
-                onClick={() => {
-                  setModelsOpen((v) => !v);
-                }}
-                className={`flex items-center gap-1.5 px-2 py-1 rounded-lg text-[11px] transition-colors max-w-[200px] ${
-                  modelsOpen
-                    ? 'bg-droid-bg/60 text-droid-text'
-                    : 'text-droid-text-secondary hover:text-droid-text hover:bg-droid-bg/40'
-                }`}
+            {/* Autonomy: read-only for a targeted child, live control for an
+                open session, draft override before a session exists. */}
+            {targetChild ? (
+              <span
+                className="flex shrink-0 items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] text-droid-text-muted"
                 title={
-                  childSettingsTarget
-                    ? `${childSettingsTarget.label} · ${childSettingsReadinessLabel(childSettingsTarget.readiness)}`
-                    : missionPreview
-                      ? 'Configure orchestrator / worker / validator models'
-                      : 'Select chat model'
+                  targetChild.autonomy
+                    ? `Child session autonomy: ${AUTONOMY_LABELS[targetChild.autonomy]}`
+                    : 'Child autonomy is managed by the provider until the session is opened'
                 }
               >
-                {childSettingsTarget ? (
-                  <>
-                    <ModelIcon
-                      provider={providerOf(
-                        state.models.find((model) => model.id === childSettingsTarget.modelId),
-                        childSettingsTarget.modelId,
-                      )}
-                      size={14}
-                    />
-                    <span className="truncate">{childSettingsTarget.label}</span>
-                  </>
-                ) : missionPreview ? (
-                  <>
-                    <SlidersHorizontal className="w-3.5 h-3.5 shrink-0" />
-                    <span>Models</span>
-                  </>
-                ) : (
-                  <>
-                    <ModelIcon provider={providerOf(chipModel, primaryModelId)} size={14} />
-                    <span className="truncate">{selectedModelLabel}</span>
-                    {primaryReasoning && (
-                      <span
-                        className={`shrink-0 capitalize ${
-                          primaryReasoning === 'ultra'
-                            ? 'text-droid-ultra'
-                            : 'text-droid-text-muted'
-                        }`}
-                        title={`Reasoning: ${reasoningEffortLabel(primaryReasoning, composerProvider)}`}
-                      >
-                        {reasoningEffortLabel(primaryReasoning, composerProvider)}
-                      </span>
-                    )}
-                  </>
-                )}
-                <ChevronDown
-                  className={`w-3 h-3 shrink-0 text-droid-text-muted/40 transition-transform ${modelsOpen ? 'rotate-180' : ''}`}
-                />
-              </button>
-
-              <AnimatePresence>
-                {modelsOpen && (
-                  <ModelSelectorPopover
-                    onClose={() => {
-                      setModelsOpen(false);
-                    }}
-                    singleAgent={!missionPreview}
-                    childTarget={childSettingsTarget}
-                  />
-                )}
-              </AnimatePresence>
-            </div>
-
-            {specComposer && (
-              <button
-                onClick={toggleSpec}
-                className={`flex items-center gap-1.5 px-2 py-1 rounded-lg text-[11px] transition-colors shrink-0 ${
-                  isSpecMode
-                    ? 'text-droid-accent bg-droid-accent/10 hover:bg-droid-accent/15'
-                    : 'text-droid-text-secondary hover:text-droid-text hover:bg-droid-bg/40'
-                }`}
-              >
-                <span>{isSpecMode ? 'Spec' : 'Chat'}</span>
-              </button>
+                <span>
+                  {targetChild.autonomy
+                    ? AUTONOMY_LABELS[targetChild.autonomy]
+                    : 'Provider managed'}
+                </span>
+              </span>
+            ) : activeSession ? (
+              <AutonomySelector
+                align="start"
+                scope="session"
+                value={activeSession.autonomy}
+                pending={activeSession.appSessionId in state.pendingAutonomy}
+                onSelect={(level) => {
+                  dispatch({
+                    type: 'AUTONOMY_UPDATE_REQUESTED',
+                    appSessionId: activeSession.appSessionId,
+                    autonomy: level,
+                  });
+                  updateSessionSettings({
+                    appSessionId: activeSession.appSessionId,
+                    autonomy: level,
+                  });
+                }}
+              />
+            ) : (
+              <AutonomySelector
+                align="start"
+                scope="draft"
+                value={draftAutonomy}
+                onSelect={(level) => {
+                  dispatch({ type: 'SET_DRAFT_AUTONOMY', autonomy: level });
+                }}
+              />
             )}
 
             {/* Trailing cluster. It wraps to its own row as one unit on
-                narrow windows, and justify-end keeps the send button on the
+                narrow windows, and justify-end keeps the action slot on the
                 right edge instead of dropping it to the row start. flex-auto
                 (not flex-1) so its content width is what triggers the wrap. */}
-            <div className="flex min-w-0 flex-auto items-center justify-end gap-1.5">
-              {/* Autonomy: read-only for a targeted child, live control for an
-                open session, draft override before a session exists. */}
-              {targetChild ? (
-                <span
-                  className="flex items-center gap-1.5 px-2 py-1 rounded-lg text-[11px] text-droid-text-muted shrink-0"
+            <div className="flex min-w-0 flex-auto items-center justify-end gap-1">
+              <div className="relative shrink-0">
+                <button
+                  onPointerEnter={() => {
+                    void (state.modelSelectorStyle === 'slider'
+                      ? loadModelSliderPopover()
+                      : loadModelSelectorPopover());
+                  }}
+                  onClick={() => {
+                    setModelsOpen((v) => !v);
+                  }}
+                  className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] transition-colors max-w-[200px] ${
+                    modelsOpen
+                      ? 'bg-droid-bg/60 text-droid-text'
+                      : 'text-droid-text-secondary hover:text-droid-text hover:bg-droid-bg/40'
+                  }`}
                   title={
-                    targetChild.autonomy
-                      ? `Child session autonomy: ${AUTONOMY_LABELS[targetChild.autonomy]}`
-                      : 'Child autonomy is managed by the provider until the session is opened'
+                    childSettingsTarget
+                      ? `${childSettingsTarget.label} · ${childSettingsReadinessLabel(childSettingsTarget.readiness)}`
+                      : missionPreview
+                        ? 'Configure orchestrator / worker / validator models'
+                        : 'Select chat model'
                   }
                 >
-                  <span>
-                    {targetChild.autonomy
-                      ? AUTONOMY_LABELS[targetChild.autonomy]
-                      : 'Provider managed'}
-                  </span>
-                </span>
-              ) : activeSession ? (
-                <AutonomySelector
-                  scope="session"
-                  value={activeSession.autonomy}
-                  pending={activeSession.appSessionId in state.pendingAutonomy}
-                  onSelect={(level) => {
-                    dispatch({
-                      type: 'AUTONOMY_UPDATE_REQUESTED',
-                      appSessionId: activeSession.appSessionId,
-                      autonomy: level,
-                    });
-                    updateSessionSettings({
-                      appSessionId: activeSession.appSessionId,
-                      autonomy: level,
-                    });
-                  }}
-                />
-              ) : (
-                <AutonomySelector
-                  scope="draft"
-                  value={draftAutonomy}
-                  onSelect={(level) => {
-                    dispatch({ type: 'SET_DRAFT_AUTONOMY', autonomy: level });
-                  }}
-                />
-              )}
-
-              {activeSession && visibleTarget.kind === 'primary' && (
-                <button
-                  ref={scheduleAnchorRef}
-                  type="button"
-                  aria-label="Schedule prompt"
-                  aria-haspopup="dialog"
-                  aria-expanded={scheduleTarget?.appSessionId === activeSession.appSessionId}
-                  title="Schedule this prompt for later"
-                  disabled={!hasContent || appUpdateInstalling}
-                  onClick={() => {
-                    setScheduleTarget({ appSessionId: activeSession.appSessionId });
-                  }}
-                  className="rounded-lg px-1.5 py-2 text-droid-text-muted transition-colors hover:bg-droid-bg/40 hover:text-droid-text focus-visible:outline focus-visible:outline-droid-border-hover disabled:opacity-30"
-                >
-                  <Clock className="h-3.5 w-3.5" />
+                  {childSettingsTarget ? (
+                    <>
+                      <ModelIcon
+                        provider={providerOf(
+                          state.models.find((model) => model.id === childSettingsTarget.modelId),
+                          childSettingsTarget.modelId,
+                        )}
+                        size={14}
+                      />
+                      <span className="truncate">{childSettingsTarget.label}</span>
+                    </>
+                  ) : missionPreview ? (
+                    <>
+                      <SlidersHorizontal className="w-3.5 h-3.5 shrink-0" />
+                      <span>Models</span>
+                    </>
+                  ) : (
+                    <>
+                      <ModelIcon provider={providerOf(chipModel, primaryModelId)} size={14} />
+                      <span className="truncate font-medium text-droid-text">
+                        {selectedModelLabel}
+                      </span>
+                      {primaryReasoning && (
+                        <span
+                          className={`shrink-0 capitalize ${
+                            primaryReasoning === 'ultra'
+                              ? 'text-droid-ultra'
+                              : 'text-droid-text-muted'
+                          }`}
+                          title={`Reasoning: ${reasoningEffortLabel(primaryReasoning, composerProvider)}`}
+                        >
+                          {reasoningEffortLabel(primaryReasoning, composerProvider)}
+                        </span>
+                      )}
+                    </>
+                  )}
                 </button>
-              )}
-              <ComposerSendButton
-                starting={turnStarting}
-                live={isLive}
-                hasContent={hasContent}
-                disabled={!childActionsEnabled || runtimeActionsBlocked}
-                title={
-                  appUpdateInstalling
-                    ? 'Installing DROIDEX update'
-                    : runtimeReady
-                      ? idleSendTooltip
-                      : 'Agent runtime is unavailable'
-                }
-                enterSteers={enterSteers}
-                hintOpen={sendHintOpen}
-                onHintOpenChange={setSendHintOpen}
-                onSend={() => void handleSubmit(isLive && enterSteers ? 'now' : 'queue')}
-                onStop={() => {
-                  if (activeSession)
-                    interruptVisibleSession(activeSession.appSessionId, targetChildSessionId);
-                }}
-              />
+
+                <AnimatePresence>
+                  <Suspense fallback={null}>
+                    {modelsOpen &&
+                      // The slider style is a chat-composer picker; Mission Control
+                      // and exact-child editors keep the classic popover's semantics.
+                      (state.modelSelectorStyle === 'slider' &&
+                      !missionPreview &&
+                      !childSettingsTarget ? (
+                        <ModelSliderPopover
+                          onClose={() => {
+                            setModelsOpen(false);
+                          }}
+                        />
+                      ) : (
+                        <ModelSelectorPopover
+                          onClose={() => {
+                            setModelsOpen(false);
+                          }}
+                          singleAgent={!missionPreview}
+                          childTarget={childSettingsTarget}
+                        />
+                      ))}
+                  </Suspense>
+                </AnimatePresence>
+              </div>
+
+              <div ref={scheduleAnchorRef} className="shrink-0">
+                {voiceHere ? (
+                  <Suspense fallback={null}>
+                    <VoiceComposerControls />
+                  </Suspense>
+                ) : canStartVoice ? (
+                  <div ref={voiceSlotRef}>
+                    <Suspense fallback={sendButton}>
+                      <VoiceSendSlot showSend={showSendAction} onVoice={startVoice}>
+                        {sendButton}
+                      </VoiceSendSlot>
+                    </Suspense>
+                    {voiceRunningOn !== null && (
+                      <Suspense fallback={null}>
+                        <VoiceTakeoverPopover
+                          open={takeoverOpen}
+                          onClose={() => {
+                            setTakeoverOpen(false);
+                          }}
+                          anchorRef={voiceSlotRef}
+                          runningOn={voiceRunningOn}
+                          onTakeOver={() => {
+                            voice.close();
+                            startHere();
+                          }}
+                        />
+                      </Suspense>
+                    )}
+                  </div>
+                ) : (
+                  sendButton
+                )}
+              </div>
             </div>
           </div>
         </div>
@@ -2038,6 +2180,13 @@ export default function PromptInput({
               sessionTitle={activeSession.title}
               onSave={schedulePrompt}
               onClose={() => {
+                // Scheduling opens from the draft's menu, so a close from inside
+                // the panel (Escape, Close, Save) hands focus back to the draft;
+                // a click elsewhere keeps its own focus.
+                const focused = document.activeElement;
+                if (focused instanceof Element && focused.closest('[role="dialog"]')) {
+                  editorRef.current?.focus();
+                }
                 setScheduleTarget((current) => (current === scheduleTarget ? null : current));
               }}
             />

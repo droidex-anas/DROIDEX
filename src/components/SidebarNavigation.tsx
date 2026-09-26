@@ -38,10 +38,8 @@ export function SidebarNavigation() {
           });
           dispatch({ type: 'OPEN_PULL_REQUESTS', cwd });
         }}
-        className={`group mt-0.5 flex w-full items-center gap-2.5 rounded-xl px-2.5 py-1.5 text-[13px] font-medium transition-colors ${
-          state.mainView === 'pull-requests'
-            ? 'bg-droid-active text-droid-text'
-            : 'text-droid-text hover:bg-droid-elevated'
+        className={`group mt-0.5 flex w-full cursor-pointer items-center gap-2.5 rounded-xl px-2.5 py-1.5 text-[13px] font-medium text-droid-text transition-colors ${
+          state.mainView === 'pull-requests' ? 'bg-droid-active' : ''
         }`}
       >
         <span
@@ -62,10 +60,8 @@ export function SidebarNavigation() {
           dispatch({ type: 'OPEN_AUTOMATIONS' });
         }}
         aria-current={state.mainView === 'automations' ? 'page' : undefined}
-        className={`group mt-0.5 flex w-full items-center gap-2.5 rounded-xl px-2.5 py-1.5 text-[13px] font-medium transition-colors ${
-          state.mainView === 'automations'
-            ? 'bg-droid-active text-droid-text'
-            : 'text-droid-text hover:bg-droid-elevated'
+        className={`group mt-0.5 flex w-full cursor-pointer items-center gap-2.5 rounded-xl px-2.5 py-1.5 text-[13px] font-medium text-droid-text transition-colors ${
+          state.mainView === 'automations' ? 'bg-droid-active' : ''
         }`}
       >
         <Clock
