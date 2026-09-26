@@ -188,6 +188,7 @@ const RECOMMENDED = 'default';
 interface ClaudeModel {
   value: string;
   displayName: string;
+  description?: string;
   resolvedModel?: string;
   supportedEffortLevels?: EffortLevel[];
   supportsFastMode?: boolean;
@@ -237,7 +238,7 @@ function claudeSettings(): { model?: string; effortLevel?: ReasoningEffort } {
 // levels for — Haiku — offers none here either, and its rows show no stepper.
 function providerModel(model: ClaudeModel, configured: ReasoningEffort | undefined): ModelInfo[] {
   const id = model.value.trim();
-  const displayName = model.displayName.trim();
+  const displayName = versionedDisplayName(model.displayName.trim(), model.description);
   if (!id || !displayName) return [];
   const cliEfforts = (model.supportedEffortLevels ?? []).flatMap((level) => {
     const effort = reasoningValue(level);
@@ -265,6 +266,15 @@ function providerModel(model: ClaudeModel, configured: ReasoningEffort | undefin
         : {}),
     },
   ];
+}
+
+// The CLI labels a model by its alias ("Opus") and leads its description with
+// the versioned name ("Opus 5 with 1M context · …"); the picker shows the version.
+function versionedDisplayName(displayName: string, description: string | undefined): string {
+  const match = /^(\S+) (\d+(?:\.\d+)*)\b/.exec(description ?? '');
+  if (!match || !displayName.startsWith(match[1]) || /^\S+ \d/.test(displayName))
+    return displayName;
+  return `${match[1]} ${match[2]}${displayName.slice(match[1].length)}`;
 }
 
 // The level a chat on this model starts on: the CLI's own configured effort

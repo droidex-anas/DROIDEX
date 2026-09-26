@@ -4,6 +4,7 @@ import {
   BUILT_IN_THEMES,
   SKILL_COLORS,
   ULTRA_COLORS,
+  UPDATE_COLORS,
   contrastRatio,
   CUSTOM_THEME_ID,
   DEFAULT_THEME,
@@ -56,12 +57,12 @@ describe('BUILT_IN_THEMES', () => {
     assert.equal(DEFAULT_THEME.id, 'droid');
   });
 
-  it('light canvases are tinted (not near-white) with surfaces above them', () => {
+  it('light canvases are soft off-whites with surfaces above them', () => {
     for (const preset of BUILT_IN_THEMES) {
       const { bg, surface } = preset.light;
       assert.ok(
-        relativeLuminance(bg) < 0.86,
-        `${preset.id} light bg ${bg} should sit below searing white`,
+        relativeLuminance(bg) < 0.96,
+        `${preset.id} light bg ${bg} should sit below pure white`,
       );
       assert.ok(
         relativeLuminance(surface) > relativeLuminance(bg),
@@ -232,6 +233,15 @@ describe('fixed label colors', () => {
           `${preset.id} ${scheme} ultra label should reach 4.5:1`,
         );
       }
+    }
+  });
+
+  it('keeps the update pill label readable on both of its blues', () => {
+    for (const blue of [UPDATE_COLORS.base, UPDATE_COLORS.hover]) {
+      assert.ok(
+        contrastRatio('#ffffff', blue) >= 4.5,
+        `update pill label should reach 4.5:1 on ${blue}`,
+      );
     }
   });
 });

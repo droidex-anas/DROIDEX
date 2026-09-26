@@ -2,7 +2,12 @@ import type { McpServerConfig } from '@factory/droid-sdk';
 
 import type { CreateRuntimeSessionOptions } from '../DroidRuntime.js';
 import type { NormalizedEvent } from '../normalize.js';
-import type { Autonomy, ReasoningEffort, SessionInteractionMode } from '../protocol.js';
+import type {
+  Autonomy,
+  ReasoningEffort,
+  SessionInteractionMode,
+  VoiceNarration,
+} from '../protocol.js';
 import type { ProviderMention, SkillInfo } from './catalog.js';
 import type { ProviderInteractions } from './interactions.js';
 import type { ProviderKind } from './providerKind.js';
@@ -44,6 +49,39 @@ export interface ProviderModelSettings {
   fastMode?: boolean;
 }
 
+// A live voice conversation on the same session: the client negotiates WebRTC
+// with the provider's own service, so audio never reaches the sidecar. The
+// session relays the handshake and reports what was said.
+export type { VoiceNarration };
+
+export interface ProviderVoiceStart {
+  // The client's SDP offer, built from its microphone and audio sink.
+  sdp: string;
+  /** Names this negotiation, so its answer is not taken by the next one. */
+  attempt: string;
+  // One of the voices `listVoices` published; absent takes the provider default.
+  voice?: string;
+  // How much the agent's work is spoken while it runs.
+  narration?: VoiceNarration;
+}
+
+export type ProviderVoiceEvent =
+  | { kind: 'answer'; sdp: string; attempt: string }
+  | { kind: 'started' }
+  | { kind: 'transcript'; role: 'user' | 'assistant'; text: string; final: boolean }
+  | { kind: 'closed' }
+  | { kind: 'error'; message: string };
+
+export interface ProviderVoice {
+  /** True from the moment a conversation is asked for until it is stopped. */
+  isLive(): boolean;
+  // The voices this provider offers, and the one it uses when none is chosen.
+  listVoices(): Promise<{ voices: string[]; defaultVoice?: string }>;
+  start(input: ProviderVoiceStart): Promise<void>;
+  stop(): Promise<void>;
+  onEvent(listener: (event: ProviderVoiceEvent) => void): () => void;
+}
+
 export interface ProviderSession {
   readonly provider: ProviderKind;
   // Native id of the session the provider holds open.
@@ -66,6 +104,14 @@ export interface ProviderSession {
   ): AsyncGenerator<NormalizedEvent, void, undefined>;
   // Events delivered between turns, never duplicated by stream().
   onBackgroundEvent?(listener: (event: NormalizedEvent) => void): () => void;
+
+  /**
+   * A turn the provider started by itself, outside `stream()`, and the moment
+   * it ends. A spoken request is one: the chat is running a turn nobody asked
+   * for through the composer, and the rest of the app has to know so a typed
+   * prompt queues behind it and Stop can reach it.
+   */
+  onDelegatedTurn?(listener: (running: boolean) => void): () => void;
   // Takes a prompt into the turn that is already running, so the turn keeps its
   // work and continues with it. Absent on a provider that can only steer by
   // interrupting and resending, which is what the session layer then does.
@@ -80,6 +126,8 @@ export interface ProviderSession {
   // Only for a provider that has a planning mode of its own. Absent means the
   // session runs in Auto always, and the composer offers no Spec toggle for it.
   setInteractionMode?(mode: SessionInteractionMode): Promise<void>;
+  // Present only on a provider that can hold a voice conversation.
+  readonly voice?: ProviderVoice;
   interrupt(): Promise<void>;
   close(): Promise<void>;
 }

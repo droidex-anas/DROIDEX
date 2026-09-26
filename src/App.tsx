@@ -33,6 +33,7 @@ import { useChatPullRequests } from './hooks/useChatPullRequests';
 import { useDocumentVisible } from './hooks/useDocumentVisible';
 import { applyTheme, findPreset, resolveVariant } from './lib/theme';
 import { useOnboarding, shouldShowOnboarding, hasSetupBlocker } from './hooks/useOnboarding';
+import { useHarnessCliAutoUpdate } from './hooks/useHarnessClis';
 import SetupBanner from './components/onboarding/SetupBanner';
 import { useMeasuredHeight } from './hooks/useMeasuredHeight';
 import { addNativeSurfaceObscurer } from './hooks/useObscuresNativeSurfaces';
@@ -457,6 +458,13 @@ export default function App() {
       updateCli(onboard.onboarding.installChannel);
     }
   }, [embedded, onboard.ready, onboard.onboarding, onboard.env]);
+
+  useHarnessCliAutoUpdate(
+    !embedded &&
+      onboard.ready &&
+      onboard.onboarding?.completed === true &&
+      onboard.onboarding.harnessCliAutoUpdate !== false,
+  );
 
   // Surface the result of a background CLI update.
   useEffect(() => {
@@ -944,10 +952,10 @@ export default function App() {
               onClick={toggleRightPanel}
               aria-label="Toggle context panel"
               aria-pressed={state.rightPanelOpen}
-              className={`rounded-md p-1.5 transition-colors ${
-                state.rightPanelOpen
-                  ? 'bg-droid-elevated text-droid-text'
-                  : 'text-droid-text-muted/70 hover:bg-droid-elevated/60 hover:text-droid-text'
+              // No pressed fill: like the sidebar and utility toggles beside it,
+              // the open panel is its own evidence; the icon only brightens.
+              className={`rounded-md p-1.5 transition-colors hover:bg-droid-elevated/60 hover:text-droid-text ${
+                state.rightPanelOpen ? 'text-droid-text' : 'text-droid-text-muted/70'
               }`}
               title="Toggle context"
             >

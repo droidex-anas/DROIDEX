@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
-import { ChevronRight, Upload } from 'lucide-react';
-import { Spinner } from '@droidex/icons';
+import { ChevronRight } from 'lucide-react';
+import { Spinner, Upload } from '@droidex/icons';
 import { GitCommitIcon, GitHubMarkIcon, PrStateIcon } from './GithubIcons';
 import { Row } from './primitives';
 import { CommitSheet } from './CommitSheet';

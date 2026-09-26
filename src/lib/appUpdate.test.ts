@@ -229,5 +229,5 @@ test('sidebar download button only appears for a discovered update', async () =>
   );
   assert.match(html, /Review DROIDEX 1\.1\.4 update/);
   assert.match(html, /<button/);
-  assert.match(html, /lucide-download/);
+  assert.match(html, /data-icon="download"/);
 });

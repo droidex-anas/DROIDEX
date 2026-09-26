@@ -129,6 +129,19 @@ export default tseslint.config(
       globals: { ...globals.node },
       sourceType: 'commonjs',
     },
+    rules: {
+      'no-restricted-syntax': [
+        'error',
+        {
+          selector: "MemberExpression[property.name='enableDeviceEmulation']",
+          message: 'Chromium device emulation crashed the Browser pane.',
+        },
+        {
+          selector: "Literal[value='Emulation.setDeviceMetricsOverride']",
+          message: 'Chromium device emulation crashed the Browser pane.',
+        },
+      ],
+    },
   },
 
   prettierConfig,

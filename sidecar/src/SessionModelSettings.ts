@@ -88,17 +88,18 @@ export class SessionModelSettings {
     }
   }
 
+  /** Resolves false when the change was dropped because its session closed or was replaced. */
   update(
     requestedId: string,
     agent: ConfigurableSessionRole,
     settings: ProviderModelSettings,
-  ): Promise<void> {
+  ): Promise<boolean> {
     if (
       settings.modelId === undefined &&
       settings.reasoningEffort === undefined &&
       settings.fastMode === undefined
     )
-      return Promise.resolve();
+      return Promise.resolve(true);
     return this.serialize(
       requestedId,
       async (appSessionId, live, isCurrent) => {
@@ -109,7 +110,7 @@ export class SessionModelSettings {
             appSessionId,
             message: 'Worker and validator model settings only apply to Mission Control sessions.',
           });
-          return;
+          return true;
         }
         if (
           settings.fastMode !== undefined &&
@@ -120,24 +121,25 @@ export class SessionModelSettings {
           );
         if (!summary) {
           this.remember(appSessionId, agent, settings);
-          return;
+          return true;
         }
         const selected = mergeSettings(this.pending.get(appSessionId)?.[agent], settings);
         const runtimeSettings = await this.runtimeSettings(summary, agent, selected);
-        if (!isCurrent()) return;
+        if (!isCurrent()) return false;
         const selection = summary.provider === DEFAULT_PROVIDER ? runtimeSettings : selected;
         const next = { ...summary, ...this.summaryPatch(agent, selection) };
         const change = await this.primaryModelChange(summary, next, agent, settings);
-        if (!isCurrent()) return;
+        if (!isCurrent()) return false;
         await this.applyProvider(summary, live, agent, runtimeSettings, isCurrent);
-        if (!isCurrent()) return;
+        if (!isCurrent()) return false;
         this.persistAccepted(summary, live, agent, selection);
-        if (agent !== 'primary') return;
+        if (agent !== 'primary') return true;
         // Only a model change earns a row; a new effort shows on the chip.
         if (change) this.d.onPrimaryModelChanged(next, change.from, change.to);
         if (live) await this.d.refreshPrimary(live, selected.modelId !== undefined);
+        return true;
       },
-      undefined,
+      false,
     );
   }
 

@@ -64,7 +64,7 @@ export function BrowserFocusWorkspace({
                 {activeSession && (
                   <RunningProcessesMenu appSessionId={activeSession.appSessionId} />
                 )}
-                <div className="min-w-0 flex-1 overflow-hidden rounded-xl border border-droid-border bg-droid-elevated/95 shadow-[0_-12px_36px_rgba(0,0,0,0.24)] backdrop-blur">
+                <div className="min-w-0 flex-1 overflow-hidden rounded-xl border border-droid-border bg-droid-raised/95 shadow-[0_-12px_36px_rgba(0,0,0,0.24)] backdrop-blur">
                   <button
                     type="button"
                     aria-expanded={activityOpen}
