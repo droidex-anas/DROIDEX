@@ -1,8 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { ingestTranscriptEvents } from './transcriptIngestion';
 import type { TranscriptEvent } from '../types/bridge';
 import {
   estimateRetainedPayloadCost,
+  estimateReplacedTranscriptEventCost,
   estimateTranscriptCost,
   releaseChildTranscriptWindow,
   releaseTranscriptWindow,
@@ -174,4 +176,48 @@ test('child release trims only one logical child and preserves parent and siblin
     'child-8',
   );
   assert.equal(result.events.at(-1)?.id, 'sibling-2');
+});
+
+test('streamed text accounting matches full estimates across Unicode and metadata changes', () => {
+  for (const initial of [
+    event('initial'),
+    event('initial', { text: undefined, endTs: undefined }),
+  ]) {
+    const shared = { payload: 'unchanged nested metadata' };
+    let events: TranscriptEvent[] = [
+      { ...initial, author: undefined, toolArgs: { first: shared, second: shared } },
+    ];
+    let cost = estimateTranscriptCost(events);
+    for (const [index, text] of [
+      '😀漢字',
+      '\ud83d',
+      '\ude00',
+      '\ud83d',
+      'ascii',
+      '\ude00',
+    ].entries()) {
+      const next = ingestTranscriptEvents(events, cost, [
+        event(`delta-${index}`, { text, ts: index + 10 }),
+      ]);
+      assert.equal(next.estimatedCost, estimateRetainedPayloadCost(Array.from(next.events)));
+      assert.equal(next.events[0].endTs, index + 10);
+      events = next.events;
+      cost = next.estimatedCost;
+    }
+  }
+  const withoutText = event('missing');
+  delete withoutText.text;
+  const next = ingestTranscriptEvents([withoutText], estimateTranscriptCost([withoutText]), [
+    event('delta', { text: '漢' }),
+  ]);
+  assert.equal(next.estimatedCost, estimateRetainedPayloadCost(Array.from(next.events)));
+});
+
+test('arbitrary event replacements still estimate the complete changed payload', () => {
+  const previous = event('before', { text: '😀'.repeat(100) });
+  const next = event('after', { text: 'replacement', toolArgs: { nested: ['漢字'] } });
+  assert.equal(
+    estimateReplacedTranscriptEventCost(estimateTranscriptCost([previous]), previous, next),
+    estimateRetainedPayloadCost([next]),
+  );
 });

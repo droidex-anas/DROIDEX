@@ -7,6 +7,7 @@ import {
   replaceChunkedSequenceSuffix,
 } from './chunkedSequence';
 import {
+  appendTranscriptText,
   estimateAppendedTranscriptCost,
   estimateReplacedTranscriptEventCost,
 } from './transcriptWindow';
@@ -84,11 +85,11 @@ export function ingestTranscriptEvents(
     const textDelta = getTextDeltaRun(last, event);
     if (textDelta) {
       const changedIndex = events.length - 1;
-      const mergedTail: TranscriptEvent = {
-        ...textDelta.previous,
-        text: (textDelta.previous.text ?? '') + textDelta.text,
-        endTs: event.endTs ?? event.ts,
-      };
+      const mergedTail = appendTranscriptText(
+        textDelta.previous,
+        textDelta.text,
+        event.endTs ?? event.ts,
+      );
       events = replaceChunkedSequenceAt(events, changedIndex, mergedTail);
       indexes = replaceIndexedEvent(indexes, textDelta.previous, mergedTail);
       recordChange(changedIndex);

@@ -174,6 +174,7 @@ import {
   withUpdatedTranscript,
 } from '../lib/transcriptStoreMemory';
 import { type TranscriptMutation } from '../lib/transcriptMutation';
+import { reduceSessionChildren } from './storeSessionChildren';
 import { reduceStoreActionBatch } from './storeActionBatch';
 import {
   invalidateSelectedChildOpening,
@@ -184,7 +185,6 @@ import {
   reduceChildTranscriptViewport,
   reduceChildUpdated,
   reduceSelectChild,
-  reduceSessionChild,
   releaseInactiveSelectedChild,
   type ChildAccess,
   type ChildHistoryState,
@@ -430,7 +430,7 @@ export interface AppState {
   lastCreatedSessionRequest: { clientRef: string; appSessionId: string } | null;
 }
 
-type Action =
+export type Action =
   | { type: 'BATCH'; actions: Action[] }
   // Connection
   | {
@@ -1197,7 +1197,7 @@ function baseReducer(state: AppState, action: Action): AppState {
     }
 
     case 'SESSION_CHILD':
-      return reduceSessionChild(state, action);
+      return reduceSessionChildren(state, [action]);
 
     case 'CHILD_UPDATED':
       return reduceChildUpdated(state, action);

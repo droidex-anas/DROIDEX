@@ -20,17 +20,36 @@ export function sessionIsLive(session: Pick<SessionSummary, 'phase' | 'streaming
   return CLEARLY_ACTIVE.includes(session.phase);
 }
 
-export function hasActiveSessionWork(opts: {
+interface SessionActivity {
   sessions: Record<string, Pick<SessionSummary, 'phase' | 'streaming'>>;
   childSessions: Record<string, Record<string, Pick<ChildSessionSummary, 'status'>>>;
   childRuntime: Partial<Record<string, Record<string, { available: boolean }>>>;
-}): boolean {
-  if (Object.values(opts.sessions).some(sessionIsLive)) return true;
-  return Object.entries(opts.childSessions).some(([appSessionId, children]) =>
-    Object.entries(children).some(([childSessionId, childSession]) =>
-      childSessionIsLive(childSession, opts.childRuntime[appSessionId]?.[childSessionId]),
-    ),
-  );
+}
+
+let activeWorkCache: (SessionActivity & { result: boolean }) | undefined;
+
+export function hasActiveSessionWork({
+  sessions,
+  childSessions,
+  childRuntime,
+}: SessionActivity): boolean {
+  // Transcript-only revisions reuse these immutable maps. Retain just their
+  // references, not the store snapshot and its older transcript windows.
+  if (
+    activeWorkCache?.sessions === sessions &&
+    activeWorkCache.childSessions === childSessions &&
+    activeWorkCache.childRuntime === childRuntime
+  )
+    return activeWorkCache.result;
+  const result =
+    Object.values(sessions).some(sessionIsLive) ||
+    Object.entries(childSessions).some(([appSessionId, children]) =>
+      Object.entries(children).some(([childSessionId, childSession]) =>
+        childSessionIsLive(childSession, childRuntime[appSessionId]?.[childSessionId]),
+      ),
+    );
+  activeWorkCache = { sessions, childSessions, childRuntime, result };
+  return result;
 }
 
 // Whether a session reads as unread in the sidebar: the model finished newer

@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { childEnv } from './childEnv.js';
 import {
   availableChannels,
   compareSemver,
@@ -133,4 +134,34 @@ test('hasCliLogin ignores the retired auth.v2.file marker', () => {
   } finally {
     rmSync(authDir, { recursive: true, force: true });
   }
+});
+
+test('childEnv drops the app-private variables and keeps the user shell', () => {
+  const env = childEnv({
+    PATH: '/usr/bin',
+    HOME: '/Users/someone',
+    SHELL: '/bin/zsh',
+    LANG: 'en_US.UTF-8',
+    DROID_PATH: '/usr/local/bin/droid',
+    FACTORY_API_KEY: 'user-key',
+    DROIDEX_USER_DATA_DIR: '/profile',
+    DROIDEX_HISTORY_DIR: '/profile/history',
+    BRIDGE_PORT: '1234',
+    BRIDGE_TOKEN: 'secret',
+    BROWSER_ASSET_TOKEN: 'secret',
+    BRIDGE_EXIT_ON_STDIN_CLOSE: '1',
+    ELECTRON_RUN_AS_NODE: '1',
+    ELECTRON_START_URL: 'http://localhost:5173',
+    SIDECAR_ENTRY: '/sidecar/dist/index.js',
+    UNSET: undefined,
+  });
+
+  assert.deepEqual(env, {
+    PATH: '/usr/bin',
+    HOME: '/Users/someone',
+    SHELL: '/bin/zsh',
+    LANG: 'en_US.UTF-8',
+    DROID_PATH: '/usr/local/bin/droid',
+    FACTORY_API_KEY: 'user-key',
+  });
 });

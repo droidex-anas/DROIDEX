@@ -4,6 +4,7 @@ import type { TranscriptMutation } from '../lib/transcriptMutation';
 import { transcriptForVisibleSession } from '../lib/childSessions';
 import { getRendererPerfSnapshot, resetRendererPerfForTest } from '../lib/rendererPerf';
 import type { TranscriptEvent } from '../types/bridge';
+import { isCopyableFinalResponse, projectFinalResponseKeys } from './messageFeedState';
 import { feedRowId } from '../hooks/conversationViewportAnchor';
 import { buildGroupedFeed, type GroupedFeedOptions } from './chatFeedTurns';
 import {
@@ -150,7 +151,8 @@ test('incremental projection rebuilds one safe turn and preserves completed pref
   const mergedInput = input(mergedEvents, appendMutation(3, answerEvents.length, 5));
   const withMergedAnswer = project(mergedInput);
   assert.equal(withMergedAnswer.mode, 'incremental');
-  assert.equal(withMergedAnswer.rebuiltFromVisibleIndex, 2);
+  assert.equal(withMergedAnswer.rebuiltFromVisibleIndex, 5);
+  assert.equal(withMergedAnswer.feedItems.at(-2), withAnswer.feedItems.at(-2));
   assertMatchesFullBuild(withMergedAnswer, mergedInput);
 
   const nextPromptEvents = [...mergedEvents, user('user-3', 8)];
@@ -651,4 +653,91 @@ test('prepend lookahead preserves thinking duration at the retained user boundar
 
   assert.equal(next.mode, 'incremental');
   assertMatchesFullBuild(next, nextInput);
+});
+
+test('plain text growth reuses tool rows and preserves settlement and final-response controls', () => {
+  const project = createChatFeedProjector();
+  const tools = Array.from({ length: 1000 }, (_, index) => [
+    event(`call-${index}`, { kind: 'tool_call', toolName: 'Read', toolUseId: `tool-${index}` }),
+    event(`result-${index}`, { kind: 'tool_result', toolUseId: `tool-${index}` }),
+  ]).flat();
+  const answer = event('answer', { text: 'Done', ts: 2002 });
+  const events = [user('prompt', 0), ...tools, answer];
+  const initial = project(input(events, undefined));
+  const nextInput = input(
+    [...events.slice(0, -1), { ...answer, text: 'Done with the work', endTs: 2003 }],
+    appendMutation(1, events.length, events.length - 1),
+  );
+  const next = project(nextInput);
+  assertMatchesFullBuild(next, nextInput);
+  assert.equal(next.rebuiltFromVisibleIndex, events.length - 1);
+  assert.equal(next.rebuiltFromFeedItemIndex, initial.feedItems.length - 1);
+  assert.equal(next.reusedVisibleEventCount, events.length - 1);
+  assert.equal(next.feedItems[1], initial.feedItems[1]);
+  assert.equal(next.feedItems.at(-1)?.key, initial.feedItems.at(-1)?.key);
+  const controls = projectFinalResponseKeys(null, 'fixture', next.feedItems, next.updateKind);
+  assert.equal(isCopyableFinalResponse('answer', controls, true), false);
+
+  const settledInput = { ...nextInput, pending: false };
+  const settled = project(settledInput);
+  assertMatchesFullBuild(settled, settledInput);
+  assert.equal(settled.feedItems[1].type, 'worked');
+  assert.equal(settled.feedItems.at(-1)?.key, 'answer');
+  const settledControls = projectFinalResponseKeys(
+    controls,
+    'fixture',
+    settled.feedItems,
+    settled.updateKind,
+  );
+  assert.equal(isCopyableFinalResponse('answer', settledControls, false), true);
+});
+
+test('text-tail eligibility never bypasses structural grouping changes', () => {
+  const answer = event('answer', { text: 'Request', ts: 3 });
+  const cases: {
+    before?: Partial<TranscriptEvent>;
+    after: Partial<TranscriptEvent>;
+    pending?: boolean;
+  }[] = [
+    { after: { text: 'Request interrupted by user' } },
+    { after: { text: 'Replacement' } },
+    { after: { kind: 'thinking', text: 'Request more' } },
+    { after: { author: 'user', text: 'Request more' } },
+    { after: { sourceSessionId: 'child', role: 'worker', text: 'Request more' } },
+    { after: { ts: 100, text: 'Request more' } },
+    { after: { toolUseId: 'read', text: 'Request more' } },
+    { before: { isError: true }, after: { text: 'Request cancelled by user' } },
+    { after: { text: 'Request more' }, pending: false },
+  ];
+  for (const fixture of cases) {
+    const project = createChatFeedProjector();
+    const tail = { ...answer, ...fixture.before };
+    const events = [user('prompt', 0), event('thinking', { kind: 'thinking', ts: 1 }), tail];
+    const overrides = { pending: fixture.pending ?? true };
+    project(input(events, undefined, overrides));
+    const nextInput = input(
+      [...events.slice(0, -1), { ...tail, ...fixture.after }],
+      appendMutation(1, events.length, events.length - 1),
+      overrides,
+    );
+    const next = project(nextInput);
+    assertMatchesFullBuild(next, nextInput);
+    assert.equal(next.rebuiltFromVisibleIndex, 0);
+  }
+});
+
+test('settled merged answers and pinned spec transitions keep the full grouping semantics', () => {
+  for (const specContent of [undefined, 'Done with the work']) {
+    const project = createChatFeedProjector();
+    const answer = event('answer', { text: 'Done', ts: 4 });
+    const events = [user('prompt', 0), event('note', { text: 'Earlier fragment' }), answer];
+    const overrides = { pending: false, options: { ...PRIMARY_OPTIONS, specContent } };
+    project(input(events, undefined, overrides));
+    const nextInput = input(
+      [...events.slice(0, -1), { ...answer, text: 'Done with the work', endTs: 5 }],
+      appendMutation(1, events.length, events.length - 1),
+      overrides,
+    );
+    assertMatchesFullBuild(project(nextInput), nextInput);
+  }
 });

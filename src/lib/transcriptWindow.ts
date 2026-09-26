@@ -59,7 +59,7 @@ const OBJECT_OVERHEAD = 48;
 const ARRAY_OVERHEAD = 32;
 const STRING_OVERHEAD = 16;
 const SCALAR_OVERHEAD = 8;
-const EVENT_ESTIMATES = new WeakMap<TranscriptEvent, number>();
+const EVENT_ESTIMATES = new WeakMap<TranscriptEvent, { cost: number; lastTextCode: number }>();
 
 // Relative retained-payload estimate used for budgeting, not a V8 heap-size
 // claim. It counts UTF-8 string payloads, nested tool/reference data, and
@@ -107,17 +107,20 @@ export function estimateRetainedPayloadCost(value: unknown): number {
   return cost;
 }
 
-function estimateTranscriptEventCost(event: TranscriptEvent): number {
+function estimateTranscriptEvent(event: TranscriptEvent): { cost: number; lastTextCode: number } {
   const cached = EVENT_ESTIMATES.get(event);
-  if (cached !== undefined) return cached;
-  const cost = estimateRetainedPayloadCost(event);
-  EVENT_ESTIMATES.set(event, cost);
-  return cost;
+  if (cached) return cached;
+  const estimate = {
+    cost: estimateRetainedPayloadCost(event),
+    lastTextCode: event.text?.charCodeAt(event.text.length - 1) ?? NaN,
+  };
+  EVENT_ESTIMATES.set(event, estimate);
+  return estimate;
 }
 
 export function estimateTranscriptCost(events: readonly TranscriptEvent[]): number {
   let cost = ARRAY_OVERHEAD + events.length * SCALAR_OVERHEAD;
-  for (const event of events) cost += estimateTranscriptEventCost(event);
+  for (const event of events) cost += estimateTranscriptEvent(event).cost;
   return cost;
 }
 
@@ -125,7 +128,7 @@ export function estimateAppendedTranscriptCost(
   previousCost: number,
   event: TranscriptEvent,
 ): number {
-  return previousCost + SCALAR_OVERHEAD + estimateTranscriptEventCost(event);
+  return previousCost + SCALAR_OVERHEAD + estimateTranscriptEvent(event).cost;
 }
 
 export function estimateReplacedTranscriptEventCost(
@@ -135,9 +138,36 @@ export function estimateReplacedTranscriptEventCost(
 ): number {
   return (
     previousCost -
-    estimateTranscriptEventCost(previousEvent) +
-    estimateTranscriptEventCost(nextEvent)
+    estimateTranscriptEvent(previousEvent).cost +
+    estimateTranscriptEvent(nextEvent).cost
   );
+}
+
+// The ingestion owner supplies a proven text append; arbitrary replacements
+// still use estimateReplacedTranscriptEventCost's full payload estimate.
+export function appendTranscriptText(
+  previous: TranscriptEvent,
+  text: string,
+  endTs: number,
+): TranscriptEvent {
+  const previousText = previous.text ?? '';
+  const next = { ...previous, text: previousText + text, endTs };
+  const estimate = estimateTranscriptEvent(previous);
+  let cost = estimate.cost + utf8ByteLength(text);
+  if (previous.text === undefined) {
+    cost += STRING_OVERHEAD - (Object.hasOwn(previous, 'text') ? SCALAR_OVERHEAD : 0);
+    if (!Object.hasOwn(previous, 'text')) cost += STRING_OVERHEAD + 4;
+  }
+  if (!Object.hasOwn(previous, 'endTs')) cost += STRING_OVERHEAD + 5 + SCALAR_OVERHEAD;
+  // Two isolated surrogates cost six bytes; joining them makes one four-byte code point.
+  const last = estimate.lastTextCode;
+  const first = text.charCodeAt(0);
+  if (last >= 0xd800 && last <= 0xdbff && first >= 0xdc00 && first <= 0xdfff) cost -= 2;
+  EVENT_ESTIMATES.set(next, {
+    cost,
+    lastTextCode: text.length > 0 ? text.charCodeAt(text.length - 1) : last,
+  });
+  return next;
 }
 
 export function shouldReleaseTranscriptWindow(
@@ -161,7 +191,7 @@ export function releaseTranscriptWindow(
   let keptCount = 0;
   let keptCost = ARRAY_OVERHEAD;
   while (start > 0) {
-    const eventCost = estimateTranscriptEventCost(events[start - 1]) + SCALAR_OVERHEAD;
+    const eventCost = estimateTranscriptEvent(events[start - 1]).cost + SCALAR_OVERHEAD;
     // Keep a generous event floor while it remains safe, but never let that
     // floor defeat the byte ceiling for payload-heavy tool/reference events.
     // The newest complete event is always retained, even if it is indivisibly
@@ -187,7 +217,7 @@ export function releaseTranscriptWindow(
     if (i < start) {
       boundaryCount += 1;
       if (boundaryCount > policy.highWaterEvents) break;
-      boundaryCost += estimateTranscriptEventCost(events[i]) + SCALAR_OVERHEAD;
+      boundaryCost += estimateTranscriptEvent(events[i]).cost + SCALAR_OVERHEAD;
       if (boundaryCost > policy.highWaterCost) break;
     }
     if (events[i]?.author === 'user') {

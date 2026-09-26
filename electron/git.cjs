@@ -3,6 +3,9 @@
 // checkout, stage, commit, push). All paths are built with `node:path` so the
 // worktree features work on macOS, Linux, and Windows.
 const { execFile } = require('node:child_process');
+// Git runs the user's hooks and aliases, so it starts from their environment,
+// not the app's.
+const { childEnv } = require('./childEnv.cjs');
 const path = require('node:path');
 const os = require('node:os');
 const fs = require('node:fs');
@@ -35,20 +38,30 @@ function expandHome(value) {
 // Resolve and reject on a non-zero exit so callers can try/catch.
 function run(cwd, args, { timeout = DEFAULT_TIMEOUT } = {}) {
   return new Promise((resolve, reject) => {
-    execFile('git', ['-C', cwd, ...args], { timeout, maxBuffer: MAX_BUFFER }, (err, stdout) => {
-      if (err) reject(err);
-      else resolve(String(stdout));
-    });
+    execFile(
+      'git',
+      ['-C', cwd, ...args],
+      { timeout, maxBuffer: MAX_BUFFER, env: childEnv() },
+      (err, stdout) => {
+        if (err) reject(err);
+        else resolve(String(stdout));
+      },
+    );
   });
 }
 
 // `git diff` exits 1 when differences exist; treat that as success.
 function runSoft(cwd, args, { timeout = DEFAULT_TIMEOUT } = {}) {
   return new Promise((resolve, reject) => {
-    execFile('git', ['-C', cwd, ...args], { timeout, maxBuffer: MAX_BUFFER }, (err, stdout) => {
-      if (err && err.code !== 1) reject(err);
-      else resolve(String(stdout));
-    });
+    execFile(
+      'git',
+      ['-C', cwd, ...args],
+      { timeout, maxBuffer: MAX_BUFFER, env: childEnv() },
+      (err, stdout) => {
+        if (err && err.code !== 1) reject(err);
+        else resolve(String(stdout));
+      },
+    );
   });
 }
 

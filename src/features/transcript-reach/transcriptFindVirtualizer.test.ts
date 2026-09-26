@@ -4,7 +4,7 @@ import { Virtualizer } from '@tanstack/virtual-core';
 
 import type { FeedItem } from '../../components/chatFeed';
 import {
-  buildConversationRowLookup,
+  updateConversationRowLookup,
   CONVERSATION_LIST_ESTIMATE_PX,
   CONVERSATION_LIST_GAP_PX,
   CONVERSATION_LIST_INITIAL_RECT,
@@ -101,7 +101,7 @@ test('finding and scrolling to an unmounted row keeps the mounted window bounded
   assert.equal(matches.length, 1);
   const rowId = matches[0]?.rowId;
   assert.equal(rowId, feedRowId(items[4]!));
-  const lookup = buildConversationRowLookup(items);
+  const lookup = updateConversationRowLookup(null, items);
   const rowIndex = findConversationRowIndex(lookup, rowId ?? '');
   assert.equal(rowIndex, 4);
   engine.virtualizer.scrollToIndex(rowIndex ?? 0, { align: 'start' });

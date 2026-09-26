@@ -4,6 +4,7 @@ import { homedir, release } from 'node:os';
 import { delimiter, join } from 'node:path';
 import { promisify } from 'node:util';
 import type { EnvironmentReport, InstallChannel, PackageManagers } from './protocol.js';
+import { childEnv } from './childEnv.js';
 
 const execFileAsync = promisify(execFile);
 const DEFAULT_WINDOWS_EXECUTABLE_EXTENSIONS = '.COM;.EXE;.BAT;.CMD';
@@ -184,7 +185,7 @@ async function commandExists(command: string): Promise<boolean> {
 async function commandPath(command: string): Promise<string | null> {
   const probe = process.platform === 'win32' ? 'where' : 'which';
   try {
-    const { stdout } = await execFileAsync(probe, [command], { timeout: 4000 });
+    const { stdout } = await execFileAsync(probe, [command], { timeout: 4000, env: childEnv() });
     const first = stdout
       .split(/\r?\n/)
       .map((line) => line.trim())
@@ -202,7 +203,7 @@ function probeCliVersion(cliPath: string): Promise<string | undefined> {
 
 async function commandVersion(command: string, args: string[]): Promise<string | undefined> {
   try {
-    const { stdout } = await execFileAsync(command, args, { timeout: 8000, env: process.env });
+    const { stdout } = await execFileAsync(command, args, { timeout: 8000, env: childEnv() });
     const match = /\d+\.\d+\.\d+/.exec(stdout);
     return match ? match[0] : stdout.trim() || undefined;
   } catch {

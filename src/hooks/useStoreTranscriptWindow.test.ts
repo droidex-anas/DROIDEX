@@ -677,3 +677,46 @@ test('memory pressure releases inactive transcripts and never drops a live turn'
   assert.equal(next.transcripts.live.length, live.length);
   assert.equal(next.transcripts.live.at(-1)?.id, live.at(-1)?.id);
 });
+
+test('batched child settlements retain mutation provenance before both released windows', () => {
+  const first = childSession('active', 'first');
+  const second = childSession('active', 'second');
+  const transcript = [first, second].flatMap((child) =>
+    events('active', 900).map((event) => ({
+      ...event,
+      id: `${child.childSessionId}-${event.id}`,
+      role: child.role,
+      sourceSessionId: child.childSessionId,
+    })),
+  );
+  const state = stateWithTranscript('active', transcript, {
+    childSessions: {
+      active: {
+        first: { ...first, status: 'running' },
+        second: { ...second, status: 'running' },
+      },
+    },
+    childRuntime: {
+      active: {
+        first: { available: true, runtimeGeneration: 1 },
+        second: { available: true, runtimeGeneration: 1 },
+      },
+    },
+  });
+  const next = reducer(state, {
+    type: 'BATCH',
+    actions: [first, second].map((child) => ({
+      type: 'SESSION_CHILD',
+      child,
+      runtimeAvailable: false,
+      runtimeGeneration: 1,
+    })),
+  });
+  assert.ok(next.transcripts.active.length < transcript.length);
+  assert.equal(next.childHistory.active.first.status, 'paged');
+  assert.equal(next.childHistory.active.second.status, 'paged');
+  assert.equal(next.transcriptMutations.active.revision, 2);
+  assert.equal(next.transcriptMutations.active.baseRevision, 0);
+  assert.equal(next.transcriptMutations.active.previousLength, transcript.length);
+  assert.equal(next.transcriptMutations.active.kind, 'reset');
+});

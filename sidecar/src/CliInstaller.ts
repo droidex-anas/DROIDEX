@@ -1,4 +1,5 @@
 import { spawn } from 'node:child_process';
+import { childEnv } from './childEnv.js';
 import type { EnvironmentReport, InstallChannel } from './protocol.js';
 
 export interface ShellCommand {
@@ -78,9 +79,11 @@ export function runStreaming(
     // Windows npm and Droid `.cmd` shims require cmd.exe. Invoke that executable
     // explicitly; never enable Node's generic shell mode.
     const invocation = streamingInvocation(cmd);
+    // An installer runs npm and package lifecycle scripts, so it gets the same
+    // scrubbed environment a harness does rather than the app's own.
     const child = spawn(invocation.command, invocation.args, {
       shell: false,
-      env: invocation.env ?? process.env,
+      env: childEnv(invocation.env ?? process.env),
     });
 
     const pump = (stream: 'stdout' | 'stderr') => (chunk: Buffer) => {
