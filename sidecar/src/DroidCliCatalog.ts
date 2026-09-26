@@ -6,6 +6,7 @@ import { promisify } from 'node:util';
 import { wrapDroidInvocation } from './Environment.js';
 import { reasoningValue } from './modelCatalog.js';
 import type { ModelInfo, ReasoningEffort } from './protocol.js';
+import { childEnv } from './childEnv.js';
 
 const execFileAsync = promisify(execFile);
 
@@ -16,7 +17,7 @@ export async function readDroidCliModelCatalog(droidPath: string): Promise<Model
   const { execPath, execArgs } = wrapDroidInvocation(droidPath, ['exec', '--help']);
   const { stdout } = await execFileAsync(execPath, execArgs, {
     maxBuffer: 1024 * 1024,
-    env: process.env,
+    env: childEnv(),
   });
   return parseDroidExecHelp(stdout);
 }
