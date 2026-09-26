@@ -2,6 +2,7 @@ import type { ProviderKind } from './providerKind.js';
 import type { ProviderStatus, SkillInfo } from '../protocol.js';
 import type {
   ProbedProvider,
+  ProviderModelSettings,
   ProviderOpenInput,
   ProviderResumeInput,
   ProviderSession,
@@ -18,6 +19,10 @@ export class LazyProvider implements ProbedProvider {
     readonly kind: ProviderKind,
     private readonly load: () => Promise<ProbedProvider>,
   ) {}
+
+  async validateModelSettings(settings: ProviderModelSettings): Promise<void> {
+    await (await this.provider()).validateModelSettings?.(settings);
+  }
 
   async create(input: ProviderOpenInput): Promise<ProviderSession> {
     return (await this.provider()).create(input);

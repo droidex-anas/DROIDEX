@@ -24,6 +24,7 @@ import { storedNoticeLine } from '../sessionNotices.js';
 interface ProviderSessionStart extends StoredSessionStart {
   modelId?: string;
   reasoningEffort?: string;
+  contextWindowTokens?: 200000 | 1000000;
   autonomyLevel?: string;
 }
 
@@ -172,6 +173,9 @@ function headLine(summary: SessionSummary): ProviderSessionStart {
     autonomyLevel: summary.autonomy,
     ...(summary.resumeId ? { resumeId: summary.resumeId } : {}),
     ...(summary.modelId ? { modelId: summary.modelId } : {}),
+    ...(summary.contextWindowTokens !== undefined
+      ? { contextWindowTokens: summary.contextWindowTokens }
+      : {}),
     ...(summary.reasoningEffort ? { reasoningEffort: summary.reasoningEffort } : {}),
   };
 }

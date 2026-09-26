@@ -8,6 +8,7 @@ export class HistoryWriteStatements {
   private readonly insertEvent: StatementSync;
   private readonly readSearchIdentity: StatementSync;
   private readonly upsertSummary: StatementSync;
+  private readonly upsertContextWindow: StatementSync;
   private readonly upsertChild: StatementSync;
   private readonly advanceSearchIdentityRevision: StatementSync;
 
@@ -20,6 +21,10 @@ export class HistoryWriteStatements {
       SELECT provider_session_id, compacted_from_provider_session_ids, updated_at
       FROM app_sessions
       WHERE app_session_id = ?
+    `);
+    this.upsertContextWindow = db.prepare(`
+      INSERT INTO settings (scope, value_json, updated_at) VALUES (?, ?, ?)
+      ON CONFLICT(scope) DO UPDATE SET value_json = excluded.value_json, updated_at = excluded.updated_at
     `);
     this.upsertSummary = db.prepare(`
       INSERT INTO app_sessions (
@@ -151,6 +156,12 @@ export class HistoryWriteStatements {
       current?.provider_session_id !== providerSessionId ||
       current.compacted_from_provider_session_ids !== providerAliases ||
       current.updated_at !== summary.updatedAt;
+    if (summary.contextWindowTokens !== undefined)
+      this.upsertContextWindow.run(
+        `session.contextWindowTokens.${summary.appSessionId}`,
+        JSON.stringify(summary.contextWindowTokens),
+        summary.updatedAt,
+      );
     this.upsertSummary.run(
       summary.appSessionId,
       providerSessionId,

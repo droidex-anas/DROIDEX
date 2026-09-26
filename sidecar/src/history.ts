@@ -437,14 +437,14 @@ export class HistoryIndex {
   }
 
   summaryPatchesAndHidden(): SummaryPatchesAndHidden {
-    const rows = this.db.prepare('SELECT * FROM app_sessions').all() as Record<string, unknown>[];
+    const rows = readSummaryRows(this.db);
     const patches = summaryPatchesFromRows(rows);
     applyStoredCompactionGenerations(this.db, patches);
     return { patches, hiddenProviderSessionIds: hiddenProviderSessionIdsFromRows(rows) };
   }
 
   private summaryPatches(): Map<string, Partial<SessionSummary>> {
-    const rows = this.db.prepare('SELECT * FROM app_sessions').all() as Record<string, unknown>[];
+    const rows = readSummaryRows(this.db);
     const patches = summaryPatchesFromRows(rows);
     applyStoredCompactionGenerations(this.db, patches);
     return patches;
@@ -777,7 +777,7 @@ function readStoredSummaryPatches(): Map<string, Partial<SessionSummary>> {
   const db = new DatabaseSync(path);
   try {
     assertCanonicalHistorySchema(db);
-    const rows = db.prepare('SELECT * FROM app_sessions').all() as Record<string, unknown>[];
+    const rows = readSummaryRows(db);
     const patches = summaryPatchesFromRows(rows);
     applyStoredCompactionGenerations(db, patches);
     return patches;
@@ -829,6 +829,18 @@ function readStoredChildSessions(parentAppSessionId: string): PersistedChildSess
   }
 }
 
+function readSummaryRows(db: DatabaseSync): Record<string, unknown>[] {
+  return db
+    .prepare(
+      `
+    SELECT app_sessions.*, json_extract(settings.value_json, '$') AS context_window_tokens
+    FROM app_sessions LEFT JOIN settings
+    ON settings.scope = 'session.contextWindowTokens.' || app_sessions.app_session_id
+  `,
+    )
+    .all() as Record<string, unknown>[];
+}
+
 function summaryPatchesFromRows(
   rows: Record<string, unknown>[],
 ): Map<string, Partial<SessionSummary>> {
@@ -851,6 +863,9 @@ function summaryPatchesFromRows(
       workspaceKind: workspaceKind(stringValue(row.workspace_kind)),
       modelId: stringValue(row.model_id),
       reasoningEffort: mapReasoning(stringValue(row.reasoning_effort)),
+      ...(row.context_window_tokens !== null && row.context_window_tokens !== undefined
+        ? { contextWindowTokens: readContextWindowTokens(row.context_window_tokens) }
+        : {}),
       compactionModel: stringValue(row.compaction_model),
       workerModelId: stringValue(row.worker_model_id),
       workerReasoningEffort: mapReasoning(stringValue(row.worker_reasoning_effort)),
@@ -1594,7 +1609,7 @@ function sessionInteractionMode(start: StoredSessionStart): string | undefined {
 function readSessionModelSettings(
   start: StoredSessionStart | undefined,
   sessionPath: string,
-): FactoryDefaults {
+): FactoryDefaults & Pick<SessionSummary, 'contextWindowTokens'> {
   const raw = objectValue(start) ?? {};
   const settings = objectValue(raw.settings) ?? objectValue(raw.sessionSettings) ?? {};
   const sidecarSettings = readAdjacentSessionSettings(sessionPath);
@@ -1613,6 +1628,11 @@ function readSessionModelSettings(
       stringValue(sidecarSettings.reasoningEffort) ||
         stringValue(settings.reasoningEffort) ||
         stringValue(raw.reasoningEffort),
+    ),
+    contextWindowTokens: readContextWindowTokens(
+      sidecarSettings.contextWindowTokens !== undefined
+        ? sidecarSettings.contextWindowTokens
+        : raw.contextWindowTokens,
     ),
     compactionModel:
       stringValue(sidecarSettings.compactionModel) ||
@@ -1727,4 +1747,10 @@ function roleFromSessionStart(start: StoredSessionStart): SessionRole {
 
 function lastPathSegment(path: string): string {
   return path.split('/').filter(Boolean).pop() ?? '';
+}
+
+function readContextWindowTokens(value: unknown): 200000 | 1000000 | undefined {
+  if (value === undefined) return undefined;
+  if (value === 200000 || value === 1000000) return value;
+  throw new Error('Invalid stored contextWindowTokens: expected 200000 or 1000000.');
 }

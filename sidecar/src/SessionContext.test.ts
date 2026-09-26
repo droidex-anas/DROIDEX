@@ -901,3 +901,30 @@ function summary(appSessionId: string, providerSessionId: string): SessionSummar
     updatedAt: 1,
   };
 }
+
+test('same-model chats retain independent windows and publish limit-only updates', () => {
+  const h = createHarness();
+  const first = registerLive(h, 'small').live;
+  const second = registerLive(h, 'large').live;
+  first.summary.provider = second.summary.provider = 'claude';
+  first.summary.modelId = second.summary.modelId = 'sonnet';
+  const reading = { tokensIn: 10, tokensOut: 5, contextTokens: 15 };
+  h.context.recordUsage('small', 'small', { ...reading, maxContextTokens: 200000 });
+  h.context.recordUsage('large', 'large', { ...reading, maxContextTokens: 1000000 });
+  assert.equal(first.summary.maxContextTokens, 200000);
+  assert.equal(second.summary.maxContextTokens, 1000000);
+  const count = h.events.length;
+  h.context.recordUsage('small', 'small', { ...reading, maxContextTokens: 1000000 });
+  assert.equal(first.summary.maxContextTokens, 1000000);
+  assert.ok(h.events.length > count);
+  const afterLimit = h.events.length;
+  h.context.recordUsage('small', 'small', { ...reading, maxContextTokens: 1000000 });
+  assert.equal(h.events.length, afterLimit);
+  assert.deepEqual(h.contextWindowNotes, []);
+  h.context.invalidateWindow('small');
+  h.registry.updateSummary('small', { maxContextTokens: undefined });
+  const contextEvents = h.events.filter((event) => event.type === 'context.updated').length;
+  h.context.recordUsage('small', 'small', { ...reading, contextTokens: 20 });
+  assert.equal(first.summary.maxContextTokens, undefined);
+  assert.equal(h.events.filter((event) => event.type === 'context.updated').length, contextEvents);
+});

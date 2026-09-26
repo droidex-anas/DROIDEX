@@ -140,6 +140,7 @@ export interface SessionSummary {
   workspaceKind?: 'folder' | 'none';
   modelId?: string;
   reasoningEffort?: ReasoningEffort;
+  contextWindowTokens?: 200000 | 1000000;
   compactionModel?: string;
   workerModelId?: string;
   workerReasoningEffort?: ReasoningEffort;
@@ -666,6 +667,7 @@ export type ClientCommand =
       interactionMode?: SessionInteractionMode;
       modelId?: string;
       reasoningEffort?: ReasoningEffort;
+      contextWindowTokens?: 200000 | 1000000;
       compactionModel?: string;
       compactionTokenLimit?: number | null;
       compactionTokenLimitPerModel?: Record<string, number>;
@@ -710,6 +712,7 @@ export type ClientCommand =
       modelId?: string | null;
       // null clears the effort: the model chosen offers none.
       reasoningEffort?: ReasoningEffort | null;
+      contextWindowTokens?: 200000 | 1000000;
       // Echoed once the model/effort change settles, by
       // `session.model_update_applied` or a `session.model_update_failed` error.
       requestId?: string;

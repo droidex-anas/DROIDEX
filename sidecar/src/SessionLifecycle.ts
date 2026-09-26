@@ -102,6 +102,7 @@ export interface LiveSession extends LiveTurnState {
   closeMode?: SessionCloseMode;
   closePromise?: Promise<void>;
   turnPromise?: Promise<void>;
+  restartBeforeNextTurn?: boolean;
   providerClosePromise?: Promise<void>;
   mcpServers: LocalMcpResource[];
   // Running MCP handles reused when compaction swaps the provider session.
@@ -148,7 +149,10 @@ export interface SessionLifecycleDependencies {
   waitForSettingsMutations?: (appSessionId: string) => Promise<void>;
   runPrimaryTurn: (liveSession: LiveSession, request: PrimaryTurnRequest) => Promise<void>;
   eventFlow: Pick<SessionEventFlow, 'apply' | 'beginTurn'>;
-  context: Pick<SessionContext, 'refresh' | 'stopPolling' | 'stopSession' | 'forgetSession'>;
+  context: Pick<
+    SessionContext,
+    'refresh' | 'stopPolling' | 'stopSession' | 'forgetSession' | 'preserveUsage'
+  >;
   hasPendingInteractions: (appSessionId: string) => boolean;
   hasActiveSettingsChanges: (appSessionId: string) => boolean;
   // Durable transcript for a provider that keeps no session file of its own.
@@ -200,6 +204,8 @@ export class SessionLifecycle {
       // Resolved here so an unroutable provider fails before any resource starts.
       const kind = requireProviderKind(command.provider);
       requireDroidReasoningSupported(kind, command);
+      if (command.contextWindowTokens !== undefined && kind !== 'claude')
+        throw new Error('Context window selection is only supported for Claude Code chats.');
       const provider = d.provider(kind);
       const defaults = await d.getFactoryDefaults();
       const interactionMode = createInteractionModeForCommand(command, defaults);
@@ -257,7 +263,8 @@ export class SessionLifecycle {
       this.requireOpenAdmission();
 
       const appSessionId = providerSession.providerSessionId;
-      const maxContextTokens = d.maxContextTokensForModel(primary.modelId);
+      const maxContextTokens =
+        kind === 'droid' ? d.maxContextTokensForModel(primary.modelId) : undefined;
       const summary = buildCreatedSessionSummary({
         command,
         appSessionId,
@@ -400,6 +407,8 @@ export class SessionLifecycle {
       requireCurrentResume();
       const projectedSummary = d.applyPendingSettingsToSummary({ ...summary });
       const liveSession = createLiveSession(projectedSummary, providerSession, session, mcp);
+      if (projectedSummary.contextWindowTokens !== historical?.contextWindowTokens)
+        liveSession.restartBeforeNextTurn = true;
       pendingLiveSession = liveSession;
       this.subscribeAutomaticCompaction(liveSession);
       this.subscribeBackgroundEvents(liveSession);
@@ -1066,6 +1075,7 @@ export class SessionLifecycle {
       this.dependencies.emitError({ appSessionId, message });
       return undefined;
     }
+    if (liveSession.streaming && liveSession.summary.provider === 'claude') return liveSession;
     const settingsApplied = await this.dependencies.applyPendingSessionSettings(
       liveSession.summary.appSessionId,
     );
@@ -1135,8 +1145,44 @@ export class SessionLifecycle {
     delivery?: ScheduledTurnDelivery,
   ): Promise<void> {
     const d = this.dependencies;
-    const liveSession = d.registry.getLive(appSessionId);
+    let liveSession = d.registry.getLive(appSessionId);
     if (!liveSession || liveSession.closeMode || d.isShutdownStarted()) return;
+    if (liveSession.summary.provider === 'claude') {
+      await d.waitForSettingsMutations?.(appSessionId);
+      if (
+        d.registry.getLive(appSessionId) !== liveSession ||
+        liveSession.closeMode ||
+        d.isShutdownStarted()
+      )
+        return;
+    }
+    if (liveSession.streaming) {
+      liveSession.pendingSends.push(prompt);
+      this.updateQueuedSends(liveSession);
+      return;
+    }
+    while (liveSession.restartBeforeNextTurn) {
+      const previous = liveSession;
+      const carryover = {
+        tokensIn: liveSession.summary.tokensIn,
+        tokensOut: liveSession.summary.tokensOut,
+      };
+      await this.close(appSessionId, 'preserve-pending');
+      if (d.isShutdownStarted() || liveSession.closeMode === 'discard-pending') return;
+      if (!(await this.resume(appSessionId))) return;
+      liveSession = d.registry.getLive(appSessionId);
+      if (!liveSession || liveSession.closeMode) return;
+      const session = liveSession.session;
+      await session.setInteractionMode?.(previous.summary.interactionMode);
+      if (d.isShutdownStarted() || liveSession.closeMode || d.registry.getLive(appSessionId) !== liveSession || liveSession.session !== session) return;
+      d.context.preserveUsage(appSessionId, carryover);
+      liveSession.pendingSends.push(...previous.pendingSends.splice(0));
+      if (liveSession.streaming) {
+        liveSession.pendingSends.unshift(prompt);
+        this.updateQueuedSends(liveSession);
+        return;
+      }
+    }
     const stableAppSessionId = liveSession.summary.appSessionId;
     try {
       liveSession.streaming = true;

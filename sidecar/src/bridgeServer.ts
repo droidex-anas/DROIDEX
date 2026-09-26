@@ -253,6 +253,16 @@ export function startBridgeServer(options: {
       if (typeof parsed === 'object' && parsed !== null && 'mentions' in parsed) {
         assertValidMentions(parsed);
       }
+      if (
+        typeof parsed === 'object' &&
+        parsed !== null &&
+        'contextWindowTokens' in parsed &&
+        parsed.contextWindowTokens !== undefined &&
+        parsed.contextWindowTokens !== 200000 &&
+        parsed.contextWindowTokens !== 1000000
+      ) {
+        throw new Error('contextWindowTokens must be 200000 or 1000000.');
+      }
       await options.onCommand(parsed as ClientCommand);
     } catch (err) {
       sendDirectWire(ws, {

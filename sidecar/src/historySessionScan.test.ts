@@ -18,6 +18,7 @@ delete process.env.DROIDEX_USER_DATA_DIR;
 const { loadHistoricalSessions } = await import('./history.js');
 const { parseFullSessionTranscript, SessionTranscriptReader } =
   await import('./sessionTranscript.js');
+const { writeProviderSessionSettings } = await import('./providers/providerSessionSettings.js');
 const { ProviderTranscriptFile } = await import('./providers/ProviderTranscriptFile.js');
 const { SessionVoice } = await import('./providers/SessionVoice.js');
 const { providerSessionsDir } = await import('./droidexPaths.js');
@@ -128,7 +129,8 @@ test('a transcript DROIDEX writes for a non-Droid session is enumerated and repl
     title: 'Claude session',
     goal: 'Claude session',
     cwd: '',
-    modelId: 'claude-sonnet-4-5',
+    modelId: 'claude-sonnet-4-5[1m]',
+    contextWindowTokens: 1000000,
     autonomy: 'medium',
     phase: 'paused',
     queuedSends: 0,
@@ -177,7 +179,13 @@ test('a transcript DROIDEX writes for a non-Droid session is enumerated and repl
   assert.equal(listed?.summary.provider, 'claude');
   assert.equal(listed?.summary.resumeId, 'thread-abc');
   // Without a model on the head line the restored session cannot be resumed.
-  assert.equal(listed?.summary.modelId, 'claude-sonnet-4-5');
+  assert.equal(listed?.summary.modelId, 'claude-sonnet-4-5[1m]');
+  assert.equal(listed?.summary.contextWindowTokens, 1000000);
+  writeProviderSessionSettings(appSessionId, { contextWindowTokens: 200000 });
+  const restored = loadHistoricalSessions().find(
+    (row) => row.summary.appSessionId === appSessionId,
+  );
+  assert.equal(restored?.summary.contextWindowTokens, 200000);
   assert.equal(listed?.summary.title, 'Claude session');
 
   const events = parseFullSessionTranscript(

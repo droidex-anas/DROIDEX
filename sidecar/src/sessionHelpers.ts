@@ -298,7 +298,9 @@ export function buildCreateRuntimeOptions(input: {
   compactionModel: string;
   compactionTokenLimit: number;
   mcpServers: McpServerConfig[];
-}): Omit<CreateRuntimeSessionOptions, 'permissionHandler' | 'askUserHandler'> {
+}): Omit<CreateRuntimeSessionOptions, 'permissionHandler' | 'askUserHandler'> & {
+  contextWindowTokens?: 200000 | 1000000;
+} {
   const usePrimaryForSpec =
     input.interactionMode === 'spec' ||
     Boolean(input.command.modelId) ||
@@ -308,6 +310,9 @@ export function buildCreateRuntimeOptions(input: {
     ? input.primary.reasoningEffort
     : input.defaults.specReasoningEffort;
   return {
+    ...(input.command.contextWindowTokens !== undefined
+      ? { contextWindowTokens: input.command.contextWindowTokens }
+      : {}),
     cwd: input.runtimeCwd,
     interactionMode: input.interactionMode,
     ...(input.primary.modelId !== undefined ? { modelId: input.primary.modelId } : {}),
@@ -362,6 +367,9 @@ export function buildCreatedSessionSummary(input: {
     cwd,
     workspaceKind: cwd ? 'folder' : 'none',
     ...(primary.modelId !== undefined ? { modelId: primary.modelId } : {}),
+    ...(input.command.contextWindowTokens !== undefined
+      ? { contextWindowTokens: input.command.contextWindowTokens }
+      : {}),
     ...(primary.reasoningEffort !== undefined ? { reasoningEffort: primary.reasoningEffort } : {}),
     compactionModel: input.compactionModel,
     ...agents,
@@ -421,6 +429,9 @@ export const resumeHandle = (summary: SessionSummary | undefined) =>
 export const resumeSettings = (summary: SessionSummary | undefined) => ({
   ...(summary?.modelId !== undefined ? { modelId: summary.modelId } : {}),
   ...(summary?.reasoningEffort !== undefined ? { reasoningEffort: summary.reasoningEffort } : {}),
+  ...(summary?.contextWindowTokens !== undefined
+    ? { contextWindowTokens: summary.contextWindowTokens }
+    : {}),
   ...(summary?.autonomy !== undefined ? { autonomy: summary.autonomy } : {}),
 });
 

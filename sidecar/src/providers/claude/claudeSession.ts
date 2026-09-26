@@ -5,6 +5,7 @@ import {
   query,
   type EffortLevel,
   type McpServerConfig,
+  type ModelInfo,
   type Options,
   type Query,
   type SDKMessage,
@@ -19,6 +20,7 @@ import { errMsg } from '../../sessionHelpers.js';
 import type { SkillInfo } from '../catalog.js';
 import type { ProviderInteractions } from '../interactions.js';
 import type { ProviderModelSettings, ProviderSession } from '../session.js';
+import { claudeContextEnv, claudeContextModel } from './claudeContextWindow.js';
 import { ClaudeCatalog } from './claudeCatalog.js';
 import { ClaudeEventMapper, rateLimitRefusal } from './claudeEvents.js';
 import { MessageQueue } from './claudeMessages.js';
@@ -34,6 +36,8 @@ export interface ClaudeSessionInput {
   interactionMode: SessionInteractionMode;
   modelId?: string;
   reasoningEffort?: ReasoningEffort;
+  contextWindowTokens?: 200000 | 1000000;
+  models: ModelInfo[];
   mcpServers: Record<string, McpServerConfig>;
   interactions: ProviderInteractions;
   // Set when reopening a stored session instead of starting a new one.
@@ -72,7 +76,7 @@ export class ClaudeSession implements ProviderSession {
   private turnQueue?: MessageQueue<{ message: SDKMessage; events: NormalizedEvent[] }>;
   private readonly backgroundListeners = new Set<(event: NormalizedEvent) => void>();
 
-  constructor(input: ClaudeSessionInput) {
+  constructor(private readonly input: ClaudeSessionInput) {
     this.providerSessionId = input.appSessionId;
     this.autonomy = input.autonomy;
     this.modelId = input.modelId;
@@ -316,12 +320,21 @@ export class ClaudeSession implements ProviderSession {
 
   // Model and effort stay on this process, never in the user's settings files.
   // Replaying an already-applied model needs no API validation request.
-  async setModel({ modelId, reasoningEffort }: ProviderModelSettings): Promise<void> {
+  async setModel({
+    modelId,
+    reasoningEffort,
+    contextWindowTokens,
+  }: ProviderModelSettings): Promise<void> {
     await this.waitUntilInitialized();
-    if (modelId !== undefined && (modelId ?? undefined) !== this.modelId) {
-      await this.query.setModel(modelId ?? undefined);
+    const resolvedModel = claudeContextModel(
+      modelId === undefined ? this.modelId : (modelId ?? undefined),
+      contextWindowTokens ?? this.input.contextWindowTokens,
+      this.input.models,
+    );
+    if (modelId !== undefined && resolvedModel !== this.modelId) {
+      await this.query.setModel(resolvedModel);
       this.requireOpen();
-      this.modelId = modelId ?? undefined;
+      this.modelId = resolvedModel;
       this.mapper.setModel(this.modelId);
     }
     this.abort.signal.throwIfAborted();
@@ -447,7 +460,7 @@ function sessionOptions(
     spawnClaudeCodeProcess: ({ command, args, cwd, env, signal }) => {
       const child = spawn(command, args, {
         ...(cwd !== undefined ? { cwd } : {}),
-        env,
+        env: claudeContextEnv(env, input.contextWindowTokens),
         signal,
         stdio: ['pipe', 'pipe', 'pipe'],
         windowsHide: true,

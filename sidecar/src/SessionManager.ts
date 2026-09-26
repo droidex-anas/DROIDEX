@@ -553,6 +553,10 @@ export class SessionManager {
       },
     });
     this.modelSettings = new SessionModelSettings({
+      validateModelSettings: async (summary, settings) => {
+        if (settings.contextWindowTokens !== undefined)
+          await this.providerFor(summary.provider).validateModelSettings?.(settings);
+      },
       registry: this.registry,
       runtime: this.runtime,
       getFactoryDefaults: () => this.getFactoryDefaults(),
@@ -560,6 +564,8 @@ export class SessionManager {
       maxContextTokensForModel: (modelId) => this.maxContextTokensForModel(modelId),
       isShutdownStarted: () => this.shutdownPromise !== undefined,
       refreshPrimary: async (live, modelChanged) => {
+        if (modelChanged && live.summary.provider === 'claude')
+          this.context.invalidateWindow(live.summary.appSessionId);
         const session = live.session;
         const compactionTarget = this.primaryCompactionTarget(live);
         if (modelChanged && compactionTarget) await this.compaction.rearmPrimary(compactionTarget);
@@ -1286,7 +1292,9 @@ export class SessionManager {
   }
 
   private maxContextTokensForSummary(summary: SessionSummary): number | undefined {
-    return this.maxContextTokensForModel(summary.modelId);
+    return summary.provider === 'droid'
+      ? this.maxContextTokensForModel(summary.modelId)
+      : summary.maxContextTokens;
   }
 
   private maxContextTokensForModel(modelId?: string): number | undefined {

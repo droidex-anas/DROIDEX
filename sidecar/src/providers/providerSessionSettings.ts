@@ -11,7 +11,7 @@ import type { ProviderModelSettings } from './session.js';
 
 export function writeProviderSessionSettings(
   appSessionId: string,
-  { modelId, reasoningEffort }: ProviderModelSettings,
+  { modelId, reasoningEffort, contextWindowTokens }: ProviderModelSettings,
 ): void {
   const directory = providerSessionsDir();
   // Settings belong to a conversation; a session that never wrote a transcript
@@ -23,7 +23,8 @@ export function writeProviderSessionSettings(
   // record that the chat has no model of its own, which dropping the key would
   // leave to the transcript head's original one.
   if (modelId !== undefined) stored.modelId = modelId;
-  if (reasoningEffort) stored.reasoningEffort = reasoningEffort;
+  if (reasoningEffort !== undefined) stored.reasoningEffort = reasoningEffort;
+  if (contextWindowTokens !== undefined) stored.contextWindowTokens = contextWindowTokens;
   mkdirSync(directory, { recursive: true });
   writeFileSync(path, JSON.stringify(stored));
 }

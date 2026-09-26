@@ -80,13 +80,16 @@ test('syncSummaries persists autoCompactions and loadHistoricalSessions restores
   const cwd = join(home, 'workspace-autocompact');
   writeSession('autocompact-chat', cwd);
   const index = new HistoryIndex();
-  persistTestSummaries([{ ...summary('autocompact-chat', cwd), autoCompactions: 3 }]);
+  persistTestSummaries([
+    { ...summary('autocompact-chat', cwd), autoCompactions: 3, contextWindowTokens: 200000 },
+  ]);
   index.close();
 
   const rows = loadHistoricalSessions({ workspaceCwds: [cwd] });
 
   const row = rows.find((r) => r.summary.appSessionId === 'autocompact-chat');
   assert.equal(row?.summary.autoCompactions, 3);
+  assert.equal(row?.summary.contextWindowTokens, 200000);
 });
 
 test('historical compaction markers hydrate the summary generation', () => {

@@ -1,6 +1,7 @@
 import {
   query,
   type EffortLevel,
+  type ModelInfo as ClaudeModelInfo,
   type McpServerConfig as SdkMcpServerConfig,
   type SDKUserMessage,
 } from '@anthropic-ai/claude-agent-sdk';
@@ -16,11 +17,13 @@ import type { ModelInfo, ProviderStatus, ReasoningEffort } from '../../protocol.
 import type {
   Provider,
   ProviderOpenInput,
+  ProviderModelSettings,
   ProviderResumeInput,
   ProviderSession,
 } from '../session.js';
 import { resolveClaudePath } from './claudeExecutable.js';
 import { claudeCatalogItems } from './claudeCatalog.js';
+import { claudeContextEnv, claudeContextModel } from './claudeContextWindow.js';
 import { ClaudeSession, type ClaudeSessionInput } from './claudeSession.js';
 
 const PROBE_TIMEOUT_MS = 25_000;
@@ -28,12 +31,23 @@ const INSTALL_HINT = 'Claude Code CLI not found. Install it, then refresh.';
 
 export class ClaudeProvider implements Provider {
   readonly kind = 'claude' as const;
+  private models: ClaudeModelInfo[] = [];
+  private defaultModelId?: string;
+
+  validateModelSettings(settings: ProviderModelSettings): void {
+    claudeContextModel(
+      settings.modelId ?? this.defaultModelId,
+      settings.contextWindowTokens,
+      this.models,
+    );
+  }
 
   async create({
     interactions,
     cwd,
     modelId,
     reasoningEffort,
+    contextWindowTokens,
     autonomyLevel,
     interactionMode,
     mcpServers,
@@ -47,6 +61,7 @@ export class ClaudeProvider implements Provider {
       interactionMode,
       ...(modelId ? { modelId } : {}),
       ...(reasoningEffort ? { reasoningEffort } : {}),
+      ...(contextWindowTokens !== undefined ? { contextWindowTokens } : {}),
       mcpServers: sdkMcpServers(mcpServers),
       interactions,
     });
@@ -54,7 +69,15 @@ export class ClaudeProvider implements Provider {
 
   async resume(
     providerSessionId: string,
-    { interactions, cwd, modelId, reasoningEffort, autonomy, mcpServers }: ProviderResumeInput,
+    {
+      interactions,
+      cwd,
+      modelId,
+      reasoningEffort,
+      contextWindowTokens,
+      autonomy,
+      mcpServers,
+    }: ProviderResumeInput,
   ): Promise<ProviderSession> {
     // A stored chat carries no interaction mode of its own, so a reopened one
     // starts in Chat the way the sidebar shows it.
@@ -65,14 +88,27 @@ export class ClaudeProvider implements Provider {
       interactionMode: 'auto',
       ...(modelId ? { modelId } : {}),
       ...(reasoningEffort ? { reasoningEffort } : {}),
+      ...(contextWindowTokens !== undefined ? { contextWindowTokens } : {}),
       mcpServers: sdkMcpServers(mcpServers),
       interactions,
       resume: true,
     });
   }
 
-  private async open(input: Omit<ClaudeSessionInput, 'executable'>): Promise<ProviderSession> {
-    const session = new ClaudeSession({ ...input, executable: this.requireExecutable() });
+  private async open(
+    input: Omit<ClaudeSessionInput, 'executable' | 'models'>,
+  ): Promise<ProviderSession> {
+    const modelId = claudeContextModel(
+      input.modelId ?? this.defaultModelId,
+      input.contextWindowTokens,
+      this.models,
+    );
+    const session = new ClaudeSession({
+      ...input,
+      modelId,
+      models: this.models,
+      executable: this.requireExecutable(),
+    });
     try {
       await session.start();
     } catch (error) {
@@ -104,6 +140,7 @@ export class ClaudeProvider implements Provider {
         cwd: tmpdir(),
         pathToClaudeCodeExecutable: executable,
         persistSession: false,
+        env: claudeContextEnv(process.env, 1000000),
         allowedTools: [],
         mcpServers: {},
         strictMcpConfig: true,
@@ -127,6 +164,8 @@ export class ClaudeProvider implements Provider {
       ]);
       const settings = claudeSettings();
       const defaultModelId = claudeDefaultModelId(catalog, settings.model);
+      this.models = catalog;
+      this.defaultModelId = defaultModelId;
       return {
         provider: 'claude',
         readiness: 'ready',

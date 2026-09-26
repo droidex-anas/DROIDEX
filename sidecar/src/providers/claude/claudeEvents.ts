@@ -69,6 +69,7 @@ export class ClaudeEventMapper {
 
   setModel(modelId: string | undefined): void {
     this.modelId = modelId;
+    this.observedModelId = undefined;
   }
 
   // Resets state scoped to the turn that is starting, not the long-lived
@@ -291,7 +292,12 @@ export class ClaudeEventMapper {
           ],
     );
     this.reportedResults.clear();
-    return [...missed, this.usage()];
+    const mainModel = this.observedModelId ?? this.modelId?.replace(/\[1m\]$/i, '');
+    const limit = mainModel ? message.modelUsage?.[mainModel]?.contextWindow : undefined;
+    const usageEvent = this.usage();
+    if (limit !== undefined && Number.isFinite(limit) && limit > 0 && usageEvent.tokens)
+      usageEvent.tokens.maxContextTokens = limit;
+    return [...missed, usageEvent];
   }
 
   // A line the session itself has to say, in the row shape every provider's

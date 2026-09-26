@@ -45,6 +45,7 @@ export const createSession = (input: {
   interactionMode?: SessionInteractionMode;
   modelId?: string;
   reasoningEffort?: ReasoningEffort;
+  contextWindowTokens?: 200000 | 1000000;
   compactionModel?: string;
   compactionTokenLimit?: number | null;
   compactionTokenLimitPerModel?: Record<string, number>;
@@ -63,6 +64,7 @@ export const updateSessionSettings = (input: {
   appSessionId: string;
   modelId?: string | null;
   reasoningEffort?: ReasoningEffort | null;
+  contextWindowTokens?: 200000 | 1000000;
   requestId?: string;
   autonomy?: Autonomy;
   interactionMode?: SessionInteractionMode;
