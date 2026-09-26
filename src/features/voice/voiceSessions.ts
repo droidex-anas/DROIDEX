@@ -81,6 +81,13 @@ export function voiceSessionOf(
   return sessions[appSessionId] ?? IDLE;
 }
 
+/** True while the assistant's own words are still arriving, which is it talking. */
+export function isAssistantSpeaking(lines: VoiceTranscriptLine[]): boolean {
+  // Not only the last line: the user can be transcribed while the assistant is
+  // still talking, which leaves the assistant's open line behind theirs.
+  return lines.some((line) => line.role === 'assistant' && !line.final);
+}
+
 export function withoutVoiceSession(sessions: VoiceSessions, appSessionId: string): VoiceSessions {
   if (!(appSessionId in sessions)) return sessions;
   return Object.fromEntries(Object.entries(sessions).filter(([id]) => id !== appSessionId));
