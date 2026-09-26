@@ -5,9 +5,8 @@ import { ChevronDown, Keyboard, Mic, MicOff, Settings2, X } from 'lucide-react';
 import { useObscuresNativeSurfaces } from '../../hooks/useObscuresNativeSurfaces';
 import { WINDOW_CONTROLS_INSET_PX } from '../../lib/windowChrome';
 import { pushEscapeLayer } from '../../components/environment/usePopover';
-import AskUserInline from '../../components/AskUserInline';
 import { MessageBody } from '../../components/MessageBody';
-import PermissionInline from '../../components/PermissionInline';
+import InlineInteractions from '../../components/InlineInteractions';
 import { SpokenMark } from '../../components/transcript/primitives';
 import { UserBubble } from '../../components/transcript/UserBubble';
 import { VoiceOrb } from './VoiceOrb';
@@ -146,8 +145,7 @@ function VoiceSurfaceDialog({ voice }: { voice: Voice }) {
           It asks with the app's own cards, in the same place the composer
           would have shown them, rather than behind this surface. */}
       <div className="mx-auto max-h-[35vh] w-full max-w-[680px] shrink-0 overflow-y-auto px-6">
-        <PermissionInline />
-        <AskUserInline />
+        <InlineInteractions asks />
       </div>
 
       <div className="flex shrink-0 flex-col items-center gap-3 pb-6 pt-4">

@@ -135,9 +135,7 @@ import {
   buildVisibleChildSettingsTarget,
   childSettingsReadinessLabel,
 } from '../lib/exactChildSettings';
-import AskUserInline from './AskUserInline';
-import PermissionInline from './PermissionInline';
-import PlanApprovalInline from './PlanApprovalInline';
+import InlineInteractions from './InlineInteractions';
 import { ModelIcon, providerOf } from './ModelIcon';
 import { StartInBar } from './environment/StartInBar';
 import type { Autonomy, SkillInfo } from '../types/bridge';
@@ -1801,15 +1799,9 @@ export default function PromptInput({
           onRunRow={runMenuItem}
         />
 
-        <PlanApprovalInline />
         {/* The full voice surface covers this composer and shows the same two
             cards itself, so only one of the two places owns an ask at a time. */}
-        {voice.view !== 'full' && (
-          <>
-            <PermissionInline />
-            <AskUserInline />
-          </>
-        )}
+        <InlineInteractions plans asks={voice.view !== 'full'} />
 
         {missionPreview ? (
           <div
