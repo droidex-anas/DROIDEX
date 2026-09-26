@@ -89,6 +89,7 @@ test('thread start, resume and every turn carry the requested service tier inclu
     onNotification: (method: string, handler: (params: unknown) => void) =>
       notifications.set(method, handler),
     onRequest: () => undefined,
+    onUnsupportedRequest: () => undefined,
     onClose: () => undefined,
     request: (method: string, params: Record<string, unknown>) => {
       if (method === 'skills/list') return Promise.resolve({ data: [] });
