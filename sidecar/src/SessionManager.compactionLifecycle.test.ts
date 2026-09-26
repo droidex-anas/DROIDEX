@@ -354,6 +354,8 @@ test('[C2] Provider-session swap', { concurrency: false }, async () => {
     assert.equal(update.session.appSessionId, 'provider-1');
     assert.equal(update.session.providerSessionId, 'provider-2');
     assert.equal(load.sessionId, 'provider-2');
+    assert.equal(update.session.autonomy, 'low');
+    assert.deepEqual(h.provider.session('provider-2').settings[0], { autonomyLevel: 'off' });
     assert.equal(typeof load.handlers.permissionHandler, 'function');
     assert.equal(typeof load.handlers.askUserHandler, 'function');
     assert.equal(load.handlers.mcpServers, creation.mcpServers);

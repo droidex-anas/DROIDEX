@@ -8,7 +8,7 @@ import {
 
 import { automationPermissionTarget } from '../../automations/permissionPolicy.js';
 import { classifyPermission, confirmationType, permissionSignature } from '../../normalize.js';
-import type { PermissionOutcome, SessionQuestion } from '../../protocol.js';
+import type { Autonomy, PermissionOutcome, SessionQuestion } from '../../protocol.js';
 import { nextInteractionRequestId, type ProviderInteractions } from '../interactions.js';
 
 const DROID_OUTCOMES: Record<PermissionOutcome, ToolConfirmationOutcome> = {
@@ -29,12 +29,22 @@ const DROID_OUTCOMES: Record<PermissionOutcome, ToolConfirmationOutcome> = {
 // The Droid daemon asks through its own handler callbacks while DROIDEX decides
 // in its own vocabulary, so this is the only place the two shapes meet.
 export function droidInteractionHandlers(
-  ref: { id: string },
+  ref: { id: string; autonomy?: Autonomy },
   interactions: ProviderInteractions,
 ): { permissionHandler: PermissionHandler; askUserHandler: AskUserHandler } {
   return {
-    permissionHandler: async (params) =>
-      DROID_OUTCOMES[await requestApproval(ref.id, params, interactions)],
+    permissionHandler: async (params) => {
+      // A single callback may cover several tools; every one must be an edit.
+      if (
+        ref.autonomy === 'low' &&
+        params.toolUses.length > 0 &&
+        params.toolUses.every(({ details }) =>
+          ['edit', 'create', 'apply_patch'].includes(details.type),
+        )
+      )
+        return ToolConfirmationOutcome.ProceedOnce;
+      return DROID_OUTCOMES[await requestApproval(ref.id, params, interactions)];
+    },
     askUserHandler: async (params) => await interactions.requestQuestion(askedQuestions(params)),
   };
 }

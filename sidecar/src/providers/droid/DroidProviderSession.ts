@@ -24,6 +24,7 @@ export class DroidProviderSession implements ProviderSession {
     private readonly appSessionId: string,
     readonly droid: FactorySession,
     private readonly runtime: DroidProcessRuntime,
+    private readonly permissions: { autonomy: Autonomy } = { autonomy: 'off' },
   ) {}
 
   get providerSessionId(): string {
@@ -58,6 +59,7 @@ export class DroidProviderSession implements ProviderSession {
 
   async setAutonomy(autonomy: Autonomy): Promise<void> {
     await this.droid.updateSettings({ autonomyLevel: mapAutonomy(autonomy) });
+    this.permissions.autonomy = autonomy;
   }
 
   async setModel({ modelId, reasoningEffort }: ProviderModelSettings): Promise<void> {

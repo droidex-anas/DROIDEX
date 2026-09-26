@@ -1,4 +1,5 @@
 import test from 'node:test';
+import { loadDefaultPermissionMode } from './permissionSemantics';
 import assert from 'node:assert/strict';
 
 import {
@@ -77,3 +78,15 @@ function withLocalStorageMap(seed: Record<string, string>, fn: () => void): void
     else delete (globalThis as { localStorage?: Storage }).localStorage;
   }
 }
+
+test('permission semantics reset the saved default once and new installs start supervised', () => {
+  withLocalStorageMap({ 'droid-default-autonomy': 'high' }, () => {
+    assert.equal(loadDefaultPermissionMode(), 'off');
+    saveDefaultAutonomy('low');
+    assert.equal(loadDefaultPermissionMode(), 'low');
+  });
+  withLocalStorageMap({}, () => assert.equal(loadDefaultPermissionMode(), 'off'));
+  withLocalStorageMap({ 'droid-permission-semantics-revision': '1' }, () =>
+    assert.equal(loadDefaultPermissionMode(), 'off'),
+  );
+});

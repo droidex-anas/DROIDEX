@@ -68,7 +68,7 @@ export class CodexProvider implements Provider {
     return this.openSession({
       appSessionId: randomUUID(),
       cwd,
-      autonomy: autonomyLevel ?? 'low',
+      autonomy: autonomyLevel ?? 'off',
       model: {
         ...(modelId ? { modelId } : {}),
         ...(reasoningEffort ? { reasoningEffort } : {}),
@@ -87,7 +87,7 @@ export class CodexProvider implements Provider {
       {
         appSessionId: providerSessionId,
         cwd: cwd ?? tmpdir(),
-        autonomy: autonomy ?? 'low',
+        autonomy: autonomy ?? 'off',
         model: {
           ...(modelId ? { modelId } : {}),
           ...(reasoningEffort ? { reasoningEffort } : {}),

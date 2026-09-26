@@ -1,5 +1,13 @@
 import assert from 'node:assert/strict';
-import { chmodSync, mkdirSync, mkdtempSync, rmSync, unlinkSync, writeFileSync } from 'node:fs';
+import {
+  chmodSync,
+  mkdirSync,
+  mkdtempSync,
+  rmSync,
+  readFileSync,
+  unlinkSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
@@ -486,3 +494,38 @@ function transcriptEvent(
     ...extra,
   };
 }
+
+test('permission migration persists beside old provider transcripts and survives repeated scans', () => {
+  for (const [provider, before, after] of [
+    ['claude', 'low', 'off'],
+    ['claude', 'medium', 'off'],
+    ['codex', 'low', 'medium'],
+    ['codex', 'medium', 'medium'],
+  ] as const) {
+    const id = `old-permissions-${provider}-${before}`;
+    mkdirSync(providerSessionsDir(), { recursive: true });
+    writeFileSync(
+      join(providerSessionsDir(), `${id}.jsonl`),
+      providerSessionJsonl({
+        type: 'session_start',
+        provider,
+        id,
+        title: id,
+        autonomyLevel: before,
+      }),
+    );
+    assert.equal(
+      loadHistoricalSessions().find((row) => row.summary.appSessionId === id)?.summary.autonomy,
+      after,
+    );
+    const settingsPath = join(providerSessionsDir(), `${id}.settings.json`);
+    const settings = JSON.parse(readFileSync(settingsPath, 'utf8'));
+    assert.equal(settings.permissionSemanticsRevision, 1);
+    assert.equal(settings.autonomyLevel, after);
+    writeFileSync(settingsPath, JSON.stringify({ ...settings, autonomyLevel: 'low' }));
+    assert.equal(
+      loadHistoricalSessions().find((row) => row.summary.appSessionId === id)?.summary.autonomy,
+      'low',
+    );
+  }
+});

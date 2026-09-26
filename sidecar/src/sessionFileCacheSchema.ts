@@ -1,5 +1,6 @@
 import type { DatabaseSync } from 'node:sqlite';
 
+import { PERMISSION_SEMANTICS_REVISION } from './permissionSemantics.js';
 import { stringValue } from './values.js';
 
 const CACHE_COLUMNS = [
@@ -16,7 +17,14 @@ const CACHE_COLUMNS = [
 export function initializeSessionFileCacheSchema(db: DatabaseSync): void {
   const isCanonical =
     hasExactColumns(db, 'session_file_cache', CACHE_COLUMNS) &&
-    hasExactColumns(db, 'session_file_cache_metadata', ['id', 'revision']);
+    hasExactColumns(db, 'session_file_cache_metadata', [
+      'id',
+      'revision',
+      'permission_semantics_revision',
+    ]) &&
+    db
+      .prepare('SELECT permission_semantics_revision FROM session_file_cache_metadata WHERE id = 1')
+      .get()?.permission_semantics_revision === PERMISSION_SEMANTICS_REVISION;
   if (!isCanonical) {
     db.exec(`
       DROP TABLE IF EXISTS session_file_cache;
@@ -36,9 +44,11 @@ export function initializeSessionFileCacheSchema(db: DatabaseSync): void {
     );
     CREATE TABLE IF NOT EXISTS session_file_cache_metadata (
       id INTEGER PRIMARY KEY CHECK (id = 1),
-      revision INTEGER NOT NULL
+      revision INTEGER NOT NULL,
+      permission_semantics_revision INTEGER NOT NULL
     );
-    INSERT OR IGNORE INTO session_file_cache_metadata (id, revision) VALUES (1, 0);
+    INSERT OR IGNORE INTO session_file_cache_metadata (id, revision, permission_semantics_revision)
+      VALUES (1, 0, ${String(PERMISSION_SEMANTICS_REVISION)});
   `);
 }
 

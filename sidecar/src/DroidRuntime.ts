@@ -277,10 +277,9 @@ export function mapInteractionMode(mode: SessionInteractionMode): DroidInteracti
 }
 
 export function mapAutonomy(autonomy: Autonomy): AutonomyLevel {
-  if (autonomy === 'off') return AutonomyLevel.Off;
+  if (autonomy === 'off' || autonomy === 'low') return AutonomyLevel.Off;
   if (autonomy === 'high') return AutonomyLevel.High;
-  if (autonomy === 'medium') return AutonomyLevel.Medium;
-  return AutonomyLevel.Low;
+  return AutonomyLevel.Medium;
 }
 
 export function factoryReasoningEffort(reasoning: ReasoningEffort): SdkReasoningEffort {

@@ -42,6 +42,7 @@ import {
   rebuildChildSessionsToV4,
 } from './historyChildSchemaMigration.js';
 import { DEFAULT_PROVIDER, providerKind } from './providers/providerKind.js';
+import { migrateHistoryPermissions, migrateTranscriptPermissions } from './permissionSemantics.js';
 import { readSessionFileHead, readSessionStart } from './sessionFileHead.js';
 import { droidexHistoryDir, providerSessionsDir } from './droidexPaths.js';
 import { removeSessionNotices, sessionNoticesRevision } from './sessionNotices.js';
@@ -342,6 +343,7 @@ export class HistoryIndex {
         .get() !== undefined;
     if (!nonEmpty) {
       HistoryIndex.createSchema(db);
+      migrateHistoryPermissions(db);
       return;
     }
     if (version === 1 || version === 2) {
@@ -354,6 +356,7 @@ export class HistoryIndex {
       throw new Error(historySchemaRecovery());
     }
     if (!hasCanonicalHistorySchema(db)) throw new Error(historySchemaRecovery());
+    migrateHistoryPermissions(db);
   }
 
   private static createSchema(db: DatabaseSync): void {
@@ -1626,10 +1629,15 @@ function readSessionModelSettings(
       tokenLimitRecordValue(sidecarSettings.compactionTokenLimitPerModel) ??
       tokenLimitRecordValue(settings.compactionTokenLimitPerModel) ??
       tokenLimitRecordValue(raw.compactionTokenLimitPerModel),
-    autonomy: mapAutonomy(
-      stringValue(sidecarSettings.autonomyLevel) ||
-        stringValue(settings.autonomyLevel) ||
-        stringValue(raw.autonomyLevel),
+    autonomy: migrateTranscriptPermissions(
+      sessionPath,
+      providerKind(start?.provider) ?? DEFAULT_PROVIDER,
+      mapAutonomy(
+        stringValue(sidecarSettings.autonomyLevel) ??
+          stringValue(settings.autonomyLevel) ??
+          stringValue(raw.autonomyLevel),
+      ),
+      raw.permissionSemanticsRevision,
     ),
   };
 }
