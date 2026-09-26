@@ -10,6 +10,7 @@ import { MessageBody } from '../../components/MessageBody';
 import PermissionInline from '../../components/PermissionInline';
 import { SpokenMark } from '../../components/transcript/primitives';
 import { UserBubble } from '../../components/transcript/UserBubble';
+import { isConversationAtLatest } from '../../components/conversationListState';
 import { VoiceOrb } from './VoiceOrb';
 import { VoiceSettingsSheet } from './VoiceSettingsSheet';
 import { voiceStatusIsLive, voiceStatusLabel } from './voiceStatus';
@@ -230,16 +231,42 @@ function VoiceSurfaceDialog({ voice, appSessionId }: { voice: Voice; appSessionI
 function SpokenFeed({ appSessionId }: { appSessionId: string }) {
   const lines = useVoiceTranscript(appSessionId);
   const feedRef = useRef<HTMLDivElement>(null);
+  const contentRef = useRef<HTMLDivElement>(null);
+  // Whether the reader is at the newest line, with the same slack the chat
+  // allows. Scrolling up to reread lets the conversation grow below them;
+  // scrolling back down follows it again.
+  const following = useRef(true);
 
-  // The newest line stays in view as the conversation runs.
+  // The newest line stays in view while it is followed. The feed moves once
+  // its content has grown, in the browser's own resize pass, so arriving words
+  // cost no layout read of their own.
   useLayoutEffect(() => {
     const feed = feedRef.current;
-    if (feed) feed.scrollTop = feed.scrollHeight;
-  }, [lines]);
+    const content = contentRef.current;
+    if (!feed || !content) return;
+    const observer = new ResizeObserver(() => {
+      if (following.current) feed.scrollTop = feed.scrollHeight;
+    });
+    observer.observe(content);
+    return () => {
+      observer.disconnect();
+    };
+  }, []);
 
   return (
-    <div ref={feedRef} className="min-h-0 flex-1 overflow-y-auto px-6 pb-2 pt-4">
-      <div className="mx-auto flex w-full max-w-[680px] flex-col gap-6">
+    <div
+      ref={feedRef}
+      onScroll={(event) => {
+        const feed = event.currentTarget;
+        following.current = isConversationAtLatest(
+          feed.scrollHeight,
+          feed.scrollTop,
+          feed.clientHeight,
+        );
+      }}
+      className="min-h-0 flex-1 overflow-y-auto px-6 pb-2 pt-4"
+    >
+      <div ref={contentRef} className="mx-auto flex w-full max-w-[680px] flex-col gap-6">
         {lines.map((line) => (
           <SpokenLine key={line.id} line={line} />
         ))}
