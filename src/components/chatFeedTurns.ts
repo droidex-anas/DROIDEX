@@ -109,12 +109,14 @@ export function tailTimestamp(item?: FeedItem): number | undefined {
   if (!item) return undefined;
   if (item.type === 'worked' || item.type === 'turnChanges') return undefined;
   if (item.type === 'tools') {
+    if (item.events.length === 0) return undefined;
     const e = item.events[item.events.length - 1];
-    return e?.endTs ?? e?.ts;
+    return e.endTs ?? e.ts;
   }
   if (item.type === 'diffs') {
+    if (item.changes.length === 0) return undefined;
     const c = item.changes[item.changes.length - 1];
-    return c?.event.endTs ?? c?.event.ts;
+    return c.event.endTs ?? c.event.ts;
   }
   if (item.type === 'child_sessions') {
     const e = item.events.at(-1);

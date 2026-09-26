@@ -244,11 +244,6 @@
       "count": 3
     }
   },
-  "src/components/chatFeedTurns.ts": {
-    "@typescript-eslint/no-unnecessary-condition": {
-      "count": 4
-    }
-  },
   "src/components/environment/usePopover.ts": {
     "@typescript-eslint/array-type": {
       "count": 1
