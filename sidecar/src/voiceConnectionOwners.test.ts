@@ -46,3 +46,29 @@ test('the same page reclaims a call, while a new page cannot', (t) => {
   t.mock.timers.tick(10_000);
   assert.deepEqual(stopped, ['chat-one']);
 });
+
+test('a failed replacement leaves the old orphan timer and cannot stop its call', (t) => {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  const stopped: string[] = [];
+  const owners = new VoiceConnectionOwners((appSessionId) => stopped.push(appSessionId));
+  const first = {};
+  owners.started('chat-one', 'page-one', first);
+  owners.disconnected(first);
+
+  assert.equal(owners.stopped('chat-one', 'page-two'), false);
+  t.mock.timers.tick(10_000);
+  assert.deepEqual(stopped, ['chat-one']);
+  owners.close();
+});
+
+test('an old page cannot stop the replacement page call', () => {
+  const stopped: string[] = [];
+  const owners = new VoiceConnectionOwners((appSessionId) => stopped.push(appSessionId));
+  owners.started('chat-one', 'page-one', {});
+  owners.started('chat-one', 'page-two', {});
+
+  assert.equal(owners.stopped('chat-one', 'page-one'), false);
+  assert.equal(owners.stopped('chat-one', 'page-two'), true);
+  assert.deepEqual(stopped, []);
+  owners.close();
+});
