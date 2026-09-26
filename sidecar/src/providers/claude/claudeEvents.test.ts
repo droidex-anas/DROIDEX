@@ -472,3 +472,22 @@ test("the session's totals count the main loop, not its subagents", () => {
   assert.deepEqual(tokens(message({ type: 'conversation_reset' })), []);
   assert.deepEqual(tokens(turn(7, 3)), [{ tokensIn: 7, tokensOut: 3, contextTokens: 0 }]);
 });
+
+test('task updates preserve nonterminal states and only explicit endings settle children', () => {
+  const children = childrenOf(new ClaudeEventMapper('app-1'));
+  children(
+    message({
+      type: 'system',
+      subtype: 'task_started',
+      task_id: 'agent-1',
+      task_type: 'local_agent',
+      description: 'Worker',
+    }),
+  );
+  for (const status of ['pending', 'running', 'paused', 'completed', 'failed', 'killed']) {
+    const [child] = children(
+      message({ type: 'system', subtype: 'task_updated', task_id: 'agent-1', patch: { status } }),
+    );
+    assert.equal(child?.status, status === 'killed' ? 'paused' : status);
+  }
+});

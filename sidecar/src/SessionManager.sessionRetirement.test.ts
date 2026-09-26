@@ -618,3 +618,65 @@ test('a session whose agent left a dev server running is never retired', async (
     await h.dispose();
   }
 });
+
+test('warm-up owns readiness and resume failures once and permits a later attempt', async (t) => {
+  const errors: unknown[][] = [];
+  t.mock.method(console, 'error', (...args: unknown[]) => errors.push(args));
+  let attempts = 0;
+  let readyFails = true;
+  const warmUp = new SessionRuntimeWarmUp({
+    ready: async () => {
+      if (readyFails) throw new Error('readiness failed');
+    },
+    isResumable: () => true,
+    isLive: () => false,
+    resume: async () => {
+      if (++attempts === 1) throw new Error('resume failed');
+    },
+  });
+  t.after(() => warmUp.stop());
+  warmUp.selected('A');
+  await warmUp.flush();
+  readyFails = false;
+  warmUp.selected('A');
+  await warmUp.flush();
+  warmUp.selected('A');
+  await warmUp.flush();
+  assert.equal(attempts, 2);
+  assert.deepEqual(errors, [
+    ['Could not warm session runtime: readiness failed'],
+    ['Could not warm session runtime: resume failed'],
+  ]);
+});
+
+test('selection abandoned while readiness is pending never begins resuming', async (t) => {
+  const resumed: string[] = [];
+  let reconcile = (): void => undefined;
+  const ready = new Promise<void>((resolve) => {
+    reconcile = resolve;
+  });
+  let waiting = (): void => undefined;
+  const started = new Promise<void>((resolve) => {
+    waiting = resolve;
+  });
+  const warmUp = new SessionRuntimeWarmUp({
+    ready: () => {
+      waiting();
+      return ready;
+    },
+    isResumable: () => true,
+    isLive: () => false,
+    resume: async (id) => {
+      resumed.push(id);
+    },
+  });
+  t.after(() => warmUp.stop());
+  warmUp.selected('A');
+  const first = warmUp.flush();
+  await started;
+  warmUp.selected('B');
+  const second = warmUp.flush();
+  reconcile();
+  await Promise.all([first, second]);
+  assert.deepEqual(resumed, ['B']);
+});

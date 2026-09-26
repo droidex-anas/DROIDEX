@@ -88,7 +88,7 @@ function parentOf(...children: ChildSessionState[]): ParentChildSessions {
     },
     children: new Map(children.map((entry) => [entry.identity.childSessionId, entry])),
     spawnChildren: new Map(),
-    settledSinceWake: new Set(),
+    settledSinceWake: new Map(),
     pendingSpawns: new Map(),
     openAttempts: new Map(),
     reservedOpenSlots: new Set(),

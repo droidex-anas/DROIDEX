@@ -52,7 +52,7 @@ function parentWith(
     lease: {} as ParentChildSessions['lease'],
     children: new Map([[id, childState]]),
     spawnChildren: new Map(),
-    settledSinceWake: new Set(),
+    settledSinceWake: new Map(),
     pendingSpawns: new Map(),
     openAttempts: open ? new Map([[id, open]]) : new Map(),
     reservedOpenSlots: new Set(),
