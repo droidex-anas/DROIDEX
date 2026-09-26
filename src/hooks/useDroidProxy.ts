@@ -76,11 +76,19 @@ export function useDroidProxy(): {
       }
       if (event.type === 'droidproxy.factoryModels.applied') {
         if (event.ok) {
-          toast.success(
-            event.removed > 0
-              ? `Applied ${String(event.applied)} DroidProxy models (replaced ${String(event.removed)}).`
-              : `Applied ${String(event.applied)} DroidProxy models.`,
-          );
+          if (event.applied === 0) {
+            toast.success(
+              event.removed > 0
+                ? `Removed ${String(event.removed)} DroidProxy models.`
+                : 'No DroidProxy models to remove.',
+            );
+          } else {
+            toast.success(
+              event.removed > 0
+                ? `Applied ${String(event.applied)} DroidProxy models (replaced ${String(event.removed)}).`
+                : `Applied ${String(event.applied)} DroidProxy models.`,
+            );
+          }
         } else {
           toast.error(event.message ?? 'Could not update Factory settings.');
         }

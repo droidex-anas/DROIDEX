@@ -1,7 +1,23 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  readdirSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+} from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 
-import { droidProxySettingsModels, mergeFactoryModels } from './droidProxyFactoryModels.js';
+import {
+  applyDroidProxyFactoryModels,
+  droidProxySettingsModels,
+  mergeFactoryModels,
+} from './droidProxyFactoryModels.js';
 
 describe('droidProxySettingsModels', () => {
   it('emits one entry per catalog definition for enabled providers', () => {
@@ -54,4 +70,67 @@ describe('mergeFactoryModels', () => {
       merged.map((_, index) => index),
     );
   });
+});
+
+it('applies and removes proxy models without losing other settings or overwriting backups', () => {
+  const home = mkdtempSync(join(tmpdir(), 'droidproxy-factory-models-'));
+  const previousHome = process.env.HOME;
+  process.env.HOME = home;
+  try {
+    const settingsDir = join(home, '.factory');
+    const path = join(settingsDir, 'settings.json');
+    mkdirSync(settingsDir);
+    const original = `${JSON.stringify({
+      customModels: [{ id: 'custom:other:model', index: 9 }],
+      otherSetting: 'keep',
+    })}\n`;
+    writeFileSync(path, original, { mode: 0o600 });
+
+    const first = applyDroidProxyFactoryModels((provider) => provider === 'codex');
+    assert.ok(first.applied > 0);
+    assert.ok(first.backupPath);
+    assert.equal(readFileSync(first.backupPath, 'utf8'), original);
+    assert.equal(statSync(path).mode & 0o777, 0o600);
+
+    const second = applyDroidProxyFactoryModels(() => false);
+    assert.equal(second.applied, 0);
+    assert.ok(second.removed > 0);
+    assert.ok(second.backupPath);
+    assert.notEqual(second.backupPath, first.backupPath);
+    assert.equal(readFileSync(first.backupPath, 'utf8'), original);
+    assert.deepEqual(JSON.parse(readFileSync(path, 'utf8')), {
+      customModels: [{ id: 'custom:other:model', index: 0 }],
+      otherSetting: 'keep',
+    });
+    assert.equal(
+      readdirSync(settingsDir).some((name) => name.endsWith('.tmp')),
+      false,
+    );
+  } finally {
+    if (previousHome === undefined) delete process.env.HOME;
+    else process.env.HOME = previousHome;
+    rmSync(home, { recursive: true, force: true });
+  }
+});
+
+it('leaves Factory settings untouched when customModels has an invalid shape', () => {
+  const home = mkdtempSync(join(tmpdir(), 'droidproxy-factory-models-'));
+  const previousHome = process.env.HOME;
+  process.env.HOME = home;
+  try {
+    const settingsDir = join(home, '.factory');
+    const path = join(settingsDir, 'settings.json');
+    mkdirSync(settingsDir);
+    const original = '{"customModels":[null]}\n';
+    writeFileSync(path, original);
+
+    assert.throws(() => applyDroidProxyFactoryModels(), /customModels must be an array/);
+    assert.equal(readFileSync(path, 'utf8'), original);
+    assert.equal(readdirSync(settingsDir).length, 1);
+    assert.ok(existsSync(path));
+  } finally {
+    if (previousHome === undefined) delete process.env.HOME;
+    else process.env.HOME = previousHome;
+    rmSync(home, { recursive: true, force: true });
+  }
 });

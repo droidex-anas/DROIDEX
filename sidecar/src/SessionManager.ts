@@ -817,16 +817,13 @@ export class SessionManager {
         this.droidProxy.cancelLogin();
         return;
       case 'droidproxy.install':
-        await this.droidProxy.install();
+        if (await this.droidProxy.install()) void this.refreshModelsAfterFactoryChange();
         return;
       case 'droidproxy.install.cancel':
         this.droidProxy.cancelInstall();
         return;
       case 'droidproxy.factoryModels.apply':
-        await this.droidProxy.applyFactoryModels();
-        // Factory settings changed under the catalog: reload it so the model
-        // picker offers the applied proxy models without a restart.
-        void this.refreshModelCatalog(true);
+        if (await this.droidProxy.applyFactoryModels()) void this.refreshModelsAfterFactoryChange();
         return;
       case 'catalog.models': {
         const models = await this.getModels();
@@ -1145,6 +1142,12 @@ export class SessionManager {
       }
     })();
     return this.modelRefresh;
+  }
+
+  private async refreshModelsAfterFactoryChange(): Promise<void> {
+    if (this.modelRefresh) await this.modelRefresh;
+    this.droidModels.invalidate();
+    await this.refreshModelCatalog(true);
   }
 
   // The help text lags the account's catalog (no Auto model), so until any

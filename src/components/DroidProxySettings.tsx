@@ -89,7 +89,12 @@ const INSTALL_UNAVAILABLE_COPY: Record<
 };
 
 function appDescription(status: DroidProxyStatus, installError: string | null): string {
-  if (status.appInstalled) return 'Installed. It serves your subscriptions on localhost:8317.';
+  if (status.appInstalled && installError)
+    return `Installed, but setup did not finish: ${installError}`;
+  if (status.appInstalled)
+    return status.proxyRunning
+      ? 'Installed and serving your subscriptions on localhost:8317.'
+      : 'Installed. Launch it to serve your subscriptions.';
   if (status.installUnavailable) return INSTALL_UNAVAILABLE_COPY[status.installUnavailable];
   if (installError) return `Install failed: ${installError} Try again, or use manual download.`;
   return 'Not installed. One click installs and launches it; then connect below.';
@@ -124,6 +129,19 @@ export function DroidProxySettings() {
   }
 
   const connectedCount = status.providers.filter((row) => row.accounts.length > 0).length;
+  const canCancelInstall = install?.phase === 'downloading' || install?.phase === 'verifying';
+  let modelDescription: string;
+  let modelActionLabel: string;
+  if (status.factoryModelCount === 0) {
+    modelDescription = 'No providers enabled. Remove previously applied proxy models from Droid.';
+    modelActionLabel = 'Remove proxy models';
+  } else if (status.factoryModelsInstalled) {
+    modelDescription = `${String(status.factoryModelCount)} models applied. They show in the model picker with the DroidProxy mark.`;
+    modelActionLabel = 'Re-apply';
+  } else {
+    modelDescription = `${String(status.factoryModelCount)} models ready. Droid sessions cannot see them until you apply.`;
+    modelActionLabel = 'Apply';
+  }
 
   return (
     <div>
@@ -148,14 +166,16 @@ export function DroidProxySettings() {
               <span className="text-[12px] font-mono text-droid-text-muted">
                 {installLabel(install)}
               </span>
-              <button
-                onClick={() => {
-                  cancelDroidProxyInstall();
-                }}
-                className={BUTTON_CLASS}
-              >
-                Cancel
-              </button>
+              {canCancelInstall && (
+                <button
+                  onClick={() => {
+                    cancelDroidProxyInstall();
+                  }}
+                  className={BUTTON_CLASS}
+                >
+                  Cancel
+                </button>
+              )}
             </div>
           ) : status.installUnavailable ? (
             <span />
@@ -197,27 +217,14 @@ export function DroidProxySettings() {
             </button>
           </div>
         </SettingRow>
-        <SettingRow
-          label="Proxy models in Droid"
-          description={
-            status.factoryModelsInstalled
-              ? `${String(status.factoryModelCount)} models applied. They show in the model picker with the DroidProxy mark.`
-              : `${String(status.factoryModelCount)} models ready. Droid sessions cannot see them until you apply.`
-          }
-        >
+        <SettingRow label="Proxy models in Droid" description={modelDescription}>
           <button
             onClick={() => {
               applyDroidProxyFactoryModels();
             }}
-            disabled={status.factoryModelCount === 0}
-            title={
-              status.factoryModelCount === 0
-                ? 'Enable a provider in the DroidProxy app first'
-                : undefined
-            }
             className={BUTTON_CLASS}
           >
-            {status.factoryModelsInstalled ? 'Re-apply' : 'Apply'}
+            {modelActionLabel}
           </button>
         </SettingRow>
       </div>

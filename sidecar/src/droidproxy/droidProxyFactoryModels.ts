@@ -1,4 +1,15 @@
-import { existsSync, copyFileSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { randomUUID } from 'node:crypto';
+import {
+  constants,
+  copyFileSync,
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  renameSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+} from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 
@@ -351,7 +362,7 @@ function pad(value: number): string {
 function backupName(now: Date): string {
   return (
     `settings.json.droidex-${String(now.getFullYear())}${pad(now.getMonth() + 1)}${pad(now.getDate())}` +
-    `-${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}.bak`
+    `-${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}-${randomUUID()}.bak`
   );
 }
 
@@ -371,12 +382,14 @@ function readFactorySettings(): FactorySettings {
   if (!isRecord(parsed)) {
     throw new Error('Factory settings.json is not a JSON object.');
   }
-  return {
-    ...parsed,
-    customModels: Array.isArray(parsed.customModels)
-      ? parsed.customModels.filter(isRecord)
-      : undefined,
-  };
+  const customModels = parsed.customModels;
+  if (
+    customModels !== undefined &&
+    (!Array.isArray(customModels) || !customModels.every(isRecord))
+  ) {
+    throw new Error('Factory settings.json customModels must be an array of objects.');
+  }
+  return { ...parsed, ...(customModels === undefined ? {} : { customModels }) };
 }
 
 function isDroidProxyEntry(id: unknown): boolean {
@@ -413,8 +426,9 @@ export function applyDroidProxyFactoryModels(
   providerIsEnabled: (providerKey: string) => boolean = () => true,
   options: DroidProxyApplyOptions = { contributorMode: false },
 ): ApplyFactoryModelsResult {
+  const settingsDir = join(homedir(), '.factory');
   const path = factorySettingsPath();
-  mkdirSync(join(homedir(), '.factory'), { recursive: true });
+  mkdirSync(settingsDir, { recursive: true });
   const settings = readFactorySettings();
   const models = Array.isArray(settings.customModels) ? settings.customModels : [];
   const enabled = droidProxySettingsModels(providerIsEnabled, options);
@@ -423,11 +437,23 @@ export function applyDroidProxyFactoryModels(
 
   let backupPath: string | undefined;
   if (existsSync(path)) {
-    backupPath = join(homedir(), '.factory', backupName(new Date()));
-    copyFileSync(path, backupPath);
+    backupPath = join(settingsDir, backupName(new Date()));
+    copyFileSync(path, backupPath, constants.COPYFILE_EXCL);
   }
-  // JSON.stringify never escapes `/`, matching DroidProxy's unescaped output.
-  writeFileSync(path, `${JSON.stringify(settings, null, 2)}\n`, 'utf8');
+  const temporaryPath = join(settingsDir, `.settings.json.droidex-${randomUUID()}.tmp`);
+  try {
+    // Write beside the original so rename replaces it atomically. Preserve its
+    // permissions; new settings files are private because they may hold keys.
+    const mode = existsSync(path) ? statSync(path).mode & 0o777 : 0o600;
+    writeFileSync(temporaryPath, `${JSON.stringify(settings, null, 2)}\n`, {
+      encoding: 'utf8',
+      flag: 'wx',
+      mode,
+    });
+    renameSync(temporaryPath, path);
+  } finally {
+    rmSync(temporaryPath, { force: true });
+  }
   return { applied: enabled.length, removed, ...(backupPath ? { backupPath } : {}) };
 }
 

@@ -1,7 +1,7 @@
 import { execFile } from 'node:child_process';
-import { createHash } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { createReadStream, createWriteStream, existsSync } from 'node:fs';
-import { access, constants, mkdir, mkdtemp, rm } from 'node:fs/promises';
+import { access, constants, mkdir, mkdtemp, rename, rm } from 'node:fs/promises';
 import { homedir, tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
@@ -140,6 +140,7 @@ export async function installDroidProxyApp(
   try {
     const zipPath = join(workdir, 'DroidProxy-arm64.zip');
     await downloadVerifiedZip(zipPath, onProgress, signal);
+    signal?.throwIfAborted();
     onProgress({ phase: 'installing' });
     // ditto, not unzip: only it preserves the bundle's code signature.
     const extracted = join(workdir, 'extracted');
@@ -153,13 +154,25 @@ export async function installDroidProxyApp(
     const target = await installTarget();
     if (!target) throw new Error('No writable Applications folder found.');
     if (existsSync(target)) return { ok: true };
-    await execFileAsync('/usr/bin/ditto', [stagedApp, target], { timeout: DITTO_TIMEOUT_MS });
-    // Strip quarantine so first launch skips the internet-download warning. If
-    // this fails the app still launches; macOS just asks once.
+    const pending = `${target}.droidex-${randomUUID()}.pending`;
     try {
-      await execFileAsync('/usr/bin/xattr', ['-cr', target], { timeout: DITTO_TIMEOUT_MS });
-    } catch {
-      // Launch proceeds; the user answers one Gatekeeper dialog instead.
+      await execFileAsync('/usr/bin/ditto', [stagedApp, pending], { timeout: DITTO_TIMEOUT_MS });
+      // Node downloads are not quarantined automatically. Leave the trust
+      // decision to macOS and the user before this app is launched.
+      const downloadedAt = Math.floor(Date.now() / 1000).toString(16);
+      try {
+        await execFileAsync(
+          '/usr/bin/xattr',
+          ['-w', 'com.apple.quarantine', `0083;${downloadedAt};DROIDEX;`, pending],
+          { timeout: DITTO_TIMEOUT_MS },
+        );
+      } catch {
+        throw new Error('Could not mark DroidProxy for macOS verification. Install it manually.');
+      }
+      if (existsSync(target)) throw new Error('DroidProxy was installed by another process.');
+      await rename(pending, target);
+    } finally {
+      await rm(pending, { recursive: true, force: true });
     }
     return { ok: true };
   } catch (error) {
@@ -208,4 +221,5 @@ async function downloadVerifiedZip(
   if ((await sha256FileHex(zipPath)) !== expected) {
     throw new Error('Download failed verification. Try again or use manual download.');
   }
+  combined.throwIfAborted();
 }

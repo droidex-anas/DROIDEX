@@ -28,6 +28,10 @@ interface ActiveLogin {
   cancelRequested: boolean;
 }
 
+type FactoryApplyOutcome =
+  | { ok: true; applied: number; removed: number; backupPath?: string }
+  | { ok: false; message: string };
+
 // Drives the DroidProxy settings page: status snapshots, browser OAuth logins
 // through DroidProxy's bundled cli-proxy-api, launching the app, and merging
 // the proxy model catalog into Factory settings.
@@ -151,59 +155,80 @@ export class DroidProxyController {
 
   // One-click setup: download, verify, install, launch, and apply models,
   // all behind progress events. A second call while one runs just re-reports.
-  async install(): Promise<void> {
+  async install(): Promise<boolean> {
     if (this.installPhase || droidProxyAppPath()) {
       await this.report();
-      return;
+      return false;
     }
     const abort = new AbortController();
     this.installAbort = abort;
     this.installPhase = 'downloading';
     let lastPhase: DroidProxyInstallPhase | undefined;
     let lastEmit = 0;
-    const result = await installDroidProxyApp((progress) => {
-      this.installPhase = progress.phase;
-      // Download chunks arrive faster than the UI can use them; phase
-      // changes always go through immediately.
-      const now = Date.now();
-      if (progress.phase === lastPhase && now - lastEmit < 150) return;
-      lastPhase = progress.phase;
-      lastEmit = now;
+    try {
+      const result = await installDroidProxyApp((progress) => {
+        this.installPhase = progress.phase;
+        // Download chunks arrive faster than the UI can use them; phase
+        // changes always go through immediately.
+        const now = Date.now();
+        if (progress.phase === lastPhase && now - lastEmit < 150) return;
+        lastPhase = progress.phase;
+        lastEmit = now;
+        this.emit({
+          type: 'droidproxy.install.progress',
+          phase: progress.phase,
+          ...(progress.receivedBytes === undefined
+            ? {}
+            : { receivedBytes: progress.receivedBytes }),
+          ...(progress.totalBytes === undefined ? {} : { totalBytes: progress.totalBytes }),
+        });
+      }, abort.signal);
+      this.installAbort = undefined;
+      if (!result.ok) {
+        this.emit({
+          type: 'droidproxy.install.done',
+          ok: false,
+          ...(result.cancelled ? { cancelled: true } : {}),
+          message: result.message,
+        });
+        return false;
+      }
+
+      this.installPhase = 'launching';
+      this.emit({ type: 'droidproxy.install.progress', phase: 'launching' });
+      await this.launchApp();
+      const proxyUp = await this.waitForProxy();
+      this.installPhase = 'applying';
+      this.emit({ type: 'droidproxy.install.progress', phase: 'applying' });
+      const applied = await this.writeFactoryModels();
+      if (!applied.ok) {
+        this.emit({
+          type: 'droidproxy.install.done',
+          ok: false,
+          message: `DroidProxy installed, but models could not be applied: ${applied.message}`,
+        });
+        return false;
+      }
       this.emit({
-        type: 'droidproxy.install.progress',
-        phase: progress.phase,
-        ...(progress.receivedBytes === undefined ? {} : { receivedBytes: progress.receivedBytes }),
-        ...(progress.totalBytes === undefined ? {} : { totalBytes: progress.totalBytes }),
+        type: 'droidproxy.install.done',
+        ok: true,
+        ...(proxyUp
+          ? {}
+          : { message: 'Installed, but the proxy is not up yet. Open the app if it stays down.' }),
       });
-    }, abort.signal);
-    this.installAbort = undefined;
-    if (!result.ok) {
-      this.installPhase = undefined;
+      return true;
+    } catch (error) {
       this.emit({
         type: 'droidproxy.install.done',
         ok: false,
-        ...(result.cancelled ? { cancelled: true } : {}),
-        message: result.message,
+        message: error instanceof Error ? error.message : 'DroidProxy setup failed.',
       });
+      return false;
+    } finally {
+      this.installAbort = undefined;
+      this.installPhase = undefined;
       await this.report();
-      return;
     }
-    this.installPhase = 'launching';
-    this.emit({ type: 'droidproxy.install.progress', phase: 'launching' });
-    await this.launchApp();
-    const proxyUp = await this.waitForProxy();
-    this.installPhase = 'applying';
-    this.emit({ type: 'droidproxy.install.progress', phase: 'applying' });
-    await this.applyFactoryModels();
-    this.installPhase = undefined;
-    this.emit({
-      type: 'droidproxy.install.done',
-      ok: true,
-      ...(proxyUp
-        ? {}
-        : { message: 'Installed, but the proxy is not up yet. Open the app if it stays down.' }),
-    });
-    await this.report();
   }
 
   cancelInstall(): void {
@@ -218,22 +243,17 @@ export class DroidProxyController {
     return false;
   }
 
-  async applyFactoryModels(): Promise<void> {
-    const status = await readDroidProxyStatus();
-    let result: { applied: number; removed: number; backupPath?: string };
-    try {
-      result = applyDroidProxyFactoryModels(this.providerEnabledPredicate(status), {
-        contributorMode: status.metaContributorMode,
-      });
-    } catch (error) {
+  async applyFactoryModels(): Promise<boolean> {
+    const result = await this.writeFactoryModels();
+    if (!result.ok) {
       this.emit({
         type: 'droidproxy.factoryModels.applied',
         ok: false,
         applied: 0,
         removed: 0,
-        message: error instanceof Error ? error.message : 'Could not update Factory settings.',
+        message: result.message,
       });
-      return;
+      return false;
     }
     this.emit({
       type: 'droidproxy.factoryModels.applied',
@@ -243,6 +263,22 @@ export class DroidProxyController {
       ...(result.backupPath ? { backupPath: result.backupPath } : {}),
     });
     await this.report();
+    return true;
+  }
+
+  private async writeFactoryModels(): Promise<FactoryApplyOutcome> {
+    try {
+      const status = await readDroidProxyStatus();
+      const result = applyDroidProxyFactoryModels(this.providerEnabledPredicate(status), {
+        contributorMode: status.metaContributorMode,
+      });
+      return { ok: true, ...result };
+    } catch (error) {
+      return {
+        ok: false,
+        message: error instanceof Error ? error.message : 'Could not update Factory settings.',
+      };
+    }
   }
 
   private providerEnabledPredicate(status: {

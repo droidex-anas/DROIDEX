@@ -69,6 +69,13 @@ export class DroidModelCatalog {
     return this.source === 'session';
   }
 
+  // Factory settings changed; the next refresh must reopen a session rather
+  // than reuse the pre-change session catalog.
+  invalidate(): void {
+    this.known();
+    this.source = 'help';
+  }
+
   private replace(source: CatalogSource, models: ModelInfo[]): void {
     this.source = source;
     this.models = models;
