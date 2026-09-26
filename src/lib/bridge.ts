@@ -25,6 +25,7 @@ function canAdoptTurnBaseline(api: object): api is TurnBaselineAdopter {
 }
 
 export class Bridge {
+  private readonly pageId = crypto.randomUUID();
   private ws: WebSocket | null = null;
   private readonly listeners = new Set<Listener>();
   private readonly batchListeners = new Set<BatchListener>();
@@ -215,6 +216,7 @@ export class Bridge {
   private connectionUrl(): string {
     const params = new URLSearchParams({
       bridgeProtocol: String(BRIDGE_PROTOCOL_VERSION),
+      pageId: this.pageId,
     });
     if (this.lastGeneration !== null) {
       params.set('resumeGeneration', this.lastGeneration);
