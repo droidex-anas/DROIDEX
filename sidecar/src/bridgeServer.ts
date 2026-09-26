@@ -49,9 +49,14 @@ export function startBridgeServer(options: {
 }): BridgeServer {
   const clients = new Set<WebSocket>();
   const voiceOwners = new VoiceConnectionOwners((appSessionId) => {
-    void options.onCommand({ type: 'voice.stop', appSessionId }).catch((error: unknown) => {
-      console.error('Orphaned voice session could not be stopped:', error);
-    });
+    void options
+      .onCommand({ type: 'voice.stop', appSessionId })
+      .then(() => {
+        broadcast({ type: 'voice.state', appSessionId, status: 'closed' });
+      })
+      .catch((error: unknown) => {
+        console.error('Orphaned voice session could not be stopped:', error);
+      });
   });
   const replay = new BridgeReplayBuffer();
   let boundPort = options.requestedPort;
@@ -266,20 +271,38 @@ export function startBridgeServer(options: {
         assertValidMentions(parsed);
       }
       const command = parsed as ClientCommand;
-      if (command.type === 'voice.start') {
-        if (!pageId) throw new Error('Voice requires a renderer page ID. Reload DROIDEX.');
-        voiceOwners.started(command.appSessionId, pageId, ws);
-        if (ws.readyState !== ws.OPEN) voiceOwners.disconnected(ws);
-      } else if (command.type === 'voice.stop') {
-        voiceOwners.stopped(command.appSessionId);
-      }
-      await options.onCommand(command);
+      if (command.type === 'voice.start' || command.type === 'voice.stop')
+        await runVoiceCommand(ws, command, pageId);
+      else await options.onCommand(command);
     } catch (err) {
       sendDirectWire(ws, {
         type: 'error',
         message: err instanceof Error ? err.message : String(err),
       });
     }
+  }
+
+  // The page that started a call owns it: only a start that succeeds moves
+  // ownership, and only the owning page can stop it.
+  async function runVoiceCommand(
+    ws: WebSocket,
+    command: Extract<ClientCommand, { type: 'voice.start' | 'voice.stop' }>,
+    pageId: string | null,
+  ): Promise<void> {
+    if (command.type === 'voice.stop') {
+      if (voiceOwners.stopped(command.appSessionId, pageId ?? '')) await options.onCommand(command);
+      return;
+    }
+    if (!pageId) throw new Error('Voice requires a renderer page ID. Reload DROIDEX.');
+    // A failed start has already been reported to its chat by the voice owner;
+    // here it only means this page does not take the call.
+    const started = await options.onCommand(command).then(
+      () => true,
+      () => false,
+    );
+    if (!started) return;
+    voiceOwners.started(command.appSessionId, pageId, ws);
+    if (ws.readyState !== ws.OPEN) voiceOwners.disconnected(ws);
   }
 
   function sendDirectWire(ws: WebSocket, message: ServerWireMessage): void {

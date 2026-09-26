@@ -20,10 +20,12 @@ export class VoiceConnectionOwners {
     this.owners.set(appSessionId, { pageId, connection });
   }
 
-  stopped(appSessionId: string): void {
+  stopped(appSessionId: string, pageId?: string): boolean {
     const owner = this.owners.get(appSessionId);
+    if (owner && pageId !== undefined && owner.pageId !== pageId) return false;
     if (owner?.stopTimer) clearTimeout(owner.stopTimer);
     this.owners.delete(appSessionId);
+    return true;
   }
 
   connected(pageId: string, connection: object): void {
