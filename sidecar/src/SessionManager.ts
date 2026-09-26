@@ -913,13 +913,14 @@ export class SessionManager {
         await this.sessionVoice.handle(cmd);
         this.runtimeRetirement.arm();
         return;
-      case 'voice.stop':
-        await this.sessionVoice.handle(cmd);
-        // A chat being talked to is not idle however quiet its transcript is,
-        // and one that has stopped is idle again. Both move when the next
-        // sweep is due, and nothing else here would say so.
+      case 'voice.stop': {
+        // Stopping clears the live flag before Codex acknowledges the request.
+        // Recheck retirement now so a missing acknowledgement cannot pin it.
+        const stoppingVoice = this.sessionVoice.handle(cmd);
         this.runtimeRetirement.arm();
+        await stoppingVoice;
         return;
+      }
       case 'voice.voices':
         await this.sessionVoice.handle(cmd);
         return;

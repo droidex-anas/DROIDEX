@@ -187,6 +187,9 @@ and sequence. Same-generation reconnects replay the retained buffer. A new
 process generation or a replay gap delivers a compact `bridge.snapshot` of
 live sessions, runtime state, and the authoritative agent-process map instead
 of a hard resync; `bridge.reset` is reserved for an invalid resume cursor.
+Each renderer page also sends a stable page ID across socket reconnects. Voice
+sessions owned by a disconnected page stop after a ten-second reclaim window;
+a reload creates a new ID because its WebRTC peer is gone.
 Electron owns sidecar health
 (`starting`, `healthy`, `degraded`, `restarting`, `recovery-required`,
 `stopped`) and bounded restart; `GET /health` is a cheap liveness probe, not a

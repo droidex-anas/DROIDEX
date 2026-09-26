@@ -3,6 +3,14 @@ import test from 'node:test';
 import { Bridge } from './bridge';
 import type { ServerEvent } from '../types/bridge';
 
+// The page ID is random per page; the rest of the URL is the contract.
+function withoutPageId(url: string): string {
+  const parsed = new URL(url);
+  assert.match(parsed.searchParams.get('pageId') ?? '', /^[0-9a-f-]{36}$/);
+  parsed.searchParams.delete('pageId');
+  return parsed.toString().replace('/?', '?');
+}
+
 class FakeWebSocket {
   static readonly OPEN = 1;
   static instances: FakeWebSocket[] = [];
@@ -69,7 +77,10 @@ test('bridge refreshes sidecar identity before reconnecting', { concurrency: fal
     await bridge.start();
     const first = FakeWebSocket.instances.at(-1);
     assert.ok(first);
-    assert.equal(first.url, 'ws://127.0.0.1:43001?token=first-token&bridgeProtocol=6');
+    assert.equal(
+      withoutPageId(first.url),
+      'ws://127.0.0.1:43001?token=first-token&bridgeProtocol=6',
+    );
     assert.equal(bridge.sendIfConnected({ type: 'runtime.status' }), false);
     assert.deepEqual(first.sent, []);
     first.close();
@@ -80,7 +91,10 @@ test('bridge refreshes sidecar identity before reconnecting', { concurrency: fal
     await Promise.resolve();
     const second = FakeWebSocket.instances.at(-1);
     assert.ok(second);
-    assert.equal(second.url, 'ws://127.0.0.1:43002?token=second-token&bridgeProtocol=6');
+    assert.equal(
+      withoutPageId(second.url),
+      'ws://127.0.0.1:43002?token=second-token&bridgeProtocol=6',
+    );
     second.open();
     assert.equal(bridge.sendIfConnected({ type: 'runtime.status' }), true);
     assert.deepEqual(
@@ -143,7 +157,7 @@ test('[R1] Renderer command round trip', { concurrency: false }, async () => {
     await bridge.start();
     const socket = FakeWebSocket.instances.at(-1)!;
 
-    assert.equal(socket.url, 'ws://127.0.0.1:43123?token=r1-token&bridgeProtocol=6');
+    assert.equal(withoutPageId(socket.url), 'ws://127.0.0.1:43123?token=r1-token&bridgeProtocol=6');
     assert.deepEqual(socket.sent, []);
     socket.open();
     assert.equal(socket.sent.length, 6);
