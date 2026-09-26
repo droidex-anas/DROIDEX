@@ -633,7 +633,7 @@ export class SessionManager {
       },
       getFactoryDefaults: () => this.getFactoryDefaults(),
       maxContextTokensForModel: (modelId) => this.maxContextTokensForModel(modelId),
-      startLocalMcpServers: (ref, cwd) => this.startLocalMcpServers(ref, cwd),
+      startLocalMcpServers: (ref, kind, cwd) => this.startLocalMcpServers(ref, kind, cwd),
       interactionsFor: (ref) => this.interactions.interactionsFor(ref),
       compaction: this.compaction,
       isShutdownStarted: () => this.shutdownPromise !== undefined,
@@ -1312,8 +1312,19 @@ export class SessionManager {
 
   private async startLocalMcpServers(
     ref: { id: string; clientRef?: string },
+    kind: ProviderKind,
     cwd?: string,
   ): Promise<StartedLocalMcpResources> {
+    if (kind === 'codex') {
+      const unattended = await isUnattendedAutomationSession(ref.id);
+      const inAppServers = shouldAttachAutomationMcp(ref.clientRef, unattended)
+        ? [
+            createSessionsMcpServer(() => ref.id, this.sidebarSessions),
+            createAutomationMcpServer(() => ref.id),
+          ]
+        : [];
+      return { servers: [], configs: [], inAppServers };
+    }
     const servers = [this.createLocalMcpResource(() => ref.id)];
     const unattended = await isUnattendedAutomationSession(ref.id);
     if (shouldAttachAutomationMcp(ref.clientRef, unattended)) {

@@ -2,6 +2,7 @@
 // run on that thread; model, effort and autonomy ride on each `turn/start`,
 // which Codex applies to that turn and the ones after it.
 import type { NormalizedEvent } from '../../normalize.js';
+import type { SdkMcpServer } from '@factory/droid-sdk';
 import type { Autonomy } from '../../protocol.js';
 import type { ProviderMention, SkillInfo } from '../catalog.js';
 import type { ProviderInteractions } from '../interactions.js';
@@ -18,6 +19,7 @@ import {
   type CodexTurn,
 } from './codexEvents.js';
 import { CodexStartup } from './codexStartup.js';
+import { CodexToolBridge } from './codexTools.js';
 import { CodexVoice } from './codexVoice.js';
 import { TurnStream, turnInput, turnStartParams } from './codexTurn.js';
 
@@ -32,6 +34,7 @@ export interface CodexSessionInput {
   autonomy: Autonomy;
   model: ProviderModelSettings;
   interactions: ProviderInteractions;
+  inAppMcpServers?: SdkMcpServer[];
 }
 
 interface ThreadResponse {
@@ -71,6 +74,7 @@ export class CodexSession implements ProviderSession {
   // explicitly; an omitted effort would leave the previous one in place.
   private effortCleared = false;
   private readonly prompts: OpenPrompts;
+  private readonly tools: CodexToolBridge;
   private readonly startup = new CodexStartup();
   private readonly backgroundListeners = new Set<(event: NormalizedEvent) => void>();
   private readonly delegatedListeners = new Set<(running: boolean) => void>();
@@ -96,6 +100,13 @@ export class CodexSession implements ProviderSession {
       () => this.applyThreadSettings(),
     );
     this.prompts = new OpenPrompts(input.appSessionId, input.interactions);
+    this.tools = new CodexToolBridge(
+      input.inAppMcpServers ?? [],
+      input.appSessionId,
+      input.interactions,
+      () => this.threadId,
+      () => !this.hasClosed,
+    );
     // Registered before `initialize`, so nothing the server sends can arrive
     // before its handler exists. Requests left unregistered — the legacy exec
     // and patch callbacks, additional permissions, MCP elicitation — are
@@ -140,7 +151,10 @@ export class CodexSession implements ProviderSession {
           excludeTurns: true,
           ...settings,
         })
-      : this.client.request<ThreadResponse>('thread/start', settings));
+      : this.client.request<ThreadResponse>('thread/start', {
+          ...settings,
+          ...(this.tools.declarations.length ? { dynamicTools: this.tools.declarations } : {}),
+        }));
     this.threadId = response.thread.id;
     this.threadModel = response.model;
     this.mapper.setModel({ ...this.model, modelId: this.model.modelId ?? this.threadModel });
@@ -386,6 +400,7 @@ export class CodexSession implements ProviderSession {
   }
 
   private registerHandlers(): void {
+    this.client.onRequest('item/tool/call', (params) => this.tools.call(params));
     this.client.onNotification('thread/started', (params) => {
       this.deliver(this.mapper.childThreadStarted(params, this.threadId));
     });
