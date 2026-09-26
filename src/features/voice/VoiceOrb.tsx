@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'react';
 import { useReducedMotion } from 'framer-motion';
+import { analyserFor } from './voiceAnalysis';
 
 /**
  * The voice orb: a gradient sphere built from the droid skill/ultra tokens,
@@ -16,6 +17,9 @@ import { useReducedMotion } from 'framer-motion';
 // Inline rather than utilities: the orb renders only while voice is on, so its
 // one-off effects should not ship in every window's stylesheet.
 const GLOW_BLOB = { mixBlendMode: 'screen', filter: 'blur(24px)' } as const;
+// Only the layers the frame loop writes to: promoting anything else would cost
+// memory for nothing.
+const COMPOSITED = { willChange: 'transform' } as const;
 export function VoiceOrb({
   micStream,
   replyStream,
@@ -36,19 +40,9 @@ export function VoiceOrb({
     const glow = glowRef.current;
     if (reducedMotion || !blobs || !sphere || !glow) return;
 
-    let audio: AudioContext | null = null;
-    let samples = new Uint8Array(0);
-    const listen = (stream: MediaStream | null): AnalyserNode | null => {
-      if (!stream) return null;
-      audio ??= new AudioContext();
-      const analyser = audio.createAnalyser();
-      analyser.fftSize = 512;
-      audio.createMediaStreamSource(stream).connect(analyser);
-      if (samples.length === 0) samples = new Uint8Array(analyser.fftSize);
-      return analyser;
-    };
-    const mic = listen(micStream);
-    const reply = listen(replyStream);
+    const mic = analyserFor(micStream);
+    const reply = analyserFor(replyStream);
+    const samples = new Uint8Array((mic ?? reply)?.fftSize ?? 0);
 
     const loudness = (analyser: AnalyserNode | null): number => {
       if (!analyser) return 0;
@@ -86,7 +80,6 @@ export function VoiceOrb({
     });
     return () => {
       cancelAnimationFrame(raf);
-      if (audio) void audio.close();
     };
   }, [micStream, replyStream, reducedMotion]);
 
@@ -98,6 +91,7 @@ export function VoiceOrb({
         className="absolute rounded-full blur-2xl"
         style={{
           inset: '-14%',
+          willChange: 'transform, opacity',
           // The halo is light, not a panel: masking it to a circle keeps its
           // blurred bounding box from reading as a square behind the orb, and
           // it stays faint so the orb reads as a sphere rather than a lamp.
@@ -110,6 +104,7 @@ export function VoiceOrb({
         ref={sphereRef}
         className="absolute inset-0 overflow-hidden rounded-full"
         style={{
+          ...COMPOSITED,
           // Blurred, blended children in a rounded overflow box get clipped to
           // the box's rectangle by the compositor, which shows as a square edge
           // around the orb. Clipping to the circle keeps the shape it is drawn as.
@@ -121,7 +116,12 @@ export function VoiceOrb({
             'linear-gradient(170deg, color-mix(in srgb, var(--droid-skill) 82%, #ffffff) 0%, color-mix(in srgb, var(--droid-skill) 34%, #ffffff) 44%, #ffffff 78%, color-mix(in srgb, var(--droid-ultra) 18%, #ffffff) 100%)',
         }}
       >
-        <div ref={blobsRef} aria-hidden className="absolute" style={{ inset: '-15%' }}>
+        <div
+          ref={blobsRef}
+          aria-hidden
+          className="absolute"
+          style={{ ...COMPOSITED, inset: '-15%' }}
+        >
           <div
             className="absolute rounded-full"
             style={{
