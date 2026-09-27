@@ -67,6 +67,31 @@ leaving the conversation.
 If an agent is missing or signed out, DROIDEX tells you in the agent picker
 instead of failing mid-task.
 
+### Use subscriptions with Droid
+
+On an Apple silicon Mac, open **Settings → DroidProxy** to install DroidProxy,
+connect a supported subscription through its browser sign-in, and add its models
+to Droid's model picker. DROIDEX verifies the download checksum and leaves the
+macOS app approval to you. If macOS blocks the first launch, approve DroidProxy
+in **System Settings → Privacy & Security**, then open it again.
+
+The page shows accounts already connected in the running DroidProxy app. Click
+a connected provider heading to expand or collapse its accounts. Connect
+opens browser sign-in for Claude, Codex, Gemini, Kimi, Grok, and Meta when the
+running app supports it. Junie and Copilot use DroidProxy's own connection
+flow; **Open to connect** opens that app, and the account list refreshes when
+you return to DROIDEX. If multiple DroidProxy copies are installed, **Open app**
+targets the copy serving the local proxy.
+
+For accounts backed by DroidProxy auth files, **Enable** and **Disable** change
+that account's routing state in both apps. The last enabled account for a
+provider stays on, matching DroidProxy's own control.
+
+**Apply** updates `~/.factory/settings.json` with a backup and refreshes the
+model picker. If you disable every provider, **Remove proxy models** clears the
+previously applied entries. DroidProxy runs locally and must be open to serve
+those models.
+
 ## Install
 
 1. Download the latest DMG from the

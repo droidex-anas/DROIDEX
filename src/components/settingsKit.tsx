@@ -29,7 +29,7 @@ export function SettingRow({
   description,
   children,
 }: {
-  label: string;
+  label: React.ReactNode;
   description?: React.ReactNode;
   children: React.ReactNode;
 }) {

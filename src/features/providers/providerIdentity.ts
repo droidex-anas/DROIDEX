@@ -12,7 +12,7 @@ export const PROVIDER_LABELS: Record<ProviderKind, string> = {
   codex: 'Codex',
 };
 
-// Each provider carries the official mark of the harness it runs, monochrome
+// Each provider carries the official mark of the harness it runs, full color
 // and at one size so the three read as one family.
 export const PROVIDER_MARKS: Record<ProviderKind, Provider> = {
   droid: 'factory',

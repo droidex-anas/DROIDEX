@@ -23,6 +23,7 @@ import { hasActiveSessionWork } from '../lib/sessions';
 import { applyTheme } from '../lib/theme';
 import { AppearanceSection } from './AppearanceSettings';
 import { DiagnosticsSettings } from './DiagnosticsSettings';
+import { DroidProxySettings } from './DroidProxySettings';
 import { KeyboardShortcutsSettings } from './KeyboardShortcutsSettings';
 import { McpServersSettings } from './McpServersSettings';
 import { NotificationsSettings } from './NotificationsSettings';
@@ -61,7 +62,12 @@ const NAV: { group: string; items: NavItem[] }[] = [
   },
   {
     group: 'Integrations',
-    items: [{ label: 'Snapshots' }, { label: 'MCP servers' }, { label: 'Browser' }],
+    items: [
+      { label: 'Snapshots' },
+      { label: 'MCP servers' },
+      { label: 'Browser' },
+      { label: 'DroidProxy' },
+    ],
   },
   {
     group: 'Coding',
@@ -964,6 +970,9 @@ export default function SettingsPanel() {
       break;
     case 'MCP servers':
       content = <McpServersSettings cwd={mcpCwd} />;
+      break;
+    case 'DroidProxy':
+      content = <DroidProxySettings />;
       break;
     case 'Keyboard shortcuts':
       content = <KeyboardShortcutsSettings />;
