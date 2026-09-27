@@ -104,6 +104,7 @@ import {
   ListTodo,
   MessageBubble,
   MessageSquareText,
+  MessageThread,
   Models,
   Settings,
 } from '@droidex/icons';
@@ -114,9 +115,10 @@ import AddMenu from './composer/AddMenu';
 import SelectionMenu from './composer/SelectionMenu';
 import { useDraftEditing } from './composer/useDraftEditing';
 import type { ComposerHandle } from './composer/ComposerEditor';
-import { DraftSelections } from './composer/DraftSelections';
+import { DraftSelections, type DraftSelection } from './composer/DraftSelections';
 import ComposerMenu, { type SlashCommand } from './ComposerMenu';
-import { useStartSideChat } from './sidechats/useStartSideChat';
+import { SideChatRestoreButton } from './sidechats/SideChatRestoreButton';
+import { useAskSideChat } from './sidechats/useAskSideChat';
 import { effectiveProvider } from '../features/providers/providerDraft';
 import {
   PROVIDER_MARKS,
@@ -145,7 +147,11 @@ import {
 import { StartInBar } from './environment/StartInBar';
 import type { Autonomy, SkillInfo } from '../types/bridge';
 import { feedbackDraftFromCommand } from '../lib/feedbackReport';
-import { sideChatPromptFromCommand } from '../lib/sideChats';
+import {
+  promptWithSideChatReplies,
+  sideChatPanel,
+  sideChatPromptFromCommand,
+} from '../lib/sideChats';
 import { useSessionWorkingDirectory } from '../hooks/useSessionWorkingDirectory';
 import { useRuntimeHealth } from '../hooks/useRuntimeHealth';
 import { toast } from '../lib/toast';
@@ -174,6 +180,7 @@ const VoiceComposerControls = lazy(() =>
 
 // Stable identity for a closed menu, so no trigger means no new object.
 const EMPTY_COMPOSER_MENU: ComposerMenuModel = { entries: [], rows: [] };
+const NO_REPLIES: string[] = [];
 
 const ACCENT = 'var(--droid-accent)';
 // Slash entries that drive Droid's own subsystems, so they leave the menu with
@@ -248,7 +255,7 @@ export default function PromptInput({
   onOverlayChange?: (open: boolean) => void;
 }) {
   const dispatch = useStoreDispatch();
-  const startSideChat = useStartSideChat();
+  const askSideChat = useAskSideChat();
   const { downloading: appUpdateInstalling, installResult: appUpdateInstallResult } =
     useAppUpdate();
   const runtimeReady = useRuntimeHealth().canRunAgents;
@@ -259,6 +266,9 @@ export default function PromptInput({
       activeSession: current.activeAppSessionId
         ? current.sessions[current.activeAppSessionId]
         : null,
+      attachedReplies: current.activeAppSessionId
+        ? sideChatPanel(current.sideChats, current.activeAppSessionId).attachedReplies
+        : undefined,
       agentConfig: current.agentConfig,
       harnessModels: current.harnessModels,
       childAccess: current.childAccess,
@@ -377,6 +387,10 @@ export default function PromptInput({
   const hasChips = hasSelection || hasAttachmentChips;
 
   const removeLastChip = () => {
+    if (sideChatReplies.length > 0) {
+      detachSideChatReplies();
+      return;
+    }
     const { images, files: documents } = partitionImagePaths(attachedFiles);
     const removal = chipRemovedByBackspace({
       visualizeSelected,
@@ -461,6 +475,32 @@ export default function PromptInput({
   visibleTargetRef.current = visibleTarget;
   const targetChild = visibleTarget.kind === 'child' ? visibleTarget.child : undefined;
   const targetChildSessionId = targetChild?.childSessionId ?? null;
+  // Side-chat answers go with the session's own next prompt, never a child's.
+  const sideChatReplies = targetChildSessionId ? NO_REPLIES : (state.attachedReplies ?? NO_REPLIES);
+  const detachSideChatReplies = () => {
+    if (!activeSession) return;
+    dispatch({
+      type: 'DETACH_SIDE_CHAT_REPLIES',
+      sourceAppSessionId: activeSession.appSessionId,
+      replies: sideChatReplies,
+    });
+  };
+  const composerSelections: DraftSelection[] =
+    sideChatReplies.length > 0
+      ? [
+          ...draftSelections,
+          {
+            key: 'side-chat-replies',
+            icon: MessageThread,
+            label:
+              sideChatReplies.length === 1
+                ? '1 message'
+                : `${String(sideChatReplies.length)} messages`,
+            removeLabel: 'Remove side chat answers',
+            onRemove: detachSideChatReplies,
+          },
+        ]
+      : draftSelections;
   const hasAppContext = useStoreSelector((current) => {
     if (!activeSession) return false;
     const events = current.transcripts[activeSession.appSessionId] ?? [];
@@ -564,17 +604,18 @@ export default function PromptInput({
     }
   };
 
-  // `/side` with nothing after it opens the side chats to write the question there.
+  // `/side` with nothing after it opens the session's side chat; with a
+  // question it starts a new one in its place.
   const openSideChat = (prompt: string): boolean => {
     if (!activeSession) {
       toast.info('Open a chat to ask a side question about it.');
       return false;
     }
-    if (prompt) return startSideChat(activeSession.appSessionId, prompt);
+    if (prompt) return askSideChat(activeSession.appSessionId, prompt);
     dispatch({
       type: 'SHOW_SIDE_CHAT',
       sourceAppSessionId: activeSession.appSessionId,
-      view: { kind: 'list' },
+      view: { kind: 'current' },
     });
     return true;
   };
@@ -1156,7 +1197,12 @@ export default function PromptInput({
       ...readyFiles,
       ...readyImages,
     ]);
-    const hasPayload = text || visualizeSelected || activeSkills.length > 0 || allFiles.length > 0;
+    const hasPayload =
+      text ||
+      visualizeSelected ||
+      activeSkills.length > 0 ||
+      allFiles.length > 0 ||
+      sideChatReplies.length > 0;
     if (!hasPayload) return;
     setHistoryIndex(null);
 
@@ -1227,10 +1273,13 @@ export default function PromptInput({
     // it must not also be written into the prompt's words.
     const mentions = mentionsForRows(composerProvider, activeSkills);
     const mentioned = new Set(mentions.map((mention) => mention.name));
-    const composed = composePrompt(
-      displayText,
-      skillNames.filter((name) => !mentioned.has(name)),
-      allFiles,
+    const composed = promptWithSideChatReplies(
+      composePrompt(
+        displayText,
+        skillNames.filter((name) => !mentioned.has(name)),
+        allFiles,
+      ),
+      sideChatReplies,
     );
     const registerPending = (ref: string) => {
       if (turnStartingClientRef.current === ref) {
@@ -1363,8 +1412,10 @@ export default function PromptInput({
           files: allFiles,
           ...(mentions.length > 0 ? { mentions } : {}),
           ...(activeSkills.length > 0 ? { rowKeys: activeSkills.map(catalogRowKey) } : {}),
+          ...(sideChatReplies.length > 0 ? { sideChatReplies } : {}),
         },
       });
+      if (sideChatReplies.length > 0) detachSideChatReplies();
       clearAfterSubmit();
       return;
     }
@@ -1383,9 +1434,11 @@ export default function PromptInput({
           author: 'user',
           skills: skillNames,
           files: allFiles,
+          ...(sideChatReplies.length > 0 ? { sideChatReplies } : {}),
           steered: isLive && mode === 'now',
         },
       });
+      if (sideChatReplies.length > 0) detachSideChatReplies();
     };
     const sendCommand = () => {
       try {
@@ -1481,6 +1534,13 @@ export default function PromptInput({
     // A queued App request already carries /visualize in its text, so the chip
     // would add a second copy of the command.
     setVisualizeSelected(false);
+    for (const reply of p.sideChatReplies ?? []) {
+      dispatch({
+        type: 'ATTACH_SIDE_CHAT_REPLY',
+        sourceAppSessionId: activeSession.appSessionId,
+        reply,
+      });
+    }
     dispatch({ type: 'REMOVE_QUEUED_PROMPT', appSessionId: activeSession.appSessionId, id: p.id });
     requestAnimationFrame(() => editorRef.current?.focus());
   };
@@ -1553,7 +1613,7 @@ export default function PromptInput({
         return;
       }
     }
-    if (e.key === 'Backspace' && input === '' && hasChips) {
+    if (e.key === 'Backspace' && input === '' && (hasChips || sideChatReplies.length > 0)) {
       e.preventDefault();
       e.stopPropagation();
       removeLastChip();
@@ -1644,7 +1704,8 @@ export default function PromptInput({
     activeSkills.length > 0 ||
     attachedFiles.length > 0 ||
     fileAttachments.files.length > 0 ||
-    imageAttachments.images.length > 0;
+    imageAttachments.images.length > 0 ||
+    sideChatReplies.length > 0;
   // The app's one conversation, which may belong to another chat entirely. The
   // orb is offered only where this chat's harness can hold a conversation and
   // none is running anywhere; the chat that owns one gets its controls instead.
@@ -1822,6 +1883,9 @@ export default function PromptInput({
             SPEC MODE
           </div>
         ) : null}
+        {activeSession && !targetChildSessionId && (
+          <SideChatRestoreButton sourceAppSessionId={activeSession.appSessionId} />
+        )}
 
         <QueuedPrompts
           queue={queue}
@@ -1956,7 +2020,7 @@ export default function PromptInput({
           )}
 
           <div className="relative">
-            <DraftSelections items={draftSelections} onWidthChange={setSelectionsIndent} />
+            <DraftSelections items={composerSelections} onWidthChange={setSelectionsIndent} />
             {/* The draft renders markdown as it is typed; the editor owns
                 typing while `input` here stays the source of truth for sends,
                 seeds, and formatting actions. */}
@@ -1971,7 +2035,7 @@ export default function PromptInput({
                 ref={editorRef}
                 value={input}
                 ariaLabel="Prompt"
-                placeholder={draftSelections.length > 0 ? '' : promptPlaceholder}
+                placeholder={composerSelections.length > 0 ? '' : promptPlaceholder}
                 indentPx={selectionsIndent}
                 onChange={editDraft}
                 onCaret={setCaret}

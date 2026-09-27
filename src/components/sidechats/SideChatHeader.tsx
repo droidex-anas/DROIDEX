@@ -30,7 +30,7 @@ export function SideChatBackButton({ onClick }: { onClick: () => void }) {
     <button
       type="button"
       onClick={onClick}
-      aria-label="Back to side chats"
+      aria-label="Back to side chat"
       className="shrink-0 rounded-md p-1 text-droid-text-muted transition-colors hover:bg-droid-elevated hover:text-droid-text"
     >
       <ArrowLeft className="h-3.5 w-3.5" />

@@ -243,7 +243,7 @@ function isRestoredTool(tool: UtilityTool): boolean {
 
 function utilityToolLabel(tool: UtilityTool, tabs: UtilityTab[]): string {
   if (tool === 'agents') return 'Subagents';
-  if (tool === 'side') return 'Side chats';
+  if (tool === 'side') return 'Side chat';
   if (tool !== 'terminal') return tool[0].toUpperCase() + tool.slice(1);
   const count = tabs.filter((tab) => tab.tool === 'terminal').length;
   return count === 0 ? 'Terminal' : `Terminal ${String(count + 1)}`;

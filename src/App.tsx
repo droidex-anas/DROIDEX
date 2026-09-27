@@ -41,7 +41,6 @@ import RuntimeStatusBanner from './components/RuntimeStatusBanner';
 import { checkForAppUpdateAutomatically, startAutomaticAppUpdateChecks } from './lib/appUpdate';
 import { toast } from './lib/toast';
 import { UtilityPane } from './components/utility/UtilityPane';
-import { SideChatRestoreButton } from './components/sidechats/SideChatRestoreButton';
 import { peekTerminalInstance, releaseTerminalInstancesExcept } from './lib/terminalInstances';
 import {
   isExpandableTool,
@@ -333,7 +332,7 @@ export default function App() {
 
   const openUtilityTool = useCallback(
     (tool: UtilityTool) => {
-      // Side chats live in one place at a time, so opening their tab docks them.
+      // A side chat lives in one place at a time, so opening its tab docks it.
       const sourceAppSessionId = activeSession?.appSessionId;
       if (tool === 'side' && sourceAppSessionId) {
         dispatch({
@@ -757,13 +756,6 @@ export default function App() {
                       }
                     }}
                     onOpenTool={openUtilityTool}
-                    onContinueSideChat={
-                      state.sideChatPlacement === 'minimized'
-                        ? () => {
-                            openUtilityTool('side');
-                          }
-                        : undefined
-                    }
                     onActivateTab={(tabId) => {
                       const nextTab = utilityPanel.tabs.find((tab) => tab.id === tabId);
                       if (!isExpandableTool(nextTab?.tool)) setExpandedPaneAppSessionId(null);
@@ -967,9 +959,6 @@ export default function App() {
           className="absolute right-0 h-9 z-40 flex items-center gap-1 pr-3"
           style={{ top: bannerStackHeight }}
         >
-          {activeSession && state.sideChatPlacement === 'minimized' && (
-            <SideChatRestoreButton sourceAppSessionId={activeSession.appSessionId} />
-          )}
           {workingDirectory && (
             <EditorOpenMenu cwd={workingDirectory} hasRepo={!!repoStatus} variant="toolbar" />
           )}

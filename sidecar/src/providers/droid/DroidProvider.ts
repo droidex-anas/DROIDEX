@@ -69,18 +69,41 @@ export class DroidProvider implements Provider {
       : { providerSessionId, rewindTo: undefined };
     const open =
       live && point.providerSessionId === providerSessionId ? droidSessionOf(live) : undefined;
-    if (open) return { providerSessionId: await copySession(open, title, point.rewindTo) };
-    const session = await this.runtime.loadSession(point.providerSessionId, { cwd });
+    const copiedId = open
+      ? await copySession(open, title, point.rewindTo)
+      : await this.copyLoaded(point.providerSessionId, cwd, title, point.rewindTo);
+    // A whole-session fork keeps its source's title in the daemon, which a
+    // resume would then show instead of the copy's own.
+    if (!point.rewindTo) await this.rename(copiedId, cwd, title);
+    return { providerSessionId: copiedId };
+  }
+
+  private async copyLoaded(
+    providerSessionId: string,
+    cwd: string | undefined,
+    title: string,
+    rewindTo: string | undefined,
+  ): Promise<string> {
+    const session = await this.runtime.loadSession(providerSessionId, { cwd });
     try {
-      return { providerSessionId: await copySession(session, title, point.rewindTo) };
+      return await copySession(session, title, rewindTo);
+    } finally {
+      await session.close();
+    }
+  }
+
+  private async rename(providerSessionId: string, cwd: string | undefined, title: string) {
+    const session = await this.runtime.loadSession(providerSessionId, { cwd });
+    try {
+      await session.renameSession({ title });
     } finally {
       await session.close();
     }
   }
 }
 
-// A rewind copies the messages before `rewindTo` into a new session and
-// leaves the source and the working tree alone.
+// A rewind copies the messages before `rewindTo` into a new session, titled,
+// and leaves the source and the working tree alone.
 async function copySession(
   session: FactorySession,
   title: string,

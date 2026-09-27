@@ -341,3 +341,24 @@ test('a mid-file compaction_state record replays as a divider event', () => {
     );
   }
 });
+
+test('a prompt sent with side-chat answers replays as the words typed plus the answers', () => {
+  // The block as the renderer's promptWithSideChatReplies writes it.
+  const prompt = [
+    'Use this',
+    '',
+    '<side_chat_replies>',
+    'The user attached these answers from a side chat about this conversation.',
+    '<reply>',
+    'Sort by date first.',
+    '</reply>',
+    '<reply>',
+    'Then by name.',
+    '</reply>',
+    '</side_chat_replies>',
+  ].join('\n');
+  const line = JSON.parse(messageLine({ role: 'user', content: [{ type: 'text', text: prompt }] }));
+  const [event] = parseSessionLineEvents('app', 'provider', 'primary', line);
+  assert.equal(event?.text, 'Use this');
+  assert.deepEqual(event?.sideChatReplies, ['Sort by date first.', 'Then by name.']);
+});

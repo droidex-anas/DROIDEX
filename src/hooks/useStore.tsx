@@ -227,6 +227,7 @@ export interface QueuedPrompt {
   mentions?: ProviderMention[];
   /** The staged rows' catalog identities, so editing restores the same chips. */
   rowKeys?: string[];
+  sideChatReplies?: string[];
   design?: QueuedDesignContext;
 }
 
@@ -466,8 +467,11 @@ type Action =
   // Shows a view of a session's side chats and brings their surface forward.
   | { type: 'SHOW_SIDE_CHAT'; sourceAppSessionId: string; view: SideChatView }
   | { type: 'PLACE_SIDE_CHATS'; sourceAppSessionId: string; placement: SideChatPlacement }
-  | { type: 'HIDE_SIDE_CHATS'; sourceAppSessionId: string }
+  // Takes the side chat off screen; a side chat it names is deleted for good.
+  | { type: 'CLOSE_SIDE_CHAT'; sourceAppSessionId: string; appSessionId?: string }
   | { type: 'CHOOSE_SIDE_CHAT_HARNESS'; sourceAppSessionId: string; harness: SideChatHarness }
+  | { type: 'ATTACH_SIDE_CHAT_REPLY'; sourceAppSessionId: string; reply: string }
+  | { type: 'DETACH_SIDE_CHAT_REPLIES'; sourceAppSessionId: string; replies: readonly string[] }
   | {
       type: 'SET_PENDING_COMPOSE';
       clientRef: string;
@@ -1123,15 +1127,25 @@ function baseReducer(state: AppState, action: Action): AppState {
       };
     }
 
-    // Closing the floating window puts the side chats back where the next
-    // `/side` docks them.
-    case 'HIDE_SIDE_CHATS':
+    // The next `/side` docks the session's side chat again.
+    case 'CLOSE_SIDE_CHAT': {
+      const { sourceAppSessionId, appSessionId } = action;
+      const chatMetadata = appSessionId
+        ? deleteChat(state.chatMetadata, appSessionId, Date.now())
+        : null;
       return {
         ...state,
-        sideChats: updateSideChatPanel(state.sideChats, action.sourceAppSessionId, {
+        chatMetadata: chatMetadata ?? state.chatMetadata,
+        sideChats: updateSideChatPanel(state.sideChats, sourceAppSessionId, {
+          view: { kind: 'current' },
           placement: 'docked',
         }),
+        utilityPanels: {
+          ...state.utilityPanels,
+          [sourceAppSessionId]: removeUtilityTool(state.utilityPanels[sourceAppSessionId], 'side'),
+        },
       };
+    }
 
     case 'CHOOSE_SIDE_CHAT_HARNESS':
       return {
@@ -1140,6 +1154,30 @@ function baseReducer(state: AppState, action: Action): AppState {
           harness: action.harness,
         }),
       };
+
+    case 'ATTACH_SIDE_CHAT_REPLY': {
+      const { attachedReplies = [] } = sideChatPanel(state.sideChats, action.sourceAppSessionId);
+      if (attachedReplies.includes(action.reply)) return state;
+      return {
+        ...state,
+        sideChats: updateSideChatPanel(state.sideChats, action.sourceAppSessionId, {
+          attachedReplies: [...attachedReplies, action.reply],
+        }),
+      };
+    }
+
+    case 'DETACH_SIDE_CHAT_REPLIES': {
+      const attachedReplies = state.sideChats[action.sourceAppSessionId]?.attachedReplies;
+      if (!attachedReplies) return state;
+      // Only the sent replies go; one attached while the prompt was in flight stays.
+      const remaining = attachedReplies.filter((reply) => !action.replies.includes(reply));
+      return {
+        ...state,
+        sideChats: updateSideChatPanel(state.sideChats, action.sourceAppSessionId, {
+          attachedReplies: remaining.length > 0 ? remaining : undefined,
+        }),
+      };
+    }
 
     case 'SET_PENDING_COMPOSE':
       return {

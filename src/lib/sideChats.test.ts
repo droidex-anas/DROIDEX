@@ -2,7 +2,11 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import type { HarnessModels } from '../hooks/persistedUiPreferences';
 import type { SessionSummary } from '../types/bridge';
-import { sideChatPromptFromCommand, sideChatSettings } from './sideChats';
+import {
+  promptWithSideChatReplies,
+  sideChatPromptFromCommand,
+  sideChatSettings,
+} from './sideChats';
 
 test('/side and /btw open a side chat, with any words after them as its question', () => {
   assert.equal(sideChatPromptFromCommand('/side'), '');
@@ -53,4 +57,21 @@ test('a side chat runs on its source harness and model unless another is picked'
   });
   const picked = { provider: 'codex' as const, modelId: 'gpt-mini' };
   assert.deepEqual(sideChatSettings(source, picked, harnessModels), picked);
+});
+
+test('side-chat answers ride after the prompt in a block the sidecar strips on replay', () => {
+  assert.equal(promptWithSideChatReplies('Use this', []), 'Use this');
+  assert.equal(
+    promptWithSideChatReplies('Use this', ['Sort by date first.']),
+    [
+      'Use this',
+      '',
+      '<side_chat_replies>',
+      'The user attached these answers from a side chat about this conversation.',
+      '<reply>',
+      'Sort by date first.',
+      '</reply>',
+      '</side_chat_replies>',
+    ].join('\n'),
+  );
 });

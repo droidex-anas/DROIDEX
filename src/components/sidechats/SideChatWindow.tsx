@@ -5,7 +5,7 @@ import {
   type CSSProperties,
   type PointerEvent as ReactPointerEvent,
 } from 'react';
-import { ChevronDown, PanelRight, X } from '@droidex/icons';
+import { ChevronDown, PanelRight } from '@droidex/icons';
 import { useStoreDispatch } from '../../hooks/useStore';
 import { SIDE_CHAT_DRAG_HANDLE, SideChatHeaderButton } from './SideChatHeader';
 import { SideChatPane } from './SideChatPane';
@@ -39,9 +39,9 @@ interface Gesture {
   latest: WindowGeometry;
 }
 
-/* Side chats floating over the chat: dragged by the header, resized from the
-   top-left corner, minimized to the window toolbar, or docked back into the
-   utility pane. */
+/* The side chat floating over the chat: dragged by the header, resized from the
+   top-left corner, minimized to a pill above the composer, or docked back into
+   the utility pane. */
 
 export function SideChatWindow({ sourceAppSessionId }: { sourceAppSessionId: string }) {
   const dispatch = useStoreDispatch();
@@ -118,7 +118,7 @@ export function SideChatWindow({ sourceAppSessionId }: { sourceAppSessionId: str
     <div
       ref={windowRef}
       role="dialog"
-      aria-label="Side chats"
+      aria-label="Side chat"
       data-testid="side-chat-window"
       style={
         {
@@ -170,14 +170,6 @@ export function SideChatWindow({ sourceAppSessionId }: { sourceAppSessionId: str
               }}
             >
               <PanelRight className="h-3.5 w-3.5" />
-            </SideChatHeaderButton>
-            <SideChatHeaderButton
-              label="Close"
-              onClick={() => {
-                dispatch({ type: 'HIDE_SIDE_CHATS', sourceAppSessionId });
-              }}
-            >
-              <X className="h-3.5 w-3.5" />
             </SideChatHeaderButton>
           </>
         }

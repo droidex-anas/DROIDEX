@@ -74,6 +74,15 @@ export const MessageBubbleFilled = createIcon(
   />,
 );
 
+// A reply over the message it answers: the back bubble stops where the front one begins.
+export const MessageThread = createIcon(
+  'message-thread',
+  <>
+    <path d="M16 7.5C15.8 5.1 14.6 4 12 4H7C4.25 4 3 5.25 3 8v3.5c0 2 .75 3.15 2.5 3.4v2.35L8 15.2" />
+    <path d="M12 9h5c2.75 0 4 1.25 4 4v3c0 2.75-1.25 4-4 4h-.5v2.25L13.8 20H12c-2.75 0-4-1.25-4-4v-3c0-2.75 1.25-4 4-4Z" />
+  </>,
+);
+
 const NODE_RAILS = <path d="m8 12-1.25-4m4.8 4.25 4.2-5m-3.7 8.25 4.2 1" />;
 const NODES = (
   <>

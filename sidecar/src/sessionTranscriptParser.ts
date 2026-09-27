@@ -10,6 +10,7 @@ import { dateMs, numberValue, objectValue, safeStringify, stringValue } from './
 import { designPromptDisplayFromText } from './browser/designPromptDisplay.js';
 import { appPromptDisplayFromText, hasAppFence } from './appPrompt.js';
 import { branchPromptDisplayFromText } from './branchPrompt.js';
+import { sideChatRepliesFromPrompt } from './sideChatReplies.js';
 import { parseSkillActivation } from './skillSignals.js';
 import type { SessionRole, TranscriptEvent } from './protocol.js';
 import { parseStoredNotice } from './sessionNotices.js';
@@ -155,15 +156,18 @@ function nonAssistantBlockEvent(
     // A branch prompt carries a whole copied conversation after its request;
     // it is cut back to the request before the cap could cut the request off.
     const storedText = nonEmpty(stringValue(block.text));
-    const rawText = trimText(branchPromptDisplayFromText(storedText) ?? storedText, MAX_TEXT_CHARS);
+    const withReplies = sideChatRepliesFromPrompt(storedText);
+    const promptText = withReplies?.text ?? storedText;
+    const rawText = trimText(branchPromptDisplayFromText(promptText) ?? promptText, MAX_TEXT_CHARS);
     const designDisplay = designPromptDisplayFromText(rawText);
     const text = designDisplay?.text ?? appPromptDisplayFromText(rawText) ?? rawText;
-    if (!text || isSystemText(text)) return null;
+    if ((!text && !withReplies) || isSystemText(text)) return null;
     const sourceProviderSessionId = base.role === 'primary' ? 'user' : base.sourceProviderSessionId;
     return event({ ...base, sourceProviderSessionId }, index, 'text', {
       text,
       author: 'user',
       browserRefs: designDisplay?.browserRefs,
+      sideChatReplies: withReplies?.sideChatReplies,
     });
   }
   return null;

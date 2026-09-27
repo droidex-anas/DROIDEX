@@ -5,10 +5,9 @@ import { useForkChat, useForkPending } from '../../hooks/useForkChat';
 import { useSessionHistory } from '../../hooks/useSessionHistory';
 import type { SessionRestore } from '../../hooks/storeChildSession';
 import { PROVIDER_LABELS, PROVIDER_MARKS } from '../../features/providers/providerIdentity';
-import { interruptSession, loadSessionHistory, sendToSession } from '../../lib/commands';
+import { interruptSession, loadSessionHistory } from '../../lib/commands';
 import { sessionIsLive } from '../../lib/sessions';
 import { MAX_RUNNING_SIDE_CHATS } from '../../lib/sideChats';
-import { toast } from '../../lib/toast';
 import { classifyEvent } from '../../lib/transcript';
 import type { SessionSummary, TranscriptEvent } from '../../types/bridge';
 import { isConversationAtLatest } from '../conversationListState';
@@ -20,15 +19,16 @@ import PermissionInline from '../PermissionInline';
 import PlanApprovalInline from '../PlanApprovalInline';
 import { SideChatComposer } from './SideChatComposer';
 import { SideChatBackButton, SideChatHeader, SideChatHeaderButton } from './SideChatHeader';
-import { runningSideChatCount } from './useStartSideChat';
+import { runningSideChatCount, sendToSideChat } from './useAskSideChat';
 
 const EMPTY_TRANSCRIPT: TranscriptEvent[] = [];
 const SIDE_CHAT_HISTORY_PAGE_EVENTS = 240;
 
 /* One side chat: its question and answers, and a composer to keep asking. It
    shows only what happened after it branched; the copied conversation above
-   that is the source chat's, already on screen beside it. Its answer can go to
-   the main composer, or the whole side chat can carry on as a chat of its own. */
+   that is the source chat's, already on screen beside it. Its answer can be
+   attached to the main composer, or the whole side chat can carry on as a chat
+   of its own. */
 
 export function SideChatDetail({
   sourceAppSessionId,
@@ -42,7 +42,8 @@ export function SideChatDetail({
   // Given the whole content row, the conversation takes the chat's measure.
   wide: boolean;
   controls: ReactNode;
-  onBack: () => void;
+  // Present when this is an earlier side chat rather than the session's current one.
+  onBack?: () => void;
 }) {
   const { appSessionId } = session;
   const dispatch = useStoreDispatch();
@@ -99,26 +100,7 @@ export function SideChatDetail({
   };
 
   const send = (text: string) => {
-    const message = text.trim();
-    try {
-      sendToSession(appSessionId, message);
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : 'Could not send to this side chat.');
-      return false;
-    }
-    dispatch({
-      type: 'SESSION_TRANSCRIPT',
-      event: {
-        id: `local-${String(Date.now())}`,
-        appSessionId,
-        sourceSessionId: 'user',
-        role: 'primary',
-        ts: Date.now(),
-        kind: 'text',
-        text: message,
-        author: 'user',
-      },
-    });
+    if (!sendToSideChat(dispatch, appSessionId, text)) return false;
     pinned.current = true;
     return true;
   };
@@ -126,7 +108,7 @@ export function SideChatDetail({
   return (
     <div data-testid="side-chat-detail" className="flex min-h-0 flex-1 flex-col">
       <SideChatHeader controls={controls}>
-        <SideChatBackButton onClick={onBack} />
+        {onBack && <SideChatBackButton onClick={onBack} />}
         <span title={PROVIDER_LABELS[session.provider]} className="flex shrink-0">
           <ModelIcon provider={PROVIDER_MARKS[session.provider]} size={15} />
         </span>
@@ -140,7 +122,7 @@ export function SideChatDetail({
           label="Send answer to chat"
           disabled={!reply}
           onClick={() => {
-            dispatch({ type: 'SEED_COMPOSER', text: reply });
+            dispatch({ type: 'ATTACH_SIDE_CHAT_REPLY', sourceAppSessionId, reply });
           }}
         >
           <CornerDownLeft className="h-3.5 w-3.5" />

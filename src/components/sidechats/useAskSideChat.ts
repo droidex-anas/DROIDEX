@@ -1,9 +1,10 @@
 import { useCallback } from 'react';
 import { useStoreApi, useStoreDispatch, type AppState } from '../../hooks/useStore';
-import { forkSession, newClientRef } from '../../lib/commands';
+import { forkSession, newClientRef, sendToSession } from '../../lib/commands';
 import { sessionIsLive } from '../../lib/sessions';
 import {
   MAX_RUNNING_SIDE_CHATS,
+  currentSideChat,
   isSideChatOf,
   sideChatPanel,
   sideChatSettings,
@@ -22,10 +23,11 @@ export function runningSideChatCount(state: AppState, sourceAppSessionId: string
   return running + starting;
 }
 
-// Branches a side chat off a session with its first question, on the harness
-// the side-chat composer picked. The panel shows it starting until the sidecar
-// answers. Returns whether the request went out, so a composer knows to clear.
-export function useStartSideChat(): (sourceAppSessionId: string, prompt: string) => boolean {
+// Asks the session's side chat a question: a follow-up in the one it has, or
+// the first message of a new one branched on the harness the side-chat
+// composer picked. Returns whether the question went out, so a composer knows
+// to clear.
+export function useAskSideChat(): (sourceAppSessionId: string, prompt: string) => boolean {
   const dispatch = useStoreDispatch();
   const store = useStoreApi();
   return useCallback(
@@ -34,11 +36,25 @@ export function useStartSideChat(): (sourceAppSessionId: string, prompt: string)
       const question = prompt.trim();
       if (!Object.hasOwn(state.sessions, sourceAppSessionId) || !question) return false;
       const source = state.sessions[sourceAppSessionId];
+      const current = currentSideChat(state.sessions, state.chatMetadata, sourceAppSessionId);
+      const showCurrent = () => {
+        dispatch({ type: 'SHOW_SIDE_CHAT', sourceAppSessionId, view: { kind: 'current' } });
+      };
+      if (current && sessionIsLive(current)) {
+        showCurrent();
+        toast.info('The side chat is still answering. Ask again when it finishes.');
+        return false;
+      }
       if (runningSideChatCount(state, sourceAppSessionId) >= MAX_RUNNING_SIDE_CHATS) {
         toast.error(
           `${String(MAX_RUNNING_SIDE_CHATS)} side chats are already running. Wait for one to finish.`,
         );
         return false;
+      }
+      if (current) {
+        if (!sendToSideChat(dispatch, current.appSessionId, question)) return false;
+        showCurrent();
+        return true;
       }
       const { harness } = sideChatPanel(state.sideChats, sourceAppSessionId);
       const settings = sideChatSettings(source, harness, state.harnessModels);
@@ -70,4 +86,33 @@ export function useStartSideChat(): (sourceAppSessionId: string, prompt: string)
     },
     [dispatch, store],
   );
+}
+
+// The backend never echoes a sent prompt, so the side chat shows it right away.
+export function sendToSideChat(
+  dispatch: ReturnType<typeof useStoreDispatch>,
+  appSessionId: string,
+  text: string,
+): boolean {
+  const message = text.trim();
+  try {
+    sendToSession(appSessionId, message);
+  } catch (error) {
+    toast.error(error instanceof Error ? error.message : 'Could not send to this side chat.');
+    return false;
+  }
+  dispatch({
+    type: 'SESSION_TRANSCRIPT',
+    event: {
+      id: `local-${String(Date.now())}`,
+      appSessionId,
+      sourceSessionId: 'user',
+      role: 'primary',
+      ts: Date.now(),
+      kind: 'text',
+      text: message,
+      author: 'user',
+    },
+  });
+  return true;
 }

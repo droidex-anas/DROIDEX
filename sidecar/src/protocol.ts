@@ -214,6 +214,8 @@ export interface TranscriptEvent {
   skills?: string[];
   files?: string[];
   browserRefs?: BrowserTranscriptReference[];
+  // Side-chat answers the user attached to this prompt.
+  sideChatReplies?: string[];
   steered?: boolean;
   // Set on a row whose text was said out loud in a voice conversation.
   spoken?: boolean;

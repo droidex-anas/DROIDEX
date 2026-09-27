@@ -35,7 +35,7 @@ const AGENTS_TOOL_OPTION: UtilityToolOption = {
 // Opened by `/side`, `/btw`, or a chat's own side-chat action.
 const SIDE_TOOL_OPTION: UtilityToolOption = {
   tool: 'side',
-  label: 'Side chats',
+  label: 'Side chat',
   icon: MessageBubble,
   shortcut: '',
 };
