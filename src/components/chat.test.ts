@@ -1020,6 +1020,18 @@ test('live thinking stays collapsed until the user opens it', () => {
   assert.equal(html.includes('private live reasoning detail'), false);
 });
 
+test('trailing thinking event has no inferred duration without a following event', () => {
+  const thinking = ev({ kind: 'thinking', text: 'still working', ts: 10 });
+  const items = buildFeed([thinking]);
+  const item = items[0];
+
+  assert.equal(items.length, 1);
+  assert.equal(item.type, 'thinking');
+  assert.equal(item.key, thinking.id);
+  assert.equal(item.event, thinking);
+  assert.equal(item.durationMs, undefined);
+});
+
 test('#14 an assistant message that is exactly the spec text is not double-rendered in chat', () => {
   const spec = '# Specification\n\nThe one and only spec body';
   const events = [userMsg('hi'), asst(spec)];
