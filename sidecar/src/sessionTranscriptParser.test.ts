@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { parseSessionLineEvents } from './sessionTranscriptParser.js';
 import type { TranscriptEvent } from './protocol.js';
 import { storedNoticeLine } from './sessionNotices.js';
+import { formatBranchPrompt } from './branchPrompt.js';
 
 function messageLine(opts: {
   role: string;
@@ -213,6 +214,20 @@ test('app-generation guidance replays as only the concise user command', () => {
   assert.equal(events.length, 1);
   assert.equal(events[0].text, '/visualize compare renderer timings');
   assert.doesNotMatch(events[0].text ?? '', /Private generation guidance/);
+});
+
+test('a branch prompt replays as only its request, however long the copied conversation', () => {
+  const conversation = `**User:** earlier question\n\n**Assistant:** ${'long answer '.repeat(10_000)}`;
+  const line = JSON.parse(
+    messageLine({
+      role: 'user',
+      content: [{ type: 'text', text: formatBranchPrompt('Try it with Postgres', conversation) }],
+    }),
+  );
+
+  const events = parseSessionLineEvents('app', 'provider', 'primary', line);
+  assert.equal(events.length, 1);
+  assert.equal(events[0].text, 'Try it with Postgres');
 });
 
 test('internal skill notifications never replay as user-authored chat', () => {

@@ -98,7 +98,15 @@ import {
 } from '../lib/childSessions';
 import { commitPrimaryPromptAfterBaseline } from '../lib/promptSend';
 import { SlidersHorizontal } from 'lucide-react';
-import { Bug, FoldVertical, ListTodo, MessageSquareText, Models, Settings } from '@droidex/icons';
+import {
+  Bug,
+  FoldVertical,
+  ListTodo,
+  MessageBubble,
+  MessageSquareText,
+  Models,
+  Settings,
+} from '@droidex/icons';
 import { VisualizeIcon } from './icons/VisualizeIcon';
 import { ComposerSendButton } from './composer/ComposerSendButton';
 import { useQueuedPromptDelivery } from './composer/useQueuedPromptDelivery';
@@ -108,6 +116,7 @@ import { useDraftEditing } from './composer/useDraftEditing';
 import type { ComposerHandle } from './composer/ComposerEditor';
 import { DraftSelections } from './composer/DraftSelections';
 import ComposerMenu, { type SlashCommand } from './ComposerMenu';
+import { useStartSideChat } from './sidechats/useStartSideChat';
 import { effectiveProvider } from '../features/providers/providerDraft';
 import {
   PROVIDER_MARKS,
@@ -136,6 +145,7 @@ import {
 import { StartInBar } from './environment/StartInBar';
 import type { Autonomy, SkillInfo } from '../types/bridge';
 import { feedbackDraftFromCommand } from '../lib/feedbackReport';
+import { sideChatPromptFromCommand } from '../lib/sideChats';
 import { useSessionWorkingDirectory } from '../hooks/useSessionWorkingDirectory';
 import { useRuntimeHealth } from '../hooks/useRuntimeHealth';
 import { toast } from '../lib/toast';
@@ -238,6 +248,7 @@ export default function PromptInput({
   onOverlayChange?: (open: boolean) => void;
 }) {
   const dispatch = useStoreDispatch();
+  const startSideChat = useStartSideChat();
   const { downloading: appUpdateInstalling, installResult: appUpdateInstallResult } =
     useAppUpdate();
   const runtimeReady = useRuntimeHealth().canRunAgents;
@@ -553,6 +564,21 @@ export default function PromptInput({
     }
   };
 
+  // `/side` with nothing after it opens the side chats to write the question there.
+  const openSideChat = (prompt: string): boolean => {
+    if (!activeSession) {
+      toast.info('Open a chat to ask a side question about it.');
+      return false;
+    }
+    if (prompt) return startSideChat(activeSession.appSessionId, prompt);
+    dispatch({
+      type: 'SHOW_SIDE_CHAT',
+      sourceAppSessionId: activeSession.appSessionId,
+      view: { kind: 'list' },
+    });
+    return true;
+  };
+
   const slashCommands: SlashCommand[] = [
     {
       ...VISUALIZE_COMMAND,
@@ -577,6 +603,14 @@ export default function PromptInput({
         setFeedbackReport({ category: 'other', description: '' });
       },
     },
+    ...['/side', '/btw'].map((cmd) => ({
+      cmd,
+      desc: 'Ask a side question without adding to this chat',
+      icon: MessageBubble,
+      run: () => {
+        openSideChat('');
+      },
+    })),
     {
       cmd: '/model',
       desc: 'Open model selector',
@@ -1050,7 +1084,8 @@ export default function PromptInput({
           skillCount: skills.length,
           fileCount: paths.length,
         }) ||
-        feedbackDraftFromCommand(text)
+        feedbackDraftFromCommand(text) ||
+        sideChatPromptFromCommand(text) !== null
       ) {
         throw new Error('App commands cannot be scheduled. Write a prompt for the agent instead.');
       }
@@ -1149,6 +1184,16 @@ export default function PromptInput({
     if (feedbackDraft !== null) {
       setFeedbackReport(feedbackDraft);
       clearAfterSubmit();
+      return;
+    }
+
+    // Only the words go to the side chat; attachments stay for this chat.
+    const sideChatPrompt = sideChatPromptFromCommand(text);
+    if (sideChatPrompt !== null) {
+      if (openSideChat(sideChatPrompt)) {
+        setInput('');
+        setHistoryIndex(null);
+      }
       return;
     }
 

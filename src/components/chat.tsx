@@ -25,10 +25,10 @@ import {
 import {
   CompactingIndicator,
   CompactionDivider,
-  MessageActions,
   SpokenMark,
   TranscriptNotice,
 } from './transcript/primitives';
+import { ResponseActions } from './transcript/ResponseActions';
 import { correlateResults, ErrorLine, ThinkingItem } from './transcript/rows';
 import { DiffGroup, ToolGroupItem, WorkedGroup } from './transcript/groups';
 import { UserBubble } from './transcript/UserBubble';
@@ -139,6 +139,11 @@ export interface FeedItemViewProps {
   liveTiming?: boolean;
   specContent?: string;
   isFinalResponse?: boolean;
+  // Set only on a settled final response an idle chat can fork from; the
+  // latest response carries no point because it forks the whole chat.
+  onFork?: (forkPointId?: string) => void;
+  forkPointId?: string;
+  forking?: boolean;
   // Render-only detail level for tool runs (aggregate line / per-tool lines /
   // inline bodies). Never a feed input: changing it re-renders rows in place.
   density?: ToolActivityDensity;
@@ -177,24 +182,31 @@ export function isSpecEcho(text: string, specContent: string | undefined): boole
 // drawn by CSS at the end of the last line while `md-typing` is set, stops
 // after a short idle gap (and never appears for app blocks, which render their
 // own building status) so a wedged pending flag cannot leave it blinking.
-// Copy belongs to the turn's settled final response only, and floats over the
-// message so a row never changes height when it settles.
+// The action row belongs to the turn's settled final response only.
 const AssistantMessage = memo(function AssistantMessage({
   text,
+  ts,
   streamId,
   live,
   isFinalResponse,
+  onFork,
+  forkPointId,
+  forking,
   autoPlayAppBlocks,
   cacheId,
   specContent,
   spoken,
 }: {
   text: string;
+  ts: number;
   // The session this text streams in, so the caret's shared idle record is
   // never shared with another session whose tail happens to read the same.
   streamId: string;
   live: boolean;
   isFinalResponse?: boolean;
+  onFork?: (forkPointId?: string) => void;
+  forkPointId?: string;
+  forking?: boolean;
   autoPlayAppBlocks: boolean;
   cacheId: string;
   specContent?: string;
@@ -225,7 +237,18 @@ const AssistantMessage = memo(function AssistantMessage({
         cacheId={cacheId}
       />
       {!live && isFinalResponse && text.trim() ? (
-        <MessageActions text={copyTextForMessage(text)} side="end" />
+        <ResponseActions
+          text={copyTextForMessage(text)}
+          ts={ts}
+          {...(onFork !== undefined
+            ? {
+                onFork: () => {
+                  onFork(forkPointId);
+                },
+              }
+            : {})}
+          {...(forking !== undefined ? { forking } : {})}
+        />
       ) : null}
     </div>
   );
@@ -278,6 +301,9 @@ export function feedItemPropsEqual(prev: FeedItemViewProps, next: FeedItemViewPr
     prev.specContent === next.specContent &&
     prev.cwd === next.cwd &&
     prev.isFinalResponse === next.isFinalResponse &&
+    prev.onFork === next.onFork &&
+    prev.forkPointId === next.forkPointId &&
+    prev.forking === next.forking &&
     densityOf(prev) === densityOf(next) &&
     inlineDiffsOf(prev) === inlineDiffsOf(next) &&
     prev.onOpenDiff === next.onOpenDiff &&
@@ -304,6 +330,9 @@ export const FeedItemView = memo(function FeedItemView({
   liveTiming,
   specContent,
   isFinalResponse,
+  onFork,
+  forkPointId,
+  forking,
   density = DEFAULT_TOOL_ACTIVITY.density,
   inlineDiffs = DEFAULT_TOOL_ACTIVITY.inlineDiffs,
 }: FeedItemViewProps) {
@@ -320,9 +349,13 @@ export const FeedItemView = memo(function FeedItemView({
       return (
         <AssistantMessage
           text={item.event.text ?? ''}
+          ts={item.event.endTs ?? item.event.ts}
           streamId={item.event.appSessionId}
           live={live}
           isFinalResponse={isFinalResponse}
+          {...(onFork !== undefined ? { onFork } : {})}
+          {...(forkPointId !== undefined ? { forkPointId } : {})}
+          {...(forking !== undefined ? { forking } : {})}
           autoPlayAppBlocks={autoPlayAppBlocks}
           cacheId={item.key}
           specContent={specContent}

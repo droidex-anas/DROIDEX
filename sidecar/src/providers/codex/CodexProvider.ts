@@ -7,6 +7,8 @@ import { nonEmptyEnv } from '../../droidexPaths.js';
 import type { ModelInfo, ProviderStatus, SkillInfo } from '../../protocol.js';
 import type {
   Provider,
+  ProviderForkHandle,
+  ProviderForkSource,
   ProviderOpenInput,
   ProviderResumeInput,
   ProviderSession,
@@ -96,6 +98,28 @@ export class CodexProvider implements Provider {
       },
       resumeId,
     );
+  }
+
+  // Codex copies a thread from its stored rollout, so a short-lived process
+  // can fork a thread another process holds open. The copy is resumed like
+  // any stored thread, which reloads its history there. A fork point is a turn
+  // id, which the copy keeps.
+  async fork({ resumeId, cwd, forkPointId }: ProviderForkSource): Promise<ProviderForkHandle> {
+    if (!resumeId) throw new Error('This Codex session has no stored thread to fork.');
+    const executable = resolveCodexPath();
+    if (!executable) throw new Error(INSTALL_HINT);
+    const client = new AppServerClient(executable, cwd ?? tmpdir());
+    try {
+      await initialize(client);
+      const response = await client.request<{ thread: { id: string } }>('thread/fork', {
+        threadId: resumeId,
+        excludeTurns: true,
+        ...(forkPointId ? { lastTurnId: forkPointId } : {}),
+      });
+      return { providerSessionId: randomUUID(), resumeId: response.thread.id };
+    } finally {
+      await client.close();
+    }
   }
 
   // What Codex can do for the user right now: one app-server process that

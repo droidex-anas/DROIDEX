@@ -9,6 +9,7 @@
 import { dateMs, numberValue, objectValue, safeStringify, stringValue } from './values.js';
 import { designPromptDisplayFromText } from './browser/designPromptDisplay.js';
 import { appPromptDisplayFromText, hasAppFence } from './appPrompt.js';
+import { branchPromptDisplayFromText } from './branchPrompt.js';
 import { parseSkillActivation } from './skillSignals.js';
 import type { SessionRole, TranscriptEvent } from './protocol.js';
 import { parseStoredNotice } from './sessionNotices.js';
@@ -35,6 +36,9 @@ export interface StoredMessageLine {
     content?: unknown[];
     visibility?: unknown;
   };
+  // Where the provider can fork the conversation after this message. Written by
+  // DROIDEX's own transcript; a Droid file's message id is already that point.
+  forkPointId?: string;
 }
 
 export interface StoredSessionStart {
@@ -100,6 +104,7 @@ function assistantBlockEvent(
   base: EventBase,
   index: number,
   block: Record<string, unknown>,
+  forkPointId: string | undefined,
 ): TranscriptEvent | null {
   const type = stringValue(block.type);
   if (type === 'thinking') {
@@ -111,7 +116,8 @@ function assistantBlockEvent(
   }
   if (type === 'text') {
     const text = trimAnswerText(nonEmpty(stringValue(block.text)));
-    return text ? event(base, index, 'text', { text }) : null;
+    if (!text) return null;
+    return event(base, index, 'text', { text, ...(forkPointId ? { forkPointId } : {}) });
   }
   if (type === 'tool_use') {
     return event(base, index, 'tool_call', {
@@ -146,7 +152,10 @@ function nonAssistantBlockEvent(
   }
   if (messageRole === 'user' && type === 'text') {
     // A user bubble renders as plain text, never as a runnable App.
-    const rawText = trimText(nonEmpty(stringValue(block.text)), MAX_TEXT_CHARS);
+    // A branch prompt carries a whole copied conversation after its request;
+    // it is cut back to the request before the cap could cut the request off.
+    const storedText = nonEmpty(stringValue(block.text));
+    const rawText = trimText(branchPromptDisplayFromText(storedText) ?? storedText, MAX_TEXT_CHARS);
     const designDisplay = designPromptDisplayFromText(rawText);
     const text = designDisplay?.text ?? appPromptDisplayFromText(rawText) ?? rawText;
     if (!text || isSystemText(text)) return null;
@@ -244,13 +253,14 @@ export function parseSessionLineEvents(
     ];
   }
 
+  const forkPointId = line.forkPointId ?? line.id;
   const events: TranscriptEvent[] = [];
   content.forEach((item, index) => {
     const block = objectValue(item);
     if (!block) return;
     const parsed =
       messageRole === 'assistant'
-        ? assistantBlockEvent(base, index, block)
+        ? assistantBlockEvent(base, index, block, forkPointId)
         : nonAssistantBlockEvent(base, index, block, messageRole);
     if (parsed) events.push(parsed);
   });

@@ -60,6 +60,8 @@ export class ClaudeEventMapper {
   private readonly subagents = new ClaudeSubagents();
   // Unpinned sessions learn their model from the main conversation.
   private observedModelId?: string;
+  // The uuid of the prompt that opened the turn: where a fork of it cuts.
+  private turnId?: string;
 
   constructor(
     private readonly appSessionId: string,
@@ -72,7 +74,8 @@ export class ClaudeEventMapper {
 
   // Resets state scoped to the turn that is starting, not the long-lived
   // background task identity the session may still be tracking across turns.
-  beginTurn(): void {
+  beginTurn(turnId: string): void {
+    this.turnId = turnId;
     this.subagents.beginTurn();
   }
 
@@ -108,9 +111,7 @@ export class ClaudeEventMapper {
   private system(message: Extract<SDKMessage, { type: 'system' }>): NormalizedEvent[] {
     // A local slash command answers through this frame instead of the model loop.
     if (message.subtype === 'local_command_output')
-      return message.content
-        ? [{ transcript: this.transcript('text', { text: message.content }) }]
-        : [];
+      return message.content ? [{ transcript: this.answerText(message.content) }] : [];
     return this.subagents.map(message, this.modelId ?? this.observedModelId);
   }
 
@@ -179,7 +180,7 @@ export class ClaudeEventMapper {
     // snapshot rule right even if one is ever missed.
     if (!blocks.has(index)) blocks.set(index, {});
     if (delta.type === 'text_delta' && delta.text)
-      return [{ transcript: this.transcript('text', { text: delta.text }) }];
+      return [{ transcript: this.answerText(delta.text) }];
     if (delta.type === 'thinking_delta' && delta.thinking)
       return [{ transcript: this.transcript('thinking', { text: delta.thinking }) }];
     return [];
@@ -217,7 +218,7 @@ export class ClaudeEventMapper {
       }
       if (streamed || message.parent_tool_use_id) continue;
       if (block.type === 'text' && block.text)
-        events.push({ transcript: this.transcript('text', { text: block.text }) });
+        events.push({ transcript: this.answerText(block.text) });
       if (block.type === 'thinking' && block.thinking)
         events.push({ transcript: this.transcript('thinking', { text: block.thinking }) });
     }
@@ -331,6 +332,10 @@ export class ClaudeEventMapper {
     const created = new Map<number, BlockState>();
     this.blocks.set(key, created);
     return created;
+  }
+
+  private answerText(text: string): TranscriptEvent {
+    return this.transcript('text', { text, ...(this.turnId ? { forkPointId: this.turnId } : {}) });
   }
 
   private transcript(

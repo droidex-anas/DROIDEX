@@ -10,7 +10,14 @@
 // sessionTranscriptParser.ts maps the content blocks below back to transcript
 // events. Changing a shape here without reading those three is a silent
 // "session is empty after restart" bug.
-import { appendFileSync, existsSync, mkdirSync } from 'node:fs';
+import {
+  appendFileSync,
+  copyFileSync,
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  writeFileSync,
+} from 'node:fs';
 import { join } from 'node:path';
 
 import { providerSessionsDir } from '../droidexPaths.js';
@@ -43,6 +50,7 @@ interface PendingMessage {
   id: string;
   ts: number;
   blocks: ContentBlock[];
+  forkPointId?: string;
 }
 
 export class ProviderTranscriptFile {
@@ -88,6 +96,7 @@ export class ProviderTranscriptFile {
     const block = assistantBlock(event);
     if (block) {
       this.pending ??= { id: event.id, ts: event.ts, blocks: [] };
+      if (event.forkPointId) this.pending.forkPointId = event.forkPointId;
       const previous = this.pending.blocks.at(-1);
       // Adjacent stream deltas must replay as one text or thinking row.
       if (block.type === 'text' && previous?.type === 'text') {
@@ -111,7 +120,7 @@ export class ProviderTranscriptFile {
   flush(): void {
     const message = this.pending;
     if (!message) return;
-    this.writeMessage('assistant', message.blocks, message.id, message.ts);
+    this.writeMessage('assistant', message.blocks, message.id, message.ts, message.forkPointId);
     this.pending = null;
   }
 
@@ -140,12 +149,14 @@ export class ProviderTranscriptFile {
     content: ContentBlock[],
     id: string,
     ts: number,
+    forkPointId?: string,
   ): void {
     const line: StoredMessageLine = {
       type: 'message',
       id,
       timestamp: new Date(ts).toISOString(),
       message: { role, content },
+      ...(forkPointId ? { forkPointId } : {}),
     };
     this.writeLine(line);
   }
@@ -160,6 +171,78 @@ export class ProviderTranscriptFile {
     }
     appendFileSync(this.path, serialize(line));
   }
+}
+
+// The part of a session's transcript a fork copies: all of it, or every line
+// up to the last one of the answer at `forkPointId`. Read before the provider
+// copies anything, so a point the transcript never recorded fails the fork
+// without leaving a provider copy behind.
+export interface ForkedTranscript {
+  sourceAppSessionId: string;
+  head: ProviderSessionStart;
+  lines: string[];
+}
+
+export function readForkedTranscript(
+  sourceAppSessionId: string,
+  forkPointId?: string,
+): ForkedTranscript {
+  const source = readFileSync(join(providerSessionsDir(), `${sourceAppSessionId}.jsonl`), 'utf8');
+  const [headLine = '', ...lines] = source.split('\n').filter((line) => line.trim() !== '');
+  const head = JSON.parse(headLine) as ProviderSessionStart;
+  if (!forkPointId) return { sourceAppSessionId, head, lines };
+  const last = lines.findLastIndex((line) => storedForkPointId(line) === forkPointId);
+  if (last < 0) throw new Error('This answer was saved before forking from it was possible.');
+  return { sourceAppSessionId, head, lines: lines.slice(0, last + 1) };
+}
+
+// A forked conversation's transcript: the source's messages under a head that
+// names the copy. The provider copied its own record of the conversation; this
+// is DROIDEX's, which scrollback and the sidebar read. A provider that gives
+// the copy new ids for its fork points names them in `forkPointRenames`.
+// Returns the new path.
+export function writeForkedTranscript(
+  transcript: ForkedTranscript,
+  copy: {
+    appSessionId: string;
+    title: string;
+    resumeId?: string;
+    forkPointRenames?: ReadonlyMap<string, string>;
+  },
+): string {
+  const directory = providerSessionsDir();
+  const path = join(directory, `${copy.appSessionId}.jsonl`);
+  const head: ProviderSessionStart = {
+    ...transcript.head,
+    id: copy.appSessionId,
+    title: copy.title,
+    ...(copy.resumeId ? { resumeId: copy.resumeId } : {}),
+  };
+  const renames = copy.forkPointRenames;
+  const lines = renames
+    ? transcript.lines.map((line) => renameForkPoint(line, renames))
+    : transcript.lines;
+  writeFileSync(path, [serialize(head), ...lines.map((line) => `${line}\n`)].join(''));
+  const settingsPath = join(directory, `${transcript.sourceAppSessionId}.settings.json`);
+  if (existsSync(settingsPath)) {
+    copyFileSync(settingsPath, join(directory, `${copy.appSessionId}.settings.json`));
+  }
+  return path;
+}
+
+function storedForkPointId(line: string): string | undefined {
+  try {
+    return (JSON.parse(line) as StoredMessageLine).forkPointId;
+  } catch {
+    return undefined;
+  }
+}
+
+function renameForkPoint(line: string, renames: ReadonlyMap<string, string>): string {
+  const forkPointId = storedForkPointId(line);
+  const renamed = forkPointId ? renames.get(forkPointId) : undefined;
+  if (!renamed) return line;
+  return JSON.stringify({ ...(JSON.parse(line) as StoredMessageLine), forkPointId: renamed });
 }
 
 function headLine(summary: SessionSummary): ProviderSessionStart {

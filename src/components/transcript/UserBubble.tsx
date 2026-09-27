@@ -11,7 +11,8 @@ import { userMessageAttachments } from '../../lib/promptMentions';
 import { SkillIcon } from '../icons/SkillIcon';
 import { VisualizeIcon } from '../icons/VisualizeIcon';
 import { Markdown } from '../Markdown';
-import { MessageActions, SpokenMark } from './primitives';
+import { SpokenMark } from './primitives';
+import { PromptActions } from './ResponseActions';
 
 function BrowserReferenceChip({ reference }: { reference: BrowserTranscriptReference }) {
   const Icon = reference.kind === 'element' ? MousePointer2 : PenLine;
@@ -178,7 +179,12 @@ export function UserBubble({
   event,
   onOpenReviewFile,
 }: {
-  event: Pick<TranscriptEvent, 'text' | 'skills' | 'files' | 'browserRefs' | 'steered' | 'spoken'>;
+  event: Pick<
+    TranscriptEvent,
+    'text' | 'skills' | 'files' | 'browserRefs' | 'steered' | 'spoken'
+  > & {
+    ts?: number;
+  };
   onOpenReviewFile?: OpenReviewFileHandler;
 }) {
   const browserRefs = event.browserRefs ?? [];
@@ -244,13 +250,14 @@ export function UserBubble({
         </div>
       )}
       {hasPrompt && (
-        // The bubble's actions float in the free space to its left, so a prompt
-        // row is exactly its bubble: no reserved action row under it.
         <div className="relative min-w-0 max-w-[80%]">
-          <div className="min-w-0 rounded-2xl rounded-br-sm bg-droid-elevated px-4 py-2.5 text-[14px] leading-[1.6] text-droid-text">
+          <div className="min-w-0 rounded-2xl rounded-br-sm bg-[var(--prompt-bubble-bg,var(--droid-elevated))] px-4 py-2.5 text-[14px] leading-[1.6] text-droid-text">
             {display.text ? <ClampedPrompt source={display.text} chips={chips} /> : chips}
           </div>
-          {message.text ? <MessageActions text={message.text} side="start" /> : null}
+          {/* The pending preview of a first message has no ts, and no actions yet. */}
+          {message.text && event.ts !== undefined ? (
+            <PromptActions text={message.text} ts={event.ts} />
+          ) : null}
         </div>
       )}
     </div>

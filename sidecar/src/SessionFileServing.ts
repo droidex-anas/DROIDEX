@@ -74,6 +74,15 @@ export class SessionFileServing {
     await this.queueReconcile(() => this.reconcileExternal(changes));
   }
 
+  // A copied session is opened straight away, and its scrollback and resume
+  // both read the file index, so the copy is indexed now rather than whenever
+  // the watcher reports it. A copy the provider wrote without telling us where
+  // is found by a full scan.
+  async admitCopiedSession(change: SessionFileChange | null): Promise<void> {
+    await this.whenBootReconciled();
+    await this.queueReconcile(() => this.reconcileExternal(change ? [change] : null));
+  }
+
   async close(): Promise<void> {
     for (const watcher of this.watchers) watcher.close();
     await this.reconcileTail;

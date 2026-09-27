@@ -1,5 +1,5 @@
 import { Fragment, useRef, useState, type ReactNode } from 'react';
-import { PanelRight, Plus, X } from '@droidex/icons';
+import { MessageBubble, PanelRight, Plus, X } from '@droidex/icons';
 import { HoverTooltip } from '../HoverTooltip';
 import { Popover } from '../environment/Popover';
 import type { UtilityPanelState, UtilityTab, UtilityTool } from '../../lib/utilityPanel';
@@ -17,6 +17,7 @@ export function UtilityPane({
   onResize,
   onResizeEnd,
   onOpenTool,
+  onContinueSideChat,
   onActivateTab,
   onCloseTab,
   onClosePane,
@@ -30,6 +31,8 @@ export function UtilityPane({
   onResize: (width: number) => void;
   onResizeEnd: (width: number) => void;
   onOpenTool: (tool: UtilityTool) => void;
+  /** Present while this session's side chats are minimized. */
+  onContinueSideChat?: () => void;
   onActivateTab: (tabId: string) => void;
   onCloseTab: (tab: UtilityTab) => void;
   onClosePane: () => void;
@@ -189,6 +192,16 @@ export function UtilityPane({
                 tools={UTILITY_TOOL_OPTIONS.map((option) => option.tool)}
                 onSelect={onOpenTool}
               />
+              {onContinueSideChat && (
+                <button
+                  type="button"
+                  onClick={onContinueSideChat}
+                  className="group mt-2.5 flex w-full items-center justify-center gap-2 rounded-2xl border border-droid-border/60 bg-droid-elevated/25 px-3 py-3 text-[12px] font-medium text-droid-text-secondary transition-colors hover:border-droid-border-hover hover:bg-droid-elevated/60 hover:text-droid-text focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-droid-accent/60"
+                >
+                  <MessageBubble className="h-4 w-4 text-droid-text-muted transition-colors group-hover:text-droid-text" />
+                  Continue side chat
+                </button>
+              )}
             </div>
           </div>
         )}

@@ -7,7 +7,6 @@ import {
   connect,
   listFactoryDefaults,
   listModels,
-  loadSessionHistory,
   sendNativeBrowserResult,
   openChild,
   newChildOpenRequestId,
@@ -42,6 +41,7 @@ import RuntimeStatusBanner from './components/RuntimeStatusBanner';
 import { checkForAppUpdateAutomatically, startAutomaticAppUpdateChecks } from './lib/appUpdate';
 import { toast } from './lib/toast';
 import { UtilityPane } from './components/utility/UtilityPane';
+import { SideChatRestoreButton } from './components/sidechats/SideChatRestoreButton';
 import { peekTerminalInstance, releaseTerminalInstancesExcept } from './lib/terminalInstances';
 import {
   isExpandableTool,
@@ -63,7 +63,8 @@ import { useWorkspaceScopes } from './hooks/useWorkspaceScopes';
 import { useWorkspaceSessionList } from './hooks/useWorkspaceSessionList';
 import { useHistoryIndexingIdle } from './hooks/useHistoryIndexingIdle';
 import { useBackgroundWorkTier } from './hooks/useBackgroundWorkTier';
-import { transcriptRehydrationLimit } from './lib/transcriptStoreMemory';
+import { useSessionHistory } from './hooks/useSessionHistory';
+import { sideChatPanel } from './lib/sideChats';
 import {
   bindLazySurfaceIntent,
   scheduleIdleLazyWarmup,
@@ -86,6 +87,8 @@ import {
   LazyMissionControl,
   LazyPullRequestsView,
   LazyReviewPanel,
+  LazySideChatsWorkspace,
+  LazySideChatWindow,
   LazySpecWikiModal,
   LazyTerminalWorkspace,
   utilityToolFallback,
@@ -145,12 +148,13 @@ export default function App() {
       hasSessionContent: Boolean(
         activeSession && (current.transcripts[activeSession.appSessionId] ?? []).length > 0,
       ),
-      historyLoaded: current.historyLoaded,
       mainView: current.mainView,
       rightPanelOpen: current.rightPanelOpen,
       selectedChild: current.selectedChild,
-      sessionRestore: current.sessionRestore,
       settingsOpen: current.settingsOpen,
+      sideChatPlacement: activeSession
+        ? sideChatPanel(current.sideChats, activeSession.appSessionId).placement
+        : 'docked',
       shortcutBindings: current.shortcutBindings,
       sidebarCollapsed: current.sidebarCollapsed,
       theme: current.theme,
@@ -233,7 +237,6 @@ export default function App() {
   // right edge instead of sliding inward and looking like a divider.
   const rightPanelVisible =
     !focused && !fullContentRoute && !showUtilityPane && state.rightPanelOpen && hasSessionContent;
-  const requestedHistory = useRef(new Set<string>());
   const [utilityPaneWidth, setUtilityPaneWidth] = useState(() => initialUtilityPaneWidth());
   const [utilityPaneMax, setUtilityPaneMax] = useState(() => utilityPaneMaxWidth());
   const [confirmCloseTabId, setConfirmCloseTabId] = useState<string | null>(null);
@@ -330,6 +333,16 @@ export default function App() {
 
   const openUtilityTool = useCallback(
     (tool: UtilityTool) => {
+      // Side chats live in one place at a time, so opening their tab docks them.
+      const sourceAppSessionId = activeSession?.appSessionId;
+      if (tool === 'side' && sourceAppSessionId) {
+        dispatch({
+          type: 'PLACE_SIDE_CHATS',
+          sourceAppSessionId,
+          placement: 'docked',
+        });
+        return;
+      }
       dispatch({
         type: 'OPEN_UTILITY_TOOL',
         tool,
@@ -337,7 +350,7 @@ export default function App() {
         cwd: tool === 'terminal' ? workingDirectory : undefined,
       });
     },
-    [dispatch, workingDirectory],
+    [dispatch, workingDirectory, activeSession?.appSessionId],
   );
 
   const closeTerminalTab = useCallback(
@@ -542,24 +555,7 @@ export default function App() {
     };
   }, [dispatch, embedded, store]);
 
-  useEffect(() => {
-    if (embedded) return;
-    if (!activeSession) return;
-    const appSessionId = activeSession.appSessionId;
-    if (state.historyLoaded[appSessionId]) {
-      requestedHistory.current.delete(appSessionId);
-      return;
-    }
-    const restore = state.sessionRestore[appSessionId];
-    if (restore?.status === 'failed') {
-      requestedHistory.current.delete(appSessionId);
-      return;
-    }
-    if (restore?.status === 'loading' || requestedHistory.current.has(appSessionId)) return;
-    requestedHistory.current.add(appSessionId);
-    dispatch({ type: 'SESSION_RESTORE_START', appSessionId });
-    loadSessionHistory(appSessionId, undefined, transcriptRehydrationLimit(restore));
-  }, [activeSession, embedded, state.historyLoaded, state.sessionRestore, dispatch]);
+  useSessionHistory(embedded ? null : (activeSession?.appSessionId ?? null));
 
   useEffect(() => {
     if (embedded || !activeSession) return;
@@ -722,6 +718,11 @@ export default function App() {
                     besidePane={showUtilityPane}
                   />
                   <PromptInput rightInset={rightPanelVisible} />
+                  {activeSession && state.sideChatPlacement === 'floating' ? (
+                    <Suspense fallback={null}>
+                      <LazySideChatWindow sourceAppSessionId={activeSession.appSessionId} />
+                    </Suspense>
+                  ) : null}
                 </>
               )}
             </section>
@@ -756,6 +757,13 @@ export default function App() {
                       }
                     }}
                     onOpenTool={openUtilityTool}
+                    onContinueSideChat={
+                      state.sideChatPlacement === 'minimized'
+                        ? () => {
+                            openUtilityTool('side');
+                          }
+                        : undefined
+                    }
                     onActivateTab={(tabId) => {
                       const nextTab = utilityPanel.tabs.find((tab) => tab.id === tabId);
                       if (!isExpandableTool(nextTab?.tool)) setExpandedPaneAppSessionId(null);
@@ -809,6 +817,21 @@ export default function App() {
                       dispatch({ type: 'SET_UTILITY_PANEL_OPEN', open: false });
                     }}
                     renderTab={(tab, { overlayOpen }) => {
+                      if (tab.tool === 'side') {
+                        return (
+                          <Suspense fallback={utilityToolFallback('side')}>
+                            <LazySideChatsWorkspace
+                              sourceAppSessionId={activeSession.appSessionId}
+                              expanded={paneExpanded}
+                              onToggleExpanded={() => {
+                                setExpandedPaneAppSessionId(
+                                  paneExpanded ? null : activeSession.appSessionId,
+                                );
+                              }}
+                            />
+                          </Suspense>
+                        );
+                      }
                       if (tab.tool === 'agents') {
                         return (
                           <Suspense fallback={utilityToolFallback('agents')}>
@@ -944,6 +967,9 @@ export default function App() {
           className="absolute right-0 h-9 z-40 flex items-center gap-1 pr-3"
           style={{ top: bannerStackHeight }}
         >
+          {activeSession && state.sideChatPlacement === 'minimized' && (
+            <SideChatRestoreButton sourceAppSessionId={activeSession.appSessionId} />
+          )}
           {workingDirectory && (
             <EditorOpenMenu cwd={workingDirectory} hasRepo={!!repoStatus} variant="toolbar" />
           )}
