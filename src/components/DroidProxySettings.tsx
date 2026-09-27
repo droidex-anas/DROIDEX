@@ -420,7 +420,7 @@ function DroidProxyAccountRow({
           disabled={pendingAccountId !== null || lastEnabled}
           aria-label={`${action} ${label}`}
           title={lastEnabled ? 'Keep at least one account enabled' : undefined}
-          className="inline-flex min-h-8 shrink-0 items-center rounded-md px-2 text-[11px] font-medium text-droid-orange transition-[color,background-color,opacity] duration-200 ease-out hover:bg-droid-orange/10 hover:text-droid-text focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-droid-orange/70 disabled:cursor-not-allowed disabled:opacity-40 motion-reduce:transition-none"
+          className="inline-flex min-h-8 shrink-0 items-center rounded-md px-2 text-[11px] font-medium text-droid-orange transition-colors duration-200 ease-out hover:bg-droid-orange/10 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-droid-accent/60 disabled:cursor-not-allowed disabled:opacity-40 motion-reduce:transition-none"
         >
           {pending ? (
             <LoaderCircle aria-hidden="true" className="h-3.5 w-3.5 motion-safe:animate-spin" />
