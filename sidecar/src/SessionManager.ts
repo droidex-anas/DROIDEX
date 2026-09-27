@@ -1126,7 +1126,7 @@ export class SessionManager {
     return (await this.refreshModelCatalog(false)) ?? [];
   }
 
-  private refreshModelCatalog(emit: boolean): Promise<ModelInfo[] | null> {
+  private refreshModelCatalog(emit: boolean, freshSession = false): Promise<ModelInfo[] | null> {
     if (this.modelRefresh) return this.modelRefresh;
     this.modelRefresh = (async () => {
       try {
@@ -1135,7 +1135,8 @@ export class SessionManager {
           this.emit({ type: 'catalog.updated', catalog: 'models', items: models });
           await this.emitProviderStatus();
         }
-        if (!this.droidModels.hasSessionCatalog()) await this.adoptCatalogSessionModels();
+        if (!this.droidModels.hasSessionCatalog())
+          await this.adoptCatalogSessionModels(freshSession);
         return this.droidModels.known();
       } catch (err) {
         this.emitError({ message: `catalog.models failed: ${errMsg(err)}` });
@@ -1150,13 +1151,13 @@ export class SessionManager {
   private async refreshModelsAfterFactoryChange(): Promise<void> {
     if (this.modelRefresh) await this.modelRefresh;
     this.droidModels.invalidate();
-    await this.refreshModelCatalog(true);
+    await this.refreshModelCatalog(true, true);
   }
 
   // The help text lags the account's catalog (no Auto model), so until any
   // session has reported the live one, a catalog session stands in once.
-  private async adoptCatalogSessionModels(): Promise<void> {
-    const { session, close } = await this.catalogSession();
+  private async adoptCatalogSessionModels(freshSession = false): Promise<void> {
+    const { session, close } = await this.catalogSession(undefined, freshSession);
     try {
       this.adoptSessionModels(session.initResult.availableModels ?? []);
     } finally {
@@ -1823,10 +1824,15 @@ export class SessionManager {
 
   private async catalogSession(
     providerSessionId?: string,
+    freshSession = false,
   ): Promise<{ session: FactorySession; close: () => Promise<void> }> {
-    const first = this.registry.liveSessionsSnapshot().at(0);
-    const live = providerSessionId ? this.registry.getLive(providerSessionId)?.droid : first?.droid;
-    if (live) return { session: live, close: () => Promise.resolve() };
+    if (!freshSession) {
+      const first = this.registry.liveSessionsSnapshot().at(0);
+      const live = providerSessionId
+        ? this.registry.getLive(providerSessionId)?.droid
+        : first?.droid;
+      if (live) return { session: live, close: () => Promise.resolve() };
+    }
     const session = await this.runtime.createSession({
       cwd: tmpdir(),
       interactionMode: 'auto',

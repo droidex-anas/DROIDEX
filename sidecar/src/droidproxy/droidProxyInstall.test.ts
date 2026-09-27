@@ -98,6 +98,22 @@ test('downloadFile works without a content length', async () => {
   );
 });
 
+test('downloadFile rejects a destination write error without hanging', async () => {
+  await withServer(
+    (_req, res) => {
+      res.writeHead(200);
+      res.end(Buffer.alloc(256 * 1024));
+    },
+    async (baseUrl) => {
+      const dir = mkdtempSync(join(tmpdir(), 'droidex-dl-'));
+      await assert.rejects(
+        downloadFile(`${baseUrl}/file`, dir, () => {}),
+        (error: unknown) => error instanceof Error && 'code' in error && error.code === 'EISDIR',
+      );
+    },
+  );
+});
+
 test('downloadFile refuses an absurd content length before reading', async () => {
   await withServer(
     (_req, res) => {

@@ -4,6 +4,8 @@ import { createReadStream, createWriteStream, existsSync } from 'node:fs';
 import { access, constants, mkdir, mkdtemp, rename, rm } from 'node:fs/promises';
 import { homedir, tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { Readable } from 'node:stream';
+import { pipeline } from 'node:stream/promises';
 import { promisify } from 'node:util';
 
 import type { DroidProxyInstallPhase } from '../protocol.js';
@@ -63,39 +65,28 @@ export async function downloadFile(
   signal?: AbortSignal,
 ): Promise<void> {
   const response = await fetch(url, { signal });
-  if (!response.ok || !response.body) {
+  const body = response.body;
+  if (!response.ok || !body) {
     throw new Error(`Download failed (HTTP ${String(response.status)}).`);
   }
+  const readableBody = body;
   const total = contentLength(response);
   if (total !== undefined && total > MAX_ZIP_BYTES) {
     throw new Error('Download is larger than expected.');
   }
-  const file = createWriteStream(destPath);
   let received = 0;
-  try {
-    for await (const chunk of response.body) {
-      received += (chunk as Uint8Array).length;
+  async function* chunks(): AsyncGenerator<Uint8Array> {
+    for await (const value of readableBody) {
+      const chunk = value as Uint8Array;
+      received += chunk.length;
       if (received > MAX_ZIP_BYTES) {
         throw new Error('Download is larger than expected.');
       }
-      if (!file.write(chunk)) {
-        await new Promise<void>((resolve) =>
-          file.once('drain', () => {
-            resolve();
-          }),
-        );
-      }
       onProgress(received, total);
+      yield chunk;
     }
-  } finally {
-    file.end();
   }
-  await new Promise<void>((resolve, reject) => {
-    file.on('finish', () => {
-      resolve();
-    });
-    file.on('error', reject);
-  });
+  await pipeline(Readable.from(chunks()), createWriteStream(destPath), { signal });
 }
 
 // /Applications for admin users, ~/Applications otherwise: both keep the
