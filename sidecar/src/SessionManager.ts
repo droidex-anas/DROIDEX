@@ -101,7 +101,7 @@ import type { HotPathResourceCounts } from './telemetry/hotPathMetrics.js';
 import { DroidMcpConfiguration, type McpConfiguration } from './DroidMcpConfiguration.js';
 import { McpSettings } from './McpSettings.js';
 import { loadFactoryMcpServers } from './FactoryMcpConfig.js';
-import { assertValidResponseFormat, formatAppPrompt } from './appPrompt.js';
+import { assertValidResponseFormat, formatAppPrompt, formatAppRepairPrompt } from './appPrompt.js';
 import { droidCatalogItems } from './providers/catalog.js';
 import { DroidProvider } from './providers/droid/DroidProvider.js';
 import { runPrimaryTurn } from './providers/primaryTurn.js';
@@ -893,6 +893,9 @@ export class SessionManager {
           formatResponsePrompt(cmd.text, cmd.responseFormat),
           cmd.mentions,
         );
+        return;
+      case 'session.repairApp':
+        await this.lifecycle.send(cmd.appSessionId, formatAppRepairPrompt(cmd.error, cmd.source));
         return;
       case 'session.sendNow':
         await this.lifecycle.sendNow(

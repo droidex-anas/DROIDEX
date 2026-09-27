@@ -37,9 +37,7 @@ import {
   forkOffer,
   lastInheritedItemIndex,
   projectFinalResponseKeys,
-  rememberFreshAppResponses,
   type FinalResponseKeyState,
-  type FreshAppResponseState,
 } from './messageFeedState';
 import { buildFeed, isCompactingStatus, isSettingsStatus, type FeedItem } from './chatFeed';
 import { groupTurns, tailTimestamp, trailingSubagentPoll } from './chatFeedTurns';
@@ -236,15 +234,6 @@ export function MessageFeed({
     [providedItems, events, pending, rich, changes, specContent, dockEnabled],
   );
   const feedIdentity = `${events[0]?.appSessionId ?? ''}:${events[0]?.sourceSessionId ?? ''}`;
-  const freshAppResponsesRef = useRef<FreshAppResponseState | null>(null);
-  const freshAppResponseState = useMemo(
-    () => rememberFreshAppResponses(freshAppResponsesRef.current, feedIdentity, items, pending),
-    [feedIdentity, items, pending],
-  );
-  useEffect(() => {
-    freshAppResponsesRef.current = freshAppResponseState;
-  }, [freshAppResponseState]);
-  const freshAppResponseTexts = freshAppResponseState.texts;
   const renderedFeedRef = useRef<{ identity: string; items: FeedItem[] } | null>(null);
   const previousFeed = renderedFeedRef.current;
   useEffect(() => {
@@ -424,11 +413,6 @@ export function MessageFeed({
                   animateOnMount={shouldAnimateFeedRow(item, animateKeys, enteredKeys)}
                   onEnter={recordEntrance}
                   live={pending && index === lastIdx && !subagentPollActive}
-                  autoPlayAppBlocks={
-                    item.type === 'message' &&
-                    item.event.author !== 'user' &&
-                    freshAppResponseTexts.has(item.event.text ?? '')
-                  }
                   sessionLive={pending}
                   compacting={compacting && index === lastIdx}
                   {...optionalItemProps}

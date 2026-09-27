@@ -24,7 +24,13 @@ function streaming(source: string, extra: Record<string, unknown> = {}): string 
 }
 
 function assertSettledMatchesCanonical(source: string, extra: Record<string, unknown> = {}): void {
-  assert.equal(settled(source, extra), canonical(source, extra));
+  // Each mounted sandbox gets its own token, including identical historical rows.
+  const withoutBridgeToken = (html: string) =>
+    html.replace(/const bridgeToken = &quot;[^&]+&quot;/g, 'const bridgeToken = [token];');
+  assert.equal(
+    withoutBridgeToken(settled(source, extra)),
+    withoutBridgeToken(canonical(source, extra)),
+  );
 }
 
 function assertCompletedBlocksStable(full: string): void {

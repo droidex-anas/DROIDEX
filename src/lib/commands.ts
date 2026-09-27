@@ -184,6 +184,11 @@ export const sendToSession = (
   });
 };
 
+export const repairApp = (appSessionId: string, error: string, source: string) => {
+  requireAgentWorkAvailable();
+  bridge.send({ type: 'session.repairApp', appSessionId, error, source });
+};
+
 export const sendToSessionNow = (
   appSessionId: string,
   text: string,

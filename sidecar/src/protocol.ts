@@ -762,6 +762,7 @@ export type ClientCommand =
       mentions?: ProviderMention[];
       responseFormat?: ResponseFormat;
     }
+  | { type: 'session.repairApp'; appSessionId: string; error: string; source: string }
   | { type: 'session.resume'; appSessionId: string }
   | { type: 'session.interrupt'; appSessionId: string }
   | {

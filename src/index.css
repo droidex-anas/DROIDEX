@@ -495,6 +495,34 @@
     animation: cue-enter 0.16s ease-out both;
   }
 
+  /* A visualization opened full screen settles out of a slight zoom over a
+     fading backdrop; closing is instant so the chat is back at once. */
+  @keyframes app-expand-enter {
+    from {
+      opacity: 0;
+      transform: scale(0.985);
+    }
+    to {
+      opacity: 1;
+      transform: scale(1);
+    }
+  }
+
+  .app-expand-scrim {
+    animation: cue-enter 0.16s ease-out both;
+  }
+
+  .app-expand-panel {
+    animation: app-expand-enter 0.24s cubic-bezier(0.16, 1, 0.3, 1) both;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .app-expand-scrim,
+    .app-expand-panel {
+      animation: none;
+    }
+  }
+
   /* Streaming caret: drawn at the end of the last line of the last block while
      tokens flow, so it never wraps onto a line of its own. Blocks that have no
      text line to end on (a code card, a table) get it after the block. */

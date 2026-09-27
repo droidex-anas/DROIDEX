@@ -12,13 +12,17 @@ export function createAppDocument(
 ): string {
   const serializedId = JSON.stringify(instanceId).replaceAll('<', '\\u003c');
   const serializedBridgeToken = JSON.stringify(bridgeToken).replaceAll('<', '\\u003c');
+  const componentCdns = 'https://cdn.jsdelivr.net https://cdnjs.cloudflare.com';
   const contentSecurityPolicy = [
     "default-src 'none'",
-    "script-src 'unsafe-inline'",
-    "style-src 'unsafe-inline'",
-    'img-src data: blob:',
+    `script-src 'unsafe-inline' ${componentCdns}`,
+    `style-src 'unsafe-inline' https://fonts.googleapis.com ${componentCdns}`,
+    `font-src data: https://fonts.gstatic.com ${componentCdns}`,
+    `img-src data: blob: ${componentCdns}`,
     'media-src data: blob:',
-    "connect-src 'none'",
+    // Some components fetch icons or other assets from their own CDN.
+    `connect-src ${componentCdns}`,
+    "worker-src 'none'",
     "frame-src 'none'",
     "object-src 'none'",
     "base-uri 'none'",
@@ -41,12 +45,17 @@ export function createAppDocument(
   --app-muted: ${theme.muted};
   --app-border: ${theme.border};
   --app-accent: ${theme.accent};
-  font-family: ui-sans-serif, system-ui, sans-serif;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 html, body { margin: 0; min-width: 0; background: transparent; }
 body { box-sizing: border-box; padding: 0; color: var(--app-foreground); overflow-wrap: anywhere; }
 *, *::before, *::after { box-sizing: inherit; }
 img, svg, canvas, video { display: block; max-width: 100%; height: auto; }
+:where(pre) { max-width: 100%; overflow-x: auto; }
+:where([data-droidex-app-root]) { border-radius: 12px; }
+:where(canvas[data-droidex-managed-canvas]) { width: 100%; }
 a { color: var(--app-accent); }
 button, input, select, textarea {
   border: 1px solid var(--app-border);
@@ -61,6 +70,79 @@ button, input, select, textarea {
 (() => {
   const instanceId = ${serializedId};
   const bridgeToken = ${serializedBridgeToken};
+  let currentTheme = Object.freeze(${JSON.stringify(theme).replaceAll('<', '\\u003c')});
+  const themeColors = ['background', 'surface', 'foreground', 'muted', 'border', 'accent'];
+  const updateTheme = (theme) => {
+    if (!theme || !['light', 'dark'].includes(theme.colorScheme) ||
+      !themeColors.every((key) => typeof theme[key] === 'string' && CSS.supports('color', theme[key]))) return;
+    currentTheme = Object.freeze(Object.fromEntries(
+      ['colorScheme', ...themeColors].map((key) => [key, theme[key]])
+    ));
+    const style = document.documentElement.style;
+    style.colorScheme = currentTheme.colorScheme;
+    for (const key of themeColors) style.setProperty('--app-' + key, currentTheme[key]);
+    window.dispatchEvent(new CustomEvent('droidex:themechange', { detail: currentTheme }));
+    reportHeight();
+  };
+  const createCanvas = (target, draw) => {
+    const canvas = typeof target === 'string' ? document.querySelector(target) : target;
+    if (!(canvas instanceof HTMLCanvasElement) || typeof draw !== 'function') {
+      throw new TypeError('createCanvas requires a canvas and a draw callback.');
+    }
+    const context = canvas.getContext('2d');
+    if (!context) throw new Error('A 2D canvas context is unavailable.');
+    canvas.setAttribute('data-droidex-managed-canvas', '');
+    // Preserve the CSS box's ratio before bitmap dimensions change for HiDPI.
+    if (getComputedStyle(canvas).aspectRatio.startsWith('auto')) {
+      canvas.style.aspectRatio = String((canvas.width || 300) / (canvas.height || 150));
+    }
+    let stopped = false;
+    let timer = 0;
+    const redraw = () => {
+      if (stopped) return;
+      if (timer) clearTimeout(timer);
+      timer = 0;
+      const style = getComputedStyle(canvas);
+      const width = Math.max(0, canvas.clientWidth - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight));
+      const height = Math.max(0, canvas.clientHeight - parseFloat(style.paddingTop) - parseFloat(style.paddingBottom));
+      if (!width || !height) return;
+      const pixelRatio = Math.min(2, Math.max(1, window.devicePixelRatio || 1));
+      canvas.width = Math.round(width * pixelRatio);
+      canvas.height = Math.round(height * pixelRatio);
+      context.setTransform(pixelRatio, 0, 0, pixelRatio, 0, 0);
+      context.save();
+      try {
+        draw({ context, width, height, pixelRatio, theme: currentTheme });
+      } finally {
+        context.restore();
+      }
+    };
+    const schedule = () => {
+      if (!stopped && !timer) timer = setTimeout(redraw);
+    };
+    const observer = new ResizeObserver(schedule);
+    const dispose = () => {
+      if (stopped) return;
+      stopped = true;
+      if (timer) clearTimeout(timer);
+      timer = 0;
+      observer.disconnect();
+      window.removeEventListener('droidex:themechange', schedule);
+      window.removeEventListener('resize', schedule);
+      window.removeEventListener('pagehide', dispose);
+    };
+    observer.observe(canvas);
+    window.addEventListener('droidex:themechange', schedule);
+    window.addEventListener('resize', schedule);
+    window.addEventListener('pagehide', dispose, { once: true });
+    try {
+      redraw();
+    } catch (error) {
+      dispose();
+      throw error;
+    }
+    return { redraw, dispose };
+  };
   const pendingMath = new Map();
   let mathSequence = 0;
   let heightTimer = 0;
@@ -108,19 +190,54 @@ button, input, select, textarea {
     const content = document.body?.scrollHeight ?? 0;
     return content > 0 ? content : document.documentElement.scrollHeight;
   };
+  // Fixed-size SVG without a viewBox is cropped, not scaled, when the frame is
+  // narrower than its width attribute. A viewBox matching those attributes
+  // draws identically at full size; it follows later attribute changes.
+  const makeSvgScalable = () => {
+    const unscalable = 'svg:not(svg svg):not([viewBox]), svg[data-droidex-viewbox]';
+    for (const svg of document.querySelectorAll(unscalable)) {
+      const width = Number(svg.getAttribute('width'));
+      const height = Number(svg.getAttribute('height'));
+      const viewBox = '0 0 ' + width + ' ' + height;
+      if (!(width > 0 && height > 0) || svg.getAttribute('viewBox') === viewBox) continue;
+      svg.setAttribute('viewBox', viewBox);
+      svg.setAttribute('data-droidex-viewbox', '');
+    }
+  };
+  // Content wider than the frame is scaled down to fit instead of being clipped
+  // by the host's overflow lock. Past the smallest legible scale the frame
+  // scrolls sideways instead of shrinking text further.
+  const minimumFitScale = 0.7;
+  let appRoot = null;
+  const fitToWidth = () => {
+    makeSvgScalable();
+    if (!appRoot) return;
+    appRoot.style.removeProperty('zoom');
+    const available = document.documentElement.clientWidth;
+    const natural = appRoot.scrollWidth;
+    const scale = natural > available + 1 ? Math.max(minimumFitScale, available / natural) : 1;
+    if (scale < 1) appRoot.style.setProperty('zoom', String(scale), 'important');
+    document.documentElement.toggleAttribute('data-droidex-scroll-x', natural * scale > available + 1);
+  };
   const reportHeight = () => {
     if (!initialRenderComplete || disposed || heightTimer) return;
     heightTimer = setTimeout(() => {
       heightTimer = 0;
+      fitToWidth();
       const height = measureHeight();
       if (height === lastHeight) return;
       lastHeight = height;
       parent.postMessage({ type: 'droidex:app-height', instanceId, bridgeToken, height }, '*');
     });
   };
-  const renderMath = (target, latex, options = {}) => {
+  let resolveMathReady;
+  const mathReady = new Promise((resolve) => { resolveMathReady = resolve; });
+  const renderMath = async (target, latex, options = {}) => {
     const element = typeof target === 'string' ? document.querySelector(target) : target;
-    if (!(element instanceof Element) || typeof latex !== 'string') return Promise.resolve(false);
+    if (!(element instanceof Element) || typeof latex !== 'string') return false;
+    // Inline scripts can request math before the host accepts document work.
+    await mathReady;
+    if (disposed) return false;
     const requestId = instanceId + '-math-' + String(++mathSequence);
     return new Promise((resolve) => {
       pendingMath.set(requestId, { element, resolve });
@@ -141,6 +258,7 @@ button, input, select, textarea {
   );
   const postReady = () => {
     parent.postMessage({ type: 'droidex:app-ready', instanceId, bridgeToken }, '*');
+    resolveMathReady();
   };
   const onHostMessage = (event) => {
     const data = event.data;
@@ -150,6 +268,10 @@ button, input, select, textarea {
       data.instanceId !== instanceId ||
       data.bridgeToken !== bridgeToken
     ) return;
+    if (data.type === 'droidex:theme-update') {
+      updateTheme(data.theme);
+      return;
+    }
     if (data.type === 'droidex:host-ready') {
       postReady();
       return;
@@ -168,20 +290,23 @@ button, input, select, textarea {
     reportHeight();
   };
   addEventListener('message', onHostMessage);
-  window.droidex = Object.freeze({ renderMath, renderAllMath });
+  window.droidex = Object.freeze({
+    renderMath, renderAllMath, createCanvas,
+    get theme() { return currentTheme; },
+  });
   addEventListener('DOMContentLoaded', () => {
     const root = document.querySelector('[data-droidex-app-root]') ??
       [...document.body.children].find((element) => !['SCRIPT', 'STYLE'].includes(element.tagName));
     root?.setAttribute('data-droidex-app-root', '');
-    if (root && !root.querySelector('[data-droidex-app-canvas]')) {
-      const visualRegions = [...root.children].filter((element) =>
-        element.matches('svg, canvas') || element.querySelector('svg, canvas')
-      );
-      if (visualRegions.length === 1) {
-        visualRegions[0].setAttribute('data-droidex-app-canvas', '');
-      }
-    }
+    appRoot = root ?? null;
     postReady();
+    // Registered after the App's own scripts ran, so an Escape the App handles
+    // (closing its own menu, say) is already default-prevented here.
+    const onKeyDown = (event) => {
+      if (event.key !== 'Escape' || event.defaultPrevented) return;
+      parent.postMessage({ type: 'droidex:escape', instanceId, bridgeToken }, '*');
+    };
+    addEventListener('keydown', onKeyDown);
     const observer = new ResizeObserver(reportHeight);
     observer.observe(document.body);
     if (root && root !== document.body) observer.observe(root);
@@ -193,6 +318,7 @@ button, input, select, textarea {
       disposed = true;
       if (heightTimer) clearTimeout(heightTimer);
       observer.disconnect();
+      removeEventListener('keydown', onKeyDown);
       removeEventListener('message', onHostMessage);
       removeEventListener('error', onRuntimeError);
       removeEventListener('unhandledrejection', onUnhandledRejection);
@@ -206,22 +332,18 @@ button, input, select, textarea {
 <body>
 ${source}
 <style data-droidex-app-host>
-html, body { overflow: hidden !important; height: auto !important; }
-body { min-height: 0 !important; padding: 0 !important; }
+html, body {
+  overflow: hidden !important;
+  height: auto !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  background: transparent !important;
+}
+body { min-height: 0 !important; }
+html[data-droidex-scroll-x] body { overflow-x: auto !important; }
 [data-droidex-app-root] {
   width: 100% !important;
   max-width: none !important;
-  margin: 0 !important;
-  padding: 0 !important;
-  border: 0 !important;
-  box-shadow: none !important;
-}
-[data-droidex-app-canvas] {
-  margin-inline: 0 !important;
-  padding: 0 !important;
-  border: 0 !important;
-  border-radius: 0 !important;
-  box-shadow: none !important;
 }
 </style>
 </body>
