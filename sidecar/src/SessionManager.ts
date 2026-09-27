@@ -713,7 +713,10 @@ export class SessionManager {
       provider: (kind) => this.providerFor(kind),
       registry: this.registry,
       lineage: this.lineage,
-      admitCopiedSession: (change) => this.sessionFiles.admitCopiedSession(change),
+      indexSessionFiles: (change) => this.sessionFiles.indexNow(change),
+      updateModel: (appSessionId, settings) =>
+        this.modelSettings.update(appSessionId, 'primary', settings),
+      isShutdownStarted: () => this.shutdownPromise !== undefined,
       create: (command, branch) => this.lifecycle.create(command, branch),
       send: (appSessionId, text) => this.lifecycle.send(appSessionId, text),
       emit: (event) => {

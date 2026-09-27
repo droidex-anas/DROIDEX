@@ -1191,7 +1191,7 @@ export type ServerEvent =
   | { type: 'browser.closed'; appSessionId: string }
   | { type: 'browser.error'; appSessionId?: string; message: string };
 
-export const BRIDGE_PROTOCOL_VERSION = 4 as const;
+export const BRIDGE_PROTOCOL_VERSION = 5 as const;
 
 export interface SequencedServerEvent {
   seq: number;

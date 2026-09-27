@@ -928,8 +928,16 @@ function baseReducer(state: AppState, action: Action): AppState {
       if (action.status === 'connected')
         return { ...state, connection: action.status, connectionError: action.message };
       const next = invalidateSelectedChildOpening(state);
+      // A lost bridge never answers a fork either; a side chat still starting
+      // hands its question back to the composer.
+      let sideChats = next.sideChats;
+      for (const [clientRef, fork] of Object.entries(next.pendingForks)) {
+        if (fork?.kind === 'side') sideChats = settleSideChatStart(sideChats, clientRef, null);
+      }
       return {
         ...next,
+        pendingForks: {},
+        sideChats,
         connection: action.status,
         connectionError: action.message,
         selectedChild: null,

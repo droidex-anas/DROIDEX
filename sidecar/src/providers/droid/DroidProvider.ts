@@ -55,17 +55,24 @@ export class DroidProvider implements Provider {
   // place; loading a second handle on it would race the one already running.
   async fork({
     providerSessionId,
+    compactedFromProviderSessionIds = [],
     cwd,
     title,
     live,
     forkPointId,
   }: ProviderForkSource): Promise<ProviderForkHandle> {
-    const rewindTo = forkPointId ? messageAfter(providerSessionId, forkPointId) : undefined;
-    const open = live ? droidSessionOf(live) : undefined;
-    if (open) return { providerSessionId: await copySession(open, title, rewindTo) };
-    const session = await this.runtime.loadSession(providerSessionId, { cwd });
+    const point = forkPointId
+      ? findForkPoint(
+          [providerSessionId, ...compactedFromProviderSessionIds].reverse(),
+          forkPointId,
+        )
+      : { providerSessionId, rewindTo: undefined };
+    const open =
+      live && point.providerSessionId === providerSessionId ? droidSessionOf(live) : undefined;
+    if (open) return { providerSessionId: await copySession(open, title, point.rewindTo) };
+    const session = await this.runtime.loadSession(point.providerSessionId, { cwd });
     try {
-      return { providerSessionId: await copySession(session, title, rewindTo) };
+      return { providerSessionId: await copySession(session, title, point.rewindTo) };
     } finally {
       await session.close();
     }
@@ -90,16 +97,23 @@ async function copySession(
 }
 
 // A fork point is the id of the answer's message. Droid rewinds to the message
-// after it; an answer with nothing after it forks the whole session.
-function messageAfter(providerSessionId: string, messageId: string): string | undefined {
-  const path = sessionFilePath(providerSessionId);
-  if (!path) throw new Error('Droid has no stored session to fork.');
-  const ids = readFileSync(path, 'utf8')
-    .split('\n')
-    .flatMap((line) => storedMessageId(line) ?? []);
-  const index = ids.indexOf(messageId);
-  if (index < 0) throw new Error('Droid no longer has this answer to fork from.');
-  return ids.at(index + 1);
+// after it; an answer with nothing after it forks the whole session. An answer
+// from before a compaction lives in the session the chat compacted from, newest
+// first, and is copied from there.
+function findForkPoint(
+  providerSessionIds: readonly string[],
+  messageId: string,
+): { providerSessionId: string; rewindTo: string | undefined } {
+  for (const providerSessionId of providerSessionIds) {
+    const path = sessionFilePath(providerSessionId);
+    if (!path) continue;
+    const ids = readFileSync(path, 'utf8')
+      .split('\n')
+      .flatMap((line) => storedMessageId(line) ?? []);
+    const index = ids.indexOf(messageId);
+    if (index >= 0) return { providerSessionId, rewindTo: ids.at(index + 1) };
+  }
+  throw new Error('Droid no longer has this answer to fork from.');
 }
 
 function storedMessageId(line: string): string | undefined {

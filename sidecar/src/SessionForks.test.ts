@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { mkdirSync, mkdtempSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
@@ -89,18 +89,29 @@ function summary(overrides: Partial<SessionSummary> & { appSessionId: string }):
   };
 }
 
-function harness(options: { streaming?: boolean } = {}) {
+function harness(
+  options: {
+    streaming?: boolean;
+    provider?: 'droid' | 'claude';
+    duringFork?: (stored: Map<string, SessionSummary>) => void;
+  } = {},
+) {
   const dir = mkdtempSync(join(tmpdir(), 'session-forks-'));
   const lineage = new SessionLineageStore(sessionLineagePath(dir));
   const stored = new Map<string, SessionSummary>([
     [
       'source',
-      summary({ appSessionId: 'source', modelId: 'claude-opus', reasoningEffort: 'high' }),
+      summary({
+        appSessionId: 'source',
+        provider: options.provider ?? 'droid',
+        modelId: 'claude-opus',
+        reasoningEffort: 'high',
+      }),
     ],
   ]);
   const forkSources: ProviderForkSource[] = [];
   const events: ServerEvent[] = [];
-  const errors: { code: string; clientRef: string; message: string }[] = [];
+  const errors: { code: string; clientRef?: string; message: string }[] = [];
   const order: string[] = [];
   const created: { command: SessionCreateCommand; branch: SessionBranch }[] = [];
 
@@ -111,6 +122,7 @@ function harness(options: { streaming?: boolean } = {}) {
       resume: () => Promise.reject(new Error('not used')),
       fork: (source) => {
         forkSources.push(source);
+        options.duringFork?.(stored);
         return Promise.resolve({ providerSessionId: 'copy' });
       },
     }),
@@ -132,12 +144,19 @@ function harness(options: { streaming?: boolean } = {}) {
       },
     },
     lineage,
-    admitCopiedSession: () => {
+    indexSessionFiles: () => {
       order.push(lineage.project(summary({ appSessionId: 'copy' })).lineage ? 'lineage' : 'none');
       // Indexing the copied file is what makes the copy a stored row.
       stored.set('copy', summary({ appSessionId: 'copy', title: 'Provider title' }));
       return Promise.resolve();
     },
+    updateModel: (appSessionId, settings) => {
+      order.push(
+        `model ${appSessionId}: ${String(settings.modelId)} ${String(settings.reasoningEffort)}`,
+      );
+      return Promise.resolve(true);
+    },
+    isShutdownStarted: () => false,
     create: (command, branch) => {
       created.push({ command, branch });
       return Promise.resolve();
@@ -221,14 +240,17 @@ test('a same-harness side chat takes its question as the first message after the
   });
 
   assert.deepEqual(h.errors, []);
-  // The renderer learns of the copy before its first turn starts streaming.
-  assert.deepEqual(h.order, ['lineage', 'session.forked', 'send copy: Why this migration order?']);
+  // The renderer learns of the copy before its first turn starts streaming. A
+  // picked model replaces the source's, and the source's effort goes with it.
+  assert.deepEqual(h.order, [
+    'lineage',
+    'session.forked',
+    'model copy: claude-sonnet null',
+    'send copy: Why this migration order?',
+  ]);
   const [event] = h.events;
   if (event.type !== 'session.forked') return assert.fail('expected session.forked');
   assert.equal(event.session.lineage?.kind, 'side');
-  // A picked model replaces the source's, and the source's effort goes with it.
-  assert.equal(event.session.modelId, 'claude-sonnet');
-  assert.equal(event.session.reasoningEffort, undefined);
 });
 
 test('a chat with a turn in progress is not forked', async (t) => {
@@ -299,4 +321,44 @@ test('a fork to another harness needs a first message', async (t) => {
   assert.equal(h.errors.length, 1);
   assert.equal(h.errors[0].clientRef, 'ref-3');
   assert.match(h.errors[0].message, /first message/);
+});
+
+test('a copy taken while the source was replaced is not kept', async (t) => {
+  const h = harness({
+    provider: 'claude',
+    duringFork: (stored) => {
+      const source = stored.get('source');
+      if (source) stored.set('source', { ...source, providerSessionId: 'replacement' });
+    },
+  });
+  t.after(h.cleanup);
+
+  await h.forks.fork({
+    type: 'session.fork',
+    clientRef: 'ref-6',
+    appSessionId: 'source',
+    lineage: 'fork',
+    title: 'Source chat (fork)',
+  });
+
+  assert.equal(h.forkSources.length, 1);
+  assert.deepEqual(h.order, []);
+  assert.equal(h.errors.length, 1);
+  assert.equal(h.errors[0].clientRef, 'ref-6');
+  assert.match(h.errors[0].message, /changed while it was being copied/);
+});
+
+test('an unreadable lineage file is moved aside instead of overwritten', (t) => {
+  const dir = mkdtempSync(join(tmpdir(), 'session-lineage-'));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const path = sessionLineagePath(dir);
+  writeFileSync(path, '{ not json');
+
+  const store = new SessionLineageStore(path);
+  const lineage = { kind: 'side', sourceAppSessionId: 'source', forkedAt: 1 } as const;
+  store.record('copy', lineage);
+
+  assert.equal(readFileSync(`${path}.unreadable`, 'utf8'), '{ not json');
+  const reloaded = new SessionLineageStore(path);
+  assert.deepEqual(reloaded.project(summary({ appSessionId: 'copy' })).lineage, lineage);
 });

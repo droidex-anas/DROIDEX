@@ -17,11 +17,14 @@ export function sessionLineagePath(userDataDir: string): string {
 // when the copy is made and never rewritten.
 export class SessionLineageStore {
   private lineages: Map<string, SessionLineage> | undefined;
+  // Set when an unreadable file could not be moved aside: writing would replace it.
+  private unwritable = false;
 
   constructor(private readonly filePath: string) {}
 
   record(appSessionId: string, lineage: SessionLineage): void {
     const lineages = this.load();
+    if (this.unwritable) throw new Error('Session lineage is unreadable, so no copy can be made.');
     lineages.set(appSessionId, lineage);
     mkdirSync(dirname(this.filePath), { recursive: true });
     const temporary = `${this.filePath}.${String(process.pid)}.tmp`;
@@ -35,23 +38,34 @@ export class SessionLineageStore {
   }
 
   private load(): Map<string, SessionLineage> {
-    this.lineages ??= readLineages(this.filePath);
+    this.lineages ??= this.read();
     return this.lineages;
+  }
+
+  // An unreadable file loses only the side-chat grouping: those chats show as
+  // ordinary sidebar rows. It is moved aside, not overwritten by the next copy,
+  // so the grouping can still be recovered from it.
+  private read(): Map<string, SessionLineage> {
+    try {
+      return parseLineages(readFileSync(this.filePath, 'utf8'));
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') return new Map();
+      const aside = `${this.filePath}.unreadable`;
+      console.error(`Session lineage is unreadable and was ignored: ${errMsg(error)}`);
+      try {
+        renameSync(this.filePath, aside);
+        console.error(`Moved the unreadable session lineage to ${aside}.`);
+      } catch (renameError) {
+        console.error(`Could not move the unreadable session lineage: ${errMsg(renameError)}`);
+        this.unwritable = true;
+      }
+      return new Map();
+    }
   }
 }
 
-function readLineages(filePath: string): Map<string, SessionLineage> {
-  let stored: Record<string, unknown> | undefined;
-  try {
-    stored = objectValue(JSON.parse(readFileSync(filePath, 'utf8')));
-  } catch (error) {
-    // No file yet is the common case. An unreadable one loses only the
-    // side-chat grouping: those chats show as ordinary sidebar rows.
-    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
-      console.error(`Session lineage is unreadable and was ignored: ${errMsg(error)}`);
-    }
-    return new Map();
-  }
+function parseLineages(text: string): Map<string, SessionLineage> {
+  const stored = objectValue(JSON.parse(text));
   const lineages = new Map<string, SessionLineage>();
   for (const [appSessionId, value] of Object.entries(stored ?? {})) {
     const lineage = lineageValue(value);

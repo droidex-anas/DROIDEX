@@ -20,6 +20,7 @@ export function SideChatsWorkspace({
   return (
     <div data-testid="side-chats-workspace" className="flex h-full min-h-0 flex-col">
       <SideChatPane
+        key={sourceAppSessionId}
         sourceAppSessionId={sourceAppSessionId}
         wide={expanded}
         controls={

@@ -1,6 +1,12 @@
 import { formatBranchPrompt } from './branchPrompt.js';
 import { loadSessionTranscriptWindow, resolveSessionChain } from './history.js';
-import type { ClientCommand, ServerEvent, SessionLineage, SessionSummary } from './protocol.js';
+import type {
+  ClientCommand,
+  ServerEvent,
+  SessionLineage,
+  SessionSummary,
+  TranscriptEvent,
+} from './protocol.js';
 import type { LiveSession, SessionBranch, SessionCreateCommand } from './SessionLifecycle.js';
 import type { SessionFileChange } from './sessionFileCache.js';
 import { errMsg } from './sessionHelpers.js';
@@ -9,7 +15,7 @@ import { conversationMarkdown } from './sessionMarkdown.js';
 import type { SessionRegistry, SessionSummaryPatch } from './SessionRegistry.js';
 import { readForkedTranscript, writeForkedTranscript } from './providers/ProviderTranscriptFile.js';
 import type { ProviderKind } from './providers/providerKind.js';
-import type { Provider } from './providers/session.js';
+import type { Provider, ProviderModelSettings } from './providers/session.js';
 
 type SessionForkCommand = Extract<ClientCommand, { type: 'session.fork' }>;
 
@@ -24,11 +30,20 @@ export interface SessionForksDependencies {
     'getLive' | 'resolveSummary' | 'updateStoredSummary'
   >;
   lineage: SessionLineageStore;
-  admitCopiedSession: (change: SessionFileChange | null) => Promise<void>;
+  // Indexes one session file now, or scans for every file when given null.
+  indexSessionFiles: (change: SessionFileChange | null) => Promise<void>;
+  // The settings owner's model change: it reaches the provider as well as the stored row.
+  updateModel: (appSessionId: string, settings: ProviderModelSettings) => Promise<boolean>;
+  isShutdownStarted: () => boolean;
   create: (command: SessionCreateCommand, branch: SessionBranch) => Promise<void>;
   send: (appSessionId: string, text: string) => Promise<void>;
   emit: (event: ServerEvent) => void;
-  emitError: (error: { code: string; clientRef: string; message: string }) => void;
+  emitError: (error: {
+    code: string;
+    clientRef?: string;
+    appSessionId?: string;
+    message: string;
+  }) => void;
 }
 
 // Copies a session into a new one. On the source's own provider the provider
@@ -63,10 +78,33 @@ export class SessionForks {
       });
       return;
     }
-    // Outside the fork's own failure path: the copy exists by now, so a send
-    // that fails is that chat's send error, not a failed fork.
+    // Outside the fork's own failure path: the copy exists by now, so a model
+    // or a send that fails is that chat's error, not a failed fork.
+    if (!copiedAppSessionId) return;
+    if (command.modelId && !(await this.applyPickedModel(copiedAppSessionId, command))) return;
     const request = command.prompt?.trim();
-    if (copiedAppSessionId && request) await this.d.send(copiedAppSessionId, request);
+    if (request) await this.d.send(copiedAppSessionId, request);
+  }
+
+  // A model picked for the copy replaces the source's and its effort, since an
+  // effort only means something for the model it was chosen with.
+  private async applyPickedModel(
+    appSessionId: string,
+    command: SessionForkCommand,
+  ): Promise<boolean> {
+    try {
+      return await this.d.updateModel(appSessionId, {
+        modelId: command.modelId,
+        reasoningEffort: command.reasoningEffort ?? null,
+      });
+    } catch (error) {
+      this.d.emitError({
+        code: 'session.settings_failed',
+        appSessionId,
+        message: `Could not switch the copied chat's model: ${errMsg(error)}`,
+      });
+      return false;
+    }
   }
 
   // A turn in progress has no settled copy yet: the provider would copy half
@@ -94,20 +132,24 @@ export class SessionForks {
     lineage: SessionLineage,
   ): Promise<string> {
     const live = this.d.registry.getLive(source.appSessionId);
-    // Droid writes its copy where its own sessions live. Every other provider's
-    // scrollback is DROIDEX's transcript file, which is copied beside it.
-    const transcript =
-      source.provider === 'droid'
-        ? null
-        : readForkedTranscript(source.appSessionId, command.forkPointId);
     const handle = await this.d.provider(source.provider).fork({
       providerSessionId: source.providerSessionId ?? source.appSessionId,
       ...(source.resumeId ? { resumeId: source.resumeId } : {}),
+      ...(source.compactedFromProviderSessionIds
+        ? { compactedFromProviderSessionIds: source.compactedFromProviderSessionIds }
+        : {}),
       ...(source.cwd ? { cwd: source.cwd } : {}),
       title: command.title,
       ...(live ? { live: live.session } : {}),
       ...(command.forkPointId ? { forkPointId: command.forkPointId } : {}),
     });
+    // Droid writes its copy where its own sessions live. Every other provider's
+    // scrollback is DROIDEX's transcript file, which is copied beside it.
+    let transcript = null;
+    if (source.provider !== 'droid') {
+      this.requireUnchanged(source);
+      transcript = readForkedTranscript(source.appSessionId, command.forkPointId);
+    }
     const appSessionId = handle.providerSessionId;
     const change = transcript && {
       providerSessionId: appSessionId,
@@ -121,7 +163,7 @@ export class SessionForks {
     // Recorded before the copy is indexed, so the list that indexing publishes
     // already keeps a side chat out of the sidebar.
     this.d.lineage.record(appSessionId, lineage);
-    await this.d.admitCopiedSession(change);
+    await this.d.indexSessionFiles(change);
     // The stored row makes the copy a DROIDEX chat and carries the source's
     // settings, which the provider's file does not always hold.
     if (!this.d.registry.updateStoredSummary(appSessionId, copiedSettings(command, source))) {
@@ -156,8 +198,34 @@ export class SessionForks {
           ? modelSettings(command, source)
           : pickedModelSettings(command)),
       },
-      { lineage, prompt: formatBranchPrompt(request, sourceConversation(source)) },
+      { lineage, prompt: formatBranchPrompt(request, await this.sourceConversation(source)) },
     );
+  }
+
+  // The provider's copy was taken across an await: a source that closed, was
+  // replaced or started a turn meanwhile would pair it with a transcript it
+  // never had.
+  private requireUnchanged(source: SessionSummary): void {
+    const current = this.d.registry.resolveSummary(source.appSessionId);
+    if (
+      this.d.isShutdownStarted() ||
+      current?.providerSessionId !== source.providerSessionId ||
+      this.isStreaming(source)
+    ) {
+      throw new Error('The chat changed while it was being copied. Try again.');
+    }
+  }
+
+  // A chat opened this run is indexed only once it closes, so a missing
+  // transcript is looked for on disk before the branch gives up.
+  private async sourceConversation(source: SessionSummary): Promise<string> {
+    let events = storedEvents(source);
+    if (events.length === 0) {
+      await this.d.indexSessionFiles(null);
+      events = storedEvents(source);
+    }
+    if (events.length === 0) throw new Error('This chat has no stored messages to fork.');
+    return conversationMarkdown(events);
   }
 }
 
@@ -169,7 +237,8 @@ function copiedSettings(command: SessionForkCommand, source: SessionSummary): Se
     autonomy: source.autonomy,
     interactionMode: source.interactionMode,
     ...(source.workspaceKind ? { workspaceKind: source.workspaceKind } : {}),
-    ...modelSettings(command, source),
+    // A picked model is applied through the settings owner once the copy exists.
+    ...(command.modelId ? {} : modelSettings(command, source)),
     ...(source.compactionModel ? { compactionModel: source.compactionModel } : {}),
   };
 }
@@ -192,12 +261,9 @@ function pickedModelSettings(command: SessionForkCommand): SessionSummaryPatch {
   };
 }
 
-function sourceConversation(source: SessionSummary): string {
+function storedEvents(source: SessionSummary): TranscriptEvent[] {
   const providerSessionId = source.providerSessionId ?? source.appSessionId;
   const chain = resolveSessionChain(source.appSessionId, providerSessionId);
-  const { events } = loadSessionTranscriptWindow(source.appSessionId, chain, {
-    limit: BRANCH_CONTEXT_EVENTS,
-  });
-  if (events.length === 0) throw new Error('This chat has no stored messages to fork.');
-  return conversationMarkdown(events);
+  return loadSessionTranscriptWindow(source.appSessionId, chain, { limit: BRANCH_CONTEXT_EVENTS })
+    .events;
 }

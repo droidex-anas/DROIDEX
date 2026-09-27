@@ -94,6 +94,14 @@ test('a failed start hands the question back to the side-chat composer', () => {
   assert.deepEqual(state.sideChats['source']?.view, { kind: 'new', prompt: 'Keep this question' });
 });
 
+test('a lost bridge settles a start it will never answer', () => {
+  let state = startSideChat(withSource(), 'ref-5', 'Still waiting');
+  state = reducer(state, { type: 'SET_CONNECTION', status: 'connecting' });
+
+  assert.deepEqual(state.pendingForks, {});
+  assert.deepEqual(state.sideChats['source']?.view, { kind: 'new', prompt: 'Still waiting' });
+});
+
 test('a start that lands after the user moved on leaves their view alone', () => {
   let state = startSideChat(withSource(), 'ref-4', 'Slow one');
   state = reducer(state, {

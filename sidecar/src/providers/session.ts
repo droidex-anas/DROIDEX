@@ -41,6 +41,8 @@ export interface ProviderResumeInput {
 export interface ProviderForkSource {
   providerSessionId: string;
   resumeId?: string;
+  // The provider sessions the conversation compacted from, oldest first.
+  compactedFromProviderSessionIds?: readonly string[];
   cwd?: string;
   // The copy's title, for a provider that names the copies it makes.
   title: string;

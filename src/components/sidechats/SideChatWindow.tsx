@@ -150,6 +150,7 @@ export function SideChatWindow({ sourceAppSessionId }: { sourceAppSessionId: str
         className="absolute left-0 top-0 z-10 h-4 w-4 cursor-nwse-resize"
       />
       <SideChatPane
+        key={sourceAppSessionId}
         sourceAppSessionId={sourceAppSessionId}
         wide={false}
         controls={
