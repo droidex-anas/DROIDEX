@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 
 import { bridge } from '../lib/bridge';
-import { requestDroidProxyStatus } from '../lib/commands';
+import { requestDroidProxyStatus, setDroidProxyAccountEnabled } from '../lib/commands';
 import { toast } from '../lib/toast';
 import type {
   DroidProxyInstallPhase,
@@ -22,11 +22,14 @@ export function useDroidProxy(): {
   loggingIn: DroidProxyProviderKey | null;
   install: DroidProxyInstallState | null;
   installError: string | null;
+  pendingAccountId: string | null;
+  updateAccount: (provider: DroidProxyProviderKey, id: string, enabled: boolean) => void;
 } {
   const [status, setStatus] = useState<DroidProxyStatus | null>(null);
   const [loggingIn, setLoggingIn] = useState<DroidProxyProviderKey | null>(null);
   const [install, setInstall] = useState<DroidProxyInstallState | null>(null);
   const [installError, setInstallError] = useState<string | null>(null);
+  const [pendingAccountId, setPendingAccountId] = useState<string | null>(null);
 
   useEffect(() => {
     const unsubscribe = bridge.subscribe((event) => {
@@ -53,6 +56,33 @@ export function useDroidProxy(): {
         } else if (!event.cancelled) {
           toast.error(event.message ?? 'Sign-in did not complete.');
         }
+        return;
+      }
+      if (event.type === 'droidproxy.account.updated') {
+        if (event.ok) {
+          setStatus((previous) =>
+            previous
+              ? {
+                  ...previous,
+                  providers: previous.providers.map((row) =>
+                    row.provider === event.provider
+                      ? {
+                          ...row,
+                          accounts: row.accounts.map((account) =>
+                            account.id === event.id
+                              ? { ...account, disabled: !event.enabled }
+                              : account,
+                          ),
+                        }
+                      : row,
+                  ),
+                }
+              : previous,
+          );
+        } else {
+          toast.error(event.message ?? 'Could not update this account.');
+        }
+        setPendingAccountId(null);
         return;
       }
       if (event.type === 'droidproxy.install.progress') {
@@ -95,8 +125,19 @@ export function useDroidProxy(): {
       }
     });
     requestDroidProxyStatus();
-    return unsubscribe;
+    // Accounts connected in DroidProxy or a browser appear when DROIDEX regains focus.
+    window.addEventListener('focus', requestDroidProxyStatus);
+    return () => {
+      window.removeEventListener('focus', requestDroidProxyStatus);
+      unsubscribe();
+    };
   }, []);
 
-  return { status, loggingIn, install, installError };
+  const updateAccount = (provider: DroidProxyProviderKey, id: string, enabled: boolean) => {
+    if (pendingAccountId) return;
+    setPendingAccountId(id);
+    setDroidProxyAccountEnabled(provider, id, enabled);
+  };
+
+  return { status, loggingIn, install, installError, pendingAccountId, updateAccount };
 }

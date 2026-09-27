@@ -434,7 +434,12 @@ test('rejects object payloads that are actually arrays', () => {
 });
 
 test('accepts droidproxy reports and rejects unknown providers or shapes', () => {
-  const account = { provider: 'codex', email: 'dev@example.com', disabled: false };
+  const account = {
+    provider: 'codex',
+    id: 'codex-dev.json',
+    email: 'dev@example.com',
+    disabled: false,
+  };
   const provider = { provider: 'codex', enabled: true, canLoginHere: true, accounts: [account] };
   const status = {
     appInstalled: true,
@@ -528,6 +533,29 @@ test('accepts droidproxy reports and rejects unknown providers or shapes', () =>
 });
 
 test('accepts droidproxy login and apply outcomes, rejects bad shapes', () => {
+  assert.ok(
+    serverWireMessage(
+      batch({
+        type: 'droidproxy.account.updated',
+        provider: 'codex',
+        id: 'codex-dev.json',
+        enabled: false,
+        ok: true,
+      }),
+    ),
+  );
+  assert.equal(
+    serverWireMessage(
+      batch({
+        type: 'droidproxy.account.updated',
+        provider: 'codex',
+        id: 'codex-dev.json',
+        enabled: 'no',
+        ok: true,
+      }),
+    ),
+    null,
+  );
   assert.ok(serverWireMessage(batch({ type: 'droidproxy.login.started', provider: 'kimi' })));
   assert.equal(
     serverWireMessage(batch({ type: 'droidproxy.login.started', provider: 'cursor' })),

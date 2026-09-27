@@ -99,6 +99,13 @@ export const startDroidProxyLogin = (provider: DroidProxyProviderKey) => {
 export const cancelDroidProxyLogin = () => {
   bridge.send({ type: 'droidproxy.login.cancel' });
 };
+export const setDroidProxyAccountEnabled = (
+  provider: DroidProxyProviderKey,
+  id: string,
+  enabled: boolean,
+) => {
+  bridge.send({ type: 'droidproxy.account.setEnabled', provider, id, enabled });
+};
 export const installDroidProxy = () => {
   bridge.send({ type: 'droidproxy.install' });
 };

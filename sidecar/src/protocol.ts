@@ -317,6 +317,8 @@ export type DroidProxyInstallPhase =
   | 'applying';
 export interface DroidProxyAccount {
   provider: DroidProxyProviderKey;
+  // Auth-file name for accounts whose enabled state can be edited here.
+  id?: string;
   email?: string;
   login?: string;
   // ISO timestamp when the stored credential expires, if the auth file says.
@@ -691,6 +693,12 @@ export type ClientCommand =
   | { type: 'droidproxy.launch' }
   | { type: 'droidproxy.login'; provider: DroidProxyProviderKey }
   | { type: 'droidproxy.login.cancel' }
+  | {
+      type: 'droidproxy.account.setEnabled';
+      provider: DroidProxyProviderKey;
+      id: string;
+      enabled: boolean;
+    }
   | { type: 'droidproxy.install' }
   | { type: 'droidproxy.install.cancel' }
   | { type: 'droidproxy.factoryModels.apply' }
@@ -986,6 +994,14 @@ export type ServerEvent =
     }
   | { type: 'droidproxy.report'; status: DroidProxyStatus }
   | { type: 'droidproxy.login.started'; provider: DroidProxyProviderKey }
+  | {
+      type: 'droidproxy.account.updated';
+      provider: DroidProxyProviderKey;
+      id: string;
+      enabled: boolean;
+      ok: boolean;
+      message?: string;
+    }
   | {
       type: 'droidproxy.login.done';
       provider: DroidProxyProviderKey;

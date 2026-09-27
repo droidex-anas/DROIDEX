@@ -1,4 +1,5 @@
-import { spawn, type ChildProcess } from 'node:child_process';
+import { execFile, spawn, type ChildProcess } from 'node:child_process';
+import { promisify } from 'node:util';
 
 import type { DroidProxyInstallPhase, DroidProxyProviderKey } from '../protocol.js';
 import {
@@ -6,6 +7,9 @@ import {
   loginFlagFor,
   readDroidProxyStatus,
   resolveCliProxyApi,
+  runningDroidProxyAppPath,
+  setDroidProxyAccountEnabled,
+  supportsLoginFlag,
   type DroidProxyEvent,
 } from './droidProxy.js';
 import { installDroidProxyApp } from './droidProxyInstall.js';
@@ -18,6 +22,7 @@ import {
 // One OAuth login runs at a time: the flows open a browser and wait on a
 // local callback, so parallel runs would fight over ports and windows.
 const LOGIN_TIMEOUT_MS = 10 * 60 * 1000;
+const execFileAsync = promisify(execFile);
 
 // One login's live state: the child, its provider for status reports, and
 // whether Cancel was requested (a binary that catches SIGTERM exits with a
@@ -64,11 +69,9 @@ export class DroidProxyController {
     if (process.platform !== 'darwin') {
       throw new Error('DroidProxy is a macOS app.');
     }
-    const child = spawn('open', ['-a', 'DroidProxy'], {
-      detached: true,
-      stdio: 'ignore',
-    });
-    child.unref();
+    const appPath = (await runningDroidProxyAppPath()) ?? droidProxyAppPath();
+    if (!appPath) throw new Error('DroidProxy is not installed.');
+    await execFileAsync('open', ['-a', appPath]);
     // The proxy takes a moment to bind; re-probe so the page settles on truth.
     await new Promise((resolve) => setTimeout(resolve, 2500));
     await this.report();
@@ -77,8 +80,8 @@ export class DroidProxyController {
   async login(provider: DroidProxyProviderKey): Promise<void> {
     if (this.activeLogin) return;
     const flag = loginFlagFor(provider);
-    const backend = resolveCliProxyApi();
-    if (!flag || !backend) {
+    const backend = resolveCliProxyApi((await runningDroidProxyAppPath()) ?? droidProxyAppPath());
+    if (!flag || !backend || !(await supportsLoginFlag(backend.binary, flag))) {
       this.emit({
         type: 'droidproxy.login.done',
         provider,
@@ -151,6 +154,27 @@ export class DroidProxyController {
     if (!this.activeLogin) return;
     this.activeLogin.cancelRequested = true;
     this.activeLogin.child.kill('SIGTERM');
+  }
+
+  async setAccountEnabled(
+    provider: DroidProxyProviderKey,
+    id: string,
+    enabled: boolean,
+  ): Promise<void> {
+    try {
+      setDroidProxyAccountEnabled(provider, id, enabled);
+      this.emit({ type: 'droidproxy.account.updated', provider, id, enabled, ok: true });
+    } catch (error) {
+      this.emit({
+        type: 'droidproxy.account.updated',
+        provider,
+        id,
+        enabled,
+        ok: false,
+        message: error instanceof Error ? error.message : 'Could not update this account.',
+      });
+    }
+    await this.report();
   }
 
   // One-click setup: download, verify, install, launch, and apply models,

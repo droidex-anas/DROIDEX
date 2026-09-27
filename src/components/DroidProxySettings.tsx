@@ -1,3 +1,6 @@
+import { useId, useState } from 'react';
+import { ChevronDown, LoaderCircle } from 'lucide-react';
+
 import {
   applyDroidProxyFactoryModels,
   cancelDroidProxyInstall,
@@ -110,7 +113,8 @@ function proxyDescription(status: { proxyRunning: boolean; backendRunning: boole
 // Run coding-subscription models (Claude, Codex, Gemini, Kimi, …) inside Droid
 // sessions through the DroidProxy app's local OAuth proxy.
 export function DroidProxySettings() {
-  const { status, loggingIn, install, installError } = useDroidProxy();
+  const { status, loggingIn, install, installError, pendingAccountId, updateAccount } =
+    useDroidProxy();
 
   if (!status) {
     return (
@@ -243,15 +247,18 @@ export function DroidProxySettings() {
               loggingIn={loggingIn === provider}
               loginBusy={loggingIn !== null && loggingIn !== provider}
               loginUnavailable={!status.loginBinaryAvailable}
+              appInstalled={status.appInstalled}
+              pendingAccountId={pendingAccountId}
+              updateAccount={updateAccount}
             />
           );
         })}
       </div>
 
       <p className="text-[11px] leading-relaxed text-droid-text-muted">
-        Connecting signs you in with the provider in your browser; DROIDEX only reads which accounts
-        are connected, never tokens or keys. Applying writes proxy models into Factory settings with
-        a timestamped backup first. Copilot model picks and Meta contributor mode live in the
+        Connecting signs you in with the provider in your browser; DROIDEX displays account
+        metadata, never tokens or keys. Applying writes proxy models into Factory settings with a
+        timestamped backup first. Copilot model picks and Meta contributor mode live in the
         DroidProxy app itself.
       </p>
     </div>
@@ -263,53 +270,166 @@ function DroidProxyProviderRow({
   loggingIn,
   loginBusy,
   loginUnavailable,
+  appInstalled,
+  pendingAccountId,
+  updateAccount,
 }: {
   row: DroidProxyProviderState;
   loggingIn: boolean;
   loginBusy: boolean;
   loginUnavailable: boolean;
+  appInstalled: boolean;
+  pendingAccountId: string | null;
+  updateAccount: (provider: DroidProxyProviderKey, id: string, enabled: boolean) => void;
 }) {
   const label = PROVIDER_LABELS[row.provider];
+  const [expanded, setExpanded] = useState(row.accounts.length > 0);
+  const accountListId = useId();
+  const heading = (
+    <div className="min-w-0">
+      <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[13px] text-droid-text">
+        <ModelIcon provider={PROVIDER_ICONS[row.provider]} size={15} />
+        <span>{label}</span>
+        {row.accounts.length > 0 && (
+          <span className="text-[11px] text-droid-text-muted">
+            {row.accounts.length} {row.accounts.length === 1 ? 'account' : 'accounts'}
+          </span>
+        )}
+      </div>
+      {!row.enabled && (
+        <p className="mt-0.5 text-[11px] text-droid-text-muted">Disabled in the DroidProxy app</p>
+      )}
+    </div>
+  );
   return (
-    <SettingRow
-      label={
-        <span className="inline-flex items-center gap-2">
-          <ModelIcon provider={PROVIDER_ICONS[row.provider]} size={15} />
-          {label}
-        </span>
-      }
-      description={<AccountDescription row={row} />}
-    >
-      <ProviderAction
-        row={row}
-        loggingIn={loggingIn}
-        loginBusy={loginBusy}
-        loginUnavailable={loginUnavailable}
-      />
-    </SettingRow>
+    <div className="px-4 py-3">
+      <div className="flex flex-wrap items-start justify-between gap-x-4 gap-y-2">
+        {row.accounts.length > 0 ? (
+          <button
+            type="button"
+            aria-expanded={expanded}
+            aria-controls={accountListId}
+            onClick={() => {
+              setExpanded((current) => !current);
+            }}
+            className="group flex min-w-0 items-center gap-2 rounded-md text-left focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-droid-accent/60"
+          >
+            {heading}
+            <ChevronDown
+              aria-hidden="true"
+              className={`h-3.5 w-3.5 shrink-0 text-droid-text-muted transition-transform duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:transition-none ${expanded ? 'rotate-180' : ''}`}
+            />
+          </button>
+        ) : (
+          heading
+        )}
+        <ProviderAction
+          row={row}
+          loggingIn={loggingIn}
+          loginBusy={loginBusy}
+          loginUnavailable={loginUnavailable}
+          appInstalled={appInstalled}
+        />
+      </div>
+      {row.accounts.length === 0 ? (
+        <p className="mt-1 text-[11px] text-droid-text-muted">Not connected</p>
+      ) : (
+        <div
+          id={accountListId}
+          aria-hidden={!expanded}
+          inert={!expanded}
+          className={`grid transition-[grid-template-rows,opacity] duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:transition-none ${expanded ? 'grid-rows-[1fr] opacity-100' : 'grid-rows-[0fr] opacity-0'}`}
+        >
+          <div className="min-h-0 overflow-hidden">
+            <AccountList
+              row={row}
+              pendingAccountId={pendingAccountId}
+              updateAccount={updateAccount}
+            />
+          </div>
+        </div>
+      )}
+    </div>
   );
 }
 
-function AccountDescription({ row }: { row: DroidProxyProviderState }) {
-  if (row.accounts.length === 0) {
-    return <>{`Not connected.${row.enabled ? '' : ' Disabled in the DroidProxy app.'}`}</>;
-  }
+function AccountList({
+  row,
+  pendingAccountId,
+  updateAccount,
+}: {
+  row: DroidProxyProviderState;
+  pendingAccountId: string | null;
+  updateAccount: (provider: DroidProxyProviderKey, id: string, enabled: boolean) => void;
+}) {
+  const enabledCount = row.accounts.filter((account) => !account.disabled).length;
   return (
-    <>
+    <div className="mt-2 space-y-0.5">
       {row.accounts.map((account, index) => (
-        <span
-          key={`${account.email ?? account.login ?? 'account'}-${String(index)}`}
-          className="block truncate"
-        >
-          {account.email ?? account.login ?? 'Connected account'}
-          {account.disabled ? ' · disabled' : null}
-          {account.expired && Date.parse(account.expired) < Date.now() ? (
-            <span className="text-droid-red"> · expired</span>
-          ) : null}
-        </span>
+        <DroidProxyAccountRow
+          key={account.id ?? `${account.email ?? account.login ?? 'account'}-${String(index)}`}
+          account={account}
+          provider={row.provider}
+          enabledCount={enabledCount}
+          pendingAccountId={pendingAccountId}
+          updateAccount={updateAccount}
+        />
       ))}
-      {!row.enabled && <span className="block truncate">Disabled in the DroidProxy app.</span>}
-    </>
+    </div>
+  );
+}
+
+function DroidProxyAccountRow({
+  account,
+  provider,
+  enabledCount,
+  pendingAccountId,
+  updateAccount,
+}: {
+  account: DroidProxyProviderState['accounts'][number];
+  provider: DroidProxyProviderKey;
+  enabledCount: number;
+  pendingAccountId: string | null;
+  updateAccount: (provider: DroidProxyProviderKey, id: string, enabled: boolean) => void;
+}) {
+  const label = account.email ?? account.login ?? 'Connected account';
+  const lastEnabled = !account.disabled && enabledCount <= 1;
+  const pending = pendingAccountId === account.id;
+  const action = account.disabled ? 'Enable' : 'Disable';
+  return (
+    <div className="flex min-w-0 items-center gap-2 rounded-md px-2 py-1.5 transition-colors duration-200 ease-out hover:bg-droid-elevated/60 motion-reduce:transition-none">
+      <span
+        aria-hidden="true"
+        className={`h-1.5 w-1.5 shrink-0 rounded-full transition-colors duration-200 motion-reduce:transition-none ${account.disabled ? 'bg-droid-text-muted/50' : 'bg-droid-orange'}`}
+      />
+      <span
+        className={`min-w-0 flex-1 truncate text-[11px] transition-colors duration-200 motion-reduce:transition-none ${account.disabled ? 'text-droid-text-muted line-through' : 'text-droid-text-secondary'}`}
+        title={label}
+      >
+        {label}
+      </span>
+      {account.expired && Date.parse(account.expired) < Date.now() && (
+        <span className="shrink-0 text-[10px] text-droid-red">Expired</span>
+      )}
+      {account.id && (
+        <button
+          type="button"
+          onClick={() => {
+            if (account.id) updateAccount(provider, account.id, account.disabled);
+          }}
+          disabled={pendingAccountId !== null || lastEnabled}
+          aria-label={`${action} ${label}`}
+          title={lastEnabled ? 'Keep at least one account enabled' : undefined}
+          className="inline-flex min-h-8 shrink-0 items-center rounded-md px-2 text-[11px] font-medium text-droid-orange transition-[color,background-color,opacity] duration-200 ease-out hover:bg-droid-orange/10 hover:text-droid-text focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-droid-orange/70 disabled:cursor-not-allowed disabled:opacity-40 motion-reduce:transition-none"
+        >
+          {pending ? (
+            <LoaderCircle aria-hidden="true" className="h-3.5 w-3.5 motion-safe:animate-spin" />
+          ) : (
+            action
+          )}
+        </button>
+      )}
+    </div>
   );
 }
 
@@ -318,11 +438,13 @@ function ProviderAction({
   loggingIn,
   loginBusy,
   loginUnavailable,
+  appInstalled,
 }: {
   row: DroidProxyProviderState;
   loggingIn: boolean;
   loginBusy: boolean;
   loginUnavailable: boolean;
+  appInstalled: boolean;
 }) {
   if (loggingIn) {
     return (
@@ -340,7 +462,18 @@ function ProviderAction({
     );
   }
   if (!row.canLoginHere) {
-    return <span className="text-[12px] text-droid-text-muted">Connect in the DroidProxy app</span>;
+    return (
+      <button
+        onClick={() => {
+          launchDroidProxy();
+        }}
+        disabled={loginBusy || !appInstalled}
+        className={BUTTON_CLASS}
+        title="Open DroidProxy's connection flow"
+      >
+        {row.accounts.length > 0 ? 'Manage in app' : 'Open to connect'}
+      </button>
+    );
   }
   return (
     <button

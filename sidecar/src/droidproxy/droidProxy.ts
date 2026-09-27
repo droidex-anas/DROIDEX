@@ -1,8 +1,18 @@
 import { execFile } from 'node:child_process';
-import { existsSync, readdirSync, readFileSync } from 'node:fs';
+import {
+  existsSync,
+  lstatSync,
+  readdirSync,
+  readFileSync,
+  renameSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+} from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
+import { randomUUID } from 'node:crypto';
 
 import type {
   DroidProxyAccount,
@@ -27,14 +37,33 @@ const PROVIDER_KEYS: readonly DroidProxyProviderKey[] = [
   'meta',
 ];
 
-// OAuth providers DroidProxy delegates to `cli-proxy-api -<provider>-login`.
-// Grok/Copilot/Meta run their own in-app flows there instead.
+// OAuth providers supported by DroidProxy's bundled cli-proxy-api.
+// Junie and Copilot still require DroidProxy's own connection flow.
 const CLI_LOGIN_FLAGS: Partial<Record<DroidProxyProviderKey, string>> = {
   claude: '-claude-login',
   codex: '-codex-login',
   antigravity: '-antigravity-login',
   kimi: '-kimi-login',
+  grok: '-xai-login',
+  meta: '-meta-login',
 };
+
+const loginFlagCache = new Map<string, { mtimeMs: number; flags: Set<string> }>();
+
+async function availableLoginFlags(binary: string): Promise<Set<string>> {
+  try {
+    const mtimeMs = statSync(binary).mtimeMs;
+    const cached = loginFlagCache.get(binary);
+    if (cached?.mtimeMs === mtimeMs) return cached.flags;
+    const { stdout, stderr } = await execFileAsync(binary, ['-h']);
+    const help = `${stdout}\n${stderr}`;
+    const flags = new Set(Object.values(CLI_LOGIN_FLAGS).filter((flag) => help.includes(flag)));
+    loginFlagCache.set(binary, { mtimeMs, flags });
+    return flags;
+  } catch {
+    return new Set();
+  }
+}
 
 // Auth-file `type` tags mapped the way DroidProxy's ServiceType does.
 function providerKeyForAuthType(type: string): DroidProxyProviderKey | undefined {
@@ -92,8 +121,7 @@ function parseExpiry(value: unknown): string | undefined {
   return undefined;
 }
 
-function readAuthDirAccounts(): DroidProxyAccount[] {
-  const dir = authDir();
+function readAuthDirAccounts(dir: string = authDir()): DroidProxyAccount[] {
   if (!existsSync(dir)) return [];
   let files: string[];
   try {
@@ -105,6 +133,7 @@ function readAuthDirAccounts(): DroidProxyAccount[] {
   for (const file of files) {
     let parsed: unknown;
     try {
+      if (!lstatSync(join(dir, file)).isFile()) continue;
       parsed = JSON.parse(readFileSync(join(dir, file), 'utf8')) as unknown;
     } catch {
       continue;
@@ -119,6 +148,7 @@ function readAuthDirAccounts(): DroidProxyAccount[] {
     const expired = parseExpiry(record.expired ?? record.expires);
     accounts.push({
       provider,
+      id: file,
       email,
       login,
       expired,
@@ -126,6 +156,66 @@ function readAuthDirAccounts(): DroidProxyAccount[] {
     });
   }
   return accounts;
+}
+
+// Mirror DroidProxy's account toggle: edit only the selected auth file and
+// keep at least one account enabled for that provider. Rename notifies its
+// directory watcher and avoids exposing a partially written credential file.
+function accountFilePath(dir: string, id: string): string {
+  if (
+    typeof id !== 'string' ||
+    id.length > 255 ||
+    id.startsWith('.') ||
+    !id.endsWith('.json') ||
+    /[/\\\0]/.test(id)
+  ) {
+    throw new Error('Invalid DroidProxy account. Refresh the page and try again.');
+  }
+  return join(dir, id);
+}
+
+export function setDroidProxyAccountEnabled(
+  provider: DroidProxyProviderKey,
+  id: string,
+  enabled: boolean,
+  dir: string = authDir(),
+): void {
+  if (typeof enabled !== 'boolean') throw new Error('Invalid account state.');
+  const path = accountFilePath(dir, id);
+  const original = lstatSync(path);
+  if (!original.isFile()) throw new Error('The selected account is not a regular auth file.');
+  const value: unknown = JSON.parse(readFileSync(path, 'utf8')) as unknown;
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    throw new Error('The selected DroidProxy auth file is invalid.');
+  }
+  const record = value as Record<string, unknown>;
+  if (typeof record.type !== 'string' || providerKeyForAuthType(record.type) !== provider) {
+    throw new Error('This account changed. Refresh the page and try again.');
+  }
+  if (enabled === (record.disabled !== true)) return;
+  if (!enabled) {
+    const enabledCount = readAuthDirAccounts(dir).filter(
+      (account) => account.provider === provider && !account.disabled,
+    ).length;
+    if (enabledCount <= 1) {
+      throw new Error('Keep at least one account enabled for this provider.');
+    }
+  }
+  record.disabled = !enabled;
+  const temporaryPath = join(dir, `.droidex-${randomUUID()}.tmp`);
+  try {
+    writeFileSync(temporaryPath, `${JSON.stringify(record)}\n`, {
+      encoding: 'utf8',
+      flag: 'wx',
+      mode: original.mode & 0o777,
+    });
+    if (statSync(path).mtimeMs !== original.mtimeMs) {
+      throw new Error('This account changed. Refresh the page and try again.');
+    }
+    renameSync(temporaryPath, path);
+  } finally {
+    rmSync(temporaryPath, { force: true });
+  }
 }
 
 interface MetaStoredAccount {
@@ -212,6 +302,32 @@ export function droidProxyAppPath(): string | undefined {
   return candidates.find((path) => existsSync(path));
 }
 
+// When multiple copies are installed, open the one actually serving the
+// proxy. `open -a DroidProxy` can otherwise launch a second, disconnected copy.
+export async function runningDroidProxyAppPath(): Promise<string | undefined> {
+  if (process.platform !== 'darwin') return undefined;
+  try {
+    const { stdout: pids } = await execFileAsync('lsof', [
+      '-nP',
+      '-t',
+      '-iTCP:8317',
+      '-sTCP:LISTEN',
+    ]);
+    const suffix = '/Contents/MacOS/CLIProxyMenuBar';
+    for (const pid of pids.trim().split(/\s+/)) {
+      if (!/^\d+$/.test(pid)) continue;
+      const { stdout } = await execFileAsync('ps', ['-p', pid, '-o', 'comm=']);
+      const executable = stdout.trim();
+      if (!executable.endsWith(suffix)) continue;
+      const appPath = executable.slice(0, -suffix.length);
+      if (appPath.endsWith('/DroidProxy.app') && existsSync(appPath)) return appPath;
+    }
+  } catch {
+    // No active frontend; the installed app path is used for launching.
+  }
+  return undefined;
+}
+
 // A bundle is only worth installing when it carries the login backend the
 // settings page drives.
 export function droidProxyBundleComplete(appPath: string): boolean {
@@ -221,8 +337,9 @@ export function droidProxyBundleComplete(appPath: string): boolean {
   );
 }
 
-export function resolveCliProxyApi(): { binary: string; config: string } | undefined {
-  const app = droidProxyAppPath();
+export function resolveCliProxyApi(
+  app: string | undefined = droidProxyAppPath(),
+): { binary: string; config: string } | undefined {
   if (app && droidProxyBundleComplete(app)) {
     return {
       binary: join(app, 'Contents', 'Resources', 'cli-proxy-api'),
@@ -259,29 +376,41 @@ export function droidProxyInstallUnavailable(
 export async function readDroidProxyStatus(): Promise<
   Omit<DroidProxyStatus, 'factoryModelsInstalled' | 'factoryModelCount'>
 > {
-  const [accounts, metaAccounts, copilot, enabled, proxyUp, backendUp, metaContributorMode] =
-    await Promise.all([
-      Promise.resolve(readAuthDirAccounts()),
-      Promise.resolve(readMetaAccounts()),
-      Promise.resolve(readCopilotAccount()),
-      readProviderEnabled(),
-      probePort(8317),
-      probePort(8318),
-      readMetaContributorMode(),
-    ]);
+  const [
+    accounts,
+    metaAccounts,
+    copilot,
+    enabled,
+    proxyUp,
+    backendUp,
+    metaContributorMode,
+    runningApp,
+  ] = await Promise.all([
+    Promise.resolve(readAuthDirAccounts()),
+    Promise.resolve(readMetaAccounts()),
+    Promise.resolve(readCopilotAccount()),
+    readProviderEnabled(),
+    probePort(8317),
+    probePort(8318),
+    readMetaContributorMode(),
+    runningDroidProxyAppPath(),
+  ]);
+  const app = runningApp ?? droidProxyAppPath();
+  const backend = resolveCliProxyApi(app);
+  const loginFlags = backend ? await availableLoginFlags(backend.binary) : new Set<string>();
   const all = [...accounts, ...metaAccounts, ...(copilot ? [copilot] : [])];
   const providers: DroidProxyProviderState[] = PROVIDER_KEYS.map((provider) => ({
     provider,
     enabled: enabled[provider] ?? true,
-    canLoginHere: CLI_LOGIN_FLAGS[provider] !== undefined,
+    canLoginHere: loginFlags.has(CLI_LOGIN_FLAGS[provider] ?? ''),
     accounts: all.filter((account) => account.provider === provider),
   }));
   const installUnavailable = droidProxyInstallUnavailable();
   return {
-    appInstalled: droidProxyAppPath() !== undefined,
+    appInstalled: app !== undefined,
     proxyRunning: proxyUp,
     backendRunning: backendUp,
-    loginBinaryAvailable: resolveCliProxyApi() !== undefined,
+    loginBinaryAvailable: loginFlags.size > 0,
     ...(installUnavailable ? { installUnavailable } : {}),
     metaContributorMode,
     providers,
@@ -290,6 +419,10 @@ export async function readDroidProxyStatus(): Promise<
 
 export function loginFlagFor(provider: DroidProxyProviderKey): string | undefined {
   return CLI_LOGIN_FLAGS[provider];
+}
+
+export async function supportsLoginFlag(binary: string, flag: string): Promise<boolean> {
+  return (await availableLoginFlags(binary)).has(flag);
 }
 
 export type DroidProxyEvent = Extract<ServerEvent, { type: `droidproxy.${string}` }>;

@@ -170,6 +170,14 @@ function isServerEvent(value: unknown): value is ServerEvent {
       return isDroidProxyStatus(value.status);
     case 'droidproxy.login.started':
       return isDroidProxyProviderKey(value.provider);
+    case 'droidproxy.account.updated':
+      return (
+        isDroidProxyProviderKey(value.provider) &&
+        typeof value.id === 'string' &&
+        typeof value.enabled === 'boolean' &&
+        typeof value.ok === 'boolean' &&
+        isOptionalString(value.message)
+      );
     case 'droidproxy.login.done':
       return (
         isDroidProxyProviderKey(value.provider) &&
@@ -536,6 +544,7 @@ function isDroidProxyAccount(value: unknown): boolean {
   return (
     isRecord(value) &&
     isDroidProxyProviderKey(value.provider) &&
+    isOptionalString(value.id) &&
     isOptionalString(value.email) &&
     isOptionalString(value.login) &&
     isOptionalString(value.expired) &&

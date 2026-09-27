@@ -816,6 +816,9 @@ export class SessionManager {
       case 'droidproxy.login.cancel':
         this.droidProxy.cancelLogin();
         return;
+      case 'droidproxy.account.setEnabled':
+        await this.droidProxy.setAccountEnabled(cmd.provider, cmd.id, cmd.enabled);
+        return;
       case 'droidproxy.install':
         if (await this.droidProxy.install()) void this.refreshModelsAfterFactoryChange();
         return;
