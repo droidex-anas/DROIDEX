@@ -140,9 +140,9 @@ function tokenUsageOf(params: Record<string, unknown>): ThreadTokenUsage | undef
 // A tool call still running: what it is about, for an approval card that has to
 // describe it, and the output collected so far.
 interface OpenTool {
+  changes?: FileUpdateChange[];
   detail: string;
   output: string;
-  diff?: string;
 }
 
 let sequence = 0;
@@ -162,6 +162,11 @@ export class CodexEventMapper {
     private readonly appSessionId: string,
     private model: ProviderModelSettings = {},
   ) {}
+
+  beginTurn(): void {
+    this.tools.clear();
+    this.streamed.clear();
+  }
 
   setModel(model: ProviderModelSettings): void {
     this.model = model;
@@ -234,7 +239,13 @@ export class CodexEventMapper {
   // What a pending approval is about. A file-change approval carries no detail
   // of its own, so the open item it belongs to is the only description there is.
   toolDetail(itemId: string): { detail: string; diff?: string } | undefined {
-    return this.tools.get(itemId);
+    const tool = this.tools.get(itemId);
+    if (!tool) return undefined;
+    return { detail: tool.detail, ...(tool.changes ? { diff: patchText(tool.changes) } : {}) };
+  }
+
+  fileChanges(itemId: string): FileUpdateChange[] {
+    return this.tools.get(itemId)?.changes ?? [];
   }
 
   // A server the user did not ask for in this turn failing is not the turn's
@@ -274,7 +285,8 @@ export class CodexEventMapper {
     const tool = this.tools.get(params.itemId);
     if (tool) {
       tool.detail = params.changes.map((change) => change.path).join('\n');
-      tool.diff = patchText(params.changes);
+      tool.output = patchText(params.changes);
+      tool.changes = params.changes;
     }
     return [];
   }
@@ -285,7 +297,7 @@ export class CodexEventMapper {
     this.tools.set(call.id, {
       detail: call.detail,
       output: '',
-      ...(item.type === 'fileChange' ? { diff: patchText(item.changes) } : {}),
+      ...(item.type === 'fileChange' ? { changes: item.changes } : {}),
     });
     return [
       {

@@ -3,6 +3,7 @@
 // output or credentials outside Electron.
 const { spawn } = require('node:child_process');
 const { resolveExecutable, runFile } = require('./executable.cjs');
+const { childEnv } = require('./childEnv.cjs');
 
 const DEFAULT_TIMEOUT = 15000;
 const COMMON_BREW_PATHS = ['/opt/homebrew/bin/brew', '/usr/local/bin/brew'];
@@ -89,7 +90,7 @@ function runSetupFile(
     };
 
     try {
-      child = spawnProcess(file, args, { stdio: ['ignore', 'ignore', 'ignore'] });
+      child = spawnProcess(file, args, { stdio: ['ignore', 'ignore', 'ignore'], env: childEnv() });
     } catch {
       finish({ code: 1, timedOut: false });
       return;
@@ -349,7 +350,7 @@ function runAuthenticationProcess(executable, operation, options = {}) {
           '--clipboard',
           '--skip-ssh-key',
         ],
-        { stdio: ['ignore', 'pipe', 'pipe'] },
+        { stdio: ['ignore', 'pipe', 'pipe'], env: childEnv() },
       );
     } catch {
       finish({ ok: false, reason: 'auth_failed', message: 'GitHub sign-in could not start.' });

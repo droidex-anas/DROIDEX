@@ -19,21 +19,13 @@ const IDLE_SURFACES: LazySurface[] = [
   'agents',
 ];
 
-function loaderFor(surface: LazySurface): () => Promise<unknown> {
-  return loaderOverride?.[surface] ?? LAZY_SURFACE_LOADERS[surface];
-}
-
-function preloadSurface(surface: LazySurface): void {
+export function preloadLazySurface(surface: LazySurface): void {
   if (warmed.has(surface)) return;
   warmed.add(surface);
   loaderCalls.set(surface, (loaderCalls.get(surface) ?? 0) + 1);
-  void loaderFor(surface)().catch(() => {
+  void (loaderOverride?.[surface] ?? LAZY_SURFACE_LOADERS[surface])().catch(() => {
     warmed.delete(surface);
   });
-}
-
-export function preloadLazySurface(surface: LazySurface): void {
-  preloadSurface(surface);
 }
 
 export function bindLazySurfaceIntent(
@@ -61,25 +53,35 @@ export function bindLazySurfaceIntent(
   return cleanup;
 }
 
-export function scheduleIdleLazyWarmup(): void {
+export function scheduleIdleLazyWarmup(isBusy: () => boolean): void {
   if (idleHandle !== null) return;
   const generation = idleGeneration;
 
-  const run = () => {
-    idleHandle = null;
+  let index = 0;
+  const run = (deadline?: IdleDeadline) => {
     if (generation !== idleGeneration) return;
-    for (const surface of IDLE_SURFACES) preloadSurface(surface);
+    idleHandle = null;
+    // The app schedules again when work settles; do not poll during a turn.
+    if (isBusy()) return;
+    if (!deadline || deadline.timeRemaining() > 0) {
+      while (index < IDLE_SURFACES.length && warmed.has(IDLE_SURFACES[index])) index += 1;
+      if (index < IDLE_SURFACES.length) preloadLazySurface(IDLE_SURFACES[index++]);
+    }
+    if (index < IDLE_SURFACES.length) schedule();
   };
 
   const requestIdle = (
     globalThis as {
-      requestIdleCallback?: (callback: () => void, options?: { timeout: number }) => number;
+      requestIdleCallback?: (callback: (deadline: IdleDeadline) => void) => number;
     }
   ).requestIdleCallback;
 
-  idleHandle = requestIdle
-    ? requestIdle(run, { timeout: 4_000 })
-    : (setTimeout(run, 1_500) as unknown as IdleCallbackHandle);
+  const schedule = () => {
+    idleHandle = requestIdle
+      ? requestIdle(run)
+      : (setTimeout(run, 1_500) as unknown as IdleCallbackHandle);
+  };
+  schedule();
 }
 
 export function cancelIdleLazyWarmup(): void {

@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import test from 'node:test';
 import type { SessionSummary } from '../protocol.js';
 import { AutomationManager } from './AutomationManager.js';
-import { parseAutomationStore } from './automationStore.js';
+import { parseAutomationStore } from './automationStoreParsing.js';
 import type { AutomationInput, AutomationSnapshot } from './types.js';
 
 type Options = ConstructorParameters<typeof AutomationManager>[0];

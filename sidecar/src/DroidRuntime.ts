@@ -15,6 +15,7 @@ import {
   type MessageOptions,
   type PermissionHandler,
 } from '@factory/droid-sdk';
+import { childEnv } from './childEnv.js';
 import { createDroidTransport, type ConnectableDroidTransport } from './DroidTransport.js';
 import { buildDroidInvocation, resolveDroidPath } from './Environment.js';
 import { sessionOrganizationId } from './history.js';
@@ -210,10 +211,7 @@ export class DroidRuntime implements FactoryRuntime {
   }
 
   private env(): Record<string, string> {
-    const env: Record<string, string> = {};
-    for (const [key, value] of Object.entries(process.env)) {
-      if (value !== undefined) env[key] = value;
-    }
+    const env = childEnv();
 
     if (this.explicitApiKey) env.FACTORY_API_KEY = this.explicitApiKey;
     else delete env.FACTORY_API_KEY;
@@ -279,10 +277,9 @@ export function mapInteractionMode(mode: SessionInteractionMode): DroidInteracti
 }
 
 export function mapAutonomy(autonomy: Autonomy): AutonomyLevel {
-  if (autonomy === 'off') return AutonomyLevel.Off;
+  if (autonomy === 'off' || autonomy === 'low') return AutonomyLevel.Off;
   if (autonomy === 'high') return AutonomyLevel.High;
-  if (autonomy === 'medium') return AutonomyLevel.Medium;
-  return AutonomyLevel.Low;
+  return AutonomyLevel.Medium;
 }
 
 export function factoryReasoningEffort(reasoning: ReasoningEffort): SdkReasoningEffort {

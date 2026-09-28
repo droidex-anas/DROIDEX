@@ -147,14 +147,18 @@ function fitByteBudget<T>(items: T[], maxBytes: number, keep: 'start' | 'end'): 
 }
 
 function boundTranscriptEvents(events: TranscriptEvent[]): TranscriptEvent[] {
-  return fitByteBudget(
-    // A transient row is only true while it is on screen, and the sidecar never
-    // stores one: repainting it after a reload would contradict the history
-    // page that replaces this snapshot a moment later.
-    events.filter((event) => !event.transient).slice(-MAX_SNAPSHOT_TRANSCRIPT_EVENTS),
-    MAX_SNAPSHOT_TRANSCRIPT_BYTES,
-    'end',
-  );
+  const tail: TranscriptEvent[] = [];
+  for (
+    let index = events.length - 1;
+    index >= 0 && tail.length < MAX_SNAPSHOT_TRANSCRIPT_EVENTS;
+    index -= 1
+  ) {
+    const event = events[index];
+    // Transient progress must not reappear after a reload.
+    if (!event.transient) tail.push(event);
+  }
+  tail.reverse();
+  return fitByteBudget(tail, MAX_SNAPSHOT_TRANSCRIPT_BYTES, 'end');
 }
 
 export function loadSessionSnapshot(): SessionSnapshot | undefined {

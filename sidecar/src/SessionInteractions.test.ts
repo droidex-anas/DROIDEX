@@ -499,3 +499,42 @@ test('Claude always-allow suppression prevents grant reuse, caching, and SDK rul
     interrupt: true,
   });
 });
+
+test('Droid edits-only approves a pure edit batch and asks for commands or mixed batches', async () => {
+  let asked = 0;
+  const ref = { id: 'app-1', autonomy: 'low' as const };
+  const { permissionHandler } = droidInteractionHandlers(ref, {
+    requestApproval: async () => {
+      asked += 1;
+      return 'cancel';
+    },
+    requestQuestion: async () => ({ cancelled: true, answers: [] }),
+    cancelPending: () => undefined,
+  });
+  const edit: RequestPermissionRequestParams = {
+    toolUses: [
+      {
+        toolUse: {
+          type: 'tool_use',
+          id: 'edit-1',
+          name: 'Edit',
+          input: { file_path: '/workspace/a' },
+        },
+        confirmationType: ToolConfirmationType.Edit,
+        details: { type: ToolConfirmationType.Edit, filePath: '/workspace/a', fileName: 'a' },
+      },
+    ],
+    options: [],
+  };
+  assert.equal(await permissionHandler(edit), ToolConfirmationOutcome.ProceedOnce);
+  assert.equal(asked, 0);
+  assert.equal(await permissionHandler(permissionInput('exec-1')), ToolConfirmationOutcome.Cancel);
+  assert.equal(
+    await permissionHandler({
+      ...edit,
+      toolUses: [...edit.toolUses, ...permissionInput('exec-2').toolUses],
+    }),
+    ToolConfirmationOutcome.Cancel,
+  );
+  assert.equal(asked, 2);
+});
