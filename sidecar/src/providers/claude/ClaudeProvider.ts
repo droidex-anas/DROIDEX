@@ -22,8 +22,14 @@ import type {
 } from '../session.js';
 import { resolveClaudePath } from './claudeExecutable.js';
 import { claudeCatalogItems } from './claudeCatalog.js';
-import { claudeContextEnv, claudeContextModel } from './claudeContextWindow.js';
-import { claudeDefaultModel, claudeModelRows } from './claudeModels.js';
+import { childEnv } from '../../childEnv.js';
+import { claudeContextEnv } from './claudeContextWindow.js';
+import {
+  claudeDefaultModel,
+  claudeLaunchModel,
+  claudeModelRows,
+  type ClaudeDefaultModel,
+} from './claudeModels.js';
 import { ClaudeSession, type ClaudeSessionInput } from './claudeSession.js';
 
 const PROBE_TIMEOUT_MS = 25_000;
@@ -32,15 +38,16 @@ const INSTALL_HINT = 'Claude Code CLI not found. Install it, then refresh.';
 export class ClaudeProvider implements Provider {
   readonly kind = 'claude' as const;
   private models: ClaudeModelInfo[] = [];
-  // The CLI's own name for the model a chat that pins none runs on, suffix
-  // included. The catalog row published beside it is the unsuffixed one.
-  private defaultLaunchModelId?: string;
+  // The model a chat that pins none runs on: the row published for it and the
+  // CLI's own name for it, suffix included.
+  private defaultModel?: ClaudeDefaultModel;
 
   validateModelSettings(settings: ProviderModelSettings): void {
-    claudeContextModel(
-      settings.modelId ?? this.defaultLaunchModelId,
+    claudeLaunchModel(
+      settings.modelId ?? undefined,
       settings.contextWindowTokens,
       this.models,
+      this.defaultModel,
     );
   }
 
@@ -103,15 +110,17 @@ export class ClaudeProvider implements Provider {
   private async open(
     input: Omit<ClaudeSessionInput, 'executable' | 'models'>,
   ): Promise<ProviderSession> {
-    const modelId = claudeContextModel(
-      input.modelId ?? this.defaultLaunchModelId,
+    const modelId = claudeLaunchModel(
+      input.modelId,
       input.contextWindowTokens,
       this.models,
+      this.defaultModel,
     );
     const session = new ClaudeSession({
       ...input,
       modelId,
       models: this.models,
+      ...(this.defaultModel ? { defaultModel: this.defaultModel } : {}),
       executable: this.requireExecutable(),
     });
     try {
@@ -145,7 +154,7 @@ export class ClaudeProvider implements Provider {
         cwd: tmpdir(),
         pathToClaudeCodeExecutable: executable,
         persistSession: false,
-        env: claudeContextEnv(process.env, 1000000),
+        env: claudeContextEnv(childEnv(), 1000000),
         allowedTools: [],
         mcpServers: {},
         strictMcpConfig: true,
@@ -170,7 +179,7 @@ export class ClaudeProvider implements Provider {
       const settings = claudeSettings();
       const defaultModel = claudeDefaultModel(catalog, settings.model);
       this.models = catalog;
-      this.defaultLaunchModelId = defaultModel?.launchModelId;
+      this.defaultModel = defaultModel;
       return {
         provider: 'claude',
         readiness: 'ready',

@@ -185,6 +185,10 @@ export class SessionLifecycle {
   private readonly steering = new WeakMap<LiveSession, Promise<SteerOutcome>>();
   private readonly resumeOperations = new Map<string, Promise<boolean>>();
   private readonly canceledResumes = new Set<string>();
+  // Chats being relaunched on a new context window, and those of them a Stop
+  // reached while there was no runtime to interrupt.
+  private readonly relaunching = new Set<string>();
+  private readonly stoppedRelaunches = new Set<string>();
 
   constructor(private readonly dependencies: SessionLifecycleDependencies) {}
   async create(command: SessionCreateCommand): Promise<void> {
@@ -655,6 +659,8 @@ export class SessionLifecycle {
   }
 
   async interrupt(requestedAppSessionId: string): Promise<void> {
+    if (this.relaunching.has(requestedAppSessionId))
+      this.stoppedRelaunches.add(requestedAppSessionId);
     const liveSession = this.dependencies.registry.getLive(requestedAppSessionId);
     if (!liveSession) return;
     const appSessionId = liveSession.summary.appSessionId;
@@ -1152,47 +1158,27 @@ export class SessionLifecycle {
     delivery?: ScheduledTurnDelivery,
   ): Promise<void> {
     const d = this.dependencies;
-    let liveSession = d.registry.getLive(appSessionId);
-    if (!liveSession || liveSession.closeMode || d.isShutdownStarted()) return;
-    if (liveSession.summary.provider === 'claude') {
+    const liveSession = d.registry.getLive(appSessionId);
+    if (!liveSession || d.isShutdownStarted() || this.stoppedRelaunches.has(appSessionId)) return;
+    if (liveSession.summary.provider === 'claude' && !liveSession.closeMode) {
       await d.waitForSettingsMutations?.(appSessionId);
-      const settled = d.registry.getLive(appSessionId);
-      if (settled !== liveSession || settled.closeMode || d.isShutdownStarted()) return;
+      if (d.isShutdownStarted()) return;
+    }
+    if (d.registry.getLive(appSessionId) !== liveSession || liveSession.closeMode) {
+      // The runtime was released under this send. A prompt the user typed
+      // reopens the chat, as a send to any released chat does.
+      if (liveSession.closeMode === 'preserve-pending' && !delivery && !prompt.notice)
+        await this.send(appSessionId, prompt.text, prompt.mentions);
+      return;
     }
     if (liveSession.streaming) {
       liveSession.pendingSends.push(prompt);
       this.updateQueuedSends(liveSession);
       return;
     }
-    while (liveSession.restartBeforeNextTurn) {
-      const previous = liveSession;
-      const carryover = {
-        tokensIn: liveSession.summary.tokensIn,
-        tokensOut: liveSession.summary.tokensOut,
-      };
-      await this.close(appSessionId, 'preserve-pending');
-      // The close above set `previous.closeMode`; a concurrent discard wins.
-      if (d.isShutdownStarted() || previous.closeMode === 'discard-pending') return;
-      if (!(await this.resume(appSessionId))) return;
-      liveSession = d.registry.getLive(appSessionId);
-      if (!liveSession || liveSession.closeMode) return;
-      const session = liveSession.session;
-      await session.setInteractionMode?.(previous.summary.interactionMode);
-      const resumed = d.registry.getLive(appSessionId);
-      if (
-        d.isShutdownStarted() ||
-        resumed !== liveSession ||
-        resumed.closeMode ||
-        resumed.session !== session
-      )
-        return;
-      d.context.preserveUsage(appSessionId, carryover);
-      liveSession.pendingSends.push(...previous.pendingSends.splice(0));
-      if (liveSession.streaming) {
-        liveSession.pendingSends.unshift(prompt);
-        this.updateQueuedSends(liveSession);
-        return;
-      }
+    if (liveSession.restartBeforeNextTurn && !delivery) {
+      await this.relaunch(liveSession, prompt);
+      return;
     }
     const stableAppSessionId = liveSession.summary.appSessionId;
     try {
@@ -1287,6 +1273,40 @@ export class SessionLifecycle {
     return liveSession.closeMode === 'discard-pending';
   }
 
+  // A chat whose context window changed runs on a new process. The runtime is
+  // released and reopened the way an idle one is, and the prompt that found it
+  // stale is sent again with everything queued behind it.
+  private async relaunch(liveSession: LiveSession, prompt: SessionPrompt): Promise<void> {
+    const d = this.dependencies;
+    const appSessionId = liveSession.summary.appSessionId;
+    const usage = {
+      tokensIn: liveSession.summary.tokensIn,
+      tokensOut: liveSession.summary.tokensOut,
+    };
+    const queued = [prompt, ...liveSession.pendingSends.splice(0)];
+    const stopped = () => this.stoppedRelaunches.has(appSessionId) || d.isShutdownStarted();
+    this.relaunching.add(appSessionId);
+    try {
+      await this.close(appSessionId, 'preserve-pending');
+      if (stopped()) return;
+      if (!(await this.resume(appSessionId))) {
+        d.emitError({
+          appSessionId,
+          message: `The chat could not restart on its new context window, so ${describeUnsent(queued)} not sent.`,
+        });
+        return;
+      }
+      d.context.preserveUsage(appSessionId, usage);
+      for (const next of queued) {
+        if (stopped()) return;
+        await this.send(appSessionId, next.text, next.mentions);
+      }
+    } finally {
+      this.relaunching.delete(appSessionId);
+      this.stoppedRelaunches.delete(appSessionId);
+    }
+  }
+
   private async redeliverQueuedSends(appSessionId: string, queued: SessionPrompt[]): Promise<void> {
     for (const prompt of queued) {
       if (this.dependencies.isShutdownStarted()) return;
@@ -1300,6 +1320,10 @@ export class SessionLifecycle {
       }
     }
   }
+}
+
+function describeUnsent(prompts: SessionPrompt[]): string {
+  return prompts.length === 1 ? 'your message was' : `${String(prompts.length)} messages were`;
 }
 
 function sessionPrompt(text: string, mentions?: ProviderMention[]): SessionPrompt {

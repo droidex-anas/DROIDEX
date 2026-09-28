@@ -143,7 +143,9 @@ export class SessionModelSettings {
           (summary.provider !== 'claude' || agent !== 'primary')
         )
           throw new Error('Context window selection is only supported for Claude Code chats.');
-        const selected = mergeSettings(this.pending.get(appSessionId)?.[agent], settings);
+        const changes = withoutCurrentPreferences(settings, summary);
+        if (Object.keys(changes).length === 0) return true;
+        const selected = mergeSettings(this.pending.get(appSessionId)?.[agent], changes);
         const runtimeSettings = await this.runtimeSettings(summary, agent, selected);
         if (!isCurrent()) return false;
         await this.d.validateModelSettings?.(summary, {
@@ -159,7 +161,7 @@ export class SessionModelSettings {
           live !== undefined && (windowChanged || live.restartBeforeNextTurn === true);
         const selection = summary.provider === DEFAULT_PROVIDER ? runtimeSettings : selected;
         const next = { ...summary, ...this.summaryPatch(agent, selection, summary.provider) };
-        const change = await this.primaryModelChange(summary, next, agent, settings);
+        const change = await this.primaryModelChange(summary, next, agent, changes);
         if (!isCurrent()) return false;
         if (!restart) await this.applyProvider(summary, live, agent, runtimeSettings, isCurrent);
         if (!isCurrent()) return false;
@@ -451,5 +453,21 @@ function mergeSettings(
       : {}),
     ...(patch.reasoningEffort !== undefined ? { reasoningEffort: patch.reasoningEffort } : {}),
     ...(patch.fastMode !== undefined ? { fastMode: patch.fastMode } : {}),
+  };
+}
+
+// A preference the chat already has is not a change: applying it again would
+// reach the provider and drop the window the chat was measured at for nothing.
+function withoutCurrentPreferences(
+  settings: ProviderModelSettings,
+  summary: SessionSummary,
+): ProviderModelSettings {
+  const { fastMode, contextWindowTokens, ...rest } = settings;
+  return {
+    ...rest,
+    ...(fastMode !== undefined && fastMode !== (summary.fastMode ?? false) ? { fastMode } : {}),
+    ...(contextWindowTokens !== undefined && contextWindowTokens !== summary.contextWindowTokens
+      ? { contextWindowTokens }
+      : {}),
   };
 }

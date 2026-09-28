@@ -3,6 +3,7 @@ import test from 'node:test';
 
 import type { FactoryDefaultSettings, SessionSummary } from './protocol.js';
 import {
+  buildResumedProviderSummary,
   buildResumedSession,
   createMissionAgentDefaultsForMode,
   createModelDefaultsForMode,
@@ -177,15 +178,7 @@ test('a resumed chat keeps the fast mode and context window it was closed with',
     updatedAt: 1,
   };
 
-  const { summary } = buildResumedSession({
-    init: {},
-    historical,
-    appSessionId: historical.appSessionId,
-    providerSessionId: historical.appSessionId,
-    defaults: {},
-    maxContextTokensForModel: () => undefined,
-    now: 2,
-  });
+  const summary = buildResumedProviderSummary(historical, historical.appSessionId);
 
   // An explicit off is a choice the chat made, not an absent preference.
   assert.equal(summary.fastMode, false);

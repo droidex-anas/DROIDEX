@@ -5,6 +5,7 @@ import type { ModelInfo as ClaudeModelInfo } from '@anthropic-ai/claude-agent-sd
 import { reasoningValue } from '../../modelCatalog.js';
 import type { ContextWindowTokens, ModelInfo, ReasoningEffort } from '../../protocol.js';
 import {
+  claudeContextModel,
   claudeExtendedContextId,
   hasExtendedContext,
   withoutExtendedContext,
@@ -57,10 +58,9 @@ function aliasRow(
     // What ModelIcon reads to draw the Anthropic mark.
     provider: 'anthropic',
     isCustom: false,
-    // The suffix on the user's own setting is evidence enough for the window.
-    maxContextTokens: hasExtendedContext(defaultModel.modelId)
-      ? 1_000_000
-      : (capabilities?.maxContextTokens ?? 200_000),
+    // The suffix on the user's own setting is the only evidence there is: the
+    // catalog has no row for the alias, so nothing else spells a 1M id for it.
+    maxContextTokens: hasExtendedContext(defaultModel.modelId) ? 1_000_000 : 200_000,
     ...(capabilities?.supportsFastMode !== undefined
       ? { supportsFastMode: capabilities.supportsFastMode }
       : {}),
@@ -116,6 +116,20 @@ export function claudeDefaultModel(
     ...(row === undefined && FAMILY_ALIASES.includes(named) ? { aliasFamily: named } : {}),
     ...(hasExtendedContext(wanted) ? { contextWindowTokens: 1_000_000 as const } : {}),
   };
+}
+
+// The id that reaches the CLI. A chat on the default model that pins no window
+// runs what the CLI's own default would, suffix included, even though the row
+// the picker lists for it is the unsuffixed one.
+export function claudeLaunchModel(
+  modelId: string | undefined,
+  window: ContextWindowTokens | undefined,
+  catalog: ClaudeModelInfo[],
+  defaultModel: ClaudeDefaultModel | undefined,
+): string | undefined {
+  const onDefault = modelId === undefined || modelId === defaultModel?.modelId;
+  if (onDefault && window === undefined && defaultModel) return defaultModel.launchModelId;
+  return claudeContextModel(modelId ?? defaultModel?.launchModelId, window, catalog);
 }
 
 // A catalog entry missing its id or label cannot be selected or shown, so it is
