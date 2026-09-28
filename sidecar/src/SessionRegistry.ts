@@ -257,13 +257,14 @@ export class SessionRegistry<TLive extends RegisteredSession> {
 
     await this.dependencies.history.flush?.();
     if (this.sessions.get(updated.appSessionId) !== liveSession) return undefined;
-    const rebound = liveSession.summary;
-    this.summariesAwaitingDurability.delete(rebound.appSessionId);
-    if (this.publishedLiveSummaries.get(rebound.appSessionId) !== rebound) {
-      this.publishedLiveSummaries.set(rebound.appSessionId, rebound);
-      this.publish(rebound);
+    // Only this write is released here. A summary that replaced it meanwhile
+    // has published itself or is held for a boundary of its own.
+    if (this.summariesAwaitingDurability.get(updated.appSessionId)?.summary === updated) {
+      this.summariesAwaitingDurability.delete(updated.appSessionId);
+      this.publishedLiveSummaries.set(updated.appSessionId, updated);
+      this.publish(updated);
     }
-    return rebound;
+    return liveSession.summary;
   }
 
   async unregister(id: string): Promise<TLive | undefined> {
