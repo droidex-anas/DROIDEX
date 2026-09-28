@@ -996,7 +996,8 @@ export class SessionLifecycle {
       }
       // A Stop lands before the turn reports itself finished, so the flags it
       // set are cleared here as they are for a typed turn.
-      const stopped = liveSession.interrupting || liveSession.interruptingForSteer;
+      const stopped =
+        liveSession.interrupting === true || liveSession.interruptingForSteer === true;
       liveSession.interrupting = false;
       liveSession.interruptingForSteer = false;
       this.publishTurnSettled(liveSession);
@@ -1213,7 +1214,8 @@ export class SessionLifecycle {
       await liveSession.turnPromise;
     } finally {
       liveSession.turnPromise = undefined;
-      const stopped = liveSession.interrupting || liveSession.interruptingForSteer;
+      const stopped =
+        liveSession.interrupting === true || liveSession.interruptingForSteer === true;
       liveSession.interruptingForSteer = false;
       liveSession.interrupting = false;
       liveSession.streaming = false;
