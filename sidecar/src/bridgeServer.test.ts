@@ -125,10 +125,18 @@ test('orphan voice cleanup publishes a closed state', async (t) => {
             if (event) resolve(event);
           });
         });
-        t.mock.timers.tick(10_000);
-        await Promise.resolve();
-        t.mock.timers.tick(100);
-        assert.deepEqual(await closed, {
+        // The server sees the close, stops the call and broadcasts over real
+        // I/O, so fake time moves in small steps, past the reclaim window,
+        // until the event arrives.
+        let event: ServerEvent | undefined;
+        void closed.then((value) => {
+          event = value;
+        });
+        for (let step = 0; step < 400 && !event; step += 1) {
+          await new Promise((resolve) => setImmediate(resolve));
+          t.mock.timers.tick(100);
+        }
+        assert.deepEqual(event, {
           type: 'voice.state',
           appSessionId: 'chat-one',
           status: 'closed',
