@@ -117,9 +117,15 @@ export default function ModelSliderPopover({ onClose }: { onClose: () => void })
       : effortDisplay(shownEffort, provider);
 
   const fastModeBlocked = fastModeBlockedReason(activeModel);
+  // The window a chat that pins none runs on: the one measured for it, or for
+  // a draft on the harness's own default model, the one that default asks for.
+  const status = providerStatuses.find((entry) => entry.provider === provider);
+  const defaultWindow =
+    providerWindow ??
+    (activeModel?.id === status?.defaultModelId ? status?.defaultContextWindowTokens : undefined);
   const windowOptions = useMemo(
-    () => contextWindowOptions(activeModel, providerWindow),
-    [activeModel, providerWindow],
+    () => contextWindowOptions(activeModel, defaultWindow),
+    [activeModel, defaultWindow],
   );
   const defaultEffort = activeModel?.defaultReasoningEffort;
   const canReset =
