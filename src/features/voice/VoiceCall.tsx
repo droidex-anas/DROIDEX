@@ -69,6 +69,8 @@ export function VoiceCall({
   useEffect(() => {
     if (!hearing) closeVoiceAnalysis();
   }, [hearing]);
+  // Unmounting ends the call too, and the graph with it.
+  useEffect(() => closeVoiceAnalysis, []);
 
   // Whatever ended the conversation, a hang-up, the provider, or a failed
   // connection, the chat stops owning one.
