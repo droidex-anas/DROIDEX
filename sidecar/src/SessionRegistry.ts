@@ -245,19 +245,24 @@ export class SessionRegistry<TLive extends RegisteredSession> {
     // The runtime already speaks for the new provider, so once the write is
     // accepted the summary is rebound before it is awaited: an update that
     // lands meanwhile patches the new binding rather than storing the old one
-    // over it.
+    // over it. If the write then fails the binding stays, held for the next
+    // boundary to publish, because the runtime cannot go back either.
     this.dependencies.history.syncSummaries([updated]);
     this.removeAliases(current);
     liveSession.summary = updated;
     this.indexAliases(updated);
+    this.summariesAwaitingDurability.set(updated.appSessionId, { liveSession, summary: updated });
+    if (current.providerSessionId)
+      this.dependencies.onLiveProviderReplaced?.(current.providerSessionId);
+
     await this.dependencies.history.flush?.();
     if (this.sessions.get(updated.appSessionId) !== liveSession) return undefined;
     const rebound = liveSession.summary;
     this.summariesAwaitingDurability.delete(rebound.appSessionId);
-    this.publishedLiveSummaries.set(rebound.appSessionId, rebound);
-    this.publish(rebound);
-    if (current.providerSessionId)
-      this.dependencies.onLiveProviderReplaced?.(current.providerSessionId);
+    if (this.publishedLiveSummaries.get(rebound.appSessionId) !== rebound) {
+      this.publishedLiveSummaries.set(rebound.appSessionId, rebound);
+      this.publish(rebound);
+    }
     return rebound;
   }
 
