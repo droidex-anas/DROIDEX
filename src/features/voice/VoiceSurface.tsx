@@ -238,8 +238,9 @@ function SpokenFeed({ appSessionId }: { appSessionId: string }) {
   const following = useRef(true);
 
   // The newest line stays in view while it is followed. The feed moves once
-  // its content has grown, in the browser's own resize pass, so arriving words
-  // cost no layout read of their own.
+  // its content grows or its own height shrinks (a card below it, a shorter
+  // window), in the browser's own resize pass, so arriving words cost no
+  // layout read of their own.
   useLayoutEffect(() => {
     const feed = feedRef.current;
     const content = contentRef.current;
@@ -248,6 +249,7 @@ function SpokenFeed({ appSessionId }: { appSessionId: string }) {
       if (following.current) feed.scrollTop = feed.scrollHeight;
     });
     observer.observe(content);
+    observer.observe(feed);
     return () => {
       observer.disconnect();
     };
