@@ -4,7 +4,7 @@ import type { ContextWindowTokens, ModelInfo, ProviderKind } from '../types/brid
 // chat is measured against: picking none leaves the provider's own in place.
 
 export const CONTEXT_WINDOW_LABEL = 'Context window';
-export const CONTEXT_WINDOWS: readonly ContextWindowTokens[] = [200000, 1000000];
+const CONTEXT_WINDOWS: readonly ContextWindowTokens[] = [200000, 1000000];
 
 export interface ContextWindowOption {
   value: ContextWindowTokens;
