@@ -5,6 +5,8 @@ import type { ModelInfo } from '@anthropic-ai/claude-agent-sdk';
 import type { ContextWindowTokens } from '../../protocol.js';
 
 const EXTENDED_CONTEXT = /\[1m\]$/i;
+// Some catalogs name the window in prose instead of in the id.
+const DESCRIBES_EXTENDED_CONTEXT = /\b1m\b.*context|context.*\b1m\b/i;
 
 export function hasExtendedContext(id: string | undefined): boolean {
   return EXTENDED_CONTEXT.test(id ?? '');
@@ -14,7 +16,25 @@ export function withoutExtendedContext(id: string | undefined): string {
   return (id ?? '').replace(EXTENDED_CONTEXT, '');
 }
 
-// Only catalog-backed variants are selectable; an unknown capacity stays unknown.
+// The one rule for whether a model can run 1M, used both by the catalog the
+// picker reads and by the launch below, so the picker never offers a window the
+// adapter then refuses. The answer is the suffixed id the catalog itself
+// spells: DROIDEX never invents one the CLI has not published.
+export function claudeExtendedContextId(
+  model: ModelInfo,
+  catalog: ModelInfo[],
+): string | undefined {
+  if (hasExtendedContext(model.value)) return model.value;
+  if (hasExtendedContext(model.resolvedModel)) return model.resolvedModel;
+  const names = [model.value, model.resolvedModel].map(withoutExtendedContext).filter(Boolean);
+  for (const row of catalog)
+    for (const id of [row.value, row.resolvedModel])
+      if (hasExtendedContext(id) && names.includes(withoutExtendedContext(id))) return id;
+  return DESCRIBES_EXTENDED_CONTEXT.test(`${model.displayName} ${model.description}`)
+    ? model.value
+    : undefined;
+}
+
 export function claudeContextModel(
   modelId: string | undefined,
   window: ContextWindowTokens | undefined,
@@ -22,22 +42,17 @@ export function claudeContextModel(
 ): string | undefined {
   if (window === undefined) return modelId;
   if (!modelId) throw new Error('Choose a Claude model before selecting its context window.');
-  const base = withoutExtendedContext(modelId);
-  if (window === 200000) return base;
-  const row = catalog.find((model) => model.value === base || model.resolvedModel === base);
-  const extended = catalog.find(
+  if (window === 200000) return withoutExtendedContext(modelId);
+  // An id that already names the extended variant is its own evidence.
+  if (hasExtendedContext(modelId)) return modelId;
+  const row = catalog.find(
     (model) =>
-      hasExtendedContext(model.value) &&
-      (withoutExtendedContext(model.value) === base ||
-        withoutExtendedContext(model.value) === row?.value),
+      withoutExtendedContext(model.value) === modelId ||
+      withoutExtendedContext(model.resolvedModel) === modelId,
   );
-  if (extended) return extended.value;
-  // A row the CLI itself resolves to an extended variant already runs at 1M,
-  // as does one whose own description says so.
-  if (row && hasExtendedContext(row.resolvedModel)) return row.value;
-  if (row && /\b1m\b.*context|context.*\b1m\b/i.test(`${row.displayName} ${row.description}`))
-    return row.value;
-  throw new Error(`1M context is unavailable for ${base} in the Claude Code catalog.`);
+  const extended = row && claudeExtendedContextId(row, catalog);
+  if (extended) return extended;
+  throw new Error(`The Claude Code catalog offers no 1M context window for ${modelId}.`);
 }
 
 export function claudeContextEnv(

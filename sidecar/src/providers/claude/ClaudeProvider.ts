@@ -179,7 +179,7 @@ export class ClaudeProvider implements Provider {
         ...(defaultModel?.contextWindowTokens !== undefined
           ? { defaultContextWindowTokens: defaultModel.contextWindowTokens }
           : {}),
-        models: claudeModelRows(catalog, settings.effortLevel),
+        models: claudeModelRows(catalog, settings.effortLevel, defaultModel),
         items: claudeCatalogItems(commands),
       };
     } catch (error) {

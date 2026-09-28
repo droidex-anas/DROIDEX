@@ -4,21 +4,75 @@ import type { ModelInfo as ClaudeModelInfo } from '@anthropic-ai/claude-agent-sd
 
 import { reasoningValue } from '../../modelCatalog.js';
 import type { ContextWindowTokens, ModelInfo, ReasoningEffort } from '../../protocol.js';
-import { hasExtendedContext, withoutExtendedContext } from './claudeContextWindow.js';
+import {
+  claudeExtendedContextId,
+  hasExtendedContext,
+  withoutExtendedContext,
+} from './claudeContextWindow.js';
 
 // The catalog row the CLI publishes for "whatever is recommended", rather than
 // for a model of its own.
 const RECOMMENDED = 'default';
+
+// The family names the CLI accepts on its command line. It publishes some of
+// them as catalog rows and some not, so a configured default may name one that
+// the picker would otherwise have no row for.
+const FAMILY_ALIASES = ['opus', 'sonnet', 'haiku'];
 
 // The rows a picker can show: the recommendation is resolved into a model of
 // its own by claudeDefaultModel, so it is never listed as one.
 export function claudeModelRows(
   catalog: ClaudeModelInfo[],
   configuredEffort: ReasoningEffort | undefined,
+  defaultModel: ClaudeDefaultModel | undefined,
 ): ModelInfo[] {
-  return catalog
+  const rows = catalog
     .filter((model) => model.value !== RECOMMENDED)
-    .flatMap((model) => providerModel(model, configuredEffort));
+    .flatMap((model) => providerModel(model, configuredEffort, catalog));
+  const alias = aliasRow(defaultModel, catalog, rows);
+  return alias ? [alias, ...rows] : rows;
+}
+
+// A default that names a family alias rather than a catalog row still has to be
+// a row the picker lists and selects. The entry says only what the app knows:
+// the alias and the window its suffix asks for, never a version. Its
+// capabilities come from the newest row of the same family, or none at all.
+function aliasRow(
+  defaultModel: ClaudeDefaultModel | undefined,
+  catalog: ClaudeModelInfo[],
+  rows: ModelInfo[],
+): ModelInfo | undefined {
+  if (defaultModel?.aliasFamily === undefined) return undefined;
+  const prefix = `claude-${defaultModel.aliasFamily}-`;
+  const relative = catalog.find(
+    (model) =>
+      model.value !== RECOMMENDED &&
+      (model.value.startsWith(prefix) ||
+        withoutExtendedContext(model.resolvedModel).startsWith(prefix)),
+  );
+  const capabilities = rows.find((row) => row.id === relative?.value);
+  return {
+    id: defaultModel.modelId,
+    displayName: defaultModel.aliasFamily.replace(/^./, (first) => first.toUpperCase()),
+    // What ModelIcon reads to draw the Anthropic mark.
+    provider: 'anthropic',
+    isCustom: false,
+    // The suffix on the user's own setting is evidence enough for the window.
+    maxContextTokens: hasExtendedContext(defaultModel.modelId)
+      ? 1_000_000
+      : (capabilities?.maxContextTokens ?? 200_000),
+    ...(capabilities?.supportsFastMode !== undefined
+      ? { supportsFastMode: capabilities.supportsFastMode }
+      : {}),
+    ...(capabilities?.supportedReasoningEfforts
+      ? {
+          supportedReasoningEfforts: capabilities.supportedReasoningEfforts,
+          ...(capabilities.defaultReasoningEffort
+            ? { defaultReasoningEffort: capabilities.defaultReasoningEffort }
+            : {}),
+        }
+      : {}),
+  };
 }
 
 export interface ClaudeDefaultModel {
@@ -28,6 +82,9 @@ export interface ClaudeDefaultModel {
   launchModelId: string;
   // Set when the CLI's own default runs that model at its extended window.
   contextWindowTokens?: ContextWindowTokens;
+  // Set when `modelId` names a family alias instead of a catalog row, so the
+  // picker is given an entry for it.
+  aliasFamily?: string;
 }
 
 // The model a new Claude Code session starts on, named the way the catalog names
@@ -56,6 +113,7 @@ export function claudeDefaultModel(
   return {
     modelId: row?.value ?? wanted,
     launchModelId: wanted,
+    ...(row === undefined && FAMILY_ALIASES.includes(named) ? { aliasFamily: named } : {}),
     ...(hasExtendedContext(wanted) ? { contextWindowTokens: 1_000_000 as const } : {}),
   };
 }
@@ -66,6 +124,7 @@ export function claudeDefaultModel(
 function providerModel(
   model: ClaudeModelInfo,
   configured: ReasoningEffort | undefined,
+  catalog: ClaudeModelInfo[],
 ): ModelInfo[] {
   const id = model.value.trim();
   const displayName = versionedDisplayName(model.displayName.trim(), model.description);
@@ -86,6 +145,8 @@ function providerModel(
       id,
       displayName,
       provider: 'anthropic',
+      // The ceiling the window menu offers, by the one catalog-evidence rule.
+      maxContextTokens: claudeExtendedContextId(model, catalog) ? 1_000_000 : 200_000,
       ...(model.supportsFastMode !== undefined ? { supportsFastMode: model.supportsFastMode } : {}),
       isCustom: false,
       ...(efforts.length > 0

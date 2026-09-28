@@ -240,7 +240,7 @@ test('Claude context choices round-trip suffixes and isolate the 200k launch env
   assert.equal(claudeContextModel('sonnet[1M]', 200000, catalog), 'sonnet');
   assert.equal(claudeContextModel('sonnet[1m]', undefined, catalog), 'sonnet[1m]');
   assert.equal(claudeContextModel('native', 1000000, catalog), 'native');
-  assert.throws(() => claudeContextModel('haiku', 1000000, catalog), /unavailable/);
+  assert.throws(() => claudeContextModel('haiku', 1000000, catalog), /no 1M context window/);
   const env = { CLAUDE_CODE_DISABLE_1M_CONTEXT: 'global', PATH: '/bin' };
   assert.deepEqual(claudeContextEnv(env, 200000), { ...env, CLAUDE_CODE_DISABLE_1M_CONTEXT: '1' });
   assert.deepEqual(claudeContextEnv(env, 1000000), { PATH: '/bin' });
