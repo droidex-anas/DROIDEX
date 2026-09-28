@@ -152,11 +152,11 @@ export class SessionModelSettings {
           ...runtimeSettings,
         });
         if (!isCurrent()) return false;
+        const windowChanged =
+          selected.contextWindowTokens !== undefined &&
+          selected.contextWindowTokens !== summary.contextWindowTokens;
         const restart =
-          live !== undefined &&
-          (live.restartBeforeNextTurn ||
-            (selected.contextWindowTokens !== undefined &&
-              selected.contextWindowTokens !== summary.contextWindowTokens));
+          live !== undefined && (windowChanged || live.restartBeforeNextTurn === true);
         const selection = summary.provider === DEFAULT_PROVIDER ? runtimeSettings : selected;
         const next = { ...summary, ...this.summaryPatch(agent, selection, summary.provider) };
         const change = await this.primaryModelChange(summary, next, agent, settings);

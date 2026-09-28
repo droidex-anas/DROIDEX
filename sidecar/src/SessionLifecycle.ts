@@ -1155,12 +1155,8 @@ export class SessionLifecycle {
     if (!liveSession || liveSession.closeMode || d.isShutdownStarted()) return;
     if (liveSession.summary.provider === 'claude') {
       await d.waitForSettingsMutations?.(appSessionId);
-      if (
-        d.registry.getLive(appSessionId) !== liveSession ||
-        liveSession.closeMode ||
-        d.isShutdownStarted()
-      )
-        return;
+      const settled = d.registry.getLive(appSessionId);
+      if (settled !== liveSession || settled.closeMode || d.isShutdownStarted()) return;
     }
     if (liveSession.streaming) {
       liveSession.pendingSends.push(prompt);
@@ -1174,17 +1170,19 @@ export class SessionLifecycle {
         tokensOut: liveSession.summary.tokensOut,
       };
       await this.close(appSessionId, 'preserve-pending');
-      if (d.isShutdownStarted() || liveSession.closeMode === 'discard-pending') return;
+      // The close above set `previous.closeMode`; a concurrent discard wins.
+      if (d.isShutdownStarted() || previous.closeMode === 'discard-pending') return;
       if (!(await this.resume(appSessionId))) return;
       liveSession = d.registry.getLive(appSessionId);
       if (!liveSession || liveSession.closeMode) return;
       const session = liveSession.session;
       await session.setInteractionMode?.(previous.summary.interactionMode);
+      const resumed = d.registry.getLive(appSessionId);
       if (
         d.isShutdownStarted() ||
-        liveSession.closeMode ||
-        d.registry.getLive(appSessionId) !== liveSession ||
-        liveSession.session !== session
+        resumed !== liveSession ||
+        resumed.closeMode ||
+        resumed.session !== session
       )
         return;
       d.context.preserveUsage(appSessionId, carryover);

@@ -309,7 +309,12 @@ export class ClaudeEventMapper {
     );
     this.reportedResults.clear();
     const mainModel = this.observedModelId ?? this.modelId?.replace(/\[1m\]$/i, '');
-    const limit = mainModel ? message.modelUsage?.[mainModel]?.contextWindow : undefined;
+    // The SDK types modelUsage as a plain record, so a model it never called
+    // still reads as present; `in` is what actually says whether it is there.
+    const limit =
+      mainModel && mainModel in message.modelUsage
+        ? message.modelUsage[mainModel].contextWindow
+        : undefined;
     const usageEvent = this.usage();
     if (limit !== undefined && Number.isFinite(limit) && limit > 0 && usageEvent.tokens)
       usageEvent.tokens.maxContextTokens = limit;
