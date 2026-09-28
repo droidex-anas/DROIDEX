@@ -3,18 +3,27 @@
 
 // The bridge retries for up to five seconds; allow one retry and handshake.
 const VOICE_RECONNECT_GRACE_MS = 10_000;
+// The renderer gives up on an unanswered start after 20 s; past this, a start
+// still open is abandoned and no longer holds back an orphan stop.
+const VOICE_START_LIMIT_MS = 30_000;
 
 interface VoiceOwner {
   pageId: string;
   stopTimer?: NodeJS.Timeout;
 }
 
+/** The newest start on a chat. Only it can take the call; older ones were replaced. */
+interface VoiceOpening {
+  pageId: string;
+  attempt: string;
+  since: number;
+}
+
 export class VoiceConnectionOwners {
   /** Each page's open connection. A call belongs to a page, not to a socket. */
   private readonly pages = new Map<string, object>();
   private readonly owners = new Map<string, VoiceOwner>();
-  /** Chats with a voice start still running; their orphan stop waits for it. */
-  private readonly starting = new Set<string>();
+  private readonly openings = new Map<string, VoiceOpening>();
 
   constructor(private readonly stopOrphan: (appSessionId: string) => void) {}
 
@@ -35,20 +44,24 @@ export class VoiceConnectionOwners {
     }
   }
 
-  startBegan(appSessionId: string): void {
-    this.starting.add(appSessionId);
+  startBegan(appSessionId: string, pageId: string, attempt: string): void {
+    this.openings.set(appSessionId, { pageId, attempt, since: Date.now() });
   }
 
-  startEnded(appSessionId: string): void {
-    this.starting.delete(appSessionId);
-  }
-
-  started(appSessionId: string, pageId: string): void {
+  /** Gives the call to the page whose start this was, unless a newer start replaced it. */
+  startSucceeded(appSessionId: string, attempt: string): void {
+    const opening = this.openings.get(appSessionId);
+    if (opening?.attempt !== attempt) return;
+    this.openings.delete(appSessionId);
     this.stopped(appSessionId);
-    const owner: VoiceOwner = { pageId };
+    const owner: VoiceOwner = { pageId: opening.pageId };
     this.owners.set(appSessionId, owner);
     // The page may have dropped while its call was opening.
-    if (!this.pages.has(pageId)) this.armStop(appSessionId, owner);
+    if (!this.pages.has(opening.pageId)) this.armStop(appSessionId, owner);
+  }
+
+  startFailed(appSessionId: string, attempt: string): void {
+    if (this.openings.get(appSessionId)?.attempt === attempt) this.openings.delete(appSessionId);
   }
 
   stopped(appSessionId: string, pageId?: string): boolean {
@@ -56,6 +69,8 @@ export class VoiceConnectionOwners {
     if (owner && pageId !== undefined && owner.pageId !== pageId) return false;
     if (owner) this.cancelStop(owner);
     this.owners.delete(appSessionId);
+    if (pageId !== undefined && this.openings.get(appSessionId)?.pageId === pageId)
+      this.openings.delete(appSessionId);
     return true;
   }
 
@@ -63,16 +78,16 @@ export class VoiceConnectionOwners {
     for (const owner of this.owners.values()) this.cancelStop(owner);
     this.owners.clear();
     this.pages.clear();
-    this.starting.clear();
+    this.openings.clear();
   }
 
   private armStop(appSessionId: string, owner: VoiceOwner): void {
     if (owner.stopTimer) return;
     owner.stopTimer = setTimeout(() => {
       owner.stopTimer = undefined;
-      // A new call opening on this chat replaces this one when it succeeds;
+      // A newer call opening on this chat replaces this one when it succeeds;
       // stopping now would end that call instead. Wait for it to settle.
-      if (this.starting.has(appSessionId)) {
+      if (this.isOpening(appSessionId)) {
         this.armStop(appSessionId, owner);
         return;
       }
@@ -81,6 +96,11 @@ export class VoiceConnectionOwners {
       this.stopOrphan(appSessionId);
     }, VOICE_RECONNECT_GRACE_MS);
     owner.stopTimer.unref();
+  }
+
+  private isOpening(appSessionId: string): boolean {
+    const opening = this.openings.get(appSessionId);
+    return opening !== undefined && Date.now() - opening.since < VOICE_START_LIMIT_MS;
   }
 
   private cancelStop(owner: VoiceOwner): void {

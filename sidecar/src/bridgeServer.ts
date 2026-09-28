@@ -293,19 +293,16 @@ export function startBridgeServer(options: {
       return;
     }
     if (!pageId) throw new Error('Voice requires a renderer page ID. Reload DROIDEX.');
-    voiceOwners.startBegan(command.appSessionId);
+    const { appSessionId, attempt } = command;
+    voiceOwners.startBegan(appSessionId, pageId, attempt);
     // A failed start has already been reported to its chat by the voice owner;
     // here it only means this page does not take the call.
-    const started = await options
-      .onCommand(command)
-      .then(
-        () => true,
-        () => false,
-      )
-      .finally(() => {
-        voiceOwners.startEnded(command.appSessionId);
-      });
-    if (started) voiceOwners.started(command.appSessionId, pageId);
+    const started = await options.onCommand(command).then(
+      () => true,
+      () => false,
+    );
+    if (started) voiceOwners.startSucceeded(appSessionId, attempt);
+    else voiceOwners.startFailed(appSessionId, attempt);
   }
 
   function sendDirectWire(ws: WebSocket, message: ServerWireMessage): void {
