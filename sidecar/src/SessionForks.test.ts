@@ -9,6 +9,7 @@ import type { ProviderForkSource } from './providers/session.js';
 import type { SessionBranch, SessionCreateCommand } from './SessionLifecycle.js';
 import { SessionLineageStore, sessionLineagePath } from './sessionLineage.js';
 import type { SessionSummaryPatch } from './SessionRegistry.js';
+import { formatSideChatPrompt } from './sideChatPrompt.js';
 
 // A branch reads the source's stored transcript, so history lives in a
 // throwaway home.
@@ -246,7 +247,7 @@ test('a same-harness side chat takes its question as the first message after the
     'lineage',
     'session.forked',
     'model copy: claude-sonnet null',
-    'send copy: Why this migration order?',
+    `send copy: ${formatSideChatPrompt('Why this migration order?')}`,
   ]);
   const [event] = h.events;
   if (event.type !== 'session.forked') return assert.fail('expected session.forked');

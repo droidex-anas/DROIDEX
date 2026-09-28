@@ -102,6 +102,7 @@ import { DroidMcpConfiguration, type McpConfiguration } from './DroidMcpConfigur
 import { McpSettings } from './McpSettings.js';
 import { loadFactoryMcpServers } from './FactoryMcpConfig.js';
 import { assertValidResponseFormat, formatAppPrompt, formatAppRepairPrompt } from './appPrompt.js';
+import { formatSideChatPrompt } from './sideChatPrompt.js';
 import { droidCatalogItems } from './providers/catalog.js';
 import { DroidProvider } from './providers/droid/DroidProvider.js';
 import { runPrimaryTurn } from './providers/primaryTurn.js';
@@ -890,7 +891,7 @@ export class SessionManager {
       case 'session.send':
         await this.lifecycle.send(
           cmd.appSessionId,
-          formatResponsePrompt(cmd.text, cmd.responseFormat),
+          this.sessionPrompt(cmd.appSessionId, cmd.text, cmd.responseFormat),
           cmd.mentions,
         );
         return;
@@ -900,7 +901,7 @@ export class SessionManager {
       case 'session.sendNow':
         await this.lifecycle.sendNow(
           cmd.appSessionId,
-          formatResponsePrompt(cmd.text, cmd.responseFormat),
+          this.sessionPrompt(cmd.appSessionId, cmd.text, cmd.responseFormat),
           cmd.mentions,
         );
         return;
@@ -1146,6 +1147,17 @@ export class SessionManager {
     reasoningEffort: ReasoningEffort,
   ): Promise<void> {
     assertAutomationSelectionSupported(modelId, reasoningEffort, await this.getModels());
+  }
+
+  private sessionPrompt(
+    appSessionId: string,
+    text: string,
+    responseFormat?: ResponseFormat,
+  ): string {
+    if (!responseFormat && this.registry.resolveSummary(appSessionId)?.lineage?.kind === 'side') {
+      return formatSideChatPrompt(text);
+    }
+    return formatResponsePrompt(text, responseFormat);
   }
 
   private async getModels(): Promise<ModelInfo[]> {
