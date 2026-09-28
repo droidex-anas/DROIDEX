@@ -134,6 +134,7 @@ interface AutomationSchedulerStatus {
 
 export interface AutomationStore {
   version: 1;
+  permissionSemanticsRevision: 1;
   automations: Automation[];
   runs: AutomationRun[];
   proposals: AutomationProposal[];

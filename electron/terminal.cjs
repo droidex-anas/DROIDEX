@@ -20,6 +20,7 @@
 const fsp = require('node:fs/promises');
 const crypto = require('node:crypto');
 const { execFile } = require('node:child_process');
+const { childEnv } = require('./childEnv.cjs');
 
 const MAX_TERMINALS_PER_SESSION = 4;
 const MAX_GLOBAL_TERMINALS = 8;
@@ -49,11 +50,13 @@ function defaultShell(platform, env) {
   return { file: hint || fallback, args: ['-l'] };
 }
 
-// Build the environment for the spawned PTY: inherit the parent env and pin
-// TERM/COLORTERM so shells always emit 256-color + truecolor escapes.
+// Build the environment for the spawned PTY: inherit the parent env minus the
+// app's own private variables, and pin TERM/COLORTERM so shells always emit
+// 256-color + truecolor escapes. This shell is one the user types in, so it
+// must start from the environment their login shell would have had.
 function buildPtyEnv(platform, env) {
   void platform;
-  return { ...(env || process.env), TERM, COLORTERM };
+  return { ...childEnv(env || process.env), TERM, COLORTERM };
 }
 
 // pgrep -P lists direct children of the shell; exit 1 means none. Any other

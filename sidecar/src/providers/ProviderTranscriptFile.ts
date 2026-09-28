@@ -14,6 +14,7 @@ import { appendFile, mkdir, stat } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 
 import { providerSessionsDir } from '../droidexPaths.js';
+import { PERMISSION_SEMANTICS_REVISION } from '../permissionSemantics.js';
 import type { SessionSummary, TranscriptEvent } from '../protocol.js';
 import type { StoredMessageLine, StoredSessionStart } from '../sessionTranscriptParser.js';
 import { storedNoticeLine } from '../sessionNotices.js';
@@ -25,18 +26,29 @@ interface ProviderSessionStart extends StoredSessionStart {
   modelId?: string;
   reasoningEffort?: string;
   autonomyLevel?: string;
+  interactionMode: SessionSummary['interactionMode'];
+  permissionSemanticsRevision: number;
 }
 
 type ContentBlock =
   | { type: 'text'; text: string }
   | { type: 'thinking'; thinking: string }
-  | { type: 'tool_use'; id?: string; name: string; input: unknown }
+  | {
+      type: 'tool_use';
+      id?: string;
+      name: string;
+      input: unknown;
+      pollsChildSessionId?: string;
+      interrupted?: true;
+    }
   | {
       type: 'tool_result';
       tool_use_id?: string;
       name?: string;
       content: string;
       is_error?: boolean;
+      pollsChildSessionId?: string;
+      interrupted?: true;
     };
 
 interface PendingMessage {
@@ -53,6 +65,7 @@ export class ProviderTranscriptFile {
   // The tail of the write queue. It never rejects: a line that fails is
   // reported to the caller that wrote it, and the lines after it still go out.
   private writes: Promise<void> = Promise.resolve();
+  private readonly children = new Map<string, ProviderTranscriptFile>();
 
   // Reads the summary when it writes rather than holding a copy: the registry
   // replaces the summary object on every update, and the head line goes out
@@ -60,10 +73,11 @@ export class ProviderTranscriptFile {
   // resume handle minted during create both land on it. A session abandoned
   // before its first turn leaves no file.
   constructor(
-    appSessionId: string,
+    private readonly sessionId: string,
     private readonly summary: () => SessionSummary,
+    private readonly parentAppSessionId?: string,
   ) {
-    this.path = join(providerSessionsDir(), `${appSessionId}.jsonl`);
+    this.path = join(providerSessionsDir(), `${sessionId}.jsonl`);
   }
 
   // A turn's prompt. The renderer already showed it, so it is persisted here
@@ -77,23 +91,19 @@ export class ProviderTranscriptFile {
   }
 
   append(event: TranscriptEvent): void | Promise<void> {
-    // Child sessions keep their own transcripts; this file is one conversation.
-    if (event.role !== 'primary') return;
+    if (event.role !== 'primary' && !this.parentAppSessionId) return this.appendToChild(event);
+    if (event.kind === 'text' && event.author === 'user' && !event.spoken) {
+      return this.sealThenWrite(
+        messageLine('user', [{ type: 'text', text: event.text ?? '' }], event.id, event.ts),
+      );
+    }
     if (event.spoken) return this.sealThenWrite(spokenLine(event));
     const notice = storedNoticeLine(event);
     if (notice) return this.sealThenWrite(notice);
     const block = assistantBlock(event);
     if (block) {
       this.pending ??= { id: event.id, ts: event.ts, blocks: [] };
-      const previous = this.pending.blocks.at(-1);
-      // Adjacent stream deltas must replay as one text or thinking row.
-      if (block.type === 'text' && previous?.type === 'text') {
-        previous.text += block.text;
-      } else if (block.type === 'thinking' && previous?.type === 'thinking') {
-        previous.thinking += block.thinking;
-      } else {
-        this.pending.blocks.push(block);
-      }
+      addBlock(this.pending.blocks, block);
       return;
     }
     const result = toolResultBlock(event);
@@ -103,10 +113,23 @@ export class ProviderTranscriptFile {
   }
 
   // Called when a turn settles and when the session closes. Resolves once
-  // everything queued has been tried, and rejects when the message it closed
+  // everything queued has been tried, and rejects when a message it closed
   // could not be written.
   flush(): Promise<void> {
-    return this.sealMessage() ?? this.writes;
+    const flushing = [this.sealMessage() ?? this.writes];
+    for (const child of this.children.values()) flushing.push(child.flush());
+    return Promise.all(flushing).then(() => undefined);
+  }
+
+  // Routed children have no independent turn-settlement callback. Persist
+  // each coalesced run so replay can read it while the parent is still busy.
+  private appendToChild(event: TranscriptEvent): Promise<void> {
+    let child = this.children.get(event.sourceSessionId);
+    if (!child) {
+      child = new ProviderTranscriptFile(event.sourceSessionId, this.summary, this.sessionId);
+      this.children.set(event.sourceSessionId, child);
+    }
+    return Promise.all([child.append(event), child.flush()]).then(() => undefined);
   }
 
   // Closes the open assistant message, so one stored line is one settled
@@ -146,8 +169,23 @@ export class ProviderTranscriptFile {
   private async headIfMissing(): Promise<string> {
     if (this.headWritten) return '';
     await mkdir(dirname(this.path), { recursive: true });
-    return (await exists(this.path)) ? '' : serialize(headLine(this.summary()));
+    if (await exists(this.path)) return '';
+    const summary = this.summary();
+    return serialize(
+      this.parentAppSessionId
+        ? childHeadLine(summary, this.sessionId, this.parentAppSessionId)
+        : headLine(summary),
+    );
   }
+}
+
+// Adjacent stream deltas must replay as one text or thinking row.
+function addBlock(blocks: ContentBlock[], block: ContentBlock): void {
+  const previous = blocks.at(-1);
+  if (block.type === 'text' && previous?.type === 'text') previous.text += block.text;
+  else if (block.type === 'thinking' && previous?.type === 'thinking')
+    previous.thinking += block.thinking;
+  else blocks.push(block);
 }
 
 async function exists(path: string): Promise<boolean> {
@@ -192,9 +230,27 @@ function headLine(summary: SessionSummary): ProviderSessionStart {
     cwd: summary.cwd,
     title: summary.title,
     autonomyLevel: summary.autonomy,
+    interactionMode: summary.interactionMode,
+    permissionSemanticsRevision: PERMISSION_SEMANTICS_REVISION,
     ...(summary.resumeId ? { resumeId: summary.resumeId } : {}),
     ...(summary.modelId ? { modelId: summary.modelId } : {}),
     ...(summary.reasoningEffort ? { reasoningEffort: summary.reasoningEffort } : {}),
+  };
+}
+
+function childHeadLine(
+  summary: SessionSummary,
+  childSessionId: string,
+  parentAppSessionId: string,
+): ProviderSessionStart {
+  return {
+    type: 'session_start',
+    id: childSessionId,
+    provider: summary.provider,
+    cwd: summary.cwd,
+    callingSessionId: parentAppSessionId,
+    interactionMode: summary.interactionMode,
+    permissionSemanticsRevision: PERMISSION_SEMANTICS_REVISION,
   };
 }
 
@@ -205,6 +261,8 @@ function assistantBlock(event: TranscriptEvent): ContentBlock | null {
       ...(event.toolUseId ? { id: event.toolUseId } : {}),
       name: event.toolName ?? 'tool',
       input: event.toolArgs,
+      ...(event.pollsChildSessionId ? { pollsChildSessionId: event.pollsChildSessionId } : {}),
+      ...(event.interrupted ? { interrupted: true } : {}),
     };
   }
   if (!event.text) return null;
@@ -221,6 +279,8 @@ function toolResultBlock(event: TranscriptEvent): ContentBlock | null {
     ...(event.toolName ? { name: event.toolName } : {}),
     content: event.text ?? '',
     ...(event.isError ? { is_error: true } : {}),
+    ...(event.pollsChildSessionId ? { pollsChildSessionId: event.pollsChildSessionId } : {}),
+    ...(event.interrupted ? { interrupted: true } : {}),
   };
 }
 

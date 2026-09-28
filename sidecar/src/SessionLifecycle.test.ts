@@ -143,6 +143,9 @@ function createHarness(ordinarySummaries: SessionSummary[] = []) {
     getFactoryDefaults: () => Promise.resolve(defaults),
     maxContextTokensForModel: () => 1_000,
     childSessions: {
+      retryAgentWave: (appSessionId) => {
+        calls.push({ target: 'cleanup', method: 'children.retryWave', args: [appSessionId] });
+      },
       attachParent: (appSessionId) => {
         calls.push({ target: 'cleanup', method: 'children.attach', args: [appSessionId] });
       },
@@ -1333,7 +1336,7 @@ test('accepted settings stay durable through resume and precede first-send appli
     return true;
   });
   await harness.lifecycle.send('app-pending', 'apply now');
-  assert.deepEqual(provider.settings, [pending]);
+  assert.deepEqual(provider.settings, [{ autonomyLevel: 'off' }, pending]);
   assert.deepEqual(provider.prompts, ['apply now']);
   const settingsCall = harness.calls.findIndex((call) => call.method === 'updateSettings');
   const streamCall = harness.calls.findIndex(
@@ -1591,4 +1594,71 @@ test('closing a scheduled target during cold resume invalidates its provisional 
   assert.ok(
     harness.calls.some((call) => call.method === 'session.close' && call.args[0] === 'cold-close'),
   );
+});
+
+test('Droid resume reapplies canonical edits-only before publishing the stored session', async () => {
+  const harness = createHarness([
+    summary('app-permissions', 'provider-permissions', { autonomy: 'low' }),
+  ]);
+  const session = queueLoad(harness, 'provider-permissions');
+  await harness.lifecycle.resume('app-permissions');
+  assert.deepEqual(session.settings[0], { autonomyLevel: 'off' });
+  assert.equal(harness.registry.getLive('app-permissions')?.summary.autonomy, 'low');
+});
+
+test('an unindexed Droid resume preserves its native selection before applying current semantics', async () => {
+  const harness = createHarness();
+  const session = new FakeFactorySession('external-session', {}, harness.calls, {
+    settings: { autonomyLevel: 'low' },
+  });
+  queueLoad(harness, 'external-session', session);
+  await harness.lifecycle.resume('external-session');
+  assert.deepEqual(session.settings[0], { autonomyLevel: 'off' });
+  assert.equal(harness.registry.getLive('external-session')?.summary.autonomy, 'low');
+});
+
+test('agent completion cannot start a turn while Stop or steer interruption is outstanding', async () => {
+  const h = createHarness([summary('app-1', 'provider-1')]);
+  const provider = queueLoad(h, 'provider-1');
+  await h.lifecycle.resume('app-1');
+  const live = requireLive(h, 'app-1');
+  for (const flag of ['interrupting', 'interruptingForSteer'] as const) {
+    live[flag] = true;
+    assert.equal(
+      h.lifecycle.wakeForSettledAgents('app-1', 'agent result', 'Agents finished'),
+      false,
+    );
+    assert.deepEqual(provider.prompts, []);
+    live[flag] = false;
+  }
+  assert.equal(h.lifecycle.wakeForSettledAgents('app-1', 'agent result', 'Agents finished'), true);
+  await live.turnPromise;
+  assert.deepEqual(provider.prompts, ['agent result']);
+  // A wave held back by a Stop is owed once the Stop is over: the lifecycle
+  // asks the child sessions to try again as soon as the flag clears.
+  const retriesBefore = retryWaveCount(h);
+  await h.lifecycle.interrupt('app-1');
+  assert.equal(live.interrupting, false);
+  assert.equal(retryWaveCount(h), retriesBefore + 1);
+  await h.lifecycle.close('app-1');
+});
+
+function retryWaveCount(harness: Harness): number {
+  return harness.calls.filter(
+    (call) => call.target === 'cleanup' && call.method === 'children.retryWave',
+  ).length;
+}
+
+test('agent wake setup failures reach the background-turn error owner', async () => {
+  const h = createHarness([summary('app-1', 'provider-1')]);
+  queueLoad(h, 'provider-1');
+  await h.lifecycle.resume('app-1');
+  h.history.nextSyncError = new Error('wake persistence failed');
+  h.lifecycle.wakeForSettledAgents('app-1', 'agent result', 'Agents finished');
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.deepEqual(
+    h.events.filter((event) => event.type === 'error').map((event) => event.message),
+    ['wake persistence failed'],
+  );
+  await h.lifecycle.close('app-1');
 });

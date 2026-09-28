@@ -18,11 +18,10 @@ export type SandboxPolicy =
       excludeSlashTmp: boolean;
     };
 
-// 'off' asks before anything it does not already trust; 'low' and 'medium' ask
-// before acting outside the workspace; 'high' runs unattended.
+// Low keeps command approvals while the adapter accepts eligible workspace edits.
 const AUTONOMY: Record<Autonomy, { approvalPolicy: AskForApproval; sandbox: SandboxMode }> = {
   off: { approvalPolicy: 'untrusted', sandbox: 'read-only' },
-  low: { approvalPolicy: 'on-request', sandbox: 'workspace-write' },
+  low: { approvalPolicy: 'untrusted', sandbox: 'workspace-write' },
   medium: { approvalPolicy: 'on-request', sandbox: 'workspace-write' },
   high: { approvalPolicy: 'never', sandbox: 'danger-full-access' },
 };
@@ -72,6 +71,9 @@ interface CommandApproval {
 
 interface FileChangeApproval {
   itemId: string;
+  threadId: string;
+  turnId: string;
+  grantRoot?: string | null;
   reason?: string | null;
 }
 
@@ -174,12 +176,14 @@ export class OpenPrompts {
   register(
     client: Pick<AppServerClient, 'onRequest'>,
     fileDetail: (itemId: string) => string | undefined,
+    canApproveEdits: (request: FileChangeApproval) => boolean,
   ): void {
     client.onRequest('item/commandExecution/requestApproval', (params) =>
       this.decide(commandApproval(params as CommandApproval)),
     );
-    client.onRequest('item/fileChange/requestApproval', (params) => {
+    client.onRequest('item/fileChange/requestApproval', async (params) => {
       const request = params as FileChangeApproval;
+      if (request.grantRoot == null && canApproveEdits(request)) return { decision: 'accept' };
       return this.decide(fileChangeApproval(request, fileDetail(request.itemId)));
     });
     client.onRequest('item/tool/requestUserInput', async (params) => {

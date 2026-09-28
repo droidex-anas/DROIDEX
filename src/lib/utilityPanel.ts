@@ -255,3 +255,13 @@ function isUtilityTool(value: unknown): value is UtilityTool {
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
+
+export function terminalTabIds(panels: Record<string, UtilityPanelState>): string {
+  const ids: string[] = [];
+  for (const panel of Object.values(panels)) {
+    for (const tab of panel.tabs) {
+      if (tab.tool === 'terminal') ids.push(tab.id);
+    }
+  }
+  return ids.join('\n');
+}

@@ -54,9 +54,8 @@ export interface ChildSessionsDependencies {
     | 'rearmModelChangedChild'
     | 'resolveLimit'
   >;
-  // The chat's agents have all stopped and it is owed one turn carrying their
-  // results; see childWaveWake.
-  onAgentWaveSettled(parentAppSessionId: string, agents: readonly SettledAgent[]): void;
+  // True transfers the wave to the parent turn; false retains it for retry.
+  onAgentWaveSettled(parentAppSessionId: string, agents: readonly SettledAgent[]): boolean;
   resolveDefaultSettings(
     summary: SessionSummary,
     initResult: SessionInitResult,

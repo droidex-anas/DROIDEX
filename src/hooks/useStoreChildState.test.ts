@@ -3,7 +3,7 @@ import test from 'node:test';
 
 import type { ChildSessionSummary, SessionSummary } from '../types/bridge';
 import { childSessionIsLive } from '../lib/childSessions';
-import { initialState, reducer } from './useStore';
+import { initialState, reducer, type Action } from './useStore';
 
 function session(appSessionId: string): SessionSummary {
   return {
@@ -151,4 +151,61 @@ test('a chat is marked as having agents working only while one is running', () =
 
   const settled = reducer(ticked, upsert({ ...running, status: 'completed' }));
   assert.deepEqual(settled.agentsWorkingByParent, {});
+});
+
+test('child batches preserve published state and sequential lifecycle transitions across barriers', () => {
+  const update = (
+    parentId: string,
+    childId: string,
+    generation: number,
+    available: boolean,
+  ): Action => ({
+    type: 'SESSION_CHILD',
+    child: { ...child(parentId, childId), status: available ? 'running' : 'completed' },
+    runtimeAvailable: available,
+    runtimeGeneration: generation,
+  });
+  const state = reducer(initialState, {
+    type: 'BATCH',
+    actions: [
+      update('parent', 'one', 1, true),
+      update('other', 'two', 1, true),
+      update('untouched', 'three', 1, true),
+    ],
+  });
+  for (const record of [
+    state.childSessions,
+    state.childRuntime,
+    state.childAccess,
+    state.contextStats.child,
+  ]) {
+    for (const parent of Object.values(record)) Object.freeze(parent);
+    Object.freeze(record);
+  }
+  Object.freeze(state.agentsWorkingByParent);
+  Object.freeze(state.contextStats);
+  Object.freeze(state);
+  const actions: Action[] = [
+    update('parent', 'one', 2, true),
+    update('parent', 'one', 1, false), // Stale settlement must not win.
+    update('parent', 'sibling', 1, true),
+    update('other', 'two', 2, false),
+    { type: 'BATCH', actions: [update('parent', 'one', 2, false)] },
+    update('parent', 'sibling', 2, false),
+    { type: 'SET_CONNECTION', status: 'disconnected' },
+    update('parent', 'one', 3, true),
+    update('parent', 'one', 3, false),
+  ];
+  const next = reducer(state, { type: 'BATCH', actions });
+  const sequential = actions.reduce(reducer, state);
+  assert.deepEqual(next, sequential);
+  assert.equal(state.childRuntime.parent.one.runtimeGeneration, 1);
+  assert.equal(state.childSessions.parent.one.status, 'running');
+  assert.equal(next.childSessions.untouched, state.childSessions.untouched);
+  assert.equal(next.childRuntime.parent.one.available, false);
+  assert.equal(next.agentsWorkingByParent.parent, undefined);
+  assert.equal(
+    reducer(state, { type: 'BATCH', actions: [update('parent', 'one', 0, false)] }),
+    state,
+  );
 });

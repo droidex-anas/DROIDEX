@@ -133,7 +133,7 @@ export class SessionCompactionExecution {
     carryover: UsageOffset,
   ): Promise<void> {
     const appSessionId = liveSession.summary.appSessionId;
-    const ref = { id: appSessionId };
+    const ref = { id: appSessionId, autonomy: liveSession.summary.autonomy };
     const oldSession = liveSession.session;
     const target = this.effects.primaryTarget(liveSession);
     const replacement = await this.dependencies.runtime.loadSession(providerSessionId, {
@@ -154,6 +154,15 @@ export class SessionCompactionExecution {
           () => this.dependencies.runtime.isProcessAlive(replacement),
           'provisional',
         );
+      const provider = new DroidProviderSession(
+        appSessionId,
+        replacement,
+        this.dependencies.runtime,
+        ref,
+      );
+      const autonomy = liveSession.summary.autonomy;
+      await provider.setAutonomy(autonomy);
+      if (!target.isCurrent()) return;
       // Keep the old provider alive and owned until discovery succeeds.
       // Closing it on a failed scan would orphan its unobserved children.
       if (oldPid !== undefined) {
@@ -168,12 +177,10 @@ export class SessionCompactionExecution {
       }
       await oldSession.close();
       if (!target.isCurrent()) return;
+      if (liveSession.summary.autonomy !== autonomy)
+        throw new Error('Permissions changed while replacing the session. Retry compaction.');
       if (oldPid !== undefined) this.dependencies.agentProcesses.untrack(oldPid, appSessionId);
-      liveSession.session = new DroidProviderSession(
-        appSessionId,
-        replacement,
-        this.dependencies.runtime,
-      );
+      liveSession.session = provider;
       liveSession.droid = replacement;
       installed = true;
       if (replacementPid !== undefined)
