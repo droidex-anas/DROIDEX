@@ -426,6 +426,7 @@ export const resumeSettings = (summary: SessionSummary | undefined) => ({
   ...(summary?.modelId !== undefined ? { modelId: summary.modelId } : {}),
   ...(summary?.reasoningEffort !== undefined ? { reasoningEffort: summary.reasoningEffort } : {}),
   ...(summary?.autonomy !== undefined ? { autonomy: summary.autonomy } : {}),
+  ...(summary ? { interactionMode: summary.interactionMode } : {}),
   ...(summary && summary.provider !== DEFAULT_PROVIDER
     ? { fastMode: summary.fastMode ?? false }
     : {}),
@@ -523,11 +524,7 @@ function resumedBaseModelSettings(
       historical?.compactionModel ??
       defaults.compactionModel ??
       'current-model',
-    autonomy:
-      normalizeAutonomy(init.settings?.autonomyLevel) ??
-      historical?.autonomy ??
-      defaults.autonomy ??
-      'low',
+    autonomy: historical?.autonomy ?? normalizeAutonomy(init.settings?.autonomyLevel) ?? 'off',
   };
 }
 

@@ -36,6 +36,7 @@ export interface ProviderResumeInput {
   reasoningEffort?: ReasoningEffort;
   fastMode?: boolean;
   autonomy?: Autonomy;
+  interactionMode?: SessionInteractionMode;
   interactions: ProviderInteractions;
 }
 

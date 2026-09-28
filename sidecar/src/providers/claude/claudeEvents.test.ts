@@ -505,3 +505,22 @@ test('requested fast mode reports unavailability once without marking the row as
   );
   assert.match(cooldownRows[0].transcript?.text ?? '', /cooldown/);
 });
+
+test('task updates preserve nonterminal states and only explicit endings settle children', () => {
+  const children = childrenOf(new ClaudeEventMapper('app-1'));
+  children(
+    message({
+      type: 'system',
+      subtype: 'task_started',
+      task_id: 'agent-1',
+      task_type: 'local_agent',
+      description: 'Worker',
+    }),
+  );
+  for (const status of ['pending', 'running', 'paused', 'completed', 'failed', 'killed']) {
+    const [child] = children(
+      message({ type: 'system', subtype: 'task_updated', task_id: 'agent-1', patch: { status } }),
+    );
+    assert.equal(child?.status, status === 'killed' ? 'paused' : status);
+  }
+});

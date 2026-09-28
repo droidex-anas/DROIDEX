@@ -13,6 +13,7 @@ import type {
 } from '../protocol.js';
 import { resolveClaudePath } from './claude/claudeExecutable.js';
 import { resolveCodexPath } from './codex/codexExecutable.js';
+import { childEnv } from '../childEnv.js';
 
 const HARNESS_CLI_PROVIDERS: readonly HarnessCliProvider[] = ['claude', 'codex'];
 const VERSION_TIMEOUT_MS = 10_000;
@@ -82,7 +83,10 @@ function findInstall(provider: HarnessCliProvider): InstalledCli | undefined {
 // prints `codex-cli 0.156.1`; the version is the first dotted number either way.
 async function installedVersion(path: string): Promise<string | undefined> {
   try {
-    const { stdout } = await execFileAsync(path, ['--version'], { timeout: VERSION_TIMEOUT_MS });
+    const { stdout } = await execFileAsync(path, ['--version'], {
+      timeout: VERSION_TIMEOUT_MS,
+      env: childEnv(),
+    });
     return /\d+\.\d+\.\d+[\w.-]*/.exec(stdout)?.[0];
   } catch {
     return undefined;

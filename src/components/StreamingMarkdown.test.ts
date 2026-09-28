@@ -172,3 +172,31 @@ test('an open code fence streams as preformatted text without mermaid or app run
   assert.match(appOpen, /Building interactive app/);
   assert.doesNotMatch(appOpen, /<iframe/i);
 });
+
+test('pending lists and tables preserve canonical markdown across displayed prefixes', () => {
+  for (const source of [
+    '- first **bold** item\n- second item\n  - nested item',
+    '| a | b |\n| --- | --- |\n| **one** | two |\n| three | four',
+  ]) {
+    for (const specMode of [false, true]) {
+      for (const shown of [source.slice(0, -4), source]) {
+        assert.equal(streaming(shown, { specMode }), canonical(shown, { specMode }));
+      }
+    }
+  }
+});
+
+test('pending fence rendering honors building, cut-off, and generated-content flags', () => {
+  const source = '```app\n<main>partial';
+  assert.match(streaming(source, { buildingAppBlocks: true }), /Building interactive app/);
+  assert.doesNotMatch(streaming(source, { buildingAppBlocks: false }), /Building interactive app/);
+  assert.equal(
+    streaming(source, { cutOffAppBlocks: true }),
+    canonical(source, { cutOffAppBlocks: true }),
+  );
+  assert.doesNotMatch(
+    streaming(source, { buildingAppBlocks: true, allowGeneratedContent: false }),
+    /Building interactive app/,
+  );
+  assert.match(settled(source + '\n```', { autoPlayAppBlocks: true }), /<iframe/);
+});

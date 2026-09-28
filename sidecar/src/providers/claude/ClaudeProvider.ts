@@ -21,8 +21,7 @@ import type {
 } from '../session.js';
 import { resolveClaudePath } from './claudeExecutable.js';
 import { claudeCatalogItems } from './claudeCatalog.js';
-import { ClaudeSession } from './claudeSession.js';
-import type { ClaudeSessionInput } from './claudeSessionOptions.js';
+import { ClaudeSession, type ClaudeSessionInput } from './claudeSession.js';
 
 const PROBE_TIMEOUT_MS = 25_000;
 const INSTALL_HINT = 'Claude Code CLI not found. Install it, then refresh.';
@@ -45,7 +44,7 @@ export class ClaudeProvider implements Provider {
     return await this.open({
       appSessionId: randomUUID(),
       cwd: sessionCwd(cwd),
-      autonomy: autonomyLevel ?? 'low',
+      autonomy: autonomyLevel ?? 'off',
       interactionMode,
       ...(modelId ? { modelId } : {}),
       ...(reasoningEffort ? { reasoningEffort } : {}),
@@ -64,16 +63,15 @@ export class ClaudeProvider implements Provider {
       reasoningEffort,
       fastMode,
       autonomy,
+      interactionMode,
       mcpServers,
     }: ProviderResumeInput,
   ): Promise<ProviderSession> {
-    // A stored chat carries no interaction mode of its own, so a reopened one
-    // starts in Chat the way the sidebar shows it.
     return await this.open({
       appSessionId: providerSessionId,
       cwd: sessionCwd(cwd),
-      autonomy: autonomy ?? 'low',
-      interactionMode: 'auto',
+      autonomy: autonomy ?? 'off',
+      interactionMode: interactionMode ?? 'auto',
       ...(modelId ? { modelId } : {}),
       ...(reasoningEffort ? { reasoningEffort } : {}),
       fastMode: fastMode ?? false,

@@ -8,6 +8,7 @@ import {
   createModelDefaultsForMode,
   defaultsModeForSummary,
   requireAutonomyForCommand,
+  resumeSettings,
 } from './sessionHelpers.js';
 
 test('create requires an explicit autonomy snapshot and never falls back', () => {
@@ -134,6 +135,9 @@ test('cold resume preserves a persisted Mission Control proposal', () => {
     createdAt: 1,
     updatedAt: 1,
   };
+
+  assert.equal(resumeSettings(historical).autonomy, 'low');
+  assert.equal(resumeSettings({ ...historical, interactionMode: 'spec' }).interactionMode, 'spec');
 
   const resumed = buildResumedSession({
     init: { settings: { interactionMode: 'agi' } },

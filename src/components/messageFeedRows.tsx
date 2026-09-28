@@ -1,45 +1,24 @@
-import { memo, useEffect, useRef, type ComponentType } from 'react';
+import { memo, useEffect, useRef } from 'react';
 
 import { feedRowId } from '../hooks/conversationViewportAnchor';
 import {
   feedRowReachClassName,
   useTranscriptReachChrome,
 } from '../features/transcript-reach/transcriptReachContext';
-import type { ChildSessionActivity, ChildSessionTarget } from '../lib/childSessions';
-import type { FileChange } from '../lib/diff';
-import type { OpenReviewFileHandler } from '../lib/reviewFocus';
-import type { ToolActivityDensity } from '../lib/toolActivity';
-import type { ChildSessionSummary } from '../types/bridge';
 import { hasAppBlock } from './appBlockRuntime';
-import type { FeedItemViewProps } from './chat';
-import type { AgentMonitorData } from './agents/AgentMonitorCard';
+import { FeedItemView, feedItemPropsEqual, type FeedItemViewProps } from './chat';
 
 export interface FeedRowProps extends FeedItemViewProps {
   animateOnMount: boolean;
   onEnter?: (key: string) => void;
-  itemView: ComponentType<FeedItemViewProps>;
-  areItemPropsEqual: (previous: FeedItemViewProps, next: FeedItemViewProps) => boolean;
 }
 
 export function areFeedRowPropsEqual(previous: FeedRowProps, next: FeedRowProps): boolean {
-  return (
-    previous.itemView === next.itemView &&
-    previous.onEnter === next.onEnter &&
-    previous.areItemPropsEqual === next.areItemPropsEqual &&
-    next.areItemPropsEqual(previous, next)
-  );
-}
-
-// A sent prompt gets its own entrance (see index.css) so the send reads as a
-// gesture; everything else that appends slides in quietly.
-function enterClass(isPrompt: boolean): string {
-  return isPrompt ? 'prompt-enter' : 'feed-row-enter';
+  return previous.onEnter === next.onEnter && feedItemPropsEqual(previous, next);
 }
 
 export const FeedRow = memo(function FeedRow(props: FeedRowProps) {
-  const { animateOnMount, onEnter, itemView, areItemPropsEqual, ...itemProps } = props;
-  void areItemPropsEqual;
-  const ItemView = itemView;
+  const { animateOnMount, onEnter, ...itemProps } = props;
   const { item } = itemProps;
   const animate = useRef(animateOnMount).current;
   useEffect(() => {
@@ -49,6 +28,7 @@ export const FeedRow = memo(function FeedRow(props: FeedRowProps) {
   const isMessage = item.type === 'message';
   const isWideAppResponse =
     item.type === 'message' && item.event.author !== 'user' && hasAppBlock(item.event.text ?? '');
+  const entranceClass = isPrompt ? 'prompt-enter' : 'feed-row-enter';
   const rowId = feedRowId(item);
   const reach = useTranscriptReachChrome();
   const reachClass = feedRowReachClassName({
@@ -73,7 +53,7 @@ export const FeedRow = memo(function FeedRow(props: FeedRowProps) {
       // height never changes when a turn settles.
       className={`mx-auto min-w-0 ${isWideAppResponse ? 'max-w-4xl' : 'max-w-2xl'} ${
         isPrompt ? 'pt-2' : ''
-      } ${isMessage ? 'pb-2' : ''} ${animate ? enterClass(isPrompt) : ''} ${reachClass}`}
+      } ${isMessage ? 'pb-2' : ''} ${animate ? entranceClass : ''} ${reachClass}`}
     >
       {reach.rangeSelecting && (
         <button
@@ -88,45 +68,10 @@ export const FeedRow = memo(function FeedRow(props: FeedRowProps) {
           {rangeRowLabel(item.key, reach.rangeStartKey, reach.rangeEndKey)}
         </button>
       )}
-      <ItemView {...itemProps} />
+      <FeedItemView {...itemProps} />
     </div>
   );
 }, areFeedRowPropsEqual);
-
-export interface FeedRowsSharedProps {
-  pending: boolean;
-  cwd?: string;
-  onOpenDiff?: (change: FileChange) => void;
-  onOpenReviewFile?: OpenReviewFileHandler;
-  onOpenChildSession?: (target: ChildSessionTarget) => void;
-  onOpenAgent?: (child: ChildSessionSummary) => void;
-  childSessionActivity?: (target: ChildSessionTarget) => ChildSessionActivity | undefined;
-  agentMonitor?: AgentMonitorData;
-  liveTiming: boolean;
-  specContent?: string;
-  // Render-only tool-activity settings, applied to every row.
-  density: ToolActivityDensity;
-  inlineDiffs: boolean;
-}
-
-export function optionalFeedRowProps(shared: FeedRowsSharedProps): Partial<FeedItemViewProps> {
-  return {
-    density: shared.density,
-    inlineDiffs: shared.inlineDiffs,
-    ...(shared.cwd !== undefined ? { cwd: shared.cwd } : {}),
-    ...(shared.onOpenDiff !== undefined ? { onOpenDiff: shared.onOpenDiff } : {}),
-    ...(shared.onOpenReviewFile !== undefined ? { onOpenReviewFile: shared.onOpenReviewFile } : {}),
-    ...(shared.onOpenChildSession !== undefined
-      ? { onOpenChildSession: shared.onOpenChildSession }
-      : {}),
-    ...(shared.onOpenAgent !== undefined ? { onOpenAgent: shared.onOpenAgent } : {}),
-    ...(shared.childSessionActivity !== undefined
-      ? { childSessionActivity: shared.childSessionActivity }
-      : {}),
-    ...(shared.agentMonitor !== undefined ? { agentMonitor: shared.agentMonitor } : {}),
-    ...(shared.specContent !== undefined ? { specContent: shared.specContent } : {}),
-  };
-}
 
 function feedRowHitKind(
   rowId: string,

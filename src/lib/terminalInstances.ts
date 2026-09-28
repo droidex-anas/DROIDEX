@@ -1,3 +1,4 @@
+import { terminalInstances } from './terminalInstanceRegistry';
 import type { Terminal } from '@xterm/xterm';
 import type { FitAddon } from '@xterm/addon-fit';
 import {
@@ -81,36 +82,16 @@ const defaultDeps: TerminalInstanceDeps = {
   },
 };
 
-const instances = new Map<string, TerminalInstance & { dispose(): Promise<void> }>();
-
-export function peekTerminalInstance(tabId: string): TerminalInstance | undefined {
-  return instances.get(tabId);
-}
-
 export function acquireTerminalInstance(
   tabId: string,
   options: TerminalInstanceOptions,
   deps: TerminalInstanceDeps = defaultDeps,
 ): TerminalInstance {
-  const existing = instances.get(tabId);
+  const existing = terminalInstances.get(tabId);
   if (existing) return existing;
   const instance = createInstance(tabId, options, deps);
-  instances.set(tabId, instance);
+  terminalInstances.set(tabId, instance);
   return instance;
-}
-
-export async function releaseTerminalInstance(tabId: string): Promise<void> {
-  const instance = instances.get(tabId);
-  if (!instance) return;
-  instances.delete(tabId);
-  await instance.dispose();
-}
-
-export async function releaseTerminalInstancesExcept(
-  liveTabIds: ReadonlySet<string>,
-): Promise<void> {
-  const gone = [...instances.keys()].filter((tabId) => !liveTabIds.has(tabId));
-  await Promise.all(gone.map(releaseTerminalInstance));
 }
 
 function createInstance(

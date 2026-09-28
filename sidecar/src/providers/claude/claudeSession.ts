@@ -3,6 +3,7 @@
 // same process and the permission mode and model can change while it runs.
 import {
   query,
+  type McpServerConfig,
   type Query,
   type SDKMessage,
   type SDKUserMessage,
@@ -10,16 +11,35 @@ import {
 import type { ChildProcess } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 
+import { childEnv } from '../../childEnv.js';
 import type { NormalizedEvent } from '../../normalize.js';
-import type { Autonomy, SessionInteractionMode } from '../../protocol.js';
+import type { Autonomy, ReasoningEffort, SessionInteractionMode } from '../../protocol.js';
 import { errMsg } from '../../sessionHelpers.js';
 import type { SkillInfo } from '../catalog.js';
+import type { ProviderInteractions } from '../interactions.js';
 import type { ProviderModelSettings, ProviderSession } from '../session.js';
 import { ClaudeCatalog } from './claudeCatalog.js';
 import { ClaudeEventMapper, rateLimitRefusal } from './claudeEvents.js';
 import { MessageQueue } from './claudeMessages.js';
-import { sessionOptions, claudeEffort, type ClaudeSessionInput } from './claudeSessionOptions.js';
-import { claudePermissionMode } from './claudePermissions.js';
+import { sessionOptions, claudeEffort } from './claudeOptions.js';
+import { ClaudePermissionModes } from './claudePermissionModes.js';
+
+export interface ClaudeSessionInput {
+  // Claude pins the session id it is given, so DROIDEX's own identity is also
+  // the provider's: there is no separate resume handle.
+  appSessionId: string;
+  executable: string;
+  cwd: string;
+  autonomy: Autonomy;
+  interactionMode: SessionInteractionMode;
+  modelId?: string;
+  reasoningEffort?: ReasoningEffort;
+  fastMode?: boolean;
+  mcpServers: Record<string, McpServerConfig>;
+  interactions: ProviderInteractions;
+  // Set when reopening a stored session instead of starting a new one.
+  resume?: boolean;
+}
 
 export class ClaudeSession implements ProviderSession {
   readonly provider = 'claude' as const;
@@ -32,22 +52,17 @@ export class ClaudeSession implements ProviderSession {
   private readonly prompts = new MessageQueue<SDKUserMessage>();
   private readonly mapper: ClaudeEventMapper;
   private readonly query: Query;
-  // Turns can stream during boot, but control requests must wait: the SDK
-  // writes them immediately, before the CLI has answered initialize.
+  // The permission capability probe must finish before the first prompt.
+  // Control requests may only start after the CLI answers initialize.
   private readonly initialized: Promise<void>;
   private readonly catalog: ClaudeCatalog;
   // Resolves once the CLI process exists, which is all an open has to wait for.
   private readonly spawned: Promise<void>;
   private initializing = true;
   private child?: ChildProcess;
-  private autonomy: Autonomy;
   private modelId: string | undefined;
   private fastMode: boolean;
-  // Spec mode is Claude Code's plan mode, and both reach the CLI as the one
-  // permission mode, so the session owns which of the two is in force.
-  private planning: boolean;
-  // Serializes the permission-mode changes below, so two never race.
-  private modeChanges: Promise<void> = Promise.resolve();
+  private readonly permissions: ClaudePermissionModes;
   private activeTurnId?: string;
   // The turn the user stopped, so only that turn's own error result is excused.
   private interruptedTurnId?: string;
@@ -56,10 +71,15 @@ export class ClaudeSession implements ProviderSession {
 
   constructor(input: ClaudeSessionInput) {
     this.providerSessionId = input.appSessionId;
-    this.autonomy = input.autonomy;
     this.modelId = input.modelId;
     this.fastMode = input.fastMode ?? false;
-    this.planning = input.interactionMode === 'spec';
+    this.permissions = new ClaudePermissionModes(
+      input.autonomy,
+      input.interactionMode === 'spec',
+      () => {
+        this.requireOpen();
+      },
+    );
     this.mapper = new ClaudeEventMapper(input.appSessionId, input.modelId);
     this.closed = new Promise((resolve) => {
       this.resolveClosed = resolve;
@@ -75,7 +95,7 @@ export class ClaudeSession implements ProviderSession {
       options: sessionOptions(
         input,
         this.abort,
-        () => this.planning,
+        () => this.permissions.planning,
         (process) => {
           this.child = process;
           process.once('spawn', markSpawned);
@@ -96,7 +116,9 @@ export class ClaudeSession implements ProviderSession {
       ),
     });
     this.initialized = this.query.initializationResult().then(
-      () => {
+      async () => {
+        this.abort.signal.throwIfAborted();
+        await this.permissions.initialize(this.query);
         this.abort.signal.throwIfAborted();
         this.initializing = false;
       },
@@ -161,7 +183,9 @@ export class ClaudeSession implements ProviderSession {
     }>());
     let reportedPlanningModel = false;
     try {
-      this.requireOpen();
+      await this.waitUntilInitialized();
+      const notice = this.permissions.takeNotice();
+      if (notice) yield this.mapper.statusEvent(notice);
       this.prompts.push({
         type: 'user',
         uuid: turnId,
@@ -214,7 +238,7 @@ export class ClaudeSession implements ProviderSession {
   ): string | undefined {
     const model = message.message.model;
     if (
-      !this.planning ||
+      !this.permissions.planning ||
       !this.modelId ||
       message.parent_tool_use_id ||
       model === '<synthetic>' ||
@@ -264,37 +288,27 @@ export class ClaudeSession implements ProviderSession {
   }
 
   async setAutonomy(autonomy: Autonomy): Promise<void> {
-    await this.changePermissionMode(() => ({ autonomy, planning: this.planning }));
+    await this.permissions.change(this.query, this.initialized, () => ({
+      autonomy,
+      planning: this.permissions.planning,
+    }));
+    this.publishPermissionNotice();
   }
 
-  // Spec mode is plan mode: the model plans and reads, and its ExitPlanMode call
-  // raises the plan for review rather than ending the mode itself.
   async setInteractionMode(mode: SessionInteractionMode): Promise<void> {
-    await this.changePermissionMode(() => ({ autonomy: this.autonomy, planning: mode === 'spec' }));
+    await this.permissions.change(this.query, this.initialized, () => ({
+      autonomy: this.permissions.selection(),
+      planning: mode === 'spec',
+    }));
+    this.publishPermissionNotice();
   }
 
-  // Autonomy and Spec reach the CLI as the one permission mode, so changes run
-  // one at a time and each reads the session as it is when its turn comes: two
-  // that overlap can no longer send a mode built from state the other replaced.
-  // The session commits only what the CLI accepted.
-  private changePermissionMode(
-    next: () => { autonomy: Autonomy; planning: boolean },
-  ): Promise<void> {
-    const applied = this.modeChanges.then(async () => {
-      await this.waitUntilInitialized();
-      const { autonomy, planning } = next();
-      // While the session is planning the permission mode is already plan mode
-      // and stays it, so a new autonomy is only recorded here and takes effect
-      // when the session leaves Spec.
-      if (!planning || !this.planning)
-        await this.query.setPermissionMode(planning ? 'plan' : claudePermissionMode(autonomy));
-      this.abort.signal.throwIfAborted();
-      this.autonomy = autonomy;
-      this.planning = planning;
-    });
-    // A refused change settles its own caller; the next one still gets its turn.
-    this.modeChanges = applied.catch(() => undefined);
-    return applied;
+  private publishPermissionNotice(): void {
+    if (this.backgroundListeners.size === 0) return;
+    const notice = this.permissions.takeNotice();
+    if (!notice) return;
+    const event = this.mapper.statusEvent(notice);
+    for (const listener of this.backgroundListeners) listener(event);
   }
 
   // Model and effort stay on this process, never in the user's settings files.

@@ -48,6 +48,7 @@ test('scheduler backs off after a due-store write fails', async (context) => {
   );
   const store: AutomationStore = {
     version: 1,
+    permissionSemanticsRevision: 1,
     automations: [automation],
     runs: [],
     proposals: [],

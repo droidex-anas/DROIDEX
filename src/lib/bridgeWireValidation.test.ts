@@ -476,3 +476,23 @@ test('fast mode preference and capability must be booleans on the wire', () => {
     for (const event of events) assert.equal(serverWireMessage(batch(event)) !== null, valid);
   }
 });
+
+test('transient transcript events accept only the literal true or an absent flag', () => {
+  const event = {
+    id: 'event-1',
+    appSessionId: 'app-1',
+    sourceSessionId: 'provider-1',
+    role: 'primary',
+    kind: 'status',
+    ts: 1,
+  };
+  for (const transient of [undefined, true]) {
+    assert.ok(serverWireMessage(batch({ type: 'event.appended', event: { ...event, transient } })));
+  }
+  for (const transient of ['false', false, 1, null]) {
+    assert.equal(
+      serverWireMessage(batch({ type: 'event.appended', event: { ...event, transient } })),
+      null,
+    );
+  }
+});

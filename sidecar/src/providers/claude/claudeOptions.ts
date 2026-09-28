@@ -1,26 +1,10 @@
-import type { EffortLevel, McpServerConfig, Options } from '@anthropic-ai/claude-agent-sdk';
 import { spawn, type ChildProcess } from 'node:child_process';
+import type { EffortLevel, Options } from '@anthropic-ai/claude-agent-sdk';
 
-import type { Autonomy, ReasoningEffort, SessionInteractionMode } from '../../protocol.js';
-import type { ProviderInteractions } from '../interactions.js';
+import type { ReasoningEffort } from '../../protocol.js';
+import type { ClaudeSessionInput } from './claudeSession.js';
+import { childEnv } from '../../childEnv.js';
 import { claudeCanUseTool, claudePermissionMode } from './claudePermissions.js';
-
-export interface ClaudeSessionInput {
-  // Claude pins the session id it is given, so DROIDEX's own identity is also
-  // the provider's: there is no separate resume handle.
-  appSessionId: string;
-  executable: string;
-  cwd: string;
-  autonomy: Autonomy;
-  interactionMode: SessionInteractionMode;
-  modelId?: string;
-  reasoningEffort?: ReasoningEffort;
-  fastMode?: boolean;
-  mcpServers: Record<string, McpServerConfig>;
-  interactions: ProviderInteractions;
-  // Set when reopening a stored session instead of starting a new one.
-  resume?: boolean;
-}
 
 export function sessionOptions(
   input: ClaudeSessionInput,
@@ -37,6 +21,8 @@ export function sessionOptions(
     // The flag is written both ways: a settings file may carry ultracode too,
     // and the level the chip shows is the one the session must run at.
     ...(effort ? { effort: effort.effortLevel } : {}),
+    // Fast mode is always stated: the CLI would otherwise fall back to the
+    // user's own saved preference, which this chat never asked for.
     settings: {
       ...(effort ? { ultracode: effort.ultracode } : {}),
       fastMode: input.fastMode ?? false,
@@ -53,7 +39,9 @@ export function sessionOptions(
     // how the model hands its plan over, and plan mode always asks the callback.
     disallowedTools: ['EnterPlanMode'],
     permissionMode:
-      input.interactionMode === 'spec' ? 'plan' : claudePermissionMode(input.autonomy),
+      input.interactionMode === 'spec'
+        ? 'plan'
+        : claudePermissionMode(input.autonomy === 'medium' ? 'off' : input.autonomy),
     // Consent to the bypass mode, not the mode itself: the CLI reads this flag
     // only as "this host may use bypassPermissions" and takes the mode from
     // permissionMode. Raising autonomy to high mid-session switches the mode
@@ -63,6 +51,11 @@ export function sessionOptions(
     // The SDK would otherwise own the subprocess privately; spawning it here is
     // what gives the session a pid for the agent-process monitor to track and
     // kill, the way it tracks Droid's.
+    // This replaces the subprocess environment rather than adding to it, which
+    // is why childEnv copies process.env: the CLI needs the user's PATH, HOME
+    // and login, and only the app's own variables are left behind.
+    env: childEnv(),
+    // `env` below is the one set above, handed back unchanged.
     spawnClaudeCodeProcess: ({ command, args, cwd, env, signal }) => {
       const child = spawn(command, args, {
         ...(cwd !== undefined ? { cwd } : {}),

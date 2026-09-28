@@ -713,7 +713,7 @@ test('[L10] Autonomy mutation reports provider rejection', { concurrency: false 
     assert.equal(
       h.provider
         .session('provider-1')
-        .settings.some((settings) => settings['autonomyLevel'] === 'low'),
+        .settings.some((settings) => settings['autonomyLevel'] === 'off'),
       true,
     );
     assert.equal(

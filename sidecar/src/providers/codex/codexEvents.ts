@@ -140,6 +140,7 @@ function tokenUsageOf(params: Record<string, unknown>): ThreadTokenUsage | undef
 // A tool call still running: what it is about, for an approval card that has to
 // describe it, and the output collected so far.
 interface OpenTool {
+  changes?: FileUpdateChange[];
   detail: string;
   output: string;
 }
@@ -161,6 +162,11 @@ export class CodexEventMapper {
     private readonly appSessionId: string,
     private model: ProviderModelSettings = {},
   ) {}
+
+  beginTurn(): void {
+    this.tools.clear();
+    this.streamed.clear();
+  }
 
   setModel(model: ProviderModelSettings): void {
     this.model = model;
@@ -232,6 +238,10 @@ export class CodexEventMapper {
 
   // What a pending approval is about. A file-change approval carries no detail
   // of its own, so the open item it belongs to is the only description there is.
+  fileChanges(itemId: string): FileUpdateChange[] {
+    return this.tools.get(itemId)?.changes ?? [];
+  }
+
   toolDetail(itemId: string): string | undefined {
     return this.tools.get(itemId)?.detail;
   }
@@ -271,14 +281,21 @@ export class CodexEventMapper {
   private replacePatch(params: PatchParams | undefined): NormalizedEvent[] {
     if (!params) return [];
     const tool = this.tools.get(params.itemId);
-    if (tool) tool.output = patchText(params.changes);
+    if (tool) {
+      tool.output = patchText(params.changes);
+      tool.changes = params.changes;
+    }
     return [];
   }
 
   private started(item: ThreadItem): NormalizedEvent[] {
     const call = toolCall(item);
     if (!call) return [];
-    this.tools.set(call.id, { detail: call.detail, output: '' });
+    this.tools.set(call.id, {
+      detail: call.detail,
+      output: '',
+      ...(item.type === 'fileChange' ? { changes: item.changes } : {}),
+    });
     return [
       {
         transcript: this.transcript('tool_call', {

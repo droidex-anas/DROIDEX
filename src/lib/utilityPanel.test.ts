@@ -1,3 +1,4 @@
+import { terminalTabIds } from './utilityPanel';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
@@ -94,4 +95,26 @@ test('removeSessionPanel drops only the given session', () => {
   const next = removeSessionPanel(panels, 'a');
   assert.deepEqual(Object.keys(next), ['b']);
   assert.equal(removeSessionPanel(next, 'zzz'), next);
+});
+
+test('terminal cleanup retains terminal tabs from open and closed session panels in order', () => {
+  assert.equal(terminalTabIds({}), '');
+  assert.equal(
+    terminalTabIds({
+      first: {
+        open: false,
+        activeTabId: null,
+        tabs: [
+          { id: 'files', tool: 'files', label: 'Files' },
+          { id: 'terminal-a', tool: 'terminal', label: 'Terminal' },
+        ],
+      },
+      second: {
+        open: true,
+        activeTabId: 'terminal-b',
+        tabs: [{ id: 'terminal-b', tool: 'terminal', label: 'Terminal' }],
+      },
+    }),
+    'terminal-a\nterminal-b',
+  );
 });

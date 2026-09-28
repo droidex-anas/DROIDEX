@@ -30,6 +30,9 @@ export type SessionRole = 'primary' | 'worker' | 'validator';
 type SessionPurpose = 'chat' | 'design' | 'mission-control';
 export type SessionInteractionMode = 'auto' | 'spec' | 'agi';
 export type ResponseFormat = 'app-create' | 'app-followup';
+// Product permissions, independent of interactionMode: off = Supervised,
+// low = Auto-accept edits, medium = Auto, high = Full access. Provider safety
+// rules still apply; Codex changes take effect on the next turn.
 export type Autonomy = 'off' | 'low' | 'medium' | 'high';
 export type ReasoningEffort =
   | 'off'
