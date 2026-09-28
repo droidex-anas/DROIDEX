@@ -2122,7 +2122,8 @@ export default function PromptInput({
                             className="shrink-0 text-droid-text-muted"
                             title={`${CONTEXT_WINDOW_LABEL}: ${contextWindowLabel(contextWindowTokens)}`}
                           >
-                            · {contextWindowLabel(contextWindowTokens)}
+                            {primaryReasoning ? '· ' : ''}
+                            {contextWindowLabel(contextWindowTokens)}
                           </span>
                         )}
                     </>

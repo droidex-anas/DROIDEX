@@ -55,8 +55,12 @@ export default function ContextWindowMenu({
     const button = buttonRef.current;
     if (!open || !button) return;
     const rect = button.getBoundingClientRect();
+    // Hung from the button's right edge, so the list stays inside the popover.
     setPlace({
-      left: Math.max(EDGE_PX, Math.min(rect.left, window.innerWidth - MENU_WIDTH_PX - EDGE_PX)),
+      left: Math.max(
+        EDGE_PX,
+        Math.min(rect.right - MENU_WIDTH_PX, window.innerWidth - MENU_WIDTH_PX - EDGE_PX),
+      ),
       top: rect.bottom + GAP_PX,
     });
   }, [open]);
