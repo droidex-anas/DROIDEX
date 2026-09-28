@@ -62,7 +62,10 @@ export class HistoryPersistence {
   private historyRevision = 0;
   private lastFailureLogAt = 0;
   private indexingIdle = false;
-  private writeRevision = 0;
+  // Durability asked for while a boundary is in flight was not in that
+  // boundary's snapshot, so the boundary takes one more pass. Ordinary output
+  // never sets it: a boundary must not wait for every chat to go quiet.
+  private anotherPass = false;
   private boundary: Promise<void> | null = null;
   private closed = false;
   private degraded = false;
@@ -197,11 +200,11 @@ export class HistoryPersistence {
     if (this.closed) throw new Error('History persistence is closed.');
     if (summaries.some((summary) => summary.streaming)) this.pauseBackgroundIndexing();
     const copies = this.queue.enqueueSummaries(summaries);
-    this.writeRevision += 1;
     for (const summary of copies) {
       this.runtimeSummaries.set(summary.appSessionId, summary);
     }
     const decision = this.durability.acceptSummaries(copies);
+    if (decision.needsDurability) this.extendBoundary();
     if (this.durability.isBlocked) return !decision.holdWhileBlocked;
     return decision.needsDurability ? this.requestDurability() : true;
   }
@@ -219,8 +222,9 @@ export class HistoryPersistence {
     if (this.closed) throw new Error('History persistence is closed.');
     this.pauseBackgroundIndexing();
     this.queue.enqueueEvent(event);
-    this.writeRevision += 1;
-    if (event.kind === 'compaction' && !this.durability.isBlocked) this.requestDurability();
+    if (event.kind !== 'compaction') return;
+    this.extendBoundary();
+    if (!this.durability.isBlocked) this.requestDurability();
   }
 
   upsertChildSession(child: PersistedChildSession): boolean {
@@ -228,9 +232,9 @@ export class HistoryPersistence {
     if (child.status === 'pending' || child.status === 'running') this.pauseBackgroundIndexing();
     const key = persistenceChildKey(child.parentAppSessionId, child.childSessionId);
     const copy = this.queue.enqueueChild(child);
-    this.writeRevision += 1;
     const decision = this.durability.acceptChild(copy);
     this.runtimeChildren.set(key, copy);
+    if (decision.needsDurability) this.extendBoundary();
     if (this.durability.isBlocked) return !decision.holdWhileBlocked;
     return decision.needsDurability ? this.requestDurability() : true;
   }
@@ -263,8 +267,12 @@ export class HistoryPersistence {
 
   flush(): Promise<void> {
     if (this.closed) return Promise.reject(new Error('History persistence is closed.'));
-    if (this.boundary) return this.boundary;
+    if (this.boundary) {
+      this.extendBoundary();
+      return this.boundary;
+    }
     this.durability.holdUntilDurable();
+    this.anotherPass = false;
     this.boundary = this.flushPending().then(
       () => {
         this.boundary = null;
@@ -396,14 +404,21 @@ export class HistoryPersistence {
   private async flushPending(): Promise<void> {
     const startedAt = performance.now();
     try {
-      let revision: number;
-      do {
-        revision = this.writeRevision;
-        await this.queue.flush();
-      } while (revision !== this.writeRevision);
+      await this.queue.flush();
+      while (this.takeAnotherPass()) await this.queue.flush();
     } finally {
       hotPathMetrics.recordPersistenceBoundary(performance.now() - startedAt);
     }
+  }
+
+  private extendBoundary(): void {
+    if (this.boundary) this.anotherPass = true;
+  }
+
+  private takeAnotherPass(): boolean {
+    const asked = this.anotherPass;
+    this.anotherPass = false;
+    return asked;
   }
 
   private reportRecovery(): void {

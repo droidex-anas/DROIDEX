@@ -29,6 +29,13 @@ export interface SessionAdoptionDependencies {
     liveSessionsSnapshot(): readonly { summary: SessionSummary }[];
     getCanonicalSummary(id: string): SessionSummary | undefined;
     getLive(id: string): { summary: SessionSummary } | undefined;
+    // The owner of a live session's summary: patches what it says now, then
+    // stores and publishes it.
+    updateSummary(
+      id: string,
+      patch: Pick<SessionSummary, 'streaming' | 'phase' | 'interruptReason'>,
+      options: { touchActivity: false },
+    ): unknown;
   };
   lifecycle: Pick<SessionLifecycle, 'resume'>;
   liveChildren: () => readonly LiveChildIdentity[];
@@ -36,6 +43,7 @@ export interface SessionAdoptionDependencies {
   // Kills whatever the previous run left running, matched by start time so a
   // recycled pid is never signalled.
   reapProcesses: (entries: readonly LiveProcessIdentity[]) => Promise<void>;
+  // Stores and publishes the summary of a session that has no live runtime.
   persistSummaries: (summaries: SessionSummary[]) => void | Promise<void>;
   appendStatus: (appSessionId: string, text: string) => void;
   sessionRuntimeIdleMs: number;
@@ -134,22 +142,13 @@ export class SessionAdoption {
         return;
       }
       if (!wasActive) return;
-      const live = this.dependencies.registry.getLive(identity.appSessionId);
-      if (!live) {
-        await this.markSessionInterrupted(identity, historical, true, SESSION_UNAVAILABLE);
-        return;
-      }
-      await this.dependencies.persistSummaries([turnInterrupted(live.summary)]);
-      // Only a replaced runtime makes this stale. A summary that moved on
-      // meanwhile (a status ping, a title) still owes the interruption, applied
-      // over what it says now.
-      if (this.dependencies.registry.getLive(identity.appSessionId) !== live) return;
-      live.summary = turnInterrupted(live.summary);
-      this.interrupted.push({
-        appSessionId: identity.appSessionId,
-        reason: TURN_INTERRUPTED,
-      });
-      this.dependencies.appendStatus(identity.appSessionId, TURN_INTERRUPTED);
+      const reconnected = this.dependencies.registry.getLive(identity.appSessionId) !== undefined;
+      await this.markSessionInterrupted(
+        identity,
+        historical,
+        true,
+        reconnected ? TURN_INTERRUPTED : SESSION_UNAVAILABLE,
+      );
     } catch (error) {
       await this.markSessionInterrupted(
         identity,
@@ -166,16 +165,20 @@ export class SessionAdoption {
     wasActive: boolean,
     reason: string,
   ): Promise<void> {
-    const live = this.dependencies.registry.getLive(identity.appSessionId);
-    const base = historical ?? syntheticSummary(identity);
-    const updated: SessionSummary = {
-      ...base,
-      streaming: false,
-      phase: wasActive ? interruptedPhase(base.phase) : base.phase,
-      interruptReason: reason,
-    };
-    await this.dependencies.persistSummaries([updated]);
-    if (this.dependencies.registry.getLive(identity.appSessionId) !== live) return;
+    const { registry } = this.dependencies;
+    const live = registry.getLive(identity.appSessionId);
+    if (live) {
+      registry.updateSummary(identity.appSessionId, interruption(live.summary, wasActive, reason), {
+        touchActivity: false,
+      });
+    } else {
+      const base = historical ?? syntheticSummary(identity);
+      await this.dependencies.persistSummaries([
+        { ...base, ...interruption(base, wasActive, reason) },
+      ]);
+      // The chat was opened while this was stored, and speaks for itself now.
+      if (registry.getLive(identity.appSessionId)) return;
+    }
     this.interrupted.push({ appSessionId: identity.appSessionId, reason });
     this.dependencies.appendStatus(identity.appSessionId, reason);
   }
@@ -190,12 +193,15 @@ export class SessionAdoption {
   }
 }
 
-function turnInterrupted(summary: SessionSummary): SessionSummary {
+function interruption(
+  summary: SessionSummary,
+  wasActive: boolean,
+  reason: string,
+): Pick<SessionSummary, 'streaming' | 'phase' | 'interruptReason'> {
   return {
-    ...summary,
     streaming: false,
-    phase: interruptedPhase(summary.phase),
-    interruptReason: TURN_INTERRUPTED,
+    phase: wasActive ? interruptedPhase(summary.phase) : summary.phase,
+    interruptReason: reason,
   };
 }
 

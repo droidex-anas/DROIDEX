@@ -713,14 +713,11 @@ export class SessionManager {
       recordedProcesses: () => this.agentProcesses.snapshotPids(),
       reapProcesses: (entries) => this.agentProcesses.killRecorded(entries),
       persistSummaries: async (summaries) => {
-        const owners = summaries.map((summary) => this.registry.getLive(summary.appSessionId));
-        const previous = owners.map((owner) => owner?.summary);
         this.history.syncSummaries(summaries);
         await this.history.flush?.();
         if (this.shutdownPromise) return;
-        for (const [index, session] of summaries.entries()) {
-          const live = this.registry.getLive(session.appSessionId);
-          if (live === owners[index] && live?.summary === previous[index])
+        for (const session of summaries) {
+          if (!this.registry.getLive(session.appSessionId))
             this.emit({ type: 'session.updated', session });
         }
       },
@@ -746,7 +743,13 @@ export class SessionManager {
   connect(apiKey?: string): void {
     this.runtime.connect(apiKey);
     this.ready = true;
-    void this.adoption.adopt();
+    void this.adoption.adopt().catch((error: unknown) => {
+      this.emit({
+        type: 'error',
+        message: `Could not restore the sessions that were running: ${errMsg(error)}`,
+        recoverable: true,
+      });
+    });
     this.emit({ type: 'connection', status: 'connected' });
     this.emit({ type: 'runtime.updated', status: this.runtime.status() });
     void this.emitProviderStatus();

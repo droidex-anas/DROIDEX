@@ -233,28 +233,32 @@ export class SessionRegistry<TLive extends RegisteredSession> {
       ]),
     };
 
-    await this.persistStrict(updated);
-    if (
-      this.sessions.get(current.appSessionId) !== liveSession ||
-      (liveSession && liveSession.summary !== current)
-    )
-      return undefined;
-    if (liveSession) {
-      this.removeAliases(current);
-      liveSession.summary = updated;
-      this.summariesAwaitingDurability.delete(updated.appSessionId);
-      this.publishedLiveSummaries.set(updated.appSessionId, updated);
-      this.indexAliases(updated);
-    } else {
+    if (!liveSession) {
+      await this.persistStrict(updated);
+      if (this.sessions.has(current.appSessionId)) return undefined;
       this.cacheHistoricalSummary(updated);
       this.rebuildHistoricalAliases(this.historicalSummaries.values());
+      this.publish(updated);
+      return updated;
     }
 
-    this.publish(updated);
-    if (liveSession && current.providerSessionId) {
+    // The runtime already speaks for the new provider, so once the write is
+    // accepted the summary is rebound before it is awaited: an update that
+    // lands meanwhile patches the new binding rather than storing the old one
+    // over it.
+    this.dependencies.history.syncSummaries([updated]);
+    this.removeAliases(current);
+    liveSession.summary = updated;
+    this.indexAliases(updated);
+    await this.dependencies.history.flush?.();
+    if (this.sessions.get(updated.appSessionId) !== liveSession) return undefined;
+    const rebound = liveSession.summary;
+    this.summariesAwaitingDurability.delete(rebound.appSessionId);
+    this.publishedLiveSummaries.set(rebound.appSessionId, rebound);
+    this.publish(rebound);
+    if (current.providerSessionId)
       this.dependencies.onLiveProviderReplaced?.(current.providerSessionId);
-    }
-    return updated;
+    return rebound;
   }
 
   async unregister(id: string): Promise<TLive | undefined> {
