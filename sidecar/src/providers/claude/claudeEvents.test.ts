@@ -524,3 +524,32 @@ test('task updates preserve nonterminal states and only explicit endings settle 
     assert.equal(child?.status, status === 'killed' ? 'paused' : status);
   }
 });
+
+test('result capacity comes from the main conversation model, never a child', () => {
+  const mapper = new ClaudeEventMapper('context-chat', 'sonnet[1m]');
+  mapper.map(
+    streamEvent({
+      type: 'message_start',
+      message: { model: 'claude-sonnet-4-6', usage: mainLoopUsage(10, 0) },
+    }),
+  );
+  mapper.map(
+    message({
+      type: 'assistant',
+      parent_tool_use_id: 'child',
+      message: { model: 'claude-haiku-4-5', content: [] },
+    }),
+  );
+  const result = message({
+    type: 'result',
+    usage: mainLoopUsage(10, 5),
+    permission_denials: [],
+    modelUsage: {
+      'claude-haiku-4-5': { contextWindow: 200000 },
+      'claude-sonnet-4-6': { contextWindow: 1000000 },
+    },
+  });
+  assert.equal(mapper.map(result).at(-1)?.tokens?.maxContextTokens, 1000000);
+  mapper.setModel('opus');
+  assert.equal(mapper.map(result).at(-1)?.tokens?.maxContextTokens, undefined);
+});

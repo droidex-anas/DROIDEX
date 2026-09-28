@@ -7,6 +7,7 @@ import type {
   SessionRole,
   Autonomy,
   BridgeFeature,
+  ContextWindowTokens,
   FactoryDefaultSettings,
   SessionHistoryEntry,
   SessionPhase,
@@ -37,10 +38,11 @@ import {
 } from './sessionTranscript.js';
 import { decodeProviderSessionIdList } from './historyProviderIds.js';
 import {
+  addChatPreferenceColumns,
   addChildSettledAt,
   CHILD_SESSIONS_TABLE_SCHEMA,
   rebuildChildSessionsToV4,
-} from './historyChildSchemaMigration.js';
+} from './historySchemaMigrations.js';
 import { DEFAULT_PROVIDER, providerKind } from './providers/providerKind.js';
 import { migrateHistoryPermissions, migrateTranscriptPermissions } from './permissionSemantics.js';
 import { readSessionFileHead, readSessionStart } from './sessionFileHead.js';
@@ -160,7 +162,8 @@ const DEFAULT_HISTORY_WINDOW = 400;
 // (1<<27)/256 = 524,288 lines per segment — multi-GB at the multi-KB lines
 // real sessions store, far beyond any observed file.
 const SEQ_SEGMENT_STRIDE = 1 << 27;
-const HISTORY_SCHEMA_VERSION = 4;
+const HISTORY_SCHEMA_VERSION = 5;
+type HistorySchemaVersion = 1 | 2 | 3 | 4 | 5;
 export const SESSION_INDEX_FILENAME = 'session-index.sqlite';
 export const SESSION_SEARCH_INDEX_FILENAME = 'session-search.sqlite';
 function historySchemaRecovery(): string {
@@ -349,12 +352,13 @@ export class HistoryIndex {
     if (version === 1 || version === 2) {
       if (!hasCanonicalHistorySchema(db, version)) throw new Error(historySchemaRecovery());
       rebuildChildSessionsToV4(db, version);
-    } else if (version === 3) {
-      if (!hasCanonicalHistorySchema(db, 3)) throw new Error(historySchemaRecovery());
-      addChildSettledAt(db);
+    } else if (version === 3 || version === 4) {
+      if (!hasCanonicalHistorySchema(db, version)) throw new Error(historySchemaRecovery());
+      if (version === 3) addChildSettledAt(db);
     } else if (version !== HISTORY_SCHEMA_VERSION) {
       throw new Error(historySchemaRecovery());
     }
+    if (version < HISTORY_SCHEMA_VERSION) addChatPreferenceColumns(db);
     if (!hasCanonicalHistorySchema(db)) throw new Error(historySchemaRecovery());
     migrateHistoryPermissions(db);
   }
@@ -374,6 +378,8 @@ export class HistoryIndex {
         updated_at INTEGER NOT NULL,
         model_id TEXT,
         reasoning_effort TEXT,
+        fast_mode INTEGER,
+        context_window_tokens INTEGER,
         compaction_model TEXT,
         worker_model_id TEXT,
         worker_reasoning_effort TEXT,
@@ -440,14 +446,14 @@ export class HistoryIndex {
   }
 
   summaryPatchesAndHidden(): SummaryPatchesAndHidden {
-    const rows = readSummaryRows(this.db);
+    const rows = this.db.prepare('SELECT * FROM app_sessions').all() as Record<string, unknown>[];
     const patches = summaryPatchesFromRows(rows);
     applyStoredCompactionGenerations(this.db, patches);
     return { patches, hiddenProviderSessionIds: hiddenProviderSessionIdsFromRows(rows) };
   }
 
   private summaryPatches(): Map<string, Partial<SessionSummary>> {
-    const rows = readSummaryRows(this.db);
+    const rows = this.db.prepare('SELECT * FROM app_sessions').all() as Record<string, unknown>[];
     const patches = summaryPatchesFromRows(rows);
     applyStoredCompactionGenerations(this.db, patches);
     return patches;
@@ -496,6 +502,8 @@ const CANONICAL_TABLE_COLUMNS = {
     'updated_at',
     'model_id',
     'reasoning_effort',
+    'fast_mode',
+    'context_window_tokens',
     'compaction_model',
     'worker_model_id',
     'worker_reasoning_effort',
@@ -555,7 +563,14 @@ const CHILD_SESSION_COLUMNS_BY_VERSION = {
   ),
   3: CANONICAL_TABLE_COLUMNS.child_sessions.filter((column) => column !== 'settled_at'),
   4: CANONICAL_TABLE_COLUMNS.child_sessions,
+  5: CANONICAL_TABLE_COLUMNS.child_sessions,
 };
+
+// The two chat preferences arrived in v5; every earlier version stored the same
+// app_sessions table without them.
+const APP_SESSION_COLUMNS_BEFORE_V5 = CANONICAL_TABLE_COLUMNS.app_sessions.filter(
+  (column) => column !== 'fast_mode' && column !== 'context_window_tokens',
+);
 
 const CHILD_SCHEMA_CHECKS = [
   "check (role in ('worker', 'validator'))",
@@ -579,13 +594,11 @@ const CANONICAL_PRIMARY_KEYS = {
 
 function hasCanonicalHistorySchema(
   db: DatabaseSync,
-  version: 1 | 2 | 3 | 4 = HISTORY_SCHEMA_VERSION,
+  version: HistorySchemaVersion = HISTORY_SCHEMA_VERSION,
 ): boolean {
-  for (const [table, expected] of Object.entries(CANONICAL_TABLE_COLUMNS)) {
-    const expectedColumns =
-      table === 'child_sessions' ? CHILD_SESSION_COLUMNS_BY_VERSION[version] : expected;
+  for (const table of Object.keys(CANONICAL_TABLE_COLUMNS)) {
     if (
-      !hasExactColumns(db, table, expectedColumns) ||
+      !hasExactColumns(db, table, canonicalColumns(table, version)) ||
       !hasPrimaryKey(
         db,
         table,
@@ -610,6 +623,13 @@ function hasCanonicalHistorySchema(
       )) &&
     childSchemaHasChecks(db, version)
   );
+}
+
+function canonicalColumns(table: string, version: HistorySchemaVersion): readonly string[] {
+  if (table === 'child_sessions') return CHILD_SESSION_COLUMNS_BY_VERSION[version];
+  if (table === 'app_sessions')
+    return version === 5 ? CANONICAL_TABLE_COLUMNS.app_sessions : APP_SESSION_COLUMNS_BEFORE_V5;
+  return CANONICAL_TABLE_COLUMNS[table as keyof typeof CANONICAL_TABLE_COLUMNS];
 }
 
 function hasExactColumns(db: DatabaseSync, table: string, expected: readonly string[]): boolean {
@@ -664,7 +684,7 @@ function hasPartialUniqueIndex(
   );
 }
 
-function childSchemaHasChecks(db: DatabaseSync, version: 1 | 2 | 3 | 4): boolean {
+function childSchemaHasChecks(db: DatabaseSync, version: HistorySchemaVersion): boolean {
   const row = db
     .prepare("SELECT sql FROM sqlite_schema WHERE type = 'table' AND name = 'child_sessions'")
     .get() as Record<string, unknown> | undefined;
@@ -780,7 +800,7 @@ function readStoredSummaryPatches(): Map<string, Partial<SessionSummary>> {
   const db = new DatabaseSync(path);
   try {
     assertCanonicalHistorySchema(db);
-    const rows = readSummaryRows(db);
+    const rows = db.prepare('SELECT * FROM app_sessions').all() as Record<string, unknown>[];
     const patches = summaryPatchesFromRows(rows);
     applyStoredCompactionGenerations(db, patches);
     return patches;
@@ -832,29 +852,6 @@ function readStoredChildSessions(parentAppSessionId: string): PersistedChildSess
   }
 }
 
-function readSummaryRows(db: DatabaseSync): Record<string, unknown>[] {
-  return db
-    .prepare(
-      `
-    SELECT app_sessions.*, settings.value_json AS session_preferences
-    FROM app_sessions LEFT JOIN settings ON settings.scope = 'session:' || app_session_id
-  `,
-    )
-    .all();
-}
-
-function sessionPreferences(raw: unknown): Pick<SessionSummary, 'fastMode'> {
-  if (raw === null) return {};
-  if (typeof raw !== 'string') throw new Error('Stored session preferences must be JSON.');
-  const preferences = objectValue(JSON.parse(raw));
-  if (
-    !preferences ||
-    (preferences.fastMode !== undefined && typeof preferences.fastMode !== 'boolean')
-  )
-    throw new Error('Stored fastMode must be a boolean.');
-  return preferences.fastMode === undefined ? {} : { fastMode: preferences.fastMode };
-}
-
 function summaryPatchesFromRows(
   rows: Record<string, unknown>[],
 ): Map<string, Partial<SessionSummary>> {
@@ -877,7 +874,8 @@ function summaryPatchesFromRows(
       workspaceKind: workspaceKind(stringValue(row.workspace_kind)),
       modelId: stringValue(row.model_id),
       reasoningEffort: mapReasoning(stringValue(row.reasoning_effort)),
-      ...sessionPreferences(row.session_preferences),
+      fastMode: fastModeValue(row.fast_mode),
+      contextWindowTokens: contextWindowTokensValue(row.context_window_tokens),
       compactionModel: stringValue(row.compaction_model),
       workerModelId: stringValue(row.worker_model_id),
       workerReasoningEffort: mapReasoning(stringValue(row.worker_reasoning_effort)),
@@ -1621,15 +1619,14 @@ function sessionInteractionMode(start: StoredSessionStart): string | undefined {
 function readSessionModelSettings(
   start: StoredSessionStart | undefined,
   sessionPath: string,
-): FactoryDefaults & Pick<SessionSummary, 'fastMode'> {
+): FactoryDefaults & Pick<SessionSummary, 'fastMode' | 'contextWindowTokens'> {
   const raw = objectValue(start) ?? {};
   const settings = objectValue(raw.settings) ?? objectValue(raw.sessionSettings) ?? {};
   const sidecarSettings = readAdjacentSessionSettings(sessionPath);
-  const fastMode = sidecarSettings.fastMode !== undefined ? sidecarSettings.fastMode : raw.fastMode;
-  if (fastMode !== undefined && typeof fastMode !== 'boolean')
-    throw new Error('Stored fastMode must be a boolean.');
   return {
-    ...(fastMode !== undefined ? { fastMode } : {}),
+    fastMode: fastModeValue(
+      sidecarSettings.fastMode !== undefined ? sidecarSettings.fastMode : raw.fastMode,
+    ),
     // Once the sidecar names the model the head line is history, including when
     // it names none: that is the record of a chat reset to its provider's own
     // default, not an absent setting to fall back from.
@@ -1644,6 +1641,11 @@ function readSessionModelSettings(
       stringValue(sidecarSettings.reasoningEffort) ||
         stringValue(settings.reasoningEffort) ||
         stringValue(raw.reasoningEffort),
+    ),
+    contextWindowTokens: contextWindowTokensValue(
+      sidecarSettings.contextWindowTokens !== undefined
+        ? sidecarSettings.contextWindowTokens
+        : raw.contextWindowTokens,
     ),
     compactionModel:
       stringValue(sidecarSettings.compactionModel) ||
@@ -1763,4 +1765,16 @@ function roleFromSessionStart(start: StoredSessionStart): SessionRole {
 
 function lastPathSegment(path: string): string {
   return path.split('/').filter(Boolean).pop() ?? '';
+}
+
+function contextWindowTokensValue(value: unknown): ContextWindowTokens | undefined {
+  if (value === 200000 || value === 1000000) return value;
+  return undefined;
+}
+
+// Stored as 0 or 1 in SQLite and as a boolean in a transcript head line.
+function fastModeValue(value: unknown): boolean | undefined {
+  if (typeof value === 'boolean') return value;
+  if (value === 0 || value === 1) return value === 1;
+  return undefined;
 }

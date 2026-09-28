@@ -4,6 +4,7 @@
 import {
   query,
   type McpServerConfig,
+  type ModelInfo,
   type Query,
   type SDKMessage,
   type SDKUserMessage,
@@ -11,14 +12,19 @@ import {
 import type { ChildProcess } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 
-import { childEnv } from '../../childEnv.js';
 import type { NormalizedEvent } from '../../normalize.js';
-import type { Autonomy, ReasoningEffort, SessionInteractionMode } from '../../protocol.js';
+import type {
+  Autonomy,
+  ContextWindowTokens,
+  ReasoningEffort,
+  SessionInteractionMode,
+} from '../../protocol.js';
 import { errMsg } from '../../sessionHelpers.js';
 import type { SkillInfo } from '../catalog.js';
 import type { ProviderInteractions } from '../interactions.js';
 import type { ProviderModelSettings, ProviderSession } from '../session.js';
 import { ClaudeCatalog } from './claudeCatalog.js';
+import { claudeContextModel } from './claudeContextWindow.js';
 import { ClaudeEventMapper, rateLimitRefusal } from './claudeEvents.js';
 import { MessageQueue } from './claudeMessages.js';
 import { sessionOptions, claudeEffort } from './claudeOptions.js';
@@ -35,6 +41,8 @@ export interface ClaudeSessionInput {
   modelId?: string;
   reasoningEffort?: ReasoningEffort;
   fastMode?: boolean;
+  contextWindowTokens?: ContextWindowTokens;
+  models: ModelInfo[];
   mcpServers: Record<string, McpServerConfig>;
   interactions: ProviderInteractions;
   // Set when reopening a stored session instead of starting a new one.
@@ -69,7 +77,7 @@ export class ClaudeSession implements ProviderSession {
   private turnQueue?: MessageQueue<{ message: SDKMessage; events: NormalizedEvent[] }>;
   private readonly backgroundListeners = new Set<(event: NormalizedEvent) => void>();
 
-  constructor(input: ClaudeSessionInput) {
+  constructor(private readonly input: ClaudeSessionInput) {
     this.providerSessionId = input.appSessionId;
     this.modelId = input.modelId;
     this.fastMode = input.fastMode ?? false;
@@ -313,12 +321,22 @@ export class ClaudeSession implements ProviderSession {
 
   // Model and effort stay on this process, never in the user's settings files.
   // Replaying an already-applied model needs no API validation request.
-  async setModel({ modelId, reasoningEffort, fastMode }: ProviderModelSettings): Promise<void> {
+  async setModel({
+    modelId,
+    reasoningEffort,
+    fastMode,
+    contextWindowTokens,
+  }: ProviderModelSettings): Promise<void> {
     await this.waitUntilInitialized();
-    if (modelId !== undefined && (modelId ?? undefined) !== this.modelId) {
-      await this.query.setModel(modelId ?? undefined);
+    const resolvedModel = claudeContextModel(
+      modelId === undefined ? this.modelId : (modelId ?? undefined),
+      contextWindowTokens ?? this.input.contextWindowTokens,
+      this.input.models,
+    );
+    if (modelId !== undefined && resolvedModel !== this.modelId) {
+      await this.query.setModel(resolvedModel);
       this.requireOpen();
-      this.modelId = modelId ?? undefined;
+      this.modelId = resolvedModel;
       this.mapper.setModel(this.modelId);
     }
     this.requireOpen();

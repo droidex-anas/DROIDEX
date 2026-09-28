@@ -100,6 +100,7 @@ test('reopening Spec keeps plan mode even when Full access is selected', () => {
       autonomy: 'high',
       interactionMode: 'spec',
       resume: true,
+      models: [],
       mcpServers: {},
       interactions: {
         requestApproval: async () => 'cancel',

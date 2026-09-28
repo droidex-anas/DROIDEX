@@ -36,6 +36,7 @@ for (const fastMode of [undefined, true]) {
       interactionMode: 'auto',
       reasoningEffort: 'ultra',
       fastMode,
+      models: [],
       mcpServers: {},
       interactions: {
         requestApproval: () => Promise.reject(new Error('unused')),

@@ -80,13 +80,16 @@ test('syncSummaries persists autoCompactions and loadHistoricalSessions restores
   const cwd = join(home, 'workspace-autocompact');
   writeSession('autocompact-chat', cwd);
   const index = new HistoryIndex();
-  persistTestSummaries([{ ...summary('autocompact-chat', cwd), autoCompactions: 3 }]);
+  persistTestSummaries([
+    { ...summary('autocompact-chat', cwd), autoCompactions: 3, contextWindowTokens: 200000 },
+  ]);
   index.close();
 
   const rows = loadHistoricalSessions({ workspaceCwds: [cwd] });
 
   const row = rows.find((r) => r.summary.appSessionId === 'autocompact-chat');
   assert.equal(row?.summary.autoCompactions, 3);
+  assert.equal(row?.summary.contextWindowTokens, 200000);
 });
 
 test('historical compaction markers hydrate the summary generation', () => {
@@ -240,21 +243,25 @@ test('summaryPatchesAndHidden derives patches and hidden ids from one read', () 
   }
 });
 
-test('fast mode survives canonical history writes and explicit-off overwrites', () => {
-  const cwd = join(home, 'workspace-fast');
-  writeSession('fast-chat', cwd, { provider: 'codex', fastMode: true });
-  const stored = { ...summary('fast-chat', cwd), provider: 'codex' as const, fastMode: true };
+test('chat preferences survive canonical history writes and explicit-off overwrites', () => {
+  const stored: SessionSummary = {
+    ...summary('preferences-chat', join(home, 'workspace-preferences')),
+    provider: 'claude',
+    fastMode: true,
+    contextWindowTokens: 1000000,
+  };
   const index = new HistoryIndex();
   try {
     persistTestSummaries([stored]);
-    assert.equal(index.summaryPatchesAndHidden().patches.get('fast-chat')?.fastMode, true);
-    persistTestSummaries([{ ...stored, fastMode: false }]);
-    assert.equal(index.summaryPatchesAndHidden().patches.get('fast-chat')?.fastMode, false);
+    const first = index.summaryPatchesAndHidden().patches.get('preferences-chat');
+    assert.equal(first?.fastMode, true);
+    assert.equal(first?.contextWindowTokens, 1000000);
+    // Explicit off is a stored choice, not an absent one.
+    persistTestSummaries([{ ...stored, fastMode: false, contextWindowTokens: 200000 }]);
+    const second = index.summaryPatchesAndHidden().patches.get('preferences-chat');
+    assert.equal(second?.fastMode, false);
+    assert.equal(second?.contextWindowTokens, 200000);
   } finally {
     index.close();
   }
-  const restored = loadHistoricalSessions({ workspaceCwds: [cwd] }).find(
-    (row) => row.summary.appSessionId === 'fast-chat',
-  );
-  assert.equal(restored?.summary.fastMode, false);
 });

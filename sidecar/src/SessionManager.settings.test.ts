@@ -2,10 +2,11 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import { startupFactoryDefaults, validateFactoryDefaults } from './SessionManager.js';
+import { claudeContextEnv, claudeContextModel } from './providers/claude/claudeContextWindow.js';
+import { buildCreatedSessionSummary, resumeSettings } from './sessionHelpers.js';
 import { createSessionSettingsForAgent } from './SessionModelSettings.js';
 import { createSessionManagerTestContext } from './testing/sessionManagerTestContext.js';
 import { ProviderTranscriptFile } from './providers/ProviderTranscriptFile.js';
-import { resumeSettings } from './sessionHelpers.js';
 import type { ModelInfo, SessionSummary } from './protocol.js';
 
 const models: ModelInfo[] = [
@@ -169,8 +170,8 @@ test('closed provider sessions preserve fast-only, explicit off and omitted sett
   };
   try {
     const transcript = new ProviderTranscriptFile(stored.appSessionId, () => stored);
-    transcript.appendPrompt('hello');
-    transcript.append({
+    await transcript.appendPrompt('hello');
+    await transcript.append({
       id: 'reply',
       appSessionId: stored.appSessionId,
       sourceSessionId: stored.appSessionId,
@@ -179,7 +180,7 @@ test('closed provider sessions preserve fast-only, explicit off and omitted sett
       text: 'hello',
       ts: 1,
     });
-    transcript.flush();
+    await transcript.flush();
     h.fixture.seedHistorySummaries([stored]);
     await h.handle({
       type: 'session.updateSettings',
@@ -221,4 +222,54 @@ test('closed provider sessions preserve fast-only, explicit off and omitted sett
   } finally {
     await h.dispose();
   }
+});
+
+test('Claude context choices round-trip suffixes and isolate the 200k launch environment', () => {
+  const catalog = [
+    {
+      value: 'sonnet',
+      resolvedModel: 'claude-sonnet-4-6',
+      displayName: 'Sonnet',
+      description: 'Standard context',
+    },
+    { value: 'sonnet[1m]', displayName: 'Sonnet (1M context)', description: 'Extended context' },
+    { value: 'native', displayName: 'Native (1M context)', description: '1M context window' },
+  ];
+  assert.equal(claudeContextModel('sonnet', 1000000, catalog), 'sonnet[1m]');
+  assert.equal(claudeContextModel('claude-sonnet-4-6', 1000000, catalog), 'sonnet[1m]');
+  assert.equal(claudeContextModel('sonnet[1M]', 200000, catalog), 'sonnet');
+  assert.equal(claudeContextModel('sonnet[1m]', undefined, catalog), 'sonnet[1m]');
+  assert.equal(claudeContextModel('native', 1000000, catalog), 'native');
+  assert.throws(() => claudeContextModel('haiku', 1000000, catalog), /unavailable/);
+  const env = { CLAUDE_CODE_DISABLE_1M_CONTEXT: 'global', PATH: '/bin' };
+  assert.deepEqual(claudeContextEnv(env, 200000), { ...env, CLAUDE_CODE_DISABLE_1M_CONTEXT: '1' });
+  assert.deepEqual(claudeContextEnv(env, 1000000), { PATH: '/bin' });
+  assert.deepEqual(claudeContextEnv(env, undefined), env);
+  assert.equal(env.CLAUDE_CODE_DISABLE_1M_CONTEXT, 'global');
+  const session = buildCreatedSessionSummary({
+    command: {
+      type: 'session.create',
+      clientRef: 'window',
+      title: 'Window',
+      goal: '',
+      sessionPurpose: 'chat',
+      autonomy: 'low',
+      contextWindowTokens: 1000000,
+    },
+    appSessionId: 'window',
+    interactionMode: 'auto',
+    primary: { modelId: 'sonnet[1m]' },
+    agents: {},
+    autonomy: 'low',
+    provider: 'claude',
+    compactionModel: 'current-model',
+    now: 1,
+  });
+  assert.deepEqual(resumeSettings(session), {
+    modelId: 'sonnet[1m]',
+    contextWindowTokens: 1000000,
+    autonomy: 'low',
+    interactionMode: 'auto',
+    fastMode: false,
+  });
 });

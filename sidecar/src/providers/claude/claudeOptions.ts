@@ -4,6 +4,7 @@ import type { EffortLevel, Options } from '@anthropic-ai/claude-agent-sdk';
 import type { ReasoningEffort } from '../../protocol.js';
 import type { ClaudeSessionInput } from './claudeSession.js';
 import { childEnv } from '../../childEnv.js';
+import { claudeContextEnv } from './claudeContextWindow.js';
 import { claudeCanUseTool, claudePermissionMode } from './claudePermissions.js';
 
 export function sessionOptions(
@@ -55,11 +56,11 @@ export function sessionOptions(
     // is why childEnv copies process.env: the CLI needs the user's PATH, HOME
     // and login, and only the app's own variables are left behind.
     env: childEnv(),
-    // `env` below is the one set above, handed back unchanged.
+    // `env` below is the one set above; a 200k chat adds its own disable flag.
     spawnClaudeCodeProcess: ({ command, args, cwd, env, signal }) => {
       const child = spawn(command, args, {
         ...(cwd !== undefined ? { cwd } : {}),
-        env,
+        env: claudeContextEnv(env, input.contextWindowTokens),
         signal,
         stdio: ['pipe', 'pipe', 'pipe'],
         windowsHide: true,

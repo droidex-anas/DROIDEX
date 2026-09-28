@@ -357,6 +357,9 @@ function isSessionSummary(value: unknown): boolean {
     Array.isArray(value.features) &&
     value.features.every(isBridgeFeature) &&
     hasNumbers(value, ['tokensIn', 'tokensOut', 'contextTokens', 'createdAt', 'updatedAt']) &&
+    (value.contextWindowTokens === undefined ||
+      value.contextWindowTokens === 200000 ||
+      value.contextWindowTokens === 1000000) &&
     isOptionalString(value.interruptReason) &&
     isOptionalString(value.resumeId) &&
     (value.fastMode === undefined || typeof value.fastMode === 'boolean')

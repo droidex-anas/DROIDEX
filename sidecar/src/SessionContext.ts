@@ -118,6 +118,7 @@ export class SessionContext {
     // undo the reset, so context fields wait for the next provider refresh.
     const canPublishContext =
       sourceSessionId === stableAppSessionId &&
+      !liveSession.restartBeforeNextTurn &&
       !this.pendingCompactionResets.has(primaryResourceKey(stableAppSessionId));
     const currentContextTokens = canPublishContext ? usage.contextTokens : undefined;
 
@@ -125,13 +126,20 @@ export class SessionContext {
     // for models the Droid catalog does not carry. Recorded before the
     // unchanged-usage return below, which a repeated reading takes, and only
     // for the primary: a child's usage is measured on the child's own model.
-    if (canPublishContext && usage.maxContextTokens !== undefined && nextSummary.modelId)
+    if (
+      canPublishContext &&
+      liveSession.summary.provider === 'droid' &&
+      usage.maxContextTokens !== undefined &&
+      nextSummary.modelId
+    )
       this.dependencies.noteContextWindow(nextSummary.modelId, usage.maxContextTokens);
 
     // Providers repeat identical usage many times per turn. Re-publishing an
     // unchanged reading would persist and broadcast a no-op summary update, so
     // settle for the reading already on record.
     const summaryBefore = liveSession.summary;
+    const limit = canPublishContext ? usage.maxContextTokens : undefined;
+    if (limit !== undefined) nextSummary.maxContextTokens = limit;
     const contextUnchanged =
       currentContextTokens === undefined ||
       (currentContextTokens === summaryBefore.contextTokens &&
@@ -140,13 +148,14 @@ export class SessionContext {
       !this.usagePersistenceRetries.has(stableAppSessionId) &&
       nextSummary.tokensIn === summaryBefore.tokensIn &&
       nextSummary.tokensOut === summaryBefore.tokensOut &&
-      contextUnchanged
+      contextUnchanged &&
+      (limit === undefined || limit === summaryBefore.maxContextTokens)
     )
       return;
 
-    if (currentContextTokens !== undefined) {
-      nextSummary.contextTokens = currentContextTokens;
-      if (currentContextTokens > 0) {
+    if (currentContextTokens !== undefined || limit !== undefined) {
+      if (currentContextTokens !== undefined) nextSummary.contextTokens = currentContextTokens;
+      if (currentContextTokens !== undefined && currentContextTokens > 0) {
         nextSummary.contextAccuracy = 'exact';
         nextSummary.contextUpdatedAt = new Date().toISOString();
       }
@@ -161,7 +170,7 @@ export class SessionContext {
         {
           tokensIn: nextSummary.tokensIn,
           tokensOut: nextSummary.tokensOut,
-          ...(currentContextTokens !== undefined
+          ...(currentContextTokens !== undefined || limit !== undefined
             ? {
                 contextTokens: nextSummary.contextTokens,
                 contextAccuracy: nextSummary.contextAccuracy,
@@ -307,6 +316,10 @@ export class SessionContext {
   // just re-enables usage-event context estimates for the new turn.
   beginTurn(appSessionId: string): void {
     this.pendingCompactionResets.delete(primaryResourceKey(appSessionId));
+  }
+
+  invalidateWindow(appSessionId: string): void {
+    this.snapshots.delete(primaryResourceKey(appSessionId));
   }
 
   preserveUsage(appSessionId: string, offset: UsageOffset): void {
@@ -464,7 +477,7 @@ export class SessionContext {
     const limit =
       this.dependencies.maxContextTokensForSummary(summary) ??
       summary.maxContextTokens ??
-      previous?.limit;
+      (summary.provider === 'droid' ? previous?.limit : undefined);
     if (!limit || limit <= 0) return;
     const used = Math.min(summary.contextTokens, limit);
     const breakdown = previous?.breakdown

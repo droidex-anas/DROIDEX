@@ -49,6 +49,10 @@ export type ReasoningEffort =
   | 'ultra'
   | 'dynamic';
 
+// The context windows a chat can be pinned to. A chat that picks none runs the
+// window its provider chooses.
+export type ContextWindowTokens = 200000 | 1000000;
+
 export interface BridgeFeature {
   id: string;
   description: string;
@@ -143,7 +147,11 @@ export interface SessionSummary {
   workspaceKind?: 'folder' | 'none';
   modelId?: string;
   reasoningEffort?: ReasoningEffort;
+  // The fast mode the chat asked for, never a claim about delivered speed.
   fastMode?: boolean;
+  // The window the user picked for this chat. Absent means the provider's own,
+  // which is what `maxContextTokens` then reports.
+  contextWindowTokens?: ContextWindowTokens;
   compactionModel?: string;
   workerModelId?: string;
   workerReasoningEffort?: ReasoningEffort;
@@ -672,6 +680,7 @@ export type ClientCommand =
       modelId?: string;
       reasoningEffort?: ReasoningEffort;
       fastMode?: boolean;
+      contextWindowTokens?: ContextWindowTokens;
       compactionModel?: string;
       compactionTokenLimit?: number | null;
       compactionTokenLimitPerModel?: Record<string, number>;
@@ -716,7 +725,10 @@ export type ClientCommand =
       modelId?: string | null;
       // null clears the effort: the model chosen offers none.
       reasoningEffort?: ReasoningEffort | null;
+      // Omitted leaves the chat's fast mode as it is.
       fastMode?: boolean;
+      // Omitted leaves the chat's context window as it is.
+      contextWindowTokens?: ContextWindowTokens;
       // Echoed once the model/effort change settles, by
       // `session.model_update_applied` or a `session.model_update_failed` error.
       requestId?: string;

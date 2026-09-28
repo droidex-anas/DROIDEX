@@ -15,7 +15,7 @@ import { dirname, join } from 'node:path';
 
 import { providerSessionsDir } from '../droidexPaths.js';
 import { PERMISSION_SEMANTICS_REVISION } from '../permissionSemantics.js';
-import type { SessionSummary, TranscriptEvent } from '../protocol.js';
+import type { ContextWindowTokens, SessionSummary, TranscriptEvent } from '../protocol.js';
 import type { StoredMessageLine, StoredSessionStart } from '../sessionTranscriptParser.js';
 import { storedNoticeLine } from '../sessionNotices.js';
 
@@ -26,6 +26,7 @@ interface ProviderSessionStart extends StoredSessionStart {
   modelId?: string;
   reasoningEffort?: string;
   fastMode?: boolean;
+  contextWindowTokens?: ContextWindowTokens;
   autonomyLevel?: string;
   interactionMode: SessionSummary['interactionMode'];
   permissionSemanticsRevision: number;
@@ -237,6 +238,9 @@ function headLine(summary: SessionSummary): ProviderSessionStart {
     ...(summary.modelId ? { modelId: summary.modelId } : {}),
     ...(summary.reasoningEffort ? { reasoningEffort: summary.reasoningEffort } : {}),
     ...(summary.fastMode !== undefined ? { fastMode: summary.fastMode } : {}),
+    ...(summary.contextWindowTokens !== undefined
+      ? { contextWindowTokens: summary.contextWindowTokens }
+      : {}),
   };
 }
 
