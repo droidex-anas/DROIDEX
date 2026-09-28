@@ -517,6 +517,68 @@ test('desktop idle samples do not resume archive indexing while live work is act
   }
 });
 
+test('a durability boundary does not wait for ordinary output to stop', async () => {
+  const { restore } = withTemporaryHome('droidex-history-boundary-');
+  const barriers: (() => void)[] = [];
+  let holdBarriers = true;
+  const persistenceClient: HistoryPersistenceClient = {
+    startPersist: (batch) => ({
+      promise: Promise.resolve({
+        durationMs: 1,
+        eventsWritten: batch.events.length,
+        summariesWritten: batch.summaries.length,
+        childrenWritten: batch.children.length,
+      }),
+    }),
+    startDurabilityBarrier: () => ({
+      promise: new Promise((resolve) => {
+        const release = () => {
+          resolve({ durable: true });
+        };
+        if (holdBarriers) barriers.push(release);
+        else release();
+      }),
+    }),
+    close: () => Promise.resolve(),
+  };
+  const persistence = new HistoryPersistence({ persistenceClient });
+  const output = (id: string): TranscriptEvent => ({
+    id,
+    appSessionId: 'another-chat',
+    sourceSessionId: 'another-chat',
+    role: 'primary',
+    ts: 1,
+    kind: 'text',
+    text: 'live output',
+  });
+  const nextBarrier = async (count: number) => {
+    while (barriers.length < count) await new Promise<void>((resolve) => setImmediate(resolve));
+    barriers[count - 1]?.();
+  };
+  try {
+    persistence.recordEvent(output('before'));
+    const boundary = persistence.flush();
+    persistence.recordEvent(output('during'));
+    await nextBarrier(1);
+    await boundary;
+    assert.equal(barriers.length, 1);
+
+    // Durability asked for while a boundary is in flight is a different matter:
+    // that request was not in its snapshot, so it takes one more pass.
+    const first = persistence.flush();
+    const second = persistence.flush();
+    await nextBarrier(2);
+    await nextBarrier(3);
+    await Promise.all([first, second]);
+    assert.equal(barriers.length, 3);
+  } finally {
+    holdBarriers = false;
+    for (const release of barriers) release();
+    await persistence.close();
+    restore();
+  }
+});
+
 test('reconciliation drains pending commits without running a durability barrier', async () => {
   const { restore } = withTemporaryHome('droidex-history-reconcile-drain-');
   hotPathMetrics.reset();

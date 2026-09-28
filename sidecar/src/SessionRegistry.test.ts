@@ -20,6 +20,7 @@ class FakeHistory {
   summaryReadCount = 0;
   nextSyncError?: Error;
   nextDurabilityPending = false;
+  flush?: () => Promise<void>;
   private readonly patches = new Map<string, Partial<SessionSummary>>();
 
   syncSummaries(summaries: SessionSummary[]): boolean | undefined {
@@ -447,6 +448,27 @@ test('replaceProvider retains the alias chain and supports live and historical s
   );
   assert.deepEqual(history.trace, ['persist', 'publish', 'persist', 'publish']);
   assert.equal(published.length, 2);
+});
+
+test('an update during a provider replacement patches the new binding', async () => {
+  const { history, registry } = createHarness();
+  const session = live(summary('stable-app', { providerSessionId: 'provider-old' }));
+  await registry.register(session);
+  let finishWrite: () => void = () => undefined;
+  history.flush = () =>
+    new Promise<void>((resolve) => {
+      finishWrite = resolve;
+    });
+
+  const replacing = registry.replaceProvider('stable-app', 'provider-next');
+  registry.updateSummary('stable-app', { title: 'Renamed meanwhile' });
+  finishWrite();
+  const replaced = await replacing;
+
+  assert.equal(replaced?.providerSessionId, 'provider-next');
+  assert.equal(replaced?.title, 'Renamed meanwhile');
+  assert.equal(history.persisted.at(-1)?.providerSessionId, 'provider-next');
+  assert.equal(registry.getLive('provider-next'), session);
 });
 
 test('failed provider replacement preserves the live summary and aliases', async () => {

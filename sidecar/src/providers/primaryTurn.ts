@@ -44,6 +44,10 @@ export async function runPrimaryTurn(
   const appSessionId = liveSession.summary.appSessionId;
   const providerSession = liveSession.session;
   const isCurrent = () => d.isCurrent(liveSession) && liveSession.session === providerSession;
+  // A Stop that lands before the provider has a turn to interrupt. A steer in
+  // the same window is left alone: its prompt is queued behind this one, and
+  // the agent needs this one to make sense of it.
+  const stoppedBeforeStart = () => liveSession.interrupting === true;
   const context = turnContext(d, d.contextTarget(liveSession));
   if (!isCurrent()) return;
   // A scheduled delivery that cannot go ahead must leave no trace, and
@@ -59,7 +63,7 @@ export async function runPrimaryTurn(
     const writing = d.timeline.recordPrompt(appSessionId, prompt);
     if (writing) await writing;
   }
-  if (!isCurrent()) return;
+  if (!isCurrent() || stoppedBeforeStart()) return;
   d.context.beginTurn(appSessionId);
   context.startPolling();
   let turnError: unknown;
@@ -68,7 +72,11 @@ export async function runPrimaryTurn(
   try {
     const configured =
       preflight ?? (await d.applyDesignToolPolicy(liveSession, isDesignPrompt(prompt)));
-    if (!isCurrent() || (delivery && (!configured || !delivery.isCurrent()))) {
+    if (
+      !isCurrent() ||
+      stoppedBeforeStart() ||
+      (delivery && (!configured || !delivery.isCurrent()))
+    ) {
       context.stopPolling();
       return;
     }

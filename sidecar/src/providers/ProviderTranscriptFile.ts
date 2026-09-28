@@ -112,13 +112,16 @@ export class ProviderTranscriptFile {
     return this.sealThenWrite(messageLine('user', [result], event.id, event.ts));
   }
 
-  // Called when a turn settles and when the session closes. Resolves once
-  // everything queued has been tried, and rejects when a message it closed
-  // could not be written.
-  flush(): Promise<void> {
+  // Called when a turn settles and when the session closes. Settles once
+  // everything queued here and in the child files has been tried, and rejects
+  // when a message it closed could not be written.
+  async flush(): Promise<void> {
     const flushing = [this.sealMessage() ?? this.writes];
     for (const child of this.children.values()) flushing.push(child.flush());
-    return Promise.all(flushing).then(() => undefined);
+    const failed = (await Promise.allSettled(flushing)).find(
+      (result) => result.status === 'rejected',
+    );
+    if (failed) throw failed.reason;
   }
 
   // Routed children have no independent turn-settlement callback. Persist
@@ -165,11 +168,12 @@ export class ProviderTranscriptFile {
   }
 
   // A resumed session appends to the transcript it already has: one head line
-  // per file, written with the session's first message.
+  // per file, written with the session's first message. A file a failed first
+  // write left empty has no head yet.
   private async headIfMissing(): Promise<string> {
     if (this.headWritten) return '';
     await mkdir(dirname(this.path), { recursive: true });
-    if (await exists(this.path)) return '';
+    if (await hasContent(this.path)) return '';
     const summary = this.summary();
     return serialize(
       this.parentAppSessionId
@@ -188,10 +192,9 @@ function addBlock(blocks: ContentBlock[], block: ContentBlock): void {
   else blocks.push(block);
 }
 
-async function exists(path: string): Promise<boolean> {
+async function hasContent(path: string): Promise<boolean> {
   try {
-    await stat(path);
-    return true;
+    return (await stat(path)).size > 0;
   } catch (error) {
     if (error instanceof Error && 'code' in error && error.code === 'ENOENT') return false;
     throw error;
