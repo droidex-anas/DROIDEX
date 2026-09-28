@@ -120,7 +120,7 @@ export function SideChatDetail({
         </span>
         <SideChatHeaderButton
           label="Send answer to chat"
-          disabled={!reply}
+          disabled={live || !reply}
           onClick={() => {
             dispatch({ type: 'ATTACH_SIDE_CHAT_REPLY', sourceAppSessionId, reply });
           }}

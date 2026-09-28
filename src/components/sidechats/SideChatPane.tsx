@@ -55,15 +55,18 @@ export function SideChatPane({
   const headerControls = (
     <>
       {controls}
-      <SideChatHeaderButton
-        label="Close side chat"
-        onClick={() => {
-          if (shown) setConfirmingClose(true);
-          else closeSideChat();
-        }}
-      >
-        <X className="h-3.5 w-3.5" />
-      </SideChatHeaderButton>
+      {/* A starting side chat still arrives after a close, so it can only be minimized. */}
+      {view.kind !== 'starting' && (
+        <SideChatHeaderButton
+          label="Close side chat"
+          onClick={() => {
+            if (shown) setConfirmingClose(true);
+            else closeSideChat();
+          }}
+        >
+          <X className="h-3.5 w-3.5" />
+        </SideChatHeaderButton>
+      )}
       {confirmingClose && (
         <SideChatCloseDialog
           onCancel={() => {

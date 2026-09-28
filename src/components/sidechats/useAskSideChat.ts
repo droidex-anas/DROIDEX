@@ -12,15 +12,18 @@ import {
 } from '../../lib/sideChats';
 import { toast } from '../../lib/toast';
 
+function isSideChatStarting(state: AppState, sourceAppSessionId: string): boolean {
+  return Object.values(state.pendingForks).some(
+    (fork) => fork?.kind === 'side' && fork.sourceAppSessionId === sourceAppSessionId,
+  );
+}
+
 // Side chats of a session that are running or still being made.
 export function runningSideChatCount(state: AppState, sourceAppSessionId: string): number {
   const running = Object.values(state.sessions).filter(
     (session) => isSideChatOf(session, sourceAppSessionId) && sessionIsLive(session),
   ).length;
-  const starting = Object.values(state.pendingForks).filter(
-    (fork) => fork?.kind === 'side' && fork.sourceAppSessionId === sourceAppSessionId,
-  ).length;
-  return running + starting;
+  return running + (isSideChatStarting(state, sourceAppSessionId) ? 1 : 0);
 }
 
 // Asks the session's side chat a question: a follow-up in the one it has, or
@@ -40,6 +43,13 @@ export function useAskSideChat(): (sourceAppSessionId: string, prompt: string) =
       const showCurrent = () => {
         dispatch({ type: 'SHOW_SIDE_CHAT', sourceAppSessionId, view: { kind: 'current' } });
       };
+      const panel = sideChatPanel(state.sideChats, sourceAppSessionId);
+      // Asking again before the first side chat arrives would fork a second one.
+      if (isSideChatStarting(state, sourceAppSessionId)) {
+        dispatch({ type: 'SHOW_SIDE_CHAT', sourceAppSessionId, view: panel.view });
+        toast.info('The side chat is still starting. Ask again when it opens.');
+        return false;
+      }
       if (current && sessionIsLive(current)) {
         showCurrent();
         toast.info('The side chat is still answering. Ask again when it finishes.');
@@ -56,8 +66,7 @@ export function useAskSideChat(): (sourceAppSessionId: string, prompt: string) =
         showCurrent();
         return true;
       }
-      const { harness } = sideChatPanel(state.sideChats, sourceAppSessionId);
-      const settings = sideChatSettings(source, harness, state.harnessModels);
+      const settings = sideChatSettings(source, panel.harness, state.harnessModels);
       const clientRef = newClientRef();
       try {
         forkSession({
