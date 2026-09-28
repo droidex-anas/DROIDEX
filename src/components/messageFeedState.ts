@@ -54,6 +54,19 @@ export function isCopyableFinalResponse(
   return state.settledKeys.has(key) || (!pending && state.liveKeys.has(key));
 }
 
+// Which answers an idle chat can fork from. The latest forks the whole
+// conversation. An earlier one forks through itself, so it needs the point its
+// provider forks at; answers recorded without one offer no fork.
+export function forkOffer(
+  item: FeedItem,
+  state: FinalResponseKeyState,
+): { forkPointId?: string } | undefined {
+  if (state.liveKeys.has(item.key)) return {};
+  if (item.type !== 'message' || !state.settledKeys.has(item.key)) return undefined;
+  const { forkPointId } = item.event;
+  return forkPointId ? { forkPointId } : undefined;
+}
+
 function reuseLiveKeys(
   previous: FinalResponseKeyState | null,
   identity: string,
@@ -146,6 +159,19 @@ export function completeAppResponsesInLatestTurn(items: FeedItem[]): string[] {
     if (hasCompleteAppBlock(text)) responses.push(text);
   }
   return responses;
+}
+
+// A forked chat's inherited history ends right before the first prompt sent at
+// or after the fork. -1 while that history is not loaded into the feed.
+export function lastInheritedItemIndex(items: readonly FeedItem[], forkedAt: number): number {
+  let firstForkPrompt = items.length;
+  for (let index = items.length - 1; index >= 0; index -= 1) {
+    const item = items.at(index);
+    if (item?.type !== 'message' || item.event.author !== 'user') continue;
+    if (item.event.ts < forkedAt) break;
+    firstForkPrompt = index;
+  }
+  return firstForkPrompt - 1;
 }
 
 function latestPrompt(items: readonly FeedItem[]): {

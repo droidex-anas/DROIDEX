@@ -817,6 +817,42 @@ test('#29 a replace supersedes a skill/file echo whose persisted prompt is compo
   );
 });
 
+test('a replace supersedes an echo that carried only side-chat answers', () => {
+  const echo: TranscriptEvent = {
+    id: 'local-answers',
+    appSessionId: 'm1',
+    sourceSessionId: 'user',
+    role: 'primary',
+    kind: 'text',
+    text: '',
+    ts: 500,
+    author: 'user',
+    sideChatReplies: ['Sort by date first.'],
+  };
+  const persisted = {
+    ...userEv('sess:answers:text', 1_000, ''),
+    sideChatReplies: ['Sort by date first.'],
+  };
+  const seeded = {
+    ...initialState,
+    transcripts: { m1: [echo] },
+  } as unknown as AppState;
+
+  const next = reducer(seeded, {
+    type: 'SESSION_HISTORY',
+    appSessionId: 'm1',
+    progress: [],
+    transcripts: [persisted],
+    mode: 'replace',
+    hasMore: false,
+  });
+
+  assert.deepEqual(
+    next.transcripts.m1.map((event) => event.id),
+    ['sess:answers:text'],
+  );
+});
+
 test('#29 replace and prepend supersede a skill-only echo with empty raw text', () => {
   const echo: TranscriptEvent = {
     id: 'local-skill-only',

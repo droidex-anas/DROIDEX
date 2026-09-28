@@ -1,8 +1,11 @@
 import {
+  forkSession,
+  getSessionMessages,
   query,
   type EffortLevel,
   type McpServerConfig as SdkMcpServerConfig,
   type SDKUserMessage,
+  type SessionMessage,
 } from '@anthropic-ai/claude-agent-sdk';
 import type { McpServerConfig } from '@factory/droid-sdk';
 import { randomUUID } from 'node:crypto';
@@ -12,9 +15,12 @@ import { join } from 'node:path';
 
 import { nonEmptyEnv } from '../../droidexPaths.js';
 import { reasoningValue } from '../../modelCatalog.js';
+import { objectValue } from '../../values.js';
 import type { ModelInfo, ProviderStatus, ReasoningEffort } from '../../protocol.js';
 import type {
   Provider,
+  ProviderForkHandle,
+  ProviderForkSource,
   ProviderOpenInput,
   ProviderResumeInput,
   ProviderSession,
@@ -69,6 +75,30 @@ export class ClaudeProvider implements Provider {
       interactions,
       resume: true,
     });
+  }
+
+  // Claude Code keeps a session under the project directory it ran in, which is
+  // where resume looks for it too. A fork point is the uuid of the prompt that
+  // opened the answer's turn, so the copy runs through that turn's last message.
+  // The copy gives every message a fresh uuid, so its prompts are renamed.
+  async fork({
+    providerSessionId,
+    cwd,
+    title,
+    forkPointId,
+  }: ProviderForkSource): Promise<ProviderForkHandle> {
+    const dir = sessionCwd(cwd);
+    const messages = await getSessionMessages(providerSessionId, { dir });
+    const copied = forkPointId ? messagesThroughTurn(messages, forkPointId) : messages;
+    const { sessionId } = await forkSession(providerSessionId, {
+      dir,
+      title,
+      ...(forkPointId ? { upToMessageId: copied[copied.length - 1].uuid } : {}),
+    });
+    return {
+      providerSessionId: sessionId,
+      forkPointRenames: await renamedPrompts(copied, sessionId, dir),
+    };
   }
 
   private async open(input: Omit<ClaudeSessionInput, 'executable'>): Promise<ProviderSession> {
@@ -271,6 +301,39 @@ function defaultEffort(
 ): ReasoningEffort {
   if (configured && efforts.includes(configured)) return configured;
   return efforts.includes('high') ? 'high' : efforts[efforts.length - 1];
+}
+
+function messagesThroughTurn(messages: SessionMessage[], promptUuid: string): SessionMessage[] {
+  const turnStart = messages.findIndex((message) => message.uuid === promptUuid);
+  if (turnStart < 0) throw new Error('Claude Code no longer has this answer to fork from.');
+  const nextTurn = messages.findIndex((message, index) => index > turnStart && isPrompt(message));
+  return nextTurn < 0 ? messages : messages.slice(0, nextTurn);
+}
+
+// The SDK records tool results as user messages too; a prompt is what the user sent.
+function isPrompt(message: SessionMessage): boolean {
+  if (message.type !== 'user' || message.parent_tool_use_id !== null) return false;
+  const content = objectValue(message.message)?.content;
+  return (
+    !Array.isArray(content) || !content.some((block) => objectValue(block)?.type === 'tool_result')
+  );
+}
+
+// The copy is the same chain under fresh uuids, so its messages pair with the
+// source's by position. A copy that does not line up renames nothing, and its
+// earlier answers then cannot be forked again.
+async function renamedPrompts(
+  source: SessionMessage[],
+  copySessionId: string,
+  dir: string,
+): Promise<Map<string, string>> {
+  const copy = await getSessionMessages(copySessionId, { dir });
+  const renames = new Map<string, string>();
+  if (copy.length !== source.length) return renames;
+  source.forEach((message, index) => {
+    if (isPrompt(message)) renames.set(message.uuid, copy[index].uuid);
+  });
+  return renames;
 }
 
 // Claude Code runs in the directory the chat is anchored to; a folderless chat

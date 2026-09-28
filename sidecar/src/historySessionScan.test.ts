@@ -18,7 +18,8 @@ delete process.env.DROIDEX_USER_DATA_DIR;
 const { loadHistoricalSessions } = await import('./history.js');
 const { parseFullSessionTranscript, SessionTranscriptReader } =
   await import('./sessionTranscript.js');
-const { ProviderTranscriptFile } = await import('./providers/ProviderTranscriptFile.js');
+const { ProviderTranscriptFile, readForkedTranscript, writeForkedTranscript } =
+  await import('./providers/ProviderTranscriptFile.js');
 const { SessionVoice } = await import('./providers/SessionVoice.js');
 const { providerSessionsDir } = await import('./droidexPaths.js');
 
@@ -335,6 +336,70 @@ test('voice finals append once and extend under the same id across runtime repla
   listener({ kind: 'transcript', role: 'user', text: 'after resume', final: true });
   assert.notEqual(appended[0].id, appended[4].id);
 });
+
+test('a fork at an earlier answer copies the transcript through it under the copy’s fork points', () => {
+  const summary = providerSummary('provider-transcript-fork-source');
+  const transcript = new ProviderTranscriptFile(summary.appSessionId, () => summary);
+  transcript.appendPrompt('first question');
+  transcript.append(
+    transcriptEvent(summary.appSessionId, 'text', { text: 'First', forkPointId: 'turn-1' }),
+  );
+  transcript.append(
+    transcriptEvent(summary.appSessionId, 'text', { text: ' answer.', forkPointId: 'turn-1' }),
+  );
+  transcript.flush();
+  transcript.appendPrompt('second question');
+  transcript.append(
+    transcriptEvent(summary.appSessionId, 'text', {
+      text: 'Second answer.',
+      forkPointId: 'turn-2',
+    }),
+  );
+  transcript.flush();
+
+  const forked = readForkedTranscript(summary.appSessionId, 'turn-1');
+  const path = writeForkedTranscript(forked, {
+    appSessionId: 'provider-transcript-fork-copy',
+    title: 'Forked chat',
+    forkPointRenames: new Map([['turn-1', 'copied-turn-1']]),
+  });
+
+  const events = parseFullSessionTranscript(
+    'provider-transcript-fork-copy',
+    'provider-transcript-fork-copy',
+    path,
+    'primary',
+  );
+  assert.deepEqual(
+    events.map((event) => [event.author ?? event.text, event.forkPointId]),
+    [
+      ['user', undefined],
+      ['First answer.', 'copied-turn-1'],
+    ],
+  );
+  assert.throws(() => readForkedTranscript(summary.appSessionId, 'turn-unknown'), /saved before/);
+});
+
+function providerSummary(appSessionId: string): SessionSummary {
+  return {
+    appSessionId,
+    provider: 'claude',
+    sessionPurpose: 'chat',
+    interactionMode: 'auto',
+    role: 'primary',
+    title: 'Claude session',
+    goal: 'Claude session',
+    cwd: '',
+    autonomy: 'medium',
+    phase: 'paused',
+    features: [],
+    tokensIn: 0,
+    tokensOut: 0,
+    contextTokens: 0,
+    createdAt: 1,
+    updatedAt: 1,
+  };
+}
 
 function transcriptEvent(
   appSessionId: string,

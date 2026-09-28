@@ -175,7 +175,7 @@ export class ClaudeSession implements ProviderSession {
     if (this.activeTurnId) throw new Error('This Claude session is already running a turn.');
     const turnId = randomUUID();
     this.activeTurnId = turnId;
-    this.mapper.beginTurn();
+    this.mapper.beginTurn(turnId);
     const turnQueue = (this.turnQueue = new MessageQueue<{
       message: SDKMessage;
       events: NormalizedEvent[];

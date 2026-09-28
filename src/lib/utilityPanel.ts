@@ -1,4 +1,4 @@
-export type UtilityTool = 'review' | 'terminal' | 'browser' | 'files' | 'agents';
+export type UtilityTool = 'review' | 'terminal' | 'browser' | 'files' | 'agents' | 'side';
 
 export interface UtilityTab {
   id: string;
@@ -23,11 +23,11 @@ export const CLOSED_UTILITY_PANEL: UtilityPanelState = {
   activeTabId: null,
 };
 
-const SINGLETON_TOOLS = new Set<UtilityTool>(['review', 'browser', 'files', 'agents']);
+const SINGLETON_TOOLS = new Set<UtilityTool>(['review', 'browser', 'files', 'agents', 'side']);
 
 // The tools whose pane can take the whole content row.
 export function isExpandableTool(tool: UtilityTool | undefined): boolean {
-  return tool === 'browser' || tool === 'agents';
+  return tool === 'browser' || tool === 'agents' || tool === 'side';
 }
 
 export function utilityPanelForSession(
@@ -243,13 +243,20 @@ function isRestoredTool(tool: UtilityTool): boolean {
 
 function utilityToolLabel(tool: UtilityTool, tabs: UtilityTab[]): string {
   if (tool === 'agents') return 'Subagents';
+  if (tool === 'side') return 'Side chat';
   if (tool !== 'terminal') return tool[0].toUpperCase() + tool.slice(1);
   const count = tabs.filter((tab) => tab.tool === 'terminal').length;
   return count === 0 ? 'Terminal' : `Terminal ${String(count + 1)}`;
 }
 
 function isUtilityTool(value: unknown): value is UtilityTool {
-  return value === 'review' || value === 'terminal' || value === 'browser' || value === 'files';
+  return (
+    value === 'review' ||
+    value === 'terminal' ||
+    value === 'browser' ||
+    value === 'files' ||
+    value === 'side'
+  );
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

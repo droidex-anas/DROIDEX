@@ -80,6 +80,7 @@ import type {
   Autonomy,
   FactoryDefaultSettings,
   ServerEvent,
+  SessionLineage,
   SessionSummary,
   TranscriptEvent,
   ProgressEntry,
@@ -158,6 +159,15 @@ import {
   type UtilityPanelState,
   type UtilityTool,
 } from '../lib/utilityPanel';
+import {
+  settleSideChatStart,
+  sideChatPanel,
+  updateSideChatPanel,
+  type SideChatHarness,
+  type SideChatPanel,
+  type SideChatPlacement,
+  type SideChatView,
+} from '../lib/sideChats';
 import type { FileChange } from '../lib/diff';
 import { applyOpenReviewAt, clearReviewFocus, type OpenReviewAtAction } from '../lib/reviewFocus';
 import type { ImagePasteQuality } from '../lib/images';
@@ -217,6 +227,7 @@ export interface QueuedPrompt {
   mentions?: ProviderMention[];
   /** The staged rows' catalog identities, so editing restores the same chips. */
   rowKeys?: string[];
+  sideChatReplies?: string[];
   design?: QueuedDesignContext;
 }
 
@@ -427,6 +438,17 @@ export interface AppState {
   // PromptInput uses it to distinguish that activation from a failure followed
   // by the user selecting an unrelated existing session.
   lastCreatedSessionRequest: { clientRef: string; appSessionId: string } | null;
+  // Forks this renderer asked for and has not heard back about, keyed by clientRef.
+  pendingForks: Partial<Record<string, PendingFork>>;
+  // Each session's side-chat surface, keyed by the session they branch from.
+  sideChats: Partial<Record<string, SideChatPanel>>;
+}
+
+// `prompt` is the copy's first message, which the sidecar sends once it exists.
+interface PendingFork {
+  kind: SessionLineage['kind'];
+  sourceAppSessionId: string;
+  prompt?: string;
 }
 
 type Action =
@@ -440,6 +462,16 @@ type Action =
 
   // Session lifecycle
   | { type: 'SESSION_CREATED'; clientRef: string; session: SessionSummary }
+  | { type: 'FORK_REQUESTED'; clientRef: string; fork: PendingFork }
+  | { type: 'SESSION_FORKED'; clientRef: string; session: SessionSummary }
+  // Shows a view of a session's side chats and brings their surface forward.
+  | { type: 'SHOW_SIDE_CHAT'; sourceAppSessionId: string; view: SideChatView }
+  | { type: 'PLACE_SIDE_CHATS'; sourceAppSessionId: string; placement: SideChatPlacement }
+  // Takes the side chat off screen; a side chat it names is deleted for good.
+  | { type: 'CLOSE_SIDE_CHAT'; sourceAppSessionId: string; appSessionId?: string }
+  | { type: 'CHOOSE_SIDE_CHAT_HARNESS'; sourceAppSessionId: string; harness: SideChatHarness }
+  | { type: 'ATTACH_SIDE_CHAT_REPLY'; sourceAppSessionId: string; reply: string }
+  | { type: 'DETACH_SIDE_CHAT_REPLIES'; sourceAppSessionId: string; replies: readonly string[] }
   | {
       type: 'SET_PENDING_COMPOSE';
       clientRef: string;
@@ -810,6 +842,8 @@ export const initialState: AppState = {
   agentConfig: loadAgentConfig(),
   pendingCompose: {},
   lastCreatedSessionRequest: null,
+  pendingForks: {},
+  sideChats: {},
 };
 
 function progressKey(entry: ProgressEntry): string {
@@ -877,6 +911,14 @@ function withoutCancelledRequest<T extends { requestId: string }>(
   );
 }
 
+function withoutKey<T>(
+  record: Partial<Record<string, T>>,
+  key: string,
+): Partial<Record<string, T>> {
+  if (!(key in record)) return record;
+  return Object.fromEntries(Object.entries(record).filter(([k]) => k !== key));
+}
+
 export function reducer(state: AppState, action: Action): AppState {
   if (action.type === 'BATCH') {
     return reduceStoreActionBatch(state, action.actions, reducer, syncBrowserOpen);
@@ -890,8 +932,16 @@ function baseReducer(state: AppState, action: Action): AppState {
       if (action.status === 'connected')
         return { ...state, connection: action.status, connectionError: action.message };
       const next = invalidateSelectedChildOpening(state);
+      // A lost bridge never answers a fork either; a side chat still starting
+      // hands its question back to the composer.
+      let sideChats = next.sideChats;
+      for (const [clientRef, fork] of Object.entries(next.pendingForks)) {
+        if (fork?.kind === 'side') sideChats = settleSideChatStart(sideChats, clientRef, null);
+      }
       return {
         ...next,
+        pendingForks: {},
+        sideChats,
         connection: action.status,
         connectionError: action.message,
         selectedChild: null,
@@ -908,8 +958,9 @@ function baseReducer(state: AppState, action: Action): AppState {
       const pending = state.pendingCompose[action.clientRef];
       // `session.created` is also emitted when an existing session resumes.
       // Only a create matching this renderer's pending compose may take focus;
-      // background resumes must never replace the chat the user selected.
-      const shouldActivate = pending !== undefined;
+      // background resumes must never replace the chat the user selected. A
+      // side chat opens beside its source, never in its place.
+      const shouldActivate = pending !== undefined && action.session.lineage?.kind !== 'side';
       const targetIsActive = state.activeAppSessionId === action.session.appSessionId;
       const childReset =
         shouldActivate || targetIsActive ? invalidateSelectedChildOpening(state) : state;
@@ -942,11 +993,7 @@ function baseReducer(state: AppState, action: Action): AppState {
         };
       }
 
-      const pendingCompose = pending
-        ? Object.fromEntries(
-            Object.entries(state.pendingCompose).filter(([k]) => k !== action.clientRef),
-          )
-        : state.pendingCompose;
+      const pendingCompose = withoutKey(state.pendingCompose, action.clientRef);
 
       const next: AppState = {
         ...childReset,
@@ -972,6 +1019,11 @@ function baseReducer(state: AppState, action: Action): AppState {
         childAccess,
         childRuntime,
         pendingCompose,
+        pendingForks: withoutKey(state.pendingForks, action.clientRef),
+        sideChats:
+          state.pendingForks[action.clientRef]?.kind === 'side'
+            ? settleSideChatStart(state.sideChats, action.clientRef, action.session.appSessionId)
+            : state.sideChats,
         lastCreatedSessionRequest: shouldActivate
           ? { clientRef: action.clientRef, appSessionId: action.session.appSessionId }
           : state.lastCreatedSessionRequest,
@@ -994,6 +1046,137 @@ function baseReducer(state: AppState, action: Action): AppState {
             },
           )
         : next;
+    }
+
+    case 'FORK_REQUESTED':
+      return {
+        ...state,
+        pendingForks: {
+          ...state.pendingForks,
+          [action.clientRef]: action.fork,
+        },
+      };
+
+    // A same-harness copy arrives stored and closed. It carries its source's
+    // transcript on disk; only a first message the sidecar is about to send
+    // needs seeding, since the backend never echoes it back.
+    case 'SESSION_FORKED': {
+      const pending = state.pendingForks[action.clientRef];
+      const appSessionId = action.session.appSessionId;
+      let next: AppState = {
+        ...state,
+        sessions: { ...state.sessions, [appSessionId]: action.session },
+        sessionOrder: state.sessionOrder.includes(appSessionId)
+          ? state.sessionOrder
+          : [appSessionId, ...state.sessionOrder],
+        pendingForks: withoutKey(state.pendingForks, action.clientRef),
+        sideChats:
+          pending?.kind === 'side'
+            ? settleSideChatStart(state.sideChats, action.clientRef, appSessionId)
+            : state.sideChats,
+      };
+      if (pending?.prompt) {
+        const seed: TranscriptEvent = {
+          id: `seed-${appSessionId}`,
+          appSessionId,
+          sourceSessionId: 'user',
+          role: 'primary',
+          ts: action.session.lineage?.forkedAt ?? action.session.updatedAt,
+          kind: 'text',
+          text: pending.prompt,
+          author: 'user',
+        };
+        next = appendTranscriptEvent(next, seed);
+      }
+      if (!pending || action.session.lineage?.kind !== 'fork') return next;
+      return baseReducer(next, { type: 'SET_ACTIVE_SESSION', id: appSessionId });
+    }
+
+    case 'SHOW_SIDE_CHAT': {
+      const { sourceAppSessionId } = action;
+      const { placement } = sideChatPanel(state.sideChats, sourceAppSessionId);
+      const next: AppState = {
+        ...state,
+        sideChats: updateSideChatPanel(state.sideChats, sourceAppSessionId, {
+          view: action.view,
+          ...(placement === 'minimized' ? { placement: 'floating' } : {}),
+        }),
+      };
+      if (placement !== 'docked' || sourceAppSessionId !== state.activeAppSessionId) return next;
+      return baseReducer(next, { type: 'OPEN_UTILITY_TOOL', tool: 'side' });
+    }
+
+    // Docking moves the side chats into the utility pane; floating or
+    // minimizing takes them out of it, so they are never shown twice.
+    case 'PLACE_SIDE_CHATS': {
+      const { sourceAppSessionId, placement } = action;
+      const next: AppState = {
+        ...state,
+        sideChats: updateSideChatPanel(state.sideChats, sourceAppSessionId, { placement }),
+      };
+      if (placement === 'docked') {
+        if (sourceAppSessionId !== state.activeAppSessionId) return next;
+        return baseReducer(next, { type: 'OPEN_UTILITY_TOOL', tool: 'side' });
+      }
+      return {
+        ...next,
+        utilityPanels: {
+          ...state.utilityPanels,
+          [sourceAppSessionId]: removeUtilityTool(state.utilityPanels[sourceAppSessionId], 'side'),
+        },
+      };
+    }
+
+    // The next `/side` docks the session's side chat again.
+    case 'CLOSE_SIDE_CHAT': {
+      const { sourceAppSessionId, appSessionId } = action;
+      const chatMetadata = appSessionId
+        ? deleteChat(state.chatMetadata, appSessionId, Date.now())
+        : null;
+      return {
+        ...state,
+        chatMetadata: chatMetadata ?? state.chatMetadata,
+        sideChats: updateSideChatPanel(state.sideChats, sourceAppSessionId, {
+          view: { kind: 'current' },
+          placement: 'docked',
+        }),
+        utilityPanels: {
+          ...state.utilityPanels,
+          [sourceAppSessionId]: removeUtilityTool(state.utilityPanels[sourceAppSessionId], 'side'),
+        },
+      };
+    }
+
+    case 'CHOOSE_SIDE_CHAT_HARNESS':
+      return {
+        ...state,
+        sideChats: updateSideChatPanel(state.sideChats, action.sourceAppSessionId, {
+          harness: action.harness,
+        }),
+      };
+
+    case 'ATTACH_SIDE_CHAT_REPLY': {
+      const { attachedReplies = [] } = sideChatPanel(state.sideChats, action.sourceAppSessionId);
+      if (attachedReplies.includes(action.reply)) return state;
+      return {
+        ...state,
+        sideChats: updateSideChatPanel(state.sideChats, action.sourceAppSessionId, {
+          attachedReplies: [...attachedReplies, action.reply],
+        }),
+      };
+    }
+
+    case 'DETACH_SIDE_CHAT_REPLIES': {
+      const attachedReplies = state.sideChats[action.sourceAppSessionId]?.attachedReplies;
+      if (!attachedReplies) return state;
+      // Only the sent replies go; one attached while the prompt was in flight stays.
+      const remaining = attachedReplies.filter((reply) => !action.replies.includes(reply));
+      return {
+        ...state,
+        sideChats: updateSideChatPanel(state.sideChats, action.sourceAppSessionId, {
+          attachedReplies: remaining.length > 0 ? remaining : undefined,
+        }),
+      };
     }
 
     case 'SET_PENDING_COMPOSE':
@@ -1403,11 +1586,9 @@ function baseReducer(state: AppState, action: Action): AppState {
     case 'SESSION_CREATE_FAILED':
       return {
         ...state,
-        pendingCompose: Object.fromEntries(
-          Object.entries(state.pendingCompose).filter(
-            ([clientRef]) => clientRef !== action.clientRef,
-          ),
-        ),
+        pendingCompose: withoutKey(state.pendingCompose, action.clientRef),
+        pendingForks: withoutKey(state.pendingForks, action.clientRef),
+        sideChats: settleSideChatStart(state.sideChats, action.clientRef, null),
         lastCreatedSessionRequest:
           state.lastCreatedSessionRequest?.clientRef === action.clientRef
             ? null
@@ -2327,6 +2508,8 @@ export function adaptEvent(ev: ServerEvent): Action | null {
       };
     case 'session.created':
       return { type: 'SESSION_CREATED', clientRef: ev.clientRef, session: ev.session };
+    case 'session.forked':
+      return { type: 'SESSION_FORKED', clientRef: ev.clientRef, session: ev.session };
     case 'session.updated':
       return { type: 'SESSION_UPDATED', session: ev.session };
     case 'session.model_update_applied':

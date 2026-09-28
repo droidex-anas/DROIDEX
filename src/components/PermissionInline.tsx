@@ -75,23 +75,20 @@ function Detail({ kind, detail }: { kind: PermissionKind; detail: string }) {
   );
 }
 
-export default function PermissionInline() {
+export default function PermissionInline({ appSessionId }: { appSessionId?: string }) {
   const dispatch = useStoreDispatch();
   const reduceMotion = useReducedMotion();
   // Permission requests are session-scoped: only surface the one belonging to
-  // the chat the user is looking at.
+  // the chat the user is looking at, or to the side chat given.
   const state = useStoreSelector((current) => {
-    const active = current.activeAppSessionId
-      ? current.sessions[current.activeAppSessionId]
-      : undefined;
+    const id = appSessionId ?? current.activeAppSessionId;
+    const session = id ? current.sessions[id] : undefined;
     return {
-      activeAppSessionId: current.activeAppSessionId,
-      pendingPermissions: current.pendingPermissions,
-      provider: active?.provider,
+      req: id ? current.pendingPermissions[id] : undefined,
+      provider: session?.provider,
     };
   }, shallowEqual);
-  const activeId = state.activeAppSessionId;
-  const req = activeId ? state.pendingPermissions[activeId] : undefined;
+  const { req } = state;
 
   // Spec/mission plans use the dedicated approval bar (<PlanApprovalInline />).
   if (!req || req.kind === 'spec' || req.kind === 'mission_plan') return null;

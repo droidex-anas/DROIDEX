@@ -233,6 +233,7 @@ function createHarness(ordinarySummaries: SessionSummary[] = []) {
     },
     hasActiveSettingsChanges: () => false,
     applyPendingSettingsToSummary: (item) => ({ ...item, ...projection }),
+    recordLineage: () => undefined,
     applyPendingSessionSettings: (appSessionId) => applyPending(appSessionId),
     runPrimaryTurn: async (live, prompt, _mentions, delivery) => {
       if (delivery && !delivery.isCurrent()) return;

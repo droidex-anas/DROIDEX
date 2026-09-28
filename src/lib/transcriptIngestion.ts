@@ -84,10 +84,12 @@ export function ingestTranscriptEvents(
     const textDelta = getTextDeltaRun(last, event);
     if (textDelta) {
       const changedIndex = events.length - 1;
+      const forkPointId = event.forkPointId ?? textDelta.previous.forkPointId;
       const mergedTail: TranscriptEvent = {
         ...textDelta.previous,
         text: (textDelta.previous.text ?? '') + textDelta.text,
         endTs: event.endTs ?? event.ts,
+        ...(forkPointId ? { forkPointId } : {}),
       };
       events = replaceChunkedSequenceAt(events, changedIndex, mergedTail);
       indexes = replaceIndexedEvent(indexes, textDelta.previous, mergedTail);

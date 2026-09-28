@@ -58,6 +58,8 @@ import {
   type SessionFileWatcherOptions,
 } from './sessionFileWatcher.js';
 import { SessionFileServing } from './SessionFileServing.js';
+import { SessionForks } from './SessionForks.js';
+import { SessionLineageStore, sessionLineagePath } from './sessionLineage.js';
 import { DroidModelCatalog } from './DroidModelCatalog.js';
 import { BrowserSessionManager } from './browser/BrowserSessionManager.js';
 import { createAutomationMcpServer } from './automations/automationMcpServer.js';
@@ -259,6 +261,8 @@ export class SessionManager {
   private readonly sessionVoice: SessionVoice;
   private readonly historyQueries: SessionHistoryQueries;
   private readonly modelSettings: SessionModelSettings;
+  private readonly lineage = new SessionLineageStore(sessionLineagePath(droidexUserDataDir()));
+  private readonly forks: SessionForks;
   private shutdownPromise?: Promise<void>;
   // Per-session autonomy mutation queue: rapid changes settle against the
   // provider in the order they were requested.
@@ -395,7 +399,7 @@ export class SessionManager {
       history: this.history,
       loadOrdinarySessions: (options) => this.history.listHistoricalSessions(options),
       loadMissionControlSessions,
-      projectSummary: (summary) => this.modelSettings.project({ ...summary }),
+      projectSummary: (summary) => this.lineage.project(this.modelSettings.project({ ...summary })),
       onSummaryUpdated: (summary) => {
         this.emit({ type: 'session.updated', session: summary });
         this.runtimeRetirement.arm();
@@ -604,7 +608,11 @@ export class SessionManager {
       isShutdownStarted: () => this.shutdownPromise !== undefined,
       childSessions: this.childSessions,
       agentProcesses: this.agentProcesses,
-      applyPendingSettingsToSummary: (summary) => this.modelSettings.project(summary),
+      applyPendingSettingsToSummary: (summary) =>
+        this.lineage.project(this.modelSettings.project(summary)),
+      recordLineage: (appSessionId, lineage) => {
+        this.lineage.record(appSessionId, lineage);
+      },
       applyPendingSessionSettings: (appSessionId) => this.modelSettings.applyPending(appSessionId),
       waitForSettingsMutations: (appSessionId) => this.modelSettings.waitForMutations(appSessionId),
       runPrimaryTurn: (liveSession, prompt, mentions, delivery) =>
@@ -700,6 +708,23 @@ export class SessionManager {
       },
       sessionRuntimeIdleMs: limits.sessionRuntimeIdleMs,
       now: Date.now,
+    });
+    this.forks = new SessionForks({
+      provider: (kind) => this.providerFor(kind),
+      registry: this.registry,
+      lineage: this.lineage,
+      indexSessionFiles: (change) => this.sessionFiles.indexNow(change),
+      updateModel: (appSessionId, settings) =>
+        this.modelSettings.update(appSessionId, 'primary', settings),
+      isShutdownStarted: () => this.shutdownPromise !== undefined,
+      create: (command, branch) => this.lifecycle.create(command, branch),
+      send: (appSessionId, text) => this.lifecycle.send(appSessionId, text),
+      emit: (event) => {
+        this.emit(event);
+      },
+      emitError: (error) => {
+        this.emitError(error);
+      },
     });
     this.sessionBrowser = new SessionBrowser({
       browsers: this.browsers,
@@ -938,7 +963,7 @@ export class SessionManager {
         return;
       }
       case 'session.fork':
-        await this.withSession(cmd.appSessionId, (session) => session.forkSession());
+        await this.forks.fork(cmd);
         return;
       case 'session.rename':
         await this.renameSession(cmd.appSessionId, cmd.title);

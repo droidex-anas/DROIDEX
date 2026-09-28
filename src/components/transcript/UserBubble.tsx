@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type ComponentType, type ReactNode } from 'react';
 import { MousePointer2, PenLine } from 'lucide-react';
+import { MessageThread } from '@droidex/icons';
 import type { BrowserTranscriptReference, TranscriptEvent } from '../../types/bridge';
 import type { OpenReviewFileHandler } from '../../lib/reviewFocus';
 import { ImageAttachmentChip } from '../media/ImageAttachmentChip';
@@ -11,7 +12,8 @@ import { userMessageAttachments } from '../../lib/promptMentions';
 import { SkillIcon } from '../icons/SkillIcon';
 import { VisualizeIcon } from '../icons/VisualizeIcon';
 import { Markdown } from '../Markdown';
-import { MessageActions, SpokenMark } from './primitives';
+import { SpokenMark } from './primitives';
+import { PromptActions } from './ResponseActions';
 
 function BrowserReferenceChip({ reference }: { reference: BrowserTranscriptReference }) {
   const Icon = reference.kind === 'element' ? MousePointer2 : PenLine;
@@ -178,7 +180,12 @@ export function UserBubble({
   event,
   onOpenReviewFile,
 }: {
-  event: Pick<TranscriptEvent, 'text' | 'skills' | 'files' | 'browserRefs' | 'steered' | 'spoken'>;
+  event: Pick<
+    TranscriptEvent,
+    'text' | 'skills' | 'files' | 'browserRefs' | 'steered' | 'spoken' | 'sideChatReplies'
+  > & {
+    ts?: number;
+  };
   onOpenReviewFile?: OpenReviewFileHandler;
 }) {
   const browserRefs = event.browserRefs ?? [];
@@ -187,13 +194,21 @@ export function UserBubble({
   const message = userMessageAttachments(event.text, event.files);
   const display = promptDisplayParts(message.text, event.skills);
   const hasAttachments = message.files.length > 0 || browserRefs.length > 0;
-  const hasChips = display.skills.length > 0 || display.visualize;
+  const replyCount = event.sideChatReplies?.length ?? 0;
+  const hasChips = display.skills.length > 0 || display.visualize || replyCount > 0;
   const hasPrompt = Boolean(display.text) || hasChips;
   const chips = hasChips ? (
     // Top-aligned because the icon, not the label, would set the row's baseline.
     <span
       className={`inline-flex flex-wrap items-center gap-x-2 align-top${display.text ? ' mr-2' : ''}`}
     >
+      {replyCount > 0 && (
+        <PromptChip
+          icon={MessageThread}
+          label={replyCount === 1 ? '1 message' : `${String(replyCount)} messages`}
+          title="Answers attached from the side chat"
+        />
+      )}
       {display.visualize && <PromptChip icon={VisualizeIcon} label="Visualize" />}
       {display.skills.map((skill) => (
         <PromptChip key={skill} icon={SkillIcon} label={skill} title={`Skill: ${skill}`} />
@@ -244,13 +259,14 @@ export function UserBubble({
         </div>
       )}
       {hasPrompt && (
-        // The bubble's actions float in the free space to its left, so a prompt
-        // row is exactly its bubble: no reserved action row under it.
         <div className="relative min-w-0 max-w-[80%]">
-          <div className="min-w-0 rounded-2xl rounded-br-sm bg-droid-elevated px-4 py-2.5 text-[14px] leading-[1.6] text-droid-text">
+          <div className="min-w-0 rounded-2xl rounded-br-sm bg-[var(--prompt-bubble-bg,var(--droid-elevated))] px-4 py-2.5 text-[14px] leading-[1.6] text-droid-text">
             {display.text ? <ClampedPrompt source={display.text} chips={chips} /> : chips}
           </div>
-          {message.text ? <MessageActions text={message.text} side="start" /> : null}
+          {/* The pending preview of a first message has no ts, and no actions yet. */}
+          {message.text && event.ts !== undefined ? (
+            <PromptActions text={message.text} ts={event.ts} />
+          ) : null}
         </div>
       )}
     </div>

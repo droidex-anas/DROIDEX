@@ -134,9 +134,11 @@ export class CodexEventMapper {
   // the transport's synchronous stdout listener.
   map(method: string, params: unknown): NormalizedEvent[] {
     if (!isObject(params)) return [];
+    // The turn an item belongs to is where a fork of its answer cuts.
+    const forkPointId = typeof params.turnId === 'string' ? params.turnId : undefined;
     switch (method) {
       case 'item/agentMessage/delta':
-        return this.delta('text', deltaOf(params));
+        return this.delta('text', deltaOf(params), forkPointId);
       case 'item/reasoning/textDelta':
       case 'item/reasoning/summaryTextDelta':
         return this.delta('thinking', deltaOf(params));
@@ -146,7 +148,7 @@ export class CodexEventMapper {
       }
       case 'item/completed': {
         const item = threadItem(params);
-        return [...this.completed(item), ...this.childEvents(item)];
+        return [...this.completed(item, forkPointId), ...this.childEvents(item)];
       }
       case 'item/commandExecution/outputDelta':
         return this.appendOutput(deltaOf(params));
@@ -215,10 +217,21 @@ export class CodexEventMapper {
     return { transcript: this.transcript('status', { text }) };
   }
 
-  private delta(kind: 'text' | 'thinking', params: DeltaParams | undefined): NormalizedEvent[] {
+  private delta(
+    kind: 'text' | 'thinking',
+    params: DeltaParams | undefined,
+    forkPointId?: string,
+  ): NormalizedEvent[] {
     if (!params?.delta) return [];
     if (kind === 'text') this.streamed.add(params.itemId);
-    return [{ transcript: this.transcript(kind, { text: params.delta }) }];
+    return [
+      {
+        transcript: this.transcript(kind, {
+          text: params.delta,
+          ...(forkPointId ? { forkPointId } : {}),
+        }),
+      },
+    ];
   }
 
   private appendOutput(params: DeltaParams | undefined): NormalizedEvent[] {
@@ -250,11 +263,18 @@ export class CodexEventMapper {
     ];
   }
 
-  private completed(item: ThreadItem): NormalizedEvent[] {
+  private completed(item: ThreadItem, forkPointId: string | undefined): NormalizedEvent[] {
     if (item.type === 'agentMessage') {
       // A message that never streamed is visible nowhere else.
       if (this.streamed.delete(item.id) || !item.text) return [];
-      return [{ transcript: this.transcript('text', { text: item.text }) }];
+      return [
+        {
+          transcript: this.transcript('text', {
+            text: item.text,
+            ...(forkPointId ? { forkPointId } : {}),
+          }),
+        },
+      ];
     }
     const call = toolCall(item);
     if (!call) return [];

@@ -74,6 +74,14 @@ export class SessionFileServing {
     await this.queueReconcile(() => this.reconcileExternal(changes));
   }
 
+  // For a file read through the index before the watcher reports it, or never
+  // will while its session is live: a copy about to be opened, or a live
+  // chat's transcript. Without a known path it is found by a full scan.
+  async indexNow(change: SessionFileChange | null): Promise<void> {
+    await this.whenBootReconciled();
+    await this.queueReconcile(() => this.reconcileExternal(change ? [change] : null));
+  }
+
   async close(): Promise<void> {
     for (const watcher of this.watchers) watcher.close();
     await this.reconcileTail;

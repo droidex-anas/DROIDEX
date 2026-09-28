@@ -68,9 +68,8 @@ export const FeedRow = memo(function FeedRow(props: FeedRowProps) {
       data-transcript-find-hit={hit}
       // A prompt opens a turn, so it carries a little extra air above the
       // shared row gap and the transcript reads as turns, not as a flat list.
-      // A message also keeps air below: its copy control sits in the gap and
-      // needs clearance from whatever follows. Both are constant, so a row's
-      // height never changes when a turn settles.
+      // A message also keeps air below: a prompt's copy control sits in the
+      // gap and needs clearance from whatever follows.
       className={`mx-auto min-w-0 ${isWideAppResponse ? 'max-w-4xl' : 'max-w-2xl'} ${
         isPrompt ? 'pt-2' : ''
       } ${isMessage ? 'pb-2' : ''} ${animate ? enterClass(isPrompt) : ''} ${reachClass}`}

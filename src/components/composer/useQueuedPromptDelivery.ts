@@ -8,6 +8,7 @@ import {
   responseFormatForPrompt,
 } from '../../lib/composePrompt';
 import { markGitTurnStart } from '../../lib/git';
+import { promptWithSideChatReplies } from '../../lib/sideChats';
 import {
   createLocalDesignTranscriptEvent,
   createPromptQueueDeliveryGuard,
@@ -85,10 +86,13 @@ export function useQueuedPromptDelivery({
           const mentioned = new Set(head.mentions?.map((mention) => mention.name));
           sendToSession(
             appSessionId,
-            composePrompt(
-              head.text,
-              head.skills.filter((name) => !mentioned.has(name)),
-              head.files,
+            promptWithSideChatReplies(
+              composePrompt(
+                head.text,
+                head.skills.filter((name) => !mentioned.has(name)),
+                head.files,
+              ),
+              head.sideChatReplies ?? [],
             ),
             responseFormatForPrompt(head.text, hasAppContextForTranscript(transcript, null)),
             head.mentions,
@@ -106,6 +110,7 @@ export function useQueuedPromptDelivery({
               author: 'user',
               skills: head.skills,
               files: head.files,
+              ...(head.sideChatReplies ? { sideChatReplies: head.sideChatReplies } : {}),
             },
           });
         }
