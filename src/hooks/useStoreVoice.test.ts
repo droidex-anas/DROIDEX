@@ -138,3 +138,14 @@ test('voice surface starts fresh after a session switch and a second conversatio
   assert.equal(state.transcripts.m1, undefined);
   assert.equal(state.transcripts.m2, undefined);
 });
+
+test('a call closed away from this page leaves the chat ready to start', () => {
+  let state = initialState as AppState;
+  // A reloaded page hears the sidecar close the call its old page held.
+  state = reducer(state, { type: 'VOICE_STATE', appSessionId: 'm1', status: 'closed' });
+  assert.equal(state.voiceSessions.m1?.status ?? 'idle', 'idle');
+
+  state = reducer(state, { type: 'VOICE_CONNECTING', appSessionId: 'm1' });
+  state = reducer(state, { type: 'VOICE_STATE', appSessionId: 'm1', status: 'closed' });
+  assert.equal(state.voiceSessions.m1.status, 'closed');
+});

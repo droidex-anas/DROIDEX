@@ -117,6 +117,10 @@ function nextSession(current: VoiceSessionState, action: VoiceAction): VoiceSess
     case 'VOICE_ANSWERED':
       return { ...current, answer: { sdp: action.sdp, attempt: action.attempt } };
     case 'VOICE_STATE':
+      // A chat with no conversation here has nothing to close: the call that
+      // closed was hung up here already, or belonged to a page since reloaded.
+      // Keeping it idle lets the next conversation start on the first press.
+      if (action.status === 'closed' && current.status === 'idle') return current;
       // Connecting clears what went wrong on the way: a chat whose runtime had
       // to be resumed refuses the first request and answers the second.
       return action.status === 'live'
