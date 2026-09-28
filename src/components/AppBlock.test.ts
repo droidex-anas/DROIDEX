@@ -3,7 +3,8 @@ import test from 'node:test';
 import vm from 'node:vm';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { AppBlock, RunningAppFrame } from './AppBlock';
+import { AppBlock } from './AppBlock';
+import { RunningAppFrame } from './AppBlockFrame';
 import { AppBlockErrorFallback } from './AppBlockErrorFallback';
 import {
   appBlockHeightFromMessage,
@@ -141,7 +142,10 @@ test('reported app heights follow the app instead of creating a nested scroller'
 
 test('restored app blocks mount directly without a Play or Stop card', () => {
   const html = renderToStaticMarkup(
-    createElement(AppBlock, { source: '<button>Private source</button>' }),
+    createElement(RunningAppFrame, {
+      source: '<button>Private source</button>',
+      instanceId: 'app-1',
+    }),
   );
 
   assert.match(html, /Interactive App/);

@@ -86,14 +86,14 @@ export function ExpandableAppSurface({
           }
           className={
             isExpanded
-              ? 'app-expand-scrim fixed inset-0 m-0 flex h-full max-h-none w-full max-w-none justify-center overflow-hidden border-0 bg-black/40 p-3 text-droid-text backdrop-blur-sm sm:p-6'
+              ? 'cue-enter fixed inset-0 m-0 flex h-full max-h-none w-full max-w-none justify-center overflow-hidden border-0 bg-black/40 p-3 text-droid-text backdrop-blur-sm sm:p-6'
               : 'min-w-0'
           }
         >
           <div
             className={
               isExpanded
-                ? 'app-expand-panel flex h-full w-full max-w-[1600px] flex-col overflow-hidden rounded-2xl border border-droid-border bg-droid-bg shadow-droid'
+                ? 'flex h-full w-full max-w-[1600px] flex-col overflow-hidden rounded-2xl border border-droid-border bg-droid-bg shadow-droid'
                 : 'min-w-0'
             }
           >

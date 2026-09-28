@@ -950,7 +950,7 @@ test('an incomplete live App owns its building state without exposing Play or a 
   assert.match(html, /role="status"/);
   assert.doesNotMatch(html, /aria-label="Play app"/);
   assert.doesNotMatch(html, /caret-blink/);
-  assert.doesNotMatch(html, /<iframe/i);
+  assert.doesNotMatch(html, />Starting interactive app</);
 });
 
 // The caret is the only cue while prose streams (drawn by CSS on the typing
@@ -989,7 +989,7 @@ test('historical assistant Apps render inline without freshness tracking', () =>
       pending: false,
     }),
   );
-  assert.match(html, /<iframe/);
+  assert.match(html, />Starting interactive app</);
   assert.doesNotMatch(html, /aria-label="(?:Play|Stop) app"/);
 });
 
