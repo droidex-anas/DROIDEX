@@ -440,3 +440,73 @@ test('maps dynamic tool items to the existing DROIDEX MCP transcript rows', () =
   assert.equal(completed[0].transcript?.text, 'Thread started.');
   assert.equal(completed[0].transcript?.isError, false);
 });
+
+test('a Stop sent before the turn has an id still refuses that turn its tools', async () => {
+  const requestHandlers = new Map<string, (params: unknown) => unknown>();
+  let releaseTurn: (value: unknown) => void = () => {};
+  const sent: string[] = [];
+  const client = {
+    onNotification: () => {},
+    onRequest: (method: string, handler: (params: unknown) => unknown) => {
+      requestHandlers.set(method, handler);
+    },
+    onClose: () => {},
+    onUnsupportedRequest: () => {},
+    request: async (method: string) => {
+      sent.push(method);
+      if (method === 'thread/start') return { thread: { id: 'thread-one' }, model: 'codex-model' };
+      if (method === 'turn/start') return await new Promise((resolve) => (releaseTurn = resolve));
+      if (method === 'skills/list') return { data: [] };
+      if (method === 'plugin/installed') return { marketplaces: [] };
+      if (method === 'app/list') return { data: [], nextCursor: null };
+      return {};
+    },
+    close: async () => {},
+  } as unknown as AppServerClient;
+  let ran = 0;
+  const session = new CodexSession({
+    appSessionId: 'chat-one',
+    client,
+    cwd: '/workspace',
+    autonomy: 'high',
+    model: {},
+    interactions: {
+      requestApproval: async () => 'proceed_once',
+      requestQuestion: async () => ({ cancelled: true, answers: [] }),
+      isActive: () => true,
+      cancelPending: () => {},
+    },
+    inAppMcpServers: [
+      createSdkMcpServer({
+        name: 'droidex-sessions',
+        tools: [
+          tool('session_list', 'List chats.', {}, () => {
+            ran += 1;
+            return '[]';
+          }),
+        ],
+      }),
+    ],
+  });
+  await session.open();
+  const turn = session.stream('List my chats.');
+  const first = turn.next();
+  await new Promise((resolve) => setImmediate(resolve));
+  await session.interrupt();
+  releaseTurn({ turn: { id: 'turn-one' } });
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.ok(sent.includes('turn/interrupt'));
+
+  const reply = (await requestHandlers.get('item/tool/call')?.({
+    threadId: 'thread-one',
+    turnId: 'turn-one',
+    callId: 'call-one',
+    namespace: 'droidex_sessions',
+    tool: 'session_list',
+    arguments: {},
+  })) as { success: boolean };
+  assert.equal(reply.success, false);
+  assert.equal(ran, 0);
+  void first;
+  await session.close();
+});

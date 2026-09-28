@@ -503,6 +503,9 @@ export class CodexSession implements ProviderSession {
     this.turnId = turnId;
     if (!this.pendingInterrupt) return;
     this.pendingInterrupt = false;
+    // Stopped before it had an id: its tool calls are refused from now on, as
+    // for any other stopped turn.
+    this.interruptedTurnId = turnId;
     // Nobody is waiting on this one, so a refused stop is reported in the turn
     // it belongs to — never in whichever turn happens to be open by then.
     const turn = this.turn;
