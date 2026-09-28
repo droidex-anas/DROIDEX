@@ -36,7 +36,7 @@ export interface SessionAdoptionDependencies {
   // Kills whatever the previous run left running, matched by start time so a
   // recycled pid is never signalled.
   reapProcesses: (entries: readonly LiveProcessIdentity[]) => Promise<void>;
-  persistSummaries: (summaries: SessionSummary[]) => void;
+  persistSummaries: (summaries: SessionSummary[]) => void | Promise<void>;
   appendStatus: (appSessionId: string, text: string) => void;
   sessionRuntimeIdleMs: number;
   now: () => number;
@@ -130,30 +130,28 @@ export class SessionAdoption {
     try {
       const resumed = await this.dependencies.lifecycle.resume(identity.appSessionId);
       if (!resumed) {
-        this.markSessionInterrupted(identity, historical, wasActive, SESSION_UNAVAILABLE);
+        await this.markSessionInterrupted(identity, historical, wasActive, SESSION_UNAVAILABLE);
         return;
       }
       if (!wasActive) return;
       const live = this.dependencies.registry.getLive(identity.appSessionId);
       if (!live) {
-        this.markSessionInterrupted(identity, historical, true, SESSION_UNAVAILABLE);
+        await this.markSessionInterrupted(identity, historical, true, SESSION_UNAVAILABLE);
         return;
       }
-      const updated: SessionSummary = {
-        ...live.summary,
-        streaming: false,
-        phase: interruptedPhase(live.summary.phase),
-        interruptReason: TURN_INTERRUPTED,
-      };
-      this.dependencies.persistSummaries([updated]);
-      live.summary = updated;
+      await this.dependencies.persistSummaries([turnInterrupted(live.summary)]);
+      // Only a replaced runtime makes this stale. A summary that moved on
+      // meanwhile (a status ping, a title) still owes the interruption, applied
+      // over what it says now.
+      if (this.dependencies.registry.getLive(identity.appSessionId) !== live) return;
+      live.summary = turnInterrupted(live.summary);
       this.interrupted.push({
         appSessionId: identity.appSessionId,
         reason: TURN_INTERRUPTED,
       });
       this.dependencies.appendStatus(identity.appSessionId, TURN_INTERRUPTED);
     } catch (error) {
-      this.markSessionInterrupted(
+      await this.markSessionInterrupted(
         identity,
         historical,
         wasActive,
@@ -162,12 +160,13 @@ export class SessionAdoption {
     }
   }
 
-  private markSessionInterrupted(
+  private async markSessionInterrupted(
     identity: LiveSessionIdentity,
     historical: SessionSummary | undefined,
     wasActive: boolean,
     reason: string,
-  ): void {
+  ): Promise<void> {
+    const live = this.dependencies.registry.getLive(identity.appSessionId);
     const base = historical ?? syntheticSummary(identity);
     const updated: SessionSummary = {
       ...base,
@@ -175,7 +174,8 @@ export class SessionAdoption {
       phase: wasActive ? interruptedPhase(base.phase) : base.phase,
       interruptReason: reason,
     };
-    this.dependencies.persistSummaries([updated]);
+    await this.dependencies.persistSummaries([updated]);
+    if (this.dependencies.registry.getLive(identity.appSessionId) !== live) return;
     this.interrupted.push({ appSessionId: identity.appSessionId, reason });
     this.dependencies.appendStatus(identity.appSessionId, reason);
   }
@@ -188,6 +188,15 @@ export class SessionAdoption {
       reason: CHILD_INTERRUPTED,
     });
   }
+}
+
+function turnInterrupted(summary: SessionSummary): SessionSummary {
+  return {
+    ...summary,
+    streaming: false,
+    phase: interruptedPhase(summary.phase),
+    interruptReason: TURN_INTERRUPTED,
+  };
 }
 
 function interruptedPhase(phase: SessionPhase): SessionPhase {

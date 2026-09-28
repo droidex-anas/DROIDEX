@@ -10,8 +10,8 @@
 // sessionTranscriptParser.ts maps the content blocks below back to transcript
 // events. Changing a shape here without reading those three is a silent
 // "session is empty after restart" bug.
-import { appendFileSync, existsSync, mkdirSync } from 'node:fs';
-import { join } from 'node:path';
+import { appendFile, mkdir, stat } from 'node:fs/promises';
+import { dirname, join } from 'node:path';
 
 import { providerSessionsDir } from '../droidexPaths.js';
 import { PERMISSION_SEMANTICS_REVISION } from '../permissionSemantics.js';
@@ -63,6 +63,9 @@ export class ProviderTranscriptFile {
   private pending: PendingMessage | null = null;
   private headWritten = false;
   private promptSeq = 0;
+  // The tail of the write queue. It never rejects: a line that fails is
+  // reported to the caller that wrote it, and the lines after it still go out.
+  private writes: Promise<void> = Promise.resolve();
   private readonly children = new Map<string, ProviderTranscriptFile>();
 
   // Reads the summary when it writes rather than holding a copy: the registry
@@ -80,131 +83,144 @@ export class ProviderTranscriptFile {
 
   // A turn's prompt. The renderer already showed it, so it is persisted here
   // rather than replayed as a live event.
-  appendPrompt(text: string): void {
-    if (!text) return;
-    this.flush();
+  appendPrompt(text: string): Promise<void> {
+    if (!text) return this.writes;
     const ts = Date.now();
-    this.writeMessage('user', [{ type: 'text', text }], `prompt-${this.nextPromptId(ts)}`, ts);
+    return this.sealThenWrite(
+      messageLine('user', [{ type: 'text', text }], `prompt-${this.nextPromptId(ts)}`, ts),
+    );
   }
 
-  append(event: TranscriptEvent): void {
-    if (event.role !== 'primary' && !this.parentAppSessionId) {
-      let child = this.children.get(event.sourceSessionId);
-      if (!child) {
-        child = new ProviderTranscriptFile(event.sourceSessionId, this.summary, this.sessionId);
-        this.children.set(event.sourceSessionId, child);
-      }
-      child.append(event);
-      // Routed children have no independent turn-settlement callback. Persist
-      // each coalesced run so replay can read it while the parent is still busy.
-      child.flush();
-      return;
-    }
+  append(event: TranscriptEvent): void | Promise<void> {
+    if (event.role !== 'primary' && !this.parentAppSessionId) return this.appendToChild(event);
     if (event.kind === 'text' && event.author === 'user' && !event.spoken) {
-      this.flush();
-      this.writeMessage('user', [{ type: 'text', text: event.text ?? '' }], event.id, event.ts);
-      return;
+      return this.sealThenWrite(
+        messageLine('user', [{ type: 'text', text: event.text ?? '' }], event.id, event.ts),
+      );
     }
-    if (event.spoken) {
-      this.appendSpoken(event);
-      return;
-    }
+    if (event.spoken) return this.sealThenWrite(spokenLine(event));
     const notice = storedNoticeLine(event);
-    if (notice) {
-      this.flush();
-      this.writeLine(notice);
-      return;
-    }
+    if (notice) return this.sealThenWrite(notice);
     const block = assistantBlock(event);
     if (block) {
       this.pending ??= { id: event.id, ts: event.ts, blocks: [] };
-      const previous = this.pending.blocks.at(-1);
-      // Adjacent stream deltas must replay as one text or thinking row.
-      if (block.type === 'text' && previous?.type === 'text') {
-        previous.text += block.text;
-      } else if (block.type === 'thinking' && previous?.type === 'thinking') {
-        previous.thinking += block.thinking;
-      } else {
-        this.pending.blocks.push(block);
-      }
+      addBlock(this.pending.blocks, block);
       return;
     }
     const result = toolResultBlock(event);
     if (!result) return;
     // A result belongs after the call that produced it.
-    this.flush();
-    this.writeMessage('user', [result], event.id, event.ts);
+    return this.sealThenWrite(messageLine('user', [result], event.id, event.ts));
   }
 
-  // Closes the open assistant message. Called when a turn settles and when the
-  // session closes, so one stored line is one settled message.
-  flush(): void {
-    for (const child of this.children.values()) child.flush();
+  // Called when a turn settles and when the session closes. Resolves once
+  // everything queued has been tried, and rejects when a message it closed
+  // could not be written.
+  flush(): Promise<void> {
+    const flushing = [this.sealMessage() ?? this.writes];
+    for (const child of this.children.values()) flushing.push(child.flush());
+    return Promise.all(flushing).then(() => undefined);
+  }
+
+  // Routed children have no independent turn-settlement callback. Persist
+  // each coalesced run so replay can read it while the parent is still busy.
+  private appendToChild(event: TranscriptEvent): Promise<void> {
+    let child = this.children.get(event.sourceSessionId);
+    if (!child) {
+      child = new ProviderTranscriptFile(event.sourceSessionId, this.summary, this.sessionId);
+      this.children.set(event.sourceSessionId, child);
+    }
+    return Promise.all([child.append(event), child.flush()]).then(() => undefined);
+  }
+
+  // Closes the open assistant message, so one stored line is one settled
+  // message.
+  private sealMessage(): Promise<void> | undefined {
     const message = this.pending;
-    if (!message) return;
-    this.writeMessage('assistant', message.blocks, message.id, message.ts);
+    if (!message) return undefined;
     this.pending = null;
+    return this.writeLine(messageLine('assistant', message.blocks, message.id, message.ts));
   }
 
-  private appendSpoken(event: TranscriptEvent): void {
-    if (event.kind !== 'text' || !event.text)
-      throw new Error('A spoken transcript row must contain text.');
-    this.flush();
-    this.writeLine({
-      type: 'message',
-      id: event.id,
-      timestamp: new Date(event.ts).toISOString(),
-      spoken: true,
-      message: {
-        role: event.author === 'user' ? 'user' : 'assistant',
-        content: [{ type: 'text', text: event.text }],
-      },
-    });
+  private sealThenWrite(line: object): Promise<void> {
+    const sealed = this.sealMessage();
+    const written = this.writeLine(line);
+    return sealed ? Promise.all([sealed, written]).then(() => undefined) : written;
   }
 
   private nextPromptId(ts: number): string {
     return `${ts.toString(36)}-${(this.promptSeq++).toString(36)}`;
   }
 
-  private writeMessage(
-    role: 'user' | 'assistant',
-    content: ContentBlock[],
-    id: string,
-    ts: number,
-  ): void {
-    const line: StoredMessageLine = {
-      type: 'message',
-      id,
-      timestamp: new Date(ts).toISOString(),
-      message: { role, content },
-    };
-    this.writeLine(line);
+  // Resolves when this line is on disk and rejects, for the caller that wrote
+  // it, when it is not. The queue carries on either way: one failed line must
+  // not cost the session the lines after it, or hold its close.
+  private writeLine(line: object): Promise<void> {
+    const contents = serialize(line);
+    const attempt = this.writes.then(async () => {
+      await appendFile(this.path, (await this.headIfMissing()) + contents);
+      this.headWritten = true;
+    });
+    this.writes = attempt.catch(() => undefined);
+    return attempt;
   }
 
-  private writeLine(line: object): void {
-    if (!this.headWritten) {
-      mkdirSync(providerSessionsDir(), { recursive: true });
-      // A resumed session appends to the transcript it already has: one head
-      // line per file, written with the session's first message.
-      if (!existsSync(this.path)) {
-        const summary = this.summary();
-        const head: ProviderSessionStart = this.parentAppSessionId
-          ? {
-              type: 'session_start',
-              id: this.sessionId,
-              provider: summary.provider,
-              cwd: summary.cwd,
-              callingSessionId: this.parentAppSessionId,
-              interactionMode: summary.interactionMode,
-              permissionSemanticsRevision: PERMISSION_SEMANTICS_REVISION,
-            }
-          : headLine(summary);
-        appendFileSync(this.path, serialize(head));
-      }
-      this.headWritten = true;
-    }
-    appendFileSync(this.path, serialize(line));
+  // A resumed session appends to the transcript it already has: one head line
+  // per file, written with the session's first message.
+  private async headIfMissing(): Promise<string> {
+    if (this.headWritten) return '';
+    await mkdir(dirname(this.path), { recursive: true });
+    if (await exists(this.path)) return '';
+    const summary = this.summary();
+    return serialize(
+      this.parentAppSessionId
+        ? childHeadLine(summary, this.sessionId, this.parentAppSessionId)
+        : headLine(summary),
+    );
   }
+}
+
+// Adjacent stream deltas must replay as one text or thinking row.
+function addBlock(blocks: ContentBlock[], block: ContentBlock): void {
+  const previous = blocks.at(-1);
+  if (block.type === 'text' && previous?.type === 'text') previous.text += block.text;
+  else if (block.type === 'thinking' && previous?.type === 'thinking')
+    previous.thinking += block.thinking;
+  else blocks.push(block);
+}
+
+async function exists(path: string): Promise<boolean> {
+  try {
+    await stat(path);
+    return true;
+  } catch (error) {
+    if (error instanceof Error && 'code' in error && error.code === 'ENOENT') return false;
+    throw error;
+  }
+}
+
+function messageLine(
+  role: 'user' | 'assistant',
+  content: ContentBlock[],
+  id: string,
+  ts: number,
+): StoredMessageLine {
+  return { type: 'message', id, timestamp: new Date(ts).toISOString(), message: { role, content } };
+}
+
+function spokenLine(event: TranscriptEvent): object {
+  if (event.kind !== 'text' || !event.text)
+    throw new Error('A spoken transcript row must contain text.');
+  return {
+    type: 'message',
+    id: event.id,
+    timestamp: new Date(event.ts).toISOString(),
+    spoken: true,
+    message: {
+      role: event.author === 'user' ? 'user' : 'assistant',
+      content: [{ type: 'text', text: event.text }],
+    },
+  };
 }
 
 function headLine(summary: SessionSummary): ProviderSessionStart {
@@ -221,6 +237,22 @@ function headLine(summary: SessionSummary): ProviderSessionStart {
     ...(summary.modelId ? { modelId: summary.modelId } : {}),
     ...(summary.reasoningEffort ? { reasoningEffort: summary.reasoningEffort } : {}),
     ...(summary.fastMode !== undefined ? { fastMode: summary.fastMode } : {}),
+  };
+}
+
+function childHeadLine(
+  summary: SessionSummary,
+  childSessionId: string,
+  parentAppSessionId: string,
+): ProviderSessionStart {
+  return {
+    type: 'session_start',
+    id: childSessionId,
+    provider: summary.provider,
+    cwd: summary.cwd,
+    callingSessionId: parentAppSessionId,
+    interactionMode: summary.interactionMode,
+    permissionSemanticsRevision: PERMISSION_SEMANTICS_REVISION,
   };
 }
 

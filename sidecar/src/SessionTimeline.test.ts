@@ -208,8 +208,8 @@ test('timer flush failures stay owned by turn settlement', async () => {
     },
   ]);
   assert.doesNotThrow(() => timeline.flushStreamingFor('app-1', 'app-1'));
-  assert.throws(() => timeline.settleStreaming('app-1', 'app-1'), /disk full/);
-  assert.doesNotThrow(() => timeline.settleStreaming('app-1', 'app-1'));
+  await assert.rejects(async () => await timeline.settleStreaming('app-1', 'app-1'), /disk full/);
+  await assert.doesNotReject(async () => await timeline.settleStreaming('app-1', 'app-1'));
 });
 
 test('timer flush failures report once through the owning child conversation', async () => {
@@ -244,11 +244,14 @@ test('timer flush failures report once through the owning child conversation', a
     },
   ]);
   assert.doesNotThrow(() => timeline.flushStreamingFor('parent-1', 'child-1'));
-  assert.throws(() => timeline.settleStreaming('parent-1', 'child-1'), /disk full/);
+  await assert.rejects(
+    async () => await timeline.settleStreaming('parent-1', 'child-1'),
+    /disk full/,
+  );
   assert.equal(emitted.length, 1);
 });
 
-test('one child persistence failure does not abort another child append', () => {
+test('one child persistence failure does not abort another child append', async () => {
   const { emitted, recorded, timeline } = createHarness({
     streamingCoalesceMs: 1_000,
     onRecordEvent: (event) => {
@@ -281,7 +284,10 @@ test('one child persistence failure does not abort another child append', () => 
     ['b'],
   );
   assert.deepEqual(emitted, [{ type: 'event.appended', event: recorded[0] }]);
-  assert.throws(() => timeline.settleStreaming('parent-1', 'child-a'), /child A disk failure/);
+  await assert.rejects(
+    async () => await timeline.settleStreaming('parent-1', 'child-a'),
+    /child A disk failure/,
+  );
   assert.deepEqual(emitted.slice(1), [
     {
       type: 'child.error',
@@ -294,7 +300,7 @@ test('one child persistence failure does not abort another child append', () => 
       recoverable: true,
     },
   ]);
-  assert.doesNotThrow(() => timeline.settleStreaming('parent-1', 'child-b'));
+  await assert.doesNotReject(async () => await timeline.settleStreaming('parent-1', 'child-b'));
 });
 
 test('streaming byte budget flushes early without dropping or truncating content', () => {

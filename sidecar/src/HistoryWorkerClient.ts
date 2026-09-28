@@ -1,10 +1,4 @@
-import {
-  MessageChannel,
-  Worker,
-  receiveMessageOnPort,
-  type MessagePort,
-  type WorkerOptions,
-} from 'node:worker_threads';
+import { MessageChannel, Worker, type MessagePort, type WorkerOptions } from 'node:worker_threads';
 import { randomUUID } from 'node:crypto';
 
 import type {
@@ -24,20 +18,17 @@ import type {
 } from './sessionFileCache.js';
 import type { HistorySearchReply } from './protocol.js';
 
-const SYNC_WAIT_SLICE_MS = 5;
-const DEFAULT_SYNC_TIMEOUT_MS = 10_000;
+const DEFAULT_TRANSPORT_TIMEOUT_MS = 10_000;
 const SEARCH_TRANSPORT_TIMEOUT_MS = 60_000;
-const sleepSignal = new Int32Array(new SharedArrayBuffer(Int32Array.BYTES_PER_ELEMENT));
 
 export interface HistoryPersistenceCall<T> {
   readonly promise: Promise<T>;
-  waitSync(timeoutMs?: number): T;
 }
 
 export interface HistoryPersistenceClient {
   startPersist(batch: HistoryPersistenceBatch): HistoryPersistenceCall<HistoryPersistenceResult>;
   startDurabilityBarrier(): HistoryPersistenceCall<{ durable: true }>;
-  closeSync(): void;
+  close(): Promise<void>;
 }
 
 export interface HistorySearchClient {
@@ -46,7 +37,7 @@ export interface HistorySearchClient {
   sessionFileSnapshot(): Promise<SessionFileSnapshot>;
   setIndexingIdle(isIdle: boolean): Promise<void>;
   search(query: string): Promise<HistorySearchReply>;
-  closeSync(): void;
+  close(): Promise<void>;
 }
 
 export interface HistoryWorkerClientOptions {
@@ -54,7 +45,7 @@ export interface HistoryWorkerClientOptions {
   workerUrl?: URL;
   workerData?: unknown;
   workerFactory?: () => Worker;
-  syncTimeoutMs?: number;
+  transportTimeoutMs?: number;
   scheduleWatchdog?: (callback: () => void, delayMs: number) => ReturnType<typeof setTimeout>;
   cancelWatchdog?: (timer: ReturnType<typeof setTimeout>) => void;
 }
@@ -62,7 +53,7 @@ export interface HistoryWorkerClientOptions {
 export class HistoryWorkerClient implements HistoryPersistenceClient, HistorySearchClient {
   private worker: Worker;
   private readonly createWorker: () => Worker;
-  private readonly syncTimeoutMs: number;
+  private readonly transportTimeoutMs: number;
   private readonly scheduleWatchdog: NonNullable<HistoryWorkerClientOptions['scheduleWatchdog']>;
   private readonly cancelWatchdog: NonNullable<HistoryWorkerClientOptions['cancelWatchdog']>;
   private readonly activeCalls = new Set<{ failExternal(error: Error): void }>();
@@ -70,9 +61,10 @@ export class HistoryWorkerClient implements HistoryPersistenceClient, HistorySea
   private writerGeneration = 1;
   private failed: Error | null = null;
   private closed = false;
+  private closing: Promise<void> | null = null;
 
   constructor(options: HistoryWorkerClientOptions = {}) {
-    this.syncTimeoutMs = options.syncTimeoutMs ?? DEFAULT_SYNC_TIMEOUT_MS;
+    this.transportTimeoutMs = options.transportTimeoutMs ?? DEFAULT_TRANSPORT_TIMEOUT_MS;
     this.scheduleWatchdog = options.scheduleWatchdog ?? scheduleTimeout;
     this.cancelWatchdog = options.cancelWatchdog ?? clearTimeout;
     const workerOptions: WorkerOptions = {
@@ -119,26 +111,32 @@ export class HistoryWorkerClient implements HistoryPersistenceClient, HistorySea
     return await this.call<HistorySearchReply>({ type: 'search', query }).promise;
   }
 
-  closeSync(): void {
-    if (this.closed) return;
+  close(): Promise<void> {
+    this.closing ??= this.performClose();
+    return this.closing;
+  }
+
+  private async performClose(): Promise<void> {
     let closeError: Error | undefined;
     if (!this.failed) {
       try {
-        this.call<{ closed: true }>({ type: 'close' }).waitSync(this.syncTimeoutMs);
+        await this.call<{ closed: true }>({ type: 'close' }).promise;
       } catch (error) {
         closeError = asError(error);
       }
     }
     this.closed = true;
-    void this.worker.terminate();
     const terminal = this.failed ?? new Error('History persistence worker is closed.');
     for (const call of this.activeCalls) call.failExternal(terminal);
     this.activeCalls.clear();
+    await this.worker.terminate();
     if (closeError) throw closeError;
   }
 
   private call<T extends HistoryWorkerValue>(request: HistoryWorkerRequest): PortWorkerCall<T> {
-    if (this.closed) throw new Error('History persistence worker is closed.');
+    if (this.closed || (this.closing && request.type !== 'close')) {
+      throw new Error('History persistence worker is closed.');
+    }
     this.restartFailedWorker();
     const channel = new MessageChannel();
     const call = new PortWorkerCall<T>(
@@ -168,7 +166,7 @@ export class HistoryWorkerClient implements HistoryPersistenceClient, HistorySea
       throw failure;
     }
     call.startTransportWatchdog(
-      isSearchLaneRequest(request) ? SEARCH_TRANSPORT_TIMEOUT_MS : this.syncTimeoutMs,
+      isSearchLaneRequest(request) ? SEARCH_TRANSPORT_TIMEOUT_MS : this.transportTimeoutMs,
       this.scheduleWatchdog,
       this.cancelWatchdog,
     );
@@ -223,8 +221,6 @@ function isSearchLaneRequest(request: HistoryWorkerRequest): boolean {
 class PortWorkerCall<T extends HistoryWorkerValue> implements HistoryPersistenceCall<T> {
   readonly promise: Promise<T>;
   private settled = false;
-  private value: T | undefined;
-  private error: Error | undefined;
   private resolvePromise: ((value: T) => void) | undefined;
   private rejectPromise: ((error: Error) => void) | undefined;
   private transportWatchdog: ReturnType<typeof setTimeout> | undefined;
@@ -248,31 +244,6 @@ class PortWorkerCall<T extends HistoryWorkerValue> implements HistoryPersistence
     port.start();
   }
 
-  waitSync(timeoutMs = DEFAULT_SYNC_TIMEOUT_MS): T {
-    // A synchronous caller observes the same failure by throwing below. Mark
-    // the promise branch handled so a timeout or worker exit is not also
-    // reported as an unhandled rejection on the next event-loop turn.
-    void this.promise.catch(() => undefined);
-    const deadline = performance.now() + timeoutMs;
-    while (!this.settled) {
-      const received = receiveMessageOnPort(this.port);
-      if (received) {
-        this.settle(received.message as HistoryWorkerResponse);
-        break;
-      }
-      if (performance.now() >= deadline) {
-        this.failTransport(
-          new Error(`History persistence worker did not respond within ${String(timeoutMs)}ms.`),
-        );
-        break;
-      }
-      Atomics.wait(sleepSignal, 0, 0, SYNC_WAIT_SLICE_MS);
-    }
-    if (this.error) throw this.error;
-    if (this.value === undefined) throw new Error('History persistence worker returned no value.');
-    return this.value;
-  }
-
   startTransportWatchdog(
     timeoutMs: number,
     schedule: (callback: () => void, delayMs: number) => ReturnType<typeof setTimeout>,
@@ -290,7 +261,6 @@ class PortWorkerCall<T extends HistoryWorkerValue> implements HistoryPersistence
   failExternal(error: Error): void {
     if (this.settled) return;
     this.settled = true;
-    this.error = error;
     this.rejectPromise?.(error);
     this.dispose();
   }
@@ -304,8 +274,7 @@ class PortWorkerCall<T extends HistoryWorkerValue> implements HistoryPersistence
     if (this.settled) return;
     if (response.ok) {
       this.settled = true;
-      this.value = response.value as T;
-      this.resolvePromise?.(this.value);
+      this.resolvePromise?.(response.value as T);
       this.dispose();
       return;
     }

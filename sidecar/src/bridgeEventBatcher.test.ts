@@ -36,7 +36,10 @@ function createHarness(
   let now = 100;
   const batcher = new BridgeEventBatcher<FakeTimer>({
     generation: 'generation-test',
-    sendBatch: (batch, metadata) => batches.push({ batch, metadata }),
+    sendBatch: (batch, metadata, data) => {
+      assert.deepEqual(JSON.parse(data), JSON.parse(JSON.stringify(batch)));
+      batches.push({ batch, metadata });
+    },
     now: () => now,
     schedule: (callback, delayMs) => {
       const timer = { callback, delayMs, cancelled: false };
@@ -349,3 +352,34 @@ function required<T>(value: T | undefined, message: string): T {
   if (value === undefined) throw new Error(message);
   return value;
 }
+
+test('serializes a large event once and reuses the queued snapshot', () => {
+  let serializations = 0;
+  const wire: string[] = [];
+  const payload = {
+    toJSON: () => {
+      serializations += 1;
+      return { output: 'é\n"'.repeat(350_000) };
+    },
+  };
+  const h = createHarness({
+    maxPendingEstimatedBytes: 8 * 1024 * 1024,
+    sendBatch: (_batch, _metadata, data) => {
+      wire.push(data);
+    },
+  });
+  h.batcher.enqueue({
+    type: 'event.appended',
+    event: {
+      ...transcript('app', 'result'),
+      toolArgs: payload,
+    },
+  });
+  assert.equal(serializations, 1);
+  h.batcher.flush();
+  assert.equal(serializations, 1);
+  const batch = JSON.parse(wire.join('')) as ServerEventBatch;
+  assert.equal(batch.firstSeq, 1);
+  assert.equal(batch.lastSeq, 1);
+  assert.equal(batch.events.length, 1);
+});

@@ -58,11 +58,11 @@ function createHarness(): Harness {
   return { calls, events, runtime, history, registry, context, contextWindowNotes };
 }
 
-function registerLive(
+async function registerLive(
   h: Harness,
   appSessionId: string,
   providerSessionId = appSessionId,
-): { live: LiveSession; session: FakeFactorySession } {
+): Promise<{ live: LiveSession; session: FakeFactorySession }> {
   const session = new FakeFactorySession(providerSessionId, {}, h.calls);
   const live: LiveSession = {
     summary: summary(appSessionId, providerSessionId),
@@ -74,7 +74,7 @@ function registerLive(
     mcpServers: [],
     mcpConfigs: [],
   };
-  h.registry.register(live);
+  await h.registry.register(live);
   return { live, session };
 }
 
@@ -135,7 +135,7 @@ function contextEvents(h: Harness) {
 
 test('primary refresh normalizes breakdown and persists estimated context', async () => {
   const h = createHarness();
-  const { live, session } = registerLive(h, 'app-1', 'backend-1');
+  const { live, session } = await registerLive(h, 'app-1', 'backend-1');
   session.nextContextStats = {
     used: 240,
     remaining: 760,
@@ -168,7 +168,7 @@ test('primary refresh normalizes breakdown and persists estimated context', asyn
 
 test('plausible exact primary usage wins while child usage changes totals only', async () => {
   const h = createHarness();
-  const { live, session } = registerLive(h, 'app-1');
+  const { live, session } = await registerLive(h, 'app-1');
   live.summary.maxContextTokens = 1_000;
   h.context.recordUsage('app-1', 'app-1', {
     tokensIn: 10,
@@ -202,9 +202,9 @@ test('plausible exact primary usage wins while child usage changes totals only',
   assert.equal(event?.stats.accuracy, 'exact');
 });
 
-test('repeated identical usage readings publish telemetry once', () => {
+test('repeated identical usage readings publish telemetry once', async () => {
   const h = createHarness();
-  const { live } = registerLive(h, 'app-1');
+  const { live } = await registerLive(h, 'app-1');
   live.summary.maxContextTokens = 1_000;
   const usage = { tokensIn: 10, tokensOut: 3, contextTokens: 800 };
 
@@ -222,7 +222,7 @@ test('repeated identical usage readings publish telemetry once', () => {
 
 test('unchanged in-turn poll readings emit context once until the reading changes', async () => {
   const h = createHarness();
-  const { live, session } = registerLive(h, 'app-1');
+  const { live, session } = await registerLive(h, 'app-1');
   session.nextContextStats = {
     used: 240,
     remaining: 760,
@@ -248,7 +248,7 @@ test('unchanged in-turn poll readings emit context once until the reading change
 });
 test('deduplicated in-turn polls still synchronize exact context summary fields', async () => {
   const h = createHarness();
-  const { live, session } = registerLive(h, 'app-1');
+  const { live, session } = await registerLive(h, 'app-1');
   live.summary.maxContextTokens = 1_000;
   session.nextContextStats = {
     used: 100,
@@ -278,7 +278,7 @@ test('deduplicated in-turn polls still synchronize exact context summary fields'
 
 test('provider context wins over an impossible persisted exact reading', async () => {
   const h = createHarness();
-  const { live, session } = registerLive(h, 'app-1');
+  const { live, session } = await registerLive(h, 'app-1');
   live.summary.maxContextTokens = 1_000;
   live.summary.contextTokens = 13_105_406;
   live.summary.contextAccuracy = 'exact';
@@ -301,7 +301,7 @@ test('provider context wins over an impossible persisted exact reading', async (
 
 test('cumulative provider estimates rebase after restored in-place compactions', async () => {
   const h = createHarness();
-  const { live, session } = registerLive(h, 'app-1');
+  const { live, session } = await registerLive(h, 'app-1');
   live.summary.autoCompactions = 5;
   session.nextContextStats = {
     used: 397_000,
@@ -339,7 +339,7 @@ test('cumulative provider estimates rebase after restored in-place compactions',
 
 test('a live compaction rebases a sub-window provider counter until the counter resets', async () => {
   const h = createHarness();
-  const { live, session } = registerLive(h, 'app-1');
+  const { live, session } = await registerLive(h, 'app-1');
   session.nextContextStats = {
     used: 900,
     remaining: 100,
@@ -376,7 +376,7 @@ test('a live compaction rebases a sub-window provider counter until the counter 
 
 test('a zero-limit provider reading cannot poison a live compaction baseline', async () => {
   const h = createHarness();
-  const { live, session } = registerLive(h, 'app-1');
+  const { live, session } = await registerLive(h, 'app-1');
   session.nextContextStats = {
     used: 900,
     remaining: 100,
@@ -410,9 +410,9 @@ test('a zero-limit provider reading cannot poison a live compaction baseline', a
   assert.equal(rebased?.remaining, 950);
 });
 
-test('usage without current-context telemetry updates totals only', () => {
+test('usage without current-context telemetry updates totals only', async () => {
   const h = createHarness();
-  const { live } = registerLive(h, 'app-1');
+  const { live } = await registerLive(h, 'app-1');
   live.summary.contextTokens = 320;
   live.summary.contextAccuracy = 'estimated';
 
@@ -424,9 +424,9 @@ test('usage without current-context telemetry updates totals only', () => {
   assert.equal(live.summary.contextAccuracy, 'estimated');
 });
 
-test('usage persistence failure keeps live telemetry and retries an identical reading', () => {
+test('usage persistence failure keeps live telemetry and retries an identical reading', async () => {
   const h = createHarness();
-  const { live } = registerLive(h, 'app-1');
+  const { live } = await registerLive(h, 'app-1');
   const persistedBefore = h.history.summaryPatchesAndHidden().patches.get('app-1');
   h.history.nextSyncError = new Error('disk unavailable');
   const usage = {
@@ -449,7 +449,7 @@ test('usage persistence failure keeps live telemetry and retries an identical re
 
 test('child refresh never inherits the parent exact context reading', async () => {
   const h = createHarness();
-  const parent = registerLive(h, 'parent').live;
+  const parent = (await registerLive(h, 'parent')).live;
   parent.summary.contextAccuracy = 'exact';
   parent.summary.contextTokens = 700;
   const child = addChild(h, parent, 'logical-child', 'backend-child');
@@ -471,8 +471,8 @@ test('child refresh never inherits the parent exact context reading', async () =
 
 test('child identities scope snapshots, pollers, and compaction generations by parent', async (t) => {
   const h = createHarness();
-  const parentA = registerLive(h, 'parent-a').live;
-  const parentB = registerLive(h, 'parent-b').live;
+  const parentA = (await registerLive(h, 'parent-a')).live;
+  const parentB = (await registerLive(h, 'parent-b')).live;
   const childA = addChild(h, parentA, 'same-child', 'backend-a');
   const childB = addChild(h, parentB, 'same-child', 'backend-b');
   t.after(() => h.context.clearAll());
@@ -503,8 +503,8 @@ test('child identities scope snapshots, pollers, and compaction generations by p
 
 test('primary and child resource keys cannot alias', async (t) => {
   const h = createHarness();
-  const primary = registerLive(h, '1:px');
-  const parent = registerLive(h, 'p').live;
+  const primary = await registerLive(h, '1:px');
+  const parent = (await registerLive(h, 'p')).live;
   const child = addChild(h, parent, 'x', 'child-provider');
   t.after(() => h.context.clearAll());
   child.session.nextContextStats = {
@@ -545,7 +545,7 @@ test('primary and child resource keys cannot alias', async (t) => {
 
 test('a refresh in flight across a primary compaction never republishes stale stats', async () => {
   const h = createHarness();
-  const { live, session } = registerLive(h, 'app-1');
+  const { live, session } = await registerLive(h, 'app-1');
   session.nextContextStats = {
     used: 900,
     remaining: 100,
@@ -566,9 +566,9 @@ test('a refresh in flight across a primary compaction never republishes stale st
   assert.equal(live.summary.contextTokens, 0);
 });
 
-test('compaction bookkeeping survives persistence failure without double incrementing', () => {
+test('compaction bookkeeping survives persistence failure without double incrementing', async () => {
   const h = createHarness();
-  const { live } = registerLive(h, 'app-1');
+  const { live } = await registerLive(h, 'app-1');
   live.summary.contextTokens = 900;
   h.history.nextSyncError = new Error('disk unavailable');
 
@@ -583,9 +583,9 @@ test('compaction bookkeeping survives persistence failure without double increme
   assert.equal(live.summary.autoCompactions, 1);
 });
 
-test('an older compaction retry cannot roll back a newer generation', () => {
+test('an older compaction retry cannot roll back a newer generation', async () => {
   const h = createHarness();
-  const { live } = registerLive(h, 'app-1');
+  const { live } = await registerLive(h, 'app-1');
   h.history.nextSyncError = new Error('disk unavailable');
 
   assert.throws(
@@ -601,7 +601,7 @@ test('an older compaction retry cannot roll back a newer generation', () => {
 
 test('the same compaction ID remains distinct across provider sessions', async () => {
   const h = createHarness();
-  const { live } = registerLive(h, 'app-1');
+  const { live } = await registerLive(h, 'app-1');
   const first = addChild(h, live, 'worker-1', 'provider-a');
   h.context.recordCompaction(first.target, 'summary-1');
 
@@ -621,7 +621,7 @@ test('the same compaction ID remains distinct across provider sessions', async (
 
 test('queued pre-compaction exact usage cannot undo the reset before a new turn', async () => {
   const h = createHarness();
-  const { live, session } = registerLive(h, 'app-1');
+  const { live, session } = await registerLive(h, 'app-1');
   h.context.recordCompaction(primaryTarget(h, live));
 
   h.context.recordUsage('app-1', 'app-1', { tokensIn: 10, tokensOut: 5, contextTokens: 800 });
@@ -659,14 +659,14 @@ test('queued pre-compaction exact usage cannot undo the reset before a new turn'
 
 test('provider-observed context windows are reported for compaction tuning', async () => {
   const h = createHarness();
-  const { live } = registerLive(h, 'app-1');
+  const { live } = await registerLive(h, 'app-1');
   await h.context.refresh(primaryTarget(h, live));
   assert.deepEqual(h.contextWindowNotes.at(-1), ['model-default', 1_000]);
 });
 
 test('forgetChild clears the resolved backend snapshot and logical generation', async () => {
   const h = createHarness();
-  const parent = registerLive(h, 'parent').live;
+  const parent = (await registerLive(h, 'parent')).live;
   const child = addChild(h, parent, 'logical-child', 'backend-child');
 
   h.context.recordCompaction(child.target);
@@ -678,9 +678,9 @@ test('forgetChild clears the resolved backend snapshot and logical generation', 
   assert.equal(contextEvents(h).at(-1)?.stats.compactions, 0);
 });
 
-test('usage carryover survives replacement and can be reseeded after cleanup', () => {
+test('usage carryover survives replacement and can be reseeded after cleanup', async () => {
   const h = createHarness();
-  const { live } = registerLive(h, 'app-1');
+  const { live } = await registerLive(h, 'app-1');
   h.context.preserveUsage('app-1', { tokensIn: 100, tokensOut: 40 });
   h.context.recordUsage('app-1', 'app-1', {
     tokensIn: 5,
@@ -701,7 +701,7 @@ test('usage carryover survives replacement and can be reseeded after cleanup', (
 
 test('polling and cleanup are idempotent and reset child generation state', async (t) => {
   const h = createHarness();
-  const { live, session } = registerLive(h, 'app-1', 'backend-1');
+  const { live, session } = await registerLive(h, 'app-1', 'backend-1');
   const { target: childTarget } = addChild(h, live, 'logical-child', 'backend-child');
   const target = primaryTarget(h, live);
   t.after(() => h.context.clearAll());
@@ -731,7 +731,7 @@ test('polling and cleanup are idempotent and reset child generation state', asyn
 
 test('a stale child runtime cannot stop its replacement poller', async (t) => {
   const h = createHarness();
-  const parent = registerLive(h, 'parent').live;
+  const parent = (await registerLive(h, 'parent')).live;
   const stale = addChild(h, parent, 'child', 'provider-old');
   t.after(() => h.context.clearAll());
 
@@ -750,7 +750,7 @@ test('a stale child runtime cannot stop its replacement poller', async (t) => {
 
 test('late refreshes after close or clearAll are inert', async () => {
   const h = createHarness();
-  const first = registerLive(h, 'first');
+  const first = await registerLive(h, 'first');
   const firstGate = first.session.deferNextContextStats();
   const afterClose = h.context.refresh(primaryTarget(h, first.live));
   first.live.closeMode = 'discard-pending';
@@ -758,7 +758,7 @@ test('late refreshes after close or clearAll are inert', async () => {
   await afterClose;
   assert.equal(contextEvents(h).length, 0);
 
-  const second = registerLive(h, 'second');
+  const second = await registerLive(h, 'second');
   const secondGate = second.session.deferNextContextStats();
   const afterClear = h.context.refresh(primaryTarget(h, second.live));
   h.context.clearAll();
@@ -766,7 +766,7 @@ test('late refreshes after close or clearAll are inert', async () => {
   await afterClear;
   assert.equal(contextEvents(h).length, 0);
 
-  const parent = registerLive(h, 'parent').live;
+  const parent = (await registerLive(h, 'parent')).live;
   const original = addChild(h, parent, 'logical-child', 'child-backend');
   const childGate = original.session.deferNextContextStats();
   const afterReplacement = h.context.refresh(original.target);
@@ -786,7 +786,7 @@ test('late refreshes after close or clearAll are inert', async () => {
 
 test('breakdown failures and malformed values keep valid context stats', async () => {
   const h = createHarness();
-  const { live, session } = registerLive(h, 'app-1');
+  const { live, session } = await registerLive(h, 'app-1');
   h.runtime.contextBreakdownErrors.set('app-1', new Error('private RPC failed'));
   await h.context.refresh(primaryTarget(h, live));
   assert.equal(contextEvents(h).at(-1)?.stats.used, 0);
@@ -848,7 +848,7 @@ test('hidden background work pauses context pollers and still refreshes on deman
       timers.delete(id as unknown as number);
     }) as typeof clearInterval,
   });
-  const { live, session } = registerLive({ ...h, context: injected }, 'app-1');
+  const { live, session } = await registerLive({ ...h, context: injected }, 'app-1');
   t.after(() => injected.clearAll());
   const target = primaryTarget({ ...h, context: injected }, live);
 

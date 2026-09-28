@@ -61,7 +61,7 @@ function stubSearchClient(overrides: Partial<HistorySearchClient> = {}): History
     sessionFileSnapshot: async () => ({ revision: 0, changed: 0, entries: [] }),
     setIndexingIdle: async () => undefined,
     search: async () => ({ results: [], indexingIncomplete: false }),
-    closeSync: () => undefined,
+    close: () => Promise.resolve(),
     ...overrides,
   };
 }
@@ -111,15 +111,17 @@ test('test persistence helpers reject a missing canonical history schema', () =>
   }
 });
 
-test('a failed settlement is held while live transcript output continues until recovery', () => {
+test('a failed settlement is held while live transcript output continues until recovery', async () => {
   const { home, restore } = withTemporaryHome('droidex-history-persistence-');
   const persistence = new HistoryPersistence();
   try {
     persistence.syncSummaries([summary()]);
+    await persistence.flush();
 
     const invalidSettlement = summary({ phase: 'paused', streaming: false, tokensOut: 2 });
     Object.defineProperty(invalidSettlement, 'title', { value: undefined });
     assert.equal(persistence.syncSummaries([invalidSettlement]), false);
+    await assert.rejects(persistence.flush(), /cannot be bound/);
 
     assert.doesNotThrow(() =>
       persistence.recordEvent({
@@ -137,7 +139,7 @@ test('a failed settlement is held while live transcript output continues until r
       persistence.syncSummaries([summary({ phase: 'paused', streaming: false, tokensOut: 2 })]),
       false,
     );
-    persistence.flushSync();
+    await persistence.flush();
 
     const db = new DatabaseSync(join(home, '.factory', 'droidex', 'session-index.sqlite'), {
       readOnly: true,
@@ -151,24 +153,25 @@ test('a failed settlement is held while live transcript output continues until r
       db.close();
     }
   } finally {
-    persistence.close();
+    await persistence.close();
     restore();
   }
 });
 
-test('a failed child settlement is held until a later strict boundary recovers durability', () => {
+test('a failed child settlement is held until a later strict boundary recovers durability', async () => {
   const { home, restore } = withTemporaryHome('droidex-child-persistence-');
   const persistence = new HistoryPersistence();
   try {
     persistence.upsertChildSession(child('running'));
-    persistence.flushSync();
+    await persistence.flush();
 
     const invalidSettlement = child('paused');
     Object.defineProperty(invalidSettlement, 'modelId', { value: undefined });
     assert.equal(persistence.upsertChildSession(invalidSettlement), false);
+    await assert.rejects(persistence.flush(), /cannot be bound/);
 
     assert.equal(persistence.upsertChildSession(child('paused')), false);
-    persistence.flushSync();
+    await persistence.flush();
 
     const db = new DatabaseSync(join(home, '.factory', 'droidex', 'session-index.sqlite'), {
       readOnly: true,
@@ -184,12 +187,12 @@ test('a failed child settlement is held until a later strict boundary recovers d
       db.close();
     }
   } finally {
-    persistence.close();
+    await persistence.close();
     restore();
   }
 });
 
-test('a hydrated running child replacement crosses a durability boundary', () => {
+test('a hydrated running child replacement crosses a durability boundary', async () => {
   const { restore } = withTemporaryHome('droidex-hydrated-child-durability-');
   new HistoryIndex().close();
   persistTestChild({
@@ -207,11 +210,12 @@ test('a hydrated running child replacement crosses a durability boundary', () =>
         providerSessionId: 'provider-new',
         previousProviderSessionIds: ['provider-old'],
       }),
-      true,
+      false,
     );
+    await persistence.flush();
     assert.equal(hotPathMetrics.snapshot().histograms.persistenceBoundaryMs.count, 1);
   } finally {
-    persistence.close();
+    await persistence.close();
     hotPathMetrics.reset();
     restore();
   }
@@ -246,7 +250,7 @@ test(
         indexingIncomplete: false,
       });
     } finally {
-      persistence.close();
+      await persistence.close();
       restore();
     }
   },
@@ -277,7 +281,7 @@ test('search results resolve through pending in-memory provider aliases', async 
       'stable-app',
     );
   } finally {
-    persistence.close();
+    await persistence.close();
     restore();
   }
 });
@@ -329,7 +333,7 @@ test('reconciliation awaits the index worker and applies its delta to the live h
       'Worker reconciled history',
     );
   } finally {
-    persistence.close();
+    await persistence.close();
     restore();
   }
 });
@@ -396,12 +400,12 @@ test('a reconciliation revision gap replaces the main cache from an authoritativ
       ['Recovered session'],
     );
   } finally {
-    persistence.close();
+    await persistence.close();
     restore();
   }
 });
 
-test('an active search cannot delay a synchronous persistence boundary', async () => {
+test('an active search cannot delay a persistence durability boundary', async () => {
   const { restore } = withTemporaryHome('droidex-history-lanes-');
   let resolveSearch: ((reply: HistorySearchReply) => void) | undefined;
   const searchClient = stubSearchClient({
@@ -420,13 +424,13 @@ test('an active search cannot delay a synchronous persistence boundary', async (
         summariesWritten: batch.summaries.length,
         childrenWritten: batch.children.length,
       };
-      return { promise: Promise.resolve(result), waitSync: () => result };
+      return { promise: Promise.resolve(result) };
     },
     startDurabilityBarrier: () => {
       const result = { durable: true } as const;
-      return { promise: Promise.resolve(result), waitSync: () => result };
+      return { promise: Promise.resolve(result) };
     },
-    closeSync: () => undefined,
+    close: () => Promise.resolve(),
   };
   const persistence = new HistoryPersistence({ persistenceClient, searchClient });
   try {
@@ -443,7 +447,7 @@ test('an active search cannot delay a synchronous persistence boundary', async (
       text: 'live output',
     };
     persistence.recordEvent(event);
-    persistence.flushSync();
+    await persistence.flush();
 
     assert.deepEqual(
       persisted.flatMap((batch) => batch.events.map((item) => item.id)),
@@ -452,7 +456,7 @@ test('an active search cannot delay a synchronous persistence boundary', async (
     resolveSearch?.({ results: [], indexingIncomplete: false });
     await search;
   } finally {
-    persistence.close();
+    await persistence.close();
     restore();
   }
 });
@@ -481,7 +485,7 @@ test('live transcript work pauses an idle history backfill until the next deskto
 
     assert.deepEqual(idleStates, [true, false]);
   } finally {
-    persistence.close();
+    await persistence.close();
     restore();
   }
 });
@@ -508,7 +512,7 @@ test('desktop idle samples do not resume archive indexing while live work is act
 
     assert.deepEqual(idleStates, [false, false, true]);
   } finally {
-    persistence.close();
+    await persistence.close();
     restore();
   }
 });
@@ -530,9 +534,6 @@ test('reconciliation drains pending commits without running a durability barrier
       };
       return {
         promise: Promise.resolve(result),
-        waitSync: () => {
-          throw new Error('reconciliation must not synchronously wait for persistence');
-        },
       };
     },
     startDurabilityBarrier: () => {
@@ -544,13 +545,9 @@ test('reconciliation drains pending commits without running a durability barrier
       void promise.catch(() => undefined);
       return {
         promise,
-        waitSync: () => {
-          if (!allowBarrier) throw new Error('unexpected barrier');
-          return result;
-        },
       };
     },
-    closeSync: () => undefined,
+    close: () => Promise.resolve(),
   };
   const persistence = new HistoryPersistence({ persistenceClient });
   try {
@@ -570,18 +567,18 @@ test('reconciliation drains pending commits without running a durability barrier
     assert.equal(hotPathMetrics.snapshot().histograms.persistenceBoundaryMs.count, 0);
 
     allowBarrier = true;
-    persistence.flushSync();
+    await persistence.flush();
     assert.equal(barriers, 1);
     assert.equal(hotPathMetrics.snapshot().histograms.persistenceBoundaryMs.count, 1);
   } finally {
     allowBarrier = true;
-    persistence.close();
+    await persistence.close();
     hotPathMetrics.reset();
     restore();
   }
 });
 
-test('forgetSession removes live summary and child overlays', () => {
+test('forgetSession removes live summary and child overlays', async () => {
   const { restore } = withTemporaryHome('droidex-history-forget-');
   const persistenceClient: HistoryPersistenceClient = {
     startPersist: (batch) => {
@@ -591,13 +588,13 @@ test('forgetSession removes live summary and child overlays', () => {
         summariesWritten: batch.summaries.length,
         childrenWritten: batch.children.length,
       };
-      return { promise: Promise.resolve(result), waitSync: () => result };
+      return { promise: Promise.resolve(result) };
     },
     startDurabilityBarrier: () => {
       const result = { durable: true } as const;
-      return { promise: Promise.resolve(result), waitSync: () => result };
+      return { promise: Promise.resolve(result) };
     },
-    closeSync: () => undefined,
+    close: () => Promise.resolve(),
   };
   const persistence = new HistoryPersistence({ persistenceClient });
   try {
@@ -616,12 +613,12 @@ test('forgetSession removes live summary and child overlays', () => {
     assert.equal(persistence.summaryPatchesAndHidden().patches.has('app'), false);
     assert.deepEqual(persistence.childSessions('app'), []);
   } finally {
-    persistence.close();
+    await persistence.close();
     restore();
   }
 });
 
-test('persistence reports degraded state once and reports recovery after retained work commits', () => {
+test('persistence reports degraded state once and reports recovery after retained work commits', async () => {
   const { restore } = withTemporaryHome('droidex-history-status-');
   const statuses: string[] = [];
   let attempts = 0;
@@ -637,17 +634,13 @@ test('persistence reports degraded state once and reports recovery after retaine
       const failure = attempts === 1 ? new Error('worker exited') : null;
       return {
         promise: failure ? Promise.reject(failure) : Promise.resolve(result),
-        waitSync: () => {
-          if (failure) throw failure;
-          return result;
-        },
       };
     },
     startDurabilityBarrier: () => {
       const result = { durable: true } as const;
-      return { promise: Promise.resolve(result), waitSync: () => result };
+      return { promise: Promise.resolve(result) };
     },
-    closeSync: () => undefined,
+    close: () => Promise.resolve(),
   };
   const searchClient = stubSearchClient();
   const persistence = new HistoryPersistence({
@@ -666,13 +659,13 @@ test('persistence reports degraded state once and reports recovery after retaine
   };
   try {
     persistence.recordEvent(first);
-    assert.throws(() => persistence.flushSync(), /worker exited/);
+    await assert.rejects(async () => await persistence.flush(), /worker exited/);
     assert.doesNotThrow(() => persistence.recordEvent({ ...first, id: 'two', text: 'two' }));
-    persistence.flushSync();
+    await persistence.flush();
 
     assert.deepEqual(statuses, ['degraded', 'healthy']);
   } finally {
-    persistence.close();
+    await persistence.close();
     restore();
   }
 });
@@ -688,13 +681,13 @@ test('persistence does not start the independent search worker until the first s
     },
   });
   try {
-    persistence.flushSync();
+    await persistence.flush();
     assert.equal(searchWorkersCreated, 0);
 
     await persistence.searchSessions('needle');
     assert.equal(searchWorkersCreated, 1);
   } finally {
-    persistence.close();
+    await persistence.close();
     restore();
   }
 });
@@ -727,7 +720,7 @@ test('warmSearchWorker starts the search worker without searching or reconciling
     assert.equal(searchCalls, 0);
     assert.equal(reconcileCalls, 0);
   } finally {
-    persistence.close();
+    await persistence.close();
     restore();
   }
 });

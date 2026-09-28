@@ -25,7 +25,7 @@ export type SessionSummaryPatch = Omit<Partial<SessionSummary>, IdentityField>;
 
 type RegistryHistory = Pick<HistoryIndex, 'summaryPatchesAndHidden'> & {
   syncSummaries(summaries: SessionSummary[]): boolean | undefined;
-  flushSync?: () => void;
+  flush?: () => Promise<void>;
   forgetSession?: (appSessionId: string) => void;
   readonly revision?: number;
 };
@@ -45,6 +45,7 @@ export interface SessionRegistryDependencies {
 
 export class SessionRegistry<TLive extends RegisteredSession> {
   private readonly sessions = new Map<string, TLive>();
+  private readonly pendingStrictWrites = new Map<string, SessionSummary>();
   private readonly publishedLiveSummaries = new Map<string, SessionSummary>();
   private readonly summariesAwaitingDurability = new Map<
     string,
@@ -61,16 +62,19 @@ export class SessionRegistry<TLive extends RegisteredSession> {
 
   constructor(private readonly dependencies: SessionRegistryDependencies) {}
 
-  register(liveSession: TLive): void {
+  async register(liveSession: TLive, assertCurrent?: () => void): Promise<void> {
     // Runtime boundary guard: live session data can carry a child role even
     // though the type forbids it, so the narrow type alone is not sufficient.
     // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- Runtime validation despite the narrow declared type.
     if (liveSession.summary.role !== 'primary' && liveSession.summary.role !== 'user') {
       throw new Error('SessionRegistry accepts top-level sessions only.');
     }
-    this.persistStrict(liveSession.summary);
-
     const previous = this.sessions.get(liveSession.summary.appSessionId);
+    await this.persistStrict(liveSession.summary);
+    assertCurrent?.();
+    if (this.sessions.get(liveSession.summary.appSessionId) !== previous) {
+      throw new Error('Session changed while registration was awaiting history durability.');
+    }
     if (previous) this.removeAliases(previous.summary);
 
     this.sessions.set(liveSession.summary.appSessionId, liveSession);
@@ -136,7 +140,8 @@ export class SessionRegistry<TLive extends RegisteredSession> {
     if (!liveSession) return undefined;
 
     const updated = this.withPatch(liveSession.summary, patch, options.touchActivity !== false);
-    const durable = this.persist(updated);
+    this.pendingStrictWrites.delete(updated.appSessionId);
+    const durable = this.dependencies.history.syncSummaries([updated]);
     liveSession.summary = updated;
     if (durable === false) {
       this.summariesAwaitingDurability.set(updated.appSessionId, { liveSession, summary: updated });
@@ -151,19 +156,23 @@ export class SessionRegistry<TLive extends RegisteredSession> {
   // A settings change on a chat nobody has open. The stored summary is what the
   // sidebar shows and what a later resume launches with, so patching it in place
   // is what makes the change outlive the run.
-  updateStoredSummary(id: string, patch: SessionSummaryPatch): SessionSummary | undefined {
+  async updateStoredSummary(
+    id: string,
+    patch: SessionSummaryPatch,
+  ): Promise<SessionSummary | undefined> {
     const current = this.resolveCanonicalSummary(id);
     if (!current || this.sessions.has(current.appSessionId)) return undefined;
     const updated = this.withPatch(current, patch, false);
     // Durable before it is published: a closed chat has no live session to
     // republish it later, so an enqueued-only write must not read as stored.
-    this.persistStrict(updated);
+    await this.persistStrict(updated);
+    if (this.sessions.has(current.appSessionId)) return undefined;
     this.cacheHistoricalSummary(updated);
     this.publish(updated);
     return updated;
   }
 
-  reanchorHistoricalCwd(fromCwd: string, toCwd: string): SessionSummary[] {
+  async reanchorHistoricalCwd(fromCwd: string, toCwd: string): Promise<SessionSummary[]> {
     if (!isAbsolute(fromCwd) || !isAbsolute(toCwd)) {
       throw new Error('Session cwd re-anchoring requires absolute paths.');
     }
@@ -191,7 +200,10 @@ export class SessionRegistry<TLive extends RegisteredSession> {
     if (updated.length === 0) return [];
 
     this.dependencies.history.syncSummaries(updated);
-    this.dependencies.history.flushSync?.();
+    await this.dependencies.history.flush?.();
+    if (affected.some((summary) => this.sessions.has(summary.appSessionId))) {
+      throw new Error('A session opened while its workspace was being re-anchored.');
+    }
     for (const summary of updated) {
       this.cacheHistoricalSummary(summary);
       this.publish(summary);
@@ -200,11 +212,11 @@ export class SessionRegistry<TLive extends RegisteredSession> {
     return updated.map(copySummary);
   }
 
-  replaceProvider(
+  async replaceProvider(
     id: string,
     providerSessionId: string,
     patch: SessionSummaryPatch = {},
-  ): SessionSummary | undefined {
+  ): Promise<SessionSummary | undefined> {
     const current = this.resolveCanonicalSummary(id);
     if (!current) return undefined;
     if (current.providerSessionId === providerSessionId) return current;
@@ -221,7 +233,12 @@ export class SessionRegistry<TLive extends RegisteredSession> {
       ]),
     };
 
-    this.persistStrict(updated);
+    await this.persistStrict(updated);
+    if (
+      this.sessions.get(current.appSessionId) !== liveSession ||
+      (liveSession && liveSession.summary !== current)
+    )
+      return undefined;
     if (liveSession) {
       this.removeAliases(current);
       liveSession.summary = updated;
@@ -240,7 +257,7 @@ export class SessionRegistry<TLive extends RegisteredSession> {
     return updated;
   }
 
-  unregister(id: string): TLive | undefined {
+  async unregister(id: string): Promise<TLive | undefined> {
     const liveSession = this.getLive(id);
     if (!liveSession) return undefined;
 
@@ -248,7 +265,8 @@ export class SessionRegistry<TLive extends RegisteredSession> {
     // queued transcript and summary state durable before that user-visible
     // boundary rather than claiming a closed session whose final rows are only
     // in memory.
-    this.dependencies.history.flushSync?.();
+    await this.dependencies.history.flush?.();
+    if (this.sessions.get(liveSession.summary.appSessionId) !== liveSession) return undefined;
     this.dependencies.history.forgetSession?.(liveSession.summary.appSessionId);
     this.historicalLoaded = false;
     this.sessions.delete(liveSession.summary.appSessionId);
@@ -370,16 +388,19 @@ export class SessionRegistry<TLive extends RegisteredSession> {
     return copySummary({ ...canonical, ...withoutIdentityFields(projected) });
   }
 
-  private persist(summary: SessionSummary): boolean | undefined {
-    return this.dependencies.history.syncSummaries([summary]);
-  }
-
-  private persistStrict(summary: SessionSummary): void {
-    if (this.persist(summary) !== false) return;
-    if (!this.dependencies.history.flushSync) {
-      throw new Error('History durability is pending and no strict flush is available.');
+  private async persistStrict(summary: SessionSummary): Promise<void> {
+    const id = summary.appSessionId;
+    this.pendingStrictWrites.set(id, summary);
+    try {
+      const durable = this.dependencies.history.syncSummaries([summary]);
+      if (this.dependencies.history.flush) await this.dependencies.history.flush();
+      else if (durable === false)
+        throw new Error('History durability is pending and no strict flush is available.');
+      if (this.pendingStrictWrites.get(id) !== summary)
+        throw new Error('Session changed while awaiting history durability.');
+    } finally {
+      if (this.pendingStrictWrites.get(id) === summary) this.pendingStrictWrites.delete(id);
     }
-    this.dependencies.history.flushSync();
   }
 
   private publish(summary: SessionSummary): void {
