@@ -222,6 +222,23 @@ export function patchText(changes: FileUpdateChange[]): string {
   return changes.map((change) => change.diff).join('\n');
 }
 
+// The changes as a diff a person can read. Codex sends a unified diff for a
+// file it updates and the bare content for one it adds or deletes, so those
+// lines are marked here the way a diff would mark them.
+export function changesDiff(changes: FileUpdateChange[]): string {
+  return changes
+    .map((change) => {
+      const sign = { add: '+', delete: '-' }[change.kind.type];
+      if (!sign) return change.diff;
+      return change.diff
+        .replace(/\n$/, '')
+        .split('\n')
+        .map((line) => sign + line)
+        .join('\n');
+    })
+    .join('\n');
+}
+
 function mcpContent(content: unknown[]): string {
   return content
     .map((block) => {

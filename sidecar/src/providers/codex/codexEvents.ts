@@ -11,9 +11,11 @@ import type { ChildSessionSignal } from '../../subagentSignals.js';
 import type { ProviderModelSettings } from '../session.js';
 import { errMsg } from '../../sessionHelpers.js';
 import { UsageLimitError, usageLimitDetails } from '../usageLimit.js';
+import type { FileChangeDetail } from './codexApprovals.js';
 import { imageUsageLimit } from './codexImages.js';
 import {
   collabChildSignals,
+  changesDiff,
   patchText,
   threadItem,
   toolCall,
@@ -238,10 +240,15 @@ export class CodexEventMapper {
 
   // What a pending approval is about. A file-change approval carries no detail
   // of its own, so the open item it belongs to is the only description there is.
-  toolDetail(itemId: string): { detail: string; diff?: string } | undefined {
+  toolDetail(itemId: string): FileChangeDetail | undefined {
     const tool = this.tools.get(itemId);
     if (!tool) return undefined;
-    return { detail: tool.detail, ...(tool.changes ? { diff: patchText(tool.changes) } : {}) };
+    if (!tool.changes) return { detail: tool.detail };
+    return {
+      detail: tool.detail,
+      diff: changesDiff(tool.changes),
+      creates: tool.changes.every((change) => change.kind.type === 'add'),
+    };
   }
 
   fileChanges(itemId: string): FileUpdateChange[] {

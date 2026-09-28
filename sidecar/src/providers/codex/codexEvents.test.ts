@@ -146,6 +146,16 @@ test('Codex approvals retain file diffs and questions retain answer arrays', asy
   assert.equal(approvals[0].request.detail, '/workspace/a.ts');
   assert.equal(approvals[0].request.title, 'Update the file');
   assert.equal(approvals[0].request.diff, '-old\n+updated');
+  // A file Codex adds arrives as bare content; the card is given diff lines.
+  mapper.map('item/started', {
+    item: {
+      type: 'fileChange',
+      id: 'add',
+      changes: [{ path: '/workspace/new.txt', kind: { type: 'add' }, diff: 'hello\nthere\n' }],
+      status: 'inProgress',
+    },
+  });
+  assert.equal(mapper.toolDetail('add')?.diff, '+hello\n+there');
   assert.equal(approvals[0].request.canAlwaysAllow, true);
   assert.match(approvals[0].request.requestId, /^req-/);
   const ask = handlers.get('item/tool/requestUserInput');

@@ -53,7 +53,7 @@ export function codexSandboxPolicy(sandbox: SandboxMode): SandboxPolicy {
 export type ApprovalDecision = 'accept' | 'acceptForSession' | 'decline' | 'cancel';
 
 export interface CodexApproval {
-  kind: Extract<PermissionKind, 'exec' | 'edit'>;
+  kind: Extract<PermissionKind, 'exec' | 'edit' | 'create'>;
   title: string;
   detail: string;
   diff?: string;
@@ -89,21 +89,29 @@ function commandApproval(params: CommandApproval): CodexApproval {
   const grant = params.command ?? (actions.length > 0 ? JSON.stringify(actions) : '');
   return {
     kind: 'exec',
-    title: params.reason ?? 'Bash',
+    title: params.reason ?? '',
     detail: command,
     ...(grant ? { signature: `exec::${grant}` } : {}),
     raw: params,
   };
 }
 
+// What a pending file change is about, read off the item Codex is tracking.
+export interface FileChangeDetail {
+  detail: string;
+  diff?: string;
+  // Every file in the change is a new one.
+  creates?: boolean;
+}
+
 function fileChangeApproval(
   params: FileChangeApproval,
-  change: { detail: string; diff?: string } | undefined,
+  change: FileChangeDetail | undefined,
 ): CodexApproval {
   const files = change?.detail;
   return {
-    kind: 'edit',
-    title: params.reason ?? 'Edit',
+    kind: change?.creates ? 'create' : 'edit',
+    title: params.reason ?? '',
     detail: files ?? '',
     ...(change?.diff !== undefined ? { diff: change.diff } : {}),
     ...(files ? { signature: `edit::${files}` } : {}),
@@ -186,7 +194,7 @@ export class OpenPrompts {
   // File-change requests take their paths and diff from the tracked item.
   register(
     client: Pick<AppServerClient, 'onRequest'>,
-    fileDetail: (itemId: string) => { detail: string; diff?: string } | undefined,
+    fileDetail: (itemId: string) => FileChangeDetail | undefined,
     canApproveEdits: (request: FileChangeApproval) => boolean,
   ): void {
     client.onRequest('item/commandExecution/requestApproval', (params) =>
