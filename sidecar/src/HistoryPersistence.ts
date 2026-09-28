@@ -273,18 +273,10 @@ export class HistoryPersistence {
     }
     this.durability.holdUntilDurable();
     this.anotherPass = false;
-    this.boundary = this.flushPending().then(
-      () => {
-        this.boundary = null;
-        this.durability.noteDurable();
-        this.reportRecovery();
-        this.onDurable?.();
-      },
-      (error: unknown) => {
-        this.boundary = null;
-        throw error;
-      },
-    );
+    this.boundary = this.runBoundary().catch((error: unknown) => {
+      this.boundary = null;
+      throw error;
+    });
     return this.boundary;
   }
 
@@ -401,7 +393,7 @@ export class HistoryPersistence {
     return this.durability.hasActiveWork();
   }
 
-  private async flushPending(): Promise<void> {
+  private async runBoundary(): Promise<void> {
     const startedAt = performance.now();
     try {
       await this.queue.flush();
@@ -409,6 +401,12 @@ export class HistoryPersistence {
     } finally {
       hotPathMetrics.recordPersistenceBoundary(performance.now() - startedAt);
     }
+    // Still the step that made the last check, so nothing can have asked for
+    // durability between that check and this release.
+    this.boundary = null;
+    this.durability.noteDurable();
+    this.reportRecovery();
+    this.onDurable?.();
   }
 
   private extendBoundary(): void {

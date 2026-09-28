@@ -471,6 +471,30 @@ test('an update during a provider replacement patches the new binding', async ()
   assert.equal(registry.getLive('provider-next'), session);
 });
 
+test('a replacement whose write fails keeps the new binding for the next boundary', async () => {
+  const retired: string[] = [];
+  const { history, published, registry } = createHarness({
+    onLiveProviderReplaced: (providerSessionId) => retired.push(providerSessionId),
+  });
+  const session = live(summary('stable-app', { providerSessionId: 'provider-old' }));
+  await registry.register(session);
+  history.flush = () => Promise.reject(new Error('checkpoint failed'));
+
+  await assert.rejects(
+    registry.replaceProvider('stable-app', 'provider-next'),
+    /checkpoint failed/,
+  );
+
+  // The runtime has moved, so the summary and the old provider's files follow it.
+  assert.equal(session.summary.providerSessionId, 'provider-next');
+  assert.equal(registry.getLive('provider-next'), session);
+  assert.deepEqual(retired, ['provider-old']);
+  assert.equal(published.length, 0);
+
+  registry.retryPendingDurability();
+  assert.equal(published.at(-1)?.providerSessionId, 'provider-next');
+});
+
 test('failed provider replacement preserves the live summary and aliases', async () => {
   const { history, published, registry } = createHarness({ now: () => 42 });
   const session = live(
