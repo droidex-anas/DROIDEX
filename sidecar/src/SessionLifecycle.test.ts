@@ -1675,6 +1675,30 @@ test('agent wake setup failures reach the background-turn error owner', async ()
   await h.lifecycle.close('app-1');
 });
 
+test('a Stop takes back a prompt that has not started its turn', async () => {
+  const h = createHarness([summary('app-1', 'provider-1')]);
+  const provider = new FakeFactorySession('provider-1', {}, h.calls);
+  queueLoad(h, 'provider-1', provider);
+  await h.lifecycle.resume('app-1');
+  requireLive(h, 'app-1').summary.provider = 'claude';
+  let settle: () => void = () => undefined;
+  h.setSettingsWait(
+    () =>
+      new Promise<void>((resolve) => {
+        settle = resolve;
+      }),
+  );
+
+  const sending = h.lifecycle.send('app-1', 'stopped while it waited');
+  await new Promise((resolve) => setImmediate(resolve));
+  await h.lifecycle.interrupt('app-1');
+  settle();
+  await sending;
+
+  assert.deepEqual(provider.prompts, []);
+  await h.lifecycle.close('app-1');
+});
+
 test('a context switch waits for the turn and resumes the same chat before queued work', async () => {
   const stored: SessionSummary[] = [];
   const h = createHarness(stored);

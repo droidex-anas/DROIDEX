@@ -185,10 +185,10 @@ export class SessionLifecycle {
   private readonly steering = new WeakMap<LiveSession, Promise<SteerOutcome>>();
   private readonly resumeOperations = new Map<string, Promise<boolean>>();
   private readonly canceledResumes = new Set<string>();
-  // Chats being relaunched on a new context window, and those of them a Stop
-  // reached while there was no runtime to interrupt.
-  private readonly relaunching = new Set<string>();
-  private readonly stoppedRelaunches = new Set<string>();
+  // How often each chat was stopped or discarded. A prompt that was accepted
+  // but has not started its turn compares the count it was accepted at, so a
+  // Stop takes it back even while there is no runtime to interrupt.
+  private readonly stops = new Map<string, number>();
 
   constructor(private readonly dependencies: SessionLifecycleDependencies) {}
   async create(command: SessionCreateCommand): Promise<void> {
@@ -548,8 +548,9 @@ export class SessionLifecycle {
     text: string,
     mentions?: ProviderMention[],
   ): Promise<void> {
+    const stops = this.stopCount(requestedAppSessionId);
     const liveSession = await this.prepareToSend(requestedAppSessionId);
-    if (!liveSession) return;
+    if (!liveSession || this.stopCount(requestedAppSessionId) !== stops) return;
     const prompt = sessionPrompt(text, mentions);
     if (liveSession.streaming || liveSession.compacting || liveSession.autoCompacting) {
       liveSession.pendingSends.push(prompt);
@@ -563,8 +564,9 @@ export class SessionLifecycle {
     text: string,
     mentions?: ProviderMention[],
   ): Promise<void> {
+    const stops = this.stopCount(requestedAppSessionId);
     const liveSession = await this.prepareToSend(requestedAppSessionId);
-    if (!liveSession) return;
+    if (!liveSession || this.stopCount(requestedAppSessionId) !== stops) return;
     const prompt = sessionPrompt(text, mentions);
     if (!liveSession.streaming && !liveSession.compacting && !liveSession.autoCompacting) {
       await this.drive(liveSession.summary.appSessionId, prompt);
@@ -659,8 +661,7 @@ export class SessionLifecycle {
   }
 
   async interrupt(requestedAppSessionId: string): Promise<void> {
-    if (this.relaunching.has(requestedAppSessionId))
-      this.stoppedRelaunches.add(requestedAppSessionId);
+    this.noteStop(requestedAppSessionId);
     const liveSession = this.dependencies.registry.getLive(requestedAppSessionId);
     if (!liveSession) return;
     const appSessionId = liveSession.summary.appSessionId;
@@ -732,6 +733,8 @@ export class SessionLifecycle {
   }
 
   async close(appSessionId: string, mode: SessionCloseMode = 'discard-pending'): Promise<void> {
+    // Closing a chat for good takes back whatever was about to be sent to it.
+    if (mode === 'discard-pending') this.noteStop(appSessionId);
     const pendingResume = this.resumeOperations.get(appSessionId);
     if (pendingResume) this.canceledResumes.add(appSessionId);
     const liveSession = this.dependencies.registry.getLive(appSessionId);
@@ -1158,11 +1161,12 @@ export class SessionLifecycle {
     delivery?: ScheduledTurnDelivery,
   ): Promise<void> {
     const d = this.dependencies;
+    const stops = this.stopCount(appSessionId);
     const liveSession = d.registry.getLive(appSessionId);
-    if (!liveSession || d.isShutdownStarted() || this.stoppedRelaunches.has(appSessionId)) return;
+    if (!liveSession || d.isShutdownStarted()) return;
     if (liveSession.summary.provider === 'claude' && !liveSession.closeMode) {
       await d.waitForSettingsMutations?.(appSessionId);
-      if (d.isShutdownStarted()) return;
+      if (d.isShutdownStarted() || this.stopCount(appSessionId) !== stops) return;
     }
     if (d.registry.getLive(appSessionId) !== liveSession || liveSession.closeMode) {
       // The runtime was released under this send. A prompt the user typed
@@ -1176,10 +1180,23 @@ export class SessionLifecycle {
       this.updateQueuedSends(liveSession);
       return;
     }
+    // A scheduled prompt keeps the runtime it reserved; the new window waits
+    // for the next message the user sends.
     if (liveSession.restartBeforeNextTurn && !delivery) {
-      await this.relaunch(liveSession, prompt);
+      await this.relaunch(liveSession, prompt, stops);
       return;
     }
+    await this.runTurn(liveSession, prompt, delivery);
+  }
+
+  // Marks the chat as streaming before it first yields, so a send that arrives
+  // meanwhile queues behind this turn.
+  private async runTurn(
+    liveSession: LiveSession,
+    prompt: SessionPrompt,
+    delivery?: ScheduledTurnDelivery,
+  ): Promise<void> {
+    const d = this.dependencies;
     const stableAppSessionId = liveSession.summary.appSessionId;
     try {
       liveSession.streaming = true;
@@ -1275,36 +1292,48 @@ export class SessionLifecycle {
 
   // A chat whose context window changed runs on a new process. The runtime is
   // released and reopened the way an idle one is, and the prompt that found it
-  // stale is sent again with everything queued behind it.
-  private async relaunch(liveSession: LiveSession, prompt: SessionPrompt): Promise<void> {
+  // stale starts the first turn on the new one. Nothing is queued behind it: a
+  // window only changes while the chat has nothing running or waiting.
+  private async relaunch(stale: LiveSession, prompt: SessionPrompt, stops: number): Promise<void> {
     const d = this.dependencies;
-    const appSessionId = liveSession.summary.appSessionId;
-    const usage = {
-      tokensIn: liveSession.summary.tokensIn,
-      tokensOut: liveSession.summary.tokensOut,
-    };
-    const queued = [prompt, ...liveSession.pendingSends.splice(0)];
-    const stopped = () => this.stoppedRelaunches.has(appSessionId) || d.isShutdownStarted();
-    this.relaunching.add(appSessionId);
-    try {
-      await this.close(appSessionId, 'preserve-pending');
-      if (stopped()) return;
-      if (!(await this.resume(appSessionId))) {
-        d.emitError({
-          appSessionId,
-          message: `The chat could not restart on its new context window, so ${describeUnsent(queued)} not sent.`,
-        });
-        return;
-      }
-      d.context.preserveUsage(appSessionId, usage);
-      for (const next of queued) {
-        if (stopped()) return;
-        await this.send(appSessionId, next.text, next.mentions);
-      }
-    } finally {
-      this.relaunching.delete(appSessionId);
-      this.stoppedRelaunches.delete(appSessionId);
+    const appSessionId = stale.summary.appSessionId;
+    const usage = { tokensIn: stale.summary.tokensIn, tokensOut: stale.summary.tokensOut };
+    const takenBack = () => d.isShutdownStarted() || this.stopCount(appSessionId) !== stops;
+    await this.close(appSessionId, 'preserve-pending');
+    if (takenBack()) return;
+    if (!(await this.resume(appSessionId))) {
+      d.emitError({
+        appSessionId,
+        message:
+          'The chat could not restart on its new context window, so your message was not sent.',
+      });
+      return;
     }
+    if (takenBack()) return;
+    d.context.preserveUsage(appSessionId, usage);
+    // A preference accepted while the chat was relaunching belongs to this turn.
+    const applied = await d.applyPendingSessionSettings(appSessionId);
+    const liveSession = d.registry.getLive(appSessionId);
+    if (!applied || takenBack() || !liveSession || liveSession.closeMode) return;
+    if (liveSession.streaming) {
+      liveSession.pendingSends.unshift(prompt);
+      this.updateQueuedSends(liveSession);
+    } else if (liveSession.restartBeforeNextTurn) await this.relaunch(liveSession, prompt, stops);
+    else await this.runTurn(liveSession, prompt);
+  }
+
+  private stopCount(appSessionId: string): number {
+    return this.stops.get(this.stopKey(appSessionId)) ?? 0;
+  }
+
+  private noteStop(appSessionId: string): void {
+    this.stops.set(this.stopKey(appSessionId), this.stopCount(appSessionId) + 1);
+  }
+
+  // A chat is addressed by its own id or by its provider's, and a relaunching
+  // one has no live session to resolve either through.
+  private stopKey(id: string): string {
+    return this.dependencies.registry.getCanonicalSummary(id)?.appSessionId ?? id;
   }
 
   private async redeliverQueuedSends(appSessionId: string, queued: SessionPrompt[]): Promise<void> {
@@ -1320,10 +1349,6 @@ export class SessionLifecycle {
       }
     }
   }
-}
-
-function describeUnsent(prompts: SessionPrompt[]): string {
-  return prompts.length === 1 ? 'your message was' : `${String(prompts.length)} messages were`;
 }
 
 function sessionPrompt(text: string, mentions?: ProviderMention[]): SessionPrompt {
