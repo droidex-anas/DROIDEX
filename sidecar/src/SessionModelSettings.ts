@@ -157,11 +157,6 @@ export class SessionModelSettings {
         const windowChanged =
           selected.contextWindowTokens !== undefined &&
           selected.contextWindowTokens !== summary.contextWindowTokens;
-        // The relaunch carries one prompt across, so there must be none waiting.
-        if (windowChanged && live && (live.streaming || live.pendingSends.length > 0))
-          throw new Error(
-            'The context window can be changed when this chat has nothing running or waiting.',
-          );
         const restart =
           live !== undefined && (windowChanged || live.restartBeforeNextTurn === true);
         const selection = summary.provider === DEFAULT_PROVIDER ? runtimeSettings : selected;

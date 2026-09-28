@@ -1811,8 +1811,15 @@ test('a context switch waits for the turn and resumes the same chat before queue
   while (h.registry.getLive('context-switch'))
     await new Promise((resolve) => setImmediate(resolve));
   await h.lifecycle.interrupt('context-switch');
+  // Sent after the Stop, while the chat still has no runtime: these wait for
+  // it in the order they were sent.
+  const later = [
+    h.lifecycle.send('context-switch', 'second'),
+    h.lifecycle.send('context-switch', 'third'),
+  ];
   finishResume();
-  await sending;
-  assert.deepEqual(relaunched.prompts, []);
+  await Promise.all([sending, ...later]);
+  await relaunched.waitForPrompts(2);
+  assert.deepEqual(relaunched.prompts, ['second', 'third']);
   await h.lifecycle.close('context-switch');
 });
