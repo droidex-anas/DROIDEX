@@ -509,6 +509,7 @@ type ResumedModelSettings = Pick<SessionSummary, 'autonomy' | 'compactionModel'>
       | 'modelId'
       | 'reasoningEffort'
       | 'fastMode'
+      | 'contextWindowTokens'
       | 'workerModelId'
       | 'workerReasoningEffort'
       | 'validatorModelId'
@@ -549,13 +550,26 @@ function resumedPrimaryModelSettings(
     historical?.reasoningEffort ??
     defaults.reasoningEffort;
   const maxContextTokens = historical?.maxContextTokens ?? input.maxContextTokensForModel(modelId);
-  const settings: Partial<ResumedModelSettings> = {};
-  if (modelId !== undefined) settings.modelId = modelId;
-  if (reasoningEffort !== undefined) settings.reasoningEffort = reasoningEffort;
-  if (historical && historical.provider !== DEFAULT_PROVIDER)
-    settings.fastMode = historical.fastMode ?? false;
-  if (maxContextTokens !== undefined) settings.maxContextTokens = maxContextTokens;
-  return settings;
+  return {
+    ...(modelId !== undefined ? { modelId } : {}),
+    ...(reasoningEffort !== undefined ? { reasoningEffort } : {}),
+    ...(maxContextTokens !== undefined ? { maxContextTokens } : {}),
+    ...resumedChatPreferences(historical),
+  };
+}
+
+// The two preferences only the stored summary knows: no provider session file
+// carries them, and an explicit `false` is a choice, not an absent setting.
+function resumedChatPreferences(
+  historical: SessionSummary | undefined,
+): Pick<Partial<ResumedModelSettings>, 'fastMode' | 'contextWindowTokens'> {
+  if (!historical) return {};
+  return {
+    ...(historical.provider !== DEFAULT_PROVIDER ? { fastMode: historical.fastMode ?? false } : {}),
+    ...(historical.contextWindowTokens !== undefined
+      ? { contextWindowTokens: historical.contextWindowTokens }
+      : {}),
+  };
 }
 
 function resumedAgentSettings(
