@@ -86,8 +86,13 @@ import { join } from 'node:path';
 // Main meanwhile raised its own line from 1_375_000 to 1_390_000 for the
 // DroidProxy provider marks in the composer and picker, plus bridge
 // validation, with the settings page lazy; main alone measured ~1_381_450.
+//
+// Raised to 1_398_000 when Projects landed on top of DroidProxy. Each fits its
+// own line, and together the entry measures 1_389_787, 213 bytes under the
+// line either side had. Nothing moved off the entry to make room; the new
+// headroom is ~8KB. The merged CSS of 100_491 stays under Projects' 101_500.
 const BUDGETS = {
-  initialRendererJsBytes: 1_390_000,
+  initialRendererJsBytes: 1_398_000,
   initialCssBytes: 101_500,
   largestLazyChunkBytes: 700_000,
   duplicatePackageMaxBytes: 120_000,
