@@ -143,6 +143,61 @@ test('a resumed in-flight session is paused with an interrupt reason', async () 
   }
 });
 
+test('a summary that changes while adoption persists still ends up interrupted', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'adoption-concurrent-'));
+  try {
+    const journal = new LiveRuntimeJournal(liveRuntimeJournalPath(dir));
+    journal.write({
+      sessions: [
+        {
+          appSessionId: 'app-4',
+          providerSessionId: 'provider-app-4',
+          phase: 'running',
+          streaming: true,
+          lastActiveAt: 1,
+        },
+      ],
+      children: [],
+      processes: [],
+    });
+    const live = { summary: summary('app-4') };
+    const statuses: string[] = [];
+    const adoption = new SessionAdoption({
+      journal,
+      registry: {
+        liveSessionsSnapshot: () => [live],
+        getCanonicalSummary: () => live.summary,
+        getLive: () => live,
+      },
+      lifecycle: {
+        resume: async () => true,
+      },
+      liveChildren: () => [],
+      recordedProcesses: () => [],
+      reapProcesses: () => Promise.resolve(),
+      // The reattached runtime reports something unrelated during the write.
+      persistSummaries: () => {
+        live.summary = { ...live.summary, title: 'Renamed meanwhile' };
+      },
+      appendStatus: (_appSessionId, text) => {
+        statuses.push(text);
+      },
+      sessionRuntimeIdleMs: SESSION_RUNTIME_IDLE_RETIREMENT_MS,
+      now: () => NOW,
+    });
+
+    const result = await adoption.adopt();
+    assert.equal(result.interrupted.length, 1);
+    assert.equal(statuses.length, 1);
+    assert.equal(live.summary.phase, 'paused');
+    assert.equal(live.summary.streaming, false);
+    assert.equal(typeof live.summary.interruptReason, 'string');
+    assert.equal(live.summary.title, 'Renamed meanwhile');
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test('running children are marked interrupted and written out of the live journal', async () => {
   const dir = mkdtempSync(join(tmpdir(), 'adoption-child-'));
   try {

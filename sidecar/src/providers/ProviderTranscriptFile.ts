@@ -48,8 +48,10 @@ interface PendingMessage {
 export class ProviderTranscriptFile {
   private readonly path: string;
   private pending: PendingMessage | null = null;
-  private headQueued = false;
+  private headWritten = false;
   private promptSeq = 0;
+  // The tail of the write queue. It never rejects: a line that fails is
+  // reported to the caller that wrote it, and the lines after it still go out.
   private writes: Promise<void> = Promise.resolve();
 
   // Reads the summary when it writes rather than holding a copy: the registry
@@ -68,24 +70,18 @@ export class ProviderTranscriptFile {
   // rather than replayed as a live event.
   appendPrompt(text: string): Promise<void> {
     if (!text) return this.writes;
-    this.sealMessage();
     const ts = Date.now();
-    this.writeMessage('user', [{ type: 'text', text }], `prompt-${this.nextPromptId(ts)}`, ts);
-    return this.writes;
+    return this.sealThenWrite(
+      messageLine('user', [{ type: 'text', text }], `prompt-${this.nextPromptId(ts)}`, ts),
+    );
   }
 
   append(event: TranscriptEvent): void | Promise<void> {
     // Child sessions keep their own transcripts; this file is one conversation.
     if (event.role !== 'primary') return;
-    if (event.spoken) {
-      return this.appendSpoken(event);
-    }
+    if (event.spoken) return this.sealThenWrite(spokenLine(event));
     const notice = storedNoticeLine(event);
-    if (notice) {
-      this.sealMessage();
-      this.writeLine(notice);
-      return this.writes;
-    }
+    if (notice) return this.sealThenWrite(notice);
     const block = assistantBlock(event);
     if (block) {
       this.pending ??= { id: event.id, ts: event.ts, blocks: [] };
@@ -103,82 +99,89 @@ export class ProviderTranscriptFile {
     const result = toolResultBlock(event);
     if (!result) return;
     // A result belongs after the call that produced it.
-    this.sealMessage();
-    this.writeMessage('user', [result], event.id, event.ts);
-    return this.writes;
+    return this.sealThenWrite(messageLine('user', [result], event.id, event.ts));
   }
 
-  // Closes the open assistant message. Called when a turn settles and when the
-  // session closes, so one stored line is one settled message.
+  // Called when a turn settles and when the session closes. Resolves once
+  // everything queued has been tried, and rejects when the message it closed
+  // could not be written.
   flush(): Promise<void> {
-    this.sealMessage();
-    return this.writes;
+    return this.sealMessage() ?? this.writes;
   }
 
-  private sealMessage(): void {
+  // Closes the open assistant message, so one stored line is one settled
+  // message.
+  private sealMessage(): Promise<void> | undefined {
     const message = this.pending;
-    if (!message) return;
-    this.writeMessage('assistant', message.blocks, message.id, message.ts);
+    if (!message) return undefined;
     this.pending = null;
+    return this.writeLine(messageLine('assistant', message.blocks, message.id, message.ts));
   }
 
-  private appendSpoken(event: TranscriptEvent): Promise<void> {
-    if (event.kind !== 'text' || !event.text)
-      throw new Error('A spoken transcript row must contain text.');
-    this.sealMessage();
-    this.writeLine({
-      type: 'message',
-      id: event.id,
-      timestamp: new Date(event.ts).toISOString(),
-      spoken: true,
-      message: {
-        role: event.author === 'user' ? 'user' : 'assistant',
-        content: [{ type: 'text', text: event.text }],
-      },
-    });
-    return this.writes;
+  private sealThenWrite(line: object): Promise<void> {
+    const sealed = this.sealMessage();
+    const written = this.writeLine(line);
+    return sealed ? Promise.all([sealed, written]).then(() => undefined) : written;
   }
 
   private nextPromptId(ts: number): string {
     return `${ts.toString(36)}-${(this.promptSeq++).toString(36)}`;
   }
 
-  private writeMessage(
-    role: 'user' | 'assistant',
-    content: ContentBlock[],
-    id: string,
-    ts: number,
-  ): void {
-    const line: StoredMessageLine = {
-      type: 'message',
-      id,
-      timestamp: new Date(ts).toISOString(),
-      message: { role, content },
-    };
-    this.writeLine(line);
+  // Resolves when this line is on disk and rejects, for the caller that wrote
+  // it, when it is not. The queue carries on either way: one failed line must
+  // not cost the session the lines after it, or hold its close.
+  private writeLine(line: object): Promise<void> {
+    const contents = serialize(line);
+    const attempt = this.writes.then(async () => {
+      await appendFile(this.path, (await this.headIfMissing()) + contents);
+      this.headWritten = true;
+    });
+    this.writes = attempt.catch(() => undefined);
+    return attempt;
   }
 
-  private writeLine(line: object): void {
-    const contents = serialize(line);
-    const head = this.headQueued ? undefined : serialize(headLine(this.summary()));
-    this.headQueued = true;
-    this.writes = this.writes.then(async () => {
-      if (head !== undefined) {
-        await mkdir(dirname(this.path), { recursive: true });
-        const exists = await stat(this.path).then(
-          () => true,
-          (error: unknown) => {
-            if (error instanceof Error && 'code' in error && error.code === 'ENOENT') return false;
-            throw error;
-          },
-        );
-        if (!exists) await appendFile(this.path, head);
-      }
-      await appendFile(this.path, contents);
-    });
-    // Retain a failed chain for flush to reject; never append past a missing row.
-    void this.writes.catch(() => undefined);
+  // A resumed session appends to the transcript it already has: one head line
+  // per file, written with the session's first message.
+  private async headIfMissing(): Promise<string> {
+    if (this.headWritten) return '';
+    await mkdir(dirname(this.path), { recursive: true });
+    return (await exists(this.path)) ? '' : serialize(headLine(this.summary()));
   }
+}
+
+async function exists(path: string): Promise<boolean> {
+  try {
+    await stat(path);
+    return true;
+  } catch (error) {
+    if (error instanceof Error && 'code' in error && error.code === 'ENOENT') return false;
+    throw error;
+  }
+}
+
+function messageLine(
+  role: 'user' | 'assistant',
+  content: ContentBlock[],
+  id: string,
+  ts: number,
+): StoredMessageLine {
+  return { type: 'message', id, timestamp: new Date(ts).toISOString(), message: { role, content } };
+}
+
+function spokenLine(event: TranscriptEvent): object {
+  if (event.kind !== 'text' || !event.text)
+    throw new Error('A spoken transcript row must contain text.');
+  return {
+    type: 'message',
+    id: event.id,
+    timestamp: new Date(event.ts).toISOString(),
+    spoken: true,
+    message: {
+      role: event.author === 'user' ? 'user' : 'assistant',
+      content: [{ type: 'text', text: event.text }],
+    },
+  };
 }
 
 function headLine(summary: SessionSummary): ProviderSessionStart {

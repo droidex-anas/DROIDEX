@@ -139,20 +139,12 @@ export class SessionAdoption {
         await this.markSessionInterrupted(identity, historical, true, SESSION_UNAVAILABLE);
         return;
       }
-      const previous = live.summary;
-      const updated: SessionSummary = {
-        ...previous,
-        streaming: false,
-        phase: interruptedPhase(live.summary.phase),
-        interruptReason: TURN_INTERRUPTED,
-      };
-      await this.dependencies.persistSummaries([updated]);
-      if (
-        this.dependencies.registry.getLive(identity.appSessionId) !== live ||
-        live.summary !== previous
-      )
-        return;
-      live.summary = updated;
+      await this.dependencies.persistSummaries([turnInterrupted(live.summary)]);
+      // Only a replaced runtime makes this stale. A summary that moved on
+      // meanwhile (a status ping, a title) still owes the interruption, applied
+      // over what it says now.
+      if (this.dependencies.registry.getLive(identity.appSessionId) !== live) return;
+      live.summary = turnInterrupted(live.summary);
       this.interrupted.push({
         appSessionId: identity.appSessionId,
         reason: TURN_INTERRUPTED,
@@ -175,7 +167,6 @@ export class SessionAdoption {
     reason: string,
   ): Promise<void> {
     const live = this.dependencies.registry.getLive(identity.appSessionId);
-    const previous = live?.summary;
     const base = historical ?? syntheticSummary(identity);
     const updated: SessionSummary = {
       ...base,
@@ -184,11 +175,7 @@ export class SessionAdoption {
       interruptReason: reason,
     };
     await this.dependencies.persistSummaries([updated]);
-    if (
-      this.dependencies.registry.getLive(identity.appSessionId) !== live ||
-      live?.summary !== previous
-    )
-      return;
+    if (this.dependencies.registry.getLive(identity.appSessionId) !== live) return;
     this.interrupted.push({ appSessionId: identity.appSessionId, reason });
     this.dependencies.appendStatus(identity.appSessionId, reason);
   }
@@ -201,6 +188,15 @@ export class SessionAdoption {
       reason: CHILD_INTERRUPTED,
     });
   }
+}
+
+function turnInterrupted(summary: SessionSummary): SessionSummary {
+  return {
+    ...summary,
+    streaming: false,
+    phase: interruptedPhase(summary.phase),
+    interruptReason: TURN_INTERRUPTED,
+  };
 }
 
 function interruptedPhase(phase: SessionPhase): SessionPhase {

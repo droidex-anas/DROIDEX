@@ -200,16 +200,54 @@ test('a transcript DROIDEX writes for a non-Droid session is enumerated and repl
       ['error', 'Session process was killed (SIGKILL).', undefined],
     ],
   );
+});
 
-  const blockedId = 'blocked-transcript';
-  mkdirSync(join(providerSessionsDir(), `${blockedId}.jsonl`));
-  const blocked = new ProviderTranscriptFile(blockedId, () => ({
-    ...summary,
-    appSessionId: blockedId,
-  }));
-  await assert.rejects(blocked.appendPrompt('must fail'), /EISDIR/);
-  await assert.rejects(blocked.flush(), /EISDIR/);
-  await assert.rejects(blocked.appendPrompt('must not overtake the missing row'), /EISDIR/);
+test('a failed transcript write reaches its caller and does not stop the lines after it', async () => {
+  const appSessionId = 'blocked-transcript';
+  const summary: SessionSummary = {
+    appSessionId,
+    provider: 'claude',
+    sessionPurpose: 'chat',
+    interactionMode: 'auto',
+    role: 'primary',
+    title: 'Blocked, then not',
+    goal: '',
+    cwd: '',
+    modelId: 'claude-sonnet-4-5',
+    autonomy: 'medium',
+    phase: 'paused',
+    features: [],
+    tokensIn: 0,
+    tokensOut: 0,
+    contextTokens: 0,
+    createdAt: 1,
+    updatedAt: 1,
+  };
+  const path = join(providerSessionsDir(), `${appSessionId}.jsonl`);
+  // A directory where the file belongs fails every append until it is removed.
+  mkdirSync(path, { recursive: true });
+  const transcript = new ProviderTranscriptFile(appSessionId, () => summary);
+
+  await assert.rejects(transcript.appendPrompt('lost'), /EISDIR/);
+  // Nothing is open, so a close right after the failure settles.
+  await transcript.flush();
+  transcript.append(transcriptEvent(appSessionId, 'text', { text: 'Also lost.' }));
+  await assert.rejects(transcript.flush(), /EISDIR/);
+  await transcript.flush();
+
+  rmSync(path, { recursive: true });
+  await transcript.appendPrompt('kept');
+  transcript.append(transcriptEvent(appSessionId, 'text', { text: 'Answer.' }));
+  await transcript.flush();
+
+  const events = parseFullSessionTranscript(appSessionId, appSessionId, path, 'primary');
+  assert.deepEqual(
+    events.map((event) => event.text),
+    ['kept', 'Answer.'],
+  );
+  // The head line went out with the first line that landed.
+  const listed = loadHistoricalSessions().find((row) => row.summary.appSessionId === appSessionId);
+  assert.equal(listed?.summary.modelId, 'claude-sonnet-4-5');
 });
 
 test('spoken rows replay with their mark, speaker, and latest corrected text', async () => {
