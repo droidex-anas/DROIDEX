@@ -255,7 +255,9 @@ export interface PermissionRequest {
   requestId: string;
   kind: PermissionKind;
   title: string;
-  detail: string; // human readable (command, file path, diff snippet)
+  detail: string; // Concrete command, file path, or tool input.
+  canAlwaysAllow: boolean;
+  diff?: string;
   plan?: string; // full plan/spec body (exit_spec_mode)
   options?: string[]; // custom option names offered by the tool
   raw: unknown;
@@ -264,7 +266,20 @@ export interface PermissionRequest {
 export interface SessionQuestion {
   appSessionId: string;
   requestId: string;
-  questions: { index: number; question: string; options: string[] }[];
+  questions: {
+    index: number;
+    question: string;
+    header?: string;
+    options: { label: string; description?: string }[];
+    multiSelect?: boolean;
+  }[];
+}
+
+export interface QuestionAnswer {
+  index: number;
+  question: string;
+  selected: string[];
+  custom?: string;
 }
 
 export interface ModelInfo {
@@ -632,6 +647,7 @@ export type PermissionOutcome =
   | 'proceed_new_session_medium'
   | 'proceed_new_session_high'
   | 'proceed_edit'
+  | 'refuse'
   | 'cancel';
 
 // ── Frontend -> Sidecar ──────────────────────────────────────────────
@@ -792,7 +808,7 @@ export type ClientCommand =
       appSessionId: string;
       requestId: string;
       cancelled: boolean;
-      answers: { index: number; question: string; answer: string }[];
+      answers: QuestionAnswer[];
     }
   | { type: 'history.list' }
   | { type: 'history.page'; providerSessionId: string; cursor?: string; limit?: number }

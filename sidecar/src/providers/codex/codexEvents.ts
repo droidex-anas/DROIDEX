@@ -238,12 +238,14 @@ export class CodexEventMapper {
 
   // What a pending approval is about. A file-change approval carries no detail
   // of its own, so the open item it belongs to is the only description there is.
-  fileChanges(itemId: string): FileUpdateChange[] {
-    return this.tools.get(itemId)?.changes ?? [];
+  toolDetail(itemId: string): { detail: string; diff?: string } | undefined {
+    const tool = this.tools.get(itemId);
+    if (!tool) return undefined;
+    return { detail: tool.detail, ...(tool.changes ? { diff: patchText(tool.changes) } : {}) };
   }
 
-  toolDetail(itemId: string): string | undefined {
-    return this.tools.get(itemId)?.detail;
+  fileChanges(itemId: string): FileUpdateChange[] {
+    return this.tools.get(itemId)?.changes ?? [];
   }
 
   // A server the user did not ask for in this turn failing is not the turn's
@@ -282,6 +284,7 @@ export class CodexEventMapper {
     if (!params) return [];
     const tool = this.tools.get(params.itemId);
     if (tool) {
+      tool.detail = params.changes.map((change) => change.path).join('\n');
       tool.output = patchText(params.changes);
       tool.changes = params.changes;
     }
