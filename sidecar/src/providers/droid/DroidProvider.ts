@@ -56,7 +56,7 @@ export class DroidProvider implements Provider {
     try {
       // The SDK's stored level cannot distinguish Supervised from edits-only.
       await providerSession.setAutonomy(
-        autonomy ?? normalizeAutonomy(session.initResult.settings?.autonomyLevel) ?? 'off',
+        autonomy ?? normalizeAutonomy(session.initResult.settings.autonomyLevel) ?? 'off',
       );
       return providerSession;
     } catch (error) {
