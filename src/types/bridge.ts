@@ -283,11 +283,13 @@ export interface ModelInfo {
   displayName: string;
   provider?: string;
   isCustom: boolean;
-  supportsFastMode?: boolean;
   isDefault?: boolean;
   maxContextTokens?: number;
   supportedReasoningEfforts?: ReasoningEffort[];
   defaultReasoningEffort?: ReasoningEffort;
+  // Whether the harness can run this model faster for more usage. Absent while
+  // the catalog has not said; only an explicit false disables the toggle.
+  supportsFastMode?: boolean;
 }
 
 // What a provider can do for the user right now. Derived in the sidecar from

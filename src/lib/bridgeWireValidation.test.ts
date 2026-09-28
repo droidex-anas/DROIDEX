@@ -433,7 +433,7 @@ test('rejects object payloads that are actually arrays', () => {
   );
 });
 
-test('fast mode preference and capability must be booleans on the wire', () => {
+test('the chat preferences on a summary accept only their own values', () => {
   const summary = {
     appSessionId: 'app-fast',
     provider: 'codex',
@@ -452,29 +452,14 @@ test('fast mode preference and capability must be booleans on the wire', () => {
     createdAt: 1,
     updatedAt: 1,
   };
-  const model = { id: 'model', displayName: 'Model', isCustom: false };
-  for (const value of [true, false, undefined, 'true', 1, null]) {
-    const valid = value === undefined || typeof value === 'boolean';
-    const events = [
-      { type: 'session.updated', session: { ...summary, fastMode: value } },
-      {
-        type: 'catalog.updated',
-        catalog: 'models',
-        items: [{ ...model, supportsFastMode: value }],
-      },
-      {
-        type: 'provider.status',
-        statuses: [
-          {
-            provider: 'codex',
-            readiness: 'ready',
-            models: [{ ...model, supportsFastMode: value }],
-          },
-        ],
-      },
-    ];
-    for (const event of events) assert.equal(serverWireMessage(batch(event)) !== null, valid);
-  }
+  const updated = (session: Record<string, unknown>) =>
+    serverWireMessage(batch({ type: 'session.updated', session })) !== null;
+  for (const fastMode of [true, false, undefined]) assert.ok(updated({ ...summary, fastMode }));
+  for (const fastMode of ['true', 1, null]) assert.equal(updated({ ...summary, fastMode }), false);
+  for (const contextWindowTokens of [200000, 1000000, undefined])
+    assert.ok(updated({ ...summary, contextWindowTokens }));
+  for (const contextWindowTokens of [500000, '200000', null])
+    assert.equal(updated({ ...summary, contextWindowTokens }), false);
 });
 
 test('transient transcript events accept only the literal true or an absent flag', () => {

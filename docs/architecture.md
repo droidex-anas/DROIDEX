@@ -60,15 +60,18 @@ flowchart LR
 - `SessionLifecycle` owns primary-session create, resume, lazy resume, send queueing, steering, interruption, and ordered cleanup. Parent close calls one semantic `ChildSessions.closeParent()` operation rather than maintaining another child map.
 - Workspace sessions pass their selected folder to Factory unchanged. Folder-less sessions remain `workspaceKind: none` in navigation, while their Factory runtime uses the app-owned `chats/` directory under `DROIDEX_USER_DATA_DIR`; DROIDEX creates it before opening the session, resumes the session from it (Claude Code files sessions under the directory they ran from), and never uses the user's home directory as an implicit workspace.
 
-### Fast-mode requests
+### Chat preferences
 
-`fastMode` is a per-chat request, independent of reasoning effort. Claude Code and
-Codex chats start explicitly off; omitted settings updates leave the request
-unchanged. The summary, provider transcript head and adjacent settings preserve
-both true and false across resume and history reconstruction. Canonical history
-writes the preference into the existing `settings` table under `session:<appSessionId>`
-in the same transaction as its summary; this needs no schema migration. Droid does not
-support this preference. Model catalogs publish `supportsFastMode` when known.
+`fastMode` and `contextWindowTokens` are per-chat preferences, independent of
+reasoning effort. Both live on `app_sessions` as nullable columns (`fast_mode`,
+`context_window_tokens`) written in the same statement as the rest of the
+summary; history schema v5 adds them, and NULL means the chat never chose. The
+summary, provider transcript head and adjacent settings preserve an explicit
+`false` and an explicit window across resume and history reconstruction.
+
+`fastMode` starts explicitly off on Claude Code and Codex chats; omitted settings
+updates leave it unchanged. Droid does not support it. Model catalogs publish
+`supportsFastMode` when known.
 
 Claude Code receives `settings.fastMode` at launch and `applyFlagSettings` live.
 A contradictory result adds one quiet unavailability status row per runtime.
@@ -139,7 +142,7 @@ promise of delivered speed. Codex 0.157.1 accepts and echoes both tier values.
 - Starting a Mission requires High autonomy. The composer blocks a lower draft behind an explicit choice to raise it; autonomy is never elevated silently.
 - Live changes go provider-first through `session.updateSettings`, serialized per session. The renderer shows a pending state and settles only when the confirmed summary arrives; rejections surface as recoverable `session.autonomy_update_failed` errors, and a settlement that lands after close or provider replacement is discarded.
 - A chat's model and effort change through the same command. Each change carries a `requestId`; the renderer shows the choice immediately and keeps it until `session.model_update_applied` or a recoverable `session.model_update_failed` for that request settles it, so rapid follow-up changes are never overwritten by an earlier confirmation.
-- Claude chats may choose `contextWindowTokens` (200000 or 1000000). Omission keeps the provider default. The preference persists in the transcript head, adjacent settings, and the history settings table under `session.contextWindowTokens.<appSessionId>`; the existing history schema needs no migration. It is distinct from the observed `maxContextTokens`.
+- Claude chats may choose `contextWindowTokens` (200000 or 1000000). Omission keeps the provider default. It is distinct from the observed `maxContextTokens`.
 - A window change waits for the active turn and invalidates the observed capacity. Before the next turn, lifecycle closes the CLI and resumes the same session identity with the accepted preferences. The 200k choice removes the model suffix and sets `CLAUDE_CODE_DISABLE_1M_CONTEXT=1` only in that child environment. The 1M choice uses a catalog-listed variant or a catalog-declared native 1M model and removes that override. Unavailable choices fail visibly. [Claude's model configuration](https://code.claude.com/docs/en/model-config#extended-context) defines these launch controls.
 - Claude result usage supplies the main conversation model's effective capacity. Capacity belongs to the chat, so two chats on one model can report different limits and a limit-only update still publishes. Codex has no context-window selector in this contract.
 - The default model and effort for new chats are app-owned, one per harness, stored in renderer preferences. Unset fields fall through to the harness's own default; the CLI and SDK settings are never modified.

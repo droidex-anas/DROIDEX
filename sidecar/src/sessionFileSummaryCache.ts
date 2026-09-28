@@ -112,6 +112,9 @@ function hasOptionalSummaryFields(summary: Record<string, unknown>): boolean {
     ]) &&
     (streaming === undefined || typeof streaming === 'boolean') &&
     (summary.fastMode === undefined || typeof summary.fastMode === 'boolean') &&
+    (summary.contextWindowTokens === undefined ||
+      summary.contextWindowTokens === 200000 ||
+      summary.contextWindowTokens === 1000000) &&
     (compactedFromProviderSessionIds === undefined || stringArray(compactedFromProviderSessionIds))
   );
 }
