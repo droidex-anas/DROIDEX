@@ -102,6 +102,7 @@ export interface LiveSession extends LiveTurnState {
   closeMode?: SessionCloseMode;
   closePromise?: Promise<void>;
   turnPromise?: Promise<void>;
+  restartBeforeNextTurn?: boolean;
   providerClosePromise?: Promise<void>;
   mcpServers: LocalMcpResource[];
   // Running MCP handles reused when compaction swaps the provider session.
@@ -148,13 +149,16 @@ export interface SessionLifecycleDependencies {
   waitForSettingsMutations?: (appSessionId: string) => Promise<void>;
   runPrimaryTurn: (liveSession: LiveSession, request: PrimaryTurnRequest) => Promise<void>;
   eventFlow: Pick<SessionEventFlow, 'apply' | 'beginTurn'>;
-  context: Pick<SessionContext, 'refresh' | 'stopPolling' | 'stopSession' | 'forgetSession'>;
+  context: Pick<
+    SessionContext,
+    'refresh' | 'stopPolling' | 'stopSession' | 'forgetSession' | 'preserveUsage'
+  >;
   hasPendingInteractions: (appSessionId: string) => boolean;
   hasActiveSettingsChanges: (appSessionId: string) => boolean;
   // Durable transcript for a provider that keeps no session file of its own.
   // Opened with the live session, released when it closes.
   openProviderTranscript: (summary: SessionSummary) => void;
-  forgetProviderTranscript: (appSessionId: string) => void;
+  forgetProviderTranscript: (appSessionId: string) => void | Promise<void>;
   forgetInteractions: (appSessionId: string) => void;
   forgetEventFlow: (appSessionId: string) => void;
   forgetMissionControl: (appSessionId: string) => void;
@@ -171,7 +175,7 @@ export interface SessionLifecycleDependencies {
   appendError: (appSessionId: string, message: string) => void;
   // A steered prompt joins the durable transcript without a new turn to record
   // it; the renderer already showed it from the send.
-  recordPrompt: (appSessionId: string, text: string) => void;
+  recordPrompt: (appSessionId: string, text: string) => void | Promise<void>;
   catalogUpdated: (liveSession: LiveSession, items: SkillInfo[]) => void;
   emitSessionList: (closedProviderSessionId: string) => void | Promise<void>;
 }
@@ -200,6 +204,10 @@ export class SessionLifecycle {
       // Resolved here so an unroutable provider fails before any resource starts.
       const kind = requireProviderKind(command.provider);
       requireDroidReasoningSupported(kind, command);
+      if (kind === 'droid' && command.fastMode !== undefined)
+        throw new Error('Droid does not support fast mode.');
+      if (command.contextWindowTokens !== undefined && kind !== 'claude')
+        throw new Error('Context window selection is only supported for Claude Code chats.');
       const provider = d.provider(kind);
       const defaults = await d.getFactoryDefaults();
       const interactionMode = createInteractionModeForCommand(command, defaults);
@@ -257,7 +265,8 @@ export class SessionLifecycle {
       this.requireOpenAdmission();
 
       const appSessionId = providerSession.providerSessionId;
-      const maxContextTokens = d.maxContextTokensForModel(primary.modelId);
+      const maxContextTokens =
+        kind === 'droid' ? d.maxContextTokensForModel(primary.modelId) : undefined;
       const summary = buildCreatedSessionSummary({
         command,
         appSessionId,
@@ -277,7 +286,9 @@ export class SessionLifecycle {
       pendingLiveSession = liveSession;
       this.subscribeAutomaticCompaction(liveSession);
       this.subscribeBackgroundEvents(liveSession);
-      d.registry.register(liveSession);
+      await d.registry.register(liveSession, () => {
+        this.requireOpenAdmission();
+      });
       this.subscribeCatalog(liveSession);
       this.observeProviderClosure(liveSession);
       // Registered first, so the failed-open path that unregisters also releases it.
@@ -400,10 +411,12 @@ export class SessionLifecycle {
       requireCurrentResume();
       const projectedSummary = d.applyPendingSettingsToSummary({ ...summary });
       const liveSession = createLiveSession(projectedSummary, providerSession, session, mcp);
+      if (projectedSummary.contextWindowTokens !== historical?.contextWindowTokens)
+        liveSession.restartBeforeNextTurn = true;
       pendingLiveSession = liveSession;
       this.subscribeAutomaticCompaction(liveSession);
       this.subscribeBackgroundEvents(liveSession);
-      d.registry.register(liveSession);
+      await d.registry.register(liveSession, requireCurrentResume);
       this.subscribeCatalog(liveSession);
       this.observeProviderClosure(liveSession);
       // Registered first, so the failed-open path that unregisters also releases it.
@@ -623,7 +636,7 @@ export class SessionLifecycle {
     // The session may have been replaced while the steer was in flight; only
     // the one that took the prompt records it.
     if (this.dependencies.registry.getLive(appSessionId) === liveSession)
-      this.dependencies.recordPrompt(appSessionId, prompt.text);
+      await this.dependencies.recordPrompt(appSessionId, prompt.text);
     return 'taken';
   }
 
@@ -827,7 +840,10 @@ export class SessionLifecycle {
     });
     let unregistered: LiveSession | undefined;
     try {
-      unregistered = d.registry.unregister(liveSession.summary.appSessionId);
+      await d.forgetProviderTranscript(liveSession.summary.appSessionId);
+      if (d.registry.getLive(liveSession.summary.appSessionId) === liveSession) {
+        unregistered = await d.registry.unregister(liveSession.summary.appSessionId);
+      }
     } catch (error) {
       firstError ??= error;
     }
@@ -837,11 +853,6 @@ export class SessionLifecycle {
       });
       await run(() => {
         d.forgetPendingSettings(liveSession.summary.appSessionId);
-      });
-      // Flushes the open stored message, so the file is complete before the
-      // renderer hears the session closed.
-      await run(() => {
-        d.forgetProviderTranscript(liveSession.summary.appSessionId);
       });
       d.emit({ type: 'session.closed', appSessionId: liveSession.summary.appSessionId });
       await run(() => {
@@ -985,7 +996,8 @@ export class SessionLifecycle {
       }
       // A Stop lands before the turn reports itself finished, so the flags it
       // set are cleared here as they are for a typed turn.
-      const stopped = liveSession.interrupting || liveSession.interruptingForSteer;
+      const stopped =
+        liveSession.interrupting === true || liveSession.interruptingForSteer === true;
       liveSession.interrupting = false;
       liveSession.interruptingForSteer = false;
       this.publishTurnSettled(liveSession);
@@ -1070,6 +1082,7 @@ export class SessionLifecycle {
       this.dependencies.emitError({ appSessionId, message });
       return undefined;
     }
+    if (liveSession.streaming && liveSession.summary.provider === 'claude') return liveSession;
     const settingsApplied = await this.dependencies.applyPendingSessionSettings(
       liveSession.summary.appSessionId,
     );
@@ -1123,10 +1136,10 @@ export class SessionLifecycle {
       this.dependencies.registry.getLive(liveSession.summary.appSessionId) === liveSession
     ) {
       this.dependencies.context.forgetSession(liveSession);
-      if (this.dependencies.registry.unregister(liveSession.summary.appSessionId)) {
+      if (await this.dependencies.registry.unregister(liveSession.summary.appSessionId)) {
         this.dependencies.forgetInteractions(liveSession.summary.appSessionId);
         this.dependencies.forgetEventFlow(liveSession.summary.appSessionId);
-        this.dependencies.forgetProviderTranscript(liveSession.summary.appSessionId);
+        await this.dependencies.forgetProviderTranscript(liveSession.summary.appSessionId);
         this.dependencies.forgetMissionControl(liveSession.summary.appSessionId);
         this.dependencies.forgetPendingSettings(liveSession.summary.appSessionId);
       }
@@ -1139,8 +1152,48 @@ export class SessionLifecycle {
     delivery?: ScheduledTurnDelivery,
   ): Promise<void> {
     const d = this.dependencies;
-    const liveSession = d.registry.getLive(appSessionId);
+    let liveSession = d.registry.getLive(appSessionId);
     if (!liveSession || liveSession.closeMode || d.isShutdownStarted()) return;
+    if (liveSession.summary.provider === 'claude') {
+      await d.waitForSettingsMutations?.(appSessionId);
+      const settled = d.registry.getLive(appSessionId);
+      if (settled !== liveSession || settled.closeMode || d.isShutdownStarted()) return;
+    }
+    if (liveSession.streaming) {
+      liveSession.pendingSends.push(prompt);
+      this.updateQueuedSends(liveSession);
+      return;
+    }
+    while (liveSession.restartBeforeNextTurn) {
+      const previous = liveSession;
+      const carryover = {
+        tokensIn: liveSession.summary.tokensIn,
+        tokensOut: liveSession.summary.tokensOut,
+      };
+      await this.close(appSessionId, 'preserve-pending');
+      // The close above set `previous.closeMode`; a concurrent discard wins.
+      if (d.isShutdownStarted() || previous.closeMode === 'discard-pending') return;
+      if (!(await this.resume(appSessionId))) return;
+      liveSession = d.registry.getLive(appSessionId);
+      if (!liveSession || liveSession.closeMode) return;
+      const session = liveSession.session;
+      await session.setInteractionMode?.(previous.summary.interactionMode);
+      const resumed = d.registry.getLive(appSessionId);
+      if (
+        d.isShutdownStarted() ||
+        resumed !== liveSession ||
+        resumed.closeMode ||
+        resumed.session !== session
+      )
+        return;
+      d.context.preserveUsage(appSessionId, carryover);
+      liveSession.pendingSends.push(...previous.pendingSends.splice(0));
+      if (liveSession.streaming) {
+        liveSession.pendingSends.unshift(prompt);
+        this.updateQueuedSends(liveSession);
+        return;
+      }
+    }
     const stableAppSessionId = liveSession.summary.appSessionId;
     try {
       liveSession.streaming = true;
@@ -1161,7 +1214,8 @@ export class SessionLifecycle {
       await liveSession.turnPromise;
     } finally {
       liveSession.turnPromise = undefined;
-      const stopped = liveSession.interrupting || liveSession.interruptingForSteer;
+      const stopped =
+        liveSession.interrupting === true || liveSession.interruptingForSteer === true;
       liveSession.interruptingForSteer = false;
       liveSession.interrupting = false;
       liveSession.streaming = false;

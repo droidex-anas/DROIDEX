@@ -298,7 +298,9 @@ export function buildCreateRuntimeOptions(input: {
   compactionModel: string;
   compactionTokenLimit: number;
   mcpServers: McpServerConfig[];
-}): Omit<CreateRuntimeSessionOptions, 'permissionHandler' | 'askUserHandler'> {
+}): Omit<CreateRuntimeSessionOptions, 'permissionHandler' | 'askUserHandler'> & {
+  contextWindowTokens?: 200000 | 1000000;
+} {
   const usePrimaryForSpec =
     input.interactionMode === 'spec' ||
     Boolean(input.command.modelId) ||
@@ -308,10 +310,16 @@ export function buildCreateRuntimeOptions(input: {
     ? input.primary.reasoningEffort
     : input.defaults.specReasoningEffort;
   return {
+    ...(input.command.contextWindowTokens !== undefined
+      ? { contextWindowTokens: input.command.contextWindowTokens }
+      : {}),
     cwd: input.runtimeCwd,
     interactionMode: input.interactionMode,
     ...(input.primary.modelId !== undefined ? { modelId: input.primary.modelId } : {}),
     autonomyLevel: input.autonomy,
+    ...(input.command.provider && input.command.provider !== DEFAULT_PROVIDER
+      ? { fastMode: input.command.fastMode ?? false }
+      : {}),
     ...(input.primary.reasoningEffort !== undefined
       ? { reasoningEffort: input.primary.reasoningEffort }
       : {}),
@@ -353,6 +361,7 @@ export function buildCreatedSessionSummary(input: {
     providerSessionId: appSessionId,
     ...(command.sessionPurpose === 'mission-control' ? { missionId: appSessionId } : {}),
     provider: input.provider,
+    ...(input.provider !== DEFAULT_PROVIDER ? { fastMode: command.fastMode ?? false } : {}),
     ...(input.resumeId ? { resumeId: input.resumeId } : {}),
     sessionPurpose: command.sessionPurpose,
     interactionMode: input.interactionMode,
@@ -362,6 +371,9 @@ export function buildCreatedSessionSummary(input: {
     cwd,
     workspaceKind: cwd ? 'folder' : 'none',
     ...(primary.modelId !== undefined ? { modelId: primary.modelId } : {}),
+    ...(input.command.contextWindowTokens !== undefined
+      ? { contextWindowTokens: input.command.contextWindowTokens }
+      : {}),
     ...(primary.reasoningEffort !== undefined ? { reasoningEffort: primary.reasoningEffort } : {}),
     compactionModel: input.compactionModel,
     ...agents,
@@ -421,8 +433,14 @@ export const resumeHandle = (summary: SessionSummary | undefined) =>
 export const resumeSettings = (summary: SessionSummary | undefined) => ({
   ...(summary?.modelId !== undefined ? { modelId: summary.modelId } : {}),
   ...(summary?.reasoningEffort !== undefined ? { reasoningEffort: summary.reasoningEffort } : {}),
+  ...(summary?.contextWindowTokens !== undefined
+    ? { contextWindowTokens: summary.contextWindowTokens }
+    : {}),
   ...(summary?.autonomy !== undefined ? { autonomy: summary.autonomy } : {}),
   ...(summary ? { interactionMode: summary.interactionMode } : {}),
+  ...(summary && summary.provider !== DEFAULT_PROVIDER
+    ? { fastMode: summary.fastMode ?? false }
+    : {}),
 });
 
 export function buildResumedSession(input: BuildResumedSessionInput): {
@@ -490,6 +508,8 @@ type ResumedModelSettings = Pick<SessionSummary, 'autonomy' | 'compactionModel'>
       SessionSummary,
       | 'modelId'
       | 'reasoningEffort'
+      | 'fastMode'
+      | 'contextWindowTokens'
       | 'workerModelId'
       | 'workerReasoningEffort'
       | 'validatorModelId'
@@ -530,11 +550,26 @@ function resumedPrimaryModelSettings(
     historical?.reasoningEffort ??
     defaults.reasoningEffort;
   const maxContextTokens = historical?.maxContextTokens ?? input.maxContextTokensForModel(modelId);
-  const settings: Partial<ResumedModelSettings> = {};
-  if (modelId !== undefined) settings.modelId = modelId;
-  if (reasoningEffort !== undefined) settings.reasoningEffort = reasoningEffort;
-  if (maxContextTokens !== undefined) settings.maxContextTokens = maxContextTokens;
-  return settings;
+  return {
+    ...(modelId !== undefined ? { modelId } : {}),
+    ...(reasoningEffort !== undefined ? { reasoningEffort } : {}),
+    ...(maxContextTokens !== undefined ? { maxContextTokens } : {}),
+    ...resumedChatPreferences(historical),
+  };
+}
+
+// The two preferences only the stored summary knows: no provider session file
+// carries them, and an explicit `false` is a choice, not an absent setting.
+function resumedChatPreferences(
+  historical: SessionSummary | undefined,
+): Pick<Partial<ResumedModelSettings>, 'fastMode' | 'contextWindowTokens'> {
+  if (!historical) return {};
+  return {
+    ...(historical.provider !== DEFAULT_PROVIDER ? { fastMode: historical.fastMode ?? false } : {}),
+    ...(historical.contextWindowTokens !== undefined
+      ? { contextWindowTokens: historical.contextWindowTokens }
+      : {}),
+  };
 }
 
 function resumedAgentSettings(

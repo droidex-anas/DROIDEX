@@ -138,11 +138,13 @@ type SessionHistoryBase = Pick<
   | 'sessionLaunchSettings'
   | 'childSessions'
   | 'childSession'
-  | 'close'
 > & {
+  close(): void | Promise<void>;
+  onDurable?: (() => void) | undefined;
   syncSummaries(summaries: SessionSummary[]): boolean | undefined;
   upsertChildSession(child: PersistedChildSession): boolean | undefined;
   recordEvent(event: TranscriptEvent): void;
+  flush?: () => Promise<void>;
   persistenceRecovery?(): PersistenceRecovery;
 };
 
@@ -333,11 +335,6 @@ export class SessionManager {
         onStatusChanged: (status) => {
           this.emit(serverEventForHistoryStatus(status));
         },
-        onDurabilityRecovered: () => {
-          if (this.shutdownPromise) return;
-          this.registry.retryPendingDurability();
-          this.childSessions.retryPendingDurability();
-        },
       });
       const browsers = new BrowserSessionManager({
         assetUrlFor: options.assetUrlFor,
@@ -388,6 +385,11 @@ export class SessionManager {
         this.emit(event);
       },
     );
+    this.history.onDurable = () => {
+      if (this.shutdownPromise) return;
+      this.registry.retryPendingDurability();
+      this.childSessions.retryPendingDurability();
+    };
     this.registry = new SessionRegistry({
       history: this.history,
       loadOrdinarySessions: (options) => this.history.listHistoricalSessions(options),
@@ -552,6 +554,10 @@ export class SessionManager {
       },
     });
     this.modelSettings = new SessionModelSettings({
+      validateModelSettings: async (summary, settings) => {
+        if (settings.contextWindowTokens !== undefined)
+          await this.providerFor(summary.provider).validateModelSettings?.(settings);
+      },
       registry: this.registry,
       runtime: this.runtime,
       getFactoryDefaults: () => this.getFactoryDefaults(),
@@ -559,6 +565,8 @@ export class SessionManager {
       maxContextTokensForModel: (modelId) => this.maxContextTokensForModel(modelId),
       isShutdownStarted: () => this.shutdownPromise !== undefined,
       refreshPrimary: async (live, modelChanged) => {
+        if (modelChanged && live.summary.provider === 'claude')
+          this.context.invalidateWindow(live.summary.appSessionId);
         const session = live.session;
         const compactionTarget = this.primaryCompactionTarget(live);
         if (modelChanged && compactionTarget) await this.compaction.rearmPrimary(compactionTarget);
@@ -567,7 +575,7 @@ export class SessionManager {
         if (target) await this.context.refresh(target);
       },
       onPrimaryModelChanged: (summary, from, to) => {
-        this.appendSettingsStatus(summary, `Model switched: ${from} → ${to}`, { from, to });
+        return this.appendSettingsStatus(summary, `Model switched: ${from} → ${to}`, { from, to });
       },
       onSettled: (appSessionId) => {
         this.runtimeRetirement.arm();
@@ -630,7 +638,7 @@ export class SessionManager {
         this.openProviderTranscript(summary);
       },
       forgetProviderTranscript: (appSessionId) => {
-        this.timeline.releaseTranscript(appSessionId);
+        return this.timeline.releaseTranscript(appSessionId);
       },
       forgetMissionControl: (appSessionId) => {
         this.missionControlPolicy.forget(appSessionId);
@@ -653,7 +661,7 @@ export class SessionManager {
         this.timeline.appendError(appSessionId, message);
       },
       recordPrompt: (appSessionId, text) => {
-        this.timeline.recordPrompt(appSessionId, text);
+        return this.timeline.recordPrompt(appSessionId, text);
       },
       catalogUpdated: (liveSession, items) => {
         if (this.registry.getLive(liveSession.summary.appSessionId) !== liveSession) return;
@@ -704,9 +712,14 @@ export class SessionManager {
         })),
       recordedProcesses: () => this.agentProcesses.snapshotPids(),
       reapProcesses: (entries) => this.agentProcesses.killRecorded(entries),
-      persistSummaries: (summaries) => {
+      persistSummaries: async (summaries) => {
         this.history.syncSummaries(summaries);
-        for (const session of summaries) this.emit({ type: 'session.updated', session });
+        await this.history.flush?.();
+        if (this.shutdownPromise) return;
+        for (const session of summaries) {
+          if (!this.registry.getLive(session.appSessionId))
+            this.emit({ type: 'session.updated', session });
+        }
       },
       appendStatus: (appSessionId, text) => {
         this.timeline.appendStatus(appSessionId, text);
@@ -730,7 +743,13 @@ export class SessionManager {
   connect(apiKey?: string): void {
     this.runtime.connect(apiKey);
     this.ready = true;
-    void this.adoption.adopt();
+    void this.adoption.adopt().catch((error: unknown) => {
+      this.emit({
+        type: 'error',
+        message: `Could not restore the sessions that were running: ${errMsg(error)}`,
+        recoverable: true,
+      });
+    });
     this.emit({ type: 'connection', status: 'connected' });
     this.emit({ type: 'runtime.updated', status: this.runtime.status() });
     void this.emitProviderStatus();
@@ -943,7 +962,7 @@ export class SessionManager {
         return;
       case 'sessions.reanchorCwd':
         try {
-          const sessions = this.registry.reanchorHistoricalCwd(cmd.fromCwd, cmd.toCwd);
+          const sessions = await this.registry.reanchorHistoricalCwd(cmd.fromCwd, cmd.toCwd);
           this.emit({
             type: 'sessions.cwdReanchored',
             requestId: cmd.requestId,
@@ -1285,7 +1304,9 @@ export class SessionManager {
   }
 
   private maxContextTokensForSummary(summary: SessionSummary): number | undefined {
-    return this.maxContextTokensForModel(summary.modelId);
+    return summary.provider === 'droid'
+      ? this.maxContextTokensForModel(summary.modelId)
+      : summary.maxContextTokens;
   }
 
   private maxContextTokensForModel(modelId?: string): number | undefined {
@@ -1318,11 +1339,11 @@ export class SessionManager {
     return targets;
   }
 
-  private appendSettingsStatus(
+  private async appendSettingsStatus(
     summary: SessionSummary,
     text: string,
     modelSwitch?: TranscriptEvent['modelSwitch'],
-  ): void {
+  ): Promise<void> {
     const id = summary.appSessionId;
     const closed = !this.registry.getLive(id);
     if (closed) this.openProviderTranscript(summary);
@@ -1338,7 +1359,7 @@ export class SessionManager {
         ...(modelSwitch ? { modelSwitch } : {}),
       });
     } finally {
-      if (closed) this.timeline.releaseTranscript(id);
+      if (closed) await this.timeline.releaseTranscript(id);
     }
   }
 
@@ -1902,6 +1923,7 @@ export class SessionManager {
   }
 
   private async performShutdown(): Promise<void> {
+    this.history.onDurable = undefined;
     this.historyQueries.forget();
     this.runtimeRetirement.stop();
     this.runtimeWarmUp.stop();
@@ -1935,9 +1957,7 @@ export class SessionManager {
     await run(() => {
       this.timeline.flushStreaming();
     });
-    await run(() => {
-      this.history.close();
-    });
+    await run(() => this.history.close());
     if (firstError !== undefined)
       throw firstError instanceof Error ? firstError : new Error(errMsg(firstError));
   }

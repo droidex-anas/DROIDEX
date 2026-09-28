@@ -78,9 +78,12 @@ export function startBridgeServer(options: {
     batcher.enqueue(event);
   }
 
-  function sendBatch(batch: ServerEventBatch, metadata: BridgeEventBatchMetadata): void {
+  function sendBatch(
+    batch: ServerEventBatch,
+    metadata: BridgeEventBatchMetadata,
+    batchData: string,
+  ): void {
     const startedAt = performance.now();
-    const batchData = JSON.stringify(batch);
     const replayEntry = replay.push(batch, batchData);
     if (replayEntry.bytes >= HARD_CLIENT_BUFFER_BYTES) replay.markHistoryUnavailable();
     let bytesSent = 0;
@@ -255,6 +258,9 @@ export function startBridgeServer(options: {
         assertValidMentions(parsed);
       }
       assertValidInteractionResponse(parsed);
+      if (typeof parsed === 'object' && parsed !== null) {
+        assertValidChatPreferences(parsed);
+      }
       await options.onCommand(parsed as ClientCommand);
     } catch (err) {
       sendDirectWire(ws, {
@@ -430,6 +436,24 @@ export function startBridgeServer(options: {
     browserAssetUrl,
     close,
   };
+}
+
+// Fast mode and the context window are preferences of a top-level chat, so a
+// command that is not one of the two settings commands may not carry them.
+function assertValidChatPreferences(command: object): void {
+  const settingsCommand =
+    'type' in command &&
+    (command.type === 'session.create' || command.type === 'session.updateSettings');
+  if ('fastMode' in command) {
+    if (typeof command.fastMode !== 'boolean') throw new Error('fastMode must be a boolean.');
+    if (!settingsCommand) throw new Error('Fast mode only applies to top-level session settings.');
+  }
+  if ('contextWindowTokens' in command) {
+    if (command.contextWindowTokens !== 200000 && command.contextWindowTokens !== 1000000)
+      throw new Error('contextWindowTokens must be 200000 or 1000000.');
+    if (!settingsCommand)
+      throw new Error('A context window only applies to top-level session settings.');
+  }
 }
 
 function maxBufferedAmount(clients: Iterable<WebSocket>): number {

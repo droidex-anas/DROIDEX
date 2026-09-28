@@ -473,6 +473,39 @@ test("the session's totals count the main loop, not its subagents", () => {
   assert.deepEqual(tokens(turn(7, 3)), [{ tokensIn: 7, tokensOut: 3, contextTokens: 0 }]);
 });
 
+test('requested fast mode reports unavailability once without marking the row as an error', () => {
+  const mapper = new ClaudeEventMapper('app-fast');
+  const result = message({
+    type: 'result',
+    subtype: 'success',
+    usage: mainLoopUsage(1, 1),
+    permission_denials: [],
+    fast_mode_state: 'off',
+    fast_mode_disabled_reason: 'model_not_allowed',
+  });
+  assert.equal(mapper.map(result).filter((event) => event.transcript).length, 0);
+  const rows = mapper
+    .map(result, true)
+    .flatMap((event) => (event.transcript ? [event.transcript] : []));
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0].kind, 'status');
+  assert.equal(rows[0].isError, undefined);
+  assert.equal(rows[0].text, 'Fast mode is unavailable for this model: model not allowed');
+  assert.equal(mapper.map(result, true).filter((event) => event.transcript).length, 0);
+  const cooldown = new ClaudeEventMapper('app-cooldown');
+  const cooldownRows = cooldown.map(
+    message({
+      type: 'result',
+      subtype: 'success',
+      usage: mainLoopUsage(1, 1),
+      permission_denials: [],
+      fast_mode_state: 'cooldown',
+    }),
+    true,
+  );
+  assert.match(cooldownRows[0].transcript?.text ?? '', /cooldown/);
+});
+
 test('task updates preserve nonterminal states and only explicit endings settle children', () => {
   const children = childrenOf(new ClaudeEventMapper('app-1'));
   children(
@@ -490,4 +523,33 @@ test('task updates preserve nonterminal states and only explicit endings settle 
     );
     assert.equal(child?.status, status === 'killed' ? 'paused' : status);
   }
+});
+
+test('result capacity comes from the main conversation model, never a child', () => {
+  const mapper = new ClaudeEventMapper('context-chat', 'sonnet[1m]');
+  mapper.map(
+    streamEvent({
+      type: 'message_start',
+      message: { model: 'claude-sonnet-4-6', usage: mainLoopUsage(10, 0) },
+    }),
+  );
+  mapper.map(
+    message({
+      type: 'assistant',
+      parent_tool_use_id: 'child',
+      message: { model: 'claude-haiku-4-5', content: [] },
+    }),
+  );
+  const result = message({
+    type: 'result',
+    usage: mainLoopUsage(10, 5),
+    permission_denials: [],
+    modelUsage: {
+      'claude-haiku-4-5': { contextWindow: 200000 },
+      'claude-sonnet-4-6': { contextWindow: 1000000 },
+    },
+  });
+  assert.equal(mapper.map(result).at(-1)?.tokens?.maxContextTokens, 1000000);
+  mapper.setModel('opus');
+  assert.equal(mapper.map(result).at(-1)?.tokens?.maxContextTokens, undefined);
 });

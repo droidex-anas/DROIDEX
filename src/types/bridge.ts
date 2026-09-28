@@ -328,6 +328,10 @@ export interface ProviderStatus {
   // harness itself is configured with, so the app can name it instead of
   // calling it "Default". Absent when the harness reports none.
   defaultModelId?: string;
+  // The window that default runs on when the chat picks none, for the harnesses
+  // whose own default names an extended-context variant. Absent means the app
+  // knows only that the provider chooses.
+  defaultContextWindowTokens?: ContextWindowTokens;
   models: ModelInfo[];
   items?: SkillInfo[];
 }

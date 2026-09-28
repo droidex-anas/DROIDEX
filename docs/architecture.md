@@ -62,6 +62,25 @@ flowchart LR
 - `SessionLifecycle` owns primary-session create, resume, lazy resume, send queueing, steering, interruption, and ordered cleanup. Parent close calls one semantic `ChildSessions.closeParent()` operation rather than maintaining another child map.
 - Workspace sessions pass their selected folder to Factory unchanged. Folder-less sessions remain `workspaceKind: none` in navigation, while their Factory runtime uses the app-owned `chats/` directory under `DROIDEX_USER_DATA_DIR`; DROIDEX creates it before opening the session, resumes the session from it (Claude Code files sessions under the directory they ran from), and never uses the user's home directory as an implicit workspace.
 
+### Chat preferences
+
+`fastMode` and `contextWindowTokens` are per-chat preferences, independent of
+reasoning effort. Both live on `app_sessions` as nullable columns (`fast_mode`,
+`context_window_tokens`) written in the same statement as the rest of the
+summary; history schema v5 adds them, and NULL means the chat never chose. The
+summary, provider transcript head and adjacent settings preserve an explicit
+`false` and an explicit window across resume and history reconstruction.
+
+`fastMode` starts explicitly off on Claude Code and Codex chats; omitted settings
+updates leave it unchanged. Droid does not support it. Model catalogs publish
+`supportsFastMode` when known.
+
+Claude Code receives `settings.fastMode` at launch and `applyFlagSettings` live.
+A contradictory result adds one quiet unavailability status row per runtime.
+Codex receives `serviceTier: priority | default` on thread start, resume and every
+turn start; changes affect the next turn. This records requested routing, not a
+promise of delivered speed. Codex 0.157.1 accepts and echoes both tier values.
+
 ### Child runtime residency
 
 - Every live child runtime is a provider operating-system process. One measures roughly 350 MiB resident while doing nothing, so the four concurrently live child runtimes the budget allows are the largest single memory cost in the application.
@@ -83,7 +102,8 @@ flowchart LR
 
 - `HistoryPersistence` is the sidecar-facing history seam. It keeps canonical live summary and child overlays immediately readable while persistence is pending.
 - `HistoryPersistenceQueue` retains transcript metadata losslessly, collapses pending summaries and child records by stable identity, and enforces explicit row and byte ceilings.
-- Ordinary writes flush on a short debounce or batch limit with SQLite WAL `synchronous=NORMAL`. Reconciliation drains pending transactions for read consistency without forcing a durability checkpoint. Session creation, turn settlement, provider replacement, compaction, child settlement, unregister, and shutdown additionally force a `synchronous=FULL` WAL checkpoint before the corresponding completed state is published.
+- Ordinary writes flush on a short debounce or batch limit with SQLite WAL `synchronous=NORMAL`. Reconciliation drains pending transactions for read consistency without forcing a durability checkpoint. Session creation, turn settlement, provider replacement, compaction, child settlement, unregister, and shutdown additionally force a `synchronous=FULL` WAL checkpoint before the corresponding completed state is published. These boundaries await worker replies without blocking the orchestration event loop; owners revalidate the captured session or turn before applying the result.
+- App-owned provider transcripts serialize appends through an asynchronous file-write queue, one per file. A line that fails is reported to the caller that wrote it and is lost; the lines after it are still written, and the head line is retried until a line lands. Turn settlement and close wait for the queue and for every child file, and reject only when the message they closed could not be written. No transcript file or extra worker is opened at session construction.
 - One writer worker thread owns the SQLite connection and executes each batch inside one `BEGIN IMMEDIATE` transaction. A transactional writer-generation lease rejects work from a timed-out worker after its replacement starts, so late termination cannot overwrite recovered state or cross a durability checkpoint. Failed transactions roll back completely, the queue retains the batch, and the supervised client recreates a failed worker with bounded exponential retry. Live output continues while bounded queue capacity remains; durability boundaries fail visibly until recovery.
 - A separate index worker owns provider-file tree reconciliation, targeted watcher reconciliation, search-text extraction, and SQLite FTS5 updates. It returns revisioned cache deltas; a missed delta triggers an authoritative snapshot before the sidecar changes its in-memory historical summaries or provider-path index. The orchestration thread never walks the provider-file tree or rebuilds the derived cache; explicit history page loads still parse only the indexed provider paths needed for that page. The first session list and a post-close list publish only after their reconciliation result is applied.
 - Full-text content indexing is incremental and restartable. Each transaction advances a persisted byte cursor and indexed-tail fingerprint, so appends index only new JSONL records and a restart resumes at the last committed boundary. File replacement, truncation, or a changed indexed tail rebuilds only that provider's derived rows; deletion removes rows through an indexed provider-to-row mapping.
@@ -124,6 +144,12 @@ flowchart LR
 - Starting a Mission requires High autonomy. The composer blocks a lower draft behind an explicit choice to raise it; autonomy is never elevated silently.
 - Live changes go provider-first through `session.updateSettings`, serialized per session. The renderer shows a pending state and settles only when the confirmed summary arrives; rejections surface as recoverable `session.autonomy_update_failed` errors, and a settlement that lands after close or provider replacement is discarded.
 - A chat's model and effort change through the same command. Each change carries a `requestId`; the renderer shows the choice immediately and keeps it until `session.model_update_applied` or a recoverable `session.model_update_failed` for that request settles it, so rapid follow-up changes are never overwritten by an earlier confirmation.
+- Claude chats may choose `contextWindowTokens` (200000 or 1000000). Omission keeps the provider default. It is distinct from the observed `maxContextTokens`.
+- `[1m]` is how the CLI names a model's extended-context variant. Its catalog spells the suffix inside a row's `resolvedModel` rather than publishing a row for it, so the default model resolves past the suffix to the row the picker lists while the suffixed id is what reaches the CLI. `ProviderStatus.defaultContextWindowTokens` reports the window that default runs on.
+- A model may run 1M exactly when the catalog spells its id with the suffix somewhere, which is also the id the CLI is launched with; DROIDEX never builds a suffixed id the catalog does not contain. The same rule fills `ModelInfo.maxContextTokens` for Claude rows (1000000 or 200000), so the window menu never offers what the adapter would refuse.
+- A configured default naming one of the CLI's family aliases (`opus`, `sonnet`, `haiku`) rather than a catalog row is published as its own first row: its id is the configured string, its name is the alias alone because the app does not know which version it resolves to, and its capabilities come from the newest row of the same family.
+- A window change waits for the active turn and invalidates the observed capacity. Before the next turn, lifecycle closes the CLI and resumes the same session identity with the accepted preferences. The 200k choice removes the model suffix and sets `CLAUDE_CODE_DISABLE_1M_CONTEXT=1` only in that child environment. The 1M choice uses a catalog-listed variant or a catalog-declared native 1M model and removes that override. Unavailable choices fail visibly. [Claude's model configuration](https://code.claude.com/docs/en/model-config#extended-context) defines these launch controls.
+- Claude result usage supplies the main conversation model's effective capacity. Capacity belongs to the chat, so two chats on one model can report different limits and a limit-only update still publishes. Codex has no context-window selector in this contract.
 - The default model and effort for new chats are app-owned, one per harness, stored in renderer preferences. Unset fields fall through to the harness's own default; the CLI and SDK settings are never modified.
 - The Droid model catalog is the `availableModels` list a Droid session reports on init: the account's live catalog, Auto and Factory-hosted models included. `droid exec --help` lags it and only stands in until a session reports, so when no session has, the sidecar opens one catalog session to read it. `DroidModelCatalog` caches the result per CLI path in `~/.factory/droidex/model-catalog.json`, and every created or resumed Droid session refreshes it.
 - Child sessions report their confirmed effective autonomy only while their runtime is live. It is read from the provider init result, never persisted, and never inherited from the parent; historical or unopened children report none and the renderer labels them provider managed.
@@ -160,7 +186,7 @@ The sidecar assigns process-generation sequence numbers at the single outbound
 bridge boundary and groups ordinary events into short bounded batches. Only
 replaceable session/context telemetry can collapse, and never across a
 non-replaceable event. Approvals, questions, errors, lifecycle boundaries,
-history responses, and turn settlement flush immediately.
+history responses, and turn settlement flush immediately. Each event is serialized once at enqueue; byte accounting, batch assembly, and replay reuse that snapshot.
 
 Renderers must advertise bridge protocol 4, apply one wire batch as one
 ordered store transition, and reconnect with the last fully applied generation

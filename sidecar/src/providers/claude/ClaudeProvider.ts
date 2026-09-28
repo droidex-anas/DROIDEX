@@ -1,6 +1,6 @@
 import {
   query,
-  type EffortLevel,
+  type ModelInfo as ClaudeModelInfo,
   type McpServerConfig as SdkMcpServerConfig,
   type SDKUserMessage,
 } from '@anthropic-ai/claude-agent-sdk';
@@ -12,15 +12,18 @@ import { join } from 'node:path';
 
 import { nonEmptyEnv } from '../../droidexPaths.js';
 import { reasoningValue } from '../../modelCatalog.js';
-import type { ModelInfo, ProviderStatus, ReasoningEffort } from '../../protocol.js';
+import type { ProviderStatus, ReasoningEffort } from '../../protocol.js';
 import type {
   Provider,
   ProviderOpenInput,
+  ProviderModelSettings,
   ProviderResumeInput,
   ProviderSession,
 } from '../session.js';
 import { resolveClaudePath } from './claudeExecutable.js';
 import { claudeCatalogItems } from './claudeCatalog.js';
+import { claudeContextEnv, claudeContextModel } from './claudeContextWindow.js';
+import { claudeDefaultModel, claudeModelRows } from './claudeModels.js';
 import { ClaudeSession, type ClaudeSessionInput } from './claudeSession.js';
 
 const PROBE_TIMEOUT_MS = 25_000;
@@ -28,12 +31,26 @@ const INSTALL_HINT = 'Claude Code CLI not found. Install it, then refresh.';
 
 export class ClaudeProvider implements Provider {
   readonly kind = 'claude' as const;
+  private models: ClaudeModelInfo[] = [];
+  // The CLI's own name for the model a chat that pins none runs on, suffix
+  // included. The catalog row published beside it is the unsuffixed one.
+  private defaultLaunchModelId?: string;
+
+  validateModelSettings(settings: ProviderModelSettings): void {
+    claudeContextModel(
+      settings.modelId ?? this.defaultLaunchModelId,
+      settings.contextWindowTokens,
+      this.models,
+    );
+  }
 
   async create({
     interactions,
     cwd,
     modelId,
     reasoningEffort,
+    fastMode,
+    contextWindowTokens,
     autonomyLevel,
     interactionMode,
     mcpServers,
@@ -47,6 +64,8 @@ export class ClaudeProvider implements Provider {
       interactionMode,
       ...(modelId ? { modelId } : {}),
       ...(reasoningEffort ? { reasoningEffort } : {}),
+      fastMode: fastMode ?? false,
+      ...(contextWindowTokens !== undefined ? { contextWindowTokens } : {}),
       mcpServers: sdkMcpServers(mcpServers),
       interactions,
     });
@@ -59,6 +78,8 @@ export class ClaudeProvider implements Provider {
       cwd,
       modelId,
       reasoningEffort,
+      fastMode,
+      contextWindowTokens,
       autonomy,
       interactionMode,
       mcpServers,
@@ -71,14 +92,28 @@ export class ClaudeProvider implements Provider {
       interactionMode: interactionMode ?? 'auto',
       ...(modelId ? { modelId } : {}),
       ...(reasoningEffort ? { reasoningEffort } : {}),
+      fastMode: fastMode ?? false,
+      ...(contextWindowTokens !== undefined ? { contextWindowTokens } : {}),
       mcpServers: sdkMcpServers(mcpServers),
       interactions,
       resume: true,
     });
   }
 
-  private async open(input: Omit<ClaudeSessionInput, 'executable'>): Promise<ProviderSession> {
-    const session = new ClaudeSession({ ...input, executable: this.requireExecutable() });
+  private async open(
+    input: Omit<ClaudeSessionInput, 'executable' | 'models'>,
+  ): Promise<ProviderSession> {
+    const modelId = claudeContextModel(
+      input.modelId ?? this.defaultLaunchModelId,
+      input.contextWindowTokens,
+      this.models,
+    );
+    const session = new ClaudeSession({
+      ...input,
+      modelId,
+      models: this.models,
+      executable: this.requireExecutable(),
+    });
     try {
       await session.start();
     } catch (error) {
@@ -110,6 +145,7 @@ export class ClaudeProvider implements Provider {
         cwd: tmpdir(),
         pathToClaudeCodeExecutable: executable,
         persistSession: false,
+        env: claudeContextEnv(process.env, 1000000),
         allowedTools: [],
         mcpServers: {},
         strictMcpConfig: true,
@@ -132,18 +168,18 @@ export class ClaudeProvider implements Provider {
         probe.supportedCommands(),
       ]);
       const settings = claudeSettings();
-      const defaultModelId = claudeDefaultModelId(catalog, settings.model);
+      const defaultModel = claudeDefaultModel(catalog, settings.model);
+      this.models = catalog;
+      this.defaultLaunchModelId = defaultModel?.launchModelId;
       return {
         provider: 'claude',
         readiness: 'ready',
         accountLabel: account,
-        ...(defaultModelId ? { defaultModelId } : {}),
-        // The recommended row is the CLI's own name for "no model of your own",
-        // which is what DROIDEX's default row already means, so it is resolved
-        // above rather than listed as a model of its own.
-        models: catalog
-          .filter((model) => model.value !== RECOMMENDED)
-          .flatMap((model) => providerModel(model, settings.effortLevel)),
+        ...(defaultModel ? { defaultModelId: defaultModel.modelId } : {}),
+        ...(defaultModel?.contextWindowTokens !== undefined
+          ? { defaultContextWindowTokens: defaultModel.contextWindowTokens }
+          : {}),
+        models: claudeModelRows(catalog, settings.effortLevel, defaultModel),
         items: claudeCatalogItems(commands),
       };
     } catch (error) {
@@ -175,39 +211,6 @@ function accountLabel(account: {
     .find((value) => value !== '' && value.toLowerCase() !== 'none');
 }
 
-// The catalog row the CLI publishes for "whatever is recommended", rather than
-// for a model of its own.
-const RECOMMENDED = 'default';
-
-interface ClaudeModel {
-  value: string;
-  displayName: string;
-  description?: string;
-  resolvedModel?: string;
-  supportedEffortLevels?: EffortLevel[];
-}
-
-// The model a new Claude Code session starts on, named the way the catalog names
-// it: the CLI's own `model` setting when the user configured one, otherwise the
-// row it recommends. Either can name a model by alias or by wire id, so both are
-// resolved back to the row the picker lists.
-function claudeDefaultModelId(
-  models: ClaudeModel[],
-  configured: string | undefined,
-): string | undefined {
-  const recommended = models.find((model) => model.value === RECOMMENDED);
-  const recommendation = recommended?.resolvedModel ?? recommended?.value;
-  // A setting of `default` is the CLI's own word for "whatever is recommended",
-  // not a model, so it resolves the same way an absent setting does.
-  const wanted = configured === RECOMMENDED ? recommendation : (configured ?? recommendation);
-  if (!wanted) return undefined;
-  const row = models.find(
-    (model) =>
-      model.value !== RECOMMENDED && (model.value === wanted || model.resolvedModel === wanted),
-  );
-  return row?.value ?? wanted;
-}
-
 // The CLI keeps its own defaults under its config directory, which
 // CLAUDE_CONFIG_DIR relocates. A file that is missing or unreadable simply
 // names neither a model nor an effort.
@@ -224,59 +227,6 @@ function claudeSettings(): { model?: string; effortLevel?: ReasoningEffort } {
   } catch {
     return {};
   }
-}
-
-// A catalog entry missing its id or label cannot be selected or shown, so it is
-// dropped rather than published as a blank row. A model the CLI gives no effort
-// levels for — Haiku — offers none here either, and its rows show no stepper.
-function providerModel(model: ClaudeModel, configured: ReasoningEffort | undefined): ModelInfo[] {
-  const id = model.value.trim();
-  const displayName = versionedDisplayName(model.displayName.trim(), model.description);
-  if (!id || !displayName) return [];
-  const cliEfforts = (model.supportedEffortLevels ?? []).flatMap((level) => {
-    const effort = reasoningValue(level);
-    return effort ? [effort] : [];
-  });
-  // Ultracode is not one of the CLI's levels: it is xhigh plus standing workflow
-  // orchestration, so it rides above the published set on the models that can
-  // reach xhigh and is absent everywhere else. It is never a starting level, so
-  // the default still comes from what the CLI itself publishes.
-  const efforts: ReasoningEffort[] = cliEfforts.includes('xhigh')
-    ? [...cliEfforts, 'ultra']
-    : cliEfforts;
-  return [
-    {
-      id,
-      displayName,
-      provider: 'anthropic',
-      isCustom: false,
-      ...(efforts.length > 0
-        ? {
-            supportedReasoningEfforts: efforts,
-            defaultReasoningEffort: defaultEffort(cliEfforts, configured),
-          }
-        : {}),
-    },
-  ];
-}
-
-// The CLI labels a model by its alias ("Opus") and leads its description with
-// the versioned name ("Opus 5 with 1M context · …"); the picker shows the version.
-function versionedDisplayName(displayName: string, description: string | undefined): string {
-  const match = /^(\S+) (\d+(?:\.\d+)*)\b/.exec(description ?? '');
-  if (!match || !displayName.startsWith(match[1]) || /^\S+ \d/.test(displayName))
-    return displayName;
-  return `${match[1]} ${match[2]}${displayName.slice(match[1].length)}`;
-}
-
-// The level a chat on this model starts on: the CLI's own configured effort
-// where the model supports it, otherwise the SDK's documented model default.
-function defaultEffort(
-  efforts: ReasoningEffort[],
-  configured: ReasoningEffort | undefined,
-): ReasoningEffort {
-  if (configured && efforts.includes(configured)) return configured;
-  return efforts.includes('high') ? 'high' : efforts[efforts.length - 1];
 }
 
 // Claude Code runs in the directory the chat is anchored to; a folderless chat

@@ -30,7 +30,9 @@ const { loadHistoricalSessions, HistoryIndex, createHistorySessionFileCache } =
   await import('./history.js');
 const { parseFullSessionTranscript, SessionTranscriptReader } =
   await import('./sessionTranscript.js');
+const { writeProviderSessionSettings } = await import('./providers/providerSessionSettings.js');
 const { ProviderTranscriptFile } = await import('./providers/ProviderTranscriptFile.js');
+const { resumeSettings } = await import('./sessionHelpers.js');
 const { SessionVoice } = await import('./providers/SessionVoice.js');
 const { providerSessionsDir } = await import('./droidexPaths.js');
 
@@ -128,7 +130,7 @@ test('an unreadable subdirectory is skipped without aborting the scan', () => {
 // writes for a non-Droid session is what the scan admits and the parser
 // replays. Nothing types can check — a drifted head key or content block reads
 // as "the session is missing, and empty when reopened".
-test('a transcript DROIDEX writes for a non-Droid session is enumerated and replays', () => {
+test('a transcript DROIDEX writes for a non-Droid session is enumerated and replays', async () => {
   const appSessionId = 'provider-transcript-scan';
   const summary: SessionSummary = {
     appSessionId,
@@ -140,7 +142,9 @@ test('a transcript DROIDEX writes for a non-Droid session is enumerated and repl
     title: 'Claude session',
     goal: 'Claude session',
     cwd: '',
-    modelId: 'claude-sonnet-4-5',
+    modelId: 'claude-sonnet-4-5[1m]',
+    fastMode: true,
+    contextWindowTokens: 1000000,
     autonomy: 'medium',
     phase: 'paused',
     queuedSends: 0,
@@ -152,7 +156,7 @@ test('a transcript DROIDEX writes for a non-Droid session is enumerated and repl
     updatedAt: 1,
   };
   const transcript = new ProviderTranscriptFile(summary.appSessionId, () => summary);
-  transcript.appendPrompt('what is here?');
+  await transcript.appendPrompt('what is here?');
   transcript.append(transcriptEvent(appSessionId, 'text', { text: 'Looking.' }));
   transcript.append(
     transcriptEvent(appSessionId, 'tool_call', {
@@ -189,14 +193,26 @@ test('a transcript DROIDEX writes for a non-Droid session is enumerated and repl
       isError: true,
     }),
   );
-  transcript.flush();
+  await transcript.flush();
 
   const listed = loadHistoricalSessions().find((row) => row.summary.appSessionId === appSessionId);
   assert.equal(listed?.summary.provider, 'claude');
   assert.equal(listed?.summary.resumeId, 'thread-abc');
   // Without a model on the head line the restored session cannot be resumed.
-  assert.equal(listed?.summary.modelId, 'claude-sonnet-4-5');
+  assert.equal(listed?.summary.modelId, 'claude-sonnet-4-5[1m]');
   assert.equal(listed?.summary.title, 'Claude session');
+  assert.equal(listed?.summary.fastMode, true);
+  assert.equal(listed?.summary.contextWindowTokens, 1000000);
+
+  // A later choice lives in the settings file beside the transcript and wins
+  // over the head line the chat started from.
+  writeProviderSessionSettings(appSessionId, { fastMode: false, contextWindowTokens: 200000 });
+  const restored = loadHistoricalSessions().find(
+    (row) => row.summary.appSessionId === appSessionId,
+  );
+  assert.equal(restored?.summary.fastMode, false);
+  assert.equal(restored?.summary.contextWindowTokens, 200000);
+  assert.equal(resumeSettings(restored?.summary).fastMode, false);
 
   const events = parseFullSessionTranscript(
     appSessionId,
@@ -276,6 +292,7 @@ test('a transcript DROIDEX writes for a non-Droid session is enumerated and repl
       });
     }
   }
+  await transcript.flush();
   // Reconcile files as restart does, then exercise the child pane's real loader.
   const db = new DatabaseSync(':memory:');
   const index = new HistoryIndex();
@@ -328,7 +345,55 @@ test('a transcript DROIDEX writes for a non-Droid session is enumerated and repl
   }
 });
 
-test('spoken rows replay with their mark, speaker, and latest corrected text', () => {
+test('a failed transcript write reaches its caller and does not stop the lines after it', async () => {
+  const appSessionId = 'blocked-transcript';
+  const summary: SessionSummary = {
+    appSessionId,
+    provider: 'claude',
+    sessionPurpose: 'chat',
+    interactionMode: 'auto',
+    role: 'primary',
+    title: 'Blocked, then not',
+    goal: '',
+    cwd: '',
+    modelId: 'claude-sonnet-4-5',
+    autonomy: 'medium',
+    phase: 'paused',
+    features: [],
+    tokensIn: 0,
+    tokensOut: 0,
+    contextTokens: 0,
+    createdAt: 1,
+    updatedAt: 1,
+  };
+  const path = join(providerSessionsDir(), `${appSessionId}.jsonl`);
+  // A directory where the file belongs fails every append until it is removed.
+  mkdirSync(path, { recursive: true });
+  const transcript = new ProviderTranscriptFile(appSessionId, () => summary);
+
+  await assert.rejects(transcript.appendPrompt('lost'), /EISDIR/);
+  // Nothing is open, so a close right after the failure settles.
+  await transcript.flush();
+  transcript.append(transcriptEvent(appSessionId, 'text', { text: 'Also lost.' }));
+  await assert.rejects(transcript.flush(), /EISDIR/);
+  await transcript.flush();
+
+  rmSync(path, { recursive: true });
+  await transcript.appendPrompt('kept');
+  transcript.append(transcriptEvent(appSessionId, 'text', { text: 'Answer.' }));
+  await transcript.flush();
+
+  const events = parseFullSessionTranscript(appSessionId, appSessionId, path, 'primary');
+  assert.deepEqual(
+    events.map((event) => event.text),
+    ['kept', 'Answer.'],
+  );
+  // The head line went out with the first line that landed.
+  const listed = loadHistoricalSessions().find((row) => row.summary.appSessionId === appSessionId);
+  assert.equal(listed?.summary.modelId, 'claude-sonnet-4-5');
+});
+
+test('spoken rows replay with their mark, speaker, and latest corrected text', async () => {
   const appSessionId = 'spoken-transcript-scan';
   const summary: SessionSummary = {
     appSessionId,
@@ -358,7 +423,7 @@ test('spoken rows replay with their mark, speaker, and latest corrected text', (
   });
   transcript.append(spokenUser);
   transcript.append({ ...spokenUser, text: 'please check' });
-  transcript.append(
+  await transcript.append(
     transcriptEvent(appSessionId, 'text', {
       id: 'voice-assistant',
       sourceSessionId: 'primary',

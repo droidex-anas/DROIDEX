@@ -295,13 +295,13 @@ export class SessionTimeline {
     this.transcripts.use(appSessionId, transcript);
   }
 
-  releaseTranscript(appSessionId: string): void {
-    this.transcripts.release(appSessionId);
+  async releaseTranscript(appSessionId: string): Promise<void> {
+    await this.transcripts.release(appSessionId);
   }
 
   // The renderer already showed the prompt; only persist it here.
-  recordPrompt(appSessionId: string, prompt: string): void {
-    this.transcripts.recordPrompt(appSessionId, prompt);
+  recordPrompt(appSessionId: string, prompt: string): void | Promise<void> {
+    return this.transcripts.recordPrompt(appSessionId, prompt);
   }
 
   append(event: TranscriptEvent): void {
@@ -325,13 +325,13 @@ export class SessionTimeline {
     this.streaming.flushSource(appSessionId, sourceSessionId);
   }
 
-  settleStreaming(appSessionId: string, sourceSessionId: string): void {
+  async settleStreaming(appSessionId: string, sourceSessionId: string): Promise<void> {
     let flushError: Error | undefined;
     try {
       this.streaming.endTurn(appSessionId, sourceSessionId);
       // The primary tail is recorded, so its open stored message is complete. A
       // child's turn settling must not split the parent's message in two.
-      if (sourceSessionId === appSessionId) this.transcripts.flush(appSessionId);
+      if (sourceSessionId === appSessionId) await this.transcripts.flush(appSessionId);
     } catch (error) {
       flushError =
         error instanceof Error

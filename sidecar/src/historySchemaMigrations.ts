@@ -76,6 +76,19 @@ export function addChildSettledAt(db: DatabaseSync): void {
   );
 }
 
+// v4 gains the two chat preferences as their own nullable columns. A chat
+// stored before this keeps NULL in both, which reads as "never chosen".
+export function addChatPreferenceColumns(db: DatabaseSync): void {
+  inMigrationTransaction(
+    db,
+    `
+      ALTER TABLE app_sessions ADD COLUMN fast_mode INTEGER;
+      ALTER TABLE app_sessions ADD COLUMN context_window_tokens INTEGER;
+      PRAGMA user_version = 5;
+    `,
+  );
+}
+
 // This is the user's own chat history: a migration either lands whole or leaves
 // the index exactly as it was, so the caller's recovery message is the only
 // thing they ever see.

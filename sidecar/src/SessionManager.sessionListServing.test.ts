@@ -285,6 +285,7 @@ test('provider replacement finalizes the retired file without treating its alias
       interactionMode: 'auto',
       autonomy: 'low',
     });
+    await ctx.waitForIdle();
     await ctx.handle({ type: 'sessions.list' });
     const targetedBefore = ctx.history.targetedReconcileCalls.length;
     ctx.provider.session('provider-1').nextCompactResult = {

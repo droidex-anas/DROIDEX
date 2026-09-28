@@ -7,7 +7,7 @@ import test from 'node:test';
 import { HistoryPersistence } from './HistoryPersistence.js';
 import { SESSION_INDEX_FILENAME } from './history.js';
 
-test('concurrent profiles persist history independently without competing for a writer lease', () => {
+test('concurrent profiles persist history independently without competing for a writer lease', async () => {
   const root = mkdtempSync(join(tmpdir(), 'droidex-profiles-'));
   const previous = process.env.DROIDEX_HISTORY_DIR;
   const stores: HistoryPersistence[] = [];
@@ -24,7 +24,7 @@ test('concurrent profiles persist history independently without competing for a 
         role: 'primary',
         ts: 1,
       });
-      store.flushSync();
+      await store.flush();
     }
     for (const profile of ['main', 'dev']) {
       const db = new DatabaseSync(join(root, profile, SESSION_INDEX_FILENAME), { readOnly: true });
@@ -36,7 +36,7 @@ test('concurrent profiles persist history independently without competing for a 
       }
     }
   } finally {
-    for (const store of stores) store.close();
+    for (const store of stores) await store.close();
     if (previous === undefined) delete process.env.DROIDEX_HISTORY_DIR;
     else process.env.DROIDEX_HISTORY_DIR = previous;
     rmSync(root, { recursive: true, force: true });

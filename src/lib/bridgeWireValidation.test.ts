@@ -477,6 +477,35 @@ test('interaction wire validation preserves rich questions and approval eligibil
   );
 });
 
+test('the chat preferences on a summary accept only their own values', () => {
+  const summary = {
+    appSessionId: 'app-fast',
+    provider: 'codex',
+    sessionPurpose: 'chat',
+    interactionMode: 'auto',
+    role: 'primary',
+    title: 'Fast',
+    goal: '',
+    cwd: '',
+    autonomy: 'low',
+    phase: 'paused',
+    features: [],
+    tokensIn: 0,
+    tokensOut: 0,
+    contextTokens: 0,
+    createdAt: 1,
+    updatedAt: 1,
+  };
+  const updated = (session: Record<string, unknown>) =>
+    serverWireMessage(batch({ type: 'session.updated', session })) !== null;
+  for (const fastMode of [true, false, undefined]) assert.ok(updated({ ...summary, fastMode }));
+  for (const fastMode of ['true', 1, null]) assert.equal(updated({ ...summary, fastMode }), false);
+  for (const contextWindowTokens of [200000, 1000000, undefined])
+    assert.ok(updated({ ...summary, contextWindowTokens }));
+  for (const contextWindowTokens of [500000, '200000', null])
+    assert.equal(updated({ ...summary, contextWindowTokens }), false);
+});
+
 test('transient transcript events accept only the literal true or an absent flag', () => {
   const event = {
     id: 'event-1',

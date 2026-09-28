@@ -31,10 +31,6 @@ class FakeClient implements HistoryPersistenceClient {
     };
     return {
       promise: failure ? Promise.reject(failure) : Promise.resolve(result),
-      waitSync: () => {
-        if (failure) throw failure;
-        return result;
-      },
     };
   }
 
@@ -47,10 +43,6 @@ class FakeClient implements HistoryPersistenceClient {
     void promise.catch(() => undefined);
     return {
       promise,
-      waitSync: () => {
-        if (failure) throw failure;
-        return result;
-      },
     };
   }
 
@@ -58,7 +50,7 @@ class FakeClient implements HistoryPersistenceClient {
     return Promise.resolve([]);
   }
 
-  closeSync(): void {}
+  async close(): Promise<void> {}
 }
 
 function summary(appSessionId: string, tokensIn: number): SessionSummary {
@@ -114,7 +106,7 @@ function dormantTimer(): ReturnType<typeof setTimeout> {
   return timer;
 }
 
-test('write-behind flush timer stays unarmed until a row is queued', () => {
+test('write-behind flush timer stays unarmed until a row is queued', async () => {
   const delays: number[] = [];
   const client = new FakeClient();
   const queue = new HistoryPersistenceQueue({
@@ -129,11 +121,11 @@ test('write-behind flush timer stays unarmed until a row is queued', () => {
   assert.deepEqual(delays, []);
   queue.enqueueEvent(event('one'));
   assert.deepEqual(delays, [25]);
-  queue.flushSync();
+  await queue.flush();
   assert.deepEqual(delays, [25]);
 });
 
-test('keeps transcript events lossless while summaries and children collapse latest-wins', () => {
+test('keeps transcript events lossless while summaries and children collapse latest-wins', async () => {
   const client = new FakeClient();
   const queue = new HistoryPersistenceQueue({
     dbPath: '/unused',
@@ -147,7 +139,7 @@ test('keeps transcript events lossless while summaries and children collapse lat
   queue.enqueueSummaries([summary('app', 2)]);
   queue.enqueueChild(child('running'));
   queue.enqueueChild(child('paused'));
-  queue.flushSync();
+  await queue.flush();
 
   assert.deepEqual(
     client.batches.flatMap((batch) => batch.events.map((item) => item.id)),
@@ -164,7 +156,7 @@ test('keeps transcript events lossless while summaries and children collapse lat
   assert.equal(client.durabilityBarriers, 1);
 });
 
-test('restores a failed batch and preserves newer latest-wins state', () => {
+test('restores a failed batch and preserves newer latest-wins state', async () => {
   const client = new FakeClient();
   client.failNext = new Error('database busy');
   const queue = new HistoryPersistenceQueue({
@@ -175,9 +167,9 @@ test('restores a failed batch and preserves newer latest-wins state', () => {
 
   queue.enqueueEvent(event('one'));
   queue.enqueueSummaries([summary('app', 1)]);
-  assert.throws(() => queue.flushSync(), /database busy/);
+  await assert.rejects(async () => await queue.flush(), /database busy/);
   queue.enqueueSummaries([summary('app', 2)]);
-  queue.flushSync();
+  await queue.flush();
 
   const successful = client.batches.at(-1);
   assert.deepEqual(
@@ -206,22 +198,19 @@ test('an asynchronous persistence failure restores events ahead of newer events'
         summariesWritten: batch.summaries.length,
         childrenWritten: batch.children.length,
       };
-      if (attempts > 1) return { promise: Promise.resolve(result), waitSync: () => result };
+      if (attempts > 1) return { promise: Promise.resolve(result) };
       const promise = new Promise<HistoryPersistenceResult>((_resolve, reject) => {
         rejectFirst = reject;
       });
       return {
         promise,
-        waitSync: () => {
-          throw new Error('not used');
-        },
       };
     },
     startDurabilityBarrier: () => {
       const result = { durable: true } as const;
-      return { promise: Promise.resolve(result), waitSync: () => result };
+      return { promise: Promise.resolve(result) };
     },
-    closeSync: () => undefined,
+    close: () => Promise.resolve(),
   };
   const queue = new HistoryPersistenceQueue({
     dbPath: '/unused',
@@ -244,9 +233,10 @@ test('an asynchronous persistence failure restores events ahead of newer events'
   assert.equal(queue.snapshot().pendingEntries, 0);
 });
 
-test('an asynchronous drain never enters the synchronous worker wait', async () => {
+test('a durability flush yields to the event loop and awaits both writes and checkpoint', async () => {
   let resolvePersist: ((result: HistoryPersistenceResult) => void) | undefined;
-  let synchronousWaits = 0;
+  let resolveBarrier: (() => void) | undefined;
+  let durable = false;
   const client: HistoryPersistenceClient = {
     startPersist: () => {
       const promise = new Promise<HistoryPersistenceResult>((resolve) => {
@@ -254,17 +244,16 @@ test('an asynchronous drain never enters the synchronous worker wait', async () 
       });
       return {
         promise,
-        waitSync: () => {
-          synchronousWaits += 1;
-          throw new Error('synchronous wait must not run');
-        },
       };
     },
     startDurabilityBarrier: () => {
-      const result = { durable: true } as const;
-      return { promise: Promise.resolve(result), waitSync: () => result };
+      return {
+        promise: new Promise<{ durable: true }>((resolve) => {
+          resolveBarrier = () => resolve({ durable: true });
+        }),
+      };
     },
-    closeSync: () => undefined,
+    close: () => Promise.resolve(),
   };
   const queue = new HistoryPersistenceQueue({
     dbPath: '/unused',
@@ -273,9 +262,11 @@ test('an asynchronous drain never enters the synchronous worker wait', async () 
   });
   queue.enqueueEvent(event('one'));
 
-  const draining = queue.drain();
-  await Promise.resolve();
-  assert.equal(synchronousWaits, 0);
+  const draining = queue.flush().then(() => {
+    durable = true;
+  });
+  await new Promise<void>((resolve) => setImmediate(resolve));
+  assert.equal(durable, false);
   assert.equal(queue.snapshot().inFlightEntries, 1);
 
   resolvePersist?.({
@@ -284,7 +275,12 @@ test('an asynchronous drain never enters the synchronous worker wait', async () 
     summariesWritten: 0,
     childrenWritten: 0,
   });
+  await new Promise<void>((resolve) => setImmediate(resolve));
+  assert.equal(durable, false);
+  assert.ok(resolveBarrier);
+  resolveBarrier();
   await draining;
+  assert.equal(durable, true);
   assert.equal(queue.snapshot().pendingEntries, 0);
   assert.equal(queue.snapshot().inFlightEntries, 0);
 });
@@ -298,7 +294,7 @@ test('an asynchronous drain waits only for entries captured when it starts', asy
   });
   let calls = 0;
   const client: HistoryPersistenceClient = {
-    startPersist: (batch) => {
+    startPersist: () => {
       calls += 1;
       const promise = new Promise<HistoryPersistenceResult>((resolve) => {
         if (calls === 1) resolveFirst = resolve;
@@ -309,19 +305,13 @@ test('an asynchronous drain waits only for entries captured when it starts', asy
       });
       return {
         promise,
-        waitSync: () => ({
-          durationMs: 1,
-          eventsWritten: batch.events.length,
-          summariesWritten: batch.summaries.length,
-          childrenWritten: batch.children.length,
-        }),
       };
     },
     startDurabilityBarrier: () => {
       const result = { durable: true } as const;
-      return { promise: Promise.resolve(result), waitSync: () => result };
+      return { promise: Promise.resolve(result) };
     },
-    closeSync: () => undefined,
+    close: () => Promise.resolve(),
   };
   const queue = new HistoryPersistenceQueue({
     dbPath: '/unused',
@@ -352,11 +342,11 @@ test('an asynchronous drain waits only for entries captured when it starts', asy
       childrenWritten: 0,
     });
     await draining;
-    queue.close();
+    await queue.close();
   }
 });
 
-test('large event runs preserve exact order across bounded batches', () => {
+test('large event runs preserve exact order across bounded batches', async () => {
   const client = new FakeClient();
   const queue = new HistoryPersistenceQueue({
     dbPath: '/unused',
@@ -367,7 +357,7 @@ test('large event runs preserve exact order across bounded batches', () => {
   for (let index = 0; index < 1_500; index += 1) {
     queue.enqueueEvent(event(`event-${String(index)}`));
   }
-  queue.flushSync();
+  await queue.flush();
 
   assert.deepEqual(
     client.batches.flatMap((batch) => batch.events.map((item) => item.id)),
@@ -376,7 +366,7 @@ test('large event runs preserve exact order across bounded batches', () => {
   assert.ok(client.batches.length >= 3);
 });
 
-test('queued values are detached from caller mutation', () => {
+test('queued values are detached from caller mutation', async () => {
   const client = new FakeClient();
   const queue = new HistoryPersistenceQueue({
     dbPath: '/unused',
@@ -395,7 +385,7 @@ test('queued values are detached from caller mutation', () => {
     expectedBehavior: [],
     verificationSteps: [],
   });
-  queue.flushSync();
+  await queue.flush();
 
   assert.equal(client.batches[0]?.summaries[0]?.tokensIn, 1);
   assert.equal(client.batches[0]?.summaries[0]?.features.length, 0);
@@ -405,14 +395,11 @@ test('hard capacity rejects unbounded event growth', () => {
   const neverSettles: HistoryPersistenceClient = {
     startPersist: () => ({
       promise: new Promise<HistoryPersistenceResult>(() => undefined),
-      waitSync: () => {
-        throw new Error('not used');
-      },
     }),
     startDurabilityBarrier: () => {
       throw new Error('not used');
     },
-    closeSync: () => undefined,
+    close: () => Promise.resolve(),
   };
   const queue = new HistoryPersistenceQueue({
     dbPath: '/unused',
@@ -428,7 +415,7 @@ test('hard capacity rejects unbounded event growth', () => {
   }, HistoryPersistenceBackpressureError);
 });
 
-test('a synchronous worker failure retains queued events and accepts live output until recovery', () => {
+test('a synchronous worker failure retains queued events and accepts live output until recovery', async () => {
   const scheduledDelays: number[] = [];
   const scheduledCallbacks: Array<() => void> = [];
   const persistedIds: string[][] = [];
@@ -444,13 +431,13 @@ test('a synchronous worker failure retains queued events and accepts live output
         summariesWritten: batch.summaries.length,
         childrenWritten: batch.children.length,
       };
-      return { promise: Promise.resolve(result), waitSync: () => result };
+      return { promise: Promise.resolve(result) };
     },
     startDurabilityBarrier: () => {
       const result = { durable: true } as const;
-      return { promise: Promise.resolve(result), waitSync: () => result };
+      return { promise: Promise.resolve(result) };
     },
-    closeSync: () => undefined,
+    close: () => Promise.resolve(),
   };
   const queue = new HistoryPersistenceQueue({
     dbPath: '/unused',
@@ -465,7 +452,7 @@ test('a synchronous worker failure retains queued events and accepts live output
   queue.enqueueEvent(event('one'));
   scheduledCallbacks.shift()?.();
   assert.doesNotThrow(() => queue.enqueueEvent(event('two')));
-  queue.flushSync();
+  await queue.flush();
 
   assert.equal(attempts, 2);
   assert.deepEqual(scheduledDelays, [25, 250]);
@@ -487,13 +474,13 @@ test('repeated worker failures retry with bounded exponential backoff', () => {
         summariesWritten: batch.summaries.length,
         childrenWritten: batch.children.length,
       };
-      return { promise: Promise.resolve(result), waitSync: () => result };
+      return { promise: Promise.resolve(result) };
     },
     startDurabilityBarrier: () => {
       const result = { durable: true } as const;
-      return { promise: Promise.resolve(result), waitSync: () => result };
+      return { promise: Promise.resolve(result) };
     },
-    closeSync: () => undefined,
+    close: () => Promise.resolve(),
   };
   const queue = new HistoryPersistenceQueue({
     dbPath: '/unused',
@@ -528,7 +515,7 @@ test('a failed durability barrier retries without waiting for another write', as
   });
 
   queue.enqueueEvent(event('one'));
-  assert.throws(() => queue.flushSync(), /checkpoint failed/);
+  await assert.rejects(async () => await queue.flush(), /checkpoint failed/);
   callbacks.at(-1)?.();
   await Promise.resolve();
   await Promise.resolve();
@@ -553,7 +540,7 @@ test('a consistency drain preserves a pending durability retry', async () => {
   });
 
   queue.enqueueEvent(event('one'));
-  assert.throws(() => queue.flushSync(), /checkpoint failed/);
+  await assert.rejects(async () => await queue.flush(), /checkpoint failed/);
   await queue.drain();
   callbacks.at(-1)?.();
   await Promise.resolve();
@@ -579,14 +566,14 @@ test('a failed boundary drain stays degraded until a later barrier succeeds', as
   });
 
   queue.enqueueEvent(event('one'));
-  assert.throws(() => queue.flushSync(), /worker failed during boundary/);
+  await assert.rejects(async () => await queue.flush(), /worker failed during boundary/);
   callbacks.at(-1)?.();
   await Promise.resolve();
   await Promise.resolve();
   assert.deepEqual(statuses, ['degraded', 'healthy']);
 });
 
-test('a failed close cancels the retry it scheduled before closing the client', () => {
+test('a failed close cancels the retry it scheduled before closing the client', async () => {
   const callbacks: Array<() => void> = [];
   const cancelled = new Set<ReturnType<typeof setTimeout>>();
   const client = new FakeClient();
@@ -605,7 +592,7 @@ test('a failed close cancels the retry it scheduled before closing the client', 
   });
 
   queue.enqueueEvent(event('one'));
-  assert.throws(() => queue.close(), /checkpoint failed during close/);
+  await assert.rejects(async () => await queue.close(), /checkpoint failed during close/);
   assert.equal(callbacks.length, 2, 'the initial flush and failed-barrier retry were scheduled');
   assert.equal(cancelled.size, 2, 'both timers were cancelled before close returned');
   const barriersBeforeStaleCallback = client.durabilityBarriers;
@@ -613,7 +600,7 @@ test('a failed close cancels the retry it scheduled before closing the client', 
   assert.equal(client.durabilityBarriers, barriersBeforeStaleCallback);
 });
 
-test('unflushed work is marked dirty until a successful drain, then reported rather than assumed durable', () => {
+test('unflushed work is marked dirty until a successful drain, then reported rather than assumed durable', async () => {
   const client = new FakeClient();
   const marks: string[] = [];
   const queue = new HistoryPersistenceQueue({
@@ -630,7 +617,7 @@ test('unflushed work is marked dirty until a successful drain, then reported rat
   });
   queue.enqueueEvent(event('one'));
   assert.deepEqual(marks, ['dirty']);
-  queue.flushSync();
+  await queue.flush();
   assert.ok(marks.includes('clean'));
-  queue.close();
+  await queue.close();
 });

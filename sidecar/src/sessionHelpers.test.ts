@@ -152,6 +152,53 @@ test('cold resume preserves a persisted Mission Control proposal', () => {
   assert.equal(resumed.summary.proposal, '# Persisted plan');
 });
 
+test('a resumed chat keeps the fast mode and context window it was closed with', () => {
+  const historical: SessionSummary = {
+    appSessionId: 'claude-app',
+    providerSessionId: 'claude-app',
+    provider: 'claude',
+    sessionPurpose: 'chat',
+    interactionMode: 'auto',
+    role: 'primary',
+    title: 'Claude',
+    goal: '',
+    cwd: '/workspace',
+    workspaceKind: 'folder',
+    autonomy: 'low',
+    phase: 'paused',
+    modelId: 'sonnet',
+    fastMode: false,
+    contextWindowTokens: 200000,
+    features: [],
+    tokensIn: 0,
+    tokensOut: 0,
+    contextTokens: 0,
+    createdAt: 1,
+    updatedAt: 1,
+  };
+
+  const { summary } = buildResumedSession({
+    init: {},
+    historical,
+    appSessionId: historical.appSessionId,
+    providerSessionId: historical.appSessionId,
+    defaults: {},
+    maxContextTokensForModel: () => undefined,
+    now: 2,
+  });
+
+  // An explicit off is a choice the chat made, not an absent preference.
+  assert.equal(summary.fastMode, false);
+  assert.equal(summary.contextWindowTokens, 200000);
+  assert.deepEqual(resumeSettings(summary), {
+    modelId: 'sonnet',
+    contextWindowTokens: 200000,
+    autonomy: 'low',
+    interactionMode: 'auto',
+    fastMode: false,
+  });
+});
+
 test('resume keeps the historical updatedAt so reading never reorders the sidebar', () => {
   // Opening an old session resumes it in the background; that resume must not
   // stamp "now" into updatedAt or the session would jump to the top of the

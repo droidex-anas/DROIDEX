@@ -207,7 +207,7 @@ test('fresh history index uses only the canonical child schema', () => {
   ).map(({ name }) => name);
   db.close();
 
-  assert.equal(version.user_version, 4);
+  assert.equal(version.user_version, 5);
   assert.ok(tables.includes('child_sessions'));
   assert.ok(!tables.includes('child_session_links'));
   assert.ok(!tables.includes('linked_child_sessions'));
@@ -243,6 +243,8 @@ for (const releasedVersion of [1, 2]) {
       const indexPath = join(releasedHome, '.factory', 'droidex', SESSION_INDEX_FILENAME);
       const released = new DatabaseSync(indexPath);
       released.exec(`
+        ALTER TABLE app_sessions DROP COLUMN fast_mode;
+        ALTER TABLE app_sessions DROP COLUMN context_window_tokens;
         DROP TABLE child_sessions;
         CREATE TABLE child_sessions (
           parent_app_session_id TEXT NOT NULL,
@@ -349,7 +351,7 @@ for (const releasedVersion of [1, 2]) {
         .get('existing-chat', 'existing-child') as { previous_provider_session_ids: string };
       verified.close();
 
-      assert.equal(version.user_version, 4);
+      assert.equal(version.user_version, 5);
       assert.equal(summary.title, 'Existing chat');
       assert.equal(summary.provider_session_id, 'existing-provider');
       assert.equal(
@@ -424,7 +426,12 @@ test('schema v3 gains the settling time without losing existing children', () =>
         124,
       );
     // A shipped v3 index is the canonical shape without the settling time.
-    released.exec('ALTER TABLE child_sessions DROP COLUMN settled_at; PRAGMA user_version = 3;');
+    released.exec(`
+      ALTER TABLE child_sessions DROP COLUMN settled_at;
+      ALTER TABLE app_sessions DROP COLUMN fast_mode;
+      ALTER TABLE app_sessions DROP COLUMN context_window_tokens;
+      PRAGMA user_version = 3;
+    `);
     const originalChild = released.prepare('SELECT * FROM child_sessions').get() as Record<
       string,
       unknown
@@ -440,12 +447,64 @@ test('schema v3 gains the settling time without losing existing children', () =>
     const row = verified.prepare('SELECT * FROM child_sessions').get() as Record<string, unknown>;
     verified.close();
 
-    assert.equal(version.user_version, 4);
+    assert.equal(version.user_version, 5);
     assert.deepEqual({ ...row }, { ...originalChild, settled_at: null });
     assert.ok(restoredChild);
     // A child stored before this says nothing about when it finished.
     assert.equal(restoredChild.settledAt, undefined);
     assert.equal(restoredChild.prompt, 'Continue the existing chat');
+  } finally {
+    process.env.HOME = home;
+    rmSync(releasedHome, { recursive: true, force: true });
+  }
+});
+
+test('schema v4 gains the chat preferences without losing existing chats', () => {
+  const releasedHome = mkdtempSync(join(tmpdir(), 'droid-history-preferences-upgrade-'));
+  process.env.HOME = releasedHome;
+  try {
+    const initial = new HistoryIndex();
+    initial.close();
+    const indexPath = join(releasedHome, '.factory', 'droidex', SESSION_INDEX_FILENAME);
+    const released = new DatabaseSync(indexPath);
+    // A shipped v4 index is the canonical shape without the two preferences.
+    released.exec(`
+      ALTER TABLE app_sessions DROP COLUMN fast_mode;
+      ALTER TABLE app_sessions DROP COLUMN context_window_tokens;
+      PRAGMA user_version = 4;
+    `);
+    released
+      .prepare(
+        `INSERT INTO app_sessions (
+          app_session_id,
+          provider_session_id,
+          compacted_from_provider_session_ids,
+          session_purpose,
+          interaction_mode,
+          title,
+          updated_at
+        ) VALUES (?, ?, '[]', 'chat', 'auto', ?, ?)`,
+      )
+      .run('existing-chat', 'existing-provider', 'Existing chat', 123);
+    released.close();
+
+    const upgraded = new HistoryIndex();
+    const patch = upgraded.summaryPatchesAndHidden().patches.get('existing-chat');
+    upgraded.close();
+
+    const verified = new DatabaseSync(indexPath);
+    const version = verified.prepare('PRAGMA user_version').get() as { user_version: number };
+    const row = verified
+      .prepare('SELECT fast_mode, context_window_tokens FROM app_sessions')
+      .get() as Record<string, unknown>;
+    verified.close();
+
+    assert.equal(version.user_version, 5);
+    assert.equal(patch?.title, 'Existing chat');
+    // A chat stored before v5 chose neither preference, and NULL says so.
+    assert.deepEqual({ ...row }, { fast_mode: null, context_window_tokens: null });
+    assert.equal(patch?.fastMode, undefined);
+    assert.equal(patch?.contextWindowTokens, undefined);
   } finally {
     process.env.HOME = home;
     rmSync(releasedHome, { recursive: true, force: true });

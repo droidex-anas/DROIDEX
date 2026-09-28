@@ -12,6 +12,7 @@ import type { ReplayReport } from './report.js';
 import { ReplayFactoryRuntime } from './replayRuntime.js';
 import type { ReplayTickHelpers } from './runner.js';
 import type { PerfScenarioSpec } from './scenario.js';
+import type { ServerEvent } from '../protocol.js';
 import { NO_PROVIDER_PROBES } from '../providers/providerProbes.js';
 
 export function sessionSwitchTick(spec: PerfScenarioSpec): (helpers: ReplayTickHelpers) => void {
@@ -33,13 +34,13 @@ export async function runSoak(spec: PerfScenarioSpec): Promise<ReplayReport> {
   process.env.HOME = home;
   const startedAt = Date.now();
   const startedPerf = performance.now();
-  const events: { type: string; session?: { appSessionId: string } }[] = [];
+  const events: ServerEvent[] = [];
   const runtime = new ReplayFactoryRuntime(new Map(), {
     onYield: () => undefined,
     onTurnSettled: () => undefined,
   });
   const history = new HistoryPersistence();
-  history.flushSync();
+  await history.flush();
   const browsers = new BrowserSessionManager({
     assetUrlFor: (path) => `http://127.0.0.1/soak/${path}`,
     emit: () => undefined,
@@ -93,11 +94,15 @@ export async function runSoak(spec: PerfScenarioSpec): Promise<ReplayReport> {
         sessionPurpose: 'chat',
         autonomy: 'off',
       });
-      const created = events.find(
-        (event) => event.type === 'session.created' && 'session' in event,
-      );
-      const appSessionId = created?.session?.appSessionId;
-      if (!appSessionId) throw new Error(`Soak cycle ${String(cycle)} never created a session.`);
+      const created = events.find((event) => event.type === 'session.created');
+      const appSessionId = created?.session.appSessionId;
+      if (!appSessionId)
+        throw new Error(
+          `Soak cycle ${String(cycle)} never created a session: ${events
+            .filter((event) => event.type === 'error')
+            .map((event) => event.message)
+            .join('; ')}`,
+        );
       await manager.handle({ type: 'session.close', appSessionId });
       events.length = 0;
     }
