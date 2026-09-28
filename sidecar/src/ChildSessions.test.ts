@@ -121,7 +121,7 @@ function createHarness(
         failFlushStreaming = false;
         throw new Error('flush failed');
       },
-      settleStreaming: () => {
+      settleStreaming: async () => {
         sequence.push('timeline.settleStreaming');
         if (!failSettleStreaming) return;
         failSettleStreaming = false;

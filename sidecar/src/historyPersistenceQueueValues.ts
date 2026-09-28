@@ -1,5 +1,5 @@
 import type { PersistedChildSession } from './history.js';
-import type { HistoryPersistenceCall, HistoryPersistenceClient } from './HistoryWorkerClient.js';
+import type { HistoryPersistenceClient } from './HistoryWorkerClient.js';
 import type {
   HistoryPersistenceBatch,
   HistoryPersistenceResult,
@@ -22,7 +22,6 @@ export class HistoryPersistenceBackpressureError extends Error {
 
 export interface InFlightPersistenceBatch {
   batch: HistoryPersistenceBatch;
-  call: HistoryPersistenceCall<HistoryPersistenceResult>;
   settled: Promise<void>;
   minimumSequence: number;
 }
@@ -37,7 +36,6 @@ export interface HistoryPersistenceQueueOptions {
   client?: HistoryPersistenceClient;
   flushDelayMs?: number;
   retryDelayMs?: number;
-  syncTimeoutMs?: number;
   schedule?: (callback: () => void, delayMs: number) => ReturnType<typeof setTimeout>;
   cancel?: (timer: ReturnType<typeof setTimeout>) => void;
   onCommitted?: (batch: HistoryPersistenceBatch, result: HistoryPersistenceResult) => void;

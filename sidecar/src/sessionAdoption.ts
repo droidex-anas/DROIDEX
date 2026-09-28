@@ -29,6 +29,13 @@ export interface SessionAdoptionDependencies {
     liveSessionsSnapshot(): readonly { summary: SessionSummary }[];
     getCanonicalSummary(id: string): SessionSummary | undefined;
     getLive(id: string): { summary: SessionSummary } | undefined;
+    // The owner of a live session's summary: patches what it says now, then
+    // stores and publishes it.
+    updateSummary(
+      id: string,
+      patch: Pick<SessionSummary, 'streaming' | 'phase' | 'interruptReason'>,
+      options: { touchActivity: false },
+    ): unknown;
   };
   lifecycle: Pick<SessionLifecycle, 'resume'>;
   liveChildren: () => readonly LiveChildIdentity[];
@@ -36,7 +43,8 @@ export interface SessionAdoptionDependencies {
   // Kills whatever the previous run left running, matched by start time so a
   // recycled pid is never signalled.
   reapProcesses: (entries: readonly LiveProcessIdentity[]) => Promise<void>;
-  persistSummaries: (summaries: SessionSummary[]) => void;
+  // Stores and publishes the summary of a session that has no live runtime.
+  persistSummaries: (summaries: SessionSummary[]) => void | Promise<void>;
   appendStatus: (appSessionId: string, text: string) => void;
   sessionRuntimeIdleMs: number;
   now: () => number;
@@ -130,30 +138,19 @@ export class SessionAdoption {
     try {
       const resumed = await this.dependencies.lifecycle.resume(identity.appSessionId);
       if (!resumed) {
-        this.markSessionInterrupted(identity, historical, wasActive, SESSION_UNAVAILABLE);
+        await this.markSessionInterrupted(identity, historical, wasActive, SESSION_UNAVAILABLE);
         return;
       }
       if (!wasActive) return;
-      const live = this.dependencies.registry.getLive(identity.appSessionId);
-      if (!live) {
-        this.markSessionInterrupted(identity, historical, true, SESSION_UNAVAILABLE);
-        return;
-      }
-      const updated: SessionSummary = {
-        ...live.summary,
-        streaming: false,
-        phase: interruptedPhase(live.summary.phase),
-        interruptReason: TURN_INTERRUPTED,
-      };
-      this.dependencies.persistSummaries([updated]);
-      live.summary = updated;
-      this.interrupted.push({
-        appSessionId: identity.appSessionId,
-        reason: TURN_INTERRUPTED,
-      });
-      this.dependencies.appendStatus(identity.appSessionId, TURN_INTERRUPTED);
+      const reconnected = this.dependencies.registry.getLive(identity.appSessionId) !== undefined;
+      await this.markSessionInterrupted(
+        identity,
+        historical,
+        true,
+        reconnected ? TURN_INTERRUPTED : SESSION_UNAVAILABLE,
+      );
     } catch (error) {
-      this.markSessionInterrupted(
+      await this.markSessionInterrupted(
         identity,
         historical,
         wasActive,
@@ -162,20 +159,26 @@ export class SessionAdoption {
     }
   }
 
-  private markSessionInterrupted(
+  private async markSessionInterrupted(
     identity: LiveSessionIdentity,
     historical: SessionSummary | undefined,
     wasActive: boolean,
     reason: string,
-  ): void {
-    const base = historical ?? syntheticSummary(identity);
-    const updated: SessionSummary = {
-      ...base,
-      streaming: false,
-      phase: wasActive ? interruptedPhase(base.phase) : base.phase,
-      interruptReason: reason,
-    };
-    this.dependencies.persistSummaries([updated]);
+  ): Promise<void> {
+    const { registry } = this.dependencies;
+    const live = registry.getLive(identity.appSessionId);
+    if (live) {
+      registry.updateSummary(identity.appSessionId, interruption(live.summary, wasActive, reason), {
+        touchActivity: false,
+      });
+    } else {
+      const base = historical ?? syntheticSummary(identity);
+      await this.dependencies.persistSummaries([
+        { ...base, ...interruption(base, wasActive, reason) },
+      ]);
+      // The chat was opened while this was stored, and speaks for itself now.
+      if (registry.getLive(identity.appSessionId)) return;
+    }
     this.interrupted.push({ appSessionId: identity.appSessionId, reason });
     this.dependencies.appendStatus(identity.appSessionId, reason);
   }
@@ -188,6 +191,18 @@ export class SessionAdoption {
       reason: CHILD_INTERRUPTED,
     });
   }
+}
+
+function interruption(
+  summary: SessionSummary,
+  wasActive: boolean,
+  reason: string,
+): Pick<SessionSummary, 'streaming' | 'phase' | 'interruptReason'> {
+  return {
+    streaming: false,
+    phase: wasActive ? interruptedPhase(summary.phase) : summary.phase,
+    interruptReason: reason,
+  };
 }
 
 function interruptedPhase(phase: SessionPhase): SessionPhase {
