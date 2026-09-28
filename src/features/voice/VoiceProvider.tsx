@@ -13,6 +13,7 @@ import {
 import { AnimatePresence } from 'framer-motion';
 import { useStoreApi, useStoreSelector, type AppState } from '../../hooks/useStore';
 import { renameSession } from '../../lib/commands';
+import { toast } from '../../lib/toast';
 import type { Voice } from './useVoice';
 import { canUseVoice } from './voiceAvailability';
 import { voiceSessionOf } from './voiceSessions';
@@ -40,8 +41,22 @@ const VoiceSurface = lazy(() =>
 );
 
 // The call itself, the microphone and the connection to the provider, is only
-// needed once someone talks, so it loads with the first conversation too.
-const VoiceCall = lazy(() => import('./VoiceCall').then((m) => ({ default: m.VoiceCall })));
+// needed once someone talks, so it loads with the first conversation too. A
+// chunk that fails to load ends that conversation instead of the whole window.
+const VoiceCall = lazy(() =>
+  import('./VoiceCall').then(
+    (m) => ({ default: m.VoiceCall }),
+    () => ({ default: VoiceCallUnavailable }),
+  ),
+);
+
+function VoiceCallUnavailable({ onEnded }: { onEnded: () => void }) {
+  useEffect(() => {
+    toast.error('Voice could not load. Reload DROIDEX and try again.');
+    onEnded();
+  }, [onEnded]);
+  return null;
+}
 
 /**
  * What a chat needs to know about the conversation: whether one is running,
@@ -127,6 +142,7 @@ export function VoiceProvider({ children }: { children: ReactNode }) {
   }, []);
   const ended = useCallback(() => {
     setOwner(null);
+    setOpening(false);
   }, []);
 
   // A chat the orb created has no prompt to take its name from, so it wears a
@@ -152,8 +168,11 @@ export function VoiceProvider({ children }: { children: ReactNode }) {
   const close = call?.close;
   const hangUp = useCallback(() => {
     playVoiceChime('end');
-    close?.();
-  }, [close]);
+    // Before the call has loaded there is nothing to close; letting go of the
+    // chat is what keeps it from starting once it arrives.
+    if (close) close();
+    else ended();
+  }, [close, ended]);
 
   const conversation = useMemo(() => (call ? { ...call, close: hangUp } : null), [call, hangUp]);
   // Keyed on the few things that change when the call does, not on the words
