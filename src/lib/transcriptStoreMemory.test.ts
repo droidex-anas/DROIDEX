@@ -139,3 +139,25 @@ test('batched transcript appends preserve sequential emergency release boundarie
   assert.equal(batched.transcripts['session-a'].length, 1_201);
   assert.equal(batched.transcripts['session-a'].at(-1)?.id, 'incoming-2');
 });
+
+test('a multi-session batch preserves published maps and untouched windows', () => {
+  const state = appendTranscriptEvents(initialState, [
+    transcriptEvent('a', 'session-a'),
+    transcriptEvent('b', 'session-b'),
+    transcriptEvent('c', 'session-c'),
+  ]);
+  const published = structuredClone(state.transcriptMutations);
+  Object.freeze(state.transcripts);
+  Object.freeze(state.transcriptMutations);
+  Object.freeze(state.transcriptRetainedCost);
+  const next = appendTranscriptEvents(state, [
+    transcriptEvent('a2', 'session-a'),
+    transcriptEvent('b2', 'session-b'),
+  ]);
+  assert.equal(state.transcripts['session-a'].length, 1);
+  assert.deepEqual(state.transcriptMutations, published);
+  assert.equal(next.transcripts['session-a'].length, 2);
+  assert.equal(next.transcripts['session-b'].length, 2);
+  assert.equal(next.transcripts['session-c'], state.transcripts['session-c']);
+  assert.equal(next.transcriptMutations['session-c'], state.transcriptMutations['session-c']);
+});

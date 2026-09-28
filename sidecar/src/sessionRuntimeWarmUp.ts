@@ -1,3 +1,5 @@
+import { errMsg } from './sessionHelpers.js';
+
 // Selecting a chat is the earliest honest sign that the user is about to write
 // in it. Starting its provider runtime then, instead of when they press enter,
 // is the difference between a send that answers straight away and one that
@@ -23,9 +25,7 @@ export interface SessionRuntimeWarmUpDependencies {
 
 export class SessionRuntimeWarmUp {
   private pending?: { appSessionId: string; timer: ReturnType<typeof setTimeout> };
-  // What is on screen right now. A warm-up that had to wait behind one still
-  // resuming checks this when its turn comes, so a chat the user has since
-  // left is skipped; one whose turn came at once proceeds as selected.
+  // Recheck after readiness: selection can change during boot reconciliation.
   private selectedId: string | null = null;
   private inFlight?: Promise<void>;
   private stopped = false;
@@ -71,9 +71,11 @@ export class SessionRuntimeWarmUp {
   // One warm-up at a time: a second selection waits behind the first rather
   // than opening two runtimes at once.
   private warm(appSessionId: string): Promise<void> {
-    const queued = this.inFlight !== undefined;
     const run = (this.inFlight ?? Promise.resolve())
-      .then(() => this.resumeIfWorthwhile(appSessionId, queued))
+      .then(() => this.resumeIfWorthwhile(appSessionId))
+      .catch((error: unknown) => {
+        console.error(`Could not warm session runtime: ${errMsg(error)}`);
+      })
       .finally(() => {
         if (this.inFlight === run) this.inFlight = undefined;
       });
@@ -81,10 +83,10 @@ export class SessionRuntimeWarmUp {
     return run;
   }
 
-  private async resumeIfWorthwhile(appSessionId: string, queued: boolean): Promise<void> {
+  private async resumeIfWorthwhile(appSessionId: string): Promise<void> {
     const d = this.dependencies;
     await d.ready();
-    if (this.stopped || (queued && this.selectedId !== appSessionId)) return;
+    if (this.stopped || this.selectedId !== appSessionId) return;
     if (d.isLive(appSessionId) || !d.isResumable(appSessionId)) return;
     await d.resume(appSessionId);
   }

@@ -13,11 +13,10 @@ import { toolArgumentDigest } from '../../normalize.js';
 import type { Autonomy, PermissionKind } from '../../protocol.js';
 import { nextInteractionRequestId, type ProviderInteractions } from '../interactions.js';
 
-// Off and Low share 'default': the CLI cannot ask for reads, but tools it has
-// not already allowed must reach canUseTool rather than being silently denied.
-// Medium also prompts through canUseTool; High runs unattended.
 export function claudePermissionMode(autonomy: Autonomy): PermissionMode {
   if (autonomy === 'high') return 'bypassPermissions';
+  if (autonomy === 'medium') return 'auto';
+  if (autonomy === 'low') return 'acceptEdits';
   return 'default';
 }
 

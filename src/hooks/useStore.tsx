@@ -101,7 +101,8 @@ import type {
 import { addWorkspaceCwd, removeWorkspaceCwd } from '../lib/workspaces';
 import { createOrderedActionBatcher, type OrderedActionBatcher } from './orderedActionBatcher';
 import { isHistoryStatusError, applyHistoryServerEvent } from '../lib/historyHealth';
-import { loadDefaultAutonomy, saveDefaultAutonomy } from '../lib/autonomy';
+import { saveDefaultAutonomy } from '../lib/autonomy';
+import { loadDefaultPermissionMode } from '../lib/permissionSemantics';
 import {
   mergePendingModelSettings,
   type PendingModelSettings,
@@ -175,6 +176,7 @@ import {
   withUpdatedTranscript,
 } from '../lib/transcriptStoreMemory';
 import { type TranscriptMutation } from '../lib/transcriptMutation';
+import { reduceSessionChildren } from './storeSessionChildren';
 import { reduceStoreActionBatch } from './storeActionBatch';
 import {
   invalidateSelectedChildOpening,
@@ -185,7 +187,6 @@ import {
   reduceChildTranscriptViewport,
   reduceChildUpdated,
   reduceSelectChild,
-  reduceSessionChild,
   releaseInactiveSelectedChild,
   type ChildAccess,
   type ChildHistoryState,
@@ -437,7 +438,7 @@ export interface AppState {
   lastCreatedSessionRequest: { clientRef: string; appSessionId: string } | null;
 }
 
-type Action =
+export type Action =
   | { type: 'BATCH'; actions: Action[] }
   // Connection
   | {
@@ -786,7 +787,7 @@ export const initialState: AppState = {
   customThemes: initialCustomThemes,
   missionControlMode: persistedUiState.missionControlMode ?? false,
   draftChat: null,
-  defaultAutonomy: loadDefaultAutonomy(),
+  defaultAutonomy: loadDefaultPermissionMode(),
   toolActivity: loadToolActivity(),
   draftAutonomy: null,
   draftFastMode: false,
@@ -1216,7 +1217,7 @@ function baseReducer(state: AppState, action: Action): AppState {
     }
 
     case 'SESSION_CHILD':
-      return reduceSessionChild(state, action);
+      return reduceSessionChildren(state, [action]);
 
     case 'CHILD_UPDATED':
       return reduceChildUpdated(state, action);

@@ -138,7 +138,7 @@ export interface SessionLifecycleDependencies {
     'resolveLimit' | 'arm' | 'subscribePrimary' | 'afterTurn' | 'cancel' | 'forgetSession'
   >;
   isShutdownStarted: () => boolean;
-  childSessions: Pick<ChildSessions, 'attachParent' | 'closeParent'>;
+  childSessions: Pick<ChildSessions, 'attachParent' | 'closeParent' | 'retryAgentWave'>;
   agentProcesses: Pick<
     AgentProcessMonitor,
     'track' | 'untrack' | 'killSession' | 'setIgnoredCommands'
@@ -627,19 +627,18 @@ export class SessionLifecycle {
     return 'taken';
   }
 
-  /** One turn the app owes a chat whose agents have all stopped. No harness
-      wakes an idle parent when a background agent finishes, so without this the
-      results reach nobody and the chat sleeps on. The turn is dropped rather
-      than queued: a chat that is busy, or that already has a prompt waiting,
-      learns the same thing from the turn it is about to run. Mission control
-      drives its own agents and needs no nudge. */
-  async wakeForSettledAgents(appSessionId: string, prompt: string, notice: string): Promise<void> {
+  // Acceptance transfers the wave to the background-turn error owner. Compaction
+  // defers acceptance; an ordinary active/queued turn already carries the results.
+  wakeForSettledAgents(appSessionId: string, prompt: string, notice: string): boolean {
     const liveSession = this.dependencies.registry.getLive(appSessionId);
-    if (!liveSession || liveSession.closeMode) return;
-    if (liveSession.summary.sessionPurpose === 'mission-control') return;
-    if (liveSession.streaming || liveSession.compacting || liveSession.autoCompacting) return;
-    if (liveSession.pendingSends.length > 0) return;
-    await this.drive(liveSession.summary.appSessionId, { text: prompt, notice });
+    if (!liveSession || liveSession.closeMode || this.dependencies.isShutdownStarted())
+      return false;
+    if (liveSession.interrupting || liveSession.interruptingForSteer) return false;
+    if (liveSession.compacting || liveSession.autoCompacting) return false;
+    if (liveSession.summary.sessionPurpose === 'mission-control') return true;
+    if (liveSession.streaming || liveSession.pendingSends.length > 0) return true;
+    void this.driveInBackground(liveSession.summary.appSessionId, { text: prompt, notice });
+    return true;
   }
 
   async interrupt(requestedAppSessionId: string): Promise<void> {
@@ -684,6 +683,8 @@ export class SessionLifecycle {
       streaming: false,
       queuedSends: 0,
     });
+    // A wave that finished during the Stop was held back; the Stop is over.
+    if (!liveSession.interrupting) this.dependencies.childSessions.retryAgentWave(appSessionId);
   }
 
   async settleAfterCompaction(
@@ -700,14 +701,15 @@ export class SessionLifecycle {
       return;
     }
     if (liveSession.closeMode) return;
+    this.dependencies.childSessions.retryAgentWave(appSessionId);
     if (liveSession.streaming || liveSession.compacting || liveSession.autoCompacting) return;
     const next = liveSession.pendingSends.shift();
-    if (next === undefined && previousLiveSession) {
+    if (next === undefined) {
       this.dependencies.onSessionAvailable?.(appSessionId);
       return;
     }
     this.updateQueuedSends(liveSession);
-    if (next !== undefined) await this.drive(liveSession.summary.appSessionId, next);
+    await this.drive(liveSession.summary.appSessionId, next);
   }
 
   async close(appSessionId: string, mode: SessionCloseMode = 'discard-pending'): Promise<void> {
@@ -983,9 +985,11 @@ export class SessionLifecycle {
       }
       // A Stop lands before the turn reports itself finished, so the flags it
       // set are cleared here as they are for a typed turn.
+      const stopped = liveSession.interrupting || liveSession.interruptingForSteer;
       liveSession.interrupting = false;
       liveSession.interruptingForSteer = false;
       this.publishTurnSettled(liveSession);
+      if (stopped) this.dependencies.childSessions.retryAgentWave(liveSession.summary.appSessionId);
       // A runtime that has gone takes the queue with it through the close
       // path, which reopens and redelivers. Taking a prompt off it here would
       // spend it on a client that cannot run it.
@@ -1157,9 +1161,12 @@ export class SessionLifecycle {
       await liveSession.turnPromise;
     } finally {
       liveSession.turnPromise = undefined;
+      const stopped = liveSession.interrupting || liveSession.interruptingForSteer;
       liveSession.interruptingForSteer = false;
       liveSession.interrupting = false;
       liveSession.streaming = false;
+      // A wave held back while the Stop was outstanding is owed once it is over.
+      if (stopped) d.childSessions.retryAgentWave(stableAppSessionId);
       // Let the closure observer claim cleanup before advancing the queue.
       if (liveSession.session.isClosed) await liveSession.session.closed;
       if (liveSession.providerClosePromise) {

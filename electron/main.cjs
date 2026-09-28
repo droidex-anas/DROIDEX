@@ -21,6 +21,7 @@ const fsp = require('node:fs/promises');
 const os = require('node:os');
 const path = require('node:path');
 const { pathToFileURL } = require('node:url');
+const { childEnv } = require('./childEnv.cjs');
 const gitVcs = require('./git.cjs');
 const githubVcs = require('./github.cjs');
 const githubPrConversation = require('./githubPrConversation.cjs');
@@ -1396,9 +1397,16 @@ function openTerminal(root) {
   return spawnDetached('x-terminal-emulator', ['--working-directory', root]);
 }
 
+// Everything launched this way is one of the user's own tools, an editor or a
+// terminal, and both go on to run shells, so neither gets the app's variables.
 function spawnDetached(command, args, options = {}) {
   return new Promise((resolve, reject) => {
-    const child = spawn(command, args, { detached: true, stdio: 'ignore', cwd: options.cwd });
+    const child = spawn(command, args, {
+      detached: true,
+      stdio: 'ignore',
+      cwd: options.cwd,
+      env: childEnv(),
+    });
     child.once('error', reject);
     child.once('spawn', () => {
       child.unref();
@@ -1412,7 +1420,7 @@ function git(cwd, args) {
     execFile(
       'git',
       ['-C', cwd, ...args],
-      { timeout: 5000, maxBuffer: 1024 * 1024 },
+      { timeout: 5000, maxBuffer: 1024 * 1024, env: childEnv() },
       (err, stdout) => {
         if (err) reject(err);
         else resolve(String(stdout));
@@ -1426,7 +1434,7 @@ function gitDiff(cwd, args) {
     execFile(
       'git',
       ['-C', cwd, ...args],
-      { timeout: 5000, maxBuffer: 1024 * 1024 },
+      { timeout: 5000, maxBuffer: 1024 * 1024, env: childEnv() },
       (err, stdout) => {
         if (err && err.code !== 1) reject(err);
         else resolve(String(stdout));
