@@ -83,8 +83,7 @@ export class ClaudeSession implements ProviderSession {
   private activeTurnId?: string;
   // The turn the user stopped, so only that turn's own error result is excused.
   private interruptedTurnId?: string;
-  // Whether the running turn can take a steer: not before its own prompt is
-  // pushed, not for a slash command, and not once it has ended.
+  // The running turn takes steers: set once its prompt is pushed, never for a slash command.
   private steerable = false;
   // Steers the CLI has not started yet, by uuid, with whoever waits on each.
   private readonly steerDeliveries = new Map<string, (delivered: boolean) => void>();
@@ -253,8 +252,7 @@ export class ClaudeSession implements ProviderSession {
           const refusal = rateLimitRefusal(message.rate_limit_info);
           if (refusal) throw refusal;
         }
-        // The turn's own result, and after it the result of each steer that
-        // missed the turn's last tool boundary and ran as a CLI turn of its own.
+        // The turn's own result, then that of each steer run as a CLI turn after it.
         if (message.type === 'result' && (this.turnAnswered || answersTurn(message, turnId))) {
           // A stopped turn settles quietly: the CLI still reports the
           // interruption as an error result carrying an internal diagnostic.
@@ -262,17 +260,20 @@ export class ClaudeSession implements ProviderSession {
             throw new Error(turnFailure(message.subtype, message.errors));
           this.turnAnswered = true;
           for (const uuid of message.user_message_uuids ?? []) this.settleSteer(uuid, true);
-          // The turn stays open while a steer waits to start. A stopped turn
-          // does not wait, nor does a CLI too old to list what a result answered.
-          if (
-            this.steerDeliveries.size === 0 ||
+        }
+        // Once answered, the turn ends when a result or a cancellation leaves no
+        // steer waiting to start. A stopped turn does not wait, nor does a CLI
+        // too old to list what a result answered.
+        if (
+          this.turnAnswered &&
+          (message.type === 'result' || lifecycle?.state === 'cancelled') &&
+          (this.steerDeliveries.size === 0 ||
             this.interruptedTurnId === turnId ||
-            !message.user_message_uuids
-          ) {
-            this.steerable = false;
-            yield { done: true };
-            return;
-          }
+            (message.type === 'result' && !message.user_message_uuids))
+        ) {
+          this.steerable = false;
+          yield { done: true };
+          return;
         }
       }
     } finally {
