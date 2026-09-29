@@ -311,10 +311,11 @@ export class ClaudeSession implements ProviderSession {
   }
 
   // A steer the turn ended without is withdrawn so the session layer can send
-  // it again. One the CLI already took, and will answer, counts as delivered.
+  // it again. Unless the CLI says it cancelled it, the CLI may still run it,
+  // and losing one steer on a failed turn beats showing it twice.
   private async withdrawSteer(uuid: string): Promise<void> {
     const cancelled =
-      this.isClosed || (await this.query.cancelAsyncMessage(uuid).catch(() => true));
+      this.isClosed || (await this.query.cancelAsyncMessage(uuid).catch(() => false));
     this.settleSteer(uuid, !cancelled);
   }
 
