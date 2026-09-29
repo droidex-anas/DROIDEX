@@ -10,6 +10,7 @@ import { useSessionLive } from '../hooks/useSessionLive';
 import { sessionAttention } from '../lib/sessionAttention';
 import { AnimatePresence, motion } from 'framer-motion';
 import { MessageFeed } from './MessageFeed';
+import { AppBlockRepairSessionContext } from './appBlockRepairContext';
 import { RunningProcessesMenu } from './RunningProcessesMenu';
 import { LiveProcessesContext } from './transcript/liveProcessesContext';
 import type { AgentProcess, ChildSessionSummary } from '../types/bridge';
@@ -852,7 +853,11 @@ export default function ChatView({
               overflowAnchor: 'none',
             }}
           >
-            {conversationContent}
+            <AppBlockRepairSessionContext.Provider
+              value={viewingChildSession ? null : (activeAppSessionId ?? null)}
+            >
+              {conversationContent}
+            </AppBlockRepairSessionContext.Provider>
           </div>
           <AnimatePresence>
             {transcript.length > 0 &&

@@ -1,4 +1,3 @@
-import { hasCompleteAppBlock } from './appBlockRuntime';
 import type { FeedItem } from './chatFeed';
 import type { TranscriptEvent } from '../types/bridge';
 
@@ -140,27 +139,6 @@ export function appendedFeedItemKeysFromProjection(
   return appended;
 }
 
-export interface FreshAppResponseState {
-  identity: string;
-  wasPending: boolean;
-  texts: Set<string>;
-}
-
-export function completeAppResponsesInLatestTurn(items: FeedItem[]): string[] {
-  const latestPromptIndex = latestPrompt(items).index;
-  if (latestPromptIndex < 0) return [];
-
-  const responses: string[] = [];
-  for (let index = latestPromptIndex + 1; index < items.length; index += 1) {
-    const item = items.at(index);
-    if (!item) continue;
-    if (item.type !== 'message' || item.event.author === 'user') continue;
-    const text = item.event.text ?? '';
-    if (hasCompleteAppBlock(text)) responses.push(text);
-  }
-  return responses;
-}
-
 // A forked chat's inherited history ends right before the first prompt sent at
 // or after the fork. -1 while that history is not loaded into the feed.
 export function lastInheritedItemIndex(items: readonly FeedItem[], forkedAt: number): number {
@@ -186,21 +164,4 @@ function latestPrompt(items: readonly FeedItem[]): {
     }
   }
   return { index: -1, event: undefined };
-}
-
-export function rememberFreshAppResponses(
-  previous: FreshAppResponseState | null,
-  identity: string,
-  items: FeedItem[],
-  pending: boolean,
-): FreshAppResponseState {
-  const sameSession = previous?.identity === identity;
-  const texts = new Set(sameSession ? previous.texts : []);
-  const justSettled = sameSession && previous.wasPending && !pending;
-
-  if (pending || justSettled) {
-    for (const text of completeAppResponsesInLatestTurn(items)) texts.add(text);
-  }
-
-  return { identity, wasPending: pending, texts };
 }

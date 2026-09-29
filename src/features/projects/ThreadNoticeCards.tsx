@@ -47,7 +47,7 @@ function NoticeCard({
     >
       <p className="text-[12px] font-medium text-droid-text-muted">{lead}</p>
       <div className="mt-1.5 text-[13px] leading-6 text-droid-text-secondary">
-        <MessageBody text={text} live={false} autoPlayAppBlocks={false} cacheId={cacheId} />
+        <MessageBody text={text} live={false} cacheId={cacheId} />
       </div>
     </div>
   );

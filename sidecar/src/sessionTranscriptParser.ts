@@ -10,6 +10,7 @@ import { dateMs, numberValue, objectValue, safeStringify, stringValue } from './
 import { designPromptDisplayFromText } from './browser/designPromptDisplay.js';
 import { appPromptDisplayFromText, hasAppFence } from './appPrompt.js';
 import { branchPromptDisplayFromText } from './branchPrompt.js';
+import { sideChatPromptDisplayFromText } from './sideChatPrompt.js';
 import { sideChatRepliesFromPrompt } from './sideChatReplies.js';
 import { parseSkillActivation } from './skillSignals.js';
 import type { SessionRole, TranscriptEvent } from './protocol.js';
@@ -160,7 +161,11 @@ function nonAssistantBlockEvent(
     const promptText = withReplies?.text ?? storedText;
     const rawText = trimText(branchPromptDisplayFromText(promptText) ?? promptText, MAX_TEXT_CHARS);
     const designDisplay = designPromptDisplayFromText(rawText);
-    const text = designDisplay?.text ?? appPromptDisplayFromText(rawText) ?? rawText;
+    const text =
+      designDisplay?.text ??
+      appPromptDisplayFromText(rawText) ??
+      sideChatPromptDisplayFromText(rawText) ??
+      rawText;
     if ((!text && !withReplies) || isSystemText(text)) return null;
     const sourceProviderSessionId = base.role === 'primary' ? 'user' : base.sourceProviderSessionId;
     return event({ ...base, sourceProviderSessionId }, index, 'text', {
