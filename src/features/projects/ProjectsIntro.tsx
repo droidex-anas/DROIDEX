@@ -45,9 +45,10 @@ export function ProjectsIntro({
     dismissSidebarCard(PROJECTS_INTRO_CARD_ID);
   };
 
+  // Opening Projects counts as seeing it, even while the welcome card holds it back.
   useEffect(() => {
-    if (visible && onProjects) dismiss();
-  }, [visible, onProjects]);
+    if (unseen && onProjects) dismiss();
+  }, [unseen, onProjects]);
 
   // Glued to the entry while it shows: the sidebar can resize or collapse.
   useEffect(() => {
