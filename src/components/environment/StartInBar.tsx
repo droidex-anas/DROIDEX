@@ -173,6 +173,20 @@ export function StartInBar({
     }
   };
 
+  // A draft with no folder yet, such as a project started from nowhere in
+  // particular, offers only the way to choose one.
+  if (!cwd)
+    return (
+      <div className="flex min-w-0 items-center gap-4 overflow-hidden">
+        <Pill
+          icon={<FolderPlus className="h-3.5 w-3.5" />}
+          label="Open folder…"
+          title="Project"
+          onClick={() => void openFolder()}
+        />
+      </div>
+    );
+
   return (
     <div className="flex min-w-0 items-center gap-4 overflow-hidden">
       <Pill

@@ -462,12 +462,15 @@ export default function PromptInput({
   const composerProvider = activeSession?.provider ?? draftProvider;
   const droidComposer = composerProvider === 'droid';
   const specComposer = supportsSpecMode(composerProvider);
+  // A project's lead runs in auto mode, so a project draft offers no spec.
+  const draftingProject = !activeSession && state.draftChat?.project === true;
   // For an existing chat session the mode is whatever the session actually is
   // (so a chat reopened in spec mode shows Spec); only fall back to the global
   // compose flag while drafting a brand-new chat.
   const isSpecMode =
     specComposer && activeSession?.sessionPurpose !== 'mission-control'
-      ? activeSession?.interactionMode === 'spec' || (!activeSession && state.specMode)
+      ? activeSession?.interactionMode === 'spec' ||
+        (!activeSession && state.specMode && !draftingProject)
       : false;
   const selectedChild = state.selectedChild;
   const visibleTarget: VisibleSessionTarget = visibleSessionTarget(
@@ -690,7 +693,9 @@ export default function PromptInput({
       },
     },
   ].filter((command) =>
-    command.cmd === '/spec' ? specComposer : droidComposer || !DROID_ONLY_COMMANDS.has(command.cmd),
+    command.cmd === '/spec'
+      ? specComposer && !draftingProject
+      : droidComposer || !DROID_ONLY_COMMANDS.has(command.cmd),
   );
 
   // Typing, and every edit that behaves like typing, leaves history recall.
@@ -938,7 +943,10 @@ export default function PromptInput({
     (activeSession ? activeSession.sessionPurpose === 'mission-control' : state.missionControlMode);
   // A new project is drafted in this same composer; its first message starts
   // the project's lead instead of an ordinary chat.
-  const projectDraft = !activeSession && !missionPreview && state.draftChat?.project === true;
+  const projectDraft = draftingProject && !missionPreview;
+  // The clientRef of a project this composer is starting, so a second send or
+  // a press of the orb cannot start another while it is on its way.
+  const projectStartRef = useRef<string | null>(null);
 
   // Autonomy snapshot for a session this composer would create: the draft
   // override when the user picked one, otherwise the persisted app default.
@@ -1365,6 +1373,7 @@ export default function PromptInput({
 
     // Draft/default chat: first message creates the session. No workspace is required.
     if (!activeSession) {
+      if (projectDraft && projectStartRef.current) return;
       const selectedDir = state.draftChat?.cwd ?? '';
       const clientRef = newClientRef();
       const title = (displayText || skillNames[0] || (projectDraft ? 'Project' : 'Chat')).slice(
@@ -1386,26 +1395,25 @@ export default function PromptInput({
       registerPending(clientRef);
       clearAfterSubmit();
       if (projectDraft) {
-        // The lead is started under this composer's clientRef, so it opens like
-        // any chat started here. A project takes its skills as words, since its
-        // first prompt also carries the lead's brief.
-        createProject(
-          {
-            title,
-            prompt: composePrompt(displayText, skillNames, allFiles),
-            provider: draftProvider,
-            ...draftModelSettings,
-            autonomy: draftAutonomy,
-            ...(dir ? { cwd: dir } : {}),
-          },
+        const clearedRevision = composerRevisionRef.current;
+        // A project takes its skills as words, since its first prompt also
+        // carries the lead's brief.
+        startProject(
           clientRef,
-        ).catch((error: unknown) => {
-          stopTurnStarting();
-          const message = error instanceof Error ? error.message : String(error);
-          dispatch({ type: 'SESSION_CREATE_FAILED', clientRef, message });
-          dispatch({ type: 'SEED_COMPOSER', text: displayText, replace: true });
-          toast.error(`The project could not start: ${message}`);
-        });
+          { title, prompt: composePrompt(displayText, skillNames, allFiles), dir, selectedDir },
+          () => {
+            // Only what this start set is undone: a user who has moved on, or
+            // typed since, keeps what they have now.
+            if (turnStartingClientRef.current === clientRef) stopTurnStarting();
+            const now = store.getState();
+            if (
+              now.activeAppSessionId === null &&
+              now.draftChat?.project === true &&
+              composerRevisionRef.current === clearedRevision
+            )
+              dispatch({ type: 'SEED_COMPOSER', text: displayText, replace: true });
+          },
+        );
         armTurnStartingTimeout();
         return;
       }
@@ -1722,7 +1730,7 @@ export default function PromptInput({
   const viewerSrc = viewerPath === null ? null : imageSrc(viewerPath);
   // The "Start in" repo/worktree/branch row only applies while drafting a brand
   // new chat; it renders as the top section of the composer card.
-  const showStartIn = !activeSession && !missionPreview && !!cwd;
+  const showStartIn = !activeSession && !missionPreview && (!!cwd || projectDraft);
   const enterSteers = state.liveEnterBehavior === 'interrupt';
   let chatPlaceholder = 'What would you like to work on?  (/ for skills, @ for files)';
   if (isSpecMode) chatPlaceholder = 'Describe what to build in spec mode...';
@@ -1762,6 +1770,42 @@ export default function PromptInput({
   // arrives. `registered` marks the point where the wait can be read from the
   // store, which is what tells an abandoned create from one still being
   // prepared.
+  /* Starts a project's lead under this composer's clientRef, so it opens like
+     any chat started here. A worktree the start cut becomes the draft's folder
+     first, so a retry after a failure reuses it instead of cutting another. */
+  const startProject = (
+    clientRef: string,
+    project: { title: string; prompt: string; dir: string; selectedDir: string },
+    onFailed: () => void,
+  ) => {
+    projectStartRef.current = clientRef;
+    if (project.dir && project.dir !== project.selectedDir) {
+      const override = state.draftAutonomy;
+      dispatch({ type: 'START_CHAT', cwd: project.dir, executionMode: 'local', project: true });
+      if (override) dispatch({ type: 'SET_DRAFT_AUTONOMY', autonomy: override });
+    }
+    createProject(
+      {
+        title: project.title,
+        prompt: project.prompt,
+        provider: draftProvider,
+        ...draftModelSettings,
+        autonomy: draftAutonomy,
+        ...(project.dir ? { cwd: project.dir } : {}),
+      },
+      clientRef,
+    )
+      .catch((error: unknown) => {
+        const message = error instanceof Error ? error.message : String(error);
+        dispatch({ type: 'SESSION_CREATE_FAILED', clientRef, message });
+        toast.error(`The project could not start: ${message}`);
+        onFailed();
+      })
+      .finally(() => {
+        if (projectStartRef.current === clientRef) projectStartRef.current = null;
+      });
+  };
+
   const voiceAwaiting = useRef<{ clientRef: string; registered: boolean } | null>(null);
 
   // The orb: talk to the chat that is open, or start one and talk to that. A
@@ -1772,7 +1816,7 @@ export default function PromptInput({
       voice.openOn(activeSession.appSessionId);
       return;
     }
-    if (voiceAwaiting.current) return;
+    if (voiceAwaiting.current || (projectDraft && projectStartRef.current)) return;
     const clientRef = newClientRef();
     voiceAwaiting.current = { clientRef, registered: false };
     void (async () => {
@@ -1794,22 +1838,18 @@ export default function PromptInput({
       if (projectDraft) {
         // The lead is briefed by its first prompt, which a spoken goal never
         // reaches, so it starts on a turn that asks for the goal instead.
-        createProject(
+        startProject(
+          clientRef,
           {
             title: placeholder,
             prompt: VOICE_PROJECT_TASK,
-            provider: draftProvider,
-            ...draftModelSettings,
-            autonomy: draftAutonomy,
-            ...(preparation.path ? { cwd: preparation.path } : {}),
+            dir: preparation.path,
+            selectedDir: state.draftChat?.cwd ?? '',
           },
-          clientRef,
-        ).catch((error: unknown) => {
-          voiceAwaiting.current = null;
-          const message = error instanceof Error ? error.message : String(error);
-          dispatch({ type: 'SESSION_CREATE_FAILED', clientRef, message });
-          toast.error(`The project could not start: ${message}`);
-        });
+          () => {
+            voiceAwaiting.current = null;
+          },
+        );
         return;
       }
       createSession({
