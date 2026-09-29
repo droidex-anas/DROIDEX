@@ -20,6 +20,8 @@ export interface SlashCommand {
   cmd: string;
   desc: string;
   icon: ComponentType<{ className?: string }>;
+  /** Hides the harness's own command of the same name, which this one replaces. */
+  supersedesHarnessCommand?: boolean;
   run: () => void;
 }
 

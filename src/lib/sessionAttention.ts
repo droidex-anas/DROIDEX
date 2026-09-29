@@ -8,10 +8,10 @@ export type SessionAttentionKind = 'approval' | 'question';
 
 export function sessionAttention(
   appSessionId: string,
-  pendingPermissions: Record<string, PermissionRequest | undefined>,
-  pendingQuestions: Record<string, SessionQuestion | undefined>,
+  pendingPermissions: Record<string, PermissionRequest[] | undefined>,
+  pendingQuestions: Record<string, SessionQuestion[] | undefined>,
 ): SessionAttentionKind | null {
-  if (pendingPermissions[appSessionId]) return 'approval';
-  if (pendingQuestions[appSessionId]) return 'question';
+  if (pendingPermissions[appSessionId]?.length) return 'approval';
+  if (pendingQuestions[appSessionId]?.length) return 'question';
   return null;
 }

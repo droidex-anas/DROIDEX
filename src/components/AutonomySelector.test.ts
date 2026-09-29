@@ -4,7 +4,12 @@ import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 
 import AutonomySelector, { AutonomyMenu } from './AutonomySelector.js';
-import { AUTONOMY_DESCRIPTIONS, AUTONOMY_LABELS, AUTONOMY_LEVELS } from '../lib/autonomy.js';
+import {
+  autonomyConsequence,
+  AUTONOMY_DESCRIPTIONS,
+  AUTONOMY_LABELS,
+  AUTONOMY_LEVELS,
+} from '../lib/autonomy.js';
 
 test('the menu lists every level with its consequence description', () => {
   const html = renderToStaticMarkup(
@@ -27,9 +32,34 @@ test('the pill shows the confirmed level and its meaning on hover', () => {
   );
 
   assert.ok(html.includes(AUTONOMY_LABELS.low));
-  assert.ok(html.includes(`title="Low autonomy — ${AUTONOMY_DESCRIPTIONS.low}"`));
+  assert.ok(html.includes(`title="${AUTONOMY_LABELS.low} — ${AUTONOMY_DESCRIPTIONS.low}"`));
   assert.ok(html.includes('aria-haspopup="menu"'));
   assert.ok(!html.includes('disabled'));
+});
+
+test('the chosen mode carries its harness consequence, and only that mode', () => {
+  const codex = renderToStaticMarkup(
+    createElement(AutonomyMenu, {
+      scope: 'session',
+      value: 'high',
+      provider: 'codex',
+      onSelect: () => undefined,
+    }),
+  );
+  const line = autonomyConsequence('codex', 'high');
+  assert.ok(line);
+  assert.equal((codex.match(new RegExp(line, 'g')) ?? []).length, 1);
+
+  // Claude only qualifies Auto, so any other mode says nothing extra.
+  const claude = renderToStaticMarkup(
+    createElement(AutonomyMenu, {
+      scope: 'session',
+      value: 'high',
+      provider: 'claude',
+      onSelect: () => undefined,
+    }),
+  );
+  assert.ok(!claude.includes('classifier'));
 });
 
 test('a pending change keeps the confirmed level and blocks interaction', () => {

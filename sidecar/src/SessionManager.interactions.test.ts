@@ -400,7 +400,7 @@ test(
         appSessionId: answerRequest.question.appSessionId,
         requestId: answerRequest.question.requestId,
         cancelled: false,
-        answers: [{ index: 0, question: 'Proceed?', answer: 'yes' }],
+        answers: [{ index: 0, question: 'Proceed?', selected: ['yes'] }],
       });
       assert.deepEqual(await answered, {
         cancelled: false,
@@ -438,7 +438,7 @@ test(
         appSessionId: cancellationRequest.question.appSessionId,
         requestId: cancellationRequest.question.requestId,
         cancelled: false,
-        answers: [{ index: 0, question: 'Proceed?', answer: 'no' }],
+        answers: [{ index: 0, question: 'Proceed?', selected: ['no'] }],
       });
       await h.waitForIdle();
 
@@ -577,7 +577,7 @@ test('ask-user requests tolerate omitted questions and options', async () => {
       appSessionId: freeFormRequest.question.appSessionId,
       requestId: freeFormRequest.question.requestId,
       cancelled: false,
-      answers: [{ index: 0, question: 'What should change?', answer: 'The title' }],
+      answers: [{ index: 0, question: 'What should change?', selected: ['The title'] }],
     });
     assert.deepEqual(await freeFormResult, {
       cancelled: false,

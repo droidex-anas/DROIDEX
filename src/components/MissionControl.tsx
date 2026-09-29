@@ -435,6 +435,7 @@ function AgentsSection({
         {/* Confirmed autonomy only — the pill never moves ahead of the provider. */}
         <AutonomySelector
           scope="session"
+          provider={mission.provider}
           value={mission.autonomy}
           pending={pendingAutonomy}
           placement="down"

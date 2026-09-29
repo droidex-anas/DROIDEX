@@ -1,10 +1,18 @@
 import { useEffect, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
-import { Check } from 'lucide-react';
+import { Check, Lock, LockOpen, PenLine, Sparkles } from 'lucide-react';
 import { Spinner } from '@droidex/icons';
 
-import type { Autonomy } from '../types/bridge';
-import { AUTONOMY_DESCRIPTIONS, AUTONOMY_LABELS, AUTONOMY_LEVELS } from '../lib/autonomy';
+import type { Autonomy, ProviderKind } from '../types/bridge';
+import {
+  autonomyConsequence,
+  AUTONOMY_DESCRIPTIONS,
+  AUTONOMY_LABELS,
+  AUTONOMY_LEVELS,
+} from '../lib/autonomy';
+
+// One glyph per mode, reading left to right as the permissions open up.
+const AUTONOMY_GLYPHS = { off: Lock, low: PenLine, medium: Sparkles, high: LockOpen };
 
 export type AutonomyScope = 'draft' | 'session' | 'settings';
 
@@ -29,6 +37,7 @@ const POPOVER_ALIGN_CLASS = { start: 'left-0', end: 'right-0' } as const;
 export default function AutonomySelector({
   scope,
   value,
+  provider,
   pending = false,
   disabled = false,
   onSelect,
@@ -37,6 +46,8 @@ export default function AutonomySelector({
 }: {
   scope: AutonomyScope;
   value: Autonomy;
+  /** The chat's harness, so the chosen mode can say what it means there. */
+  provider?: ProviderKind;
   pending?: boolean;
   disabled?: boolean;
   onSelect: (level: Autonomy) => void;
@@ -69,8 +80,9 @@ export default function AutonomySelector({
   const inactive = disabled || pending;
   const title = pending
     ? 'Updating autonomy…'
-    : `${AUTONOMY_LABELS[value]} autonomy — ${AUTONOMY_DESCRIPTIONS[value]}`;
+    : `${AUTONOMY_LABELS[value]} — ${AUTONOMY_DESCRIPTIONS[value]}`;
 
+  const Glyph = AUTONOMY_GLYPHS[value];
   let tone = 'text-droid-text-secondary hover:text-droid-text hover:bg-droid-bg/40';
   if (open) tone = 'bg-droid-bg/60 text-droid-text';
   else if (inactive) tone = 'text-droid-text-muted/60 cursor-not-allowed';
@@ -91,7 +103,11 @@ export default function AutonomySelector({
         title={title}
         className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] transition-colors ${tone}`}
       >
-        {pending && <Spinner className="w-3.5 h-3.5 shrink-0 motion-safe:animate-spin-slow" />}
+        {pending ? (
+          <Spinner className="w-3.5 h-3.5 shrink-0 motion-safe:animate-spin-slow" />
+        ) : (
+          <Glyph className="h-3.5 w-3.5 shrink-0" />
+        )}
         <span>{AUTONOMY_LABELS[value]}</span>
       </button>
 
@@ -107,6 +123,7 @@ export default function AutonomySelector({
             <AutonomyMenu
               scope={scope}
               value={value}
+              provider={provider}
               onSelect={(level) => {
                 if (level !== value) onSelect(level);
                 setOpen(false);
@@ -126,10 +143,12 @@ export default function AutonomySelector({
 export function AutonomyMenu({
   scope,
   value,
+  provider,
   onSelect,
 }: {
   scope: AutonomyScope;
   value: Autonomy;
+  provider?: ProviderKind;
   onSelect: (level: Autonomy) => void;
 }) {
   const optionRefs = useRef<(HTMLButtonElement | null)[]>([]);
@@ -173,6 +192,8 @@ export function AutonomyMenu({
       <div className="px-1.5 pb-1.5 space-y-0.5">
         {AUTONOMY_LEVELS.map((level, i) => {
           const selected = level === value;
+          const Mark = AUTONOMY_GLYPHS[level];
+          const consequence = selected ? autonomyConsequence(provider, level) : undefined;
           return (
             <button
               key={level}
@@ -186,10 +207,16 @@ export function AutonomyMenu({
               onClick={() => {
                 onSelect(level);
               }}
-              className={`w-full flex items-center gap-3 px-2.5 py-2 rounded-lg text-left transition-colors ${
+              className={`w-full flex items-start gap-3 px-2.5 py-2 rounded-lg text-left transition-colors ${
                 selected ? 'bg-droid-surface' : 'hover:bg-droid-surface/60'
               }`}
             >
+              <Mark
+                className={`mt-0.5 h-3.5 w-3.5 shrink-0 ${
+                  selected ? 'text-droid-text-secondary' : 'text-droid-text-muted'
+                }`}
+                aria-hidden
+              />
               <span className="min-w-0 flex-1">
                 <span
                   className={`block text-[13px] ${
@@ -201,11 +228,16 @@ export function AutonomyMenu({
                 <span className="mt-0.5 block text-[11px] text-droid-text-muted leading-snug">
                   {AUTONOMY_DESCRIPTIONS[level]}
                 </span>
+                {consequence && (
+                  <span className="mt-1 block text-[11px] text-droid-text-secondary leading-snug">
+                    {consequence}
+                  </span>
+                )}
               </span>
               {selected && (
-                <Check className="h-3.5 w-3.5 shrink-0 text-droid-accent" strokeWidth={3} />
+                <Check className="mt-0.5 h-3.5 w-3.5 shrink-0 text-droid-accent" strokeWidth={3} />
               )}
-              <span className="w-3 shrink-0 text-right text-[10px] tabular-nums text-droid-text-muted/60">
+              <span className="mt-0.5 w-3 shrink-0 text-right text-[10px] tabular-nums text-droid-text-muted/60">
                 {i + 1}
               </span>
             </button>

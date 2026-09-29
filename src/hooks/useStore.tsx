@@ -78,6 +78,7 @@ import {
 import type {
   AgentProcess,
   Autonomy,
+  ContextWindowTokens,
   FactoryDefaultSettings,
   ServerEvent,
   SessionSummary,
@@ -280,9 +281,9 @@ export interface AppState {
   childRuntime: Record<string, Record<string, ChildRuntimeState>>;
   // Pending permission requests are scoped to the session that asked, so a
   // request from one chat never appears (or gets answered) in another.
-  pendingPermissions: Record<string, PermissionRequest>;
+  pendingPermissions: Partial<Record<string, PermissionRequest[]>>;
   // Same scoping for AskUser questions: keyed by the asking session.
-  pendingQuestions: Record<string, SessionQuestion>;
+  pendingQuestions: Partial<Record<string, SessionQuestion[]>>;
   contextStats: {
     primary: Record<string, ContextStatsSnapshot>;
     child: Record<string, Record<string, ContextStatsSnapshot>>;
@@ -354,6 +355,12 @@ export interface AppState {
   // Autonomy override for the current unsent draft. Null means the draft
   // follows `defaultAutonomy`; reset whenever the draft lifecycle resets.
   draftAutonomy: Autonomy | null;
+  // Fast mode the current unsent draft will be created with. A new chat never
+  // inherits it, so it resets with the rest of the draft lifecycle.
+  draftFastMode: boolean;
+  // Context window the current unsent draft will be created with. Null means
+  // the provider's own, and it resets with the rest of the draft lifecycle.
+  draftContextWindowTokens: ContextWindowTokens | null;
   // Live-session autonomy changes awaiting provider confirmation, keyed by
   // appSessionId. The UI keeps showing the confirmed value while pending.
   pendingAutonomy: Record<string, Autonomy>;
@@ -576,8 +583,8 @@ export type Action =
       parentAppSessionId: string;
       childSessionId: string;
     }
-  | { type: 'CLEAR_PERMISSION'; appSessionId: string }
-  | { type: 'CLEAR_QUESTION'; appSessionId: string }
+  | { type: 'CLEAR_PERMISSION'; appSessionId: string; requestId: string }
+  | { type: 'CLEAR_QUESTION'; appSessionId: string; requestId: string }
   | { type: 'CLEAR_INTERACTION'; appSessionId: string; requestId: string }
 
   // UI
@@ -687,6 +694,8 @@ export type Action =
   | { type: 'SET_DEFAULT_AUTONOMY'; autonomy: Autonomy }
   | { type: 'SET_TOOL_ACTIVITY'; settings: ToolActivitySettings }
   | { type: 'SET_DRAFT_AUTONOMY'; autonomy: Autonomy }
+  | { type: 'SET_DRAFT_FAST_MODE'; fastMode: boolean }
+  | { type: 'SET_DRAFT_CONTEXT_WINDOW'; contextWindowTokens: ContextWindowTokens | null }
   | { type: 'AUTONOMY_UPDATE_REQUESTED'; appSessionId: string; autonomy: Autonomy }
   | { type: 'AUTONOMY_UPDATE_SETTLED'; appSessionId: string }
   | {
@@ -774,6 +783,8 @@ export const initialState: AppState = {
   defaultAutonomy: loadDefaultPermissionMode(),
   toolActivity: loadToolActivity(),
   draftAutonomy: null,
+  draftFastMode: false,
+  draftContextWindowTokens: null,
   pendingAutonomy: {},
   pendingModelUpdates: {},
   composerSeed: null,
@@ -866,18 +877,38 @@ function closeActiveUtilityPanel(state: AppState): AppState {
     : { ...state, utilityPanels: { ...state.utilityPanels, [appSessionId]: panel } };
 }
 
-// Drops the open request a session was cancelled out of. Keyed on the request
-// id as well as the session so a card raised after the cancellation stays.
-function withoutCancelledRequest<T extends { requestId: string }>(
-  pending: Record<string, T>,
+// Settle only the matching request, retaining the order of everything still pending.
+function withoutPendingRequest<T extends { requestId: string }>(
+  pending: Partial<Record<string, T[]>>,
   appSessionId: string,
   requestId: string,
-): Record<string, T> {
-  return Object.fromEntries(
-    Object.entries(pending).filter(
-      ([id, request]) => id !== appSessionId || request.requestId !== requestId,
-    ),
-  );
+): Partial<Record<string, T[]>> {
+  const requests = pending[appSessionId];
+  if (!requests?.some((request) => request.requestId === requestId)) return pending;
+  const remaining = requests.filter((request) => request.requestId !== requestId);
+  if (remaining.length) return { ...pending, [appSessionId]: remaining };
+  return Object.fromEntries(Object.entries(pending).filter(([id]) => id !== appSessionId));
+}
+
+// The plan the approval bar and the spec reader show is the one of the oldest
+// approval still waiting, which is the one the bar answers. A richer spec file
+// for that plan (SPEC_SET) is kept while its content is unchanged.
+function withShownPlan(state: AppState, appSessionId: string): AppState {
+  const shown = state.pendingPermissions[appSessionId]?.[0];
+  if (!shown?.plan || (shown.kind !== 'spec' && shown.kind !== 'mission_plan')) return state;
+  const existingSpec = state.sessionSpecs[appSessionId];
+  return {
+    ...state,
+    specPlans:
+      shown.kind === 'spec' ? { ...state.specPlans, [appSessionId]: shown.plan } : state.specPlans,
+    sessionSpecs:
+      existingSpec?.content === shown.plan
+        ? state.sessionSpecs
+        : {
+            ...state.sessionSpecs,
+            [appSessionId]: { path: existingSpec?.path, title: shown.title, content: shown.plan },
+          },
+  };
 }
 
 export function reducer(state: AppState, action: Action): AppState {
@@ -961,6 +992,8 @@ function baseReducer(state: AppState, action: Action): AppState {
         activeAppSessionId: shouldActivate ? action.session.appSessionId : state.activeAppSessionId,
         draftChat: shouldActivate ? null : state.draftChat,
         draftAutonomy: shouldActivate ? null : state.draftAutonomy,
+        draftFastMode: shouldActivate ? false : state.draftFastMode,
+        draftContextWindowTokens: shouldActivate ? null : state.draftContextWindowTokens,
         selectedChild: shouldActivate || targetIsActive ? null : childReset.selectedChild,
         // A pending review-focus request belongs to the session that issued
         // it; a different session becoming active must not inherit it.
@@ -1367,39 +1400,39 @@ function baseReducer(state: AppState, action: Action): AppState {
 
     case 'SESSION_PERMISSION': {
       const r = action.request;
-      const specPlans =
-        r.kind === 'spec' && r.plan
-          ? { ...state.specPlans, [r.appSessionId]: r.plan }
-          : state.specPlans;
-      // Seed the persistent spec/plan so the inline card and wiki reader work
-      // immediately (a richer spec file, if any, overrides this via SPEC_SET).
-      // Seed/refresh the persistent spec whenever a (revised) plan arrives so the
-      // card/wiki never go stale. The path is preserved; ChatView reloads the
-      // file on revision and overrides with the richer on-disk content.
-      const existingSpec = state.sessionSpecs[r.appSessionId];
-      const sessionSpecs =
-        (r.kind === 'spec' || r.kind === 'mission_plan') &&
-        r.plan &&
-        existingSpec?.content !== r.plan
-          ? {
-              ...state.sessionSpecs,
-              [r.appSessionId]: { path: existingSpec?.path, title: r.title, content: r.plan },
-            }
-          : state.sessionSpecs;
-      return {
-        ...state,
-        pendingPermissions: { ...state.pendingPermissions, [r.appSessionId]: r },
-        specPlans,
-        sessionSpecs,
-      };
+      if (
+        state.pendingPermissions[r.appSessionId]?.some(
+          (request) => request.requestId === r.requestId,
+        )
+      )
+        return state;
+      return withShownPlan(
+        {
+          ...state,
+          pendingPermissions: {
+            ...state.pendingPermissions,
+            [r.appSessionId]: [...(state.pendingPermissions[r.appSessionId] ?? []), r],
+          },
+        },
+        r.appSessionId,
+      );
     }
 
     case 'SESSION_QUESTION':
+      if (
+        state.pendingQuestions[action.question.appSessionId]?.some(
+          (question) => question.requestId === action.question.requestId,
+        )
+      )
+        return state;
       return {
         ...state,
         pendingQuestions: {
           ...state.pendingQuestions,
-          [action.question.appSessionId]: action.question,
+          [action.question.appSessionId]: [
+            ...(state.pendingQuestions[action.question.appSessionId] ?? []),
+            action.question,
+          ],
         },
       };
 
@@ -1519,42 +1552,49 @@ function baseReducer(state: AppState, action: Action): AppState {
     case 'SESSION_HISTORY':
       return reduceSessionHistory(state, action);
 
-    case 'CLEAR_PERMISSION': {
-      return {
-        ...state,
-        pendingPermissions: Object.fromEntries(
-          Object.entries(state.pendingPermissions).filter(([id]) => id !== action.appSessionId),
-        ),
-      };
-    }
+    case 'CLEAR_PERMISSION':
+      return withShownPlan(
+        {
+          ...state,
+          pendingPermissions: withoutPendingRequest(
+            state.pendingPermissions,
+            action.appSessionId,
+            action.requestId,
+          ),
+        },
+        action.appSessionId,
+      );
 
-    case 'CLEAR_QUESTION': {
+    case 'CLEAR_QUESTION':
       return {
         ...state,
-        pendingQuestions: Object.fromEntries(
-          Object.entries(state.pendingQuestions).filter(([id]) => id !== action.appSessionId),
+        pendingQuestions: withoutPendingRequest(
+          state.pendingQuestions,
+          action.appSessionId,
+          action.requestId,
         ),
       };
-    }
 
     // The sidecar gave up on a request the user never answered. Matched on the
     // request id so a late cancellation cannot clear a newer card.
     case 'CLEAR_INTERACTION': {
       const { appSessionId, requestId } = action;
-      const pendingPermissions = withoutCancelledRequest(
+      const pendingPermissions = withoutPendingRequest(
         state.pendingPermissions,
         appSessionId,
         requestId,
       );
-      const pendingQuestions = withoutCancelledRequest(
+      const pendingQuestions = withoutPendingRequest(
         state.pendingQuestions,
         appSessionId,
         requestId,
       );
       const cleared =
-        Object.keys(pendingPermissions).length !== Object.keys(state.pendingPermissions).length ||
-        Object.keys(pendingQuestions).length !== Object.keys(state.pendingQuestions).length;
-      return cleared ? { ...state, pendingPermissions, pendingQuestions } : state;
+        pendingPermissions !== state.pendingPermissions ||
+        pendingQuestions !== state.pendingQuestions;
+      return cleared
+        ? withShownPlan({ ...state, pendingPermissions, pendingQuestions }, appSessionId)
+        : state;
     }
 
     case 'SET_ACTIVE_SESSION': {
@@ -1591,6 +1631,8 @@ function baseReducer(state: AppState, action: Action): AppState {
         sessionLastSeen,
         draftChat: null,
         draftAutonomy: null,
+        draftFastMode: false,
+        draftContextWindowTokens: null,
         selectedChild: null,
         // A pending review-focus request belongs to the session that issued
         // it; never let it fire in another session's panel after a switch.
@@ -1898,6 +1940,8 @@ function baseReducer(state: AppState, action: Action): AppState {
           branch: action.branch,
         },
         draftAutonomy: null,
+        draftFastMode: false,
+        draftContextWindowTokens: null,
         activeAppSessionId: null,
         missionControlMode: false,
         selectedChild: null,
@@ -2249,6 +2293,12 @@ function baseReducer(state: AppState, action: Action): AppState {
 
     case 'SET_DRAFT_AUTONOMY':
       return { ...state, draftAutonomy: action.autonomy };
+
+    case 'SET_DRAFT_FAST_MODE':
+      return { ...state, draftFastMode: action.fastMode };
+
+    case 'SET_DRAFT_CONTEXT_WINDOW':
+      return { ...state, draftContextWindowTokens: action.contextWindowTokens };
 
     case 'AUTONOMY_UPDATE_REQUESTED':
       return {

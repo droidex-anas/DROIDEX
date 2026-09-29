@@ -1,12 +1,21 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { ChevronLeft, RotateCcw, Search } from 'lucide-react';
+import { Zap } from '@droidex/icons';
 import type { ProviderKind, ReasoningEffort } from '../types/bridge';
 import {
   isReasoningEffort,
   offersReasoningEffort,
   reasoningEffortLabel,
 } from '../lib/reasoningEffort';
+import {
+  FAST_MODE_HINT,
+  FAST_MODE_LABEL,
+  fastModeBlockedReason,
+  offersFastMode,
+} from '../lib/fastMode';
+import { contextWindowOptions, offersContextWindow } from '../lib/contextWindow';
+import useContextWindow from '../hooks/useContextWindow';
 import { ModelIcon, providerOf } from './ModelIcon';
 import HarnessSegments from '../features/providers/HarnessSegments';
 import ModelCategoryFilter from './ModelCategoryFilter';
@@ -14,6 +23,7 @@ import { effortsFor, stepModel } from './ModelCatalogList';
 import { useTriggerAnchor } from './composer/useTriggerAnchor';
 import useModelPicker from './useModelPicker';
 import ModelSliderCatalogList from './ModelSliderCatalogList';
+import ContextWindowMenu from './ContextWindowMenu';
 import EffortSlider from './effortSlider/EffortSlider';
 import type { EffortSliderElement, EffortSliderLevel } from './effortSlider/effortSliderElement';
 
@@ -68,9 +78,14 @@ export default function ModelSliderPopover({ onClose }: { onClose: () => void })
     selectedLabel,
     activeModel,
     effReasoning,
+    fastMode,
+    setFastMode,
+    scopedAppSessionId,
     updateModel,
     updateReasoning,
   } = useModelPicker({ singleAgent: true });
+  const { contextWindowTokens, providerWindow, setContextWindow } =
+    useContextWindow(scopedAppSessionId);
   const efforts = effortsFor(activeModel, effReasoning);
   const canDrill =
     activeModel !== undefined &&
@@ -101,6 +116,17 @@ export default function ModelSliderPopover({ onClose }: { onClose: () => void })
       ? 'Default'
       : effortDisplay(shownEffort, provider);
 
+  const fastModeBlocked = fastModeBlockedReason(activeModel);
+  // The window a chat that pins none runs on: the one measured for it, or for
+  // a draft on the harness's own default model, the one that default asks for.
+  const status = providerStatuses.find((entry) => entry.provider === provider);
+  const defaultWindow =
+    providerWindow ??
+    (activeModel?.id === status?.defaultModelId ? status?.defaultContextWindowTokens : undefined);
+  const windowOptions = useMemo(
+    () => contextWindowOptions(activeModel, defaultWindow),
+    [activeModel, defaultWindow],
+  );
   const defaultEffort = activeModel?.defaultReasoningEffort;
   const canReset =
     defaultEffort !== undefined &&
@@ -114,7 +140,12 @@ export default function ModelSliderPopover({ onClose }: { onClose: () => void })
 
   useEffect(() => {
     const onDown = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) onClose();
+      const target = e.target;
+      if (!(target instanceof Node)) return;
+      // Menus this popover owns float in a portal, so a click in one of them
+      // is not a click outside the popover.
+      if (target instanceof Element && target.closest('[data-popover-layer]')) return;
+      if (ref.current && !ref.current.contains(target)) onClose();
     };
     window.addEventListener('mousedown', onDown);
     return () => {
@@ -188,12 +219,42 @@ export default function ModelSliderPopover({ onClose }: { onClose: () => void })
                 >
                   <ChevronLeft className="h-4 w-4" />
                 </button>
+                {offersFastMode(provider) && (
+                  <button
+                    type="button"
+                    aria-pressed={fastMode}
+                    aria-label={FAST_MODE_LABEL}
+                    disabled={fastModeBlocked !== undefined}
+                    title={fastModeBlocked ?? FAST_MODE_HINT}
+                    onClick={() => {
+                      setFastMode(!fastMode);
+                    }}
+                    className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-md transition-colors disabled:opacity-40 ${
+                      fastMode
+                        ? 'bg-droid-surface text-droid-accent'
+                        : 'text-droid-text-muted enabled:hover:bg-droid-surface/60 enabled:hover:text-droid-text'
+                    }`}
+                  >
+                    <Zap
+                      size={14}
+                      className="transition-colors"
+                      fill={fastMode ? 'currentColor' : 'transparent'}
+                    />
+                  </button>
+                )}
                 <span className="flex h-4 w-4 shrink-0 items-center justify-center">
                   <ModelIcon provider={providerOf(activeModel, resolvedModelId)} size={14} />
                 </span>
                 <span className="min-w-0 flex-1 truncate text-[13px] font-medium text-droid-text">
                   {selectedLabel}
                 </span>
+                {offersContextWindow(provider) && (
+                  <ContextWindowMenu
+                    options={windowOptions}
+                    selected={contextWindowTokens}
+                    onSelect={setContextWindow}
+                  />
+                )}
                 {canReset && (
                   <button
                     type="button"

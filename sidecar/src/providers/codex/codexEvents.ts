@@ -11,9 +11,11 @@ import type { ChildSessionSignal } from '../../subagentSignals.js';
 import type { ProviderModelSettings } from '../session.js';
 import { errMsg } from '../../sessionHelpers.js';
 import { UsageLimitError, usageLimitDetails } from '../usageLimit.js';
+import type { FileChangeDetail } from './codexApprovals.js';
 import { imageUsageLimit } from './codexImages.js';
 import {
   collabChildSignals,
+  changesDiff,
   patchText,
   threadItem,
   toolCall,
@@ -238,12 +240,19 @@ export class CodexEventMapper {
 
   // What a pending approval is about. A file-change approval carries no detail
   // of its own, so the open item it belongs to is the only description there is.
-  fileChanges(itemId: string): FileUpdateChange[] {
-    return this.tools.get(itemId)?.changes ?? [];
+  toolDetail(itemId: string): FileChangeDetail | undefined {
+    const tool = this.tools.get(itemId);
+    if (!tool) return undefined;
+    if (!tool.changes) return { detail: tool.detail };
+    return {
+      detail: tool.detail,
+      diff: changesDiff(tool.changes),
+      creates: tool.changes.every((change) => change.kind.type === 'add'),
+    };
   }
 
-  toolDetail(itemId: string): string | undefined {
-    return this.tools.get(itemId)?.detail;
+  fileChanges(itemId: string): FileUpdateChange[] {
+    return this.tools.get(itemId)?.changes ?? [];
   }
 
   // A server the user did not ask for in this turn failing is not the turn's
@@ -282,6 +291,7 @@ export class CodexEventMapper {
     if (!params) return [];
     const tool = this.tools.get(params.itemId);
     if (tool) {
+      tool.detail = params.changes.map((change) => change.path).join('\n');
       tool.output = patchText(params.changes);
       tool.changes = params.changes;
     }

@@ -1,12 +1,14 @@
-import type { ReasoningEffort, SessionSummary } from '../types/bridge';
+import type { ContextWindowTokens, ReasoningEffort, SessionSummary } from '../types/bridge';
 
 /**
- * A chat's model or effort change, shown before the sidecar confirms it.
- * `null` clears the field back to the provider's default.
+ * A chat's model, effort, fast mode or window change, shown before the sidecar
+ * confirms it. `null` clears the model or effort back to the provider's default.
  */
 export interface PendingModelSettings {
   modelId?: string | null;
   reasoningEffort?: ReasoningEffort | null;
+  fastMode?: boolean;
+  contextWindowTokens?: ContextWindowTokens;
 }
 
 /**
@@ -30,6 +32,10 @@ export function mergePendingModelSettings(
     ...previous,
     ...(next.modelId !== undefined ? { modelId: next.modelId } : {}),
     ...(next.reasoningEffort !== undefined ? { reasoningEffort: next.reasoningEffort } : {}),
+    ...(next.fastMode !== undefined ? { fastMode: next.fastMode } : {}),
+    ...(next.contextWindowTokens !== undefined
+      ? { contextWindowTokens: next.contextWindowTokens }
+      : {}),
   };
 }
 
