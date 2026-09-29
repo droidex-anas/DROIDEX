@@ -3,7 +3,6 @@ import assert from 'node:assert/strict';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { NotesPanel } from './NotesSection';
-import { NotesIntroCard } from './NotesIntroCard';
 import type { NoteTag } from '../lib/notesTags';
 import type { SessionNote } from '../lib/sessionNotes';
 
@@ -11,12 +10,7 @@ const noop = () => undefined;
 
 // The pad is collapsed by default in the app; tests that exercise its content
 // opt into the open state explicitly.
-const render = (
-  notes: SessionNote[],
-  draft = '',
-  introVisible = false,
-  tag: NoteTag | null = null,
-) =>
+const render = (notes: SessionNote[], draft = '', tag: NoteTag | null = null) =>
   renderToStaticMarkup(
     createElement(NotesPanel, {
       notes,
@@ -25,8 +19,6 @@ const render = (
       onSave: noop,
       onUse: noop,
       onRemove: noop,
-      introVisible,
-      onDismissIntro: noop,
       tag,
       onTagSelect: noop,
       onTagClear: noop,
@@ -43,8 +35,6 @@ test('the pad starts collapsed so mounting it never reshuffles the panel', () =>
       onSave: noop,
       onUse: noop,
       onRemove: noop,
-      introVisible: false,
-      onDismissIntro: noop,
       tag: null,
       onTagSelect: noop,
       onTagClear: noop,
@@ -132,7 +122,7 @@ test('the tag menu narrows as the @query grows', () => {
 });
 
 test('a selected tag chips inside the pad and swaps the placeholder', () => {
-  const html = render([], '', false, 'bug');
+  const html = render([], '', 'bug');
   assert.match(html, />bug</);
   assert.match(html, /aria-label="Remove tag"/);
   assert.match(html, /Add the detail/);
@@ -149,32 +139,4 @@ test('a note sent to the composer gets a filled bullet and counts in the header'
   // Exactly one filled bullet, one empty one.
   assert.equal(html.match(/bg-droid-accent/g)?.length, 1);
   assert.equal(html.match(/border-droid-text-muted\/40/g)?.length, 1);
-});
-
-const renderIntro = () =>
-  renderToStaticMarkup(
-    createElement(NotesIntroCard, {
-      style: { position: 'fixed', top: 0, left: 0 },
-      caretTop: 40,
-      onTry: noop,
-      onClose: noop,
-    }),
-  );
-
-test('the floating intro announces the feature with a try and dismiss action', () => {
-  const html = renderIntro();
-  assert.match(html, /Meet Notes/);
-  assert.match(html, /Write reminders in the pad below/);
-  assert.match(html, /Try it now/);
-  assert.match(html, /aria-label="Dismiss"/);
-  // A caret points back at the Notes card.
-  assert.match(html, /rotate-45/);
-  // The accent is white in this theme, so the CTA must use dark text.
-  assert.match(html, /text-droid-bg/);
-  assert.doesNotMatch(html, /text-white/);
-});
-
-test('the intro floats through a portal, so static markup stays anchor-only', () => {
-  assert.doesNotMatch(render([], '', true), /Meet Notes/);
-  assert.doesNotMatch(render([], ''), /Meet Notes/);
 });
