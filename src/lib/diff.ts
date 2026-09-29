@@ -159,7 +159,8 @@ function pathFromPatch(patch: string): string | undefined {
 function parsePatch(patch: string): DiffOp[] {
   const ops: DiffOp[] = [];
   let owed = 0;
-  for (const line of patch.split('\n')) {
+  // A patch ends with a newline; the empty string after it is not a line.
+  for (const line of patch.replace(/\n$/, '').split('\n')) {
     const hunk = /^@@ -\d+(?:,(\d+))? \+\d+(?:,(\d+))? @@/.exec(line);
     if (hunk) {
       // A count left out is one line.

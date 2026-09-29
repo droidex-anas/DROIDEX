@@ -74,3 +74,11 @@ test('a line inside a hunk is content even when it reads like a header', () => {
     ],
   );
 });
+
+test('the newline that ends a patch adds no empty row', () => {
+  const patch = '@@ -1,2 +1,2 @@\n one\n-two\n+three\n';
+  assert.deepEqual(
+    extractFileChange('apply_patch', { patch })?.ops.map((op) => op.type),
+    ['ctx', 'del', 'add'],
+  );
+});
