@@ -4,9 +4,10 @@ import {
   DEFAULT_THEME_ID,
   detectPresetId,
   findPreset,
+  isHexColor,
   parseCustomThemes,
-  readThemeColors,
   resolveVariant,
+  type ThemeColors,
   type ThemePreset,
 } from '../lib/theme';
 
@@ -91,7 +92,13 @@ function readSavedTheme(): Record<string, unknown> | null {
 export function loadTheme(customThemes: ThemePreset[]): ThemeConfig {
   const saved = readSavedTheme();
   if (!saved) return defaultTheme;
-  const colors = readThemeColors(saved) ?? DEFAULT_THEME.dark;
+  const colors: ThemeColors = {
+    bg: savedColor(saved, 'bg'),
+    fg: savedColor(saved, 'fg'),
+    surface: savedColor(saved, 'surface'),
+    border: savedColor(saved, 'border'),
+    accent: savedColor(saved, 'accent'),
+  };
   const theme: ThemeConfig = {
     mode: saved.mode === 'light' || saved.mode === 'system' ? saved.mode : 'dark',
     appIconMode: normalizeAppIconMode(saved.appIconMode),
@@ -116,6 +123,11 @@ export function loadTheme(customThemes: ThemePreset[]): ThemeConfig {
   // it means a retuned preset reaches themes saved before the change.
   const preset = findPreset(theme.presetId, customThemes);
   return preset ? { ...theme, ...resolveVariant(preset, theme.mode) } : theme;
+}
+
+function savedColor(saved: Record<string, unknown>, key: keyof ThemeColors): string {
+  const value = saved[key];
+  return isHexColor(value) ? value : DEFAULT_THEME.dark[key];
 }
 
 export function persistTheme(theme: ThemeConfig): void {

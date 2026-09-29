@@ -286,6 +286,10 @@ export function detectPresetId(colors: ThemeColors, customThemes: ThemePreset[] 
 /* ── custom preset persistence + import ── */
 const HEX_COLOR = /^#[0-9a-f]{6}$/i;
 
+export function isHexColor(value: unknown): value is string {
+  return typeof value === 'string' && HEX_COLOR.test(value);
+}
+
 export function readThemeColors(value: unknown): ThemeColors | null {
   if (!value || typeof value !== 'object') return null;
   const raw = value as Record<string, unknown>;
@@ -297,7 +301,7 @@ export function readThemeColors(value: unknown): ThemeColors | null {
     accent: raw.accent,
   };
   for (const v of Object.values(colors)) {
-    if (typeof v !== 'string' || !HEX_COLOR.test(v)) return null;
+    if (!isHexColor(v)) return null;
   }
   return colors as ThemeColors;
 }
