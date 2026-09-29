@@ -579,9 +579,14 @@ export class SessionLifecycle {
     text: string,
     mentions?: ProviderMention[],
   ): Promise<void> {
+    await this.sendPrompt(requestedAppSessionId, sessionPrompt(text, mentions));
+  }
+
+  // A redelivered prompt keeps what it was queued with, so one nobody typed is
+  // still announced when it finally runs.
+  private async sendPrompt(requestedAppSessionId: string, prompt: SessionPrompt): Promise<void> {
     const liveSession = await this.prepareToSend(requestedAppSessionId);
     if (!liveSession) return;
-    const prompt = sessionPrompt(text, mentions);
     if (liveSession.streaming || liveSession.compacting || liveSession.autoCompacting) {
       liveSession.pendingSends.push(prompt);
       this.updateQueuedSends(liveSession);
@@ -1253,7 +1258,7 @@ export class SessionLifecycle {
     for (const prompt of queued) {
       if (this.dependencies.isShutdownStarted()) return;
       try {
-        await this.send(appSessionId, prompt.text, prompt.mentions);
+        await this.sendPrompt(appSessionId, prompt);
       } catch (error) {
         this.dependencies.emitError({
           appSessionId,
