@@ -11,7 +11,7 @@ import { generatedImage, type GeneratedImage } from './codexImages.js';
 const IMAGE_TOOL_NAME = 'image_generation';
 export interface FileUpdateChange {
   path: string;
-  kind: { type: string; movePath?: string | null };
+  kind: { type: string; move_path?: string | null };
   diff: string;
 }
 
