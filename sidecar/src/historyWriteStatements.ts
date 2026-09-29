@@ -34,6 +34,8 @@ export class HistoryWriteStatements {
         updated_at,
         model_id,
         reasoning_effort,
+        fast_mode,
+        context_window_tokens,
         compaction_model,
         worker_model_id,
         worker_reasoning_effort,
@@ -49,7 +51,7 @@ export class HistoryWriteStatements {
         max_context_tokens,
         auto_compactions
       )
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(app_session_id) DO UPDATE SET
         provider_session_id = excluded.provider_session_id,
         compacted_from_provider_session_ids = excluded.compacted_from_provider_session_ids,
@@ -61,6 +63,8 @@ export class HistoryWriteStatements {
         updated_at = excluded.updated_at,
         model_id = excluded.model_id,
         reasoning_effort = excluded.reasoning_effort,
+        fast_mode = excluded.fast_mode,
+        context_window_tokens = excluded.context_window_tokens,
         compaction_model = excluded.compaction_model,
         worker_model_id = excluded.worker_model_id,
         worker_reasoning_effort = excluded.worker_reasoning_effort,
@@ -163,6 +167,8 @@ export class HistoryWriteStatements {
       summary.updatedAt,
       sqlValue(summary.modelId),
       sqlValue(summary.reasoningEffort),
+      summary.fastMode === undefined ? null : Number(summary.fastMode),
+      sqlValue(summary.contextWindowTokens),
       sqlValue(summary.compactionModel),
       sqlValue(summary.workerModelId),
       sqlValue(summary.workerReasoningEffort),

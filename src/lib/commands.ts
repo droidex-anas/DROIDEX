@@ -6,6 +6,7 @@ import type {
   BrowserViewport,
   BrowserViewportMode,
   ConfigurableSessionRole,
+  ContextWindowTokens,
   DesignReference,
   HarnessCliProvider,
   InstallChannel,
@@ -45,6 +46,8 @@ export const createSession = (input: {
   interactionMode?: SessionInteractionMode;
   modelId?: string;
   reasoningEffort?: ReasoningEffort;
+  fastMode?: boolean;
+  contextWindowTokens?: ContextWindowTokens;
   compactionModel?: string;
   compactionTokenLimit?: number | null;
   compactionTokenLimitPerModel?: Record<string, number>;
@@ -63,6 +66,8 @@ export const updateSessionSettings = (input: {
   appSessionId: string;
   modelId?: string | null;
   reasoningEffort?: ReasoningEffort | null;
+  fastMode?: boolean;
+  contextWindowTokens?: ContextWindowTokens;
   requestId?: string;
   autonomy?: Autonomy;
   interactionMode?: SessionInteractionMode;

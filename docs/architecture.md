@@ -60,6 +60,25 @@ flowchart LR
 - `SessionLifecycle` owns primary-session create, resume, lazy resume, send queueing, steering, interruption, and ordered cleanup. Parent close calls one semantic `ChildSessions.closeParent()` operation rather than maintaining another child map.
 - Workspace sessions pass their selected folder to Factory unchanged. Folder-less sessions remain `workspaceKind: none` in navigation, while their Factory runtime uses the app-owned `chats/` directory under `DROIDEX_USER_DATA_DIR`; DROIDEX creates it before opening the session, resumes the session from it (Claude Code files sessions under the directory they ran from), and never uses the user's home directory as an implicit workspace.
 
+### Chat preferences
+
+`fastMode` and `contextWindowTokens` are per-chat preferences, independent of
+reasoning effort. Both live on `app_sessions` as nullable columns (`fast_mode`,
+`context_window_tokens`) written in the same statement as the rest of the
+summary; history schema v5 adds them, and NULL means the chat never chose. The
+summary, provider transcript head and adjacent settings preserve an explicit
+`false` and an explicit window across resume and history reconstruction.
+
+`fastMode` starts explicitly off on Claude Code and Codex chats; omitted settings
+updates leave it unchanged. Droid does not support it. Model catalogs publish
+`supportsFastMode` when known.
+
+Claude Code receives `settings.fastMode` at launch and `applyFlagSettings` live.
+A contradictory result adds one quiet unavailability status row per runtime.
+Codex receives `serviceTier: priority | default` on thread start, resume and every
+turn start; changes affect the next turn. This records requested routing, not a
+promise of delivered speed. Codex 0.157.1 accepts and echoes both tier values.
+
 ### Child runtime residency
 
 - Every live child runtime is a provider operating-system process. One measures roughly 350 MiB resident while doing nothing, so the four concurrently live child runtimes the budget allows are the largest single memory cost in the application.
@@ -123,6 +142,13 @@ flowchart LR
 - Starting a Mission requires High autonomy. The composer blocks a lower draft behind an explicit choice to raise it; autonomy is never elevated silently.
 - Live changes go provider-first through `session.updateSettings`, serialized per session. The renderer shows a pending state and settles only when the confirmed summary arrives; rejections surface as recoverable `session.autonomy_update_failed` errors, and a settlement that lands after close or provider replacement is discarded.
 - A chat's model and effort change through the same command. Each change carries a `requestId`; the renderer shows the choice immediately and keeps it until `session.model_update_applied` or a recoverable `session.model_update_failed` for that request settles it, so rapid follow-up changes are never overwritten by an earlier confirmation.
+- Claude chats may choose `contextWindowTokens` (200000 or 1000000). Omission keeps the provider default. It is distinct from the observed `maxContextTokens`.
+- `[1m]` is how the CLI names a model's extended-context variant. Its catalog spells the suffix inside a row's `resolvedModel` rather than publishing a row for it, so the default model resolves past the suffix to the row the picker lists while the suffixed id is what reaches the CLI. `ProviderStatus.defaultContextWindowTokens` reports the window that default runs on.
+- A model may run 1M exactly when the catalog spells its id with the suffix somewhere, which is also the id the CLI is launched with; DROIDEX never builds a suffixed id the catalog does not contain. The same rule fills `ModelInfo.maxContextTokens` for Claude rows (1000000 or 200000), so the window menu never offers what the adapter would refuse.
+- A configured default naming one of the CLI's family aliases (`opus`, `sonnet`, `haiku`) rather than a catalog row is published as its own first row: its id is the configured string, its name is the alias alone because the app does not know which version it resolves to, and its capabilities come from the newest row of the same family.
+- A window change waits for the active turn and invalidates the observed capacity. The next prompt the user sends finds the runtime stale, releases it the way an idle runtime is released, and reopens the same session identity with the accepted preferences. While that takes place the chat has no runtime to queue on, so that prompt, what was queued behind it and whatever is sent meanwhile wait in one list owned by the relaunch, in the order they were sent; the first starts the turn on the new runtime and the rest become its queue. A Stop empties the list, a discarding close removes it. A scheduled prompt that fires first keeps the runtime it reserved. A chat on the default model that pins no window launches the id the CLI's own default would, suffix included. Sending a preference the chat already has changes nothing.
+- `SessionLifecycle` counts the Stops and discarding closes of each chat. A prompt that was accepted but has not started its turn compares the count it was accepted at after every wait, so a Stop takes it back even while the chat has no runtime to interrupt (a resume or a relaunch in flight). A send that finds its runtime released reopens the chat instead of being dropped. The 200k choice removes the model suffix and sets `CLAUDE_CODE_DISABLE_1M_CONTEXT=1` only in that child environment. The 1M choice uses a catalog-listed variant or a catalog-declared native 1M model and removes that override. Unavailable choices fail visibly. [Claude's model configuration](https://code.claude.com/docs/en/model-config#extended-context) defines these launch controls.
+- Claude result usage supplies the main conversation model's effective capacity. Capacity belongs to the chat, so two chats on one model can report different limits and a limit-only update still publishes. Codex has no context-window selector in this contract.
 - The default model and effort for new chats are app-owned, one per harness, stored in renderer preferences. Unset fields fall through to the harness's own default; the CLI and SDK settings are never modified.
 - The Droid model catalog is the `availableModels` list a Droid session reports on init: the account's live catalog, Auto and Factory-hosted models included. `droid exec --help` lags it and only stands in until a session reports, so when no session has, the sidecar opens one catalog session to read it. `DroidModelCatalog` caches the result per CLI path in `~/.factory/droidex/model-catalog.json`, and every created or resumed Droid session refreshes it.
 - Child sessions report their confirmed effective autonomy only while their runtime is live. It is read from the provider init result, never persisted, and never inherited from the parent; historical or unopened children report none and the renderer labels them provider managed.

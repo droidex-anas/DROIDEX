@@ -4,6 +4,7 @@ import type { EffortLevel, Options } from '@anthropic-ai/claude-agent-sdk';
 import type { ReasoningEffort } from '../../protocol.js';
 import type { ClaudeSessionInput } from './claudeSession.js';
 import { childEnv } from '../../childEnv.js';
+import { claudeContextEnv } from './claudeContextWindow.js';
 import { claudeCanUseTool, claudePermissionMode } from './claudePermissions.js';
 
 export function sessionOptions(
@@ -20,7 +21,13 @@ export function sessionOptions(
     ...(input.modelId ? { model: input.modelId } : {}),
     // The flag is written both ways: a settings file may carry ultracode too,
     // and the level the chip shows is the one the session must run at.
-    ...(effort ? { effort: effort.effortLevel, settings: { ultracode: effort.ultracode } } : {}),
+    ...(effort ? { effort: effort.effortLevel } : {}),
+    // Fast mode is always stated: the CLI would otherwise fall back to the
+    // user's own saved preference, which this chat never asked for.
+    settings: {
+      ...(effort ? { ultracode: effort.ultracode } : {}),
+      fastMode: input.fastMode ?? false,
+    },
     ...(input.resume ? { resume: input.appSessionId } : { sessionId: input.appSessionId }),
     systemPrompt: { type: 'preset', preset: 'claude_code' },
     // 'project' is what loads the repository's CLAUDE.md.
@@ -49,11 +56,11 @@ export function sessionOptions(
     // is why childEnv copies process.env: the CLI needs the user's PATH, HOME
     // and login, and only the app's own variables are left behind.
     env: childEnv(),
-    // `env` below is the one set above, handed back unchanged.
+    // `env` below is the one set above; a 200k chat adds its own disable flag.
     spawnClaudeCodeProcess: ({ command, args, cwd, env, signal }) => {
       const child = spawn(command, args, {
         ...(cwd !== undefined ? { cwd } : {}),
-        env,
+        env: claudeContextEnv(env, input.contextWindowTokens),
         signal,
         stdio: ['pipe', 'pipe', 'pipe'],
         windowsHide: true,

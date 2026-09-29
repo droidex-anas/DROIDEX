@@ -23,6 +23,10 @@ interface Dependencies {
   providerDefaultModelId: (provider: ProviderKind) => string | undefined;
   maxContextTokensForModel: (modelId?: string) => number | undefined;
   isShutdownStarted: () => boolean;
+  validateModelSettings?: (
+    summary: SessionSummary,
+    settings: ProviderModelSettings,
+  ) => Promise<void>;
   refreshPrimary: (live: LiveSession, modelChanged: boolean) => Promise<void>;
   onPrimaryModelChanged: (
     summary: SessionSummary,
@@ -75,7 +79,10 @@ export class SessionModelSettings {
 
   project(summary: SessionSummary): SessionSummary {
     for (const [agent, settings] of Object.entries(this.pending.get(summary.appSessionId) ?? {})) {
-      Object.assign(summary, this.summaryPatch(agent as ConfigurableSessionRole, settings));
+      Object.assign(
+        summary,
+        this.summaryPatch(agent as ConfigurableSessionRole, settings, summary.provider),
+      );
     }
     return summary;
   }
@@ -98,11 +105,19 @@ export class SessionModelSettings {
     agent: ConfigurableSessionRole,
     settings: ProviderModelSettings,
   ): Promise<boolean> {
-    if (settings.modelId === undefined && settings.reasoningEffort === undefined)
+    if (
+      settings.modelId === undefined &&
+      settings.reasoningEffort === undefined &&
+      settings.fastMode === undefined &&
+      settings.contextWindowTokens === undefined
+    )
       return Promise.resolve(true);
     return this.serialize(
       requestedId,
       async (appSessionId, live, isCurrent) => {
+        if (agent === 'primary' && live?.summary.provider === 'claude' && live.turnPromise)
+          await live.turnPromise.catch(() => undefined);
+        if (!isCurrent()) return false;
         const summary = this.d.registry.getCanonicalSummary(appSessionId);
         if (agent !== 'primary' && summary && summary.sessionPurpose !== 'mission-control') {
           this.d.emitError({
@@ -116,22 +131,52 @@ export class SessionModelSettings {
           this.remember(appSessionId, agent, settings);
           return true;
         }
-        const selected = mergeSettings(this.pending.get(appSessionId)?.[agent], settings);
+        if (
+          settings.fastMode !== undefined &&
+          (agent !== 'primary' || summary.provider === DEFAULT_PROVIDER)
+        )
+          throw new Error(
+            'Fast mode is supported only for top-level Claude Code and Codex sessions.',
+          );
+        if (
+          settings.contextWindowTokens !== undefined &&
+          (summary.provider !== 'claude' || agent !== 'primary')
+        )
+          throw new Error('Context window selection is only supported for Claude Code chats.');
+        const changes = withoutCurrentPreferences(settings, summary);
+        if (Object.keys(changes).length === 0) return true;
+        const selected = mergeSettings(this.pending.get(appSessionId)?.[agent], changes);
         const runtimeSettings = await this.runtimeSettings(summary, agent, selected);
         if (!isCurrent()) return false;
-        const selection = summary.provider === DEFAULT_PROVIDER ? runtimeSettings : selected;
-        const next = { ...summary, ...this.summaryPatch(agent, selection) };
-        const change = await this.primaryModelChange(summary, next, agent, settings);
+        await this.d.validateModelSettings?.(summary, {
+          modelId: summary.modelId,
+          contextWindowTokens: summary.contextWindowTokens,
+          ...runtimeSettings,
+        });
         if (!isCurrent()) return false;
-        await this.applyProvider(summary, live, agent, runtimeSettings, isCurrent);
+        const windowChanged =
+          selected.contextWindowTokens !== undefined &&
+          selected.contextWindowTokens !== summary.contextWindowTokens;
+        const restart =
+          live !== undefined && (windowChanged || live.restartBeforeNextTurn === true);
+        const selection = summary.provider === DEFAULT_PROVIDER ? runtimeSettings : selected;
+        const next = { ...summary, ...this.summaryPatch(agent, selection, summary.provider) };
+        const change = await this.primaryModelChange(summary, next, agent, changes);
+        if (!isCurrent()) return false;
+        if (!restart) await this.applyProvider(summary, live, agent, runtimeSettings, isCurrent);
         if (!isCurrent()) return false;
         await this.persistAccepted(summary, live, agent, selection);
         if (!isCurrent()) return false;
+        if (restart) live.restartBeforeNextTurn = true;
         if (agent !== 'primary') return true;
         // Only a model change earns a row; a new effort shows on the chip.
         if (change) await this.d.onPrimaryModelChanged(next, change.from, change.to);
         if (!isCurrent()) return false;
-        if (live) await this.d.refreshPrimary(live, selected.modelId !== undefined);
+        if (live)
+          await this.d.refreshPrimary(
+            live,
+            selected.modelId !== undefined || selected.contextWindowTokens !== undefined,
+          );
         return true;
       },
       false,
@@ -150,10 +195,10 @@ export class SessionModelSettings {
             const role = agent as ConfigurableSessionRole;
             const resolved = await this.runtimeSettings(live.summary, role, settings);
             if (!isCurrent()) return false;
-            await this.applyLive(live, role, resolved);
+            if (!live.restartBeforeNextTurn) await this.applyLive(live, role, resolved);
             if (!isCurrent()) return false;
             const selection = live.summary.provider === DEFAULT_PROVIDER ? resolved : settings;
-            patch = { ...patch, ...this.summaryPatch(role, selection) };
+            patch = { ...patch, ...this.summaryPatch(role, selection, live.summary.provider) };
           }
           if (live.summary.provider !== DEFAULT_PROVIDER && pending.primary)
             writeProviderSessionSettings(appSessionId, pending.primary);
@@ -235,7 +280,7 @@ export class SessionModelSettings {
       else this.pending.delete(appSessionId);
     } else this.remember(appSessionId, agent, settings);
     try {
-      const patch = this.summaryPatch(agent, settings);
+      const patch = this.summaryPatch(agent, settings, summary.provider);
       if (live) this.d.registry.updateSummary(appSessionId, patch);
       else await this.d.registry.updateStoredSummary(appSessionId, patch);
     } catch (error) {
@@ -340,6 +385,7 @@ export class SessionModelSettings {
   private summaryPatch(
     agent: ConfigurableSessionRole,
     settings: ProviderModelSettings,
+    provider: ProviderKind,
   ): Partial<SessionSummary> {
     const patch: Partial<SessionSummary> = {};
     // A cleared effort is stored as none.
@@ -347,9 +393,17 @@ export class SessionModelSettings {
     if (agent === 'primary') {
       if (settings.modelId !== undefined) {
         patch.modelId = settings.modelId ?? undefined;
-        patch.maxContextTokens = this.d.maxContextTokensForModel(settings.modelId ?? undefined);
+        patch.maxContextTokens =
+          provider === 'droid'
+            ? this.d.maxContextTokensForModel(settings.modelId ?? undefined)
+            : undefined;
       }
       if (settings.reasoningEffort !== undefined) patch.reasoningEffort = effort;
+      if (settings.fastMode !== undefined) patch.fastMode = settings.fastMode;
+      if (settings.contextWindowTokens !== undefined) {
+        patch.contextWindowTokens = settings.contextWindowTokens;
+        patch.maxContextTokens = undefined;
+      }
     } else if (agent === 'worker') {
       if (settings.modelId !== undefined) patch.workerModelId = settings.modelId ?? undefined;
       if (settings.reasoningEffort !== undefined) patch.workerReasoningEffort = effort;
@@ -394,6 +448,26 @@ function mergeSettings(
   return {
     ...previous,
     ...(patch.modelId !== undefined ? { modelId: patch.modelId } : {}),
+    ...(patch.contextWindowTokens !== undefined
+      ? { contextWindowTokens: patch.contextWindowTokens }
+      : {}),
     ...(patch.reasoningEffort !== undefined ? { reasoningEffort: patch.reasoningEffort } : {}),
+    ...(patch.fastMode !== undefined ? { fastMode: patch.fastMode } : {}),
+  };
+}
+
+// A preference the chat already has is not a change: applying it again would
+// reach the provider and drop the window the chat was measured at for nothing.
+function withoutCurrentPreferences(
+  settings: ProviderModelSettings,
+  summary: SessionSummary,
+): ProviderModelSettings {
+  const { fastMode, contextWindowTokens, ...rest } = settings;
+  return {
+    ...rest,
+    ...(fastMode !== undefined && fastMode !== (summary.fastMode ?? false) ? { fastMode } : {}),
+    ...(contextWindowTokens !== undefined && contextWindowTokens !== summary.contextWindowTokens
+      ? { contextWindowTokens }
+      : {}),
   };
 }

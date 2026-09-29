@@ -11,6 +11,8 @@ import type {
   ServerEvent,
   SessionSummary,
 } from './protocol.js';
+import { SessionModelSettings } from './SessionModelSettings.js';
+import type { Provider } from './providers/session.js';
 import { DroidProvider } from './providers/droid/DroidProvider.js';
 import { DroidProviderSession } from './providers/droid/DroidProviderSession.js';
 import type { ProviderQuestionAnswers } from './providers/interactions.js';
@@ -87,7 +89,9 @@ function createHarness(ordinarySummaries: SessionSummary[] = []) {
   const missionForgettingAfterUnregister: boolean[] = [];
   const history = new TestHistory(calls);
   const runtime = new FakeFactoryRuntime(calls);
+  let provider: Provider = new DroidProvider(runtime, () => undefined);
   let projection: Partial<SessionSummary> = {};
+  let waitForSettings = (): Promise<void> => Promise.resolve();
   let applyPending: (appSessionId: string) => Promise<boolean> = () => Promise.resolve(true);
   let enableAutoCompaction = (): Promise<boolean> => Promise.resolve(true);
   let compactionLimit = (): Promise<number> => Promise.resolve(800);
@@ -135,7 +139,7 @@ function createHarness(ordinarySummaries: SessionSummary[] = []) {
   };
   const lifecycle = new SessionLifecycle({
     eventFlow: { apply: () => undefined, beginTurn: () => undefined },
-    provider: () => new DroidProvider(runtime, () => undefined),
+    provider: () => provider,
     registry,
     ensureConnected: () => {
       calls.push({ target: 'runtime', method: 'ensureConnected', args: [] });
@@ -235,6 +239,7 @@ function createHarness(ordinarySummaries: SessionSummary[] = []) {
       },
     },
     hasActiveSettingsChanges: () => false,
+    waitForSettingsMutations: () => waitForSettings(),
     applyPendingSettingsToSummary: (item) => ({ ...item, ...projection }),
     applyPendingSessionSettings: (appSessionId) => applyPending(appSessionId),
     runPrimaryTurn: async (live, { prompt, delivery }) => {
@@ -246,6 +251,7 @@ function createHarness(ordinarySummaries: SessionSummary[] = []) {
       delivery?.accepted();
     },
     context: {
+      preserveUsage: () => undefined,
       refresh: (target) => {
         calls.push({
           target: 'provider',
@@ -339,6 +345,12 @@ function createHarness(ordinarySummaries: SessionSummary[] = []) {
     },
     setProjection: (patch: Partial<SessionSummary>) => {
       projection = { ...patch };
+    },
+    setProvider: (next: Provider) => {
+      provider = next;
+    },
+    setSettingsWait: (wait: () => Promise<void>) => {
+      waitForSettings = wait;
     },
     setPendingApply: (action: (appSessionId: string) => Promise<boolean>) => {
       applyPending = action;
@@ -1661,4 +1673,211 @@ test('agent wake setup failures reach the background-turn error owner', async ()
     ['wake persistence failed'],
   );
   await h.lifecycle.close('app-1');
+});
+
+test('a Stop takes back a prompt that has not started its turn', async () => {
+  const h = createHarness([summary('app-1', 'provider-1')]);
+  const provider = new FakeFactorySession('provider-1', {}, h.calls);
+  queueLoad(h, 'provider-1', provider);
+  await h.lifecycle.resume('app-1');
+  requireLive(h, 'app-1').summary.provider = 'claude';
+  let settle: () => void = () => undefined;
+  h.setSettingsWait(
+    () =>
+      new Promise<void>((resolve) => {
+        settle = resolve;
+      }),
+  );
+
+  const sending = h.lifecycle.send('app-1', 'stopped while it waited');
+  await new Promise((resolve) => setImmediate(resolve));
+  await h.lifecycle.interrupt('app-1');
+  settle();
+  await sending;
+
+  assert.deepEqual(provider.prompts, []);
+  await h.lifecycle.close('app-1');
+});
+
+test('a context switch waits for the turn and resumes the same chat before queued work', async () => {
+  const stored: SessionSummary[] = [];
+  const h = createHarness(stored);
+  const original = queueCreate(h, 'context-switch');
+  const gate = original.deferNextStream();
+  await h.lifecycle.create(createCommand());
+  await original.waitForPrompts(1);
+  const live = requireLive(h, 'context-switch');
+  live.summary.provider = 'claude';
+  live.summary.interactionMode = 'spec';
+  live.summary.contextWindowTokens = 1000000;
+  live.summary.maxContextTokens = 1000000;
+  const replacement = new FakeFactorySession('context-switch', {}, h.calls);
+  const resumed = new DroidProviderSession('context-switch', replacement, h.runtime);
+  h.setProvider({
+    kind: 'claude',
+    create: async () => {
+      throw new Error('unexpected create');
+    },
+    resume: async (id, input) => {
+      assert.equal(id, 'context-switch');
+      assert.equal(input.contextWindowTokens, 200000);
+      return {
+        provider: 'claude',
+        providerSessionId: id,
+        setInteractionMode: async (mode) => {
+          assert.equal(mode, 'spec');
+        },
+        stream: resumed.stream.bind(resumed),
+        setModel: resumed.setModel.bind(resumed),
+        setAutonomy: resumed.setAutonomy.bind(resumed),
+        interrupt: resumed.interrupt.bind(resumed),
+        close: resumed.close.bind(resumed),
+      };
+    },
+  });
+  const settings = new SessionModelSettings({
+    registry: h.registry,
+    runtime: h.runtime,
+    getFactoryDefaults: async () => ({}),
+    providerDefaultModelId: () => 'model-default',
+    validateModelSettings: async (_summary, selection) => {
+      if (selection.modelId === 'unavailable') throw new Error('1M context unavailable');
+    },
+    maxContextTokensForModel: () => undefined,
+    isShutdownStarted: () => false,
+    refreshPrimary: async () => undefined,
+    onPrimaryModelChanged: () => undefined,
+    onSettled: () => {
+      stored.splice(0, stored.length, { ...live.summary });
+    },
+    emitError: (error) => assert.fail(error.message),
+  });
+  h.setSettingsWait(() => settings.waitForMutations('context-switch'));
+  const changed = settings.update('context-switch', 'primary', { contextWindowTokens: 200000 });
+  await h.lifecycle.send('context-switch', 'next');
+  assert.equal(live.summary.contextWindowTokens, 1000000);
+  assert.equal(live.closeMode, undefined);
+  gate.resolve();
+  assert.equal(await changed, true);
+  await replacement.waitForPrompts(1);
+  assert.equal(requireLive(h, 'context-switch').summary.appSessionId, 'context-switch');
+  assert.equal(requireLive(h, 'context-switch').summary.contextWindowTokens, 200000);
+  assert.deepEqual(original.prompts, ['first']);
+  assert.deepEqual(replacement.prompts, ['next']);
+  assert.ok(h.calls.some((call) => call.method === 'close' || call.method === 'session.close'));
+  await requireLive(h, 'context-switch').turnPromise;
+  const beforeRejected = h.registry.getCanonicalSummary('context-switch');
+  await assert.rejects(
+    settings.update('context-switch', 'primary', {
+      modelId: 'unavailable',
+      contextWindowTokens: 1000000,
+    }),
+    /1M context unavailable/,
+  );
+  assert.deepEqual(h.registry.getCanonicalSummary('context-switch'), beforeRejected);
+  assert.equal(requireLive(h, 'context-switch').restartBeforeNextTurn, undefined);
+
+  // A Stop that lands while the chat is relaunching has no runtime to
+  // interrupt, and still keeps the prompt from being sent.
+  assert.equal(
+    await settings.update('context-switch', 'primary', { contextWindowTokens: 1000000 }),
+    true,
+  );
+  let finishResume: () => void = () => undefined;
+  const resuming = new Promise<void>((resolve) => {
+    finishResume = resolve;
+  });
+  const relaunched = new FakeFactorySession('context-switch', {}, h.calls);
+  const relaunchedSession = new DroidProviderSession('context-switch', relaunched, h.runtime);
+  h.setProvider({
+    kind: 'claude',
+    create: async () => {
+      throw new Error('unexpected create');
+    },
+    resume: async (id) => {
+      await resuming;
+      return {
+        provider: 'claude',
+        providerSessionId: id,
+        stream: relaunchedSession.stream.bind(relaunchedSession),
+        setModel: relaunchedSession.setModel.bind(relaunchedSession),
+        setAutonomy: relaunchedSession.setAutonomy.bind(relaunchedSession),
+        interrupt: relaunchedSession.interrupt.bind(relaunchedSession),
+        close: relaunchedSession.close.bind(relaunchedSession),
+      };
+    },
+  });
+  const sending = h.lifecycle.send('context-switch', 'stopped before it was sent');
+  while (h.registry.getLive('context-switch'))
+    await new Promise((resolve) => setImmediate(resolve));
+  await h.lifecycle.interrupt('context-switch');
+  // Sent after the Stop, while the chat still has no runtime: these wait for
+  // it in the order they were sent.
+  const later = [
+    h.lifecycle.send('context-switch', 'second'),
+    h.lifecycle.send('context-switch', 'third'),
+  ];
+  finishResume();
+  await Promise.all([sending, ...later]);
+  await relaunched.waitForPrompts(2);
+  assert.deepEqual(relaunched.prompts, ['second', 'third']);
+  await requireLive(h, 'context-switch').turnPromise;
+
+  // A send still being prepared when the relaunch begins joins its queue.
+  const window = requireLive(h, 'context-switch').summary.contextWindowTokens;
+  assert.equal(
+    await settings.update('context-switch', 'primary', {
+      contextWindowTokens: window === 200000 ? 1000000 : 200000,
+    }),
+    true,
+  );
+  assert.equal(requireLive(h, 'context-switch').restartBeforeNextTurn, true);
+  let finishSecondResume: () => void = () => undefined;
+  const resumingAgain = new Promise<void>((resolve) => {
+    finishSecondResume = resolve;
+  });
+  const again = new FakeFactorySession('context-switch', {}, h.calls);
+  const againSession = new DroidProviderSession('context-switch', again, h.runtime);
+  h.setProvider({
+    kind: 'claude',
+    create: async () => {
+      throw new Error('unexpected create');
+    },
+    resume: async (id) => {
+      await resumingAgain;
+      return {
+        provider: 'claude',
+        providerSessionId: id,
+        stream: againSession.stream.bind(againSession),
+        setModel: againSession.setModel.bind(againSession),
+        setAutonomy: againSession.setAutonomy.bind(againSession),
+        interrupt: againSession.interrupt.bind(againSession),
+        close: againSession.close.bind(againSession),
+      };
+    },
+  });
+  let prepareSecond: () => void = () => undefined;
+  let applies = 0;
+  h.setPendingApply(async () => {
+    applies += 1;
+    if (applies === 2)
+      await new Promise<void>((resolve) => {
+        prepareSecond = resolve;
+      });
+    return true;
+  });
+  const first = h.lifecycle.send('context-switch', 'A');
+  const second = h.lifecycle.send('context-switch', 'B');
+  // B finishes preparing while A's relaunch has the chat without a runtime.
+  while (h.registry.getLive('context-switch'))
+    await new Promise((resolve) => setImmediate(resolve));
+  prepareSecond();
+  await new Promise((resolve) => setImmediate(resolve));
+  finishSecondResume();
+  await Promise.all([first, second]);
+  // Bounded, so a dropped B fails the assertion instead of hanging the suite.
+  for (let tick = 0; tick < 500 && again.prompts.length < 2; tick += 1)
+    await new Promise((resolve) => setImmediate(resolve));
+  assert.deepEqual(again.prompts, ['A', 'B']);
+  await h.lifecycle.close('context-switch');
 });

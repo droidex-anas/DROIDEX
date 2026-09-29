@@ -49,6 +49,7 @@ function providerModel(model: CodexModel): ModelInfo {
     displayName: model.displayName,
     provider: 'openai',
     isCustom: false,
+    supportsFastMode: true,
     isDefault: model.isDefault,
     ...(efforts.length > 0 ? { supportedReasoningEfforts: efforts } : {}),
     ...(fallback ? { defaultReasoningEffort: fallback } : {}),

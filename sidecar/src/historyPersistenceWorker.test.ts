@@ -37,6 +37,8 @@ function createSchema(path: string): void {
       updated_at INTEGER NOT NULL,
       model_id TEXT,
       reasoning_effort TEXT,
+      fast_mode INTEGER,
+      context_window_tokens INTEGER,
       compaction_model TEXT,
       worker_model_id TEXT,
       worker_reasoning_effort TEXT,

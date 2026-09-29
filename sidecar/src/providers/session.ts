@@ -4,6 +4,7 @@ import type { CreateRuntimeSessionOptions } from '../DroidRuntime.js';
 import type { NormalizedEvent } from '../normalize.js';
 import type {
   Autonomy,
+  ContextWindowTokens,
   ReasoningEffort,
   SessionInteractionMode,
   VoiceNarration,
@@ -19,7 +20,7 @@ import type { ProviderProbe } from './providerProbes.js';
 export type ProviderOpenInput = Omit<
   CreateRuntimeSessionOptions,
   'permissionHandler' | 'askUserHandler'
-> & { interactions: ProviderInteractions };
+> & { interactions: ProviderInteractions; contextWindowTokens?: ContextWindowTokens };
 
 export interface ProviderResumeInput {
   // DROIDEX's own identity for the session, which a resumed provider session
@@ -34,6 +35,8 @@ export interface ProviderResumeInput {
   // its own and therefore cannot read them back. Droid reads its own.
   modelId?: string;
   reasoningEffort?: ReasoningEffort;
+  fastMode?: boolean;
+  contextWindowTokens?: ContextWindowTokens;
   autonomy?: Autonomy;
   interactionMode?: SessionInteractionMode;
   interactions: ProviderInteractions;
@@ -46,6 +49,8 @@ export interface ProviderModelSettings {
   // A level selects it; null clears the level a previous model carried, for a
   // model that offers none; absent leaves it alone.
   reasoningEffort?: ReasoningEffort | null;
+  fastMode?: boolean;
+  contextWindowTokens?: ContextWindowTokens;
 }
 
 // A live voice conversation on the same session: the client negotiates WebRTC
@@ -133,6 +138,7 @@ export interface ProviderSession {
 
 export interface Provider {
   readonly kind: ProviderKind;
+  validateModelSettings?(settings: ProviderModelSettings): void | Promise<void>;
   create(input: ProviderOpenInput): Promise<ProviderSession>;
   resume(providerSessionId: string, input: ProviderResumeInput): Promise<ProviderSession>;
 }
