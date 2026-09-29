@@ -1,4 +1,11 @@
-export type UtilityTool = 'review' | 'terminal' | 'browser' | 'files' | 'agents' | 'side';
+export type UtilityTool =
+  | 'review'
+  | 'terminal'
+  | 'browser'
+  | 'files'
+  | 'agents'
+  | 'threads'
+  | 'side';
 
 export interface UtilityTab {
   id: string;
@@ -9,6 +16,8 @@ export interface UtilityTab {
   filePath?: string;
   // The agents pane: the agent it is showing, absent while it shows the list.
   agentId?: string;
+  // The threads pane: the thread it is showing, absent while it shows the list.
+  threadId?: string;
 }
 
 export interface UtilityPanelState {
@@ -23,7 +32,14 @@ export const CLOSED_UTILITY_PANEL: UtilityPanelState = {
   activeTabId: null,
 };
 
-const SINGLETON_TOOLS = new Set<UtilityTool>(['review', 'browser', 'files', 'agents', 'side']);
+const SINGLETON_TOOLS = new Set<UtilityTool>([
+  'review',
+  'browser',
+  'files',
+  'agents',
+  'threads',
+  'side',
+]);
 
 // The tools whose pane can take the whole content row.
 export function isExpandableTool(tool: UtilityTool | undefined): boolean {
@@ -42,15 +58,19 @@ export function openUtilityTool(
   panel: UtilityPanelState | undefined,
   tool: UtilityTool,
   createId: () => string,
-  details: Partial<Pick<UtilityTab, 'terminalId' | 'cwd' | 'filePath' | 'agentId'>> = {},
+  details: Partial<
+    Pick<UtilityTab, 'terminalId' | 'cwd' | 'filePath' | 'agentId' | 'threadId'>
+  > = {},
 ): UtilityPanelState {
   const current = panel ?? CLOSED_UTILITY_PANEL;
   const existing = SINGLETON_TOOLS.has(tool)
     ? current.tabs.find((tab) => tab.tool === tool)
     : undefined;
   if (existing) {
-    // Opening another agent points the one agents pane at it.
-    const retarget = details.agentId !== undefined && details.agentId !== existing.agentId;
+    // Opening another agent or thread points the one pane at it.
+    const retarget =
+      (details.agentId !== undefined && details.agentId !== existing.agentId) ||
+      (details.threadId !== undefined && details.threadId !== existing.threadId);
     if (!retarget && current.open && current.activeTabId === existing.id) return current;
     return {
       ...current,
@@ -59,7 +79,13 @@ export function openUtilityTool(
       ...(retarget
         ? {
             tabs: current.tabs.map((tab) =>
-              tab.id === existing.id ? { ...tab, agentId: details.agentId } : tab,
+              tab.id === existing.id
+                ? {
+                    ...tab,
+                    ...(details.agentId === undefined ? {} : { agentId: details.agentId }),
+                    ...(details.threadId === undefined ? {} : { threadId: details.threadId }),
+                  }
+                : tab,
             ),
           }
         : {}),
@@ -111,19 +137,23 @@ export function updateUtilityTab(
   details: Partial<Pick<UtilityTab, 'terminalId' | 'cwd' | 'filePath' | 'label'>> & {
     // null returns the agents pane to its list.
     agentId?: string | null;
+    // null returns the threads pane to its list.
+    threadId?: string | null;
   },
 ): UtilityPanelState {
   const current = panel ?? CLOSED_UTILITY_PANEL;
   const index = current.tabs.findIndex((tab) => tab.id === tabId);
   if (index < 0) return current;
   const tabs = [...current.tabs];
-  const { agentId, ...rest } = details;
+  const { agentId, threadId, ...rest } = details;
   const nextDetails = Object.fromEntries(
     Object.entries(rest as Record<string, unknown>).filter(([, value]) => value !== undefined),
   ) as Partial<UtilityTab>;
   const next = { ...tabs[index], ...nextDetails };
   if (agentId === null) delete next.agentId;
   else if (agentId !== undefined) next.agentId = agentId;
+  if (threadId === null) delete next.threadId;
+  else if (threadId !== undefined) next.threadId = threadId;
   tabs[index] = next;
   return { ...current, tabs };
 }
@@ -255,6 +285,7 @@ function isUtilityTool(value: unknown): value is UtilityTool {
     value === 'terminal' ||
     value === 'browser' ||
     value === 'files' ||
+    value === 'threads' ||
     value === 'side'
   );
 }

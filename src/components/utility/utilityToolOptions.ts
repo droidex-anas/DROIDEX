@@ -4,6 +4,7 @@ import {
   Globe,
   Hierarchy,
   MessageBubble,
+  MessageSquareText,
   SquareTerminal,
   type IconComponent,
 } from '@droidex/icons';
@@ -23,12 +24,20 @@ export const UTILITY_TOOL_OPTIONS: UtilityToolOption[] = [
   { tool: 'files', label: 'Files', icon: Files, shortcut: '⌘⇧F' },
 ];
 
-// Opened from an agent row, never from the picker: the tool grid stays the four
-// tools a session always has.
+// Opened from an agent row or a project thread, never from the picker: the tool
+// grid stays the four tools a session always has. Threads belong to Projects,
+// so an ordinary chat is never offered one.
 const AGENTS_TOOL_OPTION: UtilityToolOption = {
   tool: 'agents',
   label: 'Subagents',
   icon: Hierarchy,
+  shortcut: '',
+};
+
+const THREADS_TOOL_OPTION: UtilityToolOption = {
+  tool: 'threads',
+  label: 'Threads',
+  icon: MessageSquareText,
   shortcut: '',
 };
 
@@ -42,6 +51,7 @@ const SIDE_TOOL_OPTION: UtilityToolOption = {
 
 export function utilityToolOption(tool: UtilityTool): UtilityToolOption {
   if (tool === 'agents') return AGENTS_TOOL_OPTION;
+  if (tool === 'threads') return THREADS_TOOL_OPTION;
   if (tool === 'side') return SIDE_TOOL_OPTION;
   return UTILITY_TOOL_OPTIONS.find((option) => option.tool === tool) ?? UTILITY_TOOL_OPTIONS[0];
 }

@@ -51,6 +51,7 @@ import { worktreeName } from '../../lib/git';
 import { resolveMainCheckout } from '../../lib/chatWorkspace';
 import { workspaceName } from '../../lib/workspaces';
 
+/** One control of the Start in row. `open` is omitted by a pill with no menu. */
 function Pill({
   icon,
   label,
@@ -62,18 +63,18 @@ function Pill({
   icon: React.ReactNode;
   label: string;
   title: string;
-  open: boolean;
-  innerRef: React.RefObject<HTMLButtonElement | null>;
+  open?: boolean;
+  innerRef?: React.RefObject<HTMLButtonElement | null>;
   onClick: () => void;
 }) {
   return (
     <button
+      type="button"
       ref={innerRef}
       onClick={onClick}
       title={`${title}: ${label}`}
       aria-label={`${title}: ${label}`}
-      aria-expanded={open}
-      aria-haspopup="dialog"
+      {...(open === undefined ? {} : { 'aria-expanded': open, 'aria-haspopup': 'dialog' as const })}
       className={`group flex min-w-0 items-center gap-1.5 rounded-md px-1.5 py-1 text-[11px] transition-colors ${
         open
           ? 'bg-droid-bg/60 text-droid-text'
@@ -88,9 +89,24 @@ function Pill({
   );
 }
 
+/** Where a conversation will start, as the bar reads and writes it. */
+export interface StartInSelection {
+  cwd: string;
+  executionMode: 'worktree' | 'local';
+  branch?: string;
+}
+
 // The composer's "Start in" controls: pick the repository, choose an isolated
-// worktree or the local checkout, and select the starting ref.
-export function StartInBar() {
+// worktree or the local checkout, and select the starting ref. It drives the
+// composer's own draft by default; a caller with a draft of its own, such as the
+// new-project form, passes it in and gets the same controls over it.
+export function StartInBar({
+  value,
+  onChange,
+}: {
+  value?: StartInSelection;
+  onChange?: (next: StartInSelection) => void;
+} = {}) {
   const dispatch = useStoreDispatch();
   const state = useStoreSelector(
     (current) => ({
@@ -99,10 +115,10 @@ export function StartInBar() {
     }),
     shallowEqual,
   );
-  const draft = state.draftChat;
+  const draft = value ?? state.draftChat;
   const cwd = draft?.cwd ?? '';
   // 'uncommitted' so the branch-switch warning counts only working-tree changes
-  // that a checkout would carry over — not committed work, which stays put.
+  // that a checkout would carry over, not committed work, which stays put.
   const { env, branches, worktrees, diffStat, refresh } = useGitEnvironment(cwd, 'uncommitted');
 
   const [repoOpen, setRepoOpen] = useState(false);
@@ -112,7 +128,7 @@ export function StartInBar() {
   const locRef = useRef<HTMLButtonElement>(null);
   const branchRef = useRef<HTMLButtonElement>(null);
 
-  if (!draft || !cwd) return null;
+  if (!draft) return null;
 
   const mainCheckout = env ? resolveMainCheckout(env, worktrees) : null;
   const repoRoot = mainCheckout?.path ?? env?.repoRoot ?? cwd;
@@ -134,7 +150,18 @@ export function StartInBar() {
     branch?: string,
     executionMode: 'worktree' | 'local' = 'worktree',
   ) => {
-    dispatch({ type: 'START_CHAT', cwd: path, executionMode, branch });
+    if (onChange) {
+      onChange({ cwd: path, executionMode, ...(branch ? { branch } : {}) });
+      return;
+    }
+    // Moving the draft keeps what it starts, a chat or a project.
+    dispatch({
+      type: 'START_CHAT',
+      cwd: path,
+      executionMode,
+      branch,
+      ...(state.draftChat?.project ? { project: true } : {}),
+    });
   };
 
   const openFolder = async () => {
@@ -145,6 +172,20 @@ export function StartInBar() {
       startIn(dir);
     }
   };
+
+  // A draft with no folder yet, such as a project started from nowhere in
+  // particular, offers only the way to choose one.
+  if (!cwd)
+    return (
+      <div className="flex min-w-0 items-center gap-4 overflow-hidden">
+        <Pill
+          icon={<FolderPlus className="h-3.5 w-3.5" />}
+          label="Open folder…"
+          title="Project"
+          onClick={() => void openFolder()}
+        />
+      </div>
+    );
 
   return (
     <div className="flex min-w-0 items-center gap-4 overflow-hidden">

@@ -42,6 +42,7 @@ test('sessions created outside the app are republished live when the watcher fir
     startSessionFileWatcher: (options) => {
       watcherOptions = options;
       return {
+        liveSessionFile: () => undefined,
         consumeLiveSessionFile: () => undefined,
         close: () => {
           watcherClosed = true;
@@ -94,7 +95,11 @@ test('metadata-only sessions created outside the app never become sidebar rows',
   const ctx = createSessionManagerTestContext({
     startSessionFileWatcher: (options) => {
       watcherOptions = options;
-      return { consumeLiveSessionFile: () => undefined, close: () => {} };
+      return {
+        liveSessionFile: () => undefined,
+        consumeLiveSessionFile: () => undefined,
+        close: () => {},
+      };
     },
   });
   try {
@@ -156,7 +161,11 @@ test('unexplained watcher events fall back to a full reconcile before republishi
   const ctx = createSessionManagerTestContext({
     startSessionFileWatcher: (options) => {
       watcherOptions = options;
-      return { consumeLiveSessionFile: () => undefined, close: () => {} };
+      return {
+        liveSessionFile: () => undefined,
+        consumeLiveSessionFile: () => undefined,
+        close: () => {},
+      };
     },
   });
   try {
@@ -183,7 +192,11 @@ test('a failed watcher reconcile marks the next list for an authoritative full r
   const ctx = createSessionManagerTestContext({
     startSessionFileWatcher: (options) => {
       watcherOptions = options;
-      return { consumeLiveSessionFile: () => undefined, close: () => {} };
+      return {
+        liveSessionFile: () => undefined,
+        consumeLiveSessionFile: () => undefined,
+        close: () => {},
+      };
     },
   });
   try {
@@ -216,6 +229,7 @@ test('closing a live session reconciles its final file before republishing', asy
   let finalizedSessionFile: string | undefined;
   const ctx = createSessionManagerTestContext({
     startSessionFileWatcher: () => ({
+      liveSessionFile: () => undefined,
       consumeLiveSessionFile: () => finalizedSessionFile,
       close: () => {},
     }),
@@ -268,6 +282,7 @@ test('provider replacement finalizes the retired file without treating its alias
   const retiredPath = '/tmp/provider-1.jsonl';
   const ctx = createSessionManagerTestContext({
     startSessionFileWatcher: () => ({
+      liveSessionFile: () => undefined,
       consumeLiveSessionFile: (providerSessionId) => {
         consumedProviderSessionIds.push(providerSessionId);
         return providerSessionId === 'provider-1' ? retiredPath : undefined;
@@ -312,7 +327,11 @@ test('watchers start once per boot, not per sessions.list command', async () => 
     startSessionFileWatcher: (options) => {
       roots.add(options.root);
       starts += 1;
-      return { consumeLiveSessionFile: () => undefined, close: () => {} };
+      return {
+        liveSessionFile: () => undefined,
+        consumeLiveSessionFile: () => undefined,
+        close: () => {},
+      };
     },
   });
   try {
@@ -476,7 +495,11 @@ test('a watcher event during the worker boot reconcile is replayed before the fi
   const ctx = createSessionManagerTestContext({
     startSessionFileWatcher: (options) => {
       watcherOptions = options;
-      return { consumeLiveSessionFile: () => undefined, close: () => {} };
+      return {
+        liveSessionFile: () => undefined,
+        consumeLiveSessionFile: () => undefined,
+        close: () => {},
+      };
     },
   });
   try {
@@ -530,7 +553,11 @@ test('shutdown waits for an active watcher reconcile and suppresses its republis
   const ctx = createSessionManagerTestContext({
     startSessionFileWatcher: (options) => {
       watcherOptions = options;
-      return { consumeLiveSessionFile: () => undefined, close: () => {} };
+      return {
+        liveSessionFile: () => undefined,
+        consumeLiveSessionFile: () => undefined,
+        close: () => {},
+      };
     },
   });
   try {

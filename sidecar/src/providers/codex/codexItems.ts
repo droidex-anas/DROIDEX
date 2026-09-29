@@ -37,6 +37,16 @@ export type ThreadItem =
       result: { content: unknown[] } | null;
       error: { message: string } | null;
     }
+  | {
+      type: 'dynamicToolCall';
+      id: string;
+      namespace: string;
+      tool: string;
+      status: string;
+      arguments: unknown;
+      contentItems: { type: string; text?: string }[] | null;
+      success: boolean | null;
+    }
   | ({ type: 'imageGeneration'; status: string; revisedPrompt?: string | null } & GeneratedImage)
   | {
       type: 'collabAgentToolCall';
@@ -59,6 +69,7 @@ const MAPPED_ITEMS = new Set([
   'commandExecution',
   'fileChange',
   'mcpToolCall',
+  'dynamicToolCall',
   'imageGeneration',
   'collabAgentToolCall',
   'subAgentActivity',
@@ -75,7 +86,23 @@ export function threadItem(params: unknown): ThreadItem {
   if (item.type === 'collabAgentToolCall' && !isCollabAgentToolCall(item))
     return { type: 'ignored' };
   if (item.type === 'subAgentActivity' && !isSubAgentActivity(item)) return { type: 'ignored' };
+  if (item.type === 'dynamicToolCall' && !isDynamicToolCall(item)) return { type: 'ignored' };
   return item;
+}
+
+function isDynamicToolCall(item: Extract<ThreadItem, { type: 'dynamicToolCall' }>): boolean {
+  return (
+    typeof item.id === 'string' &&
+    typeof item.namespace === 'string' &&
+    typeof item.tool === 'string' &&
+    typeof item.status === 'string' &&
+    (item.contentItems === null ||
+      (Array.isArray(item.contentItems) &&
+        item.contentItems.every(
+          (content) => content.type === 'inputText' && typeof content.text === 'string',
+        ))) &&
+    (item.success === null || typeof item.success === 'boolean')
+  );
 }
 
 function isCollabAgentToolCall(
@@ -179,6 +206,14 @@ export function toolCall(item: ThreadItem): ToolCall | undefined {
       // error itself is what makes the row an error.
       failed: item.status !== 'completed' || item.error !== null,
     };
+  if (item.type === 'dynamicToolCall')
+    return {
+      id: item.id,
+      name: `mcp__${item.namespace.replaceAll('_', '-')}__${item.tool}`,
+      detail: item.tool,
+      args: item.arguments,
+      failed: item.status !== 'completed' || item.success !== true,
+    };
   // Only the spawn anchors a transcript row; later calls update its children.
   if (item.type === 'collabAgentToolCall' && item.tool === 'spawnAgent')
     return {
@@ -203,6 +238,7 @@ export function toolOutput(item: ThreadItem, streamed: string, appSessionId: str
       : '';
   if (item.type === 'mcpToolCall')
     return item.error ? item.error.message : mcpContent(item.result?.content ?? []);
+  if (item.type === 'dynamicToolCall') return mcpContent(item.contentItems ?? []);
   return streamed;
 }
 

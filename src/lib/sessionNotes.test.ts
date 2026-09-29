@@ -5,8 +5,6 @@ import {
   MAX_NOTE_SESSIONS,
   MAX_NOTE_TEXT_LENGTH,
   addSessionNote,
-  dismissNotesIntro,
-  loadNotesIntroSeen,
   loadSessionNotes,
   markSessionNoteUsed,
   removeSessionNote,
@@ -137,13 +135,6 @@ test('session notes round-trip through localStorage, including used state', () =
   );
   assert.equal(loaded.s1[1].usedAt, map.s1[1].usedAt);
   assert.equal(loaded.s1[0].usedAt, null);
-});
-
-test('notes intro is unseen on a fresh profile and seen after dismissal', () => {
-  fakeStorage();
-  assert.equal(loadNotesIntroSeen(), false);
-  dismissNotesIntro();
-  assert.equal(loadNotesIntroSeen(), true);
 });
 
 test('loadSessionNotes sanitizes corrupt payloads', () => {

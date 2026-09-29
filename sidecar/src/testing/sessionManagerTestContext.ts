@@ -45,6 +45,12 @@ const AUTOMATION_MCP_CONFIG = McpServerConfigSchema.parse({
   url: 'http://127.0.0.1/automations',
 });
 
+const SESSIONS_MCP_CONFIG = McpServerConfigSchema.parse({
+  type: 'http',
+  name: 'droidex-sessions',
+  url: 'http://127.0.0.1/sessions',
+});
+
 const CLI_MCP_CONFIG = McpServerConfigSchema.parse({
   type: 'http',
   name: 'test-cli',
@@ -122,6 +128,7 @@ export function createSessionManagerTestContext(
     browsers,
     createLocalMcpResource: () => new FakeLocalMcpResource(calls),
     createAutomationMcpResource: () => new FakeAutomationMcpResource(),
+    createSessionsMcpResource: () => new FakeInAppMcpResource(SESSIONS_MCP_CONFIG),
     loadConfiguredMcpServers: () => [CLI_MCP_CONFIG],
     mcpConfiguration: {
       add: (server, cwd) => {
@@ -351,6 +358,19 @@ class FakeLocalMcpResource implements StartableLocalMcpResource {
 class FakeAutomationMcpResource implements StartableLocalMcpResource {
   start(): Promise<McpServerConfig> {
     return Promise.resolve(AUTOMATION_MCP_CONFIG);
+  }
+
+  close(): Promise<void> {
+    return Promise.resolve();
+  }
+}
+
+/** Stands in for one of DROIDEX's own in-process tool servers. */
+class FakeInAppMcpResource implements StartableLocalMcpResource {
+  constructor(private readonly config: McpServerConfig) {}
+
+  start(): Promise<McpServerConfig> {
+    return Promise.resolve(this.config);
   }
 
   close(): Promise<void> {

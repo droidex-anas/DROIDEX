@@ -85,7 +85,6 @@ export class SessionVoice {
         if (!this.wanted.has(cmd.appSessionId)) return;
       }
       const voice = this.voiceFor(cmd.appSessionId);
-      if (!voice) return;
       switch (cmd.type) {
         case 'voice.start':
           this.conversations.set(cmd.appSessionId, { open: new Map(), lastFinal: new Map() });
@@ -115,6 +114,7 @@ export class SessionVoice {
       }
     } catch (error) {
       this.emitError(cmd.appSessionId, errMsg(error));
+      if (cmd.type === 'voice.start') throw error;
     }
   }
 
@@ -149,16 +149,10 @@ export class SessionVoice {
 
   // Resolves the session's voice port and subscribes this app session to it
   // once. A session without one gets an error saying why instead.
-  private voiceFor(appSessionId: string): ProviderVoice | undefined {
+  private voiceFor(appSessionId: string): ProviderVoice {
     const session = this.d.liveSession(appSessionId);
-    if (!session) {
-      this.emitError(appSessionId, 'This chat is not running, so it cannot hold a voice session.');
-      return undefined;
-    }
-    if (!session.voice) {
-      this.emitError(appSessionId, 'Voice is available on Codex chats only.');
-      return undefined;
-    }
+    if (!session) throw new Error('This chat is not running, so it cannot hold a voice session.');
+    if (!session.voice) throw new Error('Voice is available on Codex chats only.');
     const existing = this.subscriptions.get(appSessionId);
     if (existing?.session !== session) {
       existing?.unsubscribe();

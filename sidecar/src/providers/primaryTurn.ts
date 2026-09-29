@@ -5,8 +5,7 @@ import type { ServerEvent, SessionSummary } from '../protocol.js';
 import type { LiveOperationTarget, SessionContext } from '../SessionContext.js';
 import type { SessionEventFlow } from '../SessionEventFlow.js';
 import { errMsg, isUserCancellation } from '../sessionHelpers.js';
-import type { ProviderMention } from './catalog.js';
-import type { LiveSession } from '../SessionLifecycle.js';
+import type { LiveSession, SessionPrompt } from '../SessionLifecycle.js';
 import type { ScheduledTurnDelivery } from '../sessionAutomationDelivery.js';
 import { isReportedStreamingTranscriptError, type SessionTimeline } from '../SessionTimeline.js';
 import { usageLimitDetails } from './usageLimit.js';
@@ -14,7 +13,10 @@ import { usageLimitDetails } from './usageLimit.js';
 export interface PrimaryTurnDependencies {
   eventFlow: Pick<SessionEventFlow, 'beginTurn' | 'apply'>;
   context: Pick<SessionContext, 'beginTurn' | 'startPolling' | 'stopPolling' | 'refresh'>;
-  timeline: Pick<SessionTimeline, 'recordPrompt' | 'settleStreaming' | 'appendStatus' | 'append'>;
+  timeline: Pick<
+    SessionTimeline,
+    'recordPrompt' | 'announcePrompt' | 'settleStreaming' | 'appendStatus' | 'append'
+  >;
   // Absent for a provider without Droid's context accounting.
   contextTarget: (liveSession: LiveSession) => LiveOperationTarget | undefined;
   isCurrent: (liveSession: LiveSession) => boolean;
@@ -28,8 +30,7 @@ export interface PrimaryTurnDependencies {
 export async function runPrimaryTurn(
   d: PrimaryTurnDependencies,
   liveSession: LiveSession,
-  prompt: string,
-  mentions?: ProviderMention[],
+  { text: prompt, mentions, announce }: SessionPrompt,
   delivery?: ScheduledTurnDelivery,
 ): Promise<void> {
   const appSessionId = liveSession.summary.appSessionId;
@@ -41,9 +42,13 @@ export async function runPrimaryTurn(
   const preflight = delivery
     ? await d.applyDesignToolPolicy(liveSession, isDesignPrompt(prompt))
     : undefined;
-  if (delivery && (!d.isCurrent(liveSession) || !preflight || !delivery.isCurrent())) return;
+  if (delivery && (!d.isCurrent(liveSession) || !preflight || !delivery.isCurrent())) {
+    delivery.declined();
+    return;
+  }
   d.eventFlow.beginTurn(appSessionId, appSessionId);
-  d.timeline.recordPrompt(appSessionId, prompt);
+  if (announce) d.timeline.announcePrompt(appSessionId, prompt);
+  else d.timeline.recordPrompt(appSessionId, prompt);
   d.context.beginTurn(appSessionId);
   context.startPolling();
   let turnError: unknown;

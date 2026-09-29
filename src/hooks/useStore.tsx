@@ -72,6 +72,7 @@ import {
   type SideChatDefaultPlacement,
 } from './persistedUiPreferences';
 import type { ShortcutAction, ShortcutBindings } from '../lib/shortcuts';
+import type { ProjectView } from '../features/projects/types';
 import {
   clearDesignMode,
   setDesignMode,
@@ -243,6 +244,13 @@ export interface AppState {
   // Sessions domain
   sessions: Record<string, SessionSummary>;
   sessionOrder: string[];
+  // Every local project as the runtime last reported it. The chat list, the
+  // navigation and Projects itself all read this one copy.
+  projects: ProjectView[];
+  /** True once the runtime has answered with a snapshot, empty or not. */
+  projectsLoaded: boolean;
+  /** What projects last failed at; the next snapshot retires it. Empty when fine. */
+  projectsError: string;
   // Ids vouched for by the last authoritative listing: the boot snapshot
   // before the first SESSION_LIST, then the sessions of the most recent
   // SESSION_LIST. A SESSION_LIST prunes confirmed rows it no longer reports,
@@ -356,6 +364,8 @@ export interface AppState {
     cwd: string;
     executionMode: 'worktree' | 'local';
     branch?: string;
+    /** The draft starts a project: its first message goes to the project's lead. */
+    project?: true;
   } | null;
   // Persisted app-wide default autonomy for new sessions. Owned by Settings;
   // factory-default reloads and draft/session changes never overwrite it.
@@ -489,6 +499,8 @@ type Action =
   | { type: 'SESSION_CLOSED'; appSessionId: string }
   | { type: 'SESSION_PROCESSES'; appSessionId: string; processes: AgentProcess[] }
   | { type: 'SESSIONS_PROCESSES'; processes: Record<string, AgentProcess[]> }
+  | { type: 'PROJECTS_SNAPSHOT'; projects: ProjectView[] }
+  | { type: 'PROJECTS_UNAVAILABLE'; message: string }
   // App-level chat organization (rename/pin/archive/delete); see lib/chatMetadata.
   // A blank RENAME_CHAT title clears the override back to the generated title.
   | { type: 'LINK_CHATS_PR'; appSessionIds: readonly string[]; cwd: string; pr: ChatPullRequest }
@@ -628,6 +640,7 @@ type Action =
       cwd?: string;
       filePath?: string;
       agentId?: string;
+      threadId?: string;
     }
   | { type: 'CLOSE_UTILITY_TAB'; tabId: string; appSessionId?: string }
   | { type: 'ACTIVATE_UTILITY_TAB'; tabId: string }
@@ -640,6 +653,7 @@ type Action =
       filePath?: string;
       label?: string;
       agentId?: string | null;
+      threadId?: string | null;
     }
   | { type: 'SET_UTILITY_PANEL_OPEN'; open: boolean }
   | { type: 'SET_REVIEW_OPEN'; open: boolean }
@@ -659,6 +673,8 @@ type Action =
     }
   | { type: 'TOGGLE_SETTINGS' }
   | { type: 'TOGGLE_MISSION_CONTROL' }
+  | { type: 'OPEN_PROJECTS' }
+  | { type: 'CLOSE_PROJECTS' }
   | { type: 'OPEN_AUTOMATIONS'; automationId?: string }
   | { type: 'CLOSE_AUTOMATIONS' }
   | { type: 'AUTOMATION_EDITOR_REQUEST_HANDLED'; requestId: number }
@@ -669,6 +685,7 @@ type Action =
       cwd: string;
       executionMode: 'worktree' | 'local';
       branch?: string;
+      project?: true;
     }
   | { type: 'SEED_COMPOSER'; text: string; replace?: boolean }
   | { type: 'CLEAR_COMPOSER_SEED' }
@@ -756,6 +773,9 @@ export const initialState: AppState = {
   connection: 'idle',
   sessions: sessionSnapshot?.sessions ?? {},
   sessionOrder: sessionSnapshot?.sessionOrder ?? [],
+  projects: [],
+  projectsLoaded: false,
+  projectsError: '',
   listConfirmedSessionIds: sessionSnapshot?.sessionOrder ?? null,
   earlierSessionsByCwd: {},
   activeAppSessionId: persistedUiState.activeAppSessionId ?? null,
@@ -1049,13 +1069,16 @@ function baseReducer(state: AppState, action: Action): AppState {
         lastCreatedSessionRequest: shouldActivate
           ? { clientRef: action.clientRef, appSessionId: action.session.appSessionId }
           : state.lastCreatedSessionRequest,
-        // A foreground chat just created by this renderer is already seen.
-        sessionLastSeen: shouldActivate
-          ? {
-              ...state.sessionLastSeen,
-              [action.session.appSessionId]: action.session.updatedAt,
-            }
-          : state.sessionLastSeen,
+        // A foreground chat just created by this renderer is already seen. A
+        // chat this client just learned of starts seen at its creation, so its
+        // first reply reads as unread.
+        sessionLastSeen:
+          shouldActivate || !Object.hasOwn(state.sessionLastSeen, action.session.appSessionId)
+            ? {
+                ...state.sessionLastSeen,
+                [action.session.appSessionId]: action.session.updatedAt,
+              }
+            : state.sessionLastSeen,
       };
       return seed
         ? withUpdatedTranscript(
@@ -1278,6 +1301,12 @@ function baseReducer(state: AppState, action: Action): AppState {
         return next;
       return releaseSessionTranscriptWindow(next, m.appSessionId, INACTIVE_TRANSCRIPT_POLICY);
     }
+
+    case 'PROJECTS_SNAPSHOT':
+      return { ...state, projects: action.projects, projectsLoaded: true, projectsError: '' };
+
+    case 'PROJECTS_UNAVAILABLE':
+      return { ...state, projectsLoaded: true, projectsError: action.message };
 
     case 'SESSIONS_PROCESSES':
       return { ...state, agentProcesses: action.processes };
@@ -1743,8 +1772,9 @@ function baseReducer(state: AppState, action: Action): AppState {
       };
     }
 
-    // The sidecar gave up on a request the user never answered. Matched on the
-    // request id so a late cancellation cannot clear a newer card.
+    // A request that stopped waiting without this window answering it: the
+    // sidecar gave up on it, or another chat answered it. Matched on the request
+    // id so a late event cannot clear a newer card.
     case 'CLEAR_INTERACTION': {
       const { appSessionId, requestId } = action;
       const pendingPermissions = withoutCancelledRequest(
@@ -1841,6 +1871,7 @@ function baseReducer(state: AppState, action: Action): AppState {
           cwd: action.cwd,
           filePath: action.filePath,
           agentId: action.agentId,
+          threadId: action.threadId,
         },
       );
       return {
@@ -1902,6 +1933,7 @@ function baseReducer(state: AppState, action: Action): AppState {
         filePath: action.filePath,
         label: action.label,
         agentId: action.agentId,
+        threadId: action.threadId,
       });
       if (panel === current) return state;
       return {
@@ -2068,6 +2100,15 @@ function baseReducer(state: AppState, action: Action): AppState {
         : { ...next, automationEditorRequest: null };
     }
 
+    case 'OPEN_PROJECTS':
+      return {
+        ...state,
+        mainView: 'projects',
+        automationEditorRequest: null,
+        rightPanelOpen: false,
+      };
+    case 'CLOSE_PROJECTS':
+      return state.mainView === 'projects' ? { ...state, mainView: 'session' } : state;
     case 'OPEN_AUTOMATIONS':
       return {
         ...state,
@@ -2102,6 +2143,7 @@ function baseReducer(state: AppState, action: Action): AppState {
           cwd: action.cwd,
           executionMode: action.executionMode,
           branch: action.branch,
+          ...(action.project ? { project: action.project } : {}),
         },
         draftAutonomy: null,
         activeAppSessionId: null,
@@ -2550,6 +2592,8 @@ export function adaptEvent(ev: ServerEvent): Action | null {
       return { type: 'SESSION_CLOSED', appSessionId: ev.appSessionId };
     case 'session.processes':
       return { type: 'SESSION_PROCESSES', appSessionId: ev.appSessionId, processes: ev.processes };
+    case 'projects.snapshot':
+      return { type: 'PROJECTS_SNAPSHOT', projects: ev.projects };
     case 'sessions.processes':
       return { type: 'SESSIONS_PROCESSES', processes: ev.processes };
     case 'mission.features':
@@ -2596,6 +2640,7 @@ export function adaptEvent(ev: ServerEvent): Action | null {
     case 'question.requested':
       return { type: 'SESSION_QUESTION', question: ev.question };
     case 'interaction.cancelled':
+    case 'question.answered':
       return {
         type: 'CLEAR_INTERACTION',
         appSessionId: ev.appSessionId,
@@ -2619,6 +2664,10 @@ export function adaptEvent(ev: ServerEvent): Action | null {
           ? { type: 'MODEL_UPDATE_SETTLED', appSessionId: ev.appSessionId, requestId: ev.requestId }
           : null;
       }
+      // The chat list waits to hear about projects before it paints, so a
+      // runtime that cannot answer has to count as having answered.
+      if (ev.code?.startsWith('project.'))
+        return { type: 'PROJECTS_UNAVAILABLE', message: ev.message };
       if (ev.code === 'session.create_failed' && ev.clientRef) {
         return {
           type: 'SESSION_CREATE_FAILED',
@@ -2915,7 +2964,7 @@ function useStoreContext(): StoreContextValue {
   return context;
 }
 
-export function useStoreApi(): Pick<StoreContextValue, 'getState'> {
+export function useStoreApi(): Pick<StoreContextValue, 'getState' | 'subscribe'> {
   return useStoreContext();
 }
 

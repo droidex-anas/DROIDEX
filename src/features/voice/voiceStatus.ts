@@ -1,4 +1,4 @@
-import type { VoiceStatus, VoiceTranscriptLine } from './voiceSessions';
+import type { VoiceStatus } from './voiceSessions';
 
 /** What the conversation is doing right now, as the surfaces report it. */
 export interface VoiceActivity {
@@ -8,14 +8,8 @@ export interface VoiceActivity {
   error?: string;
   /** The chat's model is running a turn the conversation asked for. */
   working: boolean;
-  lines: VoiceTranscriptLine[];
-}
-
-/** True while the assistant's own words are still arriving, which is it talking. */
-function isSpeaking(lines: VoiceTranscriptLine[]): boolean {
-  // Not only the last line: the user can be transcribed while the assistant is
-  // still talking, which leaves the assistant's open line behind theirs.
-  return lines.some((line) => line.role === 'assistant' && !line.final);
+  /** The assistant's words are still arriving, which is it talking. */
+  speaking: boolean;
 }
 
 /**
@@ -32,7 +26,7 @@ export function voiceStatusLabel(activity: VoiceActivity): string {
   if (status === 'connecting') return 'Connecting…';
   if (status !== 'live') return 'Starting voice…';
   if (muted) return 'Muted';
-  if (isSpeaking(activity.lines)) return 'Speaking…';
+  if (activity.speaking) return 'Speaking…';
   if (activity.working) return 'Working…';
   return 'Listening…';
 }

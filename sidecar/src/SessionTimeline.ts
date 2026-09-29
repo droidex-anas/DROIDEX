@@ -1,6 +1,7 @@
 import {
   hydrateHistoricalSession,
   loadSessionHistory,
+  loadOpenTranscriptTail,
   loadSessionPage,
   loadSessionTranscriptWindow,
   resolveSessionChain,
@@ -31,6 +32,7 @@ export interface SessionTimelineLoaders {
   hydrateMission: typeof hydrateHistoricalSession;
   resolveChain: typeof resolveSessionChain;
   transcriptWindow: typeof loadSessionTranscriptWindow;
+  openTranscriptTail: typeof loadOpenTranscriptTail;
 }
 
 export interface SessionTimelineRegistry {
@@ -46,6 +48,9 @@ export interface SessionTimelineDependencies {
   emitError: (error: TimelineError) => void;
   now?: () => number;
   loaders?: SessionTimelineLoaders;
+  // Where an open session writes its own file when DROIDEX does not write it
+  // (Droid), so a session opened this run can be read before it closes.
+  liveSessionFile?: (providerSessionId: string) => string | undefined;
   // Streaming deltas buffered longer than this are flushed as one event.
   // 0 disables coalescing (every delta records and emits immediately).
   streamingCoalesceMs?: number;
@@ -131,6 +136,7 @@ export class SessionTimeline {
       hydrateMission: hydrateHistoricalSession,
       resolveChain: resolveSessionChain,
       transcriptWindow: loadSessionTranscriptWindow,
+      openTranscriptTail: loadOpenTranscriptTail,
     };
     this.streaming = new StreamingDeltaCoalescer({
       windowMs: dependencies.streamingCoalesceMs ?? DEFAULT_STREAMING_COALESCE_MS,
@@ -291,6 +297,24 @@ export class SessionTimeline {
     }
   }
 
+  /**
+   * The newest events of a conversation's stored transcript, for a caller that
+   * only looks at it: nothing is recorded or sent to the window.
+   */
+  tail(appSessionId: string, limit: number): TranscriptEvent[] {
+    const summary = this.dependencies.registry.resolveSummary(appSessionId);
+    if (!summary) throw new Error(`Session history not found for ${appSessionId}`);
+    const providerSessionId = summary.providerSessionId ?? summary.appSessionId;
+    // An open session's file joins the history index only when the session
+    // closes, so until then it is read where it is written.
+    const openFile =
+      this.transcripts.path(summary.appSessionId) ??
+      this.dependencies.liveSessionFile?.(providerSessionId);
+    if (openFile && !this.loaders.resolveChain(summary.appSessionId, providerSessionId).length)
+      return this.loaders.openTranscriptTail(summary.appSessionId, openFile, limit);
+    return this.loadStandard(summary.appSessionId, providerSessionId, undefined, limit).transcripts;
+  }
+
   useTranscript(appSessionId: string, transcript: TimelineTranscript): void {
     this.transcripts.use(appSessionId, transcript);
   }
@@ -302,6 +326,27 @@ export class SessionTimeline {
   // The renderer already showed the prompt; only persist it here.
   recordPrompt(appSessionId: string, prompt: string): void {
     this.transcripts.recordPrompt(appSessionId, prompt);
+  }
+
+  /**
+   * A prompt nobody typed (an automation's or a project thread's), which the
+   * renderer therefore never showed. It is announced as well as persisted, so
+   * the conversation reads the same live as it does after a reload instead of
+   * answering something the reader cannot see.
+   */
+  announcePrompt(appSessionId: string, prompt: string): void {
+    this.recordPrompt(appSessionId, prompt);
+    const now = this.dependencies.now ?? Date.now;
+    this.emitRecordedEvent({
+      id: `delivered-${now().toString(36)}-${(this.statusSeq++).toString(36)}`,
+      appSessionId,
+      sourceSessionId: appSessionId,
+      role: 'primary',
+      ts: now(),
+      kind: 'text',
+      text: prompt,
+      author: 'user',
+    });
   }
 
   append(event: TranscriptEvent): void {
