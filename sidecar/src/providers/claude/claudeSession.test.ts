@@ -41,6 +41,7 @@ for (const fastMode of [undefined, true]) {
       interactions: {
         requestApproval: () => Promise.reject(new Error('unused')),
         requestQuestion: () => Promise.reject(new Error('unused')),
+        isActive: () => true,
         cancelPending: () => undefined,
       },
     });

@@ -9,7 +9,7 @@ const token = process.env.BRIDGE_TOKEN ?? '';
 const logPath = process.env.CHILD_SESSIONS_SMOKE_LOG;
 const allowAnyToken = process.env.CHILD_SESSIONS_SMOKE_ALLOW_ANY_TOKEN === '1';
 const streamEventCount = Number(process.env.CHILD_SESSIONS_SMOKE_STREAM_EVENTS ?? '0');
-const bridgeProtocolVersion = '6';
+const bridgeProtocolVersion = '8';
 const bridgeGeneration = `child-session-smoke-${String(process.pid)}`;
 let nextBridgeSequence = 1;
 
@@ -29,6 +29,7 @@ const now = Date.now();
 const session = (appSessionId, title, updatedAt) => ({
   appSessionId,
   providerSessionId: `provider-${appSessionId}`,
+  provider: 'droid',
   sessionPurpose: 'chat',
   interactionMode: 'auto',
   role: 'primary',
@@ -382,6 +383,9 @@ server.on('connection', (socket, request) => {
         break;
       case 'sessions.list':
         send(socket, { type: 'sessions.list', sessions: parents, earlierSessionsByCwd: {} });
+        break;
+      case 'projects.list':
+        send(socket, { type: 'projects.snapshot', projects: [] });
         break;
       case 'session.loadHistory':
         history(socket, command.appSessionId);

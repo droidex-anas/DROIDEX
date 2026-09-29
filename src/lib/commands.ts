@@ -23,6 +23,7 @@ import type {
   SessionPurpose,
   VoiceNarration,
 } from '../types/bridge';
+import type { SidebarResult } from '../types/sidebar';
 
 let refCounter = 0;
 
@@ -135,6 +136,11 @@ export const cancelDroidProxyInstall = () => {
 };
 export const applyDroidProxyFactoryModels = () => {
   bridge.send({ type: 'droidproxy.factoryModels.apply' });
+};
+
+/** The project graph: which sessions are threads, and what each project is doing. */
+export const listProjects = () => {
+  bridge.send({ type: 'projects.list' });
 };
 
 export const listModels = () => {
@@ -486,4 +492,8 @@ export const sendDesignPrompt = (
 
 export const sendNativeBrowserResult = (result: BrowserNativeResult) => {
   bridge.send({ type: 'browser.native.result', result });
+};
+
+export const sendSidebarResult = (result: SidebarResult) => {
+  bridge.send({ type: 'sidebar.result', result });
 };

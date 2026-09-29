@@ -477,6 +477,16 @@ test('interaction wire validation preserves rich questions and approval eligibil
   );
 });
 
+test('accepts the sidebar requests the sidecar sends and rejects unknown marks', () => {
+  const request = (query: unknown) =>
+    batch({ type: 'sidebar.request', request: { requestId: 'r-1', expiresAt: 4_000, query } });
+  assert.notEqual(serverWireMessage(request({ kind: 'rows' })), null);
+  assert.notEqual(serverWireMessage(request({ kind: 'rows', appSessionIds: ['chat-a'] })), null);
+  const targets = [{ appSessionId: 'chat-a', updatedAt: 100 }];
+  assert.notEqual(serverWireMessage(request({ kind: 'mark', mark: 'archived', targets })), null);
+  assert.equal(serverWireMessage(request({ kind: 'mark', mark: 'deleted', targets })), null);
+});
+
 test('accepts droidproxy reports and rejects unknown providers or shapes', () => {
   const account = {
     provider: 'codex',

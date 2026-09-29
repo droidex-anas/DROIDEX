@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'react';
 import { useReducedMotion } from 'framer-motion';
+import { isDocumentVisible, subscribeVisibilityChange } from '../../hooks/useDocumentVisible';
 import { analyserFor } from './voiceAnalysis';
 
 /**
@@ -61,7 +62,8 @@ export function VoiceOrb({
     let voice = 0;
     let rotation = 0;
     let last = performance.now();
-    let raf = requestAnimationFrame(function tick(now) {
+    let raf = 0;
+    const tick = (now: number) => {
       const dt = Math.min(0.05, (now - last) / 1000);
       last = now;
       const spoken = loudness(reply);
@@ -77,8 +79,17 @@ export function VoiceOrb({
       glow.style.opacity = (0.5 + level * 0.5).toFixed(3);
       glow.style.transform = `scale(${(1 + voice * 0.12).toFixed(4)})`;
       raf = requestAnimationFrame(tick);
-    });
+    };
+    // A hidden window shows nothing, so the loop stops with it and carries on
+    // from the same level and rotation once the window is back.
+    const followVisibility = () => {
+      cancelAnimationFrame(raf);
+      if (isDocumentVisible()) raf = requestAnimationFrame(tick);
+    };
+    followVisibility();
+    const stopFollowing = subscribeVisibilityChange(followVisibility);
     return () => {
+      stopFollowing();
       cancelAnimationFrame(raf);
     };
   }, [micStream, replyStream, reducedMotion]);

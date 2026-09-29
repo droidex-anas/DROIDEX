@@ -1,3 +1,4 @@
+import type { AppState } from '../hooks/useStore';
 import type { SessionSummary } from '../types/bridge';
 import {
   chatDisplayTitle,
@@ -5,8 +6,8 @@ import {
   linkedPrsDone,
   type ChatMetadataMap,
 } from './chatMetadata';
-import type { SessionAttentionKind } from './sessionAttention';
-import { sessionIsLive } from './sessions';
+import { sessionAttention, type SessionAttentionKind } from './sessionAttention';
+import { sessionIsLive, sessionIsUnread } from './sessions';
 
 export type SessionActivityStatus =
   | 'working'
@@ -47,6 +48,32 @@ export interface ActivitySignals {
   prDone?: boolean;
   // The user reopened the chat after its pull requests closed.
   reopened?: boolean;
+}
+
+/** The signals behind a chat's sidebar status that the store and the saved
+    settle markers hold. The Activity view adds awaitingReply and uncommitted,
+    which only it works out while it is on screen. */
+export function chatActivitySignals(
+  session: SessionSummary,
+  state: Pick<
+    AppState,
+    | 'pendingPermissions'
+    | 'pendingQuestions'
+    | 'activeAppSessionId'
+    | 'sessionLastSeen'
+    | 'chatMetadata'
+  >,
+  preferences: Pick<SidebarActivityPreferences, 'settled' | 'reopened'>,
+): ActivitySignals {
+  const id = session.appSessionId;
+  const metadata: Partial<ChatMetadataMap> = state.chatMetadata;
+  return {
+    attention: sessionAttention(id, state.pendingPermissions, state.pendingQuestions),
+    unread: sessionIsUnread(session, state.activeAppSessionId, state.sessionLastSeen[id]),
+    settledAt: preferences.settled[id],
+    prDone: linkedPrsDone(metadata[id]),
+    reopened: preferences.reopened.includes(id),
+  };
 }
 
 // Ordered from "blocked on the user" down to "nothing to do": the first rule

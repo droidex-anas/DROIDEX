@@ -5,6 +5,8 @@ import { errMsg } from './errors.js';
 // Native providers store the full transcript; Droid stores only app notices
 // separately from its harness-owned session file.
 export interface TimelineTranscript {
+  /** The file it writes, which the history index learns of when the session closes. */
+  readonly path: string;
   appendPrompt(text: string): Promise<void>;
   append(event: TranscriptEvent): void | Promise<void>;
   flush(): Promise<void>;
@@ -27,6 +29,10 @@ export class TimelineTranscripts {
     if (!transcript) return;
     await transcript.flush();
     if (this.byId.get(appSessionId) === transcript) this.byId.delete(appSessionId);
+  }
+
+  path(appSessionId: string): string | undefined {
+    return this.byId.get(appSessionId)?.path;
   }
 
   recordPrompt(appSessionId: string, prompt: string): void | Promise<void> {

@@ -1,3 +1,4 @@
+import type { ProjectCommand, ProjectEvent } from '../features/projects/protocol';
 // Bridge protocol shared between the Node sidecar and the React frontend.
 // The frontend keeps a mirror copy at src/types/bridge.ts — keep them in sync.
 
@@ -7,6 +8,7 @@ import type {
 } from '../features/automations/protocol';
 import type { McpClientCommand, McpServerEvent } from './mcp.js';
 import type { ProviderMention, SkillInfo } from './catalog.js';
+import type { SidebarRequest, SidebarResult } from './sidebar.js';
 export type { ProviderMention, SkillInfo } from './catalog.js';
 export type { McpServerInfo, McpServerInput, McpStatusSummary, McpToolInfo } from './mcp.js';
 
@@ -753,6 +755,7 @@ export type PermissionOutcome =
 
 // ── Frontend -> Sidecar ──────────────────────────────────────────────
 export type ClientCommand =
+  | ProjectCommand
   | AutomationBridgeCommand
   | McpClientCommand
   | { type: 'connect'; apiKey?: string }
@@ -1007,7 +1010,8 @@ export type ClientCommand =
       instruction: string;
       referenceIds: string[];
     }
-  | { type: 'browser.native.result'; result: BrowserNativeResult };
+  | { type: 'browser.native.result'; result: BrowserNativeResult }
+  | { type: 'sidebar.result'; result: SidebarResult };
 
 type ChildUpdatedEvent =
   | {
@@ -1050,6 +1054,7 @@ interface ChildErrorEvent {
 export type VoiceNarration = 'brief' | 'commentary';
 
 export type ServerEvent =
+  | ProjectEvent
   | { type: 'voice.answer'; appSessionId: string; sdp: string; attempt: string }
   | { type: 'voice.state'; appSessionId: string; status: 'live' | 'closed' }
   | {
@@ -1157,6 +1162,8 @@ export type ServerEvent =
   // An approval or question the session will never get an answer for, because
   // the turn that raised it ended first.
   | { type: 'interaction.cancelled'; appSessionId: string; requestId: string }
+  // A question another chat answered, so the window stops asking it.
+  | { type: 'question.answered'; appSessionId: string; requestId: string }
   | {
       type: 'context.updated';
       appSessionId: string;
@@ -1233,10 +1240,11 @@ export type ServerEvent =
   | { type: 'history.list'; sessions: SessionHistoryEntry[] }
   | { type: 'browser.updated'; state: BrowserState }
   | { type: 'browser.native.request'; request: BrowserNativeRequest }
+  | { type: 'sidebar.request'; request: SidebarRequest }
   | { type: 'browser.closed'; appSessionId: string }
   | { type: 'browser.error'; appSessionId?: string; message: string };
 
-export const BRIDGE_PROTOCOL_VERSION = 6 as const;
+export const BRIDGE_PROTOCOL_VERSION = 8 as const;
 
 export interface SequencedServerEvent {
   seq: number;

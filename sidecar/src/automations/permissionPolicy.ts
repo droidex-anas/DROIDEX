@@ -63,24 +63,14 @@ export function shouldAutoApproveAutomationTool(
   return autonomy === 'high' && HIGH_AUTONOMY_SAFE.has(tool);
 }
 
-/**
- * True when the request changes saved automation state, so an auto-approved
- * mutation can still be surfaced instead of executing invisibly.
- */
-export function isAutomationMutationPermission(params: unknown): boolean {
-  const target = automationPermissionTarget(params);
-  return target ? isAutomationMutationTool(target.serverName, target.toolName) : false;
-}
-
-// The name-level form, for a provider whose permission callback carries the
-// namespaced tool name instead of Droid's confirmation params.
 export function isAutomationMutationTool(serverName: string, toolName: string): boolean {
   if (!isAutomationServer(serverName)) return false;
   const tool = automationToolName(toolName);
   return Boolean(tool) && !ALWAYS_SAFE.has(tool);
 }
 
-export function automationPermissionTarget(
+/** The server and tool a Droid permission request names, for a tool on any MCP server. */
+export function mcpPermissionTarget(
   params: unknown,
 ): { serverName: string; toolName: string } | null {
   const raw = recordValue(params);
@@ -118,7 +108,8 @@ function isAutomationServer(serverName: string): boolean {
   return normalizeMcpServerName(serverName) === AUTOMATION_MCP_SERVER_NAME;
 }
 
-function splitNamespacedTool(value: string): { serverName: string; toolName: string } {
+/** Splits `mcp__server__tool` / `server___tool` into its two halves. */
+export function splitNamespacedTool(value: string): { serverName: string; toolName: string } {
   if (value.includes('___')) {
     const marker = value.indexOf('___');
     return { serverName: value.slice(0, marker), toolName: value.slice(marker + 3) };

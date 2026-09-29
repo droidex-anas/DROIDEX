@@ -26,20 +26,16 @@ const PEAK = 0.06;
 // electronic.
 const TONE_HZ = 2600;
 
-let context: AudioContext | null = null;
-
-function audioContext(): AudioContext | null {
-  if (context) return context;
-  try {
-    context = new AudioContext();
-  } catch {
-    return null;
-  }
-  return context;
-}
-
-/** One note: the pitch, its fifth at a whisper, and a bloom that decays away. */
-function bloom(ctx: AudioContext, frequency: number, startAt: number, peak: number): void {
+/**
+ * One note: the pitch, its fifth at a whisper, and a bloom that decays away.
+ * Returns the pitch's oscillator, which ends when the note has rung out.
+ */
+function bloom(
+  ctx: AudioContext,
+  frequency: number,
+  startAt: number,
+  peak: number,
+): OscillatorNode {
   const filter = ctx.createBiquadFilter();
   filter.type = 'lowpass';
   filter.frequency.value = TONE_HZ;
@@ -49,10 +45,7 @@ function bloom(ctx: AudioContext, frequency: number, startAt: number, peak: numb
   gain.gain.exponentialRampToValueAtTime(0.0001, startAt + RELEASE_S);
   filter.connect(gain).connect(ctx.destination);
 
-  for (const [ratio, level] of [
-    [1, 1],
-    [1.5, 0.35],
-  ] as const) {
+  const tone = (ratio: number, level: number): OscillatorNode => {
     const oscillator = ctx.createOscillator();
     const voice = ctx.createGain();
     oscillator.type = 'sine';
@@ -61,19 +54,35 @@ function bloom(ctx: AudioContext, frequency: number, startAt: number, peak: numb
     oscillator.connect(voice).connect(filter);
     oscillator.start(startAt);
     oscillator.stop(startAt + RELEASE_S + 0.05);
-  }
+    return oscillator;
+  };
+  const pitch = tone(1, 1);
+  tone(1.5, 0.35);
+  return pitch;
 }
 
 export function playVoiceChime(chime: Chime): void {
-  const ctx = audioContext();
-  if (!ctx) return;
+  // Each chime has a context of its own and closes it once it has rung out:
+  // an open context keeps the audio thread running for as long as the app
+  // does, between conversations as much as during them.
+  let ctx: AudioContext;
+  try {
+    ctx = new AudioContext();
+  } catch {
+    return;
+  }
+  const close = () => {
+    void ctx.close();
+  };
   // A context created before any gesture starts suspended; a click is what
-  // triggers these, so resuming here is enough.
-  void ctx.resume().catch(() => undefined);
+  // triggers these, so resuming here is enough. One that cannot resume would
+  // never ring out, so it closes now instead.
+  void ctx.resume().catch(close);
   const [first, second] = NOTES[chime];
   const now = ctx.currentTime + 0.01;
   bloom(ctx, first, now, PEAK);
   // The second note lands while the first is still ringing, so the pair reads
   // as one gesture instead of two beeps.
-  bloom(ctx, second, now + STEP_MS / 1000, chime === 'start' ? PEAK : PEAK * 0.8);
+  const last = bloom(ctx, second, now + STEP_MS / 1000, chime === 'start' ? PEAK : PEAK * 0.8);
+  last.addEventListener('ended', close, { once: true });
 }

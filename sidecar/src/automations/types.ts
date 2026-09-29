@@ -15,6 +15,8 @@ export type AutomationDeliveryReceipt =
   // `target` clears when that conversation frees up; `capacity` is global and
   // clears when any scheduled runtime slot is released.
   | { status: 'busy'; retryOn: 'target' | 'capacity' }
+  // The caller's isCurrent turned false before any turn was dispatched.
+  | { status: 'cancelled' }
   | { status: 'unavailable'; error: string };
 
 export type AutomationExecutionMode = 'local' | 'worktree';

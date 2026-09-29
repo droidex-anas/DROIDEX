@@ -65,6 +65,7 @@ export class CodexProvider implements Provider {
     reasoningEffort,
     fastMode,
     autonomy,
+    inAppMcpServers,
   }: ProviderOpenInput): Promise<ProviderSession> {
     // Codex mints the thread id, so DROIDEX's own identity is minted here and
     // the thread becomes the session's separate resume handle.
@@ -78,6 +79,7 @@ export class CodexProvider implements Provider {
         fastMode: fastMode ?? false,
       },
       interactions,
+      inAppMcpServers,
     });
   }
 
@@ -91,6 +93,7 @@ export class CodexProvider implements Provider {
       fastMode,
       autonomy,
       resumeId,
+      inAppMcpServers,
     }: ProviderResumeInput,
   ): Promise<ProviderSession> {
     if (!resumeId)
@@ -106,6 +109,7 @@ export class CodexProvider implements Provider {
           fastMode: fastMode ?? false,
         },
         interactions,
+        inAppMcpServers,
       },
       resumeId,
     );
