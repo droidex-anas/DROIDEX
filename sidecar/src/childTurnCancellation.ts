@@ -15,11 +15,6 @@ export type PreparedChildInterrupt =
       runtime: ChildRuntimeState;
     };
 
-function discardCancelledPendingSends(child: ChildSessionState): void {
-  child.turn.pendingSends = [];
-  child.turn.pendingDrainEpoch += 1;
-}
-
 export function dequeueQueuedChild(parent: ParentChildSessions, child: ChildSessionState): void {
   parent.runtimeQueue = parent.runtimeQueue.filter((id) => id !== child.identity.childSessionId);
   if (!child.queued) return;
@@ -36,13 +31,6 @@ export function cancelInFlightOpen(parent: ParentChildSessions, child: ChildSess
   return true;
 }
 
-export function takeAdmittedSend(child: ChildSessionState): string | undefined {
-  const drainEpoch = child.turn.pendingDrainEpoch;
-  const send = child.turn.pendingSends.shift();
-  if (send === undefined || child.turn.pendingDrainEpoch !== drainEpoch) return undefined;
-  return send;
-}
-
 function markQueuedInterruptSettled(child: ChildSessionState, now: number): void {
   child.turn.interrupting = false;
   child.turn.phase = 'idle';
@@ -55,7 +43,7 @@ export function prepareChildInterrupt(
   now: number,
 ): PreparedChildInterrupt {
   if (!parent || !child) return { kind: 'missing' };
-  discardCancelledPendingSends(child);
+  child.turn.pendingSends = [];
   dequeueQueuedChild(parent, child);
   if (!child.runtime) cancelInFlightOpen(parent, child);
   const runtime = child.runtime;

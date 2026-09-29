@@ -19,7 +19,6 @@ import {
   type ParentChildSessions,
 } from './ChildSessionState.js';
 import type { ChildOperation, ChildSessionsDependencies } from './ChildSessionsTypes.js';
-import { takeAdmittedSend } from './childTurnCancellation.js';
 
 export const CHILD_OPEN_CANCELLED = Symbol('child-open-cancelled');
 const ignoreError = (): undefined => undefined;
@@ -336,7 +335,7 @@ async function bindLoadedChildRuntime(input: {
   // a provider-reported model window before the first turn settles.
   void host.d.context.refresh(host.contextTarget(parent, child, runtime));
   if (requestId) host.emitReady(runtime, child, requestId);
-  const queuedSend = takeAdmittedSend(child);
+  const queuedSend = child.turn.pendingSends.shift();
   if (queuedSend !== undefined) void host.drive(parent, child, queuedSend);
 }
 
