@@ -16,6 +16,7 @@ import type {
 import type { CompactType } from './compaction.js';
 import { errMsg } from './errors.js';
 import { StreamingDeltaCoalescer, streamingEventOwner } from './streamingDeltaCoalescer.js';
+import { userPromptDisplay } from './sessionTranscriptParser.js';
 import { hotPathMetrics } from './telemetry/hotPathMetrics.js';
 
 interface TimelineHistory {
@@ -438,11 +439,11 @@ export class SessionTimeline {
     });
   }
 
-  // A prompt the renderer has not drawn: the parent agent's brief to one of
-  // its children, or a steer that runs as a turn of its own. `recordPrompt`
-  // only persists, because the renderer draws the user's own prompt as it is
-  // sent; this one goes through `append` and reaches the pane as the same
-  // bubble the chat gives a user's prompt.
+  // A prompt nobody typed: the parent agent's brief to one of its children.
+  // `recordPrompt` only persists, because the renderer draws the user's own
+  // prompt as it is sent; this one has never been drawn, so it goes through
+  // `append` and reaches the child's pane as the same bubble the chat gives a
+  // user's prompt.
   appendPrompt(
     appSessionId: string,
     text: string,
@@ -462,14 +463,14 @@ export class SessionTimeline {
     });
   }
 
-  // A steer at the moment the model takes it into the running turn. The
-  // renderer showed it as pending until now; this row is where the model took
-  // it in, and what the transcript keeps. Its source is the user's, like the
-  // renderer's own prompt rows and the stored history, so a restored chat
-  // recognizes it as the same row.
-  appendSteer(appSessionId: string, text: string): void {
+  // A steer at the moment the model takes it in: into the running turn
+  // (steered), or as a turn of its own. The chat showed it as pending until
+  // now. It is stored the way an ordinary prompt is and shown the way its
+  // replay will read, so a restored chat sees the two as one row.
+  appendSteer(appSessionId: string, prompt: string, steered: boolean): void | Promise<void> {
     const ts = this.clock();
-    this.append({
+    this.streaming.flushSource(appSessionId, appSessionId);
+    this.emitRecordedEvent({
       id: this.noticeId('prompt', ts),
       appSessionId,
       sourceSessionId: 'user',
@@ -477,9 +478,10 @@ export class SessionTimeline {
       ts,
       kind: 'text',
       author: 'user',
-      text,
-      steered: true,
+      ...userPromptDisplay(prompt),
+      ...(steered ? { steered: true } : {}),
     });
+    return this.recordPrompt(appSessionId, prompt);
   }
 
   // A status row that is only true right now — a CLI booting, a turn stopping

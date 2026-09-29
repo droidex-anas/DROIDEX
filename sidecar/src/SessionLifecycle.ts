@@ -181,7 +181,7 @@ export interface SessionLifecycleDependencies {
   appendError: (appSessionId: string, message: string) => void;
   // A steer the harness has just delivered into the running turn: the row that
   // marks where the model took it in, and what the transcript stores.
-  appendSteer: (appSessionId: string, text: string) => void;
+  appendSteer: (appSessionId: string, text: string) => void | Promise<void>;
   catalogUpdated: (liveSession: LiveSession, items: SkillInfo[]) => void;
   emitSessionList: (closedProviderSessionId: string) => void | Promise<void>;
 }
@@ -624,7 +624,7 @@ export class SessionLifecycle {
     // delivered it.
     const appSessionId = liveSession.summary.appSessionId;
     if (this.dependencies.registry.getLive(appSessionId) === liveSession)
-      this.dependencies.appendSteer(appSessionId, prompt.text);
+      await this.dependencies.appendSteer(appSessionId, prompt.text);
     removePrompt(liveSession.pendingSends, prompt);
     this.updateQueuedSends(liveSession);
     return true;

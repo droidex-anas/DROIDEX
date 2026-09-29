@@ -14,7 +14,7 @@ export interface PrimaryTurnDependencies {
   context: Pick<SessionContext, 'beginTurn' | 'startPolling' | 'stopPolling' | 'refresh'>;
   timeline: Pick<
     SessionTimeline,
-    'recordPrompt' | 'appendPrompt' | 'settleStreaming' | 'appendStatus' | 'appendError'
+    'recordPrompt' | 'appendSteer' | 'settleStreaming' | 'appendStatus' | 'appendError'
   >;
   // Absent for a provider without Droid's context accounting.
   contextTarget: (liveSession: LiveSession) => LiveOperationTarget | undefined;
@@ -33,7 +33,7 @@ export interface PrimaryTurnRequest {
   // Set when the app, not the user, started this turn. The transcript then gets
   // this quiet status row instead of a prompt bubble nobody typed.
   notice?: string;
-  // Set for a steer that runs as a turn of its own. The renderer showed it as
+  // Set for a steer that runs as a turn of its own. The chat showed it as
   // pending, never as a transcript row, so the turn adds that row itself.
   sentAsSteer?: true;
 }
@@ -62,9 +62,10 @@ export async function runPrimaryTurn(
   if (delivery && (!isCurrent() || !preflight || !delivery.isCurrent())) return;
   d.eventFlow.beginTurn(appSessionId, appSessionId);
   if (notice) d.timeline.appendStatus(appSessionId, notice);
-  else if (sentAsSteer) d.timeline.appendPrompt(appSessionId, prompt, 'user');
   else {
-    const writing = d.timeline.recordPrompt(appSessionId, prompt);
+    const writing = sentAsSteer
+      ? d.timeline.appendSteer(appSessionId, prompt, false)
+      : d.timeline.recordPrompt(appSessionId, prompt);
     if (writing) await writing;
   }
   if (!isCurrent() || stoppedBeforeStart()) return;

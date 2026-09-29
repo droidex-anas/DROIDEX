@@ -157,29 +157,34 @@ function nonAssistantBlockEvent(
     });
   }
   if (messageRole === 'user' && type === 'text') {
-    // A user bubble renders as plain text, never as a runnable App.
-    // A branch prompt carries a whole copied conversation after its request;
-    // it is cut back to the request before the cap could cut the request off.
-    const storedText = nonEmpty(stringValue(block.text));
-    const withReplies = sideChatRepliesFromPrompt(storedText);
-    const promptText = withReplies?.text ?? storedText;
-    const rawText = trimText(branchPromptDisplayFromText(promptText) ?? promptText, MAX_TEXT_CHARS);
-    const designDisplay = designPromptDisplayFromText(rawText);
-    const text =
-      designDisplay?.text ??
-      appPromptDisplayFromText(rawText) ??
-      sideChatPromptDisplayFromText(rawText) ??
-      rawText;
-    if ((!text && !withReplies) || isSystemText(text)) return null;
+    const shown = userPromptDisplay(nonEmpty(stringValue(block.text)));
+    if ((!shown.text && !shown.sideChatReplies) || isSystemText(shown.text)) return null;
     const sourceProviderSessionId = base.role === 'primary' ? 'user' : base.sourceProviderSessionId;
-    return event({ ...base, sourceProviderSessionId }, index, 'text', {
-      text,
-      author: 'user',
-      browserRefs: designDisplay?.browserRefs,
-      sideChatReplies: withReplies?.sideChatReplies,
-    });
+    return event({ ...base, sourceProviderSessionId }, index, 'text', { ...shown, author: 'user' });
   }
   return null;
+}
+
+// A stored prompt as the chat shows it: plain text, never a runnable App, and
+// without the side-chat answers or the branch, design, app and side-chat
+// framing it was sent with.
+export function userPromptDisplay(storedText: string) {
+  const withReplies = sideChatRepliesFromPrompt(storedText);
+  const promptText = withReplies?.text ?? storedText;
+  // A branch prompt carries a whole copied conversation after its request; it
+  // is cut back to the request before the cap could cut the request off.
+  const rawText = trimText(branchPromptDisplayFromText(promptText) ?? promptText, MAX_TEXT_CHARS);
+  const designDisplay = designPromptDisplayFromText(rawText);
+  const text =
+    designDisplay?.text ??
+    appPromptDisplayFromText(rawText) ??
+    sideChatPromptDisplayFromText(rawText) ??
+    rawText;
+  return {
+    text,
+    browserRefs: designDisplay?.browserRefs,
+    sideChatReplies: withReplies?.sideChatReplies,
+  };
 }
 
 // Map one stored JSONL row to its transcript events. Each line converts
