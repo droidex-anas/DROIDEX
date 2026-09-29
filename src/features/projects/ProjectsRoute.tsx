@@ -6,14 +6,12 @@ import { useStoreDispatch, useStoreSelector } from '../../hooks/useStore';
 import { formatRelativeTime } from '../../lib/time';
 import { toast } from '../../lib/toast';
 import { resolveNewChatCwd, workspaceName } from '../../lib/workspaces';
-import { createProject, resumeProject } from './client';
-import { NewProjectForm } from './NewProjectForm';
+import { resumeProject } from './client';
 import { PaneTransition } from './PaneTransition';
 import { ProjectThreads } from './ProjectThreads';
 import { projectLead } from './threadBoard';
 import { useProjectBoard, type ProjectBoardEntry } from './useProjectBoard';
 import { useRelativeTimeNow } from './useRelativeTimeNow';
-import type { ThreadInput } from './types';
 
 /* Projects: every project, and one project at a time with the threads it is
    running. A project is one conversation that hands work to others, so this
@@ -26,10 +24,10 @@ export function ProjectsRoute() {
   const reduceMotion = useReducedMotion() === true;
   const { entries, loading, error } = useProjectBoard();
   const [openId, setOpenId] = useState<string | null>(null);
-  const [creating, setCreating] = useState(false);
   const now = useRelativeTimeNow();
   // A new project follows the workspace a new chat would, so starting one from
-  // the Projects tab lands in the folder the user is already working in.
+  // the Projects tab lands in the folder the user is already working in. It is
+  // drafted in the new-chat composer, whose first message starts its lead.
   const cwd = useStoreSelector((state) =>
     resolveNewChatCwd(
       state.activeAppSessionId ? state.sessions[state.activeAppSessionId] : undefined,
@@ -51,12 +49,8 @@ export function ProjectsRoute() {
     if (lead) openLeadChat(lead.appSessionId);
   }
 
-  // A new project opens like any other new chat instead of leaving the user on a list.
-  async function create(input: ThreadInput): Promise<void> {
-    const started = await createProject(input);
-    setCreating(false);
-    if (started.appSessionId) openLeadChat(started.appSessionId);
-    else setOpenId(started.projectId);
+  function startProject(): void {
+    dispatch({ type: 'START_CHAT', cwd, executionMode: 'local', project: true });
   }
 
   return (
@@ -88,12 +82,7 @@ export function ProjectsRoute() {
             loading={loading}
             error={error ?? ''}
             now={now}
-            creating={creating}
-            cwd={cwd}
-            onCreate={create}
-            onToggleCreate={() => {
-              setCreating((value) => !value);
-            }}
+            onStartProject={startProject}
             onOpen={setOpenId}
             onOpenChat={openChat}
           />
@@ -108,10 +97,7 @@ function ProjectListView({
   loading,
   error,
   now,
-  creating,
-  cwd,
-  onCreate,
-  onToggleCreate,
+  onStartProject,
   onOpen,
   onOpenChat,
 }: {
@@ -119,10 +105,7 @@ function ProjectListView({
   loading: boolean;
   error: string;
   now: number;
-  creating: boolean;
-  cwd: string;
-  onCreate: (input: ThreadInput) => Promise<void>;
-  onToggleCreate: () => void;
+  onStartProject: () => void;
   onOpen: (projectId: string) => void;
   onOpenChat: (entry: ProjectBoardEntry) => void;
 }) {
@@ -133,7 +116,7 @@ function ProjectListView({
           <h1 className="flex-1 text-[22px] font-semibold tracking-tight">Projects</h1>
           <button
             type="button"
-            onClick={onToggleCreate}
+            onClick={onStartProject}
             className="flex items-center gap-1.5 rounded-xl bg-droid-active px-3 py-1.5 text-[13px] font-medium text-droid-text transition-colors hover:bg-droid-elevated"
           >
             <Plus className="h-3.5 w-3.5" />
@@ -141,14 +124,8 @@ function ProjectListView({
           </button>
         </div>
 
-        {creating && (
-          <div className="mb-5">
-            <NewProjectForm cwd={cwd} onSubmit={onCreate} onCancel={onToggleCreate} />
-          </div>
-        )}
-
-        {entries.length === 0 && !creating ? (
-          <Empty loading={loading} error={error} onCreate={onToggleCreate} />
+        {entries.length === 0 ? (
+          <Empty loading={loading} error={error} onCreate={onStartProject} />
         ) : (
           <div className="flex flex-col gap-2">
             {entries.map((entry) => (

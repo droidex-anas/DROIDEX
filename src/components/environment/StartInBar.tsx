@@ -52,7 +52,7 @@ import { resolveMainCheckout } from '../../lib/chatWorkspace';
 import { workspaceName } from '../../lib/workspaces';
 
 /** One control of the Start in row. `open` is omitted by a pill with no menu. */
-export function Pill({
+function Pill({
   icon,
   label,
   title,
@@ -154,7 +154,14 @@ export function StartInBar({
       onChange({ cwd: path, executionMode, ...(branch ? { branch } : {}) });
       return;
     }
-    dispatch({ type: 'START_CHAT', cwd: path, executionMode, branch });
+    // Moving the draft keeps what it starts, a chat or a project.
+    dispatch({
+      type: 'START_CHAT',
+      cwd: path,
+      executionMode,
+      branch,
+      ...(state.draftChat?.project ? { project: true } : {}),
+    });
   };
 
   const openFolder = async () => {
