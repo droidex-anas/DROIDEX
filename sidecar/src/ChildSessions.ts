@@ -487,6 +487,35 @@ export class ChildSessions {
     return targets;
   }
 
+  async rearmRoleModelChangedChildren(
+    parentAppSessionId: string,
+    role: PersistedChildSession['role'],
+    effectiveModelId: string,
+  ): Promise<void> {
+    const parent = this.parents.get(parentAppSessionId);
+    if (!parent || !this.isCurrentParent(parent)) return;
+    await Promise.allSettled(
+      [...parent.children.values()].map(async (child) => {
+        if (child.role !== role || !child.runtime || !this.isSettingsTarget(parent, child)) return;
+        if (child.turn.autoCompacting)
+          this.d.compaction.cancel(this.automaticTarget(parent, child));
+        child.modelId = effectiveModelId;
+        child.configurationGeneration += 1;
+        this.commit(child);
+        try {
+          await this.d.compaction.rearmModelChangedChild(
+            this.compactionTarget(parent, child, effectiveModelId),
+            effectiveModelId,
+          );
+        } catch (error) {
+          console.error(
+            `[compaction] could not resolve ${role} limit for ${child.runtime.session.sessionId}: ${errMsg(error)}`,
+          );
+        }
+      }),
+    );
+  }
+
   resolveAutomaticTarget(key: CompactionResourceKey): ChildAutomaticCompactionTarget | undefined {
     if (key.kind !== 'child') return undefined;
     const parent = this.parents.get(key.parentAppSessionId);

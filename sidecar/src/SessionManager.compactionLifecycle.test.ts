@@ -573,7 +573,15 @@ test(
 );
 
 test('[C5] Compaction retuning uses each live session model', { concurrency: false }, async () => {
-  const h = createSessionManagerTestContext();
+  const h = createSessionManagerTestContext({
+    defaults: {
+      modelId: 'model-default',
+      workerModelId: 'model-worker-default',
+      validatorModelId: 'model-validator-default',
+      interactionMode: 'auto',
+      autonomy: 'low',
+    },
+  });
   const parent = new FakeFactorySession('provider-1', {}, h.calls);
   const worker = new FakeFactorySession('worker-c5', {}, h.calls);
   const validator = new FakeFactorySession('validator-c5', {}, h.calls);
@@ -662,25 +670,59 @@ test('[C5] Compaction retuning uses each live session model', { concurrency: fal
       compactionTokenLimit: 400,
       compactionTokenLimitPerModel: {
         'model-parent-effective': 100,
+        'model-default': 260,
         'model-worker-loaded': 200,
+        'model-worker-new': 250,
+        'model-worker-default': 260,
         'model-validator-loaded': 300,
+        'model-validator-new': 350,
         'model-worker-fallback': 201,
         'model-validator-fallback': 301,
       },
     });
+    const compactionWrites = (id: string) =>
+      h.provider
+        .session(id)
+        .settings.filter((settings) => settings['compactionThresholdCheckEnabled'] === true);
+    const latestCompactionLimit = (id: string) =>
+      compactionWrites(id).at(-1)?.['compactionTokenLimit'];
     const limits: ReadonlyArray<readonly [string, number]> = [
       ['provider-1', 100],
       ['worker-c5', 200],
       ['validator-c5', 300],
     ];
-    for (const [id, limit] of limits)
-      assert.equal(
-        h.provider
-          .session(id)
-          .settings.filter((settings) => settings['compactionThresholdCheckEnabled'] === true)
-          .at(-1)?.['compactionTokenLimit'],
-        limit,
-      );
+    for (const [id, limit] of limits) assert.equal(latestCompactionLimit(id), limit);
+
+    const parentCompactions = compactionWrites('provider-1').length;
+    const validatorCompactions = compactionWrites('validator-c5').length;
+    await h.handle({
+      type: 'settings.agent.update',
+      appSessionId: 'provider-1',
+      agent: 'worker',
+      modelId: 'model-worker-new',
+    });
+    assert.equal(latestCompactionLimit('worker-c5'), 250);
+    assert.equal(compactionWrites('provider-1').length, parentCompactions);
+    assert.equal(compactionWrites('validator-c5').length, validatorCompactions);
+
+    await h.handle({
+      type: 'settings.agent.update',
+      appSessionId: 'provider-1',
+      agent: 'worker',
+      modelId: null,
+    });
+    assert.equal(latestCompactionLimit('worker-c5'), 260);
+
+    const workerCompactions = compactionWrites('worker-c5').length;
+    parent.nextUpdateSettingsError = new Error('role default rejected');
+    await h.handle({
+      type: 'settings.agent.update',
+      appSessionId: 'provider-1',
+      agent: 'validator',
+      modelId: 'model-validator-new',
+    });
+    assert.equal(compactionWrites('worker-c5').length, workerCompactions);
+    assert.equal(compactionWrites('validator-c5').length, validatorCompactions);
   } finally {
     await h.dispose();
   }

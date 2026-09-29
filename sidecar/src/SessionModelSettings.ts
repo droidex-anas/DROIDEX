@@ -25,6 +25,11 @@ interface Dependencies {
   isShutdownStarted: () => boolean;
   refreshPrimary: (live: LiveSession, modelChanged: boolean) => Promise<void>;
   onPrimaryModelChanged: (summary: SessionSummary, from: string, to: string) => void;
+  rearmChildAgentModelChanged: (
+    appSessionId: string,
+    agent: Exclude<ConfigurableSessionRole, 'primary'>,
+    effectiveModelId: string,
+  ) => Promise<void>;
   onSettled: (appSessionId: string) => void;
   emitError: (error: SettingsError) => void;
 }
@@ -122,7 +127,13 @@ export class SessionModelSettings {
         await this.applyProvider(summary, live, agent, runtimeSettings, isCurrent);
         if (!isCurrent()) return false;
         this.persistAccepted(summary, live, agent, selection);
-        if (agent !== 'primary') return true;
+        if (agent !== 'primary') {
+          if (settings.modelId !== undefined && selection.modelId) {
+            await this.d.rearmChildAgentModelChanged(appSessionId, agent, selection.modelId);
+            if (!isCurrent()) return false;
+          }
+          return true;
+        }
         // Only a model change earns a row; a new effort shows on the chip.
         if (change) this.d.onPrimaryModelChanged(next, change.from, change.to);
         if (live) await this.d.refreshPrimary(live, selected.modelId !== undefined);
