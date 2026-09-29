@@ -7,10 +7,11 @@ import { GitPullRequestIcon } from './environment/GithubIcons';
 import { Clock } from '@droidex/icons';
 import { ActivityStatusGlyph } from './ActivityStatusGlyph';
 import { projectsNavSignal } from '../lib/projectThreads';
+import { ProjectsIntro } from '../features/projects/ProjectsIntro';
 import { sessionAttention } from '../lib/sessionAttention';
 import type { SessionSummary } from '../types/bridge';
 
-export function SidebarNavigation() {
+export function SidebarNavigation({ announcementShown = false }: { announcementShown?: boolean }) {
   const dispatch = useStoreDispatch();
   const projectsSignal = useStoreSelector(
     (current) => {
@@ -37,6 +38,7 @@ export function SidebarNavigation() {
     };
   }, shallowEqual);
   const automationsButtonRef = useRef<HTMLButtonElement>(null);
+  const projectsButtonRef = useRef<HTMLButtonElement>(null);
 
   useEffect(() => bindLazySurfaceIntent('automations', automationsButtonRef.current), []);
 
@@ -71,6 +73,7 @@ export function SidebarNavigation() {
         Pull requests
       </button>
       <button
+        ref={projectsButtonRef}
         data-testid="projects-nav"
         aria-current={state.mainView === 'projects' ? 'page' : undefined}
         onClick={() => {
@@ -86,6 +89,7 @@ export function SidebarNavigation() {
             one is moving and when one is holding for them. */}
         <ProjectsNavBadge attention={projectsSignal.attention} live={projectsSignal.live} />
       </button>
+      <ProjectsIntro anchorRef={projectsButtonRef} held={announcementShown} />
       <button
         ref={automationsButtonRef}
         data-testid="automations-nav"

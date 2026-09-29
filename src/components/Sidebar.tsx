@@ -347,7 +347,7 @@ export default function Sidebar({
             <MessageCirclePlus className="h-4 w-4" />
           </button>
         </div>
-        <SidebarNavigation />
+        <SidebarNavigation announcementShown={welcomeVisible} />
       </div>
 
       <SidebarCustomize

@@ -5,6 +5,13 @@ it starts are normal top-level sessions, not harness subagents: each keeps its
 own history, settings, transcript and runtime identity, and each can be opened,
 steered and reviewed like any other chat.
 
+Projects ships in beta. The Projects view says so under its title, with links to
+the app's own feedback and bug report (the dialog `/feedback` and `/bug` open)
+and to the maker's account on X. A one-time spotlight beside the sidebar's
+Projects entry introduces the feature once the first-run welcome card is gone;
+it is one of the sidebar's announcements (`src/lib/sidebarCards.ts`, id
+`projects-beta`).
+
 ## Starting threads
 
 A chat on Droid, Claude Code or Codex is given DROIDEX's in-app session tools.

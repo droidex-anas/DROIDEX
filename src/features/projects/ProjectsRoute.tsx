@@ -8,6 +8,7 @@ import { toast } from '../../lib/toast';
 import { resolveNewChatCwd, workspaceName } from '../../lib/workspaces';
 import { resumeProject } from './client';
 import { PaneTransition } from './PaneTransition';
+import { ProjectsBetaNote } from './ProjectsBetaNote';
 import { ProjectThreads } from './ProjectThreads';
 import { projectLead } from './threadBoard';
 import { useProjectBoard, type ProjectBoardEntry } from './useProjectBoard';
@@ -112,8 +113,13 @@ function ProjectListView({
   return (
     <div className="min-h-0 flex-1 overflow-y-auto">
       <div className="mx-auto w-full max-w-3xl px-6 pb-16 pt-4">
-        <div className="flex items-center gap-3 pb-5">
-          <h1 className="flex-1 text-[22px] font-semibold tracking-tight">Projects</h1>
+        <div className="flex items-center gap-3">
+          <h1 className="flex flex-1 items-baseline gap-2.5 text-[22px] font-semibold tracking-tight">
+            Projects
+            <span className="text-[13px] font-medium tracking-normal text-droid-text-muted">
+              Beta
+            </span>
+          </h1>
           <button
             type="button"
             onClick={onStartProject}
@@ -123,6 +129,7 @@ function ProjectListView({
             New project
           </button>
         </div>
+        <ProjectsBetaNote className="pb-6 pt-1.5 text-[13px] leading-6 text-droid-text-muted" />
 
         {entries.length === 0 ? (
           <Empty loading={loading} error={error} onCreate={onStartProject} />
