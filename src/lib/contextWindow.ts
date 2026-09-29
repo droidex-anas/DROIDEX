@@ -48,3 +48,16 @@ export function contextWindowOptions(
       : {}),
   }));
 }
+
+/**
+ * The window a chat takes when it moves to `model`: the largest the model runs,
+ * when the one it pinned is beyond it. Undefined when the pin still fits.
+ */
+export function contextWindowForModel(
+  model: Pick<ModelInfo, 'maxContextTokens'> | undefined,
+  pinned: ContextWindowTokens | undefined,
+): ContextWindowTokens | undefined {
+  const ceiling = model?.maxContextTokens;
+  if (pinned === undefined || ceiling === undefined || pinned <= ceiling) return undefined;
+  return CONTEXT_WINDOWS.filter((value) => value <= ceiling).at(-1);
+}

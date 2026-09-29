@@ -23,6 +23,9 @@ import {
   providerModelSelection,
 } from '../features/providers/providerIdentity';
 import useFastMode from '../hooks/useFastMode';
+import useContextWindow from '../hooks/useContextWindow';
+import { fastModeBlockedReason } from '../lib/fastMode';
+import { contextWindowForModel } from '../lib/contextWindow';
 import { defaultModelOf } from './ModelCatalogList';
 import { categoryOf, categoryOptions, type ModelCategory } from './modelCategories';
 
@@ -194,6 +197,7 @@ export default function useModelPicker({
   // Fast mode belongs to the chat this composer writes into; the mission and
   // child pickers never offer it, so they read the draft's and leave it alone.
   const { fastMode, setFastMode } = useFastMode(scopedAppSessionId);
+  const { contextWindowTokens, setContextWindow } = useContextWindow(scopedAppSessionId);
 
   const updateReasoning = useCallback(
     (reasoning: ReasoningEffort) => {
@@ -230,6 +234,14 @@ export default function useModelPicker({
 
       // Snap only an explicit effort, as part of the same user-requested update.
       const next = source.find((x) => x.id === modelId);
+      // A window or fast mode the new model cannot run is set back first, so
+      // the change of model is never refused over it and the chip never
+      // claims what the chat does not do.
+      if (agent === 'primary') {
+        if (fastMode && fastModeBlockedReason(next)) setFastMode(false);
+        const window = contextWindowForModel(next, contextWindowTokens);
+        if (window) setContextWindow(window);
+      }
       const reasoningEffort = reasoningForModelSwitch(next, effReasoning);
       const settings = {
         modelId,
@@ -246,9 +258,13 @@ export default function useModelPicker({
       agent,
       cfg.reasoning,
       childTarget,
+      contextWindowTokens,
       effReasoning,
+      fastMode,
       saveDefault,
       scopedAppSessionId,
+      setContextWindow,
+      setFastMode,
       source,
       state.activeSessionAppSessionId,
       updateSession,
