@@ -421,15 +421,15 @@ function GeneralSection() {
       <div className="rounded-xl border border-droid-border bg-droid-surface divide-y divide-droid-border mb-8">
         <SettingRow
           label="Enter while working"
-          description="Choose what plain Enter does during an active model turn. Cmd/Ctrl+Enter does the opposite."
+          description="What Enter does while the agent works. Steer hands the message to the agent at its next step; Queue sends it after the turn. Cmd/Ctrl+Enter does the other."
         >
           <Dropdown
             ariaLabel="Enter while working"
             value={state.liveEnterBehavior}
             width="w-44"
             options={[
+              { value: 'steer', label: 'Steer message' },
               { value: 'queue', label: 'Queue message' },
-              { value: 'interrupt', label: 'Send now' },
             ]}
             onChange={(behavior) => {
               dispatch({

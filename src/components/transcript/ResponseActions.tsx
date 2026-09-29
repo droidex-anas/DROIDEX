@@ -1,4 +1,4 @@
-import { Check } from 'lucide-react';
+import { ArrowUp, Check } from 'lucide-react';
 import { Copy, GitFork } from '@droidex/icons';
 import { HoverTooltip } from '../HoverTooltip';
 import { useCopiedFlash } from './primitives';
@@ -71,12 +71,31 @@ function CopyButton({ text, label }: { text: string; label: string }) {
 }
 
 // Hangs under the bubble's right edge without reserving a row, so prompts keep
-// their spacing; it only appears on hover or focus.
-export function PromptActions({ text, ts }: { text: string; ts: number }) {
+// their spacing; the time and actions appear on hover or focus. A steer the
+// model has not taken in yet says so at rest, and can be sent now.
+export function PromptActions({
+  text,
+  ts,
+  onSendNow,
+}: {
+  text: string;
+  ts: number;
+  onSendNow?: (() => void) | undefined;
+}) {
   return (
-    <div className="pointer-events-none absolute right-0 top-full mt-0.5 flex h-7 items-center opacity-0 transition-opacity duration-150 delay-300 focus-within:pointer-events-auto focus-within:opacity-100 focus-within:delay-0 group-hover/msg:pointer-events-auto group-hover/msg:opacity-100 group-hover/msg:delay-0">
-      <MessageTime ts={ts} />
-      <CopyButton text={text} label="Copy prompt" />
+    <div className="absolute right-0 top-full mt-0.5 flex h-7 items-center">
+      <div className="pointer-events-none flex items-center opacity-0 transition-opacity duration-150 delay-300 focus-within:pointer-events-auto focus-within:opacity-100 focus-within:delay-0 group-hover/msg:pointer-events-auto group-hover/msg:opacity-100 group-hover/msg:delay-0">
+        <MessageTime ts={ts} />
+        <CopyButton text={text} label="Copy prompt" />
+        {onSendNow ? (
+          <HoverTooltip label="Send now">
+            <button type="button" aria-label="Send now" onClick={onSendNow} className={buttonClass}>
+              <ArrowUp className="h-3.5 w-3.5" />
+            </button>
+          </HoverTooltip>
+        ) : null}
+      </div>
+      {onSendNow ? <span className="px-1.5 text-[12px] text-droid-text-muted">Unread</span> : null}
     </div>
   );
 }

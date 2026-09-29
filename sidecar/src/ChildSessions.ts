@@ -417,47 +417,6 @@ export class ChildSessions {
     await this.drive(parent, child, text);
   }
 
-  async sendNow(identity: ChildIdentity, text: string): Promise<void> {
-    const queuedParent = this.parents.get(identity.parentAppSessionId);
-    const queuedChild = queuedParent?.children.get(identity.childSessionId);
-    if (queuedParent && queuedChild?.queued) {
-      queuedChild.turn.pendingSends.unshift(text);
-      return;
-    }
-    const target = await this.requireRuntime(identity, 'sendNow');
-    if (!target) return;
-    const { parent, child, runtime } = target;
-    runtime.lastUsedAt = this.d.now();
-    if (child.turn.phase === 'idle' && !child.turn.autoCompacting) {
-      await this.drive(parent, child, text);
-      return;
-    }
-    child.turn.pendingSends.unshift(text);
-    if (child.turn.autoCompacting) return;
-    const turnGeneration = child.turn.generation;
-    child.turn.interruptingForSteer = true;
-    this.d.timeline.appendStatus(
-      identity.parentAppSessionId,
-      'Steering child session now...',
-      undefined,
-      identity.childSessionId,
-      child.role,
-    );
-    try {
-      await runtime.session.interrupt();
-    } catch (error) {
-      if (!this.isCurrentTurnGeneration(parent, child, runtime, turnGeneration)) return;
-      child.turn.interruptingForSteer = false;
-      this.emitError(
-        identity,
-        'sendNow',
-        null,
-        'child.send_now_failed',
-        `Could not interrupt child session for steering: ${errMsg(error)}`,
-      );
-    }
-  }
-
   async interrupt(identity: ChildIdentity): Promise<void> {
     const parent = this.parents.get(identity.parentAppSessionId);
     const prepared = prepareChildInterrupt(
@@ -785,7 +744,7 @@ export class ChildSessions {
 
   private async requireRuntime(
     identity: ChildIdentity,
-    operation: 'send' | 'sendNow' | 'interrupt',
+    operation: 'send' | 'interrupt',
   ): Promise<ChildRuntimeTarget | undefined> {
     const parent = this.parents.get(identity.parentAppSessionId);
     const child = parent?.children.get(identity.childSessionId);
@@ -837,15 +796,7 @@ export class ChildSessions {
       }
     } catch (error) {
       if (!this.isCurrentRuntime(parent, child, runtime)) return;
-      if (child.turn.interruptingForSteer)
-        this.d.timeline.appendStatus(
-          parent.parentAppSessionId,
-          'Child-session turn interrupted for steering.',
-          undefined,
-          child.identity.childSessionId,
-          child.role,
-        );
-      else if (!(child.turn.interrupting && isUserCancellation(error))) {
+      if (!(child.turn.interrupting && isUserCancellation(error))) {
         this.flushStreaming(child.identity);
         this.emitError(child.identity, 'send', null, 'child.send_failed', errMsg(error));
       }
@@ -874,7 +825,6 @@ export class ChildSessions {
     }
     if (!this.isCurrentTurn(parent, child, runtime, turnGeneration)) return;
     this.d.context.stopPolling(this.contextTarget(parent, child, runtime));
-    child.turn.interruptingForSteer = false;
     child.turn.interrupting = false;
     if (child.closeWhenIdle && !child.turn.autoCompacting) {
       child.turn.phase = 'idle';
@@ -1154,7 +1104,6 @@ export class ChildSessions {
     child.turn.phase = 'idle';
     child.turn.autoCompacting = false;
     child.turn.pendingSends = [];
-    child.turn.interruptingForSteer = false;
     child.turn.interrupting = false;
     const cleanupTarget = this.contextTarget(parent, child, runtime);
     void runCleanup(this.d.context.forgetChild.bind(this.d.context, child.identity));

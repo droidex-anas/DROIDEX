@@ -1635,60 +1635,6 @@ test('stale interrupt and turn settlement cannot make a replacement turn idle', 
   }
 });
 
-test('stale send-now rejection cannot clear replacement steering state', async () => {
-  const record = childRecord('child', 'provider-old');
-  const h = createHarness([record]);
-  const oldRuntime = await h.open(record);
-  const oldStreamGate = oldRuntime.deferNextStream();
-  const oldTurn = h.owner.send(record, 'old turn');
-  await oldRuntime.waitForPrompts(1);
-  const oldInterruptGate = oldRuntime.deferNextInterrupt();
-  const oldSteer = h.owner.sendNow(record, 'old steer');
-  await new Promise<void>((resolve) => setImmediate(resolve));
-
-  h.owner.admitChildObservation({
-    parentAppSessionId: h.parentId,
-    providerSessionId: 'provider-new',
-    role: 'worker',
-    spawnLink: { kind: 'tool-use', id: `tool-${record.childSessionId}` },
-  });
-  const replacementRecord = { ...record, providerSessionId: 'provider-new' };
-  const replacement = await h.open(
-    replacementRecord,
-    new FakeFactorySession('provider-new', {}, h.calls),
-  );
-  const replacementStreamGate = replacement.deferNextStream();
-  replacement.nextStreamError = new Error('replacement turn failed');
-  const replacementTurn = h.owner.send(record, 'replacement turn');
-  await replacement.waitForPrompts(1);
-  const replacementInterruptGate = replacement.deferNextInterrupt();
-  const replacementSteer = h.owner.sendNow(record, 'replacement steer');
-  await new Promise<void>((resolve) => setImmediate(resolve));
-
-  oldInterruptGate.reject(new Error('old interrupt failed'));
-  await oldSteer;
-  replacementStreamGate.resolve();
-  await replacementTurn;
-
-  assert.equal(
-    h.events.some((event) => event.type === 'child.error' && event.code === 'child.send_failed'),
-    false,
-  );
-  assert.equal(
-    h.calls.some(
-      (call) =>
-        call.method === 'timeline.status' &&
-        call.args.includes('Child-session turn interrupted for steering.'),
-    ),
-    true,
-  );
-
-  replacementInterruptGate.resolve();
-  await replacementSteer;
-  oldStreamGate.resolve();
-  await oldTurn;
-});
-
 test('one child cleanup failure cannot block sibling provider close', async () => {
   const first = childRecord('first', 'provider-first');
   const second = childRecord('second', 'provider-second');
@@ -1743,9 +1689,9 @@ test('live runtime budget queues overflow children instead of reporting them as 
     { parentAppSessionId: h.parentId, childSessionId: second.childSessionId },
     'queued send',
   );
-  await h.owner.sendNow(
+  await h.owner.send(
     { parentAppSessionId: h.parentId, childSessionId: second.childSessionId },
-    'queued first',
+    'queued second',
   );
 
   streamGate.resolve();
@@ -1758,7 +1704,7 @@ test('live runtime budget queues overflow children instead of reporting them as 
   assert.equal(h.owner.counts().live, 1);
   const opened = h.owner.list(h.parentId).find((child) => child.childSessionId === 'second');
   assert.equal(Boolean(opened?.queued), false);
-  assert.deepEqual(secondSession.prompts, ['queued first', 'queued send']);
+  assert.deepEqual(secondSession.prompts, ['queued send', 'queued second']);
 });
 
 test('four live runtimes stay concurrent and a fifth child queues instead of running', async () => {
@@ -1850,10 +1796,6 @@ test('interrupt of a queued child drops buffered sends even after a later open',
   await h.owner.send(
     { parentAppSessionId: h.parentId, childSessionId: second.childSessionId },
     'cancelled while queued',
-  );
-  await h.owner.sendNow(
-    { parentAppSessionId: h.parentId, childSessionId: second.childSessionId },
-    'cancelled first',
   );
   await h.owner.interrupt({
     parentAppSessionId: h.parentId,

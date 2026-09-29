@@ -511,7 +511,7 @@ export type Action =
       parentAppSessionId: string;
       childSessionId: string;
       requestId: string | null;
-      operation: 'open' | 'loadHistory' | 'send' | 'sendNow' | 'interrupt' | 'settings';
+      operation: 'open' | 'loadHistory' | 'send' | 'interrupt' | 'settings';
       message: string;
     }
   | {

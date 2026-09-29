@@ -170,11 +170,14 @@ export const listFactoryDefaults = () => {
   bridge.send({ type: 'settings.defaults' });
 };
 
+// A steer id hands the prompt to the running turn; without one, a send while
+// the turn runs waits for it to end.
 export const sendToSession = (
   appSessionId: string,
   text: string,
   responseFormat?: ResponseFormat,
   mentions?: ProviderMention[],
+  steerId?: string,
 ) => {
   requireAgentWorkAvailable();
   bridge.send({
@@ -183,6 +186,7 @@ export const sendToSession = (
     text,
     ...(mentions?.length ? { mentions } : {}),
     ...(responseFormat ? { responseFormat } : {}),
+    ...(steerId ? { steerId } : {}),
   });
 };
 
@@ -191,20 +195,10 @@ export const repairApp = (appSessionId: string, error: string, source: string) =
   bridge.send({ type: 'session.repairApp', appSessionId, error, source });
 };
 
-export const sendToSessionNow = (
-  appSessionId: string,
-  text: string,
-  responseFormat?: ResponseFormat,
-  mentions?: ProviderMention[],
-) => {
+// Stops the running turn so a steer the model has not taken in yet goes first.
+export const sendSteerNow = (appSessionId: string, steerId: string) => {
   requireAgentWorkAvailable();
-  bridge.send({
-    type: 'session.sendNow',
-    appSessionId,
-    text,
-    ...(mentions?.length ? { mentions } : {}),
-    ...(responseFormat ? { responseFormat } : {}),
-  });
+  bridge.send({ type: 'session.sendNow', appSessionId, steerId });
 };
 
 export const sendToChild = (
@@ -216,22 +210,6 @@ export const sendToChild = (
   requireAgentWorkAvailable();
   bridge.send({
     type: 'child.send',
-    parentAppSessionId,
-    childSessionId,
-    text,
-    ...(responseFormat ? { responseFormat } : {}),
-  });
-};
-
-export const sendToChildNow = (
-  parentAppSessionId: string,
-  childSessionId: string,
-  text: string,
-  responseFormat?: ResponseFormat,
-) => {
-  requireAgentWorkAvailable();
-  bridge.send({
-    type: 'child.sendNow',
     parentAppSessionId,
     childSessionId,
     text,

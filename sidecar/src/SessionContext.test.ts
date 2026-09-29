@@ -71,6 +71,7 @@ async function registerLive(
     streaming: false,
     autoCompacting: false,
     pendingSends: [],
+    steers: [],
     mcpServers: [],
     mcpConfigs: [],
   };

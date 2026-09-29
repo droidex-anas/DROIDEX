@@ -45,7 +45,6 @@ export function takeAdmittedSend(child: ChildSessionState): string | undefined {
 
 function markQueuedInterruptSettled(child: ChildSessionState, now: number): void {
   child.turn.interrupting = false;
-  child.turn.interruptingForSteer = false;
   child.turn.phase = 'idle';
   if (child.status === 'running') setChildStatus(child, 'paused', now);
 }

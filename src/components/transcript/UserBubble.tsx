@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState, type ComponentType, type ReactNode } from 'react';
 import { MousePointer2, PenLine } from 'lucide-react';
 import { MessageThread } from '@droidex/icons';
+import { useStoreSelector } from '../../hooks/useStore';
+import { sendSteerNow } from '../../lib/commands';
 import type { BrowserTranscriptReference, TranscriptEvent } from '../../types/bridge';
 import type { OpenReviewFileHandler } from '../../lib/reviewFocus';
 import { ImageAttachmentChip } from '../media/ImageAttachmentChip';
@@ -174,6 +176,30 @@ function ClampedPrompt({ source, chips }: { source: string; chips: ReactNode }) 
   );
 }
 
+// A steer's row offers Send now for as long as the sidecar lists it as one the
+// model has not taken in.
+function SteerPromptActions({
+  text,
+  ts,
+  appSessionId,
+  steerId,
+}: {
+  text: string;
+  ts: number;
+  appSessionId: string;
+  steerId: string;
+}) {
+  const pending = useStoreSelector(
+    (state) =>
+      Object.hasOwn(state.sessions, appSessionId) &&
+      state.sessions[appSessionId].pendingSteers?.includes(steerId) === true,
+  );
+  const sendNow = () => {
+    sendSteerNow(appSessionId, steerId);
+  };
+  return <PromptActions text={text} ts={ts} onSendNow={pending ? sendNow : undefined} />;
+}
+
 // Review reads a file through the workspace root, so a pasted or dropped
 // attachment — which lives in the temp store outside it — stays a plain chip.
 export function UserBubble({
@@ -182,8 +208,16 @@ export function UserBubble({
 }: {
   event: Pick<
     TranscriptEvent,
-    'text' | 'skills' | 'files' | 'browserRefs' | 'steered' | 'spoken' | 'sideChatReplies'
+    | 'text'
+    | 'skills'
+    | 'files'
+    | 'browserRefs'
+    | 'steered'
+    | 'steerId'
+    | 'spoken'
+    | 'sideChatReplies'
   > & {
+    appSessionId?: string;
     ts?: number;
   };
   onOpenReviewFile?: OpenReviewFileHandler;
@@ -197,6 +231,21 @@ export function UserBubble({
   const replyCount = event.sideChatReplies?.length ?? 0;
   const hasChips = display.skills.length > 0 || display.visualize || replyCount > 0;
   const hasPrompt = Boolean(display.text) || hasChips;
+  // The pending preview of a first message has no ts, and no actions yet.
+  let actions: ReactNode = null;
+  if (message.text && event.ts !== undefined) {
+    actions =
+      event.appSessionId !== undefined && event.steerId !== undefined ? (
+        <SteerPromptActions
+          text={message.text}
+          ts={event.ts}
+          appSessionId={event.appSessionId}
+          steerId={event.steerId}
+        />
+      ) : (
+        <PromptActions text={message.text} ts={event.ts} />
+      );
+  }
   const chips = hasChips ? (
     // Top-aligned because the icon, not the label, would set the row's baseline.
     <span
@@ -263,10 +312,7 @@ export function UserBubble({
           <div className="min-w-0 rounded-2xl rounded-br-sm bg-[var(--prompt-bubble-bg,var(--droid-elevated))] px-4 py-2.5 text-[14px] leading-[1.6] text-droid-text">
             {display.text ? <ClampedPrompt source={display.text} chips={chips} /> : chips}
           </div>
-          {/* The pending preview of a first message has no ts, and no actions yet. */}
-          {message.text && event.ts !== undefined ? (
-            <PromptActions text={message.text} ts={event.ts} />
-          ) : null}
+          {actions}
         </div>
       )}
     </div>

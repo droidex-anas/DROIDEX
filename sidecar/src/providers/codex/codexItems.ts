@@ -136,8 +136,8 @@ export interface ToolCall {
   detail: string;
   args: unknown;
   failed: boolean;
-  // The turn was steered or stopped before this call finished. Codex reports it
-  // as an item status, so it is a fact, not a failure.
+  // The user stopped the turn, with Stop or Send now, before this call
+  // finished. Codex reports it as an item status, so it is a fact, not a failure.
   interrupted: boolean;
 }
 
@@ -146,8 +146,8 @@ export interface ToolCall {
 // prefix for an MCP tool.
 export function toolCall(item: ThreadItem): ToolCall | undefined {
   const call = describeCall(item);
-  // Codex reports a steer or a stop as the item's own status, whatever kind of
-  // call it is, so one read covers them all.
+  // Codex reports a stop as the item's own status, whatever kind of call it
+  // is, so one read covers them all.
   return call && { ...call, interrupted: 'status' in item && item.status === 'interrupted' };
 }
 

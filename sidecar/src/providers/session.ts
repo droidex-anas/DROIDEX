@@ -147,10 +147,11 @@ export interface ProviderSession {
    * prompt queues behind it and Stop can reach it.
    */
   onDelegatedTurn?(listener: (running: boolean) => void): () => void;
-  // Takes a prompt into the turn that is already running, so the turn keeps its
-  // work and continues with it. Absent on a provider that can only steer by
-  // interrupting and resending, which is what the session layer then does.
-  steer?(text: string, mentions?: ProviderMention[]): Promise<void>;
+  // Hands a prompt to the running turn, which the harness delivers at its own
+  // next step. Resolves true once the model has it, and false when the turn
+  // cannot take it or ends without it; the session layer then sends it as an
+  // ordinary message, as it does on a provider without a steer.
+  steer?(text: string, mentions?: ProviderMention[]): Promise<boolean>;
   // Provider-native command/skill/app/plugin rows, cached for this live runtime.
   catalogItems?(): Promise<SkillInfo[]>;
   onCatalogUpdated?(listener: (items: SkillInfo[]) => void): () => void;

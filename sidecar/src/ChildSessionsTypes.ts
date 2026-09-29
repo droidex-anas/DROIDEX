@@ -11,7 +11,7 @@ import type { ChildParentLease, ChildRuntimeTarget, ChildSettings } from './Chil
 import type { AgentProcessMonitor } from './processes/AgentProcessMonitor.js';
 import type { SettledAgent } from './childWaveWake.js';
 
-export type ChildOperation = 'open' | 'loadHistory' | 'send' | 'sendNow' | 'interrupt' | 'settings';
+export type ChildOperation = 'open' | 'loadHistory' | 'send' | 'interrupt' | 'settings';
 
 export type ChildSettingsTarget = ChildRuntimeTarget & {
   parentGeneration: number;

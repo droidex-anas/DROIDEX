@@ -38,6 +38,7 @@ export function createCompactionTestLiveSession(
     streaming: false,
     autoCompacting: false,
     pendingSends: [],
+    steers: [],
     mcpServers: [],
     mcpConfigs: [],
   };

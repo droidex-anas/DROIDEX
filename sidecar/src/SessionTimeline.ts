@@ -462,8 +462,31 @@ export class SessionTimeline {
     });
   }
 
-  // A status row that is only true right now — a CLI booting, a steer being
-  // applied, an idle runtime released. Shown live, never stored.
+  // A prompt sent as a steer, at the moment the model takes it in: inside the
+  // running turn (steered), or as a turn of its own. The renderer drew it when
+  // it was sent; this row, under the same steer id, moves it here, and it is
+  // what the transcript keeps.
+  appendSteer(
+    appSessionId: string,
+    steer: { text: string; steerId: string; steered: boolean },
+  ): void {
+    const ts = this.clock();
+    this.append({
+      id: this.noticeId('prompt', ts),
+      appSessionId,
+      sourceSessionId: appSessionId,
+      role: 'primary',
+      ts,
+      kind: 'text',
+      author: 'user',
+      text: steer.text,
+      steerId: steer.steerId,
+      ...(steer.steered ? { steered: true } : {}),
+    });
+  }
+
+  // A status row that is only true right now — a CLI booting, a turn stopping
+  // to send now, an idle runtime released. Shown live, never stored.
   appendProgress(appSessionId: string, text: string): void {
     const ts = this.clock();
     this.append({

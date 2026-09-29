@@ -62,7 +62,7 @@ export class ClaudeSession implements ProviderSession {
   private failure?: Error;
   private readonly prompts = new MessageQueue<SDKUserMessage>();
   private readonly mapper: ClaudeEventMapper;
-  private readonly query: Query;
+  private readonly query: SteeringQuery;
   // The permission capability probe must finish before the first prompt.
   // Control requests may only start after the CLI answers initialize.
   private readonly initialized: Promise<void>;
@@ -77,6 +77,14 @@ export class ClaudeSession implements ProviderSession {
   private activeTurnId?: string;
   // The turn the user stopped, so only that turn's own error result is excused.
   private interruptedTurnId?: string;
+  // Whether the running turn can take a steer: not before its own prompt is
+  // pushed, not for a slash command, and not once it has ended.
+  private steerable = false;
+  // The running turn's steers, by the uuid each was pushed with: who is waiting
+  // to hear it delivered, and which a result has yet to answer. The turn stays
+  // open until every steer is answered.
+  private readonly steerDeliveries = new Map<string, (delivered: boolean) => void>();
+  private readonly unansweredSteers = new Set<string>();
   private turnQueue?: MessageQueue<{ message: SDKMessage; events: NormalizedEvent[] }>;
   private readonly backgroundListeners = new Set<(event: NormalizedEvent) => void>();
 
@@ -125,7 +133,7 @@ export class ClaudeSession implements ProviderSession {
           process.once('close', onExit);
         },
       ),
-    });
+    }) as SteeringQuery;
     this.initialized = this.query.initializationResult().then(
       async () => {
         this.abort.signal.throwIfAborted();
@@ -204,6 +212,8 @@ export class ClaudeSession implements ProviderSession {
         parent_tool_use_id: null,
         message: { role: 'user', content: prompt },
       });
+      this.steerable = !isSlashCommand(prompt);
+      let answered = false;
       for (;;) {
         const next = await turnQueue.next();
         // An exhausted stream is a failure, not a silent success.
@@ -217,6 +227,12 @@ export class ClaudeSession implements ProviderSession {
           }
         }
         yield* events;
+        const lifecycle = commandLifecycle(message);
+        if (lifecycle?.state === 'started') this.settleSteer(lifecycle.uuid, true);
+        if (lifecycle?.state === 'cancelled') {
+          this.settleSteer(lifecycle.uuid, false);
+          this.unansweredSteers.delete(lifecycle.uuid);
+        }
         // A local slash command bypasses the model loop and publishes this one
         // terminal frame instead of a result for the ordinary turn path.
         if (message.type === 'system' && message.subtype === 'local_command_output') {
@@ -229,19 +245,78 @@ export class ClaudeSession implements ProviderSession {
           const refusal = rateLimitRefusal(message.rate_limit_info);
           if (refusal) throw refusal;
         }
-        if (message.type === 'result' && answersTurn(message, turnId)) {
+        if (
+          message.type === 'result' &&
+          (answersTurn(message, turnId) || this.answersSteer(message))
+        ) {
           // A stopped turn settles quietly: the CLI still reports the
           // interruption as an error result carrying an internal diagnostic.
           if (message.subtype !== 'success' && this.interruptedTurnId !== turnId)
             throw new Error(turnFailure(message.subtype, message.errors));
+          answered = true;
+          for (const uuid of message.user_message_uuids ?? []) {
+            this.settleSteer(uuid, true);
+            this.unansweredSteers.delete(uuid);
+          }
+          // Without the list nothing could ever answer a steer, so the turn
+          // must not wait for one.
+          if (!message.user_message_uuids) this.unansweredSteers.clear();
+        }
+        // A steer that missed the turn's last tool boundary runs right after
+        // its result, so the turn stays open until that answer too. Stop
+        // cancels the steers still queued, and the frame that says so ends it.
+        if (answered && (this.unansweredSteers.size === 0 || this.interruptedTurnId === turnId)) {
+          this.steerable = false;
           yield { done: true };
           return;
         }
       }
     } finally {
       this.activeTurnId = undefined;
+      this.steerable = false;
+      // A steer the turn ended without is the session layer's to send again or
+      // drop, so the CLI must not run it as well.
+      for (const uuid of this.steerDeliveries.keys()) {
+        if (!this.isClosed) void this.query.cancelAsyncMessage(uuid).catch(() => undefined);
+        this.settleSteer(uuid, false);
+      }
+      this.unansweredSteers.clear();
       if (this.turnQueue === turnQueue) this.turnQueue = undefined;
     }
+  }
+
+  // Hands the prompt to the running turn. The CLI folds it in at the turn's
+  // next tool boundary, or runs it right after the turn's result when no
+  // boundary is left. Resolves true once the model has it, and false when the
+  // turn cannot take it or ends without it.
+  steer(text: string): Promise<boolean> {
+    // The CLI resolves a slash command instead of handing it to the model, so
+    // it can only run as a turn of its own.
+    if (!this.steerable || this.isClosed || isSlashCommand(text)) return Promise.resolve(false);
+    const uuid = randomUUID();
+    const delivered = new Promise<boolean>((resolve) => {
+      this.steerDeliveries.set(uuid, resolve);
+    });
+    this.unansweredSteers.add(uuid);
+    this.prompts.push({
+      type: 'user',
+      uuid,
+      session_id: this.providerSessionId,
+      parent_tool_use_id: null,
+      message: { role: 'user', content: text },
+      priority: 'next',
+    });
+    return delivered;
+  }
+
+  private settleSteer(uuid: string, delivered: boolean): void {
+    this.steerDeliveries.get(uuid)?.(delivered);
+    this.steerDeliveries.delete(uuid);
+  }
+
+  // A steer that runs after the turn's result gets a result of its own.
+  private answersSteer(message: { user_message_uuids?: string[] }): boolean {
+    return message.user_message_uuids?.some((uuid) => this.unansweredSteers.has(uuid)) ?? false;
   }
 
   private planningModelNotice(
@@ -390,8 +465,9 @@ export class ClaudeSession implements ProviderSession {
     }
     if (this.abort.signal.aborted || this.activeTurnId !== turnId) return;
     // Aborts the in-flight turn on the live process; the turn then settles with
-    // its own result, so the next prompt does not pay for a restart.
-    await this.query.interrupt();
+    // its own result, so the next prompt does not pay for a restart. Steers not
+    // yet delivered are cancelled with it rather than left to run unobserved.
+    await this.query.interrupt({ cancelQueued: true });
   }
 
   close(): Promise<void> {
@@ -445,6 +521,30 @@ function turnFailure(subtype: string, errors: string[]): string {
   return detail
     ? `Claude Code ended the turn (${subtype}): ${detail}`
     : `Claude Code ended the turn (${subtype}).`;
+}
+
+// Control requests the SDK sends at runtime but does not declare.
+type SteeringQuery = Query & {
+  interrupt(options: { cancelQueued: boolean }): Promise<unknown>;
+  cancelAsyncMessage(uuid: string): Promise<boolean>;
+};
+
+// The CLI reports each queued prompt's progress in a frame the SDK does not
+// declare either: 'started' when the model takes it in, 'cancelled' when it is
+// dropped.
+function commandLifecycle(message: SDKMessage): { uuid: string; state: string } | undefined {
+  const frame = message as unknown as { type?: unknown; command_uuid?: unknown; state?: unknown };
+  if (
+    frame.type !== 'command_lifecycle' ||
+    typeof frame.command_uuid !== 'string' ||
+    typeof frame.state !== 'string'
+  )
+    return undefined;
+  return { uuid: frame.command_uuid, state: frame.state };
+}
+
+function isSlashCommand(text: string): boolean {
+  return text.trimStart().startsWith('/');
 }
 
 function answersTurn(

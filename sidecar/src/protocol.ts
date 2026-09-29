@@ -172,6 +172,8 @@ export interface SessionSummary {
   // Set when a runtime restart could not continue this session's in-flight turn.
   interruptReason?: string;
   queuedSends?: number;
+  // The steers sent while a turn ran that the model has not taken in yet.
+  pendingSteers?: string[];
   proposal?: string; // markdown plan from propose_mission
   features: BridgeFeature[];
   tokensIn: number;
@@ -227,9 +229,9 @@ export interface TranscriptEvent {
   // names also read and stop background shell commands, so only the provider
   // can tell the two apart, and the feed must not guess from the name.
   pollsChildSessionId?: string;
-  // A 'tool_result' for a call that never ran because the user steered or
-  // stopped the turn. Reported by the harness, not inferred from the text: it
-  // is not a failure and must not read as one.
+  // A 'tool_result' for a call that never ran because the user stopped the
+  // turn, with Stop or Send now. Reported by the harness, not inferred from the
+  // text: it is not a failure and must not read as one.
   interrupted?: true;
   // For a 'compaction' divider: how many messages the compaction summarized away.
   removedCount?: number;
@@ -241,6 +243,9 @@ export interface TranscriptEvent {
   // Side-chat answers the user attached to this prompt.
   sideChatReplies?: string[];
   steered?: boolean;
+  // On a prompt sent as a steer: the id its sender gave it, so the row the
+  // sidecar adds when the model takes it in replaces the renderer's own.
+  steerId?: string;
   // Set on a row whose text was said out loud in a voice conversation.
   spoken?: boolean;
   compactType?: 'auto' | 'manual';
@@ -248,7 +253,7 @@ export interface TranscriptEvent {
   errorKind?: 'usage_limit';
   resetsAt?: number;
   // A 'status' row that only says what the app is doing right now (booting a
-  // CLI, steering, releasing an idle runtime). It is shown live and never
+  // CLI, stopping a turn to send now, releasing an idle runtime). It is shown live and never
   // stored, so reopening the session does not replay stale progress.
   transient?: true;
 }
@@ -807,14 +812,13 @@ export type ClientCommand =
       text: string;
       mentions?: ProviderMention[];
       responseFormat?: ResponseFormat;
+      // Hands the prompt to the running turn as a steer under this id, which
+      // the renderer chose for its own row. Absent, a send while a turn runs
+      // waits for the turn to end.
+      steerId?: string;
     }
-  | {
-      type: 'session.sendNow';
-      appSessionId: string;
-      text: string;
-      mentions?: ProviderMention[];
-      responseFormat?: ResponseFormat;
-    }
+  // Stops the running turn so a steer the model has not taken in yet goes first.
+  | { type: 'session.sendNow'; appSessionId: string; steerId: string }
   | { type: 'session.repairApp'; appSessionId: string; error: string; source: string }
   | { type: 'session.resume'; appSessionId: string }
   | { type: 'session.interrupt'; appSessionId: string }
@@ -903,13 +907,6 @@ export type ClientCommand =
     }
   | {
       type: 'child.send';
-      parentAppSessionId: string;
-      childSessionId: string;
-      text: string;
-      responseFormat?: ResponseFormat;
-    }
-  | {
-      type: 'child.sendNow';
       parentAppSessionId: string;
       childSessionId: string;
       text: string;
@@ -1039,7 +1036,7 @@ interface ChildErrorEvent {
   type: 'child.error';
   parentAppSessionId: string;
   childSessionId: string;
-  operation: 'open' | 'loadHistory' | 'send' | 'sendNow' | 'interrupt' | 'settings';
+  operation: 'open' | 'loadHistory' | 'send' | 'interrupt' | 'settings';
   requestId: string | null;
   code: string;
   message: string;
@@ -1237,7 +1234,7 @@ export type ServerEvent =
   | { type: 'browser.closed'; appSessionId: string }
   | { type: 'browser.error'; appSessionId?: string; message: string };
 
-export const BRIDGE_PROTOCOL_VERSION = 5 as const;
+export const BRIDGE_PROTOCOL_VERSION = 6 as const;
 
 export interface SequencedServerEvent {
   seq: number;

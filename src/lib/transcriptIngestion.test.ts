@@ -361,3 +361,46 @@ function retainedEvents(count: number, onIdRead: () => void): TranscriptEvent[] 
     return event;
   });
 }
+
+test('a delivered steer moves its row to where the model took it in and rejoins the text it split', () => {
+  const before = transcriptEvent('before', { author: undefined, text: 'Half ' });
+  const sent = transcriptEvent('local-steer', {
+    author: 'user',
+    sourceSessionId: 'user',
+    text: 'Also add KIWI.',
+    steerId: 'steer-1',
+  });
+  const after = transcriptEvent('after', { author: undefined, text: 'done.' });
+  const call = transcriptEvent('call', {
+    author: undefined,
+    kind: 'tool_call',
+    text: undefined,
+    toolUseId: 'tool-1',
+  });
+  const waiting = ingestTranscriptEvents([before], estimateTranscriptCost([before]), [
+    sent,
+    after,
+    call,
+  ]);
+  const delivered = transcriptEvent('prompt-1', {
+    author: 'user',
+    text: 'Also add KIWI.',
+    steered: true,
+    steerId: 'steer-1',
+  });
+
+  const result = ingestTranscriptEvents(waiting.events, waiting.estimatedCost, [
+    delivered,
+    delivered,
+  ]);
+
+  assert.deepEqual(
+    result.events.map((event) => [event.id, event.text, event.steered]),
+    [
+      ['before', 'Half done.', undefined],
+      ['call', undefined, undefined],
+      ['local-steer', 'Also add KIWI.', true],
+    ],
+  );
+  assert.equal(result.estimatedCost, estimateTranscriptCost(result.events));
+});

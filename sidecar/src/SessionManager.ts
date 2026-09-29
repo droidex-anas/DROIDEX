@@ -676,8 +676,8 @@ export class SessionManager {
       appendError: (appSessionId, message) => {
         this.timeline.appendError(appSessionId, message);
       },
-      recordPrompt: (appSessionId, text) => {
-        return this.timeline.recordPrompt(appSessionId, text);
+      appendSteer: (appSessionId, text, steerId) => {
+        this.timeline.appendSteer(appSessionId, { text, steerId, steered: true });
       },
       catalogUpdated: (liveSession, items) => {
         if (this.registry.getLive(liveSession.summary.appSessionId) !== liveSession) return;
@@ -940,17 +940,14 @@ export class SessionManager {
           cmd.appSessionId,
           this.sessionPrompt(cmd.appSessionId, cmd.text, cmd.responseFormat),
           cmd.mentions,
+          cmd.steerId,
         );
         return;
       case 'session.repairApp':
         await this.lifecycle.send(cmd.appSessionId, formatAppRepairPrompt(cmd.error, cmd.source));
         return;
       case 'session.sendNow':
-        await this.lifecycle.sendNow(
-          cmd.appSessionId,
-          this.sessionPrompt(cmd.appSessionId, cmd.text, cmd.responseFormat),
-          cmd.mentions,
-        );
+        await this.lifecycle.sendNow(cmd.appSessionId, cmd.steerId);
         return;
       case 'approval.respond':
         await this.interactions.respondToApproval(cmd.appSessionId, cmd.requestId, cmd.outcome);
@@ -985,9 +982,6 @@ export class SessionManager {
         return;
       case 'child.send':
         await this.childSessions.send(cmd, formatResponsePrompt(cmd.text, cmd.responseFormat));
-        return;
-      case 'child.sendNow':
-        await this.childSessions.sendNow(cmd, formatResponsePrompt(cmd.text, cmd.responseFormat));
         return;
       case 'child.interrupt':
         await this.childSessions.interrupt(cmd);

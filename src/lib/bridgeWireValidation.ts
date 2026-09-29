@@ -384,6 +384,7 @@ function isSessionSummary(value: unknown): boolean {
     isOptionalString(value.resumeId) &&
     isOptionalBoolean(value.fastMode) &&
     isOptionalContextWindow(value.contextWindowTokens) &&
+    (value.pendingSteers === undefined || stringArray(value.pendingSteers)) &&
     (value.lineage === undefined || isSessionLineage(value.lineage))
   );
 }
@@ -431,6 +432,7 @@ function isTranscriptEvent(value: unknown): boolean {
     (value.interrupted === undefined || value.interrupted === true) &&
     (value.transient === undefined || value.transient === true) &&
     isOptionalString(value.forkPointId) &&
+    isOptionalString(value.steerId) &&
     (value.sideChatReplies === undefined || stringArray(value.sideChatReplies))
   );
 }

@@ -265,6 +265,7 @@ export function buildResumedProviderSummary(
     phase: historical.phase === 'running' ? 'paused' : historical.phase,
     streaming: false,
     queuedSends: 0,
+    pendingSteers: [],
   };
 }
 

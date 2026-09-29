@@ -257,6 +257,10 @@ export function startBridgeServer(options: {
       if (typeof parsed === 'object' && parsed !== null && 'mentions' in parsed) {
         assertValidMentions(parsed);
       }
+      if (typeof parsed === 'object' && parsed !== null && 'steerId' in parsed) {
+        if (typeof parsed.steerId !== 'string' || !parsed.steerId)
+          throw new Error('Invalid steer id.');
+      }
       assertValidInteractionResponse(parsed);
       if (typeof parsed === 'object' && parsed !== null) {
         assertValidChatPreferences(parsed);
