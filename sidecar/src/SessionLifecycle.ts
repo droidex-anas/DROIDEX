@@ -579,7 +579,15 @@ export class SessionLifecycle {
     // A Stop can land between admission and this line.
     if (this.stopCount(requestedAppSessionId) !== admitted.stops) return;
     const { liveSession } = admitted;
-    if (steerId && (await this.steer(liveSession, prompt))) return;
+    if (steerId) {
+      if (await this.steer(liveSession, prompt)) return;
+      // A Stop, or a new runtime, since it was sent takes it back.
+      if (
+        this.stopCount(requestedAppSessionId) !== admitted.stops ||
+        this.dependencies.registry.getLive(liveSession.summary.appSessionId) !== liveSession
+      )
+        return;
+    }
     // A steer the turn could not take goes on as an ordinary message: behind
     // the turn, or as the next turn if this one settled meanwhile.
     if (liveSession.streaming || liveSession.compacting || liveSession.autoCompacting) {
