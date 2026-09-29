@@ -385,9 +385,6 @@ export interface AppState {
   // saved-note clicks). A fresh id per seed lets re-clicking re-arm the effect.
   composerSeed: { text: string; id: number; replace: boolean } | null;
   workspaceCwds: string[];
-  // Derived (synced by the reducer): whether the browser pane is open for the
-  // *currently active* session. Source of truth is `browserOpenKeys`.
-  browserOpen: boolean;
   // Per-session browser-pane open state, keyed by browser key (the chat/session
   // id). Presence means "open"; absence means "closed". Persisted so a session
   // resumes where it left off after an app restart, unless it was fully closed.
@@ -827,7 +824,6 @@ export const initialState: AppState = {
   pendingModelUpdates: {},
   composerSeed: null,
   workspaceCwds: loadWorkspaceCwds(),
-  browserOpen: false,
   browserOpenKeys: persistedUiState.browserOpenKeys ?? {},
   browsers: persistedUiState.browsers ?? {},
   browserErrors: {},
@@ -900,14 +896,6 @@ function clearBrowserOpenKey(keys: Record<string, boolean>, key: string): Record
   return next;
 }
 
-// Re-derive `browserOpen` from the per-session open set and the active session.
-// Applied after every reducer pass so the convenience flag never goes stale.
-function syncBrowserOpen(state: AppState): AppState {
-  const key = activeBrowserKey(state);
-  const open = key ? Boolean(state.browserOpenKeys[key]) : false;
-  return state.browserOpen === open ? state : { ...state, browserOpen: open };
-}
-
 function closeActiveUtilityPanel(state: AppState): AppState {
   const appSessionId = state.activeAppSessionId;
   if (!appSessionId) return state;
@@ -976,14 +964,10 @@ function withoutKey<T>(
 }
 
 export function reducer(state: AppState, action: Action): AppState {
-  if (action.type === 'BATCH') {
-    return reduceStoreActionBatch(state, action.actions, reducer, syncBrowserOpen);
-  }
-  return syncBrowserOpen(baseReducer(state, action));
-}
-
-function baseReducer(state: AppState, action: Action): AppState {
   switch (action.type) {
+    case 'BATCH':
+      return reduceStoreActionBatch(state, action.actions, reducer);
+
     case 'SET_CONNECTION': {
       if (action.status === 'connected')
         return { ...state, connection: action.status, connectionError: action.message };
@@ -1147,7 +1131,7 @@ function baseReducer(state: AppState, action: Action): AppState {
         next = appendTranscriptEvent(next, seed);
       }
       if (!pending || action.session.lineage?.kind !== 'fork') return next;
-      return baseReducer(next, { type: 'SET_ACTIVE_SESSION', id: appSessionId });
+      return reducer(next, { type: 'SET_ACTIVE_SESSION', id: appSessionId });
     }
 
     case 'SHOW_SIDE_CHAT': {
@@ -1156,7 +1140,7 @@ function baseReducer(state: AppState, action: Action): AppState {
         ...state,
         sideChats: updateSideChatPanel(state.sideChats, sourceAppSessionId, { view: action.view }),
       };
-      return baseReducer(next, {
+      return reducer(next, {
         type: 'PLACE_SIDE_CHATS',
         sourceAppSessionId,
         placement: sideChatPlacementToShow(state, sourceAppSessionId),
@@ -1173,7 +1157,7 @@ function baseReducer(state: AppState, action: Action): AppState {
       };
       if (placement === 'docked') {
         if (sourceAppSessionId !== state.activeAppSessionId) return next;
-        return baseReducer(next, { type: 'OPEN_UTILITY_TOOL', tool: 'side' });
+        return reducer(next, { type: 'OPEN_UTILITY_TOOL', tool: 'side' });
       }
       return {
         ...next,
@@ -2791,7 +2775,7 @@ interface StoreContextValue {
 const StoreContext = createContext<StoreContextValue | null>(null);
 
 export function StoreProvider({ children }: { children: ReactNode }) {
-  const [state, reduceDispatch] = useReducer(reducer, initialState, syncBrowserOpen);
+  const [state, reduceDispatch] = useReducer(reducer, initialState);
   const stateRef = useRef(state);
   const listenersRef = useRef(new Set<() => void>());
   const bridgeActionBatcherRef = useRef<OrderedActionBatcher<Action> | null>(null);

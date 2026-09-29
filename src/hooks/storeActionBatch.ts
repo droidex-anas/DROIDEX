@@ -12,7 +12,6 @@ export function reduceStoreActionBatch(
   state: AppState,
   actions: readonly Action[],
   reduceAction: (state: AppState, action: Action) => AppState,
-  syncBrowserState: (state: AppState) => AppState,
 ): AppState {
   let next = state;
   let pendingTranscriptEvents: TranscriptEvent[] = [];
@@ -30,13 +29,13 @@ export function reduceStoreActionBatch(
 
   const flushTranscriptEvents = (): void => {
     if (pendingTranscriptEvents.length === 0) return;
-    apply(syncBrowserState(appendTranscriptEvents(next, pendingTranscriptEvents)));
+    apply(appendTranscriptEvents(next, pendingTranscriptEvents));
     pendingTranscriptEvents = [];
   };
 
   const flushChildren = (): void => {
     if (pendingChildren.length === 0) return;
-    apply(syncBrowserState(reduceSessionChildren(next, pendingChildren)));
+    apply(reduceSessionChildren(next, pendingChildren));
     pendingChildren = [];
   };
 
