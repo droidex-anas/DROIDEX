@@ -461,7 +461,9 @@ export class CodexSession implements ProviderSession {
       // reports its failures in the chat too rather than stopping silently.
       this.deliver([this.mapper.errorEvent(failure.error)]);
       // A retrying error is a hiccup the turn recovers from on its own.
-      if (!failure.willRetry) this.turn?.fail(failure.error);
+      if (failure.willRetry) return;
+      this.dropSteers();
+      this.turn?.fail(failure.error);
     });
     this.client.onClose((error, cleanExit) => {
       this.catalog?.close();
