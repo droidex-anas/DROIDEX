@@ -803,9 +803,10 @@ test('queued sends stay FIFO, and send-now moves a pending steer to the front', 
   await steered.lifecycle.sendNow('steered', 'steer-1');
   steerGate.resolve();
   await steerProvider.waitForPrompts(4);
-  assert.deepEqual(steerProvider.prompts, ['first', 'steer one', 'steer two', 'queued']);
+  assert.deepEqual(steerProvider.prompts, ['first', 'steer one', 'queued', 'steer two']);
   // The second send-now lands while the first interrupt is still in flight and
-  // reorders the queue instead of interrupting the turn that sends it.
+  // reorders the queue instead of interrupting the turn that sends it; the
+  // rest keeps the order it was sent in.
   assert.equal(interruptCount(steered), 1);
 });
 
@@ -964,7 +965,7 @@ test('interrupt handles idle, streaming, manual compaction, and auto-compaction 
   live.streaming = false;
   live.interrupting = false;
   live.compacting = true;
-  live.pendingSends = [{ text: 'drop' }];
+  live.pendingSends = [{ text: 'drop', order: 0 }];
   await harness.lifecycle.interrupt('stop');
   assert.equal(interruptCount(harness), 2);
   assert.deepEqual(live.pendingSends, []);
@@ -1361,7 +1362,7 @@ test('concurrent close waits for cleanup and discard overrides queue preservatio
   await provider.waitForPrompts(1);
   await new Promise<void>((resolve) => setImmediate(resolve));
   const live = requireLive(harness, 'concurrent-close');
-  live.pendingSends = [{ text: 'preserve unless user closes' }];
+  live.pendingSends = [{ text: 'preserve unless user closes', order: 0 }];
 
   const preserving = harness.lifecycle.close('concurrent-close', 'preserve-pending');
   await new Promise<void>((resolve) => setImmediate(resolve));
@@ -1550,7 +1551,7 @@ test('scheduled delivery waits outside pendingSends for turns, compaction, inter
   harness.setPendingInteractions(true);
   await busy();
   harness.setPendingInteractions(false);
-  live.pendingSends.push({ text: 'user prompt' });
+  live.pendingSends.push({ text: 'user prompt', order: 0 });
   await busy();
   assert.deepEqual(
     live.pendingSends.map((pending) => pending.text),

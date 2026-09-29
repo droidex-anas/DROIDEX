@@ -88,6 +88,8 @@ interface SessionPrompt {
   // Set on a prompt sent as a steer. It is listed as pending until the model
   // takes it in, whether the harness holds it or it waits on the queue.
   steerId?: string;
+  // When it was sent, relative to the chat's other prompts.
+  order: number;
 }
 
 interface LiveTurnState {
@@ -629,8 +631,9 @@ export class SessionLifecycle {
   }
 
   // Stops the running turn so this steer runs next. The interrupt drops every
-  // steer the harness has not delivered, so those follow it in the order they
-  // were sent. A steer the model already took in has nothing left to send.
+  // steer the harness has not delivered, so the rest of the queue follows it
+  // in the order it was sent. A steer the model already took in has nothing
+  // left to send.
   async sendNow(appSessionId: string, steerId: string): Promise<void> {
     const liveSession = this.dependencies.registry.getLive(appSessionId);
     if (!liveSession) return;
@@ -638,20 +641,27 @@ export class SessionLifecycle {
       (pending) => pending.steerId === steerId,
     );
     if (!prompt) return;
-    removePrompt(liveSession.pendingSends, prompt);
-    const dropped = liveSession.steers.splice(0).filter((steer) => steer !== prompt);
-    liveSession.pendingSends.unshift(prompt, ...dropped);
+    const rest = [...liveSession.steers.splice(0), ...liveSession.pendingSends]
+      .filter((pending) => pending !== prompt)
+      .sort((a, b) => a.order - b.order);
+    liveSession.pendingSends = [prompt, ...rest];
     this.updateQueuedSends(liveSession);
     // Compaction is never cut short, and an interrupt already in flight sends
     // the front of the queue when the turn it stops settles.
     if (
-      !liveSession.streaming ||
       liveSession.compacting ||
       liveSession.autoCompacting ||
       liveSession.interrupting ||
       liveSession.interruptingToSend
     )
       return;
+    // Nothing to stop: it runs now, as a send to an idle chat does.
+    if (!liveSession.streaming) {
+      liveSession.pendingSends.shift();
+      this.updateQueuedSends(liveSession);
+      await this.drive(appSessionId, prompt);
+      return;
+    }
     liveSession.interruptingToSend = true;
     this.dependencies.appendProgress(appSessionId, 'Stopping the turn to send now...');
     try {
@@ -695,7 +705,10 @@ export class SessionLifecycle {
     if (liveSession.compacting || liveSession.autoCompacting) return false;
     if (liveSession.summary.sessionPurpose === 'mission-control') return true;
     if (liveSession.streaming || liveSession.pendingSends.length > 0) return true;
-    void this.driveInBackground(liveSession.summary.appSessionId, { text: prompt, notice });
+    void this.driveInBackground(liveSession.summary.appSessionId, {
+      ...sessionPrompt(prompt),
+      notice,
+    });
     return true;
   }
 
@@ -1424,12 +1437,19 @@ function unsent(count: number): string {
   return count === 1 ? 'your message was' : `${String(count)} messages were`;
 }
 
+let promptOrder = 0;
+
 function sessionPrompt(
   text: string,
   mentions?: ProviderMention[],
   steerId?: string,
 ): SessionPrompt {
-  return { text, ...(mentions?.length ? { mentions } : {}), ...(steerId ? { steerId } : {}) };
+  return {
+    text,
+    ...(mentions?.length ? { mentions } : {}),
+    ...(steerId ? { steerId } : {}),
+    order: ++promptOrder,
+  };
 }
 
 // What the chat shows of its queue: how many sends wait, and which steers the
