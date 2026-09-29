@@ -586,7 +586,7 @@ export class SessionLifecycle {
     const interrupting =
       Boolean(liveSession.interrupting) || Boolean(liveSession.interruptingForSteer);
     const steered =
-      compacting || interrupting ? 'interrupt' : await this.steerTurn(liveSession, prompt);
+      compacting || interrupting ? 'interrupt' : await this.steerTurn(liveSession, prompt, stops);
     // A Stop that landed while the steer was in flight took this prompt back.
     if (steered === 'taken' || this.stopCount(requestedAppSessionId) !== stops) return;
     liveSession.pendingSends.unshift(prompt);
@@ -633,23 +633,33 @@ export class SessionLifecycle {
   // interrupt and resend, which is how every other provider steers. Steers run
   // one at a time per session: two racing sends would both aim at the turn id
   // they read before the other landed, and the loser would fall back.
-  private steerTurn(liveSession: LiveSession, prompt: SessionPrompt): Promise<SteerOutcome> {
+  private steerTurn(
+    liveSession: LiveSession,
+    prompt: SessionPrompt,
+    stops: number,
+  ): Promise<SteerOutcome> {
     if (!liveSession.session.steer) return Promise.resolve('interrupt');
     const next = (
       this.steering.get(liveSession) ?? Promise.resolve<SteerOutcome>('interrupt')
-    ).then(() => this.steerOnce(liveSession, prompt));
+    ).then(() => this.steerOnce(liveSession, prompt, stops));
     this.steering.set(liveSession, next);
     return next;
   }
 
-  private async steerOnce(liveSession: LiveSession, prompt: SessionPrompt): Promise<SteerOutcome> {
+  private async steerOnce(
+    liveSession: LiveSession,
+    prompt: SessionPrompt,
+    stops: number,
+  ): Promise<SteerOutcome> {
     const session = liveSession.session;
     const appSessionId = liveSession.summary.appSessionId;
     if (!session.steer) return 'interrupt';
     // Re-read after waiting for the steer ahead of this one: that steer may have
     // failed and started the fallback interrupt, leaving no turn to take this
-    // prompt and nothing to gain from a second one.
+    // prompt and nothing to gain from a second one. A Stop since this prompt
+    // was sent took it back, and the turn now running may be a later one.
     if (
+      this.stopCount(appSessionId) !== stops ||
       this.dependencies.registry.getLive(appSessionId) !== liveSession ||
       !liveSession.streaming ||
       liveSession.interrupting ||
