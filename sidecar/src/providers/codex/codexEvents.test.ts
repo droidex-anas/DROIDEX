@@ -155,7 +155,7 @@ test('Codex approvals retain file diffs and questions retain answer arrays', asy
       status: 'inProgress',
     },
   });
-  assert.equal(mapper.toolDetail('add')?.diff, '+hello\n+there');
+  assert.equal(mapper.toolDetail('add')?.diff, '@@ -0,0 +1,2 @@\n+hello\n+there');
   assert.equal(approvals[0].request.canAlwaysAllow, true);
   assert.match(approvals[0].request.requestId, /^req-/);
   const ask = handlers.get('item/tool/requestUserInput');

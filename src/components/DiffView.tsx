@@ -42,11 +42,20 @@ export function DiffLines({ ops }: { ops: DiffOp[] }) {
   );
 }
 
-// The rows of a change, capped so a long patch cannot take over the surface it
-// sits on, with a line saying what was left out. Shared by the transcript's
-// diff card and the approval card so both read the same way.
-export function DiffPreview({ ops, className }: { ops: DiffOp[]; className?: string }) {
-  const preview = ops.slice(0, PREVIEW_LINES);
+// The rows of a change in a box of fixed height, so a long patch cannot take
+// over the surface it sits on. Shared by the transcript's diff card and the
+// approval card so both read the same way. The transcript caps the rows and
+// says what was left out; `complete` keeps every row, reached by scrolling.
+export function DiffPreview({
+  ops,
+  className,
+  complete = false,
+}: {
+  ops: DiffOp[];
+  className?: string;
+  complete?: boolean;
+}) {
+  const preview = complete ? ops : ops.slice(0, PREVIEW_LINES);
   const more = ops.length - preview.length;
   return (
     <ToolPanel className={className}>

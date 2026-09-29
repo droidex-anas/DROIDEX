@@ -88,9 +88,10 @@ export default function PermissionInline() {
   const title = req.title && !GENERIC_TITLES.has(req.title) ? req.title : '';
   const reason = `${PROVIDER_LABELS[state.provider ?? 'droid']} ${KIND_PROMPT[req.kind]}`;
   const explanation = title ? `${reason} · ${title}` : reason;
-  // A command longer than its first line still has to be readable in full
-  // before it runs; a file change shows its diff instead.
-  const fullCommand = req.kind === 'exec' && detail.includes('\n') ? detail : '';
+  // Whatever is asked about has to be readable in full before it is allowed:
+  // a command past its first line, every file of a change, every input of a
+  // tool call.
+  const fullDetail = detail.includes('\n') ? detail : '';
   const change = req.diff ? extractFileChange('apply_patch', req.diff) : null;
 
   const respond = (outcome: PermissionOutcome) => {
@@ -127,17 +128,18 @@ export default function PermissionInline() {
           </div>
         </div>
 
-        {fullCommand && (
+        {fullDetail && (
           <div className="px-4 pb-3">
             <div className="max-h-32 overflow-y-auto rounded-xl border border-droid-border/70 bg-droid-bg/50 px-3.5 py-2.5 text-[13px] leading-relaxed">
-              <span className="whitespace-pre-wrap break-words text-droid-text">{fullCommand}</span>
+              <span className="whitespace-pre-wrap break-words text-droid-text">{fullDetail}</span>
             </div>
           </div>
         )}
 
         {change && (
           <div className="px-4 pb-3">
-            <DiffPreview ops={change.ops} />
+            {/* Every line, in the same box: allowing it agrees to all of it. */}
+            <DiffPreview ops={change.ops} complete />
           </div>
         )}
 

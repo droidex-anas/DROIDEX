@@ -41,3 +41,15 @@ test('falls back to "file" when no path is present anywhere', () => {
   const change = extractFileChange('apply_patch', { patch: '-old\n+new' });
   assert.equal(change?.path, 'file');
 });
+
+test('a line inside a hunk is content even when it reads like a header', () => {
+  const patch = ['@@ -0,0 +1,2 @@', '+++counter;', '+--x;'].join('\n');
+  const change = extractFileChange('apply_patch', { patch });
+  assert.deepEqual(
+    change?.ops.map((op) => [op.type, op.text]),
+    [
+      ['add', '++counter;'],
+      ['add', '--x;'],
+    ],
+  );
+});

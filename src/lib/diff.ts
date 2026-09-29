@@ -152,18 +152,31 @@ function pathFromPatch(patch: string): string | undefined {
   return fromOld;
 }
 
+// Header lines name files and hunks; every other line is content. Inside a
+// hunk a line is content even when it reads like a header: an added "++i"
+// arrives as "+++i".
 function parsePatch(patch: string): DiffOp[] {
   const ops: DiffOp[] = [];
-  for (const line of patch.split('\n')) {
-    if (
-      line.startsWith('+++') ||
-      line.startsWith('---') ||
-      line.startsWith('@@') ||
-      line.startsWith('diff ') ||
-      line.startsWith('index ') ||
-      line.startsWith('*** ')
-    )
+  const lines = patch.split('\n');
+  let inHunk = false;
+  for (let index = 0; index < lines.length; index += 1) {
+    const line = lines[index];
+    if (line.startsWith('@@')) {
+      inHunk = true;
       continue;
+    }
+    // A file header is a "--- " line directly over a "+++ " line.
+    if (line.startsWith('--- ') && lines.at(index + 1)?.startsWith('+++ ')) {
+      index += 1;
+      inHunk = false;
+      continue;
+    }
+    if (line.startsWith('diff ') || line.startsWith('*** ')) {
+      // An added file's lines follow its apply_patch header without a hunk.
+      inHunk = line.startsWith('*** Add File:');
+      continue;
+    }
+    if (!inHunk && /^(index |\+\+\+ |--- )/.test(line)) continue;
     if (line.startsWith('+')) ops.push({ type: 'add', text: line.slice(1) });
     else if (line.startsWith('-')) ops.push({ type: 'del', text: line.slice(1) });
     else ops.push({ type: 'ctx', text: line.startsWith(' ') ? line.slice(1) : line });

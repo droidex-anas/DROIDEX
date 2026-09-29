@@ -224,17 +224,16 @@ export function patchText(changes: FileUpdateChange[]): string {
 
 // The changes as a diff a person can read. Codex sends a unified diff for a
 // file it updates and the bare content for one it adds or deletes, so those
-// lines are marked here the way a diff would mark them.
+// become one hunk each, the way a diff would show them.
 export function changesDiff(changes: FileUpdateChange[]): string {
   return changes
     .map((change) => {
-      const sign = { add: '+', delete: '-' }[change.kind.type];
-      if (!sign) return change.diff;
-      return change.diff
-        .replace(/\n$/, '')
-        .split('\n')
-        .map((line) => sign + line)
-        .join('\n');
+      const added = change.kind.type === 'add';
+      if (!added && change.kind.type !== 'delete') return change.diff;
+      const lines = change.diff.replace(/\n$/, '').split('\n');
+      const count = String(lines.length);
+      const hunk = added ? `@@ -0,0 +1,${count} @@` : `@@ -1,${count} +0,0 @@`;
+      return [hunk, ...lines.map((line) => (added ? '+' : '-') + line)].join('\n');
     })
     .join('\n');
 }
