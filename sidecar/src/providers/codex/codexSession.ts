@@ -519,9 +519,9 @@ export class CodexSession implements ProviderSession {
 
   // The echo of a steered message is the moment the model took it in.
   private settleDeliveredSteer(params: unknown): void {
-    const { item } = params as { item?: { type?: unknown; clientId?: unknown } };
-    if (item?.type === 'userMessage' && typeof item.clientId === 'string')
-      this.settleSteer(item.clientId, true);
+    if (!isObject(params) || !isObject(params.item)) return;
+    const { type, clientId } = params.item;
+    if (type === 'userMessage' && typeof clientId === 'string') this.settleSteer(clientId, true);
   }
 
   private settle(turn: CodexTurn): void {
