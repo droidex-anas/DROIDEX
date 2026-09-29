@@ -150,9 +150,9 @@ export class SessionForks {
     // scrollback is DROIDEX's transcript file, which is copied beside it.
     let transcript = null;
     if (source.provider !== 'droid') {
-      this.requireUnchanged(source);
+      this.requireUnchanged(source, live);
       const stored = await this.d.readTranscript(source.appSessionId);
-      this.requireUnchanged(source);
+      this.requireUnchanged(source, live);
       transcript = forkedTranscript(source.appSessionId, stored, command.forkPointId);
     }
     const appSessionId = handle.providerSessionId;
@@ -163,7 +163,7 @@ export class SessionForks {
         title: command.title,
         ...(handle.resumeId ? { resumeId: handle.resumeId } : {}),
         ...(handle.forkPointRenames ? { forkPointRenames: handle.forkPointRenames } : {}),
-        dropContextWindow: command.modelId !== undefined,
+        dropContextWindow: changesModel(command, source),
       }),
     };
     // Recorded before the copy is indexed, so the list that indexing publishes
@@ -217,12 +217,14 @@ export class SessionForks {
 
   // The provider's copy was taken across an await: a source that closed, was
   // replaced or started a turn meanwhile would pair it with a transcript it
-  // never had.
-  private requireUnchanged(source: SessionSummary): void {
+  // never had. A relaunch on a new context window keeps the provider session
+  // and replaces the runtime, so the runtime itself is compared too.
+  private requireUnchanged(source: SessionSummary, runtime: unknown): void {
     const current = this.d.registry.resolveSummary(source.appSessionId);
     if (
       this.d.isShutdownStarted() ||
       current?.providerSessionId !== source.providerSessionId ||
+      this.d.registry.getLive(source.appSessionId) !== runtime ||
       this.isStreaming(source)
     ) {
       throw new Error('The chat changed while it was being copied. Try again.');
@@ -232,6 +234,11 @@ export class SessionForks {
   // A chat opened this run is indexed only once it closes, so a missing
   // transcript is looked for on disk before the branch gives up.
   private async sourceConversation(source: SessionSummary): Promise<string> {
+    // Lines the source's writer still has queued are part of the conversation;
+    // the read waits for them. A missing or unreadable file is found out by
+    // the stored read below.
+    if (source.provider !== 'droid')
+      await this.d.readTranscript(source.appSessionId).catch(() => undefined);
     let events = storedEvents(source);
     if (events.length === 0) {
       await this.d.indexSessionFiles(null);
@@ -278,10 +285,15 @@ function modelSettings(command: SessionForkCommand, source: SessionSummary): Ses
 function chatPreferences(command: SessionForkCommand, source: SessionSummary): SessionSummaryPatch {
   return {
     ...(source.fastMode !== undefined ? { fastMode: source.fastMode } : {}),
-    ...(!command.modelId && source.contextWindowTokens !== undefined
+    ...(!changesModel(command, source) && source.contextWindowTokens !== undefined
       ? { contextWindowTokens: source.contextWindowTokens }
       : {}),
   };
+}
+
+// The side chat picker sends the source's own model when it is left alone.
+function changesModel(command: SessionForkCommand, source: SessionSummary): boolean {
+  return command.modelId !== undefined && command.modelId !== source.modelId;
 }
 
 // Another harness cannot run the source's model; without a pick it starts on its own default.

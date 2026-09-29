@@ -262,6 +262,26 @@ test('a same-harness side chat takes its question as the first message after the
   assert.equal(event.session.contextWindowTokens, undefined);
 });
 
+test('a side chat left on the source model keeps its window', async (t) => {
+  const h = harness({ contextWindowTokens: 1000000 });
+  t.after(h.cleanup);
+
+  // The picker sends the source's model when the user leaves it alone.
+  await h.forks.fork({
+    type: 'session.fork',
+    clientRef: 'ref-5',
+    appSessionId: 'source',
+    lineage: 'side',
+    title: 'Side chat',
+    prompt: 'And the rollback?',
+    modelId: 'claude-opus',
+  });
+
+  const [event] = h.events;
+  if (event.type !== 'session.forked') return assert.fail('expected session.forked');
+  assert.equal(event.session.contextWindowTokens, 1000000);
+});
+
 test('a chat with a turn in progress is not forked', async (t) => {
   const h = harness({ streaming: true });
   t.after(h.cleanup);
