@@ -554,6 +554,8 @@ export class SessionLifecycle {
     const prompt = sessionPrompt(text, mentions);
     const admitted = await this.admitPrompt(requestedAppSessionId, prompt);
     if (!admitted) return;
+    // A Stop can land between admission and this line.
+    if (this.stopCount(requestedAppSessionId) !== admitted.stops) return;
     const { liveSession } = admitted;
     if (liveSession.streaming || liveSession.compacting || liveSession.autoCompacting) {
       liveSession.pendingSends.push(prompt);
@@ -570,6 +572,8 @@ export class SessionLifecycle {
     const prompt = sessionPrompt(text, mentions);
     const admitted = await this.admitPrompt(requestedAppSessionId, prompt);
     if (!admitted) return;
+    // A Stop can land between admission and this line.
+    if (this.stopCount(requestedAppSessionId) !== admitted.stops) return;
     const { liveSession, stops } = admitted;
     if (!liveSession.streaming && !liveSession.compacting && !liveSession.autoCompacting) {
       await this.drive(liveSession.summary.appSessionId, prompt);
@@ -608,7 +612,8 @@ export class SessionLifecycle {
 
   // Where a prompt the user sent goes: the live session to send it to, or
   // nowhere, because a Stop took it back or it now waits for a chat that is
-  // relaunching. A relaunch can begin while the send is being prepared.
+  // relaunching. A relaunch can begin while the send is being prepared. The
+  // caller checks the Stop count again once this resolves.
   private async admitPrompt(
     id: string,
     prompt: SessionPrompt,
@@ -1352,15 +1357,18 @@ export class SessionLifecycle {
     }
     // From here to the turn nothing yields: a send that arrives later finds a
     // chat that is streaming and queues behind it.
-    if (waiting.length === 0) return;
-    const [first, ...rest] = waiting;
     if (!liveSession || liveSession.closeMode) {
+      // Said even when a Stop took every message back: the runtime is still
+      // the stale one.
+      const lost = waiting.length > 0 ? `, so ${unsent(waiting.length)} not sent` : '';
       d.emitError({
         appSessionId,
-        message: `The chat could not restart on its new context window${reason}, so ${unsent(waiting.length)} not sent.`,
+        message: `The chat could not restart on its new context window${reason}${lost}.`,
       });
       return;
     }
+    if (waiting.length === 0) return;
+    const [first, ...rest] = waiting;
     liveSession.pendingSends.unshift(...(liveSession.streaming ? waiting : rest));
     if (liveSession.streaming) this.updateQueuedSends(liveSession);
     else if (liveSession.restartBeforeNextTurn) await this.relaunch(liveSession, first);

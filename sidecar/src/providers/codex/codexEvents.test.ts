@@ -220,7 +220,7 @@ test('edits-only checks workspace paths and keeps the running turn permission sn
           id: itemId,
           status: 'inProgress',
           changes: [
-            { path, kind: { type: 'update', ...(movePath ? { movePath } : {}) }, diff: '+ edit' },
+            { path, kind: { type: 'update', move_path: movePath ?? null }, diff: '+ edit' },
           ],
         },
       });
@@ -240,6 +240,7 @@ test('edits-only checks workspace paths and keeps the running turn permission sn
       '.codex/config.toml',
       '.agents/rules',
       'escape/file',
+      'escape/../beside-the-workspace',
       'dangling',
     ]) {
       assert.deepEqual(await approval(path), { decision: 'cancel' });
@@ -252,7 +253,7 @@ test('edits-only checks workspace paths and keeps the running turn permission sn
       }),
       { decision: 'cancel' },
     );
-    assert.equal(asked, 8);
+    assert.equal(asked, 9);
     await stream.return(undefined);
     const nextStarted = new Promise<void>((resolve) => {
       markStarted = resolve;
