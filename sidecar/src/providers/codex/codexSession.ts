@@ -299,25 +299,27 @@ export class CodexSession implements ProviderSession {
   // server's own precondition, so a steer aimed at a turn that has already
   // settled is refused rather than applied to whatever runs now. A steer keeps
   // the turn's id, so Stop still reaches the same turn.
-  async steer(text: string, mentions?: ProviderMention[]): Promise<boolean> {
+  steer(text: string, mentions?: ProviderMention[]): Promise<boolean> {
     const threadId = this.threadId;
     // A turn started for a spoken request takes a typed prompt the same way.
     const turnId = this.turn ? this.turnId : this.delegatedTurnId;
-    if (!threadId || !turnId) return false;
+    if (!threadId || !turnId) return Promise.resolve(false);
     const clientUserMessageId = randomUUID();
     const delivered = new Promise<boolean>((resolve) => {
       this.steers.set(clientUserMessageId, resolve);
     });
-    try {
-      await this.client.request('turn/steer', {
+    // Not awaited: the echo can arrive before the reply, and the caller must
+    // hear of delivery the moment it happens.
+    void this.client
+      .request('turn/steer', {
         threadId,
         expectedTurnId: turnId,
         clientUserMessageId,
         input: turnInput(text, mentions),
+      })
+      .catch(() => {
+        this.settleSteer(clientUserMessageId, false);
       });
-    } catch {
-      this.settleSteer(clientUserMessageId, false);
-    }
     return delivered;
   }
 
