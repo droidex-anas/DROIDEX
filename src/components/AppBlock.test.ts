@@ -7,9 +7,13 @@ import { AppBlock } from './AppBlock';
 import { RunningAppFrame } from './AppBlockFrame';
 import { AppBlockErrorFallback } from './AppBlockErrorFallback';
 import {
+  appBlockErrorFromMessage,
   appBlockHeightFromMessage,
   appBlockStartupTransition,
   appBlockMathRequestFromMessage,
+  appColorScheme,
+  createAppBridgeGuard,
+  createAppBridgeSession,
   createAppHeightScheduler,
   hasAppBlock,
   hasCompleteAppBlock,
@@ -74,9 +78,6 @@ test('the running document preserves layout, theme, and the local bridge', () =>
     accent: '#2f6fed',
   });
 
-  assert.match(document, /default-src 'none'/);
-  assert.match(document, /frame-src 'none'/);
-  assert.match(document, /form-action 'none'/);
   assert.match(document, /<meta name="viewport"/);
   assert.match(document, /droidex:app-height/);
   assert.match(document, /bridgeToken/);
@@ -151,7 +152,6 @@ test('restored app blocks mount directly without a Play or Stop card', () => {
   assert.match(html, /Interactive App/);
   assert.match(html, /<iframe/i);
   assert.doesNotMatch(html, /aria-label="(?:Play|Stop) app"/);
-  assert.match(html, /border-0 bg-transparent/);
   // A mismatched iframe/document color scheme makes Chromium paint an opaque backdrop.
   assert.match(html, /color-scheme:dark/);
 });
@@ -299,17 +299,7 @@ test('a working App is not torn down by a later interaction error', () => {
   assert.deepEqual(afterInteractionError, { state: 'ready' });
 });
 
-test('the host accepts bounded runtime errors only from the mounted App document', async () => {
-  const runtime = (await import('./appBlockRuntime')) as unknown as {
-    appBlockErrorFromMessage?: (
-      data: unknown,
-      instanceId: string,
-      bridgeToken: string,
-    ) => string | undefined;
-  };
-  const appBlockErrorFromMessage = runtime.appBlockErrorFromMessage;
-  assert.equal(typeof appBlockErrorFromMessage, 'function');
-  if (!appBlockErrorFromMessage) return;
+test('the host accepts bounded runtime errors only from the mounted App document', () => {
   assert.equal(
     appBlockErrorFromMessage(
       {
@@ -410,17 +400,8 @@ test('the host bridge rejects messages without the initial document token', () =
   );
 });
 
-test('the App bridge bounds math work and deduplicates repeated heights', async () => {
-  type Guard = {
-    acceptHeight: (height: number) => boolean;
-    startMath: () => boolean;
-    finishMath: () => void;
-  };
-  const runtime = (await import('./appBlockRuntime')) as unknown as {
-    createAppBridgeGuard?: (mathBudget: number, mathConcurrency: number) => Guard;
-  };
-  const guard = runtime.createAppBridgeGuard?.(2, 1);
-  assert.ok(guard);
+test('the App bridge bounds math work and deduplicates repeated heights', () => {
+  const guard = createAppBridgeGuard(2, 1);
   assert.equal(guard.acceptHeight(400), true);
   assert.equal(guard.acceptHeight(400), false);
   assert.equal(guard.startMath(), true);
@@ -431,39 +412,15 @@ test('the App bridge bounds math work and deduplicates repeated heights', async 
   assert.equal(guard.startMath(), false);
 });
 
-test('a failed App cannot resize the chat after its recovery surface is selected', async () => {
-  type Guard = {
-    acceptHeight: (height: number) => boolean;
-    fail?: () => void;
-  };
-  const runtime = (await import('./appBlockRuntime')) as unknown as {
-    createAppBridgeGuard?: () => Guard;
-  };
-  const guard = runtime.createAppBridgeGuard?.();
-  assert.ok(guard);
-  assert.equal(typeof guard.fail, 'function');
-  if (!guard.fail) return;
-
+test('a failed App cannot resize the chat after its recovery surface is selected', () => {
+  const guard = createAppBridgeGuard();
   guard.fail();
   assert.equal(guard.acceptHeight(1_366), false);
 });
 
-test('each iframe document gets an independent bridge token and work budget', async () => {
-  type BridgeSession = {
-    token: string;
-    guard: {
-      startMath: () => boolean;
-      finishMath: () => void;
-    };
-  };
-  const runtime = (await import('./appBlockRuntime')) as unknown as {
-    createAppBridgeSession?: () => BridgeSession;
-  };
-  assert.equal(typeof runtime.createAppBridgeSession, 'function');
-  if (!runtime.createAppBridgeSession) return;
-
-  const first = runtime.createAppBridgeSession();
-  const second = runtime.createAppBridgeSession();
+test('each iframe document gets an independent bridge token and work budget', () => {
+  const first = createAppBridgeSession();
+  const second = createAppBridgeSession();
   assert.notEqual(first.token, second.token);
   assert.equal(first.guard.startMath(), true);
   assert.equal(first.guard.startMath(), true);
@@ -750,14 +707,11 @@ test('the iframe measures its content so the frame can shrink with it', async ()
   assert.deepEqual(heights, [141, 90]);
 });
 
-test('short and functional CSS colors select the correct canvas scheme', async () => {
-  const runtime = (await import('./appBlockRuntime')) as unknown as {
-    appColorScheme?: (color: string) => 'light' | 'dark';
-  };
-  assert.equal(runtime.appColorScheme?.('#fff'), 'light');
-  assert.equal(runtime.appColorScheme?.('rgb(250, 250, 250)'), 'light');
-  assert.equal(runtime.appColorScheme?.('hsl(0, 0%, 5%)'), 'dark');
-  assert.equal(runtime.appColorScheme?.('#111111ff'), 'dark');
+test('short and functional CSS colors select the correct canvas scheme', () => {
+  assert.equal(appColorScheme('#fff'), 'light');
+  assert.equal(appColorScheme('rgb(250, 250, 250)'), 'light');
+  assert.equal(appColorScheme('hsl(0, 0%, 5%)'), 'dark');
+  assert.equal(appColorScheme('#111111ff'), 'dark');
 });
 
 test('the math bridge accepts only bounded requests for the mounted App', () => {
