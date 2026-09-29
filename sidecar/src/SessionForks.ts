@@ -218,12 +218,14 @@ export class SessionForks {
   // The provider's copy was taken across an await: a source that closed, was
   // replaced or started a turn meanwhile would pair it with a transcript it
   // never had. A relaunch on a new context window keeps the provider session
-  // and replaces the runtime, so the runtime itself is compared too.
+  // and replaces the runtime, so the runtime itself is compared too, and a
+  // turn that started and finished meanwhile moved the chat's activity time.
   private requireUnchanged(source: SessionSummary, runtime: unknown): void {
     const current = this.d.registry.resolveSummary(source.appSessionId);
     if (
       this.d.isShutdownStarted() ||
       current?.providerSessionId !== source.providerSessionId ||
+      current?.updatedAt !== source.updatedAt ||
       this.d.registry.getLive(source.appSessionId) !== runtime ||
       this.isStreaming(source)
     ) {
