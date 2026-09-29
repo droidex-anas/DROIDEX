@@ -159,6 +159,39 @@ test('side chats are shown in one place: floating takes them out of the utility 
   assert.ok(state.utilityPanels['source']?.tabs.some((tab) => tab.tool === 'side'));
 });
 
+test('a new side chat opens where Settings says, and an open one stays where it is', () => {
+  const floatingByDefault: AppState = { ...withSource(), sideChatDefaultPlacement: 'floating' };
+  let state = startSideChat(floatingByDefault, 'ref-7', 'Pop this out');
+  assert.equal(state.sideChats['source']?.placement, 'floating');
+  assert.equal(
+    state.utilityPanels['source']?.tabs.some((tab) => tab.tool === 'side') ?? false,
+    false,
+  );
+
+  state = reducer(state, {
+    type: 'SESSION_FORKED',
+    clientRef: 'ref-7',
+    session: sessionSummary('side-7', { lineage: sideLineage }),
+  });
+  state = reducer(state, {
+    type: 'PLACE_SIDE_CHATS',
+    sourceAppSessionId: 'source',
+    placement: 'docked',
+  });
+  state = reducer(state, {
+    type: 'CLOSE_UTILITY_TAB',
+    tabId: state.utilityPanels['source']?.activeTabId ?? '',
+  });
+  // Docked by hand and only its tab closed: asking again brings the tab back.
+  state = reducer(state, {
+    type: 'SHOW_SIDE_CHAT',
+    sourceAppSessionId: 'source',
+    view: { kind: 'current' },
+  });
+  assert.equal(state.sideChats['source']?.placement, 'docked');
+  assert.ok(state.utilityPanels['source']?.tabs.some((tab) => tab.tool === 'side'));
+});
+
 test('closing a side chat deletes it, so the next question starts a fresh one', () => {
   let state = startSideChat(withSource(), 'ref-6', 'First question');
   state = reducer(state, {

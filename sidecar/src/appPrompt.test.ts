@@ -29,101 +29,34 @@ test('hasAppFence recognizes the App answer shape the guidance asks for', () => 
   assert.equal(hasAppFence('no fences here at all'), false);
 });
 
-test('formatAppPrompt keeps the request recoverable and adds broad internal App guidance', () => {
+// The guidance is prose the model reads; only the names the host implements
+// are a contract, so a rewording must not break this test but a renamed API must.
+test('App guidance names the host APIs, attributes, and approved hosts the runtime provides', () => {
   const prompt = formatAppPrompt('/visualize compare renderer timings', 'create');
 
-  assert.match(prompt, /^DROIDEX App request:/);
-  assert.match(prompt, /\/visualize compare renderer timings/);
-  assert.match(prompt, /chart, diagram, timeline, calculator, simulator/);
+  assert.match(prompt, /^DROIDEX App request:\n\/visualize compare renderer timings\n/);
   assert.match(prompt, /fenced `app` block/);
-  assert.match(prompt, /--app-background/);
-  assert.match(prompt, /transparent chat canvas/);
-  assert.match(prompt, /transparent by default/);
-  assert.match(prompt, /invisible layout container, not a card/);
-  assert.match(prompt, /chat background shows through the gaps/);
-  assert.match(prompt, /multiple independent sections/);
-  assert.match(prompt, /Do not add a whole-App background or enclosing card unless/);
-  assert.match(prompt, /Style individual sections/);
-  assert.match(prompt, /Avoid accidental hard black or white page slabs/);
-  assert.doesNotMatch(prompt, /keep that region transparent and unframed/);
-  assert.match(prompt, /data-droidex-app-root/);
-  assert.match(prompt, /no outer max-width or page padding/);
-  assert.match(prompt, /host preserves author padding, radius, and shadows/);
-  assert.match(prompt, /data-latex/);
-  assert.match(prompt, /window\.droidex\.renderMath/);
-  assert.match(prompt, /responsive SVG/);
-  assert.match(prompt, /bar, line, area, scatter, bubble/);
-  assert.match(prompt, /mixed views/);
-  assert.match(prompt, /color-blind-safe/);
-  assert.match(prompt, /palette or series-color controls/);
-  assert.match(prompt, /illustrations, annotated processes, infographics/);
-  assert.match(prompt, /visual, inspector, controls, and explanation/);
-  assert.match(prompt, /hover, click, touch, and keyboard/);
-  assert.match(prompt, /Never clip axis titles, tick labels, legends, or annotations/);
-  assert.match(prompt, /wireframes/);
-  assert.match(prompt, /do not request arbitrary APIs, localhost services, or local files/);
-  assert.match(prompt, /verify that every inline script parses/);
-  assert.match(prompt, /SVG or Canvas initialization runs without errors/);
-});
-
-test('App guidance allows approved fonts and components without promising desktop access', () => {
-  for (const mode of ['create', 'followup'] as const) {
-    const prompt = formatAppPrompt('Build a dashboard with custom fonts and cards', mode);
-    assert.match(prompt, /https:\/\/fonts\.googleapis\.com/);
-    assert.match(prompt, /https:\/\/fonts\.gstatic\.com/);
-    assert.match(prompt, /display=swap/);
-    assert.match(prompt, /Declare exactly the family you load/);
-    assert.match(prompt, /tabular-nums, not a monospace font/);
-    assert.match(prompt, /https:\/\/cdn\.jsdelivr\.net/);
-    assert.match(prompt, /https:\/\/cdnjs\.cloudflare\.com/);
-    assert.match(prompt, /Pin package versions/);
-    assert.match(prompt, /crossorigin="anonymous"/);
-    assert.match(prompt, /other network destinations are blocked/);
-    assert.match(prompt, /useful if an external asset fails/);
-    assert.match(prompt, /never put private chat data or credentials/);
-    assert.match(prompt, /no nested frames, storage, popups, parent-document access/);
-    assert.match(prompt, /Do not use eval, new Function/);
-    assert.doesNotMatch(prompt, /Do not use network requests, external libraries/);
-  }
-});
-
-test('App guidance documents the live local drawing contract and its lifecycle', () => {
-  for (const mode of ['create', 'followup'] as const) {
-    const prompt = formatAppPrompt('Chart the results', mode);
-    assert.match(
-      prompt,
-      /window\.droidex\.createCanvas\("#plot", \(\{ context, width, height, theme \}\)/,
-    );
-    assert.match(prompt, /plot\.redraw\(\)/);
-    assert.match(prompt, /plot\.dispose\(\)/);
-    assert.match(prompt, /window\.droidex\.theme/);
-    assert.match(prompt, /droidex:themechange.*event\.detail/);
-    assert.match(prompt, /ephemeral across virtualizer remounts/);
-    assert.match(prompt, /do not use vh sizing or min-height: 100vh/);
-    assert.match(prompt, /keyboard-accessible/);
-    assert.match(prompt, /prefers-reduced-motion/);
-    assert.match(prompt, /do not use endless animation loops or polling/);
-    assert.match(prompt, /pagehide/);
-  }
-});
-
-test('App guidance offers math and visualization tools that fit the sandbox', () => {
-  for (const mode of ['create', 'followup'] as const) {
-    const prompt = formatAppPrompt('Explain the equations with charts and a flowchart', mode);
-    assert.match(prompt, /local KaTeX rendering, with no CDN required/);
-    assert.match(prompt, /window\.droidex\.renderAllMath\(container\)/);
-    assert.match(prompt, /String\.raw`\\frac\{a\}\{b\}`/);
-    assert.match(prompt, /not full LaTeX documents or TikZ/);
-    assert.match(prompt, /Chart\.js/);
-    assert.match(prompt, /Apache ECharts/);
-    assert.match(prompt, /D3 for custom scales/);
-    assert.match(prompt, /Avoid d3\.csvParse and d3\.tsvParse/);
-    assert.match(prompt, /Mermaid for flowcharts/);
-    assert.match(prompt, /securityLevel: "strict"/);
-    assert.match(prompt, /do not attach window\.droidex\.createCanvas to a canvas already owned/);
-    assert.match(prompt, /Disconnect ResizeObservers/);
-    assert.match(prompt, /fallback on failure/);
-    assert.doesNotMatch(prompt, /Build standard charts directly/);
+  for (const name of [
+    'data-droidex-app-root',
+    'data-latex',
+    'data-display',
+    'window.droidex.renderMath',
+    'window.droidex.renderAllMath',
+    'window.droidex.createCanvas',
+    'window.droidex.theme',
+    'droidex:themechange',
+    '--app-background',
+    '--app-surface',
+    '--app-foreground',
+    '--app-muted',
+    '--app-border',
+    '--app-accent',
+    'https://fonts.googleapis.com',
+    'https://fonts.gstatic.com',
+    'https://cdn.jsdelivr.net',
+    'https://cdnjs.cloudflare.com',
+  ]) {
+    assert.ok(prompt.includes(name), `guidance should name ${name}`);
   }
 });
 
