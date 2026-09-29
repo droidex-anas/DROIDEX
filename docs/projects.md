@@ -56,8 +56,12 @@ with `workspaceOf`, so it reads the work where it was done.
 **Projects** lists every local project with what it is doing. Opening a row
 opens the conversation that leads it with its Threads panel already beside it;
 the chevron opens the project inside the Projects view instead, where its plan,
-threads and held state live. **New project** starts one from a goal and is the
-only place that asks for a harness, model and autonomy.
+threads and held state live. **New project** opens the new-chat screen in project
+mode: the same composer, with its folder, worktree, harness, model and autonomy,
+whose first message starts the project's main chat instead of an ordinary one.
+On Codex the orb starts one by voice: its main chat opens on a turn that asks
+for the goal, and the conversation opens on that chat. A project shows its main
+chat's current name, so one started by voice is named from what was said.
 
 ## How a project works
 
