@@ -696,7 +696,7 @@ export type Action =
       settings: PendingModelSettings;
     }
   | { type: 'MODEL_UPDATE_SETTLED'; appSessionId: string; requestId: string }
-  // The bridge restarted from a snapshot: no pending change will be answered.
+  // The sidecar was replaced: nothing it was working on will be answered.
   | { type: 'MODEL_UPDATES_UNANSWERED' };
 
 // Loaded once at module scope so the theme loader can match saved colors
@@ -2679,12 +2679,12 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       batcher.pushBridgeBatch(actions);
     });
     // Queued ahead of the snapshot's own events, through the same batcher.
-    const unsubSnapshot = bridge.subscribeSnapshot(() => {
+    const unsubReplaced = bridge.subscribeRuntimeReplaced(() => {
       batcher.pushBridgeBatch([{ type: 'MODEL_UPDATES_UNANSWERED' }]);
     });
     return () => {
       unsub();
-      unsubSnapshot();
+      unsubReplaced();
       // StrictMode remounts this effect in dev; deliver anything in flight so
       // no event is lost across the resubscribe.
       batcher.dispose();
