@@ -1,10 +1,11 @@
 import { normalizeAppIconMode, type AppIconMode } from '../lib/appIcon';
 import {
+  DEFAULT_THEME,
   DEFAULT_THEME_ID,
   detectPresetId,
   findPreset,
-  migrateLegacyLightPreset,
   parseCustomThemes,
+  readThemeColors,
   resolveVariant,
   type ThemePreset,
 } from '../lib/theme';
@@ -34,11 +35,7 @@ const defaultTheme: ThemeConfig = {
   mode: 'dark',
   appIconMode: 'system',
   presetId: DEFAULT_THEME_ID,
-  accent: '#f2f2f2',
-  bg: '#0a0a0a',
-  fg: '#ededed',
-  surface: '#111111',
-  border: '#1f1f1f',
+  ...DEFAULT_THEME.dark,
   uiFont: 'system',
   uiFontSize: 14,
   codeFontSize: 12,
@@ -47,33 +44,21 @@ const defaultTheme: ThemeConfig = {
   contrast: 100,
 };
 
+const THEME_STORAGE_KEY = 'droid-theme';
+const CUSTOM_THEMES_STORAGE_KEY = 'droid-theme-presets';
+
 function getLocalStorage(): Storage | undefined {
   if (typeof window !== 'undefined') return window.localStorage;
   const descriptor = Object.getOwnPropertyDescriptor(globalThis, 'localStorage');
   return descriptor && 'value' in descriptor ? (descriptor.value as Storage) : undefined;
 }
 
-// Accents that shipped as the old fixed-orange default. A saved theme still
-// carrying one of these was never deliberately colored by the user, so migrate
-// it to a theme-matched neutral and let the monochrome scale show through.
-const LEGACY_DEFAULT_ACCENTS = new Set(['#ee6018', '#ff5d2e']);
-const THEME_ACCENT_MIGRATED_KEY = 'droid-theme-accent-migrated';
-const THEME_LIGHT_PRESET_MIGRATED_KEY = 'droid-theme-light-preset-migrated';
-
-function neutralAccentFor(bg: string): string {
-  const r = parseInt(bg.slice(1, 3), 16);
-  const g = parseInt(bg.slice(3, 5), 16);
-  const b = parseInt(bg.slice(5, 7), 16);
-  const lum = (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255;
-  return Number.isFinite(lum) && lum >= 0.4 ? '#1a1a1a' : '#f2f2f2';
-}
-
+// 'symbol' is the focused style's earlier name. Loading never rewrites the
+// saved theme, so a theme saved before the rename still carries it.
 export function normalizeDiffStyle(value: unknown): DiffStyle {
   if (value === 'focused' || value === 'symbol') return 'focused';
   return 'soft';
 }
-
-const CUSTOM_THEMES_STORAGE_KEY = 'droid-theme-presets';
 
 export function loadCustomThemes(): ThemePreset[] {
   try {
@@ -92,86 +77,50 @@ export function persistCustomThemes(presets: ThemePreset[]): void {
   getLocalStorage()?.setItem(CUSTOM_THEMES_STORAGE_KEY, JSON.stringify(presets));
 }
 
-// One-time migration: a saved accent still carrying an old fixed-orange
-// default was never deliberately chosen, so neutralize it once. Keying off a
-// persisted flag (not the accent value) lets a user later pick that same
-// orange from the preset palette and have the choice stick across reloads.
-function migrateLegacyAccent(storage: Storage, saved: string | null, theme: ThemeConfig): void {
-  if (storage.getItem(THEME_ACCENT_MIGRATED_KEY) === '1') return;
-  // Migration writes are isolated so a storage failure (quota/restricted)
-  // never discards the theme we already parsed successfully above.
+function readSavedTheme(): Record<string, unknown> | null {
   try {
-    if (saved && LEGACY_DEFAULT_ACCENTS.has(theme.accent.toLowerCase())) {
-      theme.accent = neutralAccentFor(theme.bg);
-      storage.setItem('droid-theme', JSON.stringify(theme));
-    }
-    storage.setItem(THEME_ACCENT_MIGRATED_KEY, '1');
+    const saved: unknown = JSON.parse(getLocalStorage()?.getItem(THEME_STORAGE_KEY) ?? 'null');
+    return saved && typeof saved === 'object' ? (saved as Record<string, unknown>) : null;
   } catch {
-    /* migration write failed; retry on a later load */
+    return null;
   }
 }
 
-// One-time migration: a saved theme still matching the old white-on-white
-// light preset exactly was never customized, so swap it to the readable
-// warm-grey palette. Same persisted-flag pattern as the accent migration.
-function migrateLegacyLight(storage: Storage, saved: string | null, theme: ThemeConfig): void {
-  if (storage.getItem(THEME_LIGHT_PRESET_MIGRATED_KEY) === '1') return;
-  try {
-    if (saved) {
-      const migrated = migrateLegacyLightPreset(theme);
-      if (migrated !== theme) {
-        theme.bg = migrated.bg;
-        theme.fg = migrated.fg;
-        theme.surface = migrated.surface;
-        theme.border = migrated.border;
-        theme.accent = migrated.accent;
-        storage.setItem('droid-theme', JSON.stringify(theme));
-      }
-    }
-    storage.setItem(THEME_LIGHT_PRESET_MIGRATED_KEY, '1');
-  } catch {
-    /* migration write failed; retry on a later load */
-  }
-}
-
+// A field this version cannot read falls back to its default; a record that is
+// not an object at all falls back to the default theme.
 export function loadTheme(customThemes: ThemePreset[]): ThemeConfig {
-  try {
-    const storage = getLocalStorage();
-    const saved = storage?.getItem('droid-theme') ?? null;
-    const parsed: unknown = saved ? JSON.parse(saved) : null;
-    const theme =
-      parsed && typeof parsed === 'object'
-        ? { ...defaultTheme, ...(parsed as Partial<ThemeConfig>) }
-        : { ...defaultTheme };
-    theme.diffStyle = normalizeDiffStyle(theme.diffStyle);
-    theme.appIconMode = normalizeAppIconMode(theme.appIconMode);
-    // Migrations run BEFORE preset detection: a legacy palette migrated onto
-    // the default variant must come out with the default's presetId, not
-    // 'custom' — otherwise Dark/System can never resolve its other variant.
-    if (storage) {
-      migrateLegacyAccent(storage, saved, theme);
-      migrateLegacyLight(storage, saved, theme);
-    }
-    // Themes saved before presets existed have no presetId: recover it by
-    // matching the saved colors against known variants, else label them custom.
-    const savedPresetId = (parsed as { presetId?: unknown } | null)?.presetId;
-    theme.presetId =
-      typeof savedPresetId === 'string' && savedPresetId
-        ? savedPresetId
-        : detectPresetId(theme, customThemes);
-    // The preset owns its colors; the flattened copy is only a cache. Re-reading
-    // it means a retuned preset reaches themes saved before the change.
-    const preset = findPreset(theme.presetId, customThemes);
-    return preset ? { ...theme, ...resolveVariant(preset, theme.mode) } : theme;
-  } catch {
-    /* ignore */
-  }
-  return defaultTheme;
+  const saved = readSavedTheme();
+  if (!saved) return defaultTheme;
+  const colors = readThemeColors(saved) ?? DEFAULT_THEME.dark;
+  const theme: ThemeConfig = {
+    mode: saved.mode === 'light' || saved.mode === 'system' ? saved.mode : 'dark',
+    appIconMode: normalizeAppIconMode(saved.appIconMode),
+    // A theme saved without a preset is matched to one by its colors.
+    presetId:
+      typeof saved.presetId === 'string' && saved.presetId
+        ? saved.presetId
+        : detectPresetId(colors, customThemes),
+    ...colors,
+    uiFont: typeof saved.uiFont === 'string' ? saved.uiFont : defaultTheme.uiFont,
+    uiFontSize: typeof saved.uiFontSize === 'number' ? saved.uiFontSize : defaultTheme.uiFontSize,
+    codeFontSize:
+      typeof saved.codeFontSize === 'number' ? saved.codeFontSize : defaultTheme.codeFontSize,
+    translucentSidebar:
+      typeof saved.translucentSidebar === 'boolean'
+        ? saved.translucentSidebar
+        : defaultTheme.translucentSidebar,
+    diffStyle: normalizeDiffStyle(saved.diffStyle),
+    contrast: typeof saved.contrast === 'number' ? saved.contrast : defaultTheme.contrast,
+  };
+  // The preset owns its colors; the flattened copy is only a cache. Re-reading
+  // it means a retuned preset reaches themes saved before the change.
+  const preset = findPreset(theme.presetId, customThemes);
+  return preset ? { ...theme, ...resolveVariant(preset, theme.mode) } : theme;
 }
 
 export function persistTheme(theme: ThemeConfig): void {
   try {
-    getLocalStorage()?.setItem('droid-theme', JSON.stringify(theme));
+    getLocalStorage()?.setItem(THEME_STORAGE_KEY, JSON.stringify(theme));
   } catch {
     /* ignore */
   }

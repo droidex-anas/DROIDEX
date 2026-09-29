@@ -1,17 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { DEFAULT_THEME, type ThemeColors, type ThemePreset } from '../lib/theme';
+import type { ThemePreset } from '../lib/theme';
 import { loadTheme, persistCustomThemes } from './persistedThemePreferences';
 import { loadAgentConfig, loadHarnessModels, sanitizeAgentConfig } from './persistedUiPreferences';
 import type { ModelInfo } from '../types/bridge';
-
-const LEGACY_LIGHT: ThemeColors = {
-  bg: '#fcfcfc',
-  fg: '#141414',
-  surface: '#f3f3f3',
-  border: '#eeeeee',
-  accent: '#1a1a1a',
-};
 
 const CUSTOM_PRESET: ThemePreset = {
   id: 'custom-test',
@@ -20,40 +12,22 @@ const CUSTOM_PRESET: ThemePreset = {
   dark: { bg: '#101010', fg: '#f0f0f0', surface: '#181818', border: '#282828', accent: '#e8e8e8' },
 };
 
-test('legacy accent migration neutralizes old default orange and writes migration flags', () => {
+test('loadTheme keeps hand-edited colors and defaults the fields it cannot read', () => {
+  const colors = { ...CUSTOM_PRESET.dark, accent: '#123456' };
   withLocalStorageMap(
     {
       'droid-theme': JSON.stringify({
-        ...DEFAULT_THEME.dark,
-        accent: '#ee6018',
-        presetId: 'default',
+        ...colors,
+        presetId: 'custom',
+        mode: 'light',
+        uiFontSize: '',
       }),
     },
     () => {
-      const theme = loadTheme([]);
-      assert.notEqual(theme.accent.toLowerCase(), '#ee6018');
-      assert.equal(globalThis.localStorage?.getItem('droid-theme-accent-migrated'), '1');
-      const persisted = JSON.parse(globalThis.localStorage?.getItem('droid-theme') ?? '{}') as {
-        accent?: string;
-      };
-      assert.notEqual(persisted.accent?.toLowerCase(), '#ee6018');
-    },
-  );
-});
-
-test('legacy light migration rewrites the old white preset and writes migration flags', () => {
-  withLocalStorageMap(
-    {
-      'droid-theme': JSON.stringify({ ...LEGACY_LIGHT, presetId: 'default' }),
-    },
-    () => {
-      const theme = loadTheme([]);
-      assert.equal(theme.bg, DEFAULT_THEME.light.bg);
-      assert.equal(globalThis.localStorage?.getItem('droid-theme-light-preset-migrated'), '1');
-      const persisted = JSON.parse(globalThis.localStorage?.getItem('droid-theme') ?? '{}') as {
-        bg?: string;
-      };
-      assert.equal(persisted.bg, DEFAULT_THEME.light.bg);
+      const { bg, fg, surface, border, accent, mode, uiFontSize } = loadTheme([]);
+      assert.deepEqual({ bg, fg, surface, border, accent }, colors);
+      assert.equal(mode, 'light');
+      assert.equal(uiFontSize, 14);
     },
   );
 });
