@@ -291,7 +291,7 @@ export class SessionManager {
     (event) => {
       this.emit(event);
     },
-    () => this.refreshProviderStatus(),
+    () => this.providerProbes.refresh(),
   );
 
   constructor(
@@ -753,7 +753,7 @@ export class SessionManager {
     this.emit({ type: 'connection', status: 'connected' });
     this.emit({ type: 'runtime.updated', status: this.runtime.status() });
     void this.emitProviderStatus();
-    void this.refreshProviderStatus();
+    void this.providerProbes.refresh();
     const recovery = this.history.persistenceRecovery?.();
     if (recovery?.hadUnflushedWork) {
       this.emit({
@@ -851,7 +851,7 @@ export class SessionManager {
       }
       case 'provider.refresh':
         await this.emitProviderStatus();
-        await this.refreshProviderStatus();
+        await this.providerProbes.refresh();
         return;
       case 'catalog.tools':
         await this.emitToolCatalog(cmd.providerSessionId);
@@ -1209,14 +1209,6 @@ export class SessionManager {
         (provider) => this.providerProbes.status(provider),
       ),
     });
-  }
-
-  // Learns what the CLI-backed providers can do right now (one process each, no
-  // turn) and republishes. Concurrent refreshes share the one round.
-  private async refreshProviderStatus(): Promise<void> {
-    await this.providerProbes.refresh();
-    if (this.shutdownPromise) return;
-    await this.emitProviderStatus();
   }
 
   private async emitEnvironment(): Promise<void> {
