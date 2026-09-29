@@ -265,7 +265,7 @@ export class SessionRuntimeRetirement {
       streaming: live.streaming || live.summary.streaming === true,
       compacting: live.compacting === true || live.autoCompacting,
       queuedSends: live.pendingSends.length,
-      interrupting: live.interrupting === true || live.interruptingForSteer === true,
+      interrupting: live.interrupting === true || live.interruptingToSend === true,
       closing: live.closeMode !== undefined,
       focused: appSessionId === d.focusedAppSessionId(),
       hasUnsettledChildren: d.hasUnsettledChildren(appSessionId),

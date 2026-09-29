@@ -179,6 +179,7 @@ function ClampedPrompt({ source, chips }: { source: string; chips: ReactNode }) 
 export function UserBubble({
   event,
   onOpenReviewFile,
+  onSendNow,
 }: {
   event: Pick<
     TranscriptEvent,
@@ -187,6 +188,8 @@ export function UserBubble({
     ts?: number;
   };
   onOpenReviewFile?: OpenReviewFileHandler;
+  // Set on a steer the model has not taken in yet.
+  onSendNow?: () => void;
 }) {
   const browserRefs = event.browserRefs ?? [];
   // A replayed message has no files metadata, only the composed text it was sent
@@ -263,9 +266,10 @@ export function UserBubble({
           <div className="min-w-0 rounded-2xl rounded-br-sm bg-[var(--prompt-bubble-bg,var(--droid-elevated))] px-4 py-2.5 text-[14px] leading-[1.6] text-droid-text">
             {display.text ? <ClampedPrompt source={display.text} chips={chips} /> : chips}
           </div>
-          {/* The pending preview of a first message has no ts, and no actions yet. */}
-          {message.text && event.ts !== undefined ? (
-            <PromptActions text={message.text} ts={event.ts} />
+          {/* The pending preview of a first message has no ts, and no actions yet;
+              a pending steer has actions but no time. */}
+          {message.text && (event.ts !== undefined || onSendNow) ? (
+            <PromptActions text={message.text} ts={event.ts} onSendNow={onSendNow} />
           ) : null}
         </div>
       )}

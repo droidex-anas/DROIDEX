@@ -129,6 +129,7 @@ function liveSession(appSessionId: string, updatedAt: number): LiveSession {
     streaming: false,
     autoCompacting: false,
     pendingSends: [],
+    steers: [],
     mcpServers: [],
     mcpConfigs: [],
   };

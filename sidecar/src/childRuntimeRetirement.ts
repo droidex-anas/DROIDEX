@@ -46,7 +46,6 @@ function isSettled(child: ChildSessionState): boolean {
     !child.turn.autoCompacting &&
     child.turn.pendingSends.length === 0 &&
     !child.turn.interrupting &&
-    !child.turn.interruptingForSteer &&
     !child.closeWhenIdle &&
     child.queued !== true &&
     child.mutationTail === undefined

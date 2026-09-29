@@ -10,7 +10,6 @@ import {
   cancelInFlightOpen,
   dequeueQueuedChild,
   prepareChildInterrupt,
-  takeAdmittedSend,
 } from './childTurnCancellation.js';
 
 function child(status: 'paused' | 'running' = 'paused') {
@@ -74,28 +73,6 @@ test('prepareChildInterrupt discards queued sends and settles without looking ru
   assert.equal(state.status, 'paused');
   assert.equal(state.turn.phase, 'idle');
   assert.deepEqual(parent.runtimeQueue, []);
-});
-
-test('a send already taken for admission is dropped after interrupt', () => {
-  const state = child();
-  state.turn.pendingSends.push('cancelled');
-  const drainEpoch = state.turn.pendingDrainEpoch;
-  const taken = state.turn.pendingSends.shift();
-  prepareChildInterrupt(parentWith(state), state, 1_000);
-  assert.equal(taken, 'cancelled');
-  assert.notEqual(state.turn.pendingDrainEpoch, drainEpoch);
-  assert.equal(
-    taken !== undefined && state.turn.pendingDrainEpoch === drainEpoch ? taken : undefined,
-    undefined,
-  );
-});
-
-test('a send queued after interrupt still drains on a later admission', () => {
-  const state = child();
-  state.turn.pendingSends.push('cancelled');
-  prepareChildInterrupt(parentWith(state), state, 1_000);
-  state.turn.pendingSends.push('new prompt');
-  assert.equal(takeAdmittedSend(state), 'new prompt');
 });
 
 test('prepareChildInterrupt of a live child keeps the runtime path', () => {

@@ -19,9 +19,7 @@ import {
 import { useSessionLive } from '../hooks/useSessionLive';
 import {
   sendToSession,
-  sendToSessionNow,
   sendToChild,
-  sendToChildNow,
   createSession,
   interruptVisibleSession,
   compactSession,
@@ -195,8 +193,7 @@ const ACCENT = 'var(--droid-accent)';
 const DROID_ONLY_COMMANDS = new Set(['/compact']);
 const accentMix = (pct: number) =>
   `color-mix(in srgb, var(--droid-accent) ${String(pct)}%, transparent)`;
-type SubmitMode = 'queue' | 'now';
-const oppositeSubmitMode = (mode: SubmitMode): SubmitMode => (mode === 'queue' ? 'now' : 'queue');
+type SubmitMode = 'queue' | 'steer';
 
 function shouldShowTurnStarting(isLive: boolean): boolean {
   return !isLive;
@@ -1478,41 +1475,37 @@ export default function PromptInput({
       return;
     }
 
+    // A steer into the chat's own turn is pending under this id until the model
+    // takes it in. A child runs on Droid, which cannot take a steer yet, so its
+    // prompt waits behind the turn like any other send.
+    const steerId =
+      isLive && mode === 'steer' && !targetChildSessionId ? crypto.randomUUID() : undefined;
     const appendTranscript = () => {
-      dispatch({
-        type: 'SESSION_TRANSCRIPT',
-        event: {
-          id: `local-${String(Date.now())}`,
-          appSessionId: activeSession.appSessionId,
-          sourceSessionId: targetChildSessionId ?? 'user',
-          role: targetChild?.role ?? 'primary',
-          ts: Date.now(),
-          kind: 'text',
-          text: displayText,
-          author: 'user',
-          skills: skillNames,
-          files: allFiles,
-          ...(sideChatReplies.length > 0 ? { sideChatReplies } : {}),
-          steered: isLive && mode === 'now',
-        },
-      });
+      // A steer shows from the sidecar's list of pending steers instead.
+      if (!steerId)
+        dispatch({
+          type: 'SESSION_TRANSCRIPT',
+          event: {
+            id: `local-${String(Date.now())}`,
+            appSessionId: activeSession.appSessionId,
+            sourceSessionId: targetChildSessionId ?? 'user',
+            role: targetChild?.role ?? 'primary',
+            ts: Date.now(),
+            kind: 'text',
+            text: displayText,
+            author: 'user',
+            skills: skillNames,
+            files: allFiles,
+            ...(sideChatReplies.length > 0 ? { sideChatReplies } : {}),
+          },
+        });
       if (sideChatReplies.length > 0) detachSideChatReplies();
     };
     const sendCommand = () => {
       try {
-        if (targetChildSessionId) {
-          if (mode === 'now')
-            sendToChildNow(
-              activeSession.appSessionId,
-              targetChildSessionId,
-              composed,
-              responseFormat,
-            );
-          else
-            sendToChild(activeSession.appSessionId, targetChildSessionId, composed, responseFormat);
-        } else if (mode === 'now')
-          sendToSessionNow(activeSession.appSessionId, composed, responseFormat, mentions);
-        else sendToSession(activeSession.appSessionId, composed, responseFormat, mentions);
+        if (targetChildSessionId)
+          sendToChild(activeSession.appSessionId, targetChildSessionId, composed, responseFormat);
+        else sendToSession(activeSession.appSessionId, composed, responseFormat, mentions, steerId);
         armTurnStartingTimeout();
       } catch (err) {
         stopTurnStarting();
@@ -1726,11 +1719,9 @@ export default function PromptInput({
     if (e.key === 'Enter' && !e.shiftKey && !e.altKey) {
       e.preventDefault();
       e.stopPropagation();
-      const enterMode: SubmitMode =
-        isLive && state.liveEnterBehavior === 'interrupt' ? 'now' : 'queue';
-      void handleSubmit(
-        isLive && (e.metaKey || e.ctrlKey) ? oppositeSubmitMode(enterMode) : enterMode,
-      );
+      const enterMode: SubmitMode = state.liveEnterBehavior;
+      const otherMode: SubmitMode = enterMode === 'steer' ? 'queue' : 'steer';
+      void handleSubmit(e.metaKey || e.ctrlKey ? otherMode : enterMode);
     }
   };
 
@@ -1746,7 +1737,7 @@ export default function PromptInput({
   // The "Start in" repo/worktree/branch row only applies while drafting a brand
   // new chat; it renders as the top section of the composer card.
   const showStartIn = !activeSession && !missionPreview && !!cwd;
-  const enterSteers = state.liveEnterBehavior === 'interrupt';
+  const enterSteers = state.liveEnterBehavior === 'steer';
   const promptPlaceholder = missionPreview
     ? activeSession
       ? targetChildSessionId
@@ -1885,7 +1876,7 @@ export default function PromptInput({
       enterSteers={enterSteers}
       hintOpen={sendHintOpen}
       onHintOpenChange={setSendHintOpen}
-      onSend={() => void handleSubmit(isLive && enterSteers ? 'now' : 'queue')}
+      onSend={() => void handleSubmit(enterSteers ? 'steer' : 'queue')}
       onStop={() => {
         if (activeSession)
           interruptVisibleSession(activeSession.appSessionId, targetChildSessionId);

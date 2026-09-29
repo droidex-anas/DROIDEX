@@ -5,7 +5,6 @@ import {
   query,
   type McpServerConfig,
   type ModelInfo,
-  type Query,
   type SDKMessage,
   type SDKUserMessage,
 } from '@anthropic-ai/claude-agent-sdk';
@@ -24,9 +23,16 @@ import type { SkillInfo } from '../catalog.js';
 import type { ProviderInteractions } from '../interactions.js';
 import type { ProviderModelSettings, ProviderSession } from '../session.js';
 import { ClaudeCatalog } from './claudeCatalog.js';
-import { claudeLaunchModel, type ClaudeDefaultModel } from './claudeModels.js';
+import { claudeLaunchModel, planningModelNotice, type ClaudeDefaultModel } from './claudeModels.js';
 import { ClaudeEventMapper, rateLimitRefusal } from './claudeEvents.js';
-import { MessageQueue } from './claudeMessages.js';
+import {
+  answersTurn,
+  commandLifecycle,
+  isSlashCommand,
+  MessageQueue,
+  turnFailure,
+  type SteeringQuery,
+} from './claudeMessages.js';
 import { sessionOptions, claudeEffort } from './claudeOptions.js';
 import { ClaudePermissionModes } from './claudePermissionModes.js';
 
@@ -62,7 +68,7 @@ export class ClaudeSession implements ProviderSession {
   private failure?: Error;
   private readonly prompts = new MessageQueue<SDKUserMessage>();
   private readonly mapper: ClaudeEventMapper;
-  private readonly query: Query;
+  private readonly query: SteeringQuery;
   // The permission capability probe must finish before the first prompt.
   // Control requests may only start after the CLI answers initialize.
   private readonly initialized: Promise<void>;
@@ -77,6 +83,12 @@ export class ClaudeSession implements ProviderSession {
   private activeTurnId?: string;
   // The turn the user stopped, so only that turn's own error result is excused.
   private interruptedTurnId?: string;
+  // The running turn takes steers: set once its prompt is pushed, never for a slash command.
+  private steerable = false;
+  // Steers the CLI has not started yet, by uuid, with whoever waits on each.
+  private readonly steerDeliveries = new Map<string, (delivered: boolean) => void>();
+  // The running turn's own result has arrived; it may still wait for steers.
+  private turnAnswered = false;
   private turnQueue?: MessageQueue<{ message: SDKMessage; events: NormalizedEvent[] }>;
   private readonly backgroundListeners = new Set<(event: NormalizedEvent) => void>();
 
@@ -125,7 +137,7 @@ export class ClaudeSession implements ProviderSession {
           process.once('close', onExit);
         },
       ),
-    });
+    }) as SteeringQuery;
     this.initialized = this.query.initializationResult().then(
       async () => {
         this.abort.signal.throwIfAborted();
@@ -204,19 +216,30 @@ export class ClaudeSession implements ProviderSession {
         parent_tool_use_id: null,
         message: { role: 'user', content: prompt },
       });
+      this.steerable = !isSlashCommand(prompt);
       for (;;) {
         const next = await turnQueue.next();
-        // An exhausted stream is a failure, not a silent success.
-        if (next.done) throw new Error('Claude Code exited before the turn finished.');
+        // An exhausted stream is a failure, unless Stop closed it on a turn
+        // that already had its answer.
+        if (next.done) {
+          if (!this.turnAnswered) throw new Error('Claude Code exited before the turn finished.');
+          yield { done: true };
+          return;
+        }
         const { message, events } = next.value;
         if (message.type === 'assistant' && !reportedPlanningModel) {
-          const notice = this.planningModelNotice(message);
+          const notice = this.permissions.planning
+            ? planningModelNotice(message, this.modelId)
+            : undefined;
           if (notice) {
             reportedPlanningModel = true;
             yield this.mapper.statusEvent(notice);
           }
         }
         yield* events;
+        const lifecycle = commandLifecycle(message);
+        if (lifecycle?.state === 'started') this.settleSteer(lifecycle.uuid, true);
+        if (lifecycle?.state === 'cancelled') this.settleSteer(lifecycle.uuid, false);
         // A local slash command bypasses the model loop and publishes this one
         // terminal frame instead of a result for the ordinary turn path.
         if (message.type === 'system' && message.subtype === 'local_command_output') {
@@ -229,35 +252,72 @@ export class ClaudeSession implements ProviderSession {
           const refusal = rateLimitRefusal(message.rate_limit_info);
           if (refusal) throw refusal;
         }
-        if (message.type === 'result' && answersTurn(message, turnId)) {
+        // The turn's own result, then that of each steer run as a CLI turn after it.
+        if (message.type === 'result' && (this.turnAnswered || answersTurn(message, turnId))) {
           // A stopped turn settles quietly: the CLI still reports the
           // interruption as an error result carrying an internal diagnostic.
           if (message.subtype !== 'success' && this.interruptedTurnId !== turnId)
             throw new Error(turnFailure(message.subtype, message.errors));
+          this.turnAnswered = true;
+          for (const uuid of message.user_message_uuids ?? []) this.settleSteer(uuid, true);
+        }
+        // Once answered, the turn ends when a result or a cancellation leaves no
+        // steer waiting to start. A stopped turn does not wait, nor does a CLI
+        // too old to list what a result answered.
+        if (
+          this.turnAnswered &&
+          (message.type === 'result' || lifecycle?.state === 'cancelled') &&
+          (this.steerDeliveries.size === 0 ||
+            this.interruptedTurnId === turnId ||
+            (message.type === 'result' && !message.user_message_uuids))
+        ) {
+          this.steerable = false;
           yield { done: true };
           return;
         }
       }
     } finally {
       this.activeTurnId = undefined;
+      this.steerable = false;
+      this.turnAnswered = false;
       if (this.turnQueue === turnQueue) this.turnQueue = undefined;
+      await Promise.all([...this.steerDeliveries.keys()].map((uuid) => this.withdrawSteer(uuid)));
     }
   }
 
-  private planningModelNotice(
-    message: Extract<SDKMessage, { type: 'assistant' }>,
-  ): string | undefined {
-    const model = message.message.model;
-    if (
-      !this.permissions.planning ||
-      !this.modelId ||
-      message.parent_tool_use_id ||
-      model === '<synthetic>' ||
-      matchesModel(this.modelId, model)
-    )
-      return undefined;
-    // Plan mode can override the pin inside the CLI; report its choice without changing it.
-    return `Planning on ${model}, Claude Code's plan-mode model.`;
+  // Hands the prompt to the running turn: the CLI folds it in at the next tool
+  // boundary, or runs it right after the turn's result. Resolves true once the
+  // model has it. The CLI resolves a slash command itself, so that can only
+  // run as a turn of its own.
+  steer(text: string): Promise<boolean> {
+    if (!this.steerable || this.isClosed || isSlashCommand(text)) return Promise.resolve(false);
+    const uuid = randomUUID();
+    const delivered = new Promise<boolean>((resolve) => {
+      this.steerDeliveries.set(uuid, resolve);
+    });
+    this.prompts.push({
+      type: 'user',
+      uuid,
+      session_id: this.providerSessionId,
+      parent_tool_use_id: null,
+      message: { role: 'user', content: text },
+      priority: 'next',
+    });
+    return delivered;
+  }
+
+  private settleSteer(uuid: string, delivered: boolean): void {
+    this.steerDeliveries.get(uuid)?.(delivered);
+    this.steerDeliveries.delete(uuid);
+  }
+
+  // A steer the turn ended without is withdrawn so the session layer can send
+  // it again. Unless the CLI says it cancelled it, the CLI may still run it,
+  // and losing one steer on a failed turn beats showing it twice.
+  private async withdrawSteer(uuid: string): Promise<void> {
+    const cancelled =
+      this.isClosed || (await this.query.cancelAsyncMessage(uuid).catch(() => false));
+    this.settleSteer(uuid, !cancelled);
   }
 
   // Keep reading between turns so background children can settle immediately.
@@ -390,8 +450,16 @@ export class ClaudeSession implements ProviderSession {
     }
     if (this.abort.signal.aborted || this.activeTurnId !== turnId) return;
     // Aborts the in-flight turn on the live process; the turn then settles with
-    // its own result, so the next prompt does not pay for a restart.
-    await this.query.interrupt();
+    // its own result, so the next prompt does not pay for a restart. Steers not
+    // yet delivered are cancelled with it rather than left to run unobserved.
+    const receipt = await this.query.interrupt({ cancelQueued: true });
+    for (const uuid of receipt?.cancelled ?? []) this.settleSteer(uuid, false);
+    // A turn that already has its answer may be waiting only on steers the CLI
+    // had not started. An idle CLI says nothing more, so the turn ends here.
+    if (this.turnAnswered && this.activeTurnId === turnId) {
+      for (const uuid of this.steerDeliveries.keys()) this.settleSteer(uuid, false);
+      this.turnQueue?.close();
+    }
   }
 
   close(): Promise<void> {
@@ -429,33 +497,4 @@ export class ClaudeSession implements ProviderSession {
       this.resolveClosed(error);
     }
   }
-}
-
-function matchesModel(selected: string, actual: string): boolean {
-  const model = selected.replace(/\[1m\]$/i, '');
-  if (model === actual) return true;
-  // The picker also publishes CLI aliases, while assistant frames carry wire ids.
-  return !model.startsWith('claude-') && actual.startsWith(`claude-${model}-`);
-}
-
-function turnFailure(subtype: string, errors: string[]): string {
-  // The CLI's own diagnostics are bracketed internals; the subtype is what a
-  // user can act on.
-  const detail = errors.filter((error) => !error.startsWith('[')).join('\n');
-  return detail
-    ? `Claude Code ended the turn (${subtype}): ${detail}`
-    : `Claude Code ended the turn (${subtype}).`;
-}
-
-function answersTurn(
-  message: { user_message_uuid?: string; user_message_uuids?: string[] },
-  turnId: string,
-): boolean {
-  // The plural list names every prompt the turn has consumed, so where it
-  // exists it is the whole answer: a result that omits this turn's uuid belongs
-  // to another turn, whatever the singular field says.
-  if (message.user_message_uuids) return message.user_message_uuids.includes(turnId);
-  if (message.user_message_uuid !== undefined) return message.user_message_uuid === turnId;
-  // Older CLIs stamp neither field; their result can only be this turn's.
-  return true;
 }

@@ -226,7 +226,7 @@ export function reduceChildError<S extends ChildSessionStore>(
     parentAppSessionId: string;
     childSessionId: string;
     requestId: string | null;
-    operation: 'open' | 'loadHistory' | 'send' | 'sendNow' | 'interrupt' | 'settings';
+    operation: 'open' | 'loadHistory' | 'send' | 'interrupt' | 'settings';
     message: string;
   },
 ): S {

@@ -321,7 +321,7 @@ test('a task poll is marked only when it names an agent the mapper is tracking',
   );
 });
 
-test('a call the user steered away from is interrupted, not failed', () => {
+test('a call the user stopped is interrupted, not failed', () => {
   const result = (toolUseId: string, content: string): SDKMessage =>
     message({
       type: 'user',

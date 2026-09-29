@@ -384,6 +384,11 @@ function isSessionSummary(value: unknown): boolean {
     isOptionalString(value.resumeId) &&
     isOptionalBoolean(value.fastMode) &&
     isOptionalContextWindow(value.contextWindowTokens) &&
+    (value.pendingSteers === undefined ||
+      (Array.isArray(value.pendingSteers) &&
+        value.pendingSteers.every(
+          (steer) => isRecord(steer) && hasStrings(steer, ['id', 'text']),
+        ))) &&
     (value.lineage === undefined || isSessionLineage(value.lineage))
   );
 }

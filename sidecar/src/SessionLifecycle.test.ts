@@ -322,8 +322,8 @@ function createHarness(ordinarySummaries: SessionSummary[] = []) {
     appendError: (appSessionId, message) => {
       calls.push({ target: 'protocol', method: 'error', args: [appSessionId, message] });
     },
-    recordPrompt: (appSessionId, text) => {
-      calls.push({ target: 'protocol', method: 'recordPrompt', args: [appSessionId, text] });
+    appendSteer: (appSessionId, text) => {
+      calls.push({ target: 'protocol', method: 'appendSteer', args: [appSessionId, text] });
     },
     catalogUpdated: () => undefined,
     emitSessionList: (closedProviderSessionId) => emitSessionList(closedProviderSessionId),
@@ -775,7 +775,7 @@ test('failed turn setup clears streaming so the next send can run', async () => 
   assert.deepEqual(provider.prompts, ['first', 'recovered']);
 });
 
-test('queued sends stay FIFO while send-now prompts are newest first', async () => {
+test('queued sends stay FIFO, and send-now moves a pending steer to the front', async () => {
   const fifo = createHarness();
   const fifoProvider = queueCreate(fifo, 'fifo');
   const fifoGate = fifoProvider.deferNextStream();
@@ -791,13 +791,22 @@ test('queued sends stay FIFO while send-now prompts are newest first', async () 
   const steerGate = steerProvider.deferNextStream();
   await steered.lifecycle.create(createCommand('first'));
   await steerProvider.waitForPrompts(1);
-  await steered.lifecycle.sendNow('steered', 'steer one');
-  await steered.lifecycle.sendNow('steered', 'steer two');
+  await steered.lifecycle.send('steered', 'queued');
+  // Droid takes no steer yet, so both wait on the queue, still pending.
+  await steered.lifecycle.send('steered', 'steer one', undefined, 'steer-1');
+  await steered.lifecycle.send('steered', 'steer two', undefined, 'steer-2');
+  assert.deepEqual(steered.registry.getCanonicalSummary('steered')?.pendingSteers, [
+    { id: 'steer-1', text: 'steer one' },
+    { id: 'steer-2', text: 'steer two' },
+  ]);
+  await steered.lifecycle.sendNow('steered', 'steer-2');
+  await steered.lifecycle.sendNow('steered', 'steer-1');
   steerGate.resolve();
-  await steerProvider.waitForPrompts(3);
-  assert.deepEqual(steerProvider.prompts, ['first', 'steer two', 'steer one']);
+  await steerProvider.waitForPrompts(4);
+  assert.deepEqual(steerProvider.prompts, ['first', 'steer one', 'queued', 'steer two']);
   // The second send-now lands while the first interrupt is still in flight and
-  // rides the queue instead of interrupting the turn that redelivers it.
+  // reorders the queue instead of interrupting the turn that sends it; the
+  // rest keeps the order it was sent in.
   assert.equal(interruptCount(steered), 1);
 });
 
@@ -809,9 +818,11 @@ test('send-now queues without interrupting compaction and reports interrupt reje
   await new Promise<void>((resolve) => setImmediate(resolve));
   const live = requireLive(compacting, 'compacting');
   live.compacting = true;
+  await compacting.lifecycle.send('compacting', 'manual', undefined, 'manual');
   await compacting.lifecycle.sendNow('compacting', 'manual');
   live.compacting = false;
   live.autoCompacting = true;
+  await compacting.lifecycle.send('compacting', 'automatic', undefined, 'automatic');
   await compacting.lifecycle.sendNow('compacting', 'automatic');
   assert.deepEqual(
     live.pendingSends.map((prompt) => prompt.text),
@@ -824,12 +835,13 @@ test('send-now queues without interrupting compaction and reports interrupt reje
   rejected.runtime.createQueue.push(rejectingProvider);
   await rejected.lifecycle.create(createCommand());
   await rejectingProvider.waitForPrompts(1);
-  await rejected.lifecycle.sendNow('rejected', 'keep queued');
+  await rejected.lifecycle.send('rejected', 'keep queued', undefined, 'steer');
+  await rejected.lifecycle.sendNow('rejected', 'steer');
   assert.deepEqual(
     requireLive(rejected, 'rejected').pendingSends.map((prompt) => prompt.text),
     ['keep queued'],
   );
-  assert.equal(requireLive(rejected, 'rejected').interruptingForSteer, false);
+  assert.equal(requireLive(rejected, 'rejected').interruptingToSend, false);
   assert.equal(
     rejected.events.some(
       (event) => event.type === 'error' && event.code === 'session.send_now_failed',
@@ -838,6 +850,58 @@ test('send-now queues without interrupting compaction and reports interrupt reje
   );
   gate.resolve();
   await rejectingProvider.waitForPrompts(2);
+});
+
+test('a steer is pending until the harness delivers it, and one refused late still runs', async () => {
+  const h = createHarness();
+  const provider = queueCreate(h, 'steer');
+  const gate = provider.deferNextStream();
+  await h.lifecycle.create(createCommand('first'));
+  await provider.waitForPrompts(1);
+  const live = requireLive(h, 'steer');
+  const deliveries: ((delivered: boolean) => void)[] = [];
+  live.session.steer = () =>
+    new Promise<boolean>((settle) => {
+      deliveries.push(settle);
+    });
+  const harnessHas = async (count: number) => {
+    while (deliveries.length < count) await new Promise((resolve) => setImmediate(resolve));
+  };
+  const pendingSteers = () => h.registry.getCanonicalSummary('steer')?.pendingSteers;
+
+  const delivered = h.lifecycle.send('steer', 'delivered', undefined, 'steer-1');
+  await harnessHas(1);
+  assert.deepEqual(pendingSteers(), [{ id: 'steer-1', text: 'delivered' }]);
+  deliveries[0](true);
+  await delivered;
+  assert.deepEqual(pendingSteers(), []);
+  assert.deepEqual(
+    h.calls.filter((call) => call.method === 'appendSteer').map((call) => call.args),
+    [['steer', 'delivered']],
+  );
+
+  // A refusal that lands after the turn settled still runs as the next turn.
+  const late = h.lifecycle.send('steer', 'late', undefined, 'steer-2');
+  await harnessHas(2);
+  const nextGate = provider.deferNextStream();
+  gate.resolve();
+  while (live.streaming) await new Promise((resolve) => setImmediate(resolve));
+  deliveries[1](false);
+  await provider.waitForPrompts(2);
+  assert.deepEqual(provider.prompts, ['first', 'late']);
+  assert.equal(interruptCount(h), 0);
+
+  // Send now takes a steer back and stops the turn, but the harness delivers
+  // it first: it is not sent again.
+  const raced = h.lifecycle.send('steer', 'raced', undefined, 'steer-3');
+  await harnessHas(3);
+  await h.lifecycle.sendNow('steer', 'steer-3');
+  deliveries[2](true);
+  await raced;
+  assert.deepEqual(live.pendingSends, []);
+  assert.equal(interruptCount(h), 1);
+  nextGate.resolve();
+  await late;
 });
 
 test('resuming a turn persists recent activity immediately and completion advances it again', async () => {
@@ -901,7 +965,7 @@ test('interrupt handles idle, streaming, manual compaction, and auto-compaction 
   live.streaming = false;
   live.interrupting = false;
   live.compacting = true;
-  live.pendingSends = [{ text: 'drop' }];
+  live.pendingSends = [{ text: 'drop', order: 0 }];
   await harness.lifecycle.interrupt('stop');
   assert.equal(interruptCount(harness), 2);
   assert.deepEqual(live.pendingSends, []);
@@ -1298,7 +1362,7 @@ test('concurrent close waits for cleanup and discard overrides queue preservatio
   await provider.waitForPrompts(1);
   await new Promise<void>((resolve) => setImmediate(resolve));
   const live = requireLive(harness, 'concurrent-close');
-  live.pendingSends = [{ text: 'preserve unless user closes' }];
+  live.pendingSends = [{ text: 'preserve unless user closes', order: 0 }];
 
   const preserving = harness.lifecycle.close('concurrent-close', 'preserve-pending');
   await new Promise<void>((resolve) => setImmediate(resolve));
@@ -1487,7 +1551,7 @@ test('scheduled delivery waits outside pendingSends for turns, compaction, inter
   harness.setPendingInteractions(true);
   await busy();
   harness.setPendingInteractions(false);
-  live.pendingSends.push({ text: 'user prompt' });
+  live.pendingSends.push({ text: 'user prompt', order: 0 });
   await busy();
   assert.deepEqual(
     live.pendingSends.map((pending) => pending.text),
@@ -1630,12 +1694,12 @@ test('an unindexed Droid resume preserves its native selection before applying c
   assert.equal(harness.registry.getLive('external-session')?.summary.autonomy, 'low');
 });
 
-test('agent completion cannot start a turn while Stop or steer interruption is outstanding', async () => {
+test('agent completion cannot start a turn while Stop or Send now is outstanding', async () => {
   const h = createHarness([summary('app-1', 'provider-1')]);
   const provider = queueLoad(h, 'provider-1');
   await h.lifecycle.resume('app-1');
   const live = requireLive(h, 'app-1');
-  for (const flag of ['interrupting', 'interruptingForSteer'] as const) {
+  for (const flag of ['interrupting', 'interruptingToSend'] as const) {
     live[flag] = true;
     assert.equal(
       h.lifecycle.wakeForSettledAgents('app-1', 'agent result', 'Agents finished'),

@@ -70,8 +70,6 @@ interface ChildTurnState {
   phase: 'idle' | 'streaming';
   autoCompacting: boolean;
   pendingSends: string[];
-  pendingDrainEpoch: number;
-  interruptingForSteer: boolean;
   interrupting: boolean;
 }
 export interface ChildSessionState {
@@ -180,8 +178,6 @@ export function childStateFromRecord(record: PersistedChildSession): ChildSessio
       phase: 'idle',
       autoCompacting: false,
       pendingSends: [],
-      pendingDrainEpoch: 0,
-      interruptingForSteer: false,
       interrupting: false,
     },
     closeWhenIdle: false,
@@ -464,7 +460,6 @@ export function childHasWorkInFlight(child: ChildSessionState): boolean {
     child.turn.autoCompacting ||
     child.turn.pendingSends.length > 0 ||
     child.turn.interrupting ||
-    child.turn.interruptingForSteer ||
     child.mutationTail !== undefined
   );
 }

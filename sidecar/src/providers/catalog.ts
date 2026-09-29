@@ -72,7 +72,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 // The commands that carry a prompt, and so may carry the rows staged with it.
-const MENTION_COMMANDS = new Set(['session.send', 'session.sendNow', 'session.create']);
+const MENTION_COMMANDS = new Set(['session.send', 'session.create']);
 
 export function assertValidMentions(command: object & { mentions?: unknown }): void {
   if (

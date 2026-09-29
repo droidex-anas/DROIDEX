@@ -29,7 +29,7 @@ import {
 
 export type MissionRole = 'worker' | 'validator';
 export type AgentKind = 'primary' | MissionRole;
-export type LiveEnterBehavior = 'queue' | 'interrupt';
+export type LiveEnterBehavior = 'steer' | 'queue';
 export type DiffViewMode = 'unified' | 'split';
 export type ModelSelectorStyle = 'classic' | 'slider';
 // Where a side chat opens when none is on screen: the utility pane or a floating window.
@@ -194,15 +194,17 @@ export function saveCompactionModel(value: string): void {
   saveItem(COMPACTION_MODEL_STORAGE_KEY, value);
 }
 
+// Steer unless the user chose Queue. A stored 'interrupt', the retired Send now
+// setting, reads as Steer.
 function normalizeLiveEnterBehavior(value: unknown): LiveEnterBehavior {
-  return value === 'interrupt' ? 'interrupt' : 'queue';
+  return value === 'queue' ? 'queue' : 'steer';
 }
 
 export function loadLiveEnterBehavior(): LiveEnterBehavior {
   try {
     return normalizeLiveEnterBehavior(getLocalStorage()?.getItem(LIVE_ENTER_BEHAVIOR_STORAGE_KEY));
   } catch {
-    return 'queue';
+    return 'steer';
   }
 }
 

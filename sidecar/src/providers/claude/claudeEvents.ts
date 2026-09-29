@@ -254,8 +254,8 @@ export class ClaudeEventMapper {
       if (block.type !== 'tool_result') return [];
       this.reportedResults.add(block.tool_use_id);
       const text = toolResultText(block.content);
-      // A call the user steered or stopped away from is not a failure, and the
-      // CLI says so in this one sentence. Reading it here keeps the renderer
+      // A call the user stopped, with Stop or Send now, is not a failure, and
+      // the CLI says so in this one sentence. Reading it here keeps the renderer
       // free of text matching, and the row quiet instead of red.
       const interrupted = block.is_error === true && isInterruptionNotice(text);
       return {
@@ -421,8 +421,8 @@ export class ClaudeEventMapper {
   }
 }
 
-// What the CLI puts in a tool result when the user steers or stops the turn
-// before the tool runs. It is the harness's own wording, so it belongs here
+// What the CLI puts in a tool result when the user stops the turn before the
+// tool runs. It is the harness's own wording, so it belongs here
 // with the rest of this adapter's knowledge of the SDK, never in the renderer.
 const INTERRUPTION_NOTICE = /the user (?:doesn't|does not) want to proceed with this tool use/i;
 

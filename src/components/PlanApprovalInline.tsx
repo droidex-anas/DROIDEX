@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, type KeyboardEvent } from 'react';
 import { motion, AnimatePresence, useReducedMotion } from 'framer-motion';
 import { ChevronRight } from 'lucide-react';
 import { useStoreDispatch, useStoreSelector } from '../hooks/useStore';
-import { respondPermission, sendToSession, sendToSessionNow } from '../lib/commands';
+import { respondPermission, sendToSession } from '../lib/commands';
 import type { Autonomy, PermissionOutcome } from '../types/bridge';
 import { AUTONOMY_LABELS } from '../lib/autonomy';
 import { isAppUpdateInstalling, useAppUpdate } from '../lib/appUpdate';
@@ -85,7 +85,7 @@ export default function PlanApprovalInline({ appSessionId }: { appSessionId?: st
         interactionMode: 'auto',
       });
     }
-    if (text) sendToSessionNow(req.appSessionId, text);
+    if (text) sendToSession(req.appSessionId, text, undefined, undefined, crypto.randomUUID());
     finish();
   };
 

@@ -16,6 +16,7 @@ import type {
 import type { CompactType } from './compaction.js';
 import { errMsg } from './errors.js';
 import { StreamingDeltaCoalescer, streamingEventOwner } from './streamingDeltaCoalescer.js';
+import { userPromptDisplay } from './sessionTranscriptParser.js';
 import { hotPathMetrics } from './telemetry/hotPathMetrics.js';
 
 interface TimelineHistory {
@@ -462,8 +463,29 @@ export class SessionTimeline {
     });
   }
 
-  // A status row that is only true right now — a CLI booting, a steer being
-  // applied, an idle runtime released. Shown live, never stored.
+  // A steer at the moment the model takes it in: into the running turn
+  // (steered), or as a turn of its own. The chat showed it as pending until
+  // now. It is stored the way an ordinary prompt is and shown the way its
+  // replay will read, so a restored chat sees the two as one row.
+  appendSteer(appSessionId: string, prompt: string, steered: boolean): void | Promise<void> {
+    const ts = this.clock();
+    this.streaming.flushSource(appSessionId, appSessionId);
+    this.emitRecordedEvent({
+      id: this.noticeId('prompt', ts),
+      appSessionId,
+      sourceSessionId: 'user',
+      role: 'primary',
+      ts,
+      kind: 'text',
+      author: 'user',
+      ...userPromptDisplay(prompt),
+      ...(steered ? { steered: true } : {}),
+    });
+    return this.recordPrompt(appSessionId, prompt);
+  }
+
+  // A status row that is only true right now — a CLI booting, a turn stopping
+  // to send now, an idle runtime released. Shown live, never stored.
   appendProgress(appSessionId: string, text: string): void {
     const ts = this.clock();
     this.append({

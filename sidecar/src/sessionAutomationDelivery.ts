@@ -59,7 +59,7 @@ export async function deliverScheduledMessage(
     isCurrent: () =>
       current() &&
       !captured.interrupting &&
-      !captured.interruptingForSteer &&
+      !captured.interruptingToSend &&
       !d.hasActiveSettingsChanges(appSessionId),
     accepted: () => {
       acknowledge(true);
@@ -90,7 +90,7 @@ function isBusy(live: LiveSession, d: SessionLifecycleDependencies): boolean {
     live.autoCompacting ||
     live.closeMode !== undefined ||
     live.interrupting === true ||
-    live.interruptingForSteer === true ||
+    live.interruptingToSend === true ||
     live.pendingSends.length > 0 ||
     d.hasPendingInteractions(live.summary.appSessionId) ||
     d.hasActiveSettingsChanges(live.summary.appSessionId) ||

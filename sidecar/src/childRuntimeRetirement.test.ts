@@ -87,10 +87,6 @@ test('a child with work in flight is never retirable, however long it sits', () 
       { turn: { ...childStateFromRecord(record('x')).turn, pendingSends: ['queued'] } },
     ],
     ['interrupting', { turn: { ...childStateFromRecord(record('x')).turn, interrupting: true } }],
-    [
-      'steering',
-      { turn: { ...childStateFromRecord(record('x')).turn, interruptingForSteer: true } },
-    ],
     ['parent-reports-running', { status: 'running' }],
     ['closing-itself', { closeWhenIdle: true }],
     ['queued-for-capacity', { queued: true }],

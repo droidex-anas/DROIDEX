@@ -6,6 +6,8 @@ import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { WebSocket } from 'ws';
 
+import { BRIDGE_PROTOCOL_VERSION } from './protocol.js';
+
 const fixturePath = fileURLToPath(
   new URL('../test-fixtures/childSessionsSidecar.mjs', import.meta.url),
 );
@@ -63,7 +65,9 @@ async function startFixture(
 }
 
 function openSocket(port: number): Promise<WebSocket> {
-  const socket = new WebSocket(`ws://127.0.0.1:${String(port)}/?token=fixture&bridgeProtocol=5`);
+  const socket = new WebSocket(
+    `ws://127.0.0.1:${String(port)}/?token=fixture&bridgeProtocol=${String(BRIDGE_PROTOCOL_VERSION)}`,
+  );
   return new Promise((resolveOpen, reject) => {
     socket.once('open', () => resolveOpen(socket));
     socket.once('error', reject);
