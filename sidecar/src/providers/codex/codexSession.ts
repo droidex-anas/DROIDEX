@@ -165,7 +165,12 @@ export class CodexSession implements ProviderSession {
         })
       : this.client.request<ThreadResponse>('thread/start', {
           ...settings,
-          ...(this.tools.declarations.length ? { dynamicTools: this.tools.declarations } : {}),
+          ...(this.tools.declarations.length
+            ? {
+                dynamicTools: this.tools.declarations,
+                developerInstructions: this.tools.instructions,
+              }
+            : {}),
         }));
     this.threadId = response.thread.id;
     this.threadModel = response.model;
