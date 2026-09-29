@@ -10,6 +10,7 @@ import {
 } from '../types/sidebar';
 import { chatDisplayTitle, isChatHidden, isChatPinned, type ChatMetadataMap } from './chatMetadata';
 import { projectThreadIds } from './projectThreads';
+import { isSideChat } from './sideChats';
 import {
   ACTIVITY_LABELS,
   canSettleSession,
@@ -161,11 +162,13 @@ function applyMark(
   );
 }
 
-// A chat the sidebar shows: known, not archived or deleted, and not a project
-// thread, which Projects shows instead.
+// A chat the sidebar shows: known, not archived or deleted, not a project
+// thread, which Projects shows instead, and not a side chat, which lives beside
+// the chat it branched from.
 function sidebarChat(state: SidebarState, appSessionId: string): SessionSummary | undefined {
   if (!Object.hasOwn(state.sessions, appSessionId)) return undefined;
   if (projectThreadIds(state.projects).has(appSessionId)) return undefined;
+  if (isSideChat(state.sessions[appSessionId])) return undefined;
   const metadata: Partial<ChatMetadataMap> = state.chatMetadata;
   return isChatHidden(metadata[appSessionId]) ? undefined : state.sessions[appSessionId];
 }

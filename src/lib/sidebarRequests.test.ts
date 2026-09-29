@@ -79,6 +79,7 @@ test('rows are the chats the sidebar shows, with what each waits on', () => {
     const state = sidebarState([
       chat('lead'),
       chat('thread'),
+      { ...chat('side'), lineage: { kind: 'side', sourceAppSessionId: 'lead', forkedAt: 2 } },
       chat('archived'),
       chat('deleted'),
       chat('asking'),
