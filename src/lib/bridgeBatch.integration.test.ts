@@ -316,7 +316,7 @@ test('recovery snapshots replace process lists, including sessions that disappea
       const action = adaptEvent(event);
       if (action) state = reducer(state, action);
     });
-    // The same sidecar is still answering, so nothing it holds is abandoned.
+    // A snapshot from the same sidecar abandons nothing; one from a new one does.
     let replaced = 0;
     bridge.subscribeRuntimeReplaced(() => {
       replaced += 1;
@@ -354,6 +354,7 @@ test('recovery snapshots replace process lists, including sessions that disappea
     };
     socket.message(snapshot);
     assert.deepEqual(state.agentProcesses, { 'live-session': [process] });
+    assert.equal(replaced, 0);
     socket.message({
       ...snapshot,
       generation: 'generation-2',
@@ -361,7 +362,7 @@ test('recovery snapshots replace process lists, including sessions that disappea
       snapshot: { ...snapshot.snapshot, processes: {} },
     });
     assert.deepEqual(state.agentProcesses, {});
-    assert.equal(replaced, 0);
+    assert.equal(replaced, 1);
   } finally {
     restoreFakeRuntime(runtime);
   }
