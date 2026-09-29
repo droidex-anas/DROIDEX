@@ -1230,7 +1230,7 @@ export class SessionLifecycle {
       // The runtime was released under this send. A prompt the user typed
       // reopens the chat, as a send to any released chat does.
       if (liveSession.closeMode === 'preserve-pending' && !delivery && !prompt.notice)
-        await this.send(appSessionId, prompt.text, prompt.mentions);
+        await this.send(appSessionId, prompt.text, prompt.mentions, prompt.steerId);
       return;
     }
     if (liveSession.streaming) {
@@ -1422,7 +1422,7 @@ export class SessionLifecycle {
     for (const prompt of queued) {
       if (this.dependencies.isShutdownStarted()) return;
       try {
-        await this.send(appSessionId, prompt.text, prompt.mentions);
+        await this.send(appSessionId, prompt.text, prompt.mentions, prompt.steerId);
       } catch (error) {
         this.dependencies.emitError({
           appSessionId,
