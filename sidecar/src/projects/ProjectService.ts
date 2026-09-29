@@ -61,6 +61,10 @@ export interface ProjectPort {
   ): boolean;
 }
 
+// Closing a side chat deletes it, so it cannot be the chat a project reports to.
+const SIDE_CHAT_CANNOT_LEAD =
+  'A side chat cannot lead a project, because closing it deletes it. Start the threads from the chat it branched from.';
+
 /** A spawn under way and the chat that asked for it, which the user's Stop on that chat cancels. */
 interface SpawnUnderWay {
   source: string;
@@ -228,6 +232,7 @@ export class ProjectService {
     const owner = this.requireSession(source);
     if (owner.sessionPurpose !== 'chat')
       throw new Error('Only ordinary chats can own project threads.');
+    if (owner.lineage?.kind === 'side') throw new Error(SIDE_CHAT_CANNOT_LEAD);
     const spawn: SpawnUnderWay = { source, stopped: false };
     this.spawnsUnderWay.add(spawn);
     try {
@@ -356,6 +361,7 @@ export class ProjectService {
       const owner = this.requireSession(source);
       if (owner.sessionPurpose !== 'chat')
         throw new Error('Only ordinary chats can keep a project plan.');
+      if (owner.lineage?.kind === 'side') throw new Error(SIDE_CHAT_CANNOT_LEAD);
       if (steps.some((step) => step.threadAppSessionId))
         throw new Error('This chat has started no threads yet; leave threadId out.');
       project = this.adoption(source, owner);

@@ -499,6 +499,13 @@ test('ordinary chats adopt a project, with scoped ownership and no autonomy esca
     /autonomy/,
   );
   await h.projects.send('ordinary', grandchild.appSessionId, 'Main can coordinate all members.');
+
+  // Closing a side chat deletes it, so it never becomes the chat a project reports to.
+  const lineage = { kind: 'side' as const, sourceAppSessionId: 'ordinary', forkedAt: 1 };
+  h.sessions.set('side', { ...summary('side'), lineage });
+  await assert.rejects(h.projects.spawn('side', input), /side chat/);
+  await assert.rejects(h.projects.setPlan('side', [{ title: 'Port' }]), /side chat/);
+  assert.equal(h.projects.list().length, 2);
 });
 
 test('a first spawn that fails leaves no project behind, wherever it failed', async (t) => {
