@@ -1,6 +1,5 @@
 import type { McpServerConfig } from '@factory/droid-sdk';
 
-import type { CreateRuntimeSessionOptions } from '../DroidRuntime.js';
 import type { NormalizedEvent } from '../normalize.js';
 import type {
   Autonomy,
@@ -10,17 +9,24 @@ import type {
   VoiceNarration,
 } from '../protocol.js';
 import type { ProviderMention, SkillInfo } from './catalog.js';
+import type { DroidLaunchSettings } from './droid/droidLaunch.js';
 import type { ProviderInteractions } from './interactions.js';
 import type { ProviderKind } from './providerKind.js';
 import type { ProviderProbe } from './providerProbes.js';
 
-// The option shape the lifecycle already builds. A provider ignores the fields
-// its runtime does not support; Droid's handler pair is replaced by the neutral
-// interactions port.
-export type ProviderOpenInput = Omit<
-  CreateRuntimeSessionOptions,
-  'permissionHandler' | 'askUserHandler'
-> & { interactions: ProviderInteractions; contextWindowTokens?: ContextWindowTokens };
+export interface ProviderOpenInput {
+  cwd: string;
+  interactionMode: SessionInteractionMode;
+  autonomy: Autonomy;
+  modelId?: string;
+  reasoningEffort?: ReasoningEffort;
+  fastMode?: boolean;
+  contextWindowTokens?: ContextWindowTokens;
+  mcpServers: McpServerConfig[];
+  interactions: ProviderInteractions;
+  // Set only when the session opens on Droid.
+  droidLaunch?: DroidLaunchSettings;
+}
 
 export interface ProviderResumeInput {
   // DROIDEX's own identity for the session, which a resumed provider session

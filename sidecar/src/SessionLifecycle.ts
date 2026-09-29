@@ -23,24 +23,25 @@ import type { SessionEventFlow } from './SessionEventFlow.js';
 import type { LiveOperationTarget, SessionContext } from './SessionContext.js';
 import type { ChildSessions } from './ChildSessions.js';
 import type { AgentProcessMonitor } from './processes/AgentProcessMonitor.js';
+import { errMsg } from './errors.js';
 import {
   buildCreatedSessionSummary,
-  buildCreateRuntimeOptions,
   buildResumedProviderSummary,
   buildResumedSession,
   createDefaultsModeForCommand,
   createInteractionModeForCommand,
   createMissionAgentDefaultsForMode,
   createModelDefaultsForProvider,
-  errMsg,
   requireAutonomyForCommand,
-  requireDroidReasoningSupported,
   resumeHandle,
-  resumeSettings,
-} from './sessionHelpers.js';
+} from './sessionOpening.js';
 import type { ProviderInteractions } from './providers/interactions.js';
 import { requireProviderKind, type ProviderKind } from './providers/providerKind.js';
 import type { PrimaryTurnRequest } from './providers/primaryTurn.js';
+import {
+  droidLaunchSettings,
+  requireDroidReasoningSupported,
+} from './providers/droid/droidLaunch.js';
 import { droidSessionOf } from './providers/droid/DroidProviderSession.js';
 import type { Provider, ProviderSession } from './providers/session.js';
 
@@ -52,10 +53,6 @@ export interface SessionBranch {
   lineage: SessionLineage;
   prompt: string;
 }
-
-// An unbound summary predates the binding, so it resumes on the default
-// provider; an unroutable one fails at the provider lookup.
-const boundProvider = (summary: SessionSummary | undefined) => summary?.provider;
 
 async function sessionRuntimeCwd(appCwd: string): Promise<string> {
   if (appCwd) return appCwd;
@@ -249,22 +246,29 @@ export class SessionLifecycle {
       const mcp = await d.startLocalMcpServers(ref, appCwd);
       pendingMcpServers = mcp.servers;
       const providerSession = await provider.create({
-        ...buildCreateRuntimeOptions({
-          command,
-          runtimeCwd,
-          interactionMode,
-          primary,
-          agents,
-          defaults,
-          autonomy,
-          compactionModel,
-          compactionTokenLimit,
-          mcpServers: mcp.configs,
-        }),
+        cwd: runtimeCwd,
+        interactionMode,
+        autonomy,
+        ...primary,
         ...(kind !== 'droid' && !primary.modelId
           ? { modelId: d.providerDefaultModelId?.(kind) }
           : {}),
+        contextWindowTokens: command.contextWindowTokens,
+        mcpServers: mcp.configs,
         interactions: d.interactionsFor(ref),
+        ...(kind === 'droid'
+          ? {
+              droidLaunch: droidLaunchSettings({
+                command,
+                interactionMode,
+                primary,
+                agents,
+                defaults,
+                compactionModel,
+                compactionTokenLimit,
+              }),
+            }
+          : { fastMode: command.fastMode ?? false }),
       });
       pendingSession = providerSession;
       const droid = droidSessionOf(providerSession);
@@ -398,8 +402,9 @@ export class SessionLifecycle {
     let pendingLiveSession: LiveSession | undefined;
     try {
       // Resolved before any resource starts, so a session bound to a provider
-      // this build cannot route fails before it costs anything.
-      const kind = requireProviderKind(boundProvider(historical));
+      // this build cannot route fails before it costs anything. A summary that
+      // predates the binding has none and resumes on the default provider.
+      const kind = requireProviderKind(historical?.provider);
       const provider = d.provider(kind);
       const mcp = await d.startLocalMcpServers(ref, historical?.cwd);
       pendingMcpServers = mcp.servers;
@@ -410,7 +415,12 @@ export class SessionLifecycle {
         ...resumeHandle(historical),
         interactions: d.interactionsFor(ref),
         cwd: runtimeCwd,
-        ...resumeSettings(historical),
+        modelId: historical?.modelId,
+        reasoningEffort: historical?.reasoningEffort,
+        fastMode: historical?.fastMode,
+        contextWindowTokens: historical?.contextWindowTokens,
+        autonomy: historical?.autonomy,
+        interactionMode: historical?.interactionMode,
         ...(kind !== 'droid' && !historical?.modelId
           ? { modelId: d.providerDefaultModelId?.(kind) }
           : {}),

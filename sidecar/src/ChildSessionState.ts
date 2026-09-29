@@ -1,5 +1,5 @@
 import type { McpServerConfig } from '@factory/droid-sdk';
-import type { FactorySession } from './DroidRuntime.js';
+import type { FactorySession, SessionInitResult } from './DroidRuntime.js';
 import type { PersistedChildSession, PersistedChildSpawnLink } from './history.js';
 import { publishedStreamFidelity } from './childStreamFidelity.js';
 import type {
@@ -10,7 +10,8 @@ import type {
   SessionSummary,
   StreamFidelity,
 } from './protocol.js';
-import { normalizeAutonomy, reasoningValue, type SessionInitResult } from './sessionHelpers.js';
+import { reasoningValue } from './modelCatalog.js';
+import { normalizeAutonomy } from './values.js';
 /* eslint-disable @typescript-eslint/no-unused-vars -- persisted-only fields are intentionally omitted. */
 export interface ChildIdentity {
   parentAppSessionId: string;

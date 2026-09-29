@@ -9,7 +9,7 @@ import type { NormalizedEvent } from '../../normalize.js';
 import type { TranscriptEvent } from '../../protocol.js';
 import type { ChildSessionSignal } from '../../subagentSignals.js';
 import type { ProviderModelSettings } from '../session.js';
-import { errMsg } from '../../sessionHelpers.js';
+import { errMsg } from '../../errors.js';
 import { UsageLimitError, usageLimitDetails } from '../usageLimit.js';
 import type { FileChangeDetail } from './codexApprovals.js';
 import { imageUsageLimit } from './codexImages.js';

@@ -18,7 +18,7 @@ import {
   type ProviderInteractions,
   type ProviderQuestionAnswers,
 } from './providers/interactions.js';
-import { errMsg } from './sessionHelpers.js';
+import { errMsg } from './errors.js';
 
 interface PendingPermission {
   resolve: (outcome: PermissionOutcome) => void;

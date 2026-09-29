@@ -3,7 +3,6 @@ import test from 'node:test';
 
 import { startupFactoryDefaults, validateFactoryDefaults } from './SessionManager.js';
 import { claudeContextEnv, claudeContextModel } from './providers/claude/claudeContextWindow.js';
-import { buildCreatedSessionSummary, resumeSettings } from './sessionHelpers.js';
 import { createSessionSettingsForAgent } from './SessionModelSettings.js';
 import { createSessionManagerTestContext } from './testing/sessionManagerTestContext.js';
 import { ProviderTranscriptFile } from './providers/ProviderTranscriptFile.js';
@@ -204,7 +203,6 @@ test('closed provider sessions preserve fast-only, explicit off and omitted sett
     const patch = h.history.summaryPatchesAndHidden().patches.get(stored.appSessionId);
     assert.equal(patch?.fastMode, false);
     assert.equal(patch?.reasoningEffort, 'low');
-    assert.equal(resumeSettings({ ...stored, ...patch }).fastMode, false);
     await h.create({
       clientRef: 'unsupported-fast',
       sessionPurpose: 'chat',
@@ -246,30 +244,4 @@ test('Claude context choices round-trip suffixes and isolate the 200k launch env
   assert.deepEqual(claudeContextEnv(env, 1000000), { PATH: '/bin' });
   assert.deepEqual(claudeContextEnv(env, undefined), env);
   assert.equal(env.CLAUDE_CODE_DISABLE_1M_CONTEXT, 'global');
-  const session = buildCreatedSessionSummary({
-    command: {
-      type: 'session.create',
-      clientRef: 'window',
-      title: 'Window',
-      goal: '',
-      sessionPurpose: 'chat',
-      autonomy: 'low',
-      contextWindowTokens: 1000000,
-    },
-    appSessionId: 'window',
-    interactionMode: 'auto',
-    primary: { modelId: 'sonnet[1m]' },
-    agents: {},
-    autonomy: 'low',
-    provider: 'claude',
-    compactionModel: 'current-model',
-    now: 1,
-  });
-  assert.deepEqual(resumeSettings(session), {
-    modelId: 'sonnet[1m]',
-    contextWindowTokens: 1000000,
-    autonomy: 'low',
-    interactionMode: 'auto',
-    fastMode: false,
-  });
 });

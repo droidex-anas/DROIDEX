@@ -2,10 +2,10 @@ import { existsSync, mkdirSync, readFileSync, readdirSync, statSync } from 'node
 import { DatabaseSync } from 'node:sqlite';
 import { homedir } from 'node:os';
 import { basename, join } from 'node:path';
-import { dateMs, numberValue, objectValue, stringValue } from './values.js';
+import { dateMs, normalizeAutonomy, numberValue, objectValue, stringValue } from './values.js';
+import { reasoningValue } from './modelCatalog.js';
 import type {
   SessionRole,
-  Autonomy,
   BridgeFeature,
   ContextWindowTokens,
   FactoryDefaultSettings,
@@ -794,7 +794,7 @@ function whenNumber<T extends object>(
 function whenReasoning(
   value: unknown,
 ): { reasoningEffort: ReasoningEffort } | Record<string, never> {
-  const reasoningEffort = mapReasoning(stringValue(value));
+  const reasoningEffort = reasoningValue(value);
   return reasoningEffort === undefined ? {} : { reasoningEffort };
 }
 
@@ -877,15 +877,15 @@ function summaryPatchesFromRows(
       cwd: stringValue(row.cwd),
       workspaceKind: workspaceKind(stringValue(row.workspace_kind)),
       modelId: stringValue(row.model_id),
-      reasoningEffort: mapReasoning(stringValue(row.reasoning_effort)),
+      reasoningEffort: reasoningValue(row.reasoning_effort),
       fastMode: fastModeValue(row.fast_mode),
       contextWindowTokens: contextWindowTokensValue(row.context_window_tokens),
       compactionModel: stringValue(row.compaction_model),
       workerModelId: stringValue(row.worker_model_id),
-      workerReasoningEffort: mapReasoning(stringValue(row.worker_reasoning_effort)),
+      workerReasoningEffort: reasoningValue(row.worker_reasoning_effort),
       validatorModelId: stringValue(row.validator_model_id),
-      validatorReasoningEffort: mapReasoning(stringValue(row.validator_reasoning_effort)),
-      autonomy: mapAutonomy(stringValue(row.autonomy)),
+      validatorReasoningEffort: reasoningValue(row.validator_reasoning_effort),
+      autonomy: normalizeAutonomy(row.autonomy),
       tokensIn: numberValue(row.tokens_in),
       tokensOut: numberValue(row.tokens_out),
       contextTokens: numberValue(row.context_tokens),
@@ -1161,23 +1161,21 @@ export function readFactoryDefaults(): FactoryDefaults {
   const missionControlSettings = objectValue(settings.missionModelSettings) ?? {};
   return {
     modelId: stringValue(session.model) || stringValue(session.modelId),
-    reasoningEffort: mapReasoning(stringValue(session.reasoningEffort)),
+    reasoningEffort: reasoningValue(session.reasoningEffort),
     compactionModel: stringValue(settings.compactionModel) || stringValue(session.compactionModel),
     compactionTokenLimit: tokenLimitValue(settings.compactionTokenLimit),
     compactionTokenLimitPerModel: tokenLimitRecordValue(settings.compactionTokenLimitPerModel),
-    autonomy: mapAutonomy(stringValue(session.autonomyLevel)),
+    autonomy: normalizeAutonomy(session.autonomyLevel),
     interactionMode: mapInteractionMode(stringValue(session.interactionMode)),
     specModelId: stringValue(session.specModeModel),
-    specReasoningEffort: mapReasoning(stringValue(session.specModeReasoningEffort)),
+    specReasoningEffort: reasoningValue(session.specModeReasoningEffort),
     missionOrchestratorModelId: stringValue(settings.missionOrchestratorModel),
-    missionOrchestratorReasoningEffort: mapReasoning(
-      stringValue(settings.missionOrchestratorReasoningEffort),
-    ),
+    missionOrchestratorReasoningEffort: reasoningValue(settings.missionOrchestratorReasoningEffort),
     workerModelId: stringValue(missionControlSettings.workerModel),
-    workerReasoningEffort: mapReasoning(stringValue(missionControlSettings.workerReasoningEffort)),
+    workerReasoningEffort: reasoningValue(missionControlSettings.workerReasoningEffort),
     validatorModelId: stringValue(missionControlSettings.validationWorkerModel),
-    validatorReasoningEffort: mapReasoning(
-      stringValue(missionControlSettings.validationWorkerReasoningEffort),
+    validatorReasoningEffort: reasoningValue(
+      missionControlSettings.validationWorkerReasoningEffort,
     ),
   };
 }
@@ -1262,15 +1260,15 @@ function readMissionModelSettings(dir: string): FactoryDefaults {
   const settings = readJson<StoredModelSettings>(path);
   return {
     modelId: settings.model || settings.modelId,
-    reasoningEffort: mapReasoning(settings.reasoningEffort),
+    reasoningEffort: reasoningValue(settings.reasoningEffort),
     compactionModel: settings.compactionModel,
     compactionTokenLimit: tokenLimitValue(settings.compactionTokenLimit),
     compactionTokenLimitPerModel: tokenLimitRecordValue(settings.compactionTokenLimitPerModel),
     workerModelId: settings.workerModel,
-    workerReasoningEffort: mapReasoning(settings.workerReasoningEffort),
+    workerReasoningEffort: reasoningValue(settings.workerReasoningEffort),
     validatorModelId: settings.validationWorkerModel,
-    validatorReasoningEffort: mapReasoning(settings.validationWorkerReasoningEffort),
-    autonomy: mapAutonomy(settings.autonomyLevel),
+    validatorReasoningEffort: reasoningValue(settings.validationWorkerReasoningEffort),
+    autonomy: normalizeAutonomy(settings.autonomyLevel),
   };
 }
 
@@ -1641,7 +1639,7 @@ function readSessionModelSettings(
         stringValue(settings.model) ||
         stringValue(raw.modelId) ||
         stringValue(raw.model),
-    reasoningEffort: mapReasoning(
+    reasoningEffort: reasoningValue(
       stringValue(sidecarSettings.reasoningEffort) ||
         stringValue(settings.reasoningEffort) ||
         stringValue(raw.reasoningEffort),
@@ -1666,7 +1664,7 @@ function readSessionModelSettings(
     autonomy: migrateTranscriptPermissions(
       sessionPath,
       providerKind(start?.provider) ?? DEFAULT_PROVIDER,
-      mapAutonomy(
+      normalizeAutonomy(
         stringValue(sidecarSettings.autonomyLevel) ??
           stringValue(settings.autonomyLevel) ??
           stringValue(raw.autonomyLevel),
@@ -1709,29 +1707,6 @@ function parseJsonLines<T>(raw: string): T[] {
 function titleFromProgressType(type?: string): string | undefined {
   if (!type) return undefined;
   return type.replace(/_/g, ' ');
-}
-
-function mapReasoning(value?: string): ReasoningEffort | undefined {
-  if (
-    value === 'off' ||
-    value === 'none' ||
-    value === 'minimal' ||
-    value === 'low' ||
-    value === 'medium' ||
-    value === 'high' ||
-    value === 'xhigh' ||
-    value === 'max' ||
-    value === 'ultra' ||
-    value === 'dynamic'
-  ) {
-    return value;
-  }
-  return undefined;
-}
-
-function mapAutonomy(value?: string): Autonomy | undefined {
-  if (value === 'off' || value === 'low' || value === 'medium' || value === 'high') return value;
-  return undefined;
 }
 
 function contextAccuracy(value: unknown): SessionSummary['contextAccuracy'] | undefined {

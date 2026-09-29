@@ -6,7 +6,6 @@ import {
   type SessionListFilterOptions,
   type SessionListPage,
 } from './sessionListFilter.js';
-import { uniqueStrings } from './sessionHelpers.js';
 
 export interface RegisteredSession {
   summary: SessionSummary;
@@ -452,6 +451,10 @@ export class SessionRegistry<TLive extends RegisteredSession> {
       this.historicalPatches.set(providerSessionId, cached);
     }
   }
+}
+
+function uniqueStrings(values: (string | undefined)[]): string[] {
+  return [...new Set(values.filter((value): value is string => Boolean(value)))];
 }
 
 function providerIds(summary: SessionSummary): string[] {

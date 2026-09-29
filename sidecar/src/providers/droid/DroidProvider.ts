@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 
 import type { Autonomy } from '../../protocol.js';
-import { normalizeAutonomy } from '../../sessionHelpers.js';
+import { normalizeAutonomy } from '../../values.js';
 import type { FactoryRuntime, FactorySession } from '../../DroidRuntime.js';
 import { sessionFilePath } from '../../history.js';
 import type { StoredMessageLine } from '../../sessionTranscriptParser.js';
@@ -25,17 +25,28 @@ export class DroidProvider implements Provider {
     private readonly onAvailableModels: (models: readonly Record<string, unknown>[]) => void,
   ) {}
 
-  async create({ interactions, ...options }: ProviderOpenInput): Promise<ProviderSession> {
+  async create({
+    cwd,
+    interactionMode,
+    autonomy,
+    modelId,
+    reasoningEffort,
+    mcpServers,
+    interactions,
+    droidLaunch,
+  }: ProviderOpenInput): Promise<ProviderSession> {
     // A created session mints the identity DROIDEX adopts as its own, and the
     // daemon can ask for permission before it is known, so the handlers read it
     // lazily from this holder.
-    const ref: { id: string; autonomy: Autonomy } = {
-      id: '',
-      autonomy: options.autonomyLevel ?? 'off',
-    };
+    const ref: { id: string; autonomy: Autonomy } = { id: '', autonomy };
     const session = await this.runtime.createSession({
-      ...options,
-      autonomyLevel: ref.autonomy,
+      cwd,
+      interactionMode,
+      ...(modelId !== undefined ? { modelId } : {}),
+      ...(reasoningEffort !== undefined ? { reasoningEffort } : {}),
+      autonomyLevel: autonomy,
+      mcpServers,
+      ...droidLaunch,
       ...droidInteractionHandlers(ref, interactions),
     });
     ref.id = session.sessionId;

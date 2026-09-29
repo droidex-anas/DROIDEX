@@ -6,7 +6,7 @@ import type {
 } from './liveRuntimeJournal.js';
 import type { InterruptedSessionRecord, SessionPhase, SessionSummary } from './protocol.js';
 import { DEFAULT_PROVIDER } from './providers/providerKind.js';
-import { errMsg } from './sessionHelpers.js';
+import { errMsg } from './errors.js';
 import type { SessionLifecycle } from './SessionLifecycle.js';
 import { adoptedSessionFacts, isDueForRetirement } from './sessionRuntimeRetirement.js';
 

@@ -14,7 +14,7 @@ import type {
   TranscriptEvent,
 } from './protocol.js';
 import type { CompactType } from './compaction.js';
-import { errMsg } from './sessionHelpers.js';
+import { errMsg } from './errors.js';
 import { StreamingDeltaCoalescer, streamingEventOwner } from './streamingDeltaCoalescer.js';
 import { hotPathMetrics } from './telemetry/hotPathMetrics.js';
 

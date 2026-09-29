@@ -1,4 +1,4 @@
-import type { FactoryRuntime } from './DroidRuntime.js';
+import type { FactoryRuntime, SessionInitResult } from './DroidRuntime.js';
 import type { HistoryIndex, PersistedChildSession } from './history.js';
 import type { ServerEvent, SessionSummary } from './protocol.js';
 import type { SessionRegistry } from './SessionRegistry.js';
@@ -7,7 +7,6 @@ import type { SessionEventFlow } from './SessionEventFlow.js';
 import type { SessionInteractions } from './SessionInteractions.js';
 import type { SessionContext } from './SessionContext.js';
 import type { SessionCompaction } from './SessionCompaction.js';
-import type { SessionInitResult } from './sessionHelpers.js';
 import type { ChildParentLease, ChildRuntimeTarget, ChildSettings } from './ChildSessionState.js';
 import type { AgentProcessMonitor } from './processes/AgentProcessMonitor.js';
 import type { SettledAgent } from './childWaveWake.js';

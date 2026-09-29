@@ -2,7 +2,7 @@ import { mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 
 import type { SessionLineage, SessionSummary } from './protocol.js';
-import { errMsg } from './sessionHelpers.js';
+import { errMsg } from './errors.js';
 import { numberValue, objectValue, stringValue } from './values.js';
 
 const LINEAGE_NAME = 'session-lineage.json';

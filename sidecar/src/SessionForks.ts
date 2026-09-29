@@ -9,7 +9,7 @@ import type {
 } from './protocol.js';
 import type { LiveSession, SessionBranch, SessionCreateCommand } from './SessionLifecycle.js';
 import type { SessionFileChange } from './sessionFileCache.js';
-import { errMsg } from './sessionHelpers.js';
+import { errMsg } from './errors.js';
 import type { SessionLineageStore } from './sessionLineage.js';
 import { formatSideChatPrompt } from './sideChatPrompt.js';
 import { conversationMarkdown } from './sessionMarkdown.js';

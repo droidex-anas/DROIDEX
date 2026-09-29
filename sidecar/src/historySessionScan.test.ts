@@ -33,7 +33,6 @@ const { parseFullSessionTranscript, SessionTranscriptReader } =
 const { writeProviderSessionSettings } = await import('./providers/providerSessionSettings.js');
 const { ProviderTranscriptFile, forkedTranscript, writeForkedTranscript } =
   await import('./providers/ProviderTranscriptFile.js');
-const { resumeSettings } = await import('./sessionHelpers.js');
 const { SessionVoice } = await import('./providers/SessionVoice.js');
 const { providerSessionsDir } = await import('./droidexPaths.js');
 
@@ -213,7 +212,6 @@ test('a transcript DROIDEX writes for a non-Droid session is enumerated and repl
   );
   assert.equal(restored?.summary.fastMode, false);
   assert.equal(restored?.summary.contextWindowTokens, 200000);
-  assert.equal(resumeSettings(restored?.summary).fastMode, false);
 
   const events = parseFullSessionTranscript(
     appSessionId,

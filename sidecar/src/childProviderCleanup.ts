@@ -2,7 +2,7 @@ import type { ParentChildSessions } from './ChildSessionState.js';
 import type { ChildSessionsDependencies } from './ChildSessionsTypes.js';
 import type { FactorySession } from './DroidRuntime.js';
 import { RuntimeRetirementTimer } from './runtimeRetirementTimer.js';
-import { errMsg } from './sessionHelpers.js';
+import { errMsg } from './errors.js';
 
 const RETRY_MS = 5_000;
 

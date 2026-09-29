@@ -2,7 +2,7 @@
 // kinds the transcript shows are modelled; every other item Codex reports is one
 // explicit no-op.
 import { objectValue } from '../../values.js';
-import { reasoningValue } from '../../sessionHelpers.js';
+import { reasoningValue } from '../../modelCatalog.js';
 import type { ChildSessionSignal } from '../../subagentSignals.js';
 import { generatedImage, type GeneratedImage } from './codexImages.js';
 
