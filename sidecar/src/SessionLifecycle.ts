@@ -14,6 +14,7 @@ import type {
   ProviderMention,
   ServerEvent,
   SessionLineage,
+  SessionPurpose,
   SessionSummary,
   SkillInfo,
 } from './protocol.js';
@@ -137,7 +138,7 @@ export interface SessionLifecycleDependencies {
   getFactoryDefaults: () => Promise<FactoryDefaultSettings>;
   maxContextTokensForModel: (modelId?: string) => number | undefined;
   startLocalMcpServers: (
-    ref: { id: string; clientRef?: string },
+    ref: { id: string; clientRef?: string; purpose?: SessionPurpose },
     kind: ProviderKind,
     cwd?: string,
   ) => Promise<StartedLocalMcpResources>;
@@ -200,7 +201,7 @@ export class SessionLifecycle {
     const d = this.dependencies;
     d.ensureConnected();
     const appCwd = command.cwd ?? '';
-    const ref = { id: '', clientRef: command.clientRef };
+    const ref = { id: '', clientRef: command.clientRef, purpose: command.sessionPurpose };
     let pendingMcpServers: LocalMcpResource[] = [];
     let pendingSession: ProviderSession | undefined;
     let pendingLiveSession: LiveSession | undefined;
@@ -391,7 +392,7 @@ export class SessionLifecycle {
         throw new Error('The target session changed while it was being resumed.');
       }
     };
-    const ref = { id: appSessionId };
+    const ref = { id: appSessionId, purpose: historical?.sessionPurpose };
     let pendingMcpServers: LocalMcpResource[] = [];
     let pendingSession: ProviderSession | undefined;
     let pendingLiveSession: LiveSession | undefined;

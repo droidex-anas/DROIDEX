@@ -18,6 +18,7 @@ import type {
   ResponseFormat,
   ServerEvent,
   SessionInteractionMode,
+  SessionPurpose,
   TranscriptEvent,
 } from './protocol.js';
 import {
@@ -1372,28 +1373,28 @@ export class SessionManager {
   }
 
   private async startLocalMcpServers(
-    ref: { id: string; clientRef?: string },
+    ref: { id: string; clientRef?: string; purpose?: SessionPurpose },
     kind: ProviderKind,
     cwd?: string,
   ): Promise<StartedLocalMcpResources> {
+    const attended = shouldAttachAutomationMcp(
+      ref.clientRef,
+      await isUnattendedAutomationSession(ref.id),
+    );
+    // The session tools start and steer chats a person watches. An unattended
+    // run has nobody watching, and only an ordinary chat may call them, so no
+    // other session carries their schemas.
+    const managesChats = attended && (ref.purpose === undefined || ref.purpose === 'chat');
     if (kind === 'codex') {
-      const unattended = await isUnattendedAutomationSession(ref.id);
-      const inAppServers = shouldAttachAutomationMcp(ref.clientRef, unattended)
-        ? [
-            createSessionsMcpServer(() => ref.id, this.sidebarSessions),
-            createAutomationMcpServer(() => ref.id),
-          ]
-        : [];
+      const inAppServers = [
+        ...(managesChats ? [createSessionsMcpServer(() => ref.id, this.sidebarSessions)] : []),
+        ...(attended ? [createAutomationMcpServer(() => ref.id)] : []),
+      ];
       return { servers: [], configs: [], inAppServers };
     }
     const servers = [this.createLocalMcpResource(() => ref.id)];
-    const unattended = await isUnattendedAutomationSession(ref.id);
-    if (shouldAttachAutomationMcp(ref.clientRef, unattended)) {
-      servers.push(this.createAutomationMcpResource(() => ref.id));
-      // The session tools start and steer chats a person watches; an unattended
-      // run has nobody watching, so it never gets them.
-      servers.push(this.createSessionsMcpResource(() => ref.id));
-    }
+    if (attended) servers.push(this.createAutomationMcpResource(() => ref.id));
+    if (managesChats) servers.push(this.createSessionsMcpResource(() => ref.id));
     // A folderless session has no project scope: user-level config only, the
     // same rule the MCP settings flows follow.
     const workspace = cwd?.trim();
