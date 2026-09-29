@@ -5,7 +5,6 @@ import {
   query,
   type McpServerConfig,
   type ModelInfo,
-  type Query,
   type SDKMessage,
   type SDKUserMessage,
 } from '@anthropic-ai/claude-agent-sdk';
@@ -24,9 +23,16 @@ import type { SkillInfo } from '../catalog.js';
 import type { ProviderInteractions } from '../interactions.js';
 import type { ProviderModelSettings, ProviderSession } from '../session.js';
 import { ClaudeCatalog } from './claudeCatalog.js';
-import { claudeLaunchModel, type ClaudeDefaultModel } from './claudeModels.js';
+import { claudeLaunchModel, planningModelNotice, type ClaudeDefaultModel } from './claudeModels.js';
 import { ClaudeEventMapper, rateLimitRefusal } from './claudeEvents.js';
-import { MessageQueue } from './claudeMessages.js';
+import {
+  answersTurn,
+  commandLifecycle,
+  isSlashCommand,
+  MessageQueue,
+  turnFailure,
+  type SteeringQuery,
+} from './claudeMessages.js';
 import { sessionOptions, claudeEffort } from './claudeOptions.js';
 import { ClaudePermissionModes } from './claudePermissionModes.js';
 
@@ -220,7 +226,9 @@ export class ClaudeSession implements ProviderSession {
         if (next.done) throw new Error('Claude Code exited before the turn finished.');
         const { message, events } = next.value;
         if (message.type === 'assistant' && !reportedPlanningModel) {
-          const notice = this.planningModelNotice(message);
+          const notice = this.permissions.planning
+            ? planningModelNotice(message, this.modelId)
+            : undefined;
           if (notice) {
             reportedPlanningModel = true;
             yield this.mapper.statusEvent(notice);
@@ -317,22 +325,6 @@ export class ClaudeSession implements ProviderSession {
   // A steer that runs after the turn's result gets a result of its own.
   private answersSteer(message: { user_message_uuids?: string[] }): boolean {
     return message.user_message_uuids?.some((uuid) => this.unansweredSteers.has(uuid)) ?? false;
-  }
-
-  private planningModelNotice(
-    message: Extract<SDKMessage, { type: 'assistant' }>,
-  ): string | undefined {
-    const model = message.message.model;
-    if (
-      !this.permissions.planning ||
-      !this.modelId ||
-      message.parent_tool_use_id ||
-      model === '<synthetic>' ||
-      matchesModel(this.modelId, model)
-    )
-      return undefined;
-    // Plan mode can override the pin inside the CLI; report its choice without changing it.
-    return `Planning on ${model}, Claude Code's plan-mode model.`;
   }
 
   // Keep reading between turns so background children can settle immediately.
@@ -505,57 +497,4 @@ export class ClaudeSession implements ProviderSession {
       this.resolveClosed(error);
     }
   }
-}
-
-function matchesModel(selected: string, actual: string): boolean {
-  const model = selected.replace(/\[1m\]$/i, '');
-  if (model === actual) return true;
-  // The picker also publishes CLI aliases, while assistant frames carry wire ids.
-  return !model.startsWith('claude-') && actual.startsWith(`claude-${model}-`);
-}
-
-function turnFailure(subtype: string, errors: string[]): string {
-  // The CLI's own diagnostics are bracketed internals; the subtype is what a
-  // user can act on.
-  const detail = errors.filter((error) => !error.startsWith('[')).join('\n');
-  return detail
-    ? `Claude Code ended the turn (${subtype}): ${detail}`
-    : `Claude Code ended the turn (${subtype}).`;
-}
-
-// Control requests the SDK sends at runtime but does not declare.
-type SteeringQuery = Query & {
-  interrupt(options: { cancelQueued: boolean }): Promise<unknown>;
-  cancelAsyncMessage(uuid: string): Promise<boolean>;
-};
-
-// The CLI reports each queued prompt's progress in a frame the SDK does not
-// declare either: 'started' when the model takes it in, 'cancelled' when it is
-// dropped.
-function commandLifecycle(message: SDKMessage): { uuid: string; state: string } | undefined {
-  const frame = message as unknown as { type?: unknown; command_uuid?: unknown; state?: unknown };
-  if (
-    frame.type !== 'command_lifecycle' ||
-    typeof frame.command_uuid !== 'string' ||
-    typeof frame.state !== 'string'
-  )
-    return undefined;
-  return { uuid: frame.command_uuid, state: frame.state };
-}
-
-function isSlashCommand(text: string): boolean {
-  return text.trimStart().startsWith('/');
-}
-
-function answersTurn(
-  message: { user_message_uuid?: string; user_message_uuids?: string[] },
-  turnId: string,
-): boolean {
-  // The plural list names every prompt the turn has consumed, so where it
-  // exists it is the whole answer: a result that omits this turn's uuid belongs
-  // to another turn, whatever the singular field says.
-  if (message.user_message_uuids) return message.user_message_uuids.includes(turnId);
-  if (message.user_message_uuid !== undefined) return message.user_message_uuid === turnId;
-  // Older CLIs stamp neither field; their result can only be this turn's.
-  return true;
 }

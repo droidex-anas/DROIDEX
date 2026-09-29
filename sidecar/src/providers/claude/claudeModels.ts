@@ -1,6 +1,6 @@
 // The Claude Code model catalogue as DROIDEX model info, and the model a chat
 // that pins none starts on.
-import type { ModelInfo as ClaudeModelInfo } from '@anthropic-ai/claude-agent-sdk';
+import type { ModelInfo as ClaudeModelInfo, SDKMessage } from '@anthropic-ai/claude-agent-sdk';
 
 import { reasoningValue } from '../../modelCatalog.js';
 import type { ContextWindowTokens, ModelInfo, ReasoningEffort } from '../../protocol.js';
@@ -190,4 +190,28 @@ function defaultEffort(
 ): ReasoningEffort {
   if (configured && efforts.includes(configured)) return configured;
   return efforts.includes('high') ? 'high' : efforts[efforts.length - 1];
+}
+
+// Plan mode can override the pinned model inside the CLI; this reports its
+// choice without changing it.
+export function planningModelNotice(
+  message: Extract<SDKMessage, { type: 'assistant' }>,
+  modelId: string | undefined,
+): string | undefined {
+  const model = message.message.model;
+  if (
+    !modelId ||
+    message.parent_tool_use_id ||
+    model === '<synthetic>' ||
+    matchesModel(modelId, model)
+  )
+    return undefined;
+  return `Planning on ${model}, Claude Code's plan-mode model.`;
+}
+
+function matchesModel(selected: string, actual: string): boolean {
+  const model = selected.replace(/\[1m\]$/i, '');
+  if (model === actual) return true;
+  // The picker also publishes CLI aliases, while assistant frames carry wire ids.
+  return !model.startsWith('claude-') && actual.startsWith(`claude-${model}-`);
 }

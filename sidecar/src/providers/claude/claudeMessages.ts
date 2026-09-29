@@ -1,3 +1,5 @@
+import type { Query, SDKMessage } from '@anthropic-ai/claude-agent-sdk';
+
 // Input prompts and per-turn output each have one producer and one reader.
 export class MessageQueue<T> implements AsyncIterable<T> {
   private readonly queued: T[] = [];
@@ -36,4 +38,50 @@ export class MessageQueue<T> implements AsyncIterable<T> {
   [Symbol.asyncIterator](): AsyncIterator<T> {
     return this;
   }
+}
+
+// Control requests the SDK sends at runtime but does not declare.
+export type SteeringQuery = Query & {
+  interrupt(options: { cancelQueued: boolean }): Promise<unknown>;
+  cancelAsyncMessage(uuid: string): Promise<boolean>;
+};
+
+// The CLI reports each queued prompt's progress in a frame the SDK does not
+// declare either: 'started' when the model takes it in, 'cancelled' when it is
+// dropped.
+export function commandLifecycle(message: SDKMessage): { uuid: string; state: string } | undefined {
+  const frame = message as unknown as { type?: unknown; command_uuid?: unknown; state?: unknown };
+  if (
+    frame.type !== 'command_lifecycle' ||
+    typeof frame.command_uuid !== 'string' ||
+    typeof frame.state !== 'string'
+  )
+    return undefined;
+  return { uuid: frame.command_uuid, state: frame.state };
+}
+
+export function turnFailure(subtype: string, errors: string[]): string {
+  // The CLI's own diagnostics are bracketed internals; the subtype is what a
+  // user can act on.
+  const detail = errors.filter((error) => !error.startsWith('[')).join('\n');
+  return detail
+    ? `Claude Code ended the turn (${subtype}): ${detail}`
+    : `Claude Code ended the turn (${subtype}).`;
+}
+
+export function isSlashCommand(text: string): boolean {
+  return text.trimStart().startsWith('/');
+}
+
+export function answersTurn(
+  message: { user_message_uuid?: string; user_message_uuids?: string[] },
+  turnId: string,
+): boolean {
+  // The plural list names every prompt the turn has consumed, so where it
+  // exists it is the whole answer: a result that omits this turn's uuid belongs
+  // to another turn, whatever the singular field says.
+  if (message.user_message_uuids) return message.user_message_uuids.includes(turnId);
+  if (message.user_message_uuid !== undefined) return message.user_message_uuid === turnId;
+  // Older CLIs stamp neither field; their result can only be this turn's.
+  return true;
 }
