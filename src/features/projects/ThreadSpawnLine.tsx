@@ -55,10 +55,19 @@ export function ThreadSpawnLine({
   // when the conversation does rather than shimmer for good.
   const starting = result === undefined && sessionLive;
   const live = row?.live === true || starting;
+  // A fork copies a lead's transcript but not its place in the project, so its
+  // Threads panel has nothing to show; from there a thread opens on its own.
+  const sameProject = useStoreSelector((state) => {
+    if (!spawned?.reportBack) return false;
+    const project = projectForSession(state.projects, spawned.id);
+    return (
+      project !== undefined &&
+      project === projectForSession(state.projects, state.activeAppSessionId)
+    );
+  });
   const openSpawned = () => {
     if (!spawned) return;
-    if (spawned.reportBack)
-      dispatch({ type: 'OPEN_UTILITY_TOOL', tool: 'threads', threadId: spawned.id });
+    if (sameProject) dispatch({ type: 'OPEN_UTILITY_TOOL', tool: 'threads', threadId: spawned.id });
     else dispatch({ type: 'SET_ACTIVE_SESSION', id: spawned.id });
   };
 
