@@ -211,6 +211,7 @@ function isServerEvent(value: unknown): value is ServerEvent {
         isOptionalString(value.message)
       );
     case 'session.created':
+    case 'session.forked':
       return typeof value.clientRef === 'string' && isSessionSummary(value.session);
     case 'session.updated':
       return isSessionSummary(value.session);
@@ -388,7 +389,17 @@ function isSessionSummary(value: unknown): boolean {
     value.features.every(isBridgeFeature) &&
     hasNumbers(value, ['tokensIn', 'tokensOut', 'contextTokens', 'createdAt', 'updatedAt']) &&
     isOptionalString(value.interruptReason) &&
-    isOptionalString(value.resumeId)
+    isOptionalString(value.resumeId) &&
+    (value.lineage === undefined || isSessionLineage(value.lineage))
+  );
+}
+
+function isSessionLineage(value: unknown): boolean {
+  return (
+    isRecord(value) &&
+    (value.kind === 'fork' || value.kind === 'side') &&
+    typeof value.sourceAppSessionId === 'string' &&
+    typeof value.forkedAt === 'number'
   );
 }
 

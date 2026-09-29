@@ -4,11 +4,6 @@
       "count": 98
     }
   },
-  "sidecar/src/CliInstaller.ts": {
-    "@typescript-eslint/no-confusing-void-expression": {
-      "count": 1
-    }
-  },
   "sidecar/src/browser/BrowserSessionManager.test.ts": {
     "@typescript-eslint/no-unused-vars": {
       "count": 1
@@ -93,9 +88,6 @@
     }
   },
   "src/components/ColorPicker.tsx": {
-    "@typescript-eslint/no-confusing-void-expression": {
-      "count": 7
-    },
     "@typescript-eslint/no-misused-promises": {
       "count": 1
     },
@@ -113,9 +105,6 @@
     },
     "@typescript-eslint/restrict-template-expressions": {
       "count": 4
-    },
-    "prefer-const": {
-      "count": 1
     }
   },
   "src/components/EditorOpenMenu.tsx": {
@@ -186,7 +175,7 @@
   },
   "src/components/browser/DesignModeComposer.tsx": {
     "@typescript-eslint/no-confusing-void-expression": {
-      "count": 6
+      "count": 1
     },
     "@typescript-eslint/no-unnecessary-condition": {
       "count": 2
@@ -236,11 +225,6 @@
       "count": 1
     },
     "@typescript-eslint/restrict-template-expressions": {
-      "count": 3
-    }
-  },
-  "src/components/chatFeed.ts": {
-    "@typescript-eslint/no-unnecessary-condition": {
       "count": 3
     }
   },
@@ -401,11 +385,6 @@
     },
     "prefer-const": {
       "count": 1
-    }
-  },
-  "src/lib/onboarding.ts": {
-    "@typescript-eslint/no-non-null-assertion": {
-      "count": 7
     }
   },
   "src/lib/repoEnvironment.ts": {

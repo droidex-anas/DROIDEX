@@ -1,6 +1,6 @@
 import { lazy, memo, Suspense, useEffect, useRef, useState } from 'react';
 import { MoreHorizontal } from 'lucide-react';
-import { Spinner } from '@droidex/icons';
+import { GitFork, Spinner } from '@droidex/icons';
 import { MAX_CHAT_TITLE_LENGTH } from '../lib/chatMetadata';
 import { formatRelativeTime } from '../lib/time';
 import { SESSION_MENU_WIDTH } from './SessionContextMenu';
@@ -232,7 +232,11 @@ export const SessionRow = memo(function SessionRow({
     }
     if (working) return spinner;
     if (WAITING_ON_USER.has(activityStatus)) return <ActivityStatusGlyph status={activityStatus} />;
-    return prIcon;
+    if (prIcon) return prIcon;
+    if (session.lineage?.kind === 'fork') {
+      return <GitFork className="h-3.5 w-3.5" role="img" aria-label="Forked chat" />;
+    }
+    return null;
   };
 
   const titleLine = (

@@ -47,6 +47,14 @@ export const LAZY_SURFACE_LOADERS = {
     const module = await import('../features/projects/ThreadAttentionNotifier');
     return { default: module.ThreadAttentionNotifier };
   },
+  sideChats: async () => {
+    const module = await import('../components/sidechats/SideChatsWorkspace');
+    return { default: module.SideChatsWorkspace };
+  },
+  sideChatWindow: async () => {
+    const module = await import('../components/sidechats/SideChatWindow');
+    return { default: module.SideChatWindow };
+  },
 };
 
 export type LazySurface = keyof typeof LAZY_SURFACE_LOADERS;
@@ -66,6 +74,8 @@ export const LazyFilesWorkspace = lazy(LAZY_SURFACE_LOADERS.files);
 export const LazyAgentsWorkspace = lazy(LAZY_SURFACE_LOADERS.agents);
 export const LazyThreadsWorkspace = lazy(LAZY_SURFACE_LOADERS.threads);
 export const LazyThreadAttentionNotifier = lazy(LAZY_SURFACE_LOADERS.threadNotifier);
+export const LazySideChatsWorkspace = lazy(LAZY_SURFACE_LOADERS.sideChats);
+export const LazySideChatWindow = lazy(LAZY_SURFACE_LOADERS.sideChatWindow);
 
 export function utilityToolFallback(tool: UtilityTool) {
   switch (tool) {
@@ -79,6 +89,7 @@ export function utilityToolFallback(tool: UtilityTool) {
       return <PanelSkeleton title="files" />;
     case 'agents':
     case 'threads':
+    case 'side':
       return <UtilityPaneSkeleton />;
   }
 }

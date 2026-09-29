@@ -91,9 +91,24 @@ import { join } from 'node:path';
 // own line, and together the entry measures 1_389_787, 213 bytes under the
 // line either side had. Nothing moved off the entry to make room; the new
 // headroom is ~8KB. The merged CSS of 100_491 stays under Projects' 101_500.
+//
+// Raised from 1_390_000 to 1_407_000 for session forks and side chats: the
+// entry gains ~17KB for the fork and side-chat store cases, `/side` and `/btw`
+// in the composer, the response action row, the sidebar's Fork chat item, the
+// forked-from divider, and `session.forked` validation. The side-chat panes and
+// floating window stay lazy. The merged ~1_398_100 leaves ~9KB of headroom.
+//
+// initialCssBytes raised from 100_000 to 101_500 on the same change: side chats
+// add ~0.8KB of utility classes, and the merged ~100_650 leaves ~0.85KB.
+//
+// Raised to 1_414_000 when Projects landed on top of session forks and side
+// chats. Each fits its own line, and together the entry measures 1_406_072,
+// 928 bytes under main's. Nothing moved off the entry to make room; the new
+// headroom is ~8KB. initialCssBytes goes from 101_500 to 102_000 on the same
+// landing: the merged CSS of 101_158 would otherwise leave ~0.3KB.
 const BUDGETS = {
-  initialRendererJsBytes: 1_398_000,
-  initialCssBytes: 101_500,
+  initialRendererJsBytes: 1_414_000,
+  initialCssBytes: 102_000,
   largestLazyChunkBytes: 700_000,
   duplicatePackageMaxBytes: 120_000,
 };

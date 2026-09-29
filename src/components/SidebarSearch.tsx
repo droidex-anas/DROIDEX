@@ -9,6 +9,7 @@ import {
   isChatHidden,
   type ChatMetadataMap,
 } from '../lib/chatMetadata';
+import { isSideChat } from '../lib/sideChats';
 import { sidebarSearchNotice } from '../lib/sidebarSearchStatus';
 import { projectsAnswered, projectThreadIds } from '../lib/projectThreads';
 import { formatRelativeTime } from '../lib/time';
@@ -56,7 +57,7 @@ export default function SidebarSearch({
       .filter((s): s is SessionSummary => Boolean(s))
       // A project thread is read inside Projects, like the list beneath this.
       .filter((s) => !state.projectThreads.has(s.appSessionId))
-      .filter((s) => !isChatHidden(state.chatMetadata[s.appSessionId]))
+      .filter((s) => !isSideChat(s) && !isChatHidden(state.chatMetadata[s.appSessionId]))
       .map((s) => {
         const title = chatDisplayTitle(s, state.chatMetadata[s.appSessionId]);
         return title === s.title ? s : { ...s, title };

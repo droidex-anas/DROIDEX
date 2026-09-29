@@ -3,6 +3,7 @@ import {
   Files,
   Globe,
   Hierarchy,
+  MessageBubble,
   MessageSquareText,
   SquareTerminal,
   type IconComponent,
@@ -40,8 +41,17 @@ const THREADS_TOOL_OPTION: UtilityToolOption = {
   shortcut: '',
 };
 
+// Opened by `/side`, `/btw`, or a chat's own side-chat action.
+const SIDE_TOOL_OPTION: UtilityToolOption = {
+  tool: 'side',
+  label: 'Side chat',
+  icon: MessageBubble,
+  shortcut: '',
+};
+
 export function utilityToolOption(tool: UtilityTool): UtilityToolOption {
   if (tool === 'agents') return AGENTS_TOOL_OPTION;
   if (tool === 'threads') return THREADS_TOOL_OPTION;
+  if (tool === 'side') return SIDE_TOOL_OPTION;
   return UTILITY_TOOL_OPTIONS.find((option) => option.tool === tool) ?? UTILITY_TOOL_OPTIONS[0];
 }

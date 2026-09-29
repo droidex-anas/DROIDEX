@@ -182,7 +182,7 @@ replaceable session/context telemetry can collapse, and never across a
 non-replaceable event. Approvals, questions, sidebar requests, errors,
 lifecycle boundaries, history responses, and turn settlement flush immediately.
 
-Renderers must advertise bridge protocol 6, apply one wire batch as one
+Renderers must advertise bridge protocol 7, apply one wire batch as one
 ordered store transition, and reconnect with the last fully applied generation
 and sequence. Same-generation reconnects replay the retained buffer. A new
 process generation or a replay gap delivers a compact `bridge.snapshot` of

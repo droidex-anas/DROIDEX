@@ -170,7 +170,7 @@ test(
       const second = required(FakeWebSocket.instances.at(-1));
       const url = new URL(second.url);
       const pageId = new URL(first.url).searchParams.get('pageId');
-      assert.equal(url.searchParams.get('bridgeProtocol'), '6');
+      assert.equal(url.searchParams.get('bridgeProtocol'), '7');
       assert.ok(pageId);
       assert.equal(url.searchParams.get('pageId'), pageId);
       assert.equal(url.searchParams.get('resumeGeneration'), 'generation-1');

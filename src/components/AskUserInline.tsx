@@ -1,6 +1,6 @@
 import { useEffect, useReducer, useRef } from 'react';
 import { motion, AnimatePresence, useReducedMotion } from 'framer-motion';
-import { shallowEqual, useStoreDispatch, useStoreSelector } from '../hooks/useStore';
+import { useStoreDispatch, useStoreSelector } from '../hooks/useStore';
 import { respondQuestion } from '../lib/commands';
 import type { SessionQuestion } from '../types/bridge';
 import { inlineCardMotion } from './inlineCardMotion';
@@ -18,18 +18,14 @@ const ACCENT = 'var(--droid-accent)';
 
 // Inline question card shown above the composer when Droid asks the user
 // something. Questions are session-scoped: only surface the one belonging to
-// the chat the user is looking at; other sessions signal via the sidebar.
-export default function AskUserInline() {
+// the chat the user is looking at (or the side chat given); other sessions
+// signal via the sidebar.
+export default function AskUserInline({ appSessionId }: { appSessionId?: string }) {
   const dispatch = useStoreDispatch();
-  const state = useStoreSelector(
-    (current) => ({
-      activeAppSessionId: current.activeAppSessionId,
-      pendingQuestions: current.pendingQuestions,
-    }),
-    shallowEqual,
-  );
-  const activeId = state.activeAppSessionId;
-  const question = activeId ? state.pendingQuestions[activeId] : undefined;
+  const question = useStoreSelector((current) => {
+    const id = appSessionId ?? current.activeAppSessionId;
+    return id ? current.pendingQuestions[id] : undefined;
+  });
   const isEmpty = question?.questions.length === 0;
 
   // A request without questions cannot be answered; cancel it so the pending

@@ -238,6 +238,7 @@ function createHarness(
     },
     hasActiveSettingsChanges: () => false,
     applyPendingSettingsToSummary: (item) => ({ ...item, ...projection }),
+    recordLineage: () => undefined,
     applyPendingSessionSettings: (appSessionId) => applyPending(appSessionId),
     runPrimaryTurn: async (live, prompt, delivery) => {
       if (delivery && !delivery.isCurrent()) return;

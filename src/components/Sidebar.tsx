@@ -28,9 +28,11 @@ import {
   pinnedChats,
 } from '../lib/chatMetadata';
 import { useSidebarRowActions } from '../hooks/useSidebarRowActions';
+import { useForkChat } from '../hooks/useForkChat';
 import { SessionContextMenu } from './SessionContextMenu';
 import { SessionRow } from './SidebarSessionRow';
 import { sessionIsLive, sessionIsUnread } from '../lib/sessions';
+import { isSideChat } from '../lib/sideChats';
 import { prKind } from '../lib/github';
 import { sessionAttention } from '../lib/sessionAttention';
 import type { SessionSummary } from '../types/bridge';
@@ -109,7 +111,7 @@ export default function Sidebar({
             .map((id) => state.sessions[id])
             .filter(Boolean)
             .filter((m) => !projectThreads.has(m.appSessionId))
-            .filter((m) => !isChatHidden(chatMetadata[m.appSessionId]))
+            .filter((m) => !isSideChat(m) && !isChatHidden(chatMetadata[m.appSessionId]))
             .filter(isUnread).length,
     [state.sessionOrder, state.sessions, chatMetadata, isUnread, projectThreads, projectsKnown],
   );
@@ -160,7 +162,7 @@ export default function Sidebar({
       .map((id) => state.sessions[id])
       .filter(Boolean)
       // A project thread is read inside Projects, with its project around it.
-      .filter((m) => !projectThreads.has(m.appSessionId))
+      .filter((m) => !projectThreads.has(m.appSessionId) && !isSideChat(m))
       .filter((m) => !isChatHidden(chatMetadata[m.appSessionId]) && (!unreadOnly || isUnread(m)))
       .filter((m) => matchesActivityFilter(statusFor(m), preferences.filter));
     const inScope = view === 'activity' ? listed.filter((m) => activity.inScope(m, now)) : listed;
@@ -236,6 +238,7 @@ export default function Sidebar({
     closeRowMenu,
     handleCopyMarkdown,
   } = rowActions;
+  const forkChat = useForkChat();
 
   // Read through a ref so the callback identity never changes and the row
   // memo keeps skipping unrelated store updates.
@@ -463,6 +466,16 @@ export default function Sidebar({
           onRename={() => {
             rowActions.startRenaming(rowMenu.appSessionId);
           }}
+          {...(rowMenuSession && !rowMenuSession.missionId && !rowMenuSession.streaming
+            ? {
+                onFork: () => {
+                  forkChat(
+                    rowMenuSession.appSessionId,
+                    chatDisplayTitle(rowMenuSession, chatMetadata[rowMenuSession.appSessionId]),
+                  );
+                },
+              }
+            : {})}
           onTogglePin={() => {
             dispatch({
               type: isChatPinned(chatMetadata[rowMenu.appSessionId]) ? 'UNPIN_CHAT' : 'PIN_CHAT',

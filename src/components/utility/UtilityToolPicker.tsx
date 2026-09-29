@@ -11,6 +11,7 @@ const TOOL_SURFACES: Record<UtilityTool, LazySurface> = {
   files: 'files',
   agents: 'agents',
   threads: 'threads',
+  side: 'sideChats',
 };
 
 export function UtilityToolPicker({

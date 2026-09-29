@@ -1020,6 +1020,18 @@ test('live thinking stays collapsed until the user opens it', () => {
   assert.equal(html.includes('private live reasoning detail'), false);
 });
 
+test('trailing thinking event has no inferred duration without a following event', () => {
+  const thinking = ev({ kind: 'thinking', text: 'still working', ts: 10 });
+  const items = buildFeed([thinking]);
+  const item = items[0];
+
+  assert.equal(items.length, 1);
+  assert.equal(item.type, 'thinking');
+  assert.equal(item.key, thinking.id);
+  assert.equal(item.event, thinking);
+  assert.equal(item.durationMs, undefined);
+});
+
 test('#14 an assistant message that is exactly the spec text is not double-rendered in chat', () => {
   const spec = '# Specification\n\nThe one and only spec body';
   const events = [userMsg('hi'), asst(spec)];
@@ -1340,7 +1352,7 @@ test('a settled prior answer stays copyable while a later turn is streaming', ()
     if (index < 0) return false;
     return html
       .slice(Math.max(0, index - 500), index + snippet.length + 500)
-      .includes('title="Copy"');
+      .includes('aria-label="Copy response"');
   };
   const pending = renderToStaticMarkup(createElement(MessageFeed, { events, pending: true }));
   const idle = renderToStaticMarkup(createElement(MessageFeed, { events, pending: false }));
@@ -1348,6 +1360,44 @@ test('a settled prior answer stays copyable while a later turn is streaming', ()
   assert.equal(copyNear(pending, 'Still writing'), false);
   assert.equal(copyNear(idle, 'Settled prior answer'), true);
   assert.equal(copyNear(idle, 'Still writing'), true);
+});
+
+test('an idle chat offers Fork on its latest answer and on earlier answers with a fork point', () => {
+  const events = [
+    userMsg('first'),
+    asst('Unrecorded answer'),
+    userMsg('second'),
+    { ...asst('Earlier answer'), forkPointId: 'turn-2' },
+    userMsg('third'),
+    asst('Latest answer'),
+  ];
+  const onFork = () => {};
+  const forkButtons = (html: string): number => html.split('aria-label="Fork chat"').length - 1;
+  const idle = renderToStaticMarkup(createElement(MessageFeed, { events, pending: false, onFork }));
+  const pending = renderToStaticMarkup(
+    createElement(MessageFeed, { events, pending: true, onFork }),
+  );
+  assert.equal(forkButtons(idle), 2);
+  const firstFork = idle.indexOf('aria-label="Fork chat"');
+  assert.ok(firstFork > idle.indexOf('Earlier answer') && firstFork < idle.indexOf('third'));
+  assert.ok(idle.lastIndexOf('aria-label="Fork chat"') > idle.indexOf('Latest answer'));
+  assert.equal(forkButtons(pending), 0);
+});
+
+test('a forked chat marks where its inherited history ends', () => {
+  const inherited = [
+    { ...userMsg('copied question'), ts: 1 },
+    { ...asst('copied answer'), ts: 2 },
+  ];
+  const forkedFrom = { forkedAt: 10, onOpenSource: () => {} };
+  const render = (events: TranscriptEvent[]): string =>
+    renderToStaticMarkup(createElement(MessageFeed, { events, pending: false, forkedFrom }));
+  const justForked = render(inherited);
+  assert.ok(justForked.indexOf('Forked from chat') > justForked.indexOf('copied answer'));
+  const continued = render([...inherited, { ...userMsg('new question'), ts: 11 }]);
+  const divider = continued.indexOf('Forked from chat');
+  assert.ok(divider > continued.indexOf('copied answer'));
+  assert.ok(divider < continued.indexOf('new question'));
 });
 
 test('inline diff cards display paths relative to the session folder', () => {

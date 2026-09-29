@@ -152,7 +152,8 @@ export function collectFinishedSessions(input: {
   const stillWorking = new Set<string>();
   const finished: SessionSummary[] = [];
   for (const session of Object.values(input.sessions)) {
-    if (!session.appSessionId) continue;
+    // A side chat is read where it was asked; a banner would open it as a chat.
+    if (!session.appSessionId || session.lineage?.kind === 'side') continue;
     // Same generating rule as the rest of the app (streaming + phase).
     if (sessionIsLive(session)) {
       stillWorking.add(session.appSessionId);

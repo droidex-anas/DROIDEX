@@ -27,6 +27,7 @@ import {
   visibleSessionTarget,
 } from '../lib/childSessions';
 import { useOpenAgent } from './agents/useOpenAgent';
+import { useForkChat, useForkPending, useOpenForkSource } from '../hooks/useForkChat';
 import { useScrollingAttribute } from '../hooks/useScrollingAttribute';
 import { ConversationTimeline } from './ConversationTimeline';
 import { WelcomeScreen } from './WelcomeScreen';
@@ -637,6 +638,30 @@ export default function ChatView({
           },
         }
       : undefined;
+  const forkChat = useForkChat();
+  const forking = useForkPending(activeAppSessionId);
+  const forkable = activeSession && !viewingChildSession && !activeSession.missionId;
+  const displayTitle = activeSession
+    ? chatDisplayTitle(activeSession, state.chatMetadata[activeSession.appSessionId])
+    : '';
+  const forkActiveChat = forkable
+    ? (forkPointId?: string) => {
+        forkChat(activeSession.appSessionId, displayTitle, forkPointId);
+      }
+    : undefined;
+  const openForkSource = useOpenForkSource();
+  const forkLineage =
+    activeSession?.lineage?.kind === 'fork' && !viewingChildSession
+      ? activeSession.lineage
+      : undefined;
+  const forkedFrom = forkLineage
+    ? {
+        forkedAt: forkLineage.forkedAt,
+        onOpenSource: () => {
+          openForkSource(forkLineage.sourceAppSessionId);
+        },
+      }
+    : undefined;
   const openSpecWiki = activeAppSessionId
     ? () => {
         dispatch({ type: 'SPEC_OPEN_WIKI', appSessionId: activeAppSessionId });
@@ -703,6 +728,8 @@ export default function ChatView({
             {...(messageFeedAgentMonitor !== undefined
               ? { agentMonitor: messageFeedAgentMonitor }
               : {})}
+            {...(forkActiveChat !== undefined ? { onFork: forkActiveChat, forking } : {})}
+            {...(forkedFrom !== undefined ? { forkedFrom } : {})}
             specContent={specContent}
             density={toolActivity.density}
             inlineDiffs={toolActivity.inlineDiffs}
@@ -777,8 +804,7 @@ export default function ChatView({
           title={
             // A thread's crumb names the chat that started it; a child session's
             // crumb walks back to this chat instead, so it keeps its own title.
-            (viewingChildSession ? undefined : origin?.ownerTitle) ??
-            chatDisplayTitle(activeSession, state.chatMetadata[activeSession.appSessionId])
+            (viewingChildSession ? undefined : origin?.ownerTitle) ?? displayTitle
           }
           live={live}
           leadPx={sidebarCollapsed ? WINDOW_CONTROLS_LEAD_PX : 16}

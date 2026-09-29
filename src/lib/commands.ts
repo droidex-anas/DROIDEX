@@ -18,6 +18,7 @@ import type {
   ReasoningEffort,
   ResponseFormat,
   SessionInteractionMode,
+  SessionLineage,
   SessionPurpose,
   VoiceNarration,
 } from '../types/bridge';
@@ -60,6 +61,21 @@ export const createSession = (input: {
 }) => {
   requireAgentWorkAvailable();
   bridge.send({ type: 'session.create', ...input });
+};
+
+export const forkSession = (input: {
+  clientRef: string;
+  appSessionId: string;
+  lineage: SessionLineage['kind'];
+  title: string;
+  forkPointId?: string;
+  prompt?: string;
+  provider?: ProviderKind;
+  modelId?: string;
+  reasoningEffort?: ReasoningEffort;
+}) => {
+  requireAgentWorkAvailable();
+  bridge.send({ type: 'session.fork', ...input });
 };
 
 export const updateSessionSettings = (input: {

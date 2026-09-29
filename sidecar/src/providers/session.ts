@@ -39,6 +39,31 @@ export interface ProviderResumeInput {
   interactions: ProviderInteractions;
 }
 
+export interface ProviderForkSource {
+  providerSessionId: string;
+  resumeId?: string;
+  // The provider sessions the conversation compacted from, oldest first.
+  compactedFromProviderSessionIds?: readonly string[];
+  cwd?: string;
+  // The copy's title, for a provider that names the copies it makes.
+  title: string;
+  // The source's runtime when it is open, for a provider that can only copy a
+  // conversation through the process that holds it.
+  live?: ProviderSession;
+  // The answer the copy ends with, as the provider stamped it on its text
+  // events. Absent copies the whole conversation.
+  forkPointId?: string;
+}
+
+// How to resume a copied conversation: the same pair a stored session carries.
+export interface ProviderForkHandle {
+  providerSessionId: string;
+  resumeId?: string;
+  // Source fork points the copy knows by another id, for a provider that
+  // renames messages as it copies them.
+  forkPointRenames?: ReadonlyMap<string, string>;
+}
+
 export interface ProviderModelSettings {
   // A string selects that model; null resets the session to the provider's own
   // default; absent leaves the model alone.
@@ -135,6 +160,9 @@ export interface Provider {
   readonly kind: ProviderKind;
   create(input: ProviderOpenInput): Promise<ProviderSession>;
   resume(providerSessionId: string, input: ProviderResumeInput): Promise<ProviderSession>;
+  // Copies a settled conversation into a new, independent one the provider can
+  // resume. Nothing is opened; the caller resumes the copy.
+  fork(source: ProviderForkSource): Promise<ProviderForkHandle>;
 }
 
 // A provider backed by a CLI learns what it can do by probing that CLI; Droid's

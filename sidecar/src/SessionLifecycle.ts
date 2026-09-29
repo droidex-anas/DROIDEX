@@ -13,6 +13,7 @@ import type {
   FactoryDefaultSettings,
   ProviderMention,
   ServerEvent,
+  SessionLineage,
   SessionSummary,
   SkillInfo,
 } from './protocol.js';
@@ -45,6 +46,11 @@ import type { Provider, ProviderSession } from './providers/session.js';
 const MAX_SCHEDULED_SESSION_RUNTIMES = 8;
 
 export type SessionCreateCommand = Extract<ClientCommand, { type: 'session.create' }>;
+
+export interface SessionBranch {
+  lineage: SessionLineage;
+  prompt: string;
+}
 
 // An unbound summary predates the binding, so it resumes on the default
 // provider; an unroutable one fails at the provider lookup.
@@ -147,6 +153,7 @@ export interface SessionLifecycleDependencies {
     'track' | 'untrack' | 'killSession' | 'setIgnoredCommands'
   >;
   applyPendingSettingsToSummary: (summary: SessionSummary) => SessionSummary;
+  recordLineage: (appSessionId: string, lineage: SessionLineage) => void;
   applyPendingSessionSettings: (appSessionId: string) => Promise<boolean>;
   waitForSettingsMutations?: (appSessionId: string) => Promise<void>;
   runPrimaryTurn: (
@@ -187,7 +194,9 @@ export class SessionLifecycle {
   private readonly canceledResumes = new Set<string>();
 
   constructor(private readonly dependencies: SessionLifecycleDependencies) {}
-  async create(command: SessionCreateCommand): Promise<void> {
+  // A branch is a session opened from another session's transcript: its goal
+  // stays the user's request while the model's first prompt carries the source.
+  async create(command: SessionCreateCommand, branch?: SessionBranch): Promise<void> {
     const d = this.dependencies;
     d.ensureConnected();
     const appCwd = command.cwd ?? '';
@@ -263,7 +272,7 @@ export class SessionLifecycle {
 
       const appSessionId = providerSession.providerSessionId;
       const maxContextTokens = d.maxContextTokensForModel(primary.modelId);
-      const summary = buildCreatedSessionSummary({
+      const created = buildCreatedSessionSummary({
         command,
         appSessionId,
         interactionMode,
@@ -277,6 +286,8 @@ export class SessionLifecycle {
         ...(autoCompactionArmed ? { compactionTokenLimit } : {}),
         now: Date.now(),
       });
+      const summary = branch ? { ...created, lineage: branch.lineage } : created;
+      if (branch) d.recordLineage(appSessionId, branch.lineage);
       ref.id = appSessionId;
       const liveSession = createLiveSession(summary, providerSession, droid, mcp);
       pendingLiveSession = liveSession;
@@ -305,7 +316,9 @@ export class SessionLifecycle {
       // A chat can open with nothing to say: voice mode creates the session so
       // the conversation has a thread to attach to, and the first request
       // arrives spoken. Driving an empty prompt would run a turn about nothing.
-      const prompt = sessionPrompt(command.goal, command.mentions);
+      const prompt = branch
+        ? sessionPrompt(branch.prompt)
+        : sessionPrompt(command.goal, command.mentions);
       if (prompt.text.trim() || prompt.mentions?.length) {
         void this.driveInBackground(appSessionId, prompt);
       }
