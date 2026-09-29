@@ -15,6 +15,9 @@ export function canApproveWorkspaceEdits(cwd: string, changes: readonly unknown[
       const paths = editPaths(change);
       if (paths.length === 0) return false;
       return paths.every((path) => {
+        // `..` after a linked directory leaves by the link's target, which the
+        // lexical resolve below cannot see, so such a path always asks.
+        if (path.split(/[\\/]/).includes('..')) return false;
         const absolute = resolve(cwd, path);
         return (
           eligible(relative(resolve(cwd), absolute)) &&
