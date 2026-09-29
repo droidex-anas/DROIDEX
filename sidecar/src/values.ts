@@ -25,6 +25,10 @@ export function normalizeAutonomy(value: unknown): Autonomy | undefined {
   return undefined;
 }
 
+export function uniqueStrings(values: (string | undefined)[]): string[] {
+  return [...new Set(values.filter((value): value is string => Boolean(value)))];
+}
+
 export function objectValue(value: unknown): Record<string, unknown> | undefined {
   return value && typeof value === 'object' && !Array.isArray(value)
     ? (value as Record<string, unknown>)
