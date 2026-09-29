@@ -286,7 +286,11 @@ export function detectPresetId(colors: ThemeColors, customThemes: ThemePreset[] 
 /* ── custom preset persistence + import ── */
 const HEX_COLOR = /^#[0-9a-f]{6}$/i;
 
-function readColors(value: unknown): ThemeColors | null {
+export function isHexColor(value: unknown): value is string {
+  return typeof value === 'string' && HEX_COLOR.test(value);
+}
+
+export function readThemeColors(value: unknown): ThemeColors | null {
   if (!value || typeof value !== 'object') return null;
   const raw = value as Record<string, unknown>;
   const colors = {
@@ -297,7 +301,7 @@ function readColors(value: unknown): ThemeColors | null {
     accent: raw.accent,
   };
   for (const v of Object.values(colors)) {
-    if (typeof v !== 'string' || !HEX_COLOR.test(v)) return null;
+    if (!isHexColor(v)) return null;
   }
   return colors as ThemeColors;
 }
@@ -329,7 +333,7 @@ export function parseCustomThemes(raw: unknown): ThemePreset[] {
   for (const entry of raw) {
     if (!entry || typeof entry !== 'object') continue;
     const { id, name, light, dark } = entry as Record<string, unknown>;
-    const colors = { light: readColors(light), dark: readColors(dark) };
+    const colors = { light: readThemeColors(light), dark: readThemeColors(dark) };
     const label = readPresetName(name);
     if (typeof id !== 'string' || !id || !label || !colors.light || !colors.dark) continue;
     presets.push({ id, name: label, light: colors.light, dark: colors.dark });
@@ -345,8 +349,8 @@ export function parseThemePresetImport(
   if (!raw || typeof raw !== 'object') return null;
   const { name, light, dark } = raw as Record<string, unknown>;
   const label = readPresetName(name);
-  const lightColors = readColors(light);
-  const darkColors = readColors(dark);
+  const lightColors = readThemeColors(light);
+  const darkColors = readThemeColors(dark);
   if (!label || !lightColors || !darkColors) return null;
   return { name: label, light: lightColors, dark: darkColors };
 }
@@ -419,24 +423,6 @@ function raisedSurfaceColor(theme: Pick<ThemeColors, 'bg' | 'surface'>): string 
   return colorLuminance(theme.bg) < 0.4
     ? elevatedSurfaceColor(theme)
     : mixHex(theme.surface, '#ffffff', 0.6);
-}
-
-// The light preset as it shipped before the readability pass. A saved theme
-// still carrying all five legacy values was never customized, so it is swapped
-// to the new preset once on load (see useStore loadTheme).
-const LEGACY_LIGHT_PRESET: ThemeColors = {
-  bg: '#fcfcfc',
-  fg: '#141414',
-  surface: '#f3f3f3',
-  border: '#eeeeee',
-  accent: '#1a1a1a',
-};
-
-export function migrateLegacyLightPreset(colors: ThemeColors): ThemeColors {
-  const isLegacy = (Object.keys(LEGACY_LIGHT_PRESET) as (keyof ThemeColors)[]).every(
-    (key) => colors[key].toLowerCase() === LEGACY_LIGHT_PRESET[key],
-  );
-  return isLegacy ? { ...DEFAULT_THEME.light } : colors;
 }
 
 const SYSTEM_FONT_STACK = '-apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif';

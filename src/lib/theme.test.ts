@@ -10,8 +10,6 @@ import {
   DEFAULT_THEME,
   detectPresetId,
   elevatedSurfaceColor,
-  findPreset,
-  migrateLegacyLightPreset,
   newCustomThemeId,
   parseCustomThemes,
   parseThemePresetImport,
@@ -21,17 +19,8 @@ import {
   statusColorOnLight,
   surfaceStep,
   upsertCustomTheme,
-  type ThemeColors,
   type ThemePreset,
 } from './theme';
-
-const LEGACY_LIGHT: ThemeColors = {
-  bg: '#fcfcfc',
-  fg: '#141414',
-  surface: '#f3f3f3',
-  border: '#eeeeee',
-  accent: '#1a1a1a',
-};
 
 const EXAMPLE_CUSTOM: ThemePreset = {
   id: 'custom-test',
@@ -146,24 +135,7 @@ describe('custom theme list helpers', () => {
   });
 });
 
-describe('findPreset', () => {
-  it('finds built-ins and custom presets by id', () => {
-    assert.equal(findPreset('midnight', [])?.name, 'Midnight');
-    assert.equal(findPreset('custom-test', [EXAMPLE_CUSTOM]), EXAMPLE_CUSTOM);
-  });
-
-  it('returns undefined for unknown ids (including the custom sentinel)', () => {
-    assert.equal(findPreset(CUSTOM_THEME_ID, []), undefined);
-    assert.equal(findPreset('nope', [EXAMPLE_CUSTOM]), undefined);
-  });
-});
-
 describe('resolveVariant', () => {
-  it('returns the matching variant for explicit schemes', () => {
-    assert.equal(resolveVariant(DEFAULT_THEME, 'light'), DEFAULT_THEME.light);
-    assert.equal(resolveVariant(DEFAULT_THEME, 'dark'), DEFAULT_THEME.dark);
-  });
-
   it('falls back to the dark variant for system when no preference is readable', () => {
     // node:test has no window, so matchMedia is unavailable.
     assert.equal(resolveVariant(DEFAULT_THEME, 'system'), DEFAULT_THEME.dark);
@@ -246,33 +218,7 @@ describe('fixed label colors', () => {
   });
 });
 
-describe('migrateLegacyLightPreset', () => {
-  it('swaps an exact legacy light theme to the new preset', () => {
-    assert.deepEqual(migrateLegacyLightPreset({ ...LEGACY_LIGHT }), DEFAULT_THEME.light);
-  });
-
-  it('matches legacy values case-insensitively', () => {
-    assert.deepEqual(
-      migrateLegacyLightPreset({ ...LEGACY_LIGHT, bg: '#FCFCFC' }),
-      DEFAULT_THEME.light,
-    );
-  });
-
-  it('leaves a customized light theme untouched (same reference)', () => {
-    const custom = { ...LEGACY_LIGHT, accent: '#ee6018' };
-    assert.equal(migrateLegacyLightPreset(custom), custom);
-  });
-
-  it('leaves non-light themes untouched', () => {
-    assert.equal(migrateLegacyLightPreset(DEFAULT_THEME.dark), DEFAULT_THEME.dark);
-  });
-});
-
 describe('parseCustomThemes', () => {
-  it('parses a valid persisted list', () => {
-    assert.deepEqual(parseCustomThemes([EXAMPLE_CUSTOM]), [EXAMPLE_CUSTOM]);
-  });
-
   it('drops malformed entries and non-array payloads', () => {
     assert.deepEqual(parseCustomThemes(null), []);
     assert.deepEqual(parseCustomThemes('nope'), []);

@@ -51,12 +51,10 @@ export function loadToolActivity(): ToolActivitySettings {
   }
 }
 
-export function saveToolActivity(value: ToolActivitySettings): ToolActivitySettings {
-  const settings = normalizeToolActivity(value);
+export function saveToolActivity(settings: ToolActivitySettings): void {
   try {
     storage()?.setItem(TOOL_ACTIVITY_STORAGE_KEY, JSON.stringify(settings));
   } catch {
     /* ignore */
   }
-  return settings;
 }
