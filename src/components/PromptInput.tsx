@@ -155,6 +155,7 @@ import {
 import { useSessionWorkingDirectory } from '../hooks/useSessionWorkingDirectory';
 import { useRuntimeHealth } from '../hooks/useRuntimeHealth';
 import { toast } from '../lib/toast';
+import { createProject } from '../features/projects/client';
 
 // The live-markdown editor is a heavy chunk of the bundle, so it loads on
 // first composer paint rather than blocking the app's initial JavaScript.
@@ -244,6 +245,10 @@ const LazyFeedbackModal = lazy(async () => {
   const module = await import('./FeedbackModal');
   return { default: module.FeedbackModal };
 });
+
+// What a project started by voice is first told, before anything is said.
+const VOICE_PROJECT_TASK =
+  'The user is about to say the goal of this project out loud, in a voice conversation on this chat. Until they do there is nothing to plan: reply with one short question asking what this project should get done.';
 
 export default function PromptInput({
   rightInset = false,
@@ -931,6 +936,9 @@ export default function PromptInput({
   const missionPreview =
     droidComposer &&
     (activeSession ? activeSession.sessionPurpose === 'mission-control' : state.missionControlMode);
+  // A new project is drafted in this same composer; its first message starts
+  // the project's lead instead of an ordinary chat.
+  const projectDraft = !activeSession && !missionPreview && state.draftChat?.project === true;
 
   // Autonomy snapshot for a session this composer would create: the draft
   // override when the user picked one, otherwise the persisted app default.
@@ -1359,7 +1367,10 @@ export default function PromptInput({
     if (!activeSession) {
       const selectedDir = state.draftChat?.cwd ?? '';
       const clientRef = newClientRef();
-      const title = (displayText || skillNames[0] || 'Chat').slice(0, 48);
+      const title = (displayText || skillNames[0] || (projectDraft ? 'Project' : 'Chat')).slice(
+        0,
+        48,
+      );
       startTurnStarting(clientRef);
       const preparation = await prepareDraftCwd(selectedDir, clientRef, title);
       if (!preparation.ok) {
@@ -1374,6 +1385,30 @@ export default function PromptInput({
       }
       registerPending(clientRef);
       clearAfterSubmit();
+      if (projectDraft) {
+        // The lead is started under this composer's clientRef, so it opens like
+        // any chat started here. A project takes its skills as words, since its
+        // first prompt also carries the lead's brief.
+        createProject(
+          {
+            title,
+            prompt: composePrompt(displayText, skillNames, allFiles),
+            provider: draftProvider,
+            ...draftModelSettings,
+            autonomy: draftAutonomy,
+            ...(dir ? { cwd: dir } : {}),
+          },
+          clientRef,
+        ).catch((error: unknown) => {
+          stopTurnStarting();
+          const message = error instanceof Error ? error.message : String(error);
+          dispatch({ type: 'SESSION_CREATE_FAILED', clientRef, message });
+          dispatch({ type: 'SEED_COMPOSER', text: displayText, replace: true });
+          toast.error(`The project could not start: ${message}`);
+        });
+        armTurnStartingTimeout();
+        return;
+      }
       try {
         createSession({
           clientRef,
@@ -1689,15 +1724,17 @@ export default function PromptInput({
   // new chat; it renders as the top section of the composer card.
   const showStartIn = !activeSession && !missionPreview && !!cwd;
   const enterSteers = state.liveEnterBehavior === 'interrupt';
+  let chatPlaceholder = 'What would you like to work on?  (/ for skills, @ for files)';
+  if (isSpecMode) chatPlaceholder = 'Describe what to build in spec mode...';
+  if (projectDraft)
+    chatPlaceholder = 'What should this project get done?  (/ for skills, @ for files)';
   const promptPlaceholder = missionPreview
     ? activeSession
       ? targetChildSessionId
         ? 'Steer the selected child session…'
         : 'Direct the orchestrator…'
       : 'Describe the mission objective…'
-    : isSpecMode
-      ? 'Describe what to build in spec mode...'
-      : 'What would you like to work on?  (/ for skills, @ for files)';
+    : chatPlaceholder;
   const hasContent =
     input.trim().length > 0 ||
     visualizeSelected ||
@@ -1740,10 +1777,10 @@ export default function PromptInput({
     voiceAwaiting.current = { clientRef, registered: false };
     void (async () => {
       // Named for now by when it started; the first thing said in it renames it.
-      const placeholder = `Voice chat ${new Date().toLocaleTimeString([], {
-        hour: '2-digit',
-        minute: '2-digit',
-      })}`;
+      const placeholder = `${projectDraft ? 'Voice project' : 'Voice chat'} ${new Date().toLocaleTimeString(
+        [],
+        { hour: '2-digit', minute: '2-digit' },
+      )}`;
       const preparation = await prepareDraftCwd(state.draftChat?.cwd ?? '', clientRef, placeholder);
       if (!preparation.ok) {
         voiceAwaiting.current = null;
@@ -1754,6 +1791,27 @@ export default function PromptInput({
       // prompt to wait for here, so the wait is registered empty.
       dispatch({ type: 'SET_PENDING_COMPOSE', clientRef, text: '', skills: [], files: [] });
       if (voiceAwaiting.current?.clientRef === clientRef) voiceAwaiting.current.registered = true;
+      if (projectDraft) {
+        // The lead is briefed by its first prompt, which a spoken goal never
+        // reaches, so it starts on a turn that asks for the goal instead.
+        createProject(
+          {
+            title: placeholder,
+            prompt: VOICE_PROJECT_TASK,
+            provider: draftProvider,
+            ...draftModelSettings,
+            autonomy: draftAutonomy,
+            ...(preparation.path ? { cwd: preparation.path } : {}),
+          },
+          clientRef,
+        ).catch((error: unknown) => {
+          voiceAwaiting.current = null;
+          const message = error instanceof Error ? error.message : String(error);
+          dispatch({ type: 'SESSION_CREATE_FAILED', clientRef, message });
+          toast.error(`The project could not start: ${message}`);
+        });
+        return;
+      }
       createSession({
         clientRef,
         cwd: preparation.path,

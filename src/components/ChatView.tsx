@@ -788,12 +788,27 @@ export default function ChatView({
       </div>
     );
   } else {
+    const draft = state.draftChat;
     conversationContent = (
       <WelcomeScreen
         {...(draftFolder !== undefined ? { folder: draftFolder } : {})}
         onSeedPrompt={(text) => {
           dispatch({ type: 'SEED_COMPOSER', text });
         }}
+        {...(draft?.project
+          ? {
+              project: {
+                onStartChat: () => {
+                  dispatch({
+                    type: 'START_CHAT',
+                    cwd: draft.cwd,
+                    executionMode: draft.executionMode,
+                    ...(draft.branch ? { branch: draft.branch } : {}),
+                  });
+                },
+              },
+            }
+          : {})}
       />
     );
   }

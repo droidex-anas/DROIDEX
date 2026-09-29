@@ -360,6 +360,8 @@ export interface AppState {
     cwd: string;
     executionMode: 'worktree' | 'local';
     branch?: string;
+    /** The draft starts a project: its first message goes to the project's lead. */
+    project?: true;
   } | null;
   // Persisted app-wide default autonomy for new sessions. Owned by Settings;
   // factory-default reloads and draft/session changes never overwrite it.
@@ -677,6 +679,7 @@ type Action =
       cwd: string;
       executionMode: 'worktree' | 'local';
       branch?: string;
+      project?: true;
     }
   | { type: 'SEED_COMPOSER'; text: string; replace?: boolean }
   | { type: 'CLEAR_COMPOSER_SEED' }
@@ -2112,6 +2115,7 @@ function baseReducer(state: AppState, action: Action): AppState {
           cwd: action.cwd,
           executionMode: action.executionMode,
           branch: action.branch,
+          ...(action.project ? { project: action.project } : {}),
         },
         draftAutonomy: null,
         activeAppSessionId: null,
