@@ -21,9 +21,10 @@ enough; it has the tools to start the work itself.
 `thread_spawn` takes a required `reportBack`. With `true` it starts a thread,
 which reports back to the chat that started it. That chat becomes a project's
 main chat once its first thread starts or it writes its first plan, and a spawn
-that fails leaves no project behind. With `false` it starts an ordinary sidebar
-chat that belongs to no project, reports nowhere and wakes nobody; [Session
-tools](session-tools.md) describes that kind.
+that fails leaves no project behind. A side chat cannot become one: closing it
+deletes it, so it would leave its threads nothing to report to. With `false` it
+starts an ordinary sidebar chat that belongs to no project, reports nowhere and
+wakes nobody; [Session tools](session-tools.md) describes that kind.
 
 Starting a thread asks the user unless the chat runs at High, and one "Always
 allow" covers only the kind of chat it was given for. The other thread tools
@@ -185,8 +186,8 @@ computer.
 
 ## Not implemented
 
-Automatic integration of thread branches and per-thread diff attribution remain
-outside this draft. Review still uses the ordinary conversation and workspace
+Automatic integration of thread branches and per-thread diff attribution are
+not part of Projects yet. Review still uses the ordinary conversation and workspace
 facilities; a shared checkout does not establish which agent authored each file
 change.
 
@@ -229,9 +230,9 @@ in Projects, and a spawn that was already under way when the user pressed Stop
 is refused. So is a chat's first spawn, though no project exists yet for the
 Stop to hold.
 
-Malformed or incompatible experimental ledgers fail visibly and are left
-untouched. This draft provides no migration from earlier prototypes. Back up any
-existing experimental `projects.json` before trying a changed draft.
+Malformed or incompatible ledgers fail visibly and are left untouched. There is
+no migration from the earlier prototypes, so back up an old `projects.json`
+before opening it with this version.
 
 ## Ownership in code
 

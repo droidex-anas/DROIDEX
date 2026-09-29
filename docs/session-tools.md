@@ -1,11 +1,12 @@
 # Session tools
 
-A chat on Droid, Claude Code or Codex is given DROIDEX's in-app session tools.
-On Droid and Claude Code, `droidex-sessions` carries all eleven tools on one
-listener per session. Codex receives the same tools as deferred dynamic tools
-in the `droidex_sessions` namespace, with no local MCP listener.
-Unattended automation runs never get it, and nothing in it runs until a tool is
-called.
+An ordinary chat on Droid, Claude Code or Codex is given DROIDEX's in-app
+session tools, whether or not it belongs to a project. On Droid and Claude Code,
+`droidex-sessions` carries all eleven tools on one listener per session. Codex
+receives the same tools as deferred dynamic tools in the `droidex_sessions`
+namespace, with no local MCP listener. Unattended automation runs, missions and
+design sessions never get it, since none of them may call its tools, and nothing
+in it runs until a tool is called.
 
 | Tool | What it does | Below High | One Always allow covers |
 | --- | --- | --- | --- |
