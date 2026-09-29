@@ -190,6 +190,57 @@ history" when older pages remain on disk, and find offers to load them instead
 of reporting a silent miss. Find does not raise overscan or remount the
 transcript.
 
+### Inline visualizations
+
+`/visualize` generates complete `app` fences. Completed fences render
+directly in the conversation, including restored history; incomplete source
+never executes. The conversation virtualizer owns their lifetime, so controls
+reset when a visualization is unmounted and later revisited.
+Failed Apps in the primary chat offer Auto-fix. A click sends
+`session.repairApp` with the exact source and runtime error, without changing
+the composer draft. The sidecar places the source in the private App guidance,
+so the chat and restored history show only the short request and its error.
+The action waits for the git baseline, then rechecks the session, runtime, and
+busy state before sending; read-only transcripts do not expose the action.
+
+Each visualization runs in an opaque-origin `allow-scripts` iframe. CSP allows
+Google Fonts stylesheets (`fonts.googleapis.com`) and fonts (`fonts.gstatic.com`),
+plus scripts, styles, fonts, images, and component asset fetches from
+`cdn.jsdelivr.net` and `cdnjs.cloudflare.com`. These external requests expose
+normal network metadata to those providers; generation guidance forbids sending
+private chat data and asks for pinned versions and offline fallbacks.
+Other subresource destinations, workers, nested frames, plugins, and form
+submissions remain blocked. The iframe has no parent-document, storage, Node.js,
+or Electron access. Its transparent document supports separate diagrams, cards,
+and controls without an enclosing host surface. Content measurements resize the
+frame in both directions.
+The host fits content to the frame width without help from the App: an SVG
+with numeric `width`/`height` and no `viewBox` gets a matching `viewBox` so it
+scales instead of cropping, and content wider than the frame is scaled down
+with CSS `zoom` (to a 0.7 floor, past which the frame scrolls sideways).
+A hover or focus control opens the visualization full screen. The same frame
+node moves into the top layer as a `popover` (moving the node would reload the
+App, and transformed transcript rows break `position: fixed`), while its row
+keeps the inline height. Escape, the close button, or a backdrop click returns
+it inline; Escape inside the frame reaches the host as `droidex:escape` unless
+the App prevented it.
+The iframe and document share a color scheme to prevent Chromium from painting
+an opaque background; theme changes update CSS variables without reloading.
+
+The local `window.droidex` toolkit provides `renderMath`, `renderAllMath`, a
+read-only live `theme`, and `createCanvas(target, draw)`. The canvas helper
+handles CSS sizing, pixel density (capped at 2), resize/theme redraws, and
+cleanup. Its callback receives `{ context, width, height, pixelRatio, theme }`
+in CSS-pixel coordinates; the returned `redraw()` and `dispose()` handle data
+changes and removal. Custom drawings can listen for `droidex:themechange`.
+Math uses the host's local KaTeX renderer and returns MathML, without external
+fonts or scripts. Generation guidance includes pinned Chart.js, ECharts, D3,
+and Mermaid entry points, their sizing and cleanup requirements, and CSP
+constraints. Apps load these libraries on demand from the approved CDNs rather
+than accessing the renderer's modules. Library-owned canvases must not also
+use `createCanvas`.
+Generation guidance and examples live in `sidecar/src/appPrompt.ts`.
+
 ### Electron main gauges
 
 - `electron/performanceMetrics.cjs` collects live WebContents, live PTYs, and

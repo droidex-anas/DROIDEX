@@ -1,22 +1,25 @@
-import { TriangleAlert } from 'lucide-react';
+import { CircleAlert } from 'lucide-react';
+import { AppBlockRepair } from './AppBlockRepair';
 
-export function AppBlockErrorFallback({ message }: { message: string }) {
+export function AppBlockErrorFallback({ message, source }: { message: string; source: string }) {
   return (
-    <div
-      role="alert"
-      className="my-2 flex min-h-28 items-start gap-3 rounded-xl border border-amber-500/25 bg-amber-500/[0.06] p-4"
-    >
-      <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-amber-500/10 text-amber-400">
-        <TriangleAlert className="h-4 w-4" />
-      </span>
-      <div className="min-w-0 pt-0.5">
-        <p className="text-[13px] font-medium text-droid-text">Interactive App couldn’t start</p>
-        <p className="mt-1 text-[12px] leading-5 text-droid-text-secondary">
-          Ask Droid to fix this visualization, then play the revised App.
-        </p>
-        <p className="mt-2 truncate font-mono text-[11px] text-droid-text-muted" title={message}>
-          {message}
-        </p>
+    <div role="alert" className="my-3 rounded-2xl bg-droid-surface p-4 shadow-droid-sm">
+      <div className="flex items-start gap-3">
+        <span className="mt-px flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-droid-orange/10 text-droid-orange">
+          <CircleAlert aria-hidden="true" className="h-4 w-4" />
+        </span>
+        <div className="min-w-0 flex-1">
+          <p className="text-[13px] font-medium leading-7 text-droid-text">
+            This visualization didn’t load
+          </p>
+          <p className="text-[12px] leading-5 text-droid-text-secondary">
+            It stopped with an error before anything could be drawn.
+          </p>
+          <p className="mt-3 max-h-24 overflow-y-auto whitespace-pre-wrap break-words rounded-lg bg-droid-elevated px-3 py-2 font-mono text-[11px] leading-[18px] text-droid-text-secondary">
+            {message}
+          </p>
+          <AppBlockRepair source={source} message={message} />
+        </div>
       </div>
     </div>
   );

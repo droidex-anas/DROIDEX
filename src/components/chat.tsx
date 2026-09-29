@@ -116,7 +116,6 @@ function AutomationToolGroup({
 export interface FeedItemViewProps {
   item: FeedItem;
   live: boolean;
-  autoPlayAppBlocks?: boolean;
   // True while the whole turn is still streaming, regardless of where this item
   // sits. Subagent waves need this rather than `live`: work continues after the
   // wave stops being the last item (a plan update or assistant text follows it),
@@ -192,7 +191,6 @@ const AssistantMessage = memo(function AssistantMessage({
   onFork,
   forkPointId,
   forking,
-  autoPlayAppBlocks,
   cacheId,
   specContent,
   spoken,
@@ -207,7 +205,6 @@ const AssistantMessage = memo(function AssistantMessage({
   onFork?: (forkPointId?: string) => void;
   forkPointId?: string;
   forking?: boolean;
-  autoPlayAppBlocks: boolean;
   cacheId: string;
   specContent?: string;
   /** The reply was said out loud in a voice conversation. */
@@ -230,12 +227,7 @@ const AssistantMessage = memo(function AssistantMessage({
           <SpokenMark />
         </div>
       )}
-      <MessageBody
-        text={text}
-        live={live}
-        autoPlayAppBlocks={autoPlayAppBlocks}
-        cacheId={cacheId}
-      />
+      <MessageBody text={text} live={live} cacheId={cacheId} />
       {!live && isFinalResponse && text.trim() ? (
         <ResponseActions
           text={copyTextForMessage(text)}
@@ -294,7 +286,6 @@ export function feedItemPropsEqual(prev: FeedItemViewProps, next: FeedItemViewPr
   if (next.item.type === 'child_session') return false;
   return (
     prev.live === next.live &&
-    prev.autoPlayAppBlocks === next.autoPlayAppBlocks &&
     prev.sessionLive === next.sessionLive &&
     prev.compacting === next.compacting &&
     prev.liveTiming === next.liveTiming &&
@@ -317,7 +308,6 @@ export function feedItemPropsEqual(prev: FeedItemViewProps, next: FeedItemViewPr
 export const FeedItemView = memo(function FeedItemView({
   item,
   live,
-  autoPlayAppBlocks = false,
   sessionLive,
   compacting,
   cwd,
@@ -356,7 +346,6 @@ export const FeedItemView = memo(function FeedItemView({
           {...(onFork !== undefined ? { onFork } : {})}
           {...(forkPointId !== undefined ? { forkPointId } : {})}
           {...(forking !== undefined ? { forking } : {})}
-          autoPlayAppBlocks={autoPlayAppBlocks}
           cacheId={item.key}
           specContent={specContent}
           spoken={item.event.spoken}

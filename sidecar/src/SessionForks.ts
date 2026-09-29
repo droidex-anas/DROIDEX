@@ -11,6 +11,7 @@ import type { LiveSession, SessionBranch, SessionCreateCommand } from './Session
 import type { SessionFileChange } from './sessionFileCache.js';
 import { errMsg } from './sessionHelpers.js';
 import type { SessionLineageStore } from './sessionLineage.js';
+import { formatSideChatPrompt } from './sideChatPrompt.js';
 import { conversationMarkdown } from './sessionMarkdown.js';
 import type { SessionRegistry, SessionSummaryPatch } from './SessionRegistry.js';
 import { readForkedTranscript, writeForkedTranscript } from './providers/ProviderTranscriptFile.js';
@@ -83,7 +84,7 @@ export class SessionForks {
     if (!copiedAppSessionId) return;
     if (command.modelId && !(await this.applyPickedModel(copiedAppSessionId, command))) return;
     const request = command.prompt?.trim();
-    if (request) await this.d.send(copiedAppSessionId, request);
+    if (request) await this.d.send(copiedAppSessionId, firstMessage(command.lineage, request));
   }
 
   // A model picked for the copy replaces the source's and its effort, since an
@@ -198,7 +199,13 @@ export class SessionForks {
           ? modelSettings(command, source)
           : pickedModelSettings(command)),
       },
-      { lineage, prompt: formatBranchPrompt(request, await this.sourceConversation(source)) },
+      {
+        lineage,
+        prompt: formatBranchPrompt(
+          firstMessage(command.lineage, request),
+          await this.sourceConversation(source),
+        ),
+      },
     );
   }
 
@@ -227,6 +234,10 @@ export class SessionForks {
     if (events.length === 0) throw new Error('This chat has no stored messages to fork.');
     return conversationMarkdown(events);
   }
+}
+
+function firstMessage(lineage: SessionLineage['kind'], request: string): string {
+  return lineage === 'side' ? formatSideChatPrompt(request) : request;
 }
 
 function copiedSettings(command: SessionForkCommand, source: SessionSummary): SessionSummaryPatch {
