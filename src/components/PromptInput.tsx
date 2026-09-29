@@ -14,6 +14,7 @@ import {
   useStoreApi,
   useStoreDispatch,
   useStoreSelector,
+  type AppState,
   type QueuedPrompt,
 } from '../hooks/useStore';
 import { useSessionLive } from '../hooks/useSessionLive';
@@ -947,6 +948,9 @@ export default function PromptInput({
   // The clientRef of a project this composer is starting, so a second send or
   // a press of the orb cannot start another while it is on its way.
   const projectStartRef = useRef<string | null>(null);
+  const releaseProjectStart = (clientRef: string) => {
+    if (projectStartRef.current === clientRef) projectStartRef.current = null;
+  };
 
   // Autonomy snapshot for a session this composer would create: the draft
   // override when the user picked one, otherwise the persisted app default.
@@ -1376,6 +1380,10 @@ export default function PromptInput({
       if (projectDraft && projectStartRef.current) return;
       const selectedDir = state.draftChat?.cwd ?? '';
       const clientRef = newClientRef();
+      // Held from before the folder is prepared, so a start still preparing,
+      // typed or spoken, blocks another.
+      if (projectDraft) projectStartRef.current = clientRef;
+      const draftAtSubmit = store.getState().draftChat;
       const title = (displayText || skillNames[0] || (projectDraft ? 'Project' : 'Chat')).slice(
         0,
         48,
@@ -1384,15 +1392,20 @@ export default function PromptInput({
       const preparation = await prepareDraftCwd(selectedDir, clientRef, title);
       if (!preparation.ok) {
         stopTurnStarting();
+        releaseProjectStart(clientRef);
         return;
       }
       const dir = preparation.path;
       if (dir) await markGitTurnStart(dir, clientRef);
       if (updateInterruptedSubmit()) {
         stopTurnStarting();
+        releaseProjectStart(clientRef);
         return;
       }
       registerPending(clientRef);
+      // Whether this send empties the composer: an edit made while it was
+      // preparing is kept, and a failure must not replace it.
+      const clearsDraft = composerRevisionRef.current === composerRevision;
       clearAfterSubmit();
       if (projectDraft) {
         const clearedRevision = composerRevisionRef.current;
@@ -1400,13 +1413,20 @@ export default function PromptInput({
         // carries the lead's brief.
         startProject(
           clientRef,
-          { title, prompt: composePrompt(displayText, skillNames, allFiles), dir, selectedDir },
+          {
+            title,
+            prompt: composePrompt(displayText, skillNames, allFiles),
+            dir,
+            selectedDir,
+            draft: draftAtSubmit,
+          },
           () => {
             // Only what this start set is undone: a user who has moved on, or
             // typed since, keeps what they have now.
             if (turnStartingClientRef.current === clientRef) stopTurnStarting();
             const now = store.getState();
             if (
+              clearsDraft &&
               now.activeAppSessionId === null &&
               now.draftChat?.project === true &&
               composerRevisionRef.current === clearedRevision
@@ -1775,12 +1795,25 @@ export default function PromptInput({
      first, so a retry after a failure reuses it instead of cutting another. */
   const startProject = (
     clientRef: string,
-    project: { title: string; prompt: string; dir: string; selectedDir: string },
+    project: {
+      title: string;
+      prompt: string;
+      dir: string;
+      selectedDir: string;
+      draft: AppState['draftChat'];
+    },
     onFailed: () => void,
   ) => {
-    projectStartRef.current = clientRef;
-    if (project.dir && project.dir !== project.selectedDir) {
-      const override = state.draftAutonomy;
+    // Only the draft this start came from moves onto the worktree it cut; one
+    // the user has since replaced or left stays as it is.
+    const now = store.getState();
+    if (
+      project.dir &&
+      project.dir !== project.selectedDir &&
+      now.activeAppSessionId === null &&
+      now.draftChat === project.draft
+    ) {
+      const override = now.draftAutonomy;
       dispatch({ type: 'START_CHAT', cwd: project.dir, executionMode: 'local', project: true });
       if (override) dispatch({ type: 'SET_DRAFT_AUTONOMY', autonomy: override });
     }
@@ -1802,7 +1835,7 @@ export default function PromptInput({
         onFailed();
       })
       .finally(() => {
-        if (projectStartRef.current === clientRef) projectStartRef.current = null;
+        releaseProjectStart(clientRef);
       });
   };
 
@@ -1819,6 +1852,8 @@ export default function PromptInput({
     if (voiceAwaiting.current || (projectDraft && projectStartRef.current)) return;
     const clientRef = newClientRef();
     voiceAwaiting.current = { clientRef, registered: false };
+    if (projectDraft) projectStartRef.current = clientRef;
+    const draftAtStart = store.getState().draftChat;
     void (async () => {
       // Named for now by when it started; the first thing said in it renames it.
       const placeholder = `${projectDraft ? 'Voice project' : 'Voice chat'} ${new Date().toLocaleTimeString(
@@ -1828,6 +1863,7 @@ export default function PromptInput({
       const preparation = await prepareDraftCwd(state.draftChat?.cwd ?? '', clientRef, placeholder);
       if (!preparation.ok) {
         voiceAwaiting.current = null;
+        releaseProjectStart(clientRef);
         return;
       }
       // A chat only takes focus when the renderer is waiting for it, and the
@@ -1845,6 +1881,7 @@ export default function PromptInput({
             prompt: VOICE_PROJECT_TASK,
             dir: preparation.path,
             selectedDir: state.draftChat?.cwd ?? '',
+            draft: draftAtStart,
           },
           () => {
             voiceAwaiting.current = null;
@@ -1871,6 +1908,7 @@ export default function PromptInput({
       // works again. The failure itself is reported by the command that raised
       // it.
       voiceAwaiting.current = null;
+      releaseProjectStart(clientRef);
     });
   };
 
