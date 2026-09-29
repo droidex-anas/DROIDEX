@@ -294,12 +294,15 @@ export async function writeForkedTranscript(
     title: string;
     resumeId?: string;
     forkPointRenames?: ReadonlyMap<string, string>;
+    // A copy on a model of its own runs that model's own window, so the
+    // source's pin stays behind.
+    dropContextWindow?: boolean;
   },
 ): Promise<string> {
   const directory = providerSessionsDir();
   const path = join(directory, `${copy.appSessionId}.jsonl`);
   const head: ProviderSessionStart = {
-    ...transcript.head,
+    ...withoutContextWindow(transcript.head, copy.dropContextWindow),
     id: copy.appSessionId,
     title: copy.title,
     ...(copy.resumeId ? { resumeId: copy.resumeId } : {}),
@@ -309,11 +312,13 @@ export async function writeForkedTranscript(
     ? transcript.lines.map((line) => renameForkPoint(line, renames))
     : transcript.lines;
   await writeFile(path, [serialize(head), ...lines.map((line) => `${line}\n`)].join(''));
+  const settingsFrom = join(directory, `${transcript.sourceAppSessionId}.settings.json`);
+  const settingsTo = join(directory, `${copy.appSessionId}.settings.json`);
   try {
-    await copyFile(
-      join(directory, `${transcript.sourceAppSessionId}.settings.json`),
-      join(directory, `${copy.appSessionId}.settings.json`),
-    );
+    if (copy.dropContextWindow) {
+      const settings = JSON.parse(await readFile(settingsFrom, 'utf8')) as Record<string, unknown>;
+      await writeFile(settingsTo, JSON.stringify(withoutContextWindow(settings, true)));
+    } else await copyFile(settingsFrom, settingsTo);
   } catch (error) {
     if (!isMissingFile(error)) throw error;
   }
@@ -403,4 +408,14 @@ function toolResultBlock(event: TranscriptEvent): ContentBlock | null {
 
 function serialize(line: object): string {
   return `${JSON.stringify(line)}\n`;
+}
+
+function withoutContextWindow<T extends { contextWindowTokens?: unknown }>(
+  value: T,
+  drop: boolean | undefined,
+): T {
+  if (!drop || value.contextWindowTokens === undefined) return value;
+  const copy = { ...value };
+  delete copy.contextWindowTokens;
+  return copy;
 }

@@ -163,6 +163,7 @@ export class SessionForks {
         title: command.title,
         ...(handle.resumeId ? { resumeId: handle.resumeId } : {}),
         ...(handle.forkPointRenames ? { forkPointRenames: handle.forkPointRenames } : {}),
+        dropContextWindow: command.modelId !== undefined,
       }),
     };
     // Recorded before the copy is indexed, so the list that indexing publishes
@@ -201,7 +202,7 @@ export class SessionForks {
         interactionMode: source.interactionMode === 'spec' ? 'spec' : 'auto',
         autonomy: source.autonomy,
         ...(provider === source.provider
-          ? { ...modelSettings(command, source), ...chatPreferences(source) }
+          ? { ...modelSettings(command, source), ...chatPreferences(command, source) }
           : pickedModelSettings(command)),
       },
       {
@@ -255,7 +256,7 @@ function copiedSettings(command: SessionForkCommand, source: SessionSummary): Se
     ...(source.workspaceKind ? { workspaceKind: source.workspaceKind } : {}),
     // A picked model is applied through the settings owner once the copy exists.
     ...(command.modelId ? {} : modelSettings(command, source)),
-    ...chatPreferences(source),
+    ...chatPreferences(command, source),
     ...(source.compactionModel ? { compactionModel: source.compactionModel } : {}),
   };
 }
@@ -270,12 +271,14 @@ function modelSettings(command: SessionForkCommand, source: SessionSummary): Ses
   };
 }
 
-// The fast mode and window the chat asked for stay with a copy on the same
-// harness, as the copied transcript and settings files already say.
-function chatPreferences(source: SessionSummary): SessionSummaryPatch {
+// The fast mode the chat asked for stays with a copy on the same harness, as
+// the copied transcript and settings files already say. Its window belongs to
+// its model, like an effort: a model picked for the copy runs its own default,
+// since it may have no 1M version at all.
+function chatPreferences(command: SessionForkCommand, source: SessionSummary): SessionSummaryPatch {
   return {
     ...(source.fastMode !== undefined ? { fastMode: source.fastMode } : {}),
-    ...(source.contextWindowTokens !== undefined
+    ...(!command.modelId && source.contextWindowTokens !== undefined
       ? { contextWindowTokens: source.contextWindowTokens }
       : {}),
   };
