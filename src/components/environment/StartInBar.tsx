@@ -128,7 +128,7 @@ export function StartInBar({
   const locRef = useRef<HTMLButtonElement>(null);
   const branchRef = useRef<HTMLButtonElement>(null);
 
-  if (!draft || !cwd) return null;
+  if (!draft) return null;
 
   const mainCheckout = env ? resolveMainCheckout(env, worktrees) : null;
   const repoRoot = mainCheckout?.path ?? env?.repoRoot ?? cwd;
