@@ -1,11 +1,18 @@
-import { useMemo } from 'react';
-import { shallowEqual, useStoreSelector } from '../../hooks/useStore';
+import { useCallback, useMemo } from 'react';
+import { shallowEqual, useStoreSelector, type AppState } from '../../hooks/useStore';
+import { chatDisplayTitle } from '../../lib/chatMetadata';
 import { useThreadDigests } from './useThreadDigests';
 import { projectForSession } from '../../lib/projectThreads';
 import { sessionAttention } from '../../lib/sessionAttention';
 import { useProjects } from './client';
 import { projectPulse, type ProjectPulse } from './projectBoard';
-import { leadRow, threadRows, type ThreadRow, type ThreadSignals } from './threadBoard';
+import {
+  leadRow,
+  projectLead,
+  threadRows,
+  type ThreadRow,
+  type ThreadSignals,
+} from './threadBoard';
 import type { ProjectView } from './types';
 
 export interface ProjectBoardEntry {
@@ -37,19 +44,48 @@ export function useProjectBoard(): {
       [snapshot.projects],
     ),
   );
+  const leadTitles = useLeadTitles(snapshot.projects);
   const entries = useMemo(
     () =>
       snapshot.projects.map((project) => {
         const rows = threadRows(project, signals);
-        return { project, rows, pulse: projectPulse(project, rows, leadRow(project, signals)) };
+        const lead = projectLead(project);
+        const title = lead ? leadTitles[lead.appSessionId] : undefined;
+        const named = title && title !== project.title ? { ...project, title } : project;
+        return { project: named, rows, pulse: projectPulse(named, rows, leadRow(named, signals)) };
       }),
-    [snapshot.projects, signals],
+    [snapshot.projects, signals, leadTitles],
   );
   return {
     entries,
     loading: snapshot.loading,
     ...(snapshot.error ? { error: snapshot.error } : {}),
   };
+}
+
+/* A project is its lead conversation, so it carries the name that chat has now:
+   one started by voice is named from the first thing said in it, and renaming
+   the chat renames the project. */
+function useLeadTitles(projects: readonly ProjectView[]): Record<string, string> {
+  const leads = useMemo(
+    () => projects.flatMap((project) => projectLead(project)?.appSessionId ?? []),
+    [projects],
+  );
+  return useStoreSelector(
+    useCallback(
+      (state: AppState) => {
+        const titles: Record<string, string> = {};
+        const known: Partial<AppState['sessions']> = state.sessions;
+        for (const id of leads) {
+          const session = known[id];
+          if (session) titles[id] = chatDisplayTitle(session, state.chatMetadata[id]);
+        }
+        return titles;
+      },
+      [leads],
+    ),
+    shallowEqual,
+  );
 }
 
 /** What a thread's row is read against, with the last step of the named threads only. */
