@@ -302,7 +302,7 @@ export class SessionTimeline {
    * The newest events of a conversation's stored transcript, for a caller that
    * only looks at it: nothing is recorded or sent to the window.
    */
-  tail(appSessionId: string, limit: number): TranscriptEvent[] {
+  async tail(appSessionId: string, limit: number): Promise<TranscriptEvent[]> {
     const summary = this.dependencies.registry.resolveSummary(appSessionId);
     if (!summary) throw new Error(`Session history not found for ${appSessionId}`);
     const providerSessionId = summary.providerSessionId ?? summary.appSessionId;
@@ -311,8 +311,11 @@ export class SessionTimeline {
     const openFile =
       this.transcripts.path(summary.appSessionId) ??
       this.dependencies.liveSessionFile?.(providerSessionId);
-    if (openFile && !this.loaders.resolveChain(summary.appSessionId, providerSessionId).length)
+    if (openFile && !this.loaders.resolveChain(summary.appSessionId, providerSessionId).length) {
+      // Lines still in the write queue land before the file is read.
+      await this.transcripts.flush(summary.appSessionId);
       return this.loaders.openTranscriptTail(summary.appSessionId, openFile, limit);
+    }
     return this.loadStandard(summary.appSessionId, providerSessionId, undefined, limit).transcripts;
   }
 

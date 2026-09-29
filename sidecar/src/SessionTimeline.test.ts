@@ -645,17 +645,17 @@ test('an open session reads its own transcript before the history index knows th
   const file = new ProviderTranscriptFile('claude-live', () => started);
   harness.timeline.useTranscript('claude-live', file);
   await file.appendPrompt('Port the client.');
+  // Still queued: the read waits for it.
   file.append({ ...transcript('reply', 'claude-live'), text: 'Ported it to v3.' });
-  await file.flush();
 
-  const tail = harness.timeline.tail('claude-live', 10);
+  const tail = await harness.timeline.tail('claude-live', 10);
   assert.deepEqual(
     tail.map((event) => event.text),
     ['Port the client.', 'Ported it to v3.'],
   );
 });
 
-test('an open Droid session reads the file its runtime writes before the index knows it', (t) => {
+test('an open Droid session reads the file its runtime writes before the index knows it', async (t) => {
   const dir = mkdtempSync(join(tmpdir(), 'droidex-droid-live-'));
   t.after(() => {
     rmSync(dir, { recursive: true, force: true });
@@ -683,7 +683,7 @@ test('an open Droid session reads the file its runtime writes before the index k
     liveSessionFile: (providerSessionId) => (providerSessionId === 'droid-live' ? file : undefined),
   });
 
-  const tail = harness.timeline.tail('droid-live', 10);
+  const tail = await harness.timeline.tail('droid-live', 10);
   assert.deepEqual(
     tail.map((event) => event.text),
     ['Port the client.', 'Ported it to v3.'],

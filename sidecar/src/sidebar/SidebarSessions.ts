@@ -14,7 +14,7 @@ export interface SidebarHost {
   isAutomationRun(appSessionId: string): Promise<boolean>;
   /** Whether an approval or a question is waiting on this session. */
   isBlocked(appSessionId: string): boolean;
-  transcriptTail(appSessionId: string, limit: number): TranscriptEvent[];
+  transcriptTail(appSessionId: string, limit: number): Promise<TranscriptEvent[]>;
   /** Steers the prompt into a running turn, as the user's Steer does; false when no turn is running. */
   steerRunningTurn(appSessionId: string, prompt: string): boolean;
   /** Starts a turn; `isCurrent` turning false before dispatch cancels it. */
@@ -119,7 +119,7 @@ export class SidebarSessions {
       autonomy: session.autonomy,
       ...waitingOn(row),
       ...(session.interruptReason ? { interrupted: session.interruptReason } : {}),
-      ...this.lastReply(target),
+      ...(await this.lastReply(target)),
     };
   }
 
@@ -373,10 +373,10 @@ export class SidebarSessions {
     };
   }
 
-  private lastReply(appSessionId: string) {
+  private async lastReply(appSessionId: string) {
     let events: TranscriptEvent[];
     try {
-      events = this.host.transcriptTail(appSessionId, TAIL_EVENTS);
+      events = await this.host.transcriptTail(appSessionId, TAIL_EVENTS);
     } catch (error) {
       return { transcript: `Could not read its transcript: ${errorMessage(error)}` };
     }

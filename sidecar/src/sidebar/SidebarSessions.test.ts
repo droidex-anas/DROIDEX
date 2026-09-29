@@ -91,7 +91,7 @@ function harness(options: {
     projects: () => Promise.resolve([PROJECT]),
     isAutomationRun: () => Promise.resolve(false),
     isBlocked: (id) => (options.blocked ?? ['thread']).includes(id),
-    transcriptTail: () => [],
+    transcriptTail: () => Promise.resolve([]),
     steerRunningTurn: (id, prompt) => {
       if (!options.runningTurns?.includes(id)) return false;
       calls.push(`steer ${id}: ${prompt}`);
