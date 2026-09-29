@@ -51,7 +51,6 @@ function reasoningArray(value: unknown): ReasoningEffort[] | undefined {
   return efforts.length > 0 ? efforts : undefined;
 }
 
-// Shared with the Codex adapter, whose catalog names efforts the same way.
 export function reasoningValue(value: unknown): ReasoningEffort | undefined {
   if (
     value === 'off' ||

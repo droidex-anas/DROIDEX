@@ -16,7 +16,7 @@ import {
   type CompactionResourceKey,
   type CompactionRetuneTarget,
 } from './SessionCompaction.js';
-import { errMsg, isUserCancellation } from './sessionHelpers.js';
+import { errMsg, isUserCancellation } from './errors.js';
 import { isReportedStreamingTranscriptError } from './SessionTimeline.js';
 import {
   addChild,

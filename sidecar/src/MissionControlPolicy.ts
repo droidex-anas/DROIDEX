@@ -6,9 +6,22 @@ import {
   type ChildSettings,
 } from './ChildSessionState.js';
 import type { NormalizedSideEffects } from './SessionEventFlow.js';
-import type { ProgressEntry, ServerEvent } from './protocol.js';
+import type { ProgressEntry, ServerEvent, SessionPhase } from './protocol.js';
 import type { SessionRegistry } from './SessionRegistry.js';
-import { phaseFromState } from './sessionHelpers.js';
+
+const STATE_TO_PHASE: Record<string, SessionPhase> = {
+  initializing: 'initializing',
+  running: 'running',
+  paused: 'paused',
+  orchestrator_turn: 'orchestrator_turn',
+  completed: 'completed',
+  failed: 'failed',
+  awaiting_input: 'running',
+};
+
+export function phaseFromState(state?: string): SessionPhase | undefined {
+  return state ? STATE_TO_PHASE[state] : undefined;
+}
 
 interface MissionCorrelation {
   providerSessionId?: string;

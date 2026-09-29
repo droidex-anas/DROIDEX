@@ -16,7 +16,7 @@ import type {
   McpToolInfo,
   ServerEvent,
 } from './protocol.js';
-import { errMsg } from './sessionHelpers.js';
+import { errMsg } from './errors.js';
 
 type McpCommand = Extract<ClientCommand, { type: `mcp.${string}` }>;
 type Emit = (event: ServerEvent) => void;

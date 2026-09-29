@@ -1,4 +1,4 @@
-import { errMsg } from './sessionHelpers.js';
+import { errMsg } from './errors.js';
 
 // Selecting a chat is the earliest honest sign that the user is about to write
 // in it. Starting its provider runtime then, instead of when they press enter,

@@ -64,7 +64,7 @@ export class ClaudeProvider implements Provider {
     reasoningEffort,
     fastMode,
     contextWindowTokens,
-    autonomyLevel,
+    autonomy,
     interactionMode,
     mcpServers,
   }: ProviderOpenInput): Promise<ProviderSession> {
@@ -73,7 +73,7 @@ export class ClaudeProvider implements Provider {
     return await this.open({
       appSessionId: randomUUID(),
       cwd: sessionCwd(cwd),
-      autonomy: autonomyLevel ?? 'off',
+      autonomy,
       interactionMode,
       ...(modelId ? { modelId } : {}),
       ...(reasoningEffort ? { reasoningEffort } : {}),

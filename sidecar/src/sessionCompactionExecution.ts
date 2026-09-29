@@ -11,7 +11,7 @@ import type { ProviderInteractions } from './providers/interactions.js';
 import type { LiveOperationTarget, SessionContext, UsageOffset } from './SessionContext.js';
 import type { LiveSession } from './SessionLifecycle.js';
 import type { SessionRegistry } from './SessionRegistry.js';
-import { errMsg } from './sessionHelpers.js';
+import { errMsg } from './errors.js';
 import type { SessionTimeline } from './SessionTimeline.js';
 
 export type CompactionExecutionResult =

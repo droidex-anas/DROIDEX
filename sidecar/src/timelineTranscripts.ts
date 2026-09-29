@@ -1,6 +1,6 @@
 import type { SessionSummary, TranscriptEvent } from './protocol.js';
 import { appendSessionNotice } from './sessionNotices.js';
-import { errMsg } from './sessionHelpers.js';
+import { errMsg } from './errors.js';
 
 // Native providers store the full transcript; Droid stores only app notices
 // separately from its harness-owned session file.

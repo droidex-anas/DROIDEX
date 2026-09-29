@@ -18,16 +18,16 @@ import type {
   SessionInteractionMode,
   TranscriptEvent,
 } from './protocol.js';
+import { errMsg } from './errors.js';
+import { reasoningValue } from './modelCatalog.js';
+import { defaultsModeForSummary, modelDefaultForMode } from './modeDefaults.js';
+import { boundedInt, normalizeAutonomy } from './values.js';
 import {
-  defaultsModeForSummary,
-  errMsg,
-  modelDefaultForMode,
-  normalizeAutonomy,
-  reasoningValue,
+  DroidRuntime,
+  type FactoryRuntime,
+  type FactorySession,
   type SessionInitResult,
-} from './sessionHelpers.js';
-import { boundedInt } from './values.js';
-import { DroidRuntime, type FactoryRuntime, type FactorySession } from './DroidRuntime.js';
+} from './DroidRuntime.js';
 import { detectEnvironment } from './Environment.js';
 import { buildInstallCommand, buildUpdateCommand, runStreaming } from './CliInstaller.js';
 import {

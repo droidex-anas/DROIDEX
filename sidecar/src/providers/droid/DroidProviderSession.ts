@@ -7,7 +7,7 @@ import {
 } from '../../DroidRuntime.js';
 import { normalizeStreamEvent, type NormalizedEvent } from '../../normalize.js';
 import type { Autonomy, SessionInteractionMode } from '../../protocol.js';
-import { errMsg } from '../../sessionHelpers.js';
+import { errMsg } from '../../errors.js';
 import { hotPathMetrics } from '../../telemetry/hotPathMetrics.js';
 import type { ProviderModelSettings, ProviderSession } from '../session.js';
 import { UsageLimitError } from '../usageLimit.js';

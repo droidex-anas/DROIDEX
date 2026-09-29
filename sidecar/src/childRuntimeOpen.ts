@@ -2,7 +2,7 @@ import type { FactorySession } from './DroidRuntime.js';
 import type { PersistedChildSession } from './history.js';
 import type { ServerEvent } from './protocol.js';
 import { droidInteractionHandlers } from './providers/droid/droidInteractions.js';
-import { errMsg } from './sessionHelpers.js';
+import { errMsg } from './errors.js';
 import type { ChildAutomaticCompactionTarget } from './SessionCompaction.js';
 import type { ChildOperationTarget } from './SessionContext.js';
 import {

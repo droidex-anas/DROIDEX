@@ -8,7 +8,8 @@ import type {
   ServerEvent,
   SessionSummary,
 } from './protocol.js';
-import { defaultsModeForSummary, errMsg, modelDefaultForMode } from './sessionHelpers.js';
+import { errMsg } from './errors.js';
+import { defaultsModeForSummary, modelDefaultForMode } from './modeDefaults.js';
 import { DEFAULT_PROVIDER, type ProviderKind } from './providers/providerKind.js';
 import { writeProviderSessionSettings } from './providers/providerSessionSettings.js';
 import type { ProviderModelSettings } from './providers/session.js';

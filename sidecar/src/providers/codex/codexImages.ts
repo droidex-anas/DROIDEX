@@ -6,7 +6,7 @@ import { copyFileSync, mkdirSync, writeFileSync } from 'node:fs';
 import { extname, join } from 'node:path';
 
 import { providerSessionsDir } from '../../droidexPaths.js';
-import { errMsg } from '../../sessionHelpers.js';
+import { errMsg } from '../../errors.js';
 import { resetAtMillis, UsageLimitError } from '../usageLimit.js';
 
 export interface GeneratedImage {

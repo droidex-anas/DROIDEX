@@ -1,7 +1,7 @@
 import type { ClientCommand, HistorySearchReply, ServerEvent, SessionSummary } from './protocol.js';
 import { loadSessionTranscriptWindow, resolveSessionChain } from './history.js';
 import { isHistorySearchUnavailableError } from './historySearchSchema.js';
-import { errMsg } from './sessionHelpers.js';
+import { errMsg } from './errors.js';
 import { transcriptToMarkdown } from './sessionMarkdown.js';
 
 type Emit = (event: ServerEvent) => void;

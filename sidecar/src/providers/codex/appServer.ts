@@ -4,7 +4,7 @@
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
 
 import { childEnv } from '../../childEnv.js';
-import { errMsg } from '../../sessionHelpers.js';
+import { errMsg } from '../../errors.js';
 
 // A line this long is a runaway payload rather than a message: fail the client
 // instead of buffering until the sidecar runs out of memory. The bound has to

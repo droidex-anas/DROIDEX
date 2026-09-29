@@ -6,7 +6,7 @@ import {
   type SessionListFilterOptions,
   type SessionListPage,
 } from './sessionListFilter.js';
-import { uniqueStrings } from './sessionHelpers.js';
+import { uniqueStrings } from './values.js';
 
 export interface RegisteredSession {
   summary: SessionSummary;

@@ -19,7 +19,7 @@ import type {
   ReasoningEffort,
   SessionInteractionMode,
 } from '../../protocol.js';
-import { errMsg } from '../../sessionHelpers.js';
+import { errMsg } from '../../errors.js';
 import type { SkillInfo } from '../catalog.js';
 import type { ProviderInteractions } from '../interactions.js';
 import type { ProviderModelSettings, ProviderSession } from '../session.js';

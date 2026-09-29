@@ -64,14 +64,14 @@ export class CodexProvider implements Provider {
     modelId,
     reasoningEffort,
     fastMode,
-    autonomyLevel,
+    autonomy,
   }: ProviderOpenInput): Promise<ProviderSession> {
     // Codex mints the thread id, so DROIDEX's own identity is minted here and
     // the thread becomes the session's separate resume handle.
     return this.openSession({
       appSessionId: randomUUID(),
       cwd,
-      autonomy: autonomyLevel ?? 'off',
+      autonomy,
       model: {
         ...(modelId ? { modelId } : {}),
         ...(reasoningEffort ? { reasoningEffort } : {}),

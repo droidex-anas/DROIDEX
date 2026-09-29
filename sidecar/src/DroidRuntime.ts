@@ -13,6 +13,7 @@ import {
   type LoadSessionRequestParams,
   type McpServerConfig,
   type MessageOptions,
+  type MissionFeature,
   type PermissionHandler,
 } from '@factory/droid-sdk';
 import { childEnv } from './childEnv.js';
@@ -37,7 +38,6 @@ export interface CreateRuntimeSessionOptions extends RuntimeHandlers {
   interactionMode: SessionInteractionMode;
   modelId?: string;
   reasoningEffort?: ReasoningEffort;
-  fastMode?: boolean;
   compactionModel?: string;
   compactionTokenLimit?: number;
   compactionThresholdCheckEnabled?: boolean;
@@ -50,6 +50,33 @@ export interface CreateRuntimeSessionOptions extends RuntimeHandlers {
   workerReasoningEffort?: ReasoningEffort;
   validatorModelId?: string;
   validatorReasoningEffort?: ReasoningEffort;
+}
+
+// The part of a Droid session's init result DROIDEX reads back.
+export interface SessionInitResult {
+  cwd?: string | undefined;
+  session?:
+    | {
+        decompSessionType?: unknown;
+        decompMissionId?: unknown;
+        cwd?: unknown;
+        title?: unknown;
+        sessionTitle?: unknown;
+        [key: string]: unknown;
+      }
+    | undefined;
+  settings?:
+    | {
+        modelId?: string | undefined;
+        reasoningEffort?: string | undefined;
+        compactionModel?: string | undefined;
+        compactionTokenLimit?: number | undefined;
+        compactionTokenLimitPerModel?: Record<string, number> | undefined;
+        interactionMode?: string | undefined;
+        autonomyLevel?: string | undefined;
+      }
+    | undefined;
+  mission?: { state?: string | undefined; features?: MissionFeature[] | undefined } | undefined;
 }
 
 export interface RuntimeStatus {
