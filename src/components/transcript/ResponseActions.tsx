@@ -79,13 +79,13 @@ export function PromptActions({
   onSendNow,
 }: {
   text: string;
-  ts: number;
+  ts?: number | undefined;
   onSendNow?: (() => void) | undefined;
 }) {
   return (
     <div className="absolute right-0 top-full mt-0.5 flex h-7 items-center">
       <div className="pointer-events-none flex items-center opacity-0 transition-opacity duration-150 delay-300 focus-within:pointer-events-auto focus-within:opacity-100 focus-within:delay-0 group-hover/msg:pointer-events-auto group-hover/msg:opacity-100 group-hover/msg:delay-0">
-        <MessageTime ts={ts} />
+        {ts !== undefined ? <MessageTime ts={ts} /> : null}
         <CopyButton text={text} label="Copy prompt" />
         {onSendNow ? (
           <HoverTooltip label="Send now">

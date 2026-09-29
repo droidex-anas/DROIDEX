@@ -148,7 +148,7 @@ import {
   shortModelName,
 } from './ModelIcon';
 import { StartInBar } from './environment/StartInBar';
-import type { Autonomy, SkillInfo, TranscriptEvent } from '../types/bridge';
+import type { Autonomy, SkillInfo } from '../types/bridge';
 import { feedbackDraftFromCommand } from '../lib/feedbackReport';
 import {
   promptWithSideChatReplies,
@@ -1475,30 +1475,30 @@ export default function PromptInput({
       return;
     }
 
-    // A steer into the chat's own turn shows below the transcript under this id
-    // until the model takes it in. A child runs on Droid, which cannot take a
-    // steer yet, so its prompt waits behind the turn like any other send.
+    // A steer into the chat's own turn is pending under this id until the model
+    // takes it in. A child runs on Droid, which cannot take a steer yet, so its
+    // prompt waits behind the turn like any other send.
     const steerId =
       isLive && mode === 'steer' && !targetChildSessionId ? crypto.randomUUID() : undefined;
     const appendTranscript = () => {
-      const event: TranscriptEvent = {
-        id: `local-${String(Date.now())}`,
-        appSessionId: activeSession.appSessionId,
-        sourceSessionId: targetChildSessionId ?? 'user',
-        role: targetChild?.role ?? 'primary',
-        ts: Date.now(),
-        kind: 'text',
-        text: displayText,
-        author: 'user',
-        skills: skillNames,
-        files: allFiles,
-        ...(sideChatReplies.length > 0 ? { sideChatReplies } : {}),
-      };
-      dispatch(
-        steerId
-          ? { type: 'STEER_SENT', appSessionId: activeSession.appSessionId, steerId, event }
-          : { type: 'SESSION_TRANSCRIPT', event },
-      );
+      // A steer shows from the sidecar's list of pending steers instead.
+      if (!steerId)
+        dispatch({
+          type: 'SESSION_TRANSCRIPT',
+          event: {
+            id: `local-${String(Date.now())}`,
+            appSessionId: activeSession.appSessionId,
+            sourceSessionId: targetChildSessionId ?? 'user',
+            role: targetChild?.role ?? 'primary',
+            ts: Date.now(),
+            kind: 'text',
+            text: displayText,
+            author: 'user',
+            skills: skillNames,
+            files: allFiles,
+            ...(sideChatReplies.length > 0 ? { sideChatReplies } : {}),
+          },
+        });
       if (sideChatReplies.length > 0) detachSideChatReplies();
     };
     const sendCommand = () => {

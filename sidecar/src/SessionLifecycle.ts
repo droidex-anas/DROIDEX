@@ -43,6 +43,7 @@ import {
   requireDroidReasoningSupported,
 } from './providers/droid/droidLaunch.js';
 import { droidSessionOf } from './providers/droid/DroidProviderSession.js';
+import { userPromptDisplay } from './sessionTranscriptParser.js';
 import type { Provider, ProviderSession } from './providers/session.js';
 
 const MAX_SCHEDULED_SESSION_RUNTIMES = 8;
@@ -1452,14 +1453,16 @@ function sessionPrompt(
   };
 }
 
-// What the chat shows of its queue: how many sends wait, and which steers the
+// What the chat shows of its queue: how many sends wait, and the steers the
 // model has not taken in yet, whether the harness holds them or the queue does.
 function queueSummary(
   liveSession: LiveTurnState,
 ): Pick<SessionSummary, 'queuedSends' | 'pendingSteers'> {
-  const pendingSteers = [...liveSession.steers, ...liveSession.pendingSends].flatMap((prompt) =>
-    prompt.steerId ? [prompt.steerId] : [],
-  );
+  const pendingSteers = [...liveSession.steers, ...liveSession.pendingSends]
+    .sort((a, b) => a.order - b.order)
+    .flatMap(({ steerId, text }) =>
+      steerId ? [{ id: steerId, text: userPromptDisplay(text).text }] : [],
+    );
   return { queuedSends: liveSession.pendingSends.length, pendingSteers };
 }
 

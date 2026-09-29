@@ -796,8 +796,8 @@ test('queued sends stay FIFO, and send-now moves a pending steer to the front', 
   await steered.lifecycle.send('steered', 'steer one', undefined, 'steer-1');
   await steered.lifecycle.send('steered', 'steer two', undefined, 'steer-2');
   assert.deepEqual(steered.registry.getCanonicalSummary('steered')?.pendingSteers, [
-    'steer-1',
-    'steer-2',
+    { id: 'steer-1', text: 'steer one' },
+    { id: 'steer-2', text: 'steer two' },
   ]);
   await steered.lifecycle.sendNow('steered', 'steer-2');
   await steered.lifecycle.sendNow('steered', 'steer-1');
@@ -871,7 +871,7 @@ test('a steer is pending until the harness delivers it, and one refused late sti
 
   const delivered = h.lifecycle.send('steer', 'delivered', undefined, 'steer-1');
   await harnessHas(1);
-  assert.deepEqual(pendingSteers(), ['steer-1']);
+  assert.deepEqual(pendingSteers(), [{ id: 'steer-1', text: 'delivered' }]);
   deliveries[0](true);
   await delivered;
   assert.deepEqual(pendingSteers(), []);

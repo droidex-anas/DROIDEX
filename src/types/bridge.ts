@@ -174,8 +174,9 @@ export interface SessionSummary {
   // Set when a runtime restart could not continue this session's in-flight turn.
   interruptReason?: string;
   queuedSends?: number;
-  // The steers sent while a turn ran that the model has not taken in yet.
-  pendingSteers?: string[];
+  // The steers sent while a turn ran that the model has not taken in yet, in
+  // the order they were sent, as the chat shows them.
+  pendingSteers?: { id: string; text: string }[];
   proposal?: string; // markdown plan from propose_mission
   features: BridgeFeature[];
   tokensIn: number;
