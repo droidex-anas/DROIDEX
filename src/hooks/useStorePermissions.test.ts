@@ -172,3 +172,30 @@ test('queued questions survive out-of-order cancellation and duplicate delivery'
   });
   assert.equal(settled.pendingQuestions['app-1'], undefined);
 });
+
+test('the spec reader shows the plan of the approval the bar answers', () => {
+  const plan = (requestId: string, content: string) => {
+    const action = adaptEvent({
+      type: 'approval.requested',
+      request: {
+        appSessionId: 'app-1',
+        requestId,
+        kind: 'spec',
+        title: `Plan ${requestId}`,
+        detail: '',
+        plan: content,
+        canAlwaysAllow: false,
+        raw: {},
+      },
+    });
+    assert.ok(action);
+    return action;
+  };
+  const both = reducer(reducer(initialState, plan('a', 'plan A')), plan('b', 'plan B'));
+  assert.equal(both.pendingPermissions['app-1']?.[0]?.requestId, 'a');
+  assert.equal(both.sessionSpecs['app-1']?.content, 'plan A');
+
+  const next = reducer(both, { type: 'CLEAR_PERMISSION', appSessionId: 'app-1', requestId: 'a' });
+  assert.equal(next.sessionSpecs['app-1']?.content, 'plan B');
+  assert.equal(next.specPlans['app-1'], 'plan B');
+});

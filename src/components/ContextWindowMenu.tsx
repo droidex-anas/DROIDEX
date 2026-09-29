@@ -70,6 +70,23 @@ export default function ContextWindowMenu({
   const label =
     shown === undefined ? 'Default' : (options.find((o) => o.value === shown)?.label ?? 'Default');
 
+  // The menu opens on the window in use, or the first that can be picked, and
+  // the arrow keys walk the ones that can.
+  const choosable = options.filter((option) => option.unavailableReason === undefined);
+  const openOn = choosable.find((option) => option.value === shown) ?? choosable[0];
+  const onMenuKey = (e: React.KeyboardEvent) => {
+    if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return;
+    e.preventDefault();
+    const items = [
+      ...(menuRef.current?.querySelectorAll<HTMLButtonElement>('[role="menuitemradio"]:enabled') ??
+        []),
+    ];
+    if (items.length === 0) return;
+    const index = items.indexOf(document.activeElement as HTMLButtonElement);
+    const step = e.key === 'ArrowDown' ? 1 : items.length - 1;
+    items[(Math.max(index, 0) + step) % items.length].focus();
+  };
+
   return (
     <>
       <button
@@ -104,6 +121,7 @@ export default function ContextWindowMenu({
               exit={{ opacity: 0, y: -4 }}
               transition={{ duration: 0.14, ease: [0.16, 1, 0.3, 1] }}
               data-popover-layer="context-window"
+              onKeyDown={onMenuKey}
               style={{ ...place, width: MENU_WIDTH_PX }}
               className="fixed z-[200] overflow-hidden rounded-xl border border-droid-border/60 bg-droid-raised p-1 shadow-droid"
             >
@@ -120,9 +138,11 @@ export default function ContextWindowMenu({
                     aria-checked={on}
                     disabled={option.unavailableReason !== undefined}
                     title={option.unavailableReason}
+                    autoFocus={option === openOn}
                     onClick={() => {
                       onSelect(option.value);
                       setOpen(false);
+                      buttonRef.current?.focus();
                     }}
                     className={`flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-[12px] transition-colors disabled:cursor-not-allowed disabled:opacity-40 ${
                       on

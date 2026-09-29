@@ -87,6 +87,16 @@ test('typing replaces a single choice and joins several', () => {
   ]);
   assert.deepEqual(answerFor(multi, 0).selected, ['SQLite']);
   assert.equal(answerFor(multi, 0).custom, 'Turso');
+
+  // Picking another option keeps the typed answer in sight: it is still sent.
+  const more = stepperReducer(multi, {
+    type: 'pickOption',
+    questionIndex: 0,
+    option: 'Postgres',
+    multiSelect: true,
+  });
+  assert.equal(isTyping(more, 0), true);
+  assert.equal(answerFor(more, 0).custom, 'Turso');
 });
 
 test('the custom field opens on the answer already held', () => {

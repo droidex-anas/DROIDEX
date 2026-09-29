@@ -42,7 +42,7 @@ function withAnswer(state: StepperState, questionIndex: number, next: HeldAnswer
 export function stepperReducer(state: StepperState, action: StepperAction): StepperState {
   switch (action.type) {
     // One choice replaces the answer; several toggle inside it and leave any
-    // typed text alone, because both travel in the same answer.
+    // typed text alone and in sight, because both travel in the same answer.
     case 'pickOption': {
       const held = answerFor(state, action.questionIndex);
       if (!action.multiSelect) {
@@ -55,7 +55,11 @@ export function stepperReducer(state: StepperState, action: StepperAction): Step
       const selected = held.selected.includes(action.option)
         ? held.selected.filter((option) => option !== action.option)
         : [...held.selected, action.option];
-      return withAnswer(state, action.questionIndex, { ...held, selected, typing: false });
+      return withAnswer(state, action.questionIndex, {
+        ...held,
+        selected,
+        typing: held.typing && held.custom.length > 0,
+      });
     }
     case 'openCustomAnswer':
       return withAnswer(state, action.questionIndex, {

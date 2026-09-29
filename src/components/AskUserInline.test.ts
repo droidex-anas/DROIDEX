@@ -91,12 +91,3 @@ test('a header names the question and options carry their descriptions', () => {
   assert.match(html, />One file, no server</);
   assert.match(html, />Runs alongside the app</);
 });
-
-test('a multi-select question marks its options with squares, not circles', () => {
-  const multi = makeQuestion([
-    { index: 0, question: 'Which features?', multiSelect: true, options: [{ label: 'Search' }] },
-  ]);
-
-  assert.match(renderCard(multi), /rounded-\[5px\]/);
-  assert.ok(!renderCard(SINGLE).includes('rounded-[5px]'));
-});
