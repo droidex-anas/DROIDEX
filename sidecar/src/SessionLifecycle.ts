@@ -639,9 +639,12 @@ export class SessionLifecycle {
     stops: number,
   ): Promise<SteerOutcome> {
     if (!liveSession.session.steer) return Promise.resolve('interrupt');
+    // The steer ahead reports its own failure to its own caller; this one runs
+    // either way.
+    const steer = () => this.steerOnce(liveSession, prompt, stops);
     const next = (
       this.steering.get(liveSession) ?? Promise.resolve<SteerOutcome>('interrupt')
-    ).then(() => this.steerOnce(liveSession, prompt, stops));
+    ).then(steer, steer);
     this.steering.set(liveSession, next);
     return next;
   }
