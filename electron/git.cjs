@@ -114,6 +114,45 @@ function parseStatusBranch(stdout) {
   return out;
 }
 
+// Parse `git status --porcelain=v1 --branch`: the branch line, then one line
+// per path with its index and worktree letters.
+function parseStatusCounts(stdout) {
+  let branch = null;
+  let changed = 0;
+  let staged = 0;
+  let unstaged = 0;
+  let untracked = 0;
+  for (const line of String(stdout).split(/\r?\n/)) {
+    if (!line) continue;
+    if (line.startsWith('## ')) {
+      branch = parseBranchLine(line.slice(3));
+      continue;
+    }
+    const x = line[0];
+    const y = line[1];
+    if (x === '!' && y === '!') continue;
+    changed++;
+    if (x === '?' && y === '?') {
+      untracked++;
+      continue;
+    }
+    if (x !== ' ' && x !== '?') staged++;
+    if (y !== ' ' && y !== '?') unstaged++;
+  }
+  return { branch, changed, staged, unstaged, untracked };
+}
+
+// The `## ` line of porcelain v1: "main...origin/main [ahead 1]", or an
+// unborn branch, or a detached HEAD, which has no branch name.
+function parseBranchLine(value) {
+  const text = String(value || '').trim();
+  if (text.startsWith('No commits yet on '))
+    return text.slice('No commits yet on '.length).trim() || null;
+  const branch = text.split('...')[0].trim();
+  if (!branch || branch === 'HEAD' || branch.startsWith('HEAD ')) return null;
+  return branch;
+}
+
 // Parse `%(upstream:track)` like "[ahead 2, behind 1]" → { ahead, behind }.
 function parseTrack(track) {
   const result = { ahead: 0, behind: 0 };
@@ -1470,8 +1509,50 @@ async function adoptTurnBaseline(dir, clientRef, appSessionId) {
   return { ok: true };
 }
 
+// Branch and change counts for the chat header's repository line, or null
+// when `dir` is not a directory inside a repository.
+async function repoStatus(dir) {
+  const root = expandHome(dir);
+  if (!root || !(await isDirectory(root))) return null;
+  try {
+    const [repoRoot, status] = await Promise.all([
+      run(root, ['rev-parse', '--show-toplevel']),
+      run(root, ['status', '--porcelain=v1', '--branch', '--untracked-files=all']),
+    ]);
+    return { repoRoot: repoRoot.trim() || null, ...parseStatusCounts(status) };
+  } catch {
+    return null;
+  }
+}
+
+// The repository a project folder belongs to, or the folder itself outside one.
+async function projectRoot(dir) {
+  const root = expandHome(dir);
+  if (!root) throw new Error('No project folder selected.');
+  if (!(await isDirectory(root))) throw new Error('Project path is not a directory.');
+  return (await tryRun(root, ['rev-parse', '--show-toplevel'])) || root;
+}
+
+// Every change against HEAD as one patch, untracked files included.
+async function workingTreeDiff(root) {
+  const parts = [await run(root, ['diff', 'HEAD', '--'])];
+  const untracked = (await run(root, ['ls-files', '--others', '--exclude-standard']))
+    .split(/\r?\n/)
+    .filter(Boolean);
+  for (const file of untracked) {
+    const diff = await runSoft(root, ['diff', '--no-index', '--', os.devNull, file]);
+    if (diff) parts.push(diff);
+  }
+  return parts.filter(Boolean).join('\n');
+}
+
 module.exports = {
   environment,
+  repoStatus,
+  projectRoot,
+  workingTreeDiff,
+  // Exported for unit tests: parses the status the repository line is built from.
+  parseStatusCounts,
   branches,
   // Pure validation helpers exported for unit tests: they are the security
   // boundary for branch names, worktree paths, and remote resolution.
