@@ -696,13 +696,6 @@ export type Action =
   | { type: 'SET_DRAFT_AUTONOMY'; autonomy: Autonomy }
   | { type: 'SET_DRAFT_FAST_MODE'; fastMode: boolean }
   | { type: 'SET_DRAFT_CONTEXT_WINDOW'; contextWindowTokens: ContextWindowTokens | null }
-  | {
-      // Optimistic echo of a session.updateSettings just sent, so the popover
-      // and the chip read the new value before the sidecar confirms it.
-      type: 'SESSION_SETTINGS_CHANGED';
-      appSessionId: string;
-      settings: Partial<Pick<SessionSummary, 'fastMode' | 'contextWindowTokens'>>;
-    }
   | { type: 'AUTONOMY_UPDATE_REQUESTED'; appSessionId: string; autonomy: Autonomy }
   | { type: 'AUTONOMY_UPDATE_SETTLED'; appSessionId: string }
   | {
@@ -895,6 +888,27 @@ function withoutPendingRequest<T extends { requestId: string }>(
   const remaining = requests.filter((request) => request.requestId !== requestId);
   if (remaining.length) return { ...pending, [appSessionId]: remaining };
   return Object.fromEntries(Object.entries(pending).filter(([id]) => id !== appSessionId));
+}
+
+// The plan the approval bar and the spec reader show is the one of the oldest
+// approval still waiting, which is the one the bar answers. A richer spec file
+// for that plan (SPEC_SET) is kept while its content is unchanged.
+function withShownPlan(state: AppState, appSessionId: string): AppState {
+  const shown = state.pendingPermissions[appSessionId]?.[0];
+  if (!shown?.plan || (shown.kind !== 'spec' && shown.kind !== 'mission_plan')) return state;
+  const existingSpec = state.sessionSpecs[appSessionId];
+  return {
+    ...state,
+    specPlans:
+      shown.kind === 'spec' ? { ...state.specPlans, [appSessionId]: shown.plan } : state.specPlans,
+    sessionSpecs:
+      existingSpec?.content === shown.plan
+        ? state.sessionSpecs
+        : {
+            ...state.sessionSpecs,
+            [appSessionId]: { path: existingSpec?.path, title: shown.title, content: shown.plan },
+          },
+  };
 }
 
 export function reducer(state: AppState, action: Action): AppState {
@@ -1392,34 +1406,16 @@ function baseReducer(state: AppState, action: Action): AppState {
         )
       )
         return state;
-      const specPlans =
-        r.kind === 'spec' && r.plan
-          ? { ...state.specPlans, [r.appSessionId]: r.plan }
-          : state.specPlans;
-      // Seed the persistent spec/plan so the inline card and wiki reader work
-      // immediately (a richer spec file, if any, overrides this via SPEC_SET).
-      // Seed/refresh the persistent spec whenever a (revised) plan arrives so the
-      // card/wiki never go stale. The path is preserved; ChatView reloads the
-      // file on revision and overrides with the richer on-disk content.
-      const existingSpec = state.sessionSpecs[r.appSessionId];
-      const sessionSpecs =
-        (r.kind === 'spec' || r.kind === 'mission_plan') &&
-        r.plan &&
-        existingSpec?.content !== r.plan
-          ? {
-              ...state.sessionSpecs,
-              [r.appSessionId]: { path: existingSpec?.path, title: r.title, content: r.plan },
-            }
-          : state.sessionSpecs;
-      return {
-        ...state,
-        pendingPermissions: {
-          ...state.pendingPermissions,
-          [r.appSessionId]: [...(state.pendingPermissions[r.appSessionId] ?? []), r],
+      return withShownPlan(
+        {
+          ...state,
+          pendingPermissions: {
+            ...state.pendingPermissions,
+            [r.appSessionId]: [...(state.pendingPermissions[r.appSessionId] ?? []), r],
+          },
         },
-        specPlans,
-        sessionSpecs,
-      };
+        r.appSessionId,
+      );
     }
 
     case 'SESSION_QUESTION':
@@ -1557,14 +1553,17 @@ function baseReducer(state: AppState, action: Action): AppState {
       return reduceSessionHistory(state, action);
 
     case 'CLEAR_PERMISSION':
-      return {
-        ...state,
-        pendingPermissions: withoutPendingRequest(
-          state.pendingPermissions,
-          action.appSessionId,
-          action.requestId,
-        ),
-      };
+      return withShownPlan(
+        {
+          ...state,
+          pendingPermissions: withoutPendingRequest(
+            state.pendingPermissions,
+            action.appSessionId,
+            action.requestId,
+          ),
+        },
+        action.appSessionId,
+      );
 
     case 'CLEAR_QUESTION':
       return {
@@ -1593,7 +1592,9 @@ function baseReducer(state: AppState, action: Action): AppState {
       const cleared =
         pendingPermissions !== state.pendingPermissions ||
         pendingQuestions !== state.pendingQuestions;
-      return cleared ? { ...state, pendingPermissions, pendingQuestions } : state;
+      return cleared
+        ? withShownPlan({ ...state, pendingPermissions, pendingQuestions }, appSessionId)
+        : state;
     }
 
     case 'SET_ACTIVE_SESSION': {
@@ -2298,21 +2299,6 @@ function baseReducer(state: AppState, action: Action): AppState {
 
     case 'SET_DRAFT_CONTEXT_WINDOW':
       return { ...state, draftContextWindowTokens: action.contextWindowTokens };
-
-    case 'SESSION_SETTINGS_CHANGED': {
-      // The echo can land after the chat it belongs to was already dropped.
-      if (!(action.appSessionId in state.sessions)) return state;
-      return {
-        ...state,
-        sessions: {
-          ...state.sessions,
-          [action.appSessionId]: {
-            ...state.sessions[action.appSessionId],
-            ...action.settings,
-          },
-        },
-      };
-    }
 
     case 'AUTONOMY_UPDATE_REQUESTED':
       return {

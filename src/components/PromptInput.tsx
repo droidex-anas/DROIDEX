@@ -957,8 +957,10 @@ export default function PromptInput({
   const draftModelSettings = {
     ...(primaryModelId ? { modelId: primaryModelId } : {}),
     ...(draftReasoning ? { reasoningEffort: draftReasoning } : {}),
-    ...(state.draftFastMode ? { fastMode: true } : {}),
-    ...(state.draftContextWindowTokens !== null
+    // A preference chosen on another harness stays behind when the draft
+    // moves: the harness it is created on may not offer it.
+    ...(state.draftFastMode && offersFastMode(composerProvider) ? { fastMode: true } : {}),
+    ...(state.draftContextWindowTokens !== null && offersContextWindow(composerProvider)
       ? { contextWindowTokens: state.draftContextWindowTokens }
       : {}),
   };
@@ -1168,6 +1170,16 @@ export default function PromptInput({
     ]);
     const hasPayload = text || visualizeSelected || activeSkills.length > 0 || allFiles.length > 0;
     if (!hasPayload) return;
+    // The app owns fast mode, so a typed /fast runs here instead of reaching
+    // the harness, whose own switch the app would never see.
+    const fastCommand = slashCommands.find(
+      (command) => command.cmd.startsWith('/fast') && command.cmd === text,
+    );
+    if (fastCommand && activeSkills.length === 0 && allFiles.length === 0) {
+      fastCommand.run();
+      setInput('');
+      return;
+    }
     setHistoryIndex(null);
 
     const clearAfterSubmit = () => {

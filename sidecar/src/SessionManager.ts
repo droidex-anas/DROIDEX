@@ -1620,9 +1620,9 @@ export class SessionManager {
         if (requestId) this.emit({ type: 'session.model_update_applied', appSessionId, requestId });
         return;
       }
-      message = 'Model change was interrupted by a session restart or close.';
+      message = 'The settings change was interrupted by a session restart or close.';
     } catch (error) {
-      message = `Could not change the model: ${errMsg(error)}`;
+      message = `Could not change the chat's settings: ${errMsg(error)}`;
     }
     this.emitError({
       code: 'session.model_update_failed',
