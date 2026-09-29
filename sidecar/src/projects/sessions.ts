@@ -40,6 +40,9 @@ export class ProjectSessions implements ProjectPort {
     bind: Launch['bind'],
     clientRef = `project:${randomUUID()}`,
   ): Promise<SessionSummary | undefined> {
+    // A launch is found again by its clientRef, so two in flight must not share one.
+    if (this.launching.has(clientRef))
+      throw new Error('A project with this request is already starting.');
     const launch: Launch = { bind };
     this.launching.set(clientRef, launch);
     try {
@@ -60,7 +63,7 @@ export class ProjectSessions implements ProjectPort {
       if (launch.session && !this.host.isSessionLive(launch.session.appSessionId)) return undefined;
       return launch.session;
     } finally {
-      this.launching.delete(clientRef);
+      if (this.launching.get(clientRef) === launch) this.launching.delete(clientRef);
     }
   }
 
