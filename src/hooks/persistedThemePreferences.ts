@@ -84,12 +84,10 @@ export function loadCustomThemes(): ThemePreset[] {
   }
 }
 
-// Persistence lives OUTSIDE the reducer: reducers must stay pure, and a throw
-// from the root reducer would surface during render and unmount the app. The
-// dispatching handler (ThemePresetCard) calls this BEFORE dispatching, so a
-// write failure (quota, restricted storage) leaves live state untouched and
-// surfaces as a retryable UI error instead of faking success. It throws on
-// failure; callers must catch.
+// Unlike the rest of the store, custom themes are saved by the dispatching
+// handler (ThemePresetCard) before it dispatches, so a failed write (quota,
+// restricted storage) leaves state untouched and shows a retryable error.
+// Throws on failure; callers must catch.
 export function persistCustomThemes(presets: ThemePreset[]): void {
   getLocalStorage()?.setItem(CUSTOM_THEMES_STORAGE_KEY, JSON.stringify(presets));
 }

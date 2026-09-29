@@ -21,12 +21,7 @@ import {
   type VoiceSessions,
 } from '../features/voice/voiceSessions';
 import { removeCustomTheme, upsertCustomTheme, type ThemePreset } from '../lib/theme';
-import {
-  loadCustomThemes,
-  loadTheme,
-  persistTheme,
-  type ThemeConfig,
-} from './persistedThemePreferences';
+import { loadCustomThemes, loadTheme, type ThemeConfig } from './persistedThemePreferences';
 import {
   loadAgentConfig,
   loadCompactionModel,
@@ -44,22 +39,6 @@ import {
   loadShortcutBindings,
   loadSideChatPlacement,
   loadWorkspaceCwds,
-  saveAgentConfig,
-  saveCompactionModel,
-  saveDefaultVoice,
-  saveKnownVoices,
-  saveDiffView,
-  saveHarnessModels,
-  saveImagePasteQuality,
-  saveLiveEnterBehavior,
-  saveModelSelectorStyle,
-  saveNarrationMode,
-  savePersistedUiState,
-  saveReviewScope,
-  saveSessionLastSeen,
-  saveShortcutBindings,
-  saveSideChatPlacement,
-  saveWorkspaceCwds,
   sanitizeAgentConfig,
   type AgentConfig,
   type DiffViewMode,
@@ -105,16 +84,15 @@ import type {
 import { addWorkspaceCwd, removeWorkspaceCwd } from '../lib/workspaces';
 import { createOrderedActionBatcher, type OrderedActionBatcher } from './orderedActionBatcher';
 import { isHistoryStatusError, applyHistoryServerEvent } from '../lib/historyHealth';
-import { saveDefaultAutonomy } from '../lib/autonomy';
 import { loadDefaultPermissionMode } from '../lib/permissionSemantics';
 import {
   mergePendingModelSettings,
   type PendingModelSettings,
   type PendingModelUpdate,
 } from '../lib/pendingModelSettings';
-import { loadDraftProvider, saveDraftProvider } from '../features/providers/providerDraft';
+import { loadDraftProvider } from '../features/providers/providerDraft';
 import { reuseUnchangedStatuses } from '../features/providers/providerIdentity';
-import { loadToolActivity, saveToolActivity, type ToolActivitySettings } from '../lib/toolActivity';
+import { loadToolActivity, type ToolActivitySettings } from '../lib/toolActivity';
 import {
   applyFactoryCompactionDefaults,
   compactionSettingsSnapshot,
@@ -132,7 +110,6 @@ import {
   loadSessionNotes,
   markSessionNoteUsed,
   removeSessionNote,
-  saveSessionNotes,
   type SessionNotesMap,
 } from '../lib/sessionNotes';
 import {
@@ -144,7 +121,6 @@ import {
   pinChat,
   renameChat,
   restoreChat,
-  saveChatMetadata,
   unpinChat,
   type ChatMetadataMap,
 } from '../lib/chatMetadata';
@@ -192,6 +168,7 @@ import {
 import { type TranscriptMutation } from '../lib/transcriptMutation';
 import { reduceSessionChildren } from './storeSessionChildren';
 import { reduceStoreActionBatch } from './storeActionBatch';
+import { persistStoreChanges } from './storePersistence';
 import {
   invalidateSelectedChildOpening,
   reduceChildError,
@@ -1192,7 +1169,7 @@ export function reducer(state: AppState, action: Action): AppState {
     case 'SET_SIDE_CHAT_DEFAULT_PLACEMENT':
       return {
         ...state,
-        sideChatDefaultPlacement: saveSideChatPlacement(action.placement),
+        sideChatDefaultPlacement: action.placement,
       };
 
     case 'CHOOSE_SIDE_CHAT_HARNESS':
@@ -2003,20 +1980,20 @@ export function reducer(state: AppState, action: Action): AppState {
       };
 
     case 'SET_REVIEW_SCOPE':
-      return { ...state, reviewScope: saveReviewScope(action.scope) };
+      return { ...state, reviewScope: action.scope };
 
     case 'OPEN_REVIEW_AT': {
       // Open the Review pane for the active session at a given scope, optionally
       // asking it to jump to a specific file once the diff list has loaded.
       const focused = applyOpenReviewAt(state, action);
       if (!state.activeAppSessionId) {
-        return { ...focused, reviewScope: saveReviewScope(action.scope) };
+        return { ...focused, reviewScope: action.scope };
       }
       return {
         ...focused,
         rightPanelOpen: false,
         reviewOpenAppSessionId: state.activeAppSessionId,
-        reviewScope: saveReviewScope(action.scope),
+        reviewScope: action.scope,
         utilityPanels: {
           ...state.utilityPanels,
           [state.activeAppSessionId]: openUtilityTool(
@@ -2032,10 +2009,10 @@ export function reducer(state: AppState, action: Action): AppState {
       return clearReviewFocus(state);
 
     case 'SET_DIFF_VIEW':
-      return { ...state, diffView: saveDiffView(action.mode) };
+      return { ...state, diffView: action.mode };
 
     case 'SET_MODEL_SELECTOR_STYLE':
-      return { ...state, modelSelectorStyle: saveModelSelectorStyle(action.style) };
+      return { ...state, modelSelectorStyle: action.style };
 
     case 'TOGGLE_COMMAND_PALETTE':
       return { ...state, commandPaletteOpen: !state.commandPaletteOpen };
@@ -2081,7 +2058,7 @@ export function reducer(state: AppState, action: Action): AppState {
     case 'VOICE_VOICES': {
       const next = reduceVoice(state, action);
       if (sameVoices(state.knownVoices, action.voices)) return next;
-      return { ...next, knownVoices: saveKnownVoices(action.voices) };
+      return { ...next, knownVoices: action.voices };
     }
 
     case 'VOICE_TRANSCRIPT':
@@ -2181,15 +2158,15 @@ export function reducer(state: AppState, action: Action): AppState {
     case 'ADD_WORKSPACE':
       return {
         ...state,
-        workspaceCwds: saveWorkspaceCwds(addWorkspaceCwd(state.workspaceCwds, action.cwd)),
+        workspaceCwds: addWorkspaceCwd(state.workspaceCwds, action.cwd),
       };
     case 'REMOVE_WORKSPACE':
       return {
         ...state,
-        workspaceCwds: saveWorkspaceCwds(removeWorkspaceCwd(state.workspaceCwds, action.cwd)),
+        workspaceCwds: removeWorkspaceCwd(state.workspaceCwds, action.cwd),
       };
     case 'SET_WORKSPACE_CWDS':
-      return { ...state, workspaceCwds: saveWorkspaceCwds(action.cwds) };
+      return { ...state, workspaceCwds: action.cwds };
 
     case 'TOGGLE_BROWSER': {
       const key = activeBrowserKey(state);
@@ -2322,14 +2299,10 @@ export function reducer(state: AppState, action: Action): AppState {
         designModes: setDesignMode(state.designModes, action.appSessionId, action.open),
       };
 
-    case 'SET_THEME': {
-      const next = { ...state.theme, ...action.theme };
-      persistTheme(next);
-      return { ...state, theme: next };
-    }
+    case 'SET_THEME':
+      return { ...state, theme: { ...state.theme, ...action.theme } };
 
-    // Pure state transitions only: persistence happens in the dispatching
-    // handler (see persistCustomThemes), never in the root reducer.
+    // The dispatching handler has already saved the list (see persistCustomThemes).
     case 'SAVE_CUSTOM_THEME':
       return { ...state, customThemes: upsertCustomTheme(state.customThemes, action.preset) };
 
@@ -2346,7 +2319,7 @@ export function reducer(state: AppState, action: Action): AppState {
       return {
         ...state,
         models: action.models,
-        agentConfig: saveAgentConfig(sanitizeAgentConfig(state.agentConfig, action.models)),
+        agentConfig: sanitizeAgentConfig(state.agentConfig, action.models),
       };
 
     case 'PROVIDER_STATUSES': {
@@ -2355,7 +2328,6 @@ export function reducer(state: AppState, action: Action): AppState {
     }
 
     case 'SET_DRAFT_PROVIDER':
-      saveDraftProvider(action.provider);
       return { ...state, draftProvider: action.provider };
 
     case 'SKILLS_LIST':
@@ -2391,7 +2363,7 @@ export function reducer(state: AppState, action: Action): AppState {
 
       return {
         ...state,
-        agentConfig: saveAgentConfig(next),
+        agentConfig: next,
         ...compactionDefaults,
         compactionSettingsRev: state.compactionSettingsRev + 1,
       };
@@ -2400,34 +2372,29 @@ export function reducer(state: AppState, action: Action): AppState {
     case 'SET_HARNESS_MODEL':
       return {
         ...state,
-        harnessModels: saveHarnessModels({
-          ...state.harnessModels,
-          [action.provider]: action.model,
-        }),
+        harnessModels: { ...state.harnessModels, [action.provider]: action.model },
       };
 
     case 'SET_AGENT_MODEL':
       return {
         ...state,
-        agentConfig: saveAgentConfig({
+        agentConfig: {
           ...state.agentConfig,
           [action.agent]: { ...state.agentConfig[action.agent], modelId: action.modelId },
-        }),
+        },
       };
 
     case 'SET_AGENT_REASONING':
       return {
         ...state,
-        agentConfig: saveAgentConfig({
+        agentConfig: {
           ...state.agentConfig,
           [action.agent]: { ...state.agentConfig[action.agent], reasoning: action.reasoning },
-        }),
+        },
       };
 
-    case 'SET_COMPACTION_MODEL_GLOBAL': {
-      const value = saveCompactionModel(action.compactionModel);
-      return { ...state, compactionModel: value };
-    }
+    case 'SET_COMPACTION_MODEL_GLOBAL':
+      return { ...state, compactionModel: action.compactionModel };
 
     case 'SET_COMPACTION_TOKEN_LIMIT_GLOBAL': {
       const limit = normalizeTokenLimit(action.limit);
@@ -2452,37 +2419,29 @@ export function reducer(state: AppState, action: Action): AppState {
       };
     }
 
-    case 'SET_LIVE_ENTER_BEHAVIOR': {
-      const behavior = saveLiveEnterBehavior(action.behavior);
-      return { ...state, liveEnterBehavior: behavior };
-    }
+    case 'SET_LIVE_ENTER_BEHAVIOR':
+      return { ...state, liveEnterBehavior: action.behavior };
 
     case 'SET_DEFAULT_VOICE':
-      return { ...state, defaultVoice: saveDefaultVoice(action.voice) };
+      return { ...state, defaultVoice: action.voice };
 
     case 'SET_NARRATION_MODE':
-      return { ...state, narrationMode: saveNarrationMode(action.mode) };
+      return { ...state, narrationMode: action.mode };
 
-    case 'SET_IMAGE_PASTE_QUALITY': {
-      const quality = saveImagePasteQuality(action.quality);
-      return { ...state, imagePasteQuality: quality };
-    }
+    case 'SET_IMAGE_PASTE_QUALITY':
+      return { ...state, imagePasteQuality: action.quality };
 
-    case 'SET_SHORTCUT_BINDING': {
-      const bindings = saveShortcutBindings({
-        ...state.shortcutBindings,
-        [action.shortcut]: action.chord,
-      });
-      return { ...state, shortcutBindings: bindings };
-    }
+    case 'SET_SHORTCUT_BINDING':
+      return {
+        ...state,
+        shortcutBindings: { ...state.shortcutBindings, [action.shortcut]: action.chord },
+      };
 
-    case 'SET_DEFAULT_AUTONOMY': {
-      saveDefaultAutonomy(action.autonomy);
+    case 'SET_DEFAULT_AUTONOMY':
       return { ...state, defaultAutonomy: action.autonomy };
-    }
 
     case 'SET_TOOL_ACTIVITY':
-      return { ...state, toolActivity: saveToolActivity(action.settings) };
+      return { ...state, toolActivity: action.settings };
 
     case 'SET_DRAFT_AUTONOMY':
       return { ...state, draftAutonomy: action.autonomy };
@@ -2804,32 +2763,11 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     for (const listener of listenersRef.current) listener();
   }, [state]);
 
+  const persistedStateRef = useRef(state);
   useEffect(() => {
-    saveChatMetadata(state.chatMetadata);
-  }, [state.chatMetadata]);
-
-  useEffect(() => {
-    savePersistedUiState(state);
-    saveSessionLastSeen(state.sessionLastSeen);
-    saveSessionNotes(state.sessionNotes);
-  }, [
-    state.sessionLastSeen,
-    state.sessionNotes,
-    state.activeAppSessionId,
-    state.browserOpenKeys,
-    state.browsers,
-    state.missionControlMode,
-    state.rightPanelOpen,
-    state.utilityPanels,
-    state.selectedChild,
-    state.selectedFeatureId,
-    state.sidebarCollapsed,
-    state.mainView,
-    state.prWorkspaceCwd,
-    state.prWorkspaceNumber,
-    state.prBacklogIds,
-    state.specMode,
-  ]);
+    persistStoreChanges(persistedStateRef.current, state);
+    persistedStateRef.current = state;
+  }, [state]);
 
   // Keep the sidecar's compaction-limit snapshot in sync so live sessions,
   // resumes, and model changes all follow these limits. The bridge queues

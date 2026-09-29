@@ -25,17 +25,11 @@ const session: SessionSummary = {
   updatedAt: 1,
 };
 
-test('the persisted default is the only seed for new drafts', () => {
-  withLocalStorageMap({}, () => {
-    const state = reducer(initialState, { type: 'SET_DEFAULT_AUTONOMY', autonomy: 'low' });
-    assert.equal(state.defaultAutonomy, 'low');
-    assert.equal(globalThis.localStorage.getItem('droid-default-autonomy'), 'low');
-    // Changing the default never rewrites an explicit draft override.
-    const drafted = reducer(state, { type: 'SET_DRAFT_AUTONOMY', autonomy: 'high' });
-    const changed = reducer(drafted, { type: 'SET_DEFAULT_AUTONOMY', autonomy: 'off' });
-    assert.equal(changed.draftAutonomy, 'high');
-    assert.equal(changed.defaultAutonomy, 'off');
-  });
+test('changing the default autonomy never rewrites an explicit draft override', () => {
+  const drafted = reducer(initialState, { type: 'SET_DRAFT_AUTONOMY', autonomy: 'high' });
+  const changed = reducer(drafted, { type: 'SET_DEFAULT_AUTONOMY', autonomy: 'off' });
+  assert.equal(changed.draftAutonomy, 'high');
+  assert.equal(changed.defaultAutonomy, 'off');
 });
 
 test('the draft override resets at every draft lifecycle point', () => {
@@ -143,31 +137,3 @@ test('an autonomy failure without a session id produces no reducer action', () =
   });
   assert.equal(action, null);
 });
-
-function withLocalStorageMap(seed: Record<string, string>, fn: () => void): void {
-  const previous = Object.getOwnPropertyDescriptor(globalThis, 'localStorage');
-  const values = new Map(Object.entries(seed));
-  const mock: Storage = {
-    getItem: (key) => values.get(key) ?? null,
-    setItem: (key, next) => {
-      values.set(key, next);
-    },
-    removeItem: (key) => {
-      values.delete(key);
-    },
-    clear: () => {
-      values.clear();
-    },
-    key: (index) => Array.from(values.keys())[index] ?? null,
-    get length() {
-      return values.size;
-    },
-  };
-  Object.defineProperty(globalThis, 'localStorage', { configurable: true, value: mock });
-  try {
-    fn();
-  } finally {
-    if (previous) Object.defineProperty(globalThis, 'localStorage', previous);
-    else delete (globalThis as { localStorage?: Storage }).localStorage;
-  }
-}

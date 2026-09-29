@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { DEFAULT_THEME, type ThemeColors, type ThemePreset } from '../lib/theme';
-import { loadTheme } from './persistedThemePreferences';
+import { loadTheme, persistCustomThemes } from './persistedThemePreferences';
 import { loadAgentConfig, loadHarnessModels, sanitizeAgentConfig } from './persistedUiPreferences';
 import type { ModelInfo } from '../types/bridge';
 
@@ -71,6 +71,25 @@ test('loadTheme resolves presetId from saved colors and custom presets', () => {
       assert.equal(theme.presetId, 'custom-test');
     },
   );
+});
+
+// A failed write must reach the handler (throw) instead of being swallowed,
+// so the UI can keep state untouched and show a retryable error.
+test('persistCustomThemes propagates storage failure instead of faking success', () => {
+  const previous = Object.getOwnPropertyDescriptor(globalThis, 'localStorage');
+  const throwing = {
+    getItem: () => null,
+    setItem: () => {
+      throw new Error('quota exceeded');
+    },
+  } as unknown as Storage;
+  Object.defineProperty(globalThis, 'localStorage', { configurable: true, value: throwing });
+  try {
+    assert.throws(() => persistCustomThemes([CUSTOM_PRESET]));
+  } finally {
+    if (previous) Object.defineProperty(globalThis, 'localStorage', previous);
+    else delete (globalThis as { localStorage?: Storage }).localStorage;
+  }
 });
 
 test('malformed agent config sanitizes to defaults', () => {
