@@ -57,7 +57,7 @@ const ThreadSpawnLine = lazy(async () => {
   return { default: module.ThreadSpawnLine };
 });
 
-const ThreadReportNotice = lazy(async () => {
+export const ThreadReportNotice = lazy(async () => {
   const module = await import('../features/projects/ThreadNoticeCards');
   return { default: module.ThreadReportNotice };
 });
