@@ -1675,6 +1675,30 @@ test('agent wake setup failures reach the background-turn error owner', async ()
   await h.lifecycle.close('app-1');
 });
 
+test('a Stop takes back a prompt that has not started its turn', async () => {
+  const h = createHarness([summary('app-1', 'provider-1')]);
+  const provider = new FakeFactorySession('provider-1', {}, h.calls);
+  queueLoad(h, 'provider-1', provider);
+  await h.lifecycle.resume('app-1');
+  requireLive(h, 'app-1').summary.provider = 'claude';
+  let settle: () => void = () => undefined;
+  h.setSettingsWait(
+    () =>
+      new Promise<void>((resolve) => {
+        settle = resolve;
+      }),
+  );
+
+  const sending = h.lifecycle.send('app-1', 'stopped while it waited');
+  await new Promise((resolve) => setImmediate(resolve));
+  await h.lifecycle.interrupt('app-1');
+  settle();
+  await sending;
+
+  assert.deepEqual(provider.prompts, []);
+  await h.lifecycle.close('app-1');
+});
+
 test('a context switch waits for the turn and resumes the same chat before queued work', async () => {
   const stored: SessionSummary[] = [];
   const h = createHarness(stored);
@@ -1752,5 +1776,108 @@ test('a context switch waits for the turn and resumes the same chat before queue
   );
   assert.deepEqual(h.registry.getCanonicalSummary('context-switch'), beforeRejected);
   assert.equal(requireLive(h, 'context-switch').restartBeforeNextTurn, undefined);
+
+  // A Stop that lands while the chat is relaunching has no runtime to
+  // interrupt, and still keeps the prompt from being sent.
+  assert.equal(
+    await settings.update('context-switch', 'primary', { contextWindowTokens: 1000000 }),
+    true,
+  );
+  let finishResume: () => void = () => undefined;
+  const resuming = new Promise<void>((resolve) => {
+    finishResume = resolve;
+  });
+  const relaunched = new FakeFactorySession('context-switch', {}, h.calls);
+  const relaunchedSession = new DroidProviderSession('context-switch', relaunched, h.runtime);
+  h.setProvider({
+    kind: 'claude',
+    create: async () => {
+      throw new Error('unexpected create');
+    },
+    resume: async (id) => {
+      await resuming;
+      return {
+        provider: 'claude',
+        providerSessionId: id,
+        stream: relaunchedSession.stream.bind(relaunchedSession),
+        setModel: relaunchedSession.setModel.bind(relaunchedSession),
+        setAutonomy: relaunchedSession.setAutonomy.bind(relaunchedSession),
+        interrupt: relaunchedSession.interrupt.bind(relaunchedSession),
+        close: relaunchedSession.close.bind(relaunchedSession),
+      };
+    },
+  });
+  const sending = h.lifecycle.send('context-switch', 'stopped before it was sent');
+  while (h.registry.getLive('context-switch'))
+    await new Promise((resolve) => setImmediate(resolve));
+  await h.lifecycle.interrupt('context-switch');
+  // Sent after the Stop, while the chat still has no runtime: these wait for
+  // it in the order they were sent.
+  const later = [
+    h.lifecycle.send('context-switch', 'second'),
+    h.lifecycle.send('context-switch', 'third'),
+  ];
+  finishResume();
+  await Promise.all([sending, ...later]);
+  await relaunched.waitForPrompts(2);
+  assert.deepEqual(relaunched.prompts, ['second', 'third']);
+  await requireLive(h, 'context-switch').turnPromise;
+
+  // A send still being prepared when the relaunch begins joins its queue.
+  const window = requireLive(h, 'context-switch').summary.contextWindowTokens;
+  assert.equal(
+    await settings.update('context-switch', 'primary', {
+      contextWindowTokens: window === 200000 ? 1000000 : 200000,
+    }),
+    true,
+  );
+  assert.equal(requireLive(h, 'context-switch').restartBeforeNextTurn, true);
+  let finishSecondResume: () => void = () => undefined;
+  const resumingAgain = new Promise<void>((resolve) => {
+    finishSecondResume = resolve;
+  });
+  const again = new FakeFactorySession('context-switch', {}, h.calls);
+  const againSession = new DroidProviderSession('context-switch', again, h.runtime);
+  h.setProvider({
+    kind: 'claude',
+    create: async () => {
+      throw new Error('unexpected create');
+    },
+    resume: async (id) => {
+      await resumingAgain;
+      return {
+        provider: 'claude',
+        providerSessionId: id,
+        stream: againSession.stream.bind(againSession),
+        setModel: againSession.setModel.bind(againSession),
+        setAutonomy: againSession.setAutonomy.bind(againSession),
+        interrupt: againSession.interrupt.bind(againSession),
+        close: againSession.close.bind(againSession),
+      };
+    },
+  });
+  let prepareSecond: () => void = () => undefined;
+  let applies = 0;
+  h.setPendingApply(async () => {
+    applies += 1;
+    if (applies === 2)
+      await new Promise<void>((resolve) => {
+        prepareSecond = resolve;
+      });
+    return true;
+  });
+  const first = h.lifecycle.send('context-switch', 'A');
+  const second = h.lifecycle.send('context-switch', 'B');
+  // B finishes preparing while A's relaunch has the chat without a runtime.
+  while (h.registry.getLive('context-switch'))
+    await new Promise((resolve) => setImmediate(resolve));
+  prepareSecond();
+  await new Promise((resolve) => setImmediate(resolve));
+  finishSecondResume();
+  await Promise.all([first, second]);
+  // Bounded, so a dropped B fails the assertion instead of hanging the suite.
+  for (let tick = 0; tick < 500 && again.prompts.length < 2; tick += 1)
+    await new Promise((resolve) => setImmediate(resolve));
+  assert.deepEqual(again.prompts, ['A', 'B']);
   await h.lifecycle.close('context-switch');
 });

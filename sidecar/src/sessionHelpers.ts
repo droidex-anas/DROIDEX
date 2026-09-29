@@ -508,8 +508,6 @@ type ResumedModelSettings = Pick<SessionSummary, 'autonomy' | 'compactionModel'>
       SessionSummary,
       | 'modelId'
       | 'reasoningEffort'
-      | 'fastMode'
-      | 'contextWindowTokens'
       | 'workerModelId'
       | 'workerReasoningEffort'
       | 'validatorModelId'
@@ -554,21 +552,6 @@ function resumedPrimaryModelSettings(
     ...(modelId !== undefined ? { modelId } : {}),
     ...(reasoningEffort !== undefined ? { reasoningEffort } : {}),
     ...(maxContextTokens !== undefined ? { maxContextTokens } : {}),
-    ...resumedChatPreferences(historical),
-  };
-}
-
-// The two preferences only the stored summary knows: no provider session file
-// carries them, and an explicit `false` is a choice, not an absent setting.
-function resumedChatPreferences(
-  historical: SessionSummary | undefined,
-): Pick<Partial<ResumedModelSettings>, 'fastMode' | 'contextWindowTokens'> {
-  if (!historical) return {};
-  return {
-    ...(historical.provider !== DEFAULT_PROVIDER ? { fastMode: historical.fastMode ?? false } : {}),
-    ...(historical.contextWindowTokens !== undefined
-      ? { contextWindowTokens: historical.contextWindowTokens }
-      : {}),
   };
 }
 

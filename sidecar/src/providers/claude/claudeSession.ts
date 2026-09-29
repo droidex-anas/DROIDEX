@@ -24,7 +24,7 @@ import type { SkillInfo } from '../catalog.js';
 import type { ProviderInteractions } from '../interactions.js';
 import type { ProviderModelSettings, ProviderSession } from '../session.js';
 import { ClaudeCatalog } from './claudeCatalog.js';
-import { claudeContextModel } from './claudeContextWindow.js';
+import { claudeLaunchModel, type ClaudeDefaultModel } from './claudeModels.js';
 import { ClaudeEventMapper, rateLimitRefusal } from './claudeEvents.js';
 import { MessageQueue } from './claudeMessages.js';
 import { sessionOptions, claudeEffort } from './claudeOptions.js';
@@ -42,6 +42,9 @@ export interface ClaudeSessionInput {
   reasoningEffort?: ReasoningEffort;
   fastMode?: boolean;
   contextWindowTokens?: ContextWindowTokens;
+  // The provider's default model, so a switch back to it launches what the
+  // CLI's own default would.
+  defaultModel?: ClaudeDefaultModel;
   models: ModelInfo[];
   mcpServers: Record<string, McpServerConfig>;
   interactions: ProviderInteractions;
@@ -328,10 +331,11 @@ export class ClaudeSession implements ProviderSession {
     contextWindowTokens,
   }: ProviderModelSettings): Promise<void> {
     await this.waitUntilInitialized();
-    const resolvedModel = claudeContextModel(
+    const resolvedModel = claudeLaunchModel(
       modelId === undefined ? this.modelId : (modelId ?? undefined),
       contextWindowTokens ?? this.input.contextWindowTokens,
       this.input.models,
+      this.input.defaultModel,
     );
     if (modelId !== undefined && resolvedModel !== this.modelId) {
       await this.query.setModel(resolvedModel);

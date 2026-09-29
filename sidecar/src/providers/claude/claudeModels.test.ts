@@ -4,7 +4,7 @@ import test from 'node:test';
 import type { ModelInfo } from '@anthropic-ai/claude-agent-sdk';
 
 import { claudeContextModel } from './claudeContextWindow.js';
-import { claudeDefaultModel, claudeModelRows } from './claudeModels.js';
+import { claudeDefaultModel, claudeLaunchModel, claudeModelRows } from './claudeModels.js';
 
 // Shaped like the rows the installed CLI publishes: no row carries the `[1m]`
 // suffix in its `value`, and the recommendation names an extended variant.
@@ -84,6 +84,10 @@ test('a default that names a family alias is published as its own entry', () => 
     rest.map((row) => row.id),
     ['claude-opus-5-5', 'claude-opus-5', 'sonnet', 'haiku'],
   );
+  // Without the suffix nothing spells a 1M id for the alias, so it offers none.
+  const [plain] = claudeModelRows(catalog, undefined, claudeDefaultModel(catalog, 'opus'));
+  assert.equal(plain?.maxContextTokens, 200000);
+  assert.throws(() => claudeContextModel('opus', 1000000, catalog), /no 1M context window/);
   // An id that is neither a row nor a family alias stays as it is.
   assert.equal(claudeDefaultModel(catalog, 'my-proxy-model')?.modelId, 'my-proxy-model');
   assert.equal(claudeModelRows(catalog, undefined, claudeDefaultModel(catalog, 'x')).length, 4);
@@ -115,4 +119,17 @@ test('the window a row offers is the window the launch accepts', () => {
   // An id that already names the extended variant is its own evidence.
   assert.equal(claudeContextModel('opus[1m]', 1000000, catalog), 'opus[1m]');
   assert.equal(claudeContextModel('opus[1m]', 200000, catalog), 'opus');
+});
+
+test('a chat on the default model that pins no window launches what the CLI default would', () => {
+  const defaultModel = claudeDefaultModel(catalog, undefined);
+  // No model chosen, and the default's own row chosen: both keep the suffix.
+  assert.equal(claudeLaunchModel(undefined, undefined, catalog, defaultModel), 'claude-opus-5[1m]');
+  assert.equal(
+    claudeLaunchModel('claude-opus-5', undefined, catalog, defaultModel),
+    'claude-opus-5[1m]',
+  );
+  // A pinned window decides for itself, and another row is left alone.
+  assert.equal(claudeLaunchModel('claude-opus-5', 200000, catalog, defaultModel), 'claude-opus-5');
+  assert.equal(claudeLaunchModel('haiku', undefined, catalog, defaultModel), 'haiku');
 });
