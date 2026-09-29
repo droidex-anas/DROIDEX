@@ -636,7 +636,7 @@ export class SessionLifecycle {
   // left to send.
   async sendNow(appSessionId: string, steerId: string): Promise<void> {
     const liveSession = this.dependencies.registry.getLive(appSessionId);
-    if (!liveSession) return;
+    if (!liveSession || !steerId) return;
     const prompt = [...liveSession.steers, ...liveSession.pendingSends].find(
       (pending) => pending.steerId === steerId,
     );

@@ -257,9 +257,8 @@ export function startBridgeServer(options: {
       if (typeof parsed === 'object' && parsed !== null && 'mentions' in parsed) {
         assertValidMentions(parsed);
       }
-      if (typeof parsed === 'object' && parsed !== null && 'steerId' in parsed) {
-        if (typeof parsed.steerId !== 'string' || !parsed.steerId)
-          throw new Error('Invalid steer id.');
+      if (typeof parsed === 'object' && parsed !== null) {
+        assertValidSteerId(parsed);
       }
       assertValidInteractionResponse(parsed);
       if (typeof parsed === 'object' && parsed !== null) {
@@ -444,6 +443,14 @@ export function startBridgeServer(options: {
 
 // Fast mode and the context window are preferences of a top-level chat, so a
 // command that is not one of the two settings commands may not carry them.
+// Optional on a send; Send now names the steer it is for.
+function assertValidSteerId(command: object): void {
+  const required = 'type' in command && command.type === 'session.sendNow';
+  if (!required && !('steerId' in command)) return;
+  const steerId = 'steerId' in command ? command.steerId : undefined;
+  if (typeof steerId !== 'string' || !steerId) throw new Error('Invalid steer id.');
+}
+
 function assertValidChatPreferences(command: object): void {
   const settingsCommand =
     'type' in command &&
