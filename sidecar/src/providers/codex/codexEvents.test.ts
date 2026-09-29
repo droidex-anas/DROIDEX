@@ -158,7 +158,7 @@ test('edits-only checks workspace paths and keeps the running turn permission sn
           id: itemId,
           status: 'inProgress',
           changes: [
-            { path, kind: { type: 'update', ...(movePath ? { movePath } : {}) }, diff: '+ edit' },
+            { path, kind: { type: 'update', move_path: movePath ?? null }, diff: '+ edit' },
           ],
         },
       });

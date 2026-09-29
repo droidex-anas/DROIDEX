@@ -33,9 +33,10 @@ function editPaths(value: unknown): string[] {
   const kind = objectValue(change?.kind);
   if (!change || typeof change.path !== 'string' || !change.path || !kind) return [];
   if (kind.type !== 'add' && kind.type !== 'delete' && kind.type !== 'update') return [];
-  if (kind.movePath == null) return [change.path];
-  if (typeof kind.movePath !== 'string' || !kind.movePath) return [];
-  return [change.path, kind.movePath];
+  // The app-server spells the rename destination in snake case.
+  if (kind.move_path == null) return [change.path];
+  if (typeof kind.move_path !== 'string' || !kind.move_path) return [];
+  return [change.path, kind.move_path];
 }
 
 function eligible(path: string): boolean {
