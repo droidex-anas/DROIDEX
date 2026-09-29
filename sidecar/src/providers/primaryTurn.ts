@@ -123,7 +123,7 @@ function settleTurnFailure(
   reportedUsageLimit: boolean,
 ): void {
   const appSessionId = liveSession.summary.appSessionId;
-  if (liveSession.interruptingForSteer && isUserCancellation(error)) {
+  if (liveSession.interruptingToSend && isUserCancellation(error)) {
     d.timeline.appendStatus(appSessionId, 'Turn stopped to send now.');
     return;
   }

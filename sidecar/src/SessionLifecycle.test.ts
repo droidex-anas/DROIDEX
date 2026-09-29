@@ -844,7 +844,7 @@ test('send-now queues without interrupting compaction and reports interrupt reje
     requireLive(rejected, 'rejected').pendingSends.map((prompt) => prompt.text),
     ['keep queued'],
   );
-  assert.equal(requireLive(rejected, 'rejected').interruptingForSteer, false);
+  assert.equal(requireLive(rejected, 'rejected').interruptingToSend, false);
   assert.equal(
     rejected.events.some(
       (event) => event.type === 'error' && event.code === 'session.send_now_failed',
@@ -1697,12 +1697,12 @@ test('an unindexed Droid resume preserves its native selection before applying c
   assert.equal(harness.registry.getLive('external-session')?.summary.autonomy, 'low');
 });
 
-test('agent completion cannot start a turn while Stop or steer interruption is outstanding', async () => {
+test('agent completion cannot start a turn while Stop or Send now is outstanding', async () => {
   const h = createHarness([summary('app-1', 'provider-1')]);
   const provider = queueLoad(h, 'provider-1');
   await h.lifecycle.resume('app-1');
   const live = requireLive(h, 'app-1');
-  for (const flag of ['interrupting', 'interruptingForSteer'] as const) {
+  for (const flag of ['interrupting', 'interruptingToSend'] as const) {
     live[flag] = true;
     assert.equal(
       h.lifecycle.wakeForSettledAgents('app-1', 'agent result', 'Agents finished'),

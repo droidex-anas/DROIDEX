@@ -96,7 +96,7 @@ interface LiveTurnState {
   pendingSends: SessionPrompt[];
   // Steers the harness holds for the running turn and has not delivered yet.
   steers: SessionPrompt[];
-  interruptingForSteer?: boolean;
+  interruptingToSend?: boolean;
   interrupting?: boolean; // Marks user Stop so the resulting stream abort settles quietly.
 }
 type SessionCloseMode = 'discard-pending' | 'preserve-pending';
@@ -605,7 +605,7 @@ export class SessionLifecycle {
       liveSession.compacting ||
       liveSession.autoCompacting ||
       liveSession.interrupting ||
-      liveSession.interruptingForSteer
+      liveSession.interruptingToSend
     )
       return false;
     liveSession.steers.push(prompt);
@@ -643,15 +643,15 @@ export class SessionLifecycle {
       liveSession.compacting ||
       liveSession.autoCompacting ||
       liveSession.interrupting ||
-      liveSession.interruptingForSteer
+      liveSession.interruptingToSend
     )
       return;
-    liveSession.interruptingForSteer = true;
+    liveSession.interruptingToSend = true;
     this.dependencies.appendProgress(appSessionId, 'Stopping the turn to send now...');
     try {
       await liveSession.session.interrupt();
     } catch (error) {
-      liveSession.interruptingForSteer = false;
+      liveSession.interruptingToSend = false;
       this.dependencies.emitError({
         code: 'session.send_now_failed',
         appSessionId,
@@ -685,7 +685,7 @@ export class SessionLifecycle {
     const liveSession = this.dependencies.registry.getLive(appSessionId);
     if (!liveSession || liveSession.closeMode || this.dependencies.isShutdownStarted())
       return false;
-    if (liveSession.interrupting || liveSession.interruptingForSteer) return false;
+    if (liveSession.interrupting || liveSession.interruptingToSend) return false;
     if (liveSession.compacting || liveSession.autoCompacting) return false;
     if (liveSession.summary.sessionPurpose === 'mission-control') return true;
     if (liveSession.streaming || liveSession.pendingSends.length > 0) return true;
@@ -1045,10 +1045,9 @@ export class SessionLifecycle {
       }
       // A Stop lands before the turn reports itself finished, so the flags it
       // set are cleared here as they are for a typed turn.
-      const stopped =
-        liveSession.interrupting === true || liveSession.interruptingForSteer === true;
+      const stopped = liveSession.interrupting === true || liveSession.interruptingToSend === true;
       liveSession.interrupting = false;
-      liveSession.interruptingForSteer = false;
+      liveSession.interruptingToSend = false;
       this.publishTurnSettled(liveSession);
       if (stopped) this.dependencies.childSessions.retryAgentWave(liveSession.summary.appSessionId);
       // A runtime that has gone takes the queue with it through the close
@@ -1258,9 +1257,8 @@ export class SessionLifecycle {
       await liveSession.turnPromise;
     } finally {
       liveSession.turnPromise = undefined;
-      const stopped =
-        liveSession.interrupting === true || liveSession.interruptingForSteer === true;
-      liveSession.interruptingForSteer = false;
+      const stopped = liveSession.interrupting === true || liveSession.interruptingToSend === true;
+      liveSession.interruptingToSend = false;
       liveSession.interrupting = false;
       liveSession.streaming = false;
       // A wave held back while the Stop was outstanding is owed once it is over.
