@@ -1821,5 +1821,63 @@ test('a context switch waits for the turn and resumes the same chat before queue
   await Promise.all([sending, ...later]);
   await relaunched.waitForPrompts(2);
   assert.deepEqual(relaunched.prompts, ['second', 'third']);
+  await requireLive(h, 'context-switch').turnPromise;
+
+  // A send still being prepared when the relaunch begins joins its queue.
+  const window = requireLive(h, 'context-switch').summary.contextWindowTokens;
+  assert.equal(
+    await settings.update('context-switch', 'primary', {
+      contextWindowTokens: window === 200000 ? 1000000 : 200000,
+    }),
+    true,
+  );
+  assert.equal(requireLive(h, 'context-switch').restartBeforeNextTurn, true);
+  let finishSecondResume: () => void = () => undefined;
+  const resumingAgain = new Promise<void>((resolve) => {
+    finishSecondResume = resolve;
+  });
+  const again = new FakeFactorySession('context-switch', {}, h.calls);
+  const againSession = new DroidProviderSession('context-switch', again, h.runtime);
+  h.setProvider({
+    kind: 'claude',
+    create: async () => {
+      throw new Error('unexpected create');
+    },
+    resume: async (id) => {
+      await resumingAgain;
+      return {
+        provider: 'claude',
+        providerSessionId: id,
+        stream: againSession.stream.bind(againSession),
+        setModel: againSession.setModel.bind(againSession),
+        setAutonomy: againSession.setAutonomy.bind(againSession),
+        interrupt: againSession.interrupt.bind(againSession),
+        close: againSession.close.bind(againSession),
+      };
+    },
+  });
+  let prepareSecond: () => void = () => undefined;
+  let applies = 0;
+  h.setPendingApply(async () => {
+    applies += 1;
+    if (applies === 2)
+      await new Promise<void>((resolve) => {
+        prepareSecond = resolve;
+      });
+    return true;
+  });
+  const first = h.lifecycle.send('context-switch', 'A');
+  const second = h.lifecycle.send('context-switch', 'B');
+  // B finishes preparing while A's relaunch has the chat without a runtime.
+  while (h.registry.getLive('context-switch'))
+    await new Promise((resolve) => setImmediate(resolve));
+  prepareSecond();
+  await new Promise((resolve) => setImmediate(resolve));
+  finishSecondResume();
+  await Promise.all([first, second]);
+  // Bounded, so a dropped B fails the assertion instead of hanging the suite.
+  for (let tick = 0; tick < 500 && again.prompts.length < 2; tick += 1)
+    await new Promise((resolve) => setImmediate(resolve));
+  assert.deepEqual(again.prompts, ['A', 'B']);
   await h.lifecycle.close('context-switch');
 });

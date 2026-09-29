@@ -552,10 +552,9 @@ export class SessionLifecycle {
     mentions?: ProviderMention[],
   ): Promise<void> {
     const prompt = sessionPrompt(text, mentions);
-    if (this.waitForRelaunch(requestedAppSessionId, prompt)) return;
-    const stops = this.stopCount(requestedAppSessionId);
-    const liveSession = await this.prepareToSend(requestedAppSessionId);
-    if (!liveSession || this.stopCount(requestedAppSessionId) !== stops) return;
+    const admitted = await this.admitPrompt(requestedAppSessionId, prompt);
+    if (!admitted) return;
+    const { liveSession } = admitted;
     if (liveSession.streaming || liveSession.compacting || liveSession.autoCompacting) {
       liveSession.pendingSends.push(prompt);
       this.updateQueuedSends(liveSession);
@@ -569,10 +568,9 @@ export class SessionLifecycle {
     mentions?: ProviderMention[],
   ): Promise<void> {
     const prompt = sessionPrompt(text, mentions);
-    if (this.waitForRelaunch(requestedAppSessionId, prompt)) return;
-    const stops = this.stopCount(requestedAppSessionId);
-    const liveSession = await this.prepareToSend(requestedAppSessionId);
-    if (!liveSession || this.stopCount(requestedAppSessionId) !== stops) return;
+    const admitted = await this.admitPrompt(requestedAppSessionId, prompt);
+    if (!admitted) return;
+    const { liveSession, stops } = admitted;
     if (!liveSession.streaming && !liveSession.compacting && !liveSession.autoCompacting) {
       await this.drive(liveSession.summary.appSessionId, prompt);
       return;
@@ -606,6 +604,24 @@ export class SessionLifecycle {
         message: `Could not interrupt session for steering: ${errMsg(error)}`,
       });
     }
+  }
+
+  // Where a prompt the user sent goes: the live session to send it to, or
+  // nowhere, because a Stop took it back or it now waits for a chat that is
+  // relaunching. A relaunch can begin while the send is being prepared.
+  private async admitPrompt(
+    id: string,
+    prompt: SessionPrompt,
+  ): Promise<{ liveSession: LiveSession; stops: number } | undefined> {
+    if (this.waitForRelaunch(id, prompt)) return undefined;
+    const stops = this.stopCount(id);
+    const liveSession = await this.prepareToSend(id);
+    if (this.stopCount(id) !== stops) return undefined;
+    if (!liveSession) {
+      this.waitForRelaunch(id, prompt);
+      return undefined;
+    }
+    return { liveSession, stops };
   }
 
   // The provider's own steer, when it has one. 'interrupt' leaves the caller to
@@ -1315,19 +1331,22 @@ export class SessionLifecycle {
     // A discarding close removes the queue; a Stop only empties it.
     const abandoned = () => d.isShutdownStarted() || this.relaunches.get(appSessionId) !== waiting;
     let liveSession: LiveSession | undefined;
+    let reason = '';
     try {
       await this.close(appSessionId, 'preserve-pending');
       if (abandoned()) return;
-      const resumed = await this.resume(appSessionId);
-      if (abandoned()) return;
-      if (resumed) {
+      if (await this.resume(appSessionId)) {
+        if (abandoned()) return;
         d.context.preserveUsage(appSessionId, usage);
         // A preference accepted while the chat was relaunching belongs to the
         // turn about to start.
         if (await d.applyPendingSessionSettings(appSessionId))
           liveSession = d.registry.getLive(appSessionId);
-        if (abandoned()) return;
       }
+      if (abandoned()) return;
+    } catch (error) {
+      if (abandoned()) return;
+      reason = ` (${errMsg(error)})`;
     } finally {
       if (this.relaunches.get(appSessionId) === waiting) this.relaunches.delete(appSessionId);
     }
@@ -1338,7 +1357,7 @@ export class SessionLifecycle {
     if (!liveSession || liveSession.closeMode) {
       d.emitError({
         appSessionId,
-        message: `The chat could not restart on its new context window, so ${unsent(waiting.length)} not sent.`,
+        message: `The chat could not restart on its new context window${reason}, so ${unsent(waiting.length)} not sent.`,
       });
       return;
     }
