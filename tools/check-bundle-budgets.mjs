@@ -101,14 +101,12 @@ import { join } from 'node:path';
 // initialCssBytes raised from 100_000 to 101_500 on the same change: side chats
 // add ~0.8KB of utility classes, and the merged ~100_650 leaves ~0.85KB.
 //
-// Raised to 1_414_000 when Projects landed on top of session forks and side
-// chats. Each fits its own line, and together the entry measures 1_406_072,
-// 928 bytes under main's. Nothing moved off the entry to make room; the new
-// headroom is ~8KB. initialCssBytes goes from 101_500 to 102_000 on the same
-// landing: the merged CSS of 101_158 would otherwise leave ~0.3KB.
+// Main's lines hold when Projects lands on top of session forks, side chats
+// and the lazily loaded app frame: together the entry measures 1_391_821 and
+// the CSS 101_012.
 const BUDGETS = {
-  initialRendererJsBytes: 1_414_000,
-  initialCssBytes: 102_000,
+  initialRendererJsBytes: 1_407_000,
+  initialCssBytes: 101_500,
   largestLazyChunkBytes: 700_000,
   duplicatePackageMaxBytes: 120_000,
 };
