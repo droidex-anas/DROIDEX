@@ -1860,6 +1860,9 @@ export default function PromptInput({
           onRunRow={runMenuItem}
         />
 
+        {activeSession && !targetChildSessionId && (
+          <SideChatRestoreButton sourceAppSessionId={activeSession.appSessionId} />
+        )}
         <PlanApprovalInline />
         {/* The full voice surface covers this composer and shows the same two
             cards itself, so only one of the two places owns an ask at a time. */}
@@ -1883,9 +1886,6 @@ export default function PromptInput({
             SPEC MODE
           </div>
         ) : null}
-        {activeSession && !targetChildSessionId && (
-          <SideChatRestoreButton sourceAppSessionId={activeSession.appSessionId} />
-        )}
 
         <QueuedPrompts
           queue={queue}

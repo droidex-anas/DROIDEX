@@ -1,4 +1,4 @@
-import type { HarnessModels } from '../hooks/persistedUiPreferences';
+import type { HarnessModels, SideChatDefaultPlacement } from '../hooks/persistedUiPreferences';
 import type { ProviderKind, ReasoningEffort, SessionSummary } from '../types/bridge';
 import { isChatHidden, type ChatMetadataMap } from './chatMetadata';
 
@@ -9,7 +9,7 @@ import { isChatHidden, type ChatMetadataMap } from './chatMetadata';
 // question starts a fresh one.
 
 // Docked lives in the utility pane's side tab; floating and minimized sit over the chat.
-export type SideChatPlacement = 'docked' | 'floating' | 'minimized';
+export type SideChatPlacement = SideChatDefaultPlacement | 'minimized';
 
 export type SideChatView =
   // The session's current side chat, or the composer that starts one.

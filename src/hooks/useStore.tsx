@@ -42,6 +42,7 @@ import {
   loadReviewScope,
   loadSessionLastSeen,
   loadShortcutBindings,
+  loadSideChatPlacement,
   loadWorkspaceCwds,
   saveAgentConfig,
   saveCompactionModel,
@@ -57,6 +58,7 @@ import {
   saveReviewScope,
   saveSessionLastSeen,
   saveShortcutBindings,
+  saveSideChatPlacement,
   saveWorkspaceCwds,
   sanitizeAgentConfig,
   type AgentConfig,
@@ -67,6 +69,7 @@ import {
   type MainView,
   type MissionRole,
   type ModelSelectorStyle,
+  type SideChatDefaultPlacement,
 } from './persistedUiPreferences';
 import type { ShortcutAction, ShortcutBindings } from '../lib/shortcuts';
 import {
@@ -160,6 +163,7 @@ import {
   type UtilityTool,
 } from '../lib/utilityPanel';
 import {
+  currentSideChat,
   settleSideChatStart,
   sideChatPanel,
   updateSideChatPanel,
@@ -442,6 +446,7 @@ export interface AppState {
   pendingForks: Partial<Record<string, PendingFork>>;
   // Each session's side-chat surface, keyed by the session they branch from.
   sideChats: Partial<Record<string, SideChatPanel>>;
+  sideChatDefaultPlacement: SideChatDefaultPlacement;
 }
 
 // `prompt` is the copy's first message, which the sidecar sends once it exists.
@@ -472,6 +477,7 @@ type Action =
   | { type: 'CHOOSE_SIDE_CHAT_HARNESS'; sourceAppSessionId: string; harness: SideChatHarness }
   | { type: 'ATTACH_SIDE_CHAT_REPLY'; sourceAppSessionId: string; reply: string }
   | { type: 'DETACH_SIDE_CHAT_REPLIES'; sourceAppSessionId: string; replies: readonly string[] }
+  | { type: 'SET_SIDE_CHAT_DEFAULT_PLACEMENT'; placement: SideChatDefaultPlacement }
   | {
       type: 'SET_PENDING_COMPOSE';
       clientRef: string;
@@ -844,6 +850,7 @@ export const initialState: AppState = {
   lastCreatedSessionRequest: null,
   pendingForks: {},
   sideChats: {},
+  sideChatDefaultPlacement: loadSideChatPlacement(),
 };
 
 function progressKey(entry: ProgressEntry): string {
@@ -895,6 +902,21 @@ function closeActiveUtilityPanel(state: AppState): AppState {
   return panel === current
     ? state
     : { ...state, utilityPanels: { ...state.utilityPanels, [appSessionId]: panel } };
+}
+
+// A minimized side chat floats again and one on screen or still open stays put.
+// Only a side chat that is not open yet, docked with no tab and no chat behind
+// it, opens where Settings says.
+function sideChatPlacementToShow(state: AppState, sourceAppSessionId: string): SideChatPlacement {
+  const { placement } = sideChatPanel(state.sideChats, sourceAppSessionId);
+  if (placement !== 'docked') return 'floating';
+  const hasTab = utilityPanelForSession(state.utilityPanels, sourceAppSessionId).tabs.some(
+    (tab) => tab.tool === 'side',
+  );
+  if (hasTab || currentSideChat(state.sessions, state.chatMetadata, sourceAppSessionId)) {
+    return 'docked';
+  }
+  return state.sideChatDefaultPlacement;
 }
 
 // Drops the open request a session was cancelled out of. Keyed on the request
@@ -1094,16 +1116,15 @@ function baseReducer(state: AppState, action: Action): AppState {
 
     case 'SHOW_SIDE_CHAT': {
       const { sourceAppSessionId } = action;
-      const { placement } = sideChatPanel(state.sideChats, sourceAppSessionId);
       const next: AppState = {
         ...state,
-        sideChats: updateSideChatPanel(state.sideChats, sourceAppSessionId, {
-          view: action.view,
-          ...(placement === 'minimized' ? { placement: 'floating' } : {}),
-        }),
+        sideChats: updateSideChatPanel(state.sideChats, sourceAppSessionId, { view: action.view }),
       };
-      if (placement !== 'docked' || sourceAppSessionId !== state.activeAppSessionId) return next;
-      return baseReducer(next, { type: 'OPEN_UTILITY_TOOL', tool: 'side' });
+      return baseReducer(next, {
+        type: 'PLACE_SIDE_CHATS',
+        sourceAppSessionId,
+        placement: sideChatPlacementToShow(state, sourceAppSessionId),
+      });
     }
 
     // Docking moves the side chats into the utility pane; floating or
@@ -1127,7 +1148,8 @@ function baseReducer(state: AppState, action: Action): AppState {
       };
     }
 
-    // The next `/side` docks the session's side chat again.
+    // A closed side chat rests docked with no tab, which is off screen; the
+    // next `/side` opens it where Settings says.
     case 'CLOSE_SIDE_CHAT': {
       const { sourceAppSessionId, appSessionId } = action;
       const chatMetadata = appSessionId
@@ -1146,6 +1168,12 @@ function baseReducer(state: AppState, action: Action): AppState {
         },
       };
     }
+
+    case 'SET_SIDE_CHAT_DEFAULT_PLACEMENT':
+      return {
+        ...state,
+        sideChatDefaultPlacement: saveSideChatPlacement(action.placement),
+      };
 
     case 'CHOOSE_SIDE_CHAT_HARNESS':
       return {

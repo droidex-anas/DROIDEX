@@ -5,10 +5,11 @@ import { currentSideChat, sideChatPanel } from '../../lib/sideChats';
 import { utilityPanelForSession } from '../../lib/utilityPanel';
 import { HoverTooltip } from '../HoverTooltip';
 
-/* A minimized side chat rests on the composer's edge, beside the prompt it
-   is asked next to. It comes back where it was: a minimized window floats
-   again, a docked one reopens its tab. Nothing shows while the side chat is
-   on screen or when the session has none. */
+/* A minimized side chat rests on its own row at the top of the composer stack,
+   so the cards docked above the prompt push it up instead of sitting under it.
+   It comes back where it was: a minimized window floats again, a docked one
+   reopens its tab. Nothing shows while the side chat is on screen or when the
+   session has none. */
 
 export function SideChatRestoreButton({ sourceAppSessionId }: { sourceAppSessionId: string }) {
   const dispatch = useStoreDispatch();
@@ -29,7 +30,7 @@ export function SideChatRestoreButton({ sourceAppSessionId }: { sourceAppSession
   const label = working ? 'Side chat is answering. Show it' : 'Show side chat';
 
   return (
-    <div className="absolute -top-8 right-1 z-10">
+    <div className="mb-2 flex justify-end px-1">
       <HoverTooltip label={label}>
         <button
           type="button"

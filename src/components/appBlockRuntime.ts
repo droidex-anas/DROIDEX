@@ -42,8 +42,8 @@ export const DEFAULT_APP_HEIGHT = 360;
 const MIN_APP_HEIGHT = 1;
 const MAX_APP_HEIGHT = 12_000;
 const MAX_APP_MATH_CHARS = 20_000;
-export const MAX_APP_MATH_REQUESTS = 64;
-export const MAX_CONCURRENT_APP_MATH_REQUESTS = 2;
+const MAX_APP_MATH_REQUESTS = 64;
+const MAX_CONCURRENT_APP_MATH_REQUESTS = 2;
 export const MAX_APP_ERROR_CHARS = 500;
 
 export interface AppBlockMathRequest {
