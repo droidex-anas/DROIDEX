@@ -86,11 +86,10 @@ export class ClaudeSession implements ProviderSession {
   // Whether the running turn can take a steer: not before its own prompt is
   // pushed, not for a slash command, and not once it has ended.
   private steerable = false;
-  // The running turn's steers, by the uuid each was pushed with: who is waiting
-  // to hear it delivered, and which a result has yet to answer. The turn stays
-  // open until every steer is answered.
+  // Steers the CLI has not started yet, by uuid, with whoever waits on each.
   private readonly steerDeliveries = new Map<string, (delivered: boolean) => void>();
-  private readonly unansweredSteers = new Set<string>();
+  // The running turn's own result has arrived; it may still wait for steers.
+  private turnAnswered = false;
   private turnQueue?: MessageQueue<{ message: SDKMessage; events: NormalizedEvent[] }>;
   private readonly backgroundListeners = new Set<(event: NormalizedEvent) => void>();
 
@@ -219,11 +218,15 @@ export class ClaudeSession implements ProviderSession {
         message: { role: 'user', content: prompt },
       });
       this.steerable = !isSlashCommand(prompt);
-      let answered = false;
       for (;;) {
         const next = await turnQueue.next();
-        // An exhausted stream is a failure, not a silent success.
-        if (next.done) throw new Error('Claude Code exited before the turn finished.');
+        // An exhausted stream is a failure, unless Stop closed it on a turn
+        // that already had its answer.
+        if (next.done) {
+          if (!this.turnAnswered) throw new Error('Claude Code exited before the turn finished.');
+          yield { done: true };
+          return;
+        }
         const { message, events } = next.value;
         if (message.type === 'assistant' && !reportedPlanningModel) {
           const notice = this.permissions.planning
@@ -237,10 +240,7 @@ export class ClaudeSession implements ProviderSession {
         yield* events;
         const lifecycle = commandLifecycle(message);
         if (lifecycle?.state === 'started') this.settleSteer(lifecycle.uuid, true);
-        if (lifecycle?.state === 'cancelled') {
-          this.settleSteer(lifecycle.uuid, false);
-          this.unansweredSteers.delete(lifecycle.uuid);
-        }
+        if (lifecycle?.state === 'cancelled') this.settleSteer(lifecycle.uuid, false);
         // A local slash command bypasses the model loop and publishes this one
         // terminal frame instead of a result for the ordinary turn path.
         if (message.type === 'system' && message.subtype === 'local_command_output') {
@@ -253,59 +253,47 @@ export class ClaudeSession implements ProviderSession {
           const refusal = rateLimitRefusal(message.rate_limit_info);
           if (refusal) throw refusal;
         }
-        if (
-          message.type === 'result' &&
-          (answersTurn(message, turnId) || this.answersSteer(message))
-        ) {
+        // The turn's own result, and after it the result of each steer that
+        // missed the turn's last tool boundary and ran as a CLI turn of its own.
+        if (message.type === 'result' && (this.turnAnswered || answersTurn(message, turnId))) {
           // A stopped turn settles quietly: the CLI still reports the
           // interruption as an error result carrying an internal diagnostic.
           if (message.subtype !== 'success' && this.interruptedTurnId !== turnId)
             throw new Error(turnFailure(message.subtype, message.errors));
-          answered = true;
-          for (const uuid of message.user_message_uuids ?? []) {
-            this.settleSteer(uuid, true);
-            this.unansweredSteers.delete(uuid);
+          this.turnAnswered = true;
+          for (const uuid of message.user_message_uuids ?? []) this.settleSteer(uuid, true);
+          // The turn stays open while a steer waits to start. A stopped turn
+          // does not wait, nor does a CLI too old to list what a result answered.
+          if (
+            this.steerDeliveries.size === 0 ||
+            this.interruptedTurnId === turnId ||
+            !message.user_message_uuids
+          ) {
+            this.steerable = false;
+            yield { done: true };
+            return;
           }
-          // Without the list nothing could ever answer a steer, so the turn
-          // must not wait for one.
-          if (!message.user_message_uuids) this.unansweredSteers.clear();
-        }
-        // A steer that missed the turn's last tool boundary runs right after
-        // its result, so the turn stays open until that answer too. Stop
-        // cancels the steers still queued, and the frame that says so ends it.
-        if (answered && (this.unansweredSteers.size === 0 || this.interruptedTurnId === turnId)) {
-          this.steerable = false;
-          yield { done: true };
-          return;
         }
       }
     } finally {
       this.activeTurnId = undefined;
       this.steerable = false;
-      // A steer the turn ended without is the session layer's to send again or
-      // drop, so the CLI must not run it as well.
-      for (const uuid of this.steerDeliveries.keys()) {
-        if (!this.isClosed) void this.query.cancelAsyncMessage(uuid).catch(() => undefined);
-        this.settleSteer(uuid, false);
-      }
-      this.unansweredSteers.clear();
+      this.turnAnswered = false;
       if (this.turnQueue === turnQueue) this.turnQueue = undefined;
+      await Promise.all([...this.steerDeliveries.keys()].map((uuid) => this.withdrawSteer(uuid)));
     }
   }
 
-  // Hands the prompt to the running turn. The CLI folds it in at the turn's
-  // next tool boundary, or runs it right after the turn's result when no
-  // boundary is left. Resolves true once the model has it, and false when the
-  // turn cannot take it or ends without it.
+  // Hands the prompt to the running turn: the CLI folds it in at the next tool
+  // boundary, or runs it right after the turn's result. Resolves true once the
+  // model has it. The CLI resolves a slash command itself, so that can only
+  // run as a turn of its own.
   steer(text: string): Promise<boolean> {
-    // The CLI resolves a slash command instead of handing it to the model, so
-    // it can only run as a turn of its own.
     if (!this.steerable || this.isClosed || isSlashCommand(text)) return Promise.resolve(false);
     const uuid = randomUUID();
     const delivered = new Promise<boolean>((resolve) => {
       this.steerDeliveries.set(uuid, resolve);
     });
-    this.unansweredSteers.add(uuid);
     this.prompts.push({
       type: 'user',
       uuid,
@@ -322,9 +310,12 @@ export class ClaudeSession implements ProviderSession {
     this.steerDeliveries.delete(uuid);
   }
 
-  // A steer that runs after the turn's result gets a result of its own.
-  private answersSteer(message: { user_message_uuids?: string[] }): boolean {
-    return message.user_message_uuids?.some((uuid) => this.unansweredSteers.has(uuid)) ?? false;
+  // A steer the turn ended without is withdrawn so the session layer can send
+  // it again. One the CLI already took, and will answer, counts as delivered.
+  private async withdrawSteer(uuid: string): Promise<void> {
+    const cancelled =
+      this.isClosed || (await this.query.cancelAsyncMessage(uuid).catch(() => true));
+    this.settleSteer(uuid, !cancelled);
   }
 
   // Keep reading between turns so background children can settle immediately.
@@ -459,7 +450,14 @@ export class ClaudeSession implements ProviderSession {
     // Aborts the in-flight turn on the live process; the turn then settles with
     // its own result, so the next prompt does not pay for a restart. Steers not
     // yet delivered are cancelled with it rather than left to run unobserved.
-    await this.query.interrupt({ cancelQueued: true });
+    const receipt = await this.query.interrupt({ cancelQueued: true });
+    for (const uuid of receipt?.cancelled ?? []) this.settleSteer(uuid, false);
+    // A turn that already has its answer may be waiting only on steers the CLI
+    // had not started. An idle CLI says nothing more, so the turn ends here.
+    if (this.turnAnswered && this.activeTurnId === turnId) {
+      for (const uuid of this.steerDeliveries.keys()) this.settleSteer(uuid, false);
+      this.turnQueue?.close();
+    }
   }
 
   close(): Promise<void> {

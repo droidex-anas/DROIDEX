@@ -1,4 +1,8 @@
-import type { Query, SDKMessage } from '@anthropic-ai/claude-agent-sdk';
+import type {
+  Query,
+  SDKControlInterruptResponse,
+  SDKMessage,
+} from '@anthropic-ai/claude-agent-sdk';
 
 // Input prompts and per-turn output each have one producer and one reader.
 export class MessageQueue<T> implements AsyncIterable<T> {
@@ -42,7 +46,7 @@ export class MessageQueue<T> implements AsyncIterable<T> {
 
 // Control requests the SDK sends at runtime but does not declare.
 export type SteeringQuery = Query & {
-  interrupt(options: { cancelQueued: boolean }): Promise<unknown>;
+  interrupt(options: { cancelQueued: boolean }): Promise<SDKControlInterruptResponse | undefined>;
   cancelAsyncMessage(uuid: string): Promise<boolean>;
 };
 
