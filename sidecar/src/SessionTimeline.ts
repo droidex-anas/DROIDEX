@@ -438,11 +438,11 @@ export class SessionTimeline {
     });
   }
 
-  // A prompt nobody typed: the parent agent's brief to one of its children.
-  // `recordPrompt` only persists, because the renderer draws the user's own
-  // prompt as it is sent; this one has never been drawn, so it goes through
-  // `append` and reaches the child's pane as the same bubble the chat gives a
-  // user's prompt.
+  // A prompt the renderer has not drawn: the parent agent's brief to one of
+  // its children, or a steer that runs as a turn of its own. `recordPrompt`
+  // only persists, because the renderer draws the user's own prompt as it is
+  // sent; this one goes through `append` and reaches the pane as the same
+  // bubble the chat gives a user's prompt.
   appendPrompt(
     appSessionId: string,
     text: string,
@@ -462,14 +462,10 @@ export class SessionTimeline {
     });
   }
 
-  // A prompt sent as a steer, at the moment the model takes it in: inside the
-  // running turn (steered), or as a turn of its own. The renderer drew it when
-  // it was sent; this row, under the same steer id, moves it here, and it is
-  // what the transcript keeps.
-  appendSteer(
-    appSessionId: string,
-    steer: { text: string; steerId: string; steered: boolean },
-  ): void {
+  // A steer at the moment the model takes it into the running turn. The
+  // renderer showed it as pending until now; this row is where the model took
+  // it in, and what the transcript keeps.
+  appendSteer(appSessionId: string, text: string): void {
     const ts = this.clock();
     this.append({
       id: this.noticeId('prompt', ts),
@@ -479,9 +475,8 @@ export class SessionTimeline {
       ts,
       kind: 'text',
       author: 'user',
-      text: steer.text,
-      steerId: steer.steerId,
-      ...(steer.steered ? { steered: true } : {}),
+      text,
+      steered: true,
     });
   }
 

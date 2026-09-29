@@ -432,7 +432,6 @@ function isTranscriptEvent(value: unknown): boolean {
     (value.interrupted === undefined || value.interrupted === true) &&
     (value.transient === undefined || value.transient === true) &&
     isOptionalString(value.forkPointId) &&
-    isOptionalString(value.steerId) &&
     (value.sideChatReplies === undefined || stringArray(value.sideChatReplies))
   );
 }

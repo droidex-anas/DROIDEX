@@ -2,7 +2,6 @@ import type { TranscriptEvent } from '../types/bridge';
 import type { TranscriptMutationChange } from './transcriptMutation';
 import {
   asChunkedSequence,
-  chunkedSequenceSlice,
   insertChunkedSequence,
   replaceChunkedSequenceAt,
   replaceChunkedSequenceSuffix,
@@ -11,7 +10,6 @@ import {
   appendTranscriptText,
   estimateAppendedTranscriptCost,
   estimateReplacedTranscriptEventCost,
-  estimateTranscriptCost,
 } from './transcriptWindow';
 import { isChildSessionTool, mergeChildSessionSpawn } from './childSessionEvents';
 
@@ -79,28 +77,6 @@ export function ingestTranscriptEvents(
       );
       continue;
     }
-
-    // The sidecar's row for a steer the model has just taken in, in the running
-    // turn or as a turn of its own. The renderer drew that prompt when it was
-    // sent, so its own row moves here, to where the model took it in, and what
-    // came after it is replayed behind it. That joins again any text the row
-    // split while it waited.
-    const sent = sentSteer(events, event.steerId);
-    if (sent) {
-      const prefix = replaceChunkedSequenceSuffix(events, sent.index, []);
-      const moved = event.steered ? { ...sent.row, steered: true } : sent.row;
-      const replayed = ingestTranscriptEvents(prefix, estimateTranscriptCost(prefix), [
-        ...chunkedSequenceSlice(events, sent.index + 1),
-        moved,
-      ]);
-      events = replayed.events;
-      ({ eventIds, indexes } = transcriptRuntime(events));
-      eventIds = addEventId(eventIds, event.id);
-      estimatedCost = replayed.estimatedCost;
-      recordChange(sent.index);
-      continue;
-    }
-
     const last = events.at(-1);
 
     // Protocol mirror of sidecar/src/streamingDeltaCoalescer.ts
@@ -485,16 +461,6 @@ function shiftIndexForInsertion(
 ): number | undefined {
   if (index === undefined) return undefined;
   return index >= insertionIndex ? index + insertedCount : index;
-}
-
-function sentSteer(
-  events: readonly TranscriptEvent[],
-  steerId: string | undefined,
-): { index: number; row: TranscriptEvent } | undefined {
-  if (steerId === undefined) return undefined;
-  const index = events.findLastIndex((row) => row.steerId === steerId);
-  const row = events.at(index);
-  return index >= 0 && row ? { index, row } : undefined;
 }
 
 // The same spoken row, said further. A closing notification can repeat with

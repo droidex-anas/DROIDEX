@@ -6,6 +6,7 @@ import {
   useMemo,
   useRef,
   useState,
+  type ReactNode,
   type RefObject,
 } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -134,6 +135,7 @@ export function MessageFeed({
   rebuiltFromItemIndex = 0,
   density = DEFAULT_TOOL_ACTIVITY.density,
   inlineDiffs = DEFAULT_TOOL_ACTIVITY.inlineDiffs,
+  pendingSteers,
 }: {
   events: TranscriptEvent[];
   items?: FeedItem[];
@@ -167,6 +169,8 @@ export function MessageFeed({
   density?: ToolActivityDensity;
   // Whether folded diff runs render expanded by default.
   inlineDiffs?: boolean;
+  // Steers the model has not taken in yet; they follow the transcript.
+  pendingSteers?: ReactNode;
 }) {
   // Child session cards, waiting label, and live timers are enabled only for the
   // chat/spec feed (which supplies onOpenChildSession). Per-turn change summaries
@@ -404,6 +408,7 @@ export function MessageFeed({
             <WorkingIndicator label={workingLabel} startTs={workingStart} />
           </div>
         )}
+        {pendingSteers}
       </div>
     </ProseFileLinks>
   );

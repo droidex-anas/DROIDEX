@@ -79,14 +79,9 @@ export function ConversationList({
     );
   }, [items, updateKind, rebuiltFromItemIndex]);
 
-  const rowOrder = useRowOrderVersion(items, rebuiltFromItemIndex);
-  // The virtualizer keeps each row's measured size by key, but it recomputes
-  // row positions only when this function changes, so a new order gets a new one.
-  const getItemKey = useCallback(
-    (index: number) => itemsRef.current[index]?.key ?? index,
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- a new order needs a new function
-    [rowOrder],
-  );
+  const getItemKey = useCallback((index: number) => {
+    return itemsRef.current[index]?.key ?? index;
+  }, []);
 
   const virtualizer = useVirtualizer({
     count: items.length,
@@ -206,20 +201,4 @@ export function ConversationList({
       </div>
     </div>
   );
-}
-
-// Counts the updates that put a different row at an index that already had
-// one, as when a delivered steer moves down to where the model took it in.
-// Appends and in-place updates leave it alone.
-function useRowOrderVersion(items: readonly FeedItem[], rebuiltFromIndex: number): number {
-  const seen = useRef({ items, version: 0 });
-  const previous = seen.current.items;
-  if (previous !== items) {
-    let reordered = false;
-    const end = Math.min(previous.length, items.length);
-    for (let index = Math.min(rebuiltFromIndex, end); index < end && !reordered; index += 1)
-      reordered = previous[index]?.key !== items[index]?.key;
-    seen.current = { items, version: seen.current.version + (reordered ? 1 : 0) };
-  }
-  return seen.current.version;
 }

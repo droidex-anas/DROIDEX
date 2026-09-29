@@ -245,9 +245,6 @@ export interface TranscriptEvent {
   // Side-chat answers the user attached to this prompt.
   sideChatReplies?: string[];
   steered?: boolean;
-  // On a prompt sent as a steer: the id its sender gave it, so the row the
-  // sidecar adds when the model takes it in replaces the renderer's own.
-  steerId?: string;
   // Set on a row whose text was said out loud in a voice conversation.
   spoken?: boolean;
   compactType?: 'auto' | 'manual';

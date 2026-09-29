@@ -167,6 +167,7 @@ import {
 } from '../lib/transcriptStoreMemory';
 import { type TranscriptMutation } from '../lib/transcriptMutation';
 import { reduceSessionChildren } from './storeSessionChildren';
+import { addSentSteer, reconcileSentSteers, type SentSteers } from './storeSentSteers';
 import { reduceStoreActionBatch } from './storeActionBatch';
 import { persistStoreChanges } from './storePersistence';
 import {
@@ -288,6 +289,8 @@ export interface AppState {
   specWikiAppSessionId: string | null;
   // Held locally until the current turn finishes, then delivered one at a time.
   promptQueue: Record<string, QueuedPrompt[]>;
+  // Steers the model has not taken in yet, per session; runtime-only.
+  sentSteers: SentSteers;
   // Scratch notes parked from the Context panel, per session. Persisted in
   // localStorage so reminders survive app restarts.
   sessionNotes: SessionNotesMap;
@@ -535,6 +538,7 @@ export type Action =
   | { type: 'TRANSCRIPT_RELEASE_VIEWPORT'; appSessionId: string }
   | { type: 'MEMORY_PRESSURE' }
   | { type: 'QUEUE_PROMPT'; appSessionId: string; prompt: QueuedPrompt }
+  | { type: 'STEER_SENT'; appSessionId: string; steerId: string; event: TranscriptEvent }
   | { type: 'REMOVE_QUEUED_PROMPT'; appSessionId: string; id: string }
   | { type: 'REORDER_QUEUE'; appSessionId: string; from: number; to: number }
   | { type: 'SPEC_SET'; appSessionId: string; path?: string; title: string; content: string }
@@ -775,6 +779,7 @@ export const initialState: AppState = {
   sessionSpecs: {},
   specWikiAppSessionId: null,
   promptQueue: {},
+  sentSteers: {},
   sessionNotes: loadSessionNotes(),
   agentProcesses: {},
   rightPanelOpen: persistedUiState.rightPanelOpen ?? true,
@@ -1263,6 +1268,7 @@ export function reducer(state: AppState, action: Action): AppState {
         sessions: { ...state.sessions, [m.appSessionId]: m },
         contextStats,
         pendingAutonomy,
+        sentSteers: reconcileSentSteers(state.sentSteers, m),
       };
       if (
         !previous ||
@@ -1502,6 +1508,15 @@ export function reducer(state: AppState, action: Action): AppState {
 
     case 'CHILD_TRANSCRIPT_RELEASE_VIEWPORT':
       return reduceChildTranscriptReleaseViewport(state, action);
+
+    case 'STEER_SENT':
+      return {
+        ...state,
+        sentSteers: addSentSteer(state.sentSteers, action.appSessionId, {
+          steerId: action.steerId,
+          event: action.event,
+        }),
+      };
 
     case 'QUEUE_PROMPT': {
       const prev = state.promptQueue[action.appSessionId] ?? [];

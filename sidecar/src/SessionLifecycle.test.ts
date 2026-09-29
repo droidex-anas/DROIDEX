@@ -322,12 +322,8 @@ function createHarness(ordinarySummaries: SessionSummary[] = []) {
     appendError: (appSessionId, message) => {
       calls.push({ target: 'protocol', method: 'error', args: [appSessionId, message] });
     },
-    appendSteer: (appSessionId, text, steerId) => {
-      calls.push({
-        target: 'protocol',
-        method: 'appendSteer',
-        args: [appSessionId, text, steerId],
-      });
+    appendSteer: (appSessionId, text) => {
+      calls.push({ target: 'protocol', method: 'appendSteer', args: [appSessionId, text] });
     },
     catalogUpdated: () => undefined,
     emitSessionList: (closedProviderSessionId) => emitSessionList(closedProviderSessionId),
@@ -880,7 +876,7 @@ test('a steer is pending until the harness delivers it, and one refused late sti
   assert.deepEqual(pendingSteers(), []);
   assert.deepEqual(
     h.calls.filter((call) => call.method === 'appendSteer').map((call) => call.args),
-    [['steer', 'delivered', 'steer-1']],
+    [['steer', 'delivered']],
   );
 
   // A refusal that lands after the turn settled still runs as the next turn.

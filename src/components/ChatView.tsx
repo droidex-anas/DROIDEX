@@ -13,6 +13,7 @@ import { RunningProcessesMenu } from './RunningProcessesMenu';
 import { LiveProcessesContext } from './transcript/liveProcessesContext';
 import type { AgentProcess, ChildSessionSummary } from '../types/bridge';
 import { WorkingIndicator, UserBubble, ChatSkeleton, TranscriptSkeleton } from './chat';
+import { PendingSteers } from './transcript/PendingSteers';
 import { readFile } from '../lib/desktop';
 import { interruptChild, loadChildHistory, loadSessionHistory } from '../lib/commands';
 import { chatDisplayTitle } from '../lib/chatMetadata';
@@ -693,6 +694,9 @@ export default function ChatView({
             {...(openSpecWiki !== undefined ? { onOpenSpecWiki: openSpecWiki } : {})}
             {...(!viewingChildSession && createdWorktreePath !== undefined
               ? { createdWorktreePath }
+              : {})}
+            {...(!viewingChildSession
+              ? { pendingSteers: <PendingSteers appSessionId={activeSession.appSessionId} /> }
               : {})}
             onMountedRowsChange={setMountedFeedRows}
             scrollElementRef={scrollRef}

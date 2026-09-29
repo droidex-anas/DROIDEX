@@ -179,7 +179,7 @@ export interface SessionLifecycleDependencies {
   appendError: (appSessionId: string, message: string) => void;
   // A steer the harness has just delivered into the running turn: the row that
   // marks where the model took it in, and what the transcript stores.
-  appendSteer: (appSessionId: string, text: string, steerId: string) => void;
+  appendSteer: (appSessionId: string, text: string) => void;
   catalogUpdated: (liveSession: LiveSession, items: SkillInfo[]) => void;
   emitSessionList: (closedProviderSessionId: string) => void | Promise<void>;
 }
@@ -579,7 +579,7 @@ export class SessionLifecycle {
     // A Stop can land between admission and this line.
     if (this.stopCount(requestedAppSessionId) !== admitted.stops) return;
     const { liveSession } = admitted;
-    if (steerId && (await this.steer(liveSession, prompt, steerId))) return;
+    if (steerId && (await this.steer(liveSession, prompt))) return;
     // A steer the turn could not take goes on as an ordinary message: behind
     // the turn, or as the next turn if this one settled meanwhile.
     if (liveSession.streaming || liveSession.compacting || liveSession.autoCompacting) {
@@ -593,11 +593,7 @@ export class SessionLifecycle {
   // Hands a steer to the running turn and waits for the harness to deliver it.
   // True when that settles it: the model took it in, or a Stop or Send now
   // took it back first. False when the turn could not take it.
-  private async steer(
-    liveSession: LiveSession,
-    prompt: SessionPrompt,
-    steerId: string,
-  ): Promise<boolean> {
+  private async steer(liveSession: LiveSession, prompt: SessionPrompt): Promise<boolean> {
     const session = liveSession.session;
     if (
       !session.steer ||
@@ -613,12 +609,14 @@ export class SessionLifecycle {
     const delivered = await session.steer(prompt.text, prompt.mentions).catch(() => false);
     const held = removePrompt(liveSession.steers, prompt);
     if (!delivered) return !held;
-    // Send now may have queued it again just as the harness delivered it.
-    removePrompt(liveSession.pendingSends, prompt);
-    this.updateQueuedSends(liveSession);
+    // The row goes first: the chat drops its pending bubble once the steer
+    // leaves the list. Send now may have queued it again just as the harness
+    // delivered it.
     const appSessionId = liveSession.summary.appSessionId;
     if (this.dependencies.registry.getLive(appSessionId) === liveSession)
-      this.dependencies.appendSteer(appSessionId, prompt.text, steerId);
+      this.dependencies.appendSteer(appSessionId, prompt.text);
+    removePrompt(liveSession.pendingSends, prompt);
+    this.updateQueuedSends(liveSession);
     return true;
   }
 
@@ -1252,7 +1250,7 @@ export class SessionLifecycle {
         ...(prompt.mentions ? { mentions: prompt.mentions } : {}),
         ...(delivery ? { delivery } : {}),
         ...(prompt.notice ? { notice: prompt.notice } : {}),
-        ...(prompt.steerId ? { steerId: prompt.steerId } : {}),
+        ...(prompt.steerId ? { sentAsSteer: true as const } : {}),
       });
       await liveSession.turnPromise;
     } finally {
