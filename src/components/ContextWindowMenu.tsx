@@ -75,6 +75,12 @@ export default function ContextWindowMenu({
   const choosable = options.filter((option) => option.unavailableReason === undefined);
   const openOn = choosable.find((option) => option.value === shown) ?? choosable[0];
   const onMenuKey = (e: React.KeyboardEvent) => {
+    // Tab leaves the list from its button, so focus moves on from there.
+    if (e.key === 'Tab') {
+      setOpen(false);
+      buttonRef.current?.focus();
+      return;
+    }
     if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return;
     e.preventDefault();
     const items = [

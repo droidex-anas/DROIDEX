@@ -234,23 +234,27 @@ export default function useModelPicker({
 
       // Snap only an explicit effort, as part of the same user-requested update.
       const next = source.find((x) => x.id === modelId);
-      // A window or fast mode the new model cannot run is set back first, so
-      // the change of model is never refused over it and the chip never
-      // claims what the chat does not do.
-      if (agent === 'primary') {
-        if (fastMode && fastModeBlockedReason(next)) setFastMode(false);
-        const window = contextWindowForModel(next, contextWindowTokens);
-        if (window) setContextWindow(window);
-      }
       const reasoningEffort = reasoningForModelSwitch(next, effReasoning);
       const settings = {
         modelId,
         ...(reasoningEffort === undefined ? {} : { reasoningEffort }),
       };
+      // A window or fast mode the new model cannot run is set back in the same
+      // change, so the model is never refused over it, a refused model leaves
+      // them as they were, and the chip never claims what the chat does not do.
+      const losesFastMode = agent === 'primary' && fastMode && !!fastModeBlockedReason(next);
+      const window =
+        agent === 'primary' ? contextWindowForModel(next, contextWindowTokens) : undefined;
+      const preferences = {
+        ...(losesFastMode ? { fastMode: false } : {}),
+        ...(window ? { contextWindowTokens: window } : {}),
+      };
       if (scopedAppSessionId) {
-        updateSession(scopedAppSessionId, settings);
+        updateSession(scopedAppSessionId, { ...settings, ...preferences });
         return;
       }
+      if (losesFastMode) setFastMode(false);
+      if (window) setContextWindow(window);
       saveDefault({ modelId, reasoning: reasoningAfterModelSwitch(next, cfg.reasoning) });
       updateAgentSettings({ appSessionId: state.activeSessionAppSessionId, agent, ...settings });
     },

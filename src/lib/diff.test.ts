@@ -43,13 +43,34 @@ test('falls back to "file" when no path is present anywhere', () => {
 });
 
 test('a line inside a hunk is content even when it reads like a header', () => {
-  const patch = ['@@ -0,0 +1,2 @@', '+++counter;', '+--x;'].join('\n');
-  const change = extractFileChange('apply_patch', { patch });
+  const added = ['@@ -0,0 +1,2 @@', '+++counter;', '+--x;'].join('\n');
   assert.deepEqual(
-    change?.ops.map((op) => [op.type, op.text]),
+    extractFileChange('apply_patch', { patch: added })?.ops.map((op) => [op.type, op.text]),
     [
       ['add', '++counter;'],
       ['add', '--x;'],
+    ],
+  );
+  // A replaced line whose old and new text start like file headers.
+  const replaced = [
+    '--- a/notes.sql',
+    '+++ b/notes.sql',
+    '@@ -1 +1 @@',
+    '--- old text',
+    '+++ new text',
+    '--- a/other.sql',
+    '+++ b/other.sql',
+    '@@ -1 +1 @@',
+    '-a',
+    '+b',
+  ].join('\n');
+  assert.deepEqual(
+    extractFileChange('apply_patch', { patch: replaced })?.ops.map((op) => [op.type, op.text]),
+    [
+      ['del', '-- old text'],
+      ['add', '++ new text'],
+      ['del', 'a'],
+      ['add', 'b'],
     ],
   );
 });

@@ -152,34 +152,37 @@ function pathFromPatch(patch: string): string | undefined {
   return fromOld;
 }
 
-// Header lines name files and hunks; every other line is content. Inside a
-// hunk a line is content even when it reads like a header: an added "++i"
-// arrives as "+++i".
+// Header lines name files and hunks; every other line is content. A unified
+// hunk says how many old and new lines it holds, and until they are read no
+// line is a header: an added "++i" arrives as "+++i" and a removed "-- x" as
+// "--- x". An apply_patch hunk gives no count and runs to the next file.
 function parsePatch(patch: string): DiffOp[] {
   const ops: DiffOp[] = [];
-  const lines = patch.split('\n');
-  let inHunk = false;
-  for (let index = 0; index < lines.length; index += 1) {
-    const line = lines[index];
+  let owed = 0;
+  for (const line of patch.split('\n')) {
+    const hunk = /^@@ -\d+(?:,(\d+))? \+\d+(?:,(\d+))? @@/.exec(line);
+    if (hunk) {
+      // A count left out is one line.
+      const [, oldLines = '1', newLines = '1'] = hunk;
+      owed = Number(oldLines) + Number(newLines);
+      continue;
+    }
     if (line.startsWith('@@')) {
-      inHunk = true;
+      owed = Infinity;
       continue;
     }
-    // A file header is a "--- " line directly over a "+++ " line.
-    if (line.startsWith('--- ') && lines.at(index + 1)?.startsWith('+++ ')) {
-      index += 1;
-      inHunk = false;
-      continue;
-    }
-    if (line.startsWith('diff ') || line.startsWith('*** ')) {
+    if (line.startsWith('*** ') || line.startsWith('diff ')) {
       // An added file's lines follow its apply_patch header without a hunk.
-      inHunk = line.startsWith('*** Add File:');
+      owed = line.startsWith('*** Add File:') ? Infinity : 0;
       continue;
     }
-    if (!inHunk && /^(index |\+\+\+ |--- )/.test(line)) continue;
+    if (line.startsWith('\\')) continue; // "\ No newline at end of file"
+    if (owed === 0 && /^(index |\+\+\+ |--- )/.test(line)) continue;
     if (line.startsWith('+')) ops.push({ type: 'add', text: line.slice(1) });
     else if (line.startsWith('-')) ops.push({ type: 'del', text: line.slice(1) });
     else ops.push({ type: 'ctx', text: line.startsWith(' ') ? line.slice(1) : line });
+    // A context line is one old line and one new one.
+    owed = Math.max(0, owed - (line.startsWith('+') || line.startsWith('-') ? 1 : 2));
   }
   return ops;
 }
