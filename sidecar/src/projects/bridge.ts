@@ -8,7 +8,14 @@ const id = z.string().min(1).max(200);
 const requestId = { requestId: id };
 const commandSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('projects.list') }).strict(),
-  z.object({ type: z.literal('project.create'), ...requestId, input: threadInputSchema }).strict(),
+  z
+    .object({
+      type: z.literal('project.create'),
+      ...requestId,
+      input: threadInputSchema,
+      clientRef: id.optional(),
+    })
+    .strict(),
   z
     .object({
       type: z.literal('project.pause'),
@@ -105,7 +112,11 @@ async function runCommand(
     let appSessionId: string | undefined;
     switch (command.type) {
       case 'project.create':
-        ({ projectId, appSessionId } = await projects.create(command.input, command.requestId));
+        ({ projectId, appSessionId } = await projects.create(
+          command.input,
+          command.requestId,
+          command.clientRef,
+        ));
         break;
       case 'project.pause':
         await projects.setPaused(command.projectId, command.paused, command.acknowledgeDelivery);

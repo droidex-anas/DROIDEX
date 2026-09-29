@@ -42,6 +42,7 @@ export interface ProjectPort {
   create(
     input: ThreadInput,
     bind: (session: SessionSummary) => Promise<void>,
+    clientRef?: string,
   ): Promise<SessionSummary | undefined>;
   deliver(
     appSessionId: string,
@@ -198,10 +199,13 @@ export class ProjectService {
     };
   }
 
-  /** Starts a project and its lead; the caller opens that conversation. */
+  /** Starts a project and its lead; the caller opens that conversation. A
+      window that started it from its composer passes its own clientRef, so the
+      lead arrives the way any chat it started does. */
   async create(
     input: ThreadInput,
     requestId?: string,
+    clientRef?: string,
   ): Promise<{ projectId: string; appSessionId?: string }> {
     this.requireOpen();
     const existing = requestId ? this.projects.get(requestId) : undefined;
@@ -215,7 +219,7 @@ export class ProjectService {
     const project = this.blankProject(input.title, requestId);
     this.projects.set(project.id, project);
     try {
-      const appSessionId = await this.launch(project, input);
+      const appSessionId = await this.launch(project, input, undefined, clientRef);
       return { projectId: project.id, appSessionId };
     } catch (error) {
       this.fail(project, error);
@@ -617,8 +621,13 @@ export class ProjectService {
   }
 
   /** Starts a lead, or with `spawn` a thread of the chat that asked for it. */
-  private launch(project: Project, input: ThreadInput, spawn?: SpawnUnderWay): Promise<string> {
-    const work = this.launchOnce(project, input, spawn);
+  private launch(
+    project: Project,
+    input: ThreadInput,
+    spawn?: SpawnUnderWay,
+    clientRef?: string,
+  ): Promise<string> {
+    const work = this.launchOnce(project, input, spawn, clientRef);
     this.launches.add(work);
     const release = () => {
       this.launches.delete(work);
@@ -631,6 +640,7 @@ export class ProjectService {
     project: Project,
     input: ThreadInput,
     spawn?: SpawnUnderWay,
+    clientRef?: string,
   ): Promise<string> {
     this.requireOpen();
     this.checkAdmission(project);
@@ -666,6 +676,7 @@ export class ProjectService {
           await this.save();
           if (!isCurrent()) throw new Error('Project launch was cancelled.');
         },
+        clientRef,
       );
       if (!session || !bound)
         throw new Error('The selected harness did not start this thread and reported no reason.');

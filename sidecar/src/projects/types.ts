@@ -122,7 +122,7 @@ export interface ProjectView {
 
 export type ProjectCommand =
   | { type: 'projects.list' }
-  | { type: 'project.create'; requestId: string; input: ThreadInput }
+  | { type: 'project.create'; requestId: string; input: ThreadInput; clientRef?: string }
   | {
       type: 'project.pause';
       requestId: string;

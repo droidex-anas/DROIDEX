@@ -38,10 +38,18 @@ function runtimeError(message: string | undefined): string {
   return message?.trim() ? message : 'The runtime is not reachable.';
 }
 
+/** Starts a project. A composer passes the clientRef it registered the prompt
+    under, so the lead opens the way any chat it starts does. */
 export async function createProject(
   input: ThreadInput,
+  clientRef?: string,
 ): Promise<{ projectId: string; appSessionId?: string }> {
-  const result = await send({ type: 'project.create', requestId: crypto.randomUUID(), input });
+  const result = await send({
+    type: 'project.create',
+    requestId: crypto.randomUUID(),
+    input,
+    ...(clientRef ? { clientRef } : {}),
+  });
   if (!result.projectId) throw new Error('The runtime did not identify the new project.');
   return {
     projectId: result.projectId,
