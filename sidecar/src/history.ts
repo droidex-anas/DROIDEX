@@ -259,6 +259,10 @@ export function loadSessionPage(
   };
 }
 
+export function sessionFilePath(providerSessionId: string): string | undefined {
+  return sessionIndex().get(providerSessionId);
+}
+
 export function sessionOrganizationId(providerSessionId: string): string | undefined {
   const path = sessionIndex().get(providerSessionId);
   if (!path) return undefined;

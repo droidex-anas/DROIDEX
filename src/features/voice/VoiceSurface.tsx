@@ -132,7 +132,6 @@ function VoiceSurfaceDialog({ voice }: { voice: Voice }) {
                 <MessageBody
                   text={line.text}
                   live={!line.final}
-                  autoPlayAppBlocks={false}
                   cacheId={`voice-${String(line.id)}`}
                 />
               </div>

@@ -1,5 +1,6 @@
 import type { TranscriptEvent } from '../types/bridge';
 import { composePrompt } from './composePrompt';
+import { promptWithSideChatReplies } from './sideChats';
 import { hasAppBlock, hasCompleteAppBlock, hasIncompleteAppBlock } from './appBlocks';
 
 // A persisted twin is emitted within moments of its live event. Same-content
@@ -12,19 +13,34 @@ function isOptimisticEcho(event: TranscriptEvent): boolean {
   return event.id.startsWith('seed-') || event.id.startsWith('local-');
 }
 
+// Replay splits attached side-chat answers off the text, and a prompt can be
+// only answers, so user prompts are compared with the answers put back.
+function userPromptTexts(events: TranscriptEvent[]): Set<string> {
+  const texts = new Set<string>();
+  for (const event of events) {
+    if (event.author !== 'user') continue;
+    const text = promptWithSideChatReplies(event.text ?? '', event.sideChatReplies ?? []);
+    if (text) texts.add(text);
+  }
+  return texts;
+}
+
 // An optimistic user echo stores raw input, while history persists the composed
 // prompt (raw text plus skill/file context). Match either representation.
-function echoMatchesPersisted(event: TranscriptEvent, persisted: Set<string | undefined>): boolean {
+function echoMatchesPersisted(event: TranscriptEvent, persisted: Set<string>): boolean {
   const rawText = event.text ?? '';
-  if (rawText && persisted.has(rawText)) return true;
   const files = event.files ?? [];
   // A prompt whose skills, plugins or apps reached the harness as structured
   // mentions persists with its words and files alone, so match that shape too.
   const shapes = [
+    rawText,
     composePrompt(rawText, event.skills ?? [], files),
     composePrompt(rawText, [], files),
   ];
-  return shapes.some((composed) => composed !== rawText && persisted.has(composed));
+  return shapes.some((shape) => {
+    const sent = promptWithSideChatReplies(shape, event.sideChatReplies ?? []);
+    return sent !== '' && persisted.has(sent);
+  });
 }
 
 function sessionKey(event: TranscriptEvent): string {
@@ -132,9 +148,7 @@ export function reconcilePrependedTranscript(
   existing: TranscriptEvent[],
   olderPage: TranscriptEvent[],
 ): TranscriptEvent[] {
-  const olderUserText = new Set(
-    olderPage.filter((event) => event.author === 'user' && event.text).map((event) => event.text),
-  );
+  const olderUserText = userPromptTexts(olderPage);
   const olderLastTs = olderPage.at(-1)?.ts ?? 0;
   const supersededEcho = (event: TranscriptEvent) =>
     isOptimisticEcho(event) &&
@@ -185,11 +199,7 @@ export function reconcileRestoredTranscript(
   }
   const authoritativePage = page.map((event) => liveReplacementByPageId.get(event.id) ?? event);
   const pageIds = new Set(authoritativePage.map((event) => event.id));
-  const pageUserText = new Set(
-    authoritativePage
-      .filter((event) => event.author === 'user' && event.text)
-      .map((event) => event.text),
-  );
+  const pageUserText = userPromptTexts(authoritativePage);
   const firstTs = authoritativePage[0]?.ts ?? 0;
   const lastTs = authoritativePage.at(-1)?.ts ?? 0;
   const supersededEcho = (event: TranscriptEvent) =>

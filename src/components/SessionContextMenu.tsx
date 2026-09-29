@@ -2,7 +2,7 @@ import { useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { motion } from 'framer-motion';
 import { Archive, FileText, Folder, Link2, Pencil, CircleCheck, RotateCcw } from 'lucide-react';
-import { Copy, Pin, PinOff } from '@droidex/icons';
+import { Copy, GitFork, Pin, PinOff } from '@droidex/icons';
 import { pushEscapeLayer } from './environment/usePopover';
 import { toast } from '../lib/toast';
 import { PROVIDER_LABELS, sessionResumeCommand } from '../features/providers/providerIdentity';
@@ -55,6 +55,9 @@ export interface SessionContextMenuProps {
   // Droid only: the id behind the Factory web link.
   providerSessionId?: string;
   onRename: () => void;
+  // Absent when the chat cannot be forked right now (a mission, or a turn in
+  // progress); the Fork row hides.
+  onFork?: () => void;
   onTogglePin: () => void;
   onArchive: () => void;
   onCopyMarkdown: () => void;
@@ -98,6 +101,7 @@ export function SessionContextMenuPanel({
   resumeSessionId,
   providerSessionId,
   onRename,
+  onFork,
   onTogglePin,
   onArchive,
   onCopyMarkdown,
@@ -163,7 +167,8 @@ export function SessionContextMenuPanel({
   // unclamped; the clamp applies on the client where a window exists.
   const viewportWidth = typeof window === 'undefined' ? undefined : window.innerWidth;
   const viewportHeight = typeof window === 'undefined' ? undefined : window.innerHeight;
-  const rowCount = 4 + (onToggleSettled ? 1 : 0) + (cwd ? 1 : 0) + (providerSessionId ? 2 : 0);
+  const rowCount =
+    4 + (onFork ? 1 : 0) + (onToggleSettled ? 1 : 0) + (cwd ? 1 : 0) + (providerSessionId ? 2 : 0);
   const estimatedMenuHeight = MENU_CHROME_PX + rowCount * MENU_ROW_PX;
   const left =
     viewportWidth === undefined
@@ -228,6 +233,20 @@ export function SessionContextMenuPanel({
         <Pencil className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
         Rename chat
       </button>
+      {onFork && (
+        <button
+          type="button"
+          role="menuitem"
+          onClick={() => {
+            onFork();
+            onClose();
+          }}
+          className={itemClass}
+        >
+          <GitFork className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
+          Fork chat
+        </button>
+      )}
       {onToggleSettled && (
         <button
           type="button"

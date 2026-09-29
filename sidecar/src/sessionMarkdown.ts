@@ -78,6 +78,15 @@ export function transcriptToMarkdown(events: TranscriptEvent[], meta: SessionMar
     ...(meta.cwd ? [`- **Directory:** \`${meta.cwd}\``] : []),
     `- **Exported:** ${exportedAt.toISOString()}`,
   ].join('\n');
-  const blocks = events.map(blockFor).filter((block): block is string => block !== null);
-  return [header, ...(meta.note ? [`> **Note:** ${meta.note}`] : []), ...blocks].join('\n\n');
+  return [header, ...(meta.note ? [`> **Note:** ${meta.note}`] : []), conversationMarkdown(events)]
+    .filter((block) => block !== '')
+    .join('\n\n');
+}
+
+// The conversation alone, without the export header.
+export function conversationMarkdown(events: TranscriptEvent[]): string {
+  return events
+    .map(blockFor)
+    .filter((block): block is string => block !== null)
+    .join('\n\n');
 }

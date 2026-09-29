@@ -166,7 +166,47 @@ function isServerEvent(value: unknown): value is ServerEvent {
         isOptionalString(value.previousVersion) &&
         isOptionalString(value.version)
       );
+    case 'droidproxy.report':
+      return isDroidProxyStatus(value.status);
+    case 'droidproxy.login.started':
+      return isDroidProxyProviderKey(value.provider);
+    case 'droidproxy.account.updated':
+      return (
+        isDroidProxyProviderKey(value.provider) &&
+        typeof value.id === 'string' &&
+        typeof value.enabled === 'boolean' &&
+        typeof value.ok === 'boolean' &&
+        isOptionalString(value.message)
+      );
+    case 'droidproxy.login.done':
+      return (
+        isDroidProxyProviderKey(value.provider) &&
+        typeof value.ok === 'boolean' &&
+        (value.cancelled === undefined || value.cancelled === true) &&
+        isOptionalString(value.message)
+      );
+    case 'droidproxy.install.progress':
+      return (
+        isDroidProxyInstallPhase(value.phase) &&
+        (value.receivedBytes === undefined || typeof value.receivedBytes === 'number') &&
+        (value.totalBytes === undefined || typeof value.totalBytes === 'number')
+      );
+    case 'droidproxy.install.done':
+      return (
+        typeof value.ok === 'boolean' &&
+        (value.cancelled === undefined || value.cancelled === true) &&
+        isOptionalString(value.message)
+      );
+    case 'droidproxy.factoryModels.applied':
+      return (
+        typeof value.ok === 'boolean' &&
+        typeof value.applied === 'number' &&
+        typeof value.removed === 'number' &&
+        isOptionalString(value.backupPath) &&
+        isOptionalString(value.message)
+      );
     case 'session.created':
+    case 'session.forked':
       return typeof value.clientRef === 'string' && isSessionSummary(value.session);
     case 'session.updated':
       return isSessionSummary(value.session);
@@ -343,7 +383,17 @@ function isSessionSummary(value: unknown): boolean {
     isOptionalString(value.interruptReason) &&
     isOptionalString(value.resumeId) &&
     isOptionalBoolean(value.fastMode) &&
-    isOptionalContextWindow(value.contextWindowTokens)
+    isOptionalContextWindow(value.contextWindowTokens) &&
+    (value.lineage === undefined || isSessionLineage(value.lineage))
+  );
+}
+
+function isSessionLineage(value: unknown): boolean {
+  return (
+    isRecord(value) &&
+    (value.kind === 'fork' || value.kind === 'side') &&
+    typeof value.sourceAppSessionId === 'string' &&
+    typeof value.forkedAt === 'number'
   );
 }
 
@@ -379,7 +429,9 @@ function isTranscriptEvent(value: unknown): boolean {
     (value.resetsAt === undefined || nonNegativeSafeInteger(value.resetsAt)) &&
     isOptionalString(value.pollsChildSessionId) &&
     (value.interrupted === undefined || value.interrupted === true) &&
-    (value.transient === undefined || value.transient === true)
+    (value.transient === undefined || value.transient === true) &&
+    isOptionalString(value.forkPointId) &&
+    (value.sideChatReplies === undefined || stringArray(value.sideChatReplies))
   );
 }
 
@@ -496,6 +548,67 @@ function isHarnessCliState(value: unknown): boolean {
     isOptionalString(value.version) &&
     typeof value.updating === 'boolean' &&
     isOptionalString(value.updateError)
+  );
+}
+function isDroidProxyProviderKey(value: unknown): boolean {
+  return (
+    value === 'claude' ||
+    value === 'codex' ||
+    value === 'antigravity' ||
+    value === 'kimi' ||
+    value === 'junie' ||
+    value === 'grok' ||
+    value === 'copilot' ||
+    value === 'meta'
+  );
+}
+function isDroidProxyInstallPhase(value: unknown): boolean {
+  return (
+    value === 'downloading' ||
+    value === 'verifying' ||
+    value === 'installing' ||
+    value === 'launching' ||
+    value === 'applying'
+  );
+}
+function isDroidProxyAccount(value: unknown): boolean {
+  return (
+    isRecord(value) &&
+    isDroidProxyProviderKey(value.provider) &&
+    isOptionalString(value.id) &&
+    isOptionalString(value.email) &&
+    isOptionalString(value.login) &&
+    isOptionalString(value.expired) &&
+    typeof value.disabled === 'boolean'
+  );
+}
+function isDroidProxyProviderState(value: unknown): boolean {
+  return (
+    isRecord(value) &&
+    isDroidProxyProviderKey(value.provider) &&
+    typeof value.enabled === 'boolean' &&
+    typeof value.canLoginHere === 'boolean' &&
+    Array.isArray(value.accounts) &&
+    value.accounts.every(isDroidProxyAccount)
+  );
+}
+function isDroidProxyStatus(value: unknown): boolean {
+  return (
+    isRecord(value) &&
+    typeof value.appInstalled === 'boolean' &&
+    typeof value.proxyRunning === 'boolean' &&
+    typeof value.backendRunning === 'boolean' &&
+    typeof value.loginBinaryAvailable === 'boolean' &&
+    (value.loginInProgress === undefined || isDroidProxyProviderKey(value.loginInProgress)) &&
+    (value.installInProgress === undefined || isDroidProxyInstallPhase(value.installInProgress)) &&
+    (value.installUnavailable === undefined ||
+      value.installUnavailable === 'unsupported-platform' ||
+      value.installUnavailable === 'unsupported-arch') &&
+    typeof value.metaContributorMode === 'boolean' &&
+    typeof value.factoryModelCount === 'number' &&
+    typeof value.factoryModelsInstalled === 'boolean' &&
+    Array.isArray(value.providers) &&
+    value.providers.every(isDroidProxyProviderState)
   );
 }
 

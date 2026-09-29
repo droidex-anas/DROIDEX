@@ -49,13 +49,11 @@ export function resetSettledMarkdownCacheForTest(): void {
 export function settledMarkdownFlags(options: {
   specMode: boolean;
   allowGeneratedContent: boolean;
-  autoPlayAppBlocks: boolean;
   cutOffAppBlocks: boolean;
 }): string {
   return [
     options.specMode ? 's' : 'c',
     options.allowGeneratedContent ? 'g' : '-',
-    options.autoPlayAppBlocks ? 'a' : '-',
     options.cutOffAppBlocks ? 'x' : '-',
   ].join('');
 }

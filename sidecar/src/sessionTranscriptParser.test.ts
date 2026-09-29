@@ -3,6 +3,8 @@ import assert from 'node:assert/strict';
 import { parseSessionLineEvents } from './sessionTranscriptParser.js';
 import type { TranscriptEvent } from './protocol.js';
 import { storedNoticeLine } from './sessionNotices.js';
+import { formatBranchPrompt } from './branchPrompt.js';
+import { formatSideChatPrompt } from './sideChatPrompt.js';
 
 function messageLine(opts: {
   role: string;
@@ -215,6 +217,33 @@ test('app-generation guidance replays as only the concise user command', () => {
   assert.doesNotMatch(events[0].text ?? '', /Private generation guidance/);
 });
 
+test('a side-chat question replays without its guidance, also when branched across harnesses', () => {
+  const question = 'Why does the chart dip on Wednesday?';
+  for (const text of [
+    formatSideChatPrompt(question),
+    formatBranchPrompt(formatSideChatPrompt(question), '**User:** /visualize coffee sales'),
+  ]) {
+    const line = JSON.parse(messageLine({ role: 'user', content: [{ type: 'text', text }] }));
+    const events = parseSessionLineEvents('app', 'provider', 'primary', line);
+    assert.equal(events.length, 1);
+    assert.equal(events[0].text, question);
+  }
+});
+
+test('a branch prompt replays as only its request, however long the copied conversation', () => {
+  const conversation = `**User:** earlier question\n\n**Assistant:** ${'long answer '.repeat(10_000)}`;
+  const line = JSON.parse(
+    messageLine({
+      role: 'user',
+      content: [{ type: 'text', text: formatBranchPrompt('Try it with Postgres', conversation) }],
+    }),
+  );
+
+  const events = parseSessionLineEvents('app', 'provider', 'primary', line);
+  assert.equal(events.length, 1);
+  assert.equal(events[0].text, 'Try it with Postgres');
+});
+
 test('internal skill notifications never replay as user-authored chat', () => {
   const line = JSON.parse(
     messageLine({
@@ -325,4 +354,25 @@ test('a mid-file compaction_state record replays as a divider event', () => {
       [original],
     );
   }
+});
+
+test('a prompt sent with side-chat answers replays as the words typed plus the answers', () => {
+  // The block as the renderer's promptWithSideChatReplies writes it.
+  const prompt = [
+    'Use this',
+    '',
+    '<side_chat_replies>',
+    'The user attached these answers from a side chat about this conversation.',
+    '<reply>',
+    'Sort by date first.',
+    '</reply>',
+    '<reply>',
+    'Then by name.',
+    '</reply>',
+    '</side_chat_replies>',
+  ].join('\n');
+  const line = JSON.parse(messageLine({ role: 'user', content: [{ type: 'text', text: prompt }] }));
+  const [event] = parseSessionLineEvents('app', 'provider', 'primary', line);
+  assert.equal(event?.text, 'Use this');
+  assert.deepEqual(event?.sideChatReplies, ['Sort by date first.', 'Then by name.']);
 });

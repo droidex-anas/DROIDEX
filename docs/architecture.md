@@ -103,7 +103,7 @@ promise of delivered speed. Codex 0.157.1 accepts and echoes both tier values.
 - `HistoryPersistence` is the sidecar-facing history seam. It keeps canonical live summary and child overlays immediately readable while persistence is pending.
 - `HistoryPersistenceQueue` retains transcript metadata losslessly, collapses pending summaries and child records by stable identity, and enforces explicit row and byte ceilings.
 - Ordinary writes flush on a short debounce or batch limit with SQLite WAL `synchronous=NORMAL`. Reconciliation drains pending transactions for read consistency without forcing a durability checkpoint. Session creation, turn settlement, provider replacement, compaction, child settlement, unregister, and shutdown additionally force a `synchronous=FULL` WAL checkpoint before the corresponding completed state is published. These boundaries await worker replies without blocking the orchestration event loop; owners revalidate the captured session or turn before applying the result.
-- App-owned provider transcripts serialize appends through an asynchronous file-write queue, one per file. A line that fails is reported to the caller that wrote it and is lost; the lines after it are still written, and the head line is retried until a line lands. Turn settlement and close wait for the queue and for every child file, and reject only when the message they closed could not be written. No transcript file or extra worker is opened at session construction.
+- App-owned provider transcripts serialize appends through an asynchronous file-write queue, one per file. A line that fails is reported to the caller that wrote it and is lost; the lines after it are still written, and the head line is retried until a line lands. Turn settlement and close wait for the queue and for every child file, and reject only when the message they closed could not be written. No transcript file or extra worker is opened at session construction. A fork of an open chat reads the source file through the same queue, so the copy holds every line queued before it and none written half-way.
 - One writer worker thread owns the SQLite connection and executes each batch inside one `BEGIN IMMEDIATE` transaction. A transactional writer-generation lease rejects work from a timed-out worker after its replacement starts, so late termination cannot overwrite recovered state or cross a durability checkpoint. Failed transactions roll back completely, the queue retains the batch, and the supervised client recreates a failed worker with bounded exponential retry. Live output continues while bounded queue capacity remains; durability boundaries fail visibly until recovery.
 - A separate index worker owns provider-file tree reconciliation, targeted watcher reconciliation, search-text extraction, and SQLite FTS5 updates. It returns revisioned cache deltas; a missed delta triggers an authoritative snapshot before the sidecar changes its in-memory historical summaries or provider-path index. The orchestration thread never walks the provider-file tree or rebuilds the derived cache; explicit history page loads still parse only the indexed provider paths needed for that page. The first session list and a post-close list publish only after their reconciliation result is applied.
 - Full-text content indexing is incremental and restartable. Each transaction advances a persisted byte cursor and indexed-tail fingerprint, so appends index only new JSONL records and a restart resumes at the last committed boundary. File replacement, truncation, or a changed indexed tail rebuilds only that provider's derived rows; deletion removes rows through an indexed provider-to-row mapping.
@@ -153,6 +153,7 @@ promise of delivered speed. Codex 0.157.1 accepts and echoes both tier values.
 - Claude result usage supplies the main conversation model's effective capacity. Capacity belongs to the chat, so two chats on one model can report different limits and a limit-only update still publishes. Codex has no context-window selector in this contract.
 - The default model and effort for new chats are app-owned, one per harness, stored in renderer preferences. Unset fields fall through to the harness's own default; the CLI and SDK settings are never modified.
 - The Droid model catalog is the `availableModels` list a Droid session reports on init: the account's live catalog, Auto and Factory-hosted models included. `droid exec --help` lags it and only stands in until a session reports, so when no session has, the sidecar opens one catalog session to read it. `DroidModelCatalog` caches the result per CLI path in `~/.factory/droidex/model-catalog.json`, and every created or resumed Droid session refreshes it.
+- DroidProxy setup runs on demand from Settings. The sidecar verifies and quarantines the downloaded macOS app, applies enabled proxy models through an atomic Factory settings write with a unique backup, invalidates the prior session model catalog, and opens a fresh catalog session for the picker. Provider status checks run on request and when DROIDEX regains focus; there is no background poller. Launch resolves the app serving port 8317 so duplicate installations do not open the wrong copy.
 - Child sessions report their confirmed effective autonomy only while their runtime is live. It is read from the provider init result, never persisted, and never inherited from the parent; historical or unopened children report none and the renderer labels them provider managed.
 
 ### Harness CLI updates
@@ -225,6 +226,57 @@ scroll with `ConversationListHandle.scrollToRow`. Match counts say "in loaded
 history" when older pages remain on disk, and find offers to load them instead
 of reporting a silent miss. Find does not raise overscan or remount the
 transcript.
+
+### Inline visualizations
+
+`/visualize` generates complete `app` fences. Completed fences render
+directly in the conversation, including restored history; incomplete source
+never executes. The conversation virtualizer owns their lifetime, so controls
+reset when a visualization is unmounted and later revisited.
+Failed Apps in the primary chat offer Auto-fix. A click sends
+`session.repairApp` with the exact source and runtime error, without changing
+the composer draft. The sidecar places the source in the private App guidance,
+so the chat and restored history show only the short request and its error.
+The action waits for the git baseline, then rechecks the session, runtime, and
+busy state before sending; read-only transcripts do not expose the action.
+
+Each visualization runs in an opaque-origin `allow-scripts` iframe. CSP allows
+Google Fonts stylesheets (`fonts.googleapis.com`) and fonts (`fonts.gstatic.com`),
+plus scripts, styles, fonts, images, and component asset fetches from
+`cdn.jsdelivr.net` and `cdnjs.cloudflare.com`. These external requests expose
+normal network metadata to those providers; generation guidance forbids sending
+private chat data and asks for pinned versions and offline fallbacks.
+Other subresource destinations, workers, nested frames, plugins, and form
+submissions remain blocked. The iframe has no parent-document, storage, Node.js,
+or Electron access. Its transparent document supports separate diagrams, cards,
+and controls without an enclosing host surface. Content measurements resize the
+frame in both directions.
+The host fits content to the frame width without help from the App: an SVG
+with numeric `width`/`height` and no `viewBox` gets a matching `viewBox` so it
+scales instead of cropping, and content wider than the frame is scaled down
+with CSS `zoom` (to a 0.7 floor, past which the frame scrolls sideways).
+A hover or focus control opens the visualization full screen. The same frame
+node moves into the top layer as a `popover` (moving the node would reload the
+App, and transformed transcript rows break `position: fixed`), while its row
+keeps the inline height. Escape, the close button, or a backdrop click returns
+it inline; Escape inside the frame reaches the host as `droidex:escape` unless
+the App prevented it.
+The iframe and document share a color scheme to prevent Chromium from painting
+an opaque background; theme changes update CSS variables without reloading.
+
+The local `window.droidex` toolkit provides `renderMath`, `renderAllMath`, a
+read-only live `theme`, and `createCanvas(target, draw)`. The canvas helper
+handles CSS sizing, pixel density (capped at 2), resize/theme redraws, and
+cleanup. Its callback receives `{ context, width, height, pixelRatio, theme }`
+in CSS-pixel coordinates; the returned `redraw()` and `dispose()` handle data
+changes and removal. Custom drawings can listen for `droidex:themechange`.
+Math uses the host's local KaTeX renderer and returns MathML, without external
+fonts or scripts. Generation guidance includes pinned Chart.js, ECharts, D3,
+and Mermaid entry points, their sizing and cleanup requirements, and CSP
+constraints. Apps load these libraries on demand from the approved CDNs rather
+than accessing the renderer's modules. Library-owned canvases must not also
+use `createCanvas`.
+Generation guidance and examples live in `sidecar/src/appPrompt.ts`.
 
 ### Electron main gauges
 

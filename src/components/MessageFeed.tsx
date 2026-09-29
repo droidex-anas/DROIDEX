@@ -34,15 +34,15 @@ import { WorktreeCreatedCard } from './WorktreeCreatedCard';
 import {
   appendedFeedItemKeysFromProjection,
   isCopyableFinalResponse,
+  forkOffer,
+  lastInheritedItemIndex,
   projectFinalResponseKeys,
-  rememberFreshAppResponses,
   type FinalResponseKeyState,
-  type FreshAppResponseState,
 } from './messageFeedState';
 import { buildFeed, isCompactingStatus, isSettingsStatus, type FeedItem } from './chatFeed';
 import { groupTurns, tailTimestamp, trailingSubagentPoll } from './chatFeedTurns';
 import { isSpecEcho } from './chat';
-import { WorkingIndicator } from './transcript/primitives';
+import { ForkedFromDivider, WorkingIndicator } from './transcript/primitives';
 import type { AgentMonitorData } from './agents/AgentMonitorCard';
 
 /* ── Collapsed spec card shown inline in chat (chevron to expand) ── */
@@ -119,6 +119,9 @@ export function MessageFeed({
   onOpenAgent,
   childSessionActivity,
   agentMonitor,
+  onFork,
+  forking = false,
+  forkedFrom,
   specContent,
   onOpenSpecWiki,
   createdWorktreePath,
@@ -144,6 +147,12 @@ export function MessageFeed({
   // When set (normal chat sessions only), the per-spawn child session lines are
   // replaced by one agent monitor card at the first spawn's position.
   agentMonitor?: AgentMonitorData;
+  // Offered under final responses once the chat is idle. The latest forks the
+  // whole conversation; an earlier one forks through itself at its point.
+  onFork?: (forkPointId?: string) => void;
+  forking?: boolean;
+  // Set on a forked chat: a divider marks where its inherited history ends.
+  forkedFrom?: { forkedAt: number; onOpenSource: () => void };
   specContent?: string;
   onOpenSpecWiki?: () => void;
   createdWorktreePath?: string;
@@ -173,10 +182,10 @@ export function MessageFeed({
   // unchanged items instead of re-rendering the whole feed on every token. Keep
   // them undefined when the parent supplies no handler, so absent affordances
   // (e.g. non-clickable diffs in the chat feed) stay absent.
-  const cbRef = useRef({ onOpenDiff, onOpenReviewFile, onOpenChildSession, onOpenAgent });
+  const cbRef = useRef({ onOpenDiff, onOpenReviewFile, onOpenChildSession, onOpenAgent, onFork });
   useLayoutEffect(() => {
-    cbRef.current = { onOpenDiff, onOpenReviewFile, onOpenChildSession, onOpenAgent };
-  }, [onOpenDiff, onOpenReviewFile, onOpenChildSession, onOpenAgent]);
+    cbRef.current = { onOpenDiff, onOpenReviewFile, onOpenChildSession, onOpenAgent, onFork };
+  }, [onOpenDiff, onOpenReviewFile, onOpenChildSession, onOpenAgent, onFork]);
   const callbacks = useMemo(
     () => ({
       onOpenDiff: (change: FileChange) => cbRef.current.onOpenDiff?.(change),
@@ -185,6 +194,7 @@ export function MessageFeed({
       onOpenChildSession: (target: ChildSessionTarget) =>
         cbRef.current.onOpenChildSession?.(target),
       onOpenAgent: (child: ChildSessionSummary) => cbRef.current.onOpenAgent?.(child),
+      onFork: (forkPointId?: string) => cbRef.current.onFork?.(forkPointId),
     }),
     [],
   );
@@ -209,15 +219,6 @@ export function MessageFeed({
     [providedItems, events, pending, rich, changes, specContent, dockEnabled],
   );
   const feedIdentity = `${events[0]?.appSessionId ?? ''}:${events[0]?.sourceSessionId ?? ''}`;
-  const freshAppResponsesRef = useRef<FreshAppResponseState | null>(null);
-  const freshAppResponseState = useMemo(
-    () => rememberFreshAppResponses(freshAppResponsesRef.current, feedIdentity, items, pending),
-    [feedIdentity, items, pending],
-  );
-  useEffect(() => {
-    freshAppResponsesRef.current = freshAppResponseState;
-  }, [freshAppResponseState]);
-  const freshAppResponseTexts = freshAppResponseState.texts;
   const renderedFeedRef = useRef<{ identity: string; items: FeedItem[] } | null>(null);
   const previousFeed = renderedFeedRef.current;
   useEffect(() => {
@@ -256,6 +257,7 @@ export function MessageFeed({
   const worktreeInsertAfter = createdWorktreePath
     ? items.findIndex((item) => item.type === 'message' && item.event.author === 'user')
     : -1;
+  const forkDividerAfter = forkedFrom ? lastInheritedItemIndex(items, forkedFrom.forkedAt) : -1;
 
   const lastIdx = items.length - 1;
   // Empty feeds are real (a fresh session), so the tail is genuinely optional.
@@ -355,40 +357,46 @@ export function MessageFeed({
           initialScrollOffset={initialScrollOffset}
           onMountedRowsChange={onMountedRowsChange}
         >
-          {(item, index) => (
-            <>
-              <FeedRow
-                item={item}
-                animateOnMount={shouldAnimateFeedRow(item, animateKeys, enteredKeys)}
-                onEnter={recordEntrance}
-                live={pending && index === lastIdx && !subagentPoll}
-                autoPlayAppBlocks={
-                  item.type === 'message' &&
-                  item.event.author !== 'user' &&
-                  freshAppResponseTexts.has(item.event.text ?? '')
-                }
-                sessionLive={pending}
-                compacting={compacting && index === lastIdx}
-                cwd={cwd}
-                onOpenDiff={onOpenDiff ? callbacks.onOpenDiff : undefined}
-                onOpenReviewFile={stableOnOpenReviewFile}
-                onOpenChildSession={rich ? callbacks.onOpenChildSession : undefined}
-                onOpenAgent={onOpenAgent ? callbacks.onOpenAgent : undefined}
-                childSessionActivity={childSessionActivity}
-                agentMonitor={agentMonitor}
-                liveTiming={rich}
-                specContent={specContent}
-                density={density}
-                inlineDiffs={inlineDiffs}
-                isFinalResponse={isCopyableFinalResponse(item.key, finalResponseState, pending)}
-              />
-              {index === worktreeInsertAfter && createdWorktreePath ? (
-                <div className="mx-auto min-w-0 max-w-2xl">
-                  <WorktreeCreatedCard path={createdWorktreePath} />
-                </div>
-              ) : null}
-            </>
-          )}
+          {(item, index) => {
+            const fork = pending || !onFork ? undefined : forkOffer(item, finalResponseState);
+            return (
+              <>
+                <FeedRow
+                  item={item}
+                  animateOnMount={shouldAnimateFeedRow(item, animateKeys, enteredKeys)}
+                  onEnter={recordEntrance}
+                  live={pending && index === lastIdx && !subagentPoll}
+                  sessionLive={pending}
+                  compacting={compacting && index === lastIdx}
+                  cwd={cwd}
+                  onOpenDiff={onOpenDiff ? callbacks.onOpenDiff : undefined}
+                  onOpenReviewFile={stableOnOpenReviewFile}
+                  onOpenChildSession={rich ? callbacks.onOpenChildSession : undefined}
+                  onOpenAgent={onOpenAgent ? callbacks.onOpenAgent : undefined}
+                  childSessionActivity={childSessionActivity}
+                  agentMonitor={agentMonitor}
+                  liveTiming={rich}
+                  specContent={specContent}
+                  density={density}
+                  inlineDiffs={inlineDiffs}
+                  isFinalResponse={isCopyableFinalResponse(item.key, finalResponseState, pending)}
+                  onFork={fork ? callbacks.onFork : undefined}
+                  forkPointId={fork?.forkPointId}
+                  forking={fork ? forking : undefined}
+                />
+                {index === worktreeInsertAfter && createdWorktreePath ? (
+                  <div className="mx-auto min-w-0 max-w-2xl">
+                    <WorktreeCreatedCard path={createdWorktreePath} />
+                  </div>
+                ) : null}
+                {index === forkDividerAfter && forkedFrom ? (
+                  <div className="mx-auto min-w-0 max-w-2xl">
+                    <ForkedFromDivider onOpenSource={forkedFrom.onOpenSource} />
+                  </div>
+                ) : null}
+              </>
+            );
+          }}
         </ConversationList>
 
         {showWorking && (

@@ -89,6 +89,7 @@ export function ingestTranscriptEvents(
         textDelta.previous,
         textDelta.text,
         event.endTs ?? event.ts,
+        event.forkPointId,
       );
       events = replaceChunkedSequenceAt(events, changedIndex, mergedTail);
       indexes = replaceIndexedEvent(indexes, textDelta.previous, mergedTail);

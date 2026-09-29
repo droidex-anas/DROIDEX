@@ -55,10 +55,23 @@ import { join } from 'node:path';
 // entry by construction. Everything a conversation shows stays lazy: the full
 // surface, the mini bar, the composer's orb and controls, the settings sheet
 // and the chimes all load with the first conversation. The merged ~1_365_300
-// leaves the usual ~9KB of headroom.
+// left ~9KB of headroom before DroidProxy was merged.
+//
+// Raised from 1_375_000 to 1_390_000 for the DroidProxy provider marks in the
+// composer and picker, plus bridge validation. The settings page stays lazy.
+// The merged entry is ~1_381_450 bytes, leaving ~8.5KB of headroom.
+//
+// Raised from 1_390_000 to 1_407_000 for session forks and side chats: the
+// entry gains ~17KB for the fork and side-chat store cases, `/side` and `/btw`
+// in the composer, the response action row, the sidebar's Fork chat item, the
+// forked-from divider, and `session.forked` validation. The side-chat panes and
+// floating window stay lazy. The merged ~1_398_100 leaves ~9KB of headroom.
+//
+// initialCssBytes raised from 100_000 to 101_500 on the same change: side chats
+// add ~0.8KB of utility classes, and the merged ~100_650 leaves ~0.85KB.
 const BUDGETS = {
-  initialRendererJsBytes: 1_375_000,
-  initialCssBytes: 100_000,
+  initialRendererJsBytes: 1_407_000,
+  initialCssBytes: 101_500,
   largestLazyChunkBytes: 700_000,
   duplicatePackageMaxBytes: 120_000,
 };

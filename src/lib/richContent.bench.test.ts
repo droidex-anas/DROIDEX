@@ -148,7 +148,6 @@ test('first-render cost of settled rich content stays in a snappy band', () => {
         createElement(MessageBody, {
           text: mixed,
           live: false,
-          autoPlayAppBlocks: false,
           cacheId: 'bench',
         }),
       );

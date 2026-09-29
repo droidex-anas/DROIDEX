@@ -220,10 +220,13 @@ function mergeStreamingDelta(
 ): TranscriptEvent | null {
   if (!sameDeltaRun(previous, next)) return null;
   if (isTextDelta(previous) && isTextDelta(next) && previous.kind === next.kind) {
+    // A run can span two Droid messages; the later one is where it ends.
+    const forkPointId = next.forkPointId ?? previous.forkPointId;
     return {
       ...previous,
       text: (previous.text ?? '') + (next.text ?? ''),
       endTs: next.endTs ?? next.ts,
+      ...(forkPointId ? { forkPointId } : {}),
     };
   }
   if (isToolCallDelta(previous) && isToolCallDelta(next) && previous.toolUseId === next.toolUseId) {

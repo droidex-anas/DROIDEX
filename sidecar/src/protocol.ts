@@ -126,11 +126,22 @@ export interface ChildSessionSummary {
   queued?: boolean;
 }
 
+// Where a session was copied from. A fork is a top-level chat of its own; a
+// side chat stays attached to its source and is never a sidebar row. Events
+// before `forkedAt` (epoch ms) are the source conversation the copy inherited.
+export interface SessionLineage {
+  kind: 'fork' | 'side';
+  sourceAppSessionId: string;
+  forkedAt: number;
+}
+
 export interface SessionSummary {
   appSessionId: string;
   providerSessionId?: string;
   compactedFromProviderSessionIds?: string[];
   missionId?: string;
+  // Fixed when the session is copied from another; absent for an original.
+  lineage?: SessionLineage;
   // Agent runtime this session is bound to, fixed at creation.
   provider: ProviderKind;
   // Provider-owned handle for resuming this conversation, when the provider
@@ -202,6 +213,9 @@ export interface TranscriptEvent {
   // so restored history never reorders. Live events omit it (they are newest).
   seq?: number;
   endTs?: number;
+  // Provider-native position a fork can branch from: the Droid message id, the
+  // Codex turn id, or the Claude prompt uuid of the turn that produced the event.
+  forkPointId?: string;
   kind: 'text' | 'thinking' | 'tool_call' | 'tool_result' | 'error' | 'status' | 'compaction';
   text?: string;
   toolName?: string;
@@ -224,6 +238,8 @@ export interface TranscriptEvent {
   skills?: string[];
   files?: string[];
   browserRefs?: BrowserTranscriptReference[];
+  // Side-chat answers the user attached to this prompt.
+  sideChatReplies?: string[];
   steered?: boolean;
   // Set on a row whose text was said out loud in a voice conversation.
   spoken?: boolean;
@@ -345,6 +361,68 @@ export type HarnessCliState =
       // Why the last update from the app failed; cleared by a successful one.
       updateError?: string;
     };
+// OAuth subscription providers the DroidProxy settings page can report on.
+// Mirrors DroidProxy's provider set, not DROIDEX's harness set.
+export type DroidProxyProviderKey =
+  | 'claude'
+  | 'codex'
+  | 'antigravity'
+  | 'kimi'
+  | 'junie'
+  | 'grok'
+  | 'copilot'
+  | 'meta';
+// One connected OAuth account. Metadata only: emails, expiry, and flags.
+// Tokens and keys never cross the bridge.
+// One-click install pipeline stages, in order.
+export type DroidProxyInstallPhase =
+  | 'downloading'
+  | 'verifying'
+  | 'installing'
+  | 'launching'
+  | 'applying';
+export interface DroidProxyAccount {
+  provider: DroidProxyProviderKey;
+  // Auth-file name for accounts whose enabled state can be edited here.
+  id?: string;
+  email?: string;
+  login?: string;
+  // ISO timestamp when the stored credential expires, if the auth file says.
+  expired?: string;
+  disabled: boolean;
+}
+export interface DroidProxyProviderState {
+  provider: DroidProxyProviderKey;
+  // DroidProxy's own per-provider toggle, read from its preferences.
+  enabled: boolean;
+  // Whether DROIDEX can run this provider's browser login itself.
+  canLoginHere: boolean;
+  accounts: DroidProxyAccount[];
+}
+export interface DroidProxyStatus {
+  appInstalled: boolean;
+  // localhost:8317, the endpoint Factory models point at.
+  proxyRunning: boolean;
+  // 127.0.0.1:8318, DroidProxy's OAuth backend.
+  backendRunning: boolean;
+  loginBinaryAvailable: boolean;
+  // Provider with an assisted login in flight, so a remounted settings page
+  // can restore its waiting state instead of offering a dead Connect.
+  loginInProgress?: DroidProxyProviderKey;
+  // Install pipeline stage in flight, so a remounted page restores progress
+  // instead of offering Install over a running download.
+  installInProgress?: DroidProxyInstallPhase;
+  // Why one-click install is off the table on this machine, if it is: the
+  // releases ship Apple Silicon macOS builds only.
+  installUnavailable?: 'unsupported-platform' | 'unsupported-arch';
+  // DroidProxy's Meta contributor-mode flag: picks the Muse Spark variant.
+  metaContributorMode: boolean;
+  // Enabled catalog size: how many entries Apply writes.
+  factoryModelCount: number;
+  // Whether the proxy catalog is merged into Factory custom models.
+  factoryModelsInstalled: boolean;
+  providers: DroidProxyProviderState[];
+}
 
 export interface FactoryDefaultSettings {
   modelId?: string;
@@ -678,6 +756,19 @@ export type ClientCommand =
   | { type: 'cli.update'; channel?: InstallChannel }
   | { type: 'harness.cli.check' }
   | { type: 'harness.cli.update'; provider: HarnessCliProvider }
+  | { type: 'droidproxy.status' }
+  | { type: 'droidproxy.launch' }
+  | { type: 'droidproxy.login'; provider: DroidProxyProviderKey }
+  | { type: 'droidproxy.login.cancel' }
+  | {
+      type: 'droidproxy.account.setEnabled';
+      provider: DroidProxyProviderKey;
+      id: string;
+      enabled: boolean;
+    }
+  | { type: 'droidproxy.install' }
+  | { type: 'droidproxy.install.cancel' }
+  | { type: 'droidproxy.factoryModels.apply' }
   | { type: 'catalog.models' }
   | { type: 'provider.refresh' }
   | { type: 'catalog.tools'; providerSessionId?: string }
@@ -724,6 +815,7 @@ export type ClientCommand =
       mentions?: ProviderMention[];
       responseFormat?: ResponseFormat;
     }
+  | { type: 'session.repairApp'; appSessionId: string; error: string; source: string }
   | { type: 'session.resume'; appSessionId: string }
   | { type: 'session.interrupt'; appSessionId: string }
   | {
@@ -754,7 +846,26 @@ export type ClientCommand =
       interactionMode?: SessionInteractionMode;
     }
   | { type: 'session.compact'; appSessionId: string; customInstructions?: string }
-  | { type: 'session.fork'; appSessionId: string }
+  | {
+      // Copies a session into a new one, answered with this clientRef. On the
+      // source's provider the conversation is copied and the answer is
+      // `session.forked`, then `prompt` (if any) is sent to the copy. Another
+      // provider cannot copy it, nor can a side chat copy a turn in progress,
+      // so then a new session opens on the source transcript plus `prompt`,
+      // answered by `session.created` like any create. A fork of a streaming
+      // session fails. `forkPointId` (an answer's) cuts a native copy after
+      // that answer; without it the whole conversation is copied.
+      type: 'session.fork';
+      clientRef: string;
+      appSessionId: string;
+      lineage: SessionLineage['kind'];
+      title: string;
+      forkPointId?: string;
+      prompt?: string;
+      provider?: ProviderKind;
+      modelId?: string;
+      reasoningEffort?: ReasoningEffort;
+    }
   | { type: 'session.rename'; appSessionId: string; title: string }
   | {
       // Full-transcript Markdown export ("Copy as Markdown"). `title` is the
@@ -974,7 +1085,46 @@ export type ServerEvent =
       previousVersion?: string;
       version?: string;
     }
+  | { type: 'droidproxy.report'; status: DroidProxyStatus }
+  | { type: 'droidproxy.login.started'; provider: DroidProxyProviderKey }
+  | {
+      type: 'droidproxy.account.updated';
+      provider: DroidProxyProviderKey;
+      id: string;
+      enabled: boolean;
+      ok: boolean;
+      message?: string;
+    }
+  | {
+      type: 'droidproxy.login.done';
+      provider: DroidProxyProviderKey;
+      ok: boolean;
+      cancelled?: boolean;
+      message?: string;
+    }
+  | {
+      type: 'droidproxy.install.progress';
+      phase: DroidProxyInstallPhase;
+      receivedBytes?: number;
+      totalBytes?: number;
+    }
+  | {
+      type: 'droidproxy.install.done';
+      ok: boolean;
+      cancelled?: boolean;
+      message?: string;
+    }
+  | {
+      type: 'droidproxy.factoryModels.applied';
+      ok: boolean;
+      applied: number;
+      removed: number;
+      backupPath?: string;
+      message?: string;
+    }
   | { type: 'session.created'; clientRef: string; session: SessionSummary }
+  // A copied session, stored and closed; its first send resumes it.
+  | { type: 'session.forked'; clientRef: string; session: SessionSummary }
   | { type: 'session.model_update_applied'; appSessionId: string; requestId: string }
   | { type: 'session.updated'; session: SessionSummary }
   | { type: 'session.closed'; appSessionId: string }
@@ -1087,7 +1237,7 @@ export type ServerEvent =
   | { type: 'browser.closed'; appSessionId: string }
   | { type: 'browser.error'; appSessionId?: string; message: string };
 
-export const BRIDGE_PROTOCOL_VERSION = 4 as const;
+export const BRIDGE_PROTOCOL_VERSION = 5 as const;
 
 export interface SequencedServerEvent {
   seq: number;

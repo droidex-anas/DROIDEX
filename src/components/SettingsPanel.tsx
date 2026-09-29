@@ -9,6 +9,7 @@ import type {
   DiffViewMode,
   LiveEnterBehavior,
   ModelSelectorStyle,
+  SideChatDefaultPlacement,
 } from '../hooks/persistedUiPreferences';
 import { ChevronLeft, ChevronDown, Search, Check, X, Plus } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
@@ -23,6 +24,7 @@ import { hasActiveSessionWork } from '../lib/sessions';
 import { applyTheme } from '../lib/theme';
 import { AppearanceSection } from './AppearanceSettings';
 import { DiagnosticsSettings } from './DiagnosticsSettings';
+import { DroidProxySettings } from './DroidProxySettings';
 import { KeyboardShortcutsSettings } from './KeyboardShortcutsSettings';
 import { McpServersSettings } from './McpServersSettings';
 import { NotificationsSettings } from './NotificationsSettings';
@@ -61,7 +63,12 @@ const NAV: { group: string; items: NavItem[] }[] = [
   },
   {
     group: 'Integrations',
-    items: [{ label: 'Snapshots' }, { label: 'MCP servers' }, { label: 'Browser' }],
+    items: [
+      { label: 'Snapshots' },
+      { label: 'MCP servers' },
+      { label: 'Browser' },
+      { label: 'DroidProxy' },
+    ],
   },
   {
     group: 'Coding',
@@ -788,6 +795,7 @@ function ConfigurationSection() {
   const dispatch = useStoreDispatch();
   const defaultAutonomy = useStoreSelector((state) => state.defaultAutonomy);
   const modelSelectorStyle = useStoreSelector((state) => state.modelSelectorStyle);
+  const sideChatPlacement = useStoreSelector((state) => state.sideChatDefaultPlacement);
   return (
     <div className="max-w-2xl mx-auto">
       <SectionTitle title="Configuration" />
@@ -830,6 +838,26 @@ function ConfigurationSection() {
             placement="down"
             onSelect={(level) => {
               dispatch({ type: 'SET_DEFAULT_AUTONOMY', autonomy: level });
+            }}
+          />
+        </SettingRow>
+        <SettingRow
+          label="Side chats open in"
+          description="Where /btw and /side open a new side chat: the side pane beside the chat, or a popup window over it. Either can be moved once it is open."
+        >
+          <Dropdown
+            ariaLabel="Side chats open in"
+            value={sideChatPlacement}
+            width="w-44"
+            options={[
+              { value: 'docked', label: 'Side pane' },
+              { value: 'floating', label: 'Popup window' },
+            ]}
+            onChange={(placement) => {
+              dispatch({
+                type: 'SET_SIDE_CHAT_DEFAULT_PLACEMENT',
+                placement: placement as SideChatDefaultPlacement,
+              });
             }}
           />
         </SettingRow>
@@ -964,6 +992,9 @@ export default function SettingsPanel() {
       break;
     case 'MCP servers':
       content = <McpServersSettings cwd={mcpCwd} />;
+      break;
+    case 'DroidProxy':
+      content = <DroidProxySettings />;
       break;
     case 'Keyboard shortcuts':
       content = <KeyboardShortcutsSettings />;

@@ -241,6 +241,7 @@ function createHarness(ordinarySummaries: SessionSummary[] = []) {
     hasActiveSettingsChanges: () => false,
     waitForSettingsMutations: () => waitForSettings(),
     applyPendingSettingsToSummary: (item) => ({ ...item, ...projection }),
+    recordLineage: () => undefined,
     applyPendingSessionSettings: (appSessionId) => applyPending(appSessionId),
     runPrimaryTurn: async (live, { prompt, delivery }) => {
       if (delivery && !delivery.isCurrent()) return;
@@ -1718,6 +1719,9 @@ test('a context switch waits for the turn and resumes the same chat before queue
     create: async () => {
       throw new Error('unexpected create');
     },
+    fork: async () => {
+      throw new Error('unexpected fork');
+    },
     resume: async (id, input) => {
       assert.equal(id, 'context-switch');
       assert.equal(input.contextWindowTokens, 200000);
@@ -1794,6 +1798,9 @@ test('a context switch waits for the turn and resumes the same chat before queue
     create: async () => {
       throw new Error('unexpected create');
     },
+    fork: async () => {
+      throw new Error('unexpected fork');
+    },
     resume: async (id) => {
       await resuming;
       return {
@@ -1842,6 +1849,9 @@ test('a context switch waits for the turn and resumes the same chat before queue
     kind: 'claude',
     create: async () => {
       throw new Error('unexpected create');
+    },
+    fork: async () => {
+      throw new Error('unexpected fork');
     },
     resume: async (id) => {
       await resumingAgain;

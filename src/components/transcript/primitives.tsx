@@ -1,6 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
-import { AudioLines, Check, ChevronRight, FoldVertical, Info } from 'lucide-react';
-import { Copy } from '@droidex/icons';
+import { AudioLines, ChevronRight, FoldVertical, GitFork, Info } from 'lucide-react';
 import { useDocumentVisible } from '../../hooks/useDocumentVisible';
 import { formatDuration } from '../../lib/tools';
 import { openExternal } from '../../lib/onboarding';
@@ -96,7 +95,9 @@ export function ToolPanel({
   );
 }
 
-function CopyButton({ text }: { text: string }) {
+// Writes text to the clipboard and reports `copied` for a short beat so the
+// control can show a check mark.
+export function useCopiedFlash(): { copied: boolean; copy: (text: string) => void } {
   const [copied, setCopied] = useState(false);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(
@@ -105,33 +106,22 @@ function CopyButton({ text }: { text: string }) {
     },
     [],
   );
-  return (
-    <button
-      onClick={(e) => {
-        e.stopPropagation();
-        void navigator.clipboard.writeText(text).then(
-          () => {
-            setCopied(true);
-            if (timer.current) clearTimeout(timer.current);
-            timer.current = setTimeout(() => {
-              timer.current = null;
-              setCopied(false);
-            }, 1200);
-          },
-          (error: unknown) => {
-            console.warn('Copy failed', error);
-          },
-        );
-      }}
-      title="Copy"
-      aria-label="Copy"
-      // A 16px box fits the gap between rows, so it never overlaps the card
-      // below; the invisible ::after pad keeps the click target generous.
-      className="relative flex h-4 w-4 shrink-0 items-center justify-center rounded text-droid-text-muted transition-colors after:absolute after:-inset-1.5 after:content-[''] hover:bg-droid-elevated/60 hover:text-droid-text focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-droid-accent/60"
-    >
-      {copied ? <Check className="h-3 w-3" /> : <Copy className="h-3 w-3" />}
-    </button>
-  );
+  const copy = (text: string) => {
+    void navigator.clipboard.writeText(text).then(
+      () => {
+        setCopied(true);
+        if (timer.current) clearTimeout(timer.current);
+        timer.current = setTimeout(() => {
+          timer.current = null;
+          setCopied(false);
+        }, 1200);
+      },
+      (error: unknown) => {
+        console.warn('Copy failed', error);
+      },
+    );
+  };
+  return { copied, copy };
 }
 
 // A small red "error" pill beside the label of a failed tool's header row;
@@ -258,23 +248,6 @@ export function WorkingIndicator({
   );
 }
 
-/* ── Copy affordance for a message: below the text on the reply's left, below
-   the bubble on a prompt's right, sitting in the 16px row gap so the row never
-   changes height when a turn settles and nothing below is covered. Fades in on
-   hover or keyboard focus; the host carries `group/msg relative`. ── */
-export function MessageActions({ text, side }: { text: string; side: 'end' | 'start' }) {
-  const place = side === 'end' ? 'left-0' : 'right-0';
-  // A short hold before hiding so the pointer can travel from the last line
-  // onto the button.
-  return (
-    <div
-      className={`pointer-events-none absolute top-full ${place} opacity-0 transition-opacity duration-150 delay-300 focus-within:pointer-events-auto focus-within:opacity-100 focus-within:delay-0 group-hover/msg:pointer-events-auto group-hover/msg:opacity-100 group-hover/msg:delay-0`}
-    >
-      <CopyButton text={text} />
-    </div>
-  );
-}
-
 /* ── Voice mark for a row whose text was said out loud, so a spoken turn reads
    as part of the conversation without claiming to be a typed one. Sits above
    the message the way the steering mark does. ── */
@@ -360,6 +333,24 @@ export function CompactionDivider({ compactType }: { compactType?: 'auto' | 'man
         <FoldVertical className="h-3.5 w-3.5" />
         {label}
       </span>
+      <div className="h-px flex-1 bg-droid-border/70" />
+    </div>
+  );
+}
+
+/* ── Fork divider — where a forked chat's inherited history ends ── */
+export function ForkedFromDivider({ onOpenSource }: { onOpenSource: () => void }) {
+  return (
+    <div className="flex items-center gap-3 py-1 text-droid-text-muted">
+      <div className="h-px flex-1 bg-droid-border/70" />
+      <button
+        type="button"
+        onClick={onOpenSource}
+        className="flex items-center gap-1.5 rounded-md px-1.5 py-0.5 text-[12px] whitespace-nowrap text-droid-text-secondary transition-colors hover:bg-droid-elevated hover:text-droid-text focus-visible:bg-droid-elevated focus-visible:outline-none"
+      >
+        <GitFork className="h-3.5 w-3.5" />
+        Forked from chat
+      </button>
       <div className="h-px flex-1 bg-droid-border/70" />
     </div>
   );
