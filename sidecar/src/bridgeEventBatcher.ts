@@ -10,6 +10,7 @@ const IMMEDIATE_EVENT_TYPES = new Set<ServerEvent['type']>([
   'connection',
   'runtime.updated',
   'session.created',
+  'session.forked',
   'session.closed',
   'sessions.cwdReanchored',
   'session.markdownExported',

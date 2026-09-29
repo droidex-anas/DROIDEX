@@ -10,7 +10,7 @@
 // sessionTranscriptParser.ts maps the content blocks below back to transcript
 // events. Changing a shape here without reading those three is a silent
 // "session is empty after restart" bug.
-import { appendFile, mkdir, stat } from 'node:fs/promises';
+import { appendFile, copyFile, mkdir, readFile, stat, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 
 import { providerSessionsDir } from '../droidexPaths.js';
@@ -57,6 +57,7 @@ interface PendingMessage {
   id: string;
   ts: number;
   blocks: ContentBlock[];
+  forkPointId?: string;
 }
 
 export class ProviderTranscriptFile {
@@ -105,6 +106,7 @@ export class ProviderTranscriptFile {
     const block = assistantBlock(event);
     if (block) {
       this.pending ??= { id: event.id, ts: event.ts, blocks: [] };
+      if (event.forkPointId) this.pending.forkPointId = event.forkPointId;
       addBlock(this.pending.blocks, block);
       return;
     }
@@ -126,6 +128,17 @@ export class ProviderTranscriptFile {
     if (failed) throw failed.reason;
   }
 
+  // The file once every line queued before this call is on disk. Lines queued
+  // after it wait for the read, so a fork never copies a line half-written.
+  read(): Promise<string> {
+    const reading = this.writes.then(() => readFile(this.path, 'utf8'));
+    this.writes = reading.then(
+      () => undefined,
+      () => undefined,
+    );
+    return reading;
+  }
+
   // Routed children have no independent turn-settlement callback. Persist
   // each coalesced run so replay can read it while the parent is still busy.
   private appendToChild(event: TranscriptEvent): Promise<void> {
@@ -143,7 +156,9 @@ export class ProviderTranscriptFile {
     const message = this.pending;
     if (!message) return undefined;
     this.pending = null;
-    return this.writeLine(messageLine('assistant', message.blocks, message.id, message.ts));
+    return this.writeLine(
+      messageLine('assistant', message.blocks, message.id, message.ts, message.forkPointId),
+    );
   }
 
   private sealThenWrite(line: object): Promise<void> {
@@ -198,9 +213,13 @@ async function hasContent(path: string): Promise<boolean> {
   try {
     return (await stat(path)).size > 0;
   } catch (error) {
-    if (error instanceof Error && 'code' in error && error.code === 'ENOENT') return false;
+    if (isMissingFile(error)) return false;
     throw error;
   }
+}
+
+function isMissingFile(error: unknown): boolean {
+  return error instanceof Error && 'code' in error && error.code === 'ENOENT';
 }
 
 function messageLine(
@@ -208,8 +227,15 @@ function messageLine(
   content: ContentBlock[],
   id: string,
   ts: number,
+  forkPointId?: string,
 ): StoredMessageLine {
-  return { type: 'message', id, timestamp: new Date(ts).toISOString(), message: { role, content } };
+  return {
+    type: 'message',
+    id,
+    timestamp: new Date(ts).toISOString(),
+    message: { role, content },
+    ...(forkPointId ? { forkPointId } : {}),
+  };
 }
 
 function spokenLine(event: TranscriptEvent): object {
@@ -225,6 +251,93 @@ function spokenLine(event: TranscriptEvent): object {
       content: [{ type: 'text', text: event.text }],
     },
   };
+}
+
+// A closed session's transcript. An open one is read through its writer, which
+// holds the lines still on their way to the file.
+export function readProviderTranscript(appSessionId: string): Promise<string> {
+  return readFile(join(providerSessionsDir(), `${appSessionId}.jsonl`), 'utf8');
+}
+
+// The part of a session's transcript a fork copies: all of it, or every line
+// up to the last one of the answer at `forkPointId`. Read before the copy is
+// written, so a point the transcript never recorded fails the fork without
+// leaving a DROIDEX copy behind.
+export interface ForkedTranscript {
+  sourceAppSessionId: string;
+  head: ProviderSessionStart;
+  lines: string[];
+}
+
+export function forkedTranscript(
+  sourceAppSessionId: string,
+  stored: string,
+  forkPointId?: string,
+): ForkedTranscript {
+  const [headText = '', ...lines] = stored.split('\n').filter((line) => line.trim() !== '');
+  const head = JSON.parse(headText) as ProviderSessionStart;
+  if (!forkPointId) return { sourceAppSessionId, head, lines };
+  const last = lines.findLastIndex((line) => storedForkPointId(line) === forkPointId);
+  if (last < 0) throw new Error('This answer was saved before forking from it was possible.');
+  return { sourceAppSessionId, head, lines: lines.slice(0, last + 1) };
+}
+
+// A forked conversation's transcript: the source's messages under a head that
+// names the copy. The provider copied its own record of the conversation; this
+// is DROIDEX's, which scrollback and the sidebar read. A provider that gives
+// the copy new ids for its fork points names them in `forkPointRenames`.
+// Resolves to the new path.
+export async function writeForkedTranscript(
+  transcript: ForkedTranscript,
+  copy: {
+    appSessionId: string;
+    title: string;
+    resumeId?: string;
+    forkPointRenames?: ReadonlyMap<string, string>;
+    // A copy on a model of its own runs that model's own window, so the
+    // source's pin stays behind.
+    dropContextWindow?: boolean;
+  },
+): Promise<string> {
+  const directory = providerSessionsDir();
+  const path = join(directory, `${copy.appSessionId}.jsonl`);
+  const head: ProviderSessionStart = {
+    ...withoutContextWindow(transcript.head, copy.dropContextWindow),
+    id: copy.appSessionId,
+    title: copy.title,
+    ...(copy.resumeId ? { resumeId: copy.resumeId } : {}),
+  };
+  const renames = copy.forkPointRenames;
+  const lines = renames
+    ? transcript.lines.map((line) => renameForkPoint(line, renames))
+    : transcript.lines;
+  await writeFile(path, [serialize(head), ...lines.map((line) => `${line}\n`)].join(''));
+  const settingsFrom = join(directory, `${transcript.sourceAppSessionId}.settings.json`);
+  const settingsTo = join(directory, `${copy.appSessionId}.settings.json`);
+  try {
+    if (copy.dropContextWindow) {
+      const settings = JSON.parse(await readFile(settingsFrom, 'utf8')) as Record<string, unknown>;
+      await writeFile(settingsTo, JSON.stringify(withoutContextWindow(settings, true)));
+    } else await copyFile(settingsFrom, settingsTo);
+  } catch (error) {
+    if (!isMissingFile(error)) throw error;
+  }
+  return path;
+}
+
+function storedForkPointId(line: string): string | undefined {
+  try {
+    return (JSON.parse(line) as StoredMessageLine).forkPointId;
+  } catch {
+    return undefined;
+  }
+}
+
+function renameForkPoint(line: string, renames: ReadonlyMap<string, string>): string {
+  const forkPointId = storedForkPointId(line);
+  const renamed = forkPointId ? renames.get(forkPointId) : undefined;
+  if (!renamed) return line;
+  return JSON.stringify({ ...(JSON.parse(line) as StoredMessageLine), forkPointId: renamed });
 }
 
 function headLine(summary: SessionSummary): ProviderSessionStart {
@@ -295,4 +408,14 @@ function toolResultBlock(event: TranscriptEvent): ContentBlock | null {
 
 function serialize(line: object): string {
   return `${JSON.stringify(line)}\n`;
+}
+
+function withoutContextWindow<T extends { contextWindowTokens?: unknown }>(
+  value: T,
+  drop: boolean | undefined,
+): T {
+  if (!drop || value.contextWindowTokens === undefined) return value;
+  const copy = { ...value };
+  delete copy.contextWindowTokens;
+  return copy;
 }

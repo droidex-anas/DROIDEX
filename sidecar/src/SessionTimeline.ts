@@ -299,6 +299,10 @@ export class SessionTimeline {
     await this.transcripts.release(appSessionId);
   }
 
+  readTranscript(appSessionId: string): Promise<string> | undefined {
+    return this.transcripts.read(appSessionId);
+  }
+
   // The renderer already showed the prompt; only persist it here.
   recordPrompt(appSessionId: string, prompt: string): void | Promise<void> {
     return this.transcripts.recordPrompt(appSessionId, prompt);

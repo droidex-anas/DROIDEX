@@ -23,7 +23,17 @@ export const liveMarkdownTheme = EditorView.theme({
   // CodeMirror ships a fixed #888 placeholder, which is unreadable on a light
   // canvas; the muted token is derived to stay legible in either scheme.
   '.cm-placeholder': { color: 'var(--droid-text-muted)' },
-  '.cm-cursor, .cm-dropCursor': { borderLeftColor: 'var(--droid-accent)', borderLeftWidth: '3px' },
+  // CodeMirror pulls its caret half a hairline left; a 2px bar starts at the
+  // gap instead so it does not touch the glyph before it.
+  '.cm-cursor, .cm-dropCursor': {
+    borderLeftColor: 'var(--droid-accent)',
+    borderLeftWidth: '2px',
+    borderRadius: '1px',
+    marginLeft: '0',
+  },
+  // CodeMirror blinks with a hard on/off step; easing it makes the caret fade.
+  // The selector matches the path CodeMirror sets its animation on.
+  '&.cm-focused > .cm-scroller > .cm-cursorLayer': { animationTimingFunction: 'ease-in-out' },
   // CodeMirror's own focused-selection rule walks the whole layer path, so the
   // themed tint has to match that path to beat its default lavender.
   '.cm-selectionBackground, &.cm-focused > .cm-scroller > .cm-selectionLayer .cm-selectionBackground':

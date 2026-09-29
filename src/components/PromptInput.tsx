@@ -108,7 +108,9 @@ import {
   Bug,
   FoldVertical,
   ListTodo,
+  MessageBubble,
   MessageSquareText,
+  MessageThread,
   Models,
   Settings,
   Zap,
@@ -120,10 +122,13 @@ import AddMenu from './composer/AddMenu';
 import SelectionMenu from './composer/SelectionMenu';
 import { useDraftEditing } from './composer/useDraftEditing';
 import type { ComposerHandle } from './composer/ComposerEditor';
-import { DraftSelections } from './composer/DraftSelections';
+import { DraftSelections, type DraftSelection } from './composer/DraftSelections';
 import ComposerMenu, { type SlashCommand } from './ComposerMenu';
+import { SideChatRestoreButton } from './sidechats/SideChatRestoreButton';
+import { useAskSideChat } from './sidechats/useAskSideChat';
 import { effectiveProvider } from '../features/providers/providerDraft';
 import {
+  PROVIDER_MARKS,
   providerDefaultModel,
   providerModelCatalog,
   providerModelSelection,
@@ -136,10 +141,22 @@ import {
   childSettingsReadinessLabel,
 } from '../lib/exactChildSettings';
 import InlineInteractions from './InlineInteractions';
-import { ModelIcon, providerOf } from './ModelIcon';
+import {
+  ModelIcon,
+  DroidProxyMark,
+  isDroidProxyModel,
+  providerOf,
+  resolveModelProvider,
+  shortModelName,
+} from './ModelIcon';
 import { StartInBar } from './environment/StartInBar';
 import type { Autonomy, SkillInfo } from '../types/bridge';
 import { feedbackDraftFromCommand } from '../lib/feedbackReport';
+import {
+  promptWithSideChatReplies,
+  sideChatPanel,
+  sideChatPromptFromCommand,
+} from '../lib/sideChats';
 import { useSessionWorkingDirectory } from '../hooks/useSessionWorkingDirectory';
 import { useRuntimeHealth } from '../hooks/useRuntimeHealth';
 import useFastMode from '../hooks/useFastMode';
@@ -170,6 +187,7 @@ const VoiceComposerControls = lazy(() =>
 
 // Stable identity for a closed menu, so no trigger means no new object.
 const EMPTY_COMPOSER_MENU: ComposerMenuModel = { entries: [], rows: [] };
+const NO_REPLIES: string[] = [];
 
 const ACCENT = 'var(--droid-accent)';
 // Slash entries that drive Droid's own subsystems, so they leave the menu with
@@ -244,6 +262,7 @@ export default function PromptInput({
   onOverlayChange?: (open: boolean) => void;
 }) {
   const dispatch = useStoreDispatch();
+  const askSideChat = useAskSideChat();
   const { downloading: appUpdateInstalling, installResult: appUpdateInstallResult } =
     useAppUpdate();
   const runtimeReady = useRuntimeHealth().canRunAgents;
@@ -254,6 +273,9 @@ export default function PromptInput({
       activeSession: current.activeAppSessionId
         ? current.sessions[current.activeAppSessionId]
         : null,
+      attachedReplies: current.activeAppSessionId
+        ? sideChatPanel(current.sideChats, current.activeAppSessionId).attachedReplies
+        : undefined,
       agentConfig: current.agentConfig,
       harnessModels: current.harnessModels,
       childAccess: current.childAccess,
@@ -376,6 +398,10 @@ export default function PromptInput({
   const hasChips = hasSelection || hasAttachmentChips;
 
   const removeLastChip = () => {
+    if (sideChatReplies.length > 0) {
+      detachSideChatReplies();
+      return;
+    }
     const { images, files: documents } = partitionImagePaths(attachedFiles);
     const removal = chipRemovedByBackspace({
       visualizeSelected,
@@ -462,6 +488,32 @@ export default function PromptInput({
   visibleTargetRef.current = visibleTarget;
   const targetChild = visibleTarget.kind === 'child' ? visibleTarget.child : undefined;
   const targetChildSessionId = targetChild?.childSessionId ?? null;
+  // Side-chat answers go with the session's own next prompt, never a child's.
+  const sideChatReplies = targetChildSessionId ? NO_REPLIES : (state.attachedReplies ?? NO_REPLIES);
+  const detachSideChatReplies = () => {
+    if (!activeSession) return;
+    dispatch({
+      type: 'DETACH_SIDE_CHAT_REPLIES',
+      sourceAppSessionId: activeSession.appSessionId,
+      replies: sideChatReplies,
+    });
+  };
+  const composerSelections: DraftSelection[] =
+    sideChatReplies.length > 0
+      ? [
+          ...draftSelections,
+          {
+            key: 'side-chat-replies',
+            icon: MessageThread,
+            label:
+              sideChatReplies.length === 1
+                ? '1 message'
+                : `${String(sideChatReplies.length)} messages`,
+            removeLabel: 'Remove side chat answers',
+            onRemove: detachSideChatReplies,
+          },
+        ]
+      : draftSelections;
   const hasAppContext = useStoreSelector((current) => {
     if (!activeSession) return false;
     const events = current.transcripts[activeSession.appSessionId] ?? [];
@@ -565,6 +617,22 @@ export default function PromptInput({
     }
   };
 
+  // `/side` with nothing after it opens the session's side chat; with a
+  // question it starts a new one in its place.
+  const openSideChat = (prompt: string): boolean => {
+    if (!activeSession) {
+      toast.info('Open a chat to ask a side question about it.');
+      return false;
+    }
+    if (prompt) return askSideChat(activeSession.appSessionId, prompt);
+    dispatch({
+      type: 'SHOW_SIDE_CHAT',
+      sourceAppSessionId: activeSession.appSessionId,
+      view: { kind: 'current' },
+    });
+    return true;
+  };
+
   const slashCommands: SlashCommand[] = [
     {
       ...VISUALIZE_COMMAND,
@@ -589,6 +657,14 @@ export default function PromptInput({
         setFeedbackReport({ category: 'other', description: '' });
       },
     },
+    ...['/side', '/btw'].map((cmd) => ({
+      cmd,
+      desc: 'Ask a side question without adding to this chat',
+      icon: MessageBubble,
+      run: () => {
+        openSideChat('');
+      },
+    })),
     {
       cmd: '/model',
       desc: 'Open model selector',
@@ -1097,7 +1173,8 @@ export default function PromptInput({
           skillCount: skills.length,
           fileCount: paths.length,
         }) ||
-        feedbackDraftFromCommand(text)
+        feedbackDraftFromCommand(text) ||
+        sideChatPromptFromCommand(text) !== null
       ) {
         throw new Error('App commands cannot be scheduled. Write a prompt for the agent instead.');
       }
@@ -1168,7 +1245,12 @@ export default function PromptInput({
       ...readyFiles,
       ...readyImages,
     ]);
-    const hasPayload = text || visualizeSelected || activeSkills.length > 0 || allFiles.length > 0;
+    const hasPayload =
+      text ||
+      visualizeSelected ||
+      activeSkills.length > 0 ||
+      allFiles.length > 0 ||
+      sideChatReplies.length > 0;
     if (!hasPayload) return;
     // The app owns fast mode, so a typed /fast runs here instead of reaching
     // the harness, whose own switch the app would never see.
@@ -1209,6 +1291,16 @@ export default function PromptInput({
       return;
     }
 
+    // Only the words go to the side chat; attachments stay for this chat.
+    const sideChatPrompt = sideChatPromptFromCommand(text);
+    if (sideChatPrompt !== null) {
+      if (openSideChat(sideChatPrompt)) {
+        setInput('');
+        setHistoryIndex(null);
+      }
+      return;
+    }
+
     const compacts =
       droidComposer &&
       runsAsCompactCommand(text, {
@@ -1239,10 +1331,13 @@ export default function PromptInput({
     // it must not also be written into the prompt's words.
     const mentions = mentionsForRows(composerProvider, activeSkills);
     const mentioned = new Set(mentions.map((mention) => mention.name));
-    const composed = composePrompt(
-      displayText,
-      skillNames.filter((name) => !mentioned.has(name)),
-      allFiles,
+    const composed = promptWithSideChatReplies(
+      composePrompt(
+        displayText,
+        skillNames.filter((name) => !mentioned.has(name)),
+        allFiles,
+      ),
+      sideChatReplies,
     );
     const registerPending = (ref: string) => {
       if (turnStartingClientRef.current === ref) {
@@ -1375,8 +1470,10 @@ export default function PromptInput({
           files: allFiles,
           ...(mentions.length > 0 ? { mentions } : {}),
           ...(activeSkills.length > 0 ? { rowKeys: activeSkills.map(catalogRowKey) } : {}),
+          ...(sideChatReplies.length > 0 ? { sideChatReplies } : {}),
         },
       });
+      if (sideChatReplies.length > 0) detachSideChatReplies();
       clearAfterSubmit();
       return;
     }
@@ -1395,9 +1492,11 @@ export default function PromptInput({
           author: 'user',
           skills: skillNames,
           files: allFiles,
+          ...(sideChatReplies.length > 0 ? { sideChatReplies } : {}),
           steered: isLive && mode === 'now',
         },
       });
+      if (sideChatReplies.length > 0) detachSideChatReplies();
     };
     const sendCommand = () => {
       try {
@@ -1493,6 +1592,13 @@ export default function PromptInput({
     // A queued App request already carries /visualize in its text, so the chip
     // would add a second copy of the command.
     setVisualizeSelected(false);
+    for (const reply of p.sideChatReplies ?? []) {
+      dispatch({
+        type: 'ATTACH_SIDE_CHAT_REPLY',
+        sourceAppSessionId: activeSession.appSessionId,
+        reply,
+      });
+    }
     dispatch({ type: 'REMOVE_QUEUED_PROMPT', appSessionId: activeSession.appSessionId, id: p.id });
     requestAnimationFrame(() => editorRef.current?.focus());
   };
@@ -1565,7 +1671,7 @@ export default function PromptInput({
         return;
       }
     }
-    if (e.key === 'Backspace' && input === '' && hasChips) {
+    if (e.key === 'Backspace' && input === '' && (hasChips || sideChatReplies.length > 0)) {
       e.preventDefault();
       e.stopPropagation();
       removeLastChip();
@@ -1656,7 +1762,8 @@ export default function PromptInput({
     activeSkills.length > 0 ||
     attachedFiles.length > 0 ||
     fileAttachments.files.length > 0 ||
-    imageAttachments.images.length > 0;
+    imageAttachments.images.length > 0 ||
+    sideChatReplies.length > 0;
   // The app's one conversation, which may belong to another chat entirely. The
   // orb is offered only where this chat's harness can hold a conversation and
   // none is running anywhere; the chat that owns one gets its controls instead.
@@ -1811,6 +1918,9 @@ export default function PromptInput({
           onRunRow={runMenuItem}
         />
 
+        {activeSession && !targetChildSessionId && (
+          <SideChatRestoreButton sourceAppSessionId={activeSession.appSessionId} />
+        )}
         {/* The full voice surface covers this composer and shows the same two
             cards itself, so only one of the two places owns an ask at a time. */}
         <InlineInteractions plans asks={voice.view !== 'full'} />
@@ -1962,7 +2072,7 @@ export default function PromptInput({
           )}
 
           <div className="relative">
-            <DraftSelections items={draftSelections} onWidthChange={setSelectionsIndent} />
+            <DraftSelections items={composerSelections} onWidthChange={setSelectionsIndent} />
             {/* The draft renders markdown as it is typed; the editor owns
                 typing while `input` here stays the source of truth for sends,
                 seeds, and formatting actions. */}
@@ -1977,7 +2087,7 @@ export default function PromptInput({
                 ref={editorRef}
                 value={input}
                 ariaLabel="Prompt"
-                placeholder={draftSelections.length > 0 ? '' : promptPlaceholder}
+                placeholder={composerSelections.length > 0 ? '' : promptPlaceholder}
                 indentPx={selectionsIndent}
                 onChange={editDraft}
                 onCaret={setCaret}
@@ -2104,9 +2214,21 @@ export default function PromptInput({
                     </>
                   ) : (
                     <>
-                      <ModelIcon provider={providerOf(chipModel, primaryModelId)} size={14} />
+                      <ModelIcon
+                        provider={resolveModelProvider(
+                          chipModel,
+                          primaryModelId,
+                          PROVIDER_MARKS[composerProvider],
+                        )}
+                        size={14}
+                      />
+                      {isDroidProxyModel(chipModel, primaryModelId) && (
+                        <span className="shrink-0 flex items-center">
+                          <DroidProxyMark size={12} />
+                        </span>
+                      )}
                       <span className="truncate font-medium text-droid-text">
-                        {selectedModelLabel}
+                        {shortModelName(selectedModelLabel)}
                       </span>
                       {fastMode && offersFastMode(composerProvider) && (
                         <Zap

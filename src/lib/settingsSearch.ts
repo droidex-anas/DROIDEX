@@ -159,6 +159,14 @@ export const SETTINGS_SEARCH_ENTRIES: readonly SettingsSearchEntry[] = [
     'high',
     'default autonomy',
   ]),
+  e('Configuration', 'Side chats open in', [
+    'side chat',
+    'btw',
+    'side pane',
+    'popup',
+    'floating window',
+    'docked',
+  ]),
   e('Configuration', 'Sessions', ['session defaults']),
 
   // ── Worktrees ────────────────────────────────────────────────────────────
@@ -214,6 +222,22 @@ export const SETTINGS_SEARCH_ENTRIES: readonly SettingsSearchEntry[] = [
   e('Snapshots', 'Snapshots', ['snapshot', 'checkpoint', 'restore']),
   e('MCP servers', 'MCP servers', ['mcp', 'tools server', 'model context protocol']),
   e('Browser', 'Browser', ['native browser', 'web browser', 'browser pane']),
+  e('DroidProxy', 'DroidProxy', ['droidproxy', 'proxy', 'localhost:8317']),
+  e('DroidProxy', 'Subscriptions', [
+    'oauth',
+    'subscription',
+    'connect claude',
+    'connect codex',
+    'connect gemini',
+    'kimi',
+    'sign in',
+  ]),
+  e('DroidProxy', 'Proxy models in Droid', [
+    'apply models',
+    'custom models',
+    'factory settings',
+    'droidproxy models',
+  ]),
   e('Hooks', 'Hooks', ['lifecycle hooks', 'script hooks']),
   e('Connections', 'Connections', ['integrations', 'connected apps']),
   e('Git', 'Git', ['github', 'vcs', 'version control', 'commit', 'branch']),

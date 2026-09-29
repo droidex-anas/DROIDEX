@@ -1,7 +1,12 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { appPromptDisplayFromText, formatAppPrompt, hasAppFence } from './appPrompt.js';
+import {
+  appPromptDisplayFromText,
+  formatAppPrompt,
+  formatAppRepairPrompt,
+  hasAppFence,
+} from './appPrompt.js';
 
 test('hasAppFence recognizes the App answer shape the guidance asks for', () => {
   assert.equal(hasAppFence('Here it is.\n\n```app\n<main></main>\n```'), true);
@@ -24,41 +29,35 @@ test('hasAppFence recognizes the App answer shape the guidance asks for', () => 
   assert.equal(hasAppFence('no fences here at all'), false);
 });
 
-test('formatAppPrompt keeps the request recoverable and adds broad internal App guidance', () => {
+// The guidance is prose the model reads; only the names the host implements
+// are a contract, so a rewording must not break this test but a renamed API must.
+test('App guidance names the host APIs, attributes, and approved hosts the runtime provides', () => {
   const prompt = formatAppPrompt('/visualize compare renderer timings', 'create');
 
-  assert.match(prompt, /^DROIDEX App request:/);
-  assert.match(prompt, /\/visualize compare renderer timings/);
-  assert.match(prompt, /chart, diagram, timeline, calculator, simulator/);
+  assert.match(prompt, /^DROIDEX App request:\n\/visualize compare renderer timings\n/);
   assert.match(prompt, /fenced `app` block/);
-  assert.match(prompt, /--app-background/);
-  assert.match(prompt, /transparent chat canvas/);
-  assert.match(prompt, /transparent by default/);
-  assert.match(
-    prompt,
-    /may intentionally give the whole App or selected regions soft theme-aware backgrounds/,
-  );
-  assert.match(prompt, /give that outer surface a restrained radius and clip its contents/);
-  assert.match(prompt, /Avoid accidental hard black or white page slabs/);
-  assert.doesNotMatch(prompt, /keep that region transparent and unframed/);
-  assert.match(prompt, /data-droidex-app-root/);
-  assert.match(prompt, /data-droidex-app-canvas/);
-  assert.match(prompt, /no outer max-width, page padding, border, or shadow/);
-  assert.match(prompt, /data-latex/);
-  assert.match(prompt, /window\.droidex\.renderMath/);
-  assert.match(prompt, /responsive SVG/);
-  assert.match(prompt, /bar, line, area, scatter, bubble/);
-  assert.match(prompt, /mixed views/);
-  assert.match(prompt, /color-blind-safe/);
-  assert.match(prompt, /palette or series-color controls/);
-  assert.match(prompt, /illustrations, annotated processes, infographics/);
-  assert.match(prompt, /visual, inspector, controls, and explanation/);
-  assert.match(prompt, /hover, click, touch, and keyboard/);
-  assert.match(prompt, /Never clip axis titles, tick labels, legends, or annotations/);
-  assert.match(prompt, /wireframes/);
-  assert.match(prompt, /Do not use network requests/);
-  assert.match(prompt, /verify that every inline script parses/);
-  assert.match(prompt, /SVG or Canvas initialization runs without errors/);
+  for (const name of [
+    'data-droidex-app-root',
+    'data-latex',
+    'data-display',
+    'window.droidex.renderMath',
+    'window.droidex.renderAllMath',
+    'window.droidex.createCanvas',
+    'window.droidex.theme',
+    'droidex:themechange',
+    '--app-background',
+    '--app-surface',
+    '--app-foreground',
+    '--app-muted',
+    '--app-border',
+    '--app-accent',
+    'https://fonts.googleapis.com',
+    'https://fonts.gstatic.com',
+    'https://cdn.jsdelivr.net',
+    'https://cdnjs.cloudflare.com',
+  ]) {
+    assert.ok(prompt.includes(name), `guidance should name ${name}`);
+  }
 });
 
 test('appPromptDisplayFromText reveals only what the user typed', () => {
@@ -66,6 +65,16 @@ test('appPromptDisplayFromText reveals only what the user typed', () => {
 
   assert.equal(appPromptDisplayFromText(prompt), '/visualize compare renderer timings');
   assert.equal(appPromptDisplayFromText('ordinary prompt'), null);
+});
+
+test('an Auto-fix request carries the exact source but displays only the request and error', () => {
+  const source = '<main><script>document.querySelector("#missing").value;</script></main>';
+  const error = "Cannot read properties of null (reading 'value')";
+  const prompt = formatAppRepairPrompt(error, source);
+
+  assert.ok(prompt.includes(JSON.stringify({ error, source })));
+  assert.match(prompt, /one complete corrected app block/);
+  assert.equal(appPromptDisplayFromText(prompt), `Auto-fix this visualization.\n\nError: ${error}`);
 });
 
 test('a conversational App follow-up can revise the existing block without forcing one', () => {

@@ -62,6 +62,8 @@ export class ClaudeEventMapper {
   // Unpinned sessions learn their model from the main conversation.
   private observedModelId?: string;
   private reportedFastModeUnavailable = false;
+  // The uuid of the prompt that opened the turn: where a fork of it cuts.
+  private turnId?: string;
 
   constructor(
     private readonly appSessionId: string,
@@ -75,7 +77,8 @@ export class ClaudeEventMapper {
 
   // Resets state scoped to the turn that is starting, not the long-lived
   // background task identity the session may still be tracking across turns.
-  beginTurn(): void {
+  beginTurn(turnId: string): void {
+    this.turnId = turnId;
     this.subagents.beginTurn();
   }
 
@@ -116,9 +119,7 @@ export class ClaudeEventMapper {
   private system(message: Extract<SDKMessage, { type: 'system' }>): NormalizedEvent[] {
     // A local slash command answers through this frame instead of the model loop.
     if (message.subtype === 'local_command_output')
-      return message.content
-        ? [{ transcript: this.transcript('text', { text: message.content }) }]
-        : [];
+      return message.content ? [{ transcript: this.answerText(message.content, null) }] : [];
     return this.subagents.map(message, this.modelId ?? this.observedModelId);
   }
 
@@ -185,7 +186,7 @@ export class ClaudeEventMapper {
     if (!blocks.has(index)) blocks.set(index, {});
     const owner = this.childOwner(parentToolUseId);
     if (delta.type === 'text_delta' && delta.text)
-      return [{ ...owner, transcript: this.transcript('text', { text: delta.text }) }];
+      return [{ ...owner, transcript: this.answerText(delta.text, parentToolUseId) }];
     if (delta.type === 'thinking_delta' && delta.thinking)
       return [{ ...owner, transcript: this.transcript('thinking', { text: delta.thinking }) }];
     return [];
@@ -224,7 +225,10 @@ export class ClaudeEventMapper {
       if (streamed) continue;
       const owner = this.childOwner(message.parent_tool_use_id);
       if (block.type === 'text' && block.text)
-        events.push({ ...owner, transcript: this.transcript('text', { text: block.text }) });
+        events.push({
+          ...owner,
+          transcript: this.answerText(block.text, message.parent_tool_use_id),
+        });
       if (block.type === 'thinking' && block.thinking)
         events.push({
           ...owner,
@@ -392,6 +396,13 @@ export class ClaudeEventMapper {
   // thread's own.
   private childOwner(parentToolUseId: string | null): Pick<NormalizedEvent, 'childOwner'> {
     return parentToolUseId ? { childOwner: { kind: 'tool-use', id: parentToolUseId } } : {};
+  }
+
+  // A fork cuts the main conversation after a turn, so only the main thread's
+  // text carries the turn's fork point; a subagent's text is that agent's step.
+  private answerText(text: string, parentToolUseId: string | null): TranscriptEvent {
+    const forkPointId = parentToolUseId ? undefined : this.turnId;
+    return this.transcript('text', { text, ...(forkPointId ? { forkPointId } : {}) });
   }
 
   private transcript(

@@ -8,6 +8,7 @@ import type {
   ConfigurableSessionRole,
   ContextWindowTokens,
   DesignReference,
+  DroidProxyProviderKey,
   HarnessCliProvider,
   InstallChannel,
   McpServerInput,
@@ -18,6 +19,7 @@ import type {
   ReasoningEffort,
   ResponseFormat,
   SessionInteractionMode,
+  SessionLineage,
   SessionPurpose,
   VoiceNarration,
 } from '../types/bridge';
@@ -63,6 +65,21 @@ export const createSession = (input: {
   bridge.send({ type: 'session.create', ...input });
 };
 
+export const forkSession = (input: {
+  clientRef: string;
+  appSessionId: string;
+  lineage: SessionLineage['kind'];
+  title: string;
+  forkPointId?: string;
+  prompt?: string;
+  provider?: ProviderKind;
+  modelId?: string;
+  reasoningEffort?: ReasoningEffort;
+}) => {
+  requireAgentWorkAvailable();
+  bridge.send({ type: 'session.fork', ...input });
+};
+
 export const updateSessionSettings = (input: {
   appSessionId: string;
   modelId?: string | null;
@@ -91,6 +108,35 @@ export const checkHarnessClis = () => {
 export const updateHarnessCli = (provider: HarnessCliProvider) => {
   bridge.send({ type: 'harness.cli.update', provider });
 };
+export const requestDroidProxyStatus = () => {
+  bridge.send({ type: 'droidproxy.status' });
+};
+export const launchDroidProxy = () => {
+  bridge.send({ type: 'droidproxy.launch' });
+};
+export const startDroidProxyLogin = (provider: DroidProxyProviderKey) => {
+  bridge.send({ type: 'droidproxy.login', provider });
+};
+export const cancelDroidProxyLogin = () => {
+  bridge.send({ type: 'droidproxy.login.cancel' });
+};
+export const setDroidProxyAccountEnabled = (
+  provider: DroidProxyProviderKey,
+  id: string,
+  enabled: boolean,
+) => {
+  bridge.send({ type: 'droidproxy.account.setEnabled', provider, id, enabled });
+};
+export const installDroidProxy = () => {
+  bridge.send({ type: 'droidproxy.install' });
+};
+export const cancelDroidProxyInstall = () => {
+  bridge.send({ type: 'droidproxy.install.cancel' });
+};
+export const applyDroidProxyFactoryModels = () => {
+  bridge.send({ type: 'droidproxy.factoryModels.apply' });
+};
+
 export const listModels = () => {
   bridge.send({ type: 'catalog.models' });
 };
@@ -138,6 +184,11 @@ export const sendToSession = (
     ...(mentions?.length ? { mentions } : {}),
     ...(responseFormat ? { responseFormat } : {}),
   });
+};
+
+export const repairApp = (appSessionId: string, error: string, source: string) => {
+  requireAgentWorkAvailable();
+  bridge.send({ type: 'session.repairApp', appSessionId, error, source });
 };
 
 export const sendToSessionNow = (
@@ -205,7 +256,7 @@ export const respondQuestion = (
   bridge.send({ type: 'question.respond', appSessionId, requestId, cancelled, answers });
 };
 
-const interruptSession = (appSessionId: string) => {
+export const interruptSession = (appSessionId: string) => {
   bridge.send({ type: 'session.interrupt', appSessionId });
 };
 

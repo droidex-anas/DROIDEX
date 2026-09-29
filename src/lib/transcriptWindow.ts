@@ -149,8 +149,13 @@ export function appendTranscriptText(
   previous: TranscriptEvent,
   text: string,
   endTs: number,
+  forkPointId?: string,
 ): TranscriptEvent {
   const previousText = previous.text ?? '';
+  // A run can span two Droid messages, and the later one is where a fork of it
+  // cuts. That is rare, so the event it makes is estimated in full when read.
+  if (forkPointId !== undefined && forkPointId !== previous.forkPointId)
+    return { ...previous, text: previousText + text, endTs, forkPointId };
   const next = { ...previous, text: previousText + text, endTs };
   const estimate = estimateTranscriptEvent(previous);
   let cost = estimate.cost + utf8ByteLength(text);

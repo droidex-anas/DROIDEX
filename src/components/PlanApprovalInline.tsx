@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type KeyboardEvent } from 'react';
 import { motion, AnimatePresence, useReducedMotion } from 'framer-motion';
 import { ChevronRight } from 'lucide-react';
-import { shallowEqual, useStoreDispatch, useStoreSelector } from '../hooks/useStore';
+import { useStoreDispatch, useStoreSelector } from '../hooks/useStore';
 import { respondPermission, sendToSession, sendToSessionNow } from '../lib/commands';
 import type { Autonomy, PermissionOutcome } from '../types/bridge';
 import { AUTONOMY_LABELS } from '../lib/autonomy';
@@ -22,21 +22,17 @@ const AUTONOMY: { value: Autonomy; outcome: PermissionOutcome }[] = [
 // (propose_mission) is ready. Replaces the old full-screen popover: the plan
 // itself lives in the inline chat card / wiki reader, this only drives the
 // decision (implement vs keep iterating) plus an optional steered comment.
-export default function PlanApprovalInline() {
+export default function PlanApprovalInline({ appSessionId }: { appSessionId?: string }) {
   const dispatch = useStoreDispatch();
   const reduceMotion = useReducedMotion();
   const { downloading: appUpdateInstalling } = useAppUpdate();
   // Plan approvals are session-scoped: only surface the one belonging to the
-  // chat the user is looking at.
-  const state = useStoreSelector(
-    (current) => ({
-      activeAppSessionId: current.activeAppSessionId,
-      pendingPermissions: current.pendingPermissions,
-    }),
-    shallowEqual,
-  );
-  const activeId = state.activeAppSessionId;
-  const req = activeId ? state.pendingPermissions[activeId]?.[0] : undefined;
+  // chat the user is looking at, or to the side chat given. A session waiting
+  // on more than one answers its oldest first.
+  const req = useStoreSelector((current) => {
+    const id = appSessionId ?? current.activeAppSessionId;
+    return id ? current.pendingPermissions[id]?.[0] : undefined;
+  });
   const [autonomy, setAutonomy] = useState<Autonomy>('high');
   const [comment, setComment] = useState('');
   const inputRef = useRef<HTMLTextAreaElement>(null);

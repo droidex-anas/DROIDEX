@@ -1,4 +1,3 @@
-import { hasCompleteAppBlock } from './appBlockRuntime';
 import type { FeedItem } from './chatFeed';
 import type { TranscriptEvent } from '../types/bridge';
 
@@ -52,6 +51,19 @@ export function isCopyableFinalResponse(
   pending: boolean,
 ): boolean {
   return state.settledKeys.has(key) || (!pending && state.liveKeys.has(key));
+}
+
+// Which answers an idle chat can fork from. The latest forks the whole
+// conversation. An earlier one forks through itself, so it needs the point its
+// provider forks at; answers recorded without one offer no fork.
+export function forkOffer(
+  item: FeedItem,
+  state: FinalResponseKeyState,
+): { forkPointId?: string } | undefined {
+  if (state.liveKeys.has(item.key)) return {};
+  if (item.type !== 'message' || !state.settledKeys.has(item.key)) return undefined;
+  const { forkPointId } = item.event;
+  return forkPointId ? { forkPointId } : undefined;
 }
 
 function reuseLiveKeys(
@@ -127,25 +139,17 @@ export function appendedFeedItemKeysFromProjection(
   return appended;
 }
 
-export interface FreshAppResponseState {
-  identity: string;
-  wasPending: boolean;
-  texts: Set<string>;
-}
-
-export function completeAppResponsesInLatestTurn(items: FeedItem[]): string[] {
-  const latestPromptIndex = latestPrompt(items).index;
-  if (latestPromptIndex < 0) return [];
-
-  const responses: string[] = [];
-  for (let index = latestPromptIndex + 1; index < items.length; index += 1) {
+// A forked chat's inherited history ends right before the first prompt sent at
+// or after the fork. -1 while that history is not loaded into the feed.
+export function lastInheritedItemIndex(items: readonly FeedItem[], forkedAt: number): number {
+  let firstForkPrompt = items.length;
+  for (let index = items.length - 1; index >= 0; index -= 1) {
     const item = items.at(index);
-    if (!item) continue;
-    if (item.type !== 'message' || item.event.author === 'user') continue;
-    const text = item.event.text ?? '';
-    if (hasCompleteAppBlock(text)) responses.push(text);
+    if (item?.type !== 'message' || item.event.author !== 'user') continue;
+    if (item.event.ts < forkedAt) break;
+    firstForkPrompt = index;
   }
-  return responses;
+  return firstForkPrompt - 1;
 }
 
 function latestPrompt(items: readonly FeedItem[]): {
@@ -160,21 +164,4 @@ function latestPrompt(items: readonly FeedItem[]): {
     }
   }
   return { index: -1, event: undefined };
-}
-
-export function rememberFreshAppResponses(
-  previous: FreshAppResponseState | null,
-  identity: string,
-  items: FeedItem[],
-  pending: boolean,
-): FreshAppResponseState {
-  const sameSession = previous?.identity === identity;
-  const texts = new Set(sameSession ? previous.texts : []);
-  const justSettled = sameSession && previous.wasPending && !pending;
-
-  if (pending || justSettled) {
-    for (const text of completeAppResponsesInLatestTurn(items)) texts.add(text);
-  }
-
-  return { identity, wasPending: pending, texts };
 }

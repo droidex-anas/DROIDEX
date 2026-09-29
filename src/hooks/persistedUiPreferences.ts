@@ -32,6 +32,8 @@ export type AgentKind = 'primary' | MissionRole;
 export type LiveEnterBehavior = 'queue' | 'interrupt';
 export type DiffViewMode = 'unified' | 'split';
 export type ModelSelectorStyle = 'classic' | 'slider';
+// Where a side chat opens when none is on screen: the utility pane or a floating window.
+export type SideChatDefaultPlacement = 'docked' | 'floating';
 
 interface AgentModelConfig {
   modelId?: string;
@@ -149,6 +151,7 @@ const LIVE_ENTER_BEHAVIOR_STORAGE_KEY = 'droid-live-enter-behavior';
 const IMAGE_PASTE_QUALITY_STORAGE_KEY = 'droid-image-paste-quality';
 const DIFF_VIEW_STORAGE_KEY = 'droid-diff-view';
 const MODEL_SELECTOR_STYLE_STORAGE_KEY = 'droid-model-selector-style';
+const SIDE_CHAT_PLACEMENT_STORAGE_KEY = 'droid-side-chat-placement';
 const DEFAULT_VOICE_STORAGE_KEY = 'droid-default-voice';
 const KNOWN_VOICES_STORAGE_KEY = 'droid-known-voices';
 const NARRATION_MODE_STORAGE_KEY = 'droid-narration-mode';
@@ -279,6 +282,28 @@ export function saveModelSelectorStyle(value: ModelSelectorStyle): ModelSelector
     /* ignore */
   }
   return style;
+}
+
+function normalizeSideChatPlacement(value: unknown): SideChatDefaultPlacement {
+  return value === 'floating' ? 'floating' : 'docked';
+}
+
+export function loadSideChatPlacement(): SideChatDefaultPlacement {
+  try {
+    return normalizeSideChatPlacement(getLocalStorage()?.getItem(SIDE_CHAT_PLACEMENT_STORAGE_KEY));
+  } catch {
+    return 'docked';
+  }
+}
+
+export function saveSideChatPlacement(value: SideChatDefaultPlacement): SideChatDefaultPlacement {
+  const placement = normalizeSideChatPlacement(value);
+  try {
+    getLocalStorage()?.setItem(SIDE_CHAT_PLACEMENT_STORAGE_KEY, placement);
+  } catch {
+    /* ignore */
+  }
+  return placement;
 }
 
 // Which voice speaks in voice mode. The harness publishes its own voices when a

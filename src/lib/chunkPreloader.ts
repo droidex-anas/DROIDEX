@@ -17,6 +17,7 @@ const IDLE_SURFACES: LazySurface[] = [
   'review',
   'browser',
   'agents',
+  'sideChats',
 ];
 
 export function preloadLazySurface(surface: LazySurface): void {

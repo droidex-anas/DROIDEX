@@ -184,6 +184,7 @@ export function normalizeStreamEvent(
       return {
         transcript: transcript(appSessionId, sourceProviderSessionId, role, 'text', {
           text: ev.text,
+          forkPointId: ev.messageId,
         }),
       };
     case 'thinking_text_delta':

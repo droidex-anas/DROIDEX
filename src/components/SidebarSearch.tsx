@@ -9,6 +9,7 @@ import {
   isChatHidden,
   type ChatMetadataMap,
 } from '../lib/chatMetadata';
+import { isSideChat } from '../lib/sideChats';
 import { sidebarSearchNotice } from '../lib/sidebarSearchStatus';
 import { formatRelativeTime } from '../lib/time';
 import type { SessionSearchMatch, SessionSummary } from '../types/bridge';
@@ -49,7 +50,7 @@ export default function SidebarSearch({
     const sessions = state.sessionOrder
       .map((id) => state.sessions[id])
       .filter((s): s is SessionSummary => Boolean(s))
-      .filter((s) => !isChatHidden(state.chatMetadata[s.appSessionId]))
+      .filter((s) => !isSideChat(s) && !isChatHidden(state.chatMetadata[s.appSessionId]))
       .map((s) => {
         const title = chatDisplayTitle(s, state.chatMetadata[s.appSessionId]);
         return title === s.title ? s : { ...s, title };

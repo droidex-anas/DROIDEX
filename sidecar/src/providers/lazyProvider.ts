@@ -2,6 +2,8 @@ import type { ProviderKind } from './providerKind.js';
 import type { ProviderStatus, SkillInfo } from '../protocol.js';
 import type {
   ProbedProvider,
+  ProviderForkHandle,
+  ProviderForkSource,
   ProviderModelSettings,
   ProviderOpenInput,
   ProviderResumeInput,
@@ -30,6 +32,10 @@ export class LazyProvider implements ProbedProvider {
 
   async resume(providerSessionId: string, input: ProviderResumeInput): Promise<ProviderSession> {
     return (await this.provider()).resume(providerSessionId, input);
+  }
+
+  async fork(source: ProviderForkSource): Promise<ProviderForkHandle> {
+    return (await this.provider()).fork(source);
   }
 
   async probe(

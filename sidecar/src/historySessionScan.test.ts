@@ -31,7 +31,8 @@ const { loadHistoricalSessions, HistoryIndex, createHistorySessionFileCache } =
 const { parseFullSessionTranscript, SessionTranscriptReader } =
   await import('./sessionTranscript.js');
 const { writeProviderSessionSettings } = await import('./providers/providerSessionSettings.js');
-const { ProviderTranscriptFile } = await import('./providers/ProviderTranscriptFile.js');
+const { ProviderTranscriptFile, forkedTranscript, writeForkedTranscript } =
+  await import('./providers/ProviderTranscriptFile.js');
 const { resumeSettings } = await import('./sessionHelpers.js');
 const { SessionVoice } = await import('./providers/SessionVoice.js');
 const { providerSessionsDir } = await import('./droidexPaths.js');
@@ -542,6 +543,78 @@ test('voice finals append once and extend under the same id across runtime repla
   listener({ kind: 'transcript', role: 'user', text: 'after resume', final: true });
   assert.notEqual(appended[0].id, appended[4].id);
 });
+
+test('a fork reads behind the queued lines and copies the transcript through its answer', async () => {
+  const summary = providerSummary('provider-transcript-fork-source');
+  const transcript = new ProviderTranscriptFile(summary.appSessionId, () => summary);
+  void transcript.appendPrompt('first question');
+  transcript.append(
+    transcriptEvent(summary.appSessionId, 'text', { text: 'First', forkPointId: 'turn-1' }),
+  );
+  transcript.append(
+    transcriptEvent(summary.appSessionId, 'text', { text: ' answer.', forkPointId: 'turn-1' }),
+  );
+  void transcript.flush();
+  void transcript.appendPrompt('second question');
+  transcript.append(
+    transcriptEvent(summary.appSessionId, 'text', {
+      text: 'Second answer.',
+      forkPointId: 'turn-2',
+    }),
+  );
+  void transcript.flush();
+
+  // None of the lines above has been awaited: the read waits behind them all.
+  const stored = await transcript.read();
+  assert.equal(forkedTranscript(summary.appSessionId, stored).lines.length, 4);
+  const path = await writeForkedTranscript(
+    forkedTranscript(summary.appSessionId, stored, 'turn-1'),
+    {
+      appSessionId: 'provider-transcript-fork-copy',
+      title: 'Forked chat',
+      forkPointRenames: new Map([['turn-1', 'copied-turn-1']]),
+    },
+  );
+
+  const events = parseFullSessionTranscript(
+    'provider-transcript-fork-copy',
+    'provider-transcript-fork-copy',
+    path,
+    'primary',
+  );
+  assert.deepEqual(
+    events.map((event) => [event.author ?? event.text, event.forkPointId]),
+    [
+      ['user', undefined],
+      ['First answer.', 'copied-turn-1'],
+    ],
+  );
+  assert.throws(
+    () => forkedTranscript(summary.appSessionId, stored, 'turn-unknown'),
+    /saved before/,
+  );
+});
+
+function providerSummary(appSessionId: string): SessionSummary {
+  return {
+    appSessionId,
+    provider: 'claude',
+    sessionPurpose: 'chat',
+    interactionMode: 'auto',
+    role: 'primary',
+    title: 'Claude session',
+    goal: 'Claude session',
+    cwd: '',
+    autonomy: 'medium',
+    phase: 'paused',
+    features: [],
+    tokensIn: 0,
+    tokensOut: 0,
+    contextTokens: 0,
+    createdAt: 1,
+    updatedAt: 1,
+  };
+}
 
 function transcriptEvent(
   appSessionId: string,

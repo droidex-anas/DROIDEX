@@ -57,7 +57,6 @@ function hastClassNames(node: { properties?: { className?: unknown } } | undefin
 
 interface FenceRenderOptions {
   allowGeneratedContent: boolean;
-  autoPlayAppBlocks: boolean;
   buildingAppBlocks: boolean;
   cutOffAppBlocks: boolean;
   // The app fences found in the source, each carrying the line it opens on, so
@@ -71,7 +70,6 @@ interface FenceRenderOptions {
 
 const FenceOptionsContext = createContext<FenceRenderOptions>({
   allowGeneratedContent: true,
-  autoPlayAppBlocks: false,
   buildingAppBlocks: false,
   cutOffAppBlocks: false,
   appFences: [],
@@ -99,13 +97,8 @@ function MarkdownFence({
   startLine?: number;
   children?: ReactNode;
 }) {
-  const {
-    allowGeneratedContent,
-    autoPlayAppBlocks,
-    buildingAppBlocks,
-    cutOffAppBlocks,
-    appFences,
-  } = useContext(FenceOptionsContext);
+  const { allowGeneratedContent, buildingAppBlocks, cutOffAppBlocks, appFences } =
+    useContext(FenceOptionsContext);
   const inline = !className;
   // Inline code owns its own pill, and inside a transcript a mention that names
   // a file opens it in Review.
@@ -118,9 +111,8 @@ function MarkdownFence({
     return (
       <AppBlock
         source={codeText}
-        autoPlay={autoPlayAppBlocks && isComplete}
         isBuilding={buildingAppBlocks && !isComplete}
-        isCutOff={cutOffAppBlocks && !isComplete}
+        isCutOff={!isComplete && (cutOffAppBlocks || !buildingAppBlocks)}
       />
     );
   }
@@ -421,7 +413,6 @@ function MarkdownImpl({
   authored = false,
   allowImages = true,
   allowGeneratedContent = !authored,
-  autoPlayAppBlocks = false,
   buildingAppBlocks = false,
   cutOffAppBlocks = false,
 }: {
@@ -430,13 +421,11 @@ function MarkdownImpl({
   authored?: boolean;
   allowGeneratedContent?: boolean;
   allowImages?: boolean;
-  autoPlayAppBlocks?: boolean;
   buildingAppBlocks?: boolean;
   cutOffAppBlocks?: boolean;
 }) {
   const fenceOptions = markdownFenceOptions(children, {
     allowGeneratedContent,
-    autoPlayAppBlocks,
     buildingAppBlocks,
     cutOffAppBlocks,
   });

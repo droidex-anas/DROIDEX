@@ -36,6 +36,14 @@ export const LAZY_SURFACE_LOADERS = {
     const module = await import('../components/agents/AgentsWorkspace');
     return { default: module.AgentsWorkspace };
   },
+  sideChats: async () => {
+    const module = await import('../components/sidechats/SideChatsWorkspace');
+    return { default: module.SideChatsWorkspace };
+  },
+  sideChatWindow: async () => {
+    const module = await import('../components/sidechats/SideChatWindow');
+    return { default: module.SideChatWindow };
+  },
 };
 
 export type LazySurface = keyof typeof LAZY_SURFACE_LOADERS;
@@ -52,6 +60,8 @@ export const LazyBrowserFocusWorkspace = lazy(LAZY_SURFACE_LOADERS.browser);
 export const LazyTerminalWorkspace = lazy(LAZY_SURFACE_LOADERS.terminal);
 export const LazyFilesWorkspace = lazy(LAZY_SURFACE_LOADERS.files);
 export const LazyAgentsWorkspace = lazy(LAZY_SURFACE_LOADERS.agents);
+export const LazySideChatsWorkspace = lazy(LAZY_SURFACE_LOADERS.sideChats);
+export const LazySideChatWindow = lazy(LAZY_SURFACE_LOADERS.sideChatWindow);
 
 export function utilityToolFallback(tool: UtilityTool) {
   switch (tool) {
@@ -64,6 +74,7 @@ export function utilityToolFallback(tool: UtilityTool) {
     case 'files':
       return <PanelSkeleton title="files" />;
     case 'agents':
+    case 'side':
       return <UtilityPaneSkeleton />;
   }
 }

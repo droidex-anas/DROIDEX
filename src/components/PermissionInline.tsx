@@ -63,20 +63,18 @@ function Subject({ kind, detail }: { kind: PermissionKind; detail: string }) {
   );
 }
 
-export default function PermissionInline() {
+export default function PermissionInline({ appSessionId }: { appSessionId?: string }) {
   const dispatch = useStoreDispatch();
   const reduceMotion = useReducedMotion();
   // Permission requests are session-scoped, and a session can be waiting on
-  // more than one: the oldest is the one the user is asked about.
+  // more than one: the oldest is the one the user is asked about, for the chat
+  // the user is looking at or the side chat given.
   const state = useStoreSelector((current) => {
-    const active = current.activeAppSessionId
-      ? current.sessions[current.activeAppSessionId]
-      : undefined;
+    const id = appSessionId ?? current.activeAppSessionId;
+    const session = id ? current.sessions[id] : undefined;
     return {
-      request: current.activeAppSessionId
-        ? current.pendingPermissions[current.activeAppSessionId]?.[0]
-        : undefined,
-      provider: active?.provider,
+      request: id ? current.pendingPermissions[id]?.[0] : undefined,
+      provider: session?.provider,
     };
   }, shallowEqual);
   const req = state.request;

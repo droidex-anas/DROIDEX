@@ -56,6 +56,8 @@ import {
   type SessionFileWatcherOptions,
 } from './sessionFileWatcher.js';
 import { SessionFileServing } from './SessionFileServing.js';
+import { SessionForks } from './SessionForks.js';
+import { SessionLineageStore, sessionLineagePath } from './sessionLineage.js';
 import { DroidModelCatalog } from './DroidModelCatalog.js';
 import { BrowserSessionManager } from './browser/BrowserSessionManager.js';
 import { createAutomationMcpServer } from './automations/automationMcpServer.js';
@@ -98,7 +100,8 @@ import type { HotPathResourceCounts } from './telemetry/hotPathMetrics.js';
 import { DroidMcpConfiguration, type McpConfiguration } from './DroidMcpConfiguration.js';
 import { McpSettings } from './McpSettings.js';
 import { loadFactoryMcpServers } from './FactoryMcpConfig.js';
-import { assertValidResponseFormat, formatAppPrompt } from './appPrompt.js';
+import { assertValidResponseFormat, formatAppPrompt, formatAppRepairPrompt } from './appPrompt.js';
+import { formatSideChatPrompt } from './sideChatPrompt.js';
 import { droidCatalogItems } from './providers/catalog.js';
 import { DroidProvider } from './providers/droid/DroidProvider.js';
 import { runPrimaryTurn, type PrimaryTurnRequest } from './providers/primaryTurn.js';
@@ -109,6 +112,7 @@ import {
   type ProviderKind,
 } from './providers/providerKind.js';
 import { HarnessCliUpdater } from './providers/harnessCli.js';
+import { DroidProxyController } from './droidproxy/droidProxyController.js';
 import { LazyProvider } from './providers/lazyProvider.js';
 import { requireDroidSession } from './providers/droid/DroidProviderSession.js';
 import {
@@ -116,7 +120,10 @@ import {
   type ProviderProbe,
   type ProviderProbeMap,
 } from './providers/providerProbes.js';
-import { ProviderTranscriptFile } from './providers/ProviderTranscriptFile.js';
+import {
+  ProviderTranscriptFile,
+  readProviderTranscript,
+} from './providers/ProviderTranscriptFile.js';
 import { SessionVoice } from './providers/SessionVoice.js';
 import { SessionModelSettings } from './SessionModelSettings.js';
 import { providerStatuses } from './providers/providerStatus.js';
@@ -261,6 +268,8 @@ export class SessionManager {
   private readonly sessionVoice: SessionVoice;
   private readonly historyQueries: SessionHistoryQueries;
   private readonly modelSettings: SessionModelSettings;
+  private readonly lineage = new SessionLineageStore(sessionLineagePath(droidexUserDataDir()));
+  private readonly forks: SessionForks;
   private shutdownPromise?: Promise<void>;
   // Per-session autonomy mutation queue: rapid changes settle against the
   // provider in the order they were requested.
@@ -293,6 +302,9 @@ export class SessionManager {
     },
     () => this.providerProbes.refresh(),
   );
+  private readonly droidProxy = new DroidProxyController((event) => {
+    this.emit(event);
+  });
 
   constructor(
     private readonly emit: Emit,
@@ -394,7 +406,7 @@ export class SessionManager {
       history: this.history,
       loadOrdinarySessions: (options) => this.history.listHistoricalSessions(options),
       loadMissionControlSessions,
-      projectSummary: (summary) => this.modelSettings.project({ ...summary }),
+      projectSummary: (summary) => this.lineage.project(this.modelSettings.project({ ...summary })),
       onSummaryUpdated: (summary) => {
         this.emit({ type: 'session.updated', session: summary });
         this.runtimeRetirement.arm();
@@ -617,7 +629,11 @@ export class SessionManager {
       isShutdownStarted: () => this.shutdownPromise !== undefined,
       childSessions: this.childSessions,
       agentProcesses: this.agentProcesses,
-      applyPendingSettingsToSummary: (summary) => this.modelSettings.project(summary),
+      applyPendingSettingsToSummary: (summary) =>
+        this.lineage.project(this.modelSettings.project(summary)),
+      recordLineage: (appSessionId, lineage) => {
+        this.lineage.record(appSessionId, lineage);
+      },
       applyPendingSessionSettings: (appSessionId) => this.modelSettings.applyPending(appSessionId),
       waitForSettingsMutations: (appSessionId) => this.modelSettings.waitForMutations(appSessionId),
       runPrimaryTurn: (liveSession, request) => this.runPrimaryTurn(liveSession, request),
@@ -726,6 +742,25 @@ export class SessionManager {
       },
       sessionRuntimeIdleMs: limits.sessionRuntimeIdleMs,
       now: Date.now,
+    });
+    this.forks = new SessionForks({
+      provider: (kind) => this.providerFor(kind),
+      registry: this.registry,
+      lineage: this.lineage,
+      indexSessionFiles: (change) => this.sessionFiles.indexNow(change),
+      readTranscript: (appSessionId) =>
+        this.timeline.readTranscript(appSessionId) ?? readProviderTranscript(appSessionId),
+      updateModel: (appSessionId, settings) =>
+        this.modelSettings.update(appSessionId, 'primary', settings),
+      isShutdownStarted: () => this.shutdownPromise !== undefined,
+      create: (command, branch) => this.lifecycle.create(command, branch),
+      send: (appSessionId, text) => this.lifecycle.send(appSessionId, text),
+      emit: (event) => {
+        this.emit(event);
+      },
+      emitError: (error) => {
+        this.emitError(error);
+      },
     });
     this.sessionBrowser = new SessionBrowser({
       browsers: this.browsers,
@@ -842,6 +877,30 @@ export class SessionManager {
       case 'harness.cli.update':
         await this.harnessClis.update(cmd.provider);
         return;
+      case 'droidproxy.status':
+        await this.droidProxy.report();
+        return;
+      case 'droidproxy.launch':
+        await this.droidProxy.launchApp();
+        return;
+      case 'droidproxy.login':
+        await this.droidProxy.login(cmd.provider);
+        return;
+      case 'droidproxy.login.cancel':
+        this.droidProxy.cancelLogin();
+        return;
+      case 'droidproxy.account.setEnabled':
+        await this.droidProxy.setAccountEnabled(cmd.provider, cmd.id, cmd.enabled);
+        return;
+      case 'droidproxy.install':
+        if (await this.droidProxy.install()) void this.refreshModelsAfterFactoryChange();
+        return;
+      case 'droidproxy.install.cancel':
+        this.droidProxy.cancelInstall();
+        return;
+      case 'droidproxy.factoryModels.apply':
+        if (await this.droidProxy.applyFactoryModels()) void this.refreshModelsAfterFactoryChange();
+        return;
       case 'catalog.models': {
         const models = await this.getModels();
         this.emit({ type: 'catalog.updated', catalog: 'models', items: models });
@@ -879,14 +938,17 @@ export class SessionManager {
       case 'session.send':
         await this.lifecycle.send(
           cmd.appSessionId,
-          formatResponsePrompt(cmd.text, cmd.responseFormat),
+          this.sessionPrompt(cmd.appSessionId, cmd.text, cmd.responseFormat),
           cmd.mentions,
         );
+        return;
+      case 'session.repairApp':
+        await this.lifecycle.send(cmd.appSessionId, formatAppRepairPrompt(cmd.error, cmd.source));
         return;
       case 'session.sendNow':
         await this.lifecycle.sendNow(
           cmd.appSessionId,
-          formatResponsePrompt(cmd.text, cmd.responseFormat),
+          this.sessionPrompt(cmd.appSessionId, cmd.text, cmd.responseFormat),
           cmd.mentions,
         );
         return;
@@ -952,7 +1014,7 @@ export class SessionManager {
         return;
       }
       case 'session.fork':
-        await this.withSession(cmd.appSessionId, (session) => session.forkSession());
+        await this.forks.fork(cmd);
         return;
       case 'session.rename':
         await this.renameSession(cmd.appSessionId, cmd.title);
@@ -1138,13 +1200,24 @@ export class SessionManager {
     assertAutomationSelectionSupported(modelId, reasoningEffort, await this.getModels());
   }
 
+  private sessionPrompt(
+    appSessionId: string,
+    text: string,
+    responseFormat?: ResponseFormat,
+  ): string {
+    if (!responseFormat && this.registry.resolveSummary(appSessionId)?.lineage?.kind === 'side') {
+      return formatSideChatPrompt(text);
+    }
+    return formatResponsePrompt(text, responseFormat);
+  }
+
   private async getModels(): Promise<ModelInfo[]> {
     const known = this.droidModels.known();
     if (known.length > 0) return known;
     return (await this.refreshModelCatalog(false)) ?? [];
   }
 
-  private refreshModelCatalog(emit: boolean): Promise<ModelInfo[] | null> {
+  private refreshModelCatalog(emit: boolean, freshSession = false): Promise<ModelInfo[] | null> {
     if (this.modelRefresh) return this.modelRefresh;
     this.modelRefresh = (async () => {
       try {
@@ -1153,7 +1226,8 @@ export class SessionManager {
           this.emit({ type: 'catalog.updated', catalog: 'models', items: models });
           await this.emitProviderStatus();
         }
-        if (!this.droidModels.hasSessionCatalog()) await this.adoptCatalogSessionModels();
+        if (!this.droidModels.hasSessionCatalog())
+          await this.adoptCatalogSessionModels(freshSession);
         return this.droidModels.known();
       } catch (err) {
         this.emitError({ message: `catalog.models failed: ${errMsg(err)}` });
@@ -1165,10 +1239,16 @@ export class SessionManager {
     return this.modelRefresh;
   }
 
+  private async refreshModelsAfterFactoryChange(): Promise<void> {
+    if (this.modelRefresh) await this.modelRefresh;
+    this.droidModels.invalidate();
+    await this.refreshModelCatalog(true, true);
+  }
+
   // The help text lags the account's catalog (no Auto model), so until any
   // session has reported the live one, a catalog session stands in once.
-  private async adoptCatalogSessionModels(): Promise<void> {
-    const { session, close } = await this.catalogSession();
+  private async adoptCatalogSessionModels(freshSession = false): Promise<void> {
+    const { session, close } = await this.catalogSession(undefined, freshSession);
     try {
       this.adoptSessionModels(session.initResult.availableModels ?? []);
     } finally {
@@ -1825,10 +1905,15 @@ export class SessionManager {
 
   private async catalogSession(
     providerSessionId?: string,
+    freshSession = false,
   ): Promise<{ session: FactorySession; close: () => Promise<void> }> {
-    const first = this.registry.liveSessionsSnapshot().at(0);
-    const live = providerSessionId ? this.registry.getLive(providerSessionId)?.droid : first?.droid;
-    if (live) return { session: live, close: () => Promise.resolve() };
+    if (!freshSession) {
+      const first = this.registry.liveSessionsSnapshot().at(0);
+      const live = providerSessionId
+        ? this.registry.getLive(providerSessionId)?.droid
+        : first?.droid;
+      if (live) return { session: live, close: () => Promise.resolve() };
+    }
     const session = await this.runtime.createSession({
       cwd: tmpdir(),
       interactionMode: 'auto',

@@ -5,6 +5,7 @@ import type { GitDiffStat } from '../types/vcs';
 import { linkedPrsDone } from '../lib/chatMetadata';
 import { sessionAttention } from '../lib/sessionAttention';
 import { sessionIsLive, sessionIsUnread } from '../lib/sessions';
+import { isSideChat } from '../lib/sideChats';
 import { toast } from '../lib/toast';
 import { activityReason } from '../lib/activityReason';
 import {
@@ -96,7 +97,10 @@ export function useSidebarActivity(
     const known: Partial<Record<string, SessionSummary>> = state.sessions;
     const sessions = state.sessionOrder
       .map((id) => known[id])
-      .filter((session): session is SessionSummary => Boolean(session?.cwd))
+      .filter(
+        (session): session is SessionSummary =>
+          session !== undefined && Boolean(session.cwd) && !isSideChat(session),
+      )
       .sort((a, b) => b.updatedAt - a.updatedAt || a.appSessionId.localeCompare(b.appSessionId));
     for (const session of sessions) {
       if (claimed.has(session.cwd)) continue;

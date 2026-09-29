@@ -40,6 +40,10 @@ export function isResultFor(call: TranscriptEvent, next: TranscriptEvent | undef
   return true;
 }
 
+function eventAfter(events: TranscriptEvent[], index: number): TranscriptEvent | undefined {
+  return index + 1 < events.length ? events[index + 1] : undefined;
+}
+
 /* ── Feed model ── */
 export type FeedItem =
   | { type: 'message'; key: string; event: TranscriptEvent }
@@ -250,7 +254,7 @@ export function buildFeed(
       continue;
     }
     if (ev.kind === 'thinking') {
-      const next = events[i + 1];
+      const next = eventAfter(events, i);
       const end = ev.endTs ?? next?.ts;
       items.push({
         type: 'thinking',
@@ -382,76 +386,69 @@ export function buildFeed(
         continue;
       }
     }
-    if (ev.kind === 'tool_call' || ev.kind === 'tool_result') {
-      const group: TranscriptEvent[] = [];
-      while (i < events.length) {
-        const t = events[i];
-        if (t.kind === 'tool_result') {
-          // A failed child session/plan result breaks the group so the outer loop
-          // surfaces it as a standalone error (its card/checklist can't convey
-          // the failure). An ordinary failed result stays so it folds into its
-          // tool card.
-          if (t.isError && isCardResult(t)) break;
-          // A successful child session/plan result is dropped (represented by its
-          // card or checklist, or pure noise); other results stay in the group.
-          if (!t.isError && isCardResult(t)) {
-            i++;
-            continue;
-          }
-          // A result already reclaimed inline by an earlier group (its call was
-          // split from it by a child session spawn) must not be re-emitted here as
-          // raw activity, which would duplicate the output.
-          if (claimed.has(t)) {
-            i++;
-            continue;
-          }
-          group.push(t);
+    const group: TranscriptEvent[] = [];
+    while (i < events.length) {
+      const t = events[i];
+      if (t.kind === 'tool_result') {
+        // A failed child session/plan result breaks the group so the outer loop
+        // surfaces it as a standalone error (its card/checklist can't convey
+        // the failure). An ordinary failed result stays so it folds into its
+        // tool card.
+        if (t.isError && isCardResult(t)) break;
+        // A successful child session/plan result is dropped (represented by its
+        // card or checklist, or pure noise); other results stay in the group.
+        if (!t.isError && isCardResult(t)) {
           i++;
           continue;
         }
-        // A generated image breaks the group for the same reason a spawn does:
-        // it is content with its own card, not a step in the run.
-        if (t.kind === 'tool_call' && isImageGenerationTool(t.toolName)) break;
-        // A child session spawn must break the group so the outer loop can render it
-        // as its own card instead of folding it into the generic tools group.
-        if (
-          childSessionCards &&
-          t.kind === 'tool_call' &&
-          isChildSessionTool(t.toolName, t.toolArgs)
-        )
-          break;
-        // Skipped rather than breaking the group, so a poll landing between two
-        // real tool calls does not split them into two cards.
-        if (isSubagentPoll(t)) {
+        // A result already reclaimed inline by an earlier group (its call was
+        // split from it by a child session spawn) must not be re-emitted here as
+        // raw activity, which would duplicate the output.
+        if (claimed.has(t)) {
           i++;
           continue;
         }
-        if (t.kind === 'tool_call' && !extractFileChange(t.toolName, t.toolArgs)) {
-          group.push(t);
-          i++;
-          continue;
-        }
-        break;
+        group.push(t);
+        i++;
+        continue;
       }
-      if (group.length) {
-        // Reclaim any successful result whose call is in this group but was
-        // separated from it (a child session spawn broke the group before the result
-        // was reached) so it renders inline with its call rather than as a
-        // detached raw result later. Card/plan results are intentionally left
-        // out (handled by their card/checklist or dropped as noise).
-        for (const c of group) {
-          if (c.kind !== 'tool_call' || !c.toolUseId) continue;
-          const r = resultById.get(c.toolUseId);
-          if (r && !group.includes(r) && !isCardResult(r)) {
-            group.push(r);
-            claimed.add(r);
-          }
-        }
-        items.push({ type: 'tools', key: group[0].id, events: dedupePlanUpdates(group) });
-      } else i++;
-      continue;
+      // A generated image breaks the group for the same reason a spawn does:
+      // it is content with its own card, not a step in the run.
+      if (t.kind === 'tool_call' && isImageGenerationTool(t.toolName)) break;
+      // A child session spawn must break the group so the outer loop can render it
+      // as its own card instead of folding it into the generic tools group.
+      if (childSessionCards && t.kind === 'tool_call' && isChildSessionTool(t.toolName, t.toolArgs))
+        break;
+      // Skipped rather than breaking the group, so a poll landing between two
+      // real tool calls does not split them into two cards.
+      if (isSubagentPoll(t)) {
+        i++;
+        continue;
+      }
+      if (t.kind === 'tool_call' && !extractFileChange(t.toolName, t.toolArgs)) {
+        group.push(t);
+        i++;
+        continue;
+      }
+      break;
     }
-    i++;
+    if (group.length) {
+      // Reclaim any successful result whose call is in this group but was
+      // separated from it (a child session spawn broke the group before the result
+      // was reached) so it renders inline with its call rather than as a
+      // detached raw result later. Card/plan results are intentionally left
+      // out (handled by their card/checklist or dropped as noise).
+      for (const c of group) {
+        if (c.kind !== 'tool_call' || !c.toolUseId) continue;
+        const r = resultById.get(c.toolUseId);
+        if (r && !group.includes(r) && !isCardResult(r)) {
+          group.push(r);
+          claimed.add(r);
+        }
+      }
+      items.push({ type: 'tools', key: group[0].id, events: dedupePlanUpdates(group) });
+    } else i++;
+    continue;
   }
   return items;
 }

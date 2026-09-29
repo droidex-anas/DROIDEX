@@ -67,6 +67,7 @@ test('idle warm-up loads one surface per opportunity, yields to work, and keeps 
     'review',
     'browser',
     'agents',
+    'sideChats',
   ] as const;
   __resetChunkPreloaderForTest({
     loaders: Object.fromEntries(
@@ -111,7 +112,7 @@ test('idle warm-up loads one surface per opportunity, yields to work, and keeps 
     assert.deepEqual(calls, ['files', 'settings']);
     run();
     assert.deepEqual(calls, ['files', 'settings', 'commandPalette']);
-    for (let index = 0; index < 4; index++) run();
+    for (let index = 0; index < 5; index++) run();
     assert.deepEqual(calls, [
       'files',
       'settings',
@@ -120,6 +121,7 @@ test('idle warm-up loads one surface per opportunity, yields to work, and keeps 
       'review',
       'browser',
       'agents',
+      'sideChats',
     ]);
     assert.equal(callbacks.length, 0);
   } finally {
