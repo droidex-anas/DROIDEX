@@ -13,6 +13,7 @@ import {
 
 type Listener = (event: ServerEvent) => void;
 type BatchListener = (events: readonly ServerEvent[]) => void;
+type SnapshotListener = () => void;
 type ReconnectScheduler = (callback: () => void, delayMs: number) => void;
 type WireMessageValidator = (value: unknown) => ServerWireMessage | null;
 
@@ -28,6 +29,7 @@ export class Bridge {
   private ws: WebSocket | null = null;
   private readonly listeners = new Set<Listener>();
   private readonly batchListeners = new Set<BatchListener>();
+  private readonly snapshotListeners = new Set<SnapshotListener>();
   private queue: ClientCommand[] = [];
   private backoff = 500;
   private url = '';
@@ -174,6 +176,7 @@ export class Bridge {
   private receiveSnapshot(message: BridgeSnapshotMessage): void {
     this.lastGeneration = message.generation;
     this.lastSeq = message.lastSeq;
+    for (const listener of this.snapshotListeners) listener();
     this.publishEvents(eventsFromSnapshot(message));
   }
 
@@ -247,6 +250,14 @@ export class Bridge {
   subscribeBatch(listener: BatchListener): () => void {
     this.batchListeners.add(listener);
     return () => this.batchListeners.delete(listener);
+  }
+
+  // Called just before a snapshot's events. The sidecar sends one only when it
+  // cannot replay what the renderer missed (it was replaced, or the missed
+  // events outgrew its buffer), so any answer among them is gone for good.
+  subscribeSnapshot(listener: SnapshotListener): () => void {
+    this.snapshotListeners.add(listener);
+    return () => this.snapshotListeners.delete(listener);
   }
 }
 

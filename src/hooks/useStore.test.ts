@@ -358,4 +358,19 @@ test('a lost bridge drops model changes it can no longer settle', () => {
   });
   state = reducer(state, { type: 'SET_CONNECTION', status: 'error', message: 'Bridge closed' });
   assert.deepEqual(state.pendingModelUpdates, {});
+
+  // A replaced sidecar reconnects through a snapshot rather than a disconnect:
+  // only the pending changes go, the chat the user is looking at stays.
+  state = reducer(
+    { ...initialState, selectedChild: { parentAppSessionId: 'sess-a', childSessionId: 'c1' } },
+    {
+      type: 'MODEL_UPDATE_REQUESTED',
+      appSessionId: 'sess-a',
+      requestId: 'r2',
+      settings: { fastMode: true },
+    },
+  );
+  state = reducer(state, { type: 'MODEL_UPDATES_UNANSWERED' });
+  assert.deepEqual(state.pendingModelUpdates, {});
+  assert.equal(state.selectedChild?.childSessionId, 'c1');
 });

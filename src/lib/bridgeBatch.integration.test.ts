@@ -231,6 +231,12 @@ test(
       );
       const seen: ServerEvent[] = [];
       bridge.subscribe((event) => seen.push(event));
+      // The store drops pending setting changes here: their answers were among
+      // the events the snapshot replaces.
+      let snapshotsBeforeEvents = 0;
+      bridge.subscribeSnapshot(() => {
+        if (seen.length === 0) snapshotsBeforeEvents += 1;
+      });
       await bridge.start();
       const first = required(FakeWebSocket.instances.at(-1));
       first.open();
@@ -253,6 +259,7 @@ test(
         seen.map((event) => event.type),
         ['connection', 'runtime.updated', 'sessions.processes'],
       );
+      assert.equal(snapshotsBeforeEvents, 1);
 
       first.close();
       reconnects.shift()?.();
