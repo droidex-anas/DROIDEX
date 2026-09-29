@@ -62,7 +62,7 @@ export async function runPrimaryTurn(
   if (delivery && (!isCurrent() || !preflight || !delivery.isCurrent())) return;
   d.eventFlow.beginTurn(appSessionId, appSessionId);
   if (notice) d.timeline.appendStatus(appSessionId, notice);
-  else if (sentAsSteer) d.timeline.appendPrompt(appSessionId, prompt);
+  else if (sentAsSteer) d.timeline.appendPrompt(appSessionId, prompt, 'user');
   else {
     const writing = d.timeline.recordPrompt(appSessionId, prompt);
     if (writing) await writing;

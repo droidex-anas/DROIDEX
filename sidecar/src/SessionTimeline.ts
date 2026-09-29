@@ -464,13 +464,15 @@ export class SessionTimeline {
 
   // A steer at the moment the model takes it into the running turn. The
   // renderer showed it as pending until now; this row is where the model took
-  // it in, and what the transcript keeps.
+  // it in, and what the transcript keeps. Its source is the user's, like the
+  // renderer's own prompt rows and the stored history, so a restored chat
+  // recognizes it as the same row.
   appendSteer(appSessionId: string, text: string): void {
     const ts = this.clock();
     this.append({
       id: this.noticeId('prompt', ts),
       appSessionId,
-      sourceSessionId: appSessionId,
+      sourceSessionId: 'user',
       role: 'primary',
       ts,
       kind: 'text',
