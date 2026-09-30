@@ -2,9 +2,18 @@
 // its own transcript and composer. A chat or a tile dragged over a tile can
 // split it, take its place or swap with it.
 
-import { memo, useEffect, useLayoutEffect, useRef, useState, type CSSProperties } from 'react';
+import {
+  memo,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type CSSProperties,
+  type RefObject,
+} from 'react';
 import ChatView from '../../components/ChatView';
 import PromptInput from '../../components/PromptInput';
+import { ComposerHeight } from '../../components/composer/ComposerHeight';
 import {
   shallowEqual,
   useStoreDispatch,
@@ -81,6 +90,8 @@ function percent(fraction: number): string {
   return `${String(fraction * 100)}%`;
 }
 
+const FULL_AREA: CSSProperties = { left: 0, top: 0, width: '100%', height: '100%' };
+
 // Interior edges give up half a gutter each, so neighbors sit a gutter apart.
 function boxStyle(box: TileBox): CSSProperties {
   const half = GUTTER_PX / 2;
@@ -105,6 +116,9 @@ const TilePane = memo(function TilePane({
   rightInset,
   isObscured,
   besidePane,
+  underBrowser,
+  composerHost,
+  onComposerOverlayChange,
 }: {
   appSessionId: string | null;
   // Null while the tab is not split.
@@ -115,20 +129,37 @@ const TilePane = memo(function TilePane({
   rightInset: boolean;
   isObscured: boolean;
   besidePane: boolean;
+  underBrowser: boolean;
+  composerHost: RefObject<HTMLElement | null> | null;
+  onComposerOverlayChange?: (open: boolean) => void;
 }) {
   // App loads the focused chat's history; the other tiles load their own.
   useSessionHistory(focused || isEmbedded() ? null : appSessionId);
   const tile: TileChrome | undefined = tileId ? { id: tileId, focused, atTop, atLeft } : undefined;
+  // Under an expanded browser only the composer shows; the transcript keeps
+  // its place, hidden, so the same composer and its draft stay mounted.
   return (
     <>
-      <ChatView
-        appSessionId={appSessionId}
-        rightInset={rightInset}
-        isObscured={isObscured}
-        besidePane={besidePane}
-        {...(tile ? { tile } : {})}
-      />
-      <PromptInput appSessionId={appSessionId} rightInset={rightInset} />
+      <div
+        aria-hidden={underBrowser || undefined}
+        className={underBrowser ? 'invisible flex min-h-0 flex-1 flex-col' : 'contents'}
+      >
+        <ChatView
+          appSessionId={appSessionId}
+          rightInset={rightInset}
+          isObscured={isObscured}
+          besidePane={besidePane}
+          {...(tile ? { tile } : {})}
+        />
+      </div>
+      <ComposerHeight target={composerHost} className={underBrowser ? 'pointer-events-auto' : ''}>
+        <PromptInput
+          appSessionId={appSessionId}
+          rightInset={rightInset && !underBrowser}
+          compact={underBrowser}
+          {...(onComposerOverlayChange ? { onOverlayChange: onComposerOverlayChange } : {})}
+        />
+      </ComposerHeight>
     </>
   );
 });
@@ -137,10 +168,19 @@ export function ChatTiles({
   rightInset,
   isObscured,
   besidePane,
+  underBrowser,
+  composerHost,
+  onComposerOverlayChange,
 }: {
   rightInset: boolean;
   isObscured: boolean;
   besidePane: boolean;
+  // An expanded browser lays the focused tile's composer under its page and
+  // hides the rest of the tiles.
+  underBrowser: boolean;
+  // Where the focused composer publishes its height for the browser to keep clear.
+  composerHost: RefObject<HTMLElement | null>;
+  onComposerOverlayChange: (open: boolean) => void;
 }) {
   const dispatch = useStoreDispatch();
   const source = useStoreSelector(selectTileSource, shallowEqual);
@@ -239,8 +279,10 @@ export function ChatTiles({
           <div
             key={slot}
             data-tile-id={tile.id}
-            className="absolute flex flex-col overflow-hidden"
-            style={boxStyle(box)}
+            className={`absolute flex-col overflow-hidden ${
+              underBrowser && !focused ? 'hidden' : 'flex'
+            }`}
+            style={underBrowser ? FULL_AREA : boxStyle(box)}
             onPointerDownCapture={() => {
               pressedTileId.current = tile.id;
               focus(tile.id);
@@ -260,6 +302,9 @@ export function ChatTiles({
               // A tile left of another ends its scrollbar mid-window, as the
               // utility pane does.
               besidePane={besidePane || !box.atRight}
+              underBrowser={underBrowser && focused}
+              composerHost={focused ? composerHost : null}
+              {...(focused ? { onComposerOverlayChange } : {})}
             />
             {drag && !isObscured && (
               <TileDropTarget
@@ -274,7 +319,7 @@ export function ChatTiles({
           </div>
         );
       })}
-      {grid.columns.length > 1 && (
+      {grid.columns.length > 1 && !underBrowser && (
         <TileDivider
           key={layout}
           orientation="vertical"
@@ -296,7 +341,7 @@ export function ChatTiles({
         />
       )}
       {boxes
-        .filter((box) => box.atTop && !box.atBottom)
+        .filter((box) => !underBrowser && box.atTop && !box.atBottom)
         .map((box) => {
           const { columnIndex } = box;
           return (
