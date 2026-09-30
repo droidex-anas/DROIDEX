@@ -82,6 +82,11 @@ export class ClaudeEventMapper {
     this.subagents.beginTurn();
   }
 
+  // A turn no prompt of ours opened has no fork point; what it spawned stays linked.
+  forgetForkPoint(): void {
+    this.turnId = undefined;
+  }
+
   map(message: SDKMessage, fastMode = false): NormalizedEvent[] {
     switch (message.type) {
       case 'stream_event':

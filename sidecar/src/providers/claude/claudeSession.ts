@@ -296,6 +296,11 @@ export class ClaudeSession implements ProviderSession {
           return;
         }
       }
+    } catch (error) {
+      // A turn that fails has ended as surely as one that answered. Only a chat
+      // that stopped reading leaves the CLI still running it.
+      ended = true;
+      throw error;
     } finally {
       this.activeTurnId = undefined;
       this.steerable = false;
@@ -410,7 +415,8 @@ export class ClaudeSession implements ProviderSession {
   private continueAfterTurn(items: { message: SDKMessage; events: NormalizedEvent[] }[]): void {
     for (const { message, events } of items) {
       if (!this.delegatedTurnRunning && startsDelegatedTurn(message)) {
-        this.mapper.beginTurn(undefined);
+        // Already mapped, spawns included: only the fork point is dropped.
+        this.mapper.forgetForkPoint();
         this.setDelegatedTurn(true);
       }
       // Mapped while our turn was current, so they carry its fork point.
