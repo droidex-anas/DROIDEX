@@ -1113,6 +1113,22 @@ test("a lead cannot retune a thread's own thread past the chat that started it",
   assert.equal(h.sessions.get(child.appSessionId)?.autonomy, 'medium');
 });
 
+test(
+  "retuning a thread's model never waits on a turn that may be waiting on its lead",
+  { timeout: 10_000 },
+  async (t) => {
+    const h = await harness();
+    t.after(() => h.projects.close());
+    const { main } = await h.root();
+    const child = await h.projects.spawn(main, input);
+    // A Claude thread takes a new model or effort only once its running turn
+    // ends, and that turn may be blocked on a question to this lead.
+    h.port.configure = () => new Promise(() => undefined);
+    const tuned = await h.projects.configure(main, child.appSessionId, { reasoningEffort: 'low' });
+    assert.match(tuned.pending ?? '', /current turn ends/);
+  },
+);
+
 test('a spawn carries a settled plan step, or none at all', async (t) => {
   const h = await harness();
   t.after(() => h.projects.close());

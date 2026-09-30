@@ -66,6 +66,9 @@ export interface ProjectPort {
 const SIDE_CHAT_CANNOT_LEAD =
   'A side chat cannot lead a project, because closing it deletes it. Start the threads from the chat it branched from.';
 
+const MODEL_CHANGE_PENDING =
+  "The new model or effort applies once the thread's current turn ends, or right away if it is idle. Until then modelId and reasoningEffort show what it runs on; thread_read shows the change once it has applied. If it cannot apply, the thread's own chat says why.";
+
 /** A spawn under way and the chat that asked for it, which the user's Stop on that chat cancels. */
 interface SpawnUnderWay {
   source: string;
@@ -481,12 +484,17 @@ export class ProjectService {
     };
   }
 
-  /** Retunes a thread within the limits of the chat that started it, and reads back what took. */
+  /**
+   * Retunes a thread within the limits of the chat that started it, and reads
+   * back what took. Autonomy applies before this returns. A new model or effort
+   * is handed over instead: a Claude thread takes one only once its running
+   * turn ends, and that turn may be waiting on this caller.
+   */
   async configure(
     source: string,
     target: string,
     settings: ThreadSettings,
-  ): Promise<ThreadReadout> {
+  ): Promise<ThreadReadout & { pending?: string }> {
     const project = this.controlledProject(source, target);
     const caller = this.requireSession(source);
     const session = this.requireSession(target);
@@ -496,14 +504,33 @@ export class ProjectService {
     // A lead can retune a thread its own thread started, and that thread is the
     // ceiling, not the lead.
     const owner = requireThread(project, target).ownerAppSessionId ?? source;
-    if (settings.autonomy) checkWithinAutonomy(this.requireSession(owner), settings.autonomy);
-    await this.sessions.configure(target, {
+    if (settings.autonomy) {
+      checkWithinAutonomy(this.requireSession(owner), settings.autonomy);
+      await this.sessions.configure(target, { autonomy: settings.autonomy });
+    }
+    const model = {
       ...(modelId ? { modelId } : {}),
       ...(settings.reasoningEffort ? { reasoningEffort: settings.reasoningEffort } : {}),
-      ...(settings.autonomy ? { autonomy: settings.autonomy } : {}),
-    });
+    };
+    const modelChanged = Object.keys(model).length > 0;
+    // The thread's own chat reports a change that fails, as it does for the
+    // composer's controls.
+    if (modelChanged)
+      void this.sessions.configure(target, model).catch((error: unknown) => {
+        const reason = error instanceof Error ? error.message : String(error);
+        this.emit({
+          type: 'error',
+          code: 'session.model_update_failed',
+          appSessionId: target,
+          message: `Could not change the chat's settings: ${reason}`,
+          recoverable: true,
+        });
+      });
     this.wakes.kick(project);
-    return this.read(source, target);
+    return {
+      ...this.read(source, target),
+      ...(modelChanged ? { pending: MODEL_CHANGE_PENDING } : {}),
+    };
   }
 
   async stop(source: string, target: string): Promise<void> {

@@ -249,7 +249,7 @@ export function threadTools(appSessionId: () => string) {
     ),
     tool(
       'thread_configure',
-      "Change a thread's model, reasoning effort or autonomy when the work changes shape, instead of stopping it and starting another. Its history stays.",
+      "Change a thread's model, reasoning effort or autonomy when the work changes shape, instead of stopping it and starting another. Its history stays. Autonomy applies at once; a new model or effort applies once the thread's current turn ends.",
       configureInput.shape,
       safeTool(async ({ threadId, ...settings }: z.infer<typeof configureInput>) => {
         const projects = await requireProjectService();
