@@ -23,6 +23,9 @@ export const SESSION_RUNTIME_IDLE_RETIREMENT_MS = 30 * 60_000;
 const SESSION_RUNTIME_RETIRED_STATUS =
   'Session runtime released after 30 minutes idle to free memory. Sending a message restores it.';
 
+const SESSION_RUNTIME_RELEASED_FOR_ROOM_STATUS =
+  'Session runtime released to make room for another chat. Sending a message restores it.';
+
 // `streaming` is the authority on whether a turn is in flight: nothing moves a
 // settled session out of 'running' or 'planning'. These phases mean the session
 // is holding an unanswered provider request instead.
@@ -73,6 +76,18 @@ function isRetirableSession(facts: SessionRetirementFacts): boolean {
     // talking to this chat, however idle its transcript looks.
     !facts.hasLiveVoice
   );
+}
+
+function oldestRetirableSession(
+  facts: Iterable<SessionRetirementFacts>,
+  excludedAppSessionId: string,
+): SessionRetirementFacts | undefined {
+  let oldest: SessionRetirementFacts | undefined;
+  for (const session of facts) {
+    if (session.appSessionId === excludedAppSessionId || !isRetirableSession(session)) continue;
+    if (!oldest || session.idleSince < oldest.idleSince) oldest = session;
+  }
+  return oldest;
 }
 
 export function isDueForRetirement(
@@ -214,6 +229,28 @@ export class SessionRuntimeRetirement {
       this.sweeping = null;
     });
     return this.sweeping;
+  }
+
+  async releaseOldestForCapacity(excludedAppSessionId: string): Promise<boolean> {
+    const d = this.dependencies;
+    const candidate = oldestRetirableSession(this.facts(), excludedAppSessionId);
+    if (!candidate) return false;
+
+    // Recheck after choosing: focus, queued work, or another close may have
+    // changed while the facts were being read.
+    const current = this.factsFor(candidate.appSessionId);
+    if (!current || !isRetirableSession(current)) return false;
+    d.appendProgress(current.appSessionId, SESSION_RUNTIME_RELEASED_FOR_ROOM_STATUS);
+    try {
+      await d.retire(current.appSessionId);
+      return true;
+    } catch (error) {
+      d.emitError(
+        current.appSessionId,
+        `Could not release this session's idle runtime: ${error instanceof Error ? error.message : String(error)}`,
+      );
+      return false;
+    }
   }
 
   private async sweepOnce(): Promise<void> {

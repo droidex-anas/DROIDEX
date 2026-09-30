@@ -214,6 +214,21 @@ test('a session stays warm for a full budget after the user switches away from i
   assert.deepEqual(h.retired, ['read-for-a-while']);
 });
 
+test('capacity release chooses the oldest safe runtime and excludes the delivery target', async () => {
+  const h = ownerHarness();
+  h.add('delivery-target', 0);
+  h.add('newer', 3_000);
+  h.add('oldest', 1_000);
+  h.add('focused', 500);
+  h.focus.current = 'focused';
+  h.owner.noteFocus(null);
+
+  assert.equal(await h.owner.releaseOldestForCapacity('delivery-target'), true);
+  assert.deepEqual(h.retired, ['oldest']);
+  assert.equal(await h.owner.releaseOldestForCapacity('delivery-target'), true);
+  assert.deepEqual(h.retired, ['oldest', 'newer']);
+});
+
 test('a prompt that arrives during an earlier release saves the session behind it', async () => {
   let releaseSecond = (): void => undefined;
   const retired: string[] = [];

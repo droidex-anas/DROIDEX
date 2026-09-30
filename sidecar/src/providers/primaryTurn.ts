@@ -68,7 +68,7 @@ export async function runPrimaryTurn(
     ? await d.applyDesignToolPolicy(liveSession, isDesignPrompt(prompt))
     : undefined;
   if (delivery && (!isCurrent() || !preflight || !delivery.isCurrent())) {
-    delivery.declined();
+    delivery.declined(isCurrent() && delivery.isCurrent() ? 'failed' : 'stale');
     return;
   }
   d.eventFlow.beginTurn(appSessionId, appSessionId);
@@ -80,7 +80,7 @@ export async function runPrimaryTurn(
     if (writing) await writing;
   }
   if (!isCurrent() || stoppedBeforeStart()) {
-    delivery?.declined();
+    delivery?.declined('stale');
     return;
   }
   d.context.beginTurn(appSessionId);
@@ -96,7 +96,7 @@ export async function runPrimaryTurn(
       stoppedBeforeStart() ||
       (delivery && (!configured || !delivery.isCurrent()))
     ) {
-      delivery?.declined();
+      delivery?.declined('stale');
       context.stopPolling();
       return;
     }
@@ -126,9 +126,7 @@ export async function runPrimaryTurn(
   }
   if (!isCurrent()) return;
   if (turnError) settleTurnFailure(d, liveSession, turnError, reportedError, reportedUsageLimit);
-  // Keep streaming=true while the context refresh is in flight so concurrent
-  // sends queue instead of racing a second lifecycle turn.
-  await context.refresh();
+  void context.refresh();
 }
 
 function settleTurnFailure(

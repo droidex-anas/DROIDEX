@@ -567,6 +567,42 @@ test('a refresh in flight across a primary compaction never republishes stale st
   assert.equal(live.summary.contextTokens, 0);
 });
 
+test('a refresh from an earlier turn cannot overwrite newer context stats', async () => {
+  const h = createHarness();
+  const { live, session } = await registerLive(h, 'app-1');
+  let resolveOld!: (value: Awaited<ReturnType<typeof session.getContextStats>>) => void;
+  let calls = 0;
+  session.getContextStats = async () => {
+    calls += 1;
+    if (calls === 1)
+      return await new Promise<Awaited<ReturnType<typeof session.getContextStats>>>((resolve) => {
+        resolveOld = resolve;
+      });
+    return {
+      used: 300,
+      remaining: 700,
+      limit: 1_000,
+      accuracy: ContextStatsAccuracy.Estimated,
+      updatedAt: '2026-01-01T00:00:01.000Z',
+    };
+  };
+
+  const oldRefresh = h.context.refresh(primaryTarget(h, live));
+  h.context.beginTurn('app-1');
+  await h.context.refresh(primaryTarget(h, live));
+  resolveOld({
+    used: 100,
+    remaining: 900,
+    limit: 1_000,
+    accuracy: ContextStatsAccuracy.Estimated,
+    updatedAt: '2026-01-01T00:00:00.000Z',
+  });
+  await oldRefresh;
+
+  assert.equal(live.summary.contextTokens, 300);
+  assert.equal(contextEvents(h).at(-1)?.stats.used, 300);
+});
+
 test('compaction bookkeeping survives persistence failure without double incrementing', async () => {
   const h = createHarness();
   const { live } = await registerLive(h, 'app-1');
