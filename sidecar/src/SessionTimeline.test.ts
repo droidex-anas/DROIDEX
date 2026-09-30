@@ -645,8 +645,9 @@ test('an open session reads its own transcript before the history index knows th
   const file = new ProviderTranscriptFile('claude-live', () => started);
   harness.timeline.useTranscript('claude-live', file);
   await file.appendPrompt('Port the client.');
-  // Still queued: the read waits for it.
   file.append({ ...transcript('reply', 'claude-live'), text: 'Ported it to v3.' });
+  // The turn settles and its reply is still being written: the read waits for it.
+  void file.flush();
 
   const tail = await harness.timeline.tail('claude-live', 10);
   assert.deepEqual(

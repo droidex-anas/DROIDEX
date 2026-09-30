@@ -10,6 +10,8 @@ export interface TimelineTranscript {
   appendPrompt(text: string): Promise<void>;
   append(event: TranscriptEvent): void | Promise<void>;
   flush(): Promise<void>;
+  // Every line queued so far is on disk; the message still streaming stays open.
+  written(): Promise<void>;
   // The stored file once every line queued before the call is written.
   read(): Promise<string>;
 }
@@ -65,6 +67,10 @@ export class TimelineTranscripts {
 
   async flush(appSessionId: string): Promise<void> {
     await this.byId.get(appSessionId)?.flush();
+  }
+
+  async written(appSessionId: string): Promise<void> {
+    await this.byId.get(appSessionId)?.written();
   }
 
   // Undefined when no writer holds the session, whose file is then complete.

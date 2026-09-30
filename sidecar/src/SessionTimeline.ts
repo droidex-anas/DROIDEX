@@ -312,7 +312,7 @@ export class SessionTimeline {
       this.transcripts.path(summary.appSessionId) ??
       this.dependencies.liveSessionFile?.(providerSessionId);
     // Lines still in the write queue land before either file is read.
-    await this.transcripts.flush(summary.appSessionId);
+    await this.transcripts.written(summary.appSessionId);
     if (openFile && !this.loaders.resolveChain(summary.appSessionId, providerSessionId).length)
       return this.loaders.openTranscriptTail(summary.appSessionId, openFile, limit);
     return this.loadStandard(summary.appSessionId, providerSessionId, undefined, limit).transcripts;
