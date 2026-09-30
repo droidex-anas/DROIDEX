@@ -67,6 +67,10 @@ async function sessionRuntimeCwd(appCwd: string): Promise<string> {
 interface LocalMcpResource {
   close(): Promise<void>;
 }
+interface AdmittedPrompt {
+  liveSession: LiveSession;
+  stops: number;
+}
 interface DeferredClose {
   promise: Promise<void>;
   resolve: () => void;
@@ -596,15 +600,22 @@ export class SessionLifecycle {
   /**
    * Steers a prompt nobody typed into the turn a live session is running, as
    * the user's Steer does: the harness takes it in at its own next step, and
-   * one the turn cannot take waits behind it. False when no turn is running,
-   * so the caller delivers it another way. It never waits for the delivery.
+   * one the turn cannot take waits behind it. Resolves once the chat has taken
+   * the prompt, never waiting for the delivery. False when no turn is running
+   * or the prompt was not taken, so the caller delivers it another way.
    */
-  steerRunningTurn(appSessionId: string, text: string): boolean {
+  async steerRunningTurn(appSessionId: string, text: string): Promise<boolean> {
     const liveSession = this.dependencies.registry.getLive(appSessionId);
     if (!liveSession || liveSession.closeMode) return false;
     if (!liveSession.streaming && !liveSession.compacting && !liveSession.autoCompacting)
       return false;
-    void this.send(appSessionId, text, undefined, randomUUID()).catch((error: unknown) => {
+    const prompt = sessionPrompt(text, undefined, randomUUID());
+    const admitted = await this.admitPrompt(appSessionId, prompt);
+    if (admitted === 'held') return true;
+    if (!admitted) return false;
+    // A Stop can land between admission and this line.
+    if (this.stopCount(appSessionId) !== admitted.stops) return false;
+    void this.handOver(appSessionId, admitted, prompt).catch((error: unknown) => {
       if (!this.dependencies.isShutdownStarted())
         this.dependencies.emitError({ appSessionId, message: errMsg(error) });
     });
@@ -624,9 +635,19 @@ export class SessionLifecycle {
   // still drawn when it finally runs.
   private async sendPrompt(requestedAppSessionId: string, prompt: SessionPrompt): Promise<void> {
     const admitted = await this.admitPrompt(requestedAppSessionId, prompt);
-    if (!admitted) return;
+    if (!admitted || admitted === 'held') return;
     // A Stop can land between admission and this line.
     if (this.stopCount(requestedAppSessionId) !== admitted.stops) return;
+    await this.handOver(requestedAppSessionId, admitted, prompt);
+  }
+
+  // Gives an admitted prompt to the chat: into the running turn, behind it, or
+  // as the next turn.
+  private async handOver(
+    requestedAppSessionId: string,
+    admitted: AdmittedPrompt,
+    prompt: SessionPrompt,
+  ): Promise<void> {
     const { liveSession } = admitted;
     if (prompt.steerId) {
       if (await this.steer(liveSession, prompt)) return;
@@ -724,22 +745,20 @@ export class SessionLifecycle {
     }
   }
 
-  // Where a prompt the user sent goes: the live session to send it to, or
-  // nowhere, because a Stop took it back or it now waits for a chat that is
-  // relaunching. A relaunch can begin while the send is being prepared. The
-  // caller checks the Stop count again once this resolves.
+  // Where a prompt the user sent goes: the live session to send it to, 'held'
+  // when it now waits for a chat that is relaunching, or nowhere, because a
+  // Stop took it back or the chat could not take it. A relaunch can begin while
+  // the send is being prepared. The caller checks the Stop count again once
+  // this resolves.
   private async admitPrompt(
     id: string,
     prompt: SessionPrompt,
-  ): Promise<{ liveSession: LiveSession; stops: number } | undefined> {
-    if (this.waitForRelaunch(id, prompt)) return undefined;
+  ): Promise<AdmittedPrompt | 'held' | undefined> {
+    if (this.waitForRelaunch(id, prompt)) return 'held';
     const stops = this.stopCount(id);
     const liveSession = await this.prepareToSend(id);
     if (this.stopCount(id) !== stops) return undefined;
-    if (!liveSession) {
-      this.waitForRelaunch(id, prompt);
-      return undefined;
-    }
+    if (!liveSession) return this.waitForRelaunch(id, prompt) ? 'held' : undefined;
     return { liveSession, stops };
   }
 

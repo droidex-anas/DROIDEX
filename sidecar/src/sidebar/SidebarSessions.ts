@@ -15,8 +15,8 @@ export interface SidebarHost {
   /** Whether an approval or a question is waiting on this session. */
   isBlocked(appSessionId: string): boolean;
   transcriptTail(appSessionId: string, limit: number): Promise<TranscriptEvent[]>;
-  /** Steers the prompt into a running turn, as the user's Steer does; false when no turn is running. */
-  steerRunningTurn(appSessionId: string, prompt: string): boolean;
+  /** Steers the prompt into a running turn, as the user's Steer does; false when no turn took it. */
+  steerRunningTurn(appSessionId: string, prompt: string): Promise<boolean>;
   /** Starts a turn; `isCurrent` turning false before dispatch cancels it. */
   deliver(
     appSessionId: string,
@@ -327,7 +327,7 @@ export class SidebarSessions {
      to take the prompt, never for the turn. */
   private async deliver(caller: string, target: string, title: string, prompt: string) {
     this.requireWithinAutonomy(caller, target, title);
-    if (this.host.steerRunningTurn(target, prompt)) return 'steered';
+    if (await this.host.steerRunningTurn(target, prompt)) return 'steered';
     const receipt = await this.host.deliver(
       target,
       prompt,
@@ -347,7 +347,7 @@ export class SidebarSessions {
         `${title} is not open, and DROIDEX already has as many chats open as it opens on its own. It can be reached once one is released, or when the user opens it.`,
       );
     this.requireWithinAutonomy(caller, target, title);
-    if (this.host.steerRunningTurn(target, prompt)) return 'steered';
+    if (await this.host.steerRunningTurn(target, prompt)) return 'steered';
     throw new Error(`${title} is busy; try again in a moment.`);
   }
 
