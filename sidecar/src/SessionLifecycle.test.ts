@@ -821,13 +821,30 @@ test('a prompt from another chat steers the running turn without waiting for it'
   const gate = provider.deferNextStream();
   await harness.lifecycle.create(createCommand('first'));
   await provider.waitForPrompts(1);
-  assert.equal(await harness.lifecycle.steerRunningTurn('unknown', 'nowhere to go'), false);
+  const always = () => true;
+  assert.equal(await harness.lifecycle.steerRunningTurn('unknown', 'nowhere to go', always), false);
   // A prompt the chat could not take is reported, not dropped behind a success.
   harness.setPendingApply(() => Promise.resolve(false));
-  assert.equal(await harness.lifecycle.steerRunningTurn('target', 'settings failed'), false);
+  assert.equal(
+    await harness.lifecycle.steerRunningTurn('target', 'settings failed', always),
+    false,
+  );
+  // A guard that turns false while the chat takes it withdraws it.
+  let allowed = true;
+  harness.setPendingApply(() => {
+    allowed = false;
+    return Promise.resolve(true);
+  });
+  assert.equal(
+    await harness.lifecycle.steerRunningTurn('target', 'withdrawn', () => allowed),
+    false,
+  );
   harness.setPendingApply(() => Promise.resolve(true));
 
-  assert.equal(await harness.lifecycle.steerRunningTurn('target', 'from another chat'), true);
+  assert.equal(
+    await harness.lifecycle.steerRunningTurn('target', 'from another chat', always),
+    true,
+  );
   // It is pending the way the user's own steer is; Droid takes no steer yet,
   // so it waits behind the turn.
   const pending = () =>

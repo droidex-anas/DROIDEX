@@ -284,8 +284,8 @@ export class SessionManager {
     isAutomationRun: (appSessionId) => isUnattendedAutomationSession(appSessionId),
     isBlocked: (appSessionId) => this.interactions.hasPending(appSessionId),
     transcriptTail: (appSessionId, limit) => this.timeline.tail(appSessionId, limit),
-    steerRunningTurn: (appSessionId, prompt) =>
-      this.lifecycle.steerRunningTurn(appSessionId, prompt),
+    steerRunningTurn: (appSessionId, prompt, isCurrent) =>
+      this.lifecycle.steerRunningTurn(appSessionId, prompt, isCurrent),
     deliver: (appSessionId, prompt, isCurrent) =>
       this.lifecycle.deliverScheduled(appSessionId, prompt, isCurrent),
     answerQuestion: (appSessionId, requestId, answers) =>

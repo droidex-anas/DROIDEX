@@ -602,19 +602,24 @@ export class SessionLifecycle {
    * the user's Steer does: the harness takes it in at its own next step, and
    * one the turn cannot take waits behind it. Resolves once the chat has taken
    * the prompt, never waiting for the delivery. False when no turn is running
-   * or the prompt was not taken, so the caller delivers it another way.
+   * or the prompt was not taken, so the caller delivers it another way;
+   * `isCurrent` turning false before the chat takes it withdraws it.
    */
-  async steerRunningTurn(appSessionId: string, text: string): Promise<boolean> {
+  async steerRunningTurn(
+    appSessionId: string,
+    text: string,
+    isCurrent: () => boolean,
+  ): Promise<boolean> {
     const liveSession = this.dependencies.registry.getLive(appSessionId);
     if (!liveSession || liveSession.closeMode) return false;
     if (!liveSession.streaming && !liveSession.compacting && !liveSession.autoCompacting)
       return false;
     const prompt = sessionPrompt(text, undefined, randomUUID());
-    const admitted = await this.admitPrompt(appSessionId, prompt);
+    const admitted = await this.admitPrompt(appSessionId, prompt, isCurrent);
     if (admitted === 'held') return true;
     if (!admitted) return false;
-    // A Stop can land between admission and this line.
-    if (this.stopCount(appSessionId) !== admitted.stops) return false;
+    // A Stop or the caller's guard can change between admission and this line.
+    if (this.stopCount(appSessionId) !== admitted.stops || !isCurrent()) return false;
     void this.handOver(appSessionId, admitted, prompt).catch((error: unknown) => {
       if (!this.dependencies.isShutdownStarted())
         this.dependencies.emitError({ appSessionId, message: errMsg(error) });
@@ -747,17 +752,18 @@ export class SessionLifecycle {
 
   // Where a prompt the user sent goes: the live session to send it to, 'held'
   // when it now waits for a chat that is relaunching, or nowhere, because a
-  // Stop took it back or the chat could not take it. A relaunch can begin while
-  // the send is being prepared. The caller checks the Stop count again once
-  // this resolves.
+  // Stop or the caller's guard took it back or the chat could not take it. A
+  // relaunch can begin while the send is being prepared. The caller checks the
+  // Stop count again once this resolves.
   private async admitPrompt(
     id: string,
     prompt: SessionPrompt,
+    isCurrent?: () => boolean,
   ): Promise<AdmittedPrompt | 'held' | undefined> {
     if (this.waitForRelaunch(id, prompt)) return 'held';
     const stops = this.stopCount(id);
     const liveSession = await this.prepareToSend(id);
-    if (this.stopCount(id) !== stops) return undefined;
+    if (this.stopCount(id) !== stops || isCurrent?.() === false) return undefined;
     if (!liveSession) return this.waitForRelaunch(id, prompt) ? 'held' : undefined;
     return { liveSession, stops };
   }
