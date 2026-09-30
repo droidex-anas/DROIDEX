@@ -101,6 +101,9 @@ export interface SessionPrompt {
   // Nobody typed it (a scheduled delivery, a message from another chat), so
   // the chat has not shown it and the turn draws it.
   announce?: true;
+  // The sender's guard on a message from another chat. Once it turns false the
+  // prompt is dropped wherever it waits, as a Stop drops it.
+  isCurrent?: () => boolean;
 }
 
 interface LiveTurnState {
@@ -602,8 +605,9 @@ export class SessionLifecycle {
    * the user's Steer does: the harness takes it in at its own next step, and
    * one the turn cannot take waits behind it. Resolves once the chat has taken
    * the prompt, never waiting for the delivery. False when no turn is running
-   * or the prompt was not taken, so the caller delivers it another way;
-   * `isCurrent` turning false before the chat takes it withdraws it.
+   * or the prompt was not taken, so the caller delivers it another way.
+   * `isCurrent` turning false withdraws it: this resolves false while the chat
+   * has not taken it, and one that went on behind the turn is dropped there.
    */
   async steerRunningTurn(
     appSessionId: string,
@@ -614,8 +618,8 @@ export class SessionLifecycle {
     if (!liveSession || liveSession.closeMode) return false;
     if (!liveSession.streaming && !liveSession.compacting && !liveSession.autoCompacting)
       return false;
-    const prompt = sessionPrompt(text, undefined, randomUUID());
-    const admitted = await this.admitPrompt(appSessionId, prompt, isCurrent);
+    const prompt = { ...sessionPrompt(text, undefined, randomUUID()), isCurrent };
+    const admitted = await this.admitPrompt(appSessionId, prompt);
     if (admitted === 'held') return true;
     if (!admitted) return false;
     // A Stop or the caller's guard can change between admission and this line.
@@ -656,10 +660,12 @@ export class SessionLifecycle {
     const { liveSession } = admitted;
     if (prompt.steerId) {
       if (await this.steer(liveSession, prompt)) return;
-      // A Stop, or a new runtime, since it was sent takes it back.
+      // A Stop, a new runtime, or its sender withdrawing it since it was sent
+      // takes it back.
       if (
         this.stopCount(requestedAppSessionId) !== admitted.stops ||
-        this.dependencies.registry.getLive(liveSession.summary.appSessionId) !== liveSession
+        this.dependencies.registry.getLive(liveSession.summary.appSessionId) !== liveSession ||
+        isWithdrawn(prompt)
       )
         return;
     }
@@ -752,18 +758,17 @@ export class SessionLifecycle {
 
   // Where a prompt the user sent goes: the live session to send it to, 'held'
   // when it now waits for a chat that is relaunching, or nowhere, because a
-  // Stop or the caller's guard took it back or the chat could not take it. A
-  // relaunch can begin while the send is being prepared. The caller checks the
-  // Stop count again once this resolves.
+  // Stop or its sender took it back or the chat could not take it. A relaunch
+  // can begin while the send is being prepared. The caller checks the Stop
+  // count again once this resolves.
   private async admitPrompt(
     id: string,
     prompt: SessionPrompt,
-    isCurrent?: () => boolean,
   ): Promise<AdmittedPrompt | 'held' | undefined> {
     if (this.waitForRelaunch(id, prompt)) return 'held';
     const stops = this.stopCount(id);
     const liveSession = await this.prepareToSend(id);
-    if (this.stopCount(id) !== stops || isCurrent?.() === false) return undefined;
+    if (this.stopCount(id) !== stops || isWithdrawn(prompt)) return undefined;
     if (!liveSession) return this.waitForRelaunch(id, prompt) ? 'held' : undefined;
     return { liveSession, stops };
   }
@@ -1311,6 +1316,14 @@ export class SessionLifecycle {
       this.updateQueuedSends(liveSession);
       return;
     }
+    // Its sender withdrew it while it waited, so what was queued behind it runs instead.
+    if (isWithdrawn(prompt)) {
+      const next = liveSession.pendingSends.shift();
+      if (next === undefined) return;
+      this.updateQueuedSends(liveSession);
+      await this.drive(appSessionId, next);
+      return;
+    }
     // A scheduled prompt keeps the runtime it reserved; the new window waits
     // for the next message the user sends.
     if (liveSession.restartBeforeNextTurn && !delivery) {
@@ -1462,9 +1475,11 @@ export class SessionLifecycle {
       });
       return;
     }
-    if (waiting.length === 0) return;
-    const [first, ...rest] = waiting;
-    liveSession.pendingSends.unshift(...(liveSession.streaming ? waiting : rest));
+    // A prompt its sender withdrew while the chat restarted is not sent.
+    const wanted = waiting.filter((queued) => !isWithdrawn(queued));
+    if (wanted.length === 0) return;
+    const [first, ...rest] = wanted;
+    liveSession.pendingSends.unshift(...(liveSession.streaming ? wanted : rest));
     if (liveSession.streaming) this.updateQueuedSends(liveSession);
     else if (liveSession.restartBeforeNextTurn) await this.relaunch(liveSession, first);
     else await this.runTurn(liveSession, first);
@@ -1523,6 +1538,10 @@ function sessionPrompt(
     ...(steerId ? { steerId } : {}),
     order: ++promptOrder,
   };
+}
+
+function isWithdrawn(prompt: SessionPrompt): boolean {
+  return prompt.isCurrent?.() === false;
 }
 
 // What the chat shows of its queue: how many sends wait, and the steers the

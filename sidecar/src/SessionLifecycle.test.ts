@@ -841,6 +841,11 @@ test('a prompt from another chat steers the running turn without waiting for it'
   );
   harness.setPendingApply(() => Promise.resolve(true));
 
+  allowed = true;
+  assert.equal(
+    await harness.lifecycle.steerRunningTurn('target', 'withdrawn behind the turn', () => allowed),
+    true,
+  );
   assert.equal(
     await harness.lifecycle.steerRunningTurn('target', 'from another chat', always),
     true,
@@ -849,11 +854,14 @@ test('a prompt from another chat steers the running turn without waiting for it'
   // so it waits behind the turn.
   const pending = () =>
     harness.registry.getCanonicalSummary('target')?.pendingSteers?.map((steer) => steer.text);
-  for (let tick = 0; tick < 100 && !pending()?.length; tick += 1)
+  for (let tick = 0; tick < 100 && pending()?.length !== 2; tick += 1)
     await new Promise((resolve) => setImmediate(resolve));
-  assert.deepEqual(pending(), ['from another chat']);
+  assert.deepEqual(pending(), ['withdrawn behind the turn', 'from another chat']);
   assert.equal(interruptCount(harness), 0);
 
+  // A guard that turns false while it waits behind the turn drops it there,
+  // and the message behind it still runs.
+  allowed = false;
   gate.resolve();
   await provider.waitForPrompts(2);
   assert.deepEqual(provider.prompts, ['first', 'from another chat']);
