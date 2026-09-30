@@ -25,7 +25,7 @@ interface Dependencies {
   isShutdownStarted: () => boolean;
   refreshPrimary: (live: LiveSession, modelChanged: boolean) => Promise<void>;
   onPrimaryModelChanged: (summary: SessionSummary, from: string, to: string) => void;
-  rearmChildAgentModelChanged: (
+  updateChildAgentModel: (
     appSessionId: string,
     agent: Exclude<ConfigurableSessionRole, 'primary'>,
     effectiveModelId: string,
@@ -129,7 +129,7 @@ export class SessionModelSettings {
         this.persistAccepted(summary, live, agent, selection);
         if (agent !== 'primary') {
           if (settings.modelId !== undefined && selection.modelId) {
-            await this.d.rearmChildAgentModelChanged(appSessionId, agent, selection.modelId);
+            await this.d.updateChildAgentModel(appSessionId, agent, selection.modelId);
             if (!isCurrent()) return false;
           }
           return true;

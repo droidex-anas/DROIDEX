@@ -1102,11 +1102,7 @@ test('role model update queues behind accepted in-flight exact settings', async 
   });
   await runtime.waitForSettings(1);
 
-  const roleUpdate = h.owner.rearmRoleModelChangedChildren(
-    h.parentId,
-    'worker',
-    'role-default-model',
-  );
+  const roleUpdate = h.owner.updateRoleModelChildren(h.parentId, 'worker', 'role-default-model');
   await Promise.resolve();
 
   assert.deepEqual(
@@ -1123,6 +1119,38 @@ test('role model update queues behind accepted in-flight exact settings', async 
   );
   assert.equal(h.owner.list(h.parentId)[0]?.modelId, 'role-default-model');
   assert.equal(h.owner.list(h.parentId)[0]?.reasoningEffort, ReasoningEffort.High);
+});
+
+test('queued role model update skips a child whose role changed', async () => {
+  const record = childRecord('child', 'provider');
+  const h = createHarness([record]);
+  const runtime = await h.open(record);
+  const gate = runtime.deferNextUpdateSettings();
+  const exactUpdate = h.owner.updateSettings({
+    type: 'child.updateSettings',
+    parentAppSessionId: h.parentId,
+    childSessionId: record.childSessionId,
+    modelId: 'accepted-model',
+  });
+  await runtime.waitForSettings(1);
+
+  h.owner.admitChildObservation({
+    parentAppSessionId: h.parentId,
+    providerSessionId: record.providerSessionId,
+    role: 'validator',
+    ...(record.spawnLink ? { spawnLink: record.spawnLink } : {}),
+  });
+  const roleUpdate = h.owner.updateRoleModelChildren(h.parentId, 'worker', 'worker-model');
+
+  gate.resolve();
+  await Promise.all([exactUpdate, roleUpdate]);
+
+  assert.equal(h.owner.list(h.parentId)[0]?.role, 'validator');
+  assert.equal(h.owner.list(h.parentId)[0]?.modelId, 'accepted-model');
+  assert.deepEqual(
+    runtime.settings.map((settings) => settings.modelId),
+    ['accepted-model'],
+  );
 });
 
 test('changed role cancels and invalidates its captured automatic target', async () => {

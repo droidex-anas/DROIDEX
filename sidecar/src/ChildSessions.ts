@@ -68,9 +68,6 @@ import { dequeueQueuedChild, prepareChildInterrupt } from './childTurnCancellati
 
 type ChildSettingsCommand = Extract<ClientCommand, { type: 'child.updateSettings' }>;
 type ChildLoadHistoryCommand = Extract<ClientCommand, { type: 'child.loadHistory' }>;
-type ChildRoleModelUpdateTarget = ChildSettingsTarget & {
-  effectiveModelId: string;
-};
 
 const ignoreError = (): undefined => undefined;
 const runCleanup = (operation: () => void | Promise<void>) =>
@@ -490,7 +487,7 @@ export class ChildSessions {
     return targets;
   }
 
-  async rearmRoleModelChangedChildren(
+  async updateRoleModelChildren(
     parentAppSessionId: string,
     role: PersistedChildSession['role'],
     effectiveModelId: string,
@@ -500,17 +497,17 @@ export class ChildSessions {
     await Promise.allSettled(
       [...parent.children.values()].map(async (child) => {
         if (child.role !== role || !child.runtime || !this.isSettingsTarget(parent, child)) return;
-        const target: ChildRoleModelUpdateTarget = {
+        const target: ChildSettingsTarget = {
           parent,
           child,
           runtime: child.runtime,
           parentGeneration: parent.generation,
           runtimeGeneration: child.runtime.generation,
-          effectiveModelId,
         };
-        const update = (child.mutationTail ?? Promise.resolve())
-          .catch(ignoreError)
-          .then(() => this.performRoleModelUpdate(target));
+        const update = (child.mutationTail ?? Promise.resolve()).catch(ignoreError).then(() => {
+          if (child.role !== role) return;
+          return this.performSettingsUpdate(target, { modelId: effectiveModelId });
+        });
         child.mutationTail = update;
         try {
           await update;
@@ -896,7 +893,7 @@ export class ChildSessions {
 
   private async performSettingsUpdate(
     target: ChildSettingsTarget,
-    command: ChildSettingsCommand,
+    command: Pick<ChildSettingsCommand, 'modelId' | 'reasoningEffort'>,
   ): Promise<void> {
     if (!this.isSettingsTransaction(target)) return;
     const { parent, child, runtime } = target;
@@ -942,40 +939,6 @@ export class ChildSessions {
     } catch (error) {
       console.error(
         `[compaction] could not resolve exact-child limit for ${runtime.session.sessionId}: ${errMsg(error)}`,
-      );
-    }
-  }
-
-  private async performRoleModelUpdate(target: ChildRoleModelUpdateTarget): Promise<void> {
-    if (!this.isSettingsTransaction(target)) return;
-    const { parent, child, runtime, effectiveModelId } = target;
-    target.configurationGeneration = child.configurationGeneration;
-    try {
-      await runtime.session.updateSettings({ modelId: effectiveModelId });
-    } catch (error) {
-      if (this.isSettingsTransaction(target))
-        this.emitError(
-          child.identity,
-          'settings',
-          null,
-          'child.settings_update_failed',
-          `Could not update child settings: ${errMsg(error)}`,
-        );
-      return;
-    }
-    if (!this.isSettingsTransaction(target)) return;
-    if (child.turn.autoCompacting) this.d.compaction.cancel(this.automaticTarget(parent, child));
-    child.modelId = effectiveModelId;
-    child.configurationGeneration += 1;
-    this.commit(child);
-    try {
-      await this.d.compaction.rearmModelChangedChild(
-        this.compactionTarget(parent, child, effectiveModelId),
-        effectiveModelId,
-      );
-    } catch (error) {
-      console.error(
-        `[compaction] could not resolve ${child.role} limit for ${runtime.session.sessionId}: ${errMsg(error)}`,
       );
     }
   }

@@ -109,6 +109,30 @@ test(
           ?.workerModelId,
         'worker-accepted',
       );
+
+      const childErrors = h.events.filter((event) => event.type === 'child.error').length;
+      const writesBeforeRoleUpdate = child.settings.length;
+      child.nextUpdateSettingsError = new Error('child role model rejected');
+      await h.handle({
+        type: 'settings.agent.update',
+        appSessionId: 'provider-1',
+        agent: 'worker',
+        modelId: 'worker-role-accepted',
+      });
+      await h.handle({ type: 'sessions.list' });
+
+      assert.equal(
+        latestSessionList(h.events).find((session) => session.appSessionId === 'provider-1')
+          ?.workerModelId,
+        'worker-role-accepted',
+      );
+      assert.equal(child.settings.length, writesBeforeRoleUpdate + 1);
+      assert.equal(child.settings.at(-1)?.['modelId'], 'worker-role-accepted');
+      assert.equal(exactSettingsEvents(h.events, 'provider-1', 'worker-logical').length, successes);
+      assert.equal(
+        h.events.filter((event) => event.type === 'child.error').length,
+        childErrors + 1,
+      );
     } finally {
       await h.dispose();
     }
