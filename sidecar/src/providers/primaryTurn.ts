@@ -125,7 +125,9 @@ export async function runPrimaryTurn(
     context.stopPolling();
   }
   if (!isCurrent()) return;
-  if (turnError) settleTurnFailure(d, liveSession, turnError, reportedError, reportedUsageLimit);
+  // A turn Claude Code started itself after this one owns the outcome now.
+  if (turnError && !liveSession.delegatedTurn)
+    settleTurnFailure(d, liveSession, turnError, reportedError, reportedUsageLimit);
   void context.refresh();
 }
 

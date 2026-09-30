@@ -1183,7 +1183,6 @@ export class SessionLifecycle {
     if (this.dependencies.registry.getLive(appSessionId) !== liveSession) return;
     // Another provider-started turn began while this one flushed; it settles itself.
     if (liveSession.delegatedGeneration !== generation) return;
-    if (failed) this.dependencies.registry.updateSummary(appSessionId, { phase: 'failed' });
     // A typed turn still finishing, or one already started, settles the chat and
     // takes the queue; so does another provider-started turn.
     if (
@@ -1192,6 +1191,7 @@ export class SessionLifecycle {
       !liveSession.streaming
     )
       return;
+    if (failed) this.dependencies.registry.updateSummary(appSessionId, { phase: 'failed' });
     liveSession.streaming = false;
     this.publishTurnSettled(liveSession);
     if (stopped) this.dependencies.childSessions.retryAgentWave(appSessionId);

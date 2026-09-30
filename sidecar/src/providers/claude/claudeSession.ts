@@ -221,6 +221,9 @@ export class ClaudeSession implements ProviderSession {
     }>());
     let reportedPlanningModel = false;
     let ended = false;
+    // A result taken off the queue means the CLI has finished the turn, even if
+    // the chat stops reading before the loop gets to end it.
+    let resultTaken = false;
     try {
       await this.waitUntilInitialized();
       const notice = this.permissions.takeNotice();
@@ -245,6 +248,7 @@ export class ClaudeSession implements ProviderSession {
           return;
         }
         const { message, events } = next.value;
+        if (message.type === 'result') resultTaken = true;
         if (message.type === 'assistant' && !reportedPlanningModel) {
           const notice = this.permissions.planning
             ? planningModelNotice(message, this.modelId)
@@ -312,7 +316,7 @@ export class ClaudeSession implements ProviderSession {
       // chat has closed this one, or closing this one would cut it off. A turn
       // the chat stopped reading before its end is still the CLI's: the rest of
       // it, up to its result, is dropped as it was.
-      if (ended) this.continueAfterTurn(unread);
+      if (ended || resultTaken) this.continueAfterTurn(unread);
       else this.discardUntilResult = !unread.some(({ message }) => message.type === 'result');
       await Promise.all([...this.steerDeliveries.keys()].map((uuid) => this.withdrawSteer(uuid)));
     }
