@@ -47,7 +47,8 @@ Electron discourages `<webview>` for stability. The spike found where it breaks,
 - Text is inserted through the guest's `webContents`, never the host's (host `insertText` while the page has focus crashes the app renderer).
 - Hidden pages live in a 1x1 clip container while an agent works; `visibility: hidden` stalls captures.
 - Touch presets use guest touch events, not mouse-to-touch conversion (which hangs input).
-- Any CDP emulation call is guarded: only when the page is not crashed and has started a navigation (an emulation call on a page with no live frame crashed the main process).
+- Emulation is sent only after `did-attach-webview` and only while the guest is not crashed, every CDP call has a timeout, and a touch preset reloads once so `ontouchstart` appears. `Emulation.setDeviceMetricsOverride` on a guest with no live renderer (before attach, or between a crash and the next load) crashes the main process, for guests exactly as for `WebContentsView`.
+- Actions wait for the page's first paint: until then Chromium silently drops mouse presses, for CDP and `sendInputEvent` alike.
 - The app shell must never reload while guests are live: a host reload destroys every page. Today `Cmd+R` reloads the shell (`electron/applicationMenu.cjs:7`); it becomes "reload the focused browser page", and shell reload leaves the production menu.
 
 ## Architecture
@@ -61,11 +62,11 @@ sidecar ──(private IPC)──> Electron main: Browser ──(CDP, attached o
         Pane, inline card, cursor, design mode, full-screen composer: React over the page
 ```
 
-**Main owns guests and every operation on them.** A guest exists only after main reserves it: the renderer asks main for a slot for a browser session, main returns a one-time token and a generation, and the renderer mounts `<webview src="about:blank">` carrying that token. `will-attach-webview` binds the token once (rejecting unknown, stale or repeated tokens), forces the partition `persist:droidex-browser`, our preload, `sandbox`, `contextIsolation` and no Node, and strips everything else. Main navigates the bound guest itself, through the same authorization as any agent navigation; the renderer never picks a URL for a guest. Partition handlers (permissions, devices, downloads) are installed once, before the first guest, with per-guest ownership checks, and page-originated IPC keeps the main-frame sender check (`electron/main.cjs:980`).
+**Main owns guests and every operation on them.** A guest exists only after main reserves it: the renderer asks main for a slot for a browser session, main returns a one-time token and a generation, and the renderer mounts `<webview src="about:blank">` carrying that token. `will-attach-webview` binds the token once (rejecting unknown, stale, repeated or wrong-host tokens) and replaces both objects outright: `webPreferences` becomes exactly the partition `persist:droidex-browser`, our preload, `sandbox`, `contextIsolation`, no Node and `disablePopups`, and `params` keeps only its `instanceId` with `src: 'about:blank'`. Forcing only the known-bad fields is not enough (the spike showed a page-chosen user agent and `allowpopups` getting through). The guest is bound in `web-contents-created`, which fires inside the attach, before any other code runs. The host renderer still controls its own guests after attach (it can set `src` or run script in them), so the app renderer stays inside the trust boundary; the token protects which chat a guest belongs to, not the renderer. Main navigates the bound guest itself, through the same authorization as any agent navigation; the renderer never picks a URL for a guest. Partition handlers (permissions, devices, downloads) are installed once, before the first guest, with per-guest ownership checks, and page-originated IPC keeps the main-frame sender check (`electron/main.cjs:980`).
 
 **The action lifecycle is serialized per guest.** One queue per guest owns actions, captures, approvals and uploads, with cancellation, and every step rechecks the guest and document generation after each await (the old branch's `SerializedBrowserRuntime` and `nativeBrowserAgentActions` invariants carry over). A guest with work in flight is pinned: the LRU (3 live guests) never unmounts it, and new guests queue when every slot is pinned. Unmounting a guest invalidates its generation first and settles its pending work as failed. A reload from the URL does not bring back form state, POST results or history, and the agent is told so.
 
-**The renderer owns where guests are shown.** The host layer positions each live `<webview>` over the pane's slot with CSS, or parks it: `visibility: hidden` when idle, a 1x1 clip while an agent works on it. Background throttling is lifted for the working guest only during its operation, restored in `finally`. Because Electron applies throttling per window, the effect on other idle guests is measured before PR 2 lands (see appendix).
+**The renderer owns where guests are shown.** The host layer positions each live `<webview>` over the pane's slot with CSS, or parks it: `visibility: hidden` when idle (0 animation frames, 0 CPU), a 1x1 clip while an agent works on it. The working guest's own background throttling is lifted for its operation and restored in `finally`, before it is hidden again (re-enabling throttling on a guest that is already hidden does not take effect). Lifting it on one guest never wakes the others.
 
 **The sidecar talks to main directly.** Main spawns the sidecar (`electron/sidecar.cjs`); adding an `ipc` stdio gives a private channel. Requests carry a run-scoped id, payloads and queues are bounded, cancellation is explicit, and a sidecar restart settles every in-flight request as failed; nothing uncertain (a click, a submit, an upload) is ever replayed. The channel authenticates the process, not the session ids in its messages, so main checks each id against its registry. The renderer receives a slim per-chat state (`url`, `title`, `canGoBack`, `canGoForward`, `viewport`, `loading`) and one small activity event per action (tool, target label, point) for the cursor and the inline card. No refs, snapshots or screenshots in the store, and agent actions never force the pane open.
 
@@ -105,7 +106,7 @@ Server key `droidex-browser`; every tool is named `browser_*` so the name stays 
 
 **Refs are stable and never reused.** A public ref maps to guest generation, frame and document identity, and `backendNodeId`; AX nodes without a DOM node get no ref. A ref survives later snapshots while its node lives. A ref from an earlier document fails with "e12 belongs to the previous page; call browser_read_page", never a wrong click.
 
-**Screenshots say their geometry.** JPEG, quality 80, captured once, saved once, returned as the image plus its path for harnesses that drop images. At the standard viewports (all at most 1440 wide) the image is the viewport at CSS size, one image pixel per CSS pixel. When a capture is larger than 1568 on its long edge (a big Fit pane, a full page) it is downscaled, and the result states the scale and, for crops, the origin, so coordinates convert exactly. PNG only on request, for pixel-exact design checks. Sensitive fields are masked before every capture and the capture fails closed if masking is not acknowledged or the document changes mid-capture (ported from the old branch), including design-mode composites.
+**Screenshots say their geometry.** JPEG, quality 80, captured once, saved once, returned as the image plus its path for harnesses that drop images. At the standard viewports (all at most 1440 wide) the image is the viewport at CSS size, one image pixel per CSS pixel. When a capture is larger than 1568 on its long edge (a big Fit pane, a full page) it is downscaled, and the result states the scale and, for crops, the origin, so coordinates convert exactly. PNG only on request, for pixel-exact design checks. A capture of a page that is shown CSS-scaled in the pane is slightly soft (the page is rendered at the scaled size), so pixel-exact design checks capture while the page is parked unscaled. Sensitive fields are masked before every capture and the capture fails closed if masking is not acknowledged or the document changes mid-capture (ported from the old branch), including design-mode composites.
 
 **Every read path redacts.** AX values of sensitive fields, element attributes, console text, network URLs and the footer go through the same redaction as today's reads; network output has no headers or bodies. URL and key redaction is not a general secret detector, and the tool descriptions do not claim it is.
 
@@ -196,23 +197,24 @@ Target: about 5,500 production lines for everything browser, against about 10,40
 
 ## Plan
 
-Small PRs into `browser/integration`. Each one deletes what it replaces, carries the policy for anything it makes usable, gets a GPT-6.1 Sol xhigh review and the bot reviews, and passes the gates (`typecheck`, `sidecar:typecheck`, lint, tests, `quality:*`, `docs:check`, `perf:gates`, bundle budgets). Anything that launches a build for checking runs in the background, never on the user's screen.
+Small PRs into `browser/integration`. Each one deletes what it replaces, carries the policy for anything it makes usable, gets a GPT-6.1 Sol xhigh review and the bot reviews, and passes CI (every check now runs on `browser/integration` PRs). Anything that launches a build for checking runs in the background, never on the user's screen.
 
-1. **One composer** (#379). The composer is never unmounted when the pane switches. Fixes the lost draft and the double queue delivery.
-2. **Spikes before hosting.** Guest CDP input in CSS coordinates under a CSS-scaled `<webview>`, guest emulation for touch and user agent, one working guest beside two idle animated guests (throttling), and token binding in `will-attach-webview`. No product code.
-3. **Browser policy on today's host.** Port the old branch's partition handlers, navigation provenance, redaction and settings schema onto `main`'s browser, so every later PR builds on proven policy.
-4. **Browser host on `<webview>`.** Reservation tokens and guest registry, hardening, pane placement, parking, pinned LRU, crash state, keyboard routing, `Cmd+R` fix. Replaces `WebContentsView` hosting, the hidden host window, eviction screenshots and native bounds sync.
-5. **Private sidecar channel.** Bounded IPC with run-scoped ids and restart settlement; today's actions move off the renderer relay unchanged.
-6. **Reading.** AX snapshots, refs, `browser_read_page`, `browser_find`, `browser_read_text`, `browser_screenshot` with masking and stated geometry. Replaces the page script's snapshot.
-7. **Acting.** `browser_open`, click, hover, fill (file consent), type, press, scroll, wait, batch, with hit-testing, sensitive-typing blocks and authentication checks. Deletes the rest of the page script.
-8. **Viewports.** Standard sizes, CSS scale to fit, guarded touch and user agent, `browser_viewport`, the viewport menu.
-9. **Debug tools.** Console, network, evaluate, inspect, with the per-origin grant.
-10. **Cursor and inline card.** The React cursor in the pane and in the card, the bounded screencast, the pane stops auto-opening.
-11. **Full screen.** Page-first layout, the composer floating over the page, one collapsed activity line with pending steers.
-12. **Design mode.** App-owned selection, chips in the composer, sketch, source anchoring, design prompts through the normal queue.
-13. **Saved logins, passkeys, cookie import and the Browser settings page**, trimmed and renamed.
-14. **Codex.** The three changes above.
-15. **Later:** tabs, and device frames for Tablet and Phone.
+Policy is ported with the PR that first needs it, not onto `main`'s current host first: the old navigation policy depends on the view lifecycle and the agent-action pipeline, so porting it onto code the next PR deletes would mean porting half of that host too.
+
+1. **One composer** (#379, merged). The composer is never unmounted when the pane switches.
+2. **Spikes** (done; results in the appendix). Guest input under CSS scale, guest emulation, throttling across guests, token binding.
+3. **Browser host on `<webview>`, with its session policy.** Reservation tokens and guest registry, hardening, pane placement, parking, pinned LRU, crash state, keyboard routing, the `Cmd+R` fix, and the partition handlers (permissions per exact origin, downloads, devices), redaction, and the user side of navigation provenance. Replaces `WebContentsView` hosting, the hidden host window, eviction screenshots and native bounds sync.
+4. **Private sidecar channel.** Bounded IPC with run-scoped ids and restart settlement; today's actions move off the renderer relay unchanged.
+5. **Reading.** AX snapshots, refs, `browser_read_page`, `browser_find`, `browser_read_text`, `browser_screenshot` with masking and stated geometry. Replaces the page script's snapshot.
+6. **Acting, with agent navigation approval.** `browser_open`, click, hover, fill (file consent), type, press, scroll, wait, batch, with first-paint waits, hit-testing, sensitive-typing blocks, authentication checks, agent navigation approval per origin and the harness deferral for browser tools. Deletes the rest of the page script.
+7. **Viewports.** Standard sizes, CSS scale to fit, guarded touch and user agent, `browser_viewport`, the viewport menu.
+8. **Debug tools.** Console, network, evaluate, inspect, with the per-origin grant.
+9. **Cursor and inline card.** The React cursor in the pane and in the card, the bounded screencast, the pane stops auto-opening.
+10. **Full screen.** Page-first layout, the composer floating over the page, one collapsed activity line with pending steers; Mission Control included.
+11. **Design mode.** App-owned selection, chips in the composer, sketch, source anchoring, design prompts through the normal queue.
+12. **Saved logins, passkeys, cookie import and the Browser settings page**, trimmed and renamed.
+13. **Codex.** The three changes above.
+14. **Later:** tabs, and device frames for Tablet and Phone.
 
 ## Performance contract
 
@@ -221,7 +223,7 @@ Small PRs into `browser/integration`. Each one deletes what it replaces, carries
 - An agent turn with the pane hidden: nothing appears on screen and nothing takes focus.
 - No per-token browser work in the renderer; the only per-frame renderer work is the inline card's preview image, within the screencast caps above, while the card is on screen.
 - Screenshots at or under 1568 px, JPEG, geometry stated.
-- Measured in a background build before and after PRs 4, 6, 7, 10 and 11, plus `perf:replay`, `perf:compare` and `perf:gates`.
+- Measured in a background build before and after PRs 3, 5, 6, 9 and 10, plus `perf:replay`, `perf:compare` and `perf:gates`.
 
 ## Appendix: spike facts and open items
 
@@ -233,4 +235,11 @@ Verified on Electron 39.8.10:
 - Lifecycle: moving the element to another parent recreates the guest and loses the page; a guest crash leaves the host alive and `reload()` recovers it; a host reload destroys all guests.
 - CDP emulation on `WebContentsView`: safe once a navigation has started; an emulation call on a page with no live frame crashes the main process. Guard: `!isDestroyed() && !isCrashed() && (isLoading() || getURL() !== '')`.
 
-Not yet verified, and covered by PR 2's spikes: guest CDP input in CSS coordinates under a CSS-scaled `<webview>`; CDP emulation inside a guest; throttling of idle guests while another guest in the same window works; binding a reservation token in `will-attach-webview`; the sidecar IPC channel in a packaged build; signed passkeys.
+Spike results (PR 2), Electron 39.8.10:
+
+- Guest input: CDP `Input.dispatchMouseEvent` in the guest's own CSS pixels hits the exact element at CSS scale 0.5, 0.75 and 1 (edge points included), with trusted pointer and click events in 5 to 17 ms. `Input.insertText` and key events work. Presses before the guest's first paint are silently dropped. `Page.captureScreenshot` with `clip.scale = 1 / devicePixelRatio` returns the CSS-sized image; captures of a CSS-scaled guest are slightly soft.
+- Guest emulation: touch, user agent and device metrics apply when sent on the guest's first navigation; touch taps land exactly; `ontouchstart` needs one reload; `navigator.maxTouchPoints` stays 0 in a guest. Device metrics before attach or on a crashed guest crash the main process; touch dispatch before commit hangs.
+- Throttling: lifting throttling on one guest, or on the host, never wakes idle guests (`visibility: hidden`: 0 animation frames, about 1 timer a second, 0 CPU). With the window hidden, only a guest's own flag keeps it running. Re-enabling throttling on an already hidden guest does not take effect.
+- Token binding: a token in `src` (fragment or query) or the partition reaches `will-attach-webview`; forged, reused and wrong-host tokens never attach; only a full rewrite of `webPreferences` and `params` holds (a partial one let a page-chosen user agent and `allowpopups` through); `web-contents-created` fires inside the attach, so binding there has no race.
+
+Still not verified: the sidecar IPC channel in a packaged build, and signed passkeys.
