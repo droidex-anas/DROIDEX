@@ -1,17 +1,21 @@
 import { useRef, useEffect, useMemo, useState, useCallback, type ReactNode } from 'react';
 import { GripVertical, ChevronRight, Square } from 'lucide-react';
 import { useStoreDispatch, useStoreSelector } from '../hooks/useStore';
+import { threadOrigin, type ThreadOrigin } from '../lib/projectThreads';
 import { WINDOW_CONTROLS_LEAD_PX } from '../lib/windowChrome';
 import { openReviewAt, type OpenReviewFileHandler } from '../lib/reviewFocus';
 import type { FileChange } from '../lib/diff';
 import type { SessionRestore } from '../hooks/storeChildSession';
 import { useSessionLive } from '../hooks/useSessionLive';
+import { sessionAttention } from '../lib/sessionAttention';
 import { AnimatePresence, motion } from 'framer-motion';
 import { MessageFeed } from './MessageFeed';
+import { AppBlockRepairSessionContext } from './appBlockRepairContext';
 import { RunningProcessesMenu } from './RunningProcessesMenu';
 import { LiveProcessesContext } from './transcript/liveProcessesContext';
 import type { AgentProcess, ChildSessionSummary } from '../types/bridge';
 import { WorkingIndicator, UserBubble, ChatSkeleton, TranscriptSkeleton } from './chat';
+import { PendingSteers } from './transcript/PendingSteers';
 import { readFile } from '../lib/desktop';
 import { interruptChild, loadChildHistory, loadSessionHistory } from '../lib/commands';
 import { chatDisplayTitle } from '../lib/chatMetadata';
@@ -52,6 +56,15 @@ import type { ConversationListHandle } from './ConversationList';
 import { TranscriptReachHost } from '../features/transcript-reach/TranscriptReachHost';
 
 const NO_LIVE_PROCESSES: readonly AgentProcess[] = [];
+
+function equalOrigin(left: ThreadOrigin | undefined, right: ThreadOrigin | undefined): boolean {
+  if (!left || !right) return left === right;
+  return (
+    left.ownerAppSessionId === right.ownerAppSessionId &&
+    left.ownerTitle === right.ownerTitle &&
+    left.threadTitle === right.threadTitle
+  );
+}
 
 // While a conversation restores we show an animated placeholder instead of a
 // "Restoring…" label, so switching chats feels like content loading in (the way
@@ -152,7 +165,14 @@ function ChatHeader({
 }: {
   title: string;
   live: boolean;
-  sub?: { label: string; meta?: string; running: boolean; onBack: () => void; onStop?: () => void };
+  sub?: {
+    label: string;
+    meta?: string;
+    running: boolean;
+    backTitle?: string;
+    onBack: () => void;
+    onStop?: () => void;
+  };
   // Room left at the row's start for the window controls and the sidebar
   // toggle while the sidebar is collapsed.
   leadPx: number;
@@ -170,7 +190,7 @@ function ChatHeader({
           <button
             type="button"
             onClick={sub.onBack}
-            title="Back to primary session"
+            title={sub.backTitle ?? 'Back to primary session'}
             className="truncate text-[13px] font-medium text-droid-text-muted transition-colors hover:text-droid-text max-w-[200px]"
           >
             {title}
@@ -583,6 +603,23 @@ export default function ChatView({
           interruptChild(visibleTarget.parentAppSessionId, visibleTarget.childSessionId);
         }
       : undefined;
+  // A thread opened as a full chat is not in the chat list, so its own header
+  // carries the way back to the conversation that started it. It is selected
+  // apart from the chat state so a project snapshot never re-renders the feed.
+  const origin = useStoreSelector(
+    (current) => threadOrigin(current.projects, current.activeAppSessionId ?? undefined),
+    equalOrigin,
+  );
+  // Mid-turn but stopped on the user is not working, so the header drops its shimmer.
+  const blockedOnUser = useStoreSelector(
+    (current) =>
+      current.activeAppSessionId !== null &&
+      sessionAttention(
+        current.activeAppSessionId,
+        current.pendingPermissions,
+        current.pendingQuestions,
+      ) !== null,
+  );
   const chatHeaderSub = viewingChildSession
     ? {
         label: selectedChildLabel,
@@ -593,7 +630,16 @@ export default function ChatView({
         },
         ...(stopSelectedChild !== undefined ? { onStop: stopSelectedChild } : {}),
       }
-    : undefined;
+    : origin
+      ? {
+          label: origin.threadTitle,
+          running: live && !blockedOnUser,
+          backTitle: 'Back to the chat that started this thread',
+          onBack: () => {
+            dispatch({ type: 'SET_ACTIVE_SESSION', id: origin.ownerAppSessionId });
+          },
+        }
+      : undefined;
   const forkChat = useForkChat();
   const forking = useForkPending(activeAppSessionId);
   const forkable = activeSession && !viewingChildSession && !activeSession.missionId;
@@ -693,6 +739,9 @@ export default function ChatView({
             {...(!viewingChildSession && createdWorktreePath !== undefined
               ? { createdWorktreePath }
               : {})}
+            {...(!viewingChildSession
+              ? { pendingSteers: <PendingSteers appSessionId={activeSession.appSessionId} /> }
+              : {})}
             onMountedRowsChange={setMountedFeedRows}
             scrollElementRef={scrollRef}
             viewportLayoutRef={viewportLayoutRef}
@@ -743,12 +792,27 @@ export default function ChatView({
       </div>
     );
   } else {
+    const draft = state.draftChat;
     conversationContent = (
       <WelcomeScreen
         {...(draftFolder !== undefined ? { folder: draftFolder } : {})}
         onSeedPrompt={(text) => {
           dispatch({ type: 'SEED_COMPOSER', text });
         }}
+        {...(draft?.project
+          ? {
+              project: {
+                onStartChat: () => {
+                  dispatch({
+                    type: 'START_CHAT',
+                    cwd: draft.cwd,
+                    executionMode: draft.executionMode,
+                    ...(draft.branch ? { branch: draft.branch } : {}),
+                  });
+                },
+              },
+            }
+          : {})}
       />
     );
   }
@@ -757,7 +821,11 @@ export default function ChatView({
     <div data-testid="chat-view" className="flex-1 min-h-0 min-w-0 flex flex-col overflow-hidden">
       {activeSession ? (
         <ChatHeader
-          title={displayTitle}
+          title={
+            // A thread's crumb names the chat that started it; a child session's
+            // crumb walks back to this chat instead, so it keeps its own title.
+            (viewingChildSession ? undefined : origin?.ownerTitle) ?? displayTitle
+          }
           live={live}
           leadPx={sidebarCollapsed ? WINDOW_CONTROLS_LEAD_PX : 16}
           appSessionId={activeSession.appSessionId}
@@ -804,7 +872,11 @@ export default function ChatView({
               overflowAnchor: 'none',
             }}
           >
-            {conversationContent}
+            <AppBlockRepairSessionContext.Provider
+              value={viewingChildSession ? null : (activeAppSessionId ?? null)}
+            >
+              {conversationContent}
+            </AppBlockRepairSessionContext.Provider>
           </div>
           <AnimatePresence>
             {transcript.length > 0 &&

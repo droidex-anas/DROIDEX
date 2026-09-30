@@ -5,7 +5,7 @@ import type {
   BrowserViewportMode,
   DesignReference,
 } from '../../types/bridge';
-import type { Size } from '../canvas/canvasMath';
+import type { Size } from './browserGeometry';
 import { clamp } from './browserViewport';
 
 export function composerStyleForReferences(

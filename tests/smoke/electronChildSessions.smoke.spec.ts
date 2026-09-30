@@ -343,7 +343,7 @@ test('[E2] parent-scoped child navigation and visible commands', async () => {
     await waitForCommand(
       commandLog,
       (command) =>
-        command.type === 'child.sendNow' &&
+        command.type === 'child.send' &&
         command.parentAppSessionId === 'parent-alpha' &&
         command.childSessionId === 'alpha-sibling' &&
         command.text === 'STEER EXACT CHILD',

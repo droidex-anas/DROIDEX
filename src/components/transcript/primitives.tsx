@@ -142,6 +142,16 @@ export function ErrorTag({ emphasis = false }: { emphasis?: boolean }) {
   );
 }
 
+// A call the user steered or stopped away from. It did not fail, so it wears
+// the row's own muted tone rather than the error red.
+export function InterruptedTag() {
+  return (
+    <span className="shrink-0 rounded-md bg-droid-elevated/60 text-[10px] font-medium uppercase tracking-[0.08em] text-droid-text-muted px-1.5 py-px">
+      Interrupted
+    </span>
+  );
+}
+
 export function firstLine(text: string): string {
   const line = text.split('\n').find((l) => l.trim()) ?? text;
   return line.trim();

@@ -238,6 +238,20 @@ export function childSessionIsLive(
   return childSession.status === 'running' && runtime?.available === true;
 }
 
+// Work in flight. A running agent always is. A pending one, spawned but not yet
+// reported on by its harness, is only while the chat's own turn is live: that is
+// a spawn in progress. Once the turn has ended nothing will ever report on it
+// (Codex mints a pending child before the agent initialises, and a restart
+// restores it unchanged), so counting it would pin the docked line open for the
+// life of the session. A paused agent is waiting on the user, and a settled one
+// has stopped.
+export function isWorkingAgent(
+  child: Pick<ChildSessionInfo, 'status'>,
+  turnLive: boolean,
+): boolean {
+  return child.status === 'running' || (turnLive && child.status === 'pending');
+}
+
 export function childSessionLabel(childSession: ChildSessionInfo, index: number): string {
   if (childSession.label) return childSession.label;
   const role = childSession.role === 'validator' ? 'Validator' : 'Worker';
@@ -413,7 +427,7 @@ export function childSessionActivityForTarget(
 }
 
 // Last non-empty line, capped, so a long thinking block stays a one-line cue.
-export function previewLine(text?: string): string | undefined {
+function previewLine(text?: string): string | undefined {
   if (!text) return undefined;
   const line = text.trim().split('\n').filter(Boolean).pop() ?? '';
   return line.length > 160 ? `${line.slice(0, 159)}…` : line || undefined;

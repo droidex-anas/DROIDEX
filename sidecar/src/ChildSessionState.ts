@@ -1,5 +1,5 @@
 import type { McpServerConfig } from '@factory/droid-sdk';
-import type { FactorySession } from './DroidRuntime.js';
+import type { FactorySession, SessionInitResult } from './DroidRuntime.js';
 import type { PersistedChildSession, PersistedChildSpawnLink } from './history.js';
 import { publishedStreamFidelity } from './childStreamFidelity.js';
 import type {
@@ -10,7 +10,8 @@ import type {
   SessionSummary,
   StreamFidelity,
 } from './protocol.js';
-import { normalizeAutonomy, reasoningValue, type SessionInitResult } from './sessionHelpers.js';
+import { reasoningValue } from './modelCatalog.js';
+import { normalizeAutonomy } from './values.js';
 /* eslint-disable @typescript-eslint/no-unused-vars -- persisted-only fields are intentionally omitted. */
 export interface ChildIdentity {
   parentAppSessionId: string;
@@ -41,6 +42,8 @@ export interface ChildSpawnObservation {
   status?: ChildStatus;
   group?: string;
   phase?: string;
+  // See ChildSessionSummary.tokensUsed: this child's own spend, live-only.
+  tokensUsed?: number;
   transcriptAvailable?: boolean;
 }
 export interface ChildParentLease {
@@ -62,13 +65,11 @@ export interface ChildRuntimeState {
   lastUsedAt: number;
   unsubscribe?: () => void;
 }
-export interface ChildTurnState {
+interface ChildTurnState {
   generation: number;
   phase: 'idle' | 'streaming';
   autoCompacting: boolean;
   pendingSends: string[];
-  pendingDrainEpoch: number;
-  interruptingForSteer: boolean;
   interrupting: boolean;
 }
 export interface ChildSessionState {
@@ -89,9 +90,12 @@ export interface ChildSessionState {
   spawnLink?: PersistedChildSession['spawnLink'];
   transcriptAvailable: boolean;
   startedAt?: number;
+  settledAt?: number;
   // See ChildSpawnObservation.activity: live-only, so it is absent after a
   // restart even though the child itself is restored from history.
   activity?: ChildActivity;
+  // This child's own spend, live-only for the same reason.
+  tokensUsed?: number;
   // Live-only. Absent until a token/tool stream is opened; summaries publish `state`.
   streamFidelity?: StreamFidelity;
   runtimeGeneration: number;
@@ -118,6 +122,10 @@ export interface ParentChildSessions {
   generation: number;
   lease: ChildParentLease;
   children: Map<string, ChildSessionState>;
+  spawnChildren: Map<string, ChildSessionState[]>;
+  // Agents that have settled since this parent was last told about a finished
+  // wave. Emptied only when delivery is accepted, or when the parent is closed.
+  settledSinceWake: Map<string, ChildActivity | undefined>;
   pendingSpawns: Map<string, ChildSpawnObservation>;
   openAttempts: Map<string, ChildOpenAttempt>;
   reservedOpenSlots: Set<string>;
@@ -170,8 +178,6 @@ export function childStateFromRecord(record: PersistedChildSession): ChildSessio
       phase: 'idle',
       autoCompacting: false,
       pendingSends: [],
-      pendingDrainEpoch: 0,
-      interruptingForSteer: false,
       interrupting: false,
     },
     closeWhenIdle: false,
@@ -200,16 +206,30 @@ export function newChildState(input: {
   });
 }
 
+const isSettledStatus = (status: ChildStatus): boolean =>
+  status === 'completed' || status === 'failed';
+
+/** The one door every child status change goes through, so a finished child
+    remembers when it finished and one that runs again forgets. The first stamp
+    wins: a settled child observed as settled again keeps the moment it stopped. */
+export function setChildStatus(child: ChildSessionState, status: ChildStatus, now: number): void {
+  child.status = status;
+  if (isSettledStatus(status)) child.settledAt ??= now;
+  else child.settledAt = undefined;
+}
+
 export function applyObservedChild(
+  parent: ParentChildSessions,
   child: ChildSessionState,
   observed: ChildSpawnObservation,
   spawnLink: PersistedChildSpawnLink | undefined,
   providerSessionId: string,
   now: number,
-): { previousPrompt: string | undefined } {
+): { previousPrompt: string | undefined; previousStatus: ChildStatus } {
   if (child.providerSessionId && child.providerSessionId !== providerSessionId)
     child.retiredProviderSessionIds.add(child.providerSessionId);
   const previousPrompt = child.prompt;
+  const previousStatus = child.status;
   if (child.role !== observed.role) {
     child.role = observed.role;
     child.configurationGeneration += 1;
@@ -217,9 +237,13 @@ export function applyObservedChild(
   child.providerSessionId = providerSessionId;
   if (observed.transcriptAvailable === false && !observed.done) child.closeWhenIdle = false;
   // Terminal observations settle through complete(), after metadata is applied.
-  if (observed.done) child.status = 'running';
-  else if (observed.status) child.status = observed.status;
-  else if (observed.transcriptAvailable !== false) child.status = 'running';
+  // A state feed can report the same ending more than once; a child that has
+  // already settled must not be walked back through 'running', which would
+  // restart its clock.
+  if (observed.done) {
+    if (!isSettledStatus(child.status)) setChildStatus(child, 'running', now);
+  } else if (observed.status) setChildStatus(child, observed.status, now);
+  else if (observed.transcriptAvailable !== false) setChildStatus(child, 'running', now);
   applyChildLaunchSettings(child, {
     modelId: observed.modelId,
     reasoningEffort: observed.reasoningEffort,
@@ -230,14 +254,15 @@ export function applyObservedChild(
   child.group ??= observed.group;
   child.phase = observed.phase ?? child.phase;
   child.prompt = observed.prompt ?? child.prompt;
-  child.spawnLink = spawnLink ?? child.spawnLink;
+  if (spawnLink) setChildSpawn(parent, child, spawnLink);
   child.activity = observed.activity ?? child.activity;
+  child.tokensUsed = observed.tokensUsed ?? child.tokensUsed;
   child.transcriptAvailable = observed.transcriptAvailable ?? true;
   child.startedAt ??= now;
-  return { previousPrompt };
+  return { previousPrompt, previousStatus };
 }
 
-export function applyChildLaunchSettings(child: ChildSessionState, settings: ChildSettings): void {
+function applyChildLaunchSettings(child: ChildSessionState, settings: ChildSettings): void {
   if (!settings.modelId) return;
   if (child.modelId === settings.modelId && child.reasoningEffort === settings.reasoningEffort)
     return;
@@ -265,6 +290,7 @@ export function persistedChild(child: ChildSessionState): PersistedChildSession 
     ...(child.reasoningEffort ? { reasoningEffort: child.reasoningEffort } : {}),
     ...(child.spawnLink ? { spawnLink: child.spawnLink } : {}),
     ...(child.startedAt === undefined ? {} : { startedAt: child.startedAt }),
+    ...(child.settledAt === undefined ? {} : { settledAt: child.settledAt }),
   };
 }
 
@@ -284,6 +310,7 @@ export function childSummary(child: ChildSessionState | PersistedChildSession) {
     // Autonomy is runtime-scoped: only a live child reports its confirmed value.
     ...(live?.runtime && live.autonomy ? { autonomy: live.autonomy } : {}),
     ...(live?.activity ? { activity: live.activity } : {}),
+    ...(live?.tokensUsed === undefined ? {} : { tokensUsed: live.tokensUsed }),
     ...(live?.queued ? { queued: true } : {}),
     streamFidelity: publishedStreamFidelity(live?.streamFidelity),
   };
@@ -315,9 +342,42 @@ export function findChildByProvider(
 }
 
 export function findChildBySpawn(parent: ParentChildSessions, spawnLink: PersistedChildSpawnLink) {
-  return [...parent.children.values()].find(
-    (child) => child.spawnLink?.kind === spawnLink.kind && child.spawnLink.id === spawnLink.id,
-  );
+  return childrenBySpawn(parent, spawnLink)[0];
+}
+
+export function addChild(parent: ParentChildSessions, child: ChildSessionState): void {
+  parent.children.set(child.identity.childSessionId, child);
+  if (child.spawnLink) setChildSpawn(parent, child, child.spawnLink);
+}
+
+function setChildSpawn(
+  parent: ParentChildSessions,
+  child: ChildSessionState,
+  spawnLink: PersistedChildSpawnLink,
+): void {
+  const key = `${spawnLink.kind}:${spawnLink.id}`;
+  const previous = child.spawnLink;
+  const previousKey = previous ? `${previous.kind}:${previous.id}` : undefined;
+  if (previousKey && previousKey !== key) {
+    const siblings = parent.spawnChildren.get(previousKey);
+    if (siblings) {
+      const index = siblings.indexOf(child);
+      if (index !== -1) siblings.splice(index, 1);
+      if (siblings.length === 0) parent.spawnChildren.delete(previousKey);
+    }
+  }
+  child.spawnLink = spawnLink;
+  const siblings = parent.spawnChildren.get(key);
+  if (!siblings) parent.spawnChildren.set(key, [child]);
+  else if (!siblings.includes(child)) siblings.push(child);
+}
+
+// Shared workflow spawns retain all siblings so routing can report ambiguity.
+export function childrenBySpawn(
+  parent: ParentChildSessions,
+  spawnLink: PersistedChildSpawnLink,
+): readonly ChildSessionState[] {
+  return parent.spawnChildren.get(`${spawnLink.kind}:${spawnLink.id}`) ?? [];
 }
 
 function pendingObservationKey(observation: ChildSpawnObservation): string | undefined {
@@ -400,7 +460,6 @@ export function childHasWorkInFlight(child: ChildSessionState): boolean {
     child.turn.autoCompacting ||
     child.turn.pendingSends.length > 0 ||
     child.turn.interrupting ||
-    child.turn.interruptingForSteer ||
     child.mutationTail !== undefined
   );
 }

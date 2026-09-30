@@ -24,7 +24,13 @@ function streaming(source: string, extra: Record<string, unknown> = {}): string 
 }
 
 function assertSettledMatchesCanonical(source: string, extra: Record<string, unknown> = {}): void {
-  assert.equal(settled(source, extra), canonical(source, extra));
+  // Each mounted sandbox gets its own token, including identical historical rows.
+  const withoutBridgeToken = (html: string) =>
+    html.replace(/const bridgeToken = &quot;[^&]+&quot;/g, 'const bridgeToken = [token];');
+  assert.equal(
+    withoutBridgeToken(settled(source, extra)),
+    withoutBridgeToken(canonical(source, extra)),
+  );
 }
 
 function assertCompletedBlocksStable(full: string): void {
@@ -107,7 +113,7 @@ test('malformed and incomplete mid-stream blocks stay pending without rewriting 
   const html = streaming(`${MALFORMED}\n`);
   assert.match(html, /Hello/);
   assert.match(html, /const incomplete = /);
-  assert.doesNotMatch(html, /<iframe/i);
+  assert.doesNotMatch(html, />Starting interactive app</);
 });
 
 test('streaming states never remove or rewrite completed blocks', () => {
@@ -170,5 +176,37 @@ test('an open code fence streams as preformatted text without mermaid or app run
 
   const appOpen = streaming('```app\n<main>still', { buildingAppBlocks: true });
   assert.match(appOpen, /Building interactive app/);
-  assert.doesNotMatch(appOpen, /<iframe/i);
+  assert.doesNotMatch(appOpen, />Starting interactive app</);
+});
+
+test('pending lists and tables preserve canonical markdown across displayed prefixes', () => {
+  for (const source of [
+    '- first **bold** item\n- second item\n  - nested item',
+    '| a | b |\n| --- | --- |\n| **one** | two |\n| three | four',
+  ]) {
+    for (const specMode of [false, true]) {
+      for (const shown of [source.slice(0, -4), source]) {
+        assert.equal(streaming(shown, { specMode }), canonical(shown, { specMode }));
+      }
+    }
+  }
+});
+
+test('pending fence rendering honors building, cut-off, and generated-content flags', () => {
+  const source = '```app\n<main>partial';
+  // An unfinished App fence never runs, whatever the message says about building.
+  for (const buildingAppBlocks of [true, false]) {
+    const html = streaming(source, { buildingAppBlocks });
+    assert.match(html, /Building interactive app/);
+    assert.doesNotMatch(html, />Starting interactive app</);
+  }
+  assert.equal(
+    streaming(source, { cutOffAppBlocks: true }),
+    canonical(source, { cutOffAppBlocks: true }),
+  );
+  assert.doesNotMatch(
+    streaming(source, { buildingAppBlocks: true, allowGeneratedContent: false }),
+    /Building interactive app/,
+  );
+  assert.match(settled(source + '\n```'), />Starting interactive app</);
 });

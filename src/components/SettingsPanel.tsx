@@ -9,6 +9,7 @@ import type {
   DiffViewMode,
   LiveEnterBehavior,
   ModelSelectorStyle,
+  SideChatDefaultPlacement,
 } from '../hooks/persistedUiPreferences';
 import { ChevronLeft, ChevronDown, Search, Check, X, Plus } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
@@ -420,15 +421,15 @@ function GeneralSection() {
       <div className="rounded-xl border border-droid-border bg-droid-surface divide-y divide-droid-border mb-8">
         <SettingRow
           label="Enter while working"
-          description="Choose what plain Enter does during an active model turn. Cmd/Ctrl+Enter does the opposite."
+          description="What Enter does while the agent works. Steer hands the message to the agent at its next step; Queue sends it after the turn. Cmd/Ctrl+Enter does the other."
         >
           <Dropdown
             ariaLabel="Enter while working"
             value={state.liveEnterBehavior}
             width="w-44"
             options={[
+              { value: 'steer', label: 'Steer message' },
               { value: 'queue', label: 'Queue message' },
-              { value: 'interrupt', label: 'Send now' },
             ]}
             onChange={(behavior) => {
               dispatch({
@@ -794,6 +795,7 @@ function ConfigurationSection() {
   const dispatch = useStoreDispatch();
   const defaultAutonomy = useStoreSelector((state) => state.defaultAutonomy);
   const modelSelectorStyle = useStoreSelector((state) => state.modelSelectorStyle);
+  const sideChatPlacement = useStoreSelector((state) => state.sideChatDefaultPlacement);
   return (
     <div className="max-w-2xl mx-auto">
       <SectionTitle title="Configuration" />
@@ -836,6 +838,26 @@ function ConfigurationSection() {
             placement="down"
             onSelect={(level) => {
               dispatch({ type: 'SET_DEFAULT_AUTONOMY', autonomy: level });
+            }}
+          />
+        </SettingRow>
+        <SettingRow
+          label="Side chats open in"
+          description="Where /btw and /side open a new side chat: the side pane beside the chat, or a popup window over it. Either can be moved once it is open."
+        >
+          <Dropdown
+            ariaLabel="Side chats open in"
+            value={sideChatPlacement}
+            width="w-44"
+            options={[
+              { value: 'docked', label: 'Side pane' },
+              { value: 'floating', label: 'Popup window' },
+            ]}
+            onChange={(placement) => {
+              dispatch({
+                type: 'SET_SIDE_CHAT_DEFAULT_PLACEMENT',
+                placement: placement as SideChatDefaultPlacement,
+              });
             }}
           />
         </SettingRow>

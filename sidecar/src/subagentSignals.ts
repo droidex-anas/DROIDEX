@@ -25,6 +25,8 @@ export interface ChildSessionSignal {
   status?: ChildStatus;
   group?: string;
   phase?: string;
+  // What this child alone has spent, when its provider reports it.
+  tokensUsed?: number;
   // False for state-only feeds with no child-transcript view.
   transcriptAvailable?: boolean;
 }
@@ -50,8 +52,18 @@ export const isTaskToolName = (name: unknown): boolean =>
 const TASK_COMPANION_TOOL = /^task[_ -]?(output|stop)$/i;
 
 // Every tool whose result can legitimately describe a subagent.
-export const isTaskFamilyToolName = (name: unknown): boolean =>
+const isTaskFamilyToolName = (name: unknown): boolean =>
   isTaskToolName(name) || (typeof name === 'string' && TASK_COMPANION_TOOL.test(name.trim()));
+
+// The task a `TaskOutput`/`TaskStop` call names, whoever that task belongs to.
+// Whether it is an agent or a background shell command is the caller's to
+// decide, from the children it is tracking; the name alone never says.
+export function taskPollTargetId(toolName: unknown, input: unknown): string | undefined {
+  if (typeof toolName !== 'string' || !TASK_COMPANION_TOOL.test(toolName.trim())) return undefined;
+  if (typeof input !== 'object' || input === null) return undefined;
+  const record = input as Record<string, unknown>;
+  return str(record.task_id) ?? str(record.shell_id);
+}
 
 // A standard chat can spawn Factory subagents via the Task tool; those surface
 // as ToolProgress events carrying raw `subagentSessionId` metadata.

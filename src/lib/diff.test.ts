@@ -41,3 +41,44 @@ test('falls back to "file" when no path is present anywhere', () => {
   const change = extractFileChange('apply_patch', { patch: '-old\n+new' });
   assert.equal(change?.path, 'file');
 });
+
+test('a line inside a hunk is content even when it reads like a header', () => {
+  const added = ['@@ -0,0 +1,2 @@', '+++counter;', '+--x;'].join('\n');
+  assert.deepEqual(
+    extractFileChange('apply_patch', { patch: added })?.ops.map((op) => [op.type, op.text]),
+    [
+      ['add', '++counter;'],
+      ['add', '--x;'],
+    ],
+  );
+  // A replaced line whose old and new text start like file headers.
+  const replaced = [
+    '--- a/notes.sql',
+    '+++ b/notes.sql',
+    '@@ -1 +1 @@',
+    '--- old text',
+    '+++ new text',
+    '--- a/other.sql',
+    '+++ b/other.sql',
+    '@@ -1 +1 @@',
+    '-a',
+    '+b',
+  ].join('\n');
+  assert.deepEqual(
+    extractFileChange('apply_patch', { patch: replaced })?.ops.map((op) => [op.type, op.text]),
+    [
+      ['del', '-- old text'],
+      ['add', '++ new text'],
+      ['del', 'a'],
+      ['add', 'b'],
+    ],
+  );
+});
+
+test('the newline that ends a patch adds no empty row', () => {
+  const patch = '@@ -1,2 +1,2 @@\n one\n-two\n+three\n';
+  assert.deepEqual(
+    extractFileChange('apply_patch', { patch })?.ops.map((op) => op.type),
+    ['ctx', 'del', 'add'],
+  );
+});

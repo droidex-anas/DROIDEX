@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
@@ -250,5 +250,66 @@ test('takes over a foreign writer lease left by an exited process', () => {
     replacement.close();
   } finally {
     rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('stored session permission meanings migrate once without reinterpreting later choices', () => {
+  const directory = mkdtempSync(join(tmpdir(), 'permission-migration-'));
+  const previousProfile = process.env.DROIDEX_USER_DATA_DIR;
+  process.env.DROIDEX_USER_DATA_DIR = directory;
+  const path = join(directory, 'history.sqlite');
+  try {
+    createSchema(path);
+    const database = new HistoryPersistenceDatabase(path);
+    database.persist(
+      {
+        ...batch(),
+        summaries: [
+          {
+            ...summary(0),
+            appSessionId: 'claude-old',
+            providerSessionId: 'claude-old',
+            provider: 'claude',
+          },
+          {
+            ...summary(0),
+            appSessionId: 'codex-old',
+            providerSessionId: 'codex-old',
+            provider: 'codex',
+          },
+          { ...summary(0), appSessionId: 'droid-old', providerSessionId: 'droid-old' },
+        ],
+      },
+      writerLease,
+    );
+    database.close();
+    const transcripts = join(directory, 'provider-sessions');
+    mkdirSync(transcripts);
+    for (const provider of ['claude', 'codex']) {
+      writeFileSync(
+        join(transcripts, `${provider}-old.jsonl`),
+        JSON.stringify({ type: 'session_start', provider }) + '\n',
+      );
+    }
+    const db = new DatabaseSync(path);
+    try {
+      db.exec("DELETE FROM settings WHERE scope = 'permissions.semantics_revision'");
+      HistoryIndex.initializeOrValidateHistorySchema(db);
+      const levels = () =>
+        db
+          .prepare('SELECT autonomy FROM app_sessions ORDER BY app_session_id')
+          .all()
+          .map((row) => row.autonomy);
+      assert.deepEqual(levels(), ['off', 'medium', 'low']);
+      db.exec("UPDATE app_sessions SET autonomy = 'low'");
+      HistoryIndex.initializeOrValidateHistorySchema(db);
+      assert.deepEqual(levels(), ['low', 'low', 'low']);
+    } finally {
+      db.close();
+    }
+  } finally {
+    if (previousProfile === undefined) delete process.env.DROIDEX_USER_DATA_DIR;
+    else process.env.DROIDEX_USER_DATA_DIR = previousProfile;
+    rmSync(directory, { recursive: true, force: true });
   }
 });

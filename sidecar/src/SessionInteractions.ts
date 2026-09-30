@@ -1,5 +1,6 @@
 import { isUnattendedAutomationSession } from './automations/AutomationManager.js';
 import { shouldAutoApproveAutomationTool } from './automations/permissionPolicy.js';
+import { shouldAutoApproveSessionsTool } from './sessionsMcpPolicy.js';
 import {
   isAlwaysOutcome,
   isApprovalOutcome,
@@ -18,11 +19,12 @@ import {
   type ProviderInteractions,
   type ProviderQuestionAnswers,
 } from './providers/interactions.js';
-import { errMsg } from './sessionHelpers.js';
+import { errMsg } from './errors.js';
 
 interface PendingPermission {
   resolve: (outcome: PermissionOutcome) => void;
   kind: PermissionKind;
+  canAlwaysAllow: boolean;
   signature?: string;
   responding?: boolean;
 }
@@ -35,6 +37,7 @@ interface InteractionScope {
 
 export interface InteractionLiveSession {
   summary: SessionSummary;
+  closePromise?: Promise<void>;
 }
 
 type InteractionError = Omit<Extract<ServerEvent, { type: 'error' }>, 'type'>;
@@ -59,6 +62,10 @@ export class SessionInteractions {
     return {
       requestApproval: (approval) => this.decideApproval(ref.id, approval),
       requestQuestion: (questions) => this.askQuestion(ref.id, questions),
+      isActive: () => {
+        const live = this.dependencies.getLiveSession(ref.id);
+        return live !== undefined && live.closePromise === undefined;
+      },
       cancelPending: () => {
         this.cancelPending(ref.id);
       },
@@ -91,13 +98,13 @@ export class SessionInteractions {
   ): Promise<PermissionOutcome> {
     const liveSession = this.dependencies.getLiveSession(sessionId);
     const autonomy = liveSession?.summary.autonomy;
-    const tool = approval.automationTool;
-    const safeForUnattended =
+    const tool = approval.mcpTool;
+    const autoApproved = (unattended: boolean) =>
       tool !== undefined &&
-      shouldAutoApproveAutomationTool(tool.serverName, tool.toolName, autonomy, true);
-    const safeForInteractive =
-      tool !== undefined &&
-      shouldAutoApproveAutomationTool(tool.serverName, tool.toolName, autonomy);
+      (shouldAutoApproveAutomationTool(tool.serverName, tool.toolName, autonomy, unattended) ||
+        shouldAutoApproveSessionsTool(tool.serverName, tool.toolName, autonomy, unattended));
+    const safeForUnattended = autoApproved(true);
+    const safeForInteractive = autoApproved(false);
     if (
       safeForUnattended ||
       (safeForInteractive &&
@@ -107,8 +114,9 @@ export class SessionInteractions {
     }
     return await new Promise<PermissionOutcome>((resolve) => {
       const { request, signature } = approval;
+      const canAlwaysAllow = request.canAlwaysAllow && Boolean(signature);
       const scope = liveSession ? this.scope(liveSession.summary.appSessionId) : undefined;
-      if (scope && signature && scope.permissionGrants.has(signature)) {
+      if (scope && canAlwaysAllow && signature && scope.permissionGrants.has(signature)) {
         resolve('proceed_always');
         return;
       }
@@ -116,6 +124,7 @@ export class SessionInteractions {
         scope.pendingPermissions.set(request.requestId, {
           resolve,
           kind: request.kind,
+          canAlwaysAllow,
           ...(signature ? { signature } : {}),
         });
         if (approval.confirmationType === 'propose_mission') {
@@ -127,7 +136,10 @@ export class SessionInteractions {
           this.dependencies.updateSummary(sessionId, { phase: 'awaiting_run_start' });
         }
       }
-      this.dependencies.emit({ type: 'approval.requested', request });
+      this.dependencies.emit({
+        type: 'approval.requested',
+        request: { ...request, canAlwaysAllow },
+      });
     });
   }
 
@@ -177,8 +189,12 @@ export class SessionInteractions {
       });
       normalized = 'cancel';
     }
-    if (pending.signature && isAlwaysOutcome(outcome)) {
-      scope.permissionGrants.add(pending.signature);
+    if (isAlwaysOutcome(normalized)) {
+      if (pending.canAlwaysAllow && pending.signature) {
+        scope.permissionGrants.add(pending.signature);
+      } else {
+        normalized = 'proceed_once';
+      }
     }
     // An approved plan runs in Auto, so the provider has to leave planning
     // first. If it refuses, the plan is declined instead of approved into a
@@ -192,21 +208,30 @@ export class SessionInteractions {
     settle(normalized);
   }
 
+  /** False when nothing was waiting on this request, so no answer was taken. */
   respondToQuestion(
     appSessionId: string,
     requestId: string,
     cancelled: boolean,
-    answers: { index: number; question: string; answer: string }[],
-  ): void {
+    answers: ProviderQuestionAnswers['answers'],
+  ): boolean {
     const liveSession = this.dependencies.getLiveSession(appSessionId);
-    if (!liveSession) return;
+    if (!liveSession) return false;
     const scope = this.scopes.get(liveSession.summary.appSessionId);
     const resolve = scope?.pendingQuestions.get(requestId);
-    if (!scope || !resolve) return;
+    if (!scope || !resolve) return false;
     scope.pendingQuestions.delete(requestId);
     resolve({ cancelled, answers });
     if (!this.hasPending(liveSession.summary.appSessionId))
       this.dependencies.onSessionAvailable?.(liveSession.summary.appSessionId);
+    return true;
+  }
+
+  /** Whether this exact question is still waiting for an answer. */
+  isQuestionPending(appSessionId: string, requestId: string): boolean {
+    const liveSession = this.dependencies.getLiveSession(appSessionId);
+    const scope = liveSession ? this.scopes.get(liveSession.summary.appSessionId) : undefined;
+    return scope?.pendingQuestions.has(requestId) === true;
   }
 
   hasPending(appSessionId: string): boolean {

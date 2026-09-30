@@ -24,6 +24,7 @@ test('rejects approval requests with unknown permission kinds', () => {
           kind: 'unknown-permission',
           title: 'Approve action',
           detail: 'Run the requested action.',
+          canAlwaysAllow: true,
           raw: {},
         },
       }),
@@ -433,6 +434,59 @@ test('rejects object payloads that are actually arrays', () => {
   );
 });
 
+test('interaction wire validation preserves rich questions and approval eligibility', () => {
+  const request = {
+    appSessionId: 'app',
+    requestId: 'approval',
+    kind: 'edit',
+    title: 'Update file',
+    detail: '/a.ts',
+    diff: '-old\n+new',
+    canAlwaysAllow: false,
+    raw: {},
+  };
+  assert.notEqual(serverWireMessage(batch({ type: 'approval.requested', request })), null);
+  assert.equal(
+    serverWireMessage(
+      batch({ type: 'approval.requested', request: { ...request, canAlwaysAllow: undefined } }),
+    ),
+    null,
+  );
+  const question = {
+    appSessionId: 'app',
+    requestId: 'question',
+    questions: [
+      {
+        index: 0,
+        question: 'Choose',
+        header: 'Features',
+        multiSelect: true,
+        options: [{ label: 'Search', description: 'Find records' }],
+      },
+    ],
+  };
+  assert.notEqual(serverWireMessage(batch({ type: 'question.requested', question })), null);
+  assert.equal(
+    serverWireMessage(
+      batch({
+        type: 'question.requested',
+        question: { ...question, questions: [{ ...question.questions[0], options: ['Search'] }] },
+      }),
+    ),
+    null,
+  );
+});
+
+test('accepts the sidebar requests the sidecar sends and rejects unknown marks', () => {
+  const request = (query: unknown) =>
+    batch({ type: 'sidebar.request', request: { requestId: 'r-1', expiresAt: 4_000, query } });
+  assert.notEqual(serverWireMessage(request({ kind: 'rows' })), null);
+  assert.notEqual(serverWireMessage(request({ kind: 'rows', appSessionIds: ['chat-a'] })), null);
+  const targets = [{ appSessionId: 'chat-a', updatedAt: 100 }];
+  assert.notEqual(serverWireMessage(request({ kind: 'mark', mark: 'archived', targets })), null);
+  assert.equal(serverWireMessage(request({ kind: 'mark', mark: 'deleted', targets })), null);
+});
+
 test('accepts droidproxy reports and rejects unknown providers or shapes', () => {
   const account = {
     provider: 'codex',
@@ -530,6 +584,55 @@ test('accepts droidproxy reports and rejects unknown providers or shapes', () =>
     ),
     null,
   );
+});
+
+test('the chat preferences on a summary accept only their own values', () => {
+  const summary = {
+    appSessionId: 'app-fast',
+    provider: 'codex',
+    sessionPurpose: 'chat',
+    interactionMode: 'auto',
+    role: 'primary',
+    title: 'Fast',
+    goal: '',
+    cwd: '',
+    autonomy: 'low',
+    phase: 'paused',
+    features: [],
+    tokensIn: 0,
+    tokensOut: 0,
+    contextTokens: 0,
+    createdAt: 1,
+    updatedAt: 1,
+  };
+  const updated = (session: Record<string, unknown>) =>
+    serverWireMessage(batch({ type: 'session.updated', session })) !== null;
+  for (const fastMode of [true, false, undefined]) assert.ok(updated({ ...summary, fastMode }));
+  for (const fastMode of ['true', 1, null]) assert.equal(updated({ ...summary, fastMode }), false);
+  for (const contextWindowTokens of [200000, 1000000, undefined])
+    assert.ok(updated({ ...summary, contextWindowTokens }));
+  for (const contextWindowTokens of [500000, '200000', null])
+    assert.equal(updated({ ...summary, contextWindowTokens }), false);
+});
+
+test('transient transcript events accept only the literal true or an absent flag', () => {
+  const event = {
+    id: 'event-1',
+    appSessionId: 'app-1',
+    sourceSessionId: 'provider-1',
+    role: 'primary',
+    kind: 'status',
+    ts: 1,
+  };
+  for (const transient of [undefined, true]) {
+    assert.ok(serverWireMessage(batch({ type: 'event.appended', event: { ...event, transient } })));
+  }
+  for (const transient of ['false', false, 1, null]) {
+    assert.equal(
+      serverWireMessage(batch({ type: 'event.appended', event: { ...event, transient } })),
+      null,
+    );
+  }
 });
 
 test('accepts droidproxy login and apply outcomes, rejects bad shapes', () => {

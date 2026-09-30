@@ -3,7 +3,7 @@
 
 import type { DroidStreamEvent } from '@factory/droid-sdk';
 
-export type PerfScenarioKind = 'replay' | 'soak' | 'session-switch';
+type PerfScenarioKind = 'replay' | 'soak' | 'session-switch';
 
 export interface PerfScenarioSpec {
   name: string;

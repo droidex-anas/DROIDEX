@@ -3,6 +3,7 @@ import { MoreHorizontal } from 'lucide-react';
 import { GitFork, Spinner } from '@droidex/icons';
 import { MAX_CHAT_TITLE_LENGTH } from '../lib/chatMetadata';
 import { formatRelativeTime } from '../lib/time';
+import { reasoningEffortLabel } from '../lib/reasoningEffort';
 import { SESSION_MENU_WIDTH } from './SessionContextMenu';
 import type { SessionSummary } from '../types/bridge';
 import type { SessionAttentionKind } from '../lib/sessionAttention';
@@ -53,6 +54,8 @@ export interface SessionRowProps {
   active: boolean;
   unread: boolean;
   running: boolean;
+  // The chat's own turn is idle but at least one of its agents is still working.
+  agentsWorking: boolean;
   attention: SessionAttentionKind | null;
   activityStatus: SessionActivityStatus;
   // Activity view only: a second line saying why the chat is listed.
@@ -79,9 +82,11 @@ export function areSessionRowPropsEqual(prev: SessionRowProps, next: SessionRowP
     prev.active === next.active &&
     prev.unread === next.unread &&
     prev.running === next.running &&
+    prev.agentsWorking === next.agentsWorking &&
     prev.attention === next.attention &&
     prev.activityStatus === next.activityStatus &&
     prev.detail === next.detail &&
+    prev.session.reasoningEffort === next.session.reasoningEffort &&
     prev.pr?.kind === next.pr?.kind &&
     prev.pr?.checks === next.pr?.checks &&
     prev.renaming === next.renaming &&
@@ -101,6 +106,7 @@ export const SessionRow = memo(function SessionRow({
   active,
   unread,
   running,
+  agentsWorking,
   attention,
   activityStatus,
   detail,
@@ -124,7 +130,14 @@ export const SessionRow = memo(function SessionRow({
   // Every row names the harness in the trailing slot. Inbox rows lead with
   // their state and add a second line saying why the chat is listed.
   const inbox = detail !== undefined;
-  const working = running && !attention;
+  // The main agent sleeps through a wave of agents and wakes when it finishes,
+  // so a chat with no turn of its own in flight can still be working. It keeps
+  // the spinning mark and says what is true when the label is read out.
+  const agentsAlone = !running && agentsWorking;
+  const working = (running || agentsAlone) && !attention;
+  // Same purple and shimmer the effort control gives the deepest level: an
+  // ultra turn, and a wave of agents, which is where that level does its work.
+  const ultra = working && (agentsAlone || session.reasoningEffort === 'ultra');
   const settled = activityStatus === 'settled';
   const harnessMark = (
     <HarnessMark
@@ -204,7 +217,19 @@ export const SessionRow = memo(function SessionRow({
 
   const prIcon = pr && <PrStateIcon kind={pr.kind} size={14} checks={pr.checks} />;
   const spinner = (
-    <Spinner size={14} className="shrink-0 motion-safe:animate-spin-slow" aria-label="working" />
+    <Spinner
+      size={14}
+      // The stroke takes its colour from the text token, so the purple eases in
+      // and out as the main agent sleeps and wakes.
+      className={`shrink-0 transition-colors duration-300 ${ultra ? 'text-droid-ultra ' : ''}motion-safe:animate-spin-slow`}
+      aria-label={
+        agentsAlone
+          ? 'agents working'
+          : ultra
+            ? `working on ${reasoningEffortLabel('ultra', session.provider)}`
+            : 'working'
+      }
+    />
   );
 
   const leadingMark = () => {
@@ -290,11 +315,13 @@ export const SessionRow = memo(function SessionRow({
         }`}
       >
         {/* On two-line rows the mark sits in a box the height of the title
-            line, so it aligns with the title rather than between the lines. */}
+            line, so it aligns with the title rather than between the lines.
+            The ultra shimmer sits on the slot, not the spinner: it and the spin
+            are both `animation` shorthands and would overwrite each other. */}
         <span
           className={`flex w-3.5 shrink-0 items-center justify-center ${inbox ? 'h-5' : ''} ${
-            active ? 'text-droid-text' : 'text-droid-text-secondary group-hover:text-droid-text'
-          }`}
+            ultra ? 'effort-dot-ultra ' : ''
+          }${active ? 'text-droid-text' : 'text-droid-text-secondary group-hover:text-droid-text'}`}
         >
           {leadingMark()}
         </span>

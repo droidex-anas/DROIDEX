@@ -110,7 +110,7 @@ export function AutomationRow({
                   : 'Choose reasoning'}
               </span>
               <span aria-hidden>·</span>
-              <span>{AUTONOMY_LABELS[automation.autonomy]} autonomy</span>
+              <span>{AUTONOMY_LABELS[automation.autonomy]}</span>
             </>
           )}
         </div>

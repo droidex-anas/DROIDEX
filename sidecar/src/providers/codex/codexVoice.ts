@@ -12,7 +12,7 @@ import type {
   ProviderVoiceStart,
   VoiceNarration,
 } from '../session.js';
-import { errMsg } from '../../sessionHelpers.js';
+import { errMsg } from '../../errors.js';
 import type { AppServerClient } from './appServer.js';
 
 // Realtime v3 is the version that supports voices, spoken handoffs and the

@@ -2,7 +2,7 @@ import { providerSessionsDir } from './droidexPaths.js';
 import type { SessionFileChange } from './sessionFileCache.js';
 import type { SessionListFilterOptions, SessionListPage } from './sessionListFilter.js';
 import type { SessionFileWatcher, SessionFileWatcherOptions } from './sessionFileWatcher.js';
-import { errMsg } from './sessionHelpers.js';
+import { errMsg } from './errors.js';
 
 interface SessionFileServingHistory {
   reconcileSessionFiles(): Promise<number>;
@@ -89,6 +89,15 @@ export class SessionFileServing {
 
   watcherCount(): number {
     return this.watchers.length;
+  }
+
+  /** Where an open session's own file is being written, once a watcher has seen it. */
+  liveSessionFile(providerSessionId: string): string | undefined {
+    for (const watcher of this.watchers) {
+      const path = watcher.liveSessionFile(providerSessionId);
+      if (path) return path;
+    }
+    return undefined;
   }
 
   // The session whose file was just finalized lives under exactly one root.

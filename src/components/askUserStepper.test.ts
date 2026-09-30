@@ -6,7 +6,6 @@ import {
   canAdvance,
   createStepper,
   isLastStep,
-  isTyping,
   stepperReducer,
   submissionAnswers,
   type StepperAction,
@@ -14,8 +13,12 @@ import {
 } from './askUserStepper';
 
 const QUESTIONS = [
-  { index: 0, question: 'Which database?', options: ['SQLite', 'Postgres'] },
-  { index: 1, question: 'Which host?', options: ['Local', 'Cloud'] },
+  {
+    index: 0,
+    question: 'Which database?',
+    options: [{ label: 'SQLite' }, { label: 'Postgres' }],
+  },
+  { index: 1, question: 'Which host?', options: [{ label: 'Local' }, { label: 'Cloud' }] },
 ];
 
 function run(total: number, actions: StepperAction[]): StepperState {
@@ -26,7 +29,8 @@ test('a fresh stepper starts on the first question with no answers', () => {
   const state = createStepper(2);
 
   assert.equal(state.current, 0);
-  assert.equal(answerFor(state, 0), '');
+  assert.deepEqual(answerFor(state, 0).selected, []);
+  assert.equal(answerFor(state, 0).custom, '');
   assert.equal(canAdvance(state, 0), false);
   assert.equal(isLastStep(state), false);
 });
@@ -37,34 +41,73 @@ test('picking an option records it and leaves typing mode', () => {
     { type: 'pickOption', questionIndex: 0, option: 'Postgres' },
   ]);
 
-  assert.equal(answerFor(state, 0), 'Postgres');
-  assert.equal(isTyping(state, 0), false);
+  assert.deepEqual(answerFor(state, 0).selected, ['Postgres']);
+  assert.equal(answerFor(state, 0).typing, false);
   assert.equal(canAdvance(state, 0), true);
 });
 
-test('the custom field opens on the picked answer so it can be edited', () => {
+test('one choice replaces the last one, several toggle inside the answer', () => {
+  const single = run(1, [
+    { type: 'pickOption', questionIndex: 0, option: 'SQLite' },
+    { type: 'pickOption', questionIndex: 0, option: 'Postgres' },
+  ]);
+  assert.deepEqual(answerFor(single, 0).selected, ['Postgres']);
+
+  const multi = run(1, [
+    { type: 'pickOption', questionIndex: 0, option: 'SQLite', multiSelect: true },
+    { type: 'pickOption', questionIndex: 0, option: 'Postgres', multiSelect: true },
+  ]);
+  assert.deepEqual(answerFor(multi, 0).selected, ['SQLite', 'Postgres']);
+
+  const unpicked = stepperReducer(multi, {
+    type: 'pickOption',
+    questionIndex: 0,
+    option: 'SQLite',
+    multiSelect: true,
+  });
+  assert.deepEqual(answerFor(unpicked, 0).selected, ['Postgres']);
+});
+
+test('typing replaces a single choice and joins several', () => {
+  const single = run(1, [
+    { type: 'pickOption', questionIndex: 0, option: 'SQLite' },
+    { type: 'typeAnswer', questionIndex: 0, value: 'Turso' },
+  ]);
+  assert.deepEqual(answerFor(single, 0).selected, []);
+  assert.equal(answerFor(single, 0).custom, 'Turso');
+  assert.equal(answerFor(single, 0).typing, true);
+
+  const multi = run(1, [
+    { type: 'pickOption', questionIndex: 0, option: 'SQLite', multiSelect: true },
+    { type: 'typeAnswer', questionIndex: 0, value: 'Turso', multiSelect: true },
+  ]);
+  assert.deepEqual(answerFor(multi, 0).selected, ['SQLite']);
+  assert.equal(answerFor(multi, 0).custom, 'Turso');
+
+  // Picking another option keeps the typed answer in sight: it is still sent.
+  const more = stepperReducer(multi, {
+    type: 'pickOption',
+    questionIndex: 0,
+    option: 'Postgres',
+    multiSelect: true,
+  });
+  assert.equal(answerFor(more, 0).typing, true);
+  assert.equal(answerFor(more, 0).custom, 'Turso');
+});
+
+test('the custom field opens on the answer already held', () => {
   const picked = run(1, [
     { type: 'pickOption', questionIndex: 0, option: 'SQLite' },
     { type: 'openCustomAnswer', questionIndex: 0 },
   ]);
 
-  assert.equal(picked.answers[0], 'SQLite');
-  assert.equal(isTyping(picked, 0), true);
-
-  const edited = stepperReducer(picked, {
-    type: 'typeAnswer',
-    questionIndex: 0,
-    value: 'SQLite via Turso',
-  });
-
-  assert.equal(answerFor(edited, 0), 'SQLite via Turso');
-  assert.equal(isTyping(edited, 0), true);
+  assert.deepEqual(answerFor(picked, 0).selected, ['SQLite']);
+  assert.equal(answerFor(picked, 0).typing, true);
 });
 
 test('a whitespace-only answer cannot advance', () => {
   const state = run(1, [{ type: 'typeAnswer', questionIndex: 0, value: '   ' }]);
 
-  assert.equal(answerFor(state, 0), '');
   assert.equal(canAdvance(state, 0), false);
 });
 
@@ -87,22 +130,23 @@ test('answers stay attached to their own question across back and forward', () =
     { type: 'forward' },
   ]);
 
-  assert.equal(answerFor(state, 0), 'Postgres');
-  assert.equal(answerFor(state, 1), 'Fly.io');
-  assert.equal(isTyping(state, 0), false);
-  assert.equal(isTyping(state, 1), true);
+  assert.deepEqual(answerFor(state, 0).selected, ['Postgres']);
+  assert.equal(answerFor(state, 1).custom, 'Fly.io');
+  assert.equal(answerFor(state, 0).typing, false);
+  assert.equal(answerFor(state, 1).typing, true);
 });
 
-test('the submission payload carries every question with its trimmed answer', () => {
+test('the submission payload carries every question with what it holds', () => {
   const state = run(2, [
-    { type: 'pickOption', questionIndex: 0, option: 'Postgres' },
+    { type: 'pickOption', questionIndex: 0, option: 'Postgres', multiSelect: true },
+    { type: 'pickOption', questionIndex: 0, option: 'SQLite', multiSelect: true },
     { type: 'forward' },
     { type: 'typeAnswer', questionIndex: 1, value: '  Fly.io  ' },
   ]);
 
   assert.deepEqual(submissionAnswers(QUESTIONS, state), [
-    { index: 0, question: 'Which database?', answer: 'Postgres' },
-    { index: 1, question: 'Which host?', answer: 'Fly.io' },
+    { index: 0, question: 'Which database?', selected: ['Postgres', 'SQLite'] },
+    { index: 1, question: 'Which host?', selected: [], custom: 'Fly.io' },
   ]);
 });
 
@@ -110,7 +154,7 @@ test('unanswered questions submit as empty answers rather than being dropped', (
   const state = run(2, [{ type: 'pickOption', questionIndex: 0, option: 'SQLite' }]);
 
   assert.deepEqual(submissionAnswers(QUESTIONS, state), [
-    { index: 0, question: 'Which database?', answer: 'SQLite' },
-    { index: 1, question: 'Which host?', answer: '' },
+    { index: 0, question: 'Which database?', selected: ['SQLite'] },
+    { index: 1, question: 'Which host?', selected: [] },
   ]);
 });

@@ -81,6 +81,13 @@ export function voiceSessionOf(
   return sessions[appSessionId] ?? IDLE;
 }
 
+/** True while the assistant's own words are still arriving, which is it talking. */
+export function isAssistantSpeaking(lines: VoiceTranscriptLine[]): boolean {
+  // Not only the last line: the user can be transcribed while the assistant is
+  // still talking, which leaves the assistant's open line behind theirs.
+  return lines.some((line) => line.role === 'assistant' && !line.final);
+}
+
 export function withoutVoiceSession(sessions: VoiceSessions, appSessionId: string): VoiceSessions {
   if (!(appSessionId in sessions)) return sessions;
   return Object.fromEntries(Object.entries(sessions).filter(([id]) => id !== appSessionId));
@@ -110,6 +117,10 @@ function nextSession(current: VoiceSessionState, action: VoiceAction): VoiceSess
     case 'VOICE_ANSWERED':
       return { ...current, answer: { sdp: action.sdp, attempt: action.attempt } };
     case 'VOICE_STATE':
+      // A chat with no conversation here has nothing to close: the call that
+      // closed was hung up here already, or belonged to a page since reloaded.
+      // Keeping it idle lets the next conversation start on the first press.
+      if (action.status === 'closed' && current.status === 'idle') return current;
       // Connecting clears what went wrong on the way: a chat whose runtime had
       // to be resumed refuses the first request and answers the second.
       return action.status === 'live'

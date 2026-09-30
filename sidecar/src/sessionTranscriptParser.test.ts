@@ -4,6 +4,7 @@ import { parseSessionLineEvents } from './sessionTranscriptParser.js';
 import type { TranscriptEvent } from './protocol.js';
 import { storedNoticeLine } from './sessionNotices.js';
 import { formatBranchPrompt } from './branchPrompt.js';
+import { formatSideChatPrompt } from './sideChatPrompt.js';
 
 function messageLine(opts: {
   role: string;
@@ -214,6 +215,19 @@ test('app-generation guidance replays as only the concise user command', () => {
   assert.equal(events.length, 1);
   assert.equal(events[0].text, '/visualize compare renderer timings');
   assert.doesNotMatch(events[0].text ?? '', /Private generation guidance/);
+});
+
+test('a side-chat question replays without its guidance, also when branched across harnesses', () => {
+  const question = 'Why does the chart dip on Wednesday?';
+  for (const text of [
+    formatSideChatPrompt(question),
+    formatBranchPrompt(formatSideChatPrompt(question), '**User:** /visualize coffee sales'),
+  ]) {
+    const line = JSON.parse(messageLine({ role: 'user', content: [{ type: 'text', text }] }));
+    const events = parseSessionLineEvents('app', 'provider', 'primary', line);
+    assert.equal(events.length, 1);
+    assert.equal(events[0].text, question);
+  }
 });
 
 test('a branch prompt replays as only its request, however long the copied conversation', () => {

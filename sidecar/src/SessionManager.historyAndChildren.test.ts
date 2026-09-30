@@ -824,7 +824,7 @@ test('[A2] Open and replay a linked child session', { concurrency: false }, asyn
   }
 });
 
-test('[A3] Child send, steer, and interrupt', { concurrency: false }, async () => {
+test('[A3] Child send, queue, and interrupt', { concurrency: false }, async () => {
   const h = createSessionManagerTestContext();
 
   try {
@@ -851,10 +851,10 @@ test('[A3] Child send, steer, and interrupt', { concurrency: false }, async () =
     });
     await h.provider.waitForPrompts('worker-a3', 1);
     await h.handle({
-      type: 'child.sendNow',
+      type: 'child.send',
       parentAppSessionId: 'app-a3',
       childSessionId: 'worker-a3',
-      text: 'steer',
+      text: 'queued',
     });
     gate.resolve();
     await sending;
@@ -876,13 +876,13 @@ test('[A3] Child send, steer, and interrupt', { concurrency: false }, async () =
       requestId: 'open-worker-failed-a3',
     });
 
-    assert.deepEqual(h.provider.session('worker-a3').prompts, ['normal', 'steer']);
+    assert.deepEqual(h.provider.session('worker-a3').prompts, ['normal', 'queued']);
     assert.equal(
       h.calls.filter(
         (call) =>
           call.target === 'provider' && call.method === 'interrupt' && call.args[0] === 'worker-a3',
       ).length,
-      2,
+      1,
     );
     assert.equal(
       h.events.some(

@@ -52,7 +52,6 @@ reasoning effort, autonomy, and interaction mode.
 
 - `child.open`
 - `child.send`
-- `child.sendNow`
 - `child.interrupt`
 
 Workers and validators are child sessions. Mission Control owns workers and

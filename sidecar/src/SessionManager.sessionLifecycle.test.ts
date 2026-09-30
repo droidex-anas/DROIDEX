@@ -47,8 +47,8 @@ test('[L1] Ordinary create', { concurrency: false }, async () => {
     assert.equal(options.autonomyLevel, 'low');
     assert.deepEqual(
       options.mcpServers?.map((server) => server.name),
-      ['test-cli', 'test-browser', 'droidex-automations'],
-      'the effective CLI MCP config and DROIDEX browser MCP must initialize together',
+      ['test-cli', 'test-browser', 'droidex-automations', 'droidex-sessions'],
+      'the effective CLI MCP config and DROIDEX’s own tool servers must initialize together',
     );
     assert.equal(
       h.calls.some((call) => call.target === 'provider' && call.method === 'addMcpServer'),
@@ -504,32 +504,6 @@ test(
   },
 );
 
-test('[L7] Send-now steers ahead of queued sends', { concurrency: false }, async () => {
-  const h = createSessionManagerTestContext();
-  const gate = h.runtime.deferNextCreateStream('provider-1');
-
-  try {
-    await h.create({
-      sessionPurpose: 'chat',
-      clientRef: 'l7',
-      title: 'L7',
-      goal: 'first',
-      interactionMode: 'auto',
-      autonomy: 'low',
-    });
-    await h.handle({ type: 'session.send', appSessionId: 'provider-1', text: 'second' });
-    await h.handle({ type: 'session.sendNow', appSessionId: 'provider-1', text: 'steer' });
-
-    assert.equal(h.calls.filter((call) => call.method === 'interrupt').length, 1);
-    gate.resolve();
-    await h.provider.waitForPrompts('provider-1', 3);
-
-    assert.deepEqual(h.provider.session('provider-1').prompts, ['first', 'steer', 'second']);
-  } finally {
-    await h.dispose();
-  }
-});
-
 test('closing an active turn suppresses later provider errors and context refresh', async () => {
   const h = createSessionManagerTestContext();
   const gate = h.runtime.deferNextCreateStream('provider-close');
@@ -713,7 +687,7 @@ test('[L10] Autonomy mutation reports provider rejection', { concurrency: false 
     assert.equal(
       h.provider
         .session('provider-1')
-        .settings.some((settings) => settings['autonomyLevel'] === 'low'),
+        .settings.some((settings) => settings['autonomyLevel'] === 'off'),
       true,
     );
     assert.equal(

@@ -3,124 +3,35 @@ import test from 'node:test';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 
-import { initialState, reducer, StaticStoreProvider, type AppState } from '../hooks/useStore.js';
-import type { AppIconMode } from '../lib/appIcon.js';
+import { initialState, StaticStoreProvider, type AppState } from '../hooks/useStore.js';
 import { CUSTOM_THEME_ID } from '../lib/theme.js';
 import { AppearanceSection } from './AppearanceSettings.js';
 import SettingsPanel from './SettingsPanel.js';
 
-const ICON_MODES: readonly [AppIconMode, string][] = [
-  ['system', 'System'],
-  ['light', 'Light'],
-  ['dark', 'Dark'],
-];
-
-function renderAppearance(appIconMode: AppIconMode): string {
-  const state: AppState = {
-    ...initialState,
-    theme: { ...initialState.theme, appIconMode },
-  };
+function renderAppearance(theme: AppState['theme']): string {
   return renderToStaticMarkup(
     createElement(
       StaticStoreProvider,
-      { state, dispatch: () => undefined },
+      { state: { ...initialState, theme }, dispatch: () => undefined },
       createElement(AppearanceSection),
     ),
   );
-}
-
-// The App icon selector shares Light/Dark/System labels with the Theme row, so
-// scope every assertion to the group tagged `aria-label="App icon"`.
-function iconGroup(html: string): string {
-  const start = html.indexOf('aria-label="App icon"');
-  assert.notEqual(start, -1, 'App icon selector group is missing');
-  const end = html.indexOf('</div>', start);
-  assert.notEqual(end, -1, 'App icon selector group is unterminated');
-  return html.slice(start, end);
-}
-
-function optionFor(group: string, label: string): string {
-  const segment = group.split('</button>').find((part) => part.includes(label));
-  assert.ok(segment, `App icon option "${label}" is missing`);
-  return segment;
-}
-
-for (const [mode, label] of ICON_MODES) {
-  test(`app icon selector marks the persisted "${mode}" mode active`, () => {
-    const group = iconGroup(renderAppearance(mode));
-    for (const [, otherLabel] of ICON_MODES) {
-      const option = optionFor(group, otherLabel);
-      if (otherLabel === label) {
-        assert.match(option, /aria-pressed="true"/, `${otherLabel} should be active for ${mode}`);
-      } else {
-        assert.match(
-          option,
-          /aria-pressed="false"/,
-          `${otherLabel} should be inactive for ${mode}`,
-        );
-      }
-    }
-  });
 }
 
 // Hand-tuned colors that match no preset must surface as an explicit
 // "Custom (unsaved)" entry so the theme dropdown always reflects the screen.
 test('theme dropdown lists an unsaved custom entry for hand-tuned colors', () => {
-  const state: AppState = {
-    ...initialState,
-    theme: {
-      ...initialState.theme,
-      presetId: CUSTOM_THEME_ID,
-      bg: '#123456',
-    },
-  };
-  const html = renderToStaticMarkup(
-    createElement(
-      StaticStoreProvider,
-      { state, dispatch: () => undefined },
-      createElement(AppearanceSection),
-    ),
-  );
+  const html = renderAppearance({
+    ...initialState.theme,
+    presetId: CUSTOM_THEME_ID,
+    bg: '#123456',
+  });
   assert.ok(html.includes('Custom (unsaved)'), 'unsaved custom entry is missing');
 });
 
 test('theme dropdown has no unsaved entry when a preset is active', () => {
-  const html = renderAppearance('system');
+  const html = renderAppearance(initialState.theme);
   assert.ok(!html.includes('Custom (unsaved)'), 'unsaved entry should be hidden for presets');
-});
-
-test('selecting an app icon mode persists appIconMode through SET_THEME', () => {
-  const values = new Map<string, string>();
-  const mock: Storage = {
-    getItem: (key) => values.get(key) ?? null,
-    setItem: (key, next) => {
-      values.set(key, next);
-    },
-    removeItem: (key) => {
-      values.delete(key);
-    },
-    clear: () => {
-      values.clear();
-    },
-    key: (index) => Array.from(values.keys())[index] ?? null,
-    get length() {
-      return values.size;
-    },
-  };
-  const previous = Object.getOwnPropertyDescriptor(globalThis, 'localStorage');
-  Object.defineProperty(globalThis, 'localStorage', { configurable: true, value: mock });
-  try {
-    for (const [mode] of ICON_MODES) {
-      const next = reducer(initialState, { type: 'SET_THEME', theme: { appIconMode: mode } });
-      assert.equal(next.theme.appIconMode, mode);
-      const persisted: unknown = JSON.parse(values.get('droid-theme') ?? '{}');
-      assert.ok(persisted && typeof persisted === 'object');
-      assert.equal((persisted as { appIconMode?: string }).appIconMode, mode);
-    }
-  } finally {
-    if (previous) Object.defineProperty(globalThis, 'localStorage', previous);
-    else delete (globalThis as { localStorage?: Storage }).localStorage;
-  }
 });
 
 test('settings renders when the persisted active session is absent from the snapshot', () => {

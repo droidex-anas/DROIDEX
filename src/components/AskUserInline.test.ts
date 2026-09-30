@@ -21,7 +21,11 @@ function renderCard(question: SessionQuestion): string {
 }
 
 const SINGLE = makeQuestion([
-  { index: 0, question: 'Which database should I use?', options: ['SQLite', 'Postgres'] },
+  {
+    index: 0,
+    question: 'Which database should I use?',
+    options: [{ label: 'SQLite' }, { label: 'Postgres' }],
+  },
 ]);
 
 test('renders the question, every option, and a custom-answer row', () => {
@@ -56,8 +60,8 @@ test('a single question hides the step counter and Back', () => {
 test('multiple questions show progress and a Next action', () => {
   const html = renderCard(
     makeQuestion([
-      { index: 0, question: 'First?', options: ['a'] },
-      { index: 1, question: 'Second?', options: ['b'] },
+      { index: 0, question: 'First?', options: [{ label: 'a' }] },
+      { index: 1, question: 'Second?', options: [{ label: 'b' }] },
     ]),
   );
 
@@ -66,4 +70,24 @@ test('multiple questions show progress and a Next action', () => {
   assert.match(html, />Next</);
   // Next stays disabled until the first question is answered.
   assert.match(html, /<button[^>]*disabled=""[^>]*>Next</);
+});
+
+test('a header names the question and options carry their descriptions', () => {
+  const html = renderCard(
+    makeQuestion([
+      {
+        index: 0,
+        question: 'Which database should I use?',
+        header: 'Database',
+        options: [
+          { label: 'SQLite', description: 'One file, no server' },
+          { label: 'Postgres', description: 'Runs alongside the app' },
+        ],
+      },
+    ]),
+  );
+
+  assert.match(html, />Database</);
+  assert.match(html, />One file, no server</);
+  assert.match(html, />Runs alongside the app</);
 });

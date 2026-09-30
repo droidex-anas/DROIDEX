@@ -22,7 +22,8 @@ import type {
   ProviderOperationTarget,
 } from './SessionContext.js';
 import type { LiveSession } from './SessionLifecycle.js';
-import { defaultsModeForSummary, errMsg, modelDefaultForMode } from './sessionHelpers.js';
+import { errMsg } from './errors.js';
+import { defaultsModeForSummary, modelDefaultForMode } from './modeDefaults.js';
 import {
   SessionCompactionExecution,
   type CompactionExecutionResult,

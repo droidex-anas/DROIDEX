@@ -112,7 +112,7 @@ export async function runReplay(options: ReplayRunOptions): Promise<ReplayReport
   // sample. Establish the writer and its durability checkpoint before metrics
   // begin so the boundary histogram measures live orchestration behavior.
   const history = new HistoryPersistence();
-  history.flushSync();
+  await history.flush();
   const dependencies: SessionManagerDependencies = {
     runtime,
     history,
@@ -404,7 +404,7 @@ export async function runReplay(options: ReplayRunOptions): Promise<ReplayReport
   }
 }
 
-export { acceptReplayWireMessage, type ReplayWireCursor } from './replayWire.js';
+export { acceptReplayWireMessage } from './replayWire.js';
 
 function sendCommand(client: WebSocket, command: Parameters<SessionManager['handle']>[0]): void {
   client.send(JSON.stringify(command));

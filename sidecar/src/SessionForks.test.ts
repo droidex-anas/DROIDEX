@@ -9,6 +9,7 @@ import type { ProviderForkSource } from './providers/session.js';
 import type { SessionBranch, SessionCreateCommand } from './SessionLifecycle.js';
 import { SessionLineageStore, sessionLineagePath } from './sessionLineage.js';
 import type { SessionSummaryPatch } from './SessionRegistry.js';
+import { formatSideChatPrompt } from './sideChatPrompt.js';
 
 // A branch reads the source's stored transcript, so history lives in a
 // throwaway home.
@@ -93,6 +94,7 @@ function harness(
   options: {
     streaming?: boolean;
     provider?: 'droid' | 'claude';
+    contextWindowTokens?: 1000000;
     duringFork?: (stored: Map<string, SessionSummary>) => void;
   } = {},
 ) {
@@ -106,6 +108,9 @@ function harness(
         provider: options.provider ?? 'droid',
         modelId: 'claude-opus',
         reasoningEffort: 'high',
+        ...(options.contextWindowTokens
+          ? { contextWindowTokens: options.contextWindowTokens }
+          : {}),
       }),
     ],
   ]);
@@ -137,10 +142,10 @@ function harness(
       },
       updateStoredSummary: (id: string, patch: SessionSummaryPatch) => {
         const found = stored.get(id);
-        if (!found) return undefined;
+        if (!found) return Promise.resolve(undefined);
         const updated = { ...found, ...patch };
         stored.set(id, updated);
-        return updated;
+        return Promise.resolve(updated);
       },
     },
     lineage,
@@ -150,6 +155,7 @@ function harness(
       stored.set('copy', summary({ appSessionId: 'copy', title: 'Provider title' }));
       return Promise.resolve();
     },
+    readTranscript: () => Promise.reject(new Error('not used')),
     updateModel: (appSessionId, settings) => {
       order.push(
         `model ${appSessionId}: ${String(settings.modelId)} ${String(settings.reasoningEffort)}`,
@@ -187,7 +193,7 @@ function harness(
 }
 
 test('a same-harness fork copies the conversation and answers with the copied chat', async (t) => {
-  const h = harness();
+  const h = harness({ contextWindowTokens: 1000000 });
   t.after(h.cleanup);
 
   await h.forks.fork({
@@ -215,6 +221,7 @@ test('a same-harness fork copies the conversation and answers with the copied ch
   assert.equal(event.session.interactionMode, 'spec');
   assert.equal(event.session.autonomy, 'medium');
   assert.equal(event.session.modelId, 'claude-opus');
+  assert.equal(event.session.contextWindowTokens, 1000000);
   const lineage = event.session.lineage;
   assert.equal(lineage?.kind, 'fork');
   assert.equal(lineage.sourceAppSessionId, 'source');
@@ -226,7 +233,7 @@ test('a same-harness fork copies the conversation and answers with the copied ch
 });
 
 test('a same-harness side chat takes its question as the first message after the copy', async (t) => {
-  const h = harness();
+  const h = harness({ contextWindowTokens: 1000000 });
   t.after(h.cleanup);
 
   await h.forks.fork({
@@ -246,11 +253,33 @@ test('a same-harness side chat takes its question as the first message after the
     'lineage',
     'session.forked',
     'model copy: claude-sonnet null',
-    'send copy: Why this migration order?',
+    `send copy: ${formatSideChatPrompt('Why this migration order?')}`,
   ]);
   const [event] = h.events;
   if (event.type !== 'session.forked') return assert.fail('expected session.forked');
   assert.equal(event.session.lineage?.kind, 'side');
+  // The source's window belongs to its model; the picked model runs its own.
+  assert.equal(event.session.contextWindowTokens, undefined);
+});
+
+test('a side chat left on the source model keeps its window', async (t) => {
+  const h = harness({ contextWindowTokens: 1000000 });
+  t.after(h.cleanup);
+
+  // The picker sends the source's model when the user leaves it alone.
+  await h.forks.fork({
+    type: 'session.fork',
+    clientRef: 'ref-5',
+    appSessionId: 'source',
+    lineage: 'side',
+    title: 'Side chat',
+    prompt: 'And the rollback?',
+    modelId: 'claude-opus',
+  });
+
+  const [event] = h.events;
+  if (event.type !== 'session.forked') return assert.fail('expected session.forked');
+  assert.equal(event.session.contextWindowTokens, 1000000);
 });
 
 test('a chat with a turn in progress is not forked', async (t) => {

@@ -1,3 +1,4 @@
+import { isProjectView, isProjectResult } from '../features/projects/validation';
 import type {
   BridgeResetMessage,
   BridgeRuntimeSnapshot,
@@ -139,6 +140,10 @@ function isServerEvent(value: unknown): value is ServerEvent {
   // Runtime `type` is a string; narrowing to the union makes a missing variant fail this switch.
   const type = value.type as ServerEvent['type'];
   switch (type) {
+    case 'projects.snapshot':
+      return Array.isArray(value.projects) && value.projects.every(isProjectView);
+    case 'project.result':
+      return isProjectResult(value);
     case 'connection':
       return value.status === 'connected' || value.status === 'error';
     case 'runtime.updated':
@@ -251,6 +256,7 @@ function isServerEvent(value: unknown): value is ServerEvent {
     case 'question.requested':
       return isSessionQuestion(value.question);
     case 'interaction.cancelled':
+    case 'question.answered':
       return hasStrings(value, ['appSessionId', 'requestId']);
     case 'context.updated':
       return hasStrings(value, ['appSessionId', 'sourceSessionId']) && isContextStats(value.stats);
@@ -312,6 +318,8 @@ function isServerEvent(value: unknown): value is ServerEvent {
       return isBrowserState(value.state);
     case 'browser.native.request':
       return isBrowserNativeRequest(value.request);
+    case 'sidebar.request':
+      return isSidebarRequest(value.request);
     case 'mcp.authRequested':
       return typeof value.requestId === 'string';
     case 'mcp.catalog':
@@ -382,6 +390,13 @@ function isSessionSummary(value: unknown): boolean {
     hasNumbers(value, ['tokensIn', 'tokensOut', 'contextTokens', 'createdAt', 'updatedAt']) &&
     isOptionalString(value.interruptReason) &&
     isOptionalString(value.resumeId) &&
+    isOptionalBoolean(value.fastMode) &&
+    isOptionalContextWindow(value.contextWindowTokens) &&
+    (value.pendingSteers === undefined ||
+      (Array.isArray(value.pendingSteers) &&
+        value.pendingSteers.every(
+          (steer) => isRecord(steer) && hasStrings(steer, ['id', 'text']),
+        ))) &&
     (value.lineage === undefined || isSessionLineage(value.lineage))
   );
 }
@@ -408,7 +423,10 @@ function isChildSessionSummary(value: unknown): boolean {
     typeof value.transcriptAvailable === 'boolean' &&
     isStreamFidelity(value.streamFidelity) &&
     isOptionalString(value.group) &&
-    isOptionalString(value.phase)
+    isOptionalString(value.phase) &&
+    isOptionalNonNegativeInteger(value.startedAt) &&
+    isOptionalNonNegativeInteger(value.settledAt) &&
+    isOptionalNonNegativeInteger(value.tokensUsed)
   );
 }
 
@@ -421,7 +439,12 @@ function isTranscriptEvent(value: unknown): boolean {
     hasStrings(value, ['id', 'appSessionId', 'sourceSessionId', 'role', 'kind']) &&
     typeof value.ts === 'number' &&
     (value.errorKind === undefined || value.errorKind === 'usage_limit') &&
-    (value.resetsAt === undefined || nonNegativeSafeInteger(value.resetsAt))
+    (value.resetsAt === undefined || nonNegativeSafeInteger(value.resetsAt)) &&
+    isOptionalString(value.pollsChildSessionId) &&
+    (value.interrupted === undefined || value.interrupted === true) &&
+    (value.transient === undefined || value.transient === true) &&
+    isOptionalString(value.forkPointId) &&
+    (value.sideChatReplies === undefined || stringArray(value.sideChatReplies))
   );
 }
 
@@ -430,6 +453,8 @@ function isPermissionRequest(value: unknown): boolean {
     isRecord(value) &&
     hasStrings(value, ['appSessionId', 'requestId', 'kind', 'title', 'detail']) &&
     isPermissionKind(value.kind) &&
+    typeof value.canAlwaysAllow === 'boolean' &&
+    (value.diff === undefined || typeof value.diff === 'string') &&
     'raw' in value
   );
 }
@@ -473,7 +498,15 @@ function isSessionQuestion(value: unknown): boolean {
         isRecord(question) &&
         typeof question.index === 'number' &&
         typeof question.question === 'string' &&
-        stringArray(question.options),
+        (question.header === undefined || typeof question.header === 'string') &&
+        (question.multiSelect === undefined || typeof question.multiSelect === 'boolean') &&
+        Array.isArray(question.options) &&
+        question.options.every(
+          (option) =>
+            isRecord(option) &&
+            typeof option.label === 'string' &&
+            (option.description === undefined || typeof option.description === 'string'),
+        ),
     )
   );
 }
@@ -617,12 +650,43 @@ function isBrowserNativeRequest(value: unknown): boolean {
   );
 }
 
+function isSidebarRequest(value: unknown): boolean {
+  if (!isRecord(value) || typeof value.requestId !== 'string') return false;
+  if (!hasNumbers(value, ['expiresAt']) || !isRecord(value.query)) return false;
+  const query = value.query;
+  if (query.kind === 'rows')
+    return query.appSessionIds === undefined || stringArray(query.appSessionIds);
+  return (
+    query.kind === 'mark' &&
+    (query.mark === 'settled' || query.mark === 'reopened' || query.mark === 'archived') &&
+    Array.isArray(query.targets) &&
+    query.targets.every(
+      (target) =>
+        isRecord(target) &&
+        typeof target.appSessionId === 'string' &&
+        hasNumbers(target, ['updatedAt']),
+    )
+  );
+}
+
 function hasStrings(value: Record<string, unknown>, keys: readonly string[]): boolean {
   return keys.every((key) => typeof value[key] === 'string');
 }
 
 function isOptionalString(value: unknown): boolean {
   return value === undefined || typeof value === 'string';
+}
+
+function isOptionalContextWindow(value: unknown): boolean {
+  return value === undefined || value === 200000 || value === 1000000;
+}
+
+function isOptionalBoolean(value: unknown): boolean {
+  return value === undefined || typeof value === 'boolean';
+}
+
+function isOptionalNonNegativeInteger(value: unknown): boolean {
+  return value === undefined || nonNegativeSafeInteger(value);
 }
 
 function hasNumbers(value: Record<string, unknown>, keys: readonly string[]): boolean {

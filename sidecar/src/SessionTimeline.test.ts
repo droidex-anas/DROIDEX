@@ -1,5 +1,11 @@
 import assert from 'node:assert/strict';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import test from 'node:test';
+
+import { loadOpenTranscriptTail } from './history.js';
+import { ProviderTranscriptFile } from './providers/ProviderTranscriptFile.js';
 
 import type {
   ChildSessionSummary,
@@ -23,6 +29,7 @@ interface HarnessOptions {
   onRecordEvent?: (event: TranscriptEvent) => boolean | void;
   streamingCoalesceMs?: number;
   streamingCoalesceMaxBytes?: number;
+  liveSessionFile?: (providerSessionId: string) => string | undefined;
 }
 
 function createHarness(options: HarnessOptions = {}) {
@@ -38,6 +45,7 @@ function createHarness(options: HarnessOptions = {}) {
     hydrateMission: () => ({ progress: [], transcripts: [] }),
     resolveChain: (_appSessionId, providerSessionId) => [providerSessionId],
     transcriptWindow: () => ({ events: [] }),
+    openTranscriptTail: () => [],
     ...options.loaders,
   };
   const registry: SessionTimelineRegistry = {
@@ -70,6 +78,7 @@ function createHarness(options: HarnessOptions = {}) {
     },
     loaders,
     ...(options.now ? { now: options.now } : {}),
+    ...(options.liveSessionFile ? { liveSessionFile: options.liveSessionFile } : {}),
     ...(options.streamingCoalesceMs !== undefined
       ? { streamingCoalesceMs: options.streamingCoalesceMs }
       : {}),
@@ -208,8 +217,8 @@ test('timer flush failures stay owned by turn settlement', async () => {
     },
   ]);
   assert.doesNotThrow(() => timeline.flushStreamingFor('app-1', 'app-1'));
-  assert.throws(() => timeline.settleStreaming('app-1', 'app-1'), /disk full/);
-  assert.doesNotThrow(() => timeline.settleStreaming('app-1', 'app-1'));
+  await assert.rejects(async () => await timeline.settleStreaming('app-1', 'app-1'), /disk full/);
+  await assert.doesNotReject(async () => await timeline.settleStreaming('app-1', 'app-1'));
 });
 
 test('timer flush failures report once through the owning child conversation', async () => {
@@ -244,11 +253,14 @@ test('timer flush failures report once through the owning child conversation', a
     },
   ]);
   assert.doesNotThrow(() => timeline.flushStreamingFor('parent-1', 'child-1'));
-  assert.throws(() => timeline.settleStreaming('parent-1', 'child-1'), /disk full/);
+  await assert.rejects(
+    async () => await timeline.settleStreaming('parent-1', 'child-1'),
+    /disk full/,
+  );
   assert.equal(emitted.length, 1);
 });
 
-test('one child persistence failure does not abort another child append', () => {
+test('one child persistence failure does not abort another child append', async () => {
   const { emitted, recorded, timeline } = createHarness({
     streamingCoalesceMs: 1_000,
     onRecordEvent: (event) => {
@@ -281,7 +293,10 @@ test('one child persistence failure does not abort another child append', () => 
     ['b'],
   );
   assert.deepEqual(emitted, [{ type: 'event.appended', event: recorded[0] }]);
-  assert.throws(() => timeline.settleStreaming('parent-1', 'child-a'), /child A disk failure/);
+  await assert.rejects(
+    async () => await timeline.settleStreaming('parent-1', 'child-a'),
+    /child A disk failure/,
+  );
   assert.deepEqual(emitted.slice(1), [
     {
       type: 'child.error',
@@ -294,7 +309,7 @@ test('one child persistence failure does not abort another child append', () => 
       recoverable: true,
     },
   ]);
-  assert.doesNotThrow(() => timeline.settleStreaming('parent-1', 'child-b'));
+  await assert.doesNotReject(async () => await timeline.settleStreaming('parent-1', 'child-b'));
 });
 
 test('streaming byte budget flushes early without dropping or truncating content', () => {
@@ -570,6 +585,7 @@ test('older restore prepends only transcripts and preserves page telemetry', () 
         assert.deepEqual(options, { cursor: 'cursor-1' });
         return { events: [event], olderCursor: 'cursor-2' };
       },
+      openTranscriptTail: () => [],
     },
   });
 
@@ -608,6 +624,71 @@ test('older failure emits an empty terminal prepend without an error', () => {
   assert.deepEqual(page.transcripts, []);
   assert.equal(page.olderCursor, undefined);
   assert.equal(page.hasMore, false);
+});
+
+test('an open session reads its own transcript before the history index knows the file', async (t) => {
+  const profile = mkdtempSync(join(tmpdir(), 'droidex-profile-'));
+  const previous = process.env.DROIDEX_USER_DATA_DIR;
+  process.env.DROIDEX_USER_DATA_DIR = profile;
+  t.after(() => {
+    if (previous === undefined) delete process.env.DROIDEX_USER_DATA_DIR;
+    else process.env.DROIDEX_USER_DATA_DIR = previous;
+    rmSync(profile, { recursive: true, force: true });
+  });
+  const started = summary('claude-live', 'claude-live', { provider: 'claude' });
+  const harness = createHarness({
+    summaries: [started],
+    liveAppSessionIds: ['claude-live'],
+    // The index learns of an open session's file only when the session closes.
+    loaders: { resolveChain: () => [], openTranscriptTail: loadOpenTranscriptTail },
+  });
+  const file = new ProviderTranscriptFile('claude-live', () => started);
+  harness.timeline.useTranscript('claude-live', file);
+  await file.appendPrompt('Port the client.');
+  file.append({ ...transcript('reply', 'claude-live'), text: 'Ported it to v3.' });
+  // The turn settles and its reply is still being written: the read waits for it.
+  void file.flush();
+
+  const tail = await harness.timeline.tail('claude-live', 10);
+  assert.deepEqual(
+    tail.map((event) => event.text),
+    ['Port the client.', 'Ported it to v3.'],
+  );
+});
+
+test('an open Droid session reads the file its runtime writes before the index knows it', async (t) => {
+  const dir = mkdtempSync(join(tmpdir(), 'droidex-droid-live-'));
+  t.after(() => {
+    rmSync(dir, { recursive: true, force: true });
+  });
+  const file = join(dir, 'droid-live.jsonl');
+  const line = (role: 'user' | 'assistant', id: string, text: string) =>
+    JSON.stringify({
+      type: 'message',
+      id,
+      timestamp: new Date(1).toISOString(),
+      message: { role, content: [{ type: 'text', text }] },
+    });
+  writeFileSync(
+    file,
+    [
+      JSON.stringify({ type: 'session_start', id: 'droid-live', cwd: '/workspace', title: 'Live' }),
+      line('user', 'prompt', 'Port the client.'),
+      line('assistant', 'reply', 'Ported it to v3.'),
+    ].join('\n') + '\n',
+  );
+  const harness = createHarness({
+    summaries: [summary('droid-live', 'droid-live')],
+    liveAppSessionIds: ['droid-live'],
+    loaders: { resolveChain: () => [], openTranscriptTail: loadOpenTranscriptTail },
+    liveSessionFile: (providerSessionId) => (providerSessionId === 'droid-live' ? file : undefined),
+  });
+
+  const tail = await harness.timeline.tail('droid-live', 10);
+  assert.deepEqual(
+    tail.map((event) => event.text),
+    ['Port the client.', 'Ported it to v3.'],
+  );
 });
 
 test('missing live history emits an authoritative empty replace page', () => {
@@ -878,24 +959,26 @@ test('child history older page prepends and reports cursor exhaustion', () => {
   assert.equal(second.hasMore, false);
 });
 
-test('status appends keep unique IDs, clock behavior, compact type, source, and role', () => {
-  const times = [100, 101, 100, 101];
+test('notice appends keep unique IDs, one clock read, compact type, source, and role', () => {
+  const times = [100, 101, 102, 103];
   const harness = createHarness({ now: () => times.shift() ?? 0 });
 
   harness.timeline.appendStatus('app-1', 'first', 'auto', 'worker-1', 'worker');
   harness.timeline.appendStatus('app-1', 'second', undefined, 'validator-1', 'validator');
+  harness.timeline.appendProgress('app-1', 'booting');
+  harness.timeline.appendError('app-1', 'it crashed', { errorKind: 'usage_limit', resetsAt: 7 });
 
-  assert.equal(harness.recorded.length, 2);
-  const [first, second] = harness.recorded;
-  assert.ok(first);
-  assert.ok(second);
-  assert.notEqual(first.id, second.id);
+  assert.equal(harness.recorded.length, 4);
+  const [first, second, progress, failure] = harness.recorded;
+  assert.ok(first && second && progress && failure);
+  assert.equal(new Set(harness.recorded.map((event) => event.id)).size, 4);
+  // The id carries the same clock reading as the row it identifies.
   assert.deepEqual(first, {
     id: 'status-2s-0',
     appSessionId: 'app-1',
     sourceSessionId: 'worker-1',
     role: 'worker',
-    ts: 101,
+    ts: 100,
     kind: 'status',
     text: 'first',
     compactType: 'auto',
@@ -903,6 +986,21 @@ test('status appends keep unique IDs, clock behavior, compact type, source, and 
   assert.equal(second.sourceSessionId, 'validator-1');
   assert.equal(second.role, 'validator');
   assert.equal(second.compactType, undefined);
+  // A progress row is live-only; an error row carries the provider's details.
+  assert.equal(progress.transient, true);
+  assert.equal(first.transient, undefined);
+  assert.deepEqual(failure, {
+    id: 'error-2v-3',
+    appSessionId: 'app-1',
+    sourceSessionId: 'app-1',
+    role: 'primary',
+    ts: 103,
+    kind: 'error',
+    text: 'it crashed',
+    isError: true,
+    errorKind: 'usage_limit',
+    resetsAt: 7,
+  });
 });
 
 test('automatic compaction appends a persistent provider-identified divider', () => {

@@ -11,6 +11,8 @@ import type {
   ServerEvent,
   SessionSummary,
 } from './protocol.js';
+import { SessionModelSettings } from './SessionModelSettings.js';
+import type { Provider } from './providers/session.js';
 import { DroidProvider } from './providers/droid/DroidProvider.js';
 import { DroidProviderSession } from './providers/droid/DroidProviderSession.js';
 import type { ProviderQuestionAnswers } from './providers/interactions.js';
@@ -78,7 +80,10 @@ class RejectingCloseSession extends FakeFactorySession {
   }
 }
 
-function createHarness(ordinarySummaries: SessionSummary[] = []) {
+function createHarness(
+  ordinarySummaries: SessionSummary[] = [],
+  beforeFirstTurn?: (session: SessionSummary, clientRef: string) => Promise<void>,
+) {
   const calls: RecordedCall[] = [];
   const events: ServerEvent[] = [];
   const publicationRegistration: boolean[] = [];
@@ -87,7 +92,9 @@ function createHarness(ordinarySummaries: SessionSummary[] = []) {
   const missionForgettingAfterUnregister: boolean[] = [];
   const history = new TestHistory(calls);
   const runtime = new FakeFactoryRuntime(calls);
+  let provider: Provider = new DroidProvider(runtime, () => undefined);
   let projection: Partial<SessionSummary> = {};
+  let waitForSettings = (): Promise<void> => Promise.resolve();
   let applyPending: (appSessionId: string) => Promise<boolean> = () => Promise.resolve(true);
   let enableAutoCompaction = (): Promise<boolean> => Promise.resolve(true);
   let compactionLimit = (): Promise<number> => Promise.resolve(800);
@@ -134,8 +141,9 @@ function createHarness(ordinarySummaries: SessionSummary[] = []) {
     interactionMode: 'auto',
   };
   const lifecycle = new SessionLifecycle({
+    beforeFirstTurn,
     eventFlow: { apply: () => undefined, beginTurn: () => undefined },
-    provider: () => new DroidProvider(runtime, () => undefined),
+    provider: () => provider,
     registry,
     ensureConnected: () => {
       calls.push({ target: 'runtime', method: 'ensureConnected', args: [] });
@@ -143,6 +151,9 @@ function createHarness(ordinarySummaries: SessionSummary[] = []) {
     getFactoryDefaults: () => Promise.resolve(defaults),
     maxContextTokensForModel: () => 1_000,
     childSessions: {
+      retryAgentWave: (appSessionId) => {
+        calls.push({ target: 'cleanup', method: 'children.retryWave', args: [appSessionId] });
+      },
       attachParent: (appSessionId) => {
         calls.push({ target: 'cleanup', method: 'children.attach', args: [appSessionId] });
       },
@@ -171,6 +182,7 @@ function createHarness(ordinarySummaries: SessionSummary[] = []) {
       requestApproval: () => new Promise<PermissionOutcome>(() => undefined),
       requestQuestion: () => new Promise<ProviderQuestionAnswers>(() => undefined),
       cancelPending: () => undefined,
+      isActive: () => true,
     }),
     compaction: {
       resolveLimit: () => compactionLimit(),
@@ -232,10 +244,11 @@ function createHarness(ordinarySummaries: SessionSummary[] = []) {
       },
     },
     hasActiveSettingsChanges: () => false,
+    waitForSettingsMutations: () => waitForSettings(),
     applyPendingSettingsToSummary: (item) => ({ ...item, ...projection }),
     recordLineage: () => undefined,
     applyPendingSessionSettings: (appSessionId) => applyPending(appSessionId),
-    runPrimaryTurn: async (live, prompt, _mentions, delivery) => {
+    runPrimaryTurn: async (live, { prompt, delivery }) => {
       if (delivery && !delivery.isCurrent()) return;
       for await (const event of live.session.stream(prompt)) {
         delivery?.accepted();
@@ -244,6 +257,7 @@ function createHarness(ordinarySummaries: SessionSummary[] = []) {
       delivery?.accepted();
     },
     context: {
+      preserveUsage: () => undefined,
       refresh: (target) => {
         calls.push({
           target: 'provider',
@@ -307,11 +321,14 @@ function createHarness(ordinarySummaries: SessionSummary[] = []) {
     },
     emit: recordEvent,
     emitError: (error) => recordEvent({ type: 'error', ...error }),
-    emitStatus: (appSessionId, text) => {
-      calls.push({ target: 'protocol', method: 'status', args: [appSessionId, text] });
+    appendProgress: (appSessionId, text) => {
+      calls.push({ target: 'protocol', method: 'progress', args: [appSessionId, text] });
     },
-    recordPrompt: (appSessionId, text) => {
-      calls.push({ target: 'protocol', method: 'recordPrompt', args: [appSessionId, text] });
+    appendError: (appSessionId, message) => {
+      calls.push({ target: 'protocol', method: 'error', args: [appSessionId, message] });
+    },
+    appendSteer: (appSessionId, text) => {
+      calls.push({ target: 'protocol', method: 'appendSteer', args: [appSessionId, text] });
     },
     catalogUpdated: () => undefined,
     emitSessionList: (closedProviderSessionId) => emitSessionList(closedProviderSessionId),
@@ -334,6 +351,12 @@ function createHarness(ordinarySummaries: SessionSummary[] = []) {
     },
     setProjection: (patch: Partial<SessionSummary>) => {
       projection = { ...patch };
+    },
+    setProvider: (next: Provider) => {
+      provider = next;
+    },
+    setSettingsWait: (wait: () => Promise<void>) => {
+      waitForSettings = wait;
     },
     setPendingApply: (action: (appSessionId: string) => Promise<boolean>) => {
       applyPending = action;
@@ -757,7 +780,7 @@ test('failed turn setup clears streaming so the next send can run', async () => 
   assert.deepEqual(provider.prompts, ['first', 'recovered']);
 });
 
-test('queued sends stay FIFO while send-now prompts are newest first', async () => {
+test('queued sends stay FIFO, and send-now moves a pending steer to the front', async () => {
   const fifo = createHarness();
   const fifoProvider = queueCreate(fifo, 'fifo');
   const fifoGate = fifoProvider.deferNextStream();
@@ -773,14 +796,75 @@ test('queued sends stay FIFO while send-now prompts are newest first', async () 
   const steerGate = steerProvider.deferNextStream();
   await steered.lifecycle.create(createCommand('first'));
   await steerProvider.waitForPrompts(1);
-  await steered.lifecycle.sendNow('steered', 'steer one');
-  await steered.lifecycle.sendNow('steered', 'steer two');
+  await steered.lifecycle.send('steered', 'queued');
+  // Droid takes no steer yet, so both wait on the queue, still pending.
+  await steered.lifecycle.send('steered', 'steer one', undefined, 'steer-1');
+  await steered.lifecycle.send('steered', 'steer two', undefined, 'steer-2');
+  assert.deepEqual(steered.registry.getCanonicalSummary('steered')?.pendingSteers, [
+    { id: 'steer-1', text: 'steer one' },
+    { id: 'steer-2', text: 'steer two' },
+  ]);
+  await steered.lifecycle.sendNow('steered', 'steer-2');
+  await steered.lifecycle.sendNow('steered', 'steer-1');
   steerGate.resolve();
-  await steerProvider.waitForPrompts(3);
-  assert.deepEqual(steerProvider.prompts, ['first', 'steer two', 'steer one']);
+  await steerProvider.waitForPrompts(4);
+  assert.deepEqual(steerProvider.prompts, ['first', 'steer one', 'queued', 'steer two']);
   // The second send-now lands while the first interrupt is still in flight and
-  // rides the queue instead of interrupting the turn that redelivers it.
+  // reorders the queue instead of interrupting the turn that sends it; the
+  // rest keeps the order it was sent in.
   assert.equal(interruptCount(steered), 1);
+});
+
+test('a prompt from another chat steers the running turn without waiting for it', async () => {
+  const harness = createHarness();
+  const provider = queueCreate(harness, 'target');
+  const gate = provider.deferNextStream();
+  await harness.lifecycle.create(createCommand('first'));
+  await provider.waitForPrompts(1);
+  const always = () => true;
+  assert.equal(await harness.lifecycle.steerRunningTurn('unknown', 'nowhere to go', always), false);
+  // A prompt the chat could not take is reported, not dropped behind a success.
+  harness.setPendingApply(() => Promise.resolve(false));
+  assert.equal(
+    await harness.lifecycle.steerRunningTurn('target', 'settings failed', always),
+    false,
+  );
+  // A guard that turns false while the chat takes it withdraws it.
+  let allowed = true;
+  harness.setPendingApply(() => {
+    allowed = false;
+    return Promise.resolve(true);
+  });
+  assert.equal(
+    await harness.lifecycle.steerRunningTurn('target', 'withdrawn', () => allowed),
+    false,
+  );
+  harness.setPendingApply(() => Promise.resolve(true));
+
+  allowed = true;
+  assert.equal(
+    await harness.lifecycle.steerRunningTurn('target', 'withdrawn behind the turn', () => allowed),
+    true,
+  );
+  assert.equal(
+    await harness.lifecycle.steerRunningTurn('target', 'from another chat', always),
+    true,
+  );
+  // It is pending the way the user's own steer is; Droid takes no steer yet,
+  // so it waits behind the turn.
+  const pending = () =>
+    harness.registry.getCanonicalSummary('target')?.pendingSteers?.map((steer) => steer.text);
+  for (let tick = 0; tick < 100 && pending()?.length !== 2; tick += 1)
+    await new Promise((resolve) => setImmediate(resolve));
+  assert.deepEqual(pending(), ['withdrawn behind the turn', 'from another chat']);
+  assert.equal(interruptCount(harness), 0);
+
+  // A guard that turns false while it waits behind the turn drops it there,
+  // and the message behind it still runs.
+  allowed = false;
+  gate.resolve();
+  await provider.waitForPrompts(2);
+  assert.deepEqual(provider.prompts, ['first', 'from another chat']);
 });
 
 test('send-now queues without interrupting compaction and reports interrupt rejection', async () => {
@@ -791,9 +875,11 @@ test('send-now queues without interrupting compaction and reports interrupt reje
   await new Promise<void>((resolve) => setImmediate(resolve));
   const live = requireLive(compacting, 'compacting');
   live.compacting = true;
+  await compacting.lifecycle.send('compacting', 'manual', undefined, 'manual');
   await compacting.lifecycle.sendNow('compacting', 'manual');
   live.compacting = false;
   live.autoCompacting = true;
+  await compacting.lifecycle.send('compacting', 'automatic', undefined, 'automatic');
   await compacting.lifecycle.sendNow('compacting', 'automatic');
   assert.deepEqual(
     live.pendingSends.map((prompt) => prompt.text),
@@ -806,12 +892,13 @@ test('send-now queues without interrupting compaction and reports interrupt reje
   rejected.runtime.createQueue.push(rejectingProvider);
   await rejected.lifecycle.create(createCommand());
   await rejectingProvider.waitForPrompts(1);
-  await rejected.lifecycle.sendNow('rejected', 'keep queued');
+  await rejected.lifecycle.send('rejected', 'keep queued', undefined, 'steer');
+  await rejected.lifecycle.sendNow('rejected', 'steer');
   assert.deepEqual(
     requireLive(rejected, 'rejected').pendingSends.map((prompt) => prompt.text),
     ['keep queued'],
   );
-  assert.equal(requireLive(rejected, 'rejected').interruptingForSteer, false);
+  assert.equal(requireLive(rejected, 'rejected').interruptingToSend, false);
   assert.equal(
     rejected.events.some(
       (event) => event.type === 'error' && event.code === 'session.send_now_failed',
@@ -820,6 +907,58 @@ test('send-now queues without interrupting compaction and reports interrupt reje
   );
   gate.resolve();
   await rejectingProvider.waitForPrompts(2);
+});
+
+test('a steer is pending until the harness delivers it, and one refused late still runs', async () => {
+  const h = createHarness();
+  const provider = queueCreate(h, 'steer');
+  const gate = provider.deferNextStream();
+  await h.lifecycle.create(createCommand('first'));
+  await provider.waitForPrompts(1);
+  const live = requireLive(h, 'steer');
+  const deliveries: ((delivered: boolean) => void)[] = [];
+  live.session.steer = () =>
+    new Promise<boolean>((settle) => {
+      deliveries.push(settle);
+    });
+  const harnessHas = async (count: number) => {
+    while (deliveries.length < count) await new Promise((resolve) => setImmediate(resolve));
+  };
+  const pendingSteers = () => h.registry.getCanonicalSummary('steer')?.pendingSteers;
+
+  const delivered = h.lifecycle.send('steer', 'delivered', undefined, 'steer-1');
+  await harnessHas(1);
+  assert.deepEqual(pendingSteers(), [{ id: 'steer-1', text: 'delivered' }]);
+  deliveries[0](true);
+  await delivered;
+  assert.deepEqual(pendingSteers(), []);
+  assert.deepEqual(
+    h.calls.filter((call) => call.method === 'appendSteer').map((call) => call.args),
+    [['steer', 'delivered']],
+  );
+
+  // A refusal that lands after the turn settled still runs as the next turn.
+  const late = h.lifecycle.send('steer', 'late', undefined, 'steer-2');
+  await harnessHas(2);
+  const nextGate = provider.deferNextStream();
+  gate.resolve();
+  while (live.streaming) await new Promise((resolve) => setImmediate(resolve));
+  deliveries[1](false);
+  await provider.waitForPrompts(2);
+  assert.deepEqual(provider.prompts, ['first', 'late']);
+  assert.equal(interruptCount(h), 0);
+
+  // Send now takes a steer back and stops the turn, but the harness delivers
+  // it first: it is not sent again.
+  const raced = h.lifecycle.send('steer', 'raced', undefined, 'steer-3');
+  await harnessHas(3);
+  await h.lifecycle.sendNow('steer', 'steer-3');
+  deliveries[2](true);
+  await raced;
+  assert.deepEqual(live.pendingSends, []);
+  assert.equal(interruptCount(h), 1);
+  nextGate.resolve();
+  await late;
 });
 
 test('resuming a turn persists recent activity immediately and completion advances it again', async () => {
@@ -883,7 +1022,7 @@ test('interrupt handles idle, streaming, manual compaction, and auto-compaction 
   live.streaming = false;
   live.interrupting = false;
   live.compacting = true;
-  live.pendingSends = [{ text: 'drop' }];
+  live.pendingSends = [{ text: 'drop', order: 0 }];
   await harness.lifecycle.interrupt('stop');
   assert.equal(interruptCount(harness), 2);
   assert.deepEqual(live.pendingSends, []);
@@ -1280,7 +1419,7 @@ test('concurrent close waits for cleanup and discard overrides queue preservatio
   await provider.waitForPrompts(1);
   await new Promise<void>((resolve) => setImmediate(resolve));
   const live = requireLive(harness, 'concurrent-close');
-  live.pendingSends = [{ text: 'preserve unless user closes' }];
+  live.pendingSends = [{ text: 'preserve unless user closes', order: 0 }];
 
   const preserving = harness.lifecycle.close('concurrent-close', 'preserve-pending');
   await new Promise<void>((resolve) => setImmediate(resolve));
@@ -1322,7 +1461,7 @@ test('accepted settings stay durable through resume and precede first-send appli
     harness.events.find((event) => event.type === 'session.created')?.session.modelId,
     'model-pending',
   );
-  const replaced = harness.registry.replaceProvider('app-pending', 'provider-next');
+  const replaced = await harness.registry.replaceProvider('app-pending', 'provider-next');
   assert.equal(replaced?.modelId, 'model-pending');
   assert.equal(harness.history.persisted.at(-1)?.modelId, 'model-pending');
   harness.setPendingApply(async (appSessionId) => {
@@ -1331,7 +1470,7 @@ test('accepted settings stay durable through resume and precede first-send appli
     return true;
   });
   await harness.lifecycle.send('app-pending', 'apply now');
-  assert.deepEqual(provider.settings, [pending]);
+  assert.deepEqual(provider.settings, [{ autonomyLevel: 'off' }, pending]);
   assert.deepEqual(provider.prompts, ['apply now']);
   const settingsCall = harness.calls.findIndex((call) => call.method === 'updateSettings');
   const streamCall = harness.calls.findIndex(
@@ -1469,7 +1608,7 @@ test('scheduled delivery waits outside pendingSends for turns, compaction, inter
   harness.setPendingInteractions(true);
   await busy();
   harness.setPendingInteractions(false);
-  live.pendingSends.push({ text: 'user prompt' });
+  live.pendingSends.push({ text: 'user prompt', order: 0 });
   await busy();
   assert.deepEqual(
     live.pendingSends.map((pending) => pending.text),
@@ -1498,7 +1637,7 @@ test('scheduled delivery rejects unknown IDs and discards settings results after
   const canceled = harness.lifecycle.deliverScheduled('scheduled-race', 'canceled', () => current);
   current = false;
   apply(true);
-  assert.equal((await canceled).status, 'unavailable');
+  assert.equal((await canceled).status, 'cancelled');
   const replaced = harness.lifecycle.deliverScheduled('scheduled-race', 'stale', () => true);
   const live = requireLive(harness, 'scheduled-race');
   live.session = new DroidProviderSession(
@@ -1588,5 +1727,335 @@ test('closing a scheduled target during cold resume invalidates its provisional 
   assert.deepEqual(provider.prompts, []);
   assert.ok(
     harness.calls.some((call) => call.method === 'session.close' && call.args[0] === 'cold-close'),
+  );
+});
+
+test('Droid resume reapplies canonical edits-only before publishing the stored session', async () => {
+  const harness = createHarness([
+    summary('app-permissions', 'provider-permissions', { autonomy: 'low' }),
+  ]);
+  const session = queueLoad(harness, 'provider-permissions');
+  await harness.lifecycle.resume('app-permissions');
+  assert.deepEqual(session.settings[0], { autonomyLevel: 'off' });
+  assert.equal(harness.registry.getLive('app-permissions')?.summary.autonomy, 'low');
+});
+
+test('an unindexed Droid resume preserves its native selection before applying current semantics', async () => {
+  const harness = createHarness();
+  const session = new FakeFactorySession('external-session', {}, harness.calls, {
+    settings: { autonomyLevel: 'low' },
+  });
+  queueLoad(harness, 'external-session', session);
+  await harness.lifecycle.resume('external-session');
+  assert.deepEqual(session.settings[0], { autonomyLevel: 'off' });
+  assert.equal(harness.registry.getLive('external-session')?.summary.autonomy, 'low');
+});
+
+test('agent completion cannot start a turn while Stop or Send now is outstanding', async () => {
+  const h = createHarness([summary('app-1', 'provider-1')]);
+  const provider = queueLoad(h, 'provider-1');
+  await h.lifecycle.resume('app-1');
+  const live = requireLive(h, 'app-1');
+  for (const flag of ['interrupting', 'interruptingToSend'] as const) {
+    live[flag] = true;
+    assert.equal(
+      h.lifecycle.wakeForSettledAgents('app-1', 'agent result', 'Agents finished'),
+      false,
+    );
+    assert.deepEqual(provider.prompts, []);
+    live[flag] = false;
+  }
+  assert.equal(h.lifecycle.wakeForSettledAgents('app-1', 'agent result', 'Agents finished'), true);
+  await live.turnPromise;
+  assert.deepEqual(provider.prompts, ['agent result']);
+  // A wave held back by a Stop is owed once the Stop is over: the lifecycle
+  // asks the child sessions to try again as soon as the flag clears.
+  const retriesBefore = retryWaveCount(h);
+  await h.lifecycle.interrupt('app-1');
+  assert.equal(live.interrupting, false);
+  assert.equal(retryWaveCount(h), retriesBefore + 1);
+  await h.lifecycle.close('app-1');
+});
+
+function retryWaveCount(harness: Harness): number {
+  return harness.calls.filter(
+    (call) => call.target === 'cleanup' && call.method === 'children.retryWave',
+  ).length;
+}
+
+test('agent wake setup failures reach the background-turn error owner', async () => {
+  const h = createHarness([summary('app-1', 'provider-1')]);
+  queueLoad(h, 'provider-1');
+  await h.lifecycle.resume('app-1');
+  h.history.nextSyncError = new Error('wake persistence failed');
+  h.lifecycle.wakeForSettledAgents('app-1', 'agent result', 'Agents finished');
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.deepEqual(
+    h.events.filter((event) => event.type === 'error').map((event) => event.message),
+    ['wake persistence failed'],
+  );
+  await h.lifecycle.close('app-1');
+});
+
+test('a Stop takes back a prompt that has not started its turn', async () => {
+  const h = createHarness([summary('app-1', 'provider-1')]);
+  const provider = new FakeFactorySession('provider-1', {}, h.calls);
+  queueLoad(h, 'provider-1', provider);
+  await h.lifecycle.resume('app-1');
+  requireLive(h, 'app-1').summary.provider = 'claude';
+  let settle: () => void = () => undefined;
+  h.setSettingsWait(
+    () =>
+      new Promise<void>((resolve) => {
+        settle = resolve;
+      }),
+  );
+
+  const sending = h.lifecycle.send('app-1', 'stopped while it waited');
+  await new Promise((resolve) => setImmediate(resolve));
+  await h.lifecycle.interrupt('app-1');
+  settle();
+  await sending;
+
+  assert.deepEqual(provider.prompts, []);
+  await h.lifecycle.close('app-1');
+});
+
+test('a context switch waits for the turn and resumes the same chat before queued work', async () => {
+  const stored: SessionSummary[] = [];
+  const h = createHarness(stored);
+  const original = queueCreate(h, 'context-switch');
+  const gate = original.deferNextStream();
+  await h.lifecycle.create(createCommand());
+  await original.waitForPrompts(1);
+  const live = requireLive(h, 'context-switch');
+  live.summary.provider = 'claude';
+  live.summary.interactionMode = 'spec';
+  live.summary.contextWindowTokens = 1000000;
+  live.summary.maxContextTokens = 1000000;
+  const replacement = new FakeFactorySession('context-switch', {}, h.calls);
+  const resumed = new DroidProviderSession('context-switch', replacement, h.runtime);
+  h.setProvider({
+    kind: 'claude',
+    create: async () => {
+      throw new Error('unexpected create');
+    },
+    fork: async () => {
+      throw new Error('unexpected fork');
+    },
+    resume: async (id, input) => {
+      assert.equal(id, 'context-switch');
+      assert.equal(input.contextWindowTokens, 200000);
+      return {
+        provider: 'claude',
+        providerSessionId: id,
+        setInteractionMode: async (mode) => {
+          assert.equal(mode, 'spec');
+        },
+        stream: resumed.stream.bind(resumed),
+        setModel: resumed.setModel.bind(resumed),
+        setAutonomy: resumed.setAutonomy.bind(resumed),
+        interrupt: resumed.interrupt.bind(resumed),
+        close: resumed.close.bind(resumed),
+      };
+    },
+  });
+  const settings = new SessionModelSettings({
+    registry: h.registry,
+    runtime: h.runtime,
+    getFactoryDefaults: async () => ({}),
+    providerDefaultModelId: () => 'model-default',
+    validateModelSettings: async (_summary, selection) => {
+      if (selection.modelId === 'unavailable') throw new Error('1M context unavailable');
+    },
+    maxContextTokensForModel: () => undefined,
+    isShutdownStarted: () => false,
+    refreshPrimary: async () => undefined,
+    onPrimaryModelChanged: () => undefined,
+    updateChildAgentModel: async () => undefined,
+    onSettled: () => {
+      stored.splice(0, stored.length, { ...live.summary });
+    },
+    emitError: (error) => assert.fail(error.message),
+  });
+  h.setSettingsWait(() => settings.waitForMutations('context-switch'));
+  const changed = settings.update('context-switch', 'primary', { contextWindowTokens: 200000 });
+  await h.lifecycle.send('context-switch', 'next');
+  assert.equal(live.summary.contextWindowTokens, 1000000);
+  assert.equal(live.closeMode, undefined);
+  gate.resolve();
+  assert.equal(await changed, true);
+  await replacement.waitForPrompts(1);
+  assert.equal(requireLive(h, 'context-switch').summary.appSessionId, 'context-switch');
+  assert.equal(requireLive(h, 'context-switch').summary.contextWindowTokens, 200000);
+  assert.deepEqual(original.prompts, ['first']);
+  assert.deepEqual(replacement.prompts, ['next']);
+  assert.ok(h.calls.some((call) => call.method === 'close' || call.method === 'session.close'));
+  await requireLive(h, 'context-switch').turnPromise;
+  const beforeRejected = h.registry.getCanonicalSummary('context-switch');
+  await assert.rejects(
+    settings.update('context-switch', 'primary', {
+      modelId: 'unavailable',
+      contextWindowTokens: 1000000,
+    }),
+    /1M context unavailable/,
+  );
+  assert.deepEqual(h.registry.getCanonicalSummary('context-switch'), beforeRejected);
+  assert.equal(requireLive(h, 'context-switch').restartBeforeNextTurn, undefined);
+
+  // A Stop that lands while the chat is relaunching has no runtime to
+  // interrupt, and still keeps the prompt from being sent.
+  assert.equal(
+    await settings.update('context-switch', 'primary', { contextWindowTokens: 1000000 }),
+    true,
+  );
+  let finishResume: () => void = () => undefined;
+  const resuming = new Promise<void>((resolve) => {
+    finishResume = resolve;
+  });
+  const relaunched = new FakeFactorySession('context-switch', {}, h.calls);
+  const relaunchedSession = new DroidProviderSession('context-switch', relaunched, h.runtime);
+  h.setProvider({
+    kind: 'claude',
+    create: async () => {
+      throw new Error('unexpected create');
+    },
+    fork: async () => {
+      throw new Error('unexpected fork');
+    },
+    resume: async (id) => {
+      await resuming;
+      return {
+        provider: 'claude',
+        providerSessionId: id,
+        stream: relaunchedSession.stream.bind(relaunchedSession),
+        setModel: relaunchedSession.setModel.bind(relaunchedSession),
+        setAutonomy: relaunchedSession.setAutonomy.bind(relaunchedSession),
+        interrupt: relaunchedSession.interrupt.bind(relaunchedSession),
+        close: relaunchedSession.close.bind(relaunchedSession),
+      };
+    },
+  });
+  const sending = h.lifecycle.send('context-switch', 'stopped before it was sent');
+  while (h.registry.getLive('context-switch'))
+    await new Promise((resolve) => setImmediate(resolve));
+  await h.lifecycle.interrupt('context-switch');
+  // Sent after the Stop, while the chat still has no runtime: these wait for
+  // it in the order they were sent.
+  const later = [
+    h.lifecycle.send('context-switch', 'second'),
+    h.lifecycle.send('context-switch', 'third'),
+  ];
+  finishResume();
+  await Promise.all([sending, ...later]);
+  await relaunched.waitForPrompts(2);
+  assert.deepEqual(relaunched.prompts, ['second', 'third']);
+  await requireLive(h, 'context-switch').turnPromise;
+
+  // A send still being prepared when the relaunch begins joins its queue.
+  const window = requireLive(h, 'context-switch').summary.contextWindowTokens;
+  assert.equal(
+    await settings.update('context-switch', 'primary', {
+      contextWindowTokens: window === 200000 ? 1000000 : 200000,
+    }),
+    true,
+  );
+  assert.equal(requireLive(h, 'context-switch').restartBeforeNextTurn, true);
+  let finishSecondResume: () => void = () => undefined;
+  const resumingAgain = new Promise<void>((resolve) => {
+    finishSecondResume = resolve;
+  });
+  const again = new FakeFactorySession('context-switch', {}, h.calls);
+  const againSession = new DroidProviderSession('context-switch', again, h.runtime);
+  h.setProvider({
+    kind: 'claude',
+    create: async () => {
+      throw new Error('unexpected create');
+    },
+    fork: async () => {
+      throw new Error('unexpected fork');
+    },
+    resume: async (id) => {
+      await resumingAgain;
+      return {
+        provider: 'claude',
+        providerSessionId: id,
+        stream: againSession.stream.bind(againSession),
+        setModel: againSession.setModel.bind(againSession),
+        setAutonomy: againSession.setAutonomy.bind(againSession),
+        interrupt: againSession.interrupt.bind(againSession),
+        close: againSession.close.bind(againSession),
+      };
+    },
+  });
+  let prepareSecond: () => void = () => undefined;
+  let applies = 0;
+  h.setPendingApply(async () => {
+    applies += 1;
+    if (applies === 2)
+      await new Promise<void>((resolve) => {
+        prepareSecond = resolve;
+      });
+    return true;
+  });
+  const first = h.lifecycle.send('context-switch', 'A');
+  const second = h.lifecycle.send('context-switch', 'B');
+  // B finishes preparing while A's relaunch has the chat without a runtime.
+  while (h.registry.getLive('context-switch'))
+    await new Promise((resolve) => setImmediate(resolve));
+  prepareSecond();
+  await new Promise((resolve) => setImmediate(resolve));
+  finishSecondResume();
+  await Promise.all([first, second]);
+  // Bounded, so a dropped B fails the assertion instead of hanging the suite.
+  for (let tick = 0; tick < 500 && again.prompts.length < 2; tick += 1)
+    await new Promise((resolve) => setImmediate(resolve));
+  assert.deepEqual(again.prompts, ['A', 'B']);
+  await h.lifecycle.close('context-switch');
+});
+
+test('dependent ownership is committed before the first provider turn', async () => {
+  let release = () => {};
+  let entered = () => {};
+  const gate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const binding = new Promise<void>((resolve) => {
+    entered = resolve;
+  });
+  const h = createHarness([], async (session, clientRef) => {
+    assert.equal(session.appSessionId, 'bound');
+    assert.equal(clientRef, 'client-1');
+    entered();
+    await gate;
+  });
+  const provider = queueCreate(h, 'bound');
+  const creating = h.lifecycle.create(createCommand());
+  await binding;
+  assert.equal(
+    h.calls.some((call) => call.method === 'stream'),
+    false,
+  );
+  release();
+  await creating;
+  await provider.waitForPrompts(1);
+  await h.lifecycle.closeAll();
+});
+
+test('a failed ownership commit releases the session without executing its goal', async () => {
+  const h = createHarness([], async () => {
+    throw new Error('Project ledger is full');
+  });
+  queueCreate(h, 'failed-bind');
+  await h.lifecycle.create(createCommand());
+  assert.equal(
+    h.calls.some((call) => call.method === 'stream'),
+    false,
+  );
+  assert.equal(h.registry.getLive('failed-bind'), undefined);
+  assert.ok(
+    h.events.some(
+      (event) => event.type === 'error' && event.message.includes('Project ledger is full'),
+    ),
   );
 });

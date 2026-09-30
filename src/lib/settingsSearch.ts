@@ -159,6 +159,14 @@ export const SETTINGS_SEARCH_ENTRIES: readonly SettingsSearchEntry[] = [
     'high',
     'default autonomy',
   ]),
+  e('Configuration', 'Side chats open in', [
+    'side chat',
+    'btw',
+    'side pane',
+    'popup',
+    'floating window',
+    'docked',
+  ]),
   e('Configuration', 'Sessions', ['session defaults']),
 
   // ── Worktrees ────────────────────────────────────────────────────────────

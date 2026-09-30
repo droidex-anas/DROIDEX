@@ -199,7 +199,6 @@ export async function runAutoCompactionScenario(h: SessionManagerTestContext) {
     },
     { type: 'mission_worker_completed', workerSessionId: 'worker-c4', exitCode: 0 },
   ]);
-  const workerSteerGate = h.provider.deferNextStream('worker-c4');
   const workerQueuedGate = h.provider.deferNextStream('worker-c4');
   notifyCompaction(h, 'provider-1', 'started');
   notifyCompaction(h, 'worker-c4', 'started');
@@ -210,13 +209,13 @@ export async function runAutoCompactionScenario(h: SessionManagerTestContext) {
     childSessionId: 'child-c4',
     text: 'worker queued',
   });
-  await h.handle({ type: 'session.sendNow', appSessionId: 'provider-1', text: 'parent steer' });
   await h.handle({
-    type: 'child.sendNow',
-    parentAppSessionId: 'provider-1',
-    childSessionId: 'child-c4',
-    text: 'worker steer',
+    type: 'session.send',
+    appSessionId: 'provider-1',
+    text: 'parent steer',
+    steerId: 'steer-c4',
   });
+  await h.handle({ type: 'session.sendNow', appSessionId: 'provider-1', steerId: 'steer-c4' });
   const contextsBefore = [contextUpdateCount(h, 'provider-1'), contextUpdateCount(h, 'child-c4')];
   notifyCompaction(h, 'provider-1', 'completed');
   notifyCompaction(h, 'worker-c4', 'completed');
@@ -238,7 +237,6 @@ export async function runAutoCompactionScenario(h: SessionManagerTestContext) {
   workerGate.resolve();
   await workerRun;
   closeCounts.push(countClose());
-  workerSteerGate.resolve();
   workerQueuedGate.resolve();
   await h.waitForIdle();
   return {

@@ -1,13 +1,23 @@
-import { Suspense, useCallback, useEffect, useRef, useState, useLayoutEffect } from 'react';
+import {
+  Suspense,
+  useMemo,
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  useLayoutEffect,
+} from 'react';
 import { shallowEqual, useStoreApi, useStoreDispatch, useStoreSelector } from './hooks/useStore';
 import { AnimatePresence, motion } from 'framer-motion';
 import { PanelLeft, PanelRight } from '@droidex/icons';
+import { hasActiveSessionWork } from './lib/sessions';
 import { bridge } from './lib/bridge';
 import {
   connect,
   listFactoryDefaults,
   listModels,
   sendNativeBrowserResult,
+  sendSidebarResult,
   openChild,
   newChildOpenRequestId,
   updateCli,
@@ -15,6 +25,7 @@ import {
 import { isEmbedded } from './lib/embed';
 import { getApiKey, setAppIcon, terminalHasChildren } from './lib/desktop';
 import { performNativeBrowserRequest } from './lib/nativeBrowserAgent';
+import { answerSidebarRequest } from './lib/sidebarRequests';
 import {
   browserKeyForSession,
   nativeBrowserRequestTargetsActiveSession,
@@ -41,10 +52,11 @@ import RuntimeStatusBanner from './components/RuntimeStatusBanner';
 import { checkForAppUpdateAutomatically, startAutomaticAppUpdateChecks } from './lib/appUpdate';
 import { toast } from './lib/toast';
 import { UtilityPane } from './components/utility/UtilityPane';
-import { peekTerminalInstance, releaseTerminalInstancesExcept } from './lib/terminalInstances';
+import { terminalInstances, releaseTerminalInstancesExcept } from './lib/terminalInstanceRegistry';
 import {
   isExpandableTool,
   utilityPanelForSession,
+  terminalTabIds,
   type UtilityTab,
   type UtilityTool,
 } from './lib/utilityPanel';
@@ -57,7 +69,9 @@ import {
 } from './lib/shortcuts';
 import { useSessionWorkingDirectory } from './hooks/useSessionWorkingDirectory';
 import { useDiagnosticsContext } from './hooks/useDiagnosticsContext';
+import { listProjects } from './lib/commands';
 import { useFinishNotifications } from './hooks/useFinishNotifications';
+import { useThreadsPaneAutoOpen } from './features/projects/useThreadsPaneAutoOpen';
 import { useWorkspaceScopes } from './hooks/useWorkspaceScopes';
 import { useWorkspaceSessionList } from './hooks/useWorkspaceSessionList';
 import { useHistoryIndexingIdle } from './hooks/useHistoryIndexingIdle';
@@ -79,9 +93,12 @@ import {
 } from './components/skeletons/WorkspaceSkeletons';
 import {
   LazyAutomationsRoute,
+  LazyProjectsRoute,
   LazyBrowserFocusWorkspace,
   LazyCommandPalette,
   LazyAgentsWorkspace,
+  LazyThreadsWorkspace,
+  LazyThreadAttentionNotifier,
   LazyFilesWorkspace,
   LazyMissionControl,
   LazyPullRequestsView,
@@ -164,7 +181,9 @@ export default function App() {
   const embedded = isEmbedded();
   useEffect(() => {
     if (!embedded) return;
-    if (state.mainView === 'automations') {
+    if (state.mainView === 'projects') {
+      dispatch({ type: 'CLOSE_PROJECTS' });
+    } else if (state.mainView === 'automations') {
       dispatch({ type: 'CLOSE_AUTOMATIONS' });
     } else if (state.mainView === 'pull-requests') {
       dispatch({ type: 'CLOSE_PULL_REQUESTS' });
@@ -183,6 +202,8 @@ export default function App() {
     !embedded && onboard.ready && (forceWizard || shouldShowOnboarding(onboard.onboarding));
   // Desktop-only: toast when a model turn finishes (snippet + optional sound).
   useFinishNotifications(!embedded && !showWizard);
+  const hasProjects = useStoreSelector((current) => current.projects.length > 0);
+  useThreadsPaneAutoOpen();
   const activeSession = state.activeSession;
   const workingDirectory = useSessionWorkingDirectory(activeSession);
   const repoStatus = useRepoStatus(workingDirectory);
@@ -214,7 +235,10 @@ export default function App() {
   // of them instead of covering their header. The pane's open state survives
   // the visit and it comes back with the chat.
   const fullContentRoute =
-    !embedded && (state.mainView === 'pull-requests' || state.mainView === 'automations');
+    !embedded &&
+    (state.mainView === 'pull-requests' ||
+      state.mainView === 'automations' ||
+      state.mainView === 'projects');
   const showUtilityPane =
     !embedded && !!activeSession && utilityPanel.open && !showWizard && !fullContentRoute;
   // An expanded browser or agent covers the full content row; the utility pane
@@ -268,12 +292,10 @@ export default function App() {
   // sidecar retires idle runtimes while the chat and its PTYs stay live), which removes
   // any terminal tabs it held. Release the matching xterm/pty instances so
   // they don't keep running in the background with nothing to reopen them.
-  const liveTerminalTabIds = useStoreSelector((current) =>
-    Object.values(current.utilityPanels)
-      .flatMap((panel) => panel.tabs)
-      .filter((tab) => tab.tool === 'terminal')
-      .map((tab) => tab.id)
-      .join('\n'),
+  const hasActiveWork = useStoreSelector(hasActiveSessionWork);
+  const liveTerminalTabIds = useMemo(
+    () => terminalTabIds(state.utilityPanels),
+    [state.utilityPanels],
   );
   useEffect(() => {
     void releaseTerminalInstancesExcept(
@@ -285,17 +307,18 @@ export default function App() {
   }, [liveTerminalTabIds]);
 
   useEffect(() => {
-    if (shellPaintMarked.current) return;
-    shellPaintMarked.current = true;
-    const raf = requestAnimationFrame;
-    raf(() => {
-      noteFirstMeaningfulShellPaint();
-      scheduleIdleLazyWarmup();
+    const frame = requestAnimationFrame(() => {
+      if (!shellPaintMarked.current) {
+        shellPaintMarked.current = true;
+        noteFirstMeaningfulShellPaint();
+      }
+      if (!hasActiveWork) scheduleIdleLazyWarmup(() => hasActiveSessionWork(store.getState()));
     });
     return () => {
+      cancelAnimationFrame(frame);
       cancelIdleLazyWarmup();
     };
-  }, []);
+  }, [hasActiveWork, store]);
 
   useEffect(() => {
     if (composerStartupResolved.current) return;
@@ -443,6 +466,15 @@ export default function App() {
     })();
   }, [embedded]);
 
+  // The chat list hides a project's threads, so it waits to have been answered
+  // about them before it draws. Asking on every connection rather than once at
+  // startup keeps that true after a reconnect, and keeps the list from
+  // depending on one call at one moment to ever be made.
+  const connection = useStoreSelector((current) => current.connection);
+  useEffect(() => {
+    if (connection === 'connected') listProjects();
+  }, [connection]);
+
   // App update discovery must never wait on CLI/env probing: that work can be
   // slow or unavailable, while the verified appcast is independent.
   useEffect(() => {
@@ -524,6 +556,14 @@ export default function App() {
   useEffect(() => {
     if (embedded) return;
     const unsub = bridge.subscribe((event) => {
+      // Answered here rather than in the Sidebar, which unmounts when collapsed.
+      if (event.type === 'sidebar.request') {
+        const result = answerSidebarRequest(event.request, store.getState(), (appSessionId) => {
+          dispatch({ type: 'ARCHIVE_CHAT', appSessionId });
+        });
+        if (result) sendSidebarResult(result);
+        return;
+      }
       if (event.type !== 'browser.native.request') return;
       const current = store.getState();
       const activeBrowserKey = browserKeyForSession(
@@ -686,7 +726,11 @@ export default function App() {
                 paneExpanded ? 'pointer-events-none' : ''
               }`}
             >
-              {!embedded && state.mainView === 'pull-requests' ? (
+              {!embedded && state.mainView === 'projects' ? (
+                <Suspense fallback={<PanelSkeleton title="projects" />}>
+                  <LazyProjectsRoute />
+                </Suspense>
+              ) : !embedded && state.mainView === 'pull-requests' ? (
                 <Suspense fallback={<PullRequestsSkeleton />}>
                   <LazyPullRequestsView />
                 </Suspense>
@@ -763,7 +807,7 @@ export default function App() {
                     }}
                     onCloseTab={(tab) => {
                       if (tab.tool === 'terminal') {
-                        const status = peekTerminalInstance(tab.id)?.getState().status;
+                        const status = terminalInstances.get(tab.id)?.getState().status;
                         if (!tab.terminalId || status !== 'running') {
                           closeTerminalTab(tab);
                           return;
@@ -836,6 +880,13 @@ export default function App() {
                                 );
                               }}
                             />
+                          </Suspense>
+                        );
+                      }
+                      if (tab.tool === 'threads') {
+                        return (
+                          <Suspense fallback={utilityToolFallback('threads')}>
+                            <LazyThreadsWorkspace tab={tab} />
                           </Suspense>
                         );
                       }
@@ -998,6 +1049,13 @@ export default function App() {
       <Suspense fallback={null}>
         <LazySpecWikiModal />
       </Suspense>
+      {/* Watches project threads for a block that needs the user. Nothing to
+          watch until a project exists, so it loads with the first one. */}
+      {hasProjects && !embedded && !showWizard && (
+        <Suspense fallback={null}>
+          <LazyThreadAttentionNotifier />
+        </Suspense>
+      )}
       <Toaster />
 
       <AnimatePresence>{state.settingsOpen && <SettingsLazyHost />}</AnimatePresence>

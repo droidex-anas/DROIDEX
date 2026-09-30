@@ -10,6 +10,7 @@ import { dateMs, numberValue, objectValue, safeStringify, stringValue } from './
 import { designPromptDisplayFromText } from './browser/designPromptDisplay.js';
 import { appPromptDisplayFromText, hasAppFence } from './appPrompt.js';
 import { branchPromptDisplayFromText } from './branchPrompt.js';
+import { sideChatPromptDisplayFromText } from './sideChatPrompt.js';
 import { sideChatRepliesFromPrompt } from './sideChatReplies.js';
 import { parseSkillActivation } from './skillSignals.js';
 import type { SessionRole, TranscriptEvent } from './protocol.js';
@@ -127,6 +128,8 @@ function assistantBlockEvent(
       // Carry the tool_use id so persisted child-session links resolve exactly
       // (duplicate-label spawns would otherwise fall back to label match).
       toolUseId: stringValue(block.id),
+      pollsChildSessionId: stringValue(block.pollsChildSessionId),
+      ...(block.interrupted === true ? { interrupted: true } : {}),
     });
   }
   return null;
@@ -149,28 +152,39 @@ function nonAssistantBlockEvent(
       // result to its tool_call exactly (result blocks have no name and
       // may not be adjacent to their call after replay/batching).
       toolUseId: stringValue(block.tool_use_id ?? block.toolUseId) ?? undefined,
+      pollsChildSessionId: stringValue(block.pollsChildSessionId),
+      ...(block.interrupted === true ? { interrupted: true } : {}),
     });
   }
   if (messageRole === 'user' && type === 'text') {
-    // A user bubble renders as plain text, never as a runnable App.
-    // A branch prompt carries a whole copied conversation after its request;
-    // it is cut back to the request before the cap could cut the request off.
-    const storedText = nonEmpty(stringValue(block.text));
-    const withReplies = sideChatRepliesFromPrompt(storedText);
-    const promptText = withReplies?.text ?? storedText;
-    const rawText = trimText(branchPromptDisplayFromText(promptText) ?? promptText, MAX_TEXT_CHARS);
-    const designDisplay = designPromptDisplayFromText(rawText);
-    const text = designDisplay?.text ?? appPromptDisplayFromText(rawText) ?? rawText;
-    if ((!text && !withReplies) || isSystemText(text)) return null;
+    const shown = userPromptDisplay(nonEmpty(stringValue(block.text)));
+    if ((!shown.text && !shown.sideChatReplies) || isSystemText(shown.text)) return null;
     const sourceProviderSessionId = base.role === 'primary' ? 'user' : base.sourceProviderSessionId;
-    return event({ ...base, sourceProviderSessionId }, index, 'text', {
-      text,
-      author: 'user',
-      browserRefs: designDisplay?.browserRefs,
-      sideChatReplies: withReplies?.sideChatReplies,
-    });
+    return event({ ...base, sourceProviderSessionId }, index, 'text', { ...shown, author: 'user' });
   }
   return null;
+}
+
+// A stored prompt as the chat shows it: plain text, never a runnable App, and
+// without the side-chat answers or the branch, design, app and side-chat
+// framing it was sent with.
+export function userPromptDisplay(storedText: string) {
+  const withReplies = sideChatRepliesFromPrompt(storedText);
+  const promptText = withReplies?.text ?? storedText;
+  // A branch prompt carries a whole copied conversation after its request; it
+  // is cut back to the request before the cap could cut the request off.
+  const rawText = trimText(branchPromptDisplayFromText(promptText) ?? promptText, MAX_TEXT_CHARS);
+  const designDisplay = designPromptDisplayFromText(rawText);
+  const text =
+    designDisplay?.text ??
+    appPromptDisplayFromText(rawText) ??
+    sideChatPromptDisplayFromText(rawText) ??
+    rawText;
+  return {
+    text,
+    browserRefs: designDisplay?.browserRefs,
+    sideChatReplies: withReplies?.sideChatReplies,
+  };
 }
 
 // Map one stored JSONL row to its transcript events. Each line converts

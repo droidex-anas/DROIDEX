@@ -1,3 +1,4 @@
+import type { ProjectCommand, ProjectEvent } from '../features/projects/protocol';
 // Bridge protocol shared between the Node sidecar and the React frontend.
 // The frontend keeps a mirror copy at src/types/bridge.ts — keep them in sync.
 
@@ -7,16 +8,9 @@ import type {
 } from '../features/automations/protocol';
 import type { McpClientCommand, McpServerEvent } from './mcp.js';
 import type { ProviderMention, SkillInfo } from './catalog.js';
+import type { SidebarRequest, SidebarResult } from './sidebar.js';
 export type { ProviderMention, SkillInfo } from './catalog.js';
-export type {
-  McpServerInfo,
-  McpServerInput,
-  McpServerSource,
-  McpServerStatus,
-  McpServerType,
-  McpStatusSummary,
-  McpToolInfo,
-} from './mcp.js';
+export type { McpServerInfo, McpServerInput, McpStatusSummary, McpToolInfo } from './mcp.js';
 
 // Which agent runtime a session runs on. Bound once when the session is
 // created and never changed afterwards.
@@ -40,7 +34,9 @@ export type SessionRole = 'primary' | 'worker' | 'validator';
 export type SessionPurpose = 'chat' | 'design' | 'mission-control';
 export type SessionInteractionMode = 'auto' | 'spec' | 'agi';
 export type ResponseFormat = 'app-create' | 'app-followup';
-export type RunStatus = 'pending' | 'running' | 'paused' | 'done' | 'failed' | 'blocked';
+// Product permissions, independent of interactionMode: off = Supervised,
+// low = Auto-accept edits, medium = Auto, high = Full access. Provider safety
+// rules still apply; Codex changes take effect on the next turn.
 export type Autonomy = 'off' | 'low' | 'medium' | 'high';
 export type ReasoningEffort =
   | 'off'
@@ -54,6 +50,10 @@ export type ReasoningEffort =
   // Codex's top level: maximum reasoning with automatic task delegation.
   | 'ultra'
   | 'dynamic';
+
+// The context windows a chat can be pinned to. A chat that picks none runs the
+// window its provider chooses.
+export type ContextWindowTokens = 200000 | 1000000;
 
 export interface BridgeFeature {
   id: string;
@@ -114,11 +114,18 @@ export interface ChildSessionSummary {
   spawnLink?: ChildSpawnLink;
   transcriptAvailable: boolean;
   startedAt?: number;
+  // When the child reached 'completed' or 'failed'. Absent while it can still
+  // run, and absent for children stored before this was recorded.
+  settledAt?: number;
   // Provider-declared: how live output actually arrives. Orthogonal to phase.
   streamFidelity: StreamFidelity;
   // Live-only (never persisted) and absent unless the parent actually polled the
   // child; autonomous children stream nothing to the parent themselves.
   activity?: ChildActivity;
+  // What this child alone has spent, as its own provider reports it. Live-only,
+  // and absent for a provider that reports no per-child usage. The parent's
+  // tokensIn/tokensOut never include it.
+  tokensUsed?: number;
   // Live-only: waiting for a runtime slot. Never persisted; never means running.
   queued?: boolean;
 }
@@ -153,6 +160,11 @@ export interface SessionSummary {
   workspaceKind?: 'folder' | 'none';
   modelId?: string;
   reasoningEffort?: ReasoningEffort;
+  // The fast mode the chat asked for, never a claim about delivered speed.
+  fastMode?: boolean;
+  // The window the user picked for this chat. Absent means the provider's own,
+  // which is what `maxContextTokens` then reports.
+  contextWindowTokens?: ContextWindowTokens;
   compactionModel?: string;
   workerModelId?: string;
   workerReasoningEffort?: ReasoningEffort;
@@ -164,6 +176,9 @@ export interface SessionSummary {
   // Set when a runtime restart could not continue this session's in-flight turn.
   interruptReason?: string;
   queuedSends?: number;
+  // The steers sent while a turn ran that the model has not taken in yet, in
+  // the order they were sent, as the chat shows them.
+  pendingSteers?: { id: string; text: string }[];
   proposal?: string; // markdown plan from propose_mission
   features: BridgeFeature[];
   tokensIn: number;
@@ -214,6 +229,15 @@ export interface TranscriptEvent {
   toolArgs?: unknown;
   toolUseId?: string;
   isError?: boolean;
+  // A 'tool_call' the provider knows is about a child session it is already
+  // tracking: polling that agent for output, or stopping it. The same tool
+  // names also read and stop background shell commands, so only the provider
+  // can tell the two apart, and the feed must not guess from the name.
+  pollsChildSessionId?: string;
+  // A 'tool_result' for a call that never ran because the user stopped the
+  // turn, with Stop or Send now. Reported by the harness, not inferred from the
+  // text: it is not a failure and must not read as one.
+  interrupted?: true;
   // For a 'compaction' divider: how many messages the compaction summarized away.
   removedCount?: number;
   author?: 'user';
@@ -230,9 +254,13 @@ export interface TranscriptEvent {
   modelSwitch?: { from: string; to: string };
   errorKind?: 'usage_limit';
   resetsAt?: number;
+  // A 'status' row that only says what the app is doing right now (booting a
+  // CLI, stopping a turn to send now, releasing an idle runtime). It is shown live and never
+  // stored, so reopening the session does not replay stale progress.
+  transient?: true;
 }
 
-export type BrowserTranscriptReferenceKind = 'element' | 'region' | 'text';
+type BrowserTranscriptReferenceKind = 'element' | 'region' | 'text';
 
 export interface BrowserTranscriptReference {
   id: string;
@@ -259,7 +287,9 @@ export interface PermissionRequest {
   requestId: string;
   kind: PermissionKind;
   title: string;
-  detail: string; // human readable (command, file path, diff snippet)
+  detail: string; // Concrete command, file path, or tool input.
+  canAlwaysAllow: boolean;
+  diff?: string;
   plan?: string; // full plan/spec body (exit_spec_mode)
   options?: string[]; // custom option names offered by the tool
   raw: unknown;
@@ -268,7 +298,20 @@ export interface PermissionRequest {
 export interface SessionQuestion {
   appSessionId: string;
   requestId: string;
-  questions: { index: number; question: string; options: string[] }[];
+  questions: {
+    index: number;
+    question: string;
+    header?: string;
+    options: { label: string; description?: string }[];
+    multiSelect?: boolean;
+  }[];
+}
+
+export interface QuestionAnswer {
+  index: number;
+  question: string;
+  selected: string[];
+  custom?: string;
 }
 
 export interface ModelInfo {
@@ -280,6 +323,9 @@ export interface ModelInfo {
   maxContextTokens?: number;
   supportedReasoningEfforts?: ReasoningEffort[];
   defaultReasoningEffort?: ReasoningEffort;
+  // Whether the harness can run this model faster for more usage. Absent while
+  // the catalog has not said; only an explicit false disables the toggle.
+  supportsFastMode?: boolean;
 }
 
 // What a provider can do for the user right now. Derived in the sidecar from
@@ -303,6 +349,10 @@ export interface ProviderStatus {
   // harness itself is configured with, so the app can name it instead of
   // calling it "Default". Absent when the harness reports none.
   defaultModelId?: string;
+  // The window that default runs on when the chat picks none, for the harnesses
+  // whose own default names an extended-context variant. Absent means the app
+  // knows only that the provider chooses.
+  defaultContextWindowTokens?: ContextWindowTokens;
   models: ModelInfo[];
   items?: SkillInfo[];
 }
@@ -415,7 +465,7 @@ export interface PackageManagers {
   pnpm: boolean;
 }
 
-export interface CliInfo {
+interface CliInfo {
   present: boolean;
   path: string;
   version?: string;
@@ -444,7 +494,7 @@ export interface ContextStatsSnapshot {
   compactions?: number;
 }
 
-export interface ContextBreakdownCategory {
+interface ContextBreakdownCategory {
   name: string;
   tokens: number;
   colorKey?: string;
@@ -482,11 +532,6 @@ export interface SessionSearchMatch {
 export interface SessionSearchResult {
   appSessionId: string;
   matches: SessionSearchMatch[];
-}
-
-export interface HistorySearchReply {
-  results: SessionSearchResult[];
-  indexingIncomplete: boolean;
 }
 
 export interface BrowserViewport {
@@ -631,7 +676,7 @@ export interface BrowserNativeResult {
   error?: string;
 }
 
-export interface ElementSource {
+interface ElementSource {
   framework?: 'react' | 'vue' | 'svelte' | 'unknown';
   component?: string;
   componentChain?: string[];
@@ -641,7 +686,7 @@ export interface ElementSource {
   confidence: 'exact' | 'attribute' | 'heuristic' | 'none';
 }
 
-export interface DesignAnchorAncestor {
+interface DesignAnchorAncestor {
   tag: string;
   component?: string;
   selector?: string;
@@ -705,10 +750,12 @@ export type PermissionOutcome =
   | 'proceed_new_session_medium'
   | 'proceed_new_session_high'
   | 'proceed_edit'
+  | 'refuse'
   | 'cancel';
 
 // ── Frontend -> Sidecar ──────────────────────────────────────────────
 export type ClientCommand =
+  | ProjectCommand
   | AutomationBridgeCommand
   | McpClientCommand
   | { type: 'connect'; apiKey?: string }
@@ -751,6 +798,8 @@ export type ClientCommand =
       interactionMode?: SessionInteractionMode;
       modelId?: string;
       reasoningEffort?: ReasoningEffort;
+      fastMode?: boolean;
+      contextWindowTokens?: ContextWindowTokens;
       compactionModel?: string;
       compactionTokenLimit?: number | null;
       compactionTokenLimitPerModel?: Record<string, number>;
@@ -768,14 +817,14 @@ export type ClientCommand =
       text: string;
       mentions?: ProviderMention[];
       responseFormat?: ResponseFormat;
+      // Hands the prompt to the running turn as a steer under this id, which
+      // the renderer chose for its own row. Absent, a send while a turn runs
+      // waits for the turn to end.
+      steerId?: string;
     }
-  | {
-      type: 'session.sendNow';
-      appSessionId: string;
-      text: string;
-      mentions?: ProviderMention[];
-      responseFormat?: ResponseFormat;
-    }
+  // Stops the running turn so a steer the model has not taken in yet goes first.
+  | { type: 'session.sendNow'; appSessionId: string; steerId: string }
+  | { type: 'session.repairApp'; appSessionId: string; error: string; source: string }
   | { type: 'session.resume'; appSessionId: string }
   | { type: 'session.interrupt'; appSessionId: string }
   | {
@@ -795,6 +844,10 @@ export type ClientCommand =
       modelId?: string | null;
       // null clears the effort: the model chosen offers none.
       reasoningEffort?: ReasoningEffort | null;
+      // Omitted leaves the chat's fast mode as it is.
+      fastMode?: boolean;
+      // Omitted leaves the chat's context window as it is.
+      contextWindowTokens?: ContextWindowTokens;
       // Echoed once the model/effort change settles, by
       // `session.model_update_applied` or a `session.model_update_failed` error.
       requestId?: string;
@@ -864,13 +917,6 @@ export type ClientCommand =
       text: string;
       responseFormat?: ResponseFormat;
     }
-  | {
-      type: 'child.sendNow';
-      parentAppSessionId: string;
-      childSessionId: string;
-      text: string;
-      responseFormat?: ResponseFormat;
-    }
   | { type: 'child.interrupt'; parentAppSessionId: string; childSessionId: string }
   | {
       type: 'child.loadHistory';
@@ -897,7 +943,7 @@ export type ClientCommand =
       appSessionId: string;
       requestId: string;
       cancelled: boolean;
-      answers: { index: number; question: string; answer: string }[];
+      answers: QuestionAnswer[];
     }
   | { type: 'history.list' }
   | { type: 'history.page'; providerSessionId: string; cursor?: string; limit?: number }
@@ -964,9 +1010,10 @@ export type ClientCommand =
       instruction: string;
       referenceIds: string[];
     }
-  | { type: 'browser.native.result'; result: BrowserNativeResult };
+  | { type: 'browser.native.result'; result: BrowserNativeResult }
+  | { type: 'sidebar.result'; result: SidebarResult };
 
-export type ChildUpdatedEvent =
+type ChildUpdatedEvent =
   | {
       type: 'child.updated';
       parentAppSessionId: string;
@@ -983,7 +1030,7 @@ export type ChildUpdatedEvent =
       access: 'history';
     };
 
-export interface SessionChildEvent {
+interface SessionChildEvent {
   type: 'session.child';
   event: 'upserted';
   child: ChildSessionSummary;
@@ -991,11 +1038,11 @@ export interface SessionChildEvent {
   runtimeGeneration: number;
 }
 
-export interface ChildErrorEvent {
+interface ChildErrorEvent {
   type: 'child.error';
   parentAppSessionId: string;
   childSessionId: string;
-  operation: 'open' | 'loadHistory' | 'send' | 'sendNow' | 'interrupt' | 'settings';
+  operation: 'open' | 'loadHistory' | 'send' | 'interrupt' | 'settings';
   requestId: string | null;
   code: string;
   message: string;
@@ -1007,6 +1054,7 @@ export interface ChildErrorEvent {
 export type VoiceNarration = 'brief' | 'commentary';
 
 export type ServerEvent =
+  | ProjectEvent
   | { type: 'voice.answer'; appSessionId: string; sdp: string; attempt: string }
   | { type: 'voice.state'; appSessionId: string; status: 'live' | 'closed' }
   | {
@@ -1114,6 +1162,8 @@ export type ServerEvent =
   // An approval or question the session will never get an answer for, because
   // the turn that raised it ended first.
   | { type: 'interaction.cancelled'; appSessionId: string; requestId: string }
+  // A question another chat answered, so the window stops asking it.
+  | { type: 'question.answered'; appSessionId: string; requestId: string }
   | {
       type: 'context.updated';
       appSessionId: string;
@@ -1190,10 +1240,11 @@ export type ServerEvent =
   | { type: 'history.list'; sessions: SessionHistoryEntry[] }
   | { type: 'browser.updated'; state: BrowserState }
   | { type: 'browser.native.request'; request: BrowserNativeRequest }
+  | { type: 'sidebar.request'; request: SidebarRequest }
   | { type: 'browser.closed'; appSessionId: string }
   | { type: 'browser.error'; appSessionId?: string; message: string };
 
-export const BRIDGE_PROTOCOL_VERSION = 5 as const;
+export const BRIDGE_PROTOCOL_VERSION = 8 as const;
 
 export interface SequencedServerEvent {
   seq: number;

@@ -38,6 +38,8 @@ interface Harness {
 function createHarness(
   records: PersistedChildSession[],
   options: {
+    acceptAgentWave?: () => boolean;
+    parentProvider?: SessionSummary['provider'];
     maxOpenSessions?: number;
     maxLiveRuntimes?: number;
     maxQueuedRuntimes?: number;
@@ -82,6 +84,11 @@ function createHarness(
   };
   history.seedChildSessions(records);
   let parent = parentLease(parentId, calls);
+  if (options.parentProvider) {
+    parent.summary.provider = options.parentProvider;
+    parent.summary.modelId = 'parent-model';
+    parent.droid = undefined;
+  }
   const dependencies: ChildSessionsDependencies = {
     runtime,
     agentProcesses: {
@@ -105,13 +112,16 @@ function createHarness(
       appendStatus: (...args) => {
         calls.push({ target: 'protocol', method: 'timeline.status', args });
       },
+      appendPrompt: (...args) => {
+        calls.push({ target: 'protocol', method: 'timeline.prompt', args });
+      },
       flushStreamingFor: () => {
         sequence.push('timeline.flushStreaming');
         if (!failFlushStreaming) return;
         failFlushStreaming = false;
         throw new Error('flush failed');
       },
-      settleStreaming: () => {
+      settleStreaming: async () => {
         sequence.push('timeline.settleStreaming');
         if (!failSettleStreaming) return;
         failSettleStreaming = false;
@@ -140,6 +150,7 @@ function createHarness(
         requestApproval: () => new Promise<PermissionOutcome>(() => undefined),
         requestQuestion: () => new Promise<ProviderQuestionAnswers>(() => undefined),
         cancelPending: () => undefined,
+        isActive: () => true,
       }),
     },
     context: {
@@ -185,6 +196,18 @@ function createHarness(
         failResolveLimit = false;
         return Promise.reject(new Error('limit lookup failed'));
       },
+    },
+    onAgentWaveSettled: (parentAppSessionId, agents) => {
+      calls.push({
+        target: 'protocol',
+        method: 'agents.waveSettled',
+        args: [
+          parentAppSessionId,
+          agents.map((agent) => `${agent.name}:${agent.status}`).join(','),
+          ...agents.flatMap((agent) => (agent.step ? [agent.step] : [])),
+        ],
+      });
+      return options.acceptAgentWave?.() ?? true;
     },
     resolveDefaultSettings: () => ({
       modelId: 'model-default',
@@ -490,10 +513,49 @@ test('result-only completion admits the exact pending spawn as historical', () =
       spawnLink: { kind: 'tool-use', id: 'tool-current' },
       transcriptAvailable: true,
       startedAt: 100,
+      settledAt: 100,
       streamFidelity: 'state',
     },
   ]);
   assert.equal(h.history.childSessions(h.parentId)[0]?.providerSessionId, 'provider-child-current');
+});
+
+test('a settled state-only child keeps the moment it stopped', () => {
+  const h = createHarness([]);
+  const observation = {
+    parentAppSessionId: h.parentId,
+    providerSessionId: 'provider-state-only',
+    role: 'worker' as const,
+    modelId: 'model-default',
+    transcriptAvailable: false,
+    done: true,
+  };
+  h.owner.admitChildObservation(observation);
+  h.advanceClock(60_000);
+  h.owner.admitChildObservation(observation);
+
+  const child = h.owner.list(h.parentId)[0];
+  assert.equal(child?.status, 'completed');
+  assert.equal(child?.settledAt, 100);
+});
+
+test('a state-only child with no model is admitted rather than parked', () => {
+  const h = createHarness([], { parentProvider: 'codex' });
+  const identity = h.owner.admitChildObservation({
+    parentAppSessionId: h.parentId,
+    providerSessionId: 'agent-1',
+    role: 'worker',
+    label: 'echo:ONE',
+    requiresExactLaunchSettings: true,
+    transcriptAvailable: false,
+    status: 'running',
+  });
+
+  assert.ok(identity);
+  assert.deepEqual(
+    h.owner.list(h.parentId).map((child) => [child.label, child.status, child.modelId]),
+    [['echo:ONE', 'running', 'parent-model']],
+  );
 });
 
 test('missing Task settings defer exact admission and preserve provider-only completion', () => {
@@ -544,6 +606,7 @@ test('missing Task settings defer exact admission and preserve provider-only com
       spawnLink: { kind: 'tool-use', id: 'tool-deferred' },
       transcriptAvailable: true,
       startedAt: 100,
+      settledAt: 100,
       streamFidelity: 'state',
     },
   ]);
@@ -602,6 +665,42 @@ test('poll observations never rekey a child away from its spawn link', () => {
   assert.equal(children[0]?.label, 'worker');
   assert.equal(children[0]?.status, 'running');
   assert.equal(children[0]?.streamFidelity, 'state');
+  assert.deepEqual(h.owner.childScopeForSpawn(h.parentId, { kind: 'tool-use', id: 'tool-spawn' }), {
+    childSessionId: children[0].childSessionId,
+    role: 'worker',
+  });
+  assert.equal(
+    h.owner.childScopeForSpawn(h.parentId, { kind: 'tool-use', id: 'tool-poll' }),
+    undefined,
+  );
+});
+
+test('spawn routing indexes hydrated siblings and moves a late spawn link', async () => {
+  const h = createHarness([
+    childRecord('a', 'provider-a', 'shared'),
+    childRecord('b', 'provider-b', 'shared'),
+    childRecord('c', 'provider-c', 'original'),
+  ]);
+  const scope = (id: string) => h.owner.childScopeForSpawn(h.parentId, { kind: 'tool-use', id });
+  assert.equal(scope('shared'), 'ambiguous');
+  assert.deepEqual(scope('original'), { childSessionId: 'c', role: 'worker' });
+
+  h.owner.admitChildObservation({
+    parentAppSessionId: h.parentId,
+    role: 'validator',
+    spawnLink: { kind: 'tool-use', id: 'replacement' },
+  });
+  h.owner.admitChildObservation({
+    parentAppSessionId: h.parentId,
+    providerSessionId: 'provider-c',
+    role: 'validator',
+    spawnLink: { kind: 'tool-use', id: 'replacement' },
+    modelId: 'model-default',
+  });
+  await new Promise<void>((resolve) => setImmediate(resolve));
+  assert.equal(scope('original'), undefined);
+  assert.deepEqual(scope('replacement'), { childSessionId: 'c', role: 'validator' });
+  assert.equal(scope('shared'), 'ambiguous');
 });
 
 test('polled Task children keep state fidelity even when a preview arrives', () => {
@@ -1013,9 +1112,9 @@ test('repeated child observations publish only new task prompts', () => {
 
   assert.deepEqual(
     h.calls
-      .filter((call) => call.target === 'protocol' && call.method === 'timeline.status')
+      .filter((call) => call.target === 'protocol' && call.method === 'timeline.prompt')
       .map((call) => call.args[1]),
-    ['Task prompt\n\nfirst prompt', 'Task prompt\n\nchanged prompt'],
+    ['first prompt', 'changed prompt'],
   );
 });
 
@@ -1602,60 +1701,6 @@ test('stale interrupt and turn settlement cannot make a replacement turn idle', 
   }
 });
 
-test('stale send-now rejection cannot clear replacement steering state', async () => {
-  const record = childRecord('child', 'provider-old');
-  const h = createHarness([record]);
-  const oldRuntime = await h.open(record);
-  const oldStreamGate = oldRuntime.deferNextStream();
-  const oldTurn = h.owner.send(record, 'old turn');
-  await oldRuntime.waitForPrompts(1);
-  const oldInterruptGate = oldRuntime.deferNextInterrupt();
-  const oldSteer = h.owner.sendNow(record, 'old steer');
-  await new Promise<void>((resolve) => setImmediate(resolve));
-
-  h.owner.admitChildObservation({
-    parentAppSessionId: h.parentId,
-    providerSessionId: 'provider-new',
-    role: 'worker',
-    spawnLink: { kind: 'tool-use', id: `tool-${record.childSessionId}` },
-  });
-  const replacementRecord = { ...record, providerSessionId: 'provider-new' };
-  const replacement = await h.open(
-    replacementRecord,
-    new FakeFactorySession('provider-new', {}, h.calls),
-  );
-  const replacementStreamGate = replacement.deferNextStream();
-  replacement.nextStreamError = new Error('replacement turn failed');
-  const replacementTurn = h.owner.send(record, 'replacement turn');
-  await replacement.waitForPrompts(1);
-  const replacementInterruptGate = replacement.deferNextInterrupt();
-  const replacementSteer = h.owner.sendNow(record, 'replacement steer');
-  await new Promise<void>((resolve) => setImmediate(resolve));
-
-  oldInterruptGate.reject(new Error('old interrupt failed'));
-  await oldSteer;
-  replacementStreamGate.resolve();
-  await replacementTurn;
-
-  assert.equal(
-    h.events.some((event) => event.type === 'child.error' && event.code === 'child.send_failed'),
-    false,
-  );
-  assert.equal(
-    h.calls.some(
-      (call) =>
-        call.method === 'timeline.status' &&
-        call.args.includes('Child-session turn interrupted for steering.'),
-    ),
-    true,
-  );
-
-  replacementInterruptGate.resolve();
-  await replacementSteer;
-  oldStreamGate.resolve();
-  await oldTurn;
-});
-
 test('one child cleanup failure cannot block sibling provider close', async () => {
   const first = childRecord('first', 'provider-first');
   const second = childRecord('second', 'provider-second');
@@ -1710,9 +1755,9 @@ test('live runtime budget queues overflow children instead of reporting them as 
     { parentAppSessionId: h.parentId, childSessionId: second.childSessionId },
     'queued send',
   );
-  await h.owner.sendNow(
+  await h.owner.send(
     { parentAppSessionId: h.parentId, childSessionId: second.childSessionId },
-    'queued first',
+    'queued second',
   );
 
   streamGate.resolve();
@@ -1725,7 +1770,7 @@ test('live runtime budget queues overflow children instead of reporting them as 
   assert.equal(h.owner.counts().live, 1);
   const opened = h.owner.list(h.parentId).find((child) => child.childSessionId === 'second');
   assert.equal(Boolean(opened?.queued), false);
-  assert.deepEqual(secondSession.prompts, ['queued first', 'queued send']);
+  assert.deepEqual(secondSession.prompts, ['queued send', 'queued second']);
 });
 
 test('four live runtimes stay concurrent and a fifth child queues instead of running', async () => {
@@ -1817,10 +1862,6 @@ test('interrupt of a queued child drops buffered sends even after a later open',
   await h.owner.send(
     { parentAppSessionId: h.parentId, childSessionId: second.childSessionId },
     'cancelled while queued',
-  );
-  await h.owner.sendNow(
-    { parentAppSessionId: h.parentId, childSessionId: second.childSessionId },
-    'cancelled first',
   );
   await h.owner.interrupt({
     parentAppSessionId: h.parentId,
@@ -2279,5 +2320,83 @@ test('opening a child arms the retirement wakeup that later releases it', async 
       .filter((call) => call.target === 'cleanup' && call.method === 'session.close')
       .map((call) => call.args[0]),
     ['provider'],
+  );
+});
+
+test('a refused completion wave is retained until acceptance and cancelled on parent close', async () => {
+  let accepted = false;
+  const h = createHarness([], { acceptAgentWave: () => accepted });
+  const observation = {
+    parentAppSessionId: h.parentId,
+    providerSessionId: 'agent-1',
+    role: 'worker' as const,
+    modelId: 'model-default',
+    transcriptAvailable: false,
+    done: true,
+  };
+  h.owner.admitChildObservation(observation);
+  assert.equal(h.calls.filter((call) => call.method === 'agents.waveSettled').length, 1);
+  accepted = true;
+  h.owner.retryAgentWave(h.parentId);
+  h.owner.retryAgentWave(h.parentId);
+  h.owner.admitChildObservation(observation);
+  assert.equal(h.calls.filter((call) => call.method === 'agents.waveSettled').length, 2);
+  accepted = false;
+  h.owner.admitChildObservation({ ...observation, status: 'running', done: false });
+  h.owner.admitChildObservation(observation);
+  const attempts = h.calls.filter((call) => call.method === 'agents.waveSettled').length;
+  await h.owner.closeParent(h.parentId);
+  accepted = true;
+  h.owner.retryAgentWave(h.parentId);
+  assert.equal(h.calls.filter((call) => call.method === 'agents.waveSettled').length, attempts);
+});
+
+test('a pending sibling blocks a completion wave until it settles', () => {
+  const h = createHarness([childRecord('child-a', 'agent-a'), childRecord('child-b', 'agent-b')]);
+  const observe = (providerSessionId: string, status: 'pending' | 'running' | 'completed') =>
+    h.owner.admitChildObservation({
+      parentAppSessionId: h.parentId,
+      providerSessionId,
+      role: 'worker',
+      transcriptAvailable: false,
+      status,
+      done: status === 'completed',
+    });
+  observe('agent-a', 'running');
+  observe('agent-b', 'pending');
+  observe('agent-a', 'completed');
+  assert.equal(h.calls.filter((call) => call.method === 'agents.waveSettled').length, 0);
+  observe('agent-b', 'completed');
+  assert.deepEqual(
+    h.calls.filter((call) => call.method === 'agents.waveSettled').map((call) => call.args),
+    [['parent', 'Worker 1:completed,Worker 2:completed']],
+  );
+});
+
+test('a terminal observation preserves its result preview across deferred delivery', () => {
+  let accept = false;
+  const h = createHarness([], { acceptAgentWave: () => accept });
+  const observation = {
+    parentAppSessionId: h.parentId,
+    providerSessionId: 'agent-result',
+    role: 'worker' as const,
+    transcriptAvailable: false,
+    modelId: 'model-default',
+  };
+  h.owner.admitChildObservation({ ...observation, status: 'running' });
+  h.owner.admitChildObservation({
+    ...observation,
+    done: true,
+    activity: { preview: 'The race is in the compaction callback.' },
+  });
+  assert.equal(h.owner.list(h.parentId)[0]?.activity, undefined);
+  accept = true;
+  h.owner.retryAgentWave(h.parentId);
+  assert.deepEqual(
+    h.calls.filter((call) => call.method === 'agents.waveSettled').map((call) => call.args),
+    [
+      ['parent', 'Worker 1:completed', 'The race is in the compaction callback.'],
+      ['parent', 'Worker 1:completed', 'The race is in the compaction callback.'],
+    ],
   );
 });

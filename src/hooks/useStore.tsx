@@ -21,12 +21,7 @@ import {
   type VoiceSessions,
 } from '../features/voice/voiceSessions';
 import { removeCustomTheme, upsertCustomTheme, type ThemePreset } from '../lib/theme';
-import {
-  loadCustomThemes,
-  loadTheme,
-  persistTheme,
-  type ThemeConfig,
-} from './persistedThemePreferences';
+import { loadCustomThemes, loadTheme, type ThemeConfig } from './persistedThemePreferences';
 import {
   loadAgentConfig,
   loadCompactionModel,
@@ -42,22 +37,8 @@ import {
   loadReviewScope,
   loadSessionLastSeen,
   loadShortcutBindings,
+  loadSideChatPlacement,
   loadWorkspaceCwds,
-  saveAgentConfig,
-  saveCompactionModel,
-  saveDefaultVoice,
-  saveKnownVoices,
-  saveDiffView,
-  saveHarnessModels,
-  saveImagePasteQuality,
-  saveLiveEnterBehavior,
-  saveModelSelectorStyle,
-  saveNarrationMode,
-  savePersistedUiState,
-  saveReviewScope,
-  saveSessionLastSeen,
-  saveShortcutBindings,
-  saveWorkspaceCwds,
   sanitizeAgentConfig,
   type AgentConfig,
   type DiffViewMode,
@@ -67,8 +48,10 @@ import {
   type MainView,
   type MissionRole,
   type ModelSelectorStyle,
+  type SideChatDefaultPlacement,
 } from './persistedUiPreferences';
 import type { ShortcutAction, ShortcutBindings } from '../lib/shortcuts';
+import type { ProjectView } from '../features/projects/types';
 import {
   clearDesignMode,
   setDesignMode,
@@ -78,6 +61,7 @@ import {
 import type {
   AgentProcess,
   Autonomy,
+  ContextWindowTokens,
   FactoryDefaultSettings,
   ServerEvent,
   SessionLineage,
@@ -101,15 +85,15 @@ import type {
 import { addWorkspaceCwd, removeWorkspaceCwd } from '../lib/workspaces';
 import { createOrderedActionBatcher, type OrderedActionBatcher } from './orderedActionBatcher';
 import { isHistoryStatusError, applyHistoryServerEvent } from '../lib/historyHealth';
-import { loadDefaultAutonomy, saveDefaultAutonomy } from '../lib/autonomy';
+import { loadDefaultPermissionMode } from '../lib/permissionSemantics';
 import {
   mergePendingModelSettings,
   type PendingModelSettings,
   type PendingModelUpdate,
 } from '../lib/pendingModelSettings';
-import { loadDraftProvider, saveDraftProvider } from '../features/providers/providerDraft';
+import { loadDraftProvider } from '../features/providers/providerDraft';
 import { reuseUnchangedStatuses } from '../features/providers/providerIdentity';
-import { loadToolActivity, saveToolActivity, type ToolActivitySettings } from '../lib/toolActivity';
+import { loadToolActivity, type ToolActivitySettings } from '../lib/toolActivity';
 import {
   applyFactoryCompactionDefaults,
   compactionSettingsSnapshot,
@@ -127,7 +111,6 @@ import {
   loadSessionNotes,
   markSessionNoteUsed,
   removeSessionNote,
-  saveSessionNotes,
   type SessionNotesMap,
 } from '../lib/sessionNotes';
 import {
@@ -139,7 +122,6 @@ import {
   pinChat,
   renameChat,
   restoreChat,
-  saveChatMetadata,
   unpinChat,
   type ChatMetadataMap,
 } from '../lib/chatMetadata';
@@ -160,6 +142,7 @@ import {
   type UtilityTool,
 } from '../lib/utilityPanel';
 import {
+  currentSideChat,
   settleSideChatStart,
   sideChatPanel,
   updateSideChatPanel,
@@ -184,7 +167,9 @@ import {
   withUpdatedTranscript,
 } from '../lib/transcriptStoreMemory';
 import { type TranscriptMutation } from '../lib/transcriptMutation';
+import { reduceSessionChildren } from './storeSessionChildren';
 import { reduceStoreActionBatch } from './storeActionBatch';
+import { persistStoreChanges } from './storePersistence';
 import {
   invalidateSelectedChildOpening,
   reduceChildError,
@@ -194,7 +179,6 @@ import {
   reduceChildTranscriptViewport,
   reduceChildUpdated,
   reduceSelectChild,
-  reduceSessionChild,
   releaseInactiveSelectedChild,
   type ChildAccess,
   type ChildHistoryState,
@@ -212,7 +196,7 @@ import {
 
 export type { ImagePasteQuality } from '../lib/images';
 
-export interface QueuedDesignContext {
+interface QueuedDesignContext {
   browserKey: string;
   references: DesignReference[];
   referenceIds: string[];
@@ -239,6 +223,13 @@ export interface AppState {
   // Sessions domain
   sessions: Record<string, SessionSummary>;
   sessionOrder: string[];
+  // Every local project as the runtime last reported it. The chat list, the
+  // navigation and Projects itself all read this one copy.
+  projects: ProjectView[];
+  /** True once the runtime has answered with a snapshot, empty or not. */
+  projectsLoaded: boolean;
+  /** What projects last failed at; the next snapshot retires it. Empty when fine. */
+  projectsError: string;
   // Ids vouched for by the last authoritative listing: the boot snapshot
   // before the first SESSION_LIST, then the sessions of the most recent
   // SESSION_LIST. A SESSION_LIST prunes confirmed rows it no longer reports,
@@ -269,6 +260,7 @@ export interface AppState {
   transcriptViewportPinned: Partial<Record<string, boolean>>;
   progress: Record<string, ProgressEntry[]>;
   childSessions: Record<string, Record<string, ChildSessionInfo>>;
+  agentsWorkingByParent: Partial<Record<string, true>>;
   historyLoaded: Record<string, boolean>;
   // Cursor for the next older page of primary-session scrollback;
   // undefined/absent once the oldest compaction segment has been loaded.
@@ -289,9 +281,9 @@ export interface AppState {
   childRuntime: Record<string, Record<string, ChildRuntimeState>>;
   // Pending permission requests are scoped to the session that asked, so a
   // request from one chat never appears (or gets answered) in another.
-  pendingPermissions: Record<string, PermissionRequest>;
+  pendingPermissions: Partial<Record<string, PermissionRequest[]>>;
   // Same scoping for AskUser questions: keyed by the asking session.
-  pendingQuestions: Record<string, SessionQuestion>;
+  pendingQuestions: Partial<Record<string, SessionQuestion[]>>;
   contextStats: {
     primary: Record<string, ContextStatsSnapshot>;
     child: Record<string, Record<string, ContextStatsSnapshot>>;
@@ -352,6 +344,8 @@ export interface AppState {
     cwd: string;
     executionMode: 'worktree' | 'local';
     branch?: string;
+    /** The draft starts a project: its first message goes to the project's lead. */
+    project?: true;
   } | null;
   // Persisted app-wide default autonomy for new sessions. Owned by Settings;
   // factory-default reloads and draft/session changes never overwrite it.
@@ -363,6 +357,12 @@ export interface AppState {
   // Autonomy override for the current unsent draft. Null means the draft
   // follows `defaultAutonomy`; reset whenever the draft lifecycle resets.
   draftAutonomy: Autonomy | null;
+  // Fast mode the current unsent draft will be created with. A new chat never
+  // inherits it, so it resets with the rest of the draft lifecycle.
+  draftFastMode: boolean;
+  // Context window the current unsent draft will be created with. Null means
+  // the provider's own, and it resets with the rest of the draft lifecycle.
+  draftContextWindowTokens: ContextWindowTokens | null;
   // Live-session autonomy changes awaiting provider confirmation, keyed by
   // appSessionId. The UI keeps showing the confirmed value while pending.
   pendingAutonomy: Record<string, Autonomy>;
@@ -372,9 +372,6 @@ export interface AppState {
   // saved-note clicks). A fresh id per seed lets re-clicking re-arm the effect.
   composerSeed: { text: string; id: number; replace: boolean } | null;
   workspaceCwds: string[];
-  // Derived (synced by the reducer): whether the browser pane is open for the
-  // *currently active* session. Source of truth is `browserOpenKeys`.
-  browserOpen: boolean;
   // Per-session browser-pane open state, keyed by browser key (the chat/session
   // id). Presence means "open"; absence means "closed". Persisted so a session
   // resumes where it left off after an app restart, unless it was fully closed.
@@ -442,6 +439,7 @@ export interface AppState {
   pendingForks: Partial<Record<string, PendingFork>>;
   // Each session's side-chat surface, keyed by the session they branch from.
   sideChats: Partial<Record<string, SideChatPanel>>;
+  sideChatDefaultPlacement: SideChatDefaultPlacement;
 }
 
 // `prompt` is the copy's first message, which the sidecar sends once it exists.
@@ -451,7 +449,7 @@ interface PendingFork {
   prompt?: string;
 }
 
-type Action =
+export type Action =
   | { type: 'BATCH'; actions: Action[] }
   // Connection
   | {
@@ -472,6 +470,7 @@ type Action =
   | { type: 'CHOOSE_SIDE_CHAT_HARNESS'; sourceAppSessionId: string; harness: SideChatHarness }
   | { type: 'ATTACH_SIDE_CHAT_REPLY'; sourceAppSessionId: string; reply: string }
   | { type: 'DETACH_SIDE_CHAT_REPLIES'; sourceAppSessionId: string; replies: readonly string[] }
+  | { type: 'SET_SIDE_CHAT_DEFAULT_PLACEMENT'; placement: SideChatDefaultPlacement }
   | {
       type: 'SET_PENDING_COMPOSE';
       clientRef: string;
@@ -483,6 +482,8 @@ type Action =
   | { type: 'SESSION_CLOSED'; appSessionId: string }
   | { type: 'SESSION_PROCESSES'; appSessionId: string; processes: AgentProcess[] }
   | { type: 'SESSIONS_PROCESSES'; processes: Record<string, AgentProcess[]> }
+  | { type: 'PROJECTS_SNAPSHOT'; projects: ProjectView[] }
+  | { type: 'PROJECTS_UNAVAILABLE'; message: string }
   // App-level chat organization (rename/pin/archive/delete); see lib/chatMetadata.
   // A blank RENAME_CHAT title clears the override back to the generated title.
   | { type: 'LINK_CHATS_PR'; appSessionIds: readonly string[]; cwd: string; pr: ChatPullRequest }
@@ -522,7 +523,7 @@ type Action =
       parentAppSessionId: string;
       childSessionId: string;
       requestId: string | null;
-      operation: 'open' | 'loadHistory' | 'send' | 'sendNow' | 'interrupt' | 'settings';
+      operation: 'open' | 'loadHistory' | 'send' | 'interrupt' | 'settings';
       message: string;
     }
   | {
@@ -606,8 +607,8 @@ type Action =
       parentAppSessionId: string;
       childSessionId: string;
     }
-  | { type: 'CLEAR_PERMISSION'; appSessionId: string }
-  | { type: 'CLEAR_QUESTION'; appSessionId: string }
+  | { type: 'CLEAR_PERMISSION'; appSessionId: string; requestId: string }
+  | { type: 'CLEAR_QUESTION'; appSessionId: string; requestId: string }
   | { type: 'CLEAR_INTERACTION'; appSessionId: string; requestId: string }
 
   // UI
@@ -622,6 +623,7 @@ type Action =
       cwd?: string;
       filePath?: string;
       agentId?: string;
+      threadId?: string;
     }
   | { type: 'CLOSE_UTILITY_TAB'; tabId: string; appSessionId?: string }
   | { type: 'ACTIVATE_UTILITY_TAB'; tabId: string }
@@ -634,6 +636,7 @@ type Action =
       filePath?: string;
       label?: string;
       agentId?: string | null;
+      threadId?: string | null;
     }
   | { type: 'SET_UTILITY_PANEL_OPEN'; open: boolean }
   | { type: 'SET_REVIEW_OPEN'; open: boolean }
@@ -653,6 +656,8 @@ type Action =
     }
   | { type: 'TOGGLE_SETTINGS' }
   | { type: 'TOGGLE_MISSION_CONTROL' }
+  | { type: 'OPEN_PROJECTS' }
+  | { type: 'CLOSE_PROJECTS' }
   | { type: 'OPEN_AUTOMATIONS'; automationId?: string }
   | { type: 'CLOSE_AUTOMATIONS' }
   | { type: 'AUTOMATION_EDITOR_REQUEST_HANDLED'; requestId: number }
@@ -663,6 +668,7 @@ type Action =
       cwd: string;
       executionMode: 'worktree' | 'local';
       branch?: string;
+      project?: true;
     }
   | { type: 'SEED_COMPOSER'; text: string; replace?: boolean }
   | { type: 'CLEAR_COMPOSER_SEED' }
@@ -717,6 +723,8 @@ type Action =
   | { type: 'SET_DEFAULT_AUTONOMY'; autonomy: Autonomy }
   | { type: 'SET_TOOL_ACTIVITY'; settings: ToolActivitySettings }
   | { type: 'SET_DRAFT_AUTONOMY'; autonomy: Autonomy }
+  | { type: 'SET_DRAFT_FAST_MODE'; fastMode: boolean }
+  | { type: 'SET_DRAFT_CONTEXT_WINDOW'; contextWindowTokens: ContextWindowTokens | null }
   | { type: 'AUTONOMY_UPDATE_REQUESTED'; appSessionId: string; autonomy: Autonomy }
   | { type: 'AUTONOMY_UPDATE_SETTLED'; appSessionId: string }
   | {
@@ -750,6 +758,9 @@ export const initialState: AppState = {
   connection: 'idle',
   sessions: sessionSnapshot?.sessions ?? {},
   sessionOrder: sessionSnapshot?.sessionOrder ?? [],
+  projects: [],
+  projectsLoaded: false,
+  projectsError: '',
   listConfirmedSessionIds: sessionSnapshot?.sessionOrder ?? null,
   earlierSessionsByCwd: {},
   activeAppSessionId: persistedUiState.activeAppSessionId ?? null,
@@ -769,6 +780,7 @@ export const initialState: AppState = {
   transcriptViewportPinned: {},
   progress: {},
   childSessions: {},
+  agentsWorkingByParent: {},
   historyLoaded: {},
   historyCursor: {},
   historyLoadingOlder: {},
@@ -800,14 +812,15 @@ export const initialState: AppState = {
   customThemes: initialCustomThemes,
   missionControlMode: persistedUiState.missionControlMode ?? false,
   draftChat: null,
-  defaultAutonomy: loadDefaultAutonomy(),
+  defaultAutonomy: loadDefaultPermissionMode(),
   toolActivity: loadToolActivity(),
   draftAutonomy: null,
+  draftFastMode: false,
+  draftContextWindowTokens: null,
   pendingAutonomy: {},
   pendingModelUpdates: {},
   composerSeed: null,
   workspaceCwds: loadWorkspaceCwds(),
-  browserOpen: false,
   browserOpenKeys: persistedUiState.browserOpenKeys ?? {},
   browsers: persistedUiState.browsers ?? {},
   browserErrors: {},
@@ -844,6 +857,7 @@ export const initialState: AppState = {
   lastCreatedSessionRequest: null,
   pendingForks: {},
   sideChats: {},
+  sideChatDefaultPlacement: loadSideChatPlacement(),
 };
 
 function progressKey(entry: ProgressEntry): string {
@@ -879,14 +893,6 @@ function clearBrowserOpenKey(keys: Record<string, boolean>, key: string): Record
   return next;
 }
 
-// Re-derive `browserOpen` from the per-session open set and the active session.
-// Applied after every reducer pass so the convenience flag never goes stale.
-function syncBrowserOpen(state: AppState): AppState {
-  const key = activeBrowserKey(state);
-  const open = key ? Boolean(state.browserOpenKeys[key]) : false;
-  return state.browserOpen === open ? state : { ...state, browserOpen: open };
-}
-
 function closeActiveUtilityPanel(state: AppState): AppState {
   const appSessionId = state.activeAppSessionId;
   if (!appSessionId) return state;
@@ -897,18 +903,53 @@ function closeActiveUtilityPanel(state: AppState): AppState {
     : { ...state, utilityPanels: { ...state.utilityPanels, [appSessionId]: panel } };
 }
 
-// Drops the open request a session was cancelled out of. Keyed on the request
-// id as well as the session so a card raised after the cancellation stays.
-function withoutCancelledRequest<T extends { requestId: string }>(
-  pending: Record<string, T>,
+// A minimized side chat floats again and one on screen or still open stays put.
+// Only a side chat that is not open yet, docked with no tab and no chat behind
+// it, opens where Settings says.
+function sideChatPlacementToShow(state: AppState, sourceAppSessionId: string): SideChatPlacement {
+  const { placement } = sideChatPanel(state.sideChats, sourceAppSessionId);
+  if (placement !== 'docked') return 'floating';
+  const hasTab = utilityPanelForSession(state.utilityPanels, sourceAppSessionId).tabs.some(
+    (tab) => tab.tool === 'side',
+  );
+  if (hasTab || currentSideChat(state.sessions, state.chatMetadata, sourceAppSessionId)) {
+    return 'docked';
+  }
+  return state.sideChatDefaultPlacement;
+}
+
+// Settle only the matching request, retaining the order of everything still pending.
+function withoutPendingRequest<T extends { requestId: string }>(
+  pending: Partial<Record<string, T[]>>,
   appSessionId: string,
   requestId: string,
-): Record<string, T> {
-  return Object.fromEntries(
-    Object.entries(pending).filter(
-      ([id, request]) => id !== appSessionId || request.requestId !== requestId,
-    ),
-  );
+): Partial<Record<string, T[]>> {
+  const requests = pending[appSessionId];
+  if (!requests?.some((request) => request.requestId === requestId)) return pending;
+  const remaining = requests.filter((request) => request.requestId !== requestId);
+  if (remaining.length) return { ...pending, [appSessionId]: remaining };
+  return Object.fromEntries(Object.entries(pending).filter(([id]) => id !== appSessionId));
+}
+
+// The plan the approval bar and the spec reader show is the one of the oldest
+// approval still waiting, which is the one the bar answers. A richer spec file
+// for that plan (SPEC_SET) is kept while its content is unchanged.
+function withShownPlan(state: AppState, appSessionId: string): AppState {
+  const shown = state.pendingPermissions[appSessionId]?.[0];
+  if (!shown?.plan || (shown.kind !== 'spec' && shown.kind !== 'mission_plan')) return state;
+  const existingSpec = state.sessionSpecs[appSessionId];
+  return {
+    ...state,
+    specPlans:
+      shown.kind === 'spec' ? { ...state.specPlans, [appSessionId]: shown.plan } : state.specPlans,
+    sessionSpecs:
+      existingSpec?.content === shown.plan
+        ? state.sessionSpecs
+        : {
+            ...state.sessionSpecs,
+            [appSessionId]: { path: existingSpec?.path, title: shown.title, content: shown.plan },
+          },
+  };
 }
 
 function withoutKey<T>(
@@ -920,14 +961,10 @@ function withoutKey<T>(
 }
 
 export function reducer(state: AppState, action: Action): AppState {
-  if (action.type === 'BATCH') {
-    return reduceStoreActionBatch(state, action.actions, reducer, syncBrowserOpen);
-  }
-  return syncBrowserOpen(baseReducer(state, action));
-}
-
-function baseReducer(state: AppState, action: Action): AppState {
   switch (action.type) {
+    case 'BATCH':
+      return reduceStoreActionBatch(state, action.actions, reducer);
+
     case 'SET_CONNECTION': {
       if (action.status === 'connected')
         return { ...state, connection: action.status, connectionError: action.message };
@@ -1005,6 +1042,8 @@ function baseReducer(state: AppState, action: Action): AppState {
         activeAppSessionId: shouldActivate ? action.session.appSessionId : state.activeAppSessionId,
         draftChat: shouldActivate ? null : state.draftChat,
         draftAutonomy: shouldActivate ? null : state.draftAutonomy,
+        draftFastMode: shouldActivate ? false : state.draftFastMode,
+        draftContextWindowTokens: shouldActivate ? null : state.draftContextWindowTokens,
         selectedChild: shouldActivate || targetIsActive ? null : childReset.selectedChild,
         // A pending review-focus request belongs to the session that issued
         // it; a different session becoming active must not inherit it.
@@ -1027,13 +1066,16 @@ function baseReducer(state: AppState, action: Action): AppState {
         lastCreatedSessionRequest: shouldActivate
           ? { clientRef: action.clientRef, appSessionId: action.session.appSessionId }
           : state.lastCreatedSessionRequest,
-        // A foreground chat just created by this renderer is already seen.
-        sessionLastSeen: shouldActivate
-          ? {
-              ...state.sessionLastSeen,
-              [action.session.appSessionId]: action.session.updatedAt,
-            }
-          : state.sessionLastSeen,
+        // A foreground chat just created by this renderer is already seen. A
+        // chat this client just learned of starts seen at its creation, so its
+        // first reply reads as unread.
+        sessionLastSeen:
+          shouldActivate || !Object.hasOwn(state.sessionLastSeen, action.session.appSessionId)
+            ? {
+                ...state.sessionLastSeen,
+                [action.session.appSessionId]: action.session.updatedAt,
+              }
+            : state.sessionLastSeen,
       };
       return seed
         ? withUpdatedTranscript(
@@ -1089,21 +1131,20 @@ function baseReducer(state: AppState, action: Action): AppState {
         next = appendTranscriptEvent(next, seed);
       }
       if (!pending || action.session.lineage?.kind !== 'fork') return next;
-      return baseReducer(next, { type: 'SET_ACTIVE_SESSION', id: appSessionId });
+      return reducer(next, { type: 'SET_ACTIVE_SESSION', id: appSessionId });
     }
 
     case 'SHOW_SIDE_CHAT': {
       const { sourceAppSessionId } = action;
-      const { placement } = sideChatPanel(state.sideChats, sourceAppSessionId);
       const next: AppState = {
         ...state,
-        sideChats: updateSideChatPanel(state.sideChats, sourceAppSessionId, {
-          view: action.view,
-          ...(placement === 'minimized' ? { placement: 'floating' } : {}),
-        }),
+        sideChats: updateSideChatPanel(state.sideChats, sourceAppSessionId, { view: action.view }),
       };
-      if (placement !== 'docked' || sourceAppSessionId !== state.activeAppSessionId) return next;
-      return baseReducer(next, { type: 'OPEN_UTILITY_TOOL', tool: 'side' });
+      return reducer(next, {
+        type: 'PLACE_SIDE_CHATS',
+        sourceAppSessionId,
+        placement: sideChatPlacementToShow(state, sourceAppSessionId),
+      });
     }
 
     // Docking moves the side chats into the utility pane; floating or
@@ -1116,7 +1157,7 @@ function baseReducer(state: AppState, action: Action): AppState {
       };
       if (placement === 'docked') {
         if (sourceAppSessionId !== state.activeAppSessionId) return next;
-        return baseReducer(next, { type: 'OPEN_UTILITY_TOOL', tool: 'side' });
+        return reducer(next, { type: 'OPEN_UTILITY_TOOL', tool: 'side' });
       }
       return {
         ...next,
@@ -1127,7 +1168,8 @@ function baseReducer(state: AppState, action: Action): AppState {
       };
     }
 
-    // The next `/side` docks the session's side chat again.
+    // A closed side chat rests docked with no tab, which is off screen; the
+    // next `/side` opens it where Settings says.
     case 'CLOSE_SIDE_CHAT': {
       const { sourceAppSessionId, appSessionId } = action;
       const chatMetadata = appSessionId
@@ -1146,6 +1188,12 @@ function baseReducer(state: AppState, action: Action): AppState {
         },
       };
     }
+
+    case 'SET_SIDE_CHAT_DEFAULT_PLACEMENT':
+      return {
+        ...state,
+        sideChatDefaultPlacement: action.placement,
+      };
 
     case 'CHOOSE_SIDE_CHAT_HARNESS':
       return {
@@ -1250,6 +1298,12 @@ function baseReducer(state: AppState, action: Action): AppState {
         return next;
       return releaseSessionTranscriptWindow(next, m.appSessionId, INACTIVE_TRANSCRIPT_POLICY);
     }
+
+    case 'PROJECTS_SNAPSHOT':
+      return { ...state, projects: action.projects, projectsLoaded: true, projectsError: '' };
+
+    case 'PROJECTS_UNAVAILABLE':
+      return { ...state, projectsLoaded: true, projectsError: action.message };
 
     case 'SESSIONS_PROCESSES':
       return { ...state, agentProcesses: action.processes };
@@ -1378,7 +1432,7 @@ function baseReducer(state: AppState, action: Action): AppState {
     }
 
     case 'SESSION_CHILD':
-      return reduceSessionChild(state, action);
+      return reduceSessionChildren(state, [action]);
 
     case 'CHILD_UPDATED':
       return reduceChildUpdated(state, action);
@@ -1547,39 +1601,39 @@ function baseReducer(state: AppState, action: Action): AppState {
 
     case 'SESSION_PERMISSION': {
       const r = action.request;
-      const specPlans =
-        r.kind === 'spec' && r.plan
-          ? { ...state.specPlans, [r.appSessionId]: r.plan }
-          : state.specPlans;
-      // Seed the persistent spec/plan so the inline card and wiki reader work
-      // immediately (a richer spec file, if any, overrides this via SPEC_SET).
-      // Seed/refresh the persistent spec whenever a (revised) plan arrives so the
-      // card/wiki never go stale. The path is preserved; ChatView reloads the
-      // file on revision and overrides with the richer on-disk content.
-      const existingSpec = state.sessionSpecs[r.appSessionId];
-      const sessionSpecs =
-        (r.kind === 'spec' || r.kind === 'mission_plan') &&
-        r.plan &&
-        existingSpec?.content !== r.plan
-          ? {
-              ...state.sessionSpecs,
-              [r.appSessionId]: { path: existingSpec?.path, title: r.title, content: r.plan },
-            }
-          : state.sessionSpecs;
-      return {
-        ...state,
-        pendingPermissions: { ...state.pendingPermissions, [r.appSessionId]: r },
-        specPlans,
-        sessionSpecs,
-      };
+      if (
+        state.pendingPermissions[r.appSessionId]?.some(
+          (request) => request.requestId === r.requestId,
+        )
+      )
+        return state;
+      return withShownPlan(
+        {
+          ...state,
+          pendingPermissions: {
+            ...state.pendingPermissions,
+            [r.appSessionId]: [...(state.pendingPermissions[r.appSessionId] ?? []), r],
+          },
+        },
+        r.appSessionId,
+      );
     }
 
     case 'SESSION_QUESTION':
+      if (
+        state.pendingQuestions[action.question.appSessionId]?.some(
+          (question) => question.requestId === action.question.requestId,
+        )
+      )
+        return state;
       return {
         ...state,
         pendingQuestions: {
           ...state.pendingQuestions,
-          [action.question.appSessionId]: action.question,
+          [action.question.appSessionId]: [
+            ...(state.pendingQuestions[action.question.appSessionId] ?? []),
+            action.question,
+          ],
         },
       };
 
@@ -1697,42 +1751,50 @@ function baseReducer(state: AppState, action: Action): AppState {
     case 'SESSION_HISTORY':
       return reduceSessionHistory(state, action);
 
-    case 'CLEAR_PERMISSION': {
+    case 'CLEAR_PERMISSION':
+      return withShownPlan(
+        {
+          ...state,
+          pendingPermissions: withoutPendingRequest(
+            state.pendingPermissions,
+            action.appSessionId,
+            action.requestId,
+          ),
+        },
+        action.appSessionId,
+      );
+
+    case 'CLEAR_QUESTION':
       return {
         ...state,
-        pendingPermissions: Object.fromEntries(
-          Object.entries(state.pendingPermissions).filter(([id]) => id !== action.appSessionId),
+        pendingQuestions: withoutPendingRequest(
+          state.pendingQuestions,
+          action.appSessionId,
+          action.requestId,
         ),
       };
-    }
 
-    case 'CLEAR_QUESTION': {
-      return {
-        ...state,
-        pendingQuestions: Object.fromEntries(
-          Object.entries(state.pendingQuestions).filter(([id]) => id !== action.appSessionId),
-        ),
-      };
-    }
-
-    // The sidecar gave up on a request the user never answered. Matched on the
-    // request id so a late cancellation cannot clear a newer card.
+    // A request that stopped waiting without this window answering it: the
+    // sidecar gave up on it, or another chat answered it. Matched on the request
+    // id so a late event cannot clear a newer card.
     case 'CLEAR_INTERACTION': {
       const { appSessionId, requestId } = action;
-      const pendingPermissions = withoutCancelledRequest(
+      const pendingPermissions = withoutPendingRequest(
         state.pendingPermissions,
         appSessionId,
         requestId,
       );
-      const pendingQuestions = withoutCancelledRequest(
+      const pendingQuestions = withoutPendingRequest(
         state.pendingQuestions,
         appSessionId,
         requestId,
       );
       const cleared =
-        Object.keys(pendingPermissions).length !== Object.keys(state.pendingPermissions).length ||
-        Object.keys(pendingQuestions).length !== Object.keys(state.pendingQuestions).length;
-      return cleared ? { ...state, pendingPermissions, pendingQuestions } : state;
+        pendingPermissions !== state.pendingPermissions ||
+        pendingQuestions !== state.pendingQuestions;
+      return cleared
+        ? withShownPlan({ ...state, pendingPermissions, pendingQuestions }, appSessionId)
+        : state;
     }
 
     case 'SET_ACTIVE_SESSION': {
@@ -1769,6 +1831,8 @@ function baseReducer(state: AppState, action: Action): AppState {
         sessionLastSeen,
         draftChat: null,
         draftAutonomy: null,
+        draftFastMode: false,
+        draftContextWindowTokens: null,
         selectedChild: null,
         // A pending review-focus request belongs to the session that issued
         // it; never let it fire in another session's panel after a switch.
@@ -1813,6 +1877,7 @@ function baseReducer(state: AppState, action: Action): AppState {
           cwd: action.cwd,
           filePath: action.filePath,
           agentId: action.agentId,
+          threadId: action.threadId,
         },
       );
       return {
@@ -1874,6 +1939,7 @@ function baseReducer(state: AppState, action: Action): AppState {
         filePath: action.filePath,
         label: action.label,
         agentId: action.agentId,
+        threadId: action.threadId,
       });
       if (panel === current) return state;
       return {
@@ -1946,20 +2012,20 @@ function baseReducer(state: AppState, action: Action): AppState {
       };
 
     case 'SET_REVIEW_SCOPE':
-      return { ...state, reviewScope: saveReviewScope(action.scope) };
+      return { ...state, reviewScope: action.scope };
 
     case 'OPEN_REVIEW_AT': {
       // Open the Review pane for the active session at a given scope, optionally
       // asking it to jump to a specific file once the diff list has loaded.
       const focused = applyOpenReviewAt(state, action);
       if (!state.activeAppSessionId) {
-        return { ...focused, reviewScope: saveReviewScope(action.scope) };
+        return { ...focused, reviewScope: action.scope };
       }
       return {
         ...focused,
         rightPanelOpen: false,
         reviewOpenAppSessionId: state.activeAppSessionId,
-        reviewScope: saveReviewScope(action.scope),
+        reviewScope: action.scope,
         utilityPanels: {
           ...state.utilityPanels,
           [state.activeAppSessionId]: openUtilityTool(
@@ -1975,10 +2041,10 @@ function baseReducer(state: AppState, action: Action): AppState {
       return clearReviewFocus(state);
 
     case 'SET_DIFF_VIEW':
-      return { ...state, diffView: saveDiffView(action.mode) };
+      return { ...state, diffView: action.mode };
 
     case 'SET_MODEL_SELECTOR_STYLE':
-      return { ...state, modelSelectorStyle: saveModelSelectorStyle(action.style) };
+      return { ...state, modelSelectorStyle: action.style };
 
     case 'TOGGLE_COMMAND_PALETTE':
       return { ...state, commandPaletteOpen: !state.commandPaletteOpen };
@@ -2024,7 +2090,7 @@ function baseReducer(state: AppState, action: Action): AppState {
     case 'VOICE_VOICES': {
       const next = reduceVoice(state, action);
       if (sameVoices(state.knownVoices, action.voices)) return next;
-      return { ...next, knownVoices: saveKnownVoices(action.voices) };
+      return { ...next, knownVoices: action.voices };
     }
 
     case 'VOICE_TRANSCRIPT':
@@ -2040,6 +2106,15 @@ function baseReducer(state: AppState, action: Action): AppState {
         : { ...next, automationEditorRequest: null };
     }
 
+    case 'OPEN_PROJECTS':
+      return {
+        ...state,
+        mainView: 'projects',
+        automationEditorRequest: null,
+        rightPanelOpen: false,
+      };
+    case 'CLOSE_PROJECTS':
+      return state.mainView === 'projects' ? { ...state, mainView: 'session' } : state;
     case 'OPEN_AUTOMATIONS':
       return {
         ...state,
@@ -2074,8 +2149,11 @@ function baseReducer(state: AppState, action: Action): AppState {
           cwd: action.cwd,
           executionMode: action.executionMode,
           branch: action.branch,
+          ...(action.project ? { project: action.project } : {}),
         },
         draftAutonomy: null,
+        draftFastMode: false,
+        draftContextWindowTokens: null,
         activeAppSessionId: null,
         missionControlMode: false,
         selectedChild: null,
@@ -2122,15 +2200,15 @@ function baseReducer(state: AppState, action: Action): AppState {
     case 'ADD_WORKSPACE':
       return {
         ...state,
-        workspaceCwds: saveWorkspaceCwds(addWorkspaceCwd(state.workspaceCwds, action.cwd)),
+        workspaceCwds: addWorkspaceCwd(state.workspaceCwds, action.cwd),
       };
     case 'REMOVE_WORKSPACE':
       return {
         ...state,
-        workspaceCwds: saveWorkspaceCwds(removeWorkspaceCwd(state.workspaceCwds, action.cwd)),
+        workspaceCwds: removeWorkspaceCwd(state.workspaceCwds, action.cwd),
       };
     case 'SET_WORKSPACE_CWDS':
-      return { ...state, workspaceCwds: saveWorkspaceCwds(action.cwds) };
+      return { ...state, workspaceCwds: action.cwds };
 
     case 'TOGGLE_BROWSER': {
       const key = activeBrowserKey(state);
@@ -2263,14 +2341,10 @@ function baseReducer(state: AppState, action: Action): AppState {
         designModes: setDesignMode(state.designModes, action.appSessionId, action.open),
       };
 
-    case 'SET_THEME': {
-      const next = { ...state.theme, ...action.theme };
-      persistTheme(next);
-      return { ...state, theme: next };
-    }
+    case 'SET_THEME':
+      return { ...state, theme: { ...state.theme, ...action.theme } };
 
-    // Pure state transitions only: persistence happens in the dispatching
-    // handler (see persistCustomThemes), never in the root reducer.
+    // The dispatching handler has already saved the list (see persistCustomThemes).
     case 'SAVE_CUSTOM_THEME':
       return { ...state, customThemes: upsertCustomTheme(state.customThemes, action.preset) };
 
@@ -2287,7 +2361,7 @@ function baseReducer(state: AppState, action: Action): AppState {
       return {
         ...state,
         models: action.models,
-        agentConfig: saveAgentConfig(sanitizeAgentConfig(state.agentConfig, action.models)),
+        agentConfig: sanitizeAgentConfig(state.agentConfig, action.models),
       };
 
     case 'PROVIDER_STATUSES': {
@@ -2296,7 +2370,6 @@ function baseReducer(state: AppState, action: Action): AppState {
     }
 
     case 'SET_DRAFT_PROVIDER':
-      saveDraftProvider(action.provider);
       return { ...state, draftProvider: action.provider };
 
     case 'SKILLS_LIST':
@@ -2332,7 +2405,7 @@ function baseReducer(state: AppState, action: Action): AppState {
 
       return {
         ...state,
-        agentConfig: saveAgentConfig(next),
+        agentConfig: next,
         ...compactionDefaults,
         compactionSettingsRev: state.compactionSettingsRev + 1,
       };
@@ -2341,34 +2414,29 @@ function baseReducer(state: AppState, action: Action): AppState {
     case 'SET_HARNESS_MODEL':
       return {
         ...state,
-        harnessModels: saveHarnessModels({
-          ...state.harnessModels,
-          [action.provider]: action.model,
-        }),
+        harnessModels: { ...state.harnessModels, [action.provider]: action.model },
       };
 
     case 'SET_AGENT_MODEL':
       return {
         ...state,
-        agentConfig: saveAgentConfig({
+        agentConfig: {
           ...state.agentConfig,
           [action.agent]: { ...state.agentConfig[action.agent], modelId: action.modelId },
-        }),
+        },
       };
 
     case 'SET_AGENT_REASONING':
       return {
         ...state,
-        agentConfig: saveAgentConfig({
+        agentConfig: {
           ...state.agentConfig,
           [action.agent]: { ...state.agentConfig[action.agent], reasoning: action.reasoning },
-        }),
+        },
       };
 
-    case 'SET_COMPACTION_MODEL_GLOBAL': {
-      const value = saveCompactionModel(action.compactionModel);
-      return { ...state, compactionModel: value };
-    }
+    case 'SET_COMPACTION_MODEL_GLOBAL':
+      return { ...state, compactionModel: action.compactionModel };
 
     case 'SET_COMPACTION_TOKEN_LIMIT_GLOBAL': {
       const limit = normalizeTokenLimit(action.limit);
@@ -2393,40 +2461,38 @@ function baseReducer(state: AppState, action: Action): AppState {
       };
     }
 
-    case 'SET_LIVE_ENTER_BEHAVIOR': {
-      const behavior = saveLiveEnterBehavior(action.behavior);
-      return { ...state, liveEnterBehavior: behavior };
-    }
+    case 'SET_LIVE_ENTER_BEHAVIOR':
+      return { ...state, liveEnterBehavior: action.behavior };
 
     case 'SET_DEFAULT_VOICE':
-      return { ...state, defaultVoice: saveDefaultVoice(action.voice) };
+      return { ...state, defaultVoice: action.voice };
 
     case 'SET_NARRATION_MODE':
-      return { ...state, narrationMode: saveNarrationMode(action.mode) };
+      return { ...state, narrationMode: action.mode };
 
-    case 'SET_IMAGE_PASTE_QUALITY': {
-      const quality = saveImagePasteQuality(action.quality);
-      return { ...state, imagePasteQuality: quality };
-    }
+    case 'SET_IMAGE_PASTE_QUALITY':
+      return { ...state, imagePasteQuality: action.quality };
 
-    case 'SET_SHORTCUT_BINDING': {
-      const bindings = saveShortcutBindings({
-        ...state.shortcutBindings,
-        [action.shortcut]: action.chord,
-      });
-      return { ...state, shortcutBindings: bindings };
-    }
+    case 'SET_SHORTCUT_BINDING':
+      return {
+        ...state,
+        shortcutBindings: { ...state.shortcutBindings, [action.shortcut]: action.chord },
+      };
 
-    case 'SET_DEFAULT_AUTONOMY': {
-      saveDefaultAutonomy(action.autonomy);
+    case 'SET_DEFAULT_AUTONOMY':
       return { ...state, defaultAutonomy: action.autonomy };
-    }
 
     case 'SET_TOOL_ACTIVITY':
-      return { ...state, toolActivity: saveToolActivity(action.settings) };
+      return { ...state, toolActivity: action.settings };
 
     case 'SET_DRAFT_AUTONOMY':
       return { ...state, draftAutonomy: action.autonomy };
+
+    case 'SET_DRAFT_FAST_MODE':
+      return { ...state, draftFastMode: action.fastMode };
+
+    case 'SET_DRAFT_CONTEXT_WINDOW':
+      return { ...state, draftContextWindowTokens: action.contextWindowTokens };
 
     case 'AUTONOMY_UPDATE_REQUESTED':
       return {
@@ -2522,6 +2588,8 @@ export function adaptEvent(ev: ServerEvent): Action | null {
       return { type: 'SESSION_CLOSED', appSessionId: ev.appSessionId };
     case 'session.processes':
       return { type: 'SESSION_PROCESSES', appSessionId: ev.appSessionId, processes: ev.processes };
+    case 'projects.snapshot':
+      return { type: 'PROJECTS_SNAPSHOT', projects: ev.projects };
     case 'sessions.processes':
       return { type: 'SESSIONS_PROCESSES', processes: ev.processes };
     case 'mission.features':
@@ -2568,6 +2636,7 @@ export function adaptEvent(ev: ServerEvent): Action | null {
     case 'question.requested':
       return { type: 'SESSION_QUESTION', question: ev.question };
     case 'interaction.cancelled':
+    case 'question.answered':
       return {
         type: 'CLEAR_INTERACTION',
         appSessionId: ev.appSessionId,
@@ -2591,6 +2660,10 @@ export function adaptEvent(ev: ServerEvent): Action | null {
           ? { type: 'MODEL_UPDATE_SETTLED', appSessionId: ev.appSessionId, requestId: ev.requestId }
           : null;
       }
+      // The chat list waits to hear about projects before it paints, so a
+      // runtime that cannot answer has to count as having answered.
+      if (ev.code?.startsWith('project.'))
+        return { type: 'PROJECTS_UNAVAILABLE', message: ev.message };
       if (ev.code === 'session.create_failed' && ev.clientRef) {
         return {
           type: 'SESSION_CREATE_FAILED',
@@ -2710,7 +2783,7 @@ interface StoreContextValue {
 const StoreContext = createContext<StoreContextValue | null>(null);
 
 export function StoreProvider({ children }: { children: ReactNode }) {
-  const [state, reduceDispatch] = useReducer(reducer, initialState, syncBrowserOpen);
+  const [state, reduceDispatch] = useReducer(reducer, initialState);
   const stateRef = useRef(state);
   const listenersRef = useRef(new Set<() => void>());
   const bridgeActionBatcherRef = useRef<OrderedActionBatcher<Action> | null>(null);
@@ -2739,32 +2812,11 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     for (const listener of listenersRef.current) listener();
   }, [state]);
 
+  const persistedStateRef = useRef(state);
   useEffect(() => {
-    saveChatMetadata(state.chatMetadata);
-  }, [state.chatMetadata]);
-
-  useEffect(() => {
-    savePersistedUiState(state);
-    saveSessionLastSeen(state.sessionLastSeen);
-    saveSessionNotes(state.sessionNotes);
-  }, [
-    state.sessionLastSeen,
-    state.sessionNotes,
-    state.activeAppSessionId,
-    state.browserOpenKeys,
-    state.browsers,
-    state.missionControlMode,
-    state.rightPanelOpen,
-    state.utilityPanels,
-    state.selectedChild,
-    state.selectedFeatureId,
-    state.sidebarCollapsed,
-    state.mainView,
-    state.prWorkspaceCwd,
-    state.prWorkspaceNumber,
-    state.prBacklogIds,
-    state.specMode,
-  ]);
+    persistStoreChanges(persistedStateRef.current, state);
+    persistedStateRef.current = state;
+  }, [state]);
 
   // Keep the sidecar's compaction-limit snapshot in sync so live sessions,
   // resumes, and model changes all follow these limits. The bridge queues
@@ -2887,7 +2939,7 @@ function useStoreContext(): StoreContextValue {
   return context;
 }
 
-export function useStoreApi(): Pick<StoreContextValue, 'getState'> {
+export function useStoreApi(): Pick<StoreContextValue, 'getState' | 'subscribe'> {
   return useStoreContext();
 }
 

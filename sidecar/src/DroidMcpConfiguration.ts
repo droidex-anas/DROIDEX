@@ -3,6 +3,7 @@ import { promisify } from 'node:util';
 
 import type { McpServerInput } from './protocol.js';
 import { buildDroidInvocation } from './Environment.js';
+import { childEnv } from './childEnv.js';
 
 const execFileAsync = promisify(execFile);
 
@@ -53,7 +54,7 @@ async function runMcpCommand(args: string[], cwd?: string): Promise<void> {
   const invocation = buildDroidInvocation(args);
   await execFileAsync(invocation.execPath, invocation.execArgs, {
     ...(cwd ? { cwd } : {}),
-    env: process.env,
+    env: childEnv(),
     timeout: 30_000,
   });
 }

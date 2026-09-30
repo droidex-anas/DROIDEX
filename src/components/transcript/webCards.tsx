@@ -12,7 +12,17 @@ import {
   toolArgString,
   toolArgStringArray,
 } from '../../lib/tools';
-import { Caret, ErrorTag, Expand, httpHref, linkify, openLink, RED, RED_TINT } from './primitives';
+import {
+  Caret,
+  ErrorTag,
+  Expand,
+  httpHref,
+  InterruptedTag,
+  linkify,
+  openLink,
+  RED,
+  RED_TINT,
+} from './primitives';
 import { LinkBadge } from './LinkBadge';
 import { describeLink } from '../../lib/linkPresentation';
 
@@ -106,12 +116,6 @@ function WebSearchRunningRow({ isX, query }: { isX: boolean; query: string }) {
   );
 }
 
-function searchTrailing(error: boolean, total: number): React.ReactNode {
-  if (error) return <ErrorTag />;
-  if (total > 0) return <CountBadge label={String(total)} />;
-  return null;
-}
-
 /* ── Web search: a collapsible search row that expands into readable result
    cards (title, snippet, source) instead of a raw text dump. Stays collapsed
    by default — the header (query + result count) is enough until expanded. ── */
@@ -119,12 +123,14 @@ export function WebSearchCard({
   event,
   output,
   error = false,
+  interrupted = false,
   running = false,
   forceOpen = false,
 }: {
   event: TranscriptEvent;
   output?: string;
   error?: boolean;
+  interrupted?: boolean;
   running?: boolean;
   forceOpen?: boolean;
 }) {
@@ -138,7 +144,7 @@ export function WebSearchCard({
     /(^|\.)(x|twitter)\.com$/i.test(d),
   );
   if (running) return <WebSearchRunningRow isX={isX} query={query} />;
-  const trailing = searchTrailing(error, total);
+  const trailing = fetchTrailing(error, interrupted, total > 0 ? String(total) : null);
 
   let body: React.ReactNode = null;
   if (expanded && results.length > 0) {
@@ -259,7 +265,12 @@ function WebFetchRunningRow({ url }: { url: string }) {
   return <WebToolRunningRow label="Fetching…" detail={url.length > 0 ? url : undefined} />;
 }
 
-function fetchTrailing(error: boolean, badge: string | null): React.ReactNode {
+function fetchTrailing(
+  error: boolean,
+  interrupted: boolean,
+  badge: string | null,
+): React.ReactNode {
+  if (interrupted) return <InterruptedTag />;
   if (error) return <ErrorTag />;
   if (badge) return <CountBadge label={badge} />;
   return null;
@@ -272,12 +283,14 @@ export function WebFetchCard({
   event,
   output,
   error = false,
+  interrupted = false,
   running = false,
   forceOpen = false,
 }: {
   event: TranscriptEvent;
   output?: string;
   error?: boolean;
+  interrupted?: boolean;
   running?: boolean;
   forceOpen?: boolean;
 }) {
@@ -300,7 +313,7 @@ export function WebFetchCard({
     [expanded, hasBody, page.body],
   );
   const badge = fetchSizeBadge(page.chars, page.truncatedChars);
-  const trailing = fetchTrailing(error, badge);
+  const trailing = fetchTrailing(error, interrupted, badge);
 
   if (running) return <WebFetchRunningRow url={url} />;
 

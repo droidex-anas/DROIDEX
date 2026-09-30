@@ -57,7 +57,7 @@ function createHarness(
     registry: {
       getLive: () => undefined,
       resolveSummary: () => undefined,
-      replaceProvider: () => undefined,
+      replaceProvider: async () => undefined,
       updateSummary: () => undefined,
     },
     context: {
@@ -98,6 +98,7 @@ function createHarness(
       requestApproval: () => new Promise<PermissionOutcome>(() => undefined),
       requestQuestion: () => new Promise<ProviderQuestionAnswers>(() => undefined),
       cancelPending: () => undefined,
+      isActive: () => true,
     }),
     emitError: () => undefined,
     isShutdownStarted: () => false,

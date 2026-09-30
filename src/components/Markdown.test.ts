@@ -7,7 +7,6 @@ import { Markdown, MarkdownTree, markdownFenceOptions } from './Markdown';
 interface MarkdownProps {
   children: string;
   specMode?: boolean;
-  autoPlayAppBlocks?: boolean;
 }
 
 test('disabled diagrams render fenced SVG as escaped code', () => {
@@ -20,15 +19,12 @@ test('disabled diagrams render fenced SVG as escaped code', () => {
   assert.match(html, /&lt;svg onload=/);
 });
 
-test('restored app fences stay inert behind a compact Play card', () => {
+test('restored app fences start inline without a Play card', () => {
   const source = '```app\n<button onclick="document.body.dataset.ran=\'yes\'">Run</button>\n```';
   const html = renderToStaticMarkup(createElement(Markdown, null, source));
 
-  assert.match(html, /Interactive App/);
-  assert.match(html, /aria-label="Play app"/);
-  assert.doesNotMatch(html, /&lt;button onclick=/);
-  assert.doesNotMatch(html, /<iframe/i);
-  assert.doesNotMatch(html, /srcdoc=/i);
+  assert.doesNotMatch(html, /aria-label="(?:Play|Stop) app"/);
+  assert.match(html, />Starting interactive app</);
 });
 
 test('an App fence that saved history cut short reports the loss instead of offering Play', () => {
@@ -38,7 +34,7 @@ test('an App fence that saved history cut short reports the loss instead of offe
   assert.match(html, /role="alert"/);
   assert.match(html, /Saved history kept only part/);
   assert.doesNotMatch(html, /aria-label="Play app"/);
-  assert.doesNotMatch(html, /<iframe/i);
+  assert.doesNotMatch(html, />Starting interactive app</);
 });
 
 test('a cut-off message keeps its earlier complete App playable', () => {
@@ -52,16 +48,16 @@ test('a cut-off message keeps its earlier complete App playable', () => {
   ].join('\n');
   const html = renderToStaticMarkup(createElement(Markdown, { cutOffAppBlocks: true }, source));
 
-  assert.equal(html.match(/aria-label="Play app"/g)?.length, 1);
+  assert.equal(html.match(/>Starting interactive app</g)?.length, 1);
   assert.equal(html.match(/role="alert"/g)?.length, 1);
 });
 
 test('a complete app fence in the live response opens automatically', () => {
   const source = '```app\n<main>Live app</main>\n```';
-  const html = renderToStaticMarkup(createElement(Markdown, { autoPlayAppBlocks: true }, source));
+  const html = renderToStaticMarkup(createElement(Markdown, null, source));
 
-  assert.match(html, /<iframe/i);
-  assert.match(html, /aria-label="Stop app"/);
+  assert.match(html, />Starting interactive app</);
+  assert.doesNotMatch(html, /aria-label="(?:Play|Stop) app"/);
 });
 
 test('disabled generated content renders app fences as ordinary code', () => {
@@ -124,22 +120,18 @@ test('each live App fence owns its own completion state', () => {
     '```app',
     '<main>Still streaming',
   ].join('\n');
-  const html = renderToStaticMarkup(
-    createElement(Markdown, { autoPlayAppBlocks: true, buildingAppBlocks: true }, source),
-  );
+  const html = renderToStaticMarkup(createElement(Markdown, { buildingAppBlocks: true }, source));
 
-  assert.equal(html.match(/<iframe/g)?.length, 1);
+  assert.equal(html.match(/>Starting interactive app</g)?.length, 1);
   assert.equal(html.match(/>Building interactive app</g)?.length, 1);
 });
 
 test('App fences with an info-string title use the same completion state as react-markdown', () => {
   const source = '```app title="Latency explorer"\n<main>Still streaming';
-  const html = renderToStaticMarkup(
-    createElement(Markdown, { autoPlayAppBlocks: true, buildingAppBlocks: true }, source),
-  );
+  const html = renderToStaticMarkup(createElement(Markdown, { buildingAppBlocks: true }, source));
 
   assert.match(html, />Building interactive app</);
-  assert.doesNotMatch(html, /<iframe/i);
+  assert.doesNotMatch(html, />Starting interactive app</);
 });
 
 test('uppercase fences stay ordinary code without shifting a later App completion state', () => {
@@ -151,13 +143,11 @@ test('uppercase fences stay ordinary code without shifting a later App completio
     '```app',
     '<main>Still streaming',
   ].join('\n');
-  const html = renderToStaticMarkup(
-    createElement(Markdown, { autoPlayAppBlocks: true, buildingAppBlocks: true }, source),
-  );
+  const html = renderToStaticMarkup(createElement(Markdown, { buildingAppBlocks: true }, source));
 
   assert.match(html, /&lt;main&gt;Ordinary code&lt;\/main&gt;/);
   assert.match(html, />Building interactive app</);
-  assert.doesNotMatch(html, /<iframe/i);
+  assert.doesNotMatch(html, />Starting interactive app</);
 });
 
 test('completed App fences inside quotes and lists keep their completed streaming state', () => {
@@ -168,10 +158,8 @@ test('completed App fences inside quotes and lists keep their completed streamin
   ];
 
   for (const source of sources) {
-    const html = renderToStaticMarkup(
-      createElement(Markdown, { autoPlayAppBlocks: true, buildingAppBlocks: true }, source),
-    );
-    assert.match(html, /<iframe/i);
+    const html = renderToStaticMarkup(createElement(Markdown, { buildingAppBlocks: true }, source));
+    assert.match(html, />Starting interactive app</);
     assert.doesNotMatch(html, />Building interactive app</);
   }
 });
@@ -191,11 +179,9 @@ test('a streaming App fence nested past the fence scan keeps building', () => {
     '      ```app',
     '      <main>Still streaming',
   ].join('\n');
-  const html = renderToStaticMarkup(
-    createElement(Markdown, { autoPlayAppBlocks: true, buildingAppBlocks: true }, source),
-  );
+  const html = renderToStaticMarkup(createElement(Markdown, { buildingAppBlocks: true }, source));
 
-  assert.equal(html.match(/<iframe/g)?.length, 1);
+  assert.equal(html.match(/>Starting interactive app</g)?.length, 1);
   assert.equal(html.match(/>Building interactive app</g)?.length, 1);
 });
 
@@ -216,10 +202,9 @@ test('a streaming response keeps the same element types across renders', () => {
   };
 
   const source = '```app\n<main>Live app</main>\n```\n';
-  const first = componentsFor({ children: source, autoPlayAppBlocks: true });
+  const first = componentsFor({ children: source });
   const second = componentsFor({
     children: `${source}\nTrailing prose while the answer streams.`,
-    autoPlayAppBlocks: true,
   });
 
   assert.equal(first, second);

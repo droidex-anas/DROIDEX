@@ -29,7 +29,6 @@ export interface StreamingMarkdownProps {
   cacheId: string;
   specMode?: boolean;
   allowGeneratedContent?: boolean;
-  autoPlayAppBlocks?: boolean;
   buildingAppBlocks?: boolean;
   cutOffAppBlocks?: boolean;
 }
@@ -45,24 +44,21 @@ const FrozenMarkdownBlock = memo(function FrozenMarkdownBlock({
   block,
   specMode,
   allowGeneratedContent,
-  autoPlayAppBlocks,
   cutOffAppBlocks,
 }: {
   block: StreamingBlock;
   specMode: boolean;
   allowGeneratedContent: boolean;
-  autoPlayAppBlocks: boolean;
   cutOffAppBlocks: boolean;
 }) {
   const fenceOptions = useMemo(
     () =>
       markdownFenceOptions(block.source, {
         allowGeneratedContent,
-        autoPlayAppBlocks,
         buildingAppBlocks: false,
         cutOffAppBlocks,
       }),
-    [allowGeneratedContent, autoPlayAppBlocks, block.source, cutOffAppBlocks],
+    [allowGeneratedContent, block.source, cutOffAppBlocks],
   );
   return (
     <MarkdownTree specMode={specMode} fenceOptions={fenceOptions}>
@@ -71,55 +67,34 @@ const FrozenMarkdownBlock = memo(function FrozenMarkdownBlock({
   );
 });
 
-function PendingFence({
-  info,
-  body,
-  specMode,
-  flags,
-}: {
-  info?: string;
-  body: string;
-  specMode: boolean;
-  flags: MarkdownFenceFlags;
-}) {
-  if (flags.allowGeneratedContent && info === 'app') {
-    return (
-      <AppBlock
-        source={body}
-        autoPlay={false}
-        isBuilding={flags.buildingAppBlocks}
-        isCutOff={flags.cutOffAppBlocks}
-      />
-    );
-  }
-  return (
-    <CodeCard code={body} className={info ? `language-${info}` : undefined} specMode={specMode} />
-  );
-}
-
-function PendingMarkdown({
+// Incoming tokens can render before the next reveal frame. Scalar props let
+// that unchanged displayed source keep its parsed tree.
+const PendingMarkdown = memo(function PendingMarkdown({
   source,
   live,
   kind,
   fenceInfo,
   specMode,
-  flags,
+  ...flags
 }: {
   source: string;
   live: boolean;
   kind: StreamingDocument['pendingKind'];
-  fenceInfo?: string;
+  fenceInfo: string | undefined;
   specMode: boolean;
-  flags: MarkdownFenceFlags;
-}) {
+} & MarkdownFenceFlags) {
   // Settlement makes EOF final, including a closing fence without a trailing newline.
   if (live && kind === 'fence') {
+    const body = pendingFenceBody(source);
+    // AppBlock runs whatever is not building, and an unfinished fence must never run.
+    if (flags.allowGeneratedContent && fenceInfo === 'app') {
+      return <AppBlock source={body} isBuilding isCutOff={flags.cutOffAppBlocks} />;
+    }
     return (
-      <PendingFence
-        {...(fenceInfo !== undefined ? { info: fenceInfo } : {})}
-        body={pendingFenceBody(source)}
+      <CodeCard
+        code={body}
+        className={fenceInfo ? `language-${fenceInfo}` : undefined}
         specMode={specMode}
-        flags={flags}
       />
     );
   }
@@ -129,7 +104,7 @@ function PendingMarkdown({
       {source}
     </MarkdownTree>
   );
-}
+});
 
 function SettledMarkdown({
   source,
@@ -145,12 +120,7 @@ function SettledMarkdown({
   const key = settledMarkdownCacheKey(
     cacheId,
     source,
-    settledMarkdownFlags({
-      specMode,
-      allowGeneratedContent: flags.allowGeneratedContent,
-      autoPlayAppBlocks: flags.autoPlayAppBlocks,
-      cutOffAppBlocks: flags.cutOffAppBlocks,
-    }),
+    settledMarkdownFlags({ specMode, ...flags }),
   );
   return getSettledMarkdownElement(key, () => (
     <Markdown specMode={specMode} {...flags}>
@@ -180,7 +150,6 @@ function LiveStreamingMarkdown({
           block={block}
           specMode={specMode}
           allowGeneratedContent={flags.allowGeneratedContent}
-          autoPlayAppBlocks={flags.autoPlayAppBlocks}
           cutOffAppBlocks={flags.cutOffAppBlocks}
         />
       ))}
@@ -189,11 +158,9 @@ function LiveStreamingMarkdown({
           source={document.pendingSource}
           live={live}
           kind={document.pendingKind}
-          {...(document.pendingFenceInfo !== undefined
-            ? { fenceInfo: document.pendingFenceInfo }
-            : {})}
+          fenceInfo={document.pendingFenceInfo}
           specMode={specMode}
-          flags={flags}
+          {...flags}
         />
       ) : null}
     </div>
@@ -206,13 +173,11 @@ function StreamingMarkdownImpl({
   cacheId,
   specMode = false,
   allowGeneratedContent = true,
-  autoPlayAppBlocks = false,
   buildingAppBlocks = false,
   cutOffAppBlocks = false,
 }: StreamingMarkdownProps) {
   const flags: MarkdownFenceFlags = {
     allowGeneratedContent,
-    autoPlayAppBlocks,
     buildingAppBlocks,
     cutOffAppBlocks,
   };

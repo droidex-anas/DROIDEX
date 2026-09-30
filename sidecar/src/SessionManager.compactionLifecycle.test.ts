@@ -354,12 +354,14 @@ test('[C2] Provider-session swap', { concurrency: false }, async () => {
     assert.equal(update.session.appSessionId, 'provider-1');
     assert.equal(update.session.providerSessionId, 'provider-2');
     assert.equal(load.sessionId, 'provider-2');
+    assert.equal(update.session.autonomy, 'low');
+    assert.deepEqual(h.provider.session('provider-2').settings[0], { autonomyLevel: 'off' });
     assert.equal(typeof load.handlers.permissionHandler, 'function');
     assert.equal(typeof load.handlers.askUserHandler, 'function');
     assert.equal(load.handlers.mcpServers, creation.mcpServers);
     assert.deepEqual(
       load.handlers.mcpServers?.map((server) => server.name),
-      ['test-cli', 'test-browser', 'droidex-automations'],
+      ['test-cli', 'test-browser', 'droidex-automations', 'droidex-sessions'],
     );
     assert.equal(callCount(h.calls, 'provider', 'onNotification', 'provider-2'), 1);
     assert.equal(callCount(h.calls, 'cleanup', 'unsubscribe', 'provider-1'), 1);

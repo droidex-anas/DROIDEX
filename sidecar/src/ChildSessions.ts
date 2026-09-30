@@ -1,6 +1,12 @@
 import { factoryReasoningEffort } from './DroidRuntime.js';
 import type { PersistedChildSession, PersistedChildSpawnLink } from './history.js';
-import type { ChildSessionSummary, ClientCommand } from './protocol.js';
+import type {
+  ChildActivity,
+  ChildRole,
+  ChildSessionSummary,
+  ChildStatus,
+  ClientCommand,
+} from './protocol.js';
 import type { ChildOperationTarget } from './SessionContext.js';
 import {
   matchesChildGenerationSnapshot,
@@ -10,9 +16,10 @@ import {
   type CompactionResourceKey,
   type CompactionRetuneTarget,
 } from './SessionCompaction.js';
-import { errMsg, isUserCancellation } from './sessionHelpers.js';
+import { errMsg, isUserCancellation } from './errors.js';
 import { isReportedStreamingTranscriptError } from './SessionTimeline.js';
 import {
+  addChild,
   applyObservedChild,
   childAcceptsWork,
   childDurabilityKey,
@@ -21,6 +28,7 @@ import {
   childStateFromRecord,
   childSummary,
   findChildByProvider,
+  childrenBySpawn,
   findChildBySpawn,
   findPendingChildObservation,
   forgetPendingChildObservation,
@@ -30,6 +38,7 @@ import {
   persistedChild,
   rememberPendingChildObservation,
   restoredChildStatus,
+  setChildStatus,
   type ChildIdentity,
   type ChildRuntimeState,
   type ChildRuntimeTarget,
@@ -64,6 +73,7 @@ import {
 import { RuntimeRetirementTimer } from './runtimeRetirementTimer.js';
 import { ChildProviderCleanup } from './childProviderCleanup.js';
 import { childTokenStream } from './childStreamFidelity.js';
+import { isSettledChildStatus, settledAgent, type SettledAgent } from './childWaveWake.js';
 import { dequeueQueuedChild, prepareChildInterrupt } from './childTurnCancellation.js';
 
 type ChildSettingsCommand = Extract<ClientCommand, { type: 'child.updateSettings' }>;
@@ -106,6 +116,8 @@ export class ChildSessions {
       generation: ++this.nextParentGeneration,
       lease,
       children: new Map(),
+      spawnChildren: new Map(),
+      settledSinceWake: new Map(),
       pendingSpawns: new Map(),
       openAttempts: new Map(),
       reservedOpenSlots: new Set(),
@@ -113,7 +125,7 @@ export class ChildSessions {
       closing: false,
     };
     for (const record of this.d.history.childSessions(parentAppSessionId))
-      parent.children.set(record.childSessionId, childStateFromRecord(record));
+      addChild(parent, childStateFromRecord(record));
     this.parents.set(parentAppSessionId, parent);
   }
 
@@ -155,6 +167,24 @@ export class ChildSessions {
     return summaries;
   }
 
+  // The scope a row the provider attributed to a spawn belongs in. Undefined
+  // while no child has been admitted for that spawn yet, and 'ambiguous' when
+  // several share the link: a workflow gives every one of its agents the same
+  // spawn, so picking one would file an agent's step under a sibling and lose
+  // it from both.
+  childScopeForSpawn(
+    parentAppSessionId: string,
+    spawnLink: PersistedChildSpawnLink,
+  ): { childSessionId: string; role: ChildRole } | 'ambiguous' | undefined {
+    const parent = this.parents.get(parentAppSessionId);
+    if (!parent || !this.isCurrentParent(parent)) return undefined;
+    const matches = childrenBySpawn(parent, spawnLink);
+    if (matches.length > 1) return 'ambiguous';
+    if (matches.length === 0) return undefined;
+    const child = matches[0];
+    return { childSessionId: child.identity.childSessionId, role: child.role };
+  }
+
   admitChildObservation(observation: ChildSpawnObservation): ChildIdentity | undefined {
     const parent = this.parents.get(observation.parentAppSessionId);
     if (!parent || !this.isCurrentParent(parent)) return undefined;
@@ -164,7 +194,11 @@ export class ChildSessions {
     if (!observed.providerSessionId) {
       const child = spawnLink ? findChildBySpawn(parent, spawnLink) : undefined;
       if (observed.done && child)
-        this.complete(child, observed.status === 'failed' ? 'failed' : 'completed');
+        this.complete(
+          child,
+          observed.status === 'failed' ? 'failed' : 'completed',
+          observed.activity,
+        );
       else if (spawnLink) rememberPendingChildObservation(parent, pending, observed);
       return undefined;
     }
@@ -180,7 +214,11 @@ export class ChildSessions {
     if (observed.done && providerChild && !stateOnly) {
       if (spawnLink && spawnChild !== providerChild) return undefined;
       forgetPendingChildObservation(parent, pending);
-      this.complete(providerChild, observed.status === 'failed' ? 'failed' : 'completed');
+      this.complete(
+        providerChild,
+        observed.status === 'failed' ? 'failed' : 'completed',
+        observed.activity,
+      );
       return undefined;
     }
 
@@ -200,16 +238,20 @@ export class ChildSessions {
           observed.reasoningEffort = launchSettings.reasoningEffort;
         }
       }
-      if (!observed.modelId) {
+      // State-only feeds cannot use deferred provider-file discovery. Admit them
+      // with parent defaults until explicit launch settings arrive.
+      if (!observed.modelId && !stateOnly) {
         rememberPendingChildObservation(parent, pending, observed);
         return undefined;
       }
     }
 
+    // Exact settings need a model to be exact about.
+    const exactLaunchSettings = needsExactSettings && observed.modelId !== undefined;
     const child =
       spawnChild ??
       providerChild ??
-      this.createChild(parent, observed.role, spawnLink, observed, needsExactSettings);
+      this.createChild(parent, observed.role, spawnLink, observed, exactLaunchSettings);
     forgetPendingChildObservation(parent, pending);
     // Poll-style observations (TaskOutput) carry their own call's tool_use id,
     // not the spawn's; only a link that matched an observed spawn call (pending)
@@ -226,7 +268,8 @@ export class ChildSessions {
       if (child.retiredProviderSessionIds.has(providerSessionId)) return;
       if (child.role !== observed.role && child.turn.autoCompacting)
         this.d.compaction.cancel(this.automaticTarget(parent, child));
-      const { previousPrompt } = applyObservedChild(
+      const { previousPrompt, previousStatus } = applyObservedChild(
+        parent,
         child,
         observed,
         linkForApply,
@@ -234,13 +277,21 @@ export class ChildSessions {
         this.d.now(),
       );
       if (observed.done)
-        this.complete(child, observed.status === 'failed' ? 'failed' : 'completed');
-      else this.commit(child);
+        this.complete(
+          child,
+          observed.status === 'failed' ? 'failed' : 'completed',
+          observed.activity,
+        );
+      else {
+        this.commit(child);
+        this.noteWaveSettlement(child, previousStatus);
+      }
+      // The parent agent is the sender, so the brief reads as a prompt in the
+      // agent's pane rather than as a status line.
       if (child.prompt && child.prompt !== previousPrompt)
-        this.d.timeline.appendStatus(
+        this.d.timeline.appendPrompt(
           child.identity.parentAppSessionId,
-          `Task prompt\n\n${child.prompt}`,
-          undefined,
+          child.prompt,
           child.identity.childSessionId,
           child.role,
         );
@@ -366,50 +417,13 @@ export class ChildSessions {
     await this.drive(parent, child, text);
   }
 
-  async sendNow(identity: ChildIdentity, text: string): Promise<void> {
-    const queuedParent = this.parents.get(identity.parentAppSessionId);
-    const queuedChild = queuedParent?.children.get(identity.childSessionId);
-    if (queuedParent && queuedChild?.queued) {
-      queuedChild.turn.pendingSends.unshift(text);
-      return;
-    }
-    const target = await this.requireRuntime(identity, 'sendNow');
-    if (!target) return;
-    const { parent, child, runtime } = target;
-    runtime.lastUsedAt = this.d.now();
-    if (child.turn.phase === 'idle' && !child.turn.autoCompacting) {
-      await this.drive(parent, child, text);
-      return;
-    }
-    child.turn.pendingSends.unshift(text);
-    if (child.turn.autoCompacting) return;
-    const turnGeneration = child.turn.generation;
-    child.turn.interruptingForSteer = true;
-    this.d.timeline.appendStatus(
-      identity.parentAppSessionId,
-      'Steering child session now...',
-      undefined,
-      identity.childSessionId,
-      child.role,
-    );
-    try {
-      await runtime.session.interrupt();
-    } catch (error) {
-      if (!this.isCurrentTurnGeneration(parent, child, runtime, turnGeneration)) return;
-      child.turn.interruptingForSteer = false;
-      this.emitError(
-        identity,
-        'sendNow',
-        null,
-        'child.send_now_failed',
-        `Could not interrupt child session for steering: ${errMsg(error)}`,
-      );
-    }
-  }
-
   async interrupt(identity: ChildIdentity): Promise<void> {
     const parent = this.parents.get(identity.parentAppSessionId);
-    const prepared = prepareChildInterrupt(parent, parent?.children.get(identity.childSessionId));
+    const prepared = prepareChildInterrupt(
+      parent,
+      parent?.children.get(identity.childSessionId),
+      this.d.now(),
+    );
     if (prepared.kind === 'missing') {
       await this.requireRuntime(identity, 'interrupt');
       return;
@@ -437,7 +451,7 @@ export class ChildSessions {
     if (wasAutoCompacting) this.d.compaction.cancel(this.automaticTarget(liveParent, child));
     if (child.turn.phase === 'streaming') return;
     child.turn.interrupting = false;
-    child.status = 'paused';
+    setChildStatus(child, 'paused', this.d.now());
     this.commit(child);
   }
 
@@ -543,7 +557,7 @@ export class ChildSessions {
       void this.drive(parent, child, next);
       return;
     }
-    child.status = 'paused';
+    setChildStatus(child, 'paused', this.d.now());
     this.commit(child);
     if (parent.runtimeQueue.length > 0) void this.closeRuntime(parent, child, true);
   }
@@ -674,7 +688,7 @@ export class ChildSessions {
     let child = parent.children.get(childSessionId);
     if (!child) {
       child = childStateFromRecord(record);
-      parent.children.set(childSessionId, child);
+      addChild(parent, child);
     }
     if (!this.isCurrentParent(parent)) return;
     if (child.mutationTail) {
@@ -761,7 +775,7 @@ export class ChildSessions {
 
   private async requireRuntime(
     identity: ChildIdentity,
-    operation: 'send' | 'sendNow' | 'interrupt',
+    operation: 'send' | 'interrupt',
   ): Promise<ChildRuntimeTarget | undefined> {
     const parent = this.parents.get(identity.parentAppSessionId);
     const child = parent?.children.get(identity.childSessionId);
@@ -792,8 +806,9 @@ export class ChildSessions {
     if (child.turn.autoCompacting) this.d.compaction.cancel(this.automaticTarget(parent, child));
     const turnGeneration = ++child.turn.generation;
     child.turn.phase = 'streaming';
-    runtime.lastUsedAt = this.d.now();
-    child.status = 'running';
+    const startedTurnAt = this.d.now();
+    runtime.lastUsedAt = startedTurnAt;
+    setChildStatus(child, 'running', startedTurnAt);
     try {
       this.d.eventFlow.beginTurn(parent.parentAppSessionId, runtime.session.sessionId);
       const tokenStream = childTokenStream();
@@ -812,15 +827,7 @@ export class ChildSessions {
       }
     } catch (error) {
       if (!this.isCurrentRuntime(parent, child, runtime)) return;
-      if (child.turn.interruptingForSteer)
-        this.d.timeline.appendStatus(
-          parent.parentAppSessionId,
-          'Child-session turn interrupted for steering.',
-          undefined,
-          child.identity.childSessionId,
-          child.role,
-        );
-      else if (!(child.turn.interrupting && isUserCancellation(error))) {
+      if (!(child.turn.interrupting && isUserCancellation(error))) {
         this.flushStreaming(child.identity);
         this.emitError(child.identity, 'send', null, 'child.send_failed', errMsg(error));
       }
@@ -838,9 +845,17 @@ export class ChildSessions {
     if (!this.isCurrentTurn(parent, child, runtime, turnGeneration)) return;
     // Deliver only this runtime generation's buffered tail before it reads as
     // settled. A retired turn must not settle its replacement's shared source.
-    this.settleStreaming(child.identity);
+    try {
+      await this.d.timeline.settleStreaming(
+        parent.parentAppSessionId,
+        child.identity.childSessionId,
+      );
+    } catch (error) {
+      if (this.isCurrentTurn(parent, child, runtime, turnGeneration))
+        this.reportStreamingPersistenceFailure(child.identity, error);
+    }
+    if (!this.isCurrentTurn(parent, child, runtime, turnGeneration)) return;
     this.d.context.stopPolling(this.contextTarget(parent, child, runtime));
-    child.turn.interruptingForSteer = false;
     child.turn.interrupting = false;
     if (child.closeWhenIdle && !child.turn.autoCompacting) {
       child.turn.phase = 'idle';
@@ -859,7 +874,7 @@ export class ChildSessions {
       void this.drive(parent, child, next);
       return;
     }
-    child.status = 'paused';
+    setChildStatus(child, 'paused', this.d.now());
     this.commit(child);
     if (parent.runtimeQueue.length > 0) await this.closeRuntime(parent, child, true);
   }
@@ -867,14 +882,6 @@ export class ChildSessions {
   private flushStreaming(identity: ChildIdentity): void {
     try {
       this.d.timeline.flushStreamingFor(identity.parentAppSessionId, identity.childSessionId);
-    } catch (error) {
-      this.reportStreamingPersistenceFailure(identity, error);
-    }
-  }
-
-  private settleStreaming(identity: ChildIdentity): void {
-    try {
-      this.d.timeline.settleStreaming(identity.parentAppSessionId, identity.childSessionId);
     } catch (error) {
       this.reportStreamingPersistenceFailure(identity, error);
     }
@@ -943,9 +950,14 @@ export class ChildSessions {
     }
   }
 
-  private complete(child?: ChildSessionState, status: 'completed' | 'failed' = 'completed'): void {
+  private complete(
+    child?: ChildSessionState,
+    status: 'completed' | 'failed' = 'completed',
+    activity = child?.activity,
+  ): void {
     if (!child || child.status === 'completed' || child.status === 'failed') return;
-    child.status = status;
+    const previousStatus = child.status;
+    setChildStatus(child, status, this.d.now());
     // Activity describes a moment that has passed; keeping the last poll's line
     // would leave a finished subagent reading as still working.
     child.activity = undefined;
@@ -954,6 +966,48 @@ export class ChildSessions {
       const pending = this.childrenAwaitingDurability.get(childDurabilityKey(child.identity));
       if (pending) pending.closeAfterPublish = true;
     }
+    this.noteWaveSettlement(child, previousStatus, activity);
+  }
+
+  // Repeated terminal observations must not create another completion wave.
+  private noteWaveSettlement(
+    child: ChildSessionState,
+    previousStatus: ChildStatus,
+    activity: ChildActivity | undefined = child.activity,
+  ): void {
+    if (previousStatus === child.status || !isSettledChildStatus(child.status)) return;
+    const parent = this.parents.get(child.identity.parentAppSessionId);
+    if (!parent || !this.isCurrentParent(parent)) return;
+    parent.settledSinceWake.set(child.identity.childSessionId, activity);
+    this.retryAgentWave(parent.parentAppSessionId);
+  }
+
+  retryAgentWave(parentAppSessionId: string): void {
+    const parent = this.parents.get(parentAppSessionId);
+    if (!parent || !this.isCurrentParent(parent) || parent.settledSinceWake.size === 0) return;
+    for (const candidate of parent.children.values())
+      if (candidate.status === 'pending' || candidate.status === 'running' || candidate.queued)
+        return;
+    const agents: SettledAgent[] = [];
+    let index = 0;
+    for (const candidate of parent.children.values()) {
+      if (parent.settledSinceWake.has(candidate.identity.childSessionId))
+        agents.push(
+          settledAgent(
+            {
+              label: candidate.label,
+              role: candidate.role,
+              status: candidate.status,
+              activity: parent.settledSinceWake.get(candidate.identity.childSessionId),
+            },
+            index,
+          ),
+        );
+      index += 1;
+    }
+    // Compaction can refuse delivery; retain the wave until the lifecycle accepts it.
+    if (agents.length > 0 && this.d.onAgentWaveSettled(parent.parentAppSessionId, agents))
+      parent.settledSinceWake.clear();
   }
 
   private createChild(
@@ -963,16 +1017,20 @@ export class ChildSessions {
     launchSettings: ChildSettings = {},
     exactLaunchSettings = false,
   ): ChildSessionState {
-    const settings = exactLaunchSettings
-      ? launchSettings
-      : {
-          ...this.d.resolveDefaultSettings(
-            parent.lease.summary,
-            parentDroidSession(parent.lease).initResult,
-            role,
-          ),
-          ...launchSettings,
-        };
+    // Model and effort travel together: explicit launch settings when supplied,
+    // otherwise the parent's provider-specific defaults.
+    let settings = launchSettings;
+    if (!exactLaunchSettings && !launchSettings.modelId) {
+      const summary = parent.lease.summary;
+      settings =
+        summary.provider === 'droid'
+          ? this.d.resolveDefaultSettings(
+              summary,
+              parentDroidSession(parent.lease).initResult,
+              role,
+            )
+          : { modelId: summary.modelId, reasoningEffort: summary.reasoningEffort };
+    }
     if (!settings.modelId) throw new Error(`No accepted model is available for ${role}.`);
     const child = newChildState({
       parentAppSessionId: parent.parentAppSessionId,
@@ -983,7 +1041,7 @@ export class ChildSessions {
       reasoningEffort: settings.reasoningEffort,
       updatedAt: this.d.now(),
     });
-    parent.children.set(child.identity.childSessionId, child);
+    addChild(parent, child);
     return child;
   }
 
@@ -1077,7 +1135,6 @@ export class ChildSessions {
     child.turn.phase = 'idle';
     child.turn.autoCompacting = false;
     child.turn.pendingSends = [];
-    child.turn.interruptingForSteer = false;
     child.turn.interrupting = false;
     const cleanupTarget = this.contextTarget(parent, child, runtime);
     void runCleanup(this.d.context.forgetChild.bind(this.d.context, child.identity));

@@ -168,69 +168,6 @@ async function exerciseLateChildUnwind(mode: 'close' | 'shutdown'): Promise<void
   }
 }
 
-async function exerciseRejectedSteerAfterTeardown(mode: 'close' | 'shutdown'): Promise<void> {
-  const h = createSessionManagerTestContext();
-  try {
-    const child = await createMissionWithChild(h);
-    const streamGate = child.deferNextStream();
-    const interruptGate = child.deferNextInterrupt();
-    const running = h.handle({
-      type: 'child.send',
-      parentAppSessionId: 'provider-1',
-      childSessionId: 'child-logical',
-      text: 'running',
-    });
-    await child.waitForPrompts(1);
-
-    const steering = h.handle({
-      type: 'child.sendNow',
-      parentAppSessionId: 'provider-1',
-      childSessionId: 'child-logical',
-      text: 'must not drain',
-    });
-    await h.waitForIdle();
-    assert.equal(
-      h.calls.filter(
-        (call) =>
-          call.target === 'provider' &&
-          call.method === 'interrupt' &&
-          call.args[0] === 'child-backend',
-      ).length,
-      1,
-    );
-
-    if (mode === 'close') await h.handle({ type: 'session.close', appSessionId: 'provider-1' });
-    else await h.shutdown();
-    const eventsAfterTeardown = h.events.length;
-
-    interruptGate.reject(new Error('interrupt completed after teardown'));
-    await steering;
-    streamGate.resolve();
-    await running;
-    await h.waitForIdle();
-
-    assert.deepEqual(child.prompts, ['running']);
-    assert.equal(h.events.length, eventsAfterTeardown);
-    assert.equal(
-      h.events.some(
-        (event) => event.type === 'child.error' && event.code === 'child.send_now_failed',
-      ),
-      false,
-    );
-    assert.equal(
-      h.calls.filter(
-        (call) =>
-          call.target === 'cleanup' &&
-          call.method === 'session.close' &&
-          call.args[0] === 'child-backend',
-      ).length,
-      1,
-    );
-  } finally {
-    await h.dispose().catch(() => undefined);
-  }
-}
-
 test('late active-child unwind cannot restart work after close', { concurrency: false }, () =>
   exerciseLateChildUnwind('close'),
 );
@@ -238,12 +175,6 @@ test('late active-child unwind cannot restart work after close', { concurrency: 
 test('late active-child unwind cannot restart work after shutdown', { concurrency: false }, () =>
   exerciseLateChildUnwind('shutdown'),
 );
-
-test('late rejecting child steer is silent after close', () =>
-  exerciseRejectedSteerAfterTeardown('close'));
-
-test('late rejecting child steer is silent after shutdown', () =>
-  exerciseRejectedSteerAfterTeardown('shutdown'));
 
 test('shutdown marks later parents before blocked earlier cleanup', async () => {
   const h = createSessionManagerTestContext();

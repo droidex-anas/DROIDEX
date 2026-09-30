@@ -15,6 +15,8 @@ export type AutomationDeliveryReceipt =
   // `target` clears when that conversation frees up; `capacity` is global and
   // clears when any scheduled runtime slot is released.
   | { status: 'busy'; retryOn: 'target' | 'capacity' }
+  // The caller's isCurrent turned false before any turn was dispatched.
+  | { status: 'cancelled' }
   | { status: 'unavailable'; error: string };
 
 export type AutomationExecutionMode = 'local' | 'worktree';
@@ -81,10 +83,7 @@ export type AutomationPatch = {
   [Key in keyof AutomationInput]?: AutomationInput[Key] | undefined;
 };
 
-export interface AutomationRunSnapshot extends Omit<
-  NormalizedAutomationInput,
-  'enabled' | 'schedule'
-> {
+interface AutomationRunSnapshot extends Omit<NormalizedAutomationInput, 'enabled' | 'schedule'> {
   id: string;
 }
 
@@ -107,7 +106,7 @@ export interface AutomationRun {
   selectionVerified: boolean | null;
 }
 
-export type AutomationProposalStatus = 'draft' | 'confirmed';
+type AutomationProposalStatus = 'draft' | 'confirmed';
 export type AutomationProposalMissingField = 'modelId' | 'reasoningEffort';
 
 export interface AutomationProposal {
@@ -122,14 +121,14 @@ export interface AutomationProposal {
   confirmedAt: number | null;
 }
 
-export interface AutomationSessionOrigin {
+interface AutomationSessionOrigin {
   automationId: string;
   automationTitle: string;
   runId: string;
   trigger: AutomationTrigger;
 }
 
-export interface AutomationSchedulerStatus {
+interface AutomationSchedulerStatus {
   ready: boolean;
   nextWakeAt: number | null;
   activeRunId: string | null;
@@ -137,6 +136,7 @@ export interface AutomationSchedulerStatus {
 
 export interface AutomationStore {
   version: 1;
+  permissionSemanticsRevision: 1;
   automations: Automation[];
   runs: AutomationRun[];
   proposals: AutomationProposal[];

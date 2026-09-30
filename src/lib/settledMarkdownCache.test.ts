@@ -37,7 +37,6 @@ test('cache keys include identity, content hash, and render flags', () => {
   const flags = settledMarkdownFlags({
     specMode: false,
     allowGeneratedContent: true,
-    autoPlayAppBlocks: false,
     cutOffAppBlocks: false,
   });
   const first = settledMarkdownCacheKey('row-1', 'Hello', flags);
@@ -45,5 +44,5 @@ test('cache keys include identity, content hash, and render flags', () => {
   const otherRow = settledMarkdownCacheKey('row-2', 'Hello', flags);
   assert.notEqual(first, second);
   assert.notEqual(first, otherRow);
-  assert.match(flags, /^cg--$/);
+  assert.match(flags, /^cg-$/);
 });

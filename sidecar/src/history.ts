@@ -2,11 +2,12 @@ import { existsSync, mkdirSync, readFileSync, readdirSync, statSync } from 'node
 import { DatabaseSync } from 'node:sqlite';
 import { homedir } from 'node:os';
 import { basename, join } from 'node:path';
-import { dateMs, numberValue, objectValue, stringValue } from './values.js';
+import { dateMs, normalizeAutonomy, numberValue, objectValue, stringValue } from './values.js';
+import { reasoningValue } from './modelCatalog.js';
 import type {
   SessionRole,
-  Autonomy,
   BridgeFeature,
+  ContextWindowTokens,
   FactoryDefaultSettings,
   SessionHistoryEntry,
   SessionPhase,
@@ -37,10 +38,13 @@ import {
 } from './sessionTranscript.js';
 import { decodeProviderSessionIdList } from './historyProviderIds.js';
 import {
+  addChatPreferenceColumns,
+  addChildSettledAt,
   CHILD_SESSIONS_TABLE_SCHEMA,
-  migrateChildSessionsToV3,
-} from './historyChildSchemaMigration.js';
+  rebuildChildSessionsToV4,
+} from './historySchemaMigrations.js';
 import { DEFAULT_PROVIDER, providerKind } from './providers/providerKind.js';
+import { migrateHistoryPermissions, migrateTranscriptPermissions } from './permissionSemantics.js';
 import { readSessionFileHead, readSessionStart } from './sessionFileHead.js';
 import { droidexHistoryDir, providerSessionsDir } from './droidexPaths.js';
 import { removeSessionNotices, sessionNoticesRevision } from './sessionNotices.js';
@@ -109,8 +113,8 @@ export interface HistoryPage {
   nextCursor?: string;
 }
 
-export type PersistedChildRole = 'worker' | 'validator';
-export type PersistedChildStatus = 'pending' | 'running' | 'paused' | 'completed' | 'failed';
+type PersistedChildRole = 'worker' | 'validator';
+type PersistedChildStatus = 'pending' | 'running' | 'paused' | 'completed' | 'failed';
 
 export interface PersistedChildSpawnLink {
   kind: 'tool-use' | 'spawn';
@@ -133,6 +137,7 @@ export interface PersistedChildSession {
   spawnLink?: PersistedChildSpawnLink;
   transcriptAvailable: boolean;
   startedAt?: number;
+  settledAt?: number;
   updatedAt: number;
 }
 
@@ -157,7 +162,8 @@ const DEFAULT_HISTORY_WINDOW = 400;
 // (1<<27)/256 = 524,288 lines per segment — multi-GB at the multi-KB lines
 // real sessions store, far beyond any observed file.
 const SEQ_SEGMENT_STRIDE = 1 << 27;
-const HISTORY_SCHEMA_VERSION = 3;
+const HISTORY_SCHEMA_VERSION = 5;
+type HistorySchemaVersion = 1 | 2 | 3 | 4 | 5;
 export const SESSION_INDEX_FILENAME = 'session-index.sqlite';
 export const SESSION_SEARCH_INDEX_FILENAME = 'session-search.sqlite';
 function historySchemaRecovery(): string {
@@ -344,15 +350,21 @@ export class HistoryIndex {
         .get() !== undefined;
     if (!nonEmpty) {
       HistoryIndex.createSchema(db);
+      migrateHistoryPermissions(db);
       return;
     }
     if (version === 1 || version === 2) {
       if (!hasCanonicalHistorySchema(db, version)) throw new Error(historySchemaRecovery());
-      migrateChildSessionsToV3(db, version);
+      rebuildChildSessionsToV4(db, version);
+    } else if (version === 3 || version === 4) {
+      if (!hasCanonicalHistorySchema(db, version)) throw new Error(historySchemaRecovery());
+      if (version === 3) addChildSettledAt(db);
     } else if (version !== HISTORY_SCHEMA_VERSION) {
       throw new Error(historySchemaRecovery());
     }
+    if (version < HISTORY_SCHEMA_VERSION) addChatPreferenceColumns(db);
     if (!hasCanonicalHistorySchema(db)) throw new Error(historySchemaRecovery());
+    migrateHistoryPermissions(db);
   }
 
   private static createSchema(db: DatabaseSync): void {
@@ -370,6 +382,8 @@ export class HistoryIndex {
         updated_at INTEGER NOT NULL,
         model_id TEXT,
         reasoning_effort TEXT,
+        fast_mode INTEGER,
+        context_window_tokens INTEGER,
         compaction_model TEXT,
         worker_model_id TEXT,
         worker_reasoning_effort TEXT,
@@ -492,6 +506,8 @@ const CANONICAL_TABLE_COLUMNS = {
     'updated_at',
     'model_id',
     'reasoning_effort',
+    'fast_mode',
+    'context_window_tokens',
     'compaction_model',
     'worker_model_id',
     'worker_reasoning_effort',
@@ -524,6 +540,7 @@ const CANONICAL_TABLE_COLUMNS = {
     'spawn_link_id',
     'transcript_available',
     'started_at',
+    'settled_at',
     'updated_at',
   ],
   events: ['id', 'source_session_id', 'app_session_id', 'kind', 'ts'],
@@ -535,16 +552,29 @@ const CANONICAL_TABLE_COLUMNS = {
   catalog_cache: ['catalog', 'value_json', 'updated_at'],
 } as const;
 
+// A stored index is canonical for the version it was written at, not for the
+// one this build writes: each entry is the child shape that version shipped.
 const CHILD_SESSION_COLUMNS_BY_VERSION = {
   1: CANONICAL_TABLE_COLUMNS.child_sessions.filter(
     (column) =>
-      column !== 'previous_provider_session_ids' && column !== 'group_name' && column !== 'phase',
+      column !== 'previous_provider_session_ids' &&
+      column !== 'group_name' &&
+      column !== 'phase' &&
+      column !== 'settled_at',
   ),
   2: CANONICAL_TABLE_COLUMNS.child_sessions.filter(
-    (column) => column !== 'group_name' && column !== 'phase',
+    (column) => column !== 'group_name' && column !== 'phase' && column !== 'settled_at',
   ),
-  3: CANONICAL_TABLE_COLUMNS.child_sessions,
+  3: CANONICAL_TABLE_COLUMNS.child_sessions.filter((column) => column !== 'settled_at'),
+  4: CANONICAL_TABLE_COLUMNS.child_sessions,
+  5: CANONICAL_TABLE_COLUMNS.child_sessions,
 };
+
+// The two chat preferences arrived in v5; every earlier version stored the same
+// app_sessions table without them.
+const APP_SESSION_COLUMNS_BEFORE_V5 = CANONICAL_TABLE_COLUMNS.app_sessions.filter(
+  (column) => column !== 'fast_mode' && column !== 'context_window_tokens',
+);
 
 const CHILD_SCHEMA_CHECKS = [
   "check (role in ('worker', 'validator'))",
@@ -568,13 +598,11 @@ const CANONICAL_PRIMARY_KEYS = {
 
 function hasCanonicalHistorySchema(
   db: DatabaseSync,
-  version: 1 | 2 | 3 = HISTORY_SCHEMA_VERSION,
+  version: HistorySchemaVersion = HISTORY_SCHEMA_VERSION,
 ): boolean {
-  for (const [table, expected] of Object.entries(CANONICAL_TABLE_COLUMNS)) {
-    const expectedColumns =
-      table === 'child_sessions' ? CHILD_SESSION_COLUMNS_BY_VERSION[version] : expected;
+  for (const table of Object.keys(CANONICAL_TABLE_COLUMNS)) {
     if (
-      !hasExactColumns(db, table, expectedColumns) ||
+      !hasExactColumns(db, table, canonicalColumns(table, version)) ||
       !hasPrimaryKey(
         db,
         table,
@@ -590,7 +618,7 @@ function hasCanonicalHistorySchema(
       ['parent_app_session_id', 'provider_session_id'],
       'provider_session_id is not null',
     ) &&
-    (version === 3 ||
+    (version >= 3 ||
       hasPartialUniqueIndex(
         db,
         'child_sessions_spawn_identity',
@@ -599,6 +627,13 @@ function hasCanonicalHistorySchema(
       )) &&
     childSchemaHasChecks(db, version)
   );
+}
+
+function canonicalColumns(table: string, version: HistorySchemaVersion): readonly string[] {
+  if (table === 'child_sessions') return CHILD_SESSION_COLUMNS_BY_VERSION[version];
+  if (table === 'app_sessions')
+    return version === 5 ? CANONICAL_TABLE_COLUMNS.app_sessions : APP_SESSION_COLUMNS_BEFORE_V5;
+  return CANONICAL_TABLE_COLUMNS[table as keyof typeof CANONICAL_TABLE_COLUMNS];
 }
 
 function hasExactColumns(db: DatabaseSync, table: string, expected: readonly string[]): boolean {
@@ -653,13 +688,13 @@ function hasPartialUniqueIndex(
   );
 }
 
-function childSchemaHasChecks(db: DatabaseSync, version: 1 | 2 | 3): boolean {
+function childSchemaHasChecks(db: DatabaseSync, version: HistorySchemaVersion): boolean {
   const row = db
     .prepare("SELECT sql FROM sqlite_schema WHERE type = 'table' AND name = 'child_sessions'")
     .get() as Record<string, unknown> | undefined;
   const sql = stringValue(row?.sql)?.toLowerCase().replace(/\s+/g, ' ');
   const statusCheck =
-    version === 3
+    version >= 3
       ? "check (status in ('pending', 'running', 'paused', 'completed', 'failed'))"
       : "check (status in ('pending', 'running', 'paused', 'completed'))";
   return Boolean(
@@ -706,6 +741,7 @@ function persistedChildSessionFromRow(row: Record<string, unknown>): PersistedCh
     ...(spawnLink ? { spawnLink } : {}),
     transcriptAvailable: numberValue(row.transcript_available) === 1,
     ...whenNumber(row.started_at, (startedAt) => ({ startedAt })),
+    ...whenNumber(row.settled_at, (settledAt) => ({ settledAt })),
     updatedAt,
   };
 }
@@ -758,7 +794,7 @@ function whenNumber<T extends object>(
 function whenReasoning(
   value: unknown,
 ): { reasoningEffort: ReasoningEffort } | Record<string, never> {
-  const reasoningEffort = mapReasoning(stringValue(value));
+  const reasoningEffort = reasoningValue(value);
   return reasoningEffort === undefined ? {} : { reasoningEffort };
 }
 
@@ -841,13 +877,15 @@ function summaryPatchesFromRows(
       cwd: stringValue(row.cwd),
       workspaceKind: workspaceKind(stringValue(row.workspace_kind)),
       modelId: stringValue(row.model_id),
-      reasoningEffort: mapReasoning(stringValue(row.reasoning_effort)),
+      reasoningEffort: reasoningValue(row.reasoning_effort),
+      fastMode: fastModeValue(row.fast_mode),
+      contextWindowTokens: contextWindowTokensValue(row.context_window_tokens),
       compactionModel: stringValue(row.compaction_model),
       workerModelId: stringValue(row.worker_model_id),
-      workerReasoningEffort: mapReasoning(stringValue(row.worker_reasoning_effort)),
+      workerReasoningEffort: reasoningValue(row.worker_reasoning_effort),
       validatorModelId: stringValue(row.validator_model_id),
-      validatorReasoningEffort: mapReasoning(stringValue(row.validator_reasoning_effort)),
-      autonomy: mapAutonomy(stringValue(row.autonomy)),
+      validatorReasoningEffort: reasoningValue(row.validator_reasoning_effort),
+      autonomy: normalizeAutonomy(row.autonomy),
       tokensIn: numberValue(row.tokens_in),
       tokensOut: numberValue(row.tokens_out),
       contextTokens: numberValue(row.context_tokens),
@@ -1115,6 +1153,22 @@ export function loadSessionTranscriptWindow(
   return { events: picked, olderCursor };
 }
 
+/**
+ * The newest events of the transcript DROIDEX is writing for a session still
+ * open. The history index learns of that file only when the session closes.
+ */
+export function loadOpenTranscriptTail(
+  appSessionId: string,
+  path: string,
+  limit: number,
+): TranscriptEvent[] {
+  if (!existsSync(path)) return [];
+  return transcriptReaderFor(appSessionId, appSessionId, path, 'primary').windowBackward(
+    Math.max(1, limit),
+    0,
+  ).events;
+}
+
 export function readFactoryDefaults(): FactoryDefaults {
   const path = join(homedir(), '.factory', 'settings.json');
   if (!existsSync(path)) return {};
@@ -1123,23 +1177,21 @@ export function readFactoryDefaults(): FactoryDefaults {
   const missionControlSettings = objectValue(settings.missionModelSettings) ?? {};
   return {
     modelId: stringValue(session.model) || stringValue(session.modelId),
-    reasoningEffort: mapReasoning(stringValue(session.reasoningEffort)),
+    reasoningEffort: reasoningValue(session.reasoningEffort),
     compactionModel: stringValue(settings.compactionModel) || stringValue(session.compactionModel),
     compactionTokenLimit: tokenLimitValue(settings.compactionTokenLimit),
     compactionTokenLimitPerModel: tokenLimitRecordValue(settings.compactionTokenLimitPerModel),
-    autonomy: mapAutonomy(stringValue(session.autonomyLevel)),
+    autonomy: normalizeAutonomy(session.autonomyLevel),
     interactionMode: mapInteractionMode(stringValue(session.interactionMode)),
     specModelId: stringValue(session.specModeModel),
-    specReasoningEffort: mapReasoning(stringValue(session.specModeReasoningEffort)),
+    specReasoningEffort: reasoningValue(session.specModeReasoningEffort),
     missionOrchestratorModelId: stringValue(settings.missionOrchestratorModel),
-    missionOrchestratorReasoningEffort: mapReasoning(
-      stringValue(settings.missionOrchestratorReasoningEffort),
-    ),
+    missionOrchestratorReasoningEffort: reasoningValue(settings.missionOrchestratorReasoningEffort),
     workerModelId: stringValue(missionControlSettings.workerModel),
-    workerReasoningEffort: mapReasoning(stringValue(missionControlSettings.workerReasoningEffort)),
+    workerReasoningEffort: reasoningValue(missionControlSettings.workerReasoningEffort),
     validatorModelId: stringValue(missionControlSettings.validationWorkerModel),
-    validatorReasoningEffort: mapReasoning(
-      stringValue(missionControlSettings.validationWorkerReasoningEffort),
+    validatorReasoningEffort: reasoningValue(
+      missionControlSettings.validationWorkerReasoningEffort,
     ),
   };
 }
@@ -1224,15 +1276,15 @@ function readMissionModelSettings(dir: string): FactoryDefaults {
   const settings = readJson<StoredModelSettings>(path);
   return {
     modelId: settings.model || settings.modelId,
-    reasoningEffort: mapReasoning(settings.reasoningEffort),
+    reasoningEffort: reasoningValue(settings.reasoningEffort),
     compactionModel: settings.compactionModel,
     compactionTokenLimit: tokenLimitValue(settings.compactionTokenLimit),
     compactionTokenLimitPerModel: tokenLimitRecordValue(settings.compactionTokenLimitPerModel),
     workerModelId: settings.workerModel,
-    workerReasoningEffort: mapReasoning(settings.workerReasoningEffort),
+    workerReasoningEffort: reasoningValue(settings.workerReasoningEffort),
     validatorModelId: settings.validationWorkerModel,
-    validatorReasoningEffort: mapReasoning(settings.validationWorkerReasoningEffort),
-    autonomy: mapAutonomy(settings.autonomyLevel),
+    validatorReasoningEffort: reasoningValue(settings.validationWorkerReasoningEffort),
+    autonomy: normalizeAutonomy(settings.autonomyLevel),
   };
 }
 
@@ -1585,11 +1637,14 @@ function sessionInteractionMode(start: StoredSessionStart): string | undefined {
 function readSessionModelSettings(
   start: StoredSessionStart | undefined,
   sessionPath: string,
-): FactoryDefaults {
+): FactoryDefaults & Pick<SessionSummary, 'fastMode' | 'contextWindowTokens'> {
   const raw = objectValue(start) ?? {};
   const settings = objectValue(raw.settings) ?? objectValue(raw.sessionSettings) ?? {};
   const sidecarSettings = readAdjacentSessionSettings(sessionPath);
   return {
+    fastMode: fastModeValue(
+      sidecarSettings.fastMode !== undefined ? sidecarSettings.fastMode : raw.fastMode,
+    ),
     // Once the sidecar names the model the head line is history, including when
     // it names none: that is the record of a chat reset to its provider's own
     // default, not an absent setting to fall back from.
@@ -1600,10 +1655,15 @@ function readSessionModelSettings(
         stringValue(settings.model) ||
         stringValue(raw.modelId) ||
         stringValue(raw.model),
-    reasoningEffort: mapReasoning(
+    reasoningEffort: reasoningValue(
       stringValue(sidecarSettings.reasoningEffort) ||
         stringValue(settings.reasoningEffort) ||
         stringValue(raw.reasoningEffort),
+    ),
+    contextWindowTokens: contextWindowTokensValue(
+      sidecarSettings.contextWindowTokens !== undefined
+        ? sidecarSettings.contextWindowTokens
+        : raw.contextWindowTokens,
     ),
     compactionModel:
       stringValue(sidecarSettings.compactionModel) ||
@@ -1617,10 +1677,15 @@ function readSessionModelSettings(
       tokenLimitRecordValue(sidecarSettings.compactionTokenLimitPerModel) ??
       tokenLimitRecordValue(settings.compactionTokenLimitPerModel) ??
       tokenLimitRecordValue(raw.compactionTokenLimitPerModel),
-    autonomy: mapAutonomy(
-      stringValue(sidecarSettings.autonomyLevel) ||
-        stringValue(settings.autonomyLevel) ||
-        stringValue(raw.autonomyLevel),
+    autonomy: migrateTranscriptPermissions(
+      sessionPath,
+      providerKind(start?.provider) ?? DEFAULT_PROVIDER,
+      normalizeAutonomy(
+        stringValue(sidecarSettings.autonomyLevel) ??
+          stringValue(settings.autonomyLevel) ??
+          stringValue(raw.autonomyLevel),
+      ),
+      raw.permissionSemanticsRevision,
     ),
   };
 }
@@ -1660,29 +1725,6 @@ function titleFromProgressType(type?: string): string | undefined {
   return type.replace(/_/g, ' ');
 }
 
-function mapReasoning(value?: string): ReasoningEffort | undefined {
-  if (
-    value === 'off' ||
-    value === 'none' ||
-    value === 'minimal' ||
-    value === 'low' ||
-    value === 'medium' ||
-    value === 'high' ||
-    value === 'xhigh' ||
-    value === 'max' ||
-    value === 'ultra' ||
-    value === 'dynamic'
-  ) {
-    return value;
-  }
-  return undefined;
-}
-
-function mapAutonomy(value?: string): Autonomy | undefined {
-  if (value === 'off' || value === 'low' || value === 'medium' || value === 'high') return value;
-  return undefined;
-}
-
 function contextAccuracy(value: unknown): SessionSummary['contextAccuracy'] | undefined {
   if (value === 'exact' || value === 'estimated') return value;
   return undefined;
@@ -1718,4 +1760,16 @@ function roleFromSessionStart(start: StoredSessionStart): SessionRole {
 
 function lastPathSegment(path: string): string {
   return path.split('/').filter(Boolean).pop() ?? '';
+}
+
+function contextWindowTokensValue(value: unknown): ContextWindowTokens | undefined {
+  if (value === 200000 || value === 1000000) return value;
+  return undefined;
+}
+
+// Stored as 0 or 1 in SQLite and as a boolean in a transcript head line.
+function fastModeValue(value: unknown): boolean | undefined {
+  if (typeof value === 'boolean') return value;
+  if (value === 0 || value === 1) return value === 1;
+  return undefined;
 }

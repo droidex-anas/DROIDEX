@@ -2,7 +2,7 @@ import type { FactorySession } from './DroidRuntime.js';
 import type { PersistedChildSession } from './history.js';
 import type { ServerEvent } from './protocol.js';
 import { droidInteractionHandlers } from './providers/droid/droidInteractions.js';
-import { errMsg } from './sessionHelpers.js';
+import { errMsg } from './errors.js';
 import type { ChildAutomaticCompactionTarget } from './SessionCompaction.js';
 import type { ChildOperationTarget } from './SessionContext.js';
 import {
@@ -11,6 +11,7 @@ import {
   childIdentity,
   childSettingsFromInit,
   parentDroidSession,
+  setChildStatus,
   type ChildIdentity,
   type ChildOpenAttempt,
   type ChildRuntimeState,
@@ -18,7 +19,6 @@ import {
   type ParentChildSessions,
 } from './ChildSessionState.js';
 import type { ChildOperation, ChildSessionsDependencies } from './ChildSessionsTypes.js';
-import { takeAdmittedSend } from './childTurnCancellation.js';
 
 export const CHILD_OPEN_CANCELLED = Symbol('child-open-cancelled');
 const ignoreError = (): undefined => undefined;
@@ -125,7 +125,7 @@ export async function cancelOpenAttempts(parent: ParentChildSessions): Promise<v
   await Promise.all(closes);
 }
 
-export function closeProvisional(attempt: ChildOpenAttempt): Promise<void> {
+function closeProvisional(attempt: ChildOpenAttempt): Promise<void> {
   if (!attempt.provisionalSession) return Promise.resolve();
   attempt.provisionalClose ??= attempt.provisionalSession.close().catch(ignoreError);
   return attempt.provisionalClose;
@@ -326,7 +326,7 @@ async function bindLoadedChildRuntime(input: {
   // is still driving (a background Task) keeps working while we mirror it,
   // so observing it must not report it as idle; only a turn we drive, an
   // interrupt, or a settlement may settle its status.
-  if (child.status !== 'running') child.status = 'paused';
+  if (child.status !== 'running') setChildStatus(child, 'paused', host.d.now());
   child.transcriptAvailable = true;
   attachOpenedChildNotifications({ parent, child, runtime, loaded, identity, host });
   host.persist(child);
@@ -335,7 +335,7 @@ async function bindLoadedChildRuntime(input: {
   // a provider-reported model window before the first turn settles.
   void host.d.context.refresh(host.contextTarget(parent, child, runtime));
   if (requestId) host.emitReady(runtime, child, requestId);
-  const queuedSend = takeAdmittedSend(child);
+  const queuedSend = child.turn.pendingSends.shift();
   if (queuedSend !== undefined) void host.drive(parent, child, queuedSend);
 }
 

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { VoiceNarration } from '../../types/bridge';
 import { useSessionLive } from '../../hooks/useSessionLive';
 import { useVoiceSession, type VoiceSession } from './useVoiceSession';
@@ -117,18 +117,25 @@ export function useVoice(
     session.refreshVoices();
   }, [appSessionId, placement, session, status]);
 
-  return {
-    // Reading another chat takes the conversation down to the bar whether it
-    // was docked or full: a surface over someone else's chat would cover the
-    // composer where that chat's own cards and prompts are.
-    view: placement !== 'off' && !onScreen ? 'mini' : placement,
-    session,
-    working,
-    activity: { ...session, working },
-    open,
-    minimize,
-    expand,
-    close,
-    restart,
-  };
+  // Reading another chat takes the conversation down to the bar whether it was
+  // docked or full: a surface over someone else's chat would cover the
+  // composer where that chat's own cards and prompts are.
+  const view = placement !== 'off' && !onScreen ? 'mini' : placement;
+
+  // Every surface reads this through context, so it is the same object until
+  // something about the call changes.
+  return useMemo(
+    () => ({
+      view,
+      session,
+      working,
+      activity: { ...session, working },
+      open,
+      minimize,
+      expand,
+      close,
+      restart,
+    }),
+    [close, expand, minimize, open, restart, session, view, working],
+  );
 }

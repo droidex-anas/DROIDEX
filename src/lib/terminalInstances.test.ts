@@ -1,12 +1,11 @@
-import assert from 'node:assert/strict';
-import test from 'node:test';
 import {
-  acquireTerminalInstance,
-  peekTerminalInstance,
+  terminalInstances,
   releaseTerminalInstance,
   releaseTerminalInstancesExcept,
-  type TerminalInstanceDeps,
-} from './terminalInstances';
+} from './terminalInstanceRegistry';
+import assert from 'node:assert/strict';
+import test from 'node:test';
+import { acquireTerminalInstance, type TerminalInstanceDeps } from './terminalInstances';
 
 class FakeTerminal {
   writes: string[] = [];
@@ -147,8 +146,8 @@ test('releaseTerminalInstancesExcept drops tabs that disappeared', async () => {
   acquireTerminalInstance('gone', { appSessionId: 's2', cwd: '/w' }, d.base);
   await new Promise((r) => setTimeout(r, 0));
   await releaseTerminalInstancesExcept(new Set(['keep']));
-  assert.ok(peekTerminalInstance('keep'));
-  assert.equal(peekTerminalInstance('gone'), undefined);
+  assert.ok(terminalInstances.get('keep'));
+  assert.equal(terminalInstances.get('gone'), undefined);
   await releaseTerminalInstance('keep');
 });
 
@@ -217,7 +216,7 @@ test('release during the initial connect kills the PTY once and leaves no subscr
   assert.equal(d.terminal.disposed, true);
   assert.deepEqual(d.killed, ['pty-1']);
   assert.equal(subscribeCount - channelCloseCount, 0);
-  assert.equal(peekTerminalInstance('tab-race-release'), undefined);
+  assert.equal(terminalInstances.get('tab-race-release'), undefined);
 });
 
 test('restart during the initial connect ends with exactly one live subscription', async () => {

@@ -5,21 +5,17 @@ import {
   observeTranscriptMutationChanges,
   type TranscriptMutation,
 } from '../lib/transcriptMutation';
-import type { AppState } from './useStore';
+import type { Action, AppState } from './useStore';
+import { reduceSessionChildren } from './storeSessionChildren';
 
-interface TranscriptAction {
-  type: 'SESSION_TRANSCRIPT';
-  event: TranscriptEvent;
-}
-
-export function reduceStoreActionBatch<Action extends { type: string }>(
+export function reduceStoreActionBatch(
   state: AppState,
   actions: readonly Action[],
   reduceAction: (state: AppState, action: Action) => AppState,
-  syncBrowserState: (state: AppState) => AppState,
 ): AppState {
   let next = state;
   let pendingTranscriptEvents: TranscriptEvent[] = [];
+  let pendingChildren: Extract<Action, { type: 'SESSION_CHILD' }>[] = [];
   const mutationRecords = new Map<string, TranscriptMutation[]>();
 
   const apply = (updated: AppState): void => {
@@ -33,19 +29,32 @@ export function reduceStoreActionBatch<Action extends { type: string }>(
 
   const flushTranscriptEvents = (): void => {
     if (pendingTranscriptEvents.length === 0) return;
-    apply(syncBrowserState(appendTranscriptEvents(next, pendingTranscriptEvents)));
+    apply(appendTranscriptEvents(next, pendingTranscriptEvents));
     pendingTranscriptEvents = [];
   };
 
+  const flushChildren = (): void => {
+    if (pendingChildren.length === 0) return;
+    apply(reduceSessionChildren(next, pendingChildren));
+    pendingChildren = [];
+  };
+
   for (const action of actions) {
-    if (isTranscriptAction(action)) {
+    if (action.type === 'SESSION_TRANSCRIPT') {
+      flushChildren();
       pendingTranscriptEvents.push(action.event);
       continue;
     }
     flushTranscriptEvents();
+    if (action.type === 'SESSION_CHILD') {
+      pendingChildren.push(action);
+      continue;
+    }
+    flushChildren();
     apply(reduceAction(next, action));
   }
   flushTranscriptEvents();
+  flushChildren();
 
   const transcriptMutations = aggregateTranscriptMutationBatch(
     state.transcriptMutations,
@@ -53,10 +62,4 @@ export function reduceStoreActionBatch<Action extends { type: string }>(
     mutationRecords,
   );
   return transcriptMutations === next.transcriptMutations ? next : { ...next, transcriptMutations };
-}
-
-function isTranscriptAction<Action extends { type: string }>(
-  action: Action,
-): action is Action & TranscriptAction {
-  return action.type === 'SESSION_TRANSCRIPT';
 }

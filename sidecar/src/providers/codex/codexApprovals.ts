@@ -18,11 +18,10 @@ export type SandboxPolicy =
       excludeSlashTmp: boolean;
     };
 
-// 'off' asks before anything it does not already trust; 'low' and 'medium' ask
-// before acting outside the workspace; 'high' runs unattended.
+// Low keeps command approvals while the adapter accepts eligible workspace edits.
 const AUTONOMY: Record<Autonomy, { approvalPolicy: AskForApproval; sandbox: SandboxMode }> = {
   off: { approvalPolicy: 'untrusted', sandbox: 'read-only' },
-  low: { approvalPolicy: 'on-request', sandbox: 'workspace-write' },
+  low: { approvalPolicy: 'untrusted', sandbox: 'workspace-write' },
   medium: { approvalPolicy: 'on-request', sandbox: 'workspace-write' },
   high: { approvalPolicy: 'never', sandbox: 'danger-full-access' },
 };
@@ -54,31 +53,35 @@ export function codexSandboxPolicy(sandbox: SandboxMode): SandboxPolicy {
 export type ApprovalDecision = 'accept' | 'acceptForSession' | 'decline' | 'cancel';
 
 export interface CodexApproval {
-  kind: Extract<PermissionKind, 'exec' | 'edit'>;
+  kind: Extract<PermissionKind, 'exec' | 'edit' | 'create'>;
   title: string;
   detail: string;
+  diff?: string;
   // The key an always-allow grant is stored under; absent leaves the request
   // ineligible for one.
   signature?: string;
   raw: unknown;
 }
 
-export interface CommandApproval {
+interface CommandApproval {
   itemId: string;
   command?: string | null;
   reason?: string | null;
   commandActions?: { command: string }[] | null;
 }
 
-export interface FileChangeApproval {
+interface FileChangeApproval {
   itemId: string;
+  threadId: string;
+  turnId: string;
+  grantRoot?: string | null;
   reason?: string | null;
 }
 
 // What the user is being asked to allow. A command request describes itself; a
 // file-change request carries no description at all, so the open item the event
 // mapper is tracking is the only thing that can name the files.
-export function commandApproval(params: CommandApproval): CodexApproval {
+function commandApproval(params: CommandApproval): CodexApproval {
   const actions = params.commandActions ?? [];
   const command = params.command ?? actions.map((action) => action.command).join('; ');
   // The grant key is the exact action list, serialized: two different lists can
@@ -86,27 +89,37 @@ export function commandApproval(params: CommandApproval): CodexApproval {
   const grant = params.command ?? (actions.length > 0 ? JSON.stringify(actions) : '');
   return {
     kind: 'exec',
-    title: 'Bash',
-    detail: params.reason ? `${command}\n\n${params.reason}` : command,
+    title: params.reason ?? '',
+    detail: command,
     ...(grant ? { signature: `exec::${grant}` } : {}),
     raw: params,
   };
 }
 
-export function fileChangeApproval(
+// What a pending file change is about, read off the item Codex is tracking.
+export interface FileChangeDetail {
+  detail: string;
+  diff?: string;
+  // Every file in the change is a new one.
+  creates?: boolean;
+}
+
+function fileChangeApproval(
   params: FileChangeApproval,
-  files: string | undefined,
+  change: FileChangeDetail | undefined,
 ): CodexApproval {
+  const files = change?.detail;
   return {
-    kind: 'edit',
-    title: 'Edit',
-    detail: params.reason ? `${files ?? ''}\n\n${params.reason}` : (files ?? 'File changes'),
+    kind: change?.creates ? 'create' : 'edit',
+    title: params.reason ?? '',
+    detail: files ?? '',
+    ...(change?.diff !== undefined ? { diff: change.diff } : {}),
     ...(files ? { signature: `edit::${files}` } : {}),
     raw: params,
   };
 }
 
-export async function decideApproval(
+async function decideApproval(
   appSessionId: string,
   interactions: ProviderInteractions,
   approval: CodexApproval,
@@ -118,6 +131,8 @@ export async function decideApproval(
       kind: approval.kind,
       title: approval.title,
       detail: approval.detail,
+      canAlwaysAllow: Boolean(approval.signature),
+      ...(approval.diff !== undefined ? { diff: approval.diff } : {}),
       raw: approval.raw,
     },
     confirmationType: approval.kind,
@@ -132,15 +147,17 @@ function approvalDecision(outcome: PermissionOutcome): ApprovalDecision {
   return outcome.startsWith('proceed') ? 'accept' : 'decline';
 }
 
-export interface RequestedQuestion {
+interface RequestedQuestion {
   id: string;
   question: string;
-  options: { label: string }[] | null;
+  header?: string;
+  multiSelect?: boolean;
+  options: { label: string; description?: string }[] | null;
 }
 
-// Codex keys answers by question id and accepts several per question; DROIDEX
-// asks one answer per question, in order. An empty map is the cancellation.
-export async function answerQuestions(
+// Codex keys answers by question id and preserves each selection.
+// An empty map is the cancellation.
+async function answerQuestions(
   interactions: ProviderInteractions,
   questions: RequestedQuestion[],
 ): Promise<Record<string, { answers: string[] }>> {
@@ -148,14 +165,16 @@ export async function answerQuestions(
     questions.map((asked, index) => ({
       index,
       question: asked.question,
-      options: (asked.options ?? []).map((option) => option.label),
+      options: asked.options ?? [],
+      ...(asked.header !== undefined ? { header: asked.header } : {}),
+      ...(asked.multiSelect !== undefined ? { multiSelect: asked.multiSelect } : {}),
     })),
   );
   if (cancelled) return {};
   const byId: Record<string, { answers: string[] }> = {};
   for (const answer of answers) {
     const id = questions[answer.index]?.id;
-    if (id) byId[id] = { answers: [answer.answer] };
+    if (id) byId[id] = { answers: [...answer.selected, ...(answer.custom ? [answer.custom] : [])] };
   }
   return byId;
 }
@@ -172,17 +191,18 @@ export class OpenPrompts {
     private readonly interactions: ProviderInteractions,
   ) {}
 
-  // A file-change request carries no description of its own, so `fileDetail`
-  // names the files from the item the event mapper is tracking.
+  // File-change requests take their paths and diff from the tracked item.
   register(
     client: Pick<AppServerClient, 'onRequest'>,
-    fileDetail: (itemId: string) => string | undefined,
+    fileDetail: (itemId: string) => FileChangeDetail | undefined,
+    canApproveEdits: (request: FileChangeApproval) => boolean,
   ): void {
     client.onRequest('item/commandExecution/requestApproval', (params) =>
       this.decide(commandApproval(params as CommandApproval)),
     );
-    client.onRequest('item/fileChange/requestApproval', (params) => {
+    client.onRequest('item/fileChange/requestApproval', async (params) => {
       const request = params as FileChangeApproval;
+      if (request.grantRoot == null && canApproveEdits(request)) return { decision: 'accept' };
       return this.decide(fileChangeApproval(request, fileDetail(request.itemId)));
     });
     client.onRequest('item/tool/requestUserInput', async (params) => {
@@ -203,7 +223,7 @@ export class OpenPrompts {
     };
   }
 
-  private async ask<T>(request: () => Promise<T>): Promise<T> {
+  async ask<T>(request: () => Promise<T>): Promise<T> {
     this.open += 1;
     try {
       return await request();

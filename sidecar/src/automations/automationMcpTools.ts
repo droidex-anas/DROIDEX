@@ -1,23 +1,10 @@
 import { automationFilesSchema, automationTargetSchema } from './automationSchemas.js';
 import { tool } from '@factory/droid-sdk';
 import { z } from 'zod';
-import { jsonResult, safeTool } from '../mcpToolUtils.js';
+import { autonomySchema, jsonResult, reasoningSchema, safeTool } from '../mcpToolUtils.js';
 import { getAutomationManager } from './AutomationManager.js';
 import type { AutomationInput, AutomationPatch } from './types.js';
 import { deriveAutomationTitle } from './title.js';
-
-const reasoningSchema = z.enum([
-  'off',
-  'none',
-  'minimal',
-  'low',
-  'medium',
-  'high',
-  'xhigh',
-  'max',
-  'ultra',
-  'dynamic',
-]);
 
 const scheduleSchema = z.discriminatedUnion('kind', [
   z.object({
@@ -107,8 +94,7 @@ const sharedInput = {
     .nullable()
     .optional()
     .describe('Omit to inherit the reasoning level used by this chat.'),
-  autonomy: z
-    .enum(['off', 'low', 'medium', 'high'])
+  autonomy: autonomySchema
     .optional()
     .describe("Omit to inherit this chat's autonomy. Defaults to low for unattended runs."),
 };

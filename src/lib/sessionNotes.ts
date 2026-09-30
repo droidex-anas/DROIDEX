@@ -71,26 +71,6 @@ export function saveSessionNotes(map: SessionNotesMap): void {
   }
 }
 
-const NOTES_INTRO_STORAGE_KEY = 'droid-notes-intro-seen';
-
-// One-time "what's new" spotlight for the Notes panel, per profile.
-export function loadNotesIntroSeen(): boolean {
-  try {
-    return getLocalStorage()?.getItem(NOTES_INTRO_STORAGE_KEY) === '1';
-  } catch {
-    // Storage unavailable: stay quiet rather than nag on every mount.
-    return true;
-  }
-}
-
-export function dismissNotesIntro(): void {
-  try {
-    getLocalStorage()?.setItem(NOTES_INTRO_STORAGE_KEY, '1');
-  } catch {
-    /* ignore */
-  }
-}
-
 // Newest first: the latest saved note sits directly under the compose box.
 // Returns null for blank input so the reducer can no-op.
 export function addSessionNote(

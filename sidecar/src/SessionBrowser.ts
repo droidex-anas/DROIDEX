@@ -4,7 +4,7 @@ import type {
   ClientCommand,
   ServerEvent,
 } from './protocol.js';
-import { errMsg } from './sessionHelpers.js';
+import { errMsg } from './errors.js';
 import { boundedInt } from './values.js';
 import { NativeBrowserRuntime } from './browser/NativeBrowserRuntime.js';
 import type { BrowserSessionManager } from './browser/BrowserSessionManager.js';

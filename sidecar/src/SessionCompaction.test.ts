@@ -38,7 +38,7 @@ function createHarness(): Harness {
   const registry: SessionCompactionDependencies['registry'] = {
     getLive: () => undefined,
     resolveSummary: () => undefined,
-    replaceProvider: () => undefined,
+    replaceProvider: async () => undefined,
     updateSummary: (appSessionId, patch) => {
       patches.push({ appSessionId, patch });
       return undefined;
@@ -65,6 +65,7 @@ function createHarness(): Harness {
       requestApproval: () => new Promise<PermissionOutcome>(() => undefined),
       requestQuestion: () => new Promise<ProviderQuestionAnswers>(() => undefined),
       cancelPending: () => undefined,
+      isActive: () => true,
     }),
     emitError: () => undefined,
     isShutdownStarted: () => false,

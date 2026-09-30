@@ -23,7 +23,7 @@ export interface SessionSnapshot {
   transcript?: { appSessionId: string; events: TranscriptEvent[] };
 }
 
-export interface SnapshotInput {
+interface SnapshotInput {
   sessions: Record<string, SessionSummary>;
   sessionOrder: string[];
   activeTranscript?: { appSessionId: string; events: TranscriptEvent[] };
@@ -147,11 +147,18 @@ function fitByteBudget<T>(items: T[], maxBytes: number, keep: 'start' | 'end'): 
 }
 
 function boundTranscriptEvents(events: TranscriptEvent[]): TranscriptEvent[] {
-  return fitByteBudget(
-    events.slice(-MAX_SNAPSHOT_TRANSCRIPT_EVENTS),
-    MAX_SNAPSHOT_TRANSCRIPT_BYTES,
-    'end',
-  );
+  const tail: TranscriptEvent[] = [];
+  for (
+    let index = events.length - 1;
+    index >= 0 && tail.length < MAX_SNAPSHOT_TRANSCRIPT_EVENTS;
+    index -= 1
+  ) {
+    const event = events[index];
+    // Transient progress must not reappear after a reload.
+    if (!event.transient) tail.push(event);
+  }
+  tail.reverse();
+  return fitByteBudget(tail, MAX_SNAPSHOT_TRANSCRIPT_BYTES, 'end');
 }
 
 export function loadSessionSnapshot(): SessionSnapshot | undefined {

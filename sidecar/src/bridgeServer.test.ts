@@ -5,11 +5,13 @@ import test from 'node:test';
 
 import { WebSocket } from 'ws';
 
+import { assertValidInteractionResponse } from './interactionResponses.js';
 import { startBridgeServer } from './bridgeServer.js';
 import { droidexUserDataDir } from './droidexPaths.js';
 import {
   BRIDGE_PROTOCOL_VERSION,
   type BridgeRuntimeSnapshot,
+  type ClientCommand,
   type ServerEvent,
   type ServerEventBatch,
 } from './protocol.js';
@@ -25,7 +27,7 @@ interface Harness {
 
 async function withServer(
   handler: (harness: Harness) => Promise<void>,
-  onCommand: () => Promise<void> = async () => undefined,
+  onCommand: (command: ClientCommand) => Promise<void> = async () => undefined,
   getSnapshot?: () => Promise<BridgeRuntimeSnapshot> | BridgeRuntimeSnapshot,
 ): Promise<void> {
   const token = 'test-token';
@@ -50,6 +52,107 @@ async function withServer(
     await server.close();
   }
 }
+
+test('voice ownership moves only on a successful start, and only the owner can stop', async () => {
+  const commands: string[] = [];
+  await withServer(
+    async (harness) => {
+      const url = (pageId: string) =>
+        `ws://127.0.0.1:${String(harness.port)}?token=${harness.token}&bridgeProtocol=${String(BRIDGE_PROTOCOL_VERSION)}&pageId=${pageId}`;
+      const first = new WebSocket(url('page-one'));
+      const second = new WebSocket(url('page-two'));
+      await Promise.all([socketOpen(first), socketOpen(second)]);
+      const send = async (socket: WebSocket, command: object, expected: string) => {
+        socket.send(JSON.stringify(command));
+        await waitFor(() => commands.includes(expected));
+      };
+      try {
+        await send(
+          first,
+          { type: 'voice.start', appSessionId: 'chat-one', attempt: 'first' },
+          'start:first',
+        );
+        // A start that fails leaves the first page the owner, so its stop is refused.
+        await send(
+          second,
+          { type: 'voice.start', appSessionId: 'chat-one', attempt: 'failed' },
+          'start:failed',
+        );
+        second.send(JSON.stringify({ type: 'voice.stop', appSessionId: 'chat-one' }));
+        await send(
+          second,
+          { type: 'voice.start', appSessionId: 'chat-one', attempt: 'second' },
+          'start:second',
+        );
+        // The second page owns the call now: the first page's late stop is refused.
+        first.send(JSON.stringify({ type: 'voice.stop', appSessionId: 'chat-one' }));
+        await send(second, { type: 'voice.stop', appSessionId: 'chat-one' }, 'stop');
+        assert.deepEqual(commands, ['start:first', 'start:failed', 'start:second', 'stop']);
+      } finally {
+        await Promise.all([closeSocket(first), closeSocket(second)]);
+      }
+    },
+    async (command) => {
+      if (command.type === 'voice.start') {
+        commands.push(`start:${command.attempt}`);
+        if (command.attempt === 'failed') throw new Error('failed start');
+      }
+      if (command.type === 'voice.stop') commands.push('stop');
+    },
+  );
+});
+
+test('orphan voice cleanup publishes a closed state', async (t) => {
+  const stops: string[] = [];
+  let started = false;
+  await withServer(
+    async (harness) => {
+      const url = (pageId: string) =>
+        `ws://127.0.0.1:${String(harness.port)}?token=${harness.token}&bridgeProtocol=${String(BRIDGE_PROTOCOL_VERSION)}&pageId=${pageId}`;
+      const owner = new WebSocket(url('page-one'));
+      const observer = new WebSocket(url('page-two'));
+      await Promise.all([socketOpen(owner), socketOpen(observer)]);
+      try {
+        owner.send(
+          JSON.stringify({ type: 'voice.start', appSessionId: 'chat-one', attempt: 'first' }),
+        );
+        await waitFor(() => started);
+        t.mock.timers.enable({ apis: ['setTimeout'] });
+        await closeSocket(owner);
+        const closed = new Promise<ServerEvent>((resolve) => {
+          observer.on('message', (raw) => {
+            const batch = JSON.parse(String(raw)) as ServerEventBatch;
+            const event = batch.events.find((entry) => entry.event.type === 'voice.state')?.event;
+            if (event) resolve(event);
+          });
+        });
+        // The server sees the close, stops the call and broadcasts over real
+        // I/O, so fake time moves in small steps, past the reclaim window,
+        // until the event arrives.
+        let event: ServerEvent | undefined;
+        void closed.then((value) => {
+          event = value;
+        });
+        for (let step = 0; step < 400 && !event; step += 1) {
+          await new Promise((resolve) => setImmediate(resolve));
+          t.mock.timers.tick(100);
+        }
+        assert.deepEqual(event, {
+          type: 'voice.state',
+          appSessionId: 'chat-one',
+          status: 'closed',
+        });
+        assert.deepEqual(stops, ['chat-one']);
+      } finally {
+        await closeSocket(observer);
+      }
+    },
+    async (command) => {
+      if (command.type === 'voice.start') started = true;
+      if (command.type === 'voice.stop') stops.push(command.appSessionId);
+    },
+  );
+});
 
 test('broadcast after close is dropped instead of throwing', async () => {
   await withServer(async (harness) => {
@@ -373,6 +476,13 @@ test('perf metrics can arm event-loop sampling on demand without changing /healt
   });
 });
 
+function socketOpen(socket: WebSocket): Promise<void> {
+  return new Promise((resolve, reject) => {
+    socket.once('open', () => resolve());
+    socket.once('error', reject);
+  });
+}
+
 function closeSocket(socket: WebSocket, timeoutMs = 2_000): Promise<void> {
   return new Promise((resolve, reject) => {
     const timer = setTimeout(() => reject(new Error('socket close timed out')), timeoutMs);
@@ -412,3 +522,75 @@ function waitFor(predicate: () => boolean, timeoutMs = 2_000): Promise<void> {
     }, 10);
   });
 }
+
+test('interaction responses require correlation and structured answers at the command boundary', () => {
+  const approval = {
+    type: 'approval.respond',
+    appSessionId: 'app',
+    requestId: 'approval',
+    outcome: 'refuse',
+  };
+  assert.doesNotThrow(() => assertValidInteractionResponse(approval));
+  assert.throws(() => assertValidInteractionResponse({ ...approval, requestId: '' }), /requestId/);
+  assert.throws(
+    () => assertValidInteractionResponse({ ...approval, outcome: 'unknown' }),
+    /Unsupported permission outcome/,
+  );
+  const question = {
+    type: 'question.respond',
+    appSessionId: 'app',
+    requestId: 'question',
+    cancelled: false,
+    answers: [{ index: 0, question: 'Choose', selected: ['A', 'B'], custom: 'C' }],
+  };
+  assert.doesNotThrow(() => assertValidInteractionResponse(question));
+  assert.throws(
+    () =>
+      assertValidInteractionResponse({
+        ...question,
+        answers: [{ index: 0, question: 'Choose', answer: 'A' }],
+      }),
+    /structured answers/,
+  );
+  assert.throws(
+    () =>
+      assertValidInteractionResponse({
+        ...question,
+        answers: [{ ...question.answers[0], selected: [42] }],
+      }),
+    /structured answers/,
+  );
+});
+
+test('fast mode rejects non-booleans before command dispatch', async () => {
+  let commands = 0;
+  await withServer(
+    async (harness) => {
+      const socket = new WebSocket(
+        `ws://127.0.0.1:${String(harness.port)}?token=${harness.token}&bridgeProtocol=${String(BRIDGE_PROTOCOL_VERSION)}`,
+      );
+      await new Promise<void>((resolve) => socket.once('open', resolve));
+      try {
+        for (const type of ['session.create', 'session.updateSettings']) {
+          for (const fastMode of [null, 'true', 1, {}]) {
+            const received = new Promise<string>((resolve) =>
+              socket.once('message', (raw) => resolve(String(raw))),
+            );
+            socket.send(JSON.stringify({ type, fastMode }));
+            assert.match(await received, /fastMode must be a boolean/);
+          }
+        }
+        assert.equal(commands, 0);
+        socket.send(
+          JSON.stringify({ type: 'session.updateSettings', appSessionId: 'app', fastMode: false }),
+        );
+        await waitFor(() => commands === 1);
+      } finally {
+        await closeSocket(socket);
+      }
+    },
+    async () => {
+      commands += 1;
+    },
+  );
+});

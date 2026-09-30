@@ -11,7 +11,8 @@ import type { SDKMessage, SDKRateLimitInfo } from '@anthropic-ai/claude-agent-sd
 
 import type { NormalizedEvent } from '../../normalize.js';
 import type { TranscriptEvent } from '../../protocol.js';
-import { ClaudeSubagents } from './claudeSubagents.js';
+import { slimChildSessionArgs } from '../../subagentSignals.js';
+import { ClaudeSubagents, isSpawnToolName } from './claudeSubagents.js';
 import { resetAtMillis, UsageLimitError, usageLimitDetails } from '../usageLimit.js';
 
 const TOOL_BLOCK_TYPES = new Set(['tool_use', 'server_tool_use', 'mcp_tool_use']);
@@ -60,6 +61,7 @@ export class ClaudeEventMapper {
   private readonly subagents = new ClaudeSubagents();
   // Unpinned sessions learn their model from the main conversation.
   private observedModelId?: string;
+  private reportedFastModeUnavailable = false;
   // The uuid of the prompt that opened the turn: where a fork of it cuts.
   private turnId?: string;
 
@@ -70,6 +72,7 @@ export class ClaudeEventMapper {
 
   setModel(modelId: string | undefined): void {
     this.modelId = modelId;
+    this.observedModelId = undefined;
   }
 
   // Resets state scoped to the turn that is starting, not the long-lived
@@ -79,7 +82,7 @@ export class ClaudeEventMapper {
     this.subagents.beginTurn();
   }
 
-  map(message: SDKMessage): NormalizedEvent[] {
+  map(message: SDKMessage, fastMode = false): NormalizedEvent[] {
     switch (message.type) {
       case 'stream_event':
         return this.streamEvent(message.event, message.parent_tool_use_id);
@@ -88,7 +91,7 @@ export class ClaudeEventMapper {
       case 'user':
         return this.toolResults(message);
       case 'result':
-        return this.result(message);
+        return [...this.fastModeNotice(message, fastMode), ...this.result(message)];
       case 'rate_limit_event':
         return this.rateLimit(message.rate_limit_info);
       case 'system':
@@ -99,7 +102,12 @@ export class ClaudeEventMapper {
       case 'tool_use_summary':
       case 'auth_status':
       case 'prompt_suggestion':
+        return [];
+      // /clear starts a fresh conversation, and the CLI's own usage counting
+      // starts again with it, so the session's totals follow.
       case 'conversation_reset':
+        this.totals.tokensIn = 0;
+        this.totals.tokensOut = 0;
         return [];
       default:
         // Fails the build when the SDK adds a top-level message type.
@@ -111,7 +119,7 @@ export class ClaudeEventMapper {
   private system(message: Extract<SDKMessage, { type: 'system' }>): NormalizedEvent[] {
     // A local slash command answers through this frame instead of the model loop.
     if (message.subtype === 'local_command_output')
-      return message.content ? [{ transcript: this.answerText(message.content) }] : [];
+      return message.content ? [{ transcript: this.answerText(message.content, null) }] : [];
     return this.subagents.map(message, this.modelId ?? this.observedModelId);
   }
 
@@ -173,16 +181,14 @@ export class ClaudeEventMapper {
       if (tool) tool.json += delta.partial_json ?? '';
       return [];
     }
-    // A subagent narrates its own conversation; only the main thread's prose
-    // belongs in this chat. Its tool calls above are kept.
-    if (parentToolUseId) return [];
     // A start always comes first in practice; recording the block here keeps the
     // snapshot rule right even if one is ever missed.
     if (!blocks.has(index)) blocks.set(index, {});
+    const owner = this.childOwner(parentToolUseId);
     if (delta.type === 'text_delta' && delta.text)
-      return [{ transcript: this.answerText(delta.text) }];
+      return [{ ...owner, transcript: this.answerText(delta.text, parentToolUseId) }];
     if (delta.type === 'thinking_delta' && delta.thinking)
-      return [{ transcript: this.transcript('thinking', { text: delta.thinking }) }];
+      return [{ ...owner, transcript: this.transcript('thinking', { text: delta.thinking }) }];
     return [];
   }
 
@@ -216,11 +222,18 @@ export class ClaudeEventMapper {
           );
         continue;
       }
-      if (streamed || message.parent_tool_use_id) continue;
+      if (streamed) continue;
+      const owner = this.childOwner(message.parent_tool_use_id);
       if (block.type === 'text' && block.text)
-        events.push({ transcript: this.answerText(block.text) });
+        events.push({
+          ...owner,
+          transcript: this.answerText(block.text, message.parent_tool_use_id),
+        });
       if (block.type === 'thinking' && block.thinking)
-        events.push({ transcript: this.transcript('thinking', { text: block.thinking }) });
+        events.push({
+          ...owner,
+          transcript: this.transcript('thinking', { text: block.thinking }),
+        });
     }
     if (message.error)
       events.push({
@@ -236,30 +249,52 @@ export class ClaudeEventMapper {
   private toolResults(message: Extract<SDKMessage, { type: 'user' }>): NormalizedEvent[] {
     const content = message.message.content;
     if (typeof content === 'string') return [];
+    const owner = this.childOwner(message.parent_tool_use_id);
     return content.flatMap((block) => {
       if (block.type !== 'tool_result') return [];
       this.reportedResults.add(block.tool_use_id);
+      const text = toolResultText(block.content);
+      // A call the user stopped, with Stop or Send now, is not a failure, and
+      // the CLI says so in this one sentence. Reading it here keeps the renderer
+      // free of text matching, and the row quiet instead of red.
+      const interrupted = block.is_error === true && isInterruptionNotice(text);
       return {
+        ...owner,
         transcript: this.transcript('tool_result', {
-          text: toolResultText(block.content),
-          isError: block.is_error === true,
+          text,
+          isError: block.is_error === true && !interrupted,
           toolUseId: block.tool_use_id,
+          ...(interrupted ? { interrupted: true } : {}),
         }),
       };
     });
   }
 
-  // modelUsage covers the main loop, subagents and compaction, and is cumulative
-  // for the whole query(). Settlement itself is the session's call: a result left
+  private fastModeNotice(
+    message: Extract<SDKMessage, { type: 'result' }>,
+    requested: boolean,
+  ): NormalizedEvent[] {
+    if (!requested || this.reportedFastModeUnavailable) return [];
+    const reason =
+      message.fast_mode_disabled_reason ??
+      (message.fast_mode_state !== 'on' ? message.fast_mode_state : undefined);
+    if (!reason) return [];
+    this.reportedFastModeUnavailable = true;
+    return [
+      this.statusEvent(`Fast mode is unavailable for this model: ${reason.replaceAll('_', ' ')}`),
+    ];
+  }
+
+  // The session's own spend. `modelUsage` would be cumulative for the whole
+  // query(), but it counts subagents and compaction too, and a subagent's tokens
+  // belong to its own row; `usage` is the main loop alone and per turn, so the
+  // turns are summed here. Settlement itself is the session's call: a result left
   // behind by an interrupted turn contributes usage and nothing else.
   private result(message: Extract<SDKMessage, { type: 'result' }>): NormalizedEvent[] {
-    this.totals.tokensIn = 0;
-    this.totals.tokensOut = 0;
-    for (const usage of Object.values(message.modelUsage)) {
-      this.totals.tokensIn +=
-        usage.inputTokens + usage.cacheReadInputTokens + usage.cacheCreationInputTokens;
-      this.totals.tokensOut += usage.outputTokens;
-    }
+    const { usage } = message;
+    this.totals.tokensIn +=
+      usage.input_tokens + usage.cache_read_input_tokens + usage.cache_creation_input_tokens;
+    this.totals.tokensOut += usage.output_tokens;
     // The denial list is the turn's authoritative record; a refusal usually
     // reaches the model as a tool result too, and that row is the one the
     // transcript keeps. What is left never streamed at all.
@@ -277,11 +312,21 @@ export class ClaudeEventMapper {
           ],
     );
     this.reportedResults.clear();
-    return [...missed, this.usage()];
+    const mainModel = this.observedModelId ?? this.modelId?.replace(/\[1m\]$/i, '');
+    // The SDK types modelUsage as a plain record, so a model it never called
+    // still reads as present; `in` is what actually says whether it is there.
+    const limit =
+      mainModel && mainModel in message.modelUsage
+        ? message.modelUsage[mainModel].contextWindow
+        : undefined;
+    const usageEvent = this.usage();
+    if (limit !== undefined && Number.isFinite(limit) && limit > 0 && usageEvent.tokens)
+      usageEvent.tokens.maxContextTokens = limit;
+    return [...missed, usageEvent];
   }
 
-  // A line the session itself has to say: what the CLI is doing before it can
-  // answer, in the row shape every provider's status already uses.
+  // A line the session itself has to say, in the row shape every provider's
+  // status already uses. It is part of the conversation and is stored with it.
   statusEvent(text: string): NormalizedEvent {
     return { transcript: this.transcript('status', { text }) };
   }
@@ -308,8 +353,19 @@ export class ClaudeEventMapper {
   ): NormalizedEvent {
     // Nested tool calls must not change the parent's spawn correlation.
     if (!parentToolUseId) this.subagents.noteToolUse(name, id);
+    // A spawn's input is the subagent's whole brief. The subagent's own pane
+    // already receives that brief as a prompt row, so the parent's transcript
+    // keeps only the fields that label the call.
+    const toolArgs = isSpawnToolName(name) && isRecord(input) ? slimChildSessionArgs(input) : input;
+    const pollsChildSessionId = this.subagents.pollsChildSessionId(name, input);
     return {
-      transcript: this.transcript('tool_call', { toolName: name, toolArgs: input, toolUseId: id }),
+      ...this.childOwner(parentToolUseId),
+      transcript: this.transcript('tool_call', {
+        toolName: name,
+        toolArgs,
+        toolUseId: id,
+        ...(pollsChildSessionId ? { pollsChildSessionId } : {}),
+      }),
     };
   }
 
@@ -334,8 +390,19 @@ export class ClaudeEventMapper {
     return created;
   }
 
-  private answerText(text: string): TranscriptEvent {
-    return this.transcript('text', { text, ...(this.turnId ? { forkPointId: this.turnId } : {}) });
+  // A subagent's own messages arrive inside the parent's stream, tagged with the
+  // tool_use that spawned it. Every row so tagged is that agent's step, and the
+  // event flow resolves the tag to the agent's scope; untagged rows are the main
+  // thread's own.
+  private childOwner(parentToolUseId: string | null): Pick<NormalizedEvent, 'childOwner'> {
+    return parentToolUseId ? { childOwner: { kind: 'tool-use', id: parentToolUseId } } : {};
+  }
+
+  // A fork cuts the main conversation after a turn, so only the main thread's
+  // text carries the turn's fork point; a subagent's text is that agent's step.
+  private answerText(text: string, parentToolUseId: string | null): TranscriptEvent {
+    const forkPointId = parentToolUseId ? undefined : this.turnId;
+    return this.transcript('text', { text, ...(forkPointId ? { forkPointId } : {}) });
   }
 
   private transcript(
@@ -354,6 +421,15 @@ export class ClaudeEventMapper {
   }
 }
 
+// What the CLI puts in a tool result when the user stops the turn before the
+// tool runs. It is the harness's own wording, so it belongs here
+// with the rest of this adapter's knowledge of the SDK, never in the renderer.
+const INTERRUPTION_NOTICE = /the user (?:doesn't|does not) want to proceed with this tool use/i;
+
+function isInterruptionNotice(text: string): boolean {
+  return INTERRUPTION_NOTICE.test(text);
+}
+
 // The tool-use block shapes share id/name; the SDK's own union splits them by
 // server/mcp provenance, which the transcript does not distinguish.
 function toolBlock(block: { type: string }): { id: string; name: string } | undefined {
@@ -365,6 +441,9 @@ function toolBlock(block: { type: string }): { id: string; name: string } | unde
 // A tool whose input never finished streaming (an interrupt, or a block the
 // model left open) still deserves its row, so a partial payload reads as no
 // arguments rather than failing the turn.
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  typeof value === 'object' && value !== null;
+
 function parseToolInput(json: string): unknown {
   if (!json) return {};
   try {

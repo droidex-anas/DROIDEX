@@ -71,7 +71,7 @@ export class HistoryDurabilityPolicy {
     }
   }
 
-  noteFailure(): void {
+  holdUntilDurable(): void {
     this.blocked = true;
   }
 

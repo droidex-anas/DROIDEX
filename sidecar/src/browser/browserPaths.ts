@@ -2,7 +2,7 @@ import { join, resolve, sep } from 'node:path';
 import { realpath } from 'node:fs/promises';
 import { droidexUserDataDir } from '../droidexPaths.js';
 
-export function browserDataRoot(baseDir = droidexUserDataDir()): string {
+function browserDataRoot(baseDir = droidexUserDataDir()): string {
   return baseDir;
 }
 

@@ -3,16 +3,17 @@ import test from 'node:test';
 import vm from 'node:vm';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { AppBlock, RunningAppFrame } from './AppBlock';
+import { AppBlock } from './AppBlock';
+import { RunningAppFrame } from './AppBlockFrame';
 import { AppBlockErrorFallback } from './AppBlockErrorFallback';
 import {
-  APP_BUILD_TIMEOUT_MS,
-  MIN_APP_BUILD_MS,
+  appBlockErrorFromMessage,
   appBlockHeightFromMessage,
   appBlockStartupTransition,
-  isAppFrameVisible,
   appBlockMathRequestFromMessage,
-  appBlockReducer,
+  appColorScheme,
+  createAppBridgeGuard,
+  createAppBridgeSession,
   createAppHeightScheduler,
   hasAppBlock,
   hasCompleteAppBlock,
@@ -20,11 +21,6 @@ import {
   renderAppBlockMath,
 } from './appBlockRuntime';
 import { createAppDocument } from './appBlockDocument';
-
-test('Play starts an app and Stop releases it back to the inert preview', () => {
-  assert.equal(appBlockReducer('idle', 'play'), 'running');
-  assert.equal(appBlockReducer('running', 'stop'), 'idle');
-});
 
 test('only a closed app fence is ready for automatic playback', () => {
   assert.equal(hasAppBlock('```app\n<main>Streaming'), true);
@@ -69,7 +65,7 @@ test('an App with a cut-off source offers no playback control', () => {
   assert.doesNotMatch(html, /const points/);
 });
 
-test('the running document is self-contained and blocks network and nested content', () => {
+test('the running document preserves layout, theme, and the local bridge', () => {
   const source =
     '<main><h1>Responsive app</h1></main><script>document.body.dataset.ready="yes"</script>';
   const document = createAppDocument(source, 'app-1', {
@@ -82,10 +78,6 @@ test('the running document is self-contained and blocks network and nested conte
     accent: '#2f6fed',
   });
 
-  assert.match(document, /default-src 'none'/);
-  assert.match(document, /connect-src 'none'/);
-  assert.match(document, /frame-src 'none'/);
-  assert.match(document, /form-action 'none'/);
   assert.match(document, /<meta name="viewport"/);
   assert.match(document, /droidex:app-height/);
   assert.match(document, /bridgeToken/);
@@ -101,10 +93,8 @@ test('the running document is self-contained and blocks network and nested conte
   assert.match(document, /background: transparent/);
   assert.doesNotMatch(document, /background: var\(--app-background\) !important/);
   assert.doesNotMatch(document, /\[data-droidex-app-root\] \{[\s\S]*?\n {2}background:/);
-  assert.doesNotMatch(document, /\[data-droidex-app-canvas\] \{[\s\S]*?\n {2}background:/);
   assert.match(document, /padding: 0/);
   assert.match(document, /\[data-droidex-app-root\]/);
-  assert.match(document, /\[data-droidex-app-canvas\]/);
   assert.match(document, /max-width: none !important/);
   assert.doesNotMatch(document, /\[data-droidex-app-root\] \{[^}]*border-radius:\s*0\s*!important/);
   assert.match(document, /window\.droidex/);
@@ -114,8 +104,36 @@ test('the running document is self-contained and blocks network and nested conte
   assert.match(document, /<main><h1>Responsive app<\/h1><\/main>/);
 });
 
+test('external assets are restricted to approved font and component CDNs', () => {
+  const document = createAppDocument('', 'app-policy');
+  const policy = /http-equiv="Content-Security-Policy" content="([^"]+)"/.exec(document)?.[1];
+  assert.ok(policy);
+  const directives = Object.fromEntries(
+    policy.split('; ').map((directive) => {
+      const [name, ...sources] = directive.split(' ');
+      return [name, sources];
+    }),
+  );
+  const componentCdns = ['https://cdn.jsdelivr.net', 'https://cdnjs.cloudflare.com'];
+  assert.deepEqual(directives, {
+    'default-src': ["'none'"],
+    'script-src': ["'unsafe-inline'", ...componentCdns],
+    'style-src': ["'unsafe-inline'", 'https://fonts.googleapis.com', ...componentCdns],
+    'font-src': ['data:', 'https://fonts.gstatic.com', ...componentCdns],
+    'img-src': ['data:', 'blob:', ...componentCdns],
+    'media-src': ['data:', 'blob:'],
+    'connect-src': componentCdns,
+    'worker-src': ["'none'"],
+    'frame-src': ["'none'"],
+    'object-src': ["'none'"],
+    'base-uri': ["'none'"],
+    'form-action': ["'none'"],
+  });
+});
+
 test('reported app heights follow the app instead of creating a nested scroller', () => {
-  assert.equal(normalizeAppBlockHeight(40), 96);
+  assert.equal(normalizeAppBlockHeight(40), 40);
+  assert.equal(normalizeAppBlockHeight(-1), 1);
   assert.equal(normalizeAppBlockHeight(141), 141);
   assert.equal(normalizeAppBlockHeight(412.2), 413);
   assert.equal(normalizeAppBlockHeight(4_000), 4_000);
@@ -123,48 +141,19 @@ test('reported app heights follow the app instead of creating a nested scroller'
   assert.equal(normalizeAppBlockHeight(Number.NaN), 360);
 });
 
-test('restored app blocks are compact and keep source inert behind Play', () => {
+test('restored app blocks mount directly without a Play or Stop card', () => {
   const html = renderToStaticMarkup(
-    createElement(AppBlock, { source: '<button>Private source</button>' }),
+    createElement(RunningAppFrame, {
+      source: '<button>Private source</button>',
+      instanceId: 'app-1',
+    }),
   );
 
   assert.match(html, /Interactive App/);
-  assert.match(html, /aria-label="Play app"/);
-  assert.doesNotMatch(html, /Private source/);
-  assert.doesNotMatch(html, /<iframe/i);
-});
-
-test('a freshly completed app opens directly on the chat canvas', () => {
-  const html = renderToStaticMarkup(
-    createElement(AppBlock, { source: '<main>Fresh app</main>', autoPlay: true }),
-  );
-
   assert.match(html, /<iframe/i);
-  assert.match(html, /aria-label="Stop app"/);
-  assert.ok(html.indexOf('<iframe') < html.indexOf('aria-label="Stop app"'));
-  assert.doesNotMatch(html, /overflow-hidden/);
-  assert.doesNotMatch(html, /absolute right-2 top-2/);
-  assert.doesNotMatch(html, />App<\/span>/);
-});
-
-test('manual Play reveals the stable App anchor at the top of the viewport', async () => {
-  type RevealAppBlock = (element: HTMLElement | null, reduceMotion: boolean) => void;
-  const appBlockModule = (await import('./AppBlock')) as unknown as {
-    revealAppBlock?: RevealAppBlock;
-  };
-  const reveal = appBlockModule.revealAppBlock;
-  assert.equal(typeof reveal, 'function');
-  if (!reveal) return;
-
-  const calls: ScrollIntoViewOptions[] = [];
-  const element = {
-    scrollIntoView(options: ScrollIntoViewOptions) {
-      calls.push(options);
-    },
-  } as HTMLElement;
-  reveal(element, false);
-
-  assert.deepEqual(calls, [{ behavior: 'smooth', block: 'start', inline: 'nearest' }]);
+  assert.doesNotMatch(html, /aria-label="(?:Play|Stop) app"/);
+  // A mismatched iframe/document color scheme makes Chromium paint an opaque backdrop.
+  assert.match(html, /color-scheme:dark/);
 });
 
 test('the running frame keeps app code inside a script-only sandbox', () => {
@@ -201,22 +190,6 @@ test('a started App builds behind a status surface until it reports its size', (
   // Off-layout, so the hidden frame's default height cannot reserve space the
   // measured App will not use.
   assert.match(html, /invisible pointer-events-none absolute inset-x-0 top-0/);
-});
-
-test('the build surface waits for a measurement but never hides a silent App', () => {
-  assert.equal(
-    isAppFrameVisible({ measured: true, floorElapsed: false, expired: false }),
-    false,
-    'a measurement inside the build floor must not flash the frame open',
-  );
-  assert.equal(isAppFrameVisible({ measured: false, floorElapsed: true, expired: false }), false);
-  assert.equal(isAppFrameVisible({ measured: true, floorElapsed: true, expired: false }), true);
-  assert.equal(
-    isAppFrameVisible({ measured: false, floorElapsed: true, expired: true }),
-    true,
-    'an App that never reports a height is still revealed',
-  );
-  assert.ok(MIN_APP_BUILD_MS < APP_BUILD_TIMEOUT_MS);
 });
 
 test('height reports coalesce on a timer so a hidden host window still measures', () => {
@@ -326,17 +299,7 @@ test('a working App is not torn down by a later interaction error', () => {
   assert.deepEqual(afterInteractionError, { state: 'ready' });
 });
 
-test('the host accepts bounded runtime errors only from the mounted App document', async () => {
-  const runtime = (await import('./appBlockRuntime')) as unknown as {
-    appBlockErrorFromMessage?: (
-      data: unknown,
-      instanceId: string,
-      bridgeToken: string,
-    ) => string | undefined;
-  };
-  const appBlockErrorFromMessage = runtime.appBlockErrorFromMessage;
-  assert.equal(typeof appBlockErrorFromMessage, 'function');
-  if (!appBlockErrorFromMessage) return;
+test('the host accepts bounded runtime errors only from the mounted App document', () => {
   assert.equal(
     appBlockErrorFromMessage(
       {
@@ -382,10 +345,10 @@ test('a failed App renders a compact recovery surface instead of a blank canvas'
   const html = renderToStaticMarkup(
     createElement(AppBlockErrorFallback, {
       message: 'Invalid or unexpected token',
+      source: '<main></main>',
     }),
   );
-  assert.match(html, /Interactive App couldn’t start/);
-  assert.match(html, /Ask Droid to fix this visualization/);
+  assert.match(html, /This visualization didn’t load/);
   assert.match(html, /Invalid or unexpected token/);
 });
 
@@ -437,17 +400,8 @@ test('the host bridge rejects messages without the initial document token', () =
   );
 });
 
-test('the App bridge bounds math work and deduplicates repeated heights', async () => {
-  type Guard = {
-    acceptHeight: (height: number) => boolean;
-    startMath: () => boolean;
-    finishMath: () => void;
-  };
-  const runtime = (await import('./appBlockRuntime')) as unknown as {
-    createAppBridgeGuard?: (mathBudget: number, mathConcurrency: number) => Guard;
-  };
-  const guard = runtime.createAppBridgeGuard?.(2, 1);
-  assert.ok(guard);
+test('the App bridge bounds math work and deduplicates repeated heights', () => {
+  const guard = createAppBridgeGuard(2, 1);
   assert.equal(guard.acceptHeight(400), true);
   assert.equal(guard.acceptHeight(400), false);
   assert.equal(guard.startMath(), true);
@@ -458,39 +412,15 @@ test('the App bridge bounds math work and deduplicates repeated heights', async 
   assert.equal(guard.startMath(), false);
 });
 
-test('a failed App cannot resize the chat after its recovery surface is selected', async () => {
-  type Guard = {
-    acceptHeight: (height: number) => boolean;
-    fail?: () => void;
-  };
-  const runtime = (await import('./appBlockRuntime')) as unknown as {
-    createAppBridgeGuard?: () => Guard;
-  };
-  const guard = runtime.createAppBridgeGuard?.();
-  assert.ok(guard);
-  assert.equal(typeof guard.fail, 'function');
-  if (!guard.fail) return;
-
+test('a failed App cannot resize the chat after its recovery surface is selected', () => {
+  const guard = createAppBridgeGuard();
   guard.fail();
   assert.equal(guard.acceptHeight(1_366), false);
 });
 
-test('each iframe document gets an independent bridge token and work budget', async () => {
-  type BridgeSession = {
-    token: string;
-    guard: {
-      startMath: () => boolean;
-      finishMath: () => void;
-    };
-  };
-  const runtime = (await import('./appBlockRuntime')) as unknown as {
-    createAppBridgeSession?: () => BridgeSession;
-  };
-  assert.equal(typeof runtime.createAppBridgeSession, 'function');
-  if (!runtime.createAppBridgeSession) return;
-
-  const first = runtime.createAppBridgeSession();
-  const second = runtime.createAppBridgeSession();
+test('each iframe document gets an independent bridge token and work budget', () => {
+  const first = createAppBridgeSession();
+  const second = createAppBridgeSession();
   assert.notEqual(first.token, second.token);
   assert.equal(first.guard.startMath(), true);
   assert.equal(first.guard.startMath(), true);
@@ -498,7 +428,7 @@ test('each iframe document gets an independent bridge token and work budget', as
   assert.equal(second.guard.startMath(), true);
 });
 
-test('the iframe document repeats readiness for each valid host handshake', () => {
+test('the iframe queues early math behind readiness and authenticates repeated handshakes', async () => {
   const document = createAppDocument('<main>Ready</main>', 'app-ready', undefined, 'token');
   const script = /<script>([\s\S]*?)<\/script>/.exec(document)?.[1];
   assert.ok(script);
@@ -509,11 +439,20 @@ test('the iframe document repeats readiness for each valid host handshake', () =
       messages.push(message);
     },
   };
+  class MathElement {
+    innerHTML = '';
+    hasAttribute() {
+      return false;
+    }
+  }
+  const window: {
+    droidex?: { renderMath: (element: MathElement, latex: string) => Promise<boolean> };
+  } = {};
 
   vm.runInNewContext(script, {
     parent,
-    window: {},
-    Element: class {},
+    window,
+    Element: MathElement,
     document: {},
     setTimeout: () => 1,
     clearTimeout: () => undefined,
@@ -526,6 +465,11 @@ test('the iframe document repeats readiness for each valid host handshake', () =
 
   const onMessage = listeners.get('message');
   assert.ok(onMessage);
+  assert.ok(window.droidex);
+  const element = new MathElement();
+  const rendered = window.droidex.renderMath(element, 'x^2');
+  await Promise.resolve();
+  assert.deepEqual(messages, []);
   const handshake = {
     source: parent,
     data: {
@@ -534,17 +478,40 @@ test('the iframe document repeats readiness for each valid host handshake', () =
       bridgeToken: 'token',
     },
   };
-  onMessage(handshake);
-  onMessage(handshake);
   onMessage({
     ...handshake,
     data: { ...handshake.data, bridgeToken: 'wrong' },
   });
+  await Promise.resolve();
+  assert.deepEqual(messages, []);
+  onMessage(handshake);
+  onMessage(handshake);
+  await Promise.resolve();
 
   assert.deepEqual(JSON.parse(JSON.stringify(messages)), [
     { type: 'droidex:app-ready', instanceId: 'app-ready', bridgeToken: 'token' },
     { type: 'droidex:app-ready', instanceId: 'app-ready', bridgeToken: 'token' },
+    {
+      type: 'droidex:render-math',
+      instanceId: 'app-ready',
+      bridgeToken: 'token',
+      requestId: 'app-ready-math-1',
+      latex: 'x^2',
+      displayMode: false,
+    },
   ]);
+  onMessage({
+    source: parent,
+    data: {
+      type: 'droidex:math-rendered',
+      instanceId: 'app-ready',
+      bridgeToken: 'token',
+      requestId: 'app-ready-math-1',
+      html: '<math><msup><mi>x</mi><mn>2</mn></msup></math>',
+    },
+  });
+  assert.equal(await rendered, true);
+  assert.match(element.innerHTML, /<math>/);
 });
 
 test('the iframe reports its initial height only after built-in math settles', async () => {
@@ -629,6 +596,7 @@ test('the iframe reports its initial height only after built-in math settles', a
   });
 
   listeners.get('DOMContentLoaded')?.();
+  await Promise.resolve();
   assert.ok(observerCallback);
   // A resize before math settles must not publish the pre-math layout: the host
   // shows the App at its first reported height.
@@ -651,8 +619,7 @@ test('the iframe reports its initial height only after built-in math settles', a
       html: '<math></math>',
     },
   });
-  await Promise.resolve();
-  await Promise.resolve();
+  await new Promise<void>((resolve) => setImmediate(resolve));
   while (pendingReports.length > 0) pendingReports.shift()?.();
 
   assert.deepEqual(
@@ -740,14 +707,11 @@ test('the iframe measures its content so the frame can shrink with it', async ()
   assert.deepEqual(heights, [141, 90]);
 });
 
-test('short and functional CSS colors select the correct canvas scheme', async () => {
-  const runtime = (await import('./appBlockRuntime')) as unknown as {
-    appColorScheme?: (color: string) => 'light' | 'dark';
-  };
-  assert.equal(runtime.appColorScheme?.('#fff'), 'light');
-  assert.equal(runtime.appColorScheme?.('rgb(250, 250, 250)'), 'light');
-  assert.equal(runtime.appColorScheme?.('hsl(0, 0%, 5%)'), 'dark');
-  assert.equal(runtime.appColorScheme?.('#111111ff'), 'dark');
+test('short and functional CSS colors select the correct canvas scheme', () => {
+  assert.equal(appColorScheme('#fff'), 'light');
+  assert.equal(appColorScheme('rgb(250, 250, 250)'), 'light');
+  assert.equal(appColorScheme('hsl(0, 0%, 5%)'), 'dark');
+  assert.equal(appColorScheme('#111111ff'), 'dark');
 });
 
 test('the math bridge accepts only bounded requests for the mounted App', () => {

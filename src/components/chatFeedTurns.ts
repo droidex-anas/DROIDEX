@@ -1,7 +1,6 @@
 import { feedItemTailId } from '../hooks/conversationViewportAnchor';
 import { promptDisplayText } from '../lib/composePrompt';
 import { classifyEvent } from '../lib/transcript';
-import { isSubagentBookkeepingTool } from '../lib/tools';
 import type { TranscriptEvent } from '../types/bridge';
 import {
   buildFeed,
@@ -13,6 +12,7 @@ import {
   type FeedItem,
 } from './chatFeed';
 import { isAutomationProposalCall } from '../features/automations/toolNames';
+import { isThreadSpawnCall } from '../features/projects/threadToolNames';
 
 function isTurnBoundary(item: FeedItem): boolean {
   return (
@@ -64,7 +64,7 @@ export function trailingSubagentPoll(
   for (let i = events.length - 1; i >= 0; i--) {
     const e = events[i];
     if (isCancellationArtifact(e)) continue;
-    if (e.kind === 'tool_call') return isSubagentBookkeepingTool(e.toolName) ? e : undefined;
+    if (e.kind === 'tool_call') return isSubagentPoll(e) ? e : undefined;
     if (e.kind !== 'tool_result' || !e.toolUseId) return undefined;
     // A replayed result carries no toolName, so correlate it back to its call —
     // scanning backward from the result, since the call is always just behind it
@@ -72,11 +72,17 @@ export function trailingSubagentPoll(
     for (let j = i - 1; j >= 0; j--) {
       const call = events[j];
       if (call.kind !== 'tool_call' || call.toolUseId !== e.toolUseId) continue;
-      return isSubagentBookkeepingTool(call.toolName) ? call : undefined;
+      return isSubagentPoll(call) ? call : undefined;
     }
     return undefined;
   }
   return undefined;
+}
+
+// The provider marks a call that polls or stops an agent it is tracking; the
+// tool's name alone never says so.
+function isSubagentPoll(event: TranscriptEvent): boolean {
+  return Boolean(event.pollsChildSessionId);
 }
 
 // Build the grouped feed once so callers can share it (the chat view derives
@@ -302,8 +308,12 @@ function collapseRun(run: FeedItem[], specContent?: string): FeedItem[] {
       // A failed tool/result must stay visible after the turn completes instead
       // of being buried in a collapsed "Worked for …" group (classifier intent).
       survivors.push(it);
-    } else if (it.type === 'tools' && it.events.some(isAutomationProposalCall)) {
-      // Proposals are review surfaces, not hidden execution detail.
+    } else if (
+      it.type === 'tools' &&
+      (it.events.some(isAutomationProposalCall) || it.events.some(isThreadSpawnCall))
+    ) {
+      // Proposals are review surfaces, and a spawned thread is work that keeps
+      // running after the turn: neither is hidden execution detail.
       survivors.push(it);
     } else if (isSpokenLine(it)) {
       // The user heard this. Folding it into "Worked for …" would hide half of

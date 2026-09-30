@@ -14,14 +14,13 @@ import {
   useStoreApi,
   useStoreDispatch,
   useStoreSelector,
+  type AppState,
   type QueuedPrompt,
 } from '../hooks/useStore';
 import { useSessionLive } from '../hooks/useSessionLive';
 import {
   sendToSession,
-  sendToSessionNow,
   sendToChild,
-  sendToChildNow,
   createSession,
   interruptVisibleSession,
   compactSession,
@@ -74,6 +73,12 @@ import {
   resolveReasoningEffortDisplay,
 } from '../lib/reasoningEffort';
 import { displayedModelSettings } from '../lib/pendingModelSettings';
+import { FAST_MODE_HINT, offersFastMode } from '../lib/fastMode';
+import {
+  CONTEXT_WINDOW_LABEL,
+  contextWindowLabel,
+  offersContextWindow,
+} from '../lib/contextWindow';
 import { compactionSettingsSnapshot } from '../lib/compactionSettings';
 import { composerTextAfterSeed, resetComposerAfterSubmit } from '../lib/composerReset';
 import { chipRemovedByBackspace } from '../lib/composerChips';
@@ -107,6 +112,7 @@ import {
   MessageThread,
   Models,
   Settings,
+  Zap,
 } from '@droidex/icons';
 import { VisualizeIcon } from './icons/VisualizeIcon';
 import { ComposerSendButton } from './composer/ComposerSendButton';
@@ -133,9 +139,7 @@ import {
   buildVisibleChildSettingsTarget,
   childSettingsReadinessLabel,
 } from '../lib/exactChildSettings';
-import AskUserInline from './AskUserInline';
-import PermissionInline from './PermissionInline';
-import PlanApprovalInline from './PlanApprovalInline';
+import InlineInteractions from './InlineInteractions';
 import {
   ModelIcon,
   DroidProxyMark,
@@ -154,7 +158,10 @@ import {
 } from '../lib/sideChats';
 import { useSessionWorkingDirectory } from '../hooks/useSessionWorkingDirectory';
 import { useRuntimeHealth } from '../hooks/useRuntimeHealth';
+import useFastMode from '../hooks/useFastMode';
+import useContextWindow from '../hooks/useContextWindow';
 import { toast } from '../lib/toast';
+import { createProject } from '../features/projects/client';
 
 // The live-markdown editor is a heavy chunk of the bundle, so it loads on
 // first composer paint rather than blocking the app's initial JavaScript.
@@ -188,12 +195,7 @@ const ACCENT = 'var(--droid-accent)';
 const DROID_ONLY_COMMANDS = new Set(['/compact']);
 const accentMix = (pct: number) =>
   `color-mix(in srgb, var(--droid-accent) ${String(pct)}%, transparent)`;
-type SubmitMode = 'queue' | 'now';
-const oppositeSubmitMode = (mode: SubmitMode): SubmitMode => (mode === 'queue' ? 'now' : 'queue');
-
-export function shouldShowTurnStarting(isLive: boolean): boolean {
-  return !isLive;
-}
+type SubmitMode = 'queue' | 'steer';
 
 export function shouldStopTurnStarting({
   isLive,
@@ -245,6 +247,10 @@ const LazyFeedbackModal = lazy(async () => {
   return { default: module.FeedbackModal };
 });
 
+// What a project started by voice is first told, before anything is said.
+const VOICE_PROJECT_TASK =
+  'The user is about to say the goal of this project out loud, in a voice conversation on this chat. Until they do there is nothing to plan: reply with one short question asking what this project should get done.';
+
 export default function PromptInput({
   rightInset = false,
   compact = false,
@@ -280,6 +286,8 @@ export default function PromptInput({
       defaultAutonomy: current.defaultAutonomy,
       draftAutonomy: current.draftAutonomy,
       draftChat: current.draftChat,
+      draftContextWindowTokens: current.draftContextWindowTokens,
+      draftFastMode: current.draftFastMode,
       draftProvider: current.draftProvider,
       providerStatuses: current.providerStatuses,
       imagePasteQuality: current.imagePasteQuality,
@@ -302,6 +310,8 @@ export default function PromptInput({
     shallowEqual,
   );
   const store = useStoreApi();
+  const { fastMode, setFastMode } = useFastMode(state.activeAppSessionId ?? undefined);
+  const { contextWindowTokens } = useContextWindow(state.activeAppSessionId ?? undefined);
   const composerRevisionRef = useRef(0);
   const [input, setInputState] = useState('');
   const setInput = (value: SetStateAction<string>) => {
@@ -442,7 +452,9 @@ export default function PromptInput({
     const events = activeSession ? (current.transcripts[activeSession.appSessionId] ?? []) : [];
     const out: string[] = [];
     for (const ev of events) {
-      if (ev.author !== 'user' || ev.kind !== 'text') continue;
+      // An agent's brief is a user-authored row too, but the parent's composer
+      // recalls what THIS user typed, not what the chat sent to a subagent.
+      if (ev.author !== 'user' || ev.kind !== 'text' || ev.role !== 'primary') continue;
       const text = ev.text ?? '';
       if (!text.trim()) continue;
       if (out[out.length - 1] !== text) out.push(text);
@@ -457,12 +469,15 @@ export default function PromptInput({
   const composerProvider = activeSession?.provider ?? draftProvider;
   const droidComposer = composerProvider === 'droid';
   const specComposer = supportsSpecMode(composerProvider);
+  // A project's lead runs in auto mode, so a project draft offers no spec.
+  const draftingProject = !activeSession && state.draftChat?.project === true;
   // For an existing chat session the mode is whatever the session actually is
   // (so a chat reopened in spec mode shows Spec); only fall back to the global
   // compose flag while drafting a brand-new chat.
   const isSpecMode =
     specComposer && activeSession?.sessionPurpose !== 'mission-control'
-      ? activeSession?.interactionMode === 'spec' || (!activeSession && state.specMode)
+      ? activeSession?.interactionMode === 'spec' ||
+        (!activeSession && state.specMode && !draftingProject)
       : false;
   const selectedChild = state.selectedChild;
   const visibleTarget: VisibleSessionTarget = visibleSessionTarget(
@@ -684,9 +699,38 @@ export default function PromptInput({
         dispatch({ type: 'TOGGLE_SETTINGS' });
       },
     },
-  ].filter((command) =>
-    command.cmd === '/spec' ? specComposer : droidComposer || !DROID_ONLY_COMMANDS.has(command.cmd),
-  );
+    {
+      cmd: '/fast',
+      desc: 'Toggle fast mode',
+      icon: Zap,
+      // The app owns this setting now, so the harness's own /fast stays out of
+      // the menu rather than offering a second, unsynced switch.
+      supersedesHarnessCommand: true,
+      run: () => {
+        setFastMode(!fastMode);
+      },
+    },
+    {
+      cmd: '/fast on',
+      desc: FAST_MODE_HINT,
+      icon: Zap,
+      run: () => {
+        setFastMode(true);
+      },
+    },
+    {
+      cmd: '/fast off',
+      desc: 'Normal speed and usage',
+      icon: Zap,
+      run: () => {
+        setFastMode(false);
+      },
+    },
+  ].filter((command) => {
+    if (command.cmd === '/spec') return specComposer && !draftingProject;
+    if (command.cmd.startsWith('/fast')) return offersFastMode(composerProvider);
+    return droidComposer || !DROID_ONLY_COMMANDS.has(command.cmd);
+  });
 
   // Typing, and every edit that behaves like typing, leaves history recall.
   const editDraft = (text: string) => {
@@ -931,6 +975,15 @@ export default function PromptInput({
   const missionPreview =
     droidComposer &&
     (activeSession ? activeSession.sessionPurpose === 'mission-control' : state.missionControlMode);
+  // A new project is drafted in this same composer; its first message starts
+  // the project's lead instead of an ordinary chat.
+  const projectDraft = draftingProject && !missionPreview;
+  // The clientRef of a project this composer is starting, so a second send or
+  // a press of the orb cannot start another while it is on its way.
+  const projectStartRef = useRef<string | null>(null);
+  const releaseProjectStart = (clientRef: string) => {
+    if (projectStartRef.current === clientRef) projectStartRef.current = null;
+  };
 
   // Autonomy snapshot for a session this composer would create: the draft
   // override when the user picked one, otherwise the persisted app default.
@@ -991,6 +1044,12 @@ export default function PromptInput({
   const draftModelSettings = {
     ...(primaryModelId ? { modelId: primaryModelId } : {}),
     ...(draftReasoning ? { reasoningEffort: draftReasoning } : {}),
+    // A preference chosen on another harness stays behind when the draft
+    // moves: the harness it is created on may not offer it.
+    ...(state.draftFastMode && offersFastMode(composerProvider) ? { fastMode: true } : {}),
+    ...(state.draftContextWindowTokens !== null && offersContextWindow(composerProvider)
+      ? { contextWindowTokens: state.draftContextWindowTokens }
+      : {}),
   };
 
   const replaceTrigger = (replacement: string) => {
@@ -1204,6 +1263,16 @@ export default function PromptInput({
       allFiles.length > 0 ||
       sideChatReplies.length > 0;
     if (!hasPayload) return;
+    // The app owns fast mode, so a typed /fast runs here instead of reaching
+    // the harness, whose own switch the app would never see.
+    const fastCommand = slashCommands.find(
+      (command) => command.cmd.startsWith('/fast') && command.cmd === text,
+    );
+    if (fastCommand && activeSkills.length === 0 && allFiles.length === 0) {
+      fastCommand.run();
+      setInput('');
+      return;
+    }
     setHistoryIndex(null);
 
     const clearAfterSubmit = () => {
@@ -1357,23 +1426,66 @@ export default function PromptInput({
 
     // Draft/default chat: first message creates the session. No workspace is required.
     if (!activeSession) {
+      if (projectDraft && projectStartRef.current) return;
       const selectedDir = state.draftChat?.cwd ?? '';
       const clientRef = newClientRef();
-      const title = (displayText || skillNames[0] || 'Chat').slice(0, 48);
+      // Held from before the folder is prepared, so a start still preparing,
+      // typed or spoken, blocks another.
+      if (projectDraft) projectStartRef.current = clientRef;
+      const draftAtSubmit = store.getState().draftChat;
+      const title = (displayText || skillNames[0] || (projectDraft ? 'Project' : 'Chat')).slice(
+        0,
+        48,
+      );
       startTurnStarting(clientRef);
       const preparation = await prepareDraftCwd(selectedDir, clientRef, title);
       if (!preparation.ok) {
         stopTurnStarting();
+        releaseProjectStart(clientRef);
         return;
       }
       const dir = preparation.path;
       if (dir) await markGitTurnStart(dir, clientRef);
       if (updateInterruptedSubmit()) {
         stopTurnStarting();
+        releaseProjectStart(clientRef);
         return;
       }
       registerPending(clientRef);
+      // Whether this send empties the composer: an edit made while it was
+      // preparing is kept, and a failure must not replace it.
+      const clearsDraft = composerRevisionRef.current === composerRevision;
       clearAfterSubmit();
+      if (projectDraft) {
+        const clearedRevision = composerRevisionRef.current;
+        // A project takes its skills as words, since its first prompt also
+        // carries the lead's brief.
+        startProject(
+          clientRef,
+          {
+            title,
+            prompt: composePrompt(displayText, skillNames, allFiles),
+            dir,
+            selectedDir,
+            draft: draftAtSubmit,
+          },
+          () => {
+            // Only what this start set is undone: a user who has moved on, or
+            // typed since, keeps what they have now.
+            if (turnStartingClientRef.current === clientRef) stopTurnStarting();
+            const now = store.getState();
+            if (
+              clearsDraft &&
+              now.activeAppSessionId === null &&
+              now.draftChat?.project === true &&
+              composerRevisionRef.current === clearedRevision
+            )
+              dispatch({ type: 'SEED_COMPOSER', text: displayText, replace: true });
+          },
+        );
+        armTurnStartingTimeout();
+        return;
+      }
       try {
         createSession({
           clientRef,
@@ -1420,41 +1532,37 @@ export default function PromptInput({
       return;
     }
 
+    // A steer into the chat's own turn is pending under this id until the model
+    // takes it in. A child runs on Droid, which cannot take a steer yet, so its
+    // prompt waits behind the turn like any other send.
+    const steerId =
+      isLive && mode === 'steer' && !targetChildSessionId ? crypto.randomUUID() : undefined;
     const appendTranscript = () => {
-      dispatch({
-        type: 'SESSION_TRANSCRIPT',
-        event: {
-          id: `local-${String(Date.now())}`,
-          appSessionId: activeSession.appSessionId,
-          sourceSessionId: targetChildSessionId ?? 'user',
-          role: targetChild?.role ?? 'primary',
-          ts: Date.now(),
-          kind: 'text',
-          text: displayText,
-          author: 'user',
-          skills: skillNames,
-          files: allFiles,
-          ...(sideChatReplies.length > 0 ? { sideChatReplies } : {}),
-          steered: isLive && mode === 'now',
-        },
-      });
+      // A steer shows from the sidecar's list of pending steers instead.
+      if (!steerId)
+        dispatch({
+          type: 'SESSION_TRANSCRIPT',
+          event: {
+            id: `local-${String(Date.now())}`,
+            appSessionId: activeSession.appSessionId,
+            sourceSessionId: targetChildSessionId ?? 'user',
+            role: targetChild?.role ?? 'primary',
+            ts: Date.now(),
+            kind: 'text',
+            text: displayText,
+            author: 'user',
+            skills: skillNames,
+            files: allFiles,
+            ...(sideChatReplies.length > 0 ? { sideChatReplies } : {}),
+          },
+        });
       if (sideChatReplies.length > 0) detachSideChatReplies();
     };
     const sendCommand = () => {
       try {
-        if (targetChildSessionId) {
-          if (mode === 'now')
-            sendToChildNow(
-              activeSession.appSessionId,
-              targetChildSessionId,
-              composed,
-              responseFormat,
-            );
-          else
-            sendToChild(activeSession.appSessionId, targetChildSessionId, composed, responseFormat);
-        } else if (mode === 'now')
-          sendToSessionNow(activeSession.appSessionId, composed, responseFormat, mentions);
-        else sendToSession(activeSession.appSessionId, composed, responseFormat, mentions);
+        if (targetChildSessionId)
+          sendToChild(activeSession.appSessionId, targetChildSessionId, composed, responseFormat);
+        else sendToSession(activeSession.appSessionId, composed, responseFormat, mentions, steerId);
         armTurnStartingTimeout();
       } catch (err) {
         stopTurnStarting();
@@ -1464,7 +1572,7 @@ export default function PromptInput({
 
     const childRuntimeTarget = childRuntimeSubmitTarget(visibleTarget);
     if (childRuntimeTarget && workingDirectory) {
-      const showTurnStarting = shouldShowTurnStarting(isLive);
+      const showTurnStarting = !isLive;
       if (showTurnStarting) startTurnStarting();
       const committed = await commitChildPromptAfterBaseline({
         capturedTarget: childRuntimeTarget,
@@ -1481,7 +1589,7 @@ export default function PromptInput({
       return;
     }
 
-    const showTurnStarting = shouldShowTurnStarting(isLive);
+    const showTurnStarting = !isLive;
     if (showTurnStarting) startTurnStarting();
 
     const committed = await commitPrimaryPromptAfterBaseline({
@@ -1668,11 +1776,9 @@ export default function PromptInput({
     if (e.key === 'Enter' && !e.shiftKey && !e.altKey) {
       e.preventDefault();
       e.stopPropagation();
-      const enterMode: SubmitMode =
-        isLive && state.liveEnterBehavior === 'interrupt' ? 'now' : 'queue';
-      void handleSubmit(
-        isLive && (e.metaKey || e.ctrlKey) ? oppositeSubmitMode(enterMode) : enterMode,
-      );
+      const enterMode: SubmitMode = state.liveEnterBehavior;
+      const otherMode: SubmitMode = enterMode === 'steer' ? 'queue' : 'steer';
+      void handleSubmit(e.metaKey || e.ctrlKey ? otherMode : enterMode);
     }
   };
 
@@ -1687,17 +1793,19 @@ export default function PromptInput({
   const viewerSrc = viewerPath === null ? null : imageSrc(viewerPath);
   // The "Start in" repo/worktree/branch row only applies while drafting a brand
   // new chat; it renders as the top section of the composer card.
-  const showStartIn = !activeSession && !missionPreview && !!cwd;
-  const enterSteers = state.liveEnterBehavior === 'interrupt';
+  const showStartIn = !activeSession && !missionPreview && (!!cwd || projectDraft);
+  const enterSteers = state.liveEnterBehavior === 'steer';
+  let chatPlaceholder = 'What would you like to work on?  (/ for skills, @ for files)';
+  if (isSpecMode) chatPlaceholder = 'Describe what to build in spec mode...';
+  if (projectDraft)
+    chatPlaceholder = 'What should this project get done?  (/ for skills, @ for files)';
   const promptPlaceholder = missionPreview
     ? activeSession
       ? targetChildSessionId
         ? 'Steer the selected child session…'
         : 'Direct the orchestrator…'
       : 'Describe the mission objective…'
-    : isSpecMode
-      ? 'Describe what to build in spec mode...'
-      : 'What would you like to work on?  (/ for skills, @ for files)';
+    : chatPlaceholder;
   const hasContent =
     input.trim().length > 0 ||
     visualizeSelected ||
@@ -1725,6 +1833,55 @@ export default function PromptInput({
   // arrives. `registered` marks the point where the wait can be read from the
   // store, which is what tells an abandoned create from one still being
   // prepared.
+  /* Starts a project's lead under this composer's clientRef, so it opens like
+     any chat started here. A worktree the start cut becomes the draft's folder
+     first, so a retry after a failure reuses it instead of cutting another. */
+  const startProject = (
+    clientRef: string,
+    project: {
+      title: string;
+      prompt: string;
+      dir: string;
+      selectedDir: string;
+      draft: AppState['draftChat'];
+    },
+    onFailed: () => void,
+  ) => {
+    // Only the draft this start came from moves onto the worktree it cut; one
+    // the user has since replaced or left stays as it is.
+    const now = store.getState();
+    if (
+      project.dir &&
+      project.dir !== project.selectedDir &&
+      now.activeAppSessionId === null &&
+      now.draftChat === project.draft
+    ) {
+      const override = now.draftAutonomy;
+      dispatch({ type: 'START_CHAT', cwd: project.dir, executionMode: 'local', project: true });
+      if (override) dispatch({ type: 'SET_DRAFT_AUTONOMY', autonomy: override });
+    }
+    createProject(
+      {
+        title: project.title,
+        prompt: project.prompt,
+        provider: draftProvider,
+        ...draftModelSettings,
+        autonomy: draftAutonomy,
+        ...(project.dir ? { cwd: project.dir } : {}),
+      },
+      clientRef,
+    )
+      .catch((error: unknown) => {
+        const message = error instanceof Error ? error.message : String(error);
+        dispatch({ type: 'SESSION_CREATE_FAILED', clientRef, message });
+        toast.error(`The project could not start: ${message}`);
+        onFailed();
+      })
+      .finally(() => {
+        releaseProjectStart(clientRef);
+      });
+  };
+
   const voiceAwaiting = useRef<{ clientRef: string; registered: boolean } | null>(null);
 
   // The orb: talk to the chat that is open, or start one and talk to that. A
@@ -1735,18 +1892,21 @@ export default function PromptInput({
       voice.openOn(activeSession.appSessionId);
       return;
     }
-    if (voiceAwaiting.current) return;
+    if (voiceAwaiting.current || (projectDraft && projectStartRef.current)) return;
     const clientRef = newClientRef();
     voiceAwaiting.current = { clientRef, registered: false };
+    if (projectDraft) projectStartRef.current = clientRef;
+    const draftAtStart = store.getState().draftChat;
     void (async () => {
       // Named for now by when it started; the first thing said in it renames it.
-      const placeholder = `Voice chat ${new Date().toLocaleTimeString([], {
-        hour: '2-digit',
-        minute: '2-digit',
-      })}`;
+      const placeholder = `${projectDraft ? 'Voice project' : 'Voice chat'} ${new Date().toLocaleTimeString(
+        [],
+        { hour: '2-digit', minute: '2-digit' },
+      )}`;
       const preparation = await prepareDraftCwd(state.draftChat?.cwd ?? '', clientRef, placeholder);
       if (!preparation.ok) {
         voiceAwaiting.current = null;
+        releaseProjectStart(clientRef);
         return;
       }
       // A chat only takes focus when the renderer is waiting for it, and the
@@ -1754,6 +1914,24 @@ export default function PromptInput({
       // prompt to wait for here, so the wait is registered empty.
       dispatch({ type: 'SET_PENDING_COMPOSE', clientRef, text: '', skills: [], files: [] });
       if (voiceAwaiting.current?.clientRef === clientRef) voiceAwaiting.current.registered = true;
+      if (projectDraft) {
+        // The lead is briefed by its first prompt, which a spoken goal never
+        // reaches, so it starts on a turn that asks for the goal instead.
+        startProject(
+          clientRef,
+          {
+            title: placeholder,
+            prompt: VOICE_PROJECT_TASK,
+            dir: preparation.path,
+            selectedDir: state.draftChat?.cwd ?? '',
+            draft: draftAtStart,
+          },
+          () => {
+            voiceAwaiting.current = null;
+          },
+        );
+        return;
+      }
       createSession({
         clientRef,
         cwd: preparation.path,
@@ -1773,6 +1951,7 @@ export default function PromptInput({
       // works again. The failure itself is reported by the command that raised
       // it.
       voiceAwaiting.current = null;
+      releaseProjectStart(clientRef);
     });
   };
 
@@ -1827,7 +2006,7 @@ export default function PromptInput({
       enterSteers={enterSteers}
       hintOpen={sendHintOpen}
       onHintOpenChange={setSendHintOpen}
-      onSend={() => void handleSubmit(isLive && enterSteers ? 'now' : 'queue')}
+      onSend={() => void handleSubmit(enterSteers ? 'steer' : 'queue')}
       onStop={() => {
         if (activeSession)
           interruptVisibleSession(activeSession.appSessionId, targetChildSessionId);
@@ -1860,15 +2039,12 @@ export default function PromptInput({
           onRunRow={runMenuItem}
         />
 
-        <PlanApprovalInline />
+        {activeSession && !targetChildSessionId && (
+          <SideChatRestoreButton sourceAppSessionId={activeSession.appSessionId} />
+        )}
         {/* The full voice surface covers this composer and shows the same two
             cards itself, so only one of the two places owns an ask at a time. */}
-        {voice.view !== 'full' && (
-          <>
-            <PermissionInline />
-            <AskUserInline />
-          </>
-        )}
+        <InlineInteractions plans asks={voice.view !== 'full'} />
 
         {missionPreview ? (
           <div
@@ -1883,9 +2059,6 @@ export default function PromptInput({
             SPEC MODE
           </div>
         ) : null}
-        {activeSession && !targetChildSessionId && (
-          <SideChatRestoreButton sourceAppSessionId={activeSession.appSessionId} />
-        )}
 
         <QueuedPrompts
           queue={queue}
@@ -2089,6 +2262,7 @@ export default function PromptInput({
               <AutonomySelector
                 align="start"
                 scope="session"
+                provider={activeSession.provider}
                 value={activeSession.autonomy}
                 pending={activeSession.appSessionId in state.pendingAutonomy}
                 onSelect={(level) => {
@@ -2107,6 +2281,7 @@ export default function PromptInput({
               <AutonomySelector
                 align="start"
                 scope="draft"
+                provider={composerProvider}
                 value={draftAutonomy}
                 onSelect={(level) => {
                   dispatch({ type: 'SET_DRAFT_AUTONOMY', autonomy: level });
@@ -2176,6 +2351,14 @@ export default function PromptInput({
                       <span className="truncate font-medium text-droid-text">
                         {shortModelName(selectedModelLabel)}
                       </span>
+                      {fastMode && offersFastMode(composerProvider) && (
+                        <Zap
+                          size={11}
+                          fill="currentColor"
+                          className="shrink-0 text-droid-accent"
+                          aria-label={`Fast mode: ${FAST_MODE_HINT}`}
+                        />
+                      )}
                       {primaryReasoning && (
                         <span
                           className={`shrink-0 capitalize ${
@@ -2188,6 +2371,16 @@ export default function PromptInput({
                           {reasoningEffortLabel(primaryReasoning, composerProvider)}
                         </span>
                       )}
+                      {contextWindowTokens !== undefined &&
+                        offersContextWindow(composerProvider) && (
+                          <span
+                            className="shrink-0 text-droid-text-muted"
+                            title={`${CONTEXT_WINDOW_LABEL}: ${contextWindowLabel(contextWindowTokens)}`}
+                          >
+                            {primaryReasoning ? '· ' : ''}
+                            {contextWindowLabel(contextWindowTokens)}
+                          </span>
+                        )}
                     </>
                   )}
                 </button>

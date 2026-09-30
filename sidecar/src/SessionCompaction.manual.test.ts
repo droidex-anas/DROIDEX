@@ -60,11 +60,11 @@ class TestRegistry {
     return live.summary;
   }
 
-  replaceProvider(
+  async replaceProvider(
     id: string,
     providerSessionId: string,
     patch: SessionSummaryPatch = {},
-  ): SessionSummary | undefined {
+  ): Promise<SessionSummary | undefined> {
     const error = this.nextReplaceError;
     delete this.nextReplaceError;
     if (error) throw error;
@@ -145,6 +145,7 @@ function createHarness(options: { adoptSucceeds?: boolean; adopt?: () => Promise
       requestApproval: () => new Promise<PermissionOutcome>(() => undefined),
       requestQuestion: () => new Promise<ProviderQuestionAnswers>(() => undefined),
       cancelPending: () => undefined,
+      isActive: () => true,
     }),
     emitError: (error) => {
       errors.push(error);

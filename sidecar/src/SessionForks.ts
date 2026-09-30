@@ -9,11 +9,12 @@ import type {
 } from './protocol.js';
 import type { LiveSession, SessionBranch, SessionCreateCommand } from './SessionLifecycle.js';
 import type { SessionFileChange } from './sessionFileCache.js';
-import { errMsg } from './sessionHelpers.js';
+import { errMsg } from './errors.js';
 import type { SessionLineageStore } from './sessionLineage.js';
+import { formatSideChatPrompt } from './sideChatPrompt.js';
 import { conversationMarkdown } from './sessionMarkdown.js';
 import type { SessionRegistry, SessionSummaryPatch } from './SessionRegistry.js';
-import { readForkedTranscript, writeForkedTranscript } from './providers/ProviderTranscriptFile.js';
+import { forkedTranscript, writeForkedTranscript } from './providers/ProviderTranscriptFile.js';
 import type { ProviderKind } from './providers/providerKind.js';
 import type { Provider, ProviderModelSettings } from './providers/session.js';
 
@@ -32,6 +33,8 @@ export interface SessionForksDependencies {
   lineage: SessionLineageStore;
   // Indexes one session file now, or scans for every file when given null.
   indexSessionFiles: (change: SessionFileChange | null) => Promise<void>;
+  // A session's DROIDEX transcript, behind every line its writer has queued.
+  readTranscript: (appSessionId: string) => Promise<string>;
   // The settings owner's model change: it reaches the provider as well as the stored row.
   updateModel: (appSessionId: string, settings: ProviderModelSettings) => Promise<boolean>;
   isShutdownStarted: () => boolean;
@@ -83,7 +86,7 @@ export class SessionForks {
     if (!copiedAppSessionId) return;
     if (command.modelId && !(await this.applyPickedModel(copiedAppSessionId, command))) return;
     const request = command.prompt?.trim();
-    if (request) await this.d.send(copiedAppSessionId, request);
+    if (request) await this.d.send(copiedAppSessionId, firstMessage(command.lineage, request));
   }
 
   // A model picked for the copy replaces the source's and its effort, since an
@@ -147,17 +150,20 @@ export class SessionForks {
     // scrollback is DROIDEX's transcript file, which is copied beside it.
     let transcript = null;
     if (source.provider !== 'droid') {
-      this.requireUnchanged(source);
-      transcript = readForkedTranscript(source.appSessionId, command.forkPointId);
+      this.requireUnchanged(source, live);
+      const stored = await this.d.readTranscript(source.appSessionId);
+      this.requireUnchanged(source, live);
+      transcript = forkedTranscript(source.appSessionId, stored, command.forkPointId);
     }
     const appSessionId = handle.providerSessionId;
     const change = transcript && {
       providerSessionId: appSessionId,
-      path: writeForkedTranscript(transcript, {
+      path: await writeForkedTranscript(transcript, {
         appSessionId,
         title: command.title,
         ...(handle.resumeId ? { resumeId: handle.resumeId } : {}),
         ...(handle.forkPointRenames ? { forkPointRenames: handle.forkPointRenames } : {}),
+        dropContextWindow: changesModel(command, source),
       }),
     };
     // Recorded before the copy is indexed, so the list that indexing publishes
@@ -166,10 +172,11 @@ export class SessionForks {
     await this.d.indexSessionFiles(change);
     // The stored row makes the copy a DROIDEX chat and carries the source's
     // settings, which the provider's file does not always hold.
-    if (!this.d.registry.updateStoredSummary(appSessionId, copiedSettings(command, source))) {
-      throw new Error('The copied chat could not be found after forking.');
-    }
-    const session = this.d.registry.resolveSummary(appSessionId);
+    const stored = await this.d.registry.updateStoredSummary(
+      appSessionId,
+      copiedSettings(command, source),
+    );
+    const session = stored && this.d.registry.resolveSummary(appSessionId);
     if (!session) throw new Error('The copied chat could not be found after forking.');
     this.d.emit({ type: 'session.forked', clientRef: command.clientRef, session });
     return appSessionId;
@@ -195,21 +202,31 @@ export class SessionForks {
         interactionMode: source.interactionMode === 'spec' ? 'spec' : 'auto',
         autonomy: source.autonomy,
         ...(provider === source.provider
-          ? modelSettings(command, source)
+          ? { ...modelSettings(command, source), ...chatPreferences(command, source) }
           : pickedModelSettings(command)),
       },
-      { lineage, prompt: formatBranchPrompt(request, await this.sourceConversation(source)) },
+      {
+        lineage,
+        prompt: formatBranchPrompt(
+          firstMessage(command.lineage, request),
+          await this.sourceConversation(source),
+        ),
+      },
     );
   }
 
   // The provider's copy was taken across an await: a source that closed, was
   // replaced or started a turn meanwhile would pair it with a transcript it
-  // never had.
-  private requireUnchanged(source: SessionSummary): void {
+  // never had. A relaunch on a new context window keeps the provider session
+  // and replaces the runtime, so the runtime itself is compared too, and a
+  // turn that started and finished meanwhile moved the chat's activity time.
+  private requireUnchanged(source: SessionSummary, runtime: unknown): void {
     const current = this.d.registry.resolveSummary(source.appSessionId);
     if (
       this.d.isShutdownStarted() ||
       current?.providerSessionId !== source.providerSessionId ||
+      current?.updatedAt !== source.updatedAt ||
+      this.d.registry.getLive(source.appSessionId) !== runtime ||
       this.isStreaming(source)
     ) {
       throw new Error('The chat changed while it was being copied. Try again.');
@@ -219,6 +236,11 @@ export class SessionForks {
   // A chat opened this run is indexed only once it closes, so a missing
   // transcript is looked for on disk before the branch gives up.
   private async sourceConversation(source: SessionSummary): Promise<string> {
+    // Lines the source's writer still has queued are part of the conversation;
+    // the read waits for them. A missing or unreadable file is found out by
+    // the stored read below.
+    if (source.provider !== 'droid')
+      await this.d.readTranscript(source.appSessionId).catch(() => undefined);
     let events = storedEvents(source);
     if (events.length === 0) {
       await this.d.indexSessionFiles(null);
@@ -227,6 +249,10 @@ export class SessionForks {
     if (events.length === 0) throw new Error('This chat has no stored messages to fork.');
     return conversationMarkdown(events);
   }
+}
+
+function firstMessage(lineage: SessionLineage['kind'], request: string): string {
+  return lineage === 'side' ? formatSideChatPrompt(request) : request;
 }
 
 function copiedSettings(command: SessionForkCommand, source: SessionSummary): SessionSummaryPatch {
@@ -239,6 +265,7 @@ function copiedSettings(command: SessionForkCommand, source: SessionSummary): Se
     ...(source.workspaceKind ? { workspaceKind: source.workspaceKind } : {}),
     // A picked model is applied through the settings owner once the copy exists.
     ...(command.modelId ? {} : modelSettings(command, source)),
+    ...chatPreferences(command, source),
     ...(source.compactionModel ? { compactionModel: source.compactionModel } : {}),
   };
 }
@@ -251,6 +278,24 @@ function modelSettings(command: SessionForkCommand, source: SessionSummary): Ses
     ...(source.modelId ? { modelId: source.modelId } : {}),
     ...(source.reasoningEffort ? { reasoningEffort: source.reasoningEffort } : {}),
   };
+}
+
+// The fast mode the chat asked for stays with a copy on the same harness, as
+// the copied transcript and settings files already say. Its window belongs to
+// its model, like an effort: a model picked for the copy runs its own default,
+// since it may have no 1M version at all.
+function chatPreferences(command: SessionForkCommand, source: SessionSummary): SessionSummaryPatch {
+  return {
+    ...(source.fastMode !== undefined ? { fastMode: source.fastMode } : {}),
+    ...(!changesModel(command, source) && source.contextWindowTokens !== undefined
+      ? { contextWindowTokens: source.contextWindowTokens }
+      : {}),
+  };
+}
+
+// The side chat picker sends the source's own model when it is left alone.
+function changesModel(command: SessionForkCommand, source: SessionSummary): boolean {
+  return command.modelId !== undefined && command.modelId !== source.modelId;
 }
 
 // Another harness cannot run the source's model; without a pick it starts on its own default.

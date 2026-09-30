@@ -126,7 +126,7 @@ The app has no traditional user authentication; it is a single-user desktop appl
 
 #### IPC Channels (Renderer -> Main)
 
-- **`get-api-key` / `set-api-key` / `clear-api-key`** - Manage encrypted FACTORY_API_KEY
+- **`get-api-key` / `set-api-key`** - Manage encrypted FACTORY_API_KEY
   - **Risk:** No sender validation; compromised renderer can read/overwrite/destroy the key
 - **`list-files` / `read-file`** (legacy) - Arbitrary path filesystem access
   - **Risk:** No root confinement, no token gate; arbitrary file read from any path

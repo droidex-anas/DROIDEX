@@ -45,6 +45,12 @@ const AUTOMATION_MCP_CONFIG = McpServerConfigSchema.parse({
   url: 'http://127.0.0.1/automations',
 });
 
+const SESSIONS_MCP_CONFIG = McpServerConfigSchema.parse({
+  type: 'http',
+  name: 'droidex-sessions',
+  url: 'http://127.0.0.1/sessions',
+});
+
 const CLI_MCP_CONFIG = McpServerConfigSchema.parse({
   type: 'http',
   name: 'test-cli',
@@ -79,6 +85,7 @@ export interface SessionManagerTestContext {
     command: Omit<Extract<Protocol.ClientCommand, { type: 'session.create' }>, 'type'>,
   ): Promise<void>;
   retireIdleSessionRuntimes(): Promise<void>;
+  warmSelectedSessionRuntime(): Promise<void>;
   scanAgentProcesses(): Promise<void>;
   shutdown(): Promise<void>;
   waitForIdle(): Promise<void>;
@@ -122,6 +129,7 @@ export function createSessionManagerTestContext(
     browsers,
     createLocalMcpResource: () => new FakeLocalMcpResource(calls),
     createAutomationMcpResource: () => new FakeAutomationMcpResource(),
+    createSessionsMcpResource: () => new FakeInAppMcpResource(SESSIONS_MCP_CONFIG),
     loadConfiguredMcpServers: () => [CLI_MCP_CONFIG],
     mcpConfiguration: {
       add: (server, cwd) => {
@@ -268,6 +276,7 @@ export function createSessionManagerTestContext(
     deliverScheduledMessage: manager.deliverScheduledMessage.bind(manager),
     create: (command) => handle({ type: 'session.create', ...command }),
     retireIdleSessionRuntimes: () => manager.retireIdleSessionRuntimes(),
+    warmSelectedSessionRuntime: () => manager.warmSelectedSessionRuntime(),
     scanAgentProcesses: () => manager.scanAgentProcesses(),
     shutdown: () => manager.shutdown(),
     waitForIdle: () => new Promise((resolve) => setImmediate(resolve)),
@@ -351,6 +360,19 @@ class FakeLocalMcpResource implements StartableLocalMcpResource {
 class FakeAutomationMcpResource implements StartableLocalMcpResource {
   start(): Promise<McpServerConfig> {
     return Promise.resolve(AUTOMATION_MCP_CONFIG);
+  }
+
+  close(): Promise<void> {
+    return Promise.resolve();
+  }
+}
+
+/** Stands in for one of DROIDEX's own in-process tool servers. */
+class FakeInAppMcpResource implements StartableLocalMcpResource {
+  constructor(private readonly config: McpServerConfig) {}
+
+  start(): Promise<McpServerConfig> {
+    return Promise.resolve(this.config);
   }
 
   close(): Promise<void> {

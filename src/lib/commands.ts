@@ -3,16 +3,17 @@ import { isAppUpdateInstalling } from './appUpdate';
 import type {
   Autonomy,
   BrowserNativeResult,
-  BrowserScrollDirection,
   BrowserViewport,
   BrowserViewportMode,
   ConfigurableSessionRole,
+  ContextWindowTokens,
   DesignReference,
   DroidProxyProviderKey,
   HarnessCliProvider,
   InstallChannel,
   McpServerInput,
   PermissionOutcome,
+  QuestionAnswer,
   ProviderKind,
   ProviderMention,
   ReasoningEffort,
@@ -22,6 +23,7 @@ import type {
   SessionPurpose,
   VoiceNarration,
 } from '../types/bridge';
+import type { SidebarResult } from '../types/sidebar';
 
 let refCounter = 0;
 
@@ -48,6 +50,8 @@ export const createSession = (input: {
   interactionMode?: SessionInteractionMode;
   modelId?: string;
   reasoningEffort?: ReasoningEffort;
+  fastMode?: boolean;
+  contextWindowTokens?: ContextWindowTokens;
   compactionModel?: string;
   compactionTokenLimit?: number | null;
   compactionTokenLimitPerModel?: Record<string, number>;
@@ -81,6 +85,8 @@ export const updateSessionSettings = (input: {
   appSessionId: string;
   modelId?: string | null;
   reasoningEffort?: ReasoningEffort | null;
+  fastMode?: boolean;
+  contextWindowTokens?: ContextWindowTokens;
   requestId?: string;
   autonomy?: Autonomy;
   interactionMode?: SessionInteractionMode;
@@ -131,8 +137,10 @@ export const cancelDroidProxyInstall = () => {
 export const applyDroidProxyFactoryModels = () => {
   bridge.send({ type: 'droidproxy.factoryModels.apply' });
 };
-export const requestRuntimeStatus = () => {
-  bridge.send({ type: 'runtime.status' });
+
+/** The project graph: which sessions are threads, and what each project is doing. */
+export const listProjects = () => {
+  bridge.send({ type: 'projects.list' });
 };
 
 export const listModels = () => {
@@ -168,11 +176,14 @@ export const listFactoryDefaults = () => {
   bridge.send({ type: 'settings.defaults' });
 };
 
+// A steer id hands the prompt to the running turn; without one, a send while
+// the turn runs waits for it to end.
 export const sendToSession = (
   appSessionId: string,
   text: string,
   responseFormat?: ResponseFormat,
   mentions?: ProviderMention[],
+  steerId?: string,
 ) => {
   requireAgentWorkAvailable();
   bridge.send({
@@ -181,23 +192,19 @@ export const sendToSession = (
     text,
     ...(mentions?.length ? { mentions } : {}),
     ...(responseFormat ? { responseFormat } : {}),
+    ...(steerId ? { steerId } : {}),
   });
 };
 
-export const sendToSessionNow = (
-  appSessionId: string,
-  text: string,
-  responseFormat?: ResponseFormat,
-  mentions?: ProviderMention[],
-) => {
+export const repairApp = (appSessionId: string, error: string, source: string) => {
   requireAgentWorkAvailable();
-  bridge.send({
-    type: 'session.sendNow',
-    appSessionId,
-    text,
-    ...(mentions?.length ? { mentions } : {}),
-    ...(responseFormat ? { responseFormat } : {}),
-  });
+  bridge.send({ type: 'session.repairApp', appSessionId, error, source });
+};
+
+// Stops the running turn so a steer the model has not taken in yet goes first.
+export const sendSteerNow = (appSessionId: string, steerId: string) => {
+  requireAgentWorkAvailable();
+  bridge.send({ type: 'session.sendNow', appSessionId, steerId });
 };
 
 export const sendToChild = (
@@ -209,22 +216,6 @@ export const sendToChild = (
   requireAgentWorkAvailable();
   bridge.send({
     type: 'child.send',
-    parentAppSessionId,
-    childSessionId,
-    text,
-    ...(responseFormat ? { responseFormat } : {}),
-  });
-};
-
-export const sendToChildNow = (
-  parentAppSessionId: string,
-  childSessionId: string,
-  text: string,
-  responseFormat?: ResponseFormat,
-) => {
-  requireAgentWorkAvailable();
-  bridge.send({
-    type: 'child.sendNow',
     parentAppSessionId,
     childSessionId,
     text,
@@ -244,7 +235,7 @@ export const respondQuestion = (
   appSessionId: string,
   requestId: string,
   cancelled: boolean,
-  answers: { index: number; question: string; answer: string }[],
+  answers: QuestionAnswer[],
 ) => {
   bridge.send({ type: 'question.respond', appSessionId, requestId, cancelled, answers });
 };
@@ -310,10 +301,6 @@ export const openChild = (
   requestId: string,
 ) => {
   bridge.send({ type: 'child.open', parentAppSessionId, childSessionId, requestId });
-};
-
-export const closeSession = (appSessionId: string) => {
-  bridge.send({ type: 'session.close', appSessionId });
 };
 
 export const stopAgentProcess = (appSessionId: string, pid: number) => {
@@ -474,16 +461,8 @@ export const openBrowser = (input: {
   bridge.send({ type: 'browser.open', ...input });
 };
 
-export const closeBrowser = (appSessionId: string) => {
-  bridge.send({ type: 'browser.close', appSessionId });
-};
-
 export const reloadBrowser = (appSessionId: string) => {
   bridge.send({ type: 'browser.reload', appSessionId });
-};
-
-export const refreshBrowser = (appSessionId: string) => {
-  bridge.send({ type: 'browser.refresh', appSessionId });
 };
 
 export const resizeBrowserViewport = (input: {
@@ -492,34 +471,6 @@ export const resizeBrowserViewport = (input: {
   viewportMode: BrowserViewportMode;
 }) => {
   bridge.send({ type: 'browser.resizeViewport', ...input });
-};
-
-export const clickBrowser = (input: {
-  appSessionId: string;
-  ref?: string;
-  x?: number;
-  y?: number;
-  source?: 'agent' | 'user';
-}) => {
-  bridge.send({ type: 'browser.click', ...input });
-};
-
-export const typeBrowser = (appSessionId: string, text: string) => {
-  bridge.send({ type: 'browser.type', appSessionId, text });
-};
-
-export const keypressBrowser = (appSessionId: string, key: string) => {
-  bridge.send({ type: 'browser.keypress', appSessionId, key });
-};
-
-export const scrollBrowser = (input: {
-  appSessionId: string;
-  direction: BrowserScrollDirection;
-  pixels?: number;
-  ref?: string;
-  source?: 'agent' | 'user';
-}) => {
-  bridge.send({ type: 'browser.scroll', ...input });
 };
 
 export const addDesignReference = (appSessionId: string, reference: DesignReference) => {
@@ -541,4 +492,8 @@ export const sendDesignPrompt = (
 
 export const sendNativeBrowserResult = (result: BrowserNativeResult) => {
   bridge.send({ type: 'browser.native.result', result });
+};
+
+export const sendSidebarResult = (result: SidebarResult) => {
+  bridge.send({ type: 'sidebar.result', result });
 };

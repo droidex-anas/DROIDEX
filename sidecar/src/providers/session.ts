@@ -1,25 +1,33 @@
-import type { McpServerConfig } from '@factory/droid-sdk';
+import type { McpServerConfig, SdkMcpServer } from '@factory/droid-sdk';
 
-import type { CreateRuntimeSessionOptions } from '../DroidRuntime.js';
 import type { NormalizedEvent } from '../normalize.js';
 import type {
   Autonomy,
+  ContextWindowTokens,
   ReasoningEffort,
   SessionInteractionMode,
   VoiceNarration,
 } from '../protocol.js';
 import type { ProviderMention, SkillInfo } from './catalog.js';
+import type { DroidLaunchSettings } from './droid/droidLaunch.js';
 import type { ProviderInteractions } from './interactions.js';
 import type { ProviderKind } from './providerKind.js';
 import type { ProviderProbe } from './providerProbes.js';
 
-// The option shape the lifecycle already builds. A provider ignores the fields
-// its runtime does not support; Droid's handler pair is replaced by the neutral
-// interactions port.
-export type ProviderOpenInput = Omit<
-  CreateRuntimeSessionOptions,
-  'permissionHandler' | 'askUserHandler'
-> & { interactions: ProviderInteractions };
+export interface ProviderOpenInput {
+  cwd: string;
+  interactionMode: SessionInteractionMode;
+  autonomy: Autonomy;
+  modelId?: string;
+  reasoningEffort?: ReasoningEffort;
+  fastMode?: boolean;
+  contextWindowTokens?: ContextWindowTokens;
+  mcpServers: McpServerConfig[];
+  inAppMcpServers?: SdkMcpServer[];
+  interactions: ProviderInteractions;
+  // Set only when the session opens on Droid.
+  droidLaunch?: DroidLaunchSettings;
+}
 
 export interface ProviderResumeInput {
   // DROIDEX's own identity for the session, which a resumed provider session
@@ -30,11 +38,15 @@ export interface ProviderResumeInput {
   resumeId?: string;
   cwd?: string;
   mcpServers?: McpServerConfig[];
+  inAppMcpServers?: SdkMcpServer[];
   // The stored launch settings, for a provider that keeps no session file of
   // its own and therefore cannot read them back. Droid reads its own.
   modelId?: string;
   reasoningEffort?: ReasoningEffort;
+  fastMode?: boolean;
+  contextWindowTokens?: ContextWindowTokens;
   autonomy?: Autonomy;
+  interactionMode?: SessionInteractionMode;
   interactions: ProviderInteractions;
 }
 
@@ -70,6 +82,8 @@ export interface ProviderModelSettings {
   // A level selects it; null clears the level a previous model carried, for a
   // model that offers none; absent leaves it alone.
   reasoningEffort?: ReasoningEffort | null;
+  fastMode?: boolean;
+  contextWindowTokens?: ContextWindowTokens;
 }
 
 // A live voice conversation on the same session: the client negotiates WebRTC
@@ -135,10 +149,11 @@ export interface ProviderSession {
    * prompt queues behind it and Stop can reach it.
    */
   onDelegatedTurn?(listener: (running: boolean) => void): () => void;
-  // Takes a prompt into the turn that is already running, so the turn keeps its
-  // work and continues with it. Absent on a provider that can only steer by
-  // interrupting and resending, which is what the session layer then does.
-  steer?(text: string, mentions?: ProviderMention[]): Promise<void>;
+  // Hands a prompt to the running turn, which the harness delivers at its own
+  // next step. Resolves true once the model has it, and false when the turn
+  // cannot take it or ends without it; the session layer then sends it as an
+  // ordinary message, as it does on a provider without a steer.
+  steer?(text: string, mentions?: ProviderMention[]): Promise<boolean>;
   // Provider-native command/skill/app/plugin rows, cached for this live runtime.
   catalogItems?(): Promise<SkillInfo[]>;
   onCatalogUpdated?(listener: (items: SkillInfo[]) => void): () => void;
@@ -157,6 +172,7 @@ export interface ProviderSession {
 
 export interface Provider {
   readonly kind: ProviderKind;
+  validateModelSettings?(settings: ProviderModelSettings): void | Promise<void>;
   create(input: ProviderOpenInput): Promise<ProviderSession>;
   resume(providerSessionId: string, input: ProviderResumeInput): Promise<ProviderSession>;
   // Copies a settled conversation into a new, independent one the provider can

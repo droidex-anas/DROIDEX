@@ -1,6 +1,7 @@
 import {
   hydrateHistoricalSession,
   loadSessionHistory,
+  loadOpenTranscriptTail,
   loadSessionPage,
   loadSessionTranscriptWindow,
   resolveSessionChain,
@@ -14,8 +15,9 @@ import type {
   TranscriptEvent,
 } from './protocol.js';
 import type { CompactType } from './compaction.js';
-import { errMsg } from './sessionHelpers.js';
+import { errMsg } from './errors.js';
 import { StreamingDeltaCoalescer, streamingEventOwner } from './streamingDeltaCoalescer.js';
+import { userPromptDisplay } from './sessionTranscriptParser.js';
 import { hotPathMetrics } from './telemetry/hotPathMetrics.js';
 
 interface TimelineHistory {
@@ -31,6 +33,7 @@ export interface SessionTimelineLoaders {
   hydrateMission: typeof hydrateHistoricalSession;
   resolveChain: typeof resolveSessionChain;
   transcriptWindow: typeof loadSessionTranscriptWindow;
+  openTranscriptTail: typeof loadOpenTranscriptTail;
 }
 
 export interface SessionTimelineRegistry {
@@ -46,6 +49,9 @@ export interface SessionTimelineDependencies {
   emitError: (error: TimelineError) => void;
   now?: () => number;
   loaders?: SessionTimelineLoaders;
+  // Where an open session writes its own file when DROIDEX does not write it
+  // (Droid), so a session opened this run can be read before it closes.
+  liveSessionFile?: (providerSessionId: string) => string | undefined;
   // Streaming deltas buffered longer than this are flushed as one event.
   // 0 disables coalescing (every delta records and emits immediately).
   streamingCoalesceMs?: number;
@@ -131,6 +137,7 @@ export class SessionTimeline {
       hydrateMission: hydrateHistoricalSession,
       resolveChain: resolveSessionChain,
       transcriptWindow: loadSessionTranscriptWindow,
+      openTranscriptTail: loadOpenTranscriptTail,
     };
     this.streaming = new StreamingDeltaCoalescer({
       windowMs: dependencies.streamingCoalesceMs ?? DEFAULT_STREAMING_COALESCE_MS,
@@ -291,17 +298,41 @@ export class SessionTimeline {
     }
   }
 
+  /**
+   * The newest events of a conversation's stored transcript, for a caller that
+   * only looks at it: nothing is recorded or sent to the window.
+   */
+  async tail(appSessionId: string, limit: number): Promise<TranscriptEvent[]> {
+    const summary = this.dependencies.registry.resolveSummary(appSessionId);
+    if (!summary) throw new Error(`Session history not found for ${appSessionId}`);
+    const providerSessionId = summary.providerSessionId ?? summary.appSessionId;
+    // An open session's file joins the history index only when the session
+    // closes, so until then it is read where it is written.
+    const openFile =
+      this.transcripts.path(summary.appSessionId) ??
+      this.dependencies.liveSessionFile?.(providerSessionId);
+    // Lines still in the write queue land before either file is read.
+    await this.transcripts.written(summary.appSessionId);
+    if (openFile && !this.loaders.resolveChain(summary.appSessionId, providerSessionId).length)
+      return this.loaders.openTranscriptTail(summary.appSessionId, openFile, limit);
+    return this.loadStandard(summary.appSessionId, providerSessionId, undefined, limit).transcripts;
+  }
+
   useTranscript(appSessionId: string, transcript: TimelineTranscript): void {
     this.transcripts.use(appSessionId, transcript);
   }
 
-  releaseTranscript(appSessionId: string): void {
-    this.transcripts.release(appSessionId);
+  async releaseTranscript(appSessionId: string): Promise<void> {
+    await this.transcripts.release(appSessionId);
+  }
+
+  readTranscript(appSessionId: string): Promise<string> | undefined {
+    return this.transcripts.read(appSessionId);
   }
 
   // The renderer already showed the prompt; only persist it here.
-  recordPrompt(appSessionId: string, prompt: string): void {
-    this.transcripts.recordPrompt(appSessionId, prompt);
+  recordPrompt(appSessionId: string, prompt: string): void | Promise<void> {
+    return this.transcripts.recordPrompt(appSessionId, prompt);
   }
 
   append(event: TranscriptEvent): void {
@@ -325,13 +356,13 @@ export class SessionTimeline {
     this.streaming.flushSource(appSessionId, sourceSessionId);
   }
 
-  settleStreaming(appSessionId: string, sourceSessionId: string): void {
+  async settleStreaming(appSessionId: string, sourceSessionId: string): Promise<void> {
     let flushError: Error | undefined;
     try {
       this.streaming.endTurn(appSessionId, sourceSessionId);
       // The primary tail is recorded, so its open stored message is complete. A
       // child's turn settling must not split the parent's message in two.
-      if (sourceSessionId === appSessionId) this.transcripts.flush(appSessionId);
+      if (sourceSessionId === appSessionId) await this.transcripts.flush(appSessionId);
     } catch (error) {
       flushError =
         error instanceof Error
@@ -412,6 +443,8 @@ export class SessionTimeline {
     hotPathMetrics.recordEmit(performance.now() - emitStartedAt);
   }
 
+  // A status row that belongs to the conversation: it is stored and replays
+  // when the session is reopened.
   appendStatus(
     appSessionId: string,
     text: string,
@@ -419,17 +452,108 @@ export class SessionTimeline {
     sourceSessionId = appSessionId,
     role: SessionRole = 'primary',
   ): void {
-    const now = this.dependencies.now ?? Date.now;
+    const ts = this.clock();
     this.append({
-      id: `status-${now().toString(36)}-${(this.statusSeq++).toString(36)}`,
+      id: this.noticeId('status', ts),
       appSessionId,
       sourceSessionId,
       role,
-      ts: now(),
+      ts,
       kind: 'status',
       text,
       ...(compactType ? { compactType } : {}),
     });
+  }
+
+  // A prompt nobody typed: the parent agent's brief to one of its children.
+  // `recordPrompt` only persists, because the renderer draws the user's own
+  // prompt as it is sent; this one has never been drawn, so it goes through
+  // `append` and reaches the child's pane as the same bubble the chat gives a
+  // user's prompt.
+  appendPrompt(
+    appSessionId: string,
+    text: string,
+    sourceSessionId = appSessionId,
+    role: SessionRole = 'primary',
+  ): void {
+    const ts = this.clock();
+    this.append({
+      id: this.noticeId('prompt', ts),
+      appSessionId,
+      sourceSessionId,
+      role,
+      ts,
+      kind: 'text',
+      author: 'user',
+      text,
+    });
+  }
+
+  // A prompt the chat has not drawn yet: one nobody typed (an automation's, a
+  // project thread's, another chat's), or a steer at the moment the model takes
+  // it in, into the running turn (steered) or as a turn of its own. It is
+  // stored the way an ordinary prompt is and shown the way its replay will
+  // read, so a restored chat sees the two as one row.
+  announcePrompt(appSessionId: string, prompt: string, steered = false): void | Promise<void> {
+    const ts = this.clock();
+    this.streaming.flushSource(appSessionId, appSessionId);
+    this.emitRecordedEvent({
+      id: this.noticeId('prompt', ts),
+      appSessionId,
+      sourceSessionId: 'user',
+      role: 'primary',
+      ts,
+      kind: 'text',
+      author: 'user',
+      ...userPromptDisplay(prompt),
+      ...(steered ? { steered: true } : {}),
+    });
+    return this.recordPrompt(appSessionId, prompt);
+  }
+
+  // A status row that is only true right now — a CLI booting, a turn stopping
+  // to send now, an idle runtime released. Shown live, never stored.
+  appendProgress(appSessionId: string, text: string): void {
+    const ts = this.clock();
+    this.append({
+      id: this.noticeId('status', ts),
+      appSessionId,
+      sourceSessionId: appSessionId,
+      role: 'primary',
+      ts,
+      kind: 'status',
+      text,
+      transient: true,
+    });
+  }
+
+  // How a turn or a session ended badly. Stored, so a chat that crashed still
+  // reads that way after a restart.
+  appendError(
+    appSessionId: string,
+    text: string,
+    details: Pick<TranscriptEvent, 'errorKind' | 'resetsAt'> = {},
+  ): void {
+    const ts = this.clock();
+    this.append({
+      id: this.noticeId('error', ts),
+      appSessionId,
+      sourceSessionId: appSessionId,
+      role: 'primary',
+      ts,
+      kind: 'error',
+      text,
+      isError: true,
+      ...details,
+    });
+  }
+
+  private clock(): number {
+    return (this.dependencies.now ?? Date.now)();
+  }
+
+  private noticeId(kind: 'status' | 'error' | 'prompt', ts: number): string {
+    return `${kind}-${ts.toString(36)}-${(this.statusSeq++).toString(36)}`;
   }
 
   appendCompaction(

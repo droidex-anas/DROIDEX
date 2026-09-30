@@ -19,6 +19,7 @@ export const NO_PROVIDER_PROBES: ProviderProbeMap = new Map();
 // are probed on demand and remembered: provider status can then be emitted on
 // any event without spawning anything. One round of probes runs at a time; a
 // refresh that arrives while one is in flight joins it instead of starting more.
+// Each answer is announced as it lands, so one harness never waits on another.
 export class ProviderProbes {
   private readonly latest = new Map<ProviderKind, ProviderStatus>();
   private inFlight?: Promise<void>;
@@ -29,8 +30,8 @@ export class ProviderProbes {
 
   constructor(
     private readonly probes: ProviderProbeMap,
-    // Called when rows arrive for a status already handed out.
-    private readonly onItems: (provider: ProviderKind) => void = () => undefined,
+    // Called when a provider's probe answers, and again as its catalog rows arrive.
+    private readonly onStatus: (provider: ProviderKind) => void = () => undefined,
   ) {}
 
   // The last answer, or undefined while a provider has not been probed yet —
@@ -59,11 +60,12 @@ export class ProviderProbes {
           if (!status) return;
           status = { ...status, items: rows };
           this.latest.set(provider, status);
-          this.onItems(provider);
+          this.onStatus(provider);
         };
         const answered = await probe(abort.signal, publishItems);
         status = items ? { ...answered, items } : answered;
         this.latest.set(provider, status);
+        this.onStatus(provider);
       }),
     )
       .then(() => undefined)

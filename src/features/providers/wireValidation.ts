@@ -15,6 +15,9 @@ export function isProviderStatus(value: unknown): boolean {
     isOneOf(PROVIDER_KINDS, value.provider) &&
     isOneOf(PROVIDER_READINESS, value.readiness) &&
     optionalStrings(value, ['version', 'accountLabel', 'message', 'defaultModelId']) &&
+    (value.defaultContextWindowTokens === undefined ||
+      value.defaultContextWindowTokens === 200000 ||
+      value.defaultContextWindowTokens === 1000000) &&
     Array.isArray(value.models) &&
     value.models.every(isModelInfo) &&
     (value.items === undefined || (Array.isArray(value.items) && value.items.every(isSkillInfo)))
@@ -83,7 +86,8 @@ export function isModelInfo(value: unknown): boolean {
     nonEmptyString(value.displayName) &&
     typeof value.isCustom === 'boolean' &&
     (value.supportedReasoningEfforts === undefined ||
-      isStringArray(value.supportedReasoningEfforts))
+      isStringArray(value.supportedReasoningEfforts)) &&
+    (value.supportsFastMode === undefined || typeof value.supportsFastMode === 'boolean')
   );
 }
 

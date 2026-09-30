@@ -8,6 +8,7 @@ import { stat } from 'node:fs/promises';
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 import { pipeline } from 'node:stream/promises';
 
+import { assertValidInteractionResponse } from './interactionResponses.js';
 import { assertValidResponseFormat } from './appPrompt.js';
 import { assertValidMentions } from './providers/catalog.js';
 import { BridgeEventBatcher, type BridgeEventBatchMetadata } from './bridgeEventBatcher.js';
@@ -25,6 +26,7 @@ import {
 } from './protocol.js';
 import { emptyRuntimeSnapshot } from './runtimeSnapshot.js';
 import { hotPathMetrics } from './telemetry/hotPathMetrics.js';
+import { VoiceConnectionOwners } from './voiceConnectionOwners.js';
 
 const HOST = '127.0.0.1';
 const SOFT_CLIENT_BUFFER_BYTES = 512 * 1024;
@@ -47,6 +49,16 @@ export function startBridgeServer(options: {
   getSnapshot?: () => Promise<BridgeRuntimeSnapshot> | BridgeRuntimeSnapshot;
 }): BridgeServer {
   const clients = new Set<WebSocket>();
+  const voiceOwners = new VoiceConnectionOwners((appSessionId) => {
+    void options
+      .onCommand({ type: 'voice.stop', appSessionId })
+      .then(() => {
+        broadcast({ type: 'voice.state', appSessionId, status: 'closed' });
+      })
+      .catch((error: unknown) => {
+        console.error('Orphaned voice session could not be stopped:', error);
+      });
+  });
   const replay = new BridgeReplayBuffer();
   let boundPort = options.requestedPort;
   let closed = false;
@@ -77,9 +89,12 @@ export function startBridgeServer(options: {
     batcher.enqueue(event);
   }
 
-  function sendBatch(batch: ServerEventBatch, metadata: BridgeEventBatchMetadata): void {
+  function sendBatch(
+    batch: ServerEventBatch,
+    metadata: BridgeEventBatchMetadata,
+    batchData: string,
+  ): void {
     const startedAt = performance.now();
-    const batchData = JSON.stringify(batch);
     const replayEntry = replay.push(batch, batchData);
     if (replayEntry.bytes >= HARD_CLIENT_BUFFER_BYTES) replay.markHistoryUnavailable();
     let bytesSent = 0;
@@ -136,12 +151,18 @@ export function startBridgeServer(options: {
   });
 
   async function admitClient(ws: WebSocket, url: URL): Promise<void> {
+    const pageId = url.searchParams.get('pageId');
+    const disconnect = () => {
+      clients.delete(ws);
+      voiceOwners.disconnected(ws);
+    };
+    ws.on('close', disconnect);
+    ws.on('error', disconnect);
+    if (pageId) voiceOwners.connected(pageId, ws);
     const admitted = await resumeClient(ws, url);
     if (!admitted || ws.readyState !== ws.OPEN) return;
     clients.add(ws);
-    ws.on('message', (raw) => void handleMessage(ws, raw));
-    ws.on('close', () => clients.delete(ws));
-    ws.on('error', () => clients.delete(ws));
+    ws.on('message', (raw) => void handleMessage(ws, raw, pageId));
   }
 
   async function resumeClient(ws: WebSocket, url: URL): Promise<boolean> {
@@ -238,7 +259,7 @@ export function startBridgeServer(options: {
     });
   }
 
-  async function handleMessage(ws: WebSocket, raw: RawData): Promise<void> {
+  async function handleMessage(ws: WebSocket, raw: RawData, pageId: string | null): Promise<void> {
     let parsed: unknown;
     try {
       parsed = JSON.parse(messageText(raw));
@@ -253,13 +274,46 @@ export function startBridgeServer(options: {
       if (typeof parsed === 'object' && parsed !== null && 'mentions' in parsed) {
         assertValidMentions(parsed);
       }
-      await options.onCommand(parsed as ClientCommand);
+      if (typeof parsed === 'object' && parsed !== null) {
+        assertValidSteerId(parsed);
+      }
+      assertValidInteractionResponse(parsed);
+      if (typeof parsed === 'object' && parsed !== null) {
+        assertValidChatPreferences(parsed);
+      }
+      const command = parsed as ClientCommand;
+      if (command.type === 'voice.start' || command.type === 'voice.stop')
+        await runVoiceCommand(command, pageId);
+      else await options.onCommand(command);
     } catch (err) {
       sendDirectWire(ws, {
         type: 'error',
         message: err instanceof Error ? err.message : String(err),
       });
     }
+  }
+
+  // The page that started a call owns it: only a start that succeeds moves
+  // ownership, and only the owning page can stop it.
+  async function runVoiceCommand(
+    command: Extract<ClientCommand, { type: 'voice.start' | 'voice.stop' }>,
+    pageId: string | null,
+  ): Promise<void> {
+    if (command.type === 'voice.stop') {
+      if (voiceOwners.stopped(command.appSessionId, pageId ?? '')) await options.onCommand(command);
+      return;
+    }
+    if (!pageId) throw new Error('Voice requires a renderer page ID. Reload DROIDEX.');
+    const { appSessionId, attempt } = command;
+    voiceOwners.startBegan(appSessionId, pageId, attempt);
+    // A failed start has already been reported to its chat by the voice owner;
+    // here it only means this page does not take the call.
+    const started = await options.onCommand(command).then(
+      () => true,
+      () => false,
+    );
+    if (started) voiceOwners.startSucceeded(appSessionId, attempt);
+    else voiceOwners.startFailed(appSessionId, attempt);
   }
 
   function sendDirectWire(ws: WebSocket, message: ServerWireMessage): void {
@@ -394,6 +448,7 @@ export function startBridgeServer(options: {
     if (closePromise) return closePromise;
     closed = true;
     batcher.close();
+    voiceOwners.close();
     closePromise = new Promise<void>((resolve) => {
       let pendingServers = 2;
       const settled = () => {
@@ -428,6 +483,32 @@ export function startBridgeServer(options: {
     browserAssetUrl,
     close,
   };
+}
+
+// Fast mode and the context window are preferences of a top-level chat, so a
+// command that is not one of the two settings commands may not carry them.
+// Optional on a send; Send now names the steer it is for.
+function assertValidSteerId(command: object): void {
+  const required = 'type' in command && command.type === 'session.sendNow';
+  if (!required && !('steerId' in command)) return;
+  const steerId = 'steerId' in command ? command.steerId : undefined;
+  if (typeof steerId !== 'string' || !steerId) throw new Error('Invalid steer id.');
+}
+
+function assertValidChatPreferences(command: object): void {
+  const settingsCommand =
+    'type' in command &&
+    (command.type === 'session.create' || command.type === 'session.updateSettings');
+  if ('fastMode' in command) {
+    if (typeof command.fastMode !== 'boolean') throw new Error('fastMode must be a boolean.');
+    if (!settingsCommand) throw new Error('Fast mode only applies to top-level session settings.');
+  }
+  if ('contextWindowTokens' in command) {
+    if (command.contextWindowTokens !== 200000 && command.contextWindowTokens !== 1000000)
+      throw new Error('contextWindowTokens must be 200000 or 1000000.');
+    if (!settingsCommand)
+      throw new Error('A context window only applies to top-level session settings.');
+  }
 }
 
 function maxBufferedAmount(clients: Iterable<WebSocket>): number {
