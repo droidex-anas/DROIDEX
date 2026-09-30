@@ -16,10 +16,8 @@ export function withoutExtendedContext(id: string | undefined): string {
   return (id ?? '').replace(EXTENDED_CONTEXT, '');
 }
 
-// The one rule for whether a model can run 1M, used both by the catalog the
-// picker reads and by the launch below, so the picker never offers a window the
-// adapter then refuses. The answer is the suffixed id the catalog itself
-// spells: DROIDEX never invents one the CLI has not published.
+// The picker and launch share the catalog's 1M support: a suffixed id or a
+// native 1M model declared in its description, without inventing a suffix.
 export function claudeExtendedContextId(
   model: ModelInfo,
   catalog: ModelInfo[],

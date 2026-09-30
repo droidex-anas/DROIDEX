@@ -26,7 +26,6 @@ export class ClaudePermissionModes {
       // A rejected capability probe is recoverable only while the CLI is live.
       this.requireOpen();
     }
-    this.requireOpen();
     await query.setPermissionMode(this.mode(this.autonomy, this.planning));
     this.requireOpen();
     this.noteFallback();
