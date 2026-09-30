@@ -737,6 +737,10 @@ export default function App() {
           <div ref={contentRowRef} className="relative flex min-h-0 min-w-0 flex-1 overflow-hidden">
             <section
               aria-hidden={paneExpanded && !browserExpanded}
+              // Behind an expanded side chat or agent the column is hidden, and
+              // a few composer controls turn pointer events back on; inert
+              // keeps the whole column out of reach.
+              inert={paneExpanded && !browserExpanded}
               className={`flex min-w-0 flex-col overflow-hidden ${
                 browserExpanded
                   ? 'pointer-events-none absolute inset-0 z-20'
