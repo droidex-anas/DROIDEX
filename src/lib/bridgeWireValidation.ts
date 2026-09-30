@@ -424,9 +424,9 @@ function isChildSessionSummary(value: unknown): boolean {
     isStreamFidelity(value.streamFidelity) &&
     isOptionalString(value.group) &&
     isOptionalString(value.phase) &&
-    isOptionalTimestamp(value.startedAt) &&
-    isOptionalTimestamp(value.settledAt) &&
-    isOptionalCount(value.tokensUsed)
+    isOptionalNonNegativeInteger(value.startedAt) &&
+    isOptionalNonNegativeInteger(value.settledAt) &&
+    isOptionalNonNegativeInteger(value.tokensUsed)
   );
 }
 
@@ -685,12 +685,7 @@ function isOptionalBoolean(value: unknown): boolean {
   return value === undefined || typeof value === 'boolean';
 }
 
-function isOptionalTimestamp(value: unknown): boolean {
-  return value === undefined || nonNegativeSafeInteger(value);
-}
-
-// A tally the sidecar reports, absent when it has nothing to report.
-function isOptionalCount(value: unknown): boolean {
+function isOptionalNonNegativeInteger(value: unknown): boolean {
   return value === undefined || nonNegativeSafeInteger(value);
 }
 

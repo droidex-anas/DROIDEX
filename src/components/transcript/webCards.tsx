@@ -116,13 +116,6 @@ function WebSearchRunningRow({ isX, query }: { isX: boolean; query: string }) {
   );
 }
 
-function searchTrailing(error: boolean, interrupted: boolean, total: number): React.ReactNode {
-  if (interrupted) return <InterruptedTag />;
-  if (error) return <ErrorTag />;
-  if (total > 0) return <CountBadge label={String(total)} />;
-  return null;
-}
-
 /* ── Web search: a collapsible search row that expands into readable result
    cards (title, snippet, source) instead of a raw text dump. Stays collapsed
    by default — the header (query + result count) is enough until expanded. ── */
@@ -151,7 +144,7 @@ export function WebSearchCard({
     /(^|\.)(x|twitter)\.com$/i.test(d),
   );
   if (running) return <WebSearchRunningRow isX={isX} query={query} />;
-  const trailing = searchTrailing(error, interrupted, total);
+  const trailing = fetchTrailing(error, interrupted, total > 0 ? String(total) : null);
 
   let body: React.ReactNode = null;
   if (expanded && results.length > 0) {

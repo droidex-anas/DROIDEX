@@ -13,7 +13,7 @@ const git = require('./git.cjs');
 async function openProject(dir, editor, target) {
   const root = await git.projectRoot(dir);
   const pathToOpen = target === 'diff' ? await writeDiffFile(root) : root;
-  await launch(normalizeEditor(editor), pathToOpen, root, target);
+  await launch(editor, pathToOpen, root, target);
 }
 
 async function writeDiffFile(root) {
@@ -42,18 +42,14 @@ async function launch(editor, pathToOpen, root, target) {
     else await openTerminal(root);
     return;
   }
-  if (editor === 'vscode') return openApp('vscode', 'Visual Studio Code', 'code', pathToOpen);
   if (editor === 'cursor') return openApp('cursor', 'Cursor', 'cursor', pathToOpen);
   if (editor === 'xcode') return openApp('xcode', 'Xcode', 'xed', pathToOpen);
+  return openApp('vscode', 'Visual Studio Code', 'code', pathToOpen);
 }
 
 async function openPathOrThrow(targetPath) {
   const error = await shell.openPath(targetPath);
   if (error) throw new Error(error);
-}
-
-function normalizeEditor(value) {
-  return ['vscode', 'cursor', 'finder', 'terminal', 'xcode'].includes(value) ? value : 'vscode';
 }
 
 // On macOS the target is the bundle the picker found (so a VSCodium-only

@@ -5,7 +5,7 @@ import type { ModelInfo, ProviderKind } from '../types/bridge';
 // every surface says the same two things and nothing more.
 
 export const FAST_MODE_LABEL = 'Fast mode';
-export const FAST_MODE_HINT = '1.5x speed · More usage';
+export const FAST_MODE_HINT = '1.5x speed · Uses your limits faster';
 
 /** Droid's runtime has no fast mode, so its chats are never offered one. */
 export function offersFastMode(provider: ProviderKind | undefined): boolean {

@@ -143,15 +143,10 @@ export function ErrorTag({ emphasis = false }: { emphasis?: boolean }) {
 }
 
 // A call the user steered or stopped away from. It did not fail, so it wears
-// the row's own muted tone rather than the error red; `emphasis` matches the
-// row-level form ErrorTag uses at a line's right edge.
-export function InterruptedTag({ emphasis = false }: { emphasis?: boolean }) {
+// the row's own muted tone rather than the error red.
+export function InterruptedTag() {
   return (
-    <span
-      className={`shrink-0 rounded-md bg-droid-elevated/60 text-[10px] font-medium uppercase tracking-[0.08em] text-droid-text-muted ${
-        emphasis ? 'ml-auto px-2 py-0.5' : 'px-1.5 py-px'
-      }`}
-    >
+    <span className="shrink-0 rounded-md bg-droid-elevated/60 text-[10px] font-medium uppercase tracking-[0.08em] text-droid-text-muted px-1.5 py-px">
       Interrupted
     </span>
   );

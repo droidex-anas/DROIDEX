@@ -6,8 +6,6 @@ import {
   canAdvance,
   createStepper,
   isLastStep,
-  isSelected,
-  isTyping,
   stepperReducer,
   submissionAnswers,
   type StepperAction,
@@ -44,7 +42,7 @@ test('picking an option records it and leaves typing mode', () => {
   ]);
 
   assert.deepEqual(answerFor(state, 0).selected, ['Postgres']);
-  assert.equal(isTyping(state, 0), false);
+  assert.equal(answerFor(state, 0).typing, false);
   assert.equal(canAdvance(state, 0), true);
 });
 
@@ -60,7 +58,6 @@ test('one choice replaces the last one, several toggle inside the answer', () =>
     { type: 'pickOption', questionIndex: 0, option: 'Postgres', multiSelect: true },
   ]);
   assert.deepEqual(answerFor(multi, 0).selected, ['SQLite', 'Postgres']);
-  assert.equal(isSelected(multi, 0, 'SQLite'), true);
 
   const unpicked = stepperReducer(multi, {
     type: 'pickOption',
@@ -69,7 +66,6 @@ test('one choice replaces the last one, several toggle inside the answer', () =>
     multiSelect: true,
   });
   assert.deepEqual(answerFor(unpicked, 0).selected, ['Postgres']);
-  assert.equal(isSelected(unpicked, 0, 'SQLite'), false);
 });
 
 test('typing replaces a single choice and joins several', () => {
@@ -79,7 +75,7 @@ test('typing replaces a single choice and joins several', () => {
   ]);
   assert.deepEqual(answerFor(single, 0).selected, []);
   assert.equal(answerFor(single, 0).custom, 'Turso');
-  assert.equal(isTyping(single, 0), true);
+  assert.equal(answerFor(single, 0).typing, true);
 
   const multi = run(1, [
     { type: 'pickOption', questionIndex: 0, option: 'SQLite', multiSelect: true },
@@ -95,7 +91,7 @@ test('typing replaces a single choice and joins several', () => {
     option: 'Postgres',
     multiSelect: true,
   });
-  assert.equal(isTyping(more, 0), true);
+  assert.equal(answerFor(more, 0).typing, true);
   assert.equal(answerFor(more, 0).custom, 'Turso');
 });
 
@@ -106,7 +102,7 @@ test('the custom field opens on the answer already held', () => {
   ]);
 
   assert.deepEqual(answerFor(picked, 0).selected, ['SQLite']);
-  assert.equal(isTyping(picked, 0), true);
+  assert.equal(answerFor(picked, 0).typing, true);
 });
 
 test('a whitespace-only answer cannot advance', () => {
@@ -136,8 +132,8 @@ test('answers stay attached to their own question across back and forward', () =
 
   assert.deepEqual(answerFor(state, 0).selected, ['Postgres']);
   assert.equal(answerFor(state, 1).custom, 'Fly.io');
-  assert.equal(isTyping(state, 0), false);
-  assert.equal(isTyping(state, 1), true);
+  assert.equal(answerFor(state, 0).typing, false);
+  assert.equal(answerFor(state, 1).typing, true);
 });
 
 test('the submission payload carries every question with what it holds', () => {

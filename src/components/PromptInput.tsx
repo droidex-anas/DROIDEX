@@ -197,10 +197,6 @@ const accentMix = (pct: number) =>
   `color-mix(in srgb, var(--droid-accent) ${String(pct)}%, transparent)`;
 type SubmitMode = 'queue' | 'steer';
 
-function shouldShowTurnStarting(isLive: boolean): boolean {
-  return !isLive;
-}
-
 export function shouldStopTurnStarting({
   isLive,
   startingTargetKey,
@@ -1576,7 +1572,7 @@ export default function PromptInput({
 
     const childRuntimeTarget = childRuntimeSubmitTarget(visibleTarget);
     if (childRuntimeTarget && workingDirectory) {
-      const showTurnStarting = shouldShowTurnStarting(isLive);
+      const showTurnStarting = !isLive;
       if (showTurnStarting) startTurnStarting();
       const committed = await commitChildPromptAfterBaseline({
         capturedTarget: childRuntimeTarget,
@@ -1593,7 +1589,7 @@ export default function PromptInput({
       return;
     }
 
-    const showTurnStarting = shouldShowTurnStarting(isLive);
+    const showTurnStarting = !isLive;
     if (showTurnStarting) startTurnStarting();
 
     const committed = await commitPrimaryPromptAfterBaseline({
