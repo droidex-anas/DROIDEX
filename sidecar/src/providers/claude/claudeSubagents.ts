@@ -114,12 +114,9 @@ export class ClaudeSubagents {
       case 'task_notification': {
         // Stopping is something the user did, not something the agent failed
         // at; only a real failure wears the failed status.
-        const ended =
-          message.status === 'completed'
-            ? 'completed'
-            : message.status === 'stopped'
-              ? 'paused'
-              : 'failed';
+        let ended: ChildStatus = 'failed';
+        if (message.status === 'completed') ended = 'completed';
+        else if (message.status === 'stopped') ended = 'paused';
         const workflow = this.workflows.get(message.task_id);
         if (workflow) {
           this.workflows.delete(message.task_id);
@@ -131,13 +128,7 @@ export class ClaudeSubagents {
           status: ended,
         });
       }
-      // Ids only, and an id leaves this list for every reason a task can end:
-      // finished, stopped, killed. Disappearance therefore says that something
-      // happened, never what. Status comes from task_notification and
-      // task_updated, which say which it was. A late 'completed' is honest; a
-      // 'paused' inferred from an absent id is a lie the user sees flash by.
-      case 'background_tasks_changed':
-        return [];
+      // Background task snapshots contain only ids, so they cannot determine outcomes.
       default:
         return [];
     }

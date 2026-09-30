@@ -268,17 +268,11 @@ export function startBridgeServer(options: {
       return;
     }
     try {
-      if (typeof parsed === 'object' && parsed !== null && 'responseFormat' in parsed) {
-        assertValidResponseFormat(parsed.responseFormat);
-      }
-      if (typeof parsed === 'object' && parsed !== null && 'mentions' in parsed) {
-        assertValidMentions(parsed);
-      }
       if (typeof parsed === 'object' && parsed !== null) {
+        if ('responseFormat' in parsed) assertValidResponseFormat(parsed.responseFormat);
+        if ('mentions' in parsed) assertValidMentions(parsed);
         assertValidSteerId(parsed);
-      }
-      assertValidInteractionResponse(parsed);
-      if (typeof parsed === 'object' && parsed !== null) {
+        assertValidInteractionResponse(parsed);
         assertValidChatPreferences(parsed);
       }
       const command = parsed as ClientCommand;
@@ -485,8 +479,6 @@ export function startBridgeServer(options: {
   };
 }
 
-// Fast mode and the context window are preferences of a top-level chat, so a
-// command that is not one of the two settings commands may not carry them.
 // Optional on a send; Send now names the steer it is for.
 function assertValidSteerId(command: object): void {
   const required = 'type' in command && command.type === 'session.sendNow';

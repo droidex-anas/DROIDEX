@@ -128,8 +128,6 @@ export class ProviderTranscriptFile {
     if (failed) throw failed.reason;
   }
 
-  // The file once every line queued before this call is on disk. Lines queued
-  // after it wait for the read, so a fork never copies a line half-written.
   // Every line queued so far is on disk. Unlike flush, the message still
   // streaming stays open, so a reader never splits it into two stored lines.
   written(): Promise<void> {
