@@ -2,10 +2,16 @@
 // permission callback. Nothing here may resolve to null or undefined: the SDK
 // treats that as "the host answered out of band" and parks the tool call for
 // the worker's whole deadline.
-import type { CanUseTool, PermissionMode, PermissionResult } from '@anthropic-ai/claude-agent-sdk';
+import type {
+  CanUseTool,
+  Options,
+  PermissionMode,
+  PermissionResult,
+} from '@anthropic-ai/claude-agent-sdk';
 
 import { mcpGrantSignature } from '../../mcpGrant.js';
 import type { Autonomy, PermissionKind, SessionQuestion } from '../../protocol.js';
+import { SESSIONS_MCP_SERVER_NAME } from '../../sessionsMcpPolicy.js';
 import { nextInteractionRequestId, type ProviderInteractions } from '../interactions.js';
 
 export function claudePermissionMode(autonomy: Autonomy): PermissionMode {
@@ -14,6 +20,25 @@ export function claudePermissionMode(autonomy: Autonomy): PermissionMode {
   if (autonomy === 'low') return 'acceptEdits';
   return 'default';
 }
+
+// Auto lets the CLI's classifier approve a tool before canUseTool is asked,
+// which would skip the rule DROIDEX keeps for its session tools. Asking hands
+// those calls to canUseTool; Full access still bypasses every tool.
+export const CLAUDE_SESSIONS_TOOL_HOOKS: Options['hooks'] = {
+  PreToolUse: [
+    {
+      matcher: `mcp__${SESSIONS_MCP_SERVER_NAME}__.*`,
+      hooks: [
+        (input) =>
+          Promise.resolve(
+            input.permission_mode === 'auto'
+              ? { hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: 'ask' } }
+              : {},
+          ),
+      ],
+    },
+  ],
+};
 
 const TOOL_KINDS: Record<string, PermissionKind> = {
   Bash: 'exec',
