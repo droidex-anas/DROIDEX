@@ -61,7 +61,7 @@ interface PendingMessage {
 }
 
 export class ProviderTranscriptFile {
-  private readonly path: string;
+  readonly path: string;
   private pending: PendingMessage | null = null;
   private headWritten = false;
   private promptSeq = 0;
@@ -130,6 +130,12 @@ export class ProviderTranscriptFile {
 
   // The file once every line queued before this call is on disk. Lines queued
   // after it wait for the read, so a fork never copies a line half-written.
+  // Every line queued so far is on disk. Unlike flush, the message still
+  // streaming stays open, so a reader never splits it into two stored lines.
+  written(): Promise<void> {
+    return this.writes;
+  }
+
   read(): Promise<string> {
     const reading = this.writes.then(() => readFile(this.path, 'utf8'));
     this.writes = reading.then(

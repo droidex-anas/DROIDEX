@@ -73,6 +73,7 @@ test('a server that failed before the first turn is still reported in it', async
     interactions: {
       requestApproval: () => Promise.reject(new Error('unused')),
       requestQuestion: () => Promise.reject(new Error('unused')),
+      isActive: () => true,
       cancelPending: () => undefined,
     },
   });
@@ -127,6 +128,7 @@ test('Codex approvals retain file diffs and questions retain answer arrays', asy
         ],
       };
     },
+    isActive: () => true,
     cancelPending: () => undefined,
   });
   prompts.register(
@@ -213,6 +215,7 @@ test('thread start, resume and every turn carry the requested service tier inclu
     interactions: {
       requestApproval: () => Promise.reject(new Error('unused')),
       requestQuestion: () => Promise.reject(new Error('unused')),
+      isActive: () => true,
       cancelPending: () => undefined,
     },
   });
@@ -287,6 +290,7 @@ test('edits-only checks workspace paths and keeps the running turn permission sn
         return 'cancel';
       },
       requestQuestion: async () => ({ cancelled: true, answers: [] }),
+      isActive: () => true,
       cancelPending: () => undefined,
     },
   });

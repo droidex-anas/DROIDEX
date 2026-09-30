@@ -5,7 +5,11 @@ import type { ReasoningEffort } from '../../protocol.js';
 import type { ClaudeSessionInput } from './claudeSession.js';
 import { childEnv } from '../../childEnv.js';
 import { claudeContextEnv } from './claudeContextWindow.js';
-import { claudeCanUseTool, claudePermissionMode } from './claudePermissions.js';
+import {
+  CLAUDE_SESSIONS_TOOL_HOOKS,
+  claudeCanUseTool,
+  claudePermissionMode,
+} from './claudePermissions.js';
 
 export function sessionOptions(
   input: ClaudeSessionInput,
@@ -49,6 +53,7 @@ export function sessionOptions(
     // with setPermissionMode, which the CLI refuses without this.
     allowDangerouslySkipPermissions: true,
     canUseTool: claudeCanUseTool(input.appSessionId, input.interactions, isPlanning),
+    hooks: CLAUDE_SESSIONS_TOOL_HOOKS,
     // The SDK would otherwise own the subprocess privately; spawning it here is
     // what gives the session a pid for the agent-process monitor to track and
     // kill, the way it tracks Droid's.

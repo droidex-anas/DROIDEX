@@ -1,6 +1,7 @@
 import {
   hydrateHistoricalSession,
   loadSessionHistory,
+  loadOpenTranscriptTail,
   loadSessionPage,
   loadSessionTranscriptWindow,
   resolveSessionChain,
@@ -32,6 +33,7 @@ export interface SessionTimelineLoaders {
   hydrateMission: typeof hydrateHistoricalSession;
   resolveChain: typeof resolveSessionChain;
   transcriptWindow: typeof loadSessionTranscriptWindow;
+  openTranscriptTail: typeof loadOpenTranscriptTail;
 }
 
 export interface SessionTimelineRegistry {
@@ -47,6 +49,9 @@ export interface SessionTimelineDependencies {
   emitError: (error: TimelineError) => void;
   now?: () => number;
   loaders?: SessionTimelineLoaders;
+  // Where an open session writes its own file when DROIDEX does not write it
+  // (Droid), so a session opened this run can be read before it closes.
+  liveSessionFile?: (providerSessionId: string) => string | undefined;
   // Streaming deltas buffered longer than this are flushed as one event.
   // 0 disables coalescing (every delta records and emits immediately).
   streamingCoalesceMs?: number;
@@ -132,6 +137,7 @@ export class SessionTimeline {
       hydrateMission: hydrateHistoricalSession,
       resolveChain: resolveSessionChain,
       transcriptWindow: loadSessionTranscriptWindow,
+      openTranscriptTail: loadOpenTranscriptTail,
     };
     this.streaming = new StreamingDeltaCoalescer({
       windowMs: dependencies.streamingCoalesceMs ?? DEFAULT_STREAMING_COALESCE_MS,
@@ -290,6 +296,26 @@ export class SessionTimeline {
         recoverable: true,
       });
     }
+  }
+
+  /**
+   * The newest events of a conversation's stored transcript, for a caller that
+   * only looks at it: nothing is recorded or sent to the window.
+   */
+  async tail(appSessionId: string, limit: number): Promise<TranscriptEvent[]> {
+    const summary = this.dependencies.registry.resolveSummary(appSessionId);
+    if (!summary) throw new Error(`Session history not found for ${appSessionId}`);
+    const providerSessionId = summary.providerSessionId ?? summary.appSessionId;
+    // An open session's file joins the history index only when the session
+    // closes, so until then it is read where it is written.
+    const openFile =
+      this.transcripts.path(summary.appSessionId) ??
+      this.dependencies.liveSessionFile?.(providerSessionId);
+    // Lines still in the write queue land before either file is read.
+    await this.transcripts.written(summary.appSessionId);
+    if (openFile && !this.loaders.resolveChain(summary.appSessionId, providerSessionId).length)
+      return this.loaders.openTranscriptTail(summary.appSessionId, openFile, limit);
+    return this.loadStandard(summary.appSessionId, providerSessionId, undefined, limit).transcripts;
   }
 
   useTranscript(appSessionId: string, transcript: TimelineTranscript): void {
@@ -463,11 +489,12 @@ export class SessionTimeline {
     });
   }
 
-  // A steer at the moment the model takes it in: into the running turn
-  // (steered), or as a turn of its own. The chat showed it as pending until
-  // now. It is stored the way an ordinary prompt is and shown the way its
-  // replay will read, so a restored chat sees the two as one row.
-  appendSteer(appSessionId: string, prompt: string, steered: boolean): void | Promise<void> {
+  // A prompt the chat has not drawn yet: one nobody typed (an automation's, a
+  // project thread's, another chat's), or a steer at the moment the model takes
+  // it in, into the running turn (steered) or as a turn of its own. It is
+  // stored the way an ordinary prompt is and shown the way its replay will
+  // read, so a restored chat sees the two as one row.
+  announcePrompt(appSessionId: string, prompt: string, steered = false): void | Promise<void> {
     const ts = this.clock();
     this.streaming.flushSource(appSessionId, appSessionId);
     this.emitRecordedEvent({

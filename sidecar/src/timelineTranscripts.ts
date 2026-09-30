@@ -5,9 +5,13 @@ import { errMsg } from './errors.js';
 // Native providers store the full transcript; Droid stores only app notices
 // separately from its harness-owned session file.
 export interface TimelineTranscript {
+  /** The file it writes, which the history index learns of when the session closes. */
+  readonly path: string;
   appendPrompt(text: string): Promise<void>;
   append(event: TranscriptEvent): void | Promise<void>;
   flush(): Promise<void>;
+  // Every line queued so far is on disk; the message still streaming stays open.
+  written(): Promise<void>;
   // The stored file once every line queued before the call is written.
   read(): Promise<string>;
 }
@@ -27,6 +31,10 @@ export class TimelineTranscripts {
     if (!transcript) return;
     await transcript.flush();
     if (this.byId.get(appSessionId) === transcript) this.byId.delete(appSessionId);
+  }
+
+  path(appSessionId: string): string | undefined {
+    return this.byId.get(appSessionId)?.path;
   }
 
   recordPrompt(appSessionId: string, prompt: string): void | Promise<void> {
@@ -59,6 +67,10 @@ export class TimelineTranscripts {
 
   async flush(appSessionId: string): Promise<void> {
     await this.byId.get(appSessionId)?.flush();
+  }
+
+  async written(appSessionId: string): Promise<void> {
+    await this.byId.get(appSessionId)?.written();
   }
 
   // Undefined when no writer holds the session, whose file is then complete.

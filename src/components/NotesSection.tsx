@@ -1,10 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
-import { createPortal } from 'react-dom';
 import { AnimatePresence, motion } from 'framer-motion';
 import { X } from 'lucide-react';
 import { useStoreDispatch, useStoreSelector } from '../hooks/useStore';
-import { NotesIntroCard } from './NotesIntroCard';
-import { INTRO_WIDTH, notesIntroPosition } from '../lib/notesIntro';
 import { RowCaret } from './environment/primitives';
 import {
   NOTE_TAG_CHIP,
@@ -16,7 +13,7 @@ import {
   parseNoteTag,
   type NoteTag,
 } from '../lib/notesTags';
-import { dismissNotesIntro, loadNotesIntroSeen, type SessionNote } from '../lib/sessionNotes';
+import type { SessionNote } from '../lib/sessionNotes';
 
 const EASE = [0.16, 1, 0.3, 1] as const;
 const EMPTY_NOTES: SessionNote[] = [];
@@ -31,19 +28,12 @@ export default function NotesSection({ appSessionId }: { appSessionId: string })
   const [draft, setDraft] = useState('');
   // Tag chipped in the pad via the @ menu; save folds it into the note text.
   const [tag, setTag] = useState<NoteTag | null>(null);
-  // One-time "what's new" spotlight for the feature, per profile.
-  const [introVisible, setIntroVisible] = useState(() => !loadNotesIntroSeen());
 
   const save = () => {
     if (!draft.trim()) return;
     dispatch({ type: 'SESSION_NOTE_ADD', appSessionId, text: composeNoteText(tag, draft) });
     setDraft('');
     setTag(null);
-  };
-
-  const dismissIntro = () => {
-    setIntroVisible(false);
-    dismissNotesIntro();
   };
 
   return (
@@ -59,8 +49,6 @@ export default function NotesSection({ appSessionId }: { appSessionId: string })
       onRemove={(noteId) => {
         dispatch({ type: 'SESSION_NOTE_REMOVE', appSessionId, noteId });
       }}
-      introVisible={introVisible}
-      onDismissIntro={dismissIntro}
       tag={tag}
       onTagSelect={(next) => {
         setTag(next);
@@ -84,8 +72,6 @@ export function NotesPanel({
   onSave,
   onUse,
   onRemove,
-  introVisible,
-  onDismissIntro,
   tag,
   onTagSelect,
   onTagClear,
@@ -97,23 +83,15 @@ export function NotesPanel({
   onSave: () => void;
   onUse: (note: SessionNote) => void;
   onRemove: (noteId: string) => void;
-  introVisible: boolean;
-  onDismissIntro: () => void;
   tag: NoteTag | null;
   onTagSelect: (tag: NoteTag) => void;
   onTagClear: () => void;
   defaultOpen?: boolean;
 }) {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
-  const sectionRef = useRef<HTMLDivElement>(null);
   // Collapsed by default: notes are a supporting tool, and opening the panel
   // should never reshuffle the layout because a textarea mounted.
   const [open, setOpen] = useState(defaultOpen);
-  const [anchorRect, setAnchorRect] = useState<{
-    top: number;
-    left: number;
-    height: number;
-  } | null>(null);
   const used = notes.filter((note) => note.usedAt !== null).length;
 
   // Pad @ autocomplete: while the whole draft is just a @token, the menu lists
@@ -139,73 +117,6 @@ export function NotesPanel({
     hadTag.current = hasTag;
   }, [tag]);
 
-  // Track the section's viewport position while the intro is up so the
-  // floating card stays glued to it. The capture-phase scroll listener also
-  // catches the panel's own scroll container, which does not bubble.
-  useEffect(() => {
-    if (!introVisible) return;
-    const measure = () => {
-      const el = sectionRef.current;
-      if (!el) {
-        setAnchorRect(null);
-        return;
-      }
-      // The section spans the panel edge to edge while its rows sit on the
-      // px-3 gutter; anchoring to the raw rect would push the floating intro
-      // 12px too far left and detach its caret from the Notes row.
-      const rect = el.getBoundingClientRect();
-      setAnchorRect({ top: rect.top, left: rect.left + 12, height: rect.height });
-    };
-    measure();
-    window.addEventListener('resize', measure);
-    window.addEventListener('scroll', measure, true);
-    // Sections above Notes can expand inline (commit/PR sheets) and the pad
-    // grows with the draft, neither of which fires resize or scroll. The
-    // section sits inside single-purpose wrappers (this component's root and
-    // the panel's per-section slot), so watch every sibling group on the way
-    // up to the scroll container to catch the layout shifts that move Notes
-    // without resizing it.
-    let observer: ResizeObserver | null = null;
-    const section = sectionRef.current;
-    if (section && typeof ResizeObserver === 'function') {
-      observer = new ResizeObserver(measure);
-      for (let el: HTMLElement | null = section; el; el = el.parentElement) {
-        observer.observe(el);
-        const parent: HTMLElement | null = el.parentElement;
-        if (!parent) break;
-        for (const sibling of parent.children) {
-          if (sibling !== el) observer.observe(sibling);
-        }
-        const overflowY = getComputedStyle(parent).overflowY;
-        if (overflowY === 'auto' || overflowY === 'scroll') break;
-      }
-    }
-    return () => {
-      observer?.disconnect();
-      window.removeEventListener('resize', measure);
-      window.removeEventListener('scroll', measure, true);
-    };
-  }, [introVisible, open, notes.length]);
-
-  // "Try it now" lands the caret in the pad; if the section is collapsed the
-  // pad only mounts after it opens, so the focus waits for that render.
-  const focusAfterOpen = useRef(false);
-  const tryNotes = () => {
-    onDismissIntro();
-    if (open) {
-      textareaRef.current?.focus();
-      return;
-    }
-    focusAfterOpen.current = true;
-    setOpen(true);
-  };
-  useEffect(() => {
-    if (open && focusAfterOpen.current) {
-      focusAfterOpen.current = false;
-      textareaRef.current?.focus();
-    }
-  }, [open]);
-
   // The pad starts three lines tall so it reads as a place to write, then
   // grows with the text like the main composer, capped so a long note scrolls
   // instead of swallowing the panel. Reopen is a dep too: collapsing unmounts
@@ -217,12 +128,9 @@ export function NotesPanel({
     el.style.height = `${String(Math.min(el.scrollHeight, 168))}px`;
   }, [draft, open]);
 
-  // anchorRect only exists client-side after measurement, so window is safe.
-  const introPos = anchorRect ? notesIntroPosition(anchorRect, window.innerHeight) : null;
-
   return (
     <div>
-      <div ref={sectionRef}>
+      <div>
         <button
           type="button"
           onClick={() => {
@@ -470,28 +378,6 @@ export function NotesPanel({
           )}
         </AnimatePresence>
       </div>
-
-      {/* Floating intro, portaled out so the panel's scroll box can't clip it.
-          Server renders have no document, so static markup stays anchor-only. */}
-      {typeof document !== 'undefined' &&
-        createPortal(
-          <AnimatePresence>
-            {introVisible && introPos && (
-              <NotesIntroCard
-                style={{
-                  position: 'fixed',
-                  top: introPos.top,
-                  left: introPos.left,
-                  width: INTRO_WIDTH,
-                }}
-                caretTop={introPos.caretTop}
-                onTry={tryNotes}
-                onClose={onDismissIntro}
-              />
-            )}
-          </AnimatePresence>,
-          document.body,
-        )}
     </div>
   );
 }

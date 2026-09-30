@@ -223,7 +223,7 @@ export class OpenPrompts {
     };
   }
 
-  private async ask<T>(request: () => Promise<T>): Promise<T> {
+  async ask<T>(request: () => Promise<T>): Promise<T> {
     this.open += 1;
     try {
       return await request();

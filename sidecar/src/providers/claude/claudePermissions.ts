@@ -2,15 +2,16 @@
 // permission callback. Nothing here may resolve to null or undefined: the SDK
 // treats that as "the host answered out of band" and parks the tool call for
 // the worker's whole deadline.
-import type { CanUseTool, PermissionMode, PermissionResult } from '@anthropic-ai/claude-agent-sdk';
+import type {
+  CanUseTool,
+  Options,
+  PermissionMode,
+  PermissionResult,
+} from '@anthropic-ai/claude-agent-sdk';
 
-import {
-  AUTOMATION_MCP_SERVER_NAME,
-  isAutomationMutationTool,
-  normalizeMcpServerName,
-} from '../../automations/permissionPolicy.js';
-import { toolArgumentDigest } from '../../normalize.js';
+import { mcpGrantSignature } from '../../mcpGrant.js';
 import type { Autonomy, PermissionKind, SessionQuestion } from '../../protocol.js';
+import { SESSIONS_MCP_SERVER_NAME } from '../../sessionsMcpPolicy.js';
 import { nextInteractionRequestId, type ProviderInteractions } from '../interactions.js';
 
 export function claudePermissionMode(autonomy: Autonomy): PermissionMode {
@@ -19,6 +20,25 @@ export function claudePermissionMode(autonomy: Autonomy): PermissionMode {
   if (autonomy === 'low') return 'acceptEdits';
   return 'default';
 }
+
+// Auto lets the CLI's classifier approve a tool before canUseTool is asked,
+// which would skip the rule DROIDEX keeps for its session tools. Asking hands
+// those calls to canUseTool; Full access still bypasses every tool.
+export const CLAUDE_SESSIONS_TOOL_HOOKS: Options['hooks'] = {
+  PreToolUse: [
+    {
+      matcher: `mcp__${SESSIONS_MCP_SERVER_NAME}__.*`,
+      hooks: [
+        (input) =>
+          Promise.resolve(
+            input.permission_mode === 'auto'
+              ? { hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: 'ask' } }
+              : {},
+          ),
+      ],
+    },
+  ],
+};
 
 const TOOL_KINDS: Record<string, PermissionKind> = {
   Bash: 'exec',
@@ -120,16 +140,17 @@ async function approveTool(
     },
     confirmationType: CONFIRMATION_TYPES[kind],
     ...(signature ? { signature } : {}),
-    ...(mcp && normalizeMcpServerName(mcp.serverName) === AUTOMATION_MCP_SERVER_NAME
-      ? { automationTool: mcp }
-      : {}),
+    ...(mcp ? { mcpTool: mcp } : {}),
   });
   if (outcome === 'cancel')
     return { behavior: 'deny', message: 'The user stopped this tool.', interrupt: true };
   if (!outcome.startsWith('proceed')) return deny('The user declined this tool.');
+  // A grant narrower than the whole MCP tool stays DROIDEX's to match: the
+  // CLI's own rule would name the tool and allow every later call of it.
+  const cliMayRemember = !mcp || signature === `mcp::${mcp.serverName}::${mcp.toolName}`;
   return {
     behavior: 'allow',
-    ...(outcome === 'proceed_always' && canAlwaysAllow && options.suggestions
+    ...(outcome === 'proceed_always' && canAlwaysAllow && cliMayRemember && options.suggestions
       ? { updatedPermissions: options.suggestions }
       : {}),
   };
@@ -213,9 +234,10 @@ function mcpTarget(toolName: string): { serverName: string; toolName: string } {
 
 // The key an "always allow" grant is stored under, scoped exactly the way Droid
 // scopes its own (normalize.ts): a command, a file path, or an MCP server and
-// tool — and, for a DROIDEX automation mutation, the arguments too, so one
-// grant cannot authorize a later call that changes something else. An empty
-// result leaves the request ineligible for always-allow.
+// tool. A DROIDEX automation mutation adds its arguments and thread_spawn the
+// kind of chat it starts, so one grant cannot authorize a later call that does
+// something else. An empty result leaves the request ineligible for
+// always-allow.
 function permissionSignature(
   kind: PermissionKind,
   mcp: { serverName: string; toolName: string } | undefined,
@@ -227,10 +249,7 @@ function permissionSignature(
     return path ? `${kind}::${path}` : undefined;
   }
   if (!mcp) return undefined;
-  const key = `mcp::${mcp.serverName}::${mcp.toolName}`;
-  if (!isAutomationMutationTool(mcp.serverName, mcp.toolName)) return key;
-  const args = toolArgumentDigest(input);
-  return args ? `${key}::${args}` : undefined;
+  return mcpGrantSignature(mcp.serverName, mcp.toolName, input) || undefined;
 }
 
 function describeInput(input: Record<string, unknown>): string {

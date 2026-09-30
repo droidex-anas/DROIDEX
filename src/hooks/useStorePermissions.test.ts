@@ -199,3 +199,20 @@ test('the spec reader shows the plan of the approval the bar answers', () => {
   assert.equal(next.sessionSpecs['app-1']?.content, 'plan B');
   assert.equal(next.specPlans['app-1'], 'plan B');
 });
+
+test('a question another chat answered stops asking, and only that request clears', () => {
+  const asked = reducer(reducer(initialState, makeQuestion('app-1')), makeQuestion('app-2'));
+  const stale = adaptEvent({ type: 'question.answered', appSessionId: 'app-1', requestId: 'old' });
+  assert.ok(stale);
+  assert.equal(reducer(asked, stale).pendingQuestions['app-1']?.[0]?.requestId, 'req-app-1');
+
+  const answered = adaptEvent({
+    type: 'question.answered',
+    appSessionId: 'app-1',
+    requestId: 'req-app-1',
+  });
+  assert.ok(answered);
+  const next = reducer(asked, answered);
+  assert.equal(next.pendingQuestions['app-1'], undefined);
+  assert.equal(next.pendingQuestions['app-2']?.[0]?.requestId, 'req-app-2');
+});

@@ -69,7 +69,8 @@ export function equalVisibleChatState(previous: ChatViewState, next: ChatViewSta
   if (!Object.is(previous.transcriptMutation, next.transcriptMutation)) return false;
   if (!Object.is(previous.models, next.models)) return false;
   if (!equalChildSelection(previous.selectedChild, next.selectedChild)) return false;
-  if (previous.draftChat?.cwd !== next.draftChat?.cwd) return false;
+  // The draft decides what the empty screen offers, a chat or a project.
+  if (!Object.is(previous.draftChat, next.draftChat)) return false;
 
   const appSessionId = next.activeSession?.appSessionId;
   if (!appSessionId) {

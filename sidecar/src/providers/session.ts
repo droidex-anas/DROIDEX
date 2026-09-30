@@ -1,4 +1,4 @@
-import type { McpServerConfig } from '@factory/droid-sdk';
+import type { McpServerConfig, SdkMcpServer } from '@factory/droid-sdk';
 
 import type { NormalizedEvent } from '../normalize.js';
 import type {
@@ -23,6 +23,7 @@ export interface ProviderOpenInput {
   fastMode?: boolean;
   contextWindowTokens?: ContextWindowTokens;
   mcpServers: McpServerConfig[];
+  inAppMcpServers?: SdkMcpServer[];
   interactions: ProviderInteractions;
   // Set only when the session opens on Droid.
   droidLaunch?: DroidLaunchSettings;
@@ -37,6 +38,7 @@ export interface ProviderResumeInput {
   resumeId?: string;
   cwd?: string;
   mcpServers?: McpServerConfig[];
+  inAppMcpServers?: SdkMcpServer[];
   // The stored launch settings, for a provider that keeps no session file of
   // its own and therefore cannot read them back. Droid reads its own.
   modelId?: string;

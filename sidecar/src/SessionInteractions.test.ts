@@ -95,6 +95,15 @@ function summary(appSessionId: string, providerSessionId: string): SessionSummar
   };
 }
 
+test('provider interactions stop admitting work when session close begins', () => {
+  const h = createHarness();
+  const live = h.addLiveSession('chat-one');
+  const interactions = h.interactions.interactionsFor({ id: 'chat-one' });
+  assert.equal(interactions.isActive(), true);
+  live.closePromise = new Promise<void>(() => undefined);
+  assert.equal(interactions.isActive(), false);
+});
+
 function permissionInput(toolUseId: string, command = 'pwd'): RequestPermissionRequestParams {
   return {
     toolUses: [
@@ -509,6 +518,7 @@ test('Droid edits-only approves a pure edit batch and asks for commands or mixed
       return 'cancel';
     },
     requestQuestion: async () => ({ cancelled: true, answers: [] }),
+    isActive: () => true,
     cancelPending: () => undefined,
   });
   const edit: RequestPermissionRequestParams = {

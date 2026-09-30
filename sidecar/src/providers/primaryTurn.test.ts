@@ -4,8 +4,9 @@ import test from 'node:test';
 import type { LiveSession } from '../SessionLifecycle.js';
 import { runPrimaryTurn, type PrimaryTurnDependencies } from './primaryTurn.js';
 
-test('a Stop that lands while the prompt is being stored keeps the turn from starting', async () => {
-  let promptStored: () => void = () => undefined;
+// A turn whose prompt is still being stored until `storePrompt` is called.
+function turnUnderTest() {
+  let storePrompt: () => void = () => undefined;
   const streamed: string[] = [];
   const liveSession = {
     summary: { appSessionId: 'app' },
@@ -17,6 +18,10 @@ test('a Stop that lands while the prompt is being stored keeps the turn from sta
       },
     },
   } as unknown as LiveSession;
+  const storing = () =>
+    new Promise<void>((resolve) => {
+      storePrompt = resolve;
+    });
   const dependencies: PrimaryTurnDependencies = {
     eventFlow: { beginTurn: () => undefined, apply: () => undefined },
     context: {
@@ -26,10 +31,8 @@ test('a Stop that lands while the prompt is being stored keeps the turn from sta
       refresh: () => Promise.resolve(),
     },
     timeline: {
-      recordPrompt: () =>
-        new Promise<void>((resolve) => {
-          promptStored = resolve;
-        }),
+      recordPrompt: storing,
+      announcePrompt: storing,
       settleStreaming: () => Promise.resolve(),
       appendStatus: () => undefined,
       appendError: () => undefined,
@@ -40,11 +43,40 @@ test('a Stop that lands while the prompt is being stored keeps the turn from sta
     updateSummary: () => undefined,
     emitError: () => undefined,
   } as unknown as PrimaryTurnDependencies;
+  return { liveSession, dependencies, streamed, storePrompt: () => storePrompt() };
+}
+
+test('a Stop that lands while the prompt is being stored keeps the turn from starting', async () => {
+  const { liveSession, dependencies, streamed, storePrompt } = turnUnderTest();
 
   const turn = runPrimaryTurn(dependencies, liveSession, { prompt: 'do the work' });
   liveSession.interrupting = true;
-  promptStored();
+  storePrompt();
   await turn;
 
   assert.deepEqual(streamed, []);
+});
+
+test('a scheduled delivery withdrawn while its prompt is stored is declined', async () => {
+  const { liveSession, dependencies, streamed, storePrompt } = turnUnderTest();
+  let current = true;
+  const outcomes: string[] = [];
+  const delivery = {
+    isCurrent: () => current,
+    accepted: () => outcomes.push('accepted'),
+    declined: () => outcomes.push('declined'),
+  };
+
+  const turn = runPrimaryTurn(dependencies, liveSession, {
+    prompt: 'from the project',
+    delivery,
+    announce: true,
+  });
+  await new Promise((resolve) => setImmediate(resolve));
+  current = false;
+  storePrompt();
+  await turn;
+
+  assert.deepEqual(streamed, []);
+  assert.deepEqual(outcomes, ['declined']);
 });

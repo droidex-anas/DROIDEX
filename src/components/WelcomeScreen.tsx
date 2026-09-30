@@ -38,11 +38,15 @@ const WELCOME_LINES: ((folder?: string) => string)[] = [
 export function WelcomeScreen({
   folder,
   onSeedPrompt,
+  project,
 }: {
   folder?: string;
   onSeedPrompt: (text: string) => void;
+  /** Drafting a project: the composer below starts its lead, and this leads back to a chat. */
+  project?: { onStartChat: () => void };
 }) {
   const [line] = useState(() => WELCOME_LINES[Math.floor(Math.random() * WELCOME_LINES.length)]);
+  if (project) return <ProjectWelcome onStartChat={project.onStartChat} />;
   return (
     <div className="flex h-full flex-col items-center justify-center px-8">
       <div className="droid-rise">
@@ -77,6 +81,39 @@ export function WelcomeScreen({
           </button>
         ))}
       </div>
+    </div>
+  );
+}
+
+// A new project starts from the same screen and composer as a chat, so it only
+// has to say what sending will do, and how to go back to starting a chat.
+function ProjectWelcome({ onStartChat }: { onStartChat: () => void }) {
+  return (
+    <div className="flex h-full flex-col items-center justify-center px-8">
+      <div className="droid-rise">
+        <BrandMark size={34} className="text-droid-accent" />
+      </div>
+      <div
+        className="droid-rise mt-6 max-w-lg text-center text-[22px] leading-snug font-semibold tracking-tight text-droid-text"
+        style={{ animationDelay: '90ms' }}
+      >
+        Start a project
+      </div>
+      <p
+        className="droid-rise mt-3 max-w-md text-center text-[13px] leading-6 text-droid-text-muted"
+        style={{ animationDelay: '160ms' }}
+      >
+        Say what you want done. Its chat plans the work, asks you what it needs to know, and runs
+        the parts that can go in parallel as threads.
+      </p>
+      <button
+        type="button"
+        onClick={onStartChat}
+        style={{ animationDelay: '230ms' }}
+        className="droid-rise mt-6 rounded-lg px-3 py-1.5 text-[13px] text-droid-text-muted transition-colors hover:bg-droid-elevated/60 hover:text-droid-text-secondary"
+      >
+        Start a chat instead
+      </button>
     </div>
   );
 }

@@ -1,0 +1,101 @@
+import { existsSync } from 'node:fs';
+import {
+  addWorktree,
+  ensureWorktreeDirectoryIgnored,
+  freeWorktreePath,
+  git,
+  removeManagedWorktree,
+  repositoryRoot,
+  requireDirectory,
+  requireRealDirectoryPath,
+  resolveCommit,
+  sanitizeSegment,
+} from '../gitWorktrees.js';
+
+/* A thread's own checkout: a worktree on its own branch, cut from a base the
+   chat names or the checkout's HEAD. DROIDEX cuts one when another thread is
+   already working in the checkout the new one would share, or when the chat
+   asks for one, so neither thread ever sees the other's half-finished tree. */
+
+interface ThreadWorkspaceRequest {
+  /** The project's checkout, which the worktree is cut from. */
+  cwd: string;
+  title: string;
+  /** Branch to create for the thread. Derived from the title when absent. */
+  branch?: string;
+  /** Commit-ish the branch starts at. The checkout's HEAD when absent. */
+  base?: string;
+}
+
+export interface ThreadWorkspace {
+  cwd: string;
+  branch: string;
+  base: string;
+}
+
+const OUTSIDE_REPOSITORY = 'A thread worktree must stay inside the project repository.';
+
+export async function createThreadWorkspace(
+  request: ThreadWorkspaceRequest,
+): Promise<ThreadWorkspace> {
+  const selected = request.cwd.trim();
+  if (!selected) throw new Error('A thread worktree needs the project to have a workspace folder.');
+  await requireDirectory(selected, 'The project workspace folder no longer exists.');
+
+  const root = await repositoryRoot(selected);
+  if (!root) throw new Error('A thread worktree can only be created for a Git repository.');
+  // A blank base names nothing, so it means HEAD, as no base does.
+  const base = request.base?.trim() ?? '';
+  const commit = await resolveCommit(root, base);
+  if (!commit) {
+    throw new Error(
+      base
+        ? `The base ${base} does not resolve to a commit in this repository.`
+        : 'The project repository does not have a commit to branch from.',
+    );
+  }
+
+  const branch = await freeBranch(root, threadBranchName(request.branch ?? request.title));
+  const target = freeWorktreePath(root, branch.replaceAll('/', '-'));
+
+  await ensureWorktreeDirectoryIgnored(root);
+  await requireRealDirectoryPath(root, target, OUTSIDE_REPOSITORY);
+  await addWorktree(root, target, commit, branch);
+  return { cwd: target, branch, base: base || 'HEAD' };
+}
+
+/**
+ * Takes back a worktree cut for a thread that never started. A worktree that
+ * holds changes is kept, and its branch with it.
+ */
+export async function removeThreadWorkspace(
+  projectCwd: string,
+  workspace: ThreadWorkspace,
+): Promise<void> {
+  await removeManagedWorktree(workspace.cwd);
+  if (existsSync(workspace.cwd)) return;
+  await git(projectCwd, ['branch', '-D', workspace.branch]);
+}
+
+// Threads live under one prefix so a repository's branch list says which
+// branches DROIDEX opened and which task each one carries.
+function threadBranchName(value: string): string {
+  // Sanitizing flattens a slash, so a chat asking for "thread/rename-api" must
+  // not come back as thread/thread-rename-api.
+  const stem =
+    sanitizeSegment(value)
+      .replace(/^thread[-/]/, '')
+      .slice(0, 48) || 'work';
+  return `thread/${stem}`;
+}
+
+async function freeBranch(root: string, name: string): Promise<string> {
+  for (let suffix = 1; suffix < 50; suffix += 1) {
+    const candidate = suffix === 1 ? name : `${name}-${String(suffix)}`;
+    const exists = await git(root, ['rev-parse', '--verify', `refs/heads/${candidate}`]).catch(
+      () => '',
+    );
+    if (!exists) return candidate;
+  }
+  throw new Error('Too many branches already use this thread name.');
+}
