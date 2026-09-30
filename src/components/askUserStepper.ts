@@ -89,14 +89,6 @@ export function answerFor(state: StepperState, questionIndex: number): HeldAnswe
   return state.answers[questionIndex] ?? EMPTY;
 }
 
-export function isSelected(state: StepperState, questionIndex: number, option: string): boolean {
-  return answerFor(state, questionIndex).selected.includes(option);
-}
-
-export function isTyping(state: StepperState, questionIndex: number): boolean {
-  return answerFor(state, questionIndex).typing;
-}
-
 /** An answer with nothing picked and nothing typed cannot be submitted. */
 export function canAdvance(state: StepperState, questionIndex: number): boolean {
   const held = answerFor(state, questionIndex);

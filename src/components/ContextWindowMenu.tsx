@@ -9,12 +9,7 @@ const MENU_WIDTH_PX = 176;
 const GAP_PX = 6;
 const EDGE_PX = 8;
 
-/**
- * The window a Claude chat runs on, as a quiet text button beside the model's
- * name in the effort popover. The list floats in a portal because the popover
- * card clips its own overflow, and it names the provider's own window so a
- * chat that pins none still reads as deliberate.
- */
+// The list floats in a portal because the effort popover card clips its own overflow.
 export default function ContextWindowMenu({
   options,
   selected,
@@ -67,11 +62,8 @@ export default function ContextWindowMenu({
 
   const providerDefault = options.find((option) => option.isProviderDefault);
   const shown = selected ?? providerDefault?.value;
-  const label =
-    shown === undefined ? 'Default' : (options.find((o) => o.value === shown)?.label ?? 'Default');
+  const label = options.find((o) => o.value === shown)?.label ?? 'Default';
 
-  // The menu opens on the window in use, or the first that can be picked, and
-  // the arrow keys walk the ones that can.
   const choosable = options.filter((option) => option.unavailableReason === undefined);
   const openOn = choosable.find((option) => option.value === shown) ?? choosable[0];
   const onMenuKey = (e: React.KeyboardEvent) => {

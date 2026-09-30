@@ -130,10 +130,6 @@ export default function ModelSliderPopover({ onClose }: { onClose: () => void })
   const defaultWindow =
     providerWindow ??
     (activeModel?.id === status?.defaultModelId ? status?.defaultContextWindowTokens : undefined);
-  const windowOptions = useMemo(
-    () => contextWindowOptions(activeModel, defaultWindow),
-    [activeModel, defaultWindow],
-  );
   const defaultEffort = activeModel?.defaultReasoningEffort;
   const canReset =
     defaultEffort !== undefined &&
@@ -263,7 +259,7 @@ export default function ModelSliderPopover({ onClose }: { onClose: () => void })
                 </span>
                 {offersContextWindow(provider) && (
                   <ContextWindowMenu
-                    options={windowOptions}
+                    options={contextWindowOptions(activeModel, defaultWindow)}
                     selected={contextWindowTokens}
                     onSelect={setContextWindow}
                   />

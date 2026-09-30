@@ -1,7 +1,7 @@
 import { motion, AnimatePresence, useReducedMotion } from 'framer-motion';
 import { shallowEqual, useStoreDispatch, useStoreSelector } from '../hooks/useStore';
 import { respondPermission } from '../lib/commands';
-import type { PermissionKind, PermissionOutcome, PermissionRequest } from '../types/bridge';
+import type { PermissionKind, PermissionOutcome } from '../types/bridge';
 import { PROVIDER_LABELS } from '../features/providers/providerIdentity';
 import { extractFileChange } from '../lib/diff';
 import { inlineCardMotion } from './inlineCardMotion';
@@ -141,49 +141,37 @@ export default function PermissionInline({ appSessionId }: { appSessionId?: stri
           </div>
         )}
 
-        <Actions request={req} onRespond={respond} />
+        <div className="flex flex-wrap items-center justify-end gap-2 px-4 pb-3.5">
+          <button
+            onClick={() => {
+              respond('refuse');
+            }}
+            className="rounded-full px-3.5 py-1.5 text-[12px] font-medium text-droid-text-secondary transition-colors hover:bg-droid-surface hover:text-droid-text"
+          >
+            Deny
+          </button>
+          {/* Only offered when the harness will let a grant be remembered. */}
+          {req.canAlwaysAllow && (
+            <button
+              onClick={() => {
+                respond('proceed_always');
+              }}
+              className="rounded-full border border-droid-border bg-droid-bg/40 px-3.5 py-1.5 text-[12px] font-medium text-droid-text-secondary transition-colors hover:border-droid-border-hover hover:text-droid-text"
+            >
+              Always allow
+            </button>
+          )}
+          <button
+            onClick={() => {
+              respond('proceed_once');
+            }}
+            className="rounded-full px-4 py-1.5 text-[12px] font-semibold text-droid-bg transition-opacity hover:opacity-90"
+            style={{ background: ACCENT }}
+          >
+            Allow once
+          </button>
+        </div>
       </motion.div>
     </AnimatePresence>
-  );
-}
-
-function Actions({
-  request,
-  onRespond,
-}: {
-  request: PermissionRequest;
-  onRespond: (outcome: PermissionOutcome) => void;
-}) {
-  return (
-    <div className="flex flex-wrap items-center justify-end gap-2 px-4 pb-3.5">
-      <button
-        onClick={() => {
-          onRespond('refuse');
-        }}
-        className="rounded-full px-3.5 py-1.5 text-[12px] font-medium text-droid-text-secondary transition-colors hover:bg-droid-surface hover:text-droid-text"
-      >
-        Deny
-      </button>
-      {/* Only offered when the harness will let a grant be remembered. */}
-      {request.canAlwaysAllow && (
-        <button
-          onClick={() => {
-            onRespond('proceed_always');
-          }}
-          className="rounded-full border border-droid-border bg-droid-bg/40 px-3.5 py-1.5 text-[12px] font-medium text-droid-text-secondary transition-colors hover:border-droid-border-hover hover:text-droid-text"
-        >
-          Always allow
-        </button>
-      )}
-      <button
-        onClick={() => {
-          onRespond('proceed_once');
-        }}
-        className="rounded-full px-4 py-1.5 text-[12px] font-semibold text-droid-bg transition-opacity hover:opacity-90"
-        style={{ background: ACCENT }}
-      >
-        Allow once
-      </button>
-    </div>
   );
 }
