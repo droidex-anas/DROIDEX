@@ -745,15 +745,6 @@ export default function PromptInput({
   const { applyFormat } = draftEditing;
 
   const trigger = useMemo(() => composerTrigger(input, caret), [input, caret]);
-  const overlayOpen = [
-    trigger,
-    modelsOpen,
-    addMenuOpen,
-    feedbackReport,
-    draftEditing.menu,
-    scheduleTarget !== null && scheduleTarget.appSessionId === activeSession?.appSessionId,
-    sendHintOpen,
-  ].some(Boolean);
 
   // Switching conversations abandons any schedule in progress; the bumped
   // generation also stops an in-flight save from clearing the new draft.
@@ -795,10 +786,6 @@ export default function PromptInput({
     },
     [],
   );
-
-  useEffect(() => {
-    onOverlayChange?.(overlayOpen);
-  }, [onOverlayChange, overlayOpen]);
 
   useEffect(
     () => () => {
@@ -876,6 +863,21 @@ export default function PromptInput({
   );
 
   const menuOpen = !!trigger && menu.rows.length > 0;
+  // Only what is actually drawn over the page counts: a typed / or @ with no
+  // matching rows shows no menu, so it must not hide the browser.
+  const overlayOpen = [
+    menuOpen,
+    modelsOpen,
+    addMenuOpen,
+    feedbackReport,
+    draftEditing.menu,
+    scheduleTarget !== null && scheduleTarget.appSessionId === activeSession?.appSessionId,
+    sendHintOpen,
+  ].some(Boolean);
+
+  useEffect(() => {
+    onOverlayChange?.(overlayOpen);
+  }, [onOverlayChange, overlayOpen]);
   // What the draft already carries, so those rows read as staged.
   const stagedRowKeys = useMemo(
     () =>
