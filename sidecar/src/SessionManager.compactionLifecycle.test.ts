@@ -723,6 +723,16 @@ test('[C5] Compaction retuning uses each live session model', { concurrency: fal
     });
     assert.equal(compactionWrites('worker-c5').length, workerCompactions);
     assert.equal(compactionWrites('validator-c5').length, validatorCompactions);
+
+    await h.handle({
+      type: 'settings.agent.update',
+      appSessionId: 'provider-1',
+      agent: 'validator',
+      modelId: 'model-validator-new',
+    });
+    assert.equal(latestCompactionLimit('validator-c5'), 350);
+    assert.equal(compactionWrites('provider-1').length, parentCompactions);
+    assert.equal(compactionWrites('worker-c5').length, workerCompactions);
   } finally {
     await h.dispose();
   }
