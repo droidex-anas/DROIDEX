@@ -91,6 +91,7 @@ const project = z
     title: z.string().min(1).max(LEDGER_LIMITS.title),
     paused: z.boolean(),
     leadStopped: z.literal(true).optional(),
+    leadFailed: z.literal(true).optional(),
     launching: z.number().int().min(0),
     plan: z
       .array(
@@ -118,6 +119,7 @@ const project = z
           earlierReplies: z.array(text).max(LEDGER_LIMITS.earlierReplies).optional(),
           repliesShed: z.literal(true).optional(),
           error: z.string().max(LEDGER_LIMITS.threadError).optional(),
+          owedReport: text.optional(),
           waiting: z.boolean(),
         })
         .strict(),

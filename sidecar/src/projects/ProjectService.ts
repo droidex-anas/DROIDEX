@@ -28,6 +28,7 @@ import {
 import type {
   Project,
   ProjectStep,
+  ProjectThread,
   ProjectView,
   ThreadInput,
   ThreadMessage,
@@ -52,6 +53,8 @@ export interface ProjectPort {
   interrupt(appSessionId: string): Promise<void>;
   /** Whether a question routed to an owner is still waiting on its thread. */
   isAsking(appSessionId: string, requestId: string): boolean;
+  /** Whether the conversation is stopped on a permission request only the user can answer. */
+  awaitingApproval(appSessionId: string): boolean;
   /** Retunes a live thread, the way the composer's own controls do. */
   configure(appSessionId: string, settings: ThreadSettings): Promise<void>;
   /** Answers a question a thread is blocked on; false when it was already settled. */
@@ -134,6 +137,9 @@ export class ProjectService {
       (project, error) => {
         this.fail(project, error);
       },
+      (project) => {
+        this.refill(project);
+      },
     );
     this.turns = new ProjectTurns({
       project: (appSessionId) => this.membership.get(appSessionId),
@@ -142,6 +148,13 @@ export class ProjectService {
       enqueue: (project, message) => {
         this.enqueue(project, message);
       },
+      report: (project, thread, text) => {
+        this.report(project, thread, text);
+      },
+      leadFailed: (project) => {
+        this.leadFailed(project);
+      },
+      leadRecovered: (project) => this.leadRecovered(project),
       save: () => this.save(),
       fail: (project, error) => {
         this.fail(project, error);
@@ -168,6 +181,7 @@ export class ProjectService {
         project.delivery.state = 'uncertain';
         project.paused = true;
         delete project.leadStopped;
+        delete project.leadFailed;
       }
       owner.projects.set(project.id, project);
       for (const thread of project.threads) owner.membership.set(thread.appSessionId, project);
@@ -553,6 +567,7 @@ export class ProjectService {
     this.wakes.invalidate(project);
     project.paused = paused;
     delete project.leadStopped;
+    delete project.leadFailed;
     if (!paused) delete project.error;
     await this.save();
     this.wakes.kick(project);
@@ -571,8 +586,10 @@ export class ProjectService {
     const project = this.membership.get(appSessionId) ?? this.adopting.get(appSessionId);
     if (!project || this.closed) return;
     if (!requireThread(project, appSessionId).ownerAppSessionId) {
-      // A hold already in place for another reason stays the user's to lift.
+      // A hold already in place for another reason stays the user's to lift,
+      // and a failure is no longer the only reason once the user has stopped.
       if (!project.paused) project.leadStopped = true;
+      delete project.leadFailed;
       this.wakes.invalidate(project);
       project.paused = true;
       await this.save();
@@ -585,6 +602,15 @@ export class ProjectService {
   async observe(event: ServerEvent): Promise<void> {
     if (this.closed) return;
     await this.turns.observe(event);
+    // A delivered turn that stops on the user's approval frees its slot.
+    if (event.type === 'approval.requested') {
+      if (this.membership.has(event.request.appSessionId)) this.wakes.waitingChanged();
+      return;
+    }
+    // Any session that goes idle may be one the runtime cap can release now,
+    // which is what a delivery parked on capacity is waiting for.
+    if (event.type === 'session.updated' && !event.session.streaming)
+      this.wakes.sessionIdle(this.projects.values());
     if (event.type !== 'session.closed') return;
     // A delivery parked on a busy member waits for its turn to settle. A closed
     // session never settles one, and the next delivery resumes it instead.
@@ -630,6 +656,24 @@ export class ProjectService {
    * never lifted here. This runs as a spawn begins, so a spawn already under
    * way when the user pressed Stop meets the hold and is refused.
    */
+  private leadFailed(project: Project): void {
+    // A hold already in place for another reason stays the user's to lift.
+    const onlyCause = !project.paused || project.leadFailed === true;
+    this.fail(
+      project,
+      new Error(
+        "The main chat's turn failed. Coordination resumes when its next turn succeeds, or with Resume.",
+      ),
+    );
+    if (onlyCause) project.leadFailed = true;
+  }
+
+  /** The main chat's next successful turn shows it is working again, which lifts a hold its failure put on. */
+  private async leadRecovered(project: Project): Promise<void> {
+    if (!project.leadFailed || project.delivery) return;
+    await this.setPaused(project.id, false);
+  }
+
   private async resumeAfterLeadStop(source: string): Promise<void> {
     const project = this.membership.get(source);
     if (!project?.leadStopped || project.delivery) return;
@@ -642,6 +686,8 @@ export class ProjectService {
     await this.wakes.settle(project);
     clearAsk(project, requireThread(project, target));
     project.pending = project.pending.filter((message) => message.to !== target);
+    for (const thread of project.threads)
+      if (thread.ownerAppSessionId === target) delete thread.owedReport;
     await this.save();
     this.wakes.kick(project);
   }
@@ -720,13 +766,33 @@ export class ProjectService {
     }
   }
 
+  /* A report that finds the inbox full waits on its thread and queues as soon as
+     a delivery makes room. A newer report from the same thread replaces it. */
+  private report(project: Project, thread: ProjectThread, text: string): void {
+    const owner = thread.ownerAppSessionId;
+    if (!owner) return;
+    requireMessageText(text);
+    if (inboxFull(project)) {
+      thread.owedReport = text;
+      return;
+    }
+    this.enqueue(project, { from: thread.appSessionId, to: owner, kind: 'result', text });
+    delete thread.owedReport;
+  }
+
+  private refill(project: Project): void {
+    if (this.closed) return;
+    for (const thread of project.threads) {
+      if (inboxFull(project)) return;
+      const text = thread.owedReport;
+      if (text) this.report(project, thread, text);
+    }
+  }
+
   private enqueue(project: Project, message: Omit<ThreadMessage, 'id'>): void {
     this.requireOpen();
-    if (!message.text.trim() || message.text.length > LEDGER_LIMITS.text)
-      throw new Error(
-        `Thread messages must contain 1 to ${String(LEDGER_LIMITS.text)} characters.`,
-      );
-    if (project.pending.length + (project.delivery?.messages.length ?? 0) >= LEDGER_LIMITS.inbox)
+    requireMessageText(message.text);
+    if (inboxFull(project))
       throw new Error(
         `The project inbox is full: ${String(LEDGER_LIMITS.inbox)} messages are waiting for their threads, and nothing more can queue until they are delivered.`,
       );
@@ -826,6 +892,7 @@ export class ProjectService {
     this.wakes.invalidate(project);
     project.paused = true;
     delete project.leadStopped;
+    delete project.leadFailed;
     const message = error instanceof Error ? error.message : String(error);
     project.error = message.slice(0, LEDGER_LIMITS.projectError);
     if (project.delivery) project.delivery.state = 'uncertain';
@@ -843,4 +910,14 @@ export class ProjectService {
     }
     this.emit({ type: 'projects.snapshot', projects: this.list() });
   }
+}
+
+/** The inbox counts what a delivery has claimed, so its limit holds while that delivery is out. */
+function inboxFull(project: Project): boolean {
+  return project.pending.length + (project.delivery?.messages.length ?? 0) >= LEDGER_LIMITS.inbox;
+}
+
+function requireMessageText(text: string): void {
+  if (!text.trim() || text.length > LEDGER_LIMITS.text)
+    throw new Error(`Thread messages must contain 1 to ${String(LEDGER_LIMITS.text)} characters.`);
 }

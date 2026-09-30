@@ -44,6 +44,7 @@ test('acceptance removes only its claim and holds the turn slot until completion
   let saved: Project | undefined;
   const queue = new ProjectWakeQueue(
     {
+      awaitingApproval: () => false,
       deliver: async (_target, prompt) => {
         calls.push(prompt);
         if (calls.length === 1) return admitted.promise;
@@ -56,6 +57,7 @@ test('acceptance removes only its claim and holds the turn slot until completion
     (_project, error) => {
       throw error;
     },
+    () => undefined,
   );
   queue.start([]);
   queue.kick(state);
@@ -88,6 +90,7 @@ test('availability arriving during an awaited busy receipt is not lost', async (
   let calls = 0;
   const queue = new ProjectWakeQueue(
     {
+      awaitingApproval: () => false,
       deliver: async () => {
         calls += 1;
         if (calls === 1) return receipt.promise;
@@ -98,6 +101,7 @@ test('availability arriving during an awaited busy receipt is not lost', async (
     (_project, error) => {
       throw error;
     },
+    () => undefined,
   );
   queue.start([]);
   queue.kick(state);
@@ -111,12 +115,53 @@ test('availability arriving during an awaited busy receipt is not lost', async (
   await queue.flush();
 });
 
+test('capacity waits block only that recipient until availability', async () => {
+  const state = project();
+  const targets: string[] = [];
+  const queue = new ProjectWakeQueue(
+    {
+      awaitingApproval: () => false,
+      deliver: async (target) => {
+        targets.push(target);
+        return targets.length === 1
+          ? { status: 'busy', retryOn: 'capacity' }
+          : { status: 'accepted', settled: Promise.resolve() };
+      },
+    },
+    () => Promise.resolve(),
+    (_project, error) => {
+      throw error;
+    },
+    () => undefined,
+  );
+  queue.start([]);
+  queue.kick(state);
+  await tick();
+  await tick();
+  assert.deepEqual(targets, ['main']);
+
+  state.pending.push(message('worker-message', 'worker'));
+  queue.kick(state);
+  await tick();
+  await tick();
+  assert.deepEqual(targets, ['main', 'worker']);
+
+  state.pending.push(message('main-again'));
+  queue.available(state, 'main');
+  await tick();
+  await tick();
+  assert.deepEqual(targets, ['main', 'worker', 'main']);
+  queue.close();
+  await queue.flush();
+});
+
 test('an unacknowledged delivery keeps its claim and is not retried', async () => {
   const state = project();
   let calls = 0;
   const failures: unknown[] = [];
   const queue = new ProjectWakeQueue(
     {
+      awaitingApproval: () => false,
       deliver: async () => {
         calls += 1;
         return { status: 'unavailable', error: 'Delivery outcome unknown' };
@@ -126,6 +171,7 @@ test('an unacknowledged delivery keeps its claim and is not retried', async () =
     (_project, error) => {
       failures.push(error);
     },
+    () => undefined,
   );
   queue.start([]);
   queue.kick(state);
@@ -149,6 +195,7 @@ test('completed callbacks free the global limit of two accepted project turns', 
   let calls = 0;
   const queue = new ProjectWakeQueue(
     {
+      awaitingApproval: () => false,
       deliver: async () => {
         calls += 1;
         return { status: 'accepted', settled: finished.promise };
@@ -158,6 +205,7 @@ test('completed callbacks free the global limit of two accepted project turns', 
     (_project, error) => {
       throw error;
     },
+    () => undefined,
   );
   queue.start([]);
   states.forEach((item) => queue.kick(item));
@@ -178,6 +226,7 @@ test('explicit resume rechecks both target and capacity busy markers', async () 
     let calls = 0;
     const queue = new ProjectWakeQueue(
       {
+        awaitingApproval: () => false,
         deliver: async () => {
           calls += 1;
           if (calls === 1) return { status: 'busy', retryOn };
@@ -188,6 +237,7 @@ test('explicit resume rechecks both target and capacity busy markers', async () 
       (_project, error) => {
         throw error;
       },
+      () => undefined,
     );
     queue.start([]);
     queue.kick(state);
@@ -214,6 +264,7 @@ test('a cancelled admission cannot restore a busy marker after resume', async ()
   let calls = 0;
   const queue = new ProjectWakeQueue(
     {
+      awaitingApproval: () => false,
       deliver: async () => {
         calls += 1;
         if (calls === 1) return admitted.promise;
@@ -224,6 +275,7 @@ test('a cancelled admission cannot restore a busy marker after resume', async ()
     (_project, error) => {
       throw error;
     },
+    () => undefined,
   );
   queue.start([]);
   queue.kick(state);
