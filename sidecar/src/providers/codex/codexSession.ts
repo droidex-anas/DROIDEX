@@ -155,6 +155,7 @@ export class CodexSession implements ProviderSession {
       serviceTier: this.model.fastMode ? 'priority' : 'default',
       ...(this.model.modelId ? { model: this.model.modelId } : {}),
     };
+    const developerInstructions = await this.developerInstructions();
     const response = await (resumeId
       ? this.client.request<ThreadResponse>('thread/resume', {
           threadId: resumeId,
@@ -162,14 +163,14 @@ export class CodexSession implements ProviderSession {
           // reload the thread's own history for the model.
           excludeTurns: true,
           ...settings,
+          // Given again on resume: Codex keeps the tools with the thread but
+          // not this override, so a resumed chat would lose it at compaction.
+          ...(developerInstructions ? { developerInstructions } : {}),
         })
       : this.client.request<ThreadResponse>('thread/start', {
           ...settings,
           ...(this.tools.declarations.length
-            ? {
-                dynamicTools: this.tools.declarations,
-                developerInstructions: this.tools.instructions,
-              }
+            ? { dynamicTools: this.tools.declarations, developerInstructions }
             : {}),
         }));
     this.threadId = response.thread.id;
@@ -177,6 +178,17 @@ export class CodexSession implements ProviderSession {
     this.mapper.setModel({ ...this.model, modelId: this.model.modelId ?? this.threadModel });
     this.catalog ??= new CodexCatalog(this.client, [this.cwd]);
     await this.pushThreadSettings();
+  }
+
+  // Codex takes developerInstructions in place of the configured ones, so the
+  // user's own developer_instructions for this folder go first.
+  private async developerInstructions(): Promise<string | undefined> {
+    const note = this.tools.instructions;
+    if (!note) return undefined;
+    const { config } = await this.client.request<{
+      config: { developer_instructions?: string | null };
+    }>('config/read', { cwd: this.cwd });
+    return [config.developer_instructions, note].filter(Boolean).join('\n\n');
   }
 
   catalogItems(): Promise<SkillInfo[]> {
