@@ -6,9 +6,11 @@ import { useLayoutEffect, useRef, type ReactNode, type RefObject } from 'react';
 // growing draft never re-renders the app.
 export function ComposerHeight({
   target,
+  className = '',
   children,
 }: {
   target: RefObject<HTMLElement | null>;
+  className?: string;
   children: ReactNode;
 }) {
   const ref = useRef<HTMLDivElement>(null);
@@ -31,7 +33,7 @@ export function ComposerHeight({
   }, [target]);
 
   return (
-    <div ref={ref} className="pointer-events-auto shrink-0">
+    <div ref={ref} className={`shrink-0 ${className}`}>
       {children}
     </div>
   );

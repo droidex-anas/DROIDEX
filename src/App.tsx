@@ -251,8 +251,10 @@ export default function App() {
     expandedPaneAppSessionId === activeSession.appSessionId;
   // An expanded browser keeps the chat's one composer: the chat column becomes
   // an overlay layer so the same composer moves under the page instead of a
-  // second one mounting there (which lost the draft on every switch).
-  const browserExpanded = paneExpanded && activeUtilityTab?.tool === 'browser';
+  // second one mounting there (which lost the draft on every switch). Mission
+  // Control owns its own composer and keeps the browser's for now.
+  const browserExpanded =
+    paneExpanded && activeUtilityTab?.tool === 'browser' && !isMissionControlView;
   const [composerOverlayOpen, setComposerOverlayOpen] = useState(false);
   const focused = isMissionControlView;
   // A normal/spec session only has something worth showing once a message has
@@ -781,22 +783,28 @@ export default function App() {
                       isObscured={paneExpanded}
                       besidePane={showUtilityPane}
                     />
+                    {activeSession && state.sideChatPlacement === 'floating' ? (
+                      <Suspense fallback={null}>
+                        <LazySideChatWindow sourceAppSessionId={activeSession.appSessionId} />
+                      </Suspense>
+                    ) : null}
                   </div>
-                  <ComposerHeight target={contentRowRef}>
+                  <ComposerHeight
+                    target={contentRowRef}
+                    className={browserExpanded ? 'pointer-events-auto' : ''}
+                  >
                     <PromptInput
                       rightInset={rightPanelVisible && !browserExpanded}
                       compact={browserExpanded}
                       onOverlayChange={setComposerOverlayOpen}
                     />
                   </ComposerHeight>
-                  {activeSession && state.sideChatPlacement === 'floating' ? (
-                    <Suspense fallback={null}>
-                      <LazySideChatWindow sourceAppSessionId={activeSession.appSessionId} />
-                    </Suspense>
-                  ) : null}
                 </>
               )}
             </section>
+            {/* Holds the chat column's place while it floats, so the pane stays
+                anchored on the right as it widens. */}
+            {browserExpanded && <div className="min-w-0 flex-1" />}
 
             <AnimatePresence initial={false}>
               {showUtilityPane && (
@@ -930,6 +938,7 @@ export default function App() {
                           <Suspense fallback={utilityToolFallback('browser')}>
                             <LazyBrowserFocusWorkspace
                               expanded={paneExpanded}
+                              ownComposer={paneExpanded && isMissionControlView}
                               externalObscured={overlayOpen}
                               onToggleExpanded={() => {
                                 setExpandedPaneAppSessionId(

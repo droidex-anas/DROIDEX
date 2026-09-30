@@ -4,6 +4,7 @@ import { ChevronDown, ChevronUp } from '@droidex/icons';
 import { useStoreSelector } from '../../hooks/useStore';
 import { useSessionLive } from '../../hooks/useSessionLive';
 import type { TranscriptEvent } from '../../types/bridge';
+import PromptInput from '../PromptInput';
 import { RunningProcessesMenu } from '../RunningProcessesMenu';
 import BrowserWorkspace from './BrowserWorkspace';
 
@@ -15,14 +16,19 @@ function sameEvents(left: readonly TranscriptEvent[], right: readonly Transcript
 
 export function BrowserFocusWorkspace({
   expanded,
+  ownComposer = false,
   externalObscured = false,
   onToggleExpanded,
 }: {
   expanded: boolean;
+  // Mission Control keeps a composer of its own here while its view is hidden;
+  // a normal chat's composer is laid over the reserved space by App instead.
+  ownComposer?: boolean;
   externalObscured?: boolean;
   onToggleExpanded: () => void;
 }) {
   const [activityOpen, setActivityOpen] = useState(false);
+  const [promptOverlayOpen, setPromptOverlayOpen] = useState(false);
   const activeSession = useStoreSelector((state) =>
     state.activeAppSessionId ? state.sessions[state.activeAppSessionId] : null,
   );
@@ -43,7 +49,7 @@ export function BrowserFocusWorkspace({
       <div className="min-h-0 flex-1">
         <BrowserWorkspace
           expanded={expanded}
-          externalObscured={externalObscured}
+          externalObscured={externalObscured || (ownComposer && promptOverlayOpen)}
           onToggleExpanded={onToggleExpanded}
         />
       </div>
@@ -124,12 +130,16 @@ export function BrowserFocusWorkspace({
                 </div>
               </div>
             </div>
-            {/* The chat's own composer is laid over this space by App, so the
-                draft is never lost when the pane expands or docks. */}
-            <div aria-hidden className="h-[var(--composer-height,0px)]" />
+            {ownComposer && <PromptInput compact onOverlayChange={setPromptOverlayOpen} />}
           </motion.section>
         )}
       </AnimatePresence>
+      {/* The chat's own composer is laid over this space by App, so the draft is
+          never lost when the pane expands or docks. Outside the entrance
+          animation, so the page never slides under the composer. */}
+      {expanded && !ownComposer && (
+        <div aria-hidden className="h-[var(--composer-height,0px)] shrink-0" />
+      )}
     </div>
   );
 }
