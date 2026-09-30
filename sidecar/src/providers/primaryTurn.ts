@@ -38,6 +38,9 @@ export interface PrimaryTurnRequest {
   // a turn of its own, which the chat showed only as pending. The turn adds
   // the row itself.
   announce?: true;
+  // A message from another chat stops here once its sender may no longer send
+  // it, even after the transcript row is written.
+  stillAllowed?: () => boolean;
 }
 
 export async function runPrimaryTurn(
@@ -45,10 +48,13 @@ export async function runPrimaryTurn(
   liveSession: LiveSession,
   request: PrimaryTurnRequest,
 ): Promise<void> {
-  const { prompt, mentions, delivery, notice, announce } = request;
+  const { prompt, mentions, delivery, notice, announce, stillAllowed } = request;
   const appSessionId = liveSession.summary.appSessionId;
   const providerSession = liveSession.session;
-  const isCurrent = () => d.isCurrent(liveSession) && liveSession.session === providerSession;
+  const isCurrent = () =>
+    d.isCurrent(liveSession) &&
+    liveSession.session === providerSession &&
+    (stillAllowed?.() ?? true);
   // A Stop that lands before the provider has a turn to interrupt. A Send now
   // in the same window is left alone: its prompt is queued behind this one,
   // and the agent needs this one to make sense of it.

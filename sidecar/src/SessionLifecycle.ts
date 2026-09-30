@@ -1358,6 +1358,7 @@ export class SessionLifecycle {
         ...(delivery ? { delivery } : {}),
         ...(prompt.notice ? { notice: prompt.notice } : {}),
         ...(prompt.steerId || prompt.announce ? { announce: true as const } : {}),
+        ...(prompt.isCurrent ? { stillAllowed: prompt.isCurrent } : {}),
       });
       await liveSession.turnPromise;
     } finally {
