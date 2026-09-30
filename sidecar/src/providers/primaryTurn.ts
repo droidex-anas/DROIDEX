@@ -73,7 +73,10 @@ export async function runPrimaryTurn(
       : d.timeline.recordPrompt(appSessionId, prompt);
     if (writing) await writing;
   }
-  if (!isCurrent() || stoppedBeforeStart()) return;
+  if (!isCurrent() || stoppedBeforeStart()) {
+    delivery?.declined();
+    return;
+  }
   d.context.beginTurn(appSessionId);
   context.startPolling();
   let turnError: unknown;
@@ -87,6 +90,7 @@ export async function runPrimaryTurn(
       stoppedBeforeStart() ||
       (delivery && (!configured || !delivery.isCurrent()))
     ) {
+      delivery?.declined();
       context.stopPolling();
       return;
     }
