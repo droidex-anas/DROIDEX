@@ -191,7 +191,7 @@ test('register rejects a runtime child shape at the top-level boundary', async (
   const child = live(summary('child-shape'));
   Reflect.set(child.summary, 'role', 'worker');
 
-  await assert.rejects(async () => await registry.register(child), /top-level sessions only/);
+  await assert.rejects(registry.register(child), /top-level sessions only/);
   assert.deepEqual(history.persisted, []);
   assert.equal(registry.getLive('child-shape'), undefined);
 });
@@ -208,10 +208,7 @@ test('failed registration leaves the previous live identity intact', async () =>
 
   history.nextSyncError = new Error('persist failed');
   await assert.rejects(
-    async () =>
-      await registry.register(
-        live(summary('stable', { providerSessionId: 'provider-replacement' })),
-      ),
+    registry.register(live(summary('stable', { providerSessionId: 'provider-replacement' }))),
     /persist failed/,
   );
 
@@ -371,7 +368,7 @@ test('reanchorHistoricalCwd refuses to move a worktree used by a live session', 
   history.persisted.length = 0;
 
   await assert.rejects(
-    async () => await registry.reanchorHistoricalCwd('/repo/.worktrees/feature', '/repo'),
+    registry.reanchorHistoricalCwd('/repo/.worktrees/feature', '/repo'),
     /live session is still using/i,
   );
   assert.deepEqual(history.persisted, []);
@@ -507,8 +504,7 @@ test('failed provider replacement preserves the live summary and aliases', async
   history.nextSyncError = new Error('persist failed');
 
   await assert.rejects(
-    async () =>
-      await registry.replaceProvider('provider-old', 'provider-next', { title: 'Uncommitted' }),
+    registry.replaceProvider('provider-old', 'provider-next', { title: 'Uncommitted' }),
     /persist failed/,
   );
 

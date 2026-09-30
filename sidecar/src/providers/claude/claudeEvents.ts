@@ -257,7 +257,7 @@ export class ClaudeEventMapper {
       // A call the user stopped, with Stop or Send now, is not a failure, and
       // the CLI says so in this one sentence. Reading it here keeps the renderer
       // free of text matching, and the row quiet instead of red.
-      const interrupted = block.is_error === true && isInterruptionNotice(text);
+      const interrupted = block.is_error === true && INTERRUPTION_NOTICE.test(text);
       return {
         ...owner,
         transcript: this.transcript('tool_result', {
@@ -425,10 +425,6 @@ export class ClaudeEventMapper {
 // tool runs. It is the harness's own wording, so it belongs here
 // with the rest of this adapter's knowledge of the SDK, never in the renderer.
 const INTERRUPTION_NOTICE = /the user (?:doesn't|does not) want to proceed with this tool use/i;
-
-function isInterruptionNotice(text: string): boolean {
-  return INTERRUPTION_NOTICE.test(text);
-}
 
 // The tool-use block shapes share id/name; the SDK's own union splits them by
 // server/mcp provenance, which the transcript does not distinguish.
