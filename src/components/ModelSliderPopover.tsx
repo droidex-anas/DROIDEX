@@ -228,6 +228,7 @@ export default function ModelSliderPopover({ onClose }: { onClose: () => void })
                       type="button"
                       aria-pressed={fastMode}
                       aria-label={FAST_MODE_LABEL}
+                      aria-description={fastModeBlocked ?? FAST_MODE_HINT}
                       disabled={fastModeBlocked !== undefined}
                       onClick={() => {
                         setFastMode(!fastMode);

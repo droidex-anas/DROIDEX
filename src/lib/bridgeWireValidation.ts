@@ -424,9 +424,9 @@ function isChildSessionSummary(value: unknown): boolean {
     isStreamFidelity(value.streamFidelity) &&
     isOptionalString(value.group) &&
     isOptionalString(value.phase) &&
-    isOptionalCount(value.startedAt) &&
-    isOptionalCount(value.settledAt) &&
-    isOptionalCount(value.tokensUsed)
+    isOptionalNonNegativeInteger(value.startedAt) &&
+    isOptionalNonNegativeInteger(value.settledAt) &&
+    isOptionalNonNegativeInteger(value.tokensUsed)
   );
 }
 
@@ -685,7 +685,7 @@ function isOptionalBoolean(value: unknown): boolean {
   return value === undefined || typeof value === 'boolean';
 }
 
-function isOptionalCount(value: unknown): boolean {
+function isOptionalNonNegativeInteger(value: unknown): boolean {
   return value === undefined || nonNegativeSafeInteger(value);
 }
 
