@@ -1,7 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
-import { Check, Lock, LockOpen, PenLine, Sparkles } from 'lucide-react';
-import { Spinner } from '@droidex/icons';
+import { AcceptEdits, AutoApprove, Check, FullAccess, Spinner, Supervised } from '@droidex/icons';
 
 import type { Autonomy, ProviderKind } from '../types/bridge';
 import {
@@ -12,7 +11,14 @@ import {
 } from '../lib/autonomy';
 
 // One glyph per mode, reading left to right as the permissions open up.
-const AUTONOMY_GLYPHS = { off: Lock, low: PenLine, medium: Sparkles, high: LockOpen };
+const AUTONOMY_GLYPHS = {
+  off: Supervised,
+  low: AcceptEdits,
+  medium: AutoApprove,
+  high: FullAccess,
+};
+// At 14px this draws the same 1.33px line as the composer's + and send icons.
+const GLYPH_STROKE = 2.29;
 
 export type AutonomyScope = 'draft' | 'session' | 'settings';
 
@@ -106,7 +112,7 @@ export default function AutonomySelector({
         {pending ? (
           <Spinner className="w-3.5 h-3.5 shrink-0 motion-safe:animate-spin-slow" />
         ) : (
-          <Glyph className="h-3.5 w-3.5 shrink-0" />
+          <Glyph className="h-3.5 w-3.5 shrink-0" strokeWidth={GLYPH_STROKE} />
         )}
         <span>{AUTONOMY_LABELS[value]}</span>
       </button>
@@ -215,7 +221,7 @@ export function AutonomyMenu({
                 className={`mt-0.5 h-3.5 w-3.5 shrink-0 ${
                   selected ? 'text-droid-text-secondary' : 'text-droid-text-muted'
                 }`}
-                aria-hidden
+                strokeWidth={GLYPH_STROKE}
               />
               <span className="min-w-0 flex-1">
                 <span
@@ -235,7 +241,10 @@ export function AutonomyMenu({
                 )}
               </span>
               {selected && (
-                <Check className="mt-0.5 h-3.5 w-3.5 shrink-0 text-droid-accent" strokeWidth={3} />
+                <Check
+                  className="mt-0.5 h-3.5 w-3.5 shrink-0 text-droid-accent"
+                  strokeWidth={2.6}
+                />
               )}
               <span className="mt-0.5 w-3 shrink-0 text-right text-[10px] tabular-nums text-droid-text-muted/60">
                 {i + 1}
