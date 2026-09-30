@@ -82,6 +82,7 @@ export class SessionContext {
   private readonly pendingCompactionResets = new Set<string>();
   private readonly recordedCompactions = new Map<string, Map<string, number>>();
   private readonly usagePersistenceRetries = new Set<string>();
+  private readonly turnGenerations = new Map<string, number>();
   private readonly pollers: ContextPollHost<ContextOperationTarget>;
   private backgroundWorkTier: BackgroundWorkTier = 'interactive';
   private focusedAppSessionId: string | null = null;
@@ -227,18 +228,20 @@ export class SessionContext {
     options: { persist?: boolean } = {},
   ): Promise<void> {
     const epoch = this.epoch;
-    const generation = this.compactions.get(contextResourceKey(target)) ?? 0;
+    const key = contextResourceKey(target);
+    const generation = this.compactions.get(key) ?? 0;
+    const turnGeneration = this.turnGenerations.get(key) ?? 0;
     if (!target.isCurrent()) return;
     try {
       const stats = await target.session.getContextStats();
-      if (!this.isCurrent(target, epoch)) return;
+      if (!this.isCurrent(target, epoch, turnGeneration)) return;
       let breakdown: unknown;
       try {
         breakdown = await this.dependencies.runtime.readContextBreakdown(target.session);
       } catch {
         breakdown = undefined;
       }
-      if (!this.isCurrent(target, epoch)) return;
+      if (!this.isCurrent(target, epoch, turnGeneration)) return;
       this.publishSnapshot(
         target,
         contextStatsSnapshot(stats, contextBreakdownSnapshot(breakdown)),
@@ -315,7 +318,9 @@ export class SessionContext {
   // clear. The poller's provider readings already keep the meter accurate; this
   // just re-enables usage-event context estimates for the new turn.
   beginTurn(appSessionId: string): void {
-    this.pendingCompactionResets.delete(primaryResourceKey(appSessionId));
+    const key = primaryResourceKey(appSessionId);
+    this.pendingCompactionResets.delete(key);
+    this.turnGenerations.set(key, (this.turnGenerations.get(key) ?? 0) + 1);
   }
 
   invalidateWindow(appSessionId: string): void {
@@ -349,6 +354,7 @@ export class SessionContext {
     this.latestProviderUsage.delete(key);
     this.pendingCompactionResets.delete(key);
     this.usagePersistenceRetries.delete(appSessionId);
+    this.turnGenerations.delete(key);
     this.forgetRecordedCompactions(key);
   }
 
@@ -363,10 +369,19 @@ export class SessionContext {
     this.recordedCompactions.clear();
     this.usagePersistenceRetries.clear();
     this.usageOffsets.clear();
+    this.turnGenerations.clear();
   }
 
-  private isCurrent(target: ContextOperationTarget, epoch: number): boolean {
-    return epoch === this.epoch && target.isCurrent();
+  private isCurrent(
+    target: ContextOperationTarget,
+    epoch: number,
+    turnGeneration: number,
+  ): boolean {
+    return (
+      epoch === this.epoch &&
+      turnGeneration === (this.turnGenerations.get(contextResourceKey(target)) ?? 0) &&
+      target.isCurrent()
+    );
   }
 
   private stopPollingKey(key: string): void {

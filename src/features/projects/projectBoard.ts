@@ -40,6 +40,9 @@ function summarize(
   total: number,
 ): string {
   const parts: string[] = [];
+  // A held project is not idle: nothing moves until it is resumed, and only
+  // its own page says so otherwise.
+  if (project.paused) parts.push('Held until you resume it');
   if (lead.attention > 0) parts.push('Main chat needs you');
   else if (lead.working > 0) parts.push('Main chat working');
   if (counts.attention > 0)

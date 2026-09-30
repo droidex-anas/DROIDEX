@@ -19,6 +19,10 @@ interface ProjectTurnsDependencies {
   /** Whether the question a thread was routed from is still waiting. */
   isAsking: (appSessionId: string, requestId: string) => boolean;
   enqueue: (project: Project, message: Omit<ThreadMessage, 'id'>) => void;
+  /** Queues a thread's report to its owner, or keeps it on the thread while the inbox is full. */
+  report: (project: Project, thread: ProjectThread, text: string) => void;
+  leadFailed: (project: Project) => void;
+  leadRecovered: (project: Project) => Promise<void>;
   save: () => Promise<void>;
   fail: (project: Project, error: unknown) => void;
   wakes: ProjectWakeQueue;
@@ -90,20 +94,12 @@ export class ProjectTurns {
     // A question the turn ended on will never be answered now.
     clearAsk(project, thread);
     if (!thread.ownerAppSessionId) {
-      if (session.phase === 'failed')
-        this.d.fail(
-          project,
-          new Error('The main thread failed. Review its error before resuming coordination.'),
-        );
+      if (session.phase === 'failed') this.d.leadFailed(project);
+      else if (session.phase !== 'paused') await this.d.leadRecovered(project);
     } else {
       try {
         // The wake already names the thread; this is how its turn ended.
-        this.d.enqueue(project, {
-          from: thread.appSessionId,
-          to: thread.ownerAppSessionId,
-          kind: 'result',
-          text: threadReport(session, turn),
-        });
+        this.d.report(project, thread, threadReport(session, turn));
       } catch (error) {
         this.d.fail(project, error);
       }

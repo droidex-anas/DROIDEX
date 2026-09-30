@@ -59,6 +59,9 @@ export async function runPrimaryTurn(
   // in the same window is left alone: its prompt is queued behind this one,
   // and the agent needs this one to make sense of it.
   const stoppedBeforeStart = () => liveSession.interrupting === true;
+  // Counts the turns the provider started itself, so this one's failure cannot
+  // be written over one that ran after it.
+  const delegatedGeneration = liveSession.delegatedGeneration;
   const context = turnContext(d, d.contextTarget(liveSession));
   if (!isCurrent()) return;
   // A scheduled delivery that cannot go ahead must leave no trace, and
@@ -68,7 +71,7 @@ export async function runPrimaryTurn(
     ? await d.applyDesignToolPolicy(liveSession, isDesignPrompt(prompt))
     : undefined;
   if (delivery && (!isCurrent() || !preflight || !delivery.isCurrent())) {
-    delivery.declined();
+    delivery.declined(isCurrent() && delivery.isCurrent() ? 'failed' : 'stale');
     return;
   }
   d.eventFlow.beginTurn(appSessionId, appSessionId);
@@ -80,7 +83,7 @@ export async function runPrimaryTurn(
     if (writing) await writing;
   }
   if (!isCurrent() || stoppedBeforeStart()) {
-    delivery?.declined();
+    delivery?.declined('stale');
     return;
   }
   d.context.beginTurn(appSessionId);
@@ -96,7 +99,7 @@ export async function runPrimaryTurn(
       stoppedBeforeStart() ||
       (delivery && (!configured || !delivery.isCurrent()))
     ) {
-      delivery?.declined();
+      delivery?.declined('stale');
       context.stopPolling();
       return;
     }
@@ -125,10 +128,10 @@ export async function runPrimaryTurn(
     context.stopPolling();
   }
   if (!isCurrent()) return;
-  if (turnError) settleTurnFailure(d, liveSession, turnError, reportedError, reportedUsageLimit);
-  // Keep streaming=true while the context refresh is in flight so concurrent
-  // sends queue instead of racing a second lifecycle turn.
-  await context.refresh();
+  // A turn the provider started itself after this one owns the outcome now.
+  if (turnError && liveSession.delegatedGeneration === delegatedGeneration)
+    settleTurnFailure(d, liveSession, turnError, reportedError, reportedUsageLimit);
+  void context.refresh();
 }
 
 function settleTurnFailure(

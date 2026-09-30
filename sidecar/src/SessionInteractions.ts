@@ -234,6 +234,15 @@ export class SessionInteractions {
     return scope?.pendingQuestions.has(requestId) === true;
   }
 
+  /**
+   * A permission request raised under this conversation. Child agents raise
+   * theirs under their parent too, so a parent still working while a child
+   * waits reads as waiting; the delivery cap can then run one more turn.
+   */
+  hasPendingApproval(appSessionId: string): boolean {
+    return (this.scopes.get(appSessionId)?.pendingPermissions.size ?? 0) > 0;
+  }
+
   hasPending(appSessionId: string): boolean {
     const scope = this.scopes.get(appSessionId);
     return Boolean(scope && (scope.pendingPermissions.size > 0 || scope.pendingQuestions.size > 0));

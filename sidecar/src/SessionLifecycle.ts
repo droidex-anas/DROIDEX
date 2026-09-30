@@ -114,6 +114,10 @@ interface LiveTurnState {
   steers: SessionPrompt[];
   interruptingToSend?: boolean;
   interrupting?: boolean; // Marks user Stop so the resulting stream abort settles quietly.
+  /** A turn the provider started itself is running; it settles, and drains the queue, on its own. */
+  delegatedTurn?: boolean;
+  /** Counts provider-started turns, so a settle that awaited cannot reach a newer one. */
+  delegatedGeneration?: number;
 }
 type SessionCloseMode = 'discard-pending' | 'preserve-pending';
 export interface LiveSession extends LiveTurnState {
@@ -171,6 +175,8 @@ export interface SessionLifecycleDependencies {
   waitForSettingsMutations?: (appSessionId: string) => Promise<void>;
   runPrimaryTurn: (liveSession: LiveSession, request: PrimaryTurnRequest) => Promise<void>;
   eventFlow: Pick<SessionEventFlow, 'apply' | 'beginTurn'>;
+  settleStreaming: (appSessionId: string, sourceSessionId: string) => Promise<void>;
+  releaseRuntimeForCapacity: (excludedAppSessionId: string) => Promise<boolean>;
   context: Pick<
     SessionContext,
     'refresh' | 'stopPolling' | 'stopSession' | 'forgetSession' | 'preserveUsage'
@@ -579,7 +585,7 @@ export class SessionLifecycle {
     });
   }
 
-  deliverScheduled(
+  async deliverScheduled(
     appSessionId: string,
     prompt: string,
     isCurrent: () => boolean,
@@ -590,6 +596,7 @@ export class SessionLifecycle {
         canResume: () =>
           this.dependencies.registry.liveSessionsSnapshot().length + this.resumeOperations.size <
           MAX_SCHEDULED_SESSION_RUNTIMES,
+        makeRoom: (id) => this.dependencies.releaseRuntimeForCapacity(id),
         resume: (id) => this.resume(id),
         start: (id, text, delivery) =>
           this.driveInBackground(id, { ...sessionPrompt(text), announce: true }, delivery),
@@ -1125,10 +1132,12 @@ export class SessionLifecycle {
     });
     // A turn the provider started by itself is the session's turn like any
     // other: it streams, it can be stopped, and a typed prompt waits behind it.
-    const delegated = liveSession.session.onDelegatedTurn?.((running) => {
+    const delegated = liveSession.session.onDelegatedTurn?.((running, failed) => {
       if (!isCurrent()) return;
-      liveSession.streaming = running;
+      liveSession.delegatedTurn = running;
       if (running) {
+        liveSession.delegatedGeneration = (liveSession.delegatedGeneration ?? 0) + 1;
+        liveSession.streaming = true;
         // A settled turn leaves the chat's own source closed, and nothing else
         // reopens it for a turn the provider started: without this the spoken
         // request's work is dropped as post-turn noise.
@@ -1145,20 +1154,53 @@ export class SessionLifecycle {
       const stopped = liveSession.interrupting === true || liveSession.interruptingToSend === true;
       liveSession.interrupting = false;
       liveSession.interruptingToSend = false;
-      this.publishTurnSettled(liveSession);
-      if (stopped) this.dependencies.childSessions.retryAgentWave(liveSession.summary.appSessionId);
-      // A runtime that has gone takes the queue with it through the close
-      // path, which reopens and redelivers. Taking a prompt off it here would
-      // spend it on a client that cannot run it.
-      if (liveSession.session.isClosed) return;
-      const next = liveSession.pendingSends.shift();
-      if (next !== undefined) void this.driveInBackground(appSessionId, next);
+      void this.settleDelegatedTurn(liveSession, failed === true, stopped);
     });
     if (events ?? delegated)
       liveSession.unsubscribe = () => {
         events?.();
         delegated?.();
       };
+  }
+
+  // The chat reads as streaming until its transcript's tail is flushed, so a
+  // prompt sent meanwhile queues instead of running beside the next queued one.
+  private async settleDelegatedTurn(
+    liveSession: LiveSession,
+    failed: boolean,
+    stopped: boolean,
+  ): Promise<void> {
+    const appSessionId = liveSession.summary.appSessionId;
+    const generation = liveSession.delegatedGeneration;
+    try {
+      await this.dependencies.settleStreaming(appSessionId, appSessionId);
+    } catch (error) {
+      this.dependencies.emitError({
+        appSessionId,
+        message: `Could not settle the session transcript: ${errMsg(error)}`,
+      });
+    }
+    if (this.dependencies.registry.getLive(appSessionId) !== liveSession) return;
+    // Another provider-started turn began while this one flushed; it settles itself.
+    if (liveSession.delegatedGeneration !== generation) return;
+    // A typed turn still finishing, or one already started, settles the chat and
+    // takes the queue; so does another provider-started turn.
+    if (
+      liveSession.turnPromise !== undefined ||
+      liveSession.delegatedTurn ||
+      !liveSession.streaming
+    )
+      return;
+    if (failed) this.dependencies.registry.updateSummary(appSessionId, { phase: 'failed' });
+    liveSession.streaming = false;
+    this.publishTurnSettled(liveSession);
+    if (stopped) this.dependencies.childSessions.retryAgentWave(appSessionId);
+    // A runtime that has gone takes the queue with it through the close
+    // path, which reopens and redelivers. Taking a prompt off it here would
+    // spend it on a client that cannot run it.
+    if (liveSession.session.isClosed) return;
+    const next = liveSession.pendingSends.shift();
+    if (next !== undefined) void this.driveInBackground(appSessionId, next);
   }
 
   private observeProviderClosure(liveSession: LiveSession): void {
@@ -1366,7 +1408,7 @@ export class SessionLifecycle {
       const stopped = liveSession.interrupting === true || liveSession.interruptingToSend === true;
       liveSession.interruptingToSend = false;
       liveSession.interrupting = false;
-      liveSession.streaming = false;
+      liveSession.streaming = liveSession.delegatedTurn === true;
       // A wave held back while the Stop was outstanding is owed once it is over.
       if (stopped) d.childSessions.retryAgentWave(stableAppSessionId);
       // Let the closure observer claim cleanup before advancing the queue.
@@ -1388,7 +1430,7 @@ export class SessionLifecycle {
         if (compactionTarget) d.compaction.afterTurn(compactionTarget);
         this.publishTurnSettled(liveSession);
       } else {
-        const next = liveSession.pendingSends.shift();
+        const next = liveSession.delegatedTurn ? undefined : liveSession.pendingSends.shift();
         this.publishTurnSettled(liveSession);
         if (next !== undefined) void this.driveInBackground(stableAppSessionId, next);
       }
