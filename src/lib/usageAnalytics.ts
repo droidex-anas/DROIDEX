@@ -87,6 +87,10 @@ export async function startUsageAnalytics(
     hasStarted = true;
 
     const rum = await (deps.loadRum ?? loadRum)();
+    // Opting out while the SDK was still loading has to stop the launch here.
+    // Starting a view emits a view event, and Datadog does not let beforeSend
+    // discard those, so the only way not to send one is never to start it.
+    if (!reportingAllowed) return 'disabled';
     client = rum;
     rum.init(buildRumConfig(bootstrap));
     rum.setUser({ id: bootstrap.installationId });
@@ -229,6 +233,10 @@ export async function getUsageAnalyticsPreference(): Promise<{ enabled: boolean 
 }
 
 export async function setUsageAnalyticsPreference(enabled: boolean): Promise<{ enabled: boolean }> {
+  // An opt-out applies the instant the user acts, not when the round trip that
+  // stores it comes back: a view or event that would otherwise start in between
+  // must not go out. The stored preference confirms it below.
+  if (!enabled) reportingAllowed = false;
   const preference = normalizePreference((await callBridge('setUsageAnalytics', [enabled])) ?? OFF);
   if (!preference.enabled) {
     reportingAllowed = false;
