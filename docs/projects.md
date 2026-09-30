@@ -156,7 +156,10 @@ are not kept, because they go to the user.
 `thread_configure` retunes a thread's model, reasoning effort and autonomy in
 place, for the same reason a person reaches for the composer's own controls: a
 quick back-and-forth does not need the effort the original work did. Its
-autonomy stays at most that of the chat that started the thread. The wake stays
+autonomy stays at most that of the chat that started the thread, and applies at
+once. A new model or effort is handed over and applies once the thread's
+current turn ends, because that turn may be waiting on the chat that asked; a
+change that fails is reported in the thread's own chat. The wake stays
 a push, because a report is what the chat that started the thread acts on and
 pulling one costs a whole extra turn. The **New project** brief also says that a
 thread which reports nothing twice is not working, and to stop it and tell the

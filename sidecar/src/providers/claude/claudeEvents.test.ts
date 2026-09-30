@@ -3,6 +3,7 @@ import test from 'node:test';
 
 import type { SDKMessage } from '@anthropic-ai/claude-agent-sdk';
 import type { TranscriptEvent } from '../../protocol.js';
+import type { ChildSessionSignal } from '../../subagentSignals.js';
 import { ClaudeEventMapper } from './claudeEvents.js';
 
 // The cross-provider contract: a Claude turn has to reach the transcript in the
@@ -16,12 +17,35 @@ const streamEvent = (event: unknown, parent: string | null = null): SDKMessage =
 const assistant = (content: unknown[], parent: string | null = null): SDKMessage =>
   message({ type: 'assistant', message: { content }, parent_tool_use_id: parent });
 
+// The child-session signals one mapper reports, message by message.
+const childrenOf =
+  (mapper: ClaudeEventMapper) =>
+  (entry: SDKMessage): ChildSessionSignal[] =>
+    mapper.map(entry).flatMap((n) => (n.childSession ? [n.childSession] : []));
+
+const mainLoopUsage = (input: number, output: number) => ({
+  input_tokens: input,
+  output_tokens: output,
+  cache_read_input_tokens: 0,
+  cache_creation_input_tokens: 0,
+});
+
 function transcripts(messages: SDKMessage[]): TranscriptEvent[] {
+  return mapped(messages).map(({ transcript }) => transcript);
+}
+
+// Transcript rows with the spawn each one is attributed to. A subagent's rows
+// carry the tool_use that spawned it; the main thread's carry nothing.
+function mapped(messages: SDKMessage[]): { transcript: TranscriptEvent; owner?: string }[] {
   const mapper = new ClaudeEventMapper('app-1');
   return messages.flatMap((entry) =>
     mapper
       .map(entry)
-      .flatMap((normalized) => (normalized.transcript ? [normalized.transcript] : [])),
+      .flatMap((normalized) =>
+        normalized.transcript
+          ? [{ transcript: normalized.transcript, owner: normalized.childOwner?.id }]
+          : [],
+      ),
   );
 }
 
@@ -114,8 +138,8 @@ test('a tool call carries its streamed input and pairs with its result by id', (
   );
 });
 
-test("a subagent's narration is dropped while its tool call is kept", () => {
-  const events = transcripts([
+test("a subagent's rows carry the spawn that owns them, never the parent's feed", () => {
+  const events = mapped([
     streamEvent(
       { type: 'content_block_start', index: 0, content_block: { type: 'text' } },
       'toolu_task',
@@ -148,8 +172,96 @@ test("a subagent's narration is dropped while its tool call is kept", () => {
   ]);
 
   assert.deepEqual(
-    events.map((event) => [event.kind, event.toolName, event.toolArgs]),
-    [['tool_call', 'Read', { file_path: 'a.ts' }]],
+    events.map(({ transcript, owner }) => [transcript.kind, transcript.toolName, owner]),
+    [
+      ['text', undefined, 'toolu_task'],
+      ['tool_call', 'Read', 'toolu_task'],
+    ],
+  );
+});
+
+// Shapes taken from a real six-agent workflow run: the fan-out is reported only
+// as a snapshot array on the workflow's own task_progress, and its agents never
+// get a task_started of their own.
+test("a workflow's agents come from its progress snapshot, with a phase and a model", () => {
+  const workflowAgent = (index: number, label: string, over: Record<string, unknown> = {}) => ({
+    type: 'workflow_agent',
+    index,
+    label,
+    phaseIndex: 1,
+    phaseTitle: 'Echo',
+    model: 'claude-haiku-4-5',
+    promptPreview: `Reply with ${label} and stop.`,
+    state: 'start',
+    ...over,
+  });
+  const progress = (agents: unknown[]) =>
+    message({
+      type: 'system',
+      subtype: 'task_progress',
+      task_id: 'wf-1',
+      tool_use_id: 'toolu_workflow',
+      description: 'Echo',
+      usage: { total_tokens: 0, tool_uses: 0, duration_ms: 1 },
+      workflow_progress: [{ type: 'workflow_phase', index: 1, title: 'Echo' }, ...agents],
+    });
+
+  const children = childrenOf(new ClaudeEventMapper('app-1', 'claude-haiku-4-5'));
+
+  assert.deepEqual(
+    children(
+      message({
+        type: 'system',
+        subtype: 'task_started',
+        task_id: 'wf-1',
+        tool_use_id: 'toolu_workflow',
+        description: 'Six trivial agents',
+        task_type: 'local_workflow',
+        workflow_name: 'echo-six',
+      }),
+    ),
+    [],
+  );
+
+  // An agent still waiting for a slot has no id yet and cannot be identified.
+  const started = children(
+    progress([workflowAgent(1, 'echo:ONE', { agentId: 'agent-1' }), workflowAgent(2, 'echo:TWO')]),
+  );
+  assert.deepEqual(
+    started.map((child) => [child.providerSessionId, child.label, child.status, child.phase]),
+    [['agent-1', 'echo:ONE', 'running', 'Echo']],
+  );
+  assert.deepEqual(
+    [started[0].toolUseId, started[0].group, started[0].modelId, started[0].prompt],
+    ['toolu_workflow', 'echo-six', 'claude-haiku-4-5', 'Reply with echo:ONE and stop.'],
+  );
+
+  // The same snapshot repeats every agent, so an unchanged one says nothing.
+  assert.deepEqual(
+    children(
+      progress([
+        workflowAgent(1, 'echo:ONE', { agentId: 'agent-1' }),
+        workflowAgent(2, 'echo:TWO', { agentId: 'agent-2' }),
+      ]),
+    ).map((child) => child.providerSessionId),
+    ['agent-2'],
+  );
+
+  // The workflow stopping settles an agent its last snapshot still showed working.
+  assert.deepEqual(
+    children(
+      message({
+        type: 'system',
+        subtype: 'task_notification',
+        task_id: 'wf-1',
+        tool_use_id: 'toolu_workflow',
+        status: 'completed',
+      }),
+    ).map((child) => [child.providerSessionId, child.status]),
+    [
+      ['agent-1', 'completed'],
+      ['agent-2', 'completed'],
+    ],
   );
 });
 
@@ -165,6 +277,7 @@ test('the result reports only the denials that never reached the transcript', ()
     }),
     message({
       type: 'result',
+      usage: mainLoopUsage(0, 0),
       modelUsage: {},
       permission_denials: [
         { tool_name: 'Write', tool_use_id: 'toolu_1', tool_input: {} },
@@ -180,4 +293,263 @@ test('the result reports only the denials that never reached the transcript', ()
       ['tool_result', 'toolu_2', 'Bash was denied.', true],
     ],
   );
+});
+
+test('a task poll is marked only when it names an agent the mapper is tracking', () => {
+  const poll = (toolUseId: string, taskId: string): SDKMessage =>
+    assistant([
+      { type: 'tool_use', id: toolUseId, name: 'TaskOutput', input: { task_id: taskId } },
+    ]);
+  const started: SDKMessage = message({
+    type: 'system',
+    subtype: 'task_started',
+    task_id: 'task-1',
+    task_type: 'local_agent',
+    description: 'survey the code',
+    tool_use_id: 'toolu_spawn',
+  });
+
+  const events = transcripts([started, poll('toolu_2', 'task-1'), poll('toolu_3', 'bash_7')]);
+  assert.deepEqual(
+    events.map((event) => [event.toolUseId, event.pollsChildSessionId]),
+    [
+      // The agent this chat spawned.
+      ['toolu_2', 'task-1'],
+      // The same tool reading a background command: no agent, so no mark.
+      ['toolu_3', undefined],
+    ],
+  );
+});
+
+test('a call the user stopped is interrupted, not failed', () => {
+  const result = (toolUseId: string, content: string): SDKMessage =>
+    message({
+      type: 'user',
+      message: {
+        content: [{ type: 'tool_result', tool_use_id: toolUseId, content, is_error: true }],
+      },
+    });
+
+  const events = transcripts([
+    result(
+      'toolu_1',
+      "The user doesn't want to proceed with this tool use. The tool use was rejected.",
+    ),
+    result('toolu_2', 'Error: no such file or directory'),
+  ]);
+  assert.deepEqual(
+    events.map((event) => [event.toolUseId, event.isError, event.interrupted]),
+    [
+      ['toolu_1', false, true],
+      ['toolu_2', true, undefined],
+    ],
+  );
+});
+
+// The SDK's background-task list carries ids only, and an agent's id leaves it
+// when the agent finishes exactly as it does when one is stopped. Reading the
+// gap as a stop flashed every completing agent through "Awaiting approval".
+test('an agent leaving the background task list is not reported as paused', () => {
+  const children = childrenOf(new ClaudeEventMapper('app-1', 'claude-haiku-4-5'));
+
+  assert.deepEqual(
+    children(
+      message({
+        type: 'system',
+        subtype: 'task_started',
+        task_id: 'task-1',
+        tool_use_id: 'toolu_task',
+        description: 'Check the diff',
+        task_type: 'local_agent',
+      }),
+    ).map((child) => child.status),
+    ['running'],
+  );
+
+  const backgroundTasks = (tasks: unknown[]) =>
+    children(message({ type: 'system', subtype: 'background_tasks_changed', tasks }));
+
+  assert.deepEqual(
+    backgroundTasks([{ task_id: 'task-1', task_type: 'local_agent', ambient: false }]),
+    [],
+  );
+  // The agent drops off the list a beat before its own terminal notification.
+  assert.deepEqual(backgroundTasks([]), []);
+
+  assert.deepEqual(
+    children(
+      message({
+        type: 'system',
+        subtype: 'task_notification',
+        task_id: 'task-1',
+        status: 'completed',
+      }),
+    ).map((child) => child.status),
+    ['completed'],
+  );
+});
+
+// The brief reaches the agent's own pane as a prompt row, so the parent's feed
+// keeps only what labels the call. A whole subagent brief in the parent's
+// transcript is stored twice and reads as the parent's own writing.
+test('a spawn keeps only its label fields in the parent transcript', () => {
+  const events = transcripts([
+    assistant([
+      {
+        type: 'tool_use',
+        id: 'toolu_task',
+        name: 'Task',
+        input: {
+          subagent_type: 'reviewer',
+          description: 'Check the diff',
+          prompt: 'Read every file in the diff and report what is wrong.',
+        },
+      },
+    ]),
+  ]);
+
+  assert.deepEqual(
+    events.map((event) => [event.toolName, event.toolArgs]),
+    [['Task', { subagent_type: 'reviewer', description: 'Check the diff' }]],
+  );
+});
+
+// A subagent's spend belongs to its own row, so the number travels with the
+// child rather than disappearing into the parent's session totals.
+test("a subagent's progress reports its own token spend", () => {
+  const children = childrenOf(new ClaudeEventMapper('app-1', 'claude-haiku-4-5'));
+  children(
+    message({
+      type: 'system',
+      subtype: 'task_started',
+      task_id: 'task-1',
+      task_type: 'local_agent',
+      description: 'Check the diff',
+    }),
+  );
+
+  assert.deepEqual(
+    children(
+      message({
+        type: 'system',
+        subtype: 'task_progress',
+        task_id: 'task-1',
+        description: 'Check the diff',
+        summary: 'Reading the diff',
+        usage: { total_tokens: 4200, tool_uses: 3, duration_ms: 900 },
+      }),
+    ).map((child) => [child.providerSessionId, child.tokensUsed, child.activity?.preview]),
+    [['task-1', 4200, 'Reading the diff']],
+  );
+});
+
+// modelUsage is cumulative but counts every subagent and compaction call the
+// query made. The session's own totals are the main loop's, which arrives per
+// turn, so the turns are summed and /clear starts the tally again.
+test("the session's totals count the main loop, not its subagents", () => {
+  const mapper = new ClaudeEventMapper('app-1');
+  const tokens = (entry: SDKMessage) =>
+    mapper.map(entry).flatMap((n) => (n.tokens ? [n.tokens] : []));
+  // The same turn as the CLI reports it: `usage` is the main loop alone, while
+  // `modelUsage` also carries what the turn's subagents spent.
+  const turn = (input: number, output: number): SDKMessage =>
+    message({
+      type: 'result',
+      usage: mainLoopUsage(input, output),
+      modelUsage: {
+        'claude-haiku-4-5': {
+          inputTokens: input * 10,
+          outputTokens: output * 10,
+          cacheReadInputTokens: 0,
+          cacheCreationInputTokens: 0,
+        },
+      },
+      permission_denials: [],
+    });
+
+  assert.deepEqual(tokens(turn(100, 20)), [{ tokensIn: 100, tokensOut: 20, contextTokens: 0 }]);
+  assert.deepEqual(tokens(turn(50, 10)), [{ tokensIn: 150, tokensOut: 30, contextTokens: 0 }]);
+  assert.deepEqual(tokens(message({ type: 'conversation_reset' })), []);
+  assert.deepEqual(tokens(turn(7, 3)), [{ tokensIn: 7, tokensOut: 3, contextTokens: 0 }]);
+});
+
+test('requested fast mode reports unavailability once without marking the row as an error', () => {
+  const mapper = new ClaudeEventMapper('app-fast');
+  const result = message({
+    type: 'result',
+    subtype: 'success',
+    usage: mainLoopUsage(1, 1),
+    permission_denials: [],
+    fast_mode_state: 'off',
+    fast_mode_disabled_reason: 'model_not_allowed',
+  });
+  assert.equal(mapper.map(result).filter((event) => event.transcript).length, 0);
+  const rows = mapper
+    .map(result, true)
+    .flatMap((event) => (event.transcript ? [event.transcript] : []));
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0].kind, 'status');
+  assert.equal(rows[0].isError, undefined);
+  assert.equal(rows[0].text, 'Fast mode is unavailable for this model: model not allowed');
+  assert.equal(mapper.map(result, true).filter((event) => event.transcript).length, 0);
+  const cooldown = new ClaudeEventMapper('app-cooldown');
+  const cooldownRows = cooldown.map(
+    message({
+      type: 'result',
+      subtype: 'success',
+      usage: mainLoopUsage(1, 1),
+      permission_denials: [],
+      fast_mode_state: 'cooldown',
+    }),
+    true,
+  );
+  assert.match(cooldownRows[0].transcript?.text ?? '', /cooldown/);
+});
+
+test('task updates preserve nonterminal states and only explicit endings settle children', () => {
+  const children = childrenOf(new ClaudeEventMapper('app-1'));
+  children(
+    message({
+      type: 'system',
+      subtype: 'task_started',
+      task_id: 'agent-1',
+      task_type: 'local_agent',
+      description: 'Worker',
+    }),
+  );
+  for (const status of ['pending', 'running', 'paused', 'completed', 'failed', 'killed']) {
+    const [child] = children(
+      message({ type: 'system', subtype: 'task_updated', task_id: 'agent-1', patch: { status } }),
+    );
+    assert.equal(child?.status, status === 'killed' ? 'paused' : status);
+  }
+});
+
+test('result capacity comes from the main conversation model, never a child', () => {
+  const mapper = new ClaudeEventMapper('context-chat', 'sonnet[1m]');
+  mapper.map(
+    streamEvent({
+      type: 'message_start',
+      message: { model: 'claude-sonnet-4-6', usage: mainLoopUsage(10, 0) },
+    }),
+  );
+  mapper.map(
+    message({
+      type: 'assistant',
+      parent_tool_use_id: 'child',
+      message: { model: 'claude-haiku-4-5', content: [] },
+    }),
+  );
+  const result = message({
+    type: 'result',
+    usage: mainLoopUsage(10, 5),
+    permission_denials: [],
+    modelUsage: {
+      'claude-haiku-4-5': { contextWindow: 200000 },
+      'claude-sonnet-4-6': { contextWindow: 1000000 },
+    },
+  });
+  assert.equal(mapper.map(result).at(-1)?.tokens?.maxContextTokens, 1000000);
+  mapper.setModel('opus');
+  assert.equal(mapper.map(result).at(-1)?.tokens?.maxContextTokens, undefined);
 });

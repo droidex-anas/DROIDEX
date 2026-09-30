@@ -277,7 +277,13 @@ test('a thread’s own question reaches its lead with its options, and the answe
     question: {
       appSessionId: child.appSessionId,
       requestId: 'ask-1',
-      questions: [{ index: 0, question: 'Which storage format?', options: ['JSON', 'SQLite'] }],
+      questions: [
+        {
+          index: 0,
+          question: 'Which storage format?',
+          options: [{ label: 'JSON' }, { label: 'SQLite' }],
+        },
+      ],
     },
   });
   await drain();
@@ -379,7 +385,7 @@ test('an outsized harness question is bounded to what the ledger will load', asy
       questions: Array.from({ length: 40 }, (_, index) => ({
         index: index + 1_000,
         question: 'q'.repeat(9_000),
-        options: Array.from({ length: 40 }, () => 'o'.repeat(4_000)),
+        options: Array.from({ length: 40 }, () => ({ label: 'o'.repeat(4_000) })),
       })),
     },
   });
@@ -405,7 +411,9 @@ test('a question that dies with its turn takes its wake off the queue', async (t
   const question = {
     appSessionId: child.appSessionId,
     requestId: 'ask-dead',
-    questions: [{ index: 0, question: 'Which format?', options: ['JSON', 'SQLite'] }],
+    questions: [
+      { index: 0, question: 'Which format?', options: [{ label: 'JSON' }, { label: 'SQLite' }] },
+    ],
   };
   await h.projects.observe({ type: 'question.requested', question });
   assert.equal(h.projects.list()[0]?.queued, 1);
@@ -434,7 +442,9 @@ test('a question answered inside its thread stops asking the owner mid-turn', as
     question: {
       appSessionId: child.appSessionId,
       requestId: 'ask-live',
-      questions: [{ index: 0, question: 'Which format?', options: ['JSON', 'SQLite'] }],
+      questions: [
+        { index: 0, question: 'Which format?', options: [{ label: 'JSON' }, { label: 'SQLite' }] },
+      ],
     },
   });
   assert.equal(h.projects.list()[0]?.threads[1]?.waiting, true);
@@ -973,6 +983,7 @@ test("permission requests and the main chat's own question stay with the user", 
       kind: 'exec',
       title: 'Run?',
       detail: 'A command',
+      canAlwaysAllow: false,
       raw: {},
     },
   });
@@ -1101,6 +1112,22 @@ test("a lead cannot retune a thread's own thread past the chat that started it",
   await h.projects.configure(main, child.appSessionId, { autonomy: 'medium' });
   assert.equal(h.sessions.get(child.appSessionId)?.autonomy, 'medium');
 });
+
+test(
+  "retuning a thread's model never waits on a turn that may be waiting on its lead",
+  { timeout: 10_000 },
+  async (t) => {
+    const h = await harness();
+    t.after(() => h.projects.close());
+    const { main } = await h.root();
+    const child = await h.projects.spawn(main, input);
+    // A Claude thread takes a new model or effort only once its running turn
+    // ends, and that turn may be blocked on a question to this lead.
+    h.port.configure = () => new Promise(() => undefined);
+    const tuned = await h.projects.configure(main, child.appSessionId, { reasoningEffort: 'low' });
+    assert.match(tuned.pending ?? '', /current turn ends/);
+  },
+);
 
 test('a spawn carries a settled plan step, or none at all', async (t) => {
   const h = await harness();

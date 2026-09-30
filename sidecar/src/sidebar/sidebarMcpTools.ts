@@ -85,7 +85,7 @@ export function sidebarTools(appSessionId: () => string, sidebar: SidebarSession
     tool(
       'session_send',
       [
-        'Send a chat from session_list a message from this chat. It starts a turn now or queues behind the running one, and wakes a released chat.',
+        "Send a chat from session_list a message from this chat. It starts a turn now, or reaches a running turn the way the user's Steer does: at its next step, or after it when the turn cannot take it. It wakes a released chat.",
         'The chat sees it as coming from this chat, not the user. When it waits on a question, pass answers, one per question in order, with its questionId.',
         'Approvals stay with the user.',
       ].join(' '),

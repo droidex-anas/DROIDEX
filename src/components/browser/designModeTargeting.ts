@@ -1,5 +1,5 @@
 import type { BrowserBox, BrowserElementRef } from '../../types/bridge';
-import type { Point, Size } from '../canvas/canvasMath';
+import type { Point, Size } from './browserGeometry';
 
 const INTERACTIVE_TAGS = new Set(['a', 'button', 'input', 'textarea', 'select', 'summary']);
 const INTERACTIVE_ROLES = new Set([
@@ -48,11 +48,6 @@ export function pickDesignModeTarget(
     .sort((a, b) => a.score - b.score);
 
   return matches[0]?.ref;
-}
-
-export function labelForBrowserRef(ref: BrowserElementRef): string {
-  const label = ref.name || ref.text || ref.role || ref.tagName;
-  return `${label} - ${ref.tagName.toLowerCase()}`;
 }
 
 function targetScore(ref: BrowserElementRef, viewport: Size): number {

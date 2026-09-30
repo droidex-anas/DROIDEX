@@ -1,4 +1,9 @@
-import type { Autonomy, ProviderKind, ReasoningEffort } from '../../types/bridge';
+import type {
+  Autonomy,
+  ContextWindowTokens,
+  ProviderKind,
+  ReasoningEffort,
+} from '../../types/bridge';
 
 export interface ThreadInput {
   title: string;
@@ -6,6 +11,8 @@ export interface ThreadInput {
   provider: ProviderKind;
   modelId?: string;
   reasoningEffort?: ReasoningEffort;
+  fastMode?: boolean;
+  contextWindowTokens?: ContextWindowTokens;
   autonomy: Autonomy;
   cwd?: string;
 }

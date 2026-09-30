@@ -1,6 +1,6 @@
 import type { ResponseFormat } from './protocol.js';
 
-export const APP_PROMPT_HEADER = 'DROIDEX App request:';
+const APP_PROMPT_HEADER = 'DROIDEX App request:';
 const APP_GUIDANCE_HEADER = 'Private generation guidance:';
 
 const APP_CREATION_GUIDANCE = [

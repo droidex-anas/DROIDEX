@@ -39,14 +39,14 @@ const INSTALL_HINT = 'Codex CLI not found. Install it, then refresh.';
 const LOGIN_HINT = 'Run `codex login` in a terminal and sign in, then refresh.';
 const PROBE_CANCELLED = 'Codex was not checked.';
 
-export interface InitializeResponse {
+interface InitializeResponse {
   userAgent: string;
 }
 
 // Every connection starts here, after its handlers are registered: the
 // capability opt-in that exposes the thread and turn API, then the bare
 // `initialized` notification Codex waits for before serving anything else.
-export async function initialize(client: AppServerClient): Promise<InitializeResponse> {
+async function initialize(client: AppServerClient): Promise<InitializeResponse> {
   const response = await client.request<InitializeResponse>('initialize', {
     clientInfo: CLIENT_INFO,
     capabilities: { experimentalApi: true },
@@ -63,7 +63,8 @@ export class CodexProvider implements Provider {
     cwd,
     modelId,
     reasoningEffort,
-    autonomyLevel,
+    fastMode,
+    autonomy,
     inAppMcpServers,
   }: ProviderOpenInput): Promise<ProviderSession> {
     // Codex mints the thread id, so DROIDEX's own identity is minted here and
@@ -71,10 +72,11 @@ export class CodexProvider implements Provider {
     return this.openSession({
       appSessionId: randomUUID(),
       cwd,
-      autonomy: autonomyLevel ?? 'low',
+      autonomy,
       model: {
         ...(modelId ? { modelId } : {}),
         ...(reasoningEffort ? { reasoningEffort } : {}),
+        fastMode: fastMode ?? false,
       },
       interactions,
       inAppMcpServers,
@@ -88,6 +90,7 @@ export class CodexProvider implements Provider {
       cwd,
       modelId,
       reasoningEffort,
+      fastMode,
       autonomy,
       resumeId,
       inAppMcpServers,
@@ -99,10 +102,11 @@ export class CodexProvider implements Provider {
       {
         appSessionId: providerSessionId,
         cwd: cwd ?? tmpdir(),
-        autonomy: autonomy ?? 'low',
+        autonomy: autonomy ?? 'off',
         model: {
           ...(modelId ? { modelId } : {}),
           ...(reasoningEffort ? { reasoningEffort } : {}),
+          fastMode: fastMode ?? false,
         },
         interactions,
         inAppMcpServers,

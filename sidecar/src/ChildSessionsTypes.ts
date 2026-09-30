@@ -1,4 +1,4 @@
-import type { FactoryRuntime } from './DroidRuntime.js';
+import type { FactoryRuntime, SessionInitResult } from './DroidRuntime.js';
 import type { HistoryIndex, PersistedChildSession } from './history.js';
 import type { ServerEvent, SessionSummary } from './protocol.js';
 import type { SessionRegistry } from './SessionRegistry.js';
@@ -7,11 +7,11 @@ import type { SessionEventFlow } from './SessionEventFlow.js';
 import type { SessionInteractions } from './SessionInteractions.js';
 import type { SessionContext } from './SessionContext.js';
 import type { SessionCompaction } from './SessionCompaction.js';
-import type { SessionInitResult } from './sessionHelpers.js';
 import type { ChildParentLease, ChildRuntimeTarget, ChildSettings } from './ChildSessionState.js';
 import type { AgentProcessMonitor } from './processes/AgentProcessMonitor.js';
+import type { SettledAgent } from './childWaveWake.js';
 
-export type ChildOperation = 'open' | 'loadHistory' | 'send' | 'sendNow' | 'interrupt' | 'settings';
+export type ChildOperation = 'open' | 'loadHistory' | 'send' | 'interrupt' | 'settings';
 
 export type ChildSettingsTarget = ChildRuntimeTarget & {
   parentGeneration: number;
@@ -33,7 +33,12 @@ export interface ChildSessionsDependencies {
   };
   timeline: Pick<
     SessionTimeline,
-    'append' | 'appendStatus' | 'loadChildHistory' | 'flushStreamingFor' | 'settleStreaming'
+    | 'append'
+    | 'appendPrompt'
+    | 'appendStatus'
+    | 'loadChildHistory'
+    | 'flushStreamingFor'
+    | 'settleStreaming'
   >;
   eventFlow: Pick<SessionEventFlow, 'beginTurn' | 'applyNotification' | 'applyStreamEvent'>;
   interactions: Pick<SessionInteractions, 'interactionsFor'>;
@@ -48,6 +53,8 @@ export interface ChildSessionsDependencies {
     | 'rearmModelChangedChild'
     | 'resolveLimit'
   >;
+  // True transfers the wave to the parent turn; false retains it for retry.
+  onAgentWaveSettled(parentAppSessionId: string, agents: readonly SettledAgent[]): boolean;
   resolveDefaultSettings(
     summary: SessionSummary,
     initResult: SessionInitResult,

@@ -178,3 +178,35 @@ test('an open code fence streams as preformatted text without mermaid or app run
   assert.match(appOpen, /Building interactive app/);
   assert.doesNotMatch(appOpen, />Starting interactive app</);
 });
+
+test('pending lists and tables preserve canonical markdown across displayed prefixes', () => {
+  for (const source of [
+    '- first **bold** item\n- second item\n  - nested item',
+    '| a | b |\n| --- | --- |\n| **one** | two |\n| three | four',
+  ]) {
+    for (const specMode of [false, true]) {
+      for (const shown of [source.slice(0, -4), source]) {
+        assert.equal(streaming(shown, { specMode }), canonical(shown, { specMode }));
+      }
+    }
+  }
+});
+
+test('pending fence rendering honors building, cut-off, and generated-content flags', () => {
+  const source = '```app\n<main>partial';
+  // An unfinished App fence never runs, whatever the message says about building.
+  for (const buildingAppBlocks of [true, false]) {
+    const html = streaming(source, { buildingAppBlocks });
+    assert.match(html, /Building interactive app/);
+    assert.doesNotMatch(html, />Starting interactive app</);
+  }
+  assert.equal(
+    streaming(source, { cutOffAppBlocks: true }),
+    canonical(source, { cutOffAppBlocks: true }),
+  );
+  assert.doesNotMatch(
+    streaming(source, { buildingAppBlocks: true, allowGeneratedContent: false }),
+    /Building interactive app/,
+  );
+  assert.match(settled(source + '\n```'), />Starting interactive app</);
+});

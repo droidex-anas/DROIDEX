@@ -1,15 +1,19 @@
 import type { SessionSummary, TranscriptEvent } from './protocol.js';
 import { appendSessionNotice } from './sessionNotices.js';
-import { errMsg } from './sessionHelpers.js';
+import { errMsg } from './errors.js';
 
 // Native providers store the full transcript; Droid stores only app notices
 // separately from its harness-owned session file.
 export interface TimelineTranscript {
   /** The file it writes, which the history index learns of when the session closes. */
   readonly path: string;
-  appendPrompt(text: string): void;
-  append(event: TranscriptEvent): void;
-  flush(): void;
+  appendPrompt(text: string): Promise<void>;
+  append(event: TranscriptEvent): void | Promise<void>;
+  flush(): Promise<void>;
+  // Every line queued so far is on disk; the message still streaming stays open.
+  written(): Promise<void>;
+  // The stored file once every line queued before the call is written.
+  read(): Promise<string>;
 }
 
 export class TimelineTranscripts {
@@ -21,21 +25,20 @@ export class TimelineTranscripts {
     this.byId.set(appSessionId, transcript);
   }
 
-  // Flushes before forgetting, so a failed final write keeps its buffered
-  // message and the failure reaches the caller.
-  release(appSessionId: string): void {
+  // A failed final write keeps the writer owned and reaches the caller.
+  async release(appSessionId: string): Promise<void> {
     const transcript = this.byId.get(appSessionId);
     if (!transcript) return;
-    transcript.flush();
-    this.byId.delete(appSessionId);
+    await transcript.flush();
+    if (this.byId.get(appSessionId) === transcript) this.byId.delete(appSessionId);
   }
 
   path(appSessionId: string): string | undefined {
     return this.byId.get(appSessionId)?.path;
   }
 
-  recordPrompt(appSessionId: string, prompt: string): void {
-    this.byId.get(appSessionId)?.appendPrompt(prompt);
+  recordPrompt(appSessionId: string, prompt: string): void | Promise<void> {
+    return this.byId.get(appSessionId)?.appendPrompt(prompt);
   }
 
   // After coalescing, so one stored block is one settled run of output. A write
@@ -43,8 +46,13 @@ export class TimelineTranscripts {
   append(event: TranscriptEvent, onError: (message: string) => void): void {
     const transcript = this.byId.get(event.appSessionId);
     try {
-      if (transcript) transcript.append(event);
-      else if (
+      if (transcript) {
+        const writing = transcript.append(event);
+        if (writing)
+          void writing.catch((error: unknown) => {
+            if (this.byId.get(event.appSessionId) === transcript) onError(errMsg(error));
+          });
+      } else if (
         event.role === 'primary' &&
         (event.modelSwitch || event.errorKind === 'usage_limit')
       ) {
@@ -57,7 +65,16 @@ export class TimelineTranscripts {
     }
   }
 
-  flush(appSessionId: string): void {
-    this.byId.get(appSessionId)?.flush();
+  async flush(appSessionId: string): Promise<void> {
+    await this.byId.get(appSessionId)?.flush();
+  }
+
+  async written(appSessionId: string): Promise<void> {
+    await this.byId.get(appSessionId)?.written();
+  }
+
+  // Undefined when no writer holds the session, whose file is then complete.
+  read(appSessionId: string): Promise<string> | undefined {
+    return this.byId.get(appSessionId)?.read();
   }
 }

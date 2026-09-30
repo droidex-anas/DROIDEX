@@ -19,11 +19,12 @@ import {
   type ProviderInteractions,
   type ProviderQuestionAnswers,
 } from './providers/interactions.js';
-import { errMsg } from './sessionHelpers.js';
+import { errMsg } from './errors.js';
 
 interface PendingPermission {
   resolve: (outcome: PermissionOutcome) => void;
   kind: PermissionKind;
+  canAlwaysAllow: boolean;
   signature?: string;
   responding?: boolean;
 }
@@ -113,8 +114,9 @@ export class SessionInteractions {
     }
     return await new Promise<PermissionOutcome>((resolve) => {
       const { request, signature } = approval;
+      const canAlwaysAllow = request.canAlwaysAllow && Boolean(signature);
       const scope = liveSession ? this.scope(liveSession.summary.appSessionId) : undefined;
-      if (scope && signature && scope.permissionGrants.has(signature)) {
+      if (scope && canAlwaysAllow && signature && scope.permissionGrants.has(signature)) {
         resolve('proceed_always');
         return;
       }
@@ -122,6 +124,7 @@ export class SessionInteractions {
         scope.pendingPermissions.set(request.requestId, {
           resolve,
           kind: request.kind,
+          canAlwaysAllow,
           ...(signature ? { signature } : {}),
         });
         if (approval.confirmationType === 'propose_mission') {
@@ -133,7 +136,10 @@ export class SessionInteractions {
           this.dependencies.updateSummary(sessionId, { phase: 'awaiting_run_start' });
         }
       }
-      this.dependencies.emit({ type: 'approval.requested', request });
+      this.dependencies.emit({
+        type: 'approval.requested',
+        request: { ...request, canAlwaysAllow },
+      });
     });
   }
 
@@ -183,8 +189,12 @@ export class SessionInteractions {
       });
       normalized = 'cancel';
     }
-    if (pending.signature && isAlwaysOutcome(outcome)) {
-      scope.permissionGrants.add(pending.signature);
+    if (isAlwaysOutcome(normalized)) {
+      if (pending.canAlwaysAllow && pending.signature) {
+        scope.permissionGrants.add(pending.signature);
+      } else {
+        normalized = 'proceed_once';
+      }
     }
     // An approved plan runs in Auto, so the provider has to leave planning
     // first. If it refuses, the plan is declined instead of approved into a
@@ -203,7 +213,7 @@ export class SessionInteractions {
     appSessionId: string,
     requestId: string,
     cancelled: boolean,
-    answers: { index: number; question: string; answer: string }[],
+    answers: ProviderQuestionAnswers['answers'],
   ): boolean {
     const liveSession = this.dependencies.getLiveSession(appSessionId);
     if (!liveSession) return false;

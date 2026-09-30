@@ -1,4 +1,4 @@
-import type { Autonomy, ReasoningEffort } from '../protocol.js';
+import type { Autonomy, ContextWindowTokens, ReasoningEffort } from '../protocol.js';
 import type { ProviderKind } from '../providers/providerKind.js';
 
 export interface ThreadInput {
@@ -7,6 +7,8 @@ export interface ThreadInput {
   provider: ProviderKind;
   modelId?: string;
   reasoningEffort?: ReasoningEffort;
+  fastMode?: boolean;
+  contextWindowTokens?: ContextWindowTokens;
   autonomy: Autonomy;
   cwd?: string;
 }

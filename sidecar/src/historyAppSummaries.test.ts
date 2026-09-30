@@ -80,13 +80,16 @@ test('syncSummaries persists autoCompactions and loadHistoricalSessions restores
   const cwd = join(home, 'workspace-autocompact');
   writeSession('autocompact-chat', cwd);
   const index = new HistoryIndex();
-  persistTestSummaries([{ ...summary('autocompact-chat', cwd), autoCompactions: 3 }]);
+  persistTestSummaries([
+    { ...summary('autocompact-chat', cwd), autoCompactions: 3, contextWindowTokens: 200000 },
+  ]);
   index.close();
 
   const rows = loadHistoricalSessions({ workspaceCwds: [cwd] });
 
   const row = rows.find((r) => r.summary.appSessionId === 'autocompact-chat');
   assert.equal(row?.summary.autoCompactions, 3);
+  assert.equal(row?.summary.contextWindowTokens, 200000);
 });
 
 test('historical compaction markers hydrate the summary generation', () => {
@@ -235,6 +238,29 @@ test('summaryPatchesAndHidden derives patches and hidden ids from one read', () 
     assert.equal(patches.get('cur-1')?.contextTokens, 800);
     assert.equal(patches.get('app-1')?.autoCompactions, 2);
     assert.deepEqual([...hiddenProviderSessionIds], ['old-1']);
+  } finally {
+    index.close();
+  }
+});
+
+test('chat preferences survive canonical history writes and explicit-off overwrites', () => {
+  const stored: SessionSummary = {
+    ...summary('preferences-chat', join(home, 'workspace-preferences')),
+    provider: 'claude',
+    fastMode: true,
+    contextWindowTokens: 1000000,
+  };
+  const index = new HistoryIndex();
+  try {
+    persistTestSummaries([stored]);
+    const first = index.summaryPatchesAndHidden().patches.get('preferences-chat');
+    assert.equal(first?.fastMode, true);
+    assert.equal(first?.contextWindowTokens, 1000000);
+    // Explicit off is a stored choice, not an absent one.
+    persistTestSummaries([{ ...stored, fastMode: false, contextWindowTokens: 200000 }]);
+    const second = index.summaryPatchesAndHidden().patches.get('preferences-chat');
+    assert.equal(second?.fastMode, false);
+    assert.equal(second?.contextWindowTokens, 200000);
   } finally {
     index.close();
   }

@@ -7,6 +7,7 @@ import type { TranscriptEvent } from '../types/bridge';
 import type { FeedItem } from './chatFeed';
 import { buildGroupedFeed, type GroupedFeedOptions } from './chatFeedTurns';
 import { projectPrependedFeed } from './chatFeedPrependProjector';
+import { projectTextTail } from './chatFeedTextTail';
 
 export interface ChatFeedProjectorInput {
   conversationKey: string;
@@ -88,21 +89,21 @@ function projectFeed(
   revision: number,
 ): { cache: ProjectionCache; mode: ProjectionMode } {
   if (cache && cacheMatches(cache, input, options, revision)) return { cache, mode: 'cache' };
-  if (cache && canAppend(cache, input, options)) {
-    const previousVisibleTranscript = cache.visibleTranscript;
-    const appended = incrementalProjection(cache, input, options, revision);
-    if (appended.mode === 'full') return { cache: appended, mode: 'full' };
-    return {
-      cache: appended,
-      mode: appended.visibleTranscript === previousVisibleTranscript ? 'invisible' : 'incremental',
-    };
-  }
-  if (cache && canPrepend(cache, input, options)) {
-    const prepended = prependProjection(cache, input, options, revision);
-    if (prepended) {
+  if (cache && hasIncrementalBase(cache, input, options)) {
+    const mutation = input.transcriptMutation;
+    let next: ProjectionCache | undefined;
+    if (mutation?.kind === 'append' && input.allTranscript.length >= cache.allTranscript.length) {
+      next = incrementalProjection(cache, input, options, revision, mutation.firstChangedIndex);
+    } else if (
+      mutation?.kind === 'prepend' &&
+      input.allTranscript.length === cache.allTranscript.length + mutation.insertedCount
+    ) {
+      next = prependProjection(cache, input, options, revision);
+    }
+    if (next) {
       return {
-        cache: prepended,
-        mode: prepended.visibleTranscript === cache.visibleTranscript ? 'invisible' : 'incremental',
+        cache: next,
+        mode: next.visibleTranscript === cache.visibleTranscript ? 'invisible' : next.mode,
       };
     }
   }
@@ -180,33 +181,6 @@ function hasIncrementalBase(
   );
 }
 
-function canAppend(
-  cache: ProjectionCache,
-  input: ChatFeedProjectorInput,
-  options: NormalizedOptions,
-): boolean {
-  const mutation = input.transcriptMutation;
-  return (
-    hasIncrementalBase(cache, input, options) &&
-    mutation?.kind === 'append' &&
-    input.allTranscript.length >= cache.allTranscript.length &&
-    input.allTranscript.length >= mutation.firstChangedIndex
-  );
-}
-
-function canPrepend(
-  cache: ProjectionCache,
-  input: ChatFeedProjectorInput,
-  options: NormalizedOptions,
-): boolean {
-  const mutation = input.transcriptMutation;
-  return (
-    hasIncrementalBase(cache, input, options) &&
-    mutation?.kind === 'prepend' &&
-    input.allTranscript.length === cache.allTranscript.length + mutation.insertedCount
-  );
-}
-
 function fullProjection(
   input: ChatFeedProjectorInput,
   options: NormalizedOptions,
@@ -240,8 +214,8 @@ function incrementalProjection(
   input: ChatFeedProjectorInput,
   options: NormalizedOptions,
   revision: number,
+  firstSourceChange: number,
 ): ProjectionCache {
-  const firstSourceChange = input.transcriptMutation?.firstChangedIndex ?? 0;
   let visiblePrefixLength = previous.visibleTranscript.length;
   for (let index = firstSourceChange; index < previous.allTranscript.length; index += 1) {
     const event = previous.allTranscript.at(index);
@@ -256,9 +230,7 @@ function incrementalProjection(
     if (event && transcriptEventIsVisible(event, input.childSessionId)) visibleSuffix.push(event);
   }
   const previousSuffix = previous.visibleTranscript.slice(visiblePrefixLength);
-  const visibleChanged = !sameEvents(previousSuffix, visibleSuffix);
-
-  if (!visibleChanged) {
+  if (sameEvents(previousSuffix, visibleSuffix)) {
     return {
       ...previous,
       allTranscript: input.allTranscript,
@@ -278,13 +250,13 @@ function incrementalProjection(
     visibleSuffix,
   );
   const newToolEvents = indexToolEvents(visibleSuffix, visiblePrefixLength);
-  const rewindIndex = safeTurnStart(
-    previous,
-    visibleTranscript,
-    visiblePrefixLength,
-    newToolEvents,
-  );
-  const prefixItemCount = feedPrefixItemCount(previous.feedItems, visibleTranscript, rewindIndex);
+  const textTail = projectTextTail(previous, input, visiblePrefixLength, visibleSuffix);
+  const rewindIndex = textTail
+    ? visiblePrefixLength
+    : safeTurnStart(previous, visibleTranscript, visiblePrefixLength, newToolEvents);
+  const prefixItemCount = textTail
+    ? previous.feedItems.length - 1
+    : feedPrefixItemCount(previous.feedItems, visibleTranscript, rewindIndex);
   if (prefixItemCount === undefined) return fullProjection(input, options, revision);
 
   updateToolEventIndex(previous.earliestToolEvent, previous.visibleTranscript, visiblePrefixLength);
@@ -293,24 +265,18 @@ function incrementalProjection(
       previous.earliestToolEvent.set(toolUseId, index);
     }
   }
-  const rebuiltItems = buildGroupedFeed(
-    visibleTranscript.slice(rewindIndex),
-    input.pending,
-    options,
-  );
+  const rebuiltItems = textTail
+    ? [textTail]
+    : buildGroupedFeed(visibleTranscript.slice(rewindIndex), input.pending, options);
   const feedItems = replaceChunkedSequenceSuffix(previous.feedItems, prefixItemCount, rebuiltItems);
 
   return {
-    conversationKey: input.conversationKey,
+    ...previous,
     allTranscript: input.allTranscript,
-    childSessionId: input.childSessionId,
     revision,
-    pending: input.pending,
-    options,
     retainedCost: input.retainedCost,
     visibleTranscript,
     feedItems,
-    earliestToolEvent: previous.earliestToolEvent,
     mode: 'incremental',
     updateKind: 'append',
     rebuiltFromVisibleIndex: rewindIndex,
@@ -338,12 +304,9 @@ function prependProjection(
   const visibleChanged = projection.visibleTranscript !== previous.visibleTranscript;
 
   return {
-    conversationKey: input.conversationKey,
+    ...previous,
     allTranscript: input.allTranscript,
-    childSessionId: input.childSessionId,
     revision,
-    pending: input.pending,
-    options,
     retainedCost: input.retainedCost,
     visibleTranscript: projection.visibleTranscript,
     feedItems: projection.feedItems,

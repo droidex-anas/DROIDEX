@@ -20,7 +20,6 @@ import {
 import { providerSessionJsonl } from './testing/providerSessionFixtures.js';
 
 // Leave cold-worker headroom while staying below the search DB's 5s lock wait.
-const LOCKED_DERIVED_DB_PROBE_TIMEOUT_MS = 3_000;
 const FTS5_UNAVAILABLE_REASON = sqliteFts5UnavailableSkipReason();
 
 function createSchema(path: string): void {
@@ -38,6 +37,8 @@ function createSchema(path: string): void {
       updated_at INTEGER NOT NULL,
       model_id TEXT,
       reasoning_effort TEXT,
+      fast_mode INTEGER,
+      context_window_tokens INTEGER,
       compaction_model TEXT,
       worker_model_id TEXT,
       worker_reasoning_effort TEXT,
@@ -70,6 +71,7 @@ function createSchema(path: string): void {
       spawn_link_id TEXT,
       transcript_available INTEGER NOT NULL CHECK (transcript_available IN (0, 1)),
       started_at INTEGER,
+      settled_at INTEGER,
       updated_at INTEGER NOT NULL,
       PRIMARY KEY (parent_app_session_id, child_session_id)
     );
@@ -111,7 +113,7 @@ function summary(): SessionSummary {
   };
 }
 
-test('worker persists a complete batch and supports synchronous durability waits', async () => {
+test('worker persists a complete batch and awaits durability replies', async () => {
   const dir = mkdtempSync(join(tmpdir(), 'droidex-history-worker-'));
   const dbPath = join(dir, 'history.sqlite');
   let client: HistoryWorkerClient | undefined;
@@ -127,7 +129,7 @@ test('worker persists a complete batch and supports synchronous durability waits
       estimatedBytes: 1_024,
     };
 
-    const result = client.startPersist(batch).waitSync();
+    const result = await client.startPersist(batch).promise;
     assert.equal(result.eventsWritten, 1);
     assert.equal(result.summariesWritten, 1);
     assert.ok((result.initializationMs ?? -1) >= 0);
@@ -147,12 +149,12 @@ test('worker persists a complete batch and supports synchronous durability waits
     );
     db.close();
   } finally {
-    client?.closeSync();
+    await client?.close();
     rmSync(dir, { recursive: true, force: true });
   }
 });
 
-test('a locked derived search database cannot delay canonical durability', () => {
+test('a locked derived search database cannot delay canonical durability', async () => {
   const dir = mkdtempSync(join(tmpdir(), 'droidex-history-worker-lanes-'));
   const dbPath = join(dir, 'history.sqlite');
   const derivedPath = join(dir, SESSION_SEARCH_INDEX_FILENAME);
@@ -162,17 +164,18 @@ test('a locked derived search database cannot delay canonical durability', () =>
     createSchema(dbPath);
     derived = new DatabaseSync(derivedPath);
     derived.exec('CREATE TABLE lock_holder (id INTEGER PRIMARY KEY); BEGIN IMMEDIATE');
-    client = new HistoryWorkerClient({ workerData: { dbPath, lane: 'persistence' } });
-    const result = client
-      .startPersist({
-        events: [],
-        summaries: [summary()],
-        children: [],
-        estimatedBytes: 1_024,
-      })
-      .waitSync(LOCKED_DERIVED_DB_PROBE_TIMEOUT_MS);
+    client = new HistoryWorkerClient({
+      workerData: { dbPath, lane: 'persistence' },
+      transportTimeoutMs: 3_000,
+    });
+    const result = await client.startPersist({
+      events: [],
+      summaries: [summary()],
+      children: [],
+      estimatedBytes: 1_024,
+    }).promise;
     assert.equal(result.summariesWritten, 1);
-    assert.deepEqual(client.startDurabilityBarrier().waitSync(LOCKED_DERIVED_DB_PROBE_TIMEOUT_MS), {
+    assert.deepEqual(await client.startDurabilityBarrier().promise, {
       durable: true,
     });
   } finally {
@@ -182,7 +185,7 @@ test('a locked derived search database cannot delay canonical durability', () =>
       // The assertion failure remains authoritative.
     }
     derived?.close();
-    client?.closeSync();
+    await client?.close();
     rmSync(dir, { recursive: true, force: true });
   }
 });
@@ -202,7 +205,7 @@ test('worker lanes reject requests from the other persistence contract', async (
       /search worker cannot handle persist/,
     );
   } finally {
-    searchClient?.closeSync();
+    await searchClient?.close();
     rmSync(dir, { recursive: true, force: true });
   }
 });
@@ -255,7 +258,7 @@ test(
       assert.deepEqual(afterRemoval.results, []);
       assert.equal(afterRemoval.indexingIncomplete, false);
     } finally {
-      client?.closeSync();
+      await client?.close();
       if (previousHome === undefined) delete process.env['HOME'];
       else process.env['HOME'] = previousHome;
       rmSync(home, { recursive: true, force: true });
@@ -292,7 +295,7 @@ test(
       createSchema(dbPath);
       first = new HistoryWorkerClient({ workerData: { dbPath, lane: 'search' } });
       await first.reconcileSessionFiles();
-      first.closeSync();
+      await first.close();
 
       const db = new DatabaseSync(join(databaseDirectory, SESSION_SEARCH_INDEX_FILENAME));
       db.exec(`
@@ -311,10 +314,10 @@ test(
         (await recreated.sessionFileSnapshot()).entries[0]?.providerSessionId,
         providerSessionId,
       );
-      recreated.closeSync();
+      await recreated.close();
     } finally {
-      first?.closeSync();
-      recreated?.closeSync();
+      await first?.close();
+      await recreated?.close();
       if (previousHome === undefined) delete process.env['HOME'];
       else process.env['HOME'] = previousHome;
       rmSync(home, { recursive: true, force: true });
@@ -356,7 +359,7 @@ test('missing FTS5 degrades search without affecting canonical persistence', asy
       kind: 'text',
       text: 'canonical history stays durable',
     });
-    persistence.flushSync();
+    await persistence.flush();
 
     const canonical = new DatabaseSync(dbPath, { readOnly: true });
     try {
@@ -387,7 +390,7 @@ test('missing FTS5 degrades search without affecting canonical persistence', asy
       kind: 'text',
       text: 'writes continue after search degrades',
     });
-    persistence.flushSync();
+    await persistence.flush();
 
     const afterSearch = new DatabaseSync(dbPath, { readOnly: true });
     try {
@@ -406,14 +409,14 @@ test('missing FTS5 degrades search without affecting canonical persistence', asy
     assert.deepEqual(unhandled, []);
   } finally {
     process.removeListener('unhandledRejection', onUnhandled);
-    persistence?.close();
+    await persistence?.close();
     if (previousHome === undefined) delete process.env['HOME'];
     else process.env['HOME'] = previousHome;
     rmSync(home, { recursive: true, force: true });
   }
 });
 
-test('a synchronous timeout does not leak an unhandled promise rejection', async () => {
+test('a close timeout does not leak an unhandled promise rejection', async () => {
   const dir = mkdtempSync(join(tmpdir(), 'droidex-history-worker-timeout-'));
   const dbPath = join(dir, 'history.sqlite');
   const unhandled: unknown[] = [];
@@ -423,7 +426,7 @@ test('a synchronous timeout does not leak an unhandled promise rejection', async
   try {
     createSchema(dbPath);
     const client = new HistoryWorkerClient({
-      syncTimeoutMs: 0,
+      transportTimeoutMs: 0,
       workerFactory: () => {
         const worker = new Worker(
           new URL('./historyPersistenceWorkerLoader.mjs', import.meta.url),
@@ -433,7 +436,7 @@ test('a synchronous timeout does not leak an unhandled promise rejection', async
         return worker;
       },
     });
-    assert.throws(() => client.closeSync(), /did not respond within 0ms/);
+    await assert.rejects(async () => await client.close(), /did not respond within 0ms/);
     await new Promise<void>((resolve) => setImmediate(resolve));
     await new Promise<void>((resolve) => setImmediate(resolve));
     assert.deepEqual(unhandled, []);
@@ -466,7 +469,7 @@ test('the worker client recreates a failed worker before the next persistence at
       children: [],
       estimatedBytes: 512,
     };
-    client.startPersist(firstBatch).waitSync();
+    await client.startPersist(firstBatch).promise;
     await workers[0]?.terminate();
 
     const secondBatch: HistoryPersistenceBatch = {
@@ -477,9 +480,9 @@ test('the worker client recreates a failed worker before the next persistence at
       children: [],
       estimatedBytes: 256,
     };
-    assert.equal(client.startPersist(secondBatch).waitSync().eventsWritten, 1);
+    assert.equal((await client.startPersist(secondBatch).promise).eventsWritten, 1);
     assert.equal(workers.length, 2);
-    client.closeSync();
+    await client.close();
 
     const db = new DatabaseSync(dbPath, { readOnly: true });
     assert.equal(
@@ -493,7 +496,7 @@ test('the worker client recreates a failed worker before the next persistence at
   }
 });
 
-test('a synchronous transport timeout recreates the worker for the next persistence attempt', async () => {
+test('a transport timeout fails all outstanding calls before recreating the worker', async () => {
   const dir = mkdtempSync(join(tmpdir(), 'droidex-history-worker-hung-'));
   const dbPath = join(dir, 'history.sqlite');
   const workers: Worker[] = [];
@@ -503,6 +506,8 @@ test('a synchronous transport timeout recreates the worker for the next persiste
     workers.push(hungWorker);
     const client = new HistoryWorkerClient({
       worker: hungWorker,
+      scheduleWatchdog: (callback, timeoutMs) =>
+        setTimeout(callback, workers.length === 1 ? 20 : timeoutMs),
       workerFactory: () => {
         const worker = new Worker(
           new URL('./historyPersistenceWorkerLoader.mjs', import.meta.url),
@@ -535,18 +540,20 @@ test('a synchronous transport timeout recreates the worker for the next persiste
       estimatedBytes: 256,
     }).promise;
 
-    assert.throws(() => client.startPersist(batch).waitSync(20), /did not respond within 20ms/);
-    await assert.rejects(pending, /did not respond within 20ms/);
-    assert.equal(client.startPersist(batch).waitSync().eventsWritten, 1);
+    await Promise.all([
+      assert.rejects(client.startPersist(batch).promise, /did not respond/),
+      assert.rejects(pending, /did not respond/),
+    ]);
+    assert.equal((await client.startPersist(batch).promise).eventsWritten, 1);
     assert.equal(workers.length, 2);
-    client.closeSync();
+    await client.close();
   } finally {
     await Promise.all(workers.map(async (worker) => await worker.terminate()));
     rmSync(dir, { recursive: true, force: true });
   }
 });
 
-test('an asynchronous persistence timeout recreates the worker without a synchronous boundary', async () => {
+test('an asynchronous persistence timeout recreates the worker without a caller waiting', async () => {
   const dir = mkdtempSync(join(tmpdir(), 'droidex-history-worker-async-hung-'));
   const dbPath = join(dir, 'history.sqlite');
   const workers: Worker[] = [];
@@ -590,14 +597,14 @@ test('an asynchronous persistence timeout recreates the worker without a synchro
     assert.equal((await settleWithin(client.startPersist(batch).promise, 2_000)).eventsWritten, 1);
     assert.equal(workers.length, 2);
     assert.equal(watchdogs.pendingCount(), 0);
-    client.closeSync();
+    await client.close();
   } finally {
     await Promise.all(workers.map(async (worker) => await worker.terminate()));
     rmSync(dir, { recursive: true, force: true });
   }
 });
 
-test('an asynchronous durability timeout recreates the worker without another boundary', async () => {
+test('an asynchronous durability timeout recreates the worker without another caller', async () => {
   const dir = mkdtempSync(join(tmpdir(), 'droidex-history-barrier-async-hung-'));
   const dbPath = join(dir, 'history.sqlite');
   const workers: Worker[] = [];
@@ -629,7 +636,7 @@ test('an asynchronous durability timeout recreates the worker without another bo
     });
     assert.equal(workers.length, 2);
     assert.equal(watchdogs.pendingCount(), 0);
-    client.closeSync();
+    await client.close();
   } finally {
     await Promise.all(workers.map(async (worker) => await worker.terminate()));
     rmSync(dir, { recursive: true, force: true });
@@ -662,13 +669,13 @@ test('a search transport timeout fails only that call', async () => {
     await assert.rejects(settleWithin(search, 2_000), /did not respond within 60000ms/);
     await assert.doesNotReject(() => settleWithin(client.setIndexingIdle(true), 2_000));
     assert.equal(watchdogs.pendingCount(), 0);
-    client.closeSync();
+    await client.close();
   } finally {
     await worker.terminate();
   }
 });
 
-test('an asynchronous worker timeout lets the queue retry without a synchronous boundary', async () => {
+test('an asynchronous worker timeout lets the queue retry without a caller waiting', async () => {
   const dir = mkdtempSync(join(tmpdir(), 'droidex-history-queue-async-hung-'));
   const dbPath = join(dir, 'history.sqlite');
   const workers: Worker[] = [];
@@ -740,7 +747,7 @@ test('an asynchronous worker timeout lets the queue retry without a synchronous 
       1,
     );
     db.close();
-    client.closeSync();
+    await client.close();
   } finally {
     await Promise.all(workers.map(async (worker) => await worker.terminate()));
     rmSync(dir, { recursive: true, force: true });
@@ -766,21 +773,19 @@ test('a serialized persistence error does not restart the worker', async () => {
     const invalidSummary = summary();
     Object.defineProperty(invalidSummary, 'title', { value: undefined });
 
-    assert.throws(
-      () =>
-        client
-          .startPersist({
-            events: [],
-            summaries: [invalidSummary],
-            children: [],
-            estimatedBytes: 256,
-          })
-          .waitSync(),
+    await assert.rejects(
+      async () =>
+        await client.startPersist({
+          events: [],
+          summaries: [invalidSummary],
+          children: [],
+          estimatedBytes: 256,
+        }).promise,
       /cannot be bound/,
     );
     assert.equal(
-      client
-        .startPersist({
+      (
+        await client.startPersist({
           events: [
             {
               id: 'after-operation-error',
@@ -793,12 +798,12 @@ test('a serialized persistence error does not restart the worker', async () => {
           summaries: [],
           children: [],
           estimatedBytes: 256,
-        })
-        .waitSync().eventsWritten,
+        }).promise
+      ).eventsWritten,
       1,
     );
     assert.equal(workers.length, 1);
-    client.closeSync();
+    await client.close();
   } finally {
     await Promise.all(workers.map(async (worker) => await worker.terminate()));
     rmSync(dir, { recursive: true, force: true });
@@ -828,7 +833,7 @@ test('a postMessage failure does not leak an unhandled rejection', async () => {
     await new Promise<void>((resolve) => setImmediate(resolve));
     await new Promise<void>((resolve) => setImmediate(resolve));
     assert.deepEqual(unhandled, []);
-    client.closeSync();
+    await client.close();
   } finally {
     process.removeListener('unhandledRejection', onUnhandled);
     await worker.terminate();

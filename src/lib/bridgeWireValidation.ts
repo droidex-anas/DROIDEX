@@ -390,6 +390,13 @@ function isSessionSummary(value: unknown): boolean {
     hasNumbers(value, ['tokensIn', 'tokensOut', 'contextTokens', 'createdAt', 'updatedAt']) &&
     isOptionalString(value.interruptReason) &&
     isOptionalString(value.resumeId) &&
+    isOptionalBoolean(value.fastMode) &&
+    isOptionalContextWindow(value.contextWindowTokens) &&
+    (value.pendingSteers === undefined ||
+      (Array.isArray(value.pendingSteers) &&
+        value.pendingSteers.every(
+          (steer) => isRecord(steer) && hasStrings(steer, ['id', 'text']),
+        ))) &&
     (value.lineage === undefined || isSessionLineage(value.lineage))
   );
 }
@@ -416,7 +423,10 @@ function isChildSessionSummary(value: unknown): boolean {
     typeof value.transcriptAvailable === 'boolean' &&
     isStreamFidelity(value.streamFidelity) &&
     isOptionalString(value.group) &&
-    isOptionalString(value.phase)
+    isOptionalString(value.phase) &&
+    isOptionalTimestamp(value.startedAt) &&
+    isOptionalTimestamp(value.settledAt) &&
+    isOptionalCount(value.tokensUsed)
   );
 }
 
@@ -429,7 +439,12 @@ function isTranscriptEvent(value: unknown): boolean {
     hasStrings(value, ['id', 'appSessionId', 'sourceSessionId', 'role', 'kind']) &&
     typeof value.ts === 'number' &&
     (value.errorKind === undefined || value.errorKind === 'usage_limit') &&
-    (value.resetsAt === undefined || nonNegativeSafeInteger(value.resetsAt))
+    (value.resetsAt === undefined || nonNegativeSafeInteger(value.resetsAt)) &&
+    isOptionalString(value.pollsChildSessionId) &&
+    (value.interrupted === undefined || value.interrupted === true) &&
+    (value.transient === undefined || value.transient === true) &&
+    isOptionalString(value.forkPointId) &&
+    (value.sideChatReplies === undefined || stringArray(value.sideChatReplies))
   );
 }
 
@@ -438,6 +453,8 @@ function isPermissionRequest(value: unknown): boolean {
     isRecord(value) &&
     hasStrings(value, ['appSessionId', 'requestId', 'kind', 'title', 'detail']) &&
     isPermissionKind(value.kind) &&
+    typeof value.canAlwaysAllow === 'boolean' &&
+    (value.diff === undefined || typeof value.diff === 'string') &&
     'raw' in value
   );
 }
@@ -481,7 +498,15 @@ function isSessionQuestion(value: unknown): boolean {
         isRecord(question) &&
         typeof question.index === 'number' &&
         typeof question.question === 'string' &&
-        stringArray(question.options),
+        (question.header === undefined || typeof question.header === 'string') &&
+        (question.multiSelect === undefined || typeof question.multiSelect === 'boolean') &&
+        Array.isArray(question.options) &&
+        question.options.every(
+          (option) =>
+            isRecord(option) &&
+            typeof option.label === 'string' &&
+            (option.description === undefined || typeof option.description === 'string'),
+        ),
     )
   );
 }
@@ -650,6 +675,23 @@ function hasStrings(value: Record<string, unknown>, keys: readonly string[]): bo
 
 function isOptionalString(value: unknown): boolean {
   return value === undefined || typeof value === 'string';
+}
+
+function isOptionalContextWindow(value: unknown): boolean {
+  return value === undefined || value === 200000 || value === 1000000;
+}
+
+function isOptionalBoolean(value: unknown): boolean {
+  return value === undefined || typeof value === 'boolean';
+}
+
+function isOptionalTimestamp(value: unknown): boolean {
+  return value === undefined || nonNegativeSafeInteger(value);
+}
+
+// A tally the sidecar reports, absent when it has nothing to report.
+function isOptionalCount(value: unknown): boolean {
+  return value === undefined || nonNegativeSafeInteger(value);
 }
 
 function hasNumbers(value: Record<string, unknown>, keys: readonly string[]): boolean {

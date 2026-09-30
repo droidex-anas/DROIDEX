@@ -1,5 +1,11 @@
-import { DecompSessionType, type McpServerConfig, type MissionFeature } from '@factory/droid-sdk';
-import { factoryReasoningEffort, type CreateRuntimeSessionOptions } from './DroidRuntime.js';
+// What a session opens with: the settings and summary a create command resolves
+// to, and the summary a resumed runtime projects from its stored record.
+import type { CompactionTokenLimitPatch } from './compaction.js';
+import type { SessionInitResult } from './DroidRuntime.js';
+import { bridgeFeature } from './missionFeatures.js';
+import { phaseFromState } from './MissionControlPolicy.js';
+import { reasoningValue } from './modelCatalog.js';
+import { modelDefaultForMode, reasoningDefaultForMode } from './modeDefaults.js';
 import type {
   Autonomy,
   ClientCommand,
@@ -9,83 +15,8 @@ import type {
   SessionPhase,
   SessionSummary,
 } from './protocol.js';
-import type { CompactionTokenLimitPatch } from './compaction.js';
-import { bridgeFeature } from './missionFeatures.js';
 import { DEFAULT_PROVIDER, type ProviderKind } from './providers/providerKind.js';
-import { stringValue } from './values.js';
-
-export interface SessionInitResult {
-  cwd?: string | undefined;
-  session?:
-    | {
-        decompSessionType?: unknown;
-        decompMissionId?: unknown;
-        cwd?: unknown;
-        title?: unknown;
-        sessionTitle?: unknown;
-        [key: string]: unknown;
-      }
-    | undefined;
-  settings?:
-    | {
-        modelId?: string | undefined;
-        reasoningEffort?: string | undefined;
-        compactionModel?: string | undefined;
-        compactionTokenLimit?: number | undefined;
-        compactionTokenLimitPerModel?: Record<string, number> | undefined;
-        interactionMode?: string | undefined;
-        autonomyLevel?: string | undefined;
-      }
-    | undefined;
-  mission?: { state?: string | undefined; features?: MissionFeature[] | undefined } | undefined;
-}
-
-const STATE_TO_PHASE: Record<string, SessionPhase> = {
-  initializing: 'initializing',
-  running: 'running',
-  paused: 'paused',
-  orchestrator_turn: 'orchestrator_turn',
-  completed: 'completed',
-  failed: 'failed',
-  awaiting_input: 'running',
-};
-
-export function normalizeAutonomy(value: unknown): Autonomy | undefined {
-  if (value === 'off' || value === 'low' || value === 'medium' || value === 'high') return value;
-  return undefined;
-}
-
-export function uniqueStrings(values: (string | undefined)[]): string[] {
-  return [...new Set(values.filter((value): value is string => Boolean(value)))];
-}
-
-export function errMsg(err: unknown): string {
-  return err instanceof Error ? err.message : String(err);
-}
-
-export function defaultsModeForSummary(summary: SessionSummary): SessionInteractionMode {
-  if (summary.sessionPurpose === 'mission-control') return 'agi';
-  if (summary.interactionMode === 'spec') return 'spec';
-  return 'auto';
-}
-
-export function reasoningValue(value?: string): ReasoningEffort | undefined {
-  if (
-    value === 'off' ||
-    value === 'none' ||
-    value === 'minimal' ||
-    value === 'low' ||
-    value === 'medium' ||
-    value === 'high' ||
-    value === 'xhigh' ||
-    value === 'max' ||
-    value === 'ultra' ||
-    value === 'dynamic'
-  ) {
-    return value;
-  }
-  return undefined;
-}
+import { normalizeAutonomy, stringValue } from './values.js';
 
 function classifySession(
   init: SessionInitResult,
@@ -157,10 +88,6 @@ function missionControlClassification(
   };
 }
 
-export function phaseFromState(state?: string): SessionPhase | undefined {
-  return state ? STATE_TO_PHASE[state] : undefined;
-}
-
 function phaseFromInit(init: SessionInitResult): SessionPhase {
   return phaseFromState(init.mission?.state) ?? 'paused';
 }
@@ -176,27 +103,6 @@ export function requireAutonomyForCommand(command: { autonomy?: Autonomy }): Aut
     );
   }
   return autonomy;
-}
-
-// session.create must never reach the Droid runtime with a reasoning level
-// its SDK cannot represent (Codex's 'ultra', for instance): checked here,
-// before any process or transport opens, the same way autonomy is required
-// up front instead of failing deep inside session creation.
-export function requireDroidReasoningSupported(
-  provider: ProviderKind,
-  command: {
-    reasoningEffort?: ReasoningEffort;
-    workerReasoning?: ReasoningEffort;
-    validatorReasoning?: ReasoningEffort;
-  },
-): void {
-  if (provider !== DEFAULT_PROVIDER) return;
-  for (const effort of [
-    command.reasoningEffort,
-    command.workerReasoning,
-    command.validatorReasoning,
-  ])
-    if (effort !== undefined) factoryReasoningEffort(effort);
 }
 
 // Factory's defaults are the Droid CLI's own, so a session on another provider
@@ -215,7 +121,7 @@ export function createModelDefaultsForProvider(
   };
 }
 
-export function createModelDefaultsForMode(
+function createModelDefaultsForMode(
   mode: SessionInteractionMode,
   command: { modelId?: string; reasoningEffort?: ReasoningEffort },
   defaults: Pick<
@@ -284,50 +190,6 @@ export function createDefaultsModeForCommand(
   return interactionMode === 'spec' ? 'spec' : 'auto';
 }
 
-export function buildCreateRuntimeOptions(input: {
-  command: SessionCreateCommand;
-  runtimeCwd: string;
-  interactionMode: SessionInteractionMode;
-  primary: { modelId?: string; reasoningEffort?: ReasoningEffort };
-  agents: Pick<
-    SessionSummary,
-    'workerModelId' | 'workerReasoningEffort' | 'validatorModelId' | 'validatorReasoningEffort'
-  >;
-  defaults: FactoryDefaultSettings;
-  autonomy: Autonomy;
-  compactionModel: string;
-  compactionTokenLimit: number;
-  mcpServers: McpServerConfig[];
-}): Omit<CreateRuntimeSessionOptions, 'permissionHandler' | 'askUserHandler'> {
-  const usePrimaryForSpec =
-    input.interactionMode === 'spec' ||
-    Boolean(input.command.modelId) ||
-    Boolean(input.command.reasoningEffort);
-  const specModeModelId = usePrimaryForSpec ? input.primary.modelId : input.defaults.specModelId;
-  const specModeReasoningEffort = usePrimaryForSpec
-    ? input.primary.reasoningEffort
-    : input.defaults.specReasoningEffort;
-  return {
-    cwd: input.runtimeCwd,
-    interactionMode: input.interactionMode,
-    ...(input.primary.modelId !== undefined ? { modelId: input.primary.modelId } : {}),
-    autonomyLevel: input.autonomy,
-    ...(input.primary.reasoningEffort !== undefined
-      ? { reasoningEffort: input.primary.reasoningEffort }
-      : {}),
-    ...(specModeModelId !== undefined ? { specModeModelId } : {}),
-    ...(specModeReasoningEffort !== undefined ? { specModeReasoningEffort } : {}),
-    ...(input.command.sessionPurpose === 'mission-control'
-      ? { decompSessionType: DecompSessionType.Orchestrator }
-      : {}),
-    ...input.agents,
-    compactionModel: input.compactionModel,
-    compactionTokenLimit: input.compactionTokenLimit,
-    compactionThresholdCheckEnabled: true,
-    mcpServers: input.mcpServers,
-  };
-}
-
 export function buildCreatedSessionSummary(input: {
   command: SessionCreateCommand;
   appSessionId: string;
@@ -353,6 +215,7 @@ export function buildCreatedSessionSummary(input: {
     providerSessionId: appSessionId,
     ...(command.sessionPurpose === 'mission-control' ? { missionId: appSessionId } : {}),
     provider: input.provider,
+    ...(input.provider !== DEFAULT_PROVIDER ? { fastMode: command.fastMode ?? false } : {}),
     ...(input.resumeId ? { resumeId: input.resumeId } : {}),
     sessionPurpose: command.sessionPurpose,
     interactionMode: input.interactionMode,
@@ -362,6 +225,9 @@ export function buildCreatedSessionSummary(input: {
     cwd,
     workspaceKind: cwd ? 'folder' : 'none',
     ...(primary.modelId !== undefined ? { modelId: primary.modelId } : {}),
+    ...(input.command.contextWindowTokens !== undefined
+      ? { contextWindowTokens: input.command.contextWindowTokens }
+      : {}),
     ...(primary.reasoningEffort !== undefined ? { reasoningEffort: primary.reasoningEffort } : {}),
     compactionModel: input.compactionModel,
     ...agents,
@@ -399,6 +265,7 @@ export function buildResumedProviderSummary(
     phase: historical.phase === 'running' ? 'paused' : historical.phase,
     streaming: false,
     queuedSends: 0,
+    pendingSteers: [],
   };
 }
 
@@ -415,14 +282,6 @@ interface BuildResumedSessionInput {
 // The provider's own resume handle, when a stored summary carries one.
 export const resumeHandle = (summary: SessionSummary | undefined) =>
   summary?.resumeId ? { resumeId: summary.resumeId } : {};
-
-// The launch settings a provider that keeps no session file of its own cannot
-// read back, handed to it from the stored summary.
-export const resumeSettings = (summary: SessionSummary | undefined) => ({
-  ...(summary?.modelId !== undefined ? { modelId: summary.modelId } : {}),
-  ...(summary?.reasoningEffort !== undefined ? { reasoningEffort: summary.reasoningEffort } : {}),
-  ...(summary?.autonomy !== undefined ? { autonomy: summary.autonomy } : {}),
-});
 
 export function buildResumedSession(input: BuildResumedSessionInput): {
   summary: SessionSummary;
@@ -515,11 +374,7 @@ function resumedBaseModelSettings(
       historical?.compactionModel ??
       defaults.compactionModel ??
       'current-model',
-    autonomy:
-      normalizeAutonomy(init.settings?.autonomyLevel) ??
-      historical?.autonomy ??
-      defaults.autonomy ??
-      'low',
+    autonomy: historical?.autonomy ?? normalizeAutonomy(init.settings?.autonomyLevel) ?? 'off',
   };
 }
 
@@ -533,11 +388,11 @@ function resumedPrimaryModelSettings(
     historical?.reasoningEffort ??
     defaults.reasoningEffort;
   const maxContextTokens = historical?.maxContextTokens ?? input.maxContextTokensForModel(modelId);
-  const settings: Partial<ResumedModelSettings> = {};
-  if (modelId !== undefined) settings.modelId = modelId;
-  if (reasoningEffort !== undefined) settings.reasoningEffort = reasoningEffort;
-  if (maxContextTokens !== undefined) settings.maxContextTokens = maxContextTokens;
-  return settings;
+  return {
+    ...(modelId !== undefined ? { modelId } : {}),
+    ...(reasoningEffort !== undefined ? { reasoningEffort } : {}),
+    ...(maxContextTokens !== undefined ? { maxContextTokens } : {}),
+  };
 }
 
 function resumedAgentSettings(
@@ -600,43 +455,4 @@ function exposedCompaction(init: SessionInitResult): CompactionTokenLimitPatch {
 
 function firstNonEmpty(...values: (string | undefined)[]): string {
   return values.find(Boolean) ?? '';
-}
-
-export function modelDefaultForMode(
-  mode: SessionInteractionMode,
-  defaults: Pick<FactoryDefaultSettings, 'modelId' | 'specModelId' | 'missionOrchestratorModelId'>,
-): string | undefined {
-  if (mode === 'spec') return defaults.specModelId ?? defaults.modelId;
-  if (mode === 'agi') return defaults.missionOrchestratorModelId ?? defaults.modelId;
-  return defaults.modelId;
-}
-
-function reasoningDefaultForMode(
-  mode: SessionInteractionMode,
-  defaults: Pick<
-    FactoryDefaultSettings,
-    'reasoningEffort' | 'specReasoningEffort' | 'missionOrchestratorReasoningEffort'
-  >,
-): ReasoningEffort | undefined {
-  if (mode === 'spec') return defaults.specReasoningEffort ?? defaults.reasoningEffort;
-  if (mode === 'agi') {
-    return defaults.missionOrchestratorReasoningEffort ?? defaults.reasoningEffort;
-  }
-  return defaults.reasoningEffort;
-}
-
-// A user Stop/interrupt makes the SDK stream throw (a cancellation message or an
-// AbortError). That is a deliberate stop, not a failure, so callers must settle
-// quietly instead of surfacing it as an error.
-export function isUserCancellation(err: unknown): boolean {
-  if (err && typeof err === 'object' && 'name' in err && err.name === 'AbortError') return true;
-  const m = errMsg(err).toLowerCase();
-  return (
-    m.includes('interrupted by user') ||
-    m.includes('cancelled by user') ||
-    m.includes('canceled by user') ||
-    m.includes('request interrupted') ||
-    m.includes('request cancelled') ||
-    m.includes('request canceled')
-  );
 }

@@ -22,6 +22,10 @@ import {
   providerModelCatalog,
   providerModelSelection,
 } from '../features/providers/providerIdentity';
+import useFastMode from '../hooks/useFastMode';
+import useContextWindow from '../hooks/useContextWindow';
+import { fastModeBlockedReason } from '../lib/fastMode';
+import { contextWindowForModel } from '../lib/contextWindow';
 import { defaultModelOf } from './ModelCatalogList';
 import { categoryOf, categoryOptions, type ModelCategory } from './modelCategories';
 
@@ -190,6 +194,11 @@ export default function useModelPicker({
     [agent, dispatch, state.provider],
   );
 
+  // Fast mode belongs to the chat this composer writes into; the mission and
+  // child pickers never offer it, so they read the draft's and leave it alone.
+  const { fastMode, setFastMode } = useFastMode(scopedAppSessionId);
+  const { contextWindowTokens, setContextWindow } = useContextWindow(scopedAppSessionId);
+
   const updateReasoning = useCallback(
     (reasoning: ReasoningEffort) => {
       if (childTarget) return;
@@ -230,10 +239,22 @@ export default function useModelPicker({
         modelId,
         ...(reasoningEffort === undefined ? {} : { reasoningEffort }),
       };
+      // A window or fast mode the new model cannot run is set back in the same
+      // change, so the model is never refused over it, a refused model leaves
+      // them as they were, and the chip never claims what the chat does not do.
+      const losesFastMode = agent === 'primary' && fastMode && !!fastModeBlockedReason(next);
+      const window =
+        agent === 'primary' ? contextWindowForModel(next, contextWindowTokens) : undefined;
+      const preferences = {
+        ...(losesFastMode ? { fastMode: false } : {}),
+        ...(window ? { contextWindowTokens: window } : {}),
+      };
       if (scopedAppSessionId) {
-        updateSession(scopedAppSessionId, settings);
+        updateSession(scopedAppSessionId, { ...settings, ...preferences });
         return;
       }
+      if (losesFastMode) setFastMode(false);
+      if (window) setContextWindow(window);
       saveDefault({ modelId, reasoning: reasoningAfterModelSwitch(next, cfg.reasoning) });
       updateAgentSettings({ appSessionId: state.activeSessionAppSessionId, agent, ...settings });
     },
@@ -241,9 +262,13 @@ export default function useModelPicker({
       agent,
       cfg.reasoning,
       childTarget,
+      contextWindowTokens,
       effReasoning,
+      fastMode,
       saveDefault,
       scopedAppSessionId,
+      setContextWindow,
+      setFastMode,
       source,
       state.activeSessionAppSessionId,
       updateSession,
@@ -277,6 +302,9 @@ export default function useModelPicker({
     selectedLabel,
     activeModel,
     effReasoning,
+    fastMode,
+    setFastMode,
+    scopedAppSessionId,
     updateModel,
     updateReasoning,
   };

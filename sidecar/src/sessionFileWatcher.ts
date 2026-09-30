@@ -12,7 +12,7 @@ import { mkdirSync, statSync, watch } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 
-import { errMsg } from './sessionHelpers.js';
+import { errMsg } from './errors.js';
 import type { SessionFileChange } from './sessionFileCache.js';
 
 export type { SessionFileChange } from './sessionFileCache.js';

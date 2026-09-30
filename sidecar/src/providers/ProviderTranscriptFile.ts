@@ -10,18 +10,12 @@
 // sessionTranscriptParser.ts maps the content blocks below back to transcript
 // events. Changing a shape here without reading those three is a silent
 // "session is empty after restart" bug.
-import {
-  appendFileSync,
-  copyFileSync,
-  existsSync,
-  mkdirSync,
-  readFileSync,
-  writeFileSync,
-} from 'node:fs';
-import { join } from 'node:path';
+import { appendFile, copyFile, mkdir, readFile, stat, writeFile } from 'node:fs/promises';
+import { dirname, join } from 'node:path';
 
 import { providerSessionsDir } from '../droidexPaths.js';
-import type { SessionSummary, TranscriptEvent } from '../protocol.js';
+import { PERMISSION_SEMANTICS_REVISION } from '../permissionSemantics.js';
+import type { ContextWindowTokens, SessionSummary, TranscriptEvent } from '../protocol.js';
 import type { StoredMessageLine, StoredSessionStart } from '../sessionTranscriptParser.js';
 import { storedNoticeLine } from '../sessionNotices.js';
 
@@ -31,19 +25,32 @@ import { storedNoticeLine } from '../sessionNotices.js';
 interface ProviderSessionStart extends StoredSessionStart {
   modelId?: string;
   reasoningEffort?: string;
+  fastMode?: boolean;
+  contextWindowTokens?: ContextWindowTokens;
   autonomyLevel?: string;
+  interactionMode: SessionSummary['interactionMode'];
+  permissionSemanticsRevision: number;
 }
 
 type ContentBlock =
   | { type: 'text'; text: string }
   | { type: 'thinking'; thinking: string }
-  | { type: 'tool_use'; id?: string; name: string; input: unknown }
+  | {
+      type: 'tool_use';
+      id?: string;
+      name: string;
+      input: unknown;
+      pollsChildSessionId?: string;
+      interrupted?: true;
+    }
   | {
       type: 'tool_result';
       tool_use_id?: string;
       name?: string;
       content: string;
       is_error?: boolean;
+      pollsChildSessionId?: string;
+      interrupted?: true;
     };
 
 interface PendingMessage {
@@ -58,6 +65,10 @@ export class ProviderTranscriptFile {
   private pending: PendingMessage | null = null;
   private headWritten = false;
   private promptSeq = 0;
+  // The tail of the write queue. It never rejects: a line that fails is
+  // reported to the caller that wrote it, and the lines after it still go out.
+  private writes: Promise<void> = Promise.resolve();
+  private readonly children = new Map<string, ProviderTranscriptFile>();
 
   // Reads the summary when it writes rather than holding a copy: the registry
   // replaces the summary object on every update, and the head line goes out
@@ -65,131 +76,212 @@ export class ProviderTranscriptFile {
   // resume handle minted during create both land on it. A session abandoned
   // before its first turn leaves no file.
   constructor(
-    appSessionId: string,
+    private readonly sessionId: string,
     private readonly summary: () => SessionSummary,
+    private readonly parentAppSessionId?: string,
   ) {
-    this.path = join(providerSessionsDir(), `${appSessionId}.jsonl`);
+    this.path = join(providerSessionsDir(), `${sessionId}.jsonl`);
   }
 
   // A turn's prompt. The renderer already showed it, so it is persisted here
   // rather than replayed as a live event.
-  appendPrompt(text: string): void {
-    if (!text) return;
-    this.flush();
+  appendPrompt(text: string): Promise<void> {
+    if (!text) return this.writes;
     const ts = Date.now();
-    this.writeMessage('user', [{ type: 'text', text }], `prompt-${this.nextPromptId(ts)}`, ts);
+    return this.sealThenWrite(
+      messageLine('user', [{ type: 'text', text }], `prompt-${this.nextPromptId(ts)}`, ts),
+    );
   }
 
-  append(event: TranscriptEvent): void {
-    // Child sessions keep their own transcripts; this file is one conversation.
-    if (event.role !== 'primary') return;
-    if (event.spoken) {
-      this.appendSpoken(event);
-      return;
+  append(event: TranscriptEvent): void | Promise<void> {
+    if (event.role !== 'primary' && !this.parentAppSessionId) return this.appendToChild(event);
+    if (event.kind === 'text' && event.author === 'user' && !event.spoken) {
+      return this.sealThenWrite(
+        messageLine('user', [{ type: 'text', text: event.text ?? '' }], event.id, event.ts),
+      );
     }
+    if (event.spoken) return this.sealThenWrite(spokenLine(event));
     const notice = storedNoticeLine(event);
-    if (notice) {
-      this.flush();
-      this.writeLine(notice);
-      return;
-    }
+    if (notice) return this.sealThenWrite(notice);
     const block = assistantBlock(event);
     if (block) {
       this.pending ??= { id: event.id, ts: event.ts, blocks: [] };
       if (event.forkPointId) this.pending.forkPointId = event.forkPointId;
-      const previous = this.pending.blocks.at(-1);
-      // Adjacent stream deltas must replay as one text or thinking row.
-      if (block.type === 'text' && previous?.type === 'text') {
-        previous.text += block.text;
-      } else if (block.type === 'thinking' && previous?.type === 'thinking') {
-        previous.thinking += block.thinking;
-      } else {
-        this.pending.blocks.push(block);
-      }
+      addBlock(this.pending.blocks, block);
       return;
     }
     const result = toolResultBlock(event);
     if (!result) return;
     // A result belongs after the call that produced it.
-    this.flush();
-    this.writeMessage('user', [result], event.id, event.ts);
+    return this.sealThenWrite(messageLine('user', [result], event.id, event.ts));
   }
 
-  // Closes the open assistant message. Called when a turn settles and when the
-  // session closes, so one stored line is one settled message.
-  flush(): void {
+  // Called when a turn settles and when the session closes. Settles once
+  // everything queued here and in the child files has been tried, and rejects
+  // when a message it closed could not be written.
+  async flush(): Promise<void> {
+    const flushing = [this.sealMessage() ?? this.writes];
+    for (const child of this.children.values()) flushing.push(child.flush());
+    const failed = (await Promise.allSettled(flushing)).find(
+      (result) => result.status === 'rejected',
+    );
+    if (failed) throw failed.reason;
+  }
+
+  // The file once every line queued before this call is on disk. Lines queued
+  // after it wait for the read, so a fork never copies a line half-written.
+  // Every line queued so far is on disk. Unlike flush, the message still
+  // streaming stays open, so a reader never splits it into two stored lines.
+  written(): Promise<void> {
+    return this.writes;
+  }
+
+  read(): Promise<string> {
+    const reading = this.writes.then(() => readFile(this.path, 'utf8'));
+    this.writes = reading.then(
+      () => undefined,
+      () => undefined,
+    );
+    return reading;
+  }
+
+  // Routed children have no independent turn-settlement callback. Persist
+  // each coalesced run so replay can read it while the parent is still busy.
+  private appendToChild(event: TranscriptEvent): Promise<void> {
+    let child = this.children.get(event.sourceSessionId);
+    if (!child) {
+      child = new ProviderTranscriptFile(event.sourceSessionId, this.summary, this.sessionId);
+      this.children.set(event.sourceSessionId, child);
+    }
+    return Promise.all([child.append(event), child.flush()]).then(() => undefined);
+  }
+
+  // Closes the open assistant message, so one stored line is one settled
+  // message.
+  private sealMessage(): Promise<void> | undefined {
     const message = this.pending;
-    if (!message) return;
-    this.writeMessage('assistant', message.blocks, message.id, message.ts, message.forkPointId);
+    if (!message) return undefined;
     this.pending = null;
+    return this.writeLine(
+      messageLine('assistant', message.blocks, message.id, message.ts, message.forkPointId),
+    );
   }
 
-  private appendSpoken(event: TranscriptEvent): void {
-    if (event.kind !== 'text' || !event.text)
-      throw new Error('A spoken transcript row must contain text.');
-    this.flush();
-    this.writeLine({
-      type: 'message',
-      id: event.id,
-      timestamp: new Date(event.ts).toISOString(),
-      spoken: true,
-      message: {
-        role: event.author === 'user' ? 'user' : 'assistant',
-        content: [{ type: 'text', text: event.text }],
-      },
-    });
+  private sealThenWrite(line: object): Promise<void> {
+    const sealed = this.sealMessage();
+    const written = this.writeLine(line);
+    return sealed ? Promise.all([sealed, written]).then(() => undefined) : written;
   }
 
   private nextPromptId(ts: number): string {
     return `${ts.toString(36)}-${(this.promptSeq++).toString(36)}`;
   }
 
-  private writeMessage(
-    role: 'user' | 'assistant',
-    content: ContentBlock[],
-    id: string,
-    ts: number,
-    forkPointId?: string,
-  ): void {
-    const line: StoredMessageLine = {
-      type: 'message',
-      id,
-      timestamp: new Date(ts).toISOString(),
-      message: { role, content },
-      ...(forkPointId ? { forkPointId } : {}),
-    };
-    this.writeLine(line);
+  // Resolves when this line is on disk and rejects, for the caller that wrote
+  // it, when it is not. The queue carries on either way: one failed line must
+  // not cost the session the lines after it, or hold its close.
+  private writeLine(line: object): Promise<void> {
+    const contents = serialize(line);
+    const attempt = this.writes.then(async () => {
+      await appendFile(this.path, (await this.headIfMissing()) + contents);
+      this.headWritten = true;
+    });
+    this.writes = attempt.catch(() => undefined);
+    return attempt;
   }
 
-  private writeLine(line: object): void {
-    if (!this.headWritten) {
-      mkdirSync(providerSessionsDir(), { recursive: true });
-      // A resumed session appends to the transcript it already has: one head
-      // line per file, written with the session's first message.
-      if (!existsSync(this.path)) appendFileSync(this.path, serialize(headLine(this.summary())));
-      this.headWritten = true;
-    }
-    appendFileSync(this.path, serialize(line));
+  // A resumed session appends to the transcript it already has: one head line
+  // per file, written with the session's first message. A file a failed first
+  // write left empty has no head yet.
+  private async headIfMissing(): Promise<string> {
+    if (this.headWritten) return '';
+    await mkdir(dirname(this.path), { recursive: true });
+    if (await hasContent(this.path)) return '';
+    const summary = this.summary();
+    return serialize(
+      this.parentAppSessionId
+        ? childHeadLine(summary, this.sessionId, this.parentAppSessionId)
+        : headLine(summary),
+    );
   }
 }
 
+// Adjacent stream deltas must replay as one text or thinking row.
+function addBlock(blocks: ContentBlock[], block: ContentBlock): void {
+  const previous = blocks.at(-1);
+  if (block.type === 'text' && previous?.type === 'text') previous.text += block.text;
+  else if (block.type === 'thinking' && previous?.type === 'thinking')
+    previous.thinking += block.thinking;
+  else blocks.push(block);
+}
+
+async function hasContent(path: string): Promise<boolean> {
+  try {
+    return (await stat(path)).size > 0;
+  } catch (error) {
+    if (isMissingFile(error)) return false;
+    throw error;
+  }
+}
+
+function isMissingFile(error: unknown): boolean {
+  return error instanceof Error && 'code' in error && error.code === 'ENOENT';
+}
+
+function messageLine(
+  role: 'user' | 'assistant',
+  content: ContentBlock[],
+  id: string,
+  ts: number,
+  forkPointId?: string,
+): StoredMessageLine {
+  return {
+    type: 'message',
+    id,
+    timestamp: new Date(ts).toISOString(),
+    message: { role, content },
+    ...(forkPointId ? { forkPointId } : {}),
+  };
+}
+
+function spokenLine(event: TranscriptEvent): object {
+  if (event.kind !== 'text' || !event.text)
+    throw new Error('A spoken transcript row must contain text.');
+  return {
+    type: 'message',
+    id: event.id,
+    timestamp: new Date(event.ts).toISOString(),
+    spoken: true,
+    message: {
+      role: event.author === 'user' ? 'user' : 'assistant',
+      content: [{ type: 'text', text: event.text }],
+    },
+  };
+}
+
+// A closed session's transcript. An open one is read through its writer, which
+// holds the lines still on their way to the file.
+export function readProviderTranscript(appSessionId: string): Promise<string> {
+  return readFile(join(providerSessionsDir(), `${appSessionId}.jsonl`), 'utf8');
+}
+
 // The part of a session's transcript a fork copies: all of it, or every line
-// up to the last one of the answer at `forkPointId`. Read before the provider
-// copies anything, so a point the transcript never recorded fails the fork
-// without leaving a provider copy behind.
+// up to the last one of the answer at `forkPointId`. Read before the copy is
+// written, so a point the transcript never recorded fails the fork without
+// leaving a DROIDEX copy behind.
 export interface ForkedTranscript {
   sourceAppSessionId: string;
   head: ProviderSessionStart;
   lines: string[];
 }
 
-export function readForkedTranscript(
+export function forkedTranscript(
   sourceAppSessionId: string,
+  stored: string,
   forkPointId?: string,
 ): ForkedTranscript {
-  const source = readFileSync(join(providerSessionsDir(), `${sourceAppSessionId}.jsonl`), 'utf8');
-  const [headLine = '', ...lines] = source.split('\n').filter((line) => line.trim() !== '');
-  const head = JSON.parse(headLine) as ProviderSessionStart;
+  const [headText = '', ...lines] = stored.split('\n').filter((line) => line.trim() !== '');
+  const head = JSON.parse(headText) as ProviderSessionStart;
   if (!forkPointId) return { sourceAppSessionId, head, lines };
   const last = lines.findLastIndex((line) => storedForkPointId(line) === forkPointId);
   if (last < 0) throw new Error('This answer was saved before forking from it was possible.');
@@ -200,20 +292,23 @@ export function readForkedTranscript(
 // names the copy. The provider copied its own record of the conversation; this
 // is DROIDEX's, which scrollback and the sidebar read. A provider that gives
 // the copy new ids for its fork points names them in `forkPointRenames`.
-// Returns the new path.
-export function writeForkedTranscript(
+// Resolves to the new path.
+export async function writeForkedTranscript(
   transcript: ForkedTranscript,
   copy: {
     appSessionId: string;
     title: string;
     resumeId?: string;
     forkPointRenames?: ReadonlyMap<string, string>;
+    // A copy on a model of its own runs that model's own window, so the
+    // source's pin stays behind.
+    dropContextWindow?: boolean;
   },
-): string {
+): Promise<string> {
   const directory = providerSessionsDir();
   const path = join(directory, `${copy.appSessionId}.jsonl`);
   const head: ProviderSessionStart = {
-    ...transcript.head,
+    ...withoutContextWindow(transcript.head, copy.dropContextWindow),
     id: copy.appSessionId,
     title: copy.title,
     ...(copy.resumeId ? { resumeId: copy.resumeId } : {}),
@@ -222,10 +317,16 @@ export function writeForkedTranscript(
   const lines = renames
     ? transcript.lines.map((line) => renameForkPoint(line, renames))
     : transcript.lines;
-  writeFileSync(path, [serialize(head), ...lines.map((line) => `${line}\n`)].join(''));
-  const settingsPath = join(directory, `${transcript.sourceAppSessionId}.settings.json`);
-  if (existsSync(settingsPath)) {
-    copyFileSync(settingsPath, join(directory, `${copy.appSessionId}.settings.json`));
+  await writeFile(path, [serialize(head), ...lines.map((line) => `${line}\n`)].join(''));
+  const settingsFrom = join(directory, `${transcript.sourceAppSessionId}.settings.json`);
+  const settingsTo = join(directory, `${copy.appSessionId}.settings.json`);
+  try {
+    if (copy.dropContextWindow) {
+      const settings = JSON.parse(await readFile(settingsFrom, 'utf8')) as Record<string, unknown>;
+      await writeFile(settingsTo, JSON.stringify(withoutContextWindow(settings, true)));
+    } else await copyFile(settingsFrom, settingsTo);
+  } catch (error) {
+    if (!isMissingFile(error)) throw error;
   }
   return path;
 }
@@ -253,9 +354,31 @@ function headLine(summary: SessionSummary): ProviderSessionStart {
     cwd: summary.cwd,
     title: summary.title,
     autonomyLevel: summary.autonomy,
+    interactionMode: summary.interactionMode,
+    permissionSemanticsRevision: PERMISSION_SEMANTICS_REVISION,
     ...(summary.resumeId ? { resumeId: summary.resumeId } : {}),
     ...(summary.modelId ? { modelId: summary.modelId } : {}),
     ...(summary.reasoningEffort ? { reasoningEffort: summary.reasoningEffort } : {}),
+    ...(summary.fastMode !== undefined ? { fastMode: summary.fastMode } : {}),
+    ...(summary.contextWindowTokens !== undefined
+      ? { contextWindowTokens: summary.contextWindowTokens }
+      : {}),
+  };
+}
+
+function childHeadLine(
+  summary: SessionSummary,
+  childSessionId: string,
+  parentAppSessionId: string,
+): ProviderSessionStart {
+  return {
+    type: 'session_start',
+    id: childSessionId,
+    provider: summary.provider,
+    cwd: summary.cwd,
+    callingSessionId: parentAppSessionId,
+    interactionMode: summary.interactionMode,
+    permissionSemanticsRevision: PERMISSION_SEMANTICS_REVISION,
   };
 }
 
@@ -266,6 +389,8 @@ function assistantBlock(event: TranscriptEvent): ContentBlock | null {
       ...(event.toolUseId ? { id: event.toolUseId } : {}),
       name: event.toolName ?? 'tool',
       input: event.toolArgs,
+      ...(event.pollsChildSessionId ? { pollsChildSessionId: event.pollsChildSessionId } : {}),
+      ...(event.interrupted ? { interrupted: true } : {}),
     };
   }
   if (!event.text) return null;
@@ -282,9 +407,21 @@ function toolResultBlock(event: TranscriptEvent): ContentBlock | null {
     ...(event.toolName ? { name: event.toolName } : {}),
     content: event.text ?? '',
     ...(event.isError ? { is_error: true } : {}),
+    ...(event.pollsChildSessionId ? { pollsChildSessionId: event.pollsChildSessionId } : {}),
+    ...(event.interrupted ? { interrupted: true } : {}),
   };
 }
 
 function serialize(line: object): string {
   return `${JSON.stringify(line)}\n`;
+}
+
+function withoutContextWindow<T extends { contextWindowTokens?: unknown }>(
+  value: T,
+  drop: boolean | undefined,
+): T {
+  if (!drop || value.contextWindowTokens === undefined) return value;
+  const copy = { ...value };
+  delete copy.contextWindowTokens;
+  return copy;
 }

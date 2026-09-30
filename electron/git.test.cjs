@@ -8,6 +8,7 @@ const path = require('node:path');
 const {
   adoptTurnBaseline,
   branches,
+  repoStatus,
   createWorktree,
   diffFiles,
   fileDiff,
@@ -343,4 +344,28 @@ test('uncommitted file entries all render a current diff', async () => {
     const rendered = await fileDiff(dir, { mode: 'uncommitted', path: file.path });
     assert.notEqual(rendered.diff, '', `${file.status} ${file.path} had no diff`);
   }
+});
+
+test('repoStatus counts what the repository line shows, and is null outside one', async () => {
+  const dir = await makeRepo();
+  await write(dir, 'tracked.txt', 'one\n');
+  await commitAll(dir, 'first');
+  await write(dir, 'tracked.txt', 'two\n');
+  await write(dir, 'new.txt', 'new\n');
+  await git(dir, ['add', 'new.txt']);
+  await write(dir, 'loose.txt', 'loose\n');
+
+  const status = await repoStatus(dir);
+  assert.equal(status?.repoRoot, await fsp.realpath(dir));
+  const { changed, staged, unstaged, untracked } = status ?? {};
+  assert.deepEqual(
+    { changed, staged, unstaged, untracked },
+    {
+      changed: 3,
+      staged: 1,
+      unstaged: 1,
+      untracked: 1,
+    },
+  );
+  assert.equal(await repoStatus(path.join(dir, 'missing')), null);
 });

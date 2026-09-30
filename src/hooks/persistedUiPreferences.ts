@@ -29,13 +29,13 @@ import {
 
 export type MissionRole = 'worker' | 'validator';
 export type AgentKind = 'primary' | MissionRole;
-export type LiveEnterBehavior = 'queue' | 'interrupt';
+export type LiveEnterBehavior = 'steer' | 'queue';
 export type DiffViewMode = 'unified' | 'split';
 export type ModelSelectorStyle = 'classic' | 'slider';
 // Where a side chat opens when none is on screen: the utility pane or a floating window.
 export type SideChatDefaultPlacement = 'docked' | 'floating';
 
-export interface AgentModelConfig {
+interface AgentModelConfig {
   modelId?: string;
   reasoning: ReasoningEffort;
 }
@@ -90,22 +90,29 @@ function adoptLegacyPrimaryModel(models: HarnessModels): HarnessModels {
   if (typeof primary?.modelId !== 'string' || !primary.modelId) return models;
   const droid: HarnessModel = { modelId: primary.modelId };
   if (isReasoningEffort(primary.reasoning)) droid.reasoning = primary.reasoning;
-  return saveHarnessModels({ ...models, droid });
+  const adopted = { ...models, droid };
+  saveHarnessModels(adopted);
+  return adopted;
 }
 
-export function saveHarnessModels(models: HarnessModels): HarnessModels {
-  try {
-    getLocalStorage()?.setItem(HARNESS_MODELS_STORAGE_KEY, JSON.stringify(models));
-  } catch {
-    /* ignore */
-  }
-  return models;
+export function saveHarnessModels(models: HarnessModels): void {
+  saveItem(HARNESS_MODELS_STORAGE_KEY, JSON.stringify(models));
 }
 
 function getLocalStorage(): Storage | undefined {
   if (typeof window !== 'undefined') return window.localStorage;
   const descriptor = Object.getOwnPropertyDescriptor(globalThis, 'localStorage');
   return descriptor && 'value' in descriptor ? (descriptor.value as Storage) : undefined;
+}
+
+// A failed write (quota, restricted storage) keeps the in-memory value, so the
+// setting holds for this run and reverts on the next launch.
+function saveItem(key: string, value: string): void {
+  try {
+    getLocalStorage()?.setItem(key, value);
+  } catch {
+    /* keep the in-memory value */
+  }
 }
 
 export function loadAgentConfig(): AgentConfig {
@@ -134,13 +141,8 @@ function readAgentConfig(
   };
 }
 
-export function saveAgentConfig(config: AgentConfig): AgentConfig {
-  try {
-    getLocalStorage()?.setItem(AGENT_CONFIG_STORAGE_KEY, JSON.stringify(config));
-  } catch {
-    /* ignore */
-  }
-  return config;
+export function saveAgentConfig(config: AgentConfig): void {
+  saveItem(AGENT_CONFIG_STORAGE_KEY, JSON.stringify(config));
 }
 
 // Global compaction model: 'current-model' means each session compacts with
@@ -188,35 +190,26 @@ export function loadCompactionModel(): string {
   }
 }
 
-export function saveCompactionModel(value: string): string {
-  try {
-    getLocalStorage()?.setItem(COMPACTION_MODEL_STORAGE_KEY, value);
-  } catch {
-    /* ignore */
-  }
-  return value;
+export function saveCompactionModel(value: string): void {
+  saveItem(COMPACTION_MODEL_STORAGE_KEY, value);
 }
 
+// Steer unless the user chose Queue. A stored 'interrupt', the retired Send now
+// setting, reads as Steer.
 function normalizeLiveEnterBehavior(value: unknown): LiveEnterBehavior {
-  return value === 'interrupt' ? 'interrupt' : 'queue';
+  return value === 'queue' ? 'queue' : 'steer';
 }
 
 export function loadLiveEnterBehavior(): LiveEnterBehavior {
   try {
     return normalizeLiveEnterBehavior(getLocalStorage()?.getItem(LIVE_ENTER_BEHAVIOR_STORAGE_KEY));
   } catch {
-    return 'queue';
+    return 'steer';
   }
 }
 
-export function saveLiveEnterBehavior(value: LiveEnterBehavior): LiveEnterBehavior {
-  const behavior = normalizeLiveEnterBehavior(value);
-  try {
-    getLocalStorage()?.setItem(LIVE_ENTER_BEHAVIOR_STORAGE_KEY, behavior);
-  } catch {
-    /* ignore */
-  }
-  return behavior;
+export function saveLiveEnterBehavior(behavior: LiveEnterBehavior): void {
+  saveItem(LIVE_ENTER_BEHAVIOR_STORAGE_KEY, behavior);
 }
 
 function normalizeImagePasteQuality(value: unknown): ImagePasteQuality {
@@ -231,14 +224,8 @@ export function loadImagePasteQuality(): ImagePasteQuality {
   }
 }
 
-export function saveImagePasteQuality(value: ImagePasteQuality): ImagePasteQuality {
-  const quality = normalizeImagePasteQuality(value);
-  try {
-    getLocalStorage()?.setItem(IMAGE_PASTE_QUALITY_STORAGE_KEY, quality);
-  } catch {
-    /* ignore */
-  }
-  return quality;
+export function saveImagePasteQuality(quality: ImagePasteQuality): void {
+  saveItem(IMAGE_PASTE_QUALITY_STORAGE_KEY, quality);
 }
 
 export function loadDiffView(): DiffViewMode {
@@ -249,14 +236,8 @@ export function loadDiffView(): DiffViewMode {
   }
 }
 
-export function saveDiffView(value: DiffViewMode): DiffViewMode {
-  const mode = value === 'split' ? 'split' : 'unified';
-  try {
-    getLocalStorage()?.setItem(DIFF_VIEW_STORAGE_KEY, mode);
-  } catch {
-    /* ignore */
-  }
-  return mode;
+export function saveDiffView(mode: DiffViewMode): void {
+  saveItem(DIFF_VIEW_STORAGE_KEY, mode);
 }
 
 // The slider is the default; only someone who chose the classic list keeps it.
@@ -274,14 +255,8 @@ export function loadModelSelectorStyle(): ModelSelectorStyle {
   }
 }
 
-export function saveModelSelectorStyle(value: ModelSelectorStyle): ModelSelectorStyle {
-  const style = normalizeModelSelectorStyle(value);
-  try {
-    getLocalStorage()?.setItem(MODEL_SELECTOR_STYLE_STORAGE_KEY, style);
-  } catch {
-    /* ignore */
-  }
-  return style;
+export function saveModelSelectorStyle(style: ModelSelectorStyle): void {
+  saveItem(MODEL_SELECTOR_STYLE_STORAGE_KEY, style);
 }
 
 function normalizeSideChatPlacement(value: unknown): SideChatDefaultPlacement {
@@ -296,14 +271,8 @@ export function loadSideChatPlacement(): SideChatDefaultPlacement {
   }
 }
 
-export function saveSideChatPlacement(value: SideChatDefaultPlacement): SideChatDefaultPlacement {
-  const placement = normalizeSideChatPlacement(value);
-  try {
-    getLocalStorage()?.setItem(SIDE_CHAT_PLACEMENT_STORAGE_KEY, placement);
-  } catch {
-    /* ignore */
-  }
-  return placement;
+export function saveSideChatPlacement(placement: SideChatDefaultPlacement): void {
+  saveItem(SIDE_CHAT_PLACEMENT_STORAGE_KEY, placement);
 }
 
 // Which voice speaks in voice mode. The harness publishes its own voices when a
@@ -317,13 +286,8 @@ export function loadDefaultVoice(): string {
   }
 }
 
-export function saveDefaultVoice(value: string): string {
-  try {
-    getLocalStorage()?.setItem(DEFAULT_VOICE_STORAGE_KEY, value);
-  } catch {
-    /* ignore */
-  }
-  return value;
+export function saveDefaultVoice(voice: string): void {
+  saveItem(DEFAULT_VOICE_STORAGE_KEY, voice);
 }
 
 // The voices the harness last said it has. Settings has no conversation to ask,
@@ -339,13 +303,8 @@ export function loadKnownVoices(): string[] {
   }
 }
 
-export function saveKnownVoices(voices: string[]): string[] {
-  try {
-    getLocalStorage()?.setItem(KNOWN_VOICES_STORAGE_KEY, JSON.stringify(voices));
-  } catch {
-    /* ignore */
-  }
-  return voices;
+export function saveKnownVoices(voices: string[]): void {
+  saveItem(KNOWN_VOICES_STORAGE_KEY, JSON.stringify(voices));
 }
 
 // How much of the agent's work is spoken while it runs. Brief is the default;
@@ -362,14 +321,8 @@ export function loadNarrationMode(): VoiceNarration {
   }
 }
 
-export function saveNarrationMode(value: VoiceNarration): VoiceNarration {
-  const mode = normalizeNarrationMode(value);
-  try {
-    getLocalStorage()?.setItem(NARRATION_MODE_STORAGE_KEY, mode);
-  } catch {
-    /* ignore */
-  }
-  return mode;
+export function saveNarrationMode(mode: VoiceNarration): void {
+  saveItem(NARRATION_MODE_STORAGE_KEY, mode);
 }
 
 export function loadReviewScope(): DiffScope {
@@ -381,14 +334,8 @@ export function loadReviewScope(): DiffScope {
   }
 }
 
-export function saveReviewScope(value: DiffScope): DiffScope {
-  const scope = DIFF_SCOPES.includes(value) ? value : 'unstaged';
-  try {
-    getLocalStorage()?.setItem(REVIEW_SCOPE_STORAGE_KEY, scope);
-  } catch {
-    /* ignore */
-  }
-  return scope;
+export function saveReviewScope(scope: DiffScope): void {
+  saveItem(REVIEW_SCOPE_STORAGE_KEY, scope);
 }
 
 export function loadWorkspaceCwds(): string[] {
@@ -403,13 +350,8 @@ export function loadWorkspaceCwds(): string[] {
   }
 }
 
-export function saveWorkspaceCwds(cwds: string[]): string[] {
-  try {
-    getLocalStorage()?.setItem(WORKSPACES_STORAGE_KEY, JSON.stringify(cwds));
-  } catch {
-    /* ignore */
-  }
-  return cwds;
+export function saveWorkspaceCwds(cwds: string[]): void {
+  saveItem(WORKSPACES_STORAGE_KEY, JSON.stringify(cwds));
 }
 
 export function loadPersistedUiState(): Partial<PersistedUiState> {
@@ -479,11 +421,7 @@ export function savePersistedUiState(state: PersistedUiStateSource): void {
     prWorkspaceNumber: state.prWorkspaceNumber,
     prBacklogIds: state.prBacklogIds,
   };
-  try {
-    getLocalStorage()?.setItem(UI_STATE_STORAGE_KEY, JSON.stringify(snapshot));
-  } catch {
-    /* ignore */
-  }
+  saveItem(UI_STATE_STORAGE_KEY, JSON.stringify(snapshot));
 }
 
 export function loadShortcutBindings(): ShortcutBindings {
@@ -505,13 +443,8 @@ export function loadShortcutBindings(): ShortcutBindings {
   }
 }
 
-export function saveShortcutBindings(bindings: ShortcutBindings): ShortcutBindings {
-  try {
-    getLocalStorage()?.setItem(SHORTCUTS_STORAGE_KEY, JSON.stringify(bindings));
-  } catch {
-    /* ignore */
-  }
-  return bindings;
+export function saveShortcutBindings(bindings: ShortcutBindings): void {
+  saveItem(SHORTCUTS_STORAGE_KEY, JSON.stringify(bindings));
 }
 
 export function loadSessionLastSeen(): Record<string, number> {
@@ -530,11 +463,7 @@ export function loadSessionLastSeen(): Record<string, number> {
 }
 
 export function saveSessionLastSeen(map: Record<string, number>): void {
-  try {
-    getLocalStorage()?.setItem(SESSION_LAST_SEEN_STORAGE_KEY, JSON.stringify(map));
-  } catch {
-    /* ignore */
-  }
+  saveItem(SESSION_LAST_SEEN_STORAGE_KEY, JSON.stringify(map));
 }
 
 export function sanitizeAgentConfig(config: AgentConfig, models: ModelInfo[]): AgentConfig {

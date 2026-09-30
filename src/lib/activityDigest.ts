@@ -28,7 +28,6 @@ const VERB: Record<ToolCat, string> = {
   web: 'Fetching',
   skill: 'Using skill',
   task: 'Delegating',
-  subagent: 'Delegating',
   other: 'Working',
 };
 
@@ -59,7 +58,7 @@ function describeTool(ev: TranscriptEvent): string {
 
 // The last sentence of a message, preferring its last question, with markdown
 // noise stripped so it reads well on one sidebar line.
-export function lastSentence(text: string): string {
+function lastSentence(text: string): string {
   const plain = text
     .replace(/```[\s\S]*?```/g, ' ')
     .replace(/[`*_>#]+/g, '')

@@ -12,7 +12,7 @@ import {
   sendDesignPrompt,
 } from '../../lib/commands';
 import type { BrowserViewport, BrowserViewportMode, DesignReference } from '../../types/bridge';
-import type { Size } from '../canvas/canvasMath';
+import type { Size } from './browserGeometry';
 import {
   CUSTOM_DEFAULT_VIEWPORT,
   normalizeUrl,

@@ -1,4 +1,4 @@
-import { parseAutomationStore } from './automationStore.js';
+import { parseAutomationStore } from './automationStoreParsing.js';
 import assert from 'node:assert/strict';
 import { chmod, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';

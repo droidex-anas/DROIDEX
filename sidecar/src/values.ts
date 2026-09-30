@@ -1,9 +1,11 @@
 // Generic, sidecar-wide value coercion guards. Several parsing paths
-// (SessionManager, history, browser/domSnapshot) need the same strict
+// (SessionManager, history, the browser runtime) need the same strict
 // string/number extraction from untyped JSON; centralizing it keeps the
 // behavior from silently diverging across copies. Catalog parsers
 // (modelCatalog, DroidCliCatalog) intentionally use looser coercion and
 // keep their own variants.
+import type { Autonomy } from './protocol.js';
+
 export function stringValue(value: unknown): string | undefined {
   return typeof value === 'string' ? value : undefined;
 }
@@ -16,6 +18,15 @@ export function trimmedString(value: unknown): string | undefined {
 
 export function numberValue(value: unknown): number | undefined {
   return typeof value === 'number' && Number.isFinite(value) ? value : undefined;
+}
+
+export function normalizeAutonomy(value: unknown): Autonomy | undefined {
+  if (value === 'off' || value === 'low' || value === 'medium' || value === 'high') return value;
+  return undefined;
+}
+
+export function uniqueStrings(values: (string | undefined)[]): string[] {
+  return [...new Set(values.filter((value): value is string => Boolean(value)))];
 }
 
 export function objectValue(value: unknown): Record<string, unknown> | undefined {

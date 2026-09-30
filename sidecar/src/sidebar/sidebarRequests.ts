@@ -43,7 +43,9 @@ const rowSchema = z.object({
           z.object({
             index: z.number().int().nonnegative(),
             question: z.string().max(LIMITS.questionText),
-            options: z.array(z.string().max(LIMITS.optionText)).max(LIMITS.options),
+            options: z
+              .array(z.object({ label: z.string().max(LIMITS.optionText) }))
+              .max(LIMITS.options),
           }),
         )
         .max(LIMITS.questions),

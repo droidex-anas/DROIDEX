@@ -1,7 +1,8 @@
-import type {
-  ChildRuntimeState,
-  ChildSessionState,
-  ParentChildSessions,
+import {
+  setChildStatus,
+  type ChildRuntimeState,
+  type ChildSessionState,
+  type ParentChildSessions,
 } from './ChildSessionState.js';
 
 export type PreparedChildInterrupt =
@@ -13,11 +14,6 @@ export type PreparedChildInterrupt =
       child: ChildSessionState;
       runtime: ChildRuntimeState;
     };
-
-export function discardCancelledPendingSends(child: ChildSessionState): void {
-  child.turn.pendingSends = [];
-  child.turn.pendingDrainEpoch += 1;
-}
 
 export function dequeueQueuedChild(parent: ParentChildSessions, child: ChildSessionState): void {
   parent.runtimeQueue = parent.runtimeQueue.filter((id) => id !== child.identity.childSessionId);
@@ -35,31 +31,24 @@ export function cancelInFlightOpen(parent: ParentChildSessions, child: ChildSess
   return true;
 }
 
-export function takeAdmittedSend(child: ChildSessionState): string | undefined {
-  const drainEpoch = child.turn.pendingDrainEpoch;
-  const send = child.turn.pendingSends.shift();
-  if (send === undefined || child.turn.pendingDrainEpoch !== drainEpoch) return undefined;
-  return send;
-}
-
-export function markQueuedInterruptSettled(child: ChildSessionState): void {
+function markQueuedInterruptSettled(child: ChildSessionState, now: number): void {
   child.turn.interrupting = false;
-  child.turn.interruptingForSteer = false;
   child.turn.phase = 'idle';
-  if (child.status === 'running') child.status = 'paused';
+  if (child.status === 'running') setChildStatus(child, 'paused', now);
 }
 
 export function prepareChildInterrupt(
   parent: ParentChildSessions | undefined,
   child: ChildSessionState | undefined,
+  now: number,
 ): PreparedChildInterrupt {
   if (!parent || !child) return { kind: 'missing' };
-  discardCancelledPendingSends(child);
+  child.turn.pendingSends = [];
   dequeueQueuedChild(parent, child);
   if (!child.runtime) cancelInFlightOpen(parent, child);
   const runtime = child.runtime;
   if (!runtime) {
-    markQueuedInterruptSettled(child);
+    markQueuedInterruptSettled(child, now);
     return { kind: 'queued', parent, child };
   }
   return { kind: 'live', parent, child, runtime };

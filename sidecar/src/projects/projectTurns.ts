@@ -157,7 +157,7 @@ export class ProjectTurns {
       question: item.question.slice(0, LEDGER_LIMITS.askQuestionText),
       options: item.options
         .slice(0, LEDGER_LIMITS.askOptions)
-        .map((option) => option.slice(0, LEDGER_LIMITS.askOptionText)),
+        .map((option) => option.label.slice(0, LEDGER_LIMITS.askOptionText)),
     }));
     if (!questions.length) return;
     const asked = questions

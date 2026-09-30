@@ -2,7 +2,7 @@ import { providerSessionsDir } from './droidexPaths.js';
 import type { SessionFileChange } from './sessionFileCache.js';
 import type { SessionListFilterOptions, SessionListPage } from './sessionListFilter.js';
 import type { SessionFileWatcher, SessionFileWatcherOptions } from './sessionFileWatcher.js';
-import { errMsg } from './sessionHelpers.js';
+import { errMsg } from './errors.js';
 
 interface SessionFileServingHistory {
   reconcileSessionFiles(): Promise<number>;

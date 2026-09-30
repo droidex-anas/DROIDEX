@@ -2,16 +2,23 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { loadPersistedUiState } from './persistedUiPreferences';
 import { normalizeDiffStyle } from './persistedThemePreferences';
-import { normalizeAppIconMode } from '../lib/appIcon';
+import { persistStoreChanges } from './storePersistence';
+import { initialState, reducer } from './useStore';
 import {
   applyFactoryCompactionDefaults,
   compactionSettingsSnapshot,
   loadCompactionTokenLimitPerModel,
 } from '../lib/compactionSettings';
 
-test('loadPersistedUiState returns an empty snapshot when storage is empty', () => {
-  withLocalStorage(null, () => {
-    assert.deepEqual(loadPersistedUiState(), {});
+test('a commit saves only the persisted fields it changed', () => {
+  const storage = new Map<string, string>();
+  withLocalStorageMap(storage, () => {
+    persistStoreChanges(initialState, initialState);
+    assert.equal(storage.size, 0);
+    const next = reducer(initialState, { type: 'SET_THEME', theme: { appIconMode: 'dark' } });
+    persistStoreChanges(initialState, next);
+    assert.deepEqual([...storage.keys()], ['droid-theme']);
+    assert.equal(JSON.parse(storage.get('droid-theme') ?? '{}').appIconMode, 'dark');
   });
 });
 
@@ -20,14 +27,6 @@ test('normalizeDiffStyle migrates the legacy symbol style and rejects invalid va
   assert.equal(normalizeDiffStyle('focused'), 'focused');
   assert.equal(normalizeDiffStyle('symbol'), 'focused');
   assert.equal(normalizeDiffStyle('unknown'), 'soft');
-});
-
-test('normalizeAppIconMode defaults missing and invalid values to system', () => {
-  assert.equal(normalizeAppIconMode('light'), 'light');
-  assert.equal(normalizeAppIconMode('dark'), 'dark');
-  assert.equal(normalizeAppIconMode('system'), 'system');
-  assert.equal(normalizeAppIconMode(undefined), 'system');
-  assert.equal(normalizeAppIconMode('bogus'), 'system');
 });
 
 test('loadPersistedUiState sanitizes persisted shell fields', () => {
@@ -272,8 +271,8 @@ test('a seeded CLI default never turns into an explicit UI override', () => {
   });
 });
 
-function withLocalStorage(value: string | null, fn: () => void): void {
-  withLocalStorageMap(value === null ? {} : { 'droid-ui-state-v2': value }, fn);
+function withLocalStorage(value: string, fn: () => void): void {
+  withLocalStorageMap({ 'droid-ui-state-v2': value }, fn);
 }
 
 function withLocalStorageMap(

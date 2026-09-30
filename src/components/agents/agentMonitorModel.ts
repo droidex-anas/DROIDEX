@@ -25,6 +25,9 @@ export interface AgentRow {
   status: ChildStatus;
   queued: boolean;
   startedAt?: number;
+  // When the sidecar saw the agent finish. Absent while it can still run, and
+  // absent for agents that settled before the app recorded it.
+  settledAt?: number;
   snapshot: ChildStreamSnapshot;
   target?: ChildSessionTarget;
   provider: Provider;
@@ -84,6 +87,7 @@ export function buildAgentRows(
       status: child.status,
       queued: Boolean(child.queued),
       startedAt: child.startedAt ?? resolved?.startedAt,
+      settledAt: child.settledAt,
       snapshot,
       provider: providerOf(model, child.modelId),
       name,

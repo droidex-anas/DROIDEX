@@ -1,7 +1,7 @@
 import type { BrowserViewport, BrowserViewportMode } from '../../types/bridge';
-import type { Size } from '../canvas/canvasMath';
+import type { Size } from './browserGeometry';
 
-export const FIT_FALLBACK_VIEWPORT: BrowserViewport = {
+const FIT_FALLBACK_VIEWPORT: BrowserViewport = {
   width: 1200,
   height: 800,
   deviceScaleFactor: 2,
@@ -12,7 +12,7 @@ export const CUSTOM_DEFAULT_VIEWPORT: BrowserViewport = {
   deviceScaleFactor: 2,
 };
 
-export const PRESET_VIEWPORTS: Partial<Record<BrowserViewportMode, BrowserViewport>> = {
+const PRESET_VIEWPORTS: Partial<Record<BrowserViewportMode, BrowserViewport>> = {
   desktop: { width: 1440, height: 900, deviceScaleFactor: 2 },
   laptop: { width: 1280, height: 800, deviceScaleFactor: 2 },
   tablet: { width: 820, height: 1180, deviceScaleFactor: 2 },

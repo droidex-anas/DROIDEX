@@ -110,12 +110,14 @@ answered chat's transcript names the chat that answered, and the window stops
 showing the question. Permission requests stay with the user: no tool approves
 or denies one, and `session_read` shows them word for word.
 
-A message to a chat running a turn joins that chat's queue, as a prompt typed
-during a turn does; otherwise it starts a turn, loading a released chat only
-while fewer than eight are loaded. The tool never waits for the turn and reports
-`started`, `queued`, `answered` or `already-answered`. The chat reads the
-message as from another chat, never the user, and the window shows it as a
-notice led by "Message from" and that chat's name.
+A message to a chat running a turn reaches it as the user's Steer does: the
+harness takes it in at its own next step, and one the turn cannot take waits
+behind it. Until then the chat lists it as an unread steer the user can send
+now. Otherwise it starts a turn, loading a released chat only while fewer than
+eight are loaded. The tool never waits for the turn and reports `started`,
+`steered`, `answered` or `already-answered`. The chat reads the message as from
+another chat, never the user, and once taken in the window shows it as a notice
+led by "Message from" and that chat's name.
 
 ## The window request
 

@@ -202,7 +202,6 @@ interface DroidControlApi {
   ackNotificationActivate: (appSessionId: string) => Promise<{ ok: boolean }>;
   getApiKey: () => Promise<string | null>;
   setApiKey: (key: string) => Promise<void>;
-  clearApiKey: () => Promise<void>;
   listFiles: (dir: string) => Promise<string[]>;
   getPerformanceMetrics: () => Promise<DesktopPerformanceMetrics>;
   systemIdleTime: () => Promise<number>;
@@ -529,12 +528,6 @@ export async function setApiKey(key: string): Promise<void> {
   const api = desktopApi();
   if (!api) return;
   await api.setApiKey(key);
-}
-
-export async function clearApiKey(): Promise<void> {
-  const api = desktopApi();
-  if (!api) return;
-  await api.clearApiKey();
 }
 
 export async function setAppIcon(mode: AppIconMode): Promise<void> {

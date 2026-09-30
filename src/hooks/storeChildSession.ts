@@ -6,8 +6,6 @@ import { INACTIVE_TRANSCRIPT_POLICY, VIEWPORT_TRANSCRIPT_POLICY } from '../lib/t
 /* eslint-disable @typescript-eslint/no-unnecessary-condition -- sparse keyed renderer maps */
 /* eslint-disable @typescript-eslint/no-dynamic-delete -- sparse childAccess parent keys */
 
-export type ChildSettingsReadiness = 'opening' | 'ready' | 'failed';
-
 export type ChildSessionInfo = ChildSessionSummary;
 
 export interface ChildSelection {
@@ -48,6 +46,11 @@ export interface ChildSessionStore {
   childRuntime: Record<string, Record<string, ChildRuntimeState>>;
   childHistory: Record<string, Record<string, ChildHistoryState>>;
   childSessions: Record<string, Record<string, ChildSessionInfo>>;
+  // Chats with at least one agent working right now. Its own map so the sidebar
+  // can read a chat's agent state without selecting the child sessions
+  // themselves, whose entries are replaced on every activity preview and token
+  // tick; only a crossing into or out of `running` rewrites this one.
+  agentsWorkingByParent: Partial<Record<string, true>>;
   selectedChild: ChildSelection | null;
   activeAppSessionId: string | null;
   contextStats: {
@@ -165,96 +168,6 @@ export function invalidateSelectedChildOpening<S extends ChildSessionStore>(stat
     : state;
 }
 
-export function reduceSessionChild<S extends ChildSessionStore>(
-  state: S,
-  action: {
-    child: ChildSessionSummary;
-    runtimeAvailable: boolean;
-    runtimeGeneration: number;
-  },
-): S {
-  const child = action.child;
-  const parent = state.childSessions[child.parentAppSessionId] ?? {};
-  const previousChild = parent[child.childSessionId];
-  const runtimeParent = state.childRuntime[child.parentAppSessionId] ?? {};
-  const previousRuntime = runtimeParent[child.childSessionId];
-  if (previousRuntime && action.runtimeGeneration < previousRuntime.runtimeGeneration) return state;
-  const settledWhileInactive =
-    previousChild?.status === 'running' &&
-    previousRuntime?.available &&
-    (child.status !== 'running' || !action.runtimeAvailable) &&
-    (state.activeAppSessionId !== child.parentAppSessionId ||
-      state.selectedChild?.parentAppSessionId !== child.parentAppSessionId ||
-      state.selectedChild.childSessionId !== child.childSessionId);
-  const clearContext =
-    !action.runtimeAvailable ||
-    (previousRuntime !== undefined && action.runtimeGeneration > previousRuntime.runtimeGeneration);
-  const contextParent = state.contextStats.child[child.parentAppSessionId] ?? {};
-  let next = {
-    ...state,
-    childSessions: {
-      ...state.childSessions,
-      [child.parentAppSessionId]: {
-        ...parent,
-        [child.childSessionId]: child,
-      },
-    },
-    contextStats: clearContext
-      ? {
-          ...state.contextStats,
-          child: {
-            ...state.contextStats.child,
-            [child.parentAppSessionId]: Object.fromEntries(
-              Object.entries(contextParent).filter(
-                ([childSessionId]) => childSessionId !== child.childSessionId,
-              ),
-            ),
-          },
-        }
-      : state.contextStats,
-  };
-  const runtimeUnchanged =
-    // Keep the existence guard because the following comparison dereferences previousRuntime.
-    // eslint-disable-next-line @typescript-eslint/prefer-optional-chain
-    previousRuntime &&
-    action.runtimeGeneration === previousRuntime.runtimeGeneration &&
-    action.runtimeAvailable === previousRuntime.available;
-  if (!runtimeUnchanged) {
-    next = {
-      ...next,
-      childRuntime: {
-        ...state.childRuntime,
-        [child.parentAppSessionId]: {
-          ...runtimeParent,
-          [child.childSessionId]: {
-            available: action.runtimeAvailable,
-            runtimeGeneration: action.runtimeGeneration,
-          },
-        },
-      },
-    };
-    const access = state.childAccess[child.parentAppSessionId]?.[child.childSessionId];
-    // Queued is waiting for a slot, not a finished open.
-    if (
-      !action.runtimeAvailable &&
-      !child.queued &&
-      (access?.state === 'opening' || access?.state === 'ready')
-    )
-      next = withChildAccess(next, child.parentAppSessionId, child.childSessionId, {
-        state: 'closed',
-        requestId: null,
-      });
-    else if (action.runtimeAvailable && access?.state === 'ready')
-      next = withChildAccess(next, child.parentAppSessionId, child.childSessionId, {
-        ...access,
-        runtimeGeneration: action.runtimeGeneration,
-      });
-  }
-  return settledWhileInactive
-    ? releaseInactiveChildTranscript(next, child.parentAppSessionId, child.childSessionId)
-    : next;
-}
-
 export function reduceChildUpdated<S extends ChildSessionStore>(
   state: S,
   action:
@@ -313,7 +226,7 @@ export function reduceChildError<S extends ChildSessionStore>(
     parentAppSessionId: string;
     childSessionId: string;
     requestId: string | null;
-    operation: 'open' | 'loadHistory' | 'send' | 'sendNow' | 'interrupt' | 'settings';
+    operation: 'open' | 'loadHistory' | 'send' | 'interrupt' | 'settings';
     message: string;
   },
 ): S {

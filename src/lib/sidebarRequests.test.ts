@@ -106,21 +106,32 @@ test('rows are the chats the sidebar shows, with what each waits on', () => {
     ];
     state.activeAppSessionId = 'lead';
     state.pendingPermissions = {
-      lead: {
-        appSessionId: 'lead',
-        requestId: 'permission-1',
-        kind: 'exec',
-        title: 'Run command',
-        detail: 'pnpm test',
-        raw: {},
-      },
+      lead: [
+        {
+          appSessionId: 'lead',
+          requestId: 'permission-1',
+          kind: 'exec',
+          title: 'Run command',
+          detail: 'pnpm test',
+          canAlwaysAllow: true,
+          raw: {},
+        },
+      ],
     };
     state.pendingQuestions = {
-      asking: {
-        appSessionId: 'asking',
-        requestId: 'question-1',
-        questions: [{ index: 0, question: 'Which API version?', options: ['v2', 'v3'] }],
-      },
+      asking: [
+        {
+          appSessionId: 'asking',
+          requestId: 'question-1',
+          questions: [
+            {
+              index: 0,
+              question: 'Which API version?',
+              options: [{ label: 'v2' }, { label: 'v3' }],
+            },
+          ],
+        },
+      ],
     };
 
     const result = answerSidebarRequest(request({ kind: 'rows' }), state, () => undefined);
@@ -145,7 +156,13 @@ test('rows are the chats the sidebar shows, with what each waits on', () => {
         unread: false,
         question: {
           requestId: 'question-1',
-          questions: [{ index: 0, question: 'Which API version?', options: ['v2', 'v3'] }],
+          questions: [
+            {
+              index: 0,
+              question: 'Which API version?',
+              options: [{ label: 'v2' }, { label: 'v3' }],
+            },
+          ],
         },
       },
     ]);

@@ -5,6 +5,7 @@ import test from 'node:test';
 
 import { WebSocket } from 'ws';
 
+import { assertValidInteractionResponse } from './interactionResponses.js';
 import { startBridgeServer } from './bridgeServer.js';
 import { droidexUserDataDir } from './droidexPaths.js';
 import {
@@ -521,3 +522,75 @@ function waitFor(predicate: () => boolean, timeoutMs = 2_000): Promise<void> {
     }, 10);
   });
 }
+
+test('interaction responses require correlation and structured answers at the command boundary', () => {
+  const approval = {
+    type: 'approval.respond',
+    appSessionId: 'app',
+    requestId: 'approval',
+    outcome: 'refuse',
+  };
+  assert.doesNotThrow(() => assertValidInteractionResponse(approval));
+  assert.throws(() => assertValidInteractionResponse({ ...approval, requestId: '' }), /requestId/);
+  assert.throws(
+    () => assertValidInteractionResponse({ ...approval, outcome: 'unknown' }),
+    /Unsupported permission outcome/,
+  );
+  const question = {
+    type: 'question.respond',
+    appSessionId: 'app',
+    requestId: 'question',
+    cancelled: false,
+    answers: [{ index: 0, question: 'Choose', selected: ['A', 'B'], custom: 'C' }],
+  };
+  assert.doesNotThrow(() => assertValidInteractionResponse(question));
+  assert.throws(
+    () =>
+      assertValidInteractionResponse({
+        ...question,
+        answers: [{ index: 0, question: 'Choose', answer: 'A' }],
+      }),
+    /structured answers/,
+  );
+  assert.throws(
+    () =>
+      assertValidInteractionResponse({
+        ...question,
+        answers: [{ ...question.answers[0], selected: [42] }],
+      }),
+    /structured answers/,
+  );
+});
+
+test('fast mode rejects non-booleans before command dispatch', async () => {
+  let commands = 0;
+  await withServer(
+    async (harness) => {
+      const socket = new WebSocket(
+        `ws://127.0.0.1:${String(harness.port)}?token=${harness.token}&bridgeProtocol=${String(BRIDGE_PROTOCOL_VERSION)}`,
+      );
+      await new Promise<void>((resolve) => socket.once('open', resolve));
+      try {
+        for (const type of ['session.create', 'session.updateSettings']) {
+          for (const fastMode of [null, 'true', 1, {}]) {
+            const received = new Promise<string>((resolve) =>
+              socket.once('message', (raw) => resolve(String(raw))),
+            );
+            socket.send(JSON.stringify({ type, fastMode }));
+            assert.match(await received, /fastMode must be a boolean/);
+          }
+        }
+        assert.equal(commands, 0);
+        socket.send(
+          JSON.stringify({ type: 'session.updateSettings', appSessionId: 'app', fastMode: false }),
+        );
+        await waitFor(() => commands === 1);
+      } finally {
+        await closeSocket(socket);
+      }
+    },
+    async () => {
+      commands += 1;
+    },
+  );
+});

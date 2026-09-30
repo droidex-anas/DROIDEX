@@ -2,17 +2,20 @@ import { useEffect, useRef, useState, type KeyboardEvent } from 'react';
 import { motion, AnimatePresence, useReducedMotion } from 'framer-motion';
 import { ChevronRight } from 'lucide-react';
 import { useStoreDispatch, useStoreSelector } from '../hooks/useStore';
-import { respondPermission, sendToSession, sendToSessionNow } from '../lib/commands';
+import { respondPermission, sendToSession } from '../lib/commands';
 import type { Autonomy, PermissionOutcome } from '../types/bridge';
+import { AUTONOMY_LABELS } from '../lib/autonomy';
 import { isAppUpdateInstalling, useAppUpdate } from '../lib/appUpdate';
 import { inlineCardMotion } from './inlineCardMotion';
 
 const ACCENT = 'var(--droid-accent)';
 
-const AUTONOMY: { value: Autonomy; label: string; outcome: PermissionOutcome }[] = [
-  { value: 'low', label: 'Low', outcome: 'proceed_auto_run_low' },
-  { value: 'medium', label: 'Medium', outcome: 'proceed_auto_run_medium' },
-  { value: 'high', label: 'High', outcome: 'proceed_auto_run_high' },
+// The same three modes the composer's permission menu names, as the choice
+// that starts implementation.
+const AUTONOMY: { value: Autonomy; outcome: PermissionOutcome }[] = [
+  { value: 'low', outcome: 'proceed_auto_run_low' },
+  { value: 'medium', outcome: 'proceed_auto_run_medium' },
+  { value: 'high', outcome: 'proceed_auto_run_high' },
 ];
 
 // Bottom approval bar shown when a spec (exit_spec_mode) or mission plan
@@ -24,10 +27,11 @@ export default function PlanApprovalInline({ appSessionId }: { appSessionId?: st
   const reduceMotion = useReducedMotion();
   const { downloading: appUpdateInstalling } = useAppUpdate();
   // Plan approvals are session-scoped: only surface the one belonging to the
-  // chat the user is looking at, or to the side chat given.
+  // chat the user is looking at, or to the side chat given. A session waiting
+  // on more than one answers its oldest first.
   const req = useStoreSelector((current) => {
     const id = appSessionId ?? current.activeAppSessionId;
-    return id ? current.pendingPermissions[id] : undefined;
+    return id ? current.pendingPermissions[id]?.[0] : undefined;
   });
   const [autonomy, setAutonomy] = useState<Autonomy>('high');
   const [comment, setComment] = useState('');
@@ -57,7 +61,11 @@ export default function PlanApprovalInline({ appSessionId }: { appSessionId?: st
   const text = comment.trim();
 
   const finish = () => {
-    dispatch({ type: 'CLEAR_PERMISSION', appSessionId: req.appSessionId });
+    dispatch({
+      type: 'CLEAR_PERMISSION',
+      appSessionId: req.appSessionId,
+      requestId: req.requestId,
+    });
   };
 
   // Implement: approve at the chosen autonomy (spec) or proceed once (mission),
@@ -77,7 +85,7 @@ export default function PlanApprovalInline({ appSessionId }: { appSessionId?: st
         interactionMode: 'auto',
       });
     }
-    if (text) sendToSessionNow(req.appSessionId, text);
+    if (text) sendToSession(req.appSessionId, text, undefined, undefined, crypto.randomUUID());
     finish();
   };
 
@@ -170,13 +178,13 @@ export default function PlanApprovalInline({ appSessionId }: { appSessionId?: st
                     onKeyDown={(e) => {
                       onAutonomyKeyDown(e, i);
                     }}
-                    title={`Implement with ${a.label.toLowerCase()} autonomy`}
+                    title={`Implement with ${AUTONOMY_LABELS[a.value]}`}
                     className={`rounded-full px-2.5 py-1 text-[11px] font-medium transition-colors ${
                       active ? 'text-droid-bg' : 'text-droid-text-secondary hover:text-droid-text'
                     }`}
                     style={active ? { background: ACCENT } : undefined}
                   >
-                    {a.label}
+                    {AUTONOMY_LABELS[a.value]}
                   </button>
                 );
               })}

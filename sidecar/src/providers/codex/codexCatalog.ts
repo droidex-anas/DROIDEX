@@ -6,6 +6,10 @@ import type { AppServerClient } from './appServer.js';
 type CatalogSource = 'skills' | 'plugins' | 'apps';
 // Publication order, whichever order the sources answer in.
 const SOURCES: readonly CatalogSource[] = ['skills', 'plugins', 'apps'];
+// The app listing is a round trip to Codex's connector service: it takes tens
+// of seconds and sometimes answers with a server error. Asking once would let
+// one bad answer cost the session every app, with nothing to retry it.
+const APP_RETRY_DELAY_MS = 1_000;
 
 // Skills answer in milliseconds, installed plugins in a second or two, and the
 // first app listing in tens of seconds while Codex discovers its connectors.
@@ -20,11 +24,13 @@ export class CodexCatalog {
   constructor(
     private readonly client: AppServerClient,
     private readonly cwds: string[],
+    // How long to wait before asking for the apps again; a test passes zero.
+    appRetryDelayMs = APP_RETRY_DELAY_MS,
   ) {
     this.initial = Promise.all([
       this.load('skills', () => loadCodexSkills(client, cwds)),
       this.load('plugins', () => loadCodexPlugins(client, cwds)),
-      this.load('apps', () => loadCodexApps(client)),
+      this.load('apps', () => loadCodexApps(client, appRetryDelayMs)),
     ]).then(() => undefined);
   }
 
@@ -102,7 +108,17 @@ async function loadCodexPlugins(client: AppServerClient, cwds: string[]): Promis
   });
 }
 
-async function loadCodexApps(client: AppServerClient): Promise<SkillInfo[]> {
+async function loadCodexApps(client: AppServerClient, retryDelayMs: number): Promise<SkillInfo[]> {
+  try {
+    return await listCodexApps(client);
+  } catch (error) {
+    if (!client.isAlive()) throw error;
+    await new Promise((resolve) => setTimeout(resolve, retryDelayMs));
+    return listCodexApps(client);
+  }
+}
+
+async function listCodexApps(client: AppServerClient): Promise<SkillInfo[]> {
   const items: SkillInfo[] = [];
   const seenCursors = new Set<string>();
   let cursor: string | null = null;
@@ -296,6 +312,12 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
+// A failing source can answer with a whole document — a sign-in challenge page
+// once put an HTML body in the log. One line, bounded, is all a warning needs.
+const LOG_LINE_LIMIT = 200;
+
 function errorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
+  const message = error instanceof Error ? error.message : String(error);
+  const firstLine = message.split('\n', 1)[0].trim();
+  return firstLine.length > LOG_LINE_LIMIT ? `${firstLine.slice(0, LOG_LINE_LIMIT)}…` : firstLine;
 }

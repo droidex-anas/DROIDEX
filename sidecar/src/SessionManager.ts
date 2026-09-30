@@ -1,5 +1,4 @@
 import type { AutomationDeliveryReceipt } from './automations/types.js';
-import type { ScheduledTurnDelivery } from './sessionAutomationDelivery.js';
 import { type McpServerConfig } from '@factory/droid-sdk';
 import { randomUUID } from 'node:crypto';
 import { tmpdir } from 'node:os';
@@ -21,16 +20,16 @@ import type {
   SessionPurpose,
   TranscriptEvent,
 } from './protocol.js';
+import { errMsg } from './errors.js';
+import { reasoningValue } from './modelCatalog.js';
+import { defaultsModeForSummary, modelDefaultForMode } from './modeDefaults.js';
+import { boundedInt, normalizeAutonomy } from './values.js';
 import {
-  defaultsModeForSummary,
-  errMsg,
-  modelDefaultForMode,
-  normalizeAutonomy,
-  reasoningValue,
+  DroidRuntime,
+  type FactoryRuntime,
+  type FactorySession,
   type SessionInitResult,
-} from './sessionHelpers.js';
-import { boundedInt } from './values.js';
-import { DroidRuntime, type FactoryRuntime, type FactorySession } from './DroidRuntime.js';
+} from './DroidRuntime.js';
 import { detectEnvironment } from './Environment.js';
 import { buildInstallCommand, buildUpdateCommand, runStreaming } from './CliInstaller.js';
 import {
@@ -91,7 +90,6 @@ import {
 import {
   SessionLifecycle,
   type LiveSession,
-  type SessionPrompt,
   type StartedLocalMcpResources,
 } from './SessionLifecycle.js';
 import { ChildSessions } from './ChildSessions.js';
@@ -101,6 +99,7 @@ import {
   SESSION_RUNTIME_IDLE_RETIREMENT_MS,
   SessionRuntimeRetirement,
 } from './sessionRuntimeRetirement.js';
+import { SessionRuntimeWarmUp } from './sessionRuntimeWarmUp.js';
 import { MissionControlPolicy } from './MissionControlPolicy.js';
 import { normalizeCompactionTokenLimit } from './compaction.js';
 import type { HotPathResourceCounts } from './telemetry/hotPathMetrics.js';
@@ -111,7 +110,8 @@ import { assertValidResponseFormat, formatAppPrompt, formatAppRepairPrompt } fro
 import { formatSideChatPrompt } from './sideChatPrompt.js';
 import { droidCatalogItems } from './providers/catalog.js';
 import { DroidProvider } from './providers/droid/DroidProvider.js';
-import { runPrimaryTurn } from './providers/primaryTurn.js';
+import { runPrimaryTurn, type PrimaryTurnRequest } from './providers/primaryTurn.js';
+import { agentWakePrompt, AGENT_WAKE_NOTICE } from './childWaveWake.js';
 import {
   assertProviderUnchanged,
   DEFAULT_PROVIDER,
@@ -126,7 +126,10 @@ import {
   type ProviderProbe,
   type ProviderProbeMap,
 } from './providers/providerProbes.js';
-import { ProviderTranscriptFile } from './providers/ProviderTranscriptFile.js';
+import {
+  ProviderTranscriptFile,
+  readProviderTranscript,
+} from './providers/ProviderTranscriptFile.js';
 import { SessionVoice } from './providers/SessionVoice.js';
 import { SessionModelSettings } from './SessionModelSettings.js';
 import { providerStatuses } from './providers/providerStatus.js';
@@ -148,11 +151,13 @@ type SessionHistoryBase = Pick<
   | 'sessionLaunchSettings'
   | 'childSessions'
   | 'childSession'
-  | 'close'
 > & {
+  close(): void | Promise<void>;
+  onDurable?: (() => void) | undefined;
   syncSummaries(summaries: SessionSummary[]): boolean | undefined;
   upsertChildSession(child: PersistedChildSession): boolean | undefined;
   recordEvent(event: TranscriptEvent): void;
+  flush?: () => Promise<void>;
   persistenceRecovery?(): PersistenceRecovery;
 };
 
@@ -263,6 +268,7 @@ export class SessionManager {
   private readonly missionControlPolicy: MissionControlPolicy;
   private readonly lifecycle: SessionLifecycle;
   private readonly runtimeRetirement: SessionRuntimeRetirement;
+  private readonly runtimeWarmUp: SessionRuntimeWarmUp;
   private readonly adoption: SessionAdoption;
   private readonly agentProcesses: AgentProcessMonitor;
   private readonly sessionFiles: SessionFileServing;
@@ -278,7 +284,8 @@ export class SessionManager {
     isAutomationRun: (appSessionId) => isUnattendedAutomationSession(appSessionId),
     isBlocked: (appSessionId) => this.interactions.hasPending(appSessionId),
     transcriptTail: (appSessionId, limit) => this.timeline.tail(appSessionId, limit),
-    queueBehindTurn: (appSessionId, prompt) => this.lifecycle.queueBehindTurn(appSessionId, prompt),
+    steerRunningTurn: (appSessionId, prompt, isCurrent) =>
+      this.lifecycle.steerRunningTurn(appSessionId, prompt, isCurrent),
     deliver: (appSessionId, prompt, isCurrent) =>
       this.lifecycle.deliverScheduled(appSessionId, prompt, isCurrent),
     answerQuestion: (appSessionId, requestId, answers) =>
@@ -327,7 +334,7 @@ export class SessionManager {
     (event) => {
       this.emit(event);
     },
-    () => this.refreshProviderStatus(),
+    () => this.providerProbes.refresh(),
   );
   private readonly droidProxy = new DroidProxyController((event) => {
     this.emit(event);
@@ -376,11 +383,6 @@ export class SessionManager {
       this.history = new HistoryPersistence({
         onStatusChanged: (status) => {
           this.emit(serverEventForHistoryStatus(status));
-        },
-        onDurabilityRecovered: () => {
-          if (this.shutdownPromise) return;
-          this.registry.retryPendingDurability();
-          this.childSessions.retryPendingDurability();
         },
       });
       const browsers = new BrowserSessionManager({
@@ -434,6 +436,11 @@ export class SessionManager {
         this.emit(event);
       },
     );
+    this.history.onDurable = () => {
+      if (this.shutdownPromise) return;
+      this.registry.retryPendingDurability();
+      this.childSessions.retryPendingDurability();
+    };
     this.registry = new SessionRegistry({
       history: this.history,
       loadOrdinarySessions: (options) => this.history.listHistoricalSessions(options),
@@ -539,6 +546,8 @@ export class SessionManager {
       applySideEffects: (appSessionId, sideEffects) => {
         this.applyEventSideEffects(appSessionId, sideEffects);
       },
+      resolveChildScope: (appSessionId, spawnLink) =>
+        this.childSessions.childScopeForSpawn(appSessionId, spawnLink),
       recordUsage: (appSessionId, sourceProviderSessionId, usage) => {
         this.context.recordUsage(appSessionId, sourceProviderSessionId, usage);
       },
@@ -553,6 +562,12 @@ export class SessionManager {
       interactions: this.interactions,
       context: this.context,
       compaction: this.compaction,
+      onAgentWaveSettled: (parentAppSessionId, agents) =>
+        this.lifecycle.wakeForSettledAgents(
+          parentAppSessionId,
+          agentWakePrompt(agents),
+          AGENT_WAKE_NOTICE,
+        ),
       resolveDefaultSettings: (summary, initResult, role) =>
         this.resolveChildDefaultSettings(summary, initResult, role),
       isShutdownStarted: () => this.shutdownPromise !== undefined,
@@ -591,6 +606,10 @@ export class SessionManager {
       },
     });
     this.modelSettings = new SessionModelSettings({
+      validateModelSettings: async (summary, settings) => {
+        if (settings.contextWindowTokens !== undefined)
+          await this.providerFor(summary.provider).validateModelSettings?.(settings);
+      },
       registry: this.registry,
       runtime: this.runtime,
       getFactoryDefaults: () => this.getFactoryDefaults(),
@@ -598,6 +617,8 @@ export class SessionManager {
       maxContextTokensForModel: (modelId) => this.maxContextTokensForModel(modelId),
       isShutdownStarted: () => this.shutdownPromise !== undefined,
       refreshPrimary: async (live, modelChanged) => {
+        if (modelChanged && live.summary.provider === 'claude')
+          this.context.invalidateWindow(live.summary.appSessionId);
         const session = live.session;
         const compactionTarget = this.primaryCompactionTarget(live);
         if (modelChanged && compactionTarget) await this.compaction.rearmPrimary(compactionTarget);
@@ -606,7 +627,7 @@ export class SessionManager {
         if (target) await this.context.refresh(target);
       },
       onPrimaryModelChanged: (summary, from, to) => {
-        this.appendSettingsStatus(summary, `Model switched: ${from} → ${to}`, { from, to });
+        return this.appendSettingsStatus(summary, `Model switched: ${from} → ${to}`, { from, to });
       },
       onSettled: (appSessionId) => {
         this.runtimeRetirement.arm();
@@ -656,8 +677,7 @@ export class SessionManager {
       },
       applyPendingSessionSettings: (appSessionId) => this.modelSettings.applyPending(appSessionId),
       waitForSettingsMutations: (appSessionId) => this.modelSettings.waitForMutations(appSessionId),
-      runPrimaryTurn: (liveSession, prompt, delivery) =>
-        this.runPrimaryTurn(liveSession, prompt, delivery),
+      runPrimaryTurn: (liveSession, request) => this.runPrimaryTurn(liveSession, request),
       eventFlow: this.eventFlow,
       hasPendingInteractions: (appSessionId) => this.interactions.hasPending(appSessionId),
       hasActiveSettingsChanges: (appSessionId) =>
@@ -675,7 +695,7 @@ export class SessionManager {
         this.openProviderTranscript(summary);
       },
       forgetProviderTranscript: (appSessionId) => {
-        this.timeline.releaseTranscript(appSessionId);
+        return this.timeline.releaseTranscript(appSessionId);
       },
       forgetMissionControl: (appSessionId) => {
         this.missionControlPolicy.forget(appSessionId);
@@ -691,12 +711,13 @@ export class SessionManager {
       emitError: (error) => {
         this.emitError(error);
       },
-      emitStatus: (appSessionId, text) => {
-        this.timeline.appendStatus(appSessionId, text);
+      appendProgress: (appSessionId, text) => {
+        this.timeline.appendProgress(appSessionId, text);
       },
-      recordPrompt: (appSessionId, text) => {
-        this.timeline.recordPrompt(appSessionId, text);
+      appendError: (appSessionId, message) => {
+        this.timeline.appendError(appSessionId, message);
       },
+      appendSteer: (appSessionId, text) => this.timeline.announcePrompt(appSessionId, text, true),
       catalogUpdated: (liveSession, items) => {
         if (this.registry.getLive(liveSession.summary.appSessionId) !== liveSession) return;
         this.emit({
@@ -719,14 +740,20 @@ export class SessionManager {
       hasAgentProcesses: (id) => this.agentProcesses.hasProcesses(id),
       hasLiveVoice: (id) => this.sessionVoice.isLive(id),
       retire: (id) => this.lifecycle.close(id, 'preserve-pending'),
-      emitStatus: (id, text) => {
-        this.timeline.appendStatus(id, text);
+      appendProgress: (id, text) => {
+        this.timeline.appendProgress(id, text);
       },
       emitError: (appSessionId, message) => {
         this.emitError({ appSessionId, message });
       },
       idleMs: limits.sessionRuntimeIdleMs,
       now: Date.now,
+    });
+    this.runtimeWarmUp = new SessionRuntimeWarmUp({
+      ready: () => this.sessionFiles.whenBootReconciled(),
+      isResumable: (id) => this.registry.getCanonicalSummary(id) !== undefined,
+      isLive: (id) => this.registry.getLive(id) !== undefined,
+      resume: (id) => this.lifecycle.resume(id),
     });
     this.adoption = new SessionAdoption({
       journal: new LiveRuntimeJournal(liveRuntimeJournalPath(droidexUserDataDir())),
@@ -740,11 +767,16 @@ export class SessionManager {
         })),
       recordedProcesses: () => this.agentProcesses.snapshotPids(),
       reapProcesses: (entries) => this.agentProcesses.killRecorded(entries),
-      persistSummaries: (summaries) => {
+      persistSummaries: async (summaries) => {
         this.history.syncSummaries(summaries);
-        for (const session of summaries) this.emit({ type: 'session.updated', session });
+        await this.history.flush?.();
+        if (this.shutdownPromise) return;
+        for (const session of summaries) {
+          if (!this.registry.getLive(session.appSessionId))
+            this.emit({ type: 'session.updated', session });
+        }
       },
-      emitStatus: (appSessionId, text) => {
+      appendStatus: (appSessionId, text) => {
         this.timeline.appendStatus(appSessionId, text);
       },
       sessionRuntimeIdleMs: limits.sessionRuntimeIdleMs,
@@ -755,6 +787,8 @@ export class SessionManager {
       registry: this.registry,
       lineage: this.lineage,
       indexSessionFiles: (change) => this.sessionFiles.indexNow(change),
+      readTranscript: (appSessionId) =>
+        this.timeline.readTranscript(appSessionId) ?? readProviderTranscript(appSessionId),
       updateModel: (appSessionId, settings) =>
         this.modelSettings.update(appSessionId, 'primary', settings),
       isShutdownStarted: () => this.shutdownPromise !== undefined,
@@ -791,11 +825,17 @@ export class SessionManager {
   connect(apiKey?: string): void {
     this.runtime.connect(apiKey);
     this.ready = true;
-    void this.adoption.adopt();
+    void this.adoption.adopt().catch((error: unknown) => {
+      this.emit({
+        type: 'error',
+        message: `Could not restore the sessions that were running: ${errMsg(error)}`,
+        recoverable: true,
+      });
+    });
     this.emit({ type: 'connection', status: 'connected' });
     this.emit({ type: 'runtime.updated', status: this.runtime.status() });
     void this.emitProviderStatus();
-    void this.refreshProviderStatus();
+    void this.providerProbes.refresh();
     const recovery = this.history.persistenceRecovery?.();
     if (recovery?.hadUnflushedWork) {
       this.emit({
@@ -828,6 +868,12 @@ export class SessionManager {
   // Runs on its own idle timer; exposed so callers can force the sweep.
   retireIdleSessionRuntimes(): Promise<void> {
     return this.runtimeRetirement.sweep();
+  }
+
+  // Start the selected chat's runtime now instead of waiting out the delay that
+  // keeps a scroll through the sidebar from opening one per row.
+  warmSelectedSessionRuntime(): Promise<void> {
+    return this.runtimeWarmUp.flush();
   }
 
   // Runs on its own tick while a session is tracked; exposed so callers can
@@ -911,7 +957,7 @@ export class SessionManager {
       }
       case 'provider.refresh':
         await this.emitProviderStatus();
-        await this.refreshProviderStatus();
+        await this.providerProbes.refresh();
         return;
       case 'catalog.tools':
         await this.emitToolCatalog(cmd.providerSessionId);
@@ -941,17 +987,14 @@ export class SessionManager {
           cmd.appSessionId,
           this.sessionPrompt(cmd.appSessionId, cmd.text, cmd.responseFormat),
           cmd.mentions,
+          cmd.steerId,
         );
         return;
       case 'session.repairApp':
         await this.lifecycle.send(cmd.appSessionId, formatAppRepairPrompt(cmd.error, cmd.source));
         return;
       case 'session.sendNow':
-        await this.lifecycle.sendNow(
-          cmd.appSessionId,
-          this.sessionPrompt(cmd.appSessionId, cmd.text, cmd.responseFormat),
-          cmd.mentions,
-        );
+        await this.lifecycle.sendNow(cmd.appSessionId, cmd.steerId);
         return;
       case 'approval.respond':
         await this.interactions.respondToApproval(cmd.appSessionId, cmd.requestId, cmd.outcome);
@@ -988,9 +1031,6 @@ export class SessionManager {
       case 'child.send':
         await this.childSessions.send(cmd, formatResponsePrompt(cmd.text, cmd.responseFormat));
         return;
-      case 'child.sendNow':
-        await this.childSessions.sendNow(cmd, formatResponsePrompt(cmd.text, cmd.responseFormat));
-        return;
       case 'child.interrupt':
         await this.childSessions.interrupt(cmd);
         return;
@@ -1026,7 +1066,7 @@ export class SessionManager {
         return;
       case 'sessions.reanchorCwd':
         try {
-          const sessions = this.registry.reanchorHistoricalCwd(cmd.fromCwd, cmd.toCwd);
+          const sessions = await this.registry.reanchorHistoricalCwd(cmd.fromCwd, cmd.toCwd);
           this.emit({
             type: 'sessions.cwdReanchored',
             requestId: cmd.requestId,
@@ -1086,6 +1126,10 @@ export class SessionManager {
         const previouslyFocused = this.context.focusedSession();
         this.context.setBackgroundWork(cmd.tier, cmd.focusedAppSessionId);
         this.runtimeRetirement.noteFocus(previouslyFocused);
+        // Only a change of chat is a new selection; the tier moves on its own
+        // whenever the window is hidden or the machine goes on battery.
+        const focused = this.context.focusedSession();
+        if (focused !== previouslyFocused) this.runtimeWarmUp.selected(focused);
         return;
       }
       case 'settings.agent.update':
@@ -1218,7 +1262,13 @@ export class SessionManager {
     requestId: string,
     answers: { index: number; question: string; answer: string }[],
   ): boolean {
-    const landed = this.interactions.respondToQuestion(appSessionId, requestId, false, answers);
+    // Another chat answers in its own words rather than by picking an option.
+    const typed = answers.map(({ answer, ...asked }) => ({
+      ...asked,
+      selected: [],
+      custom: answer,
+    }));
+    const landed = this.interactions.respondToQuestion(appSessionId, requestId, false, typed);
     if (landed) this.emit({ type: 'question.answered', appSessionId, requestId });
     return landed;
   }
@@ -1331,14 +1381,6 @@ export class SessionManager {
     });
   }
 
-  // Learns what the CLI-backed providers can do right now (one process each, no
-  // turn) and republishes. Concurrent refreshes share the one round.
-  private async refreshProviderStatus(): Promise<void> {
-    await this.providerProbes.refresh();
-    if (this.shutdownPromise) return;
-    await this.emitProviderStatus();
-  }
-
   private async emitEnvironment(): Promise<void> {
     const report = await detectEnvironment(this.runtime.status().apiKeyConfigured);
     this.emit({ type: 'env.report', report });
@@ -1439,7 +1481,9 @@ export class SessionManager {
   }
 
   private maxContextTokensForSummary(summary: SessionSummary): number | undefined {
-    return this.maxContextTokensForModel(summary.modelId);
+    return summary.provider === 'droid'
+      ? this.maxContextTokensForModel(summary.modelId)
+      : summary.maxContextTokens;
   }
 
   private maxContextTokensForModel(modelId?: string): number | undefined {
@@ -1472,11 +1516,11 @@ export class SessionManager {
     return targets;
   }
 
-  private appendSettingsStatus(
+  private async appendSettingsStatus(
     summary: SessionSummary,
     text: string,
     modelSwitch?: TranscriptEvent['modelSwitch'],
-  ): void {
+  ): Promise<void> {
     const id = summary.appSessionId;
     const closed = !this.registry.getLive(id);
     if (closed) this.openProviderTranscript(summary);
@@ -1492,7 +1536,7 @@ export class SessionManager {
         ...(modelSwitch ? { modelSwitch } : {}),
       });
     } finally {
-      if (closed) this.timeline.releaseTranscript(id);
+      if (closed) await this.timeline.releaseTranscript(id);
     }
   }
 
@@ -1513,8 +1557,7 @@ export class SessionManager {
 
   private async runPrimaryTurn(
     liveSession: LiveSession,
-    prompt: SessionPrompt,
-    delivery?: ScheduledTurnDelivery,
+    request: PrimaryTurnRequest,
   ): Promise<void> {
     await runPrimaryTurn(
       {
@@ -1532,8 +1575,7 @@ export class SessionManager {
         },
       },
       liveSession,
-      prompt,
-      delivery,
+      request,
     );
   }
 
@@ -1695,7 +1737,7 @@ export class SessionManager {
       previousLiveSession?.compacting ||
       previousLiveSession?.autoCompacting
     ) {
-      this.timeline.appendStatus(
+      this.timeline.appendProgress(
         appSessionId,
         'Cannot compact while a turn is active. Try again when the model is idle.',
       );
@@ -1755,9 +1797,9 @@ export class SessionManager {
         if (requestId) this.emit({ type: 'session.model_update_applied', appSessionId, requestId });
         return;
       }
-      message = 'Model change was interrupted by a session restart or close.';
+      message = 'The settings change was interrupted by a session restart or close.';
     } catch (error) {
-      message = `Could not change the model: ${errMsg(error)}`;
+      message = `Could not change the chat's settings: ${errMsg(error)}`;
     }
     this.emitError({
       code: 'session.model_update_failed',
@@ -2063,9 +2105,11 @@ export class SessionManager {
   }
 
   private async performShutdown(): Promise<void> {
+    this.history.onDurable = undefined;
     this.historyQueries.forget();
     this.sidebarRequests.close();
     this.runtimeRetirement.stop();
+    this.runtimeWarmUp.stop();
     this.providerProbes.cancel();
     let firstError: unknown;
     const run = async (action: () => void | Promise<void>): Promise<void> => {
@@ -2096,9 +2140,7 @@ export class SessionManager {
     await run(() => {
       this.timeline.flushStreaming();
     });
-    await run(() => {
-      this.history.close();
-    });
+    await run(() => this.history.close());
     if (firstError !== undefined)
       throw firstError instanceof Error ? firstError : new Error(errMsg(firstError));
   }

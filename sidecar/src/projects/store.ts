@@ -45,6 +45,8 @@ export const threadInputSchema = z
     reasoningEffort: z
       .enum(['off', 'none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max', 'ultra', 'dynamic'])
       .optional(),
+    fastMode: z.boolean().optional(),
+    contextWindowTokens: z.union([z.literal(200000), z.literal(1000000)]).optional(),
     autonomy: z.enum(['off', 'low', 'medium', 'high']),
     cwd: z
       .string()

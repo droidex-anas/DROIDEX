@@ -13,6 +13,8 @@ import {
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { promisify } from 'node:util';
 
+import { childEnv } from './childEnv.js';
+
 /* The git plumbing DROIDEX uses whenever it runs work in its own worktree:
    automation runs and project threads. Both keep the same shape,
    `<repo>/.worktrees/<name>/<repo>`, so a person can tell at a glance which
@@ -28,6 +30,8 @@ export async function git(cwd: string, args: string[], timeout = GIT_TIMEOUT_MS)
     timeout,
     maxBuffer: MAX_BUFFER,
     windowsHide: true,
+    // Git runs the user's hooks and aliases, so it starts from their environment.
+    env: childEnv(),
   });
   return result.stdout.trim();
 }

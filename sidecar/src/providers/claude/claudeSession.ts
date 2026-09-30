@@ -3,30 +3,38 @@
 // same process and the permission mode and model can change while it runs.
 import {
   query,
-  type EffortLevel,
   type McpServerConfig,
-  type Options,
-  type Query,
+  type ModelInfo,
   type SDKMessage,
   type SDKUserMessage,
 } from '@anthropic-ai/claude-agent-sdk';
-import { spawn, type ChildProcess } from 'node:child_process';
+import type { ChildProcess } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 
 import type { NormalizedEvent } from '../../normalize.js';
-import type { Autonomy, ReasoningEffort, SessionInteractionMode } from '../../protocol.js';
-import { errMsg } from '../../sessionHelpers.js';
+import type {
+  Autonomy,
+  ContextWindowTokens,
+  ReasoningEffort,
+  SessionInteractionMode,
+} from '../../protocol.js';
+import { errMsg } from '../../errors.js';
 import type { SkillInfo } from '../catalog.js';
 import type { ProviderInteractions } from '../interactions.js';
 import type { ProviderModelSettings, ProviderSession } from '../session.js';
 import { ClaudeCatalog } from './claudeCatalog.js';
+import { claudeLaunchModel, planningModelNotice, type ClaudeDefaultModel } from './claudeModels.js';
 import { ClaudeEventMapper, rateLimitRefusal } from './claudeEvents.js';
-import { MessageQueue } from './claudeMessages.js';
-import { claudeCanUseTool, claudePermissionMode } from './claudePermissions.js';
-
-// Booting the CLI takes seconds, and the first turn streams while it happens, so
-// the chat says what it is waiting for instead of sitting empty.
-const STARTING = 'Starting Claude Code…';
+import {
+  answersTurn,
+  commandLifecycle,
+  isSlashCommand,
+  MessageQueue,
+  turnFailure,
+  type SteeringQuery,
+} from './claudeMessages.js';
+import { sessionOptions, claudeEffort } from './claudeOptions.js';
+import { ClaudePermissionModes } from './claudePermissionModes.js';
 
 export interface ClaudeSessionInput {
   // Claude pins the session id it is given, so DROIDEX's own identity is also
@@ -38,6 +46,12 @@ export interface ClaudeSessionInput {
   interactionMode: SessionInteractionMode;
   modelId?: string;
   reasoningEffort?: ReasoningEffort;
+  fastMode?: boolean;
+  contextWindowTokens?: ContextWindowTokens;
+  // The provider's default model, so a switch back to it launches what the
+  // CLI's own default would.
+  defaultModel?: ClaudeDefaultModel;
+  models: ModelInfo[];
   mcpServers: Record<string, McpServerConfig>;
   interactions: ProviderInteractions;
   // Set when reopening a stored session instead of starting a new one.
@@ -54,33 +68,41 @@ export class ClaudeSession implements ProviderSession {
   private failure?: Error;
   private readonly prompts = new MessageQueue<SDKUserMessage>();
   private readonly mapper: ClaudeEventMapper;
-  private readonly query: Query;
-  // Turns can stream during boot, but control requests must wait: the SDK
-  // writes them immediately, before the CLI has answered initialize.
+  private readonly query: SteeringQuery;
+  // The permission capability probe must finish before the first prompt.
+  // Control requests may only start after the CLI answers initialize.
   private readonly initialized: Promise<void>;
   private readonly catalog: ClaudeCatalog;
   // Resolves once the CLI process exists, which is all an open has to wait for.
   private readonly spawned: Promise<void>;
   private initializing = true;
   private child?: ChildProcess;
-  private autonomy: Autonomy;
   private modelId: string | undefined;
-  // Spec mode is Claude Code's plan mode, and both reach the CLI as the one
-  // permission mode, so the session owns which of the two is in force.
-  private planning: boolean;
-  // Serializes the permission-mode changes below, so two never race.
-  private modeChanges: Promise<void> = Promise.resolve();
+  private fastMode: boolean;
+  private readonly permissions: ClaudePermissionModes;
   private activeTurnId?: string;
   // The turn the user stopped, so only that turn's own error result is excused.
   private interruptedTurnId?: string;
+  // The running turn takes steers: set once its prompt is pushed, never for a slash command.
+  private steerable = false;
+  // Steers the CLI has not started yet, by uuid, with whoever waits on each.
+  private readonly steerDeliveries = new Map<string, (delivered: boolean) => void>();
+  // The running turn's own result has arrived; it may still wait for steers.
+  private turnAnswered = false;
   private turnQueue?: MessageQueue<{ message: SDKMessage; events: NormalizedEvent[] }>;
   private readonly backgroundListeners = new Set<(event: NormalizedEvent) => void>();
 
-  constructor(input: ClaudeSessionInput) {
+  constructor(private readonly input: ClaudeSessionInput) {
     this.providerSessionId = input.appSessionId;
-    this.autonomy = input.autonomy;
     this.modelId = input.modelId;
-    this.planning = input.interactionMode === 'spec';
+    this.fastMode = input.fastMode ?? false;
+    this.permissions = new ClaudePermissionModes(
+      input.autonomy,
+      input.interactionMode === 'spec',
+      () => {
+        this.requireOpen();
+      },
+    );
     this.mapper = new ClaudeEventMapper(input.appSessionId, input.modelId);
     this.closed = new Promise((resolve) => {
       this.resolveClosed = resolve;
@@ -96,7 +118,7 @@ export class ClaudeSession implements ProviderSession {
       options: sessionOptions(
         input,
         this.abort,
-        () => this.planning,
+        () => this.permissions.planning,
         (process) => {
           this.child = process;
           process.once('spawn', markSpawned);
@@ -115,9 +137,11 @@ export class ClaudeSession implements ProviderSession {
           process.once('close', onExit);
         },
       ),
-    });
+    }) as SteeringQuery;
     this.initialized = this.query.initializationResult().then(
-      () => {
+      async () => {
+        this.abort.signal.throwIfAborted();
+        await this.permissions.initialize(this.query);
         this.abort.signal.throwIfAborted();
         this.initializing = false;
       },
@@ -182,7 +206,9 @@ export class ClaudeSession implements ProviderSession {
     }>());
     let reportedPlanningModel = false;
     try {
-      this.requireOpen();
+      await this.waitUntilInitialized();
+      const notice = this.permissions.takeNotice();
+      if (notice) yield this.mapper.statusEvent(notice);
       this.prompts.push({
         type: 'user',
         uuid: turnId,
@@ -190,22 +216,30 @@ export class ClaudeSession implements ProviderSession {
         parent_tool_use_id: null,
         message: { role: 'user', content: prompt },
       });
-      // Only ever the first turn: by the second the CLI is up and its startup
-      // is not what the chat is waiting for.
-      if (this.initializing) yield this.mapper.statusEvent(STARTING);
+      this.steerable = !isSlashCommand(prompt);
       for (;;) {
         const next = await turnQueue.next();
-        // An exhausted stream is a failure, not a silent success.
-        if (next.done) throw new Error('Claude Code exited before the turn finished.');
+        // An exhausted stream is a failure, unless Stop closed it on a turn
+        // that already had its answer.
+        if (next.done) {
+          if (!this.turnAnswered) throw new Error('Claude Code exited before the turn finished.');
+          yield { done: true };
+          return;
+        }
         const { message, events } = next.value;
         if (message.type === 'assistant' && !reportedPlanningModel) {
-          const notice = this.planningModelNotice(message);
+          const notice = this.permissions.planning
+            ? planningModelNotice(message, this.modelId)
+            : undefined;
           if (notice) {
             reportedPlanningModel = true;
             yield this.mapper.statusEvent(notice);
           }
         }
         yield* events;
+        const lifecycle = commandLifecycle(message);
+        if (lifecycle?.state === 'started') this.settleSteer(lifecycle.uuid, true);
+        if (lifecycle?.state === 'cancelled') this.settleSteer(lifecycle.uuid, false);
         // A local slash command bypasses the model loop and publishes this one
         // terminal frame instead of a result for the ordinary turn path.
         if (message.type === 'system' && message.subtype === 'local_command_output') {
@@ -218,35 +252,72 @@ export class ClaudeSession implements ProviderSession {
           const refusal = rateLimitRefusal(message.rate_limit_info);
           if (refusal) throw refusal;
         }
-        if (message.type === 'result' && answersTurn(message, turnId)) {
+        // The turn's own result, then that of each steer run as a CLI turn after it.
+        if (message.type === 'result' && (this.turnAnswered || answersTurn(message, turnId))) {
           // A stopped turn settles quietly: the CLI still reports the
           // interruption as an error result carrying an internal diagnostic.
           if (message.subtype !== 'success' && this.interruptedTurnId !== turnId)
             throw new Error(turnFailure(message.subtype, message.errors));
+          this.turnAnswered = true;
+          for (const uuid of message.user_message_uuids ?? []) this.settleSteer(uuid, true);
+        }
+        // Once answered, the turn ends when a result or a cancellation leaves no
+        // steer waiting to start. A stopped turn does not wait, nor does a CLI
+        // too old to list what a result answered.
+        if (
+          this.turnAnswered &&
+          (message.type === 'result' || lifecycle?.state === 'cancelled') &&
+          (this.steerDeliveries.size === 0 ||
+            this.interruptedTurnId === turnId ||
+            (message.type === 'result' && !message.user_message_uuids))
+        ) {
+          this.steerable = false;
           yield { done: true };
           return;
         }
       }
     } finally {
       this.activeTurnId = undefined;
+      this.steerable = false;
+      this.turnAnswered = false;
       if (this.turnQueue === turnQueue) this.turnQueue = undefined;
+      await Promise.all([...this.steerDeliveries.keys()].map((uuid) => this.withdrawSteer(uuid)));
     }
   }
 
-  private planningModelNotice(
-    message: Extract<SDKMessage, { type: 'assistant' }>,
-  ): string | undefined {
-    const model = message.message.model;
-    if (
-      !this.planning ||
-      !this.modelId ||
-      message.parent_tool_use_id ||
-      model === '<synthetic>' ||
-      matchesModel(this.modelId, model)
-    )
-      return undefined;
-    // Plan mode can override the pin inside the CLI; report its choice without changing it.
-    return `Planning on ${model}, Claude Code's plan-mode model.`;
+  // Hands the prompt to the running turn: the CLI folds it in at the next tool
+  // boundary, or runs it right after the turn's result. Resolves true once the
+  // model has it. The CLI resolves a slash command itself, so that can only
+  // run as a turn of its own.
+  steer(text: string): Promise<boolean> {
+    if (!this.steerable || this.isClosed || isSlashCommand(text)) return Promise.resolve(false);
+    const uuid = randomUUID();
+    const delivered = new Promise<boolean>((resolve) => {
+      this.steerDeliveries.set(uuid, resolve);
+    });
+    this.prompts.push({
+      type: 'user',
+      uuid,
+      session_id: this.providerSessionId,
+      parent_tool_use_id: null,
+      message: { role: 'user', content: text },
+      priority: 'next',
+    });
+    return delivered;
+  }
+
+  private settleSteer(uuid: string, delivered: boolean): void {
+    this.steerDeliveries.get(uuid)?.(delivered);
+    this.steerDeliveries.delete(uuid);
+  }
+
+  // A steer the turn ended without is withdrawn so the session layer can send
+  // it again. Unless the CLI says it cancelled it, the CLI may still run it,
+  // and losing one steer on a failed turn beats showing it twice.
+  private async withdrawSteer(uuid: string): Promise<void> {
+    const cancelled =
+      this.isClosed || (await this.query.cancelAsyncMessage(uuid).catch(() => false));
+    this.settleSteer(uuid, !cancelled);
   }
 
   // Keep reading between turns so background children can settle immediately.
@@ -277,7 +348,7 @@ export class ClaudeSession implements ProviderSession {
   private dispatch(message: SDKMessage): void {
     this.catalog.observe(message);
     // Mapping stays in wire order, including model and spawn-link observations.
-    const events = this.mapper.map(message);
+    const events = this.mapper.map(message, this.fastMode);
     const turnEvents: NormalizedEvent[] = [];
     for (const event of events) {
       if (event.childSession) {
@@ -288,50 +359,56 @@ export class ClaudeSession implements ProviderSession {
   }
 
   async setAutonomy(autonomy: Autonomy): Promise<void> {
-    await this.changePermissionMode(() => ({ autonomy, planning: this.planning }));
+    await this.permissions.change(this.query, this.initialized, () => ({
+      autonomy,
+      planning: this.permissions.planning,
+    }));
+    this.publishPermissionNotice();
   }
 
-  // Spec mode is plan mode: the model plans and reads, and its ExitPlanMode call
-  // raises the plan for review rather than ending the mode itself.
   async setInteractionMode(mode: SessionInteractionMode): Promise<void> {
-    await this.changePermissionMode(() => ({ autonomy: this.autonomy, planning: mode === 'spec' }));
+    await this.permissions.change(this.query, this.initialized, () => ({
+      autonomy: this.permissions.selection(),
+      planning: mode === 'spec',
+    }));
+    this.publishPermissionNotice();
   }
 
-  // Autonomy and Spec reach the CLI as the one permission mode, so changes run
-  // one at a time and each reads the session as it is when its turn comes: two
-  // that overlap can no longer send a mode built from state the other replaced.
-  // The session commits only what the CLI accepted.
-  private changePermissionMode(
-    next: () => { autonomy: Autonomy; planning: boolean },
-  ): Promise<void> {
-    const applied = this.modeChanges.then(async () => {
-      await this.waitUntilInitialized();
-      const { autonomy, planning } = next();
-      // While the session is planning the permission mode is already plan mode
-      // and stays it, so a new autonomy is only recorded here and takes effect
-      // when the session leaves Spec.
-      if (!planning || !this.planning)
-        await this.query.setPermissionMode(planning ? 'plan' : claudePermissionMode(autonomy));
-      this.abort.signal.throwIfAborted();
-      this.autonomy = autonomy;
-      this.planning = planning;
-    });
-    // A refused change settles its own caller; the next one still gets its turn.
-    this.modeChanges = applied.catch(() => undefined);
-    return applied;
+  private publishPermissionNotice(): void {
+    if (this.backgroundListeners.size === 0) return;
+    const notice = this.permissions.takeNotice();
+    if (!notice) return;
+    const event = this.mapper.statusEvent(notice);
+    for (const listener of this.backgroundListeners) listener(event);
   }
 
   // Model and effort stay on this process, never in the user's settings files.
   // Replaying an already-applied model needs no API validation request.
-  async setModel({ modelId, reasoningEffort }: ProviderModelSettings): Promise<void> {
+  async setModel({
+    modelId,
+    reasoningEffort,
+    fastMode,
+    contextWindowTokens,
+  }: ProviderModelSettings): Promise<void> {
     await this.waitUntilInitialized();
-    if (modelId !== undefined && (modelId ?? undefined) !== this.modelId) {
-      await this.query.setModel(modelId ?? undefined);
+    const resolvedModel = claudeLaunchModel(
+      modelId === undefined ? this.modelId : (modelId ?? undefined),
+      contextWindowTokens ?? this.input.contextWindowTokens,
+      this.input.models,
+      this.input.defaultModel,
+    );
+    if (modelId !== undefined && resolvedModel !== this.modelId) {
+      await this.query.setModel(resolvedModel);
       this.requireOpen();
-      this.modelId = modelId ?? undefined;
+      this.modelId = resolvedModel;
       this.mapper.setModel(this.modelId);
     }
-    this.abort.signal.throwIfAborted();
+    this.requireOpen();
+    if (fastMode !== undefined) {
+      await this.query.applyFlagSettings({ fastMode });
+      this.requireOpen();
+      this.fastMode = fastMode;
+    }
     // Leaving ultra clears the flag instead of writing `false`, which is what
     // turns ultracode off while keeping the level chosen alongside it. A model
     // without levels clears both, so the previous model's do not follow it.
@@ -373,8 +450,16 @@ export class ClaudeSession implements ProviderSession {
     }
     if (this.abort.signal.aborted || this.activeTurnId !== turnId) return;
     // Aborts the in-flight turn on the live process; the turn then settles with
-    // its own result, so the next prompt does not pay for a restart.
-    await this.query.interrupt();
+    // its own result, so the next prompt does not pay for a restart. Steers not
+    // yet delivered are cancelled with it rather than left to run unobserved.
+    const receipt = await this.query.interrupt({ cancelQueued: true });
+    for (const uuid of receipt?.cancelled ?? []) this.settleSteer(uuid, false);
+    // A turn that already has its answer may be waiting only on steers the CLI
+    // had not started. An idle CLI says nothing more, so the turn ends here.
+    if (this.turnAnswered && this.activeTurnId === turnId) {
+      for (const uuid of this.steerDeliveries.keys()) this.settleSteer(uuid, false);
+      this.turnQueue?.close();
+    }
   }
 
   close(): Promise<void> {
@@ -412,107 +497,4 @@ export class ClaudeSession implements ProviderSession {
       this.resolveClosed(error);
     }
   }
-}
-
-function sessionOptions(
-  input: ClaudeSessionInput,
-  abortController: AbortController,
-  isPlanning: () => boolean,
-  onSpawn: (process: ChildProcess) => void,
-): Options {
-  const effort = claudeEffort(input.reasoningEffort);
-  return {
-    abortController,
-    cwd: input.cwd,
-    pathToClaudeCodeExecutable: input.executable,
-    ...(input.modelId ? { model: input.modelId } : {}),
-    // The flag is written both ways: a settings file may carry ultracode too,
-    // and the level the chip shows is the one the session must run at.
-    ...(effort ? { effort: effort.effortLevel, settings: { ultracode: effort.ultracode } } : {}),
-    ...(input.resume ? { resume: input.appSessionId } : { sessionId: input.appSessionId }),
-    systemPrompt: { type: 'preset', preset: 'claude_code' },
-    // 'project' is what loads the repository's CLAUDE.md.
-    settingSources: ['user', 'project', 'local'],
-    includePartialMessages: true,
-    mcpServers: input.mcpServers,
-    // The Spec toggle owns plan mode, so the model may not enter it on its own:
-    // at high autonomy bypassPermissions skips canUseTool altogether and a
-    // refusal there would never run. ExitPlanMode stays available because it is
-    // how the model hands its plan over, and plan mode always asks the callback.
-    disallowedTools: ['EnterPlanMode'],
-    permissionMode:
-      input.interactionMode === 'spec' ? 'plan' : claudePermissionMode(input.autonomy),
-    // Consent to the bypass mode, not the mode itself: the CLI reads this flag
-    // only as "this host may use bypassPermissions" and takes the mode from
-    // permissionMode. Raising autonomy to high mid-session switches the mode
-    // with setPermissionMode, which the CLI refuses without this.
-    allowDangerouslySkipPermissions: true,
-    canUseTool: claudeCanUseTool(input.appSessionId, input.interactions, isPlanning),
-    // The SDK would otherwise own the subprocess privately; spawning it here is
-    // what gives the session a pid for the agent-process monitor to track and
-    // kill, the way it tracks Droid's.
-    spawnClaudeCodeProcess: ({ command, args, cwd, env, signal }) => {
-      const child = spawn(command, args, {
-        ...(cwd !== undefined ? { cwd } : {}),
-        env,
-        signal,
-        stdio: ['pipe', 'pipe', 'pipe'],
-        windowsHide: true,
-      });
-      // Nothing else reads stderr on this path, and a full pipe would stall the
-      // CLI mid-turn.
-      child.stderr.resume();
-      onSpawn(child);
-      return child;
-    },
-    // HOME is never overridden: on macOS it also relocates the login keychain,
-    // and the CLI then reports the user as signed out.
-  };
-}
-
-// DROIDEX's effort vocabulary is the union of every harness's; Claude Code
-// takes the five levels it publishes and nothing else, so a level from another
-// harness leaves the session on its own default rather than being coerced.
-const CLAUDE_EFFORTS: readonly EffortLevel[] = ['low', 'medium', 'high', 'xhigh', 'max'];
-
-// Ultra is the CLI's ultracode: xhigh effort plus standing workflow
-// orchestration, carried as a session setting rather than a sixth level.
-interface ClaudeEffort {
-  effortLevel: EffortLevel;
-  ultracode: boolean;
-}
-
-function claudeEffort(effort: ReasoningEffort | undefined): ClaudeEffort | undefined {
-  if (effort === 'ultra') return { effortLevel: 'xhigh', ultracode: true };
-  const level = CLAUDE_EFFORTS.find((candidate) => candidate === effort);
-  return level ? { effortLevel: level, ultracode: false } : undefined;
-}
-
-function matchesModel(selected: string, actual: string): boolean {
-  const model = selected.replace(/\[1m\]$/i, '');
-  if (model === actual) return true;
-  // The picker also publishes CLI aliases, while assistant frames carry wire ids.
-  return !model.startsWith('claude-') && actual.startsWith(`claude-${model}-`);
-}
-
-function turnFailure(subtype: string, errors: string[]): string {
-  // The CLI's own diagnostics are bracketed internals; the subtype is what a
-  // user can act on.
-  const detail = errors.filter((error) => !error.startsWith('[')).join('\n');
-  return detail
-    ? `Claude Code ended the turn (${subtype}): ${detail}`
-    : `Claude Code ended the turn (${subtype}).`;
-}
-
-function answersTurn(
-  message: { user_message_uuid?: string; user_message_uuids?: string[] },
-  turnId: string,
-): boolean {
-  // The plural list names every prompt the turn has consumed, so where it
-  // exists it is the whole answer: a result that omits this turn's uuid belongs
-  // to another turn, whatever the singular field says.
-  if (message.user_message_uuids) return message.user_message_uuids.includes(turnId);
-  if (message.user_message_uuid !== undefined) return message.user_message_uuid === turnId;
-  // Older CLIs stamp neither field; their result can only be this turn's.
-  return true;
 }

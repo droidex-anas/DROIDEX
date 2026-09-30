@@ -1,11 +1,10 @@
-import { randomUUID } from 'node:crypto';
-
 import { isDesignPrompt } from '../browser/designPromptPacks.js';
 import type { ServerEvent, SessionSummary } from '../protocol.js';
 import type { LiveOperationTarget, SessionContext } from '../SessionContext.js';
 import type { SessionEventFlow } from '../SessionEventFlow.js';
-import { errMsg, isUserCancellation } from '../sessionHelpers.js';
-import type { LiveSession, SessionPrompt } from '../SessionLifecycle.js';
+import { errMsg, isUserCancellation } from '../errors.js';
+import type { ProviderMention } from './catalog.js';
+import type { LiveSession } from '../SessionLifecycle.js';
 import type { ScheduledTurnDelivery } from '../sessionAutomationDelivery.js';
 import { isReportedStreamingTranscriptError, type SessionTimeline } from '../SessionTimeline.js';
 import { usageLimitDetails } from './usageLimit.js';
@@ -15,7 +14,7 @@ export interface PrimaryTurnDependencies {
   context: Pick<SessionContext, 'beginTurn' | 'startPolling' | 'stopPolling' | 'refresh'>;
   timeline: Pick<
     SessionTimeline,
-    'recordPrompt' | 'announcePrompt' | 'settleStreaming' | 'appendStatus' | 'append'
+    'recordPrompt' | 'announcePrompt' | 'settleStreaming' | 'appendStatus' | 'appendError'
   >;
   // Absent for a provider without Droid's context accounting.
   contextTarget: (liveSession: LiveSession) => LiveOperationTarget | undefined;
@@ -27,28 +26,63 @@ export interface PrimaryTurnDependencies {
   emitError: (error: Omit<Extract<ServerEvent, { type: 'error' }>, 'type'>) => void;
 }
 
+export interface PrimaryTurnRequest {
+  prompt: string;
+  mentions?: ProviderMention[];
+  delivery?: ScheduledTurnDelivery;
+  // Set when the app, not the user, started this turn. The transcript then gets
+  // this quiet status row instead of a prompt bubble nobody typed.
+  notice?: string;
+  // Set for a prompt the chat has not drawn as a row: one nobody typed (a
+  // scheduled delivery, a message from another chat), or a steer that runs as
+  // a turn of its own, which the chat showed only as pending. The turn adds
+  // the row itself.
+  announce?: true;
+  // A message from another chat stops here once its sender may no longer send
+  // it, even after the transcript row is written.
+  stillAllowed?: () => boolean;
+}
+
 export async function runPrimaryTurn(
   d: PrimaryTurnDependencies,
   liveSession: LiveSession,
-  { text: prompt, mentions, announce }: SessionPrompt,
-  delivery?: ScheduledTurnDelivery,
+  request: PrimaryTurnRequest,
 ): Promise<void> {
+  const { prompt, mentions, delivery, notice, announce, stillAllowed } = request;
   const appSessionId = liveSession.summary.appSessionId;
+  const providerSession = liveSession.session;
+  const isCurrent = () =>
+    d.isCurrent(liveSession) &&
+    liveSession.session === providerSession &&
+    (stillAllowed?.() ?? true);
+  // A Stop that lands before the provider has a turn to interrupt. A Send now
+  // in the same window is left alone: its prompt is queued behind this one,
+  // and the agent needs this one to make sense of it.
+  const stoppedBeforeStart = () => liveSession.interrupting === true;
   const context = turnContext(d, d.contextTarget(liveSession));
-  if (!d.isCurrent(liveSession)) return;
+  if (!isCurrent()) return;
   // A scheduled delivery that cannot go ahead must leave no trace, and
   // recordPrompt below writes to the durable transcript. So its preflight runs
   // before the turn is opened; an interactive turn keeps its existing order.
   const preflight = delivery
     ? await d.applyDesignToolPolicy(liveSession, isDesignPrompt(prompt))
     : undefined;
-  if (delivery && (!d.isCurrent(liveSession) || !preflight || !delivery.isCurrent())) {
+  if (delivery && (!isCurrent() || !preflight || !delivery.isCurrent())) {
     delivery.declined();
     return;
   }
   d.eventFlow.beginTurn(appSessionId, appSessionId);
-  if (announce) d.timeline.announcePrompt(appSessionId, prompt);
-  else d.timeline.recordPrompt(appSessionId, prompt);
+  if (notice) d.timeline.appendStatus(appSessionId, notice);
+  else {
+    const writing = announce
+      ? d.timeline.announcePrompt(appSessionId, prompt)
+      : d.timeline.recordPrompt(appSessionId, prompt);
+    if (writing) await writing;
+  }
+  if (!isCurrent() || stoppedBeforeStart()) {
+    delivery?.declined();
+    return;
+  }
   d.context.beginTurn(appSessionId);
   context.startPolling();
   let turnError: unknown;
@@ -57,15 +91,20 @@ export async function runPrimaryTurn(
   try {
     const configured =
       preflight ?? (await d.applyDesignToolPolicy(liveSession, isDesignPrompt(prompt)));
-    if (!d.isCurrent(liveSession) || (delivery && (!configured || !delivery.isCurrent()))) {
+    if (
+      !isCurrent() ||
+      stoppedBeforeStart() ||
+      (delivery && (!configured || !delivery.isCurrent()))
+    ) {
+      delivery?.declined();
       context.stopPolling();
       return;
     }
-    for await (const normalized of liveSession.session.stream(prompt, mentions)) {
+    for await (const normalized of providerSession.stream(prompt, mentions)) {
       // The runtime answered, so the prompt is accepted even if this turn stops
       // applying events; acknowledgement must never depend on the turn's outcome.
       delivery?.accepted();
-      if (!d.isCurrent(liveSession)) break;
+      if (!isCurrent()) break;
       d.eventFlow.apply(appSessionId, appSessionId, 'primary', normalized);
       if (normalized.transcript?.kind === 'error') {
         reportedError = true;
@@ -79,13 +118,13 @@ export async function runPrimaryTurn(
   }
   try {
     // Deliver any buffered streaming tail before the turn reads as settled.
-    d.timeline.settleStreaming(appSessionId, appSessionId);
+    if (isCurrent()) await d.timeline.settleStreaming(appSessionId, appSessionId);
   } catch (err) {
     turnError ??= err;
   } finally {
     context.stopPolling();
   }
-  if (!d.isCurrent(liveSession)) return;
+  if (!isCurrent()) return;
   if (turnError) settleTurnFailure(d, liveSession, turnError, reportedError, reportedUsageLimit);
   // Keep streaming=true while the context refresh is in flight so concurrent
   // sends queue instead of racing a second lifecycle turn.
@@ -100,8 +139,8 @@ function settleTurnFailure(
   reportedUsageLimit: boolean,
 ): void {
   const appSessionId = liveSession.summary.appSessionId;
-  if (liveSession.interruptingForSteer && isUserCancellation(error)) {
-    d.timeline.appendStatus(appSessionId, 'Current turn interrupted for steering.');
+  if (liveSession.interruptingToSend && isUserCancellation(error)) {
+    d.timeline.appendStatus(appSessionId, 'Turn stopped to send now.');
     return;
   }
   if (liveSession.interrupting && isUserCancellation(error)) {
@@ -113,17 +152,7 @@ function settleTurnFailure(
     const message = errMsg(error);
     const usageLimit = usageLimitDetails(error);
     if (!reportedError || (usageLimit.errorKind && !reportedUsageLimit)) {
-      d.timeline.append({
-        id: randomUUID(),
-        appSessionId,
-        sourceSessionId: appSessionId,
-        role: 'primary',
-        ts: Date.now(),
-        kind: 'error',
-        text: message,
-        isError: true,
-        ...usageLimit,
-      });
+      d.timeline.appendError(appSessionId, message, usageLimit);
     }
     d.emitError({ appSessionId, message });
   }

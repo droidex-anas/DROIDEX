@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-export type ToolContent =
+type ToolContent =
   | { type: 'text'; text: string }
   | { type: 'image'; data: string; mimeType: string };
 export type ToolHandlerResult = string | { content: ToolContent[]; isError?: boolean };

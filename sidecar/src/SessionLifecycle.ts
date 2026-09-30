@@ -4,6 +4,7 @@ import {
 } from './sessionAutomationDelivery.js';
 import type { AutomationDeliveryReceipt } from './automations/types.js';
 import { type McpServerConfig, type SdkMcpServer } from '@factory/droid-sdk';
+import { randomUUID } from 'node:crypto';
 import { mkdir } from 'node:fs/promises';
 import { join } from 'node:path';
 import type { FactorySession } from './DroidRuntime.js';
@@ -24,24 +25,27 @@ import type { SessionEventFlow } from './SessionEventFlow.js';
 import type { LiveOperationTarget, SessionContext } from './SessionContext.js';
 import type { ChildSessions } from './ChildSessions.js';
 import type { AgentProcessMonitor } from './processes/AgentProcessMonitor.js';
+import { errMsg } from './errors.js';
 import {
   buildCreatedSessionSummary,
-  buildCreateRuntimeOptions,
   buildResumedProviderSummary,
   buildResumedSession,
   createDefaultsModeForCommand,
   createInteractionModeForCommand,
   createMissionAgentDefaultsForMode,
   createModelDefaultsForProvider,
-  errMsg,
   requireAutonomyForCommand,
-  requireDroidReasoningSupported,
   resumeHandle,
-  resumeSettings,
-} from './sessionHelpers.js';
+} from './sessionOpening.js';
 import type { ProviderInteractions } from './providers/interactions.js';
 import { requireProviderKind, type ProviderKind } from './providers/providerKind.js';
+import type { PrimaryTurnRequest } from './providers/primaryTurn.js';
+import {
+  droidLaunchSettings,
+  requireDroidReasoningSupported,
+} from './providers/droid/droidLaunch.js';
 import { droidSessionOf } from './providers/droid/DroidProviderSession.js';
+import { userPromptDisplay } from './sessionTranscriptParser.js';
 import type { Provider, ProviderSession } from './providers/session.js';
 
 const MAX_SCHEDULED_SESSION_RUNTIMES = 8;
@@ -53,10 +57,6 @@ export interface SessionBranch {
   prompt: string;
 }
 
-// An unbound summary predates the binding, so it resumes on the default
-// provider; an unroutable one fails at the provider lookup.
-const boundProvider = (summary: SessionSummary | undefined) => summary?.provider;
-
 async function sessionRuntimeCwd(appCwd: string): Promise<string> {
   if (appCwd) return appCwd;
   const chatCwd = join(droidexUserDataDir(), 'chats');
@@ -66,6 +66,10 @@ async function sessionRuntimeCwd(appCwd: string): Promise<string> {
 
 interface LocalMcpResource {
   close(): Promise<void>;
+}
+interface AdmittedPrompt {
+  liveSession: LiveSession;
+  stops: number;
 }
 interface DeferredClose {
   promise: Promise<void>;
@@ -87,16 +91,28 @@ export interface StartedLocalMcpResources {
 export interface SessionPrompt {
   text: string;
   mentions?: ProviderMention[];
-  /** Nobody typed it (a scheduled delivery, a message from another chat), so
-      the window has not shown it and the turn announces it. */
+  // See PrimaryTurnRequest.notice: set for a turn the app owes the chat.
+  notice?: string;
+  // Set on a prompt sent as a steer. It is listed as pending until the model
+  // takes it in, whether the harness holds it or it waits on the queue.
+  steerId?: string;
+  // When it was sent, relative to the chat's other prompts.
+  order: number;
+  // Nobody typed it (a scheduled delivery, a message from another chat), so
+  // the chat has not shown it and the turn draws it.
   announce?: true;
+  // The sender's guard on a message from another chat. Once it turns false the
+  // prompt is dropped wherever it waits, as a Stop drops it.
+  isCurrent?: () => boolean;
 }
 
 interface LiveTurnState {
   streaming: boolean;
   autoCompacting: boolean;
   pendingSends: SessionPrompt[];
-  interruptingForSteer?: boolean;
+  // Steers the harness holds for the running turn and has not delivered yet.
+  steers: SessionPrompt[];
+  interruptingToSend?: boolean;
   interrupting?: boolean; // Marks user Stop so the resulting stream abort settles quietly.
 }
 type SessionCloseMode = 'discard-pending' | 'preserve-pending';
@@ -110,6 +126,7 @@ export interface LiveSession extends LiveTurnState {
   closeMode?: SessionCloseMode;
   closePromise?: Promise<void>;
   turnPromise?: Promise<void>;
+  restartBeforeNextTurn?: boolean;
   providerClosePromise?: Promise<void>;
   mcpServers: LocalMcpResource[];
   // Running MCP handles reused when compaction swaps the provider session.
@@ -120,11 +137,6 @@ export interface LiveSession extends LiveTurnState {
   catalogUnsubscribe?: () => void;
 }
 type LifecycleError = Omit<Extract<ServerEvent, { type: 'error' }>, 'type'>;
-
-// What a mid-turn send did: the provider took it into the running turn, the
-// turn was already ending so it waits on the queue, or the session has to be
-// interrupted and the prompt resent.
-type SteerOutcome = 'taken' | 'queued' | 'interrupt';
 
 export interface SessionLifecycleDependencies {
   beforeFirstTurn?: ((session: SessionSummary, clientRef: string) => Promise<void>) | undefined;
@@ -148,7 +160,7 @@ export interface SessionLifecycleDependencies {
     'resolveLimit' | 'arm' | 'subscribePrimary' | 'afterTurn' | 'cancel' | 'forgetSession'
   >;
   isShutdownStarted: () => boolean;
-  childSessions: Pick<ChildSessions, 'attachParent' | 'closeParent'>;
+  childSessions: Pick<ChildSessions, 'attachParent' | 'closeParent' | 'retryAgentWave'>;
   agentProcesses: Pick<
     AgentProcessMonitor,
     'track' | 'untrack' | 'killSession' | 'setIgnoredCommands'
@@ -157,19 +169,18 @@ export interface SessionLifecycleDependencies {
   recordLineage: (appSessionId: string, lineage: SessionLineage) => void;
   applyPendingSessionSettings: (appSessionId: string) => Promise<boolean>;
   waitForSettingsMutations?: (appSessionId: string) => Promise<void>;
-  runPrimaryTurn: (
-    liveSession: LiveSession,
-    prompt: SessionPrompt,
-    delivery?: ScheduledTurnDelivery,
-  ) => Promise<void>;
+  runPrimaryTurn: (liveSession: LiveSession, request: PrimaryTurnRequest) => Promise<void>;
   eventFlow: Pick<SessionEventFlow, 'apply' | 'beginTurn'>;
-  context: Pick<SessionContext, 'refresh' | 'stopPolling' | 'stopSession' | 'forgetSession'>;
+  context: Pick<
+    SessionContext,
+    'refresh' | 'stopPolling' | 'stopSession' | 'forgetSession' | 'preserveUsage'
+  >;
   hasPendingInteractions: (appSessionId: string) => boolean;
   hasActiveSettingsChanges: (appSessionId: string) => boolean;
   // Durable transcript for a provider that keeps no session file of its own.
   // Opened with the live session, released when it closes.
   openProviderTranscript: (summary: SessionSummary) => void;
-  forgetProviderTranscript: (appSessionId: string) => void;
+  forgetProviderTranscript: (appSessionId: string) => void | Promise<void>;
   forgetInteractions: (appSessionId: string) => void;
   forgetEventFlow: (appSessionId: string) => void;
   forgetMissionControl: (appSessionId: string) => void;
@@ -180,19 +191,27 @@ export interface SessionLifecycleDependencies {
   stopVoiceSession: (appSessionId: string) => Promise<void>;
   emit: (event: ServerEvent) => void;
   emitError: (error: LifecycleError) => void;
-  emitStatus: (appSessionId: string, text: string) => void;
-  // A steered prompt joins the durable transcript without a new turn to record
-  // it; the renderer already showed it from the send.
-  recordPrompt: (appSessionId: string, text: string) => void;
+  // A live progress row while a turn stops to send now; it is not stored.
+  appendProgress: (appSessionId: string, text: string) => void;
+  // The transcript row a crashed runtime leaves behind, stored with the chat.
+  appendError: (appSessionId: string, message: string) => void;
+  // A steer the harness has just delivered into the running turn: the row that
+  // marks where the model took it in, and what the transcript stores.
+  appendSteer: (appSessionId: string, text: string) => void | Promise<void>;
   catalogUpdated: (liveSession: LiveSession, items: SkillInfo[]) => void;
   emitSessionList: (closedProviderSessionId: string) => void | Promise<void>;
 }
 export class SessionLifecycle {
   private readonly deferredCloses = new WeakMap<LiveSession, DeferredClose>();
-  // One steer at a time per session; see steerTurn.
-  private readonly steering = new WeakMap<LiveSession, Promise<SteerOutcome>>();
   private readonly resumeOperations = new Map<string, Promise<boolean>>();
   private readonly canceledResumes = new Set<string>();
+  // How often each chat was stopped or discarded. A prompt that was accepted
+  // but has not started its turn compares the count it was accepted at, so a
+  // Stop takes it back even while there is no runtime to interrupt.
+  private readonly stops = new Map<string, number>();
+  // The prompts waiting for a chat that is relaunching on a new context window,
+  // in the order they were sent. The chat has no runtime to queue them on.
+  private readonly relaunches = new Map<string, SessionPrompt[]>();
 
   constructor(private readonly dependencies: SessionLifecycleDependencies) {}
   // A branch is a session opened from another session's transcript: its goal
@@ -214,6 +233,10 @@ export class SessionLifecycle {
       // Resolved here so an unroutable provider fails before any resource starts.
       const kind = requireProviderKind(command.provider);
       requireDroidReasoningSupported(kind, command);
+      if (kind === 'droid' && command.fastMode !== undefined)
+        throw new Error('Droid does not support fast mode.');
+      if (command.contextWindowTokens !== undefined && kind !== 'claude')
+        throw new Error('Context window selection is only supported for Claude Code chats.');
       const provider = d.provider(kind);
       const defaults = await d.getFactoryDefaults();
       const interactionMode = createInteractionModeForCommand(command, defaults);
@@ -239,22 +262,29 @@ export class SessionLifecycle {
       const mcp = await d.startLocalMcpServers(ref, kind, appCwd);
       pendingMcpServers = mcp.servers;
       const providerSession = await provider.create({
-        ...buildCreateRuntimeOptions({
-          command,
-          runtimeCwd,
-          interactionMode,
-          primary,
-          agents,
-          defaults,
-          autonomy,
-          compactionModel,
-          compactionTokenLimit,
-          mcpServers: mcp.configs,
-        }),
+        cwd: runtimeCwd,
+        interactionMode,
+        autonomy,
+        ...primary,
         ...(kind !== 'droid' && !primary.modelId
           ? { modelId: d.providerDefaultModelId?.(kind) }
           : {}),
+        contextWindowTokens: command.contextWindowTokens,
+        mcpServers: mcp.configs,
         interactions: d.interactionsFor(ref),
+        ...(kind === 'droid'
+          ? {
+              droidLaunch: droidLaunchSettings({
+                command,
+                interactionMode,
+                primary,
+                agents,
+                defaults,
+                compactionModel,
+                compactionTokenLimit,
+              }),
+            }
+          : { fastMode: command.fastMode ?? false }),
         ...(mcp.inAppServers ? { inAppMcpServers: mcp.inAppServers } : {}),
       });
       pendingSession = providerSession;
@@ -272,7 +302,8 @@ export class SessionLifecycle {
       this.requireOpenAdmission();
 
       const appSessionId = providerSession.providerSessionId;
-      const maxContextTokens = d.maxContextTokensForModel(primary.modelId);
+      const maxContextTokens =
+        kind === 'droid' ? d.maxContextTokensForModel(primary.modelId) : undefined;
       const created = buildCreatedSessionSummary({
         command,
         appSessionId,
@@ -294,7 +325,9 @@ export class SessionLifecycle {
       pendingLiveSession = liveSession;
       this.subscribeAutomaticCompaction(liveSession);
       this.subscribeBackgroundEvents(liveSession);
-      d.registry.register(liveSession);
+      await d.registry.register(liveSession, () => {
+        this.requireOpenAdmission();
+      });
       this.subscribeCatalog(liveSession);
       this.observeProviderClosure(liveSession);
       // Registered first, so the failed-open path that unregisters also releases it.
@@ -398,8 +431,9 @@ export class SessionLifecycle {
     let pendingLiveSession: LiveSession | undefined;
     try {
       // Resolved before any resource starts, so a session bound to a provider
-      // this build cannot route fails before it costs anything.
-      const kind = requireProviderKind(boundProvider(historical));
+      // this build cannot route fails before it costs anything. A summary that
+      // predates the binding has none and resumes on the default provider.
+      const kind = requireProviderKind(historical?.provider);
       const provider = d.provider(kind);
       const mcp = await d.startLocalMcpServers(ref, kind, historical?.cwd);
       pendingMcpServers = mcp.servers;
@@ -411,7 +445,12 @@ export class SessionLifecycle {
         interactions: d.interactionsFor(ref),
         ...(mcp.inAppServers ? { inAppMcpServers: mcp.inAppServers } : {}),
         cwd: runtimeCwd,
-        ...resumeSettings(historical),
+        modelId: historical?.modelId,
+        reasoningEffort: historical?.reasoningEffort,
+        fastMode: historical?.fastMode,
+        contextWindowTokens: historical?.contextWindowTokens,
+        autonomy: historical?.autonomy,
+        interactionMode: historical?.interactionMode,
         ...(kind !== 'droid' && !historical?.modelId
           ? { modelId: d.providerDefaultModelId?.(kind) }
           : {}),
@@ -432,10 +471,12 @@ export class SessionLifecycle {
       requireCurrentResume();
       const projectedSummary = d.applyPendingSettingsToSummary({ ...summary });
       const liveSession = createLiveSession(projectedSummary, providerSession, session, mcp);
+      if (projectedSummary.contextWindowTokens !== historical?.contextWindowTokens)
+        liveSession.restartBeforeNextTurn = true;
       pendingLiveSession = liveSession;
       this.subscribeAutomaticCompaction(liveSession);
       this.subscribeBackgroundEvents(liveSession);
-      d.registry.register(liveSession);
+      await d.registry.register(liveSession, requireCurrentResume);
       this.subscribeCatalog(liveSession);
       this.observeProviderClosure(liveSession);
       // Registered first, so the failed-open path that unregisters also releases it.
@@ -551,7 +592,7 @@ export class SessionLifecycle {
           MAX_SCHEDULED_SESSION_RUNTIMES,
         resume: (id) => this.resume(id),
         start: (id, text, delivery) =>
-          this.driveInBackground(id, { text, announce: true }, delivery),
+          this.driveInBackground(id, { ...sessionPrompt(text), announce: true }, delivery),
       },
       appSessionId,
       prompt,
@@ -560,17 +601,33 @@ export class SessionLifecycle {
   }
 
   /**
-   * Queues a prompt nobody typed behind the turn a live session is running,
-   * the way a send does, without waiting for that turn. False when no turn is
-   * running, so the caller delivers it another way.
+   * Steers a prompt nobody typed into the turn a live session is running, as
+   * the user's Steer does: the harness takes it in at its own next step, and
+   * one the turn cannot take waits behind it. Resolves once the chat has taken
+   * the prompt, never waiting for the delivery. False when no turn is running
+   * or the prompt was not taken, so the caller delivers it another way.
+   * `isCurrent` turning false withdraws it: this resolves false while the chat
+   * has not taken it, and one that went on behind the turn is dropped there.
    */
-  queueBehindTurn(appSessionId: string, text: string): boolean {
+  async steerRunningTurn(
+    appSessionId: string,
+    text: string,
+    isCurrent: () => boolean,
+  ): Promise<boolean> {
     const liveSession = this.dependencies.registry.getLive(appSessionId);
     if (!liveSession || liveSession.closeMode) return false;
     if (!liveSession.streaming && !liveSession.compacting && !liveSession.autoCompacting)
       return false;
-    liveSession.pendingSends.push({ text, announce: true });
-    this.updateQueuedSends(liveSession);
+    const prompt = { ...sessionPrompt(text, undefined, randomUUID()), isCurrent };
+    const admitted = await this.admitPrompt(appSessionId, prompt);
+    if (admitted === 'held') return true;
+    if (!admitted) return false;
+    // A Stop or the caller's guard can change between admission and this line.
+    if (this.stopCount(appSessionId) !== admitted.stops || !isCurrent()) return false;
+    void this.handOver(appSessionId, admitted, prompt).catch((error: unknown) => {
+      if (!this.dependencies.isShutdownStarted())
+        this.dependencies.emitError({ appSessionId, message: errMsg(error) });
+    });
     return true;
   }
 
@@ -578,15 +635,42 @@ export class SessionLifecycle {
     requestedAppSessionId: string,
     text: string,
     mentions?: ProviderMention[],
+    steerId?: string,
   ): Promise<void> {
-    await this.sendPrompt(requestedAppSessionId, sessionPrompt(text, mentions));
+    await this.sendPrompt(requestedAppSessionId, sessionPrompt(text, mentions, steerId));
   }
 
-  // A redelivered prompt keeps what it was queued with, so one nobody typed is
-  // still announced when it finally runs.
+  // A redelivered prompt keeps what it was sent with, so one nobody typed is
+  // still drawn when it finally runs.
   private async sendPrompt(requestedAppSessionId: string, prompt: SessionPrompt): Promise<void> {
-    const liveSession = await this.prepareToSend(requestedAppSessionId);
-    if (!liveSession) return;
+    const admitted = await this.admitPrompt(requestedAppSessionId, prompt);
+    if (!admitted || admitted === 'held') return;
+    // A Stop can land between admission and this line.
+    if (this.stopCount(requestedAppSessionId) !== admitted.stops) return;
+    await this.handOver(requestedAppSessionId, admitted, prompt);
+  }
+
+  // Gives an admitted prompt to the chat: into the running turn, behind it, or
+  // as the next turn.
+  private async handOver(
+    requestedAppSessionId: string,
+    admitted: AdmittedPrompt,
+    prompt: SessionPrompt,
+  ): Promise<void> {
+    const { liveSession } = admitted;
+    if (prompt.steerId) {
+      if (await this.steer(liveSession, prompt)) return;
+      // A Stop, a new runtime, or its sender withdrawing it since it was sent
+      // takes it back.
+      if (
+        this.stopCount(requestedAppSessionId) !== admitted.stops ||
+        this.dependencies.registry.getLive(liveSession.summary.appSessionId) !== liveSession ||
+        isWithdrawn(prompt)
+      )
+        return;
+    }
+    // A steer the turn could not take goes on as an ordinary message: behind
+    // the turn, or as the next turn if this one settled meanwhile.
     if (liveSession.streaming || liveSession.compacting || liveSession.autoCompacting) {
       liveSession.pendingSends.push(prompt);
       this.updateQueuedSends(liveSession);
@@ -594,104 +678,132 @@ export class SessionLifecycle {
     }
     await this.drive(liveSession.summary.appSessionId, prompt);
   }
-  async sendNow(
-    requestedAppSessionId: string,
-    text: string,
-    mentions?: ProviderMention[],
-  ): Promise<void> {
-    const liveSession = await this.prepareToSend(requestedAppSessionId);
-    if (!liveSession) return;
-    const prompt = sessionPrompt(text, mentions);
-    if (!liveSession.streaming && !liveSession.compacting && !liveSession.autoCompacting) {
-      await this.drive(liveSession.summary.appSessionId, prompt);
+
+  // Hands a steer to the running turn and waits for the harness to deliver it.
+  // True when that settles it: the model took it in, or a Stop or Send now
+  // took it back first. False when the turn could not take it.
+  private async steer(liveSession: LiveSession, prompt: SessionPrompt): Promise<boolean> {
+    const session = liveSession.session;
+    if (
+      !session.steer ||
+      !liveSession.streaming ||
+      liveSession.compacting ||
+      liveSession.autoCompacting ||
+      liveSession.interrupting ||
+      liveSession.interruptingToSend
+    )
+      return false;
+    liveSession.steers.push(prompt);
+    this.updateQueuedSends(liveSession);
+    const delivered = await session.steer(prompt.text, prompt.mentions).catch(() => false);
+    const held = removePrompt(liveSession.steers, prompt);
+    if (!delivered) return !held;
+    // Send now may have queued it again just as the harness delivered it. It
+    // leaves the queue at once, so a turn settling while the row is written
+    // cannot send it a second time; the list is published after the row, since
+    // the chat drops its pending bubble once the steer leaves it.
+    removePrompt(liveSession.pendingSends, prompt);
+    const appSessionId = liveSession.summary.appSessionId;
+    if (this.dependencies.registry.getLive(appSessionId) === liveSession)
+      await this.dependencies.appendSteer(appSessionId, prompt.text);
+    this.updateQueuedSends(liveSession);
+    return true;
+  }
+
+  // Stops the running turn so this steer runs next. The interrupt drops every
+  // steer the harness has not delivered, so the rest of the queue follows it
+  // in the order it was sent. A steer the model already took in has nothing
+  // left to send.
+  async sendNow(appSessionId: string, steerId: string): Promise<void> {
+    const liveSession = this.dependencies.registry.getLive(appSessionId);
+    if (!liveSession || !steerId) return;
+    const prompt = [...liveSession.steers, ...liveSession.pendingSends].find(
+      (pending) => pending.steerId === steerId,
+    );
+    if (!prompt) return;
+    const rest = [...liveSession.steers.splice(0), ...liveSession.pendingSends]
+      .filter((pending) => pending !== prompt)
+      .sort((a, b) => a.order - b.order);
+    liveSession.pendingSends = [prompt, ...rest];
+    this.updateQueuedSends(liveSession);
+    // Compaction is never cut short, and an interrupt already in flight sends
+    // the front of the queue when the turn it stops settles.
+    if (
+      liveSession.compacting ||
+      liveSession.autoCompacting ||
+      liveSession.interrupting ||
+      liveSession.interruptingToSend
+    )
+      return;
+    // Nothing to stop: it runs now, as a send to an idle chat does.
+    if (!liveSession.streaming) {
+      liveSession.pendingSends.shift();
+      this.updateQueuedSends(liveSession);
+      await this.drive(appSessionId, prompt);
       return;
     }
-    // A provider that takes the prompt into the turn it is already running
-    // needs neither the queue nor an interrupt. A session already interrupting
-    // has no turn left to steer, so those sends keep the queued path.
-    const compacting = Boolean(liveSession.compacting) || liveSession.autoCompacting;
-    const interrupting =
-      Boolean(liveSession.interrupting) || Boolean(liveSession.interruptingForSteer);
-    const steered =
-      compacting || interrupting ? 'interrupt' : await this.steerTurn(liveSession, prompt);
-    if (steered === 'taken') return;
-    liveSession.pendingSends.unshift(prompt);
-    this.updateQueuedSends(liveSession);
-    // 'queued' means the turn this send meant to steer is already ending, and an
-    // interrupt already in flight means the same: the prompt travels on the
-    // queue, and a second interrupt would only end the turn that the first one
-    // is about to redeliver it into.
-    if (steered === 'queued' || compacting || interrupting) return;
-    liveSession.interruptingForSteer = true;
-    this.dependencies.emitStatus(liveSession.summary.appSessionId, 'Steering now...');
+    liveSession.interruptingToSend = true;
+    this.dependencies.appendProgress(appSessionId, 'Stopping the turn to send now...');
     try {
       await liveSession.session.interrupt();
     } catch (error) {
-      liveSession.interruptingForSteer = false;
+      liveSession.interruptingToSend = false;
       this.dependencies.emitError({
         code: 'session.send_now_failed',
-        appSessionId: liveSession.summary.appSessionId,
-        message: `Could not interrupt session for steering: ${errMsg(error)}`,
-      });
-    }
-  }
-
-  // The provider's own steer, when it has one. 'interrupt' leaves the caller to
-  // interrupt and resend, which is how every other provider steers. Steers run
-  // one at a time per session: two racing sends would both aim at the turn id
-  // they read before the other landed, and the loser would fall back.
-  private steerTurn(liveSession: LiveSession, prompt: SessionPrompt): Promise<SteerOutcome> {
-    if (!liveSession.session.steer) return Promise.resolve('interrupt');
-    const next = (
-      this.steering.get(liveSession) ?? Promise.resolve<SteerOutcome>('interrupt')
-    ).then(() => this.steerOnce(liveSession, prompt));
-    this.steering.set(liveSession, next);
-    return next;
-  }
-
-  private async steerOnce(liveSession: LiveSession, prompt: SessionPrompt): Promise<SteerOutcome> {
-    const session = liveSession.session;
-    const appSessionId = liveSession.summary.appSessionId;
-    if (!session.steer) return 'interrupt';
-    // Re-read after waiting for the steer ahead of this one: that steer may have
-    // failed and started the fallback interrupt, leaving no turn to take this
-    // prompt and nothing to gain from a second one.
-    if (
-      this.dependencies.registry.getLive(appSessionId) !== liveSession ||
-      !liveSession.streaming ||
-      liveSession.interrupting ||
-      liveSession.interruptingForSteer
-    )
-      return 'queued';
-    try {
-      await session.steer(prompt.text, prompt.mentions);
-    } catch (error) {
-      this.dependencies.emitError({
-        code: 'session.steer_failed',
         appSessionId,
-        message: `Could not steer the running turn: ${errMsg(error)}`,
+        message: `Could not stop the turn to send now: ${errMsg(error)}`,
       });
-      return 'interrupt';
     }
-    // The session may have been replaced while the steer was in flight; only
-    // the one that took the prompt records it.
-    if (this.dependencies.registry.getLive(appSessionId) === liveSession)
-      this.dependencies.recordPrompt(appSessionId, prompt.text);
-    return 'taken';
+  }
+
+  // Where a prompt the user sent goes: the live session to send it to, 'held'
+  // when it now waits for a chat that is relaunching, or nowhere, because a
+  // Stop or its sender took it back or the chat could not take it. A relaunch
+  // can begin while the send is being prepared. The caller checks the Stop
+  // count again once this resolves.
+  private async admitPrompt(
+    id: string,
+    prompt: SessionPrompt,
+  ): Promise<AdmittedPrompt | 'held' | undefined> {
+    if (this.waitForRelaunch(id, prompt)) return 'held';
+    const stops = this.stopCount(id);
+    const liveSession = await this.prepareToSend(id);
+    if (this.stopCount(id) !== stops || isWithdrawn(prompt)) return undefined;
+    if (!liveSession) return this.waitForRelaunch(id, prompt) ? 'held' : undefined;
+    return { liveSession, stops };
+  }
+
+  // Acceptance transfers the wave to the background-turn error owner. Compaction
+  // defers acceptance; an ordinary active/queued turn already carries the results.
+  wakeForSettledAgents(appSessionId: string, prompt: string, notice: string): boolean {
+    const liveSession = this.dependencies.registry.getLive(appSessionId);
+    if (!liveSession || liveSession.closeMode || this.dependencies.isShutdownStarted())
+      return false;
+    if (liveSession.interrupting || liveSession.interruptingToSend) return false;
+    if (liveSession.compacting || liveSession.autoCompacting) return false;
+    if (liveSession.summary.sessionPurpose === 'mission-control') return true;
+    if (liveSession.streaming || liveSession.pendingSends.length > 0) return true;
+    void this.driveInBackground(liveSession.summary.appSessionId, {
+      ...sessionPrompt(prompt),
+      notice,
+    });
+    return true;
   }
 
   async interrupt(requestedAppSessionId: string): Promise<void> {
+    this.noteStop(requestedAppSessionId);
+    this.relaunches.get(this.chatKey(requestedAppSessionId))?.splice(0);
     const liveSession = this.dependencies.registry.getLive(requestedAppSessionId);
     if (!liveSession) return;
     const appSessionId = liveSession.summary.appSessionId;
+    // The harness drops the steers it holds when the turn stops.
     liveSession.pendingSends = [];
+    liveSession.steers = [];
     if (liveSession.compacting) {
       // Clearing the queue mid-compaction is bookkeeping, not activity.
-      this.dependencies.registry.updateSummary(
-        appSessionId,
-        { queuedSends: 0 },
-        { touchActivity: false },
-      );
+      this.dependencies.registry.updateSummary(appSessionId, queueSummary(liveSession), {
+        touchActivity: false,
+      });
       return;
     }
     const wasAutoCompacting = liveSession.autoCompacting;
@@ -720,8 +832,10 @@ export class SessionLifecycle {
     this.dependencies.registry.updateSummary(appSessionId, {
       phase: 'paused',
       streaming: false,
-      queuedSends: 0,
+      ...queueSummary(liveSession),
     });
+    // A wave that finished during the Stop was held back; the Stop is over.
+    if (!liveSession.interrupting) this.dependencies.childSessions.retryAgentWave(appSessionId);
   }
 
   async settleAfterCompaction(
@@ -738,17 +852,25 @@ export class SessionLifecycle {
       return;
     }
     if (liveSession.closeMode) return;
+    this.dependencies.childSessions.retryAgentWave(appSessionId);
     if (liveSession.streaming || liveSession.compacting || liveSession.autoCompacting) return;
     const next = liveSession.pendingSends.shift();
-    if (next === undefined && previousLiveSession) {
+    if (next === undefined) {
       this.dependencies.onSessionAvailable?.(appSessionId);
       return;
     }
     this.updateQueuedSends(liveSession);
-    if (next !== undefined) await this.drive(liveSession.summary.appSessionId, next);
+    await this.drive(liveSession.summary.appSessionId, next);
   }
 
-  async close(appSessionId: string, mode: SessionCloseMode = 'discard-pending'): Promise<void> {
+  async close(requestedId: string, mode: SessionCloseMode = 'discard-pending'): Promise<void> {
+    // A resume in flight is filed under the chat's own id.
+    const appSessionId = this.chatKey(requestedId);
+    // Closing a chat for good takes back whatever was about to be sent to it.
+    if (mode === 'discard-pending') {
+      this.noteStop(appSessionId);
+      this.relaunches.delete(appSessionId);
+    }
     const pendingResume = this.resumeOperations.get(appSessionId);
     if (pendingResume) this.canceledResumes.add(appSessionId);
     const liveSession = this.dependencies.registry.getLive(appSessionId);
@@ -765,6 +887,7 @@ export class SessionLifecycle {
     if (mode === 'discard-pending') {
       liveSession.closeMode = mode;
       liveSession.pendingSends = [];
+      liveSession.steers = [];
     } else {
       liveSession.closeMode ??= mode;
     }
@@ -863,7 +986,10 @@ export class SessionLifecycle {
     });
     let unregistered: LiveSession | undefined;
     try {
-      unregistered = d.registry.unregister(liveSession.summary.appSessionId);
+      await d.forgetProviderTranscript(liveSession.summary.appSessionId);
+      if (d.registry.getLive(liveSession.summary.appSessionId) === liveSession) {
+        unregistered = await d.registry.unregister(liveSession.summary.appSessionId);
+      }
     } catch (error) {
       firstError ??= error;
     }
@@ -873,11 +999,6 @@ export class SessionLifecycle {
       });
       await run(() => {
         d.forgetPendingSettings(liveSession.summary.appSessionId);
-      });
-      // Flushes the open stored message, so the file is complete before the
-      // renderer hears the session closed.
-      await run(() => {
-        d.forgetProviderTranscript(liveSession.summary.appSessionId);
       });
       d.emit({ type: 'session.closed', appSessionId: liveSession.summary.appSessionId });
       await run(() => {
@@ -1015,15 +1136,17 @@ export class SessionLifecycle {
         this.dependencies.registry.updateSummary(appSessionId, {
           phase: 'running',
           streaming: true,
-          queuedSends: liveSession.pendingSends.length,
+          ...queueSummary(liveSession),
         });
         return;
       }
       // A Stop lands before the turn reports itself finished, so the flags it
       // set are cleared here as they are for a typed turn.
+      const stopped = liveSession.interrupting === true || liveSession.interruptingToSend === true;
       liveSession.interrupting = false;
-      liveSession.interruptingForSteer = false;
+      liveSession.interruptingToSend = false;
       this.publishTurnSettled(liveSession);
+      if (stopped) this.dependencies.childSessions.retryAgentWave(liveSession.summary.appSessionId);
       // A runtime that has gone takes the queue with it through the close
       // path, which reopens and redelivers. Taking a prompt off it here would
       // spend it on a client that cannot run it.
@@ -1053,7 +1176,12 @@ export class SessionLifecycle {
       // without taking over its error handling before releasing the runtime.
       if (turn) await turn.catch(() => undefined);
       if (!isCurrent()) return;
-      if (error && !turn) d.emitError({ appSessionId, message: error.message });
+      // No turn owned this failure, so the chat would otherwise keep no record
+      // of the runtime dying: leave the same row a failed turn leaves.
+      if (error && !turn) {
+        d.appendError(appSessionId, error.message);
+        d.emitError({ appSessionId, message: error.message });
+      }
       const { deferred } = this.beginClose(liveSession, 'preserve-pending');
       // Keep ownership until cleanup succeeds; sends must not reuse a dead runtime.
       deferred.retryOnFailure = true;
@@ -1099,6 +1227,7 @@ export class SessionLifecycle {
       this.dependencies.emitError({ appSessionId, message });
       return undefined;
     }
+    if (liveSession.streaming && liveSession.summary.provider === 'claude') return liveSession;
     const settingsApplied = await this.dependencies.applyPendingSessionSettings(
       liveSession.summary.appSessionId,
     );
@@ -1152,10 +1281,10 @@ export class SessionLifecycle {
       this.dependencies.registry.getLive(liveSession.summary.appSessionId) === liveSession
     ) {
       this.dependencies.context.forgetSession(liveSession);
-      if (this.dependencies.registry.unregister(liveSession.summary.appSessionId)) {
+      if (await this.dependencies.registry.unregister(liveSession.summary.appSessionId)) {
         this.dependencies.forgetInteractions(liveSession.summary.appSessionId);
         this.dependencies.forgetEventFlow(liveSession.summary.appSessionId);
-        this.dependencies.forgetProviderTranscript(liveSession.summary.appSessionId);
+        await this.dependencies.forgetProviderTranscript(liveSession.summary.appSessionId);
         this.dependencies.forgetMissionControl(liveSession.summary.appSessionId);
         this.dependencies.forgetPendingSettings(liveSession.summary.appSessionId);
       }
@@ -1168,8 +1297,50 @@ export class SessionLifecycle {
     delivery?: ScheduledTurnDelivery,
   ): Promise<void> {
     const d = this.dependencies;
+    const stops = this.stopCount(appSessionId);
     const liveSession = d.registry.getLive(appSessionId);
-    if (!liveSession || liveSession.closeMode || d.isShutdownStarted()) return;
+    if (!liveSession || d.isShutdownStarted()) return;
+    if (liveSession.summary.provider === 'claude' && !liveSession.closeMode) {
+      await d.waitForSettingsMutations?.(appSessionId);
+      if (d.isShutdownStarted() || this.stopCount(appSessionId) !== stops) return;
+    }
+    if (d.registry.getLive(appSessionId) !== liveSession || liveSession.closeMode) {
+      // The runtime was released under this send. A prompt the user typed
+      // reopens the chat, as a send to any released chat does.
+      if (liveSession.closeMode === 'preserve-pending' && !delivery && !prompt.notice)
+        await this.sendPrompt(appSessionId, prompt);
+      return;
+    }
+    if (liveSession.streaming) {
+      liveSession.pendingSends.push(prompt);
+      this.updateQueuedSends(liveSession);
+      return;
+    }
+    // Its sender withdrew it while it waited, so what was queued behind it runs instead.
+    if (isWithdrawn(prompt)) {
+      const next = liveSession.pendingSends.shift();
+      if (next === undefined) return;
+      this.updateQueuedSends(liveSession);
+      await this.drive(appSessionId, next);
+      return;
+    }
+    // A scheduled prompt keeps the runtime it reserved; the new window waits
+    // for the next message the user sends.
+    if (liveSession.restartBeforeNextTurn && !delivery) {
+      await this.relaunch(liveSession, prompt);
+      return;
+    }
+    await this.runTurn(liveSession, prompt, delivery);
+  }
+
+  // Marks the chat as streaming before it first yields, so a send that arrives
+  // meanwhile queues behind this turn.
+  private async runTurn(
+    liveSession: LiveSession,
+    prompt: SessionPrompt,
+    delivery?: ScheduledTurnDelivery,
+  ): Promise<void> {
+    const d = this.dependencies;
     const stableAppSessionId = liveSession.summary.appSessionId;
     try {
       liveSession.streaming = true;
@@ -1179,15 +1350,25 @@ export class SessionLifecycle {
       d.registry.updateSummary(stableAppSessionId, {
         phase: liveSession.summary.sessionPurpose === 'mission-control' ? 'planning' : 'running',
         streaming: true,
-        queuedSends: liveSession.pendingSends.length,
+        ...queueSummary(liveSession),
       });
-      liveSession.turnPromise = d.runPrimaryTurn(liveSession, prompt, delivery);
+      liveSession.turnPromise = d.runPrimaryTurn(liveSession, {
+        prompt: prompt.text,
+        ...(prompt.mentions ? { mentions: prompt.mentions } : {}),
+        ...(delivery ? { delivery } : {}),
+        ...(prompt.notice ? { notice: prompt.notice } : {}),
+        ...(prompt.steerId || prompt.announce ? { announce: true as const } : {}),
+        ...(prompt.isCurrent ? { stillAllowed: prompt.isCurrent } : {}),
+      });
       await liveSession.turnPromise;
     } finally {
       liveSession.turnPromise = undefined;
-      liveSession.interruptingForSteer = false;
+      const stopped = liveSession.interrupting === true || liveSession.interruptingToSend === true;
+      liveSession.interruptingToSend = false;
       liveSession.interrupting = false;
       liveSession.streaming = false;
+      // A wave held back while the Stop was outstanding is owed once it is over.
+      if (stopped) d.childSessions.retryAgentWave(stableAppSessionId);
       // Let the closure observer claim cleanup before advancing the queue.
       if (liveSession.session.isClosed) await liveSession.session.closed;
       if (liveSession.providerClosePromise) {
@@ -1242,16 +1423,88 @@ export class SessionLifecycle {
   private publishTurnState(liveSession: LiveSession, turnSettled: boolean): void {
     this.dependencies.registry.updateSummary(
       liveSession.summary.appSessionId,
-      {
-        streaming: liveSession.streaming,
-        queuedSends: liveSession.pendingSends.length,
-      },
+      { streaming: liveSession.streaming, ...queueSummary(liveSession) },
       { touchActivity: turnSettled },
     );
   }
 
   private shouldDiscardPendingSends(liveSession: LiveSession): boolean {
     return liveSession.closeMode === 'discard-pending';
+  }
+
+  // A chat whose context window changed runs on a new process. The runtime is
+  // released and reopened the way an idle one is. The prompt that found it
+  // stale, what was queued behind it and what is sent meanwhile wait here in
+  // order, because for that long the chat has no runtime to queue them on.
+  private async relaunch(stale: LiveSession, prompt: SessionPrompt): Promise<void> {
+    const d = this.dependencies;
+    const appSessionId = stale.summary.appSessionId;
+    const usage = { tokensIn: stale.summary.tokensIn, tokensOut: stale.summary.tokensOut };
+    const waiting = [prompt, ...stale.pendingSends.splice(0)];
+    this.relaunches.set(appSessionId, waiting);
+    // A discarding close removes the queue; a Stop only empties it.
+    const abandoned = () => d.isShutdownStarted() || this.relaunches.get(appSessionId) !== waiting;
+    let liveSession: LiveSession | undefined;
+    let reason = '';
+    try {
+      await this.close(appSessionId, 'preserve-pending');
+      if (abandoned()) return;
+      if (await this.resume(appSessionId)) {
+        if (abandoned()) return;
+        d.context.preserveUsage(appSessionId, usage);
+        // A preference accepted while the chat was relaunching belongs to the
+        // turn about to start.
+        if (await d.applyPendingSessionSettings(appSessionId))
+          liveSession = d.registry.getLive(appSessionId);
+      }
+      if (abandoned()) return;
+    } catch (error) {
+      if (abandoned()) return;
+      reason = ` (${errMsg(error)})`;
+    } finally {
+      if (this.relaunches.get(appSessionId) === waiting) this.relaunches.delete(appSessionId);
+    }
+    // From here to the turn nothing yields: a send that arrives later finds a
+    // chat that is streaming and queues behind it.
+    if (!liveSession || liveSession.closeMode) {
+      // Said even when a Stop took every message back: the runtime is still
+      // the stale one.
+      const lost = waiting.length > 0 ? `, so ${unsent(waiting.length)} not sent` : '';
+      d.emitError({
+        appSessionId,
+        message: `The chat could not restart on its new context window${reason}${lost}.`,
+      });
+      return;
+    }
+    // A prompt its sender withdrew while the chat restarted is not sent.
+    const wanted = waiting.filter((queued) => !isWithdrawn(queued));
+    if (wanted.length === 0) return;
+    const [first, ...rest] = wanted;
+    liveSession.pendingSends.unshift(...(liveSession.streaming ? wanted : rest));
+    if (liveSession.streaming) this.updateQueuedSends(liveSession);
+    else if (liveSession.restartBeforeNextTurn) await this.relaunch(liveSession, first);
+    else await this.runTurn(liveSession, first);
+  }
+
+  // True when the chat is relaunching and the prompt now waits for it.
+  private waitForRelaunch(id: string, prompt: SessionPrompt): boolean {
+    const waiting = this.relaunches.get(this.chatKey(id));
+    waiting?.push(prompt);
+    return waiting !== undefined;
+  }
+
+  private stopCount(id: string): number {
+    return this.stops.get(this.chatKey(id)) ?? 0;
+  }
+
+  private noteStop(id: string): void {
+    this.stops.set(this.chatKey(id), this.stopCount(id) + 1);
+  }
+
+  // A chat is addressed by its own id or by its provider's, and one that is
+  // resuming or relaunching has no live session to resolve either through.
+  private chatKey(id: string): string {
+    return this.dependencies.registry.getCanonicalSummary(id)?.appSessionId ?? id;
   }
 
   private async redeliverQueuedSends(appSessionId: string, queued: SessionPrompt[]): Promise<void> {
@@ -1269,8 +1522,48 @@ export class SessionLifecycle {
   }
 }
 
-function sessionPrompt(text: string, mentions?: ProviderMention[]): SessionPrompt {
-  return { text, ...(mentions?.length ? { mentions } : {}) };
+function unsent(count: number): string {
+  return count === 1 ? 'your message was' : `${String(count)} messages were`;
+}
+
+let promptOrder = 0;
+
+function sessionPrompt(
+  text: string,
+  mentions?: ProviderMention[],
+  steerId?: string,
+): SessionPrompt {
+  return {
+    text,
+    ...(mentions?.length ? { mentions } : {}),
+    ...(steerId ? { steerId } : {}),
+    order: ++promptOrder,
+  };
+}
+
+function isWithdrawn(prompt: SessionPrompt): boolean {
+  return prompt.isCurrent?.() === false;
+}
+
+// What the chat shows of its queue: how many sends wait, and the steers the
+// model has not taken in yet, whether the harness holds them or the queue does.
+function queueSummary(
+  liveSession: LiveTurnState,
+): Pick<SessionSummary, 'queuedSends' | 'pendingSteers'> {
+  const pendingSteers = [...liveSession.steers, ...liveSession.pendingSends]
+    .sort((a, b) => a.order - b.order)
+    .flatMap(({ steerId, text }) =>
+      steerId ? [{ id: steerId, text: userPromptDisplay(text).text }] : [],
+    );
+  return { queuedSends: liveSession.pendingSends.length, pendingSteers };
+}
+
+// Takes the prompt out of the list; false when it was no longer there.
+function removePrompt(prompts: SessionPrompt[], prompt: SessionPrompt): boolean {
+  const index = prompts.indexOf(prompt);
+  if (index < 0) return false;
+  prompts.splice(index, 1);
+  return true;
 }
 
 function createLiveSession(
@@ -1285,6 +1578,7 @@ function createLiveSession(
     ...(droid ? { droid } : {}),
     streaming: false,
     pendingSends: [],
+    steers: [],
     mcpServers: mcp.servers,
     mcpConfigs: mcp.configs,
     autoCompacting: false,

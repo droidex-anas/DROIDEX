@@ -22,7 +22,7 @@ export const DEFAULT_FINISH_NOTIFICATION_SETTINGS: FinishNotificationSettings = 
 };
 
 const STORAGE_KEY = 'droid-finish-notifications-v1';
-export const NOTIFICATION_SNIPPET_MAX = 160;
+const NOTIFICATION_SNIPPET_MAX = 160;
 
 function getLocalStorage(): Storage | undefined {
   if (typeof window !== 'undefined') return window.localStorage;

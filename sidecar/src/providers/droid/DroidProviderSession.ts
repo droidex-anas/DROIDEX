@@ -7,7 +7,7 @@ import {
 } from '../../DroidRuntime.js';
 import { normalizeStreamEvent, type NormalizedEvent } from '../../normalize.js';
 import type { Autonomy, SessionInteractionMode } from '../../protocol.js';
-import { errMsg } from '../../sessionHelpers.js';
+import { errMsg } from '../../errors.js';
 import { hotPathMetrics } from '../../telemetry/hotPathMetrics.js';
 import type { ProviderModelSettings, ProviderSession } from '../session.js';
 import { UsageLimitError } from '../usageLimit.js';
@@ -24,6 +24,7 @@ export class DroidProviderSession implements ProviderSession {
     private readonly appSessionId: string,
     readonly droid: FactorySession,
     private readonly runtime: DroidProcessRuntime,
+    private readonly permissions: { autonomy: Autonomy } = { autonomy: 'off' },
   ) {}
 
   get providerSessionId(): string {
@@ -58,6 +59,7 @@ export class DroidProviderSession implements ProviderSession {
 
   async setAutonomy(autonomy: Autonomy): Promise<void> {
     await this.droid.updateSettings({ autonomyLevel: mapAutonomy(autonomy) });
+    this.permissions.autonomy = autonomy;
   }
 
   async setModel({ modelId, reasoningEffort }: ProviderModelSettings): Promise<void> {

@@ -91,8 +91,9 @@ function sidebarRow(
   if (isChatPinned(metadata[id])) row.pinned = true;
   if (signals.settledAt !== undefined) row.settledAt = signals.settledAt;
   if (signals.prDone) row.prDone = true;
+  // The requests the window shows first, as the sidebar's own status reads them.
   const permission = Object.hasOwn(state.pendingPermissions, id)
-    ? state.pendingPermissions[id]
+    ? state.pendingPermissions[id]?.[0]
     : undefined;
   if (permission)
     row.permission = {
@@ -100,7 +101,7 @@ function sidebarRow(
       detail: permission.detail.slice(0, LIMITS.permissionDetail),
     };
   const question = Object.hasOwn(state.pendingQuestions, id)
-    ? state.pendingQuestions[id]
+    ? state.pendingQuestions[id]?.[0]
     : undefined;
   if (question)
     row.question = {
@@ -110,7 +111,7 @@ function sidebarRow(
         question: item.question.slice(0, LIMITS.questionText),
         options: item.options
           .slice(0, LIMITS.options)
-          .map((option) => option.slice(0, LIMITS.optionText)),
+          .map((option) => ({ label: option.label.slice(0, LIMITS.optionText) })),
       })),
     };
   return row;

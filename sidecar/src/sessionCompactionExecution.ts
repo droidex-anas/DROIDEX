@@ -11,7 +11,7 @@ import type { ProviderInteractions } from './providers/interactions.js';
 import type { LiveOperationTarget, SessionContext, UsageOffset } from './SessionContext.js';
 import type { LiveSession } from './SessionLifecycle.js';
 import type { SessionRegistry } from './SessionRegistry.js';
-import { errMsg } from './sessionHelpers.js';
+import { errMsg } from './errors.js';
 import type { SessionTimeline } from './SessionTimeline.js';
 
 export type CompactionExecutionResult =
@@ -133,7 +133,7 @@ export class SessionCompactionExecution {
     carryover: UsageOffset,
   ): Promise<void> {
     const appSessionId = liveSession.summary.appSessionId;
-    const ref = { id: appSessionId };
+    const ref = { id: appSessionId, autonomy: liveSession.summary.autonomy };
     const oldSession = liveSession.session;
     const target = this.effects.primaryTarget(liveSession);
     const replacement = await this.dependencies.runtime.loadSession(providerSessionId, {
@@ -154,6 +154,15 @@ export class SessionCompactionExecution {
           () => this.dependencies.runtime.isProcessAlive(replacement),
           'provisional',
         );
+      const provider = new DroidProviderSession(
+        appSessionId,
+        replacement,
+        this.dependencies.runtime,
+        ref,
+      );
+      const autonomy = liveSession.summary.autonomy;
+      await provider.setAutonomy(autonomy);
+      if (!target.isCurrent()) return;
       // Keep the old provider alive and owned until discovery succeeds.
       // Closing it on a failed scan would orphan its unobserved children.
       if (oldPid !== undefined) {
@@ -168,12 +177,10 @@ export class SessionCompactionExecution {
       }
       await oldSession.close();
       if (!target.isCurrent()) return;
+      if (liveSession.summary.autonomy !== autonomy)
+        throw new Error('Permissions changed while replacing the session. Retry compaction.');
       if (oldPid !== undefined) this.dependencies.agentProcesses.untrack(oldPid, appSessionId);
-      liveSession.session = new DroidProviderSession(
-        appSessionId,
-        replacement,
-        this.dependencies.runtime,
-      );
+      liveSession.session = provider;
       liveSession.droid = replacement;
       installed = true;
       if (replacementPid !== undefined)
@@ -185,7 +192,7 @@ export class SessionCompactionExecution {
       if (!this.effects.primaryTarget(liveSession).isCurrent()) return;
       liveSession.todoDisabledForDesign = undefined;
       this.dependencies.context.preserveUsage(appSessionId, carryover);
-      this.replaceProvider(appSessionId, providerSessionId, carryover);
+      await this.replaceProvider(appSessionId, providerSessionId, carryover);
     } finally {
       if (!installed) {
         try {
@@ -221,7 +228,7 @@ export class SessionCompactionExecution {
     if (!this.effects.primaryTarget(liveSession).isCurrent()) return { kind: 'ready-to-settle' };
     const appSessionId = liveSession.summary.appSessionId;
     try {
-      this.replaceProvider(appSessionId, providerSessionId, carryover);
+      await this.replaceProvider(appSessionId, providerSessionId, carryover);
     } catch (error) {
       this.dependencies.emitError({
         providerSessionId,
@@ -262,7 +269,7 @@ export class SessionCompactionExecution {
           ? result.newSessionId
           : oldProviderSessionId;
       if (providerSessionId !== oldProviderSessionId && historical)
-        this.persistHistoricalProvider(appSessionId, providerSessionId);
+        await this.persistHistoricalProvider(appSessionId, providerSessionId);
     } catch (error) {
       this.dependencies.emitError({
         providerSessionId: oldProviderSessionId,
@@ -275,9 +282,12 @@ export class SessionCompactionExecution {
     }
   }
 
-  private persistHistoricalProvider(appSessionId: string, providerSessionId: string): void {
+  private async persistHistoricalProvider(
+    appSessionId: string,
+    providerSessionId: string,
+  ): Promise<void> {
     try {
-      this.dependencies.registry.replaceProvider(appSessionId, providerSessionId);
+      await this.dependencies.registry.replaceProvider(appSessionId, providerSessionId);
     } catch (error) {
       this.dependencies.emitError({
         providerSessionId,
@@ -287,16 +297,20 @@ export class SessionCompactionExecution {
     }
   }
 
-  private replaceProvider(
+  private async replaceProvider(
     appSessionId: string,
     providerSessionId: string,
     carryover: UsageOffset,
-  ): void {
-    const updated = this.dependencies.registry.replaceProvider(appSessionId, providerSessionId, {
-      tokensIn: carryover.tokensIn,
-      tokensOut: carryover.tokensOut,
-      contextTokens: 0,
-    });
+  ): Promise<void> {
+    const updated = await this.dependencies.registry.replaceProvider(
+      appSessionId,
+      providerSessionId,
+      {
+        tokensIn: carryover.tokensIn,
+        tokensOut: carryover.tokensOut,
+        contextTokens: 0,
+      },
+    );
     if (!updated) {
       throw new Error(`Session ${appSessionId} disappeared before its provider could be replaced.`);
     }

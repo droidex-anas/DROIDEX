@@ -65,6 +65,7 @@ test('failed provider adoption marks the session interrupted instead of running'
         liveSessionsSnapshot: () => [],
         getCanonicalSummary: () => historical,
         getLive: () => undefined,
+        updateSummary: () => undefined,
       },
       lifecycle: {
         resume: async () => false,
@@ -75,7 +76,7 @@ test('failed provider adoption marks the session interrupted instead of running'
       persistSummaries: (sessions) => {
         persisted.push(...sessions);
       },
-      emitStatus: (_appSessionId, text) => {
+      appendStatus: (_appSessionId, text) => {
         statuses.push(text);
       },
       sessionRuntimeIdleMs: SESSION_RUNTIME_IDLE_RETIREMENT_MS,
@@ -118,6 +119,9 @@ test('a resumed in-flight session is paused with an interrupt reason', async () 
         liveSessionsSnapshot: () => [live],
         getCanonicalSummary: () => live.summary,
         getLive: () => live,
+        updateSummary: (_id, patch) => {
+          live.summary = { ...live.summary, ...patch };
+        },
       },
       lifecycle: {
         resume: async () => true,
@@ -127,9 +131,8 @@ test('a resumed in-flight session is paused with an interrupt reason', async () 
       reapProcesses: () => Promise.resolve(),
       persistSummaries: (sessions) => {
         persisted.push(...sessions);
-        live.summary = sessions[0] ?? live.summary;
       },
-      emitStatus: () => undefined,
+      appendStatus: () => undefined,
       sessionRuntimeIdleMs: SESSION_RUNTIME_IDLE_RETIREMENT_MS,
       now: () => NOW,
     });
@@ -139,6 +142,8 @@ test('a resumed in-flight session is paused with an interrupt reason', async () 
     assert.equal(live.summary.phase, 'paused');
     assert.equal(live.summary.streaming, false);
     assert.equal(typeof live.summary.interruptReason, 'string');
+    // A live summary has one owner, so adoption never stores a copy of its own.
+    assert.deepEqual(persisted, []);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
@@ -172,6 +177,7 @@ test('running children are marked interrupted and written out of the live journa
         liveSessionsSnapshot: () => [],
         getCanonicalSummary: () => undefined,
         getLive: () => undefined,
+        updateSummary: () => undefined,
       },
       lifecycle: {
         resume: async () => false,
@@ -180,7 +186,7 @@ test('running children are marked interrupted and written out of the live journa
       recordedProcesses: () => [],
       reapProcesses: () => Promise.resolve(),
       persistSummaries: () => undefined,
-      emitStatus: () => undefined,
+      appendStatus: () => undefined,
       sessionRuntimeIdleMs: SESSION_RUNTIME_IDLE_RETIREMENT_MS,
       now: () => NOW,
     });
@@ -224,6 +230,7 @@ function bootAdoption(dir: string, options: BootCase = {}) {
       liveSessionsSnapshot: () => [],
       getCanonicalSummary: () => summary(identity.appSessionId, 'completed'),
       getLive: () => undefined,
+      updateSummary: () => undefined,
     },
     lifecycle: {
       resume: async (appSessionId: string) => {
@@ -235,7 +242,7 @@ function bootAdoption(dir: string, options: BootCase = {}) {
     recordedProcesses: () => [],
     reapProcesses: () => Promise.resolve(),
     persistSummaries: () => undefined,
-    emitStatus: () => undefined,
+    appendStatus: () => undefined,
     sessionRuntimeIdleMs: SESSION_RUNTIME_IDLE_RETIREMENT_MS,
     now: () => NOW,
   });
@@ -316,13 +323,14 @@ test('the journal carries when each live session was last active', async () => {
         liveSessionsSnapshot: () => [live],
         getCanonicalSummary: () => live.summary,
         getLive: () => live,
+        updateSummary: () => undefined,
       },
       lifecycle: { resume: async () => true },
       liveChildren: () => [],
       recordedProcesses: () => [],
       reapProcesses: () => Promise.resolve(),
       persistSummaries: () => undefined,
-      emitStatus: () => undefined,
+      appendStatus: () => undefined,
       sessionRuntimeIdleMs: SESSION_RUNTIME_IDLE_RETIREMENT_MS,
       now: () => NOW,
     });

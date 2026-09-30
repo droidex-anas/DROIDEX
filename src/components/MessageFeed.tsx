@@ -6,6 +6,7 @@ import {
   useMemo,
   useRef,
   useState,
+  type ReactNode,
   type RefObject,
 } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -29,7 +30,7 @@ import { hasAppBlock } from './appBlockRuntime';
 import { asChunkedSequence } from '../lib/chunkedSequence';
 import { ConversationList, type ConversationListHandle } from './ConversationList';
 import { shouldAnimateFeedRow } from './conversationListState';
-import { FeedRow, optionalFeedRowProps, type FeedRowsSharedProps } from './messageFeedRows';
+import { FeedRow } from './messageFeedRows';
 import { WorktreeCreatedCard } from './WorktreeCreatedCard';
 import {
   appendedFeedItemKeysFromProjection,
@@ -41,7 +42,7 @@ import {
 } from './messageFeedState';
 import { buildFeed, isCompactingStatus, isSettingsStatus, type FeedItem } from './chatFeed';
 import { groupTurns, tailTimestamp, trailingSubagentPoll } from './chatFeedTurns';
-import { FeedItemView, feedItemPropsEqual, isSpecEcho } from './chat';
+import { isSpecEcho } from './chat';
 import { ForkedFromDivider, WorkingIndicator } from './transcript/primitives';
 import type { AgentMonitorData } from './agents/AgentMonitorCard';
 
@@ -134,6 +135,7 @@ export function MessageFeed({
   rebuiltFromItemIndex = 0,
   density = DEFAULT_TOOL_ACTIVITY.density,
   inlineDiffs = DEFAULT_TOOL_ACTIVITY.inlineDiffs,
+  pendingSteers,
 }: {
   events: TranscriptEvent[];
   items?: FeedItem[];
@@ -167,6 +169,8 @@ export function MessageFeed({
   density?: ToolActivityDensity;
   // Whether folded diff runs render expanded by default.
   inlineDiffs?: boolean;
+  // Steers the model has not taken in yet; they follow the transcript.
+  pendingSteers?: ReactNode;
 }) {
   // Child session cards, waiting label, and live timers are enabled only for the
   // chat/spec feed (which supplies onOpenChildSession). Per-turn change summaries
@@ -186,34 +190,19 @@ export function MessageFeed({
   useLayoutEffect(() => {
     cbRef.current = { onOpenDiff, onOpenReviewFile, onOpenChildSession, onOpenAgent, onFork };
   }, [onOpenDiff, onOpenReviewFile, onOpenChildSession, onOpenAgent, onFork]);
-  const hasOpenDiff = !!onOpenDiff;
-  const hasOpenReviewFile = !!onOpenReviewFile;
-  const stableOnOpenDiff = useMemo(
-    () => (hasOpenDiff ? (c: FileChange) => cbRef.current.onOpenDiff?.(c) : undefined),
-    [hasOpenDiff],
+  const callbacks = useMemo(
+    () => ({
+      onOpenDiff: (change: FileChange) => cbRef.current.onOpenDiff?.(change),
+      onOpenReviewFile: (path: string, change?: FileChange) =>
+        cbRef.current.onOpenReviewFile?.(path, change),
+      onOpenChildSession: (target: ChildSessionTarget) =>
+        cbRef.current.onOpenChildSession?.(target),
+      onOpenAgent: (child: ChildSessionSummary) => cbRef.current.onOpenAgent?.(child),
+      onFork: (forkPointId?: string) => cbRef.current.onFork?.(forkPointId),
+    }),
+    [],
   );
-  const stableOnOpenReviewFile = useMemo(
-    () =>
-      hasOpenReviewFile
-        ? (p: string, change?: FileChange) => cbRef.current.onOpenReviewFile?.(p, change)
-        : undefined,
-    [hasOpenReviewFile],
-  );
-  const stableOnOpenChildSession = useMemo(
-    () => (rich ? (t: ChildSessionTarget) => cbRef.current.onOpenChildSession?.(t) : undefined),
-    [rich],
-  );
-  const hasOpenAgent = !!onOpenAgent;
-  const stableOnOpenAgent = useMemo(
-    () =>
-      hasOpenAgent ? (child: ChildSessionSummary) => cbRef.current.onOpenAgent?.(child) : undefined,
-    [hasOpenAgent],
-  );
-  const hasFork = !!onFork;
-  const stableOnFork = useMemo(
-    () => (hasFork ? (forkPointId?: string) => cbRef.current.onFork?.(forkPointId) : undefined),
-    [hasFork],
-  );
+  const stableOnOpenReviewFile = onOpenReviewFile ? callbacks.onOpenReviewFile : undefined;
 
   // With the subagents dock, each contiguous run of spawns becomes one wave
   // item: the dock card renders right where that turn spawned its agents (live
@@ -348,38 +337,6 @@ export function MessageFeed({
         : 'Working';
   // Time the check from the poll itself; the visible tail can be minutes old.
   const workingStart = rich ? (subagentPoll?.ts ?? tailTimestamp(last)) : undefined;
-  const rowSharedProps = useMemo<FeedRowsSharedProps>(
-    () => ({
-      pending,
-      cwd,
-      onOpenDiff: stableOnOpenDiff,
-      onOpenReviewFile: stableOnOpenReviewFile,
-      onOpenChildSession: stableOnOpenChildSession,
-      onOpenAgent: stableOnOpenAgent,
-      childSessionActivity,
-      agentMonitor,
-      liveTiming: rich,
-      specContent,
-      density,
-      inlineDiffs,
-    }),
-    [
-      pending,
-      cwd,
-      stableOnOpenDiff,
-      stableOnOpenReviewFile,
-      stableOnOpenChildSession,
-      stableOnOpenAgent,
-      childSessionActivity,
-      agentMonitor,
-      rich,
-      specContent,
-      density,
-      inlineDiffs,
-    ],
-  );
-  const optionalItemProps = optionalFeedRowProps(rowSharedProps);
-  const subagentPollActive = Boolean(subagentPoll);
 
   return (
     // A reply's prose names files as it works; inside the transcript those
@@ -396,29 +353,40 @@ export function MessageFeed({
 
         <ConversationList
           items={items}
-          {...(scrollElementRef !== undefined ? { scrollElementRef } : {})}
-          {...(viewportLayoutRef !== undefined ? { viewportLayoutRef } : {})}
-          {...(listRef !== undefined ? { listRef } : {})}
-          {...(initialScrollOffset !== undefined ? { initialScrollOffset } : {})}
-          {...(onMountedRowsChange !== undefined ? { onMountedRowsChange } : {})}
+          updateKind={updateKind}
+          rebuiltFromItemIndex={rebuiltFromItemIndex}
+          scrollElementRef={scrollElementRef}
+          viewportLayoutRef={viewportLayoutRef}
+          listRef={listRef}
+          initialScrollOffset={initialScrollOffset}
+          onMountedRowsChange={onMountedRowsChange}
         >
           {(item, index) => {
-            const fork = pending ? undefined : forkOffer(item, finalResponseState);
+            const fork = pending || !onFork ? undefined : forkOffer(item, finalResponseState);
             return (
               <>
                 <FeedRow
                   item={item}
-                  itemView={FeedItemView}
-                  areItemPropsEqual={feedItemPropsEqual}
                   animateOnMount={shouldAnimateFeedRow(item, animateKeys, enteredKeys)}
                   onEnter={recordEntrance}
-                  live={pending && index === lastIdx && !subagentPollActive}
+                  live={pending && index === lastIdx && !subagentPoll}
                   sessionLive={pending}
                   compacting={compacting && index === lastIdx}
-                  {...optionalItemProps}
-                  liveTiming={rowSharedProps.liveTiming}
+                  cwd={cwd}
+                  onOpenDiff={onOpenDiff ? callbacks.onOpenDiff : undefined}
+                  onOpenReviewFile={stableOnOpenReviewFile}
+                  onOpenChildSession={rich ? callbacks.onOpenChildSession : undefined}
+                  onOpenAgent={onOpenAgent ? callbacks.onOpenAgent : undefined}
+                  childSessionActivity={childSessionActivity}
+                  agentMonitor={agentMonitor}
+                  liveTiming={rich}
+                  specContent={specContent}
+                  density={density}
+                  inlineDiffs={inlineDiffs}
                   isFinalResponse={isCopyableFinalResponse(item.key, finalResponseState, pending)}
-                  {...(fork && stableOnFork ? { onFork: stableOnFork, forking, ...fork } : {})}
+                  onFork={fork ? callbacks.onFork : undefined}
+                  forkPointId={fork?.forkPointId}
+                  forking={fork ? forking : undefined}
                 />
                 {index === worktreeInsertAfter && createdWorktreePath ? (
                   <div className="mx-auto min-w-0 max-w-2xl">
@@ -440,6 +408,7 @@ export function MessageFeed({
             <WorkingIndicator label={workingLabel} startTs={workingStart} />
           </div>
         )}
+        {pendingSteers}
       </div>
     </ProseFileLinks>
   );

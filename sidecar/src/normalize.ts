@@ -13,6 +13,7 @@ import { droidErrorDetails } from './providers/droid/droidErrors.js';
 import type {
   SessionRole,
   BridgeFeature,
+  ChildSpawnLink,
   PermissionKind,
   PermissionRequest,
   ProgressEntry,
@@ -82,6 +83,11 @@ export interface NormalizedEvent {
     exitCode?: number;
   };
   childSession?: ChildSessionSignal;
+  // The transcript row is a child session's own, not the parent's. Claude Code
+  // streams a subagent's messages inside the parent's stream, tagged with the
+  // tool_use that spawned it; this is that tag, resolved to the child's scope
+  // where the transcript is appended.
+  childOwner?: ChildSpawnLink;
   tokens?: {
     tokensIn: number;
     tokensOut: number;
@@ -547,7 +553,17 @@ export function classifyPermission(
       detail = JSON.stringify(c);
   }
 
-  return { appSessionId: appSessionId, requestId, kind, title, detail, plan, options, raw: params };
+  return {
+    appSessionId,
+    requestId,
+    kind,
+    title,
+    detail,
+    canAlwaysAllow: Boolean(permissionSignature(params)),
+    plan,
+    options,
+    raw: params,
+  };
 }
 
 export function confirmationType(params: RequestPermissionRequestParams): string {
@@ -565,7 +581,8 @@ export function permissionSignature(params: RequestPermissionRequestParams): str
     case 'exec': {
       const fullCommand = typeof c.fullCommand === 'string' ? c.fullCommand : '';
       const command = typeof c.command === 'string' ? c.command : '';
-      return `exec::${fullCommand || command}`;
+      const concreteCommand = fullCommand || command;
+      return concreteCommand ? `exec::${concreteCommand}` : '';
     }
     case 'mcp_tool':
       return mcpToolSignature(params, c);
@@ -593,5 +610,6 @@ export function permissionSignature(params: RequestPermissionRequestParams): str
 function mcpToolSignature(params: RequestPermissionRequestParams, c: ConfirmationDetail): string {
   const serverName = typeof c.serverName === 'string' ? c.serverName : '';
   const toolName = typeof c.toolName === 'string' ? c.toolName : '';
+  if (!toolName) return '';
   return mcpGrantSignature(serverName, toolName, primaryToolInput(params));
 }

@@ -100,6 +100,7 @@ export class CodexToolBridge {
           appSessionId: this.session.appSessionId,
           requestId: nextInteractionRequestId(),
           kind: 'mcp',
+          canAlwaysAllow: Boolean(signature),
           title:
             sessionsToolDisplayTitle(serverName, tool.name) ??
             automationToolDisplayTitle(serverName, tool.name) ??

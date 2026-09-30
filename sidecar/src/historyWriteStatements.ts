@@ -34,6 +34,8 @@ export class HistoryWriteStatements {
         updated_at,
         model_id,
         reasoning_effort,
+        fast_mode,
+        context_window_tokens,
         compaction_model,
         worker_model_id,
         worker_reasoning_effort,
@@ -49,7 +51,7 @@ export class HistoryWriteStatements {
         max_context_tokens,
         auto_compactions
       )
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(app_session_id) DO UPDATE SET
         provider_session_id = excluded.provider_session_id,
         compacted_from_provider_session_ids = excluded.compacted_from_provider_session_ids,
@@ -61,6 +63,8 @@ export class HistoryWriteStatements {
         updated_at = excluded.updated_at,
         model_id = excluded.model_id,
         reasoning_effort = excluded.reasoning_effort,
+        fast_mode = excluded.fast_mode,
+        context_window_tokens = excluded.context_window_tokens,
         compaction_model = excluded.compaction_model,
         worker_model_id = excluded.worker_model_id,
         worker_reasoning_effort = excluded.worker_reasoning_effort,
@@ -94,9 +98,10 @@ export class HistoryWriteStatements {
         spawn_link_id,
         transcript_available,
         started_at,
+        settled_at,
         updated_at
       )
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(parent_app_session_id, child_session_id) DO UPDATE SET
         provider_session_id = excluded.provider_session_id,
         previous_provider_session_ids = excluded.previous_provider_session_ids,
@@ -112,6 +117,7 @@ export class HistoryWriteStatements {
         spawn_link_id = excluded.spawn_link_id,
         transcript_available = excluded.transcript_available,
         started_at = excluded.started_at,
+        settled_at = excluded.settled_at,
         updated_at = excluded.updated_at
     `);
     this.advanceSearchIdentityRevision = db.prepare(`
@@ -161,6 +167,8 @@ export class HistoryWriteStatements {
       summary.updatedAt,
       sqlValue(summary.modelId),
       sqlValue(summary.reasoningEffort),
+      summary.fastMode === undefined ? null : Number(summary.fastMode),
+      sqlValue(summary.contextWindowTokens),
       sqlValue(summary.compactionModel),
       sqlValue(summary.workerModelId),
       sqlValue(summary.workerReasoningEffort),
@@ -201,6 +209,7 @@ export class HistoryWriteStatements {
       sqlValue(child.spawnLink?.id),
       child.transcriptAvailable ? 1 : 0,
       sqlValue(child.startedAt),
+      sqlValue(child.settledAt),
       child.updatedAt,
     );
   }
