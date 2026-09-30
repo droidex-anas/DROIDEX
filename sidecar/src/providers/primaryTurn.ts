@@ -59,6 +59,9 @@ export async function runPrimaryTurn(
   // in the same window is left alone: its prompt is queued behind this one,
   // and the agent needs this one to make sense of it.
   const stoppedBeforeStart = () => liveSession.interrupting === true;
+  // Counts the turns the provider started itself, so this one's failure cannot
+  // be written over one that ran after it.
+  const delegatedGeneration = liveSession.delegatedGeneration;
   const context = turnContext(d, d.contextTarget(liveSession));
   if (!isCurrent()) return;
   // A scheduled delivery that cannot go ahead must leave no trace, and
@@ -125,8 +128,8 @@ export async function runPrimaryTurn(
     context.stopPolling();
   }
   if (!isCurrent()) return;
-  // A turn Claude Code started itself after this one owns the outcome now.
-  if (turnError && !liveSession.delegatedTurn)
+  // A turn the provider started itself after this one owns the outcome now.
+  if (turnError && liveSession.delegatedGeneration === delegatedGeneration)
     settleTurnFailure(d, liveSession, turnError, reportedError, reportedUsageLimit);
   void context.refresh();
 }
