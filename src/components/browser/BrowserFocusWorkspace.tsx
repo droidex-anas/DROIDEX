@@ -4,7 +4,6 @@ import { ChevronDown, ChevronUp } from '@droidex/icons';
 import { useStoreSelector } from '../../hooks/useStore';
 import { useSessionLive } from '../../hooks/useSessionLive';
 import type { TranscriptEvent } from '../../types/bridge';
-import PromptInput from '../PromptInput';
 import { RunningProcessesMenu } from '../RunningProcessesMenu';
 import BrowserWorkspace from './BrowserWorkspace';
 
@@ -24,7 +23,6 @@ export function BrowserFocusWorkspace({
   onToggleExpanded: () => void;
 }) {
   const [activityOpen, setActivityOpen] = useState(false);
-  const [promptOverlayOpen, setPromptOverlayOpen] = useState(false);
   const activeSession = useStoreSelector((state) =>
     state.activeAppSessionId ? state.sessions[state.activeAppSessionId] : null,
   );
@@ -45,7 +43,7 @@ export function BrowserFocusWorkspace({
       <div className="min-h-0 flex-1">
         <BrowserWorkspace
           expanded={expanded}
-          externalObscured={externalObscured || promptOverlayOpen}
+          externalObscured={externalObscured}
           onToggleExpanded={onToggleExpanded}
         />
       </div>
@@ -126,7 +124,9 @@ export function BrowserFocusWorkspace({
                 </div>
               </div>
             </div>
-            <PromptInput compact onOverlayChange={setPromptOverlayOpen} />
+            {/* The chat's own composer is laid over this space by App, so the
+                draft is never lost when the pane expands or docks. */}
+            <div aria-hidden className="h-[var(--composer-height,0px)]" />
           </motion.section>
         )}
       </AnimatePresence>
