@@ -30,32 +30,11 @@ export const CAT_LABEL: Record<ToolCat, string> = {
 const READ_WORDS = new Set(['read', 'cat', 'view', 'open', 'list', 'ls']);
 const READ_HEADS = new Set(['read', 'cat', 'view', 'list', 'ls']);
 
-// The arguments a category can be read off: each one is the object of an
-// action, and a category is claimed only when its own object is there.
-interface ToolObjects {
-  file?: string;
-  cmd?: string;
-  pattern?: string;
-  query?: string;
-  url?: string;
-  childSession?: string;
-  skill?: string;
-}
-
-function toolObjects(args: Record<string, unknown>): ToolObjects {
-  const s = (k: string) => (typeof args[k] === 'string' ? args[k] : undefined);
-  return {
-    file: s('file_path') ?? s('path') ?? s('filename') ?? s('target_file'),
-    cmd: s('command') ?? s('cmd') ?? s('script'),
-    pattern: s('pattern') ?? s('glob'),
-    query: s('query'),
-    url: s('url'),
-    childSession: s('subagent_type') ?? s('subagentType') ?? s('description'),
-    skill: s('skill'),
-  };
-}
-
-function toolCategory(name: string | undefined, args: unknown, objects: ToolObjects): ToolCat {
+function toolCategory(
+  name: string | undefined,
+  args: unknown,
+  { file, pattern, query }: { file?: string; pattern?: string; query?: string },
+): ToolCat {
   const { server, tool } = splitToolName(name ?? '');
   const n = tool.toLowerCase();
   if (/create|write|new/.test(n)) return 'create';
@@ -65,8 +44,7 @@ function toolCategory(name: string | undefined, args: unknown, objects: ToolObje
   // with. A bare `query` is what tools of every kind take (searching skills,
   // docs, the tool list itself), so a name containing "search" proves nothing:
   // without a pattern, or a query aimed at a path, the tool keeps its own name.
-  if (/grep|search|glob|find/.test(n) && (objects.pattern ?? (objects.query && objects.file)))
-    return 'search';
+  if (/grep|search|glob|find/.test(n) && (pattern ?? (query && file))) return 'search';
   if (/fetch|web|url|http/.test(n)) return 'web';
   // Only a real spawn is a child session. The Task *family* (TaskOutput,
   // TaskStop) merely inspects or ends an existing subagent, so it must not
@@ -86,18 +64,15 @@ function toolCategory(name: string | undefined, args: unknown, objects: ToolObje
 
 export function toolMeta(name?: string, args?: unknown): { cat: ToolCat; detail: string } {
   const a = args && typeof args === 'object' ? (args as Record<string, unknown>) : {};
-  const objects = toolObjects(a);
+  const s = (k: string) => (typeof a[k] === 'string' ? a[k] : undefined);
+  const file = s('file_path') ?? s('path') ?? s('filename') ?? s('target_file');
+  const cmd = s('command') ?? s('cmd') ?? s('script');
+  const pattern = s('pattern') ?? s('glob');
+  const query = s('query');
+  const childSession = s('subagent_type') ?? s('subagentType') ?? s('description');
   return {
-    cat: toolCategory(name, args, objects),
-    detail:
-      objects.file ??
-      objects.cmd ??
-      objects.pattern ??
-      objects.query ??
-      objects.url ??
-      objects.childSession ??
-      objects.skill ??
-      '',
+    cat: toolCategory(name, args, { file, pattern, query }),
+    detail: file ?? cmd ?? pattern ?? query ?? s('url') ?? childSession ?? s('skill') ?? '',
   };
 }
 

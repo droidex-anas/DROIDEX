@@ -194,15 +194,11 @@ export function saveCompactionModel(value: string): void {
   saveItem(COMPACTION_MODEL_STORAGE_KEY, value);
 }
 
-// Steer unless the user chose Queue. A stored 'interrupt', the retired Send now
-// setting, reads as Steer.
-function normalizeLiveEnterBehavior(value: unknown): LiveEnterBehavior {
-  return value === 'queue' ? 'queue' : 'steer';
-}
-
 export function loadLiveEnterBehavior(): LiveEnterBehavior {
   try {
-    return normalizeLiveEnterBehavior(getLocalStorage()?.getItem(LIVE_ENTER_BEHAVIOR_STORAGE_KEY));
+    return getLocalStorage()?.getItem(LIVE_ENTER_BEHAVIOR_STORAGE_KEY) === 'queue'
+      ? 'queue'
+      : 'steer';
   } catch {
     return 'steer';
   }

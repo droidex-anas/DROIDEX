@@ -10,8 +10,6 @@ import {
   canAdvance,
   createStepper,
   isLastStep,
-  isSelected,
-  isTyping,
   stepperReducer,
   submissionAnswers,
 } from './askUserStepper';
@@ -125,7 +123,7 @@ export function QuestionCard({
   const multiSelect = q.multiSelect ?? false;
   const isLast = isLastStep(stepper);
   const held = answerFor(stepper, q.index);
-  const typing = isTyping(stepper, q.index);
+  const typing = held.typing;
   const advanceEnabled = canAdvance(stepper, q.index);
 
   useEffect(() => {
@@ -173,7 +171,7 @@ export function QuestionCard({
 
       <div className="mt-2.5 space-y-1 px-3">
         {q.options.map((opt, i) => {
-          const selected = isSelected(stepper, q.index, opt.label);
+          const selected = held.selected.includes(opt.label);
           return (
             <button
               key={`${opt.label}-${String(i)}`}

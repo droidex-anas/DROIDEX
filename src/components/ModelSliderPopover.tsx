@@ -30,6 +30,7 @@ import { useTriggerAnchor } from './composer/useTriggerAnchor';
 import useModelPicker from './useModelPicker';
 import ModelSliderCatalogList from './ModelSliderCatalogList';
 import ContextWindowMenu from './ContextWindowMenu';
+import { HoverTooltip } from './HoverTooltip';
 import EffortSlider from './effortSlider/EffortSlider';
 import type { EffortSliderElement, EffortSliderLevel } from './effortSlider/effortSliderElement';
 
@@ -129,10 +130,6 @@ export default function ModelSliderPopover({ onClose }: { onClose: () => void })
   const defaultWindow =
     providerWindow ??
     (activeModel?.id === status?.defaultModelId ? status?.defaultContextWindowTokens : undefined);
-  const windowOptions = useMemo(
-    () => contextWindowOptions(activeModel, defaultWindow),
-    [activeModel, defaultWindow],
-  );
   const defaultEffort = activeModel?.defaultReasoningEffort;
   const canReset =
     defaultEffort !== undefined &&
@@ -226,27 +223,29 @@ export default function ModelSliderPopover({ onClose }: { onClose: () => void })
                   <ChevronLeft className="h-4 w-4" />
                 </button>
                 {offersFastMode(provider) && (
-                  <button
-                    type="button"
-                    aria-pressed={fastMode}
-                    aria-label={FAST_MODE_LABEL}
-                    disabled={fastModeBlocked !== undefined}
-                    title={fastModeBlocked ?? FAST_MODE_HINT}
-                    onClick={() => {
-                      setFastMode(!fastMode);
-                    }}
-                    className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-md transition-colors disabled:opacity-40 ${
-                      fastMode
-                        ? 'bg-droid-surface text-droid-accent'
-                        : 'text-droid-text-muted enabled:hover:bg-droid-surface/60 enabled:hover:text-droid-text'
-                    }`}
-                  >
-                    <Zap
-                      size={14}
-                      className="transition-colors"
-                      fill={fastMode ? 'currentColor' : 'transparent'}
-                    />
-                  </button>
+                  <HoverTooltip label={fastModeBlocked ?? `${FAST_MODE_LABEL} · ${FAST_MODE_HINT}`}>
+                    <button
+                      type="button"
+                      aria-pressed={fastMode}
+                      aria-label={FAST_MODE_LABEL}
+                      aria-description={fastModeBlocked ?? FAST_MODE_HINT}
+                      disabled={fastModeBlocked !== undefined}
+                      onClick={() => {
+                        setFastMode(!fastMode);
+                      }}
+                      className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-md transition-colors disabled:opacity-40 ${
+                        fastMode
+                          ? 'bg-droid-surface text-droid-accent'
+                          : 'text-droid-text-muted enabled:hover:bg-droid-surface/60 enabled:hover:text-droid-text'
+                      }`}
+                    >
+                      <Zap
+                        size={14}
+                        className="transition-colors"
+                        fill={fastMode ? 'currentColor' : 'transparent'}
+                      />
+                    </button>
+                  </HoverTooltip>
                 )}
                 <span className="flex h-4 w-4 shrink-0 items-center justify-center">
                   <ModelIcon provider={providerOf(activeModel, resolvedModelId)} size={14} />
@@ -261,7 +260,7 @@ export default function ModelSliderPopover({ onClose }: { onClose: () => void })
                 </span>
                 {offersContextWindow(provider) && (
                   <ContextWindowMenu
-                    options={windowOptions}
+                    options={contextWindowOptions(activeModel, defaultWindow)}
                     selected={contextWindowTokens}
                     onSelect={setContextWindow}
                   />

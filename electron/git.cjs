@@ -1540,8 +1540,7 @@ async function workingTreeDiff(root) {
     .split(/\r?\n/)
     .filter(Boolean);
   for (const file of untracked) {
-    const diff = await runSoft(root, ['diff', '--no-index', '--', os.devNull, file]);
-    if (diff) parts.push(diff);
+    parts.push(await runSoft(root, ['diff', '--no-index', '--', os.devNull, file]));
   }
   return parts.filter(Boolean).join('\n');
 }
@@ -1551,8 +1550,6 @@ module.exports = {
   repoStatus,
   projectRoot,
   workingTreeDiff,
-  // Exported for unit tests: parses the status the repository line is built from.
-  parseStatusCounts,
   branches,
   // Pure validation helpers exported for unit tests: they are the security
   // boundary for branch names, worktree paths, and remote resolution.
