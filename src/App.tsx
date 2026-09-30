@@ -35,6 +35,7 @@ import type { ChildAccess } from './hooks/storeChildSession';
 import Sidebar from './components/Sidebar';
 import ChatView from './components/ChatView';
 import PromptInput from './components/PromptInput';
+import { ComposerHeight } from './components/composer/ComposerHeight';
 import RightPanel from './components/RightPanel';
 import EditorOpenMenu from './components/EditorOpenMenu';
 import Toaster from './components/Toaster';
@@ -248,6 +249,13 @@ export default function App() {
     showUtilityPane &&
     isExpandableTool(activeUtilityTab?.tool) &&
     expandedPaneAppSessionId === activeSession.appSessionId;
+  // An expanded browser keeps the chat's one composer: the chat column becomes
+  // an overlay layer so the same composer moves under the page instead of a
+  // second one mounting there (which lost the draft on every switch). Mission
+  // Control owns its own composer and keeps the browser's for now.
+  const browserExpanded =
+    paneExpanded && activeUtilityTab?.tool === 'browser' && !isMissionControlView;
+  const [composerOverlayOpen, setComposerOverlayOpen] = useState(false);
   const focused = isMissionControlView;
   // A normal/spec session only has something worth showing once a message has
   // been sent (the first transcript is seeded from the opening prompt).
@@ -541,6 +549,13 @@ export default function App() {
     return addNativeSurfaceObscurer();
   }, [fullContentRoute]);
 
+  // Over an expanded browser the composer's menus open upward across the page,
+  // which paints above the DOM, so hide the page while one is open.
+  useLayoutEffect(() => {
+    if (!browserExpanded || !composerOverlayOpen) return;
+    return addNativeSurfaceObscurer();
+  }, [browserExpanded, composerOverlayOpen]);
+
   // "Run setup again" from Settings re-opens the tour.
   useEffect(() => {
     const onOpen = () => {
@@ -721,9 +736,15 @@ export default function App() {
         <main className="relative flex-1 min-w-0 flex flex-col min-h-0 overflow-hidden bg-droid-bg">
           <div ref={contentRowRef} className="relative flex min-h-0 min-w-0 flex-1 overflow-hidden">
             <section
-              aria-hidden={paneExpanded}
-              className={`relative flex min-w-0 flex-1 flex-col overflow-hidden ${
-                paneExpanded ? 'pointer-events-none' : ''
+              aria-hidden={paneExpanded && !browserExpanded}
+              // Behind an expanded side chat or agent the column is hidden, and
+              // a few composer controls turn pointer events back on; inert
+              // keeps the whole column out of reach.
+              inert={paneExpanded && !browserExpanded}
+              className={`flex min-w-0 flex-col overflow-hidden ${
+                browserExpanded
+                  ? 'pointer-events-none absolute inset-0 z-20'
+                  : `relative flex-1 ${paneExpanded ? 'pointer-events-none' : ''}`
               }`}
             >
               {!embedded && state.mainView === 'projects' ? (
@@ -755,20 +776,39 @@ export default function App() {
                 </motion.div>
               ) : (
                 <>
-                  <ChatView
-                    rightInset={rightPanelVisible}
-                    isObscured={paneExpanded}
-                    besidePane={showUtilityPane}
-                  />
-                  <PromptInput rightInset={rightPanelVisible} />
-                  {activeSession && state.sideChatPlacement === 'floating' ? (
-                    <Suspense fallback={null}>
-                      <LazySideChatWindow sourceAppSessionId={activeSession.appSessionId} />
-                    </Suspense>
-                  ) : null}
+                  <div
+                    aria-hidden={browserExpanded || undefined}
+                    className={
+                      browserExpanded ? 'invisible flex min-h-0 flex-1 flex-col' : 'contents'
+                    }
+                  >
+                    <ChatView
+                      rightInset={rightPanelVisible}
+                      isObscured={paneExpanded}
+                      besidePane={showUtilityPane}
+                    />
+                    {activeSession && state.sideChatPlacement === 'floating' ? (
+                      <Suspense fallback={null}>
+                        <LazySideChatWindow sourceAppSessionId={activeSession.appSessionId} />
+                      </Suspense>
+                    ) : null}
+                  </div>
+                  <ComposerHeight
+                    target={contentRowRef}
+                    className={browserExpanded ? 'pointer-events-auto' : ''}
+                  >
+                    <PromptInput
+                      rightInset={rightPanelVisible && !browserExpanded}
+                      compact={browserExpanded}
+                      onOverlayChange={setComposerOverlayOpen}
+                    />
+                  </ComposerHeight>
                 </>
               )}
             </section>
+            {/* Holds the chat column's place while it floats, so the pane stays
+                anchored on the right as it widens. */}
+            {browserExpanded && <div className="min-w-0 flex-1" />}
 
             <AnimatePresence initial={false}>
               {showUtilityPane && (
@@ -902,6 +942,7 @@ export default function App() {
                           <Suspense fallback={utilityToolFallback('browser')}>
                             <LazyBrowserFocusWorkspace
                               expanded={paneExpanded}
+                              ownComposer={paneExpanded && isMissionControlView}
                               externalObscured={overlayOpen}
                               onToggleExpanded={() => {
                                 setExpandedPaneAppSessionId(
