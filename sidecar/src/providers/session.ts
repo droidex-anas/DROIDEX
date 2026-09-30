@@ -148,7 +148,7 @@ export interface ProviderSession {
    * for through the composer, and the rest of the app has to know so a typed
    * prompt queues behind it and Stop can reach it.
    */
-  onDelegatedTurn?(listener: (running: boolean) => void): () => void;
+  onDelegatedTurn?(listener: (running: boolean, failed?: boolean) => void): () => void;
   // Hands a prompt to the running turn, which the harness delivers at its own
   // next step. Resolves true once the model has it, and false when the turn
   // cannot take it or ends without it; the session layer then sends it as an

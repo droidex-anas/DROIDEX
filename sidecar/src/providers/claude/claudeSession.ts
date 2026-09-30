@@ -58,6 +58,9 @@ export interface ClaudeSessionInput {
   resume?: boolean;
 }
 
+// Stands in for a turn id when Stop reaches a turn Claude Code started itself.
+const DELEGATED_TURN = 'delegated';
+
 export class ClaudeSession implements ProviderSession {
   readonly provider = 'claude' as const;
   readonly providerSessionId: string;
@@ -81,6 +84,7 @@ export class ClaudeSession implements ProviderSession {
   private fastMode: boolean;
   private readonly permissions: ClaudePermissionModes;
   private activeTurnId?: string;
+  private delegatedTurnRunning = false;
   // The turn the user stopped, so only that turn's own error result is excused.
   private interruptedTurnId?: string;
   // The running turn takes steers: set once its prompt is pushed, never for a slash command.
@@ -91,6 +95,7 @@ export class ClaudeSession implements ProviderSession {
   private turnAnswered = false;
   private turnQueue?: MessageQueue<{ message: SDKMessage; events: NormalizedEvent[] }>;
   private readonly backgroundListeners = new Set<(event: NormalizedEvent) => void>();
+  private readonly delegatedListeners = new Set<(running: boolean, failed?: boolean) => void>();
 
   constructor(private readonly input: ClaudeSessionInput) {
     this.providerSessionId = input.appSessionId;
@@ -176,6 +181,13 @@ export class ClaudeSession implements ProviderSession {
     };
   }
 
+  onDelegatedTurn(listener: (running: boolean, failed?: boolean) => void): () => void {
+    this.delegatedListeners.add(listener);
+    return () => {
+      this.delegatedListeners.delete(listener);
+    };
+  }
+
   get isClosed(): boolean {
     return this.abort.signal.aborted;
   }
@@ -196,7 +208,7 @@ export class ClaudeSession implements ProviderSession {
   }
 
   async *stream(prompt: string): AsyncGenerator<NormalizedEvent, void, undefined> {
-    if (this.activeTurnId) throw new Error('This Claude session is already running a turn.');
+    this.requireTurnCanStart();
     const turnId = randomUUID();
     this.activeTurnId = turnId;
     this.mapper.beginTurn(turnId);
@@ -281,6 +293,10 @@ export class ClaudeSession implements ProviderSession {
       this.steerable = false;
       this.turnAnswered = false;
       if (this.turnQueue === turnQueue) this.turnQueue = undefined;
+      // What the pump read after this turn ended, before the turn was handed
+      // over, is a turn Claude Code started itself. It goes on only now that the
+      // chat has closed this one, or closing this one would cut it off.
+      this.continueAfterTurn(turnQueue.drain());
       await Promise.all([...this.steerDeliveries.keys()].map((uuid) => this.withdrawSteer(uuid)));
     }
   }
@@ -320,6 +336,12 @@ export class ClaudeSession implements ProviderSession {
     this.settleSteer(uuid, !cancelled);
   }
 
+  private requireTurnCanStart(): void {
+    if (this.activeTurnId) throw new Error('This Claude session is already running a turn.');
+    if (this.delegatedTurnRunning)
+      throw new Error('This Claude session is finishing a turn it started itself.');
+  }
+
   // Keep reading between turns so background children can settle immediately.
   private async pump(): Promise<void> {
     try {
@@ -347,8 +369,17 @@ export class ClaudeSession implements ProviderSession {
 
   private dispatch(message: SDKMessage): void {
     this.catalog.observe(message);
+    if (!this.activeTurnId && !this.delegatedTurnRunning && startsDelegatedTurn(message)) {
+      // No prompt of ours opened this turn, so its answer has no fork point.
+      this.mapper.beginTurn(undefined);
+      this.setDelegatedTurn(true);
+    }
     // Mapping stays in wire order, including model and spawn-link observations.
     const events = this.mapper.map(message, this.fastMode);
+    if (this.delegatedTurnRunning) {
+      this.forwardDelegated(message, events);
+      return;
+    }
     const turnEvents: NormalizedEvent[] = [];
     for (const event of events) {
       if (event.childSession) {
@@ -356,6 +387,43 @@ export class ClaudeSession implements ProviderSession {
       } else turnEvents.push(event);
     }
     this.turnQueue?.push({ message, events: turnEvents });
+  }
+
+  private continueAfterTurn(items: { message: SDKMessage; events: NormalizedEvent[] }[]): void {
+    for (const { message, events } of items) {
+      if (!this.delegatedTurnRunning && startsDelegatedTurn(message)) this.setDelegatedTurn(true);
+      if (this.delegatedTurnRunning) this.forwardDelegated(message, events);
+    }
+  }
+
+  // A turn Claude Code started itself reaches the chat as it happens.
+  private forwardDelegated(message: SDKMessage, events: NormalizedEvent[]): void {
+    for (const event of events) for (const listener of this.backgroundListeners) listener(event);
+    if (message.type === 'result') this.settleDelegatedTurn(message);
+    // A refused usage window ends the turn with no result at all.
+    else if (message.type === 'rate_limit_event' && rateLimitRefusal(message.rate_limit_info))
+      this.setDelegatedTurn(false, true);
+  }
+
+  private settleDelegatedTurn(message: Extract<SDKMessage, { type: 'result' }>): void {
+    // A stopped turn settles quietly, as a typed one does.
+    const stopped = this.interruptedTurnId === DELEGATED_TURN;
+    if (stopped) this.interruptedTurnId = undefined;
+    const failed = !stopped && (message.subtype !== 'success' || message.is_error);
+    if (failed) {
+      const error =
+        message.subtype === 'success'
+          ? message.result
+          : turnFailure(message.subtype, message.errors);
+      for (const listener of this.backgroundListeners) listener(this.mapper.errorEvent(error));
+    }
+    this.setDelegatedTurn(false, failed);
+  }
+
+  private setDelegatedTurn(running: boolean, failed = false): void {
+    if (this.delegatedTurnRunning === running) return;
+    this.delegatedTurnRunning = running;
+    for (const listener of this.delegatedListeners) listener(running, failed);
   }
 
   async setAutonomy(autonomy: Autonomy): Promise<void> {
@@ -435,20 +503,25 @@ export class ClaudeSession implements ProviderSession {
 
   async interrupt(): Promise<void> {
     const turnId = this.activeTurnId;
-    if (!turnId) return;
+    if (!turnId && !this.delegatedTurnRunning) return;
+    const interruptedId = turnId ?? DELEGATED_TURN;
     // A second Stop during boot releases a CLI that never initializes.
-    if (this.initializing && this.interruptedTurnId === turnId) {
+    if (this.initializing && this.interruptedTurnId === interruptedId) {
       await this.close();
       return;
     }
-    this.interruptedTurnId = turnId;
+    this.interruptedTurnId = interruptedId;
     try {
       await this.initialized;
     } catch {
       // The turn or closure observer owns startup failure diagnostics.
       return;
     }
-    if (this.abort.signal.aborted || this.activeTurnId !== turnId) return;
+    if (
+      this.abort.signal.aborted ||
+      (turnId ? this.activeTurnId !== turnId : !this.delegatedTurnRunning)
+    )
+      return;
     // Aborts the in-flight turn on the live process; the turn then settles with
     // its own result, so the next prompt does not pay for a restart. Steers not
     // yet delivered are cancelled with it rather than left to run unobserved.
@@ -490,6 +563,7 @@ export class ClaudeSession implements ProviderSession {
     this.prompts.close();
     this.turnQueue?.close(error);
     this.backgroundListeners.clear();
+    this.delegatedListeners.clear();
     // The SDK closes stdin and escalates SIGTERM to SIGKILL itself.
     try {
       this.query.close();
@@ -497,4 +571,14 @@ export class ClaudeSession implements ProviderSession {
       this.resolveClosed(error);
     }
   }
+}
+// Claude Code continues on its own when a background task it started finishes
+// after the turn ended: a task notification and a fresh init, then the model's
+// reply and a result, with no prompt of ours behind them (measured on the CLI).
+// The model's first output is where that turn starts for DROIDEX.
+function startsDelegatedTurn(message: SDKMessage): boolean {
+  return (
+    (message.type === 'assistant' || message.type === 'stream_event') &&
+    message.parent_tool_use_id === null
+  );
 }

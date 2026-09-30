@@ -77,7 +77,7 @@ export class ClaudeEventMapper {
 
   // Resets state scoped to the turn that is starting, not the long-lived
   // background task identity the session may still be tracking across turns.
-  beginTurn(turnId: string): void {
+  beginTurn(turnId: string | undefined): void {
     this.turnId = turnId;
     this.subagents.beginTurn();
   }
@@ -323,6 +323,12 @@ export class ClaudeEventMapper {
     if (limit !== undefined && Number.isFinite(limit) && limit > 0 && usageEvent.tokens)
       usageEvent.tokens.maxContextTokens = limit;
     return [...missed, usageEvent];
+  }
+
+  errorEvent(message: string): NormalizedEvent {
+    return {
+      transcript: this.transcript('error', { text: message, isError: true }),
+    };
   }
 
   // A line the session itself has to say, in the row shape every provider's
