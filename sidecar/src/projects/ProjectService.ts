@@ -504,17 +504,15 @@ export class ProjectService {
     // A lead can retune a thread its own thread started, and that thread is the
     // ceiling, not the lead.
     const owner = requireThread(project, target).ownerAppSessionId ?? source;
-    if (settings.autonomy) {
-      checkWithinAutonomy(this.requireSession(owner), settings.autonomy);
-      await this.sessions.configure(target, { autonomy: settings.autonomy });
-    }
+    if (settings.autonomy) checkWithinAutonomy(this.requireSession(owner), settings.autonomy);
     const model = {
       ...(modelId ? { modelId } : {}),
       ...(settings.reasoningEffort ? { reasoningEffort: settings.reasoningEffort } : {}),
     };
     const modelChanged = Object.keys(model).length > 0;
-    // The thread's own chat reports a change that fails, as it does for the
-    // composer's controls.
+    // Handed over before the autonomy change is awaited, so it applies from the
+    // thread's next turn. The thread's own chat reports a change that fails, as
+    // it does for the composer's controls.
     if (modelChanged)
       void this.sessions.configure(target, model).catch((error: unknown) => {
         const reason = error instanceof Error ? error.message : String(error);
@@ -526,6 +524,7 @@ export class ProjectService {
           recoverable: true,
         });
       });
+    if (settings.autonomy) await this.sessions.configure(target, { autonomy: settings.autonomy });
     this.wakes.kick(project);
     return {
       ...this.read(source, target),
