@@ -95,7 +95,7 @@ export class ProjectTurns {
     clearAsk(project, thread);
     if (!thread.ownerAppSessionId) {
       if (session.phase === 'failed') this.d.leadFailed(project);
-      else if (session.phase !== 'paused' && !turn.error) await this.d.leadRecovered(project);
+      else if (session.phase !== 'paused') await this.d.leadRecovered(project);
     } else {
       try {
         // The wake already names the thread; this is how its turn ended.

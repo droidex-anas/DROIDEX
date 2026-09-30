@@ -4,6 +4,8 @@ import type { LiveSession, SessionLifecycleDependencies } from './SessionLifecyc
 interface DeliveryContext {
   dependencies: SessionLifecycleDependencies;
   canResume: () => boolean;
+  /** Releases an idle runtime that is safe to release; false when none is. */
+  makeRoom: (appSessionId: string) => Promise<boolean>;
   resume: (appSessionId: string) => Promise<boolean>;
   start: (appSessionId: string, prompt: string, delivery: ScheduledTurnDelivery) => Promise<void>;
 }
@@ -37,7 +39,12 @@ export async function deliverScheduledMessage(
   if (historical?.appSessionId !== appSessionId || !available()) return refusal();
   let live = d.registry.getLive(appSessionId);
   if (!live) {
-    if (!context.canResume()) return { status: 'busy', retryOn: 'capacity' };
+    if (!context.canResume()) {
+      // At the runtime cap, an idle runtime that is safe to release makes room.
+      await context.makeRoom(appSessionId);
+      if (!available()) return refusal();
+      if (!context.canResume()) return { status: 'busy', retryOn: 'capacity' };
+    }
     if (!(await context.resume(appSessionId)) || !available()) return refusal();
     live = d.registry.getLive(appSessionId);
     if (live?.summary.providerSessionId !== (historical.providerSessionId ?? appSessionId))

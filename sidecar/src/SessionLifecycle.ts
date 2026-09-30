@@ -116,6 +116,8 @@ interface LiveTurnState {
   interrupting?: boolean; // Marks user Stop so the resulting stream abort settles quietly.
   /** A turn the provider started itself is running; it settles, and drains the queue, on its own. */
   delegatedTurn?: boolean;
+  /** Counts provider-started turns, so a settle that awaited cannot reach a newer one. */
+  delegatedGeneration?: number;
 }
 type SessionCloseMode = 'discard-pending' | 'preserve-pending';
 export interface LiveSession extends LiveTurnState {
@@ -588,20 +590,13 @@ export class SessionLifecycle {
     prompt: string,
     isCurrent: () => boolean,
   ): Promise<AutomationDeliveryReceipt> {
-    const live = this.dependencies.registry.getLive(appSessionId);
-    if (
-      !live &&
-      this.dependencies.registry.liveSessionsSnapshot().length + this.resumeOperations.size >=
-        MAX_SCHEDULED_SESSION_RUNTIMES
-    ) {
-      await this.dependencies.releaseRuntimeForCapacity(appSessionId);
-    }
     return deliverScheduledMessage(
       {
         dependencies: this.dependencies,
         canResume: () =>
           this.dependencies.registry.liveSessionsSnapshot().length + this.resumeOperations.size <
           MAX_SCHEDULED_SESSION_RUNTIMES,
+        makeRoom: (id) => this.dependencies.releaseRuntimeForCapacity(id),
         resume: (id) => this.resume(id),
         start: (id, text, delivery) =>
           this.driveInBackground(id, { ...sessionPrompt(text), announce: true }, delivery),
@@ -1141,6 +1136,7 @@ export class SessionLifecycle {
       if (!isCurrent()) return;
       liveSession.delegatedTurn = running;
       if (running) {
+        liveSession.delegatedGeneration = (liveSession.delegatedGeneration ?? 0) + 1;
         liveSession.streaming = true;
         // A settled turn leaves the chat's own source closed, and nothing else
         // reopens it for a turn the provider started: without this the spoken
@@ -1175,6 +1171,7 @@ export class SessionLifecycle {
     stopped: boolean,
   ): Promise<void> {
     const appSessionId = liveSession.summary.appSessionId;
+    const generation = liveSession.delegatedGeneration;
     try {
       await this.dependencies.settleStreaming(appSessionId, appSessionId);
     } catch (error) {
@@ -1184,6 +1181,8 @@ export class SessionLifecycle {
       });
     }
     if (this.dependencies.registry.getLive(appSessionId) !== liveSession) return;
+    // Another provider-started turn began while this one flushed; it settles itself.
+    if (liveSession.delegatedGeneration !== generation) return;
     if (failed) this.dependencies.registry.updateSummary(appSessionId, { phase: 'failed' });
     // A typed turn still finishing, or one already started, settles the chat and
     // takes the queue; so does another provider-started turn.
