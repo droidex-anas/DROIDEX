@@ -158,6 +158,71 @@ test(
 );
 
 test(
+  'role model changes queue behind accepted in-flight exact child settings',
+  { concurrency: false },
+  async () => {
+    const h = createSessionManagerTestContext();
+    try {
+      await createMission(h);
+      const child = await openChild(h, 'worker-logical', 'worker-backend', 'worker', 'worker-old');
+      await h.handle({
+        type: 'settings.compaction.update',
+        compactionTokenLimit: 700,
+        compactionTokenLimitPerModel: {
+          'exact-model': 211,
+          'role-model': 311,
+        },
+      });
+      const writesBefore = child.settings.length;
+      const gate = h.provider.deferNextUpdateSettings('worker-backend');
+      const exactUpdate = h.handle({
+        type: 'child.updateSettings',
+        parentAppSessionId: 'provider-1',
+        childSessionId: 'worker-logical',
+        modelId: 'exact-model',
+        reasoningEffort: 'high',
+      });
+      await child.waitForSettings(writesBefore + 1);
+
+      const roleUpdate = h.handle({
+        type: 'settings.agent.update',
+        appSessionId: 'provider-1',
+        agent: 'worker',
+        modelId: 'role-model',
+      });
+      await h.waitForIdle();
+
+      assert.deepEqual(
+        child.settings.slice(writesBefore).map((settings) => settings['modelId']),
+        ['exact-model'],
+      );
+
+      gate.resolve();
+      await Promise.all([exactUpdate, roleUpdate]);
+
+      assert.deepEqual(
+        child.settings.slice(writesBefore).map((settings) => ({
+          modelId: settings['modelId'],
+          reasoningEffort: settings['reasoningEffort'],
+          limit: settings['compactionTokenLimit'],
+        })),
+        [
+          { modelId: 'exact-model', reasoningEffort: 'high', limit: undefined },
+          { modelId: undefined, reasoningEffort: undefined, limit: 211 },
+          { modelId: 'role-model', reasoningEffort: undefined, limit: undefined },
+          { modelId: undefined, reasoningEffort: undefined, limit: 311 },
+        ],
+      );
+      const accepted = exactSettingsEvents(h.events, 'provider-1', 'worker-logical').at(-1);
+      assert.equal(accepted?.modelId, 'role-model');
+      assert.equal(accepted?.reasoningEffort, 'high');
+    } finally {
+      await h.dispose();
+    }
+  },
+);
+
+test(
   'a child completed during limit resolution receives no compaction write',
   { concurrency: false },
   async () => {
