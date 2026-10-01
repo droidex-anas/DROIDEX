@@ -1170,11 +1170,14 @@ function showBox(rect, text) {
   label.style.display = 'block';
   label.textContent = text;
   undoPaneScale(label);
-  // Kept inside the page at the size it is drawn, wrapping where it is narrow.
-  label.style.maxWidth = `${Math.min(360, Math.floor((window.innerWidth - 16) / uiScale))}px`;
-  const width = label.getBoundingClientRect().width;
+  // Kept inside the page at the size it is drawn, wrapping where it is narrow;
+  // its own 16px of padding comes off the width it may take.
+  label.style.maxWidth = `${Math.min(360, Math.floor((window.innerWidth - 16) / uiScale) - 16)}px`;
+  const { width, height } = label.getBoundingClientRect();
+  // One line sits where it always did; a wrapped label takes the room it needs.
+  const tall = Math.max(height, 30 * uiScale);
   label.style.left = `${Math.round(Math.max(8, Math.min(window.innerWidth - width - 8, rect.x)))}px`;
-  label.style.top = `${Math.min(window.innerHeight - 36 * uiScale, Math.max(8, Math.round(rect.y - 38 * uiScale)))}px`;
+  label.style.top = `${Math.round(Math.max(8, Math.min(window.innerHeight - tall - 6 * uiScale, rect.y - tall - 8 * uiScale)))}px`;
 }
 
 function hideBox() {
