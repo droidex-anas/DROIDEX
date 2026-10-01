@@ -222,9 +222,9 @@ export function createBrowserMcpServer(
         safeTool(async (input) => {
           const { viewport, viewportMode } = await manager.useViewport(appSessionId(), input.size);
           if (viewportMode !== input.size)
-            return `The user switched the page to ${viewportMode} meanwhile; read the page for its size.`;
+            return `The user switched the page to ${viewportMode} meanwhile; browser_screenshot states its size.`;
           if (input.size === 'fit')
-            return "The page follows the user's pane; read the page for its size.";
+            return "The page follows the user's pane; browser_screenshot states its size.";
           return `The page is laid out at ${input.size} size, ${String(viewport.width)} × ${String(viewport.height)} CSS px.`;
         }),
       ),
