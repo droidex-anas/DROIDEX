@@ -87,7 +87,6 @@ export function isProviderUsage(value: unknown): boolean {
     (value.extra === undefined || isUsageExtra(value.extra)) &&
     (value.unavailable === undefined ||
       isOneOf(['no_api_key', 'no_plan_limits'] as const, value.unavailable)) &&
-    (value.updatedAt === undefined || isWholeNumber(value.updatedAt)) &&
     (value.stale === undefined || typeof value.stale === 'boolean')
   );
 }
@@ -100,7 +99,8 @@ function isUsageMeter(value: unknown): boolean {
     (value.model === undefined || nonEmptyString(value.model)) &&
     isPercent(value.usedPercent) &&
     (value.resetsAt === undefined || isWholeNumber(value.resetsAt)) &&
-    (value.durationMs === undefined || isWholeNumber(value.durationMs))
+    (value.durationMs === undefined || isWholeNumber(value.durationMs)) &&
+    isWholeNumber(value.updatedAt)
   );
 }
 

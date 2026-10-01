@@ -1,11 +1,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import type { ProviderUsage, UsageMeter } from '../protocol.js';
+import type { ProviderUsage } from '../protocol.js';
 import { AccountUsage } from './accountUsage.js';
-import type { UsageReading } from './session.js';
+import type { ReportedMeter, UsageReading } from './session.js';
 
-const fiveHour: UsageMeter = { id: 'five_hour', window: 'five_hour', usedPercent: 20 };
-const weekly: UsageMeter = { id: 'seven_day', window: 'weekly', usedPercent: 40 };
+const fiveHour: ReportedMeter = { id: 'five_hour', window: 'five_hour', usedPercent: 20 };
+const weekly: ReportedMeter = { id: 'seven_day', window: 'weekly', usedPercent: 40 };
 
 test('a push replaces only its own window, and a failed read keeps the last good ones', async () => {
   let reads = 0;

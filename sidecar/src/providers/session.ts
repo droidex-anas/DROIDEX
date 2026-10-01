@@ -121,12 +121,17 @@ export interface ProviderVoice {
   onEvent(listener: (event: ProviderVoiceEvent) => void): () => void;
 }
 
+// A window as the harness reports it; the account stamps when it arrived.
+export type ReportedMeter = Omit<UsageMeter, 'updatedAt'>;
+
 // One read of a harness account's usage: every window it reports, replacing
 // what an earlier read said.
-export type UsageReading = Pick<ProviderUsage, 'meters' | 'extra' | 'unavailable'>;
+export type UsageReading = Pick<ProviderUsage, 'extra' | 'unavailable'> & {
+  meters: ReportedMeter[];
+};
 
 // Windows the harness pushes as they change, each replacing only its own row.
-export type UsageMetersListener = (meters: UsageMeter[]) => void;
+export type UsageMetersListener = (meters: ReportedMeter[]) => void;
 
 export interface ProviderSession {
   readonly provider: ProviderKind;

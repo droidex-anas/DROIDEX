@@ -10,8 +10,8 @@ import {
   type SDKRateLimitInfo,
 } from '@anthropic-ai/claude-agent-sdk';
 
-import type { UsageExtra, UsageLimit, UsageMeter } from '../../protocol.js';
-import type { UsageMetersListener, UsageReading } from '../session.js';
+import type { UsageExtra, UsageLimit } from '../../protocol.js';
+import type { ReportedMeter, UsageMetersListener, UsageReading } from '../session.js';
 import { futureResetAt, UsageLimitError } from '../usageLimit.js';
 
 const FIVE_HOURS_MS = 5 * 60 * 60_000;
@@ -106,7 +106,7 @@ function claudeUsageReading(response: SDKControlGetUsageResponse): UsageReading 
     ]),
   ];
   // A model can be named both ways; its two rows share an id and the later stands.
-  const meters = new Map<string, UsageMeter>();
+  const meters = new Map<string, ReportedMeter>();
   for (const [scope, window] of windows) {
     if (typeof window?.utilization !== 'number') continue;
     const resetsAt = window.resets_at
@@ -131,7 +131,7 @@ function extraUsage(
 }
 
 // The event's utilization is a share of 1, and extra usage is not a window.
-function rateLimitMeter(info: SDKRateLimitInfo): UsageMeter | undefined {
+function rateLimitMeter(info: SDKRateLimitInfo): ReportedMeter | undefined {
   const scope = info.rateLimitType ? RATE_LIMIT_SCOPES[info.rateLimitType] : undefined;
   if (!scope?.window || typeof info.utilization !== 'number') return undefined;
   return claudeMeter(scope, info.utilization * 100, futureResetAt(info.resetsAt));
@@ -142,7 +142,7 @@ function claudeMeter(
   { window, model }: LimitScope,
   usedPercent: number,
   resetsAt: number | undefined,
-): UsageMeter {
+): ReportedMeter {
   const fiveHour = window === 'five_hour';
   const id = fiveHour ? 'five_hour' : ['seven_day', model?.toLowerCase()].filter(Boolean).join('_');
   return {

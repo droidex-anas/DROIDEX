@@ -1,10 +1,10 @@
 // Factory's account limits, read with the API key DROIDEX was given: the same
 // windows Droid's own /limits shows, for the standard pool and Droid Core. A
 // Droid session never reports them, and DROIDEX never reads the CLI's login.
-import type { UsageMeter, UsageWindow } from '../../protocol.js';
+import type { UsageWindow } from '../../protocol.js';
 import { numberValue, objectValue } from '../../values.js';
 import { UsageReadError } from '../accountUsage.js';
-import type { UsageReading } from '../session.js';
+import type { ReportedMeter, UsageReading } from '../session.js';
 
 const LIMITS_URL = 'https://api.factory.ai/api/billing/limits';
 const HOUR_MS = 60 * 60_000;
@@ -51,7 +51,7 @@ function factoryReading(value: unknown): UsageReading {
   return { meters, ...(cents > 0 ? { extra: { kind: 'extra_balance', cents } } : {}) };
 }
 
-function poolMeters(pool: string, value: unknown, model: string | undefined): UsageMeter[] {
+function poolMeters(pool: string, value: unknown, model: string | undefined): ReportedMeter[] {
   const windows = objectValue(value);
   if (!windows) return [];
   return WINDOWS.flatMap(([key, window, durationMs]) => {
