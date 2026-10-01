@@ -474,8 +474,9 @@ export default function BrowserWorkspace({
           <NativeBrowserSurface
             visibleBrowserSessionId={browser?.browserSessionId}
             url={activeUrl}
-            viewport={requestedViewport}
-            viewportMode={viewportMode}
+            // Laid out from the size the page has, as the Browser host draws it.
+            viewport={browser?.viewport ?? requestedViewport}
+            viewportMode={browser?.viewportMode ?? viewportMode}
             designMode={designMode}
             pencilMode={designMode && pencilMode}
             frameSize={frameSize}

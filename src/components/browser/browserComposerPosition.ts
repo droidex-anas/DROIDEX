@@ -25,9 +25,11 @@ export function composerStyleForReferences(
   };
   const composerWidth = Math.min(420, Math.max(280, frame.width - 24));
   const composerHeight = 112;
-  const left = surface.left + box.x;
-  const belowTop = surface.top + box.y + box.height + 10;
-  const aboveTop = surface.top + box.y - composerHeight - 10;
+  // Boxes are in the page's CSS pixels; a standard size is drawn scaled.
+  const scale = surface.scale ?? 1;
+  const left = surface.left + box.x * scale;
+  const belowTop = surface.top + (box.y + box.height) * scale + 10;
+  const aboveTop = surface.top + box.y * scale - composerHeight - 10;
   const top = belowTop + composerHeight <= frame.height - 12 ? belowTop : aboveTop;
   return {
     left: clamp(left, 12, Math.max(12, frame.width - composerWidth - 12)),
