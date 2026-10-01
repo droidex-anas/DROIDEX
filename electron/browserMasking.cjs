@@ -33,8 +33,8 @@ function createBrowserMasking({ savedSecretsFor }) {
       const sensitive = await isSensitive(dbg, line.field, secrets);
       if (value) line.text += `: ${sensitive ? MASK : value}`;
       if (!sensitive) continue;
-      // A field labelled by itself (aria-labelledby) carries its value in its name.
-      if (value && line.field.name.includes(value))
+      // A masked field's name goes too when it may carry what the field holds.
+      if (line.field.labelledBy || (value && line.field.name.includes(value)))
         line.text = line.text.replace(`"${line.name}"`, `"${MASK}"`);
       for (const inner of line.inside) {
         inner.hidden = true;
@@ -96,8 +96,12 @@ function foldedNames(nodes) {
 // The name in effect is the first source with a value that nothing overrides;
 // one with no attribute behind it was built from the page.
 function nameFromPage(node) {
-  const source = node.name?.sources?.find((candidate) => candidate.value && !candidate.superseded);
+  const source = nameSource(node);
   return Boolean(source) && !source.attribute;
+}
+
+function nameSource(node) {
+  return node.name?.sources?.find((candidate) => candidate.value && !candidate.superseded);
 }
 
 // A field whose value is shown or masked; the value may be empty, as in a
@@ -108,6 +112,9 @@ function fieldOf(node) {
     backendNodeId: node.backendDOMNodeId,
     name: cleanText(node.name?.value),
     value: cleanText(node.value?.value),
+    // A field labelled through aria-labelledby can be labelled by itself, and
+    // then its name is its own content.
+    labelledBy: nameSource(node)?.attribute === 'aria-labelledby',
   };
 }
 
