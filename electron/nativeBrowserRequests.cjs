@@ -36,6 +36,7 @@ const DEFAULT_SIDECAR_TIMEOUT_MS = 12_000;
 
 function createNativeBrowserRequests({ manager, notifyRenderer }) {
   const waiting = new Map(); // browserSessionId -> requests in flight
+  const painting = new Map(); // browserSessionId -> its first paint after waking
 
   // A message from the sidecar; only a well-formed browser request is answered.
   async function handle(message, reply) {
@@ -58,8 +59,8 @@ function createNativeBrowserRequests({ manager, notifyRenderer }) {
       }
       if (PAGELESS_ACTIONS.has(request.action)) return await performAction(request);
       return await withAwakePage(request.browserSessionId, deadlineMs, async (woke) => {
-        if (woke && INPUT_ACTIONS.has(request.action))
-          await manager.waitForPaint(request.browserSessionId);
+        if (woke) startPaintWait(request.browserSessionId);
+        if (INPUT_ACTIONS.has(request.action)) await painting.get(request.browserSessionId);
         return performOnPage(request);
       });
     } catch (error) {
@@ -92,6 +93,18 @@ function createNativeBrowserRequests({ manager, notifyRenderer }) {
       clearTimeout(deadline);
       setWaiting(browserSessionId, -1);
     }
+  }
+
+  // A page that has just woken drops input until it paints again; every input
+  // that arrives meanwhile waits for the same paint.
+  function startPaintWait(browserSessionId) {
+    const paint = manager
+      .waitForPaint(browserSessionId)
+      .catch(() => undefined)
+      .finally(() => {
+        if (painting.get(browserSessionId) === paint) painting.delete(browserSessionId);
+      });
+    painting.set(browserSessionId, paint);
   }
 
   function setWaiting(browserSessionId, delta) {
