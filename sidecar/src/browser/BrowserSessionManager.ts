@@ -131,10 +131,7 @@ export class BrowserSessionManager {
   }
 
   async refresh(appSessionId: string): Promise<BrowserState> {
-    return this.refreshSession(this.requireSession(appSessionId));
-  }
-
-  private async refreshSession(session: ManagedBrowserSession): Promise<BrowserState> {
+    const session = this.requireSession(appSessionId);
     session.state = await this.captureState(session);
     this.emitUpdated(session.state);
     return session.state;
@@ -215,17 +212,28 @@ export class BrowserSessionManager {
     input: { text?: string; ref?: string; urlIncludes?: string; timeoutMs?: number },
   ): Promise<BrowserState> {
     const timeoutMs = Math.min(15_000, Math.max(0, input.timeoutMs ?? 5_000));
-    if (!input.text && !input.ref && !input.urlIncludes) {
-      await delay(timeoutMs);
-      return this.refresh(appSessionId);
-    }
     const deadline = Date.now() + timeoutMs;
     const session = this.requireSession(appSessionId);
-    // Polls the browser the wait started on; a browser closed meanwhile ends it.
-    const matches = async () => {
+    // The wait belongs to the browser it started on; once that one closes,
+    // nothing it reads is reported or shown.
+    const stillOpen = () => {
       if (this.resolveSession(appSessionId) !== session)
         throw new Error('The browser was closed while waiting.');
-      const state = await this.refreshSession(session);
+    };
+    const refresh = async () => {
+      const state = await this.captureState(session);
+      stillOpen();
+      session.state = state;
+      this.emitUpdated(state);
+      return state;
+    };
+    if (!input.text && !input.ref && !input.urlIncludes) {
+      await delay(timeoutMs);
+      stillOpen();
+      return refresh();
+    }
+    const matches = async () => {
+      const state = await refresh();
       if (input.urlIncludes && !state.url.includes(input.urlIncludes)) return false;
       if (input.text && (await session.runtime.find(input.text)).matches === 0) return false;
       if (input.ref && !(await refIsOnPage(session.runtime, input.ref))) return false;
@@ -235,6 +243,7 @@ export class BrowserSessionManager {
       if (Date.now() >= deadline) throw new Error('Timed out waiting for the browser condition.');
       await delay(Math.min(200, Math.max(0, deadline - Date.now())));
     }
+    stillOpen();
     return session.state;
   }
 

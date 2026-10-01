@@ -3,9 +3,10 @@
 // in one document and is never reused; a ref from a document that has since
 // gone fails plainly instead of acting on something else.
 
+const { refFor, knownRef, forgetRefs, dropRef } = require('./browserRefs.cjs');
+
 const MAX_NODES = 20_000;
 const MAX_REFS = 5_000;
-const MAX_REMEMBERED_REFS = 50_000;
 const DEFAULT_MAX_CHARS = 12_000;
 const MAX_FIND_RESULTS = 20;
 const MAX_NAME_CHARS = 200;
@@ -58,23 +59,6 @@ const SENSITIVE_FIELD =
   /pass|otp|one.?time|verif|2fa|mfa|token|secret|cvc|cvv|csc|card.?num|cc-|security.?code|\bpin\b|ssn|iban/i;
 
 function createBrowserReading({ runWithWebContentsDebugger, savedSecretsFor, redactUrl }) {
-  // Lives on the browser session's entry: refs outlive guests and documents so
-  // an old one can be recognised, but ids are never handed out twice.
-  function registryFor(entry) {
-    entry.refs ??= { next: 1, byNode: new Map(), byRef: new Map() };
-    return entry.refs;
-  }
-
-  function refFor(registry, document, backendNodeId) {
-    const key = `${document}:${backendNodeId}`;
-    const ref = registry.byNode.get(key) ?? `e${registry.next++}`;
-    registry.byNode.set(key, ref);
-    // Re-inserted, so eviction (oldest first) never drops a ref just handed out.
-    registry.byRef.delete(ref);
-    registry.byRef.set(ref, { document, backendNodeId });
-    return ref;
-  }
-
   // Run against the guest's debugger; a guest that goes away mid-read fails.
   async function withPage(contents, run) {
     const done = await runWithWebContentsDebugger(contents, async (dbg) => ({
@@ -212,7 +196,7 @@ function createBrowserReading({ runWithWebContentsDebugger, savedSecretsFor, red
   }
 
   async function lookupRef(dbg, entry, ref) {
-    const known = registryFor(entry).byRef.get(ref);
+    const known = knownRef(entry, ref);
     if (!known) throw new Error(`Unknown ref ${ref}; call browser_read_page for current refs.`);
     const frames = await documentFrames(dbg);
     const frame = frames.find((candidate) => candidate.loaderId === known.document);
@@ -221,9 +205,8 @@ function createBrowserReading({ runWithWebContentsDebugger, savedSecretsFor, red
   }
 
   function newRender(entry, options) {
-    const registry = registryFor(entry);
     return {
-      registry,
+      entry,
       lines: [],
       fields: [],
       interactiveOnly: options.filter === 'interactive',
@@ -233,8 +216,7 @@ function createBrowserReading({ runWithWebContentsDebugger, savedSecretsFor, red
       refsCut: false,
       // The least recently issued refs are forgotten once the answer is ready.
       forget: () => {
-        if (registry.byRef.size > MAX_REMEMBERED_REFS)
-          forgetOldest(registry, registry.byRef.size - MAX_REMEMBERED_REFS);
+        forgetRefs(entry);
       },
     };
   }
@@ -276,13 +258,13 @@ function createBrowserReading({ runWithWebContentsDebugger, savedSecretsFor, red
       let ref;
       if (node.backendDOMNodeId && render.refs < MAX_REFS) {
         render.refs++;
-        ref = refFor(render.registry, document, node.backendDOMNodeId);
+        ref = refFor(render.entry, document, node.backendDOMNodeId);
       } else if (node.backendDOMNodeId) {
         render.refsCut = true;
       }
-      const line = { depth, text: describe(node, role, name, ref) };
-      const value = cleanText(node.value?.value);
-      if (VALUE_ROLES.has(role) && value) {
+      const line = { depth, text: describe(node, role, name, ref), ref };
+      if (VALUE_ROLES.has(role)) {
+        const value = cleanText(node.value?.value);
         line.field = { backendNodeId: node.backendDOMNodeId, name, value };
         render.fields.push(line);
       }
@@ -352,6 +334,8 @@ function createBrowserReading({ runWithWebContentsDebugger, savedSecretsFor, red
     secrets.delete('');
     for (const line of render.fields) {
       const { backendNodeId, name, value } = line.field;
+      // An empty field with nothing inside it has nothing to show or hide.
+      if (!value && line.inside.length === 0) continue;
       let sensitive = secrets.has(value) || SENSITIVE_FIELD.test(name);
       if (!sensitive && backendNodeId) {
         const described = await dbg
@@ -359,8 +343,14 @@ function createBrowserReading({ runWithWebContentsDebugger, savedSecretsFor, red
           .catch(() => undefined);
         sensitive = !described || isSensitiveField(described.node.attributes ?? []);
       }
-      line.text += `: ${sensitive ? MASK : value}`;
-      if (sensitive) for (const inner of line.inside) inner.hidden = true;
+      if (value) line.text += `: ${sensitive ? MASK : value}`;
+      if (!sensitive) continue;
+      // What is inside a masked field is hidden, and its refs are forgotten so
+      // they cannot be read on their own either.
+      for (const inner of line.inside) {
+        inner.hidden = true;
+        if (inner.ref) dropRef(render.entry, inner.ref);
+      }
     }
     render.lines = render.lines.filter((line) => !line.hidden);
   }
@@ -478,14 +468,6 @@ function matcher(query) {
   }
   const needle = String(query).toLowerCase();
   return (text) => text.toLowerCase().includes(needle);
-}
-
-function forgetOldest(registry, count) {
-  for (const ref of [...registry.byRef.keys()].slice(0, count)) {
-    const { document, backendNodeId } = registry.byRef.get(ref);
-    registry.byRef.delete(ref);
-    registry.byNode.delete(`${document}:${backendNodeId}`);
-  }
 }
 
 // Shoelace area, so a rotated element still counts as visible.

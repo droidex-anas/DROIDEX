@@ -83,7 +83,11 @@ function createNativeBrowserPage({
       const execution = withRefTarget(contents, entry, request)
         .then(async (target) => {
           if (target.document) await reading.assertDocument(contents, target.document);
-          return executeAgentAction(contents, target, navigation);
+          if (target.action !== 'selectOption')
+            return executeAgentAction(contents, target, navigation);
+          ensureCurrent(navigation);
+          await reading.selectOption(contents, entry, target.ref, target.text ?? '');
+          return snapshotOf(contents, target);
         })
         .then(
           (result) => ({ type: 'result', result }),
@@ -97,8 +101,8 @@ function createNativeBrowserPage({
         return await snapshotAfterNavigation(contents, request);
       }
       if (outcome.type === 'error') {
-        const navigated = outcome.error?.navigated || isNavigationExecutionError(outcome.error);
-        if (!navigation.started() || !navigated) throw outcome.error;
+        if (!navigation.started() || !isNavigationExecutionError(outcome.error))
+          throw outcome.error;
         await navigation.wait();
         return await snapshotAfterNavigation(contents, request);
       }
@@ -131,11 +135,7 @@ function createNativeBrowserPage({
 
   // A ref from browser_read_page becomes the point or selector the action needs.
   async function withRefTarget(contents, entry, request) {
-    if (!request.ref) return request;
-    if (request.action === 'selectOption') {
-      await reading.selectOption(contents, entry, request.ref, request.text ?? '');
-      return { ...request, action: 'snapshot' };
-    }
+    if (!request.ref || request.action === 'selectOption') return request;
     if (request.action === 'inspect')
       return { ...request, ...(await reading.selectorForRef(contents, entry, request.ref)) };
     const { x, y, document } = await reading.pointForRef(contents, entry, request.ref);
@@ -143,10 +143,16 @@ function createNativeBrowserPage({
   }
 
   function ensureCurrent(navigation) {
-    if (!navigation.started()) return;
-    const error = new Error('The page changed before the action ran; call browser_read_page.');
-    error.navigated = true;
-    throw error;
+    if (navigation.started())
+      throw new Error('The page changed before the action ran; call browser_read_page.');
+  }
+
+  // The page's state after an action, as the page script reports it.
+  function snapshotOf(contents, request) {
+    return contents.executeJavaScript(
+      `window.__DROIDMAXX_AGENT_ACTION?.(${JSON.stringify({ ...request, action: 'snapshot' })});`,
+      true,
+    );
   }
 
   async function executeAgentAction(contents, request, navigation) {
@@ -169,13 +175,7 @@ function createNativeBrowserPage({
         deltaY: horizontal ? 0 : request.direction === 'up' ? -pixels : pixels,
         canScroll: true,
       });
-      return contents.executeJavaScript(
-        `window.__DROIDMAXX_AGENT_ACTION?.(${JSON.stringify({
-          ...request,
-          action: 'snapshot',
-        })});`,
-        true,
-      );
+      return snapshotOf(contents, request);
     }
     if (request.action === 'click' || request.action === 'hover') {
       const x = Math.round(Number(request.x));
@@ -189,13 +189,7 @@ function createNativeBrowserPage({
         contents.sendInputEvent({ type: 'mouseDown', x, y, button: 'left', clickCount: 1 });
         contents.sendInputEvent({ type: 'mouseUp', x, y, button: 'left', clickCount: 1 });
       }
-      return contents.executeJavaScript(
-        `window.__DROIDMAXX_AGENT_ACTION?.(${JSON.stringify({
-          ...request,
-          action: 'snapshot',
-        })});`,
-        true,
-      );
+      return snapshotOf(contents, request);
     }
     return contents.executeJavaScript(
       `window.__DROIDMAXX_AGENT_ACTION?.(${JSON.stringify(request)});`,
@@ -246,8 +240,9 @@ function createNativeBrowserPage({
       settled = true;
       resolveCompletion();
     };
-    const onStart = (_event, _url, _isInPlace, isMainFrame) => {
-      if (!isMainFrame || didStart) return;
+    // Only a new document counts: hash and History changes keep the page.
+    const onStart = (_event, _url, isInPlace, isMainFrame) => {
+      if (!isMainFrame || isInPlace || didStart) return;
       didStart = true;
       timeout = setTimeout(finish, timeoutMs);
     };
