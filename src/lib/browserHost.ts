@@ -124,6 +124,7 @@ export function closeBrowserPage(browserSessionId: string): void {
   reserving.delete(browserSessionId);
   lastUsed.delete(browserSessionId);
   setBrowserPageCrashed(browserSessionId, false);
+  if (state.slot?.browserSessionId === browserSessionId) setSlot(null);
   if (!state.pages.some((page) => page.browserSessionId === browserSessionId)) return;
   update({ pages: state.pages.filter((page) => page.browserSessionId !== browserSessionId) });
 }
@@ -156,6 +157,7 @@ export function isBrowserPageAwake(host: BrowserHostState, browserSessionId: str
 
 function unloadPages(browserSessionIds: Set<string>): void {
   if (browserSessionIds.size === 0) return;
+  for (const browserSessionId of browserSessionIds) lastUsed.delete(browserSessionId);
   update({ pages: state.pages.filter((page) => !browserSessionIds.has(page.browserSessionId)) });
   for (const browserSessionId of browserSessionIds)
     void releaseNativeBrowser(browserSessionId).catch(() => undefined);
@@ -200,6 +202,7 @@ function setSlot(slot: BrowserSlot | null): void {
   if (previous === next) return;
   if (previous) void setNativeBrowserShown(previous, false).catch(() => undefined);
   if (next) void setNativeBrowserShown(next, true).catch(() => undefined);
+  unloadOverCap();
 }
 
 /**

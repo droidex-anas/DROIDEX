@@ -497,7 +497,8 @@ export default function BrowserWorkspace({
               setActiveUrl(nextUrl);
               if (document.activeElement !== urlInputRef.current)
                 setUrlInput(browserAddressValue(nextUrl));
-              if (browserKey && event.browserSessionId) {
+              // In the desktop app the Browser host records navigations.
+              if (!nativeBrowser && browserKey && event.browserSessionId) {
                 dispatch({
                   type: 'BROWSER_NAVIGATED',
                   appSessionId: browserKey,

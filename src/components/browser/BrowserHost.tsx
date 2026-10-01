@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef } from 'react';
 import type { CSSProperties } from 'react';
-import { useStoreSelector } from '../../hooks/useStore';
+import { useStoreDispatch, useStoreSelector } from '../../hooks/useStore';
 import {
   isBrowserPageAwake,
   setBrowserPageCrashed,
@@ -25,7 +25,10 @@ const DEFAULT_PAGE_SIZE: PageSize = { width: 1280, height: 800 };
  */
 export function BrowserHost() {
   const host = useBrowserHost();
+  const dispatch = useStoreDispatch();
   const browsers = useStoreSelector((state) => state.browsers);
+  const browsersRef = useRef(browsers);
+  browsersRef.current = browsers;
   const sizes = useMemo(() => {
     const bySession = new Map<string, PageSize>();
     for (const browser of Object.values(browsers))
@@ -33,7 +36,8 @@ export function BrowserHost() {
     return bySession;
   }, [browsers]);
 
-  // A page can crash while the pane is closed; remember it until it loads again.
+  // Pages navigate and crash while the pane is closed too, so their state is
+  // recorded here rather than by the pane.
   useEffect(() => {
     const subscriptions = [
       onNativeBrowserLoadFailed((failure) => {
@@ -41,7 +45,14 @@ export function BrowserHost() {
           setBrowserPageCrashed(failure.browserSessionId, true);
       }),
       onNativeBrowserLoaded((event) => {
-        if (event.browserSessionId) setBrowserPageCrashed(event.browserSessionId, false);
+        const { browserSessionId } = event;
+        if (!browserSessionId) return;
+        setBrowserPageCrashed(browserSessionId, false);
+        const appSessionId = Object.keys(browsersRef.current).find(
+          (key) => browsersRef.current[key].browserSessionId === browserSessionId,
+        );
+        if (appSessionId)
+          dispatch({ type: 'BROWSER_NAVIGATED', appSessionId, ...event, browserSessionId });
       }),
     ];
     return () => {
@@ -51,7 +62,7 @@ export function BrowserHost() {
         });
       }
     };
-  }, []);
+  }, [dispatch]);
 
   return (
     <div className="contents">

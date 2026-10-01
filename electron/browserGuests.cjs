@@ -12,7 +12,7 @@ const BIND_TIMEOUT_MS = 10_000;
 
 function createBrowserGuests({ partition, preloadPath, onBound }) {
   const reservations = new Map(); // token -> { browserSessionId, generation, hostId }
-  const claimed = new WeakMap(); // guest contents -> reservation, until it attaches
+  const claimed = new Map(); // guest contents -> reservation, until it attaches
   const guests = new Map(); // browserSessionId -> { contents, generation }
   const waiters = new Map(); // browserSessionId -> Set<{ resolve, reject }>
   let nextGeneration = 0;
@@ -67,6 +67,7 @@ function createBrowserGuests({ partition, preloadPath, onBound }) {
       return;
     }
     claimed.set(contents, reservation);
+    contents.once('destroyed', () => claimed.delete(contents));
   }
 
   // The embedder's 'did-attach-webview': the guest can now be navigated.
@@ -123,6 +124,9 @@ function createBrowserGuests({ partition, preloadPath, onBound }) {
   function release(browserSessionId) {
     for (const [token, reservation] of reservations) {
       if (reservation.browserSessionId === browserSessionId) reservations.delete(token);
+    }
+    for (const [contents, reservation] of claimed) {
+      if (reservation.browserSessionId === browserSessionId) claimed.delete(contents);
     }
     guests.delete(browserSessionId);
     settleWaiters(browserSessionId, (waiter) =>

@@ -134,7 +134,7 @@ function createNativeBrowserViewFactory({
       if (entry.state.designMode && entry.shown) applyDesignState(entry);
     });
     contents.on('render-process-gone', (_event, details) => {
-      if (entry.contents !== contents) return;
+      if (entry.contents !== contents || details?.reason === 'clean-exit') return;
       entry.crashed = true;
       entry.loadingUrl = null;
       entry.loadingPromise = null;
