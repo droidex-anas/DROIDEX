@@ -140,15 +140,16 @@ export class DroidProviderSession implements ProviderSession {
       await this.droid.updateSettings(next);
       return;
     }
-    // The user's pick replaces any switch Droid made before it.
-    const previous = this.modelId;
+    // The user's pick replaces any switch Droid made before it, unless the
+    // pick is refused.
+    const previous = { modelId: this.modelId, pendingSwitch: this.pendingSwitch };
     this.modelId = modelId;
     this.pendingSwitch = undefined;
     this.modelWritesInFlight += 1;
     try {
       await this.droid.updateSettings(next);
     } catch (error) {
-      this.modelId = previous;
+      ({ modelId: this.modelId, pendingSwitch: this.pendingSwitch } = previous);
       throw error;
     } finally {
       this.modelWritesInFlight -= 1;
