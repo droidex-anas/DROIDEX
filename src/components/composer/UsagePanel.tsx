@@ -132,16 +132,19 @@ function UsageBody({
   return (
     <ul className="flex min-w-0 flex-col gap-2 px-1.5 pb-0.5 pt-0.5">
       {usage.meters.map((meter) => (
-        <MeterRow key={meter.id} meter={meter} now={now} />
+        <MeterRow key={meter.id} meter={meter} stale={usage.stale === true} now={now} />
       ))}
     </ul>
   );
 }
 
-// Reset and pace wrap under the window's name on a narrow composer.
-function MeterRow({ meter, now }: { meter: UsageMeter; now: number }) {
+// Reset and pace wrap under the window's name on a narrow composer. A stale
+// figure's bar is muted, so it never reads as fresh.
+function MeterRow({ meter, stale, now }: { meter: UsageMeter; stale: boolean; now: number }) {
   const pace = usagePace(meter, now);
   const urgent = pace !== undefined && pace.kind !== 'lasts';
+  let fill = urgent ? 'bg-droid-orange' : 'bg-droid-text-secondary';
+  if (stale) fill = 'bg-droid-text-muted';
   const resetsIn =
     meter.resetsAt !== undefined && meter.resetsAt > now
       ? `Resets in ${formatDuration(meter.resetsAt - now)}`
@@ -173,7 +176,7 @@ function MeterRow({ meter, now }: { meter: UsageMeter; now: number }) {
         className="h-1 w-full overflow-hidden rounded-full bg-droid-elevated"
       >
         <div
-          className={`h-full rounded-full ${urgent ? 'bg-droid-orange' : 'bg-droid-text-secondary'}`}
+          className={`h-full rounded-full ${fill}`}
           style={{ width: `${String(meter.usedPercent)}%` }}
         />
       </div>
