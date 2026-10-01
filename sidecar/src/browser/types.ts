@@ -116,7 +116,6 @@ export interface BrowserState extends BrowserSnapshot {
   appSessionId?: string;
   viewport: BrowserViewport;
   viewportMode: BrowserViewportMode;
-  agentCursor?: { x: number; y: number };
   error?: string;
 }
 
