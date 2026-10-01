@@ -1594,7 +1594,6 @@ export class SessionManager {
       liveSession,
       request,
     );
-    // Whatever the turn spent, the account says so now.
     this.accountUsage.afterTurn(liveSession.summary.provider);
   }
 

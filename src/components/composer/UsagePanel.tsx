@@ -18,8 +18,7 @@ import { ComposerTab } from './ComposerTab';
 import { ACTION_CLASS, ManageUsageButton } from './UsageLimitTab';
 
 // What /usage shows: the current harness's account windows, each with how
-// much is used, when it resets and how it is pacing, in the limit tab's slot
-// and voice. The numbers sync on their own; Refresh reads again now.
+// much is used, when it resets and how it is pacing, in the limit tab's slot.
 export function UsagePanel({
   provider,
   usage,
@@ -119,8 +118,7 @@ function UsageBody({
   );
 }
 
-// One window: its name and share used, then reset and pace, which wrap under
-// on a narrow composer, over a thin bar of the share used.
+// Reset and pace wrap under the window's name on a narrow composer.
 function MeterRow({ meter, now }: { meter: UsageMeter; now: number }) {
   const pace = usagePace(meter, now);
   const urgent = pace !== undefined && pace.kind !== 'lasts';
