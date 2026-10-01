@@ -18,19 +18,6 @@ export interface BrowserBox {
   height: number;
 }
 
-export interface BrowserElementRef {
-  ref: string;
-  selector: string;
-  tagName: string;
-  role?: string;
-  name?: string;
-  text?: string;
-  attributes?: Record<string, string>;
-  className?: string;
-  box: BrowserBox;
-  computedStyles?: Record<string, string>;
-}
-
 export interface BrowserElementInspection {
   selector: string;
   tagName: string;
@@ -67,12 +54,20 @@ export interface BrowserSnapshot {
   url: string;
   title?: string;
   scroll: { x: number; y: number };
-  refs: BrowserElementRef[];
   canGoBack?: boolean;
   canGoForward?: boolean;
 }
 
 export type ScrollDirection = 'up' | 'down' | 'left' | 'right';
+
+/** What an action points at: a ref from browser_read_page, or a viewport point. */
+export type BrowserTarget = { ref: string } | { x: number; y: number };
+
+export interface BrowserReadOptions {
+  ref?: string;
+  filter?: 'interactive' | 'all';
+  maxChars?: number;
+}
 
 export interface BrowserState extends BrowserSnapshot {
   browserSessionId: string;

@@ -77,10 +77,6 @@ export class FakeBrowserSessionManager implements SessionBrowserDependencies {
   readonly screenshot: SessionBrowserDependencies['screenshot'] = () =>
     unsupportedBrowserMethod('screenshot');
 
-  readonly inspectPoint: SessionBrowserDependencies['inspectPoint'] = () => {
-    throw new Error('FakeBrowserSessionManager does not implement inspectPoint.');
-  };
-
   readonly addReference: SessionBrowserDependencies['addReference'] = () =>
     unsupportedBrowserMethod('addReference');
 
@@ -132,7 +128,6 @@ function browserState(
     viewport: { ...viewport },
     viewportMode,
     scroll: { x: 0, y: 0 },
-    refs: [],
   };
 }
 
@@ -141,7 +136,6 @@ export function nativeSnapshot(url: string): BrowserSnapshot {
     url,
     title: 'Example',
     scroll: { x: 0, y: 0 },
-    refs: [],
     canGoBack: false,
     canGoForward: false,
   };

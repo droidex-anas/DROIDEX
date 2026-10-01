@@ -6,12 +6,13 @@ import type { BrowserSessionManager } from './BrowserSessionManager.js';
 test('browser MCP server exposes agent-facing names and typed inputs', () => {
   const server = createBrowserMcpServer({} as BrowserSessionManager, () => 'm1');
 
-  assert.equal(server.name, 'droidmaxx-browser');
+  assert.equal(server.name, 'droidex-browser');
   assert.deepEqual(
     server.tools.map((tool) => tool.name),
     [
       'browser_open',
-      'browser_snapshot',
+      'browser_read_page',
+      'browser_find',
       'browser_reload',
       'browser_back',
       'browser_forward',
@@ -69,7 +70,6 @@ test('browser_open keeps high-detail viewport scale by default', async () => {
         viewport: input.viewport,
         viewportMode: 'custom',
         scroll: { x: 0, y: 0 },
-        refs: [],
       };
     },
   } as unknown as BrowserSessionManager;
@@ -83,7 +83,7 @@ test('browser_open keeps high-detail viewport scale by default', async () => {
   });
 
   assert.equal(openedViewport?.deviceScaleFactor, 2);
-  assert.match(String(result), /Opened the live DROIDEX browser/);
+  assert.match(String(result), /Opened the page in the live DROIDEX browser/);
 });
 
 test('browser_reload returns a fresh browser state', async () => {
@@ -94,7 +94,6 @@ test('browser_reload returns a fresh browser state', async () => {
         viewport: { width: 1200, height: 800, deviceScaleFactor: 2 },
         viewportMode: 'fit',
         scroll: { x: 0, y: 0 },
-        refs: [],
       };
     },
   } as unknown as BrowserSessionManager;
@@ -113,7 +112,6 @@ test('browser history tools return the resulting page state', async () => {
     viewport: { width: 1200, height: 800, deviceScaleFactor: 2 },
     viewportMode: 'fit' as const,
     scroll: { x: 0, y: 0 },
-    refs: [],
   };
   const manager = {
     async goBack() {

@@ -5,8 +5,10 @@ import type {
   BrowserElementInspection,
   BrowserConsoleEvent,
   BrowserNetworkEvent,
+  BrowserReadOptions,
   BrowserScreenshotOptions,
   BrowserSnapshot,
+  BrowserTarget,
   BrowserViewport,
   ScrollDirection,
 } from './types.js';
@@ -24,7 +26,6 @@ export class NativeBrowserRuntime implements BrowserRuntime {
   private lastSnapshot: BrowserSnapshot = {
     url: 'about:blank',
     scroll: { x: 0, y: 0 },
-    refs: [],
   };
 
   constructor(private readonly options: NativeBrowserRuntimeOptions) {
@@ -73,16 +74,25 @@ export class NativeBrowserRuntime implements BrowserRuntime {
     return this.snapshotFrom(await this.send({ action: 'snapshot' }));
   }
 
-  async click(x: number, y: number, selector?: string): Promise<BrowserSnapshot> {
-    return this.action({ action: 'click', x, y, selector });
+  async readPage(options: BrowserReadOptions = {}): Promise<string> {
+    return this.textFrom(await this.send({ action: 'readPage', ...options }));
   }
 
-  async hover(x: number, y: number, selector?: string): Promise<BrowserSnapshot> {
-    return this.action({ action: 'hover', x, y, selector });
+  async find(query: string): Promise<{ text: string; matches: number }> {
+    const result = await this.send({ action: 'find', query });
+    return { text: this.textFrom(result), matches: result.matches ?? 0 };
   }
 
-  async selectOption(selector: string, value: string): Promise<BrowserSnapshot> {
-    return this.action({ action: 'selectOption', selector, text: value });
+  async click(target: BrowserTarget): Promise<BrowserSnapshot> {
+    return this.action({ action: 'click', ...target });
+  }
+
+  async hover(target: BrowserTarget): Promise<BrowserSnapshot> {
+    return this.action({ action: 'hover', ...target });
+  }
+
+  async selectOption(ref: string, value: string): Promise<BrowserSnapshot> {
+    return this.action({ action: 'selectOption', ref, text: value });
   }
 
   async type(text: string): Promise<BrowserSnapshot> {
@@ -95,15 +105,14 @@ export class NativeBrowserRuntime implements BrowserRuntime {
 
   async scroll(
     direction: ScrollDirection,
-    pixels?: number,
-    x?: number,
-    y?: number,
+    pixels: number | undefined,
+    target: BrowserTarget,
   ): Promise<BrowserSnapshot> {
-    return this.action({ action: 'scroll', direction, pixels, x, y });
+    return this.action({ action: 'scroll', direction, pixels, ...target });
   }
 
-  async inspect(selector: string): Promise<BrowserElementInspection> {
-    const result = await this.send({ action: 'inspect', selector });
+  async inspect(target: { ref: string } | { selector: string }): Promise<BrowserElementInspection> {
+    const result = await this.send({ action: 'inspect', ...target });
     if (!result.ok) throw new Error(result.error ?? 'Native browser inspection failed.');
     if (!result.inspection) throw new Error('Native browser returned no element inspection.');
     return result.inspection;
@@ -165,11 +174,15 @@ export class NativeBrowserRuntime implements BrowserRuntime {
     this.lastSnapshot = {
       url: fallbackUrl,
       scroll: { x: 0, y: 0 },
-      refs: [],
       canGoBack: false,
       canGoForward: false,
     };
     return this.lastSnapshot;
+  }
+
+  private textFrom(result: BrowserNativeResult): string {
+    if (!result.ok) throw new Error(result.error ?? 'Native browser read failed.');
+    return result.text ?? '';
   }
 
   private navigationSnapshotFrom(result: BrowserNativeResult): BrowserSnapshot {

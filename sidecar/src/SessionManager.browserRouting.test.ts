@@ -78,7 +78,6 @@ test('[B1] Browser command routing', { concurrency: false }, async () => {
         viewport,
         viewportMode: 'custom',
         scroll: { x: 0, y: 0 },
-        refs: [],
       },
     });
 
@@ -98,7 +97,6 @@ test('[B1] Browser command routing', { concurrency: false }, async () => {
         viewport: resizedViewport,
         viewportMode: 'custom',
         scroll: { x: 0, y: 0 },
-        refs: [],
       },
     });
 
@@ -118,7 +116,6 @@ test('[B1] Browser command routing', { concurrency: false }, async () => {
         viewport: resizedViewport,
         viewportMode: 'mobile',
         scroll: { x: 0, y: 0 },
-        refs: [],
       },
     });
 
@@ -137,7 +134,6 @@ test('[B1] Browser command routing', { concurrency: false }, async () => {
         viewport: resizedViewport,
         viewportMode: 'mobile',
         scroll: { x: 0, y: 0 },
-        refs: [],
       },
     });
 
@@ -156,7 +152,6 @@ test('[B1] Browser command routing', { concurrency: false }, async () => {
         viewport: { width: 1200, height: 800, deviceScaleFactor: 2 },
         viewportMode: 'fit',
         scroll: { x: 0, y: 0 },
-        refs: [],
       },
     });
 
