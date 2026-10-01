@@ -98,12 +98,14 @@ export class AccountUsage {
   }
 
   // Another Factory key was set: nothing read with the last one, pending or
-  // kept, is this account's. A renderer shown the old figures gets new ones.
+  // kept, is this account's. A renderer that asked for the old figures, or is
+  // still waiting on them, gets new ones.
   factoryKeyChanged(): void {
     const previous = this.accounts.get('droid');
-    previous?.abort.abort();
+    if (!previous) return;
+    previous.abort.abort();
     this.accounts.delete('droid');
-    if (previous?.usage) void this.read('droid', true, true);
+    void this.read('droid', true, true);
   }
 
   close(): void {
