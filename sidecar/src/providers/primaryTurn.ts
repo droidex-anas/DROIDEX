@@ -126,8 +126,14 @@ export async function runPrimaryTurn(
   }
   if (!isCurrent()) return;
   if (turnError) settleTurnFailure(d, liveSession, turnError, reportedError, reportedUsageLimit);
-  // An answered turn is the only evidence that a limit has lifted.
-  else if (liveSession.summary.usageLimit) d.updateSummary(appSessionId, { usageLimit: undefined });
+  // An answered turn is the only evidence that a limit has lifted; a stopped
+  // one proves nothing.
+  else if (
+    liveSession.summary.usageLimit &&
+    !liveSession.interrupting &&
+    !liveSession.interruptingToSend
+  )
+    d.updateSummary(appSessionId, { usageLimit: undefined });
   // Keep streaming=true while the context refresh is in flight so concurrent
   // sends queue instead of racing a second lifecycle turn.
   await context.refresh();

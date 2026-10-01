@@ -1125,7 +1125,7 @@ export class SessionLifecycle {
     });
     // A turn the provider started by itself is the session's turn like any
     // other: it streams, it can be stopped, and a typed prompt waits behind it.
-    const delegated = liveSession.session.onDelegatedTurn?.((running) => {
+    const delegated = liveSession.session.onDelegatedTurn?.((running, completed) => {
       if (!isCurrent()) return;
       liveSession.streaming = running;
       if (running) {
@@ -1145,6 +1145,9 @@ export class SessionLifecycle {
       const stopped = liveSession.interrupting === true || liveSession.interruptingToSend === true;
       liveSession.interrupting = false;
       liveSession.interruptingToSend = false;
+      // A spoken turn that finished is an answer too, so a usage hold lifts.
+      if (completed && !stopped && liveSession.summary.usageLimit)
+        this.dependencies.registry.updateSummary(appSessionId, { usageLimit: undefined });
       this.publishTurnSettled(liveSession);
       if (stopped) this.dependencies.childSessions.retryAgentWave(liveSession.summary.appSessionId);
       // A runtime that has gone takes the queue with it through the close

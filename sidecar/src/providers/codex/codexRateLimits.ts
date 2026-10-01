@@ -30,25 +30,27 @@ export class CodexRateLimits {
     void client
       .request<unknown>('account/rateLimits/read', { excludeResetCreditDetails: true })
       .then((response) => {
-        const snapshot = snapshotOf(objectValue(response)?.rateLimits);
-        if (snapshot) this.snapshot = snapshot;
+        const read = snapshotOf(objectValue(response)?.rateLimits);
+        if (!read) return;
+        // An update that landed while this read was in flight is newer.
+        const current = this.snapshot;
+        this.snapshot = current && current.limitId === read.limitId ? merged(read, current) : read;
       })
       .catch(() => undefined);
   }
 
   // `account/rateLimits/updated` carries one bucket, and a field it leaves
-  // null keeps the value that bucket already had.
+  // null keeps the value that bucket already had. Before any read has
+  // answered, an update for the account's main bucket stands on its own.
   update(params: unknown): void {
     const update = snapshotOf(objectValue(params)?.rateLimits);
+    if (!update) return;
     const current = this.snapshot;
-    if (!update || !current || update.limitId !== current.limitId) return;
-    this.snapshot = {
-      limitId: current.limitId,
-      primary: update.primary ?? current.primary,
-      secondary: update.secondary ?? current.secondary,
-      individualLimitResetsAt: update.individualLimitResetsAt ?? current.individualLimitResetsAt,
-      spendControlReached: update.spendControlReached ?? current.spendControlReached,
-    };
+    if (!current) {
+      if (update.limitId === undefined || update.limitId === 'codex') this.snapshot = update;
+      return;
+    }
+    if (update.limitId === current.limitId) this.snapshot = merged(current, update);
   }
 
   usageLimitError(message: string): UsageLimitError {
@@ -72,6 +74,16 @@ export class CodexRateLimits {
       : undefined;
     return resetsAt === undefined ? {} : { resetsAt };
   }
+}
+
+function merged(older: RateLimitSnapshot, newer: RateLimitSnapshot): RateLimitSnapshot {
+  return {
+    limitId: older.limitId,
+    primary: newer.primary ?? older.primary,
+    secondary: newer.secondary ?? older.secondary,
+    individualLimitResetsAt: newer.individualLimitResetsAt ?? older.individualLimitResetsAt,
+    spendControlReached: newer.spendControlReached ?? older.spendControlReached,
+  };
 }
 
 function usageWindow({ windowDurationMins: minutes }: RateLimitWindow): UsageWindow | undefined {
