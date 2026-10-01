@@ -16,6 +16,7 @@ import {
 } from '../../lib/nativeBrowser';
 import type { BrowserViewport, BrowserViewportMode } from '../../types/bridge';
 import type { Size } from './browserGeometry';
+import { pageLayout } from './browserViewport';
 
 interface NativeBrowserSurfaceProps {
   visibleBrowserSessionId?: string;
@@ -30,7 +31,6 @@ interface NativeBrowserSurfaceProps {
   onSelection: (selection: NativeBrowserSelection) => void;
   onPrompt: (prompt: NativeBrowserDesignPrompt) => void;
   onLoadFailed?: (failure: NativeBrowserLoadFailed) => void;
-  onViewportSizeChange: (size: Size) => void;
 }
 
 // The pane's slot for the chat's browser page. The page itself lives in the
@@ -48,7 +48,6 @@ export function NativeBrowserSurface({
   onSelection,
   onPrompt,
   onLoadFailed,
-  onViewportSizeChange,
 }: NativeBrowserSurfaceProps) {
   const surfaceReady = frameSize.width > 8 && frameSize.height > 8;
   const onLoadedRef = useRef(onLoaded);
@@ -58,15 +57,16 @@ export function NativeBrowserSurface({
   const native = isDesktop();
   // While the pane animates out, the page must not linger over what replaces it.
   const leaving = !useIsPresent();
+  const surface = useMemo(
+    () => pageLayout(frameSize, viewport, viewportMode, expanded),
+    [expanded, frameSize, viewport, viewportMode],
+  );
   const anchor = useBrowserSlot(native ? visibleBrowserSessionId : undefined, {
     hidden: leaving || !surfaceReady,
     rounded: !expanded,
+    scale: surface.scale,
     url,
   });
-  const surface = useMemo(
-    () => surfaceLayout(frameSize, viewport, viewportMode, expanded),
-    [expanded, frameSize, viewport, viewportMode],
-  );
 
   useEffect(() => {
     onLoadedRef.current = onLoaded;
@@ -74,10 +74,6 @@ export function NativeBrowserSurface({
     onPromptRef.current = onPrompt;
     onLoadFailedRef.current = onLoadFailed;
   }, [onLoadFailed, onLoaded, onPrompt, onSelection]);
-
-  useEffect(() => {
-    onViewportSizeChange({ width: Math.round(surface.width), height: Math.round(surface.height) });
-  }, [onViewportSizeChange, surface.height, surface.width]);
 
   useEffect(() => {
     if (!visibleBrowserSessionId) return;
@@ -138,31 +134,4 @@ export function NativeBrowserSurface({
       )}
     </div>
   );
-}
-
-function surfaceLayout(
-  frame: Size,
-  viewport: BrowserViewport,
-  mode: BrowserViewportMode,
-  expanded = false,
-) {
-  if (expanded && mode === 'fit') {
-    return {
-      width: Math.max(1, Math.round(frame.width)),
-      height: Math.max(1, Math.round(frame.height)),
-      left: 0,
-      top: 0,
-    };
-  }
-  const padding = 18;
-  const availableWidth = Math.max(1, frame.width - padding * 2);
-  const availableHeight = Math.max(1, frame.height - padding * 2);
-  const width = mode === 'fit' ? availableWidth : Math.min(viewport.width, availableWidth);
-  const height = mode === 'fit' ? availableHeight : Math.min(viewport.height, availableHeight);
-  return {
-    width: Math.round(width),
-    height: Math.round(height),
-    left: Math.round((frame.width - width) / 2),
-    top: Math.round((frame.height - height) / 2),
-  };
 }

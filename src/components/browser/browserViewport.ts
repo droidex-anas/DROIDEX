@@ -6,17 +6,21 @@ const FIT_FALLBACK_VIEWPORT: BrowserViewport = {
   height: 800,
   deviceScaleFactor: 2,
 };
-export const CUSTOM_DEFAULT_VIEWPORT: BrowserViewport = {
-  width: 1024,
-  height: 720,
-  deviceScaleFactor: 2,
-};
 
-const PRESET_VIEWPORTS: Partial<Record<BrowserViewportMode, BrowserViewport>> = {
+// The standard sizes; the sidecar has the same ones for agents.
+const PRESET_VIEWPORTS: Record<Exclude<BrowserViewportMode, 'fit'>, BrowserViewport> = {
   desktop: { width: 1440, height: 900, deviceScaleFactor: 2 },
   laptop: { width: 1280, height: 800, deviceScaleFactor: 2 },
   tablet: { width: 820, height: 1180, deviceScaleFactor: 2 },
   mobile: { width: 390, height: 844, deviceScaleFactor: 2 },
+};
+
+export const VIEWPORT_LABELS: Record<BrowserViewportMode, string> = {
+  fit: 'Fit',
+  desktop: 'Desktop',
+  laptop: 'Laptop',
+  tablet: 'Tablet',
+  mobile: 'Phone',
 };
 
 export function viewportFromFrame(size: Size, edgeToEdge = false): BrowserViewport {
@@ -32,11 +36,41 @@ export function viewportFromFrame(size: Size, edgeToEdge = false): BrowserViewpo
 export function viewportForMode(
   mode: BrowserViewportMode,
   fitViewport: BrowserViewport,
-  customViewport: BrowserViewport,
 ): BrowserViewport {
-  if (mode === 'fit') return fitViewport;
-  if (mode === 'custom') return customViewport;
-  return PRESET_VIEWPORTS[mode] ?? fitViewport;
+  return mode === 'fit' ? fitViewport : PRESET_VIEWPORTS[mode];
+}
+
+const PAGE_PADDING = 18;
+
+/**
+ * Where the page sits in the pane. Fit fills it (edge to edge when
+ * expanded); a standard size keeps its own CSS size, scaled down to fit and
+ * centred, so the page lays out exactly as the agent sees it.
+ */
+export function pageLayout(
+  frame: Size,
+  viewport: BrowserViewport,
+  mode: BrowserViewportMode,
+  expanded = false,
+): Size & { left: number; top: number; scale?: number } {
+  if (expanded && mode === 'fit') {
+    return { width: pixels(frame.width), height: pixels(frame.height), left: 0, top: 0 };
+  }
+  const availableWidth = Math.max(1, frame.width - PAGE_PADDING * 2);
+  const availableHeight = Math.max(1, frame.height - PAGE_PADDING * 2);
+  const scale =
+    mode === 'fit'
+      ? undefined
+      : Math.min(1, availableWidth / viewport.width, availableHeight / viewport.height);
+  const width = scale === undefined ? availableWidth : viewport.width * scale;
+  const height = scale === undefined ? availableHeight : viewport.height * scale;
+  return {
+    width: Math.round(width),
+    height: Math.round(height),
+    left: Math.round((frame.width - width) / 2),
+    top: Math.round((frame.height - height) / 2),
+    scale,
+  };
 }
 
 export function sameViewport(a: BrowserViewport, b: BrowserViewport): boolean {

@@ -85,11 +85,15 @@ export interface BrowserOutcome {
   text: string;
 }
 
-const DEFAULT_BROWSER_VIEWPORT: BrowserViewport = {
-  width: 1200,
-  height: 800,
-  deviceScaleFactor: 2,
+// The standard sizes an agent picks from; the renderer has the same ones for
+// the user. Fit follows the user's pane.
+const STANDARD_VIEWPORTS: Record<Exclude<BrowserViewportMode, 'fit'>, BrowserViewport> = {
+  desktop: { width: 1440, height: 900, deviceScaleFactor: 2 },
+  laptop: { width: 1280, height: 800, deviceScaleFactor: 2 },
+  tablet: { width: 820, height: 1180, deviceScaleFactor: 2 },
+  mobile: { width: 390, height: 844, deviceScaleFactor: 2 },
 };
+const DEFAULT_BROWSER_VIEWPORT = STANDARD_VIEWPORTS.desktop;
 
 export class BrowserSessionManager {
   private readonly sessions = new Map<string, ManagedBrowserSession>();
@@ -150,6 +154,13 @@ export class BrowserSessionManager {
     };
     this.emitUpdated(session.state);
     return session.state;
+  }
+
+  /** A standard size, or Fit, which keeps the size until the pane sets it. */
+  async useViewport(appSessionId: string, mode: BrowserViewportMode): Promise<BrowserState> {
+    const session = this.requireSession(appSessionId);
+    const viewport = mode === 'fit' ? session.state.viewport : STANDARD_VIEWPORTS[mode];
+    return this.resizeViewport({ appSessionId, viewport, viewportMode: mode });
   }
 
   async click(
@@ -376,8 +387,12 @@ export class BrowserSessionManager {
       };
       return existing;
     }
-    const initialViewport = viewport ?? DEFAULT_BROWSER_VIEWPORT;
     const initialViewportMode = viewportMode ?? 'fit';
+    const initialViewport =
+      viewport ??
+      (initialViewportMode === 'fit'
+        ? DEFAULT_BROWSER_VIEWPORT
+        : STANDARD_VIEWPORTS[initialViewportMode]);
     const id = `browser-${appSessionId}-${Date.now().toString(36)}`;
     const runtime = this.options.runtimeFactory?.(id, initialViewport, appSessionId);
     if (!runtime) {

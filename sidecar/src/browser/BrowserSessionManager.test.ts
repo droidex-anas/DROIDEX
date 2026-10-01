@@ -270,8 +270,8 @@ test('failed resize preserves the previous viewport and emits no optimistic upda
 
   assert.equal(updates.length, updateCount);
   assert.deepEqual(manager.state('m1')?.viewport, {
-    width: 1200,
-    height: 800,
+    width: 1440,
+    height: 900,
     deviceScaleFactor: 2,
   });
 });
@@ -317,7 +317,7 @@ test('addReference captures an anchor crop and current browser context', async (
   const reference = await manager.addReference('m1', { anchor: buttonAnchor() });
 
   assert.equal(reference.url, 'http://127.0.0.1:1420/');
-  assert.equal(reference.viewport.width, 1200);
+  assert.equal(reference.viewport.width, 1440);
   assert.equal(reference.anchor.id, reference.id);
   assert.ok(reference.anchor.screenshotPath, 'expected an auto-captured crop path');
   assert.deepEqual(runtime.captures.at(-1), buttonAnchor().box);
@@ -437,14 +437,14 @@ test('open preserves existing viewport when agent omits viewport', async () => {
     appSessionId: 'm1',
     url: 'https://example.com',
     viewport: { width: 820, height: 620, deviceScaleFactor: 2 },
-    viewportMode: 'custom',
+    viewportMode: 'tablet',
   });
 
   const { state: state } = await manager.open({ appSessionId: 'm1', url: 'https://example.org' });
 
   assert.deepEqual(runtime.viewport, { width: 820, height: 620, deviceScaleFactor: 2 });
   assert.deepEqual(state.viewport, { width: 820, height: 620, deviceScaleFactor: 2 });
-  assert.equal(state.viewportMode, 'custom');
+  assert.equal(state.viewportMode, 'tablet');
 });
 
 test('open normalizes bare domains before the native runtime sees them', async () => {

@@ -536,7 +536,7 @@ export interface BrowserViewport {
   deviceScaleFactor: number;
 }
 
-export type BrowserViewportMode = 'fit' | 'desktop' | 'laptop' | 'tablet' | 'mobile' | 'custom';
+export type BrowserViewportMode = 'fit' | 'desktop' | 'laptop' | 'tablet' | 'mobile';
 type BrowserScrollDirection = 'up' | 'down' | 'left' | 'right';
 
 interface BrowserBox {

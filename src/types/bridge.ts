@@ -540,7 +540,7 @@ export interface BrowserViewport {
   deviceScaleFactor: number;
 }
 
-export type BrowserViewportMode = 'fit' | 'desktop' | 'laptop' | 'tablet' | 'mobile' | 'custom';
+export type BrowserViewportMode = 'fit' | 'desktop' | 'laptop' | 'tablet' | 'mobile';
 
 export interface BrowserBox {
   x: number;
