@@ -137,16 +137,21 @@ function createNativeBrowserPage({
   }
 
   // Records the size's name or the scheme and answers once a live guest has
-  // taken it. One the guest refused is not given to it again at its next mount.
+  // taken it. It is recorded first, so a guest mounted meanwhile takes it too;
+  // a guest that refuses it keeps what it had, and so does its entry.
   async function deviceSet(entry, request, field) {
+    const contents = liveContents(entry);
     const before = entry[field];
     entry[field] = request[field];
     try {
-      await useDevice(liveContents(entry), entry);
+      await useDevice(contents, { [field]: request[field] });
     } catch (error) {
-      if (entry[field] === request[field]) entry[field] = before;
+      if (liveContents(entry) === contents && entry[field] === request[field])
+        entry[field] = before;
       throw error;
     }
+    // A change for the same value that failed just before may have put it back.
+    if (liveContents(entry) === contents) entry[field] = request[field];
     return { requestId: request.requestId, ok: true };
   }
 
