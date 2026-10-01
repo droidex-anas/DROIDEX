@@ -17,13 +17,7 @@ import {
   waitShape,
 } from './browserActionTools.js';
 
-const viewportSchema = z.object({
-  width: z.number().int().min(240).max(4096),
-  height: z.number().int().min(240).max(4096),
-  deviceScaleFactor: z.number().positive().max(4).optional(),
-});
-
-const viewportModeSchema = z.enum(['fit', 'desktop', 'laptop', 'tablet', 'mobile', 'custom']);
+const viewportModeSchema = z.enum(['fit', 'desktop', 'laptop', 'tablet', 'mobile']);
 
 export function createBrowserMcpServer(
   manager: BrowserSessionManager,
@@ -59,8 +53,6 @@ export function createBrowserMcpServer(
             .enum(['back', 'forward', 'reload'])
             .optional()
             .describe('Go back, forward or reload instead of opening a URL.'),
-          viewport: viewportSchema.optional().describe('Optional explicit browser viewport.'),
-          viewportMode: viewportModeSchema.optional().describe('Viewport preset label for the UI.'),
         },
         safeTool(async (input) => {
           const id = appSessionId();
@@ -71,13 +63,11 @@ export function createBrowserMcpServer(
           if (input.action === 'reload')
             return said({ done: 'Reloaded the page.', outcome: await manager.reload(id) });
           if (!input.url) throw new Error('Pass a url, or an action: back, forward or reload.');
+          // A browser the agent starts lays pages out at desktop size.
           const outcome = await manager.open({
             appSessionId: id,
             url: input.url,
-            viewport: input.viewport
-              ? { ...input.viewport, deviceScaleFactor: input.viewport.deviceScaleFactor ?? 2 }
-              : undefined,
-            viewportMode: input.viewportMode ?? (input.viewport ? 'custom' : undefined),
+            viewportMode: manager.hasSession(id) ? undefined : 'desktop',
           });
           return said({ done: 'Opened the page.', outcome });
         }),
@@ -221,22 +211,21 @@ export function createBrowserMcpServer(
         safeTool(async (input) => said(await act.press(appSessionId(), input))),
       ),
       tool(
-        'browser_resize',
-        'Resize the viewport of the live DROIDEX browser. Use this to check responsive layouts or to match a specific screen size.',
+        'browser_viewport',
+        [
+          "Lay the page out at a standard size: desktop (1440×900, where a browser you open starts), laptop (1280×800), tablet (820×1180) or mobile (390×844); fit follows the size of the user's pane.",
+          'The page reflows to it; the user sees the same page scaled to fit their pane. Use it to check a responsive layout.',
+        ].join(' '),
         {
-          viewport: viewportSchema.describe('New viewport dimensions.'),
-          viewportMode: viewportModeSchema.optional().describe('Viewport preset label.'),
+          size: viewportModeSchema.describe('The size to lay the page out at.'),
         },
         safeTool(async (input) => {
-          const state = await manager.resizeViewport({
-            appSessionId: appSessionId(),
-            viewport: {
-              ...input.viewport,
-              deviceScaleFactor: input.viewport.deviceScaleFactor ?? 2,
-            },
-            viewportMode: input.viewportMode ?? 'custom',
-          });
-          return jsonResult(stateForTool(state));
+          const { viewport, viewportMode } = await manager.useViewport(appSessionId(), input.size);
+          if (viewportMode !== input.size)
+            return `The user switched the page to ${viewportMode} meanwhile; browser_screenshot states its size.`;
+          if (input.size === 'fit')
+            return "The page follows the user's pane; browser_screenshot states its size.";
+          return `The page is laid out at ${input.size} size, ${String(viewport.width)} × ${String(viewport.height)} CSS px.`;
         }),
       ),
       tool(

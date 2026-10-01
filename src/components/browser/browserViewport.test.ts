@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { normalizeUrl, viewportForMode, viewportFromFrame } from './browserViewport';
+import { normalizeUrl, pageLayout, viewportForMode, viewportFromFrame } from './browserViewport';
 
 test('viewportFromFrame matches the fit browser surface inside the canvas frame', () => {
   assert.deepEqual(viewportFromFrame({ width: 1325, height: 857 }), {
@@ -28,15 +28,19 @@ test('viewportFromFrame follows the available browser surface', () => {
   });
 });
 
-test('viewportForMode keeps custom viewport and mobile device scale', () => {
-  const fit = { width: 1000, height: 600, deviceScaleFactor: 1 };
-  const custom = { width: 777, height: 555, deviceScaleFactor: 1 };
-  assert.deepEqual(viewportForMode('custom', fit, custom), custom);
-  assert.deepEqual(viewportForMode('mobile', fit, custom), {
-    width: 390,
-    height: 844,
-    deviceScaleFactor: 2,
+test('a standard size keeps its own size and is drawn scaled down to fit the pane', () => {
+  const fit = { width: 1000, height: 600, deviceScaleFactor: 2 };
+  const desktop = viewportForMode('desktop', fit);
+  assert.deepEqual(desktop, { width: 1440, height: 900, deviceScaleFactor: 2 });
+  assert.deepEqual(pageLayout({ width: 756, height: 1000 }, desktop, 'desktop'), {
+    width: 720,
+    height: 450,
+    left: 18,
+    top: 275,
+    scale: 0.5,
   });
+  assert.equal(pageLayout({ width: 1600, height: 1000 }, desktop, 'desktop').scale, 1);
+  assert.equal(pageLayout({ width: 756, height: 1000 }, fit, 'fit').scale, undefined);
 });
 
 test('normalizeUrl preserves local browser targets', () => {

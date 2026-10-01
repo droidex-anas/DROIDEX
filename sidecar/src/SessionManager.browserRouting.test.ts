@@ -53,7 +53,7 @@ test('[B1] Browser command routing', { concurrency: false }, async () => {
       appSessionId: 'app-b1',
       url: 'https://example.test',
       viewport,
-      viewportMode: 'custom',
+      viewportMode: 'tablet',
     });
 
     assert.deepEqual(h.browsers.calls.at(-1), {
@@ -65,7 +65,7 @@ test('[B1] Browser command routing', { concurrency: false }, async () => {
           appSessionId: 'app-b1',
           url: 'https://example.test',
           viewport,
-          viewportMode: 'custom',
+          viewportMode: 'tablet',
         },
       ],
     });
@@ -76,7 +76,7 @@ test('[B1] Browser command routing', { concurrency: false }, async () => {
         appSessionId: 'app-b1',
         url: 'https://example.test',
         viewport,
-        viewportMode: 'custom',
+        viewportMode: 'tablet',
         scroll: { x: 0, y: 0 },
       },
     });
@@ -95,7 +95,7 @@ test('[B1] Browser command routing', { concurrency: false }, async () => {
         appSessionId: 'app-b1',
         url: 'https://example.test/reopened-viewport',
         viewport: resizedViewport,
-        viewportMode: 'custom',
+        viewportMode: 'tablet',
         scroll: { x: 0, y: 0 },
       },
     });

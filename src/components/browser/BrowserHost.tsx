@@ -102,6 +102,7 @@ export function BrowserHost() {
             placement={placementOf(host, page.browserSessionId)}
             anchor={slot?.anchor}
             rounded={slot?.rounded ?? false}
+            scale={slot?.scale}
             size={sizes.get(page.browserSessionId) ?? DEFAULT_PAGE_SIZE}
           />
         );
@@ -115,12 +116,14 @@ function BrowserPageFrame({
   placement,
   anchor,
   rounded,
+  scale,
   size,
 }: {
   page: BrowserPage;
   placement: Placement;
   anchor?: string;
   rounded: boolean;
+  scale?: number;
   size: PageSize;
 }) {
   const webviewRef = useRef<HTMLWebViewElement>(null);
@@ -138,7 +141,7 @@ function BrowserPageFrame({
         ref={webviewRef}
         src={page.src}
         tabIndex={shown ? undefined : -1}
-        style={shown ? FILL : { width: size.width, height: size.height }}
+        style={shown && scale === undefined ? FILL : pageStyle(size, shown ? scale : undefined)}
       />
     </div>
   );
@@ -150,6 +153,17 @@ function placementOf(host: BrowserHostState, browserSessionId: string): Placemen
 }
 
 const FILL: CSSProperties = { width: '100%', height: '100%' };
+
+// A page at its own CSS size; in the pane, a standard size is drawn scaled
+// down into the slot, so it lays out as the agent sees it.
+function pageStyle(size: PageSize, scale?: number): CSSProperties {
+  return {
+    width: size.width,
+    height: size.height,
+    transform: scale === undefined || scale === 1 ? undefined : `scale(${String(scale)})`,
+    transformOrigin: '0 0',
+  };
+}
 
 function frameStyle(placement: Placement, anchor: string | undefined, rounded: boolean) {
   if (placement === 'shown' && anchor) {

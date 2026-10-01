@@ -20,7 +20,7 @@ test('browser MCP server exposes agent-facing names and typed inputs', () => {
       'browser_fill',
       'browser_type',
       'browser_press',
-      'browser_resize',
+      'browser_viewport',
       'browser_scroll',
       'browser_wait',
       'browser_batch',
@@ -55,26 +55,25 @@ test('browser MCP handlers return visible tool errors', async () => {
   assert.match(JSON.stringify(result), /Browser session is not open yet/);
 });
 
-test('browser_open keeps high-detail viewport scale by default', async () => {
-  let openedViewport: { width: number; height: number; deviceScaleFactor?: number } | undefined;
+test('a browser the agent opens starts at desktop size', async () => {
+  const modes: unknown[] = [];
+  let open = false;
   const manager = {
-    async open(input: {
-      viewport?: { width: number; height: number; deviceScaleFactor?: number };
-    }) {
-      openedViewport = input.viewport;
+    hasSession: () => open,
+    async open(input: { viewportMode?: string }) {
+      modes.push(input.viewportMode);
+      open = true;
       return { state: {}, text: '[Example · https://example.com/]' };
     },
   } as unknown as BrowserSessionManager;
-  const server = createBrowserMcpServer(manager, () => 'm1');
-  const browserOpen = server.tools.find((tool) => tool.name === 'browser_open');
+  const browserOpen = createBrowserMcpServer(manager, () => 'm1').tools.find(
+    (tool) => tool.name === 'browser_open',
+  );
 
-  const result = await browserOpen?.handler({
-    url: 'https://example.com',
-    viewport: { width: 1000, height: 700 },
-    viewportMode: 'custom',
-  });
+  const result = await browserOpen?.handler({ url: 'https://example.com' });
+  await browserOpen?.handler({ url: 'https://example.org' });
 
-  assert.equal(openedViewport?.deviceScaleFactor, 2);
+  assert.deepEqual(modes, ['desktop', undefined]);
   assert.match(JSON.stringify(result), /Opened the page.*\[Example · https:\/\/example.com\/\]/);
 });
 

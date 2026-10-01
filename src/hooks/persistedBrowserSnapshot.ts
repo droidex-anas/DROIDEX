@@ -6,7 +6,6 @@ const BROWSER_VIEWPORT_MODES = new Set<BrowserViewportMode>([
   'laptop',
   'tablet',
   'mobile',
-  'custom',
 ]);
 
 export function loadPersistedBrowsers(value: unknown): Record<string, BrowserState> {
