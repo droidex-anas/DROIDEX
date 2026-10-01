@@ -197,6 +197,8 @@ const ACCENT = 'var(--droid-accent)';
 // Slash entries that drive Droid's own subsystems, so they leave the menu with
 // the controls they belong to when the chat runs on another provider.
 const DROID_ONLY_COMMANDS = new Set(['/compact']);
+// The app reads the account itself, so this never reaches a harness as a prompt.
+const USAGE_COMMAND = '/usage';
 const accentMix = (pct: number) =>
   `color-mix(in srgb, var(--droid-accent) ${String(pct)}%, transparent)`;
 type SubmitMode = 'queue' | 'steer';
@@ -709,11 +711,9 @@ export default function PromptInput({
       },
     },
     {
-      cmd: '/usage',
+      cmd: USAGE_COMMAND,
       desc: 'Show usage limits',
       icon: Gauge,
-      // The app reads the account itself, so the harness's own /usage never
-      // has to run as a turn.
       supersedesHarnessCommand: true,
       run: () => {
         setUsageOpen(true);
@@ -1215,6 +1215,7 @@ export default function PromptInput({
         );
       }
       if (
+        input.trim() === USAGE_COMMAND ||
         runsAsCompactCommand(text, {
           visualizeSelected,
           skillCount: skills.length,
@@ -1303,14 +1304,20 @@ export default function PromptInput({
       allFiles.length > 0 ||
       sideChatReplies.length > 0;
     if (!hasPayload) return;
-    // The app owns fast mode and usage, so a typed /fast or /usage runs here
-    // instead of reaching the harness as a turn the app would never see.
-    const appCommand = slashCommands.find(
-      (command) =>
-        command.cmd === text && (command.cmd.startsWith('/fast') || command.cmd === '/usage'),
+    // Anything staged beside it stays in the composer for the next prompt.
+    if (text === USAGE_COMMAND) {
+      setUsageOpen(true);
+      setInput('');
+      setHistoryIndex(null);
+      return;
+    }
+    // The app owns fast mode, so a typed /fast runs here instead of reaching
+    // the harness, whose own switch the app would never see.
+    const fastCommand = slashCommands.find(
+      (command) => command.cmd.startsWith('/fast') && command.cmd === text,
     );
-    if (appCommand && activeSkills.length === 0 && allFiles.length === 0) {
-      appCommand.run();
+    if (fastCommand && activeSkills.length === 0 && allFiles.length === 0) {
+      fastCommand.run();
       setInput('');
       return;
     }
