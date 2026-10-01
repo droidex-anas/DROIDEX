@@ -75,14 +75,11 @@ function poolMeters(pool: string, value: unknown, model: string | undefined): Us
   });
 }
 
-// Factory sends a window's end as epoch seconds, epoch milliseconds, or ISO text.
+// Read as Droid's own /limits reads it, with `new Date(windowEnd)`.
 function timestampMs(value: unknown): number | undefined {
-  const number = typeof value === 'string' && /^\d+(\.\d+)?$/.test(value) ? Number(value) : value;
-  if (typeof number === 'number' && Number.isFinite(number) && number > 0)
-    return Math.round(number > 1e12 ? number : number * 1000);
-  if (typeof value !== 'string') return undefined;
-  const parsed = Date.parse(value);
-  return Number.isNaN(parsed) ? undefined : parsed;
+  if (typeof value !== 'string' && typeof value !== 'number') return undefined;
+  const ms = new Date(value).getTime();
+  return Number.isNaN(ms) ? undefined : ms;
 }
 
 // Seconds, or an HTTP date.
