@@ -81,10 +81,12 @@ function createNativeBrowserManager(options) {
 
   // The renderer asks for a guest before it mounts one; the token it gets back
   // is the only way that guest can attach. After an app restart main knows no
-  // URL for the page, so the one the renderer saved is restored, if allowed.
-  function reserveNativeBrowser(browserSessionId, host, savedUrl) {
+  // URL or size for the page, so the ones the renderer saved are taken up
+  // again: the URL if allowed, the size's name for the device it asks for.
+  function reserveNativeBrowser(browserSessionId, host, savedUrl, savedMode) {
     const entry = ensureNativeBrowserEntry(browserSessionId);
     if (!entry.targetUrl && savedUrl && isAllowedUrl(savedUrl)) entry.targetUrl = savedUrl;
+    if (!entry.viewportMode && typeof savedMode === 'string') entry.viewportMode = savedMode;
     return guests.reserve(entry.browserSessionId, host);
   }
 

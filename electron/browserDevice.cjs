@@ -17,7 +17,10 @@ function touchUserAgent(viewportMode) {
   return `Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/${chrome} ${mobile}Safari/537.36`;
 }
 
-const applied = new WeakMap(); // guest contents -> { userAgent, scheme } it has taken
+const applied = new WeakMap(); // guest contents -> { userAgent, scheme } it is given
+// After a send failed, what the guest has is not known: the next change sends
+// everything.
+const UNKNOWN = { userAgent: null, scheme: null };
 
 // What a browser's entry asks of its guest: its size's name and its scheme.
 function deviceOf({ viewportMode, colorScheme }) {
@@ -29,15 +32,21 @@ function deviceOf({ viewportMode, colorScheme }) {
 
 // The user agent counts from the page's next load; touch and the scheme at
 // once. Each is sent only when it changes, so a size never touches the page's
-// scheme, and counts as taken only once the guest has answered.
+// scheme. Sends go out in the order they were asked for, so each change is
+// measured against the one before it, answered or not.
 async function useDevice(contents, entry) {
   if (!contents || contents.isDestroyed()) return;
   const device = deviceOf(entry);
   const had = applied.get(contents) ?? {};
+  applied.set(contents, device);
   const touch = had.userAgent !== device.userAgent;
   if (touch) contents.setUserAgent(device.userAgent ?? contents.session.getUserAgent());
-  await emulate(contents, device, { touch, media: had.scheme !== device.scheme });
-  applied.set(contents, device);
+  try {
+    await emulate(contents, device, { touch, media: had.scheme !== device.scheme });
+  } catch (error) {
+    applied.set(contents, UNKNOWN);
+    throw error;
+  }
 }
 
 // A guest just mounted has no page yet to take touch or a scheme, so they are

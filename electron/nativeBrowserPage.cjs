@@ -123,13 +123,9 @@ function createNativeBrowserPage({
     if (request.action === 'resize') {
       // The renderer sizes the page from the session's viewport; main keeps
       // the size's name for the device it asks for.
-      entry.viewportMode = request.viewportMode;
-      return deviceSet(entry, request);
+      return deviceSet(entry, request, 'viewportMode');
     }
-    if (request.action === 'colorScheme') {
-      entry.colorScheme = request.colorScheme;
-      return deviceSet(entry, request);
-    }
+    if (request.action === 'colorScheme') return deviceSet(entry, request, 'colorScheme');
     if (request.action === 'network') {
       const networkEvents = entry.networkEvents.slice();
       if (request.clearNetworkLog) entry.networkEvents.length = 0;
@@ -140,9 +136,17 @@ function createNativeBrowserPage({
     return { requestId: request.requestId, ok: true, consoleEvents };
   }
 
-  // Answers once a live guest has taken what its entry asks of it now.
-  async function deviceSet(entry, request) {
-    await useDevice(liveContents(entry), entry);
+  // Records the size's name or the scheme and answers once a live guest has
+  // taken it. One the guest refused is not given to it again at its next mount.
+  async function deviceSet(entry, request, field) {
+    const before = entry[field];
+    entry[field] = request[field];
+    try {
+      await useDevice(liveContents(entry), entry);
+    } catch (error) {
+      if (entry[field] === request[field]) entry[field] = before;
+      throw error;
+    }
     return { requestId: request.requestId, ok: true };
   }
 

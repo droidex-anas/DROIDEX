@@ -1,4 +1,5 @@
 import { useId, useLayoutEffect, useRef, useSyncExternalStore } from 'react';
+import type { BrowserViewportMode } from '../types/bridge';
 import { releaseNativeBrowser, reserveNativeBrowser, setNativeBrowserShown } from './nativeBrowser';
 
 // Each chat's browser page is a <webview> the Browser host mounts once at the
@@ -74,16 +75,21 @@ function touch(browserSessionId: string): void {
 }
 
 /**
- * Mounts the session's page if it is not mounted yet. `savedUrl` is the page
- * the app last saw there, which main reopens after an app restart.
+ * Mounts the session's page if it is not mounted yet. `savedUrl` and
+ * `savedMode` are the page and the size the app last saw there, which main
+ * takes up again after an app restart.
  */
-function ensureBrowserPage(browserSessionId: string, savedUrl?: string): Promise<void> {
+function ensureBrowserPage(
+  browserSessionId: string,
+  savedUrl?: string,
+  savedMode?: BrowserViewportMode,
+): Promise<void> {
   touch(browserSessionId);
   if (state.pages.some((page) => page.browserSessionId === browserSessionId))
     return Promise.resolve();
   const pending = reserving.get(browserSessionId);
   if (pending) return pending;
-  const reservation = reserveNativeBrowser(browserSessionId, savedUrl)
+  const reservation = reserveNativeBrowser(browserSessionId, savedUrl, savedMode)
     .then(({ src, generation }) => {
       if (reserving.get(browserSessionId) !== reservation)
         throw new Error('The browser page was closed.');
@@ -111,6 +117,7 @@ export function setBrowserPageWorking(
   browserSessionId: string,
   working: boolean,
   savedUrl?: string,
+  savedMode?: BrowserViewportMode,
 ): void {
   if (browserSessionId in state.working !== working) {
     update({
@@ -121,7 +128,7 @@ export function setBrowserPageWorking(
           ),
     });
   }
-  if (working) void ensureBrowserPage(browserSessionId, savedUrl).catch(() => undefined);
+  if (working) void ensureBrowserPage(browserSessionId, savedUrl, savedMode).catch(() => undefined);
   else unloadOverCap();
 }
 
@@ -213,14 +220,23 @@ export function useBrowserSlot(
     rounded,
     scale,
     url,
-  }: { hidden: boolean; rounded: boolean; scale?: number; url: string },
+    viewportMode,
+  }: {
+    hidden: boolean;
+    rounded: boolean;
+    scale?: number;
+    url: string;
+    viewportMode: BrowserViewportMode;
+  },
 ): string {
   const anchor = `--browser-slot-${useId().replace(/[^\w-]/g, '')}`;
-  const latest = useRef({ rounded, scale, url });
-  latest.current = { rounded, scale, url };
+  const latest = useRef({ rounded, scale, url, viewportMode });
+  latest.current = { rounded, scale, url, viewportMode };
   useLayoutEffect(() => {
     if (!browserSessionId || hidden) return;
-    void ensureBrowserPage(browserSessionId, latest.current.url).catch(() => undefined);
+    void ensureBrowserPage(browserSessionId, latest.current.url, latest.current.viewportMode).catch(
+      () => undefined,
+    );
     const { rounded: corners, scale: drawnAt } = latest.current;
     setSlot({ browserSessionId, anchor, rounded: corners, scale: drawnAt });
     return () => {
