@@ -45,6 +45,8 @@ interface Account {
   // Set until a read's source settles, which one a harness cannot cancel may
   // do after its timeout; no other read starts meanwhile, so none pile up.
   outstanding: boolean;
+  // The windows pushed since the last read began, which are newer than its answer.
+  pushedDuringRead: Set<string>;
 }
 
 type UsageSource = (signal: AbortSignal) => Promise<UsageReading>;
@@ -89,6 +91,7 @@ export class AccountUsage {
     });
     const usage = { ...current, meters: mergeMeters(current.meters, stamped(meters, now)) };
     account.usage = usage;
+    for (const meter of meters) account.pushedDuringRead.add(meter.id);
     if (changed || now - account.emittedAt >= MIN_READ_GAP_MS) this.publish(account, usage);
   }
 
@@ -122,13 +125,13 @@ export class AccountUsage {
     if (!source || account.outstanding || resting || now < account.retryAt) return undefined;
     this.startTimer();
     account.lastReadAt = now;
-    const signal = AbortSignal.any([account.abort.signal, AbortSignal.timeout(READ_TIMEOUT_MS)]);
-    const answer = source(signal);
     account.outstanding = true;
-    void Promise.allSettled([answer]).then(() => {
+    account.pushedDuringRead.clear();
+    const signal = AbortSignal.any([account.abort.signal, AbortSignal.timeout(READ_TIMEOUT_MS)]);
+    const answer = source(signal).finally(() => {
       account.outstanding = false;
     });
-    const reading = this.settle(provider, account, untilAborted(answer, signal), now);
+    const reading = this.settle(provider, account, untilAborted(answer, signal));
     account.reading = reading.finally(() => {
       account.reading = undefined;
     });
@@ -153,14 +156,14 @@ export class AccountUsage {
     provider: ProviderKind,
     account: Account,
     answer: Promise<UsageReading>,
-    startedAt: number,
   ): Promise<void> {
     let usage: ProviderUsage;
     try {
       const { meters, extra, unavailable, partial } = await answer;
       const listed = new Set(meters.map((meter) => meter.id));
       const kept = (account.usage?.meters ?? []).filter(
-        (meter) => meter.updatedAt >= startedAt || (partial === true && !listed.has(meter.id)),
+        (meter) =>
+          account.pushedDuringRead.has(meter.id) || (partial === true && !listed.has(meter.id)),
       );
       usage = {
         provider,
@@ -192,6 +195,7 @@ export class AccountUsage {
         retryAt: 0,
         emittedAt: 0,
         outstanding: false,
+        pushedDuringRead: new Set(),
       };
       this.accounts.set(provider, account);
     }
