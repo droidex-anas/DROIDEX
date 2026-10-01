@@ -219,10 +219,11 @@ function fieldOf(node, frame) {
   };
 }
 
-// Where an element's text is painted, as a quad in the same coordinates as
-// CDP's: the page measures the text as a share of the element's own box, which
-// is then laid over that box as CDP has it (an element in a same-process frame
-// is measured in that frame's viewport, CDP's boxes in the session's).
+// Where an element's text is painted past its own box, as a quad in CDP's
+// coordinates: the page measures the text as shares of the element's box, laid
+// over that box as CDP has it, corner to corner, so a frame that is moved,
+// scaled, turned or mirrored carries the mask with it. Text an element turned
+// within its own page lets run outside cannot be placed, so the capture fails.
 async function textQuads(dbg, sessionId, backendNodeId) {
   const { object } = await send(dbg, sessionId, 'DOM.resolveNode', { backendNodeId });
   try {
@@ -232,12 +233,13 @@ async function textQuads(dbg, sessionId, backendNodeId) {
       returnByValue: true,
     });
     if (!result?.value) return [];
+    if (result.value === 'turned')
+      throw new Error('A sensitive field on this page is turned, so it cannot be masked.');
     const { model } = await send(dbg, sessionId, 'DOM.getBoxModel', { backendNodeId });
-    const box = boundsOf(model.border);
+    const [x0, y0, x1, y1, , , x3, y3] = model.border;
+    const at = (u, v) => [x0 + u * (x1 - x0) + v * (x3 - x0), y0 + u * (y1 - y0) + v * (y3 - y0)];
     const [left, top, right, bottom] = result.value;
-    const x = (share) => box.x + share * box.width;
-    const y = (share) => box.y + share * box.height;
-    return [[x(left), y(top), x(right), y(top), x(right), y(bottom), x(left), y(bottom)]];
+    return [[...at(left, top), ...at(right, top), ...at(right, bottom), ...at(left, bottom)]];
   } finally {
     await send(dbg, sessionId, 'Runtime.releaseObject', { objectId: object.objectId }).catch(
       () => undefined,
@@ -245,13 +247,22 @@ async function textQuads(dbg, sessionId, backendNodeId) {
   }
 }
 
-// The element's text box as shares of its own border box: [left, top, right, bottom].
+// The element's text box as shares of its own border box, [left, top, right,
+// bottom]; nothing while the text stays inside the box, which the element's own
+// mask covers.
 const TEXT_SHARE = `function () {
   const range = this.ownerDocument.createRange();
   range.selectNodeContents(this);
   const text = range.getBoundingClientRect();
   const own = this.getBoundingClientRect();
   if ((!text.width && !text.height) || !own.width || !own.height) return null;
+  const inside =
+    text.left >= own.left - 1 && text.top >= own.top - 1 &&
+    text.right <= own.right + 1 && text.bottom <= own.bottom + 1;
+  if (inside) return null;
+  // Its box on screen has another shape than its layout: turned in its page.
+  if (Math.abs(own.width * this.offsetHeight - own.height * this.offsetWidth) > own.width * own.height * 0.02)
+    return 'turned';
   return [
     (text.left - own.left) / own.width,
     (text.top - own.top) / own.height,
