@@ -188,7 +188,7 @@ function createBrowserActions({
         await send(dbg, sessionId, 'DOM.focus', { backendNodeId: target.backendNodeId });
         // A focus handler can send the focus on to another element or frame.
         ({ takesText } = await keepsFocus(dbg, sessionId, document));
-        if (!(await reading.hasFocus(dbg, sessionId, target.backendNodeId)))
+        if (!(await hasFocus(dbg, sessionId, target.backendNodeId)))
           throw new Error(`${request.ref} did not keep the focus; read the page again.`);
       } else {
         ({ sessionId, document, takesText } = await focusedFrame(dbg));
@@ -207,7 +207,7 @@ function createBrowserActions({
       if (request.submit) {
         await keepsFocus(dbg, sessionId, document);
         // An input handler can move the focus on to another control.
-        if (request.ref && !(await reading.hasFocus(dbg, sessionId, refNode)))
+        if (request.ref && !(await hasFocus(dbg, sessionId, refNode)))
           throw new Error(`${request.ref} lost the focus before Enter; read the page again.`);
         // The page check comes last, right before the key.
         await inputReady(dbg, step, sessionId, document);
@@ -351,6 +351,23 @@ function createBrowserActions({
       // Asked after the await: a navigation can start while it is pending.
       return !step.navigation.started();
     };
+  }
+
+  // Whether a node is what its own document or shadow root has focused.
+  async function hasFocus(dbg, sessionId, backendNodeId) {
+    const { object } = await send(dbg, sessionId, 'DOM.resolveNode', { backendNodeId });
+    try {
+      const { result } = await send(dbg, sessionId, 'Runtime.callFunctionOn', {
+        objectId: object.objectId,
+        functionDeclaration: 'function () { return this.getRootNode().activeElement === this; }',
+        returnByValue: true,
+      });
+      return result?.value === true;
+    } finally {
+      await send(dbg, sessionId, 'Runtime.releaseObject', { objectId: object.objectId }).catch(
+        () => undefined,
+      );
+    }
   }
 
   // Keys go on only while the frame they were aimed at still has the focus.

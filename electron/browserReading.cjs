@@ -181,8 +181,8 @@ function createBrowserReading({ runWithWebContentsDebugger, savedSecretsFor, red
 
   // The ref's element as a viewport box, for a screenshot crop, and the
   // session of the frame it is in.
-  async function refBox(dbg, entry, ref) {
-    const { quad, sessionId } = await visibleQuad(dbg, entry, ref);
+  async function refBox(dbg, entry, ref, before) {
+    const { quad, sessionId } = await visibleQuad(dbg, entry, ref, before);
     return { ...boundsOf(quad), sessionId };
   }
 
@@ -240,23 +240,6 @@ function createBrowserReading({ runWithWebContentsDebugger, savedSecretsFor, red
       if (/node|object/i.test(String(error?.message)))
         throw new Error(`${ref} is not on the page any more; call browser_read_page.`);
       throw error;
-    }
-  }
-
-  // Whether a node is what its own document or shadow root has focused.
-  async function hasFocus(dbg, sessionId, backendNodeId) {
-    const { object } = await send(dbg, sessionId, 'DOM.resolveNode', { backendNodeId });
-    try {
-      const { result } = await send(dbg, sessionId, 'Runtime.callFunctionOn', {
-        objectId: object.objectId,
-        functionDeclaration: 'function () { return this.getRootNode().activeElement === this; }',
-        returnByValue: true,
-      });
-      return result?.value === true;
-    } finally {
-      await send(dbg, sessionId, 'Runtime.releaseObject', { objectId: object.objectId }).catch(
-        () => undefined,
-      );
     }
   }
 
@@ -447,7 +430,6 @@ function createBrowserReading({ runWithWebContentsDebugger, savedSecretsFor, red
     pointForRef,
     assertDocument,
     lookupRef,
-    hasFocus,
     callOnRef,
     selectorForRef,
     refBox,
