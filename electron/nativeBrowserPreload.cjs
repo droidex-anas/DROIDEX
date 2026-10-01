@@ -1503,14 +1503,17 @@ function closeIconSvg() {
 }
 
 function positionPrompt(box) {
-  // Sizes in the composer's own pixels; on screen they are `uiScale` times that.
-  const width = Math.min(440, Math.max(160, window.innerWidth / uiScale - 24));
-  const [shownWidth, shownHeight, gap, edge] = [width, 50, 10, 12].map((size) => size * uiScale);
+  // Sizes in the composer's own pixels, drawn `ui` page pixels each: its own
+  // size back, or smaller on a page shown too narrow for it to fit.
+  const edge = 12 * uiScale;
+  const width = Math.min(440, Math.max(240, window.innerWidth / uiScale - 24));
+  const ui = Math.min(uiScale, (window.innerWidth - 2 * edge) / width);
+  const [shownWidth, shownHeight, gap] = [width, 50, 10].map((size) => size * ui);
   const left = clamp(box.x, edge, Math.max(edge, window.innerWidth - shownWidth - edge));
   const below = box.y + box.height + gap;
   const above = box.y - shownHeight - gap;
   const top = below + shownHeight <= window.innerHeight - edge ? below : above;
-  undoPaneScale(promptBox);
+  undoPaneScale(promptBox, ui);
   promptBox.style.width = `${Math.round(width)}px`;
   promptBox.style.left = `${Math.round(left)}px`;
   promptBox.style.top = `${Math.round(clamp(top, edge, Math.max(edge, window.innerHeight - shownHeight - edge)))}px`;
@@ -1518,9 +1521,9 @@ function positionPrompt(box) {
 
 // The pane can draw the page scaled down (a standard size in a smaller pane);
 // the design labels and composer are drawn back up to their own size.
-function undoPaneScale(node) {
+function undoPaneScale(node, scale = uiScale) {
   node.style.transformOrigin = '0 0';
-  node.style.transform = uiScale === 1 ? '' : `scale(${uiScale})`;
+  node.style.transform = scale === 1 ? '' : `scale(${scale})`;
 }
 
 function isInternalEvent(event) {

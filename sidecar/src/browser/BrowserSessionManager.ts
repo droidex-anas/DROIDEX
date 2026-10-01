@@ -174,7 +174,13 @@ export class BrowserSessionManager {
       });
     const viewport = STANDARD_VIEWPORTS[mode];
     await this.resizeViewport({ appSessionId, viewport, viewportMode: mode });
-    return this.applied(session, await session.runtime.awaitViewport(viewport)).state;
+    try {
+      return this.applied(session, await session.runtime.awaitViewport(viewport)).state;
+    } catch (error) {
+      // The user picked another size meanwhile; the answer says so.
+      if (session.state.viewportMode !== mode) return session.state;
+      throw error;
+    }
   }
 
   async click(

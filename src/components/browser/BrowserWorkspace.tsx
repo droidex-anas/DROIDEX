@@ -73,9 +73,9 @@ export default function BrowserWorkspace({
   const initialUrl = safeBrowserUrl(browser?.url, appOrigin);
   const [urlInput, setUrlInput] = useState(browserAddressValue(initialUrl));
   const [activeUrl, setActiveUrl] = useState(initialUrl);
-  const [viewportMode, setViewportMode] = useState<BrowserViewportMode>(
-    browser?.viewportMode ?? 'fit',
-  );
+  // The size the page has; a pick shows once the sidecar has taken it, so the
+  // menu never disagrees with the page.
+  const viewportMode: BrowserViewportMode = browser?.viewportMode ?? 'fit';
   const [pencilMode, setPencilMode] = useState(false);
   const [instruction, setInstruction] = useState('');
   const [references, setReferences] = useState<DesignReference[]>([]);
@@ -169,10 +169,6 @@ export default function BrowserWorkspace({
   }, [activeUrl, appOrigin, browser?.url]);
 
   useEffect(() => {
-    if (browser?.viewportMode) setViewportMode(browser.viewportMode);
-  }, [browser?.viewportMode]);
-
-  useEffect(() => {
     if (typeof browser?.canGoBack === 'boolean') setCanGoBack(browser.canGoBack);
     if (typeof browser?.canGoForward === 'boolean') setCanGoForward(browser.canGoForward);
   }, [browser?.canGoBack, browser?.canGoForward]);
@@ -236,7 +232,7 @@ export default function BrowserWorkspace({
   // On Fit the page follows the pane: its size goes to the sidecar, which
   // takes it only while the page is still on Fit there, so it never undoes a
   // size an agent has just picked.
-  const followsPane = browser?.viewportMode === 'fit' && viewportMode === 'fit';
+  const followsPane = browser?.viewportMode === 'fit';
   const currentViewport = browser?.viewport;
   useEffect(() => {
     if (!browserKey || !currentViewport || !followsPane) return;
@@ -255,7 +251,6 @@ export default function BrowserWorkspace({
   }, [browserKey, currentViewport, fitViewport, followsPane]);
 
   const pickViewport = (mode: BrowserViewportMode) => {
-    setViewportMode(mode);
     if (browserKey)
       resizeBrowserViewport({
         appSessionId: browserKey,
@@ -476,7 +471,7 @@ export default function BrowserWorkspace({
             url={activeUrl}
             // Laid out from the size the page has, as the Browser host draws it.
             viewport={browser?.viewport ?? requestedViewport}
-            viewportMode={browser?.viewportMode ?? viewportMode}
+            viewportMode={viewportMode}
             designMode={designMode}
             pencilMode={designMode && pencilMode}
             frameSize={frameSize}
