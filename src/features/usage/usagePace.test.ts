@@ -24,15 +24,14 @@ test('pace projects the average rate since the window opened to its reset', () =
   const fast = usagePace(fiveHour(60, 2), NOW);
   assert.equal(fast?.kind === 'runs_out' && Math.round(fast.inMs / 60_000), 80);
   assert.deepEqual(usagePace(fiveHour(100, 2), NOW), { kind: 'reached' });
-  // A burst in the window's first minute is measured against 5% of it, not the minute.
-  const burst = usagePace(fiveHour(10, 1 / 60), NOW);
-  assert.deepEqual(burst, { kind: 'runs_out', inMs: 9 * 0.25 * HOUR });
+  // A burst in the window's first minute is too small a sample to read a pace from.
+  assert.equal(usagePace(fiveHour(10, 1 / 60), NOW), undefined);
   // Without a reset time, or past it, nothing is known.
   assert.equal(usagePace({ ...fiveHour(60, 2), resetsAt: undefined }, NOW), undefined);
   assert.equal(usagePace({ ...fiveHour(100, 2), resetsAt: NOW - 1 }, NOW), undefined);
 });
 
-test('the warning names the window that runs out first, once half of it is used', () => {
+test('the warning names the window that runs out first, however little of it is used', () => {
   const weekly: UsageMeter = {
     id: 'seven_day',
     window: 'weekly',
@@ -42,6 +41,7 @@ test('the warning names the window that runs out first, once half of it is used'
   };
   // The weekly runs out in about 9h; the 5-hour one in 80 minutes.
   assert.equal(paceWarning([weekly, fiveHour(60, 2)], NOW)?.meter.id, 'five_hour');
-  // Under half used, a fast start is not yet a warning.
-  assert.equal(paceWarning([fiveHour(45, 1)], NOW), undefined);
+  // 45% in the first hour runs out in about 73 minutes, four hours before the reset.
+  const early = paceWarning([fiveHour(45, 1)], NOW);
+  assert.equal(early?.pace.kind === 'runs_out' && Math.round(early.pace.inMs / 60_000), 73);
 });
