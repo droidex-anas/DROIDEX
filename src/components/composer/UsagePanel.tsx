@@ -22,11 +22,15 @@ import { ACTION_CLASS, ManageUsageButton } from './UsageLimitTab';
 export function UsagePanel({
   provider,
   usage,
+  reachable,
   now,
   onClose,
 }: {
   provider: ProviderKind;
   usage: ProviderUsage | undefined;
+  // Whether the agent runtime can be asked; without it /usage shows only what
+  // the app already knows.
+  reachable: boolean;
   now: number;
   onClose: () => void;
 }) {
@@ -81,7 +85,7 @@ export function UsagePanel({
             </button>
           </div>
         </div>
-        <UsageBody provider={provider} usage={usage} now={now} />
+        <UsageBody provider={provider} usage={usage} reachable={reachable} now={now} />
         {extra && <div className="px-1.5 pb-0.5 text-droid-text-muted">{extra}</div>}
       </div>
     </ComposerTab>
@@ -91,10 +95,12 @@ export function UsagePanel({
 function UsageBody({
   provider,
   usage,
+  reachable,
   now,
 }: {
   provider: ProviderKind;
   usage: ProviderUsage | undefined;
+  reachable: boolean;
   now: number;
 }) {
   if (usage?.unavailable === 'no_api_key')
@@ -106,7 +112,14 @@ function UsageBody({
     );
   if (usage?.unavailable === 'no_plan_limits')
     return <Note>{PROVIDER_LABELS[provider]} reports no plan limits for this account.</Note>;
-  if (!usage) return <Note>Checking usage…</Note>;
+  if (!usage)
+    return (
+      <Note>
+        {reachable
+          ? 'Checking usage…'
+          : 'Usage can’t be read while the agent runtime is unavailable.'}
+      </Note>
+    );
   if (usage.meters.length === 0)
     return <Note>{usage.stale ? 'Couldn’t read usage.' : 'No limits reported.'}</Note>;
   return (

@@ -752,6 +752,10 @@ export default function PromptInput({
     return droidComposer || !DROID_ONLY_COMMANDS.has(command.cmd);
   });
 
+  // /fast, /fast on or /fast off, when this harness offers fast mode.
+  const appFastCommand = (text: string) =>
+    slashCommands.find((command) => command.cmd.startsWith('/fast') && command.cmd === text);
+
   // Typing, and every edit that behaves like typing, leaves history recall.
   const editDraft = (text: string) => {
     setInput(text);
@@ -1216,6 +1220,7 @@ export default function PromptInput({
       }
       if (
         input.trim() === USAGE_COMMAND ||
+        appFastCommand(input.trim()) !== undefined ||
         runsAsCompactCommand(text, {
           visualizeSelected,
           skillCount: skills.length,
@@ -1264,6 +1269,17 @@ export default function PromptInput({
     mode: SubmitMode,
     autonomyOverride?: Autonomy,
   ) => {
+    const text = input.trim();
+    // The app's own commands run at once, before any attachment settles, and
+    // never reach the harness; anything staged beside them stays for the
+    // next prompt. /usage reads what the app already knows, so it runs even
+    // while the runtime is unavailable.
+    if (text === USAGE_COMMAND) {
+      setUsageOpen(true);
+      setInput('');
+      setHistoryIndex(null);
+      return;
+    }
     const updateInterruptedSubmit = () => {
       if (isAppUpdateInstalling()) {
         toast.info('DROIDEX is installing an update. New turns will resume after restart.');
@@ -1276,24 +1292,13 @@ export default function PromptInput({
       return false;
     };
     if (updateInterruptedSubmit()) return;
-    const text = input.trim();
-    // The app's own commands run at once, before any attachment settles, and
-    // never reach the harness; anything staged beside them stays for the
-    // next prompt.
-    if (text === USAGE_COMMAND) {
-      setUsageOpen(true);
-      setInput('');
-      setHistoryIndex(null);
-      return;
-    }
     // The app owns fast mode, so a typed /fast runs here instead of reaching
     // the harness, whose own switch the app would never see.
-    const fastCommand = slashCommands.find(
-      (command) => command.cmd.startsWith('/fast') && command.cmd === text,
-    );
+    const fastCommand = appFastCommand(text);
     if (fastCommand) {
       fastCommand.run();
       setInput('');
+      setHistoryIndex(null);
       return;
     }
     // Snapshot the composer revision before the settle wait: text, files, and
