@@ -122,7 +122,9 @@ function createNativeBrowserManager(options) {
     entry.settingUp = contents;
     const setup = mountDevice(contents, entry).then(() => {
       if (entry.settingUp === contents) entry.settingUp = null;
-      if (entry.loadingPromise === setup) entry.loadingPromise = null;
+      // A load started meanwhile is the page now; otherwise the saved one returns.
+      if (entry.loadingPromise !== setup) return undefined;
+      entry.loadingPromise = null;
       if (restoreUrl && liveContents(entry) === contents)
         return loadNativeBrowserUrl(entry, restoreUrl, { force: true });
       return undefined;

@@ -97,7 +97,9 @@ function createNativeBrowserViewFactory({
       entry.targetUrl = requestedUrl;
     });
     contents.on('did-navigate', (_event, loadedUrl) => {
-      if (!current() || entry.settingUp === contents || urls.isChromeErrorUrl(loadedUrl)) return;
+      // The blank page a guest is set up on is not the browser's page.
+      if (entry.settingUp === contents && loadedUrl === 'about:blank') return;
+      if (!current() || urls.isChromeErrorUrl(loadedUrl)) return;
       entry.failedRestoreUrl = null;
       entry.targetUrl = loadedUrl;
       emitLoaded(entry, loadedUrl);

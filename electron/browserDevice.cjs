@@ -51,15 +51,15 @@ async function take(contents, guest, change) {
   const settings = { ...guest.settings, ...change };
   const device = deviceOf(settings);
   const had = guest.device;
-  const defaultUserAgent = contents.session.getUserAgent();
   const touch = had.userAgent !== device.userAgent;
-  if (touch) contents.setUserAgent(device.userAgent ?? defaultUserAgent);
+  const setUserAgent = (userAgent) =>
+    contents.setUserAgent(userAgent ?? contents.session.getUserAgent());
+  if (touch) setUserAgent(device.userAgent);
   try {
     await emulate(contents, device, { touch, media: had.scheme !== device.scheme });
   } catch (error) {
     guest.device = UNKNOWN;
-    if (!contents.isDestroyed())
-      contents.setUserAgent(deviceOf(guest.settings).userAgent ?? defaultUserAgent);
+    if (touch && !contents.isDestroyed()) setUserAgent(deviceOf(guest.settings).userAgent);
     throw error;
   }
   guest.settings = settings;
@@ -72,11 +72,12 @@ async function take(contents, guest, change) {
 // its real page then starts with them in place. A failure that is not the
 // guest closing is logged: nobody waits on a mounted guest.
 async function mountDevice(contents, entry) {
-  const { viewportMode, colorScheme } = entry;
   const { userAgent, scheme } = deviceOf(entry);
   try {
     // A real load that overtakes the blank one ends it, which is fine.
     if (userAgent || scheme) await contents.loadURL('about:blank').catch(() => undefined);
+    // What the entry asks for by now: a change made meanwhile stands.
+    const { viewportMode, colorScheme } = entry;
     await useDevice(contents, { viewportMode, colorScheme });
   } catch (error) {
     if (!contents.isDestroyed())
