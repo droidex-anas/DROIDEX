@@ -43,6 +43,7 @@ import { readClaudeUsage } from './claudeRateLimits.js';
 import { ClaudeSession, type ClaudeSessionInput } from './claudeSession.js';
 
 const PROBE_TIMEOUT_MS = 25_000;
+const PROBE_CANCELLED = 'Claude Code was not checked.';
 const INSTALL_HINT = 'Claude Code CLI not found. Install it, then refresh.';
 
 export class ClaudeProvider implements Provider {
@@ -176,6 +177,10 @@ export class ClaudeProvider implements Provider {
     const executable = resolveClaudePath();
     if (!executable)
       return { provider: 'claude', readiness: 'missing', message: INSTALL_HINT, models: [] };
+    // A refresh cancelled while this provider loaded must not start the CLI:
+    // the abort it would have listened for has already fired.
+    if (signal.aborted)
+      return { provider: 'claude', readiness: 'error', message: PROBE_CANCELLED, models: [] };
 
     const abort = new AbortController();
     const timer = setTimeout(() => {
@@ -240,6 +245,8 @@ export class ClaudeProvider implements Provider {
     });
     try {
       await probe.initializationResult();
+      // The usage call takes no signal, so it must not start once cancelled.
+      signal.throwIfAborted();
       return await readClaudeUsage(probe);
     } finally {
       signal.removeEventListener('abort', stop);
