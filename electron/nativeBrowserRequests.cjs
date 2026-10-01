@@ -27,10 +27,22 @@ const ACTIONS = new Set([
   'screenshot',
   'close',
   'fillCredentials',
+  'wait',
 ]);
 // Reading the logs or recording the viewport never needs the page itself.
 const PAGELESS_ACTIONS = new Set(['resize', 'network', 'console']);
 const INPUT_ACTIONS = new Set(['click', 'hover', 'fill', 'type', 'press', 'scroll']);
+// What moves a page on, and so takes its turn; reads run alongside.
+const TURN_ACTIONS = new Set([
+  ...INPUT_ACTIONS,
+  'open',
+  'reload',
+  'goBack',
+  'goForward',
+  'fillCredentials',
+  'wait',
+]);
+const LATE = 'The browser page did not finish in time.';
 const MAX_WAITING_PER_PAGE = 8;
 const LOAD_WAIT_MS = 8_000;
 // Work still running a little past the sidecar's own timeout stops holding its
@@ -41,6 +53,7 @@ const DEFAULT_SIDECAR_TIMEOUT_MS = 12_000;
 function createNativeBrowserRequests({ manager, notifyRenderer }) {
   const waiting = new Map(); // browserSessionId -> requests in flight
   const painting = new Map(); // browserSessionId -> its first paint after waking
+  const turns = new Map(); // browserSessionId -> when the last action queued on it is over
 
   // A message from the sidecar; only a well-formed browser request is answered.
   async function handle(message, reply) {
@@ -62,10 +75,13 @@ function createNativeBrowserRequests({ manager, notifyRenderer }) {
         return result(request, true);
       }
       if (PAGELESS_ACTIONS.has(request.action)) return await performAction(request);
-      return await withAwakePage(request.browserSessionId, deadlineMs, async (woke) => {
+      return await withAwakePage(request.browserSessionId, deadlineMs, async (woke, deadline) => {
         if (woke) startPaintWait(request.browserSessionId);
-        if (INPUT_ACTIONS.has(request.action)) await painting.get(request.browserSessionId);
-        return performOnPage(request);
+        if (!TURN_ACTIONS.has(request.action)) return performOnPage(request);
+        return inTurn(request.browserSessionId, deadline, async () => {
+          if (INPUT_ACTIONS.has(request.action)) await painting.get(request.browserSessionId);
+          return performOnPage(request);
+        });
       });
     } catch (error) {
       return result(request, false, {
@@ -80,23 +96,44 @@ function createNativeBrowserRequests({ manager, notifyRenderer }) {
     }
     const woke = !waiting.has(browserSessionId);
     setWaiting(browserSessionId, 1);
-    let deadline;
+    let timer;
+    const deadline = { passed: false };
+    deadline.reached = new Promise((resolve) => {
+      timer = setTimeout(() => {
+        deadline.passed = true;
+        resolve();
+      }, deadlineMs);
+    });
     try {
-      const work = run(woke);
+      const work = run(woke, deadline);
       work.catch(() => undefined);
       return await Promise.race([
         work,
-        new Promise((_, reject) => {
-          deadline = setTimeout(
-            () => reject(new Error('The browser page did not finish in time.')),
-            deadlineMs,
-          );
+        deadline.reached.then(() => {
+          throw new Error(LATE);
         }),
       ]);
     } finally {
-      clearTimeout(deadline);
+      clearTimeout(timer);
       setWaiting(browserSessionId, -1);
     }
+  }
+
+  // Actions on one page run one at a time, in the order they came. One whose
+  // request has given up never starts, and one that hangs holds the queue only
+  // until its request gives up.
+  function inTurn(browserSessionId, deadline, run) {
+    const previous = turns.get(browserSessionId) ?? Promise.resolve();
+    const turn = previous.then(() => {
+      if (deadline.passed) throw new Error(LATE);
+      return run();
+    });
+    const over = Promise.race([turn, deadline.reached]).catch(() => undefined);
+    turns.set(browserSessionId, over);
+    void over.then(() => {
+      if (turns.get(browserSessionId) === over) turns.delete(browserSessionId);
+    });
+    return turn;
   }
 
   // A page that has just woken drops input until it paints again; every input
@@ -219,6 +256,9 @@ function agentAction(request) {
     y: request.y,
     selector: request.selector,
     text: request.text,
+    textGone: request.textGone,
+    urlIncludes: request.urlIncludes,
+    waitMs: request.waitMs,
     value: request.value,
     submit: request.submit,
     key: request.key,

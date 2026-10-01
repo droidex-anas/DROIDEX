@@ -2,6 +2,7 @@ const { createBrowserReading } = require('./browserReading.cjs');
 const { createBrowserScreenshot } = require('./browserScreenshot.cjs');
 const { redactBrowserDiagnosticUrl } = require('./browserDiagnostics.cjs');
 const { createBrowserActions } = require('./browserActions.cjs');
+const { createBrowserWait } = require('./browserWait.cjs');
 const { callPageScript } = require('./browserPageScript.cjs');
 
 function createNativeBrowserPage({
@@ -33,6 +34,7 @@ function createNativeBrowserPage({
     unthrottled,
     redactUrl: redactBrowserDiagnosticUrl,
   });
+  const waits = createBrowserWait({ reading });
 
   function setDesignMode(browserSessionId, active) {
     const entry = ensureEntry(browserSessionId);
@@ -90,6 +92,11 @@ function createNativeBrowserPage({
       // Capturing needs the page to keep producing frames.
       const shot = await unthrottled(contents, () => screenshots.take(contents, entry, request));
       return { requestId: request.requestId, ok: true, ...shot };
+    }
+    if (request.action === 'wait') {
+      // The page runs at full speed while the agent waits on it.
+      await unthrottled(contents, () => waits.wait(contents, entry, request));
+      return actions.act(contents, entry, { ...request, action: 'snapshot' });
     }
     return actions.act(contents, entry, request);
   }

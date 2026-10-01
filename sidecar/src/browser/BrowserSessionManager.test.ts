@@ -43,7 +43,6 @@ class FakeRuntime implements BrowserRuntime {
   canGoBack = false;
   canGoForward = false;
   omitHistory = false;
-  snapshotRequests = 0;
   clickError?: Error;
   viewportError?: Error;
 
@@ -94,9 +93,8 @@ class FakeRuntime implements BrowserRuntime {
     return Buffer.from('crop').toString('base64');
   }
 
-  async snapshot(url = 'http://127.0.0.1:1420/') {
-    this.snapshotRequests += 1;
-    return this.stateSnapshot(url);
+  async wait() {
+    return this.result();
   }
 
   private result(url?: string) {
@@ -227,10 +225,9 @@ test('refs go straight to the page, which resolves them', async () => {
   assert.deepEqual(runtime.hovers, [{ ref: 'e1' }]);
   assert.deepEqual(runtime.selections, [{ ref: 'e1', value: 'active' }]);
   assert.deepEqual(runtime.inspections, [{ ref: 'e1' }]);
-  assert.equal(runtime.snapshotRequests, 0);
 });
 
-test('resize requests no snapshot', async () => {
+test('resize records the viewport mode', async () => {
   let runtime!: FakeRuntime;
   const manager = createManager({
     runtimeFactory: (_id, viewport) => {
@@ -247,7 +244,6 @@ test('resize requests no snapshot', async () => {
   });
 
   assert.equal(state.viewportMode, 'mobile');
-  assert.equal(runtime.snapshotRequests, 0);
 });
 
 test('failed resize preserves the previous viewport and emits no optimistic update', async () => {

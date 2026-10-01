@@ -53,19 +53,24 @@ export function createDesktopBrowserChannel(
     if (!send || !channel.connected) {
       return Promise.reject(new Error('The browser is only available in the DROIDEX desktop app.'));
     }
+    // A wait is given its own length on top.
+    const limitMs = timeoutMs + (request.waitMs ?? 0);
     return new Promise((resolve, reject) => {
       const timer = setTimeout(() => {
         settle(request.requestId)?.reject(
           new Error(
-            `DROIDEX browser did not respond to ${request.action} within ${String(timeoutMs)}ms.`,
+            `DROIDEX browser did not respond to ${request.action} within ${String(limitMs)}ms.`,
           ),
         );
-      }, timeoutMs);
+      }, limitMs);
       pending.set(request.requestId, { resolve, reject, timer });
       try {
-        send({ type: 'browser.request', id: request.requestId, request, timeoutMs }, (error) => {
-          if (error) settle(request.requestId)?.reject(error);
-        });
+        send(
+          { type: 'browser.request', id: request.requestId, request, timeoutMs: limitMs },
+          (error) => {
+            if (error) settle(request.requestId)?.reject(error);
+          },
+        );
       } catch (error) {
         settle(request.requestId)?.reject(
           error instanceof Error ? error : new Error(String(error)),

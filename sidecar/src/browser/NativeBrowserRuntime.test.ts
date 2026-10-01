@@ -128,7 +128,7 @@ test('reload and snapshot actions never reuse a stale page snapshot', async () =
 
   await runtime.open('https://example.com/current');
   await assert.rejects(runtime.reload(), /without a fresh page snapshot/);
-  await assert.rejects(runtime.snapshot(), /without a fresh page snapshot/);
+  await assert.rejects(runtime.wait({ text: 'Saved' }), /without a fresh page snapshot/);
   await assert.rejects(runtime.fillCredentials(), /without a fresh page snapshot/);
 });
 

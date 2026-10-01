@@ -129,7 +129,27 @@ Object.assign(globalThis, {
   __droidexApplyDesignState: applyState,
   __droidexInspect: inspectElement,
   __droidexFillCredentials: fillCredentials,
+  __droidexNextChange: nextChange,
 });
+
+// Resolves at the next change to the document, or after ms, for browser_wait.
+function nextChange(ms) {
+  return new Promise((resolve) => {
+    const done = () => {
+      observer.disconnect();
+      clearTimeout(timer);
+      resolve();
+    };
+    const observer = new MutationObserver(done);
+    const timer = setTimeout(done, ms);
+    observer.observe(document, {
+      subtree: true,
+      childList: true,
+      characterData: true,
+      attributes: true,
+    });
+  });
+}
 
 ipcRenderer.on('native-browser-design-prompt-sent', (_event, payload) => {
   // Ignore acks that do not match the capture currently in flight: a stale ack
