@@ -209,7 +209,7 @@ export class CodexProvider implements Provider {
     signal.addEventListener('abort', stop);
     try {
       await initialize(client);
-      return await new CodexRateLimits(client).read(signal);
+      return await new CodexRateLimits(client).read();
     } finally {
       signal.removeEventListener('abort', stop);
       await client.close();
