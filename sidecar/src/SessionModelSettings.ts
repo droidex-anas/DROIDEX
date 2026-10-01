@@ -160,7 +160,10 @@ export class SessionModelSettings {
           live !== undefined && (windowChanged || live.restartBeforeNextTurn === true);
         const selection = summary.provider === DEFAULT_PROVIDER ? runtimeSettings : selected;
         const next = { ...summary, ...this.summaryPatch(agent, selection, summary.provider) };
-        const change = await this.primaryModelChange(summary, next, agent, changes);
+        // From the model the chat runs now: the harness may have moved it
+        // while this change was being prepared.
+        const current = this.d.registry.getCanonicalSummary(appSessionId) ?? summary;
+        const change = await this.primaryModelChange(current, next, agent, changes);
         if (!isCurrent()) return false;
         if (!restart) await this.applyProvider(summary, live, agent, runtimeSettings, isCurrent);
         if (!isCurrent()) return false;
