@@ -1868,6 +1868,7 @@ test('a context switch waits for the turn and resumes the same chat before queue
     runtime: h.runtime,
     getFactoryDefaults: async () => ({}),
     providerDefaultModelId: () => 'model-default',
+    knownModel: () => undefined,
     validateModelSettings: async (_summary, selection) => {
       if (selection.modelId === 'unavailable') throw new Error('1M context unavailable');
     },

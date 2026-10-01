@@ -29,11 +29,13 @@ export function offersReasoningEffort(
 
 // Callers choose the session or draft effort. An unset session effort stays
 // provider-managed; display code must not substitute a global or catalog default.
+// A level the model is known not to run is never shown on it.
 export function resolveReasoningEffortDisplay(
   effort: ReasoningEffort | undefined,
   model: Pick<ModelInfo, 'supportedReasoningEfforts'> | undefined,
 ): ReasoningEffort | undefined {
-  return offersReasoningEffort(model) ? effort : undefined;
+  if (!model || effort === undefined) return effort;
+  return model.supportedReasoningEfforts?.includes(effort) ? effort : undefined;
 }
 
 export function compatibleReasoningForModel(
