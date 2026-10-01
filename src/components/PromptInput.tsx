@@ -107,6 +107,7 @@ import { SlidersHorizontal } from 'lucide-react';
 import {
   Bug,
   FoldVertical,
+  Gauge,
   ListTodo,
   MessageBubble,
   MessageSquareText,
@@ -118,7 +119,7 @@ import {
 import { VisualizeIcon } from './icons/VisualizeIcon';
 import { ComposerSendButton } from './composer/ComposerSendButton';
 import { useActiveUsageLimit } from './composer/useActiveUsageLimit';
-import { UsageLimitTab } from './composer/UsageLimitTab';
+import { UsageTabs } from './composer/UsageTabs';
 import { useQueuedPromptDelivery } from './composer/useQueuedPromptDelivery';
 import AddMenu from './composer/AddMenu';
 import SelectionMenu from './composer/SelectionMenu';
@@ -338,6 +339,7 @@ export default function PromptInput({
   const [historyIndex, setHistoryIndex] = useState<number | null>(null);
   const draftBeforeHistory = useRef('');
   const [modelsOpen, setModelsOpen] = useState(false);
+  const [usageOpen, setUsageOpen] = useState(false);
   const [activeRowKey, setActiveRowKey] = useState<string | null>(null);
   const [scheduleTarget, setScheduleTarget] = useState<{ appSessionId: string } | null>(null);
   // Scheduling lives in the draft's right-click menu; its popover opens from the
@@ -704,6 +706,17 @@ export default function PromptInput({
       icon: Settings,
       run: () => {
         dispatch({ type: 'TOGGLE_SETTINGS' });
+      },
+    },
+    {
+      cmd: '/usage',
+      desc: 'Show usage limits',
+      icon: Gauge,
+      // The app reads the account itself, so the harness's own /usage never
+      // has to run as a turn.
+      supersedesHarnessCommand: true,
+      run: () => {
+        setUsageOpen(true);
       },
     },
     {
@@ -2114,21 +2127,20 @@ export default function PromptInput({
           </Suspense>
         )}
 
-        {/* A chat held on `usageLimit` shows its limit tab in this slot; StartInBar
-            only ever shows before a chat exists. */}
-        <AnimatePresence initial={false}>
-          {usageLimit && visibleTarget.kind === 'primary' && (
-            <UsageLimitTab
-              key="usage-limit"
-              limit={usageLimit}
-              provider={composerProvider}
-              onSwitchModel={() => {
-                setModelsOpen(true);
-              }}
-            />
-          )}
-        </AnimatePresence>
-        {showStartIn && (
+        {/* The usage tabs share this slot with StartInBar, which only shows
+            before a chat exists and steps aside while /usage is open. */}
+        <UsageTabs
+          provider={composerProvider}
+          panelOpen={usageOpen}
+          onClosePanel={() => {
+            setUsageOpen(false);
+          }}
+          chat={activeSession && visibleTarget.kind === 'primary' ? { usageLimit } : undefined}
+          onSwitchModel={() => {
+            setModelsOpen(true);
+          }}
+        />
+        {showStartIn && !usageOpen && (
           <div
             className="relative z-0 mx-[6%] -mb-3 min-w-0 border border-droid-border bg-droid-surface px-4 pb-4 pt-1.5"
             // The composer's own 20px corner, carried onto the tab above it.
