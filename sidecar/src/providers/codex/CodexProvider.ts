@@ -204,6 +204,7 @@ export class CodexProvider implements Provider {
   async readUsage(signal: AbortSignal): Promise<UsageReading> {
     const executable = resolveCodexPath();
     if (!executable) throw new Error(INSTALL_HINT);
+    signal.throwIfAborted();
     const client = new AppServerClient(executable, tmpdir());
     const stop = () => {
       void client.close();
@@ -211,7 +212,7 @@ export class CodexProvider implements Provider {
     signal.addEventListener('abort', stop);
     try {
       await initialize(client);
-      return await new CodexRateLimits(client).read();
+      return await new CodexRateLimits(client).read(signal);
     } finally {
       signal.removeEventListener('abort', stop);
       await client.close();

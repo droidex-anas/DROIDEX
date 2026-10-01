@@ -69,8 +69,11 @@ export class ClaudeUsage {
     private readonly onMeters?: UsageMetersListener,
   ) {}
 
-  async read(): Promise<UsageReading> {
+  // The SDK's usage call takes no signal, so a read it never answers stays
+  // pending until the session closes.
+  async read(signal: AbortSignal): Promise<UsageReading> {
     await this.ready();
+    signal.throwIfAborted();
     return await readClaudeUsage(this.query);
   }
 

@@ -39,7 +39,11 @@ interface Account {
   lastReadAt: number;
   retryAt: number;
   emittedAt: number;
+  // The read whose answer is awaited.
   reading?: Promise<void>;
+  // Set until a read's source settles, which one a harness cannot cancel may
+  // do after its timeout; no other read starts meanwhile, so none pile up.
+  outstanding: boolean;
 }
 
 type UsageSource = (signal: AbortSignal) => Promise<UsageReading>;
@@ -105,12 +109,22 @@ export class AccountUsage {
     const now = this.now();
     const source = this.source(provider, panelOpen);
     const resting = !immediate && now - account.lastReadAt < MIN_READ_GAP_MS;
-    if (!source || resting || now < account.retryAt) return undefined;
+    if (!source || account.outstanding || resting || now < account.retryAt) return undefined;
     this.startTimer();
     account.lastReadAt = now;
-    const reading = this.settle(provider, account, source, now).finally(() => {
-      account.reading = undefined;
-    });
+    const signal = AbortSignal.any([this.abort.signal, AbortSignal.timeout(READ_TIMEOUT_MS)]);
+    const answer = source(signal);
+    account.outstanding = true;
+    void answer
+      .catch(() => undefined)
+      .finally(() => {
+        account.outstanding = false;
+      });
+    const reading = this.settle(provider, account, untilAborted(answer, signal), now).finally(
+      () => {
+        account.reading = undefined;
+      },
+    );
     account.reading = reading;
     return reading;
   }
@@ -121,7 +135,7 @@ export class AccountUsage {
   private source(provider: ProviderKind, panelOpen: boolean): UsageSource | undefined {
     const live = this.host.liveSession(provider);
     const usage = live?.usage;
-    if (usage) return () => usage.read();
+    if (usage) return (signal) => usage.read(signal);
     if (live || panelOpen) return (signal) => this.host.readWithoutSession(provider, signal);
     return undefined;
   }
@@ -132,13 +146,12 @@ export class AccountUsage {
   private async settle(
     provider: ProviderKind,
     account: Account,
-    source: UsageSource,
+    answer: Promise<UsageReading>,
     startedAt: number,
   ): Promise<void> {
-    const signal = AbortSignal.any([this.abort.signal, AbortSignal.timeout(READ_TIMEOUT_MS)]);
     let usage: ProviderUsage;
     try {
-      const { meters, extra, unavailable, partial } = await untilAborted(source(signal), signal);
+      const { meters, extra, unavailable, partial } = await answer;
       const listed = new Set(meters.map((meter) => meter.id));
       const kept = (account.usage?.meters ?? []).filter(
         (meter) => meter.updatedAt >= startedAt || (partial === true && !listed.has(meter.id)),
@@ -168,7 +181,7 @@ export class AccountUsage {
   private account(provider: ProviderKind): Account {
     let account = this.accounts.get(provider);
     if (!account) {
-      account = { lastReadAt: -Infinity, retryAt: 0, emittedAt: 0 };
+      account = { lastReadAt: -Infinity, retryAt: 0, emittedAt: 0, outstanding: false };
       this.accounts.set(provider, account);
     }
     return account;

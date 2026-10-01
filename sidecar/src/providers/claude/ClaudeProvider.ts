@@ -228,6 +228,7 @@ export class ClaudeProvider implements Provider {
   // too, torn down once the CLI has answered.
   async readUsage(signal: AbortSignal): Promise<UsageReading> {
     const executable = this.requireExecutable();
+    signal.throwIfAborted();
     const abort = new AbortController();
     const stop = () => {
       abort.abort();
