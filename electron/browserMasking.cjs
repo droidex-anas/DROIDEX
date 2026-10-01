@@ -70,11 +70,12 @@ function createBrowserMasking({ savedSecretsFor }) {
   return { maskFields, insideMaskedField };
 }
 
-// Nodes whose accessible name Chromium built from their content while a field
-// sits inside them: the name folds in the field's value ("Code 424242" for a
-// heading holding a code field). They are read without that name; their
-// content reads on its own, with the field masked like any other. A name from
-// aria-label or the like is kept.
+// Nodes whose accessible name Chromium built from the page while a field sits
+// inside them: from their content, a legend or a caption, which folds in the
+// field's value ("Code 424242" for a heading holding a code field). They are
+// read without that name; their content reads on its own, with the field
+// masked like any other. A name from an attribute (aria-label, title, alt) is
+// kept.
 function foldedNames(nodes) {
   const byId = new Map(nodes.map((node) => [node.nodeId, node]));
   const holdsField = new Set();
@@ -86,13 +87,14 @@ function foldedNames(nodes) {
       parent = byId.get(parent.parentId);
     }
   }
-  return new Set([...holdsField].filter((nodeId) => nameFromContents(byId.get(nodeId))));
+  return new Set([...holdsField].filter((nodeId) => nameFromPage(byId.get(nodeId))));
 }
 
-// The name in effect is the first source with a value that nothing overrides.
-function nameFromContents(node) {
+// The name in effect is the first source with a value that nothing overrides;
+// one with no attribute behind it was built from the page.
+function nameFromPage(node) {
   const source = node.name?.sources?.find((candidate) => candidate.value && !candidate.superseded);
-  return source?.type === 'contents';
+  return Boolean(source) && !source.attribute;
 }
 
 // A field whose value is shown or masked; the value may be empty, as in a
