@@ -431,7 +431,7 @@ function fillCredentials(payload) {
   try {
     if (!payload || payload.origin !== location.origin)
       return { ok: false, filled: false, error: 'The page changed before the login was filled.' };
-    // Checked again after each focus: the page's handlers can take their time.
+    // Checked again around each focus: the page's handlers can take their time.
     const inTime = () => {
       if (payload.startBy && Date.now() >= payload.startBy)
         throw new Error('The browser page did not finish in time.');
@@ -475,6 +475,7 @@ function usernameFieldFor(passwordField) {
 }
 
 function setFieldValue(field, value, inTime) {
+  inTime();
   field.focus();
   inTime();
   const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')?.set;

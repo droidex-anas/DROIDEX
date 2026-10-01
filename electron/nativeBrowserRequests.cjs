@@ -50,6 +50,8 @@ const LOAD_WAIT_MS = 8_000;
 // page, and whatever it does afterwards is dropped.
 const DEADLINE_MARGIN_MS = 3_000;
 const DEFAULT_SIDECAR_TIMEOUT_MS = 12_000;
+// The sidecar's longest timeout, 60 s, and the longest wait it adds to one.
+const MAX_SIDECAR_TIMEOUT_MS = 75_000;
 
 function createNativeBrowserRequests({ manager, notifyRenderer }) {
   const waiting = new Map(); // browserSessionId -> requests in flight
@@ -255,7 +257,7 @@ function createNativeBrowserRequests({ manager, notifyRenderer }) {
 
 function sidecarTimeoutMs(value) {
   return Number.isFinite(value)
-    ? Math.min(Math.max(value, 1_000), 60_000)
+    ? Math.min(Math.max(value, 1_000), MAX_SIDECAR_TIMEOUT_MS)
     : DEFAULT_SIDECAR_TIMEOUT_MS;
 }
 
