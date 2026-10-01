@@ -4,14 +4,7 @@
 // the site (agents never see what browser_fill_login filled in). A field that
 // cannot be checked counts as sensitive.
 
-const {
-  send,
-  documentFrames,
-  frameOffset,
-  axTree,
-  inViewport,
-  boundsOf,
-} = require('./browserFrames.cjs');
+const { send, documentFrames, viewportMapping, axTree, boundsOf } = require('./browserFrames.cjs');
 const { cleanText } = require('./browserText.cjs');
 const { dropRef } = require('./browserRefs.cjs');
 
@@ -65,23 +58,35 @@ function createBrowserMasking({ savedSecretsFor }) {
     return false;
   }
 
-  // Boxes, in the page's viewport, of every sensitive field. A frame that
-  // cannot be read fails the call, so a screenshot fails rather than show
-  // what it could not check.
+  // Boxes, in the page's viewport, of every sensitive field: the ones the
+  // accessibility tree names, and any input whose own attributes say so even
+  // when it is hidden from that tree (aria-hidden, inside a shadow root). A
+  // frame that cannot be read fails the call, so a screenshot fails rather
+  // than show what it could not check.
   async function sensitiveBoxes(dbg, url) {
     const secrets = await secretsFor(url);
-    const boxes = [];
-    for (const frame of await documentFrames(dbg, { strict: true })) {
+    const nodes = new Map(); // `${sessionId}:${backendNodeId}` -> { sessionId, backendNodeId }
+    const add = (sessionId, backendNodeId) =>
+      nodes.set(`${sessionId}:${backendNodeId}`, { sessionId, backendNodeId });
+    const frames = await documentFrames(dbg, { strict: true });
+    for (const frame of frames) {
       for (const node of (await axTree(dbg, frame)).nodes) {
         const field = fieldOf(node, frame);
-        if (!field?.value || !(await isSensitive(dbg, field, secrets))) continue;
-        const shape = await send(dbg, frame.sessionId, 'DOM.getContentQuads', {
-          backendNodeId: field.backendNodeId,
-        }).catch(() => undefined); // not rendered, so nothing to paint over
-        if (!shape?.quads?.length) continue;
-        const offset = await frameOffset(dbg, frame.sessionId);
-        for (const quad of shape.quads) boxes.push(boundsOf(inViewport(quad, offset)));
+        if (field?.value && (await isSensitive(dbg, field, secrets)))
+          add(frame.sessionId, field.backendNodeId);
       }
+    }
+    for (const sessionId of new Set(frames.map((frame) => frame.sessionId)))
+      for (const input of await inputsOf(dbg, sessionId))
+        if (isSensitiveField(input.attributes ?? [])) add(sessionId, input.backendNodeId);
+    const boxes = [];
+    for (const { sessionId, backendNodeId } of nodes.values()) {
+      const shape = await send(dbg, sessionId, 'DOM.getContentQuads', { backendNodeId }).catch(
+        () => undefined,
+      ); // not rendered, so nothing to paint over
+      if (!shape?.quads?.length) continue;
+      const toViewport = await viewportMapping(dbg, sessionId);
+      for (const quad of shape.quads) boxes.push(boundsOf(toViewport(quad)));
     }
     return boxes;
   }
@@ -148,6 +153,29 @@ function fieldOf(node, frame) {
     labelledBy: nameSource(node)?.attribute === 'aria-labelledby',
     sessionId: frame.sessionId,
   };
+}
+
+// Every input, textarea and select in a session's documents, shadow roots
+// and same-process frames included.
+async function inputsOf(dbg, sessionId) {
+  await send(dbg, sessionId, 'DOM.getDocument', { depth: 0 });
+  const { searchId, resultCount } = await send(dbg, sessionId, 'DOM.performSearch', {
+    query: 'input, textarea, select',
+  });
+  try {
+    if (!resultCount) return [];
+    const { nodeIds } = await send(dbg, sessionId, 'DOM.getSearchResults', {
+      searchId,
+      fromIndex: 0,
+      toIndex: resultCount,
+    });
+    const inputs = [];
+    for (const nodeId of nodeIds)
+      inputs.push((await send(dbg, sessionId, 'DOM.describeNode', { nodeId })).node);
+    return inputs;
+  } finally {
+    await send(dbg, sessionId, 'DOM.discardSearchResults', { searchId }).catch(() => undefined);
+  }
 }
 
 function isSensitiveField(attributes) {

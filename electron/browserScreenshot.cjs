@@ -4,6 +4,8 @@
 // exactly. Sensitive fields are painted over here, in main, so the page the
 // user sees is never touched; the capture fails rather than leak one.
 
+const { settleFrames } = require('./browserFrames.cjs');
+
 const MAX_EDGE = 1568;
 const JPEG_QUALITY = 80;
 const REF_PADDING = 8;
@@ -26,6 +28,7 @@ function createBrowserScreenshot({ reading, nativeImage, redactUrl }) {
   // the mask and the capture.
   async function attemptShot(dbg, contents, entry, options) {
     const box = options.ref ? await reading.refBox(dbg, entry, options.ref) : undefined;
+    if (box) await settleFrames(dbg, box.sessionId);
     const view = await viewOf(dbg);
     const clip = clipFor(view, options, box);
     const masks = await masksFor(dbg, contents, view, options);

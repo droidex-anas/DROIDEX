@@ -6,10 +6,9 @@
 const {
   send,
   documentFrames,
-  frameOffset,
+  viewportMapping,
   scrollFrameIntoView,
   axTree,
-  inViewport,
   boundsOf,
 } = require('./browserFrames.cjs');
 const { createBrowserMasking, fieldOf, foldedNames } = require('./browserMasking.cjs');
@@ -169,13 +168,15 @@ function createBrowserReading({ runWithWebContentsDebugger, savedSecretsFor, red
     );
     const quad = quads?.find((candidate) => quadArea(candidate) > 1);
     if (!quad) throw new Error(`${ref} has no visible box to act on.`);
-    return { quad: inViewport(quad, await frameOffset(dbg, sessionId)), document };
+    return { quad: (await viewportMapping(dbg, sessionId))(quad), document, sessionId };
   }
 
   // The ref's element as a viewport box, for a screenshot crop.
+  // The ref's element as a viewport box, for a screenshot crop, and the
+  // session of the frame it is in.
   async function refBox(dbg, entry, ref) {
-    const { quad } = await visibleQuad(dbg, entry, ref);
-    return boundsOf(quad);
+    const { quad, sessionId } = await visibleQuad(dbg, entry, ref);
+    return { ...boundsOf(quad), sessionId };
   }
 
   // Throws when the document a target was resolved in has gone.

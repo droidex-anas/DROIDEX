@@ -321,7 +321,7 @@ function createNativeBrowserPage({
     const contents = liveContents(entry);
     if (!contents) throw new Error(`${appName} browser is not open.`);
     return unthrottled(contents, async () => {
-      // A box crop   is always already on-screen (the user just selected/sketched
+      // A box crop is always already on-screen (the user just selected/sketched
       // it). Capture the composited frame directly: capturePage never re-renders
       // the page off-screen the way CDP's captureBeyondViewport does, so the live
       // pane no longer flickers on every selection or sketch.

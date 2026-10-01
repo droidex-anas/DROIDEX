@@ -57,19 +57,32 @@ function markdownOf(tree, render, { redactUrl, maxNodes }) {
   let inline = [];
   let prefix = '';
   let lists = 0;
-  let rows = 0;
-  // Inside a table row, blocks only separate words: the row is one line.
+  let inlineOnly = 0;
+  // Inside a heading, link or table cell, blocks only separate words.
   const flush = () => {
-    if (rows) {
+    if (inlineOnly) {
       inline.push(' ');
       return;
     }
     const text = cleanText(inline.join(''));
-    if (text) blocks.push(prefix + text);
     inline = [];
+    if (!text) return;
+    blocks.push(prefix + text);
     prefix = '';
   };
   const visitChildren = (node) => childrenOf(node).forEach(visit);
+  // The text inside a node, read from its children rather than its name:
+  // Chromium folds the values of fields inside into that name.
+  const textOf = (node) => {
+    const outer = inline;
+    inline = [];
+    inlineOnly++;
+    visitChildren(node);
+    inlineOnly--;
+    const text = cleanText(inline.join(''));
+    inline = outer;
+    return text;
+  };
 
   function visit(node) {
     if (render.processed >= maxNodes) {
@@ -85,7 +98,8 @@ function markdownOf(tree, render, { redactUrl, maxNodes }) {
       inline.push(node.name?.value ?? '');
     } else if (role === 'link') {
       const url = node.properties?.find((property) => property.name === 'url')?.value?.value;
-      if (name) inline.push(url ? `[${name}](${redactUrl(url)})` : name);
+      const text = textOf(node);
+      if (text) inline.push(url ? `[${text}](${redactUrl(url)})` : text);
     } else if (role === 'image') {
       if (name) inline.push(`[image: ${name}]`);
     } else if (NOT_TEXT_ROLES.has(role)) {
@@ -93,22 +107,17 @@ function markdownOf(tree, render, { redactUrl, maxNodes }) {
     } else if (role === 'heading') {
       flush();
       const level = node.properties?.find((property) => property.name === 'level')?.value?.value;
-      if (name) blocks.push(`${'#'.repeat(Number(level) || 2)} ${name}`);
+      const text = textOf(node);
+      if (text) blocks.push(`${'#'.repeat(Number(level) || 2)} ${text}`);
     } else if (role === 'listitem') {
       flush();
       prefix = `${'  '.repeat(Math.max(0, lists - 1))}- `;
       visitChildren(node);
       flush();
+      prefix = '';
     } else if (role === 'row' || role === 'LayoutTableRow') {
       flush();
-      rows++;
-      const cells = childrenOf(node).map((cell) => {
-        visitChildren(cell);
-        const text = cleanText(inline.join(''));
-        inline = [];
-        return text;
-      });
-      rows--;
+      const cells = childrenOf(node).map(textOf);
       if (cells.some(Boolean)) blocks.push(`${prefix}| ${cells.join(' | ')} |`);
       prefix = '';
     } else {

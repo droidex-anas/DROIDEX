@@ -5,6 +5,7 @@
 // find its offset in the page's viewport.
 
 const AUTO_ATTACH = { autoAttach: true, waitForDebuggerOnStart: false, flatten: true };
+const SETTLE_MS = 200;
 const attachments = new WeakMap(); // guest debugger -> { sessions, pending }
 
 function send(dbg, sessionId, method, params = {}) {
@@ -65,18 +66,53 @@ async function documentFrames(dbg, { strict = false } = {}) {
   return frames;
 }
 
-// Where a session's (0, 0) sits in the page's viewport: the content box of
-// the iframe that owns it, added up through every cross-site parent.
-async function frameOffset(dbg, sessionId) {
-  if (!sessionId) return { x: 0, y: 0 };
+// Maps quads from a session's own coordinates into the page's viewport,
+// through the content box of the iframe that owns it, which may be scaled or
+// rotated, and on through every cross-site parent.
+async function viewportMapping(dbg, sessionId) {
+  if (!sessionId) return (quad) => quad;
   const frame = attachments.get(dbg)?.sessions.get(sessionId);
   if (!frame) throw new Error('The frame closed.');
   const { backendNodeId } = await send(dbg, frame.parent, 'DOM.getFrameOwner', {
     frameId: frame.frameId,
   });
   const { model } = await send(dbg, frame.parent, 'DOM.getBoxModel', { backendNodeId });
-  const parent = await frameOffset(dbg, frame.parent);
-  return { x: parent.x + model.content[0], y: parent.y + model.content[1] };
+  const [x0, y0, x1, y1, , , x3, y3] = model.content;
+  const [bx0, by0, bx1, by1, , , bx3, by3] = model.border;
+  // The box model's width and height are before any transform; along each
+  // edge the content box keeps its share of the border box.
+  const width = (model.width * Math.hypot(x1 - x0, y1 - y0)) / Math.hypot(bx1 - bx0, by1 - by0);
+  const height = (model.height * Math.hypot(x3 - x0, y3 - y0)) / Math.hypot(bx3 - bx0, by3 - by0);
+  const parent = await viewportMapping(dbg, frame.parent);
+  return (quad) =>
+    parent(
+      quad.map((_, i) => {
+        const u = quad[i - (i % 2)] / width;
+        const v = quad[i - (i % 2) + 1] / height;
+        return i % 2 ? y0 + u * (y1 - y0) + v * (y3 - y0) : x0 + u * (x1 - x0) + v * (x3 - x0);
+      }),
+    );
+}
+
+// Waits, briefly, until the top frame and the given cross-site frame have
+// painted twice after a scroll, so a copy of the screen shows what the DOM
+// says now. Only frames on screen paint, so the others are never waited on.
+async function settleFrames(dbg, sessionId) {
+  const painted = 'new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done)))';
+  let timer;
+  await Promise.race([
+    Promise.all(
+      [...new Set([undefined, sessionId])].map((session) =>
+        send(dbg, session, 'Runtime.evaluate', { expression: painted, awaitPromise: true }).catch(
+          () => undefined,
+        ),
+      ),
+    ),
+    new Promise((resolve) => {
+      timer = setTimeout(resolve, SETTLE_MS);
+    }),
+  ]);
+  clearTimeout(timer);
 }
 
 // Scrolls the owners of a cross-site frame into view, outermost first, so a
@@ -95,11 +131,6 @@ function axTree(dbg, frame) {
   return send(dbg, frame.sessionId, 'Accessibility.getFullAXTree', { frameId: frame.id });
 }
 
-// A quad from a frame's own coordinates moved into the page's viewport.
-function inViewport(quad, offset) {
-  return quad.map((value, i) => value + (i % 2 ? offset.y : offset.x));
-}
-
 function boundsOf(quad) {
   const xs = [quad[0], quad[2], quad[4], quad[6]];
   const ys = [quad[1], quad[3], quad[5], quad[7]];
@@ -111,9 +142,9 @@ function boundsOf(quad) {
 module.exports = {
   send,
   documentFrames,
-  frameOffset,
+  viewportMapping,
+  settleFrames,
   scrollFrameIntoView,
   axTree,
-  inViewport,
   boundsOf,
 };
