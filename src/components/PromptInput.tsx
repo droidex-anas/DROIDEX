@@ -118,6 +118,7 @@ import {
 import { VisualizeIcon } from './icons/VisualizeIcon';
 import { ComposerSendButton } from './composer/ComposerSendButton';
 import { useActiveUsageLimit } from './composer/useActiveUsageLimit';
+import { UsageLimitTab } from './composer/UsageLimitTab';
 import { useQueuedPromptDelivery } from './composer/useQueuedPromptDelivery';
 import AddMenu from './composer/AddMenu';
 import SelectionMenu from './composer/SelectionMenu';
@@ -2115,6 +2116,18 @@ export default function PromptInput({
 
         {/* A chat held on `usageLimit` shows its limit tab in this slot; StartInBar
             only ever shows before a chat exists. */}
+        <AnimatePresence initial={false}>
+          {usageLimit && visibleTarget.kind === 'primary' && (
+            <UsageLimitTab
+              key="usage-limit"
+              limit={usageLimit}
+              provider={composerProvider}
+              onSwitchModel={() => {
+                setModelsOpen(true);
+              }}
+            />
+          )}
+        </AnimatePresence>
         {showStartIn && (
           <div
             className="relative z-0 mx-[6%] -mb-3 min-w-0 border border-droid-border bg-droid-surface px-4 pb-4 pt-1.5"
