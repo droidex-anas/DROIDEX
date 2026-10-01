@@ -81,7 +81,10 @@ async function viewportMapping(dbg, sessionId) {
     frameId: frame.frameId,
   });
   const { model } = await send(dbg, frame.parent, 'DOM.getBoxModel', { backendNodeId });
-  const [x0, y0, x1, y1, , , x3, y3] = model.content;
+  const [x0, y0, x1, y1, x2, y2, x3, y3] = model.content;
+  // Only an affine transform keeps the box a parallelogram.
+  if (Math.abs(x0 + x2 - x1 - x3) > 1 || Math.abs(y0 + y2 - y1 - y3) > 1)
+    throw new Error('A frame on this page is drawn in perspective, which this tool cannot map.');
   const [bx0, by0, bx1, by1, , , bx3, by3] = model.border;
   // The box model's width and height are before any transform; along each
   // edge the content box keeps its share of the border box.

@@ -3,6 +3,11 @@
 // id, label or placeholder says so, or when its value is the login saved for
 // the site (agents never see what browser_fill_login filled in). A field that
 // cannot be checked counts as sensitive.
+//
+// This covers fields as pages show them: their values and contents, and the
+// names Chromium builds from them. A page that copies a value somewhere else
+// (into other text, an attribute, a label it points at a hidden field) shows
+// it like any other text; nothing here can hide what the page itself prints.
 
 const { send, documentFrames, viewportMapping, axTree, boundsOf } = require('./browserFrames.cjs');
 const { cleanText } = require('./browserText.cjs');
@@ -65,9 +70,9 @@ function createBrowserMasking({ savedSecretsFor }) {
   // screenshot fails rather than show what it could not check.
   async function sensitiveBoxes(dbg) {
     const logins = savedLogins();
-    const nodes = new Map(); // `${sessionId}:${backendNodeId}` -> { sessionId, backendNodeId }
-    const add = (sessionId, backendNodeId) =>
-      nodes.set(`${sessionId}:${backendNodeId}`, { sessionId, backendNodeId });
+    const nodes = new Map(); // `${sessionId}:${backendNodeId}` -> { sessionId, backendNodeId, editable }
+    const add = (sessionId, backendNodeId, editable) =>
+      nodes.set(`${sessionId}:${backendNodeId}`, { sessionId, backendNodeId, editable });
     const shown = new Set(); // `${sessionId}:${backendNodeId}` the tree does not hide
     const frames = await documentFrames(dbg, { strict: true });
     for (const frame of frames) {
@@ -75,21 +80,22 @@ function createBrowserMasking({ savedSecretsFor }) {
         if (!node.ignored) shown.add(`${frame.sessionId}:${node.backendDOMNodeId}`);
         const field = fieldOf(node, frame);
         if ((field?.value || field?.editable) && (await isSensitive(dbg, field, logins)))
-          add(frame.sessionId, field.backendNodeId);
+          add(frame.sessionId, field.backendNodeId, field.editable);
       }
     }
     for (const sessionId of new Set(frames.map((frame) => frame.sessionId)))
       for (const input of await inputsOf(dbg, sessionId)) {
-        const editable = attributeOf(input, 'contenteditable');
+        const attribute = attributeOf(input, 'contenteditable');
+        const editable = attribute !== undefined && attribute !== 'false';
         const hidden =
-          (['INPUT', 'TEXTAREA', 'SELECT'].includes(input.nodeName) ||
-            (editable !== undefined && editable !== 'false')) &&
+          (['INPUT', 'TEXTAREA', 'SELECT'].includes(input.nodeName) || editable) &&
           !shown.has(`${sessionId}:${input.backendNodeId}`);
-        if (hidden || isSensitiveField(input.attributes ?? [])) add(sessionId, input.backendNodeId);
+        if (hidden || isSensitiveField(input.attributes ?? []))
+          add(sessionId, input.backendNodeId, editable);
       }
     const boxes = [];
     const mappings = new Map(); // sessionId -> its frame's mapping to the viewport
-    for (const { sessionId, backendNodeId } of nodes.values()) {
+    for (const { sessionId, backendNodeId, editable } of nodes.values()) {
       const shape = await send(dbg, sessionId, 'DOM.getContentQuads', { backendNodeId }).catch(
         (error) => {
           // Not rendered means nothing to paint over; anything else fails.
@@ -98,8 +104,12 @@ function createBrowserMasking({ savedSecretsFor }) {
         },
       );
       if (!shape?.quads?.length) continue;
+      // Text typed into an editable region can paint past its box.
+      const quads = editable
+        ? [...shape.quads, ...(await textQuads(dbg, sessionId, backendNodeId))]
+        : shape.quads;
       if (!mappings.has(sessionId)) mappings.set(sessionId, await viewportMapping(dbg, sessionId));
-      for (const quad of shape.quads) boxes.push(boundsOf(mappings.get(sessionId)(quad)));
+      for (const quad of quads) boxes.push(boundsOf(mappings.get(sessionId)(quad)));
     }
     return boxes;
   }
@@ -208,6 +218,31 @@ function fieldOf(node, frame) {
     origin: frame.securityOrigin || frame.url,
   };
 }
+
+// Where an element's text is painted, in its frame's viewport, as a quad.
+async function textQuads(dbg, sessionId, backendNodeId) {
+  const { object } = await send(dbg, sessionId, 'DOM.resolveNode', { backendNodeId });
+  try {
+    const { result } = await send(dbg, sessionId, 'Runtime.callFunctionOn', {
+      objectId: object.objectId,
+      functionDeclaration: TEXT_QUAD,
+      returnByValue: true,
+    });
+    return result?.value ? [result.value] : [];
+  } finally {
+    await send(dbg, sessionId, 'Runtime.releaseObject', { objectId: object.objectId }).catch(
+      () => undefined,
+    );
+  }
+}
+
+const TEXT_QUAD = `function () {
+  const range = this.ownerDocument.createRange();
+  range.selectNodeContents(this);
+  const box = range.getBoundingClientRect();
+  if (!box.width && !box.height) return null;
+  return [box.left, box.top, box.right, box.top, box.right, box.bottom, box.left, box.bottom];
+}`;
 
 // Every input, textarea and select in a session's documents, shadow roots
 // and same-process frames included.
