@@ -45,9 +45,7 @@ export class CodexRateLimits {
         excludeResetCreditDetails: true,
       }),
     );
-    const read = snapshotOf(
-      objectValue(response?.rateLimitsByLimitId)?.[MAIN_BUCKET] ?? response?.rateLimits,
-    );
+    const read = snapshotOf(objectValue(response?.rateLimitsByLimitId)?.[MAIN_BUCKET]);
     if (read) {
       // An update that landed while this read was in flight is newer.
       const current = this.snapshot;
