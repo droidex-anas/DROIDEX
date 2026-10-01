@@ -2,13 +2,15 @@ import { AnimatePresence } from 'framer-motion';
 import type { ReactNode } from 'react';
 
 import { useRelativeTimeNow } from '../../features/projects/useRelativeTimeNow';
-import { useProviderUsage } from '../../features/usage/useProviderUsage';
+import { paceWarning } from '../../features/usage/usagePace';
+import { useProviderUsage, type UsageWatch } from '../../features/usage/useProviderUsage';
 import type { ProviderKind, UsageLimit } from '../../types/bridge';
-import { UsageLimitTab } from './UsageLimitTab';
+import { UsageLimitTab, UsageWarningTab } from './UsageLimitTab';
 import { UsagePanel } from './UsagePanel';
 
 // The usage tab above the composer, one at a time: /usage while it is open,
-// then the limit the chat is held on.
+// then the limit the chat is held on, then a warning that the current pace
+// runs a Claude Code or Codex limit out before it resets.
 export function UsageTabs({
   provider,
   panelOpen,
@@ -23,8 +25,13 @@ export function UsageTabs({
   chat: { usageLimit: UsageLimit | undefined } | undefined;
   onSwitchModel: () => void;
 }) {
-  const usage = useProviderUsage(provider, panelOpen ? 'panel' : null);
+  const warns = chat !== undefined && provider !== 'droid';
+  let watch: UsageWatch | null = null;
+  if (panelOpen) watch = 'panel';
+  else if (warns) watch = 'chat';
+  const usage = useProviderUsage(provider, watch);
   const now = useRelativeTimeNow();
+  const warning = warns && usage ? paceWarning(usage.meters, now) : undefined;
 
   let tab: ReactNode = null;
   if (panelOpen)
@@ -46,6 +53,8 @@ export function UsageTabs({
         onSwitchModel={onSwitchModel}
       />
     );
+  else if (warning)
+    tab = <UsageWarningTab key="usage-warning" warning={warning} provider={provider} now={now} />;
 
   // One tab leaves before the next rises, so two never stack for a frame.
   return (
