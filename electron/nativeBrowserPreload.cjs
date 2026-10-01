@@ -1170,7 +1170,8 @@ function showBox(rect, text) {
   label.style.display = 'block';
   label.textContent = text;
   undoPaneScale(label);
-  // Kept inside the page at the size it is drawn.
+  // Kept inside the page at the size it is drawn, wrapping where it is narrow.
+  label.style.maxWidth = `${Math.min(360, Math.floor((window.innerWidth - 16) / uiScale))}px`;
   const width = label.getBoundingClientRect().width;
   label.style.left = `${Math.round(Math.max(8, Math.min(window.innerWidth - width - 8, rect.x)))}px`;
   label.style.top = `${Math.min(window.innerHeight - 36 * uiScale, Math.max(8, Math.round(rect.y - 38 * uiScale)))}px`;
@@ -1348,11 +1349,15 @@ function stableHash(value) {
   return hash.toString(36);
 }
 
-// The element the composer was opened on, where the page has it now; a sketch
-// or a text range keeps the region it was drawn on.
+// The element or text the composer was opened on, where the page has it now;
+// a sketch keeps the region it was drawn on.
 function refreshPromptBox() {
-  const held = annotations.find((item) => item.anchor === promptSelection.anchor && item.el);
-  if (held) promptSelection.anchor.box = boxFor(held.el.getBoundingClientRect());
+  const { anchor } = promptSelection;
+  const held = annotations.find((item) => item.anchor === anchor && item.el);
+  if (held) anchor.box = boxFor(held.el.getBoundingClientRect());
+  if (anchor.kind !== 'text' || !textRange) return;
+  anchor.box = boxFor(textRange.getBoundingClientRect());
+  drawTextHighlights(textRange);
 }
 
 function promptVisible() {
