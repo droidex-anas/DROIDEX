@@ -35,9 +35,7 @@ test('browser MCP server exposes agent-facing names and typed inputs', () => {
     ],
   );
   assert.ok(server.tools.find((tool) => tool.name === 'browser_open')?.inputSchema?.url);
-  assert.ok(
-    server.tools.find((tool) => tool.name === 'browser_screenshot')?.inputSchema?.ref,
-  );
+  assert.ok(server.tools.find((tool) => tool.name === 'browser_screenshot')?.inputSchema?.ref);
   assert.match(
     server.tools.find((tool) => tool.name === 'browser_open')?.description ?? '',
     /Do not ask the user for a URL/,
