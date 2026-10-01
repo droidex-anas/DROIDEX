@@ -3,6 +3,7 @@ import { lazy, Suspense, useEffect, useState, type ReactNode } from 'react';
 
 import { paceWarning } from '../../features/usage/usagePace';
 import { useProviderUsage, type UsageWatch } from '../../features/usage/useProviderUsage';
+import { useStoreSelector } from '../../hooks/useStore';
 import type { ProviderKind, UsageLimit } from '../../types/bridge';
 import { UsageLimitTab, UsageWarningTab } from './UsageLimitTab';
 
@@ -34,7 +35,10 @@ export function UsageTabs({
   let watch: UsageWatch | null = null;
   if (panelOpen) watch = 'panel';
   else if (warns) watch = 'chat';
-  const usage = useProviderUsage(provider, watch, connected);
+  // The bridge's own state too: a reconnect must refresh even where the
+  // runtime never reported itself down.
+  const bridgeUp = useStoreSelector((state) => state.connection === 'connected');
+  const usage = useProviderUsage(provider, watch, connected && bridgeUp);
   const now = Date.now();
   const warning = warns && usage ? paceWarning(usage.meters, now) : undefined;
   useTicking(panelOpen || warning !== undefined);
