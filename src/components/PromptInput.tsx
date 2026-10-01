@@ -1277,6 +1277,25 @@ export default function PromptInput({
     };
     if (updateInterruptedSubmit()) return;
     const text = input.trim();
+    // The app's own commands run at once, before any attachment settles, and
+    // never reach the harness; anything staged beside them stays for the
+    // next prompt.
+    if (text === USAGE_COMMAND) {
+      setUsageOpen(true);
+      setInput('');
+      setHistoryIndex(null);
+      return;
+    }
+    // The app owns fast mode, so a typed /fast runs here instead of reaching
+    // the harness, whose own switch the app would never see.
+    const fastCommand = slashCommands.find(
+      (command) => command.cmd.startsWith('/fast') && command.cmd === text,
+    );
+    if (fastCommand) {
+      fastCommand.run();
+      setInput('');
+      return;
+    }
     // Snapshot the composer revision before the settle wait: text, files, and
     // skills are render-closure snapshots, so anything typed or staged while
     // images finish encoding is not part of this prompt — and must survive
@@ -1304,23 +1323,6 @@ export default function PromptInput({
       allFiles.length > 0 ||
       sideChatReplies.length > 0;
     if (!hasPayload) return;
-    // Anything staged beside it stays in the composer for the next prompt.
-    if (text === USAGE_COMMAND) {
-      setUsageOpen(true);
-      setInput('');
-      setHistoryIndex(null);
-      return;
-    }
-    // The app owns fast mode, so a typed /fast runs here instead of reaching
-    // the harness, whose own switch the app would never see.
-    const fastCommand = slashCommands.find(
-      (command) => command.cmd.startsWith('/fast') && command.cmd === text,
-    );
-    if (fastCommand && activeSkills.length === 0 && allFiles.length === 0) {
-      fastCommand.run();
-      setInput('');
-      return;
-    }
     setHistoryIndex(null);
 
     const clearAfterSubmit = () => {
