@@ -4,6 +4,7 @@
 import type { UsageWindow } from '../../protocol.js';
 import { numberValue, objectValue } from '../../values.js';
 import { UsageReadError } from '../accountUsage.js';
+import { windowUsage } from '../usageLimit.js';
 import type { ReportedMeter, UsageReading } from '../session.js';
 
 const LIMITS_URL = 'https://api.factory.ai/api/billing/limits';
@@ -58,17 +59,12 @@ function poolMeters(pool: string, value: unknown, model: string | undefined): Re
     const entry = objectValue(windows[key]);
     const usedPercent = numberValue(entry?.usedPercent);
     if (usedPercent === undefined) return [];
-    const resetsAt = timestampMs(entry?.windowEnd);
-    // A rolling window whose end has passed has emptied; Factory can still
-    // send the figure it had.
-    const ended = resetsAt !== undefined && resetsAt <= Date.now();
     return [
       {
         id: `${pool}_${key}`,
         window,
         ...(model ? { model } : {}),
-        usedPercent: ended ? 0 : Math.min(100, Math.max(0, usedPercent)),
-        ...(resetsAt === undefined || ended ? {} : { resetsAt }),
+        ...windowUsage(usedPercent, timestampMs(entry?.windowEnd)),
         durationMs,
       },
     ];
