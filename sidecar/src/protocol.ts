@@ -578,6 +578,7 @@ interface BrowserElementInspection {
   name?: string;
   text?: string;
   attributes: Record<string, string>;
+  styles: Record<string, string>;
   box: BrowserBox;
   html: string;
   iframe?: {
@@ -593,6 +594,9 @@ interface BrowserNetworkEvent {
   resourceType?: string;
   status?: number;
   error?: string;
+  durationMs?: number;
+  bytes?: number;
+  cached?: boolean;
 }
 
 interface BrowserConsoleEvent {
@@ -664,8 +668,6 @@ export interface BrowserNativeRequest {
   region?: BrowserBox;
   fullPage?: boolean;
   format?: 'jpeg' | 'png';
-  clearNetworkLog?: boolean;
-  clearConsoleLog?: boolean;
 }
 
 export interface BrowserNativeResult {

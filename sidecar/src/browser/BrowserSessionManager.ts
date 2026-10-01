@@ -67,8 +67,8 @@ export interface BrowserRuntime {
   inspect(target: { ref: string } | { selector: string }): Promise<BrowserElementInspection>;
   wait(condition: BrowserWaitCondition): Promise<BrowserActionResult>;
   awaitViewport(viewport: BrowserViewport): Promise<BrowserActionResult>;
-  network(clear?: boolean): Promise<BrowserNetworkEvent[]>;
-  console(clear?: boolean): Promise<BrowserConsoleEvent[]>;
+  network(): Promise<BrowserNetworkEvent[]>;
+  console(): Promise<BrowserConsoleEvent[]>;
   fillCredentials?(): Promise<BrowserActionResult>;
   close(): Promise<void>;
 }
@@ -302,12 +302,14 @@ export class BrowserSessionManager {
     return session.runtime.inspect({ selector });
   }
 
-  async network(appSessionId: string, clear = false): Promise<BrowserNetworkEvent[]> {
-    return this.requireSession(appSessionId).runtime.network(clear);
+  /** The requests that finished since the last read. */
+  async network(appSessionId: string): Promise<BrowserNetworkEvent[]> {
+    return this.requireSession(appSessionId).runtime.network();
   }
 
-  async console(appSessionId: string, clear = false): Promise<BrowserConsoleEvent[]> {
-    return this.requireSession(appSessionId).runtime.console(clear);
+  /** The console messages since the last read. */
+  async console(appSessionId: string): Promise<BrowserConsoleEvent[]> {
+    return this.requireSession(appSessionId).runtime.console();
   }
 
   async fillCredentials(appSessionId: string): Promise<BrowserOutcome> {

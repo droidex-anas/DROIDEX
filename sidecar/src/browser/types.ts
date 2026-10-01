@@ -37,6 +37,8 @@ export interface BrowserElementInspection {
   name?: string;
   text?: string;
   attributes: Record<string, string>;
+  /** Computed styles that say how it looks: colours, font, display, spacing. */
+  styles: Record<string, string>;
   box: BrowserBox;
   html: string;
   iframe?: {
@@ -52,6 +54,10 @@ export interface BrowserNetworkEvent {
   resourceType?: string;
   status?: number;
   error?: string;
+  durationMs?: number;
+  /** The size the server stated, when it stated one. */
+  bytes?: number;
+  cached?: boolean;
 }
 
 export interface BrowserConsoleEvent {

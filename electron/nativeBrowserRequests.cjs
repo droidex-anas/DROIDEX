@@ -308,8 +308,6 @@ function agentAction(request) {
     viewport: request.viewport,
     viewportMode: request.viewportMode,
     colorScheme: request.colorScheme,
-    clearNetworkLog: request.clearNetworkLog,
-    clearConsoleLog: request.clearConsoleLog,
   };
 }
 

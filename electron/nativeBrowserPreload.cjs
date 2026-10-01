@@ -539,6 +539,7 @@ function inspectElement(selector) {
     name: name && name !== '[redacted]' ? name : undefined,
     text: text || undefined,
     attributes: attrsFor(el),
+    styles: stylesFor(el),
     box: boxFor(rect),
     html: sanitizedOuterHtml(shown),
     iframe,

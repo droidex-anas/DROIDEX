@@ -154,6 +154,7 @@ class FakeRuntime implements BrowserRuntime {
       selector: 'button',
       tagName: 'button',
       attributes: {},
+      styles: {},
       box: { x: 10, y: 20, width: 80, height: 30 },
       html: '<button>Save</button>',
     };

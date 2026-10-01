@@ -126,14 +126,14 @@ function createNativeBrowserPage({
       return deviceSet(entry, request, 'viewportMode');
     }
     if (request.action === 'colorScheme') return deviceSet(entry, request, 'colorScheme');
-    if (request.action === 'network') {
-      const networkEvents = entry.networkEvents.slice();
-      if (request.clearNetworkLog) entry.networkEvents.length = 0;
-      return { requestId: request.requestId, ok: true, networkEvents };
-    }
-    const consoleEvents = entry.consoleEvents.slice();
-    if (request.clearConsoleLog) entry.consoleEvents.length = 0;
-    return { requestId: request.requestId, ok: true, consoleEvents };
+    // A read hands over what came in since the last one.
+    if (request.action === 'network')
+      return {
+        requestId: request.requestId,
+        ok: true,
+        networkEvents: entry.networkEvents.splice(0),
+      };
+    return { requestId: request.requestId, ok: true, consoleEvents: entry.consoleEvents.splice(0) };
   }
 
   // Records the size's name or the scheme and answers once a live guest has

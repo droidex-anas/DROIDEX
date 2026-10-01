@@ -16,6 +16,7 @@ function createNativeBrowserViewFactory({
   listEntries,
 }) {
   let browserSessionConfigured = false;
+  const requestStarts = new Map(); // webRequest id -> when its headers went out
 
   function configureSession() {
     if (browserSessionConfigured) return;
@@ -28,16 +29,21 @@ function createNativeBrowserViewFactory({
     ses.setDevicePermissionHandler(() => false);
     ses.setPermissionCheckHandler(() => false);
     ses.setPermissionRequestHandler((_webContents, _permission, callback) => callback(false));
-    ses.webRequest.onCompleted({ urls: ['http://*/*', 'https://*/*'] }, (details) => {
-      recordNetworkEvent(details);
+    const pages = { urls: ['http://*/*', 'https://*/*'] };
+    // When each request went out, for how long it took. One that never ends
+    // would stay here, so the lot is dropped once it grows past any real page.
+    ses.webRequest.onSendHeaders(pages, (details) => {
+      if (requestStarts.size >= 500) requestStarts.clear();
+      requestStarts.set(details.id, details.timestamp);
     });
-    ses.webRequest.onErrorOccurred({ urls: ['http://*/*', 'https://*/*'] }, (details) => {
-      recordNetworkEvent(details);
-    });
+    ses.webRequest.onCompleted(pages, recordNetworkEvent);
+    ses.webRequest.onErrorOccurred(pages, recordNetworkEvent);
     browserSessionConfigured = true;
   }
 
   function recordNetworkEvent(details) {
+    const startedAt = requestStarts.get(details.id);
+    requestStarts.delete(details.id);
     const entry = [...listEntries()].find(
       (candidate) => candidate.contents?.id === details.webContentsId,
     );
@@ -48,7 +54,14 @@ function createNativeBrowserViewFactory({
       url: redactBrowserDiagnosticUrl(details.url),
       resourceType: details.resourceType ? String(details.resourceType) : undefined,
       status: Number.isFinite(details.statusCode) ? details.statusCode : undefined,
-      error: details.error ? String(details.error).slice(0, 200) : undefined,
+      // A request that completed carries "net::OK" here.
+      error:
+        details.error && details.error !== 'net::OK'
+          ? String(details.error).slice(0, 200)
+          : undefined,
+      durationMs: startedAt === undefined ? undefined : Math.round(details.timestamp - startedAt),
+      bytes: contentLength(details.responseHeaders),
+      cached: details.fromCache || undefined,
     });
     if (entry.networkEvents.length > 100) {
       entry.networkEvents.splice(0, entry.networkEvents.length - 100);
@@ -82,6 +95,8 @@ function createNativeBrowserViewFactory({
       return { action: 'deny' };
     });
     contents.on('console-message', (details) => {
+      // Electron's own notices about the guest are not the page's.
+      if (String(details.sourceId ?? '').startsWith('node:electron/')) return;
       entry.consoleEvents.push({
         timestamp: Date.now(),
         ...normalizeBrowserConsoleMessage(details),
@@ -152,6 +167,13 @@ function createNativeBrowserViewFactory({
   }
 
   return { bindGuest, configureSession, createEntry };
+}
+
+// The size the server states for a response; many state none.
+function contentLength(headers) {
+  const name = Object.keys(headers ?? {}).find((key) => key.toLowerCase() === 'content-length');
+  const bytes = name ? Number(headers[name][0]) : NaN;
+  return Number.isFinite(bytes) ? bytes : undefined;
 }
 
 module.exports = { createNativeBrowserViewFactory };
