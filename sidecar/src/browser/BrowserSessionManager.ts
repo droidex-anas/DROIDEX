@@ -159,6 +159,8 @@ export class BrowserSessionManager {
     session: ManagedBrowserSession,
     input: { viewport: BrowserViewport; viewportMode: BrowserViewportMode; follow?: boolean },
   ): Promise<BrowserState> {
+    // A change queued behind a close never reaches the closed browser.
+    this.assertCurrent(session);
     // The pane's size for Fit never undoes a size picked in the meantime.
     const stale = () => input.follow && session.state.viewportMode !== 'fit';
     if (stale()) return session.state;

@@ -180,12 +180,10 @@ document.addEventListener('keydown', onKey, true);
 document.addEventListener('keyup', onKey, true);
 window.addEventListener('scroll', queueReposition, true);
 window.addEventListener('resize', queueReposition, true);
-// An open composer fits itself to the page again, and an element it was
-// opened on is captured where the page has laid it out now.
+// An open composer fits itself to the page again.
 window.addEventListener('resize', () => {
   if (!promptVisible()) return;
-  const held = annotations.find((item) => item.anchor === promptSelection.anchor && item.el);
-  if (held) promptSelection.anchor.box = boxFor(held.el.getBoundingClientRect());
+  refreshPromptBox();
   positionPrompt(promptSelection.anchor.box);
 });
 // passive:false so we can cancel wheel scrolling while a capture is pending.
@@ -1350,6 +1348,13 @@ function stableHash(value) {
   return hash.toString(36);
 }
 
+// The element the composer was opened on, where the page has it now; a sketch
+// or a text range keeps the region it was drawn on.
+function refreshPromptBox() {
+  const held = annotations.find((item) => item.anchor === promptSelection.anchor && item.el);
+  if (held) promptSelection.anchor.box = boxFor(held.el.getBoundingClientRect());
+}
+
 function promptVisible() {
   return Boolean(promptBox && promptBox.style.display === 'block');
 }
@@ -1474,6 +1479,8 @@ function mountPrompt() {
       const captureId = captureSeq;
       pendingCaptureId = captureId;
       capturePending = true;
+      // Captured where the element is now, however the page moved it.
+      refreshPromptBox();
       sendDesignPrompt({ selection: promptSelection, instruction, captureId });
       hidePrompt();
       if (clearTimer) clearTimeout(clearTimer);
