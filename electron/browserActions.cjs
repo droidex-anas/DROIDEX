@@ -183,7 +183,8 @@ function createBrowserActions({
         ({ document } = target);
         refNode = target.backendNodeId;
         sessionId = target.frame.sessionId;
-        startInput(step);
+        // Only the deadline: nothing counts as typed until text or Enter goes out.
+        notLate(step);
         await send(dbg, sessionId, 'DOM.focus', { backendNodeId: target.backendNodeId });
         // A focus handler can send the focus on to another element or frame.
         ({ takesText } = await keepsFocus(dbg, sessionId, document));
