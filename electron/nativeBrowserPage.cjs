@@ -1,6 +1,8 @@
 const { createBrowserReading } = require('./browserReading.cjs');
 const { redactBrowserDiagnosticUrl } = require('./browserDiagnostics.cjs');
 
+const PAGE_CHANGED = 'The page changed before the action ran; call browser_read_page.';
+
 function createNativeBrowserPage({
   appName,
   ensureEntry,
@@ -79,14 +81,15 @@ function createNativeBrowserPage({
         );
       }
       // Once a navigation starts, an action still resolving its target gives
-      // up rather than act on the next page.
+      // up rather than act on the next page; one that never sent its input
+      // did not run, whatever the page does next.
+      const step = { navigation, sent: false };
       const execution = withRefTarget(contents, entry, request)
         .then(async (target) => {
           if (target.document) await reading.assertDocument(contents, target.document);
-          if (target.action !== 'selectOption')
-            return executeAgentAction(contents, target, navigation);
-          ensureCurrent(navigation);
-          await reading.selectOption(contents, entry, target.ref, target.text ?? '');
+          if (target.action !== 'selectOption') return executeAgentAction(contents, target, step);
+          const value = target.text ?? '';
+          await reading.selectOption(contents, entry, target.ref, value, () => startInput(step));
           return snapshotOf(contents, target);
         })
         .then(
@@ -98,6 +101,7 @@ function createNativeBrowserPage({
         navigation.wait().then(() => ({ type: 'navigation' })),
       ]);
       if (outcome.type === 'navigation') {
+        if (!step.sent) throw new Error(PAGE_CHANGED);
         return await snapshotAfterNavigation(contents, request);
       }
       if (outcome.type === 'error') {
@@ -142,9 +146,10 @@ function createNativeBrowserPage({
     return { ...request, x, y, document, selector: undefined };
   }
 
-  function ensureCurrent(navigation) {
-    if (navigation.started())
-      throw new Error('The page changed before the action ran; call browser_read_page.');
+  // Called right before an action changes the page.
+  function startInput(step) {
+    if (step.navigation.started()) throw new Error(PAGE_CHANGED);
+    step.sent = true;
   }
 
   // The page's state after an action, as the page script reports it.
@@ -155,8 +160,8 @@ function createNativeBrowserPage({
     );
   }
 
-  async function executeAgentAction(contents, request, navigation) {
-    ensureCurrent(navigation);
+  async function executeAgentAction(contents, request, step) {
+    startInput(step);
     if (
       request.action === 'scroll' &&
       Number.isFinite(Number(request.x)) &&
@@ -166,7 +171,7 @@ function createNativeBrowserPage({
       const y = Math.round(Number(request.y));
       const pixels = Math.max(1, Math.round(Number(request.pixels) || 500));
       const horizontal = request.direction === 'left' || request.direction === 'right';
-      ensureCurrent(navigation);
+      startInput(step);
       contents.sendInputEvent({
         type: 'mouseWheel',
         x,
@@ -183,7 +188,7 @@ function createNativeBrowserPage({
       if (!Number.isFinite(x) || !Number.isFinite(y)) {
         throw new Error('Browser pointer interaction requires finite viewport coordinates.');
       }
-      ensureCurrent(navigation);
+      startInput(step);
       contents.sendInputEvent({ type: 'mouseMove', x, y, movementX: 0, movementY: 0 });
       if (request.action === 'click') {
         contents.sendInputEvent({ type: 'mouseDown', x, y, button: 'left', clickCount: 1 });

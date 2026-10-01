@@ -17,7 +17,7 @@ If the user names a site or domain, do not ask what URL to open. Call `browser_o
 
 1. Call `droidex-browser___browser_open` with the target `url`. Bare domains like `skeina.tech` are accepted.
 2. Call `droidex-browser___browser_read_page` to see the page as a short tree with refs such as `[ref=e12]`; use `filter: "interactive"` for just the controls, or `droidex-browser___browser_find` to look for text.
-3. Interact with `droidex-browser___browser_click`, `droidex-browser___browser_type`, `droidex-browser___browser_keypress`, or `droidex-browser___browser_scroll`, passing a ref where you have one.
+3. Click, hover, select and scroll by ref with `droidex-browser___browser_click`, `droidex-browser___browser_hover`, `droidex-browser___browser_select` and `droidex-browser___browser_scroll`. `droidex-browser___browser_type` and `droidex-browser___browser_keypress` go to the focused element, so click the field first.
 4. Use `droidex-browser___browser_reload` when the user asks to reload the visible page.
 5. Read the page again after a navigation; a ref from an earlier page is refused rather than acted on.
 6. Use `droidex-browser___browser_screenshot` only when visual inspection is needed.

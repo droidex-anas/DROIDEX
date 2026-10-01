@@ -24,7 +24,8 @@ function redactBrowserDiagnosticUrl(value, baseUrl) {
   try {
     const url = baseUrl ? new URL(String(value), baseUrl) : new URL(String(value));
     for (const key of [...url.searchParams.keys()]) {
-      if (isSensitiveBrowserKey(key)) {
+      // `sig` alone is the signature of a signed URL.
+      if (isSensitiveBrowserKey(key) || key.toLowerCase() === 'sig') {
         url.searchParams.set(key, '[redacted]');
       }
     }

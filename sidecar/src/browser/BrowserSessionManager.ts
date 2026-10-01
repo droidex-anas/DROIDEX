@@ -221,6 +221,7 @@ export class BrowserSessionManager {
         throw new Error('The browser was closed while waiting.');
     };
     const refresh = async () => {
+      stillOpen();
       const state = await this.captureState(session);
       stillOpen();
       session.state = state;
@@ -229,7 +230,6 @@ export class BrowserSessionManager {
     };
     if (!input.text && !input.ref && !input.urlIncludes) {
       await delay(timeoutMs);
-      stillOpen();
       return refresh();
     }
     const matches = async () => {

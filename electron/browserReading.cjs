@@ -3,14 +3,17 @@
 // in one document and is never reused; a ref from a document that has since
 // gone fails plainly instead of acting on something else.
 
-const { refFor, knownRef, forgetRefs, dropRef } = require('./browserRefs.cjs');
+const vm = require('node:vm');
+const { refFor, knownRef, forgetRefs } = require('./browserRefs.cjs');
+const { createBrowserMasking, fieldOf } = require('./browserMasking.cjs');
+const { cleanText, TEXT_ROLES } = require('./browserText.cjs');
 
 const MAX_NODES = 20_000;
 const MAX_REFS = 5_000;
 const DEFAULT_MAX_CHARS = 12_000;
 const MAX_FIND_RESULTS = 20;
 const MAX_NAME_CHARS = 200;
-const MASK = '••••';
+const REGEX_TIME_LIMIT_MS = 250;
 
 const INTERACTIVE_ROLES = new Set([
   'button',
@@ -49,16 +52,11 @@ const WRAPPER_ROLES = new Set([
   'emphasis',
   'mark',
 ]);
-const TEXT_ROLES = new Set(['StaticText', 'text']);
-const VALUE_ROLES = new Set(['textbox', 'searchbox', 'combobox', 'spinbutton', 'slider']);
 // Fields whose inside only repeats their value.
 const LEAF_ROLES = new Set(['textbox', 'searchbox', 'spinbutton', 'slider']);
 const STATE_PROPERTIES = ['checked', 'pressed', 'selected', 'expanded', 'disabled', 'required'];
-// A field holding one of these never shows its value to an agent.
-const SENSITIVE_FIELD =
-  /pass|otp|one.?time|verif|2fa|mfa|token|secret|cvc|cvv|csc|card.?num|cc-|security.?code|\bpin\b|ssn|iban/i;
-
 function createBrowserReading({ runWithWebContentsDebugger, savedSecretsFor, redactUrl }) {
+  const masking = createBrowserMasking({ savedSecretsFor });
   // Run against the guest's debugger; a guest that goes away mid-read fails.
   async function withPage(contents, run) {
     const done = await runWithWebContentsDebugger(contents, async (dbg) => ({
@@ -77,11 +75,13 @@ function createBrowserReading({ runWithWebContentsDebugger, savedSecretsFor, red
         const root = tree.nodes.find((node) => node.backendDOMNodeId === target.backendNodeId);
         if (!root)
           throw new Error(`${options.ref} is not on the page any more; call browser_read_page.`);
+        if (await insideMaskedField(dbg, tree, root, contents.getURL()))
+          throw new Error(`${options.ref} is inside a masked field.`);
         renderTree(render, tree, root, target.document, 0);
       } else {
         await renderFrames(dbg, render);
       }
-      await maskFields(dbg, render, contents);
+      await masking.maskFields(dbg, render, contents.getURL());
       return finish(render, options.maxChars, contents);
     });
   }
@@ -91,10 +91,11 @@ function createBrowserReading({ runWithWebContentsDebugger, savedSecretsFor, red
       const matches = matcher(query);
       const render = newRender(entry, {});
       await renderFrames(dbg, render);
-      await maskFields(dbg, render, contents);
+      await masking.maskFields(dbg, render, contents.getURL());
+      const hits = matches(render.lines.map((line) => line.text));
       const results = [];
       render.lines.forEach((line, index) => {
-        if (results.length < MAX_FIND_RESULTS && matches(line.text))
+        if (results.length < MAX_FIND_RESULTS && hits[index])
           results.push([...ancestorsOf(render.lines, index), line]);
       });
       render.forget();
@@ -144,9 +145,21 @@ function createBrowserReading({ runWithWebContentsDebugger, savedSecretsFor, red
     });
   }
 
-  // Chooses an option on the ref's own <select>, wherever it lives.
-  async function selectOption(contents, entry, ref, value) {
-    return (await callOnRef(contents, entry, ref, [value], SELECT_OPTION)).value;
+  // A ref inside a masked field reads as nothing, however the agent got it.
+  async function insideMaskedField(dbg, tree, node, url) {
+    const byId = new Map(tree.nodes.map((candidate) => [candidate.nodeId, candidate]));
+    const secrets = await masking.secretsFor(url);
+    for (let parent = byId.get(node.parentId); parent; parent = byId.get(parent.parentId)) {
+      const field = fieldOf(parent);
+      if (field && (await masking.isSensitive(dbg, field, secrets))) return true;
+    }
+    return false;
+  }
+
+  // Chooses an option on the ref's own <select>, wherever it lives; `before`
+  // runs just before the page changes and can still stop it.
+  async function selectOption(contents, entry, ref, value, before) {
+    return (await callOnRef(contents, entry, ref, [value], SELECT_OPTION, before)).value;
   }
 
   // A CSS path to the ref's element, for page-side helpers that only reach the
@@ -158,13 +171,14 @@ function createBrowserReading({ runWithWebContentsDebugger, savedSecretsFor, red
     return { selector, document };
   }
 
-  async function callOnRef(contents, entry, ref, args, functionDeclaration) {
+  async function callOnRef(contents, entry, ref, args, functionDeclaration, before) {
     return withPage(contents, async (dbg) => {
       const { backendNodeId, document } = await lookupRef(dbg, entry, ref);
       const { object } = await onNode(ref, () =>
         dbg.sendCommand('DOM.resolveNode', { backendNodeId }),
       );
       try {
+        before?.();
         const { result, exceptionDetails } = await dbg.sendCommand('Runtime.callFunctionOn', {
           objectId: object.objectId,
           returnByValue: true,
@@ -262,12 +276,8 @@ function createBrowserReading({ runWithWebContentsDebugger, savedSecretsFor, red
       } else if (node.backendDOMNodeId) {
         render.refsCut = true;
       }
-      const line = { depth, text: describe(node, role, name, ref), ref };
-      if (VALUE_ROLES.has(role)) {
-        const value = cleanText(node.value?.value);
-        line.field = { backendNodeId: node.backendDOMNodeId, name, value };
-        render.fields.push(line);
-      }
+      const line = { depth, text: describe(node, role, name, ref), ref, field: fieldOf(node) };
+      if (line.field) render.fields.push(line);
       const index = lines.push(line) - 1;
       if (!LEAF_ROLES.has(role))
         visitChildren(childrenOf(node), interactiveOnly ? depth : depth + 1, name);
@@ -308,8 +318,10 @@ function createBrowserReading({ runWithWebContentsDebugger, savedSecretsFor, red
 
     // The text of a text node or of an unnamed wrapper holding only text; null
     // for anything with structure of its own.
+    // Gives up (null) once the node budget would run out, so the nodes are
+    // visited one by one and the read stops at the limit.
     function flatText(node, counted) {
-      counted.nodes++;
+      if (render.processed + ++counted.nodes > MAX_NODES) return null;
       const role = node.role?.value ?? '';
       if (TEXT_ROLES.has(role) && !node.ignored) return node.name?.value ?? '';
       const wrapper = node.ignored || (WRAPPER_ROLES.has(role) && !cleanName(node.name?.value));
@@ -323,36 +335,6 @@ function createBrowserReading({ runWithWebContentsDebugger, savedSecretsFor, red
     }
 
     visit(root, baseDepth, '');
-  }
-
-  // A field shows its value only when nothing marks it sensitive: its type,
-  // autocomplete, name, id or label, or a value equal to the login saved for
-  // this site (agents never see what browser_fill_login filled in).
-  async function maskFields(dbg, render, contents) {
-    if (render.fields.length === 0) return;
-    const secrets = new Set((await savedSecretsFor(contents.getURL())).map(cleanText));
-    secrets.delete('');
-    for (const line of render.fields) {
-      const { backendNodeId, name, value } = line.field;
-      // An empty field with nothing inside it has nothing to show or hide.
-      if (!value && line.inside.length === 0) continue;
-      let sensitive = secrets.has(value) || SENSITIVE_FIELD.test(name);
-      if (!sensitive && backendNodeId) {
-        const described = await dbg
-          .sendCommand('DOM.describeNode', { backendNodeId })
-          .catch(() => undefined);
-        sensitive = !described || isSensitiveField(described.node.attributes ?? []);
-      }
-      if (value) line.text += `: ${sensitive ? MASK : value}`;
-      if (!sensitive) continue;
-      // What is inside a masked field is hidden, and its refs are forgotten so
-      // they cannot be read on their own either.
-      for (const inner of line.inside) {
-        inner.hidden = true;
-        if (inner.ref) dropRef(render.entry, inner.ref);
-      }
-    }
-    render.lines = render.lines.filter((line) => !line.hidden);
   }
 
   function describe(node, role, name, ref) {
@@ -419,19 +401,6 @@ const CSS_PATH = `function () {
   return ['html', ...parts].join(' > ');
 }`;
 
-function isSensitiveField(attributes) {
-  for (let i = 0; i < attributes.length; i += 2) {
-    const [name, value] = [attributes[i].toLowerCase(), String(attributes[i + 1] ?? '')];
-    if (name === 'type' && value.toLowerCase() === 'password') return true;
-    if (
-      ['autocomplete', 'name', 'id', 'aria-label', 'placeholder'].includes(name) &&
-      SENSITIVE_FIELD.test(value)
-    )
-      return true;
-  }
-  return false;
-}
-
 async function documentFrames(dbg) {
   const { frameTree } = await dbg.sendCommand('Page.getFrameTree');
   const frames = [];
@@ -459,15 +428,29 @@ function ancestorsOf(lines, index) {
   return chain;
 }
 
-// Plain text, or a /regex/flags; flags that make a regex stateful are dropped.
+// Which lines match plain text, or a /regex/flags. An agent's pattern runs on
+// the main thread, so it runs under a time limit; flags that make a regex
+// stateful are dropped.
 function matcher(query) {
   const regex = /^\/(.+)\/([a-z]*)$/.exec(String(query));
-  if (regex) {
-    const pattern = new RegExp(regex[1], regex[2].replace(/[gy]/g, ''));
-    return (text) => pattern.test(text);
+  if (!regex) {
+    const needle = String(query).toLowerCase();
+    return (texts) => texts.map((text) => text.toLowerCase().includes(needle));
   }
-  const needle = String(query).toLowerCase();
-  return (text) => text.toLowerCase().includes(needle);
+  const pattern = new RegExp(regex[1], regex[2].replace(/[gy]/g, ''));
+  return (texts) => {
+    try {
+      return vm.runInNewContext(
+        'texts.map((text) => pattern.test(text))',
+        { texts, pattern },
+        {
+          timeout: REGEX_TIME_LIMIT_MS,
+        },
+      );
+    } catch {
+      throw new Error('That /regex/ took too long; search for plain text or a simpler pattern.');
+    }
+  };
 }
 
 // Shoelace area, so a rotated element still counts as visible.
@@ -482,12 +465,6 @@ function quadArea(quad) {
 
 function indent(line) {
   return `${'  '.repeat(line.depth)}${line.text}`;
-}
-
-function cleanText(value) {
-  return String(value ?? '')
-    .replace(/\s+/g, ' ')
-    .trim();
 }
 
 function cleanName(value) {
