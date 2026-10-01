@@ -22,7 +22,7 @@ function createPerformanceMetricsCollector({
       nativeBrowsers:
         typeof nativeBrowserCounts === 'function'
           ? nativeBrowserCounts()
-          : { total: 0, live: 0, attached: 0, warm: 0, serialized: 0, maxLive: 0, idleMs: 0 },
+          : { sessions: 0, live: 0 },
       terminals:
         typeof terminalCounts === 'function'
           ? terminalCounts()

@@ -142,34 +142,12 @@ test('legacy Review and Browser actions route through utility tabs', () => {
   );
 });
 
-test('background browser updates create the session browser tab', () => {
-  const state = reducer(activeState('session-a'), {
-    type: 'BROWSER_UPDATED',
-    browser: browser('session-b'),
-  });
+test('browser updates record the page but never open or switch the pane', () => {
+  const start = activeState('session-a');
+  const state = reducer(start, { type: 'BROWSER_UPDATED', browser: browser('session-a') });
 
-  assert.equal(state.utilityPanels['session-b'].open, true);
-  assert.equal(state.utilityPanels['session-b'].activeTabId, 'browser:session-b');
-  assert.equal(state.utilityPanels['session-b'].tabs[0].tool, 'browser');
-  assert.equal(state.activeAppSessionId, 'session-a');
-});
-
-test('browser updates preserve an explicitly hidden browser pane', () => {
-  let state = reducer(activeState('session-a'), {
-    type: 'SET_BROWSER_OPEN',
-    open: true,
-  });
-  state = reducer(state, { type: 'SET_BROWSER_OPEN', open: false });
-  state = reducer(state, {
-    type: 'BROWSER_UPDATED',
-    browser: browser('session-a'),
-  });
-
-  assert.equal(state.browserOpenKeys['session-a'], false);
-  assert.equal(
-    state.utilityPanels['session-a'].tabs.some((tab) => tab.tool === 'browser'),
-    false,
-  );
+  assert.equal(state.browsers['session-a']?.appSessionId, 'session-a');
+  assert.equal(state.utilityPanels, start.utilityPanels);
 });
 
 test('a session switch drops a pending review-focus request', () => {

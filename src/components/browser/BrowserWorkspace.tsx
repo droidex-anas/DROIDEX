@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { X } from '@droidex/icons';
 import { isDesignModeOpen } from '../../hooks/designModeState';
-import { useNativeSurfacesObscured } from '../../hooks/useObscuresNativeSurfaces';
 import { shallowEqual, useStoreDispatch, useStoreSelector } from '../../hooks/useStore';
 import { useSessionLive } from '../../hooks/useSessionLive';
 import {
@@ -33,6 +32,7 @@ import { BrowserToolbar } from './BrowserToolbar';
 import { DesignModeComposer } from './DesignModeComposer';
 import { composerStyleForReferences } from './browserComposerPosition';
 import { browserKeyForSession } from '../../lib/browserSessionIdentity';
+import { setBrowserPageCrashed, useBrowserPageCrashed } from '../../lib/browserHost';
 import { browserTranscriptReferencesFromDesignReferences } from './browserTranscriptReferences';
 import { browserAddressValue, isSelfBrowserUrl, safeBrowserUrl } from './browserUrlSafety';
 import { shouldResetBrowserLoading } from './browserLoading';
@@ -42,11 +42,9 @@ import { createLocalDesignTranscriptEvent, newQueueId } from '../../lib/promptQu
 
 export default function BrowserWorkspace({
   expanded = false,
-  externalObscured = false,
   onToggleExpanded,
 }: {
   expanded?: boolean;
-  externalObscured?: boolean;
   onToggleExpanded?: () => void;
 }) {
   const dispatch = useStoreDispatch();
@@ -59,11 +57,7 @@ export default function BrowserWorkspace({
       browserErrors: current.browserErrors,
       browserGlobalError: current.browserGlobalError,
       browsers: current.browsers,
-      commandPaletteOpen: current.commandPaletteOpen,
       designModes: current.designModes,
-      pendingQuestions: current.pendingQuestions,
-      pendingPermissions: current.pendingPermissions,
-      settingsOpen: current.settingsOpen,
     }),
     shallowEqual,
   );
@@ -73,18 +67,9 @@ export default function BrowserWorkspace({
   const browser = browserKey ? state.browsers[browserKey] : undefined;
   const browserError = browserKey ? state.browserErrors[browserKey] : state.browserGlobalError;
   const designMode = isDesignModeOpen(state.designModes, browserKey);
+  const pageCrashed = useBrowserPageCrashed(browser?.browserSessionId);
   const sessionLive = useSessionLive(requestedChatId ?? null);
   const nativeBrowser = isDesktop();
-  // The native BrowserView is an OS-level layer painted above the React tree,
-  // so any full-screen overlay would otherwise be punched through by it. Detach
-  // it while such an overlay is visible and re-attach once it closes. Overlays
-  // with store state are read here; the ones that are just mounted components
-  // (the image viewers, the feedback modal, the spec wiki) register themselves
-  // instead. Questions and permissions are inline composer cards, not
-  // overlays, so they leave the view alone.
-  const portalledOverlayOpen = useNativeSurfacesObscured();
-  const obscured =
-    externalObscured || portalledOverlayOpen || state.settingsOpen || state.commandPaletteOpen;
   const frameRef = useRef<HTMLDivElement>(null);
   const urlInputRef = useRef<HTMLInputElement>(null);
   const appOrigin = typeof window === 'undefined' ? undefined : window.location.origin;
@@ -459,17 +444,19 @@ export default function BrowserWorkspace({
         </div>
       )}
 
-      {loadFailure && (
+      {(pageCrashed || loadFailure) && (
         <div className="flex shrink-0 items-center gap-2 border-b border-droid-border bg-red-500/10 px-4 py-2 text-[12px] text-droid-text-secondary">
           <span className="min-w-0 flex-1 truncate">
-            Could not load {loadFailure.url}
-            {loadFailure.error ? ` (${loadFailure.error})` : ''}. Check that the server is running.
+            {pageCrashed || !loadFailure
+              ? 'This page crashed. Retry to load it again.'
+              : `Could not load ${loadFailure.url}${loadFailure.error ? ` (${loadFailure.error})` : ''}. Check that the server is running.`}
           </span>
           <button
             type="button"
             className="shrink-0 rounded-md border border-droid-border bg-droid-surface px-2 py-0.5 text-[11px] text-droid-text-muted transition-colors hover:bg-droid-elevated/60 hover:text-droid-text"
             onClick={() => {
               setLoadFailure(null);
+              if (browser) setBrowserPageCrashed(browser.browserSessionId, false);
               startLoading();
               if (browserKey && browser) reloadBrowser(browserKey);
               else openCurrentUrl();
@@ -482,6 +469,7 @@ export default function BrowserWorkspace({
             className="flex h-5 w-5 shrink-0 items-center justify-center rounded-md text-droid-text-muted transition-colors hover:bg-droid-elevated/60 hover:text-droid-text"
             onClick={() => {
               setLoadFailure(null);
+              if (browser) setBrowserPageCrashed(browser.browserSessionId, false);
             }}
             aria-label="Dismiss"
           >
@@ -495,7 +483,6 @@ export default function BrowserWorkspace({
           <NativeBrowserSurface
             browserKey={browserKey}
             visibleBrowserSessionId={browser?.browserSessionId}
-            obscured={obscured}
             url={activeUrl}
             viewport={requestedViewport}
             viewportMode={viewportMode}
@@ -511,7 +498,8 @@ export default function BrowserWorkspace({
               setActiveUrl(nextUrl);
               if (document.activeElement !== urlInputRef.current)
                 setUrlInput(browserAddressValue(nextUrl));
-              if (browserKey && event.browserSessionId) {
+              // In the desktop app the Browser host records navigations.
+              if (!nativeBrowser && browserKey && event.browserSessionId) {
                 dispatch({
                   type: 'BROWSER_NAVIGATED',
                   appSessionId: browserKey,
@@ -526,7 +514,8 @@ export default function BrowserWorkspace({
             onPrompt={handleNativePrompt}
             onLoadFailed={(failure) => {
               stopLoading();
-              handleLoadFailed(failure);
+              // Crashes are tracked by the Browser host, pane open or not.
+              if (!failure.crashed) handleLoadFailed(failure);
             }}
             onViewportSizeChange={setActualViewport}
             expanded={expanded}

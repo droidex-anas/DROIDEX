@@ -254,11 +254,9 @@ const VOICE_PROJECT_TASK =
 export default function PromptInput({
   rightInset = false,
   compact = false,
-  onOverlayChange,
 }: {
   rightInset?: boolean;
   compact?: boolean;
-  onOverlayChange?: (open: boolean) => void;
 }) {
   const dispatch = useStoreDispatch();
   const askSideChat = useAskSideChat();
@@ -782,13 +780,6 @@ export default function PromptInput({
     [],
   );
 
-  useEffect(
-    () => () => {
-      onOverlayChange?.(false);
-    },
-    [onOverlayChange],
-  );
-
   // Everything the bound harness offers, as far as it has landed. Both menus
   // read it, and neither asks for it: see composerCatalog.
   const catalog = useMemo(
@@ -858,21 +849,6 @@ export default function PromptInput({
   );
 
   const menuOpen = !!trigger && menu.rows.length > 0;
-  // Only what is actually drawn over the page counts: a typed / or @ with no
-  // matching rows shows no menu, so it must not hide the browser.
-  const overlayOpen = [
-    menuOpen,
-    modelsOpen,
-    addMenuOpen,
-    feedbackReport,
-    draftEditing.menu,
-    scheduleTarget !== null && scheduleTarget.appSessionId === activeSession?.appSessionId,
-    sendHintOpen,
-  ].some(Boolean);
-
-  useEffect(() => {
-    onOverlayChange?.(overlayOpen);
-  }, [onOverlayChange, overlayOpen]);
   // What the draft already carries, so those rows read as staged.
   const stagedRowKeys = useMemo(
     () =>

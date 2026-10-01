@@ -1,12 +1,4 @@
-import {
-  Suspense,
-  useMemo,
-  useCallback,
-  useEffect,
-  useRef,
-  useState,
-  useLayoutEffect,
-} from 'react';
+import { Suspense, useMemo, useCallback, useEffect, useRef, useState } from 'react';
 import { shallowEqual, useStoreApi, useStoreDispatch, useStoreSelector } from './hooks/useStore';
 import { AnimatePresence, motion } from 'framer-motion';
 import { PanelLeft, PanelRight } from '@droidex/icons';
@@ -23,13 +15,10 @@ import {
   updateCli,
 } from './lib/commands';
 import { isEmbedded } from './lib/embed';
-import { getApiKey, setAppIcon, terminalHasChildren } from './lib/desktop';
+import { getApiKey, isDesktop, setAppIcon, terminalHasChildren } from './lib/desktop';
 import { performNativeBrowserRequest } from './lib/nativeBrowserAgent';
+import { BrowserHost } from './components/browser/BrowserHost';
 import { answerSidebarRequest } from './lib/sidebarRequests';
-import {
-  browserKeyForSession,
-  nativeBrowserRequestTargetsActiveSession,
-} from './lib/browserSessionIdentity';
 import { shouldOpenSelectedChild } from './lib/childSessions';
 import type { ChildAccess } from './hooks/storeChildSession';
 import Sidebar from './components/Sidebar';
@@ -47,7 +36,6 @@ import { useOnboarding, shouldShowOnboarding, hasSetupBlocker } from './hooks/us
 import { useHarnessCliAutoUpdate } from './hooks/useHarnessClis';
 import SetupBanner from './components/onboarding/SetupBanner';
 import { useMeasuredHeight } from './hooks/useMeasuredHeight';
-import { addNativeSurfaceObscurer } from './hooks/useObscuresNativeSurfaces';
 import { WINDOW_CONTROLS_INSET_PX } from './lib/windowChrome';
 import RuntimeStatusBanner from './components/RuntimeStatusBanner';
 import { checkForAppUpdateAutomatically, startAutomaticAppUpdateChecks } from './lib/appUpdate';
@@ -255,7 +243,6 @@ export default function App() {
   // Control owns its own composer and keeps the browser's for now.
   const browserExpanded =
     paneExpanded && activeUtilityTab?.tool === 'browser' && !isMissionControlView;
-  const [composerOverlayOpen, setComposerOverlayOpen] = useState(false);
   const focused = isMissionControlView;
   // A normal/spec session only has something worth showing once a message has
   // been sent (the first transcript is seeded from the opening prompt).
@@ -524,38 +511,6 @@ export default function App() {
     if (onboard.lastResult.ok) toast.success('Droid CLI is up to date.');
   }, [onboard.lastResult]);
 
-  // The native browser is a separate Electron layer that floats above the DOM,
-  // so close it while the full-screen wizard is up or it paints over the tour,
-  // and bring the pane back once the tour is done. The wizard also registers
-  // as an overlay, so the view stays hidden through its exit fade.
-  const paneClosedForWizard = useRef(false);
-  useEffect(() => {
-    if (showWizard) {
-      if (!utilityPanel.open) return;
-      paneClosedForWizard.current = true;
-      dispatch({ type: 'SET_UTILITY_PANEL_OPEN', open: false });
-    } else if (paneClosedForWizard.current) {
-      paneClosedForWizard.current = false;
-      dispatch({ type: 'SET_UTILITY_PANEL_OPEN', open: true });
-    }
-  }, [showWizard, utilityPanel.open, dispatch]);
-
-  // The pane animates out of a full-content route for 180ms, and the native
-  // browser inside it would stay painted and clickable over the new route for
-  // that long. Treat the route as an overlay so the view hides at once: a
-  // layout effect, so it is gone in the commit that paints the new route.
-  useLayoutEffect(() => {
-    if (!fullContentRoute) return;
-    return addNativeSurfaceObscurer();
-  }, [fullContentRoute]);
-
-  // Over an expanded browser the composer's menus open upward across the page,
-  // which paints above the DOM, so hide the page while one is open.
-  useLayoutEffect(() => {
-    if (!browserExpanded || !composerOverlayOpen) return;
-    return addNativeSurfaceObscurer();
-  }, [browserExpanded, composerOverlayOpen]);
-
   // "Run setup again" from Settings re-opens the tour.
   useEffect(() => {
     const onOpen = () => {
@@ -580,19 +535,12 @@ export default function App() {
         return;
       }
       if (event.type !== 'browser.native.request') return;
-      const current = store.getState();
-      const activeBrowserKey = browserKeyForSession(
-        current.activeAppSessionId ? current.sessions[current.activeAppSessionId] : undefined,
-      );
-      const requestIsForActiveChat = nativeBrowserRequestTargetsActiveSession(
-        activeBrowserKey,
-        event.request.appSessionId,
-      );
-      if (event.request.action === 'open' && requestIsForActiveChat) {
-        dispatch({ type: 'SET_RIGHT_PANEL', open: false });
-        dispatch({ type: 'OPEN_UTILITY_TOOL', tool: 'browser' });
-      }
-      void performNativeBrowserRequest(event.request)
+      // The agent works in the chat's page whether or not the pane shows it;
+      // its requests never open or switch the pane.
+      const { browsers } = store.getState();
+      const { appSessionId } = event.request;
+      const savedUrl = appSessionId in browsers ? browsers[appSessionId].url : undefined;
+      void performNativeBrowserRequest(event.request, savedUrl)
         .then(sendNativeBrowserResult)
         .catch((err: unknown) => {
           sendNativeBrowserResult({
@@ -800,7 +748,6 @@ export default function App() {
                     <PromptInput
                       rightInset={rightPanelVisible && !browserExpanded}
                       compact={browserExpanded}
-                      onOverlayChange={setComposerOverlayOpen}
                     />
                   </ComposerHeight>
                 </>
@@ -892,7 +839,7 @@ export default function App() {
                       setExpandedPaneAppSessionId(null);
                       dispatch({ type: 'SET_UTILITY_PANEL_OPEN', open: false });
                     }}
-                    renderTab={(tab, { overlayOpen }) => {
+                    renderTab={(tab) => {
                       if (tab.tool === 'side') {
                         return (
                           <Suspense fallback={utilityToolFallback('side')}>
@@ -943,7 +890,6 @@ export default function App() {
                             <LazyBrowserFocusWorkspace
                               expanded={paneExpanded}
                               ownComposer={paneExpanded && isMissionControlView}
-                              externalObscured={overlayOpen}
                               onToggleExpanded={() => {
                                 setExpandedPaneAppSessionId(
                                   paneExpanded ? null : activeSession.appSessionId,
@@ -1112,6 +1058,9 @@ export default function App() {
           />
         )}
       </AnimatePresence>
+      {/* Every chat's browser page. Last, so the pane's slot is laid out before
+          the pages anchored to it. */}
+      {!embedded && isDesktop() && <BrowserHost />}
     </div>
   );
 }

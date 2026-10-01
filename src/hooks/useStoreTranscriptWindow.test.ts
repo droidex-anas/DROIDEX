@@ -637,7 +637,6 @@ test('authoritative session removal releases orphaned per-session state', () => 
     childSessions: { gone: {} },
     historyCursor: { gone: 'cursor' },
     utilityPanels: { gone: initialState.utilityPanels.gone },
-    browserOpenKeys: { gone: true },
     sessions: { gone: { ...session('gone'), modelId: 'model', reasoningEffort: 'high' } },
   });
 
@@ -649,7 +648,6 @@ test('authoritative session removal releases orphaned per-session state', () => 
   assert.equal(next.progress.gone, undefined);
   assert.equal(next.childSessions.gone, undefined);
   assert.equal(next.historyCursor.gone, undefined);
-  assert.equal(next.browserOpenKeys.gone, undefined);
   assert.equal(next.sessions.gone, undefined);
 });
 
