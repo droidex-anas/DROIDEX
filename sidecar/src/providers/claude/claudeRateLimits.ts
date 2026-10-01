@@ -117,7 +117,13 @@ function claudeUsageReading(response: SDKControlGetUsageResponse): UsageReading 
   }
   if (meters.size === 0) throw new Error('Claude Code reported plan limits without any window.');
   const extra = extraUsage(limits.extra_usage);
-  return { meters: [...meters.values()], ...(extra ? { extra } : {}) };
+  return {
+    meters: [...meters.values()],
+    ...(extra ? { extra } : {}),
+    // The per-model windows are absent when nothing is known of them, as in
+    // an answer from Claude Code's cache, so the ones already known stay.
+    ...(limits.model_scoped ? {} : { partial: true }),
+  };
 }
 
 function extraUsage(

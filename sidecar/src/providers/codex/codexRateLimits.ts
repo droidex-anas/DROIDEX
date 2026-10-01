@@ -28,6 +28,9 @@ interface RateLimitSnapshot {
 
 export class CodexRateLimits {
   private snapshot?: RateLimitSnapshot;
+  // Each read in flight gathers the updates that land meanwhile, which are
+  // newer than its answer.
+  private readonly reads = new Set<{ updates?: RateLimitSnapshot }>();
 
   constructor(
     private readonly client: AppServerClient,
@@ -38,20 +41,25 @@ export class CodexRateLimits {
   // rejects) rejects the read and leaves the limits unknown. Reset credit
   // details are left out; their count still comes back.
   async read(): Promise<UsageReading> {
-    const response = objectValue(
-      await this.client.request<unknown>('account/rateLimits/read', {
-        excludeResetCreditDetails: true,
-      }),
-    );
+    const inFlight: { updates?: RateLimitSnapshot } = {};
+    this.reads.add(inFlight);
+    let response: Record<string, unknown> | undefined;
+    try {
+      response = objectValue(
+        await this.client.request<unknown>('account/rateLimits/read', {
+          excludeResetCreditDetails: true,
+        }),
+      );
+    } finally {
+      this.reads.delete(inFlight);
+    }
     const read = snapshotOf(objectValue(response?.rateLimitsByLimitId)?.[MAIN_BUCKET]);
     if (!read) throw new Error('Codex answered without the codex rate limits.');
-    // An update that landed while this read was in flight is newer.
-    const current = this.snapshot;
-    this.snapshot = current && current.limitId === read.limitId ? merged(read, current) : read;
+    this.snapshot = inFlight.updates ? merged(read, inFlight.updates) : read;
     // Free limit resets the account holds, shown only; nothing here spends one.
     const available = numberValue(objectValue(response?.rateLimitResetCredits)?.availableCount);
     return {
-      meters: windowMeters(this.snapshot),
+      meters: windowMeters(read),
       ...(available === undefined
         ? {}
         : { extra: { kind: 'limit_resets', available: Math.max(0, Math.round(available)) } }),
@@ -73,6 +81,8 @@ export class CodexRateLimits {
       if (update.limitId !== undefined && update.limitId !== MAIN_BUCKET) return;
       this.snapshot = update;
     }
+    for (const inFlight of this.reads)
+      inFlight.updates = inFlight.updates ? merged(inFlight.updates, update) : update;
     this.onMeters?.(windowMeters(update));
   }
 
