@@ -180,9 +180,13 @@ document.addEventListener('keydown', onKey, true);
 document.addEventListener('keyup', onKey, true);
 window.addEventListener('scroll', queueReposition, true);
 window.addEventListener('resize', queueReposition, true);
-// An open composer fits itself to the page again.
+// An open composer fits itself to the page again, and an element it was
+// opened on is captured where the page has laid it out now.
 window.addEventListener('resize', () => {
-  if (promptVisible()) positionPrompt(promptSelection.anchor.box);
+  if (!promptVisible()) return;
+  const held = annotations.find((item) => item.anchor === promptSelection.anchor && item.el);
+  if (held) promptSelection.anchor.box = boxFor(held.el.getBoundingClientRect());
+  positionPrompt(promptSelection.anchor.box);
 });
 // passive:false so we can cancel wheel scrolling while a capture is pending.
 window.addEventListener('wheel', onWheel, { capture: true, passive: false });
@@ -1168,7 +1172,9 @@ function showBox(rect, text) {
   label.style.display = 'block';
   label.textContent = text;
   undoPaneScale(label);
-  label.style.left = `${Math.min(window.innerWidth - 16, Math.max(8, Math.round(rect.x)))}px`;
+  // Kept inside the page at the size it is drawn.
+  const width = label.getBoundingClientRect().width;
+  label.style.left = `${Math.round(Math.max(8, Math.min(window.innerWidth - width - 8, rect.x)))}px`;
   label.style.top = `${Math.min(window.innerHeight - 36 * uiScale, Math.max(8, Math.round(rect.y - 38 * uiScale)))}px`;
 }
 

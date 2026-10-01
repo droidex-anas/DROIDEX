@@ -77,6 +77,8 @@ interface ManagedBrowserSession {
   runtime: BrowserRuntime;
   state: BrowserState;
   references: Map<string, DesignReference>;
+  /** The size change in progress; the next one starts after it. */
+  sizing: Promise<unknown>;
 }
 
 /** The browser's state after an action, and what the agent reads about it. */
@@ -139,13 +141,24 @@ export class BrowserSessionManager {
     return this.applied(session, await session.runtime.goForward());
   }
 
-  async resizeViewport(input: {
+  resizeViewport(input: {
     appSessionId: string;
     viewport: BrowserViewport;
     viewportMode: BrowserViewportMode;
     follow?: boolean;
   }): Promise<BrowserState> {
     const session = this.requireSession(input.appSessionId);
+    // One size change at a time, so a Fit report never lands between a
+    // pick's change to the page and its state.
+    const change = session.sizing.then(() => this.resize(session, input));
+    session.sizing = change.catch(() => undefined);
+    return change;
+  }
+
+  private async resize(
+    session: ManagedBrowserSession,
+    input: { viewport: BrowserViewport; viewportMode: BrowserViewportMode; follow?: boolean },
+  ): Promise<BrowserState> {
     // The pane's size for Fit never undoes a size picked in the meantime.
     const stale = () => input.follow && session.state.viewportMode !== 'fit';
     if (stale()) return session.state;
@@ -425,6 +438,7 @@ export class BrowserSessionManager {
       appSessionId,
       runtime,
       references: new Map(),
+      sizing: Promise.resolve(),
       state: {
         browserSessionId: id,
         appSessionId,
