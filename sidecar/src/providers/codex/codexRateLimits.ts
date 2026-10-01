@@ -28,8 +28,6 @@ interface RateLimitSnapshot {
 
 export class CodexRateLimits {
   private snapshot?: RateLimitSnapshot;
-  // Free limit resets the account holds. Shown only; nothing here spends one.
-  private resetCredits?: number;
 
   constructor(
     private readonly client: AppServerClient,
@@ -46,18 +44,17 @@ export class CodexRateLimits {
       }),
     );
     const read = snapshotOf(objectValue(response?.rateLimitsByLimitId)?.[MAIN_BUCKET]);
-    if (read) {
-      // An update that landed while this read was in flight is newer.
-      const current = this.snapshot;
-      this.snapshot = current && current.limitId === read.limitId ? merged(read, current) : read;
-    }
+    if (!read) throw new Error('Codex answered without the codex rate limits.');
+    // An update that landed while this read was in flight is newer.
+    const current = this.snapshot;
+    this.snapshot = current && current.limitId === read.limitId ? merged(read, current) : read;
+    // Free limit resets the account holds, shown only; nothing here spends one.
     const available = numberValue(objectValue(response?.rateLimitResetCredits)?.availableCount);
-    if (available !== undefined) this.resetCredits = Math.max(0, Math.round(available));
     return {
       meters: this.meters(),
-      ...(this.resetCredits === undefined
+      ...(available === undefined
         ? {}
-        : { extra: { kind: 'limit_resets', available: this.resetCredits } }),
+        : { extra: { kind: 'limit_resets', available: Math.max(0, Math.round(available)) } }),
     };
   }
 

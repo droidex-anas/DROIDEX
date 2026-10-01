@@ -92,9 +92,9 @@ export async function readClaudeUsage(query: Query): Promise<UsageReading> {
 type ClaudeWindow = { utilization: number | null; resets_at: string | null } | null | undefined;
 
 function claudeUsageReading(response: SDKControlGetUsageResponse): UsageReading {
+  if (!response.rate_limits_available) return { meters: [], unavailable: 'no_plan_limits' };
   const limits = response.rate_limits;
-  if (!response.rate_limits_available || !limits)
-    return { meters: [], unavailable: 'no_plan_limits' };
+  if (!limits) throw new Error('Claude Code reported plan limits without their windows.');
   const windows: [LimitScope, ClaudeWindow][] = [
     [RATE_LIMIT_SCOPES.five_hour, limits.five_hour],
     [RATE_LIMIT_SCOPES.seven_day, limits.seven_day],
@@ -115,6 +115,7 @@ function claudeUsageReading(response: SDKControlGetUsageResponse): UsageReading 
     const meter = claudeMeter(scope, window.utilization, resetsAt);
     meters.set(meter.id, meter);
   }
+  if (meters.size === 0) throw new Error('Claude Code reported plan limits without any window.');
   const extra = extraUsage(limits.extra_usage);
   return { meters: [...meters.values()], ...(extra ? { extra } : {}) };
 }
