@@ -1,11 +1,13 @@
 import { AnimatePresence } from 'framer-motion';
-import { useEffect, useState, type ReactNode } from 'react';
+import { lazy, Suspense, useEffect, useState, type ReactNode } from 'react';
 
 import { paceWarning } from '../../features/usage/usagePace';
 import { useProviderUsage, type UsageWatch } from '../../features/usage/useProviderUsage';
 import type { ProviderKind, UsageLimit } from '../../types/bridge';
 import { UsageLimitTab, UsageWarningTab } from './UsageLimitTab';
-import { UsagePanel } from './UsagePanel';
+
+// /usage opens on demand, so its panel loads with the first open.
+const UsagePanel = lazy(() => import('./UsagePanel').then((m) => ({ default: m.UsagePanel })));
 
 const TICK_MS = 30_000;
 
@@ -40,13 +42,9 @@ export function UsageTabs({
   let tab: ReactNode = null;
   if (panelOpen)
     tab = (
-      <UsagePanel
-        key="usage-panel"
-        provider={provider}
-        usage={usage}
-        now={now}
-        onClose={onClosePanel}
-      />
+      <Suspense key="usage-panel" fallback={null}>
+        <UsagePanel provider={provider} usage={usage} now={now} onClose={onClosePanel} />
+      </Suspense>
     );
   else if (chat?.usageLimit)
     tab = (
