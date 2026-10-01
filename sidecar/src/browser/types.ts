@@ -83,6 +83,15 @@ export interface BrowserClickOptions {
   modifiers?: BrowserModifier[];
 }
 
+/** What browser_wait waits for: all of the given conditions, or just the time. */
+export interface BrowserWaitCondition {
+  text?: string;
+  textGone?: string;
+  ref?: string;
+  urlIncludes?: string;
+  waitMs?: number;
+}
+
 /** An action's page afterwards, and what the agent reads about it. */
 export interface BrowserActionResult {
   snapshot: BrowserSnapshot;

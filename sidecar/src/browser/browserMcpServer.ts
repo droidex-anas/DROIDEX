@@ -1,8 +1,21 @@
 import { createSdkMcpServer, tool } from '@factory/droid-sdk';
 import { z } from 'zod';
-import type { BrowserOutcome, BrowserSessionManager } from './BrowserSessionManager.js';
+import type { BrowserSessionManager } from './BrowserSessionManager.js';
 import type { BrowserState, DesignReference } from './types.js';
 import { jsonResult, safeTool } from '../mcpToolUtils.js';
+import {
+  browserActs,
+  clickShape,
+  fillShape,
+  MAX_BATCH_STEPS,
+  pointShape,
+  pressShape,
+  said,
+  scrollShape,
+  stepSchema,
+  typeShape,
+  waitShape,
+} from './browserActionTools.js';
 
 const viewportSchema = z.object({
   width: z.number().int().min(240).max(4096),
@@ -11,12 +24,6 @@ const viewportSchema = z.object({
 });
 
 const viewportModeSchema = z.enum(['fit', 'desktop', 'laptop', 'tablet', 'mobile', 'custom']);
-const scrollDirectionSchema = z.enum(['up', 'down', 'left', 'right']);
-const CLICK_VERBS: Record<number, string> = {
-  1: 'Clicked',
-  2: 'Double-clicked',
-  3: 'Triple-clicked',
-};
 
 export function createBrowserMcpServer(
   manager: BrowserSessionManager,
@@ -27,6 +34,7 @@ export function createBrowserMcpServer(
     if (!id) throw new Error('Browser tools are not attached to a live DROIDEX session yet.');
     return id;
   };
+  const { act, batch } = browserActs(manager);
 
   return createSdkMcpServer({
     name: 'droidex-browser',
@@ -56,10 +64,12 @@ export function createBrowserMcpServer(
         },
         safeTool(async (input) => {
           const id = appSessionId();
-          if (input.action === 'back') return said('Went back.', await manager.goBack(id));
-          if (input.action === 'forward') return said('Went forward.', await manager.goForward(id));
+          if (input.action === 'back')
+            return said({ done: 'Went back.', outcome: await manager.goBack(id) });
+          if (input.action === 'forward')
+            return said({ done: 'Went forward.', outcome: await manager.goForward(id) });
           if (input.action === 'reload')
-            return said('Reloaded the page.', await manager.reload(id));
+            return said({ done: 'Reloaded the page.', outcome: await manager.reload(id) });
           if (!input.url) throw new Error('Pass a url, or an action: back, forward or reload.');
           const outcome = await manager.open({
             appSessionId: id,
@@ -69,7 +79,7 @@ export function createBrowserMcpServer(
               : undefined,
             viewportMode: input.viewportMode ?? (input.viewport ? 'custom' : undefined),
           });
-          return said('Opened the page.', outcome);
+          return said({ done: 'Opened the page.', outcome });
         }),
       ),
       tool(
@@ -180,37 +190,14 @@ export function createBrowserMcpServer(
           'Click in the live DROIDEX browser by ref (preferred) or viewport x and y.',
           'A click by ref is refused, naming the element in the way, when something covers it.',
         ].join(' '),
-        {
-          ref: z.string().optional().describe('Element ref from browser_read_page.'),
-          x: z.number().optional().describe('Viewport x, when there is no ref.'),
-          y: z.number().optional().describe('Viewport y, when there is no ref.'),
-          button: z.enum(['left', 'right', 'middle']).optional().describe('Defaults to left.'),
-          count: z.number().int().min(1).max(3).optional().describe('2 for a double click.'),
-          modifiers: z
-            .array(z.enum(['Alt', 'Control', 'Meta', 'Shift']))
-            .optional()
-            .describe('Keys held during the click.'),
-        },
-        safeTool(async (input) => {
-          const outcome = await manager.click({ appSessionId: appSessionId(), ...input });
-          const verb = input.button === 'right' ? 'Right-clicked' : CLICK_VERBS[input.count ?? 1];
-          return said(`${verb} ${pointed(input)}.`, outcome);
-        }),
+        clickShape,
+        safeTool(async (input) => said(await act.click(appSessionId(), input))),
       ),
       tool(
         'browser_hover',
         'Move the pointer over an element by ref or viewport x and y, to open menus or tooltips.',
-        {
-          ref: z.string().optional().describe('Element ref from browser_read_page.'),
-          x: z.number().optional().describe('Viewport x, when there is no ref.'),
-          y: z.number().optional().describe('Viewport y, when there is no ref.'),
-        },
-        safeTool(async (input) =>
-          said(
-            `Hovered ${pointed(input)}.`,
-            await manager.hover({ appSessionId: appSessionId(), ...input }),
-          ),
-        ),
+        pointShape,
+        safeTool(async (input) => said(await act.hover(appSessionId(), input))),
       ),
       tool(
         'browser_fill',
@@ -218,55 +205,20 @@ export function createBrowserMcpServer(
           'Set a field by ref in one step: text, a select option (its value or visible label), a checkbox or radio (true or false), or a date (YYYY-MM-DD).',
           'Frameworks see the change as typed input. To type into the focused element use browser_type; for keys, browser_press.',
         ].join(' '),
-        {
-          ref: z.string().describe('Field ref from browser_read_page.'),
-          value: z.string().describe('The value, option, true or false, or date.'),
-        },
-        safeTool(async (input) =>
-          said(`Filled ${input.ref}.`, await manager.fill(appSessionId(), input.ref, input.value)),
-        ),
+        fillShape,
+        safeTool(async (input) => said(await act.fill(appSessionId(), input))),
       ),
       tool(
         'browser_type',
         'Type text into a field by ref, or into whatever has focus, and optionally press Enter after. The page gets it as text input, not a key event per character; for keys use browser_press.',
-        {
-          text: z.string().describe('The text to type.'),
-          ref: z.string().optional().describe('Field ref to focus first.'),
-          submit: z.boolean().optional().describe('Press Enter after typing.'),
-        },
-        safeTool(async (input) => {
-          const outcome = await manager.type(appSessionId(), input.text, {
-            ref: input.ref,
-            submit: input.submit,
-          });
-          const into = input.ref ? ` into ${input.ref}` : '';
-          return said(
-            `Typed ${String(input.text.length)} characters${into}${input.submit ? ' and pressed Enter' : ''}.`,
-            outcome,
-          );
-        }),
+        typeShape,
+        safeTool(async (input) => said(await act.type(appSessionId(), input))),
       ),
       tool(
         'browser_press',
         'Press a key or chord on whatever has focus, such as Enter, Escape, Tab, ArrowDown, Shift+Tab or Meta+a.',
-        {
-          key: z
-            .string()
-            .min(1)
-            .describe('A key name or one character, with + between keys held together.'),
-          repeat: z
-            .number()
-            .int()
-            .min(1)
-            .max(50)
-            .optional()
-            .describe('How many times to press it.'),
-        },
-        safeTool(async (input) => {
-          const outcome = await manager.press(appSessionId(), input.key, input.repeat);
-          const times = input.repeat && input.repeat > 1 ? ` ${String(input.repeat)} times` : '';
-          return said(`Pressed ${input.key}${times}.`, outcome);
-        }),
+        pressShape,
+        safeTool(async (input) => said(await act.press(appSessionId(), input))),
       ),
       tool(
         'browser_resize',
@@ -290,44 +242,28 @@ export function createBrowserMcpServer(
       tool(
         'browser_scroll',
         'Scroll the page, or inside the element a ref names; a ref with no direction is only brought into view. Then read the page again to see what came into view.',
-        {
-          direction: scrollDirectionSchema.optional().describe('Direction to scroll.'),
-          pixels: z.number().positive().max(4000).optional().describe('Defaults to 500.'),
-          ref: z.string().optional().describe('Element to scroll in, or to bring into view.'),
-        },
-        safeTool(async (input) => {
-          const outcome = await manager.scroll(appSessionId(), input);
-          const where = input.ref ? ` in ${input.ref}` : '';
-          return said(
-            input.direction
-              ? `Scrolled ${input.direction}${where}.`
-              : `Brought ${input.ref ?? 'it'} into view.`,
-            outcome,
-          );
-        }),
+        scrollShape,
+        safeTool(async (input) => said(await act.scroll(appSessionId(), input))),
       ),
       tool(
         'browser_wait',
-        'Wait for browser text, a ref, or a URL fragment before continuing. With no condition, waits for the requested duration.',
+        [
+          'Wait until text is on the page, text is gone, a ref is on the page, or the address has a fragment; with none of them, wait for the time.',
+          'Checked again as the page changes, so it returns as soon as everything holds.',
+        ].join(' '),
+        waitShape,
+        safeTool(async (input) => said(await act.wait(appSessionId(), input))),
+      ),
+      tool(
+        'browser_batch',
+        [
+          `Run up to ${String(MAX_BATCH_STEPS)} actions in order in one call, such as filling a form, submitting it and waiting for the result.`,
+          'Each step is { action, ...the fields of browser_<action> }. It stops at the first step that fails and answers one line per step, then [Title · url].',
+        ].join(' '),
         {
-          text: z
-            .string()
-            .optional()
-            .describe('Text to wait for on the page, matched like browser_find.'),
-          ref: z.string().optional().describe('Element ref that must be on the current page.'),
-          urlIncludes: z.string().optional().describe('URL fragment to wait for.'),
-          timeoutMs: z
-            .number()
-            .int()
-            .min(0)
-            .max(15_000)
-            .optional()
-            .describe('Maximum wait in milliseconds. Defaults to 5000.'),
+          steps: z.array(stepSchema).min(1).max(MAX_BATCH_STEPS).describe('The actions, in order.'),
         },
-        safeTool(async (input) => {
-          const state = await manager.wait(appSessionId(), input);
-          return jsonResult(stateForTool(state));
-        }),
+        safeTool(async (input) => batch(appSessionId(), input.steps)),
       ),
       tool(
         'browser_inspect',
@@ -392,7 +328,10 @@ export function createBrowserMcpServer(
         ].join(' '),
         {},
         safeTool(async () =>
-          said('Filled the saved login.', await manager.fillCredentials(appSessionId())),
+          said({
+            done: 'Filled the saved login.',
+            outcome: await manager.fillCredentials(appSessionId()),
+          }),
         ),
       ),
       tool(
@@ -471,15 +410,6 @@ export function createBrowserMcpServer(
       ),
     ],
   });
-}
-
-// One line of what the action did, then what changed and the page footer.
-function said(done: string, outcome: BrowserOutcome): string {
-  return `${done}\n${outcome.text}`;
-}
-
-function pointed(input: { ref?: string; x?: number; y?: number }): string {
-  return input.ref ?? `(${String(input.x)}, ${String(input.y)})`;
 }
 
 function stateForTool(

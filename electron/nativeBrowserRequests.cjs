@@ -27,45 +27,79 @@ const ACTIONS = new Set([
   'screenshot',
   'close',
   'fillCredentials',
+  'wait',
 ]);
 // Reading the logs or recording the viewport never needs the page itself.
 const PAGELESS_ACTIONS = new Set(['resize', 'network', 'console']);
 const INPUT_ACTIONS = new Set(['click', 'hover', 'fill', 'type', 'press', 'scroll']);
+// What moves a page on, and so takes its turn; reads run alongside.
+const TURN_ACTIONS = new Set([
+  ...INPUT_ACTIONS,
+  'open',
+  'reload',
+  'goBack',
+  'goForward',
+  'fillCredentials',
+  'wait',
+]);
+const LATE = 'The browser page did not finish in time.';
+const CLOSED = 'The browser was closed.';
 const MAX_WAITING_PER_PAGE = 8;
 const LOAD_WAIT_MS = 8_000;
 // Work still running a little past the sidecar's own timeout stops holding its
 // page, and whatever it does afterwards is dropped.
 const DEADLINE_MARGIN_MS = 3_000;
 const DEFAULT_SIDECAR_TIMEOUT_MS = 12_000;
+// The sidecar's longest timeout, 60 s, and the longest wait it adds to one.
+const MAX_SIDECAR_TIMEOUT_MS = 75_000;
 
 function createNativeBrowserRequests({ manager, notifyRenderer }) {
   const waiting = new Map(); // browserSessionId -> requests in flight
   const painting = new Map(); // browserSessionId -> its first paint after waking
+  const queues = new Map(); // browserSessionId -> { over, closed } for the actions queued on it
 
   // A message from the sidecar; only a well-formed browser request is answered.
   async function handle(message, reply) {
     const request = browserRequestFrom(message);
     if (!request) return;
-    const deadlineMs = sidecarTimeoutMs(message.timeoutMs) + DEADLINE_MARGIN_MS;
+    const timeoutMs = sidecarTimeoutMs(message.timeoutMs);
+    const receivedAt = Date.now();
+    // Nothing starts once the caller has given up, by its own expiry when it
+    // sent one.
+    const startBy = Math.min(
+      receivedAt + timeoutMs,
+      Number.isFinite(message.expiresAt) ? message.expiresAt : Infinity,
+    );
     reply({
       type: 'browser.result',
       id: request.requestId,
-      result: await perform(request, deadlineMs),
+      result: await perform({ ...request, receivedAt, startBy }, timeoutMs),
     });
   }
 
-  async function perform(request, deadlineMs) {
+  async function perform(request, timeoutMs) {
     try {
       if (request.action === 'close') {
+        // Actions still queued on it never start.
+        const queue = queues.get(request.browserSessionId);
+        if (queue) queue.closed = true;
+        queues.delete(request.browserSessionId);
         manager.close(request.browserSessionId);
         notifyRenderer('native-browser-closed', { browserSessionId: request.browserSessionId });
         return result(request, true);
       }
       if (PAGELESS_ACTIONS.has(request.action)) return await performAction(request);
-      return await withAwakePage(request.browserSessionId, deadlineMs, async (woke) => {
+      return await withAwakePage(request.browserSessionId, timeoutMs, async (woke) => {
         if (woke) startPaintWait(request.browserSessionId);
-        if (INPUT_ACTIONS.has(request.action)) await painting.get(request.browserSessionId);
-        return performOnPage(request);
+        // A screenshot of a ref scrolls the page to it, so it takes a turn too.
+        const takesTurn =
+          TURN_ACTIONS.has(request.action) || (request.action === 'screenshot' && request.ref);
+        if (!takesTurn) return performOnPage(request);
+        const releaseBy = request.receivedAt + timeoutMs + DEADLINE_MARGIN_MS;
+        return inTurn(request.browserSessionId, request.startBy, releaseBy, async () => {
+          if (INPUT_ACTIONS.has(request.action)) await painting.get(request.browserSessionId);
+          return performOnPage(request);
+        });
       });
     } catch (error) {
       return result(request, false, {
@@ -74,29 +108,59 @@ function createNativeBrowserRequests({ manager, notifyRenderer }) {
     }
   }
 
-  async function withAwakePage(browserSessionId, deadlineMs, run) {
+  // The work runs while the sidecar still waits for it, and a little past that.
+  async function withAwakePage(browserSessionId, timeoutMs, run) {
     if ((waiting.get(browserSessionId) ?? 0) >= MAX_WAITING_PER_PAGE) {
       throw new Error('Too many browser actions are already waiting on this page.');
     }
     const woke = !waiting.has(browserSessionId);
     setWaiting(browserSessionId, 1);
-    let deadline;
+    let timer;
     try {
       const work = run(woke);
       work.catch(() => undefined);
       return await Promise.race([
         work,
         new Promise((_, reject) => {
-          deadline = setTimeout(
-            () => reject(new Error('The browser page did not finish in time.')),
-            deadlineMs,
-          );
+          timer = setTimeout(() => reject(new Error(LATE)), timeoutMs + DEADLINE_MARGIN_MS);
         }),
       ]);
     } finally {
-      clearTimeout(deadline);
+      clearTimeout(timer);
       setWaiting(browserSessionId, -1);
     }
+  }
+
+  // Actions on one page run one at a time, in the order they came, each only
+  // once the one ahead has finished, even past its own deadline, until main
+  // gives up on it (`releaseBy`). One whose caller has given up, or whose
+  // browser was closed, never starts.
+  function inTurn(browserSessionId, startBy, releaseBy, run) {
+    const queue = queues.get(browserSessionId) ?? { over: Promise.resolve(), closed: false };
+    const turn = queue.over.then(() => {
+      if (queue.closed) throw new Error(CLOSED);
+      if (Date.now() >= startBy) throw new Error(LATE);
+      return run();
+    });
+    // Counted from its own turn, so one that never starts frees nothing ahead.
+    let timer;
+    const over = queue.over
+      .then(() =>
+        Promise.race([
+          turn.catch(() => undefined),
+          new Promise((resolve) => {
+            timer = setTimeout(resolve, Math.max(0, releaseBy - Date.now()));
+          }),
+        ]),
+      )
+      .finally(() => clearTimeout(timer));
+    queue.over = over;
+    queues.set(browserSessionId, queue);
+    void over.then(() => {
+      if (queue.over === over && queues.get(browserSessionId) === queue)
+        queues.delete(browserSessionId);
+    });
+    return turn;
   }
 
   // A page that has just woken drops input until it paints again; every input
@@ -125,24 +189,30 @@ function createNativeBrowserRequests({ manager, notifyRenderer }) {
 
   async function performOnPage(request) {
     const { browserSessionId } = request;
+    // A navigation goes out only while its caller still waits for it.
+    const stillWanted = () => {
+      if (Date.now() >= request.startBy) throw new Error(LATE);
+    };
     if (request.action === 'open') {
       const url = request.url ?? 'about:blank';
+      await manager.waitForPage(browserSessionId);
+      stillWanted();
       await manager.open(browserSessionId, url, request.viewport);
       return result(request, true, await snapshotAfter(request, url));
     }
     if (request.action === 'reload') {
       await manager.waitForPage(browserSessionId);
+      stillWanted();
       const loaded = manager.nextLoad(browserSessionId, LOAD_WAIT_MS);
       await manager.reload(browserSessionId);
       return result(request, true, await snapshotAfter(request, (await loaded)?.url));
     }
     if (request.action === 'goBack' || request.action === 'goForward') {
-      await manager.waitForPage(browserSessionId);
       const loaded = manager.nextLoad(browserSessionId, LOAD_WAIT_MS);
       const moved =
         request.action === 'goBack'
-          ? await manager.goBack(browserSessionId)
-          : await manager.goForward(browserSessionId);
+          ? await manager.goBack(browserSessionId, stillWanted)
+          : await manager.goForward(browserSessionId, stillWanted);
       const url = moved ? (await loaded)?.url : undefined;
       return result(request, true, await snapshotAfter(request, url));
     }
@@ -187,7 +257,7 @@ function createNativeBrowserRequests({ manager, notifyRenderer }) {
 
 function sidecarTimeoutMs(value) {
   return Number.isFinite(value)
-    ? Math.min(Math.max(value, 1_000), 60_000)
+    ? Math.min(Math.max(value, 1_000), MAX_SIDECAR_TIMEOUT_MS)
     : DEFAULT_SIDECAR_TIMEOUT_MS;
 }
 
@@ -219,6 +289,11 @@ function agentAction(request) {
     y: request.y,
     selector: request.selector,
     text: request.text,
+    textGone: request.textGone,
+    urlIncludes: request.urlIncludes,
+    waitMs: request.waitMs,
+    receivedAt: request.receivedAt,
+    startBy: request.startBy,
     value: request.value,
     submit: request.submit,
     key: request.key,

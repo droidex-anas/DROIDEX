@@ -160,14 +160,21 @@ function createNativeBrowserCredentials({ app, appName, safeStorage, dialog, get
 
   // The page script fills only while the page is on the login's origin: a call
   // made while a navigation loads runs on whatever page that leads to.
-  function fillOn(contents, origin, { username, password }) {
-    return callPageScript(contents, '__droidexFillCredentials', { origin, username, password });
+  function fillOn(contents, origin, { username, password }, startBy) {
+    return callPageScript(contents, '__droidexFillCredentials', {
+      origin,
+      username,
+      password,
+      startBy,
+    });
   }
 
   // Agent-blind login: the saved secret is decrypted here in main and handed
   // to the page script in its isolated world, never through the page's own
   // world, and nothing about it comes back to the agent.
-  async function fillForAgent(contents) {
+  // `startBy` is when the agent stops waiting; the page script fills nothing
+  // later, however long the page took to finish loading.
+  async function fillForAgent(contents, startBy) {
     if (getCredentialConsent() !== 'enabled')
       throw new Error(
         `Saved logins are turned off for the ${appName} browser. Ask the user to sign in once; they will be prompted to enable and save the login first.`,
@@ -178,7 +185,7 @@ function createNativeBrowserCredentials({ app, appName, safeStorage, dialog, get
       throw new Error(
         'No saved credentials for this site. The user can sign in once and choose to save the password.',
       );
-    const fill = await fillOn(contents, origin, credential).catch(() => undefined);
+    const fill = await fillOn(contents, origin, credential, startBy).catch(() => undefined);
     if (!fill?.ok)
       throw new Error(fill?.error || 'Could not find a login form to fill on this page.');
   }

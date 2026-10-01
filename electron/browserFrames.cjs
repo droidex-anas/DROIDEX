@@ -48,8 +48,9 @@ async function attachFrames(dbg) {
 }
 
 // Frames in document order within each process, each with the session to ask.
-// A frame that cannot be read is skipped, or fails the call when `strict`.
-async function documentFrames(dbg, { strict = false } = {}) {
+// A frame that cannot be read is skipped (and reported to `onSkip`), or fails
+// the call when `strict`.
+async function documentFrames(dbg, { strict = false, onSkip } = {}) {
   const sessions = await attachFrames(dbg);
   const frames = [];
   const visit = async (sessionId) => {
@@ -63,6 +64,7 @@ async function documentFrames(dbg, { strict = false } = {}) {
       if (child.parent !== sessionId) continue;
       await visit(childId).catch((error) => {
         if (strict) throw error;
+        onSkip?.();
       });
     }
   };
@@ -241,14 +243,20 @@ async function framePainted(dbg, sessionId) {
 
 // Scrolls the owners of a cross-site frame into view, outermost first, so a
 // node inside it can then be scrolled into the visible page.
-async function scrollFrameIntoView(dbg, sessionId) {
+// A frame that cannot be scrolled stays where it is; `before` runs right
+// before each scroll, and what it throws stops the scrolling.
+async function scrollFrameIntoView(dbg, sessionId, before) {
   const frame = sessionId && attachments.get(dbg)?.sessions.get(sessionId);
   if (!frame) return;
-  await scrollFrameIntoView(dbg, frame.parent);
-  const { backendNodeId } = await send(dbg, frame.parent, 'DOM.getFrameOwner', {
+  await scrollFrameIntoView(dbg, frame.parent, before);
+  const owner = await send(dbg, frame.parent, 'DOM.getFrameOwner', {
     frameId: frame.frameId,
-  });
-  await send(dbg, frame.parent, 'DOM.scrollIntoViewIfNeeded', { backendNodeId });
+  }).catch(() => undefined);
+  if (!owner) return;
+  before?.();
+  await send(dbg, frame.parent, 'DOM.scrollIntoViewIfNeeded', {
+    backendNodeId: owner.backendNodeId,
+  }).catch(() => undefined);
 }
 
 function axTree(dbg, frame) {

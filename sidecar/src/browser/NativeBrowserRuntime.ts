@@ -10,9 +10,9 @@ import type {
   BrowserReadOptions,
   BrowserScreenshot,
   BrowserScreenshotOptions,
-  BrowserSnapshot,
   BrowserTarget,
   BrowserViewport,
+  BrowserWaitCondition,
   ScrollDirection,
 } from './types.js';
 
@@ -66,10 +66,6 @@ export class NativeBrowserRuntime implements BrowserRuntime {
     if (!result.ok) throw new Error(result.error ?? 'Native browser capture failed.');
     if (!result.image) throw new Error('Native browser did not return a captured image.');
     return result.image;
-  }
-
-  async snapshot(): Promise<BrowserSnapshot> {
-    return (await this.act({ action: 'snapshot' })).snapshot;
   }
 
   async readPage(options: BrowserReadOptions = {}): Promise<string> {
@@ -136,6 +132,10 @@ export class NativeBrowserRuntime implements BrowserRuntime {
     const result = await this.send({ action: 'console', clearConsoleLog: clear });
     if (!result.ok) throw new Error(result.error ?? 'Native browser console inspection failed.');
     return result.consoleEvents ?? [];
+  }
+
+  async wait(condition: BrowserWaitCondition): Promise<BrowserActionResult> {
+    return this.act({ action: 'wait', ...condition });
   }
 
   async fillCredentials(): Promise<BrowserActionResult> {
