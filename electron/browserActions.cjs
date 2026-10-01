@@ -428,6 +428,11 @@ function startInput(step) {
 // and others) see the change; a checkbox or radio is clicked when it needs to
 // change. Nothing is read back, so a masked field stays unread.
 const FILL = `function (value) {
+  // A focus handler can swap the field for another; nothing is written then.
+  const focus = () => {
+    this.focus();
+    if (!this.isConnected) throw new Error('the field was replaced when it took the focus; read the page again');
+  };
   if (this instanceof HTMLSelectElement) {
     const wanted = String(value);
     const options = [...this.options];
@@ -445,10 +450,10 @@ const FILL = `function (value) {
   } else if (this instanceof HTMLInputElement || this instanceof HTMLTextAreaElement) {
     if (this.type === 'file') throw new Error('file inputs need the user');
     const proto = this instanceof HTMLInputElement ? HTMLInputElement.prototype : HTMLTextAreaElement.prototype;
-    this.focus();
+    focus();
     Object.getOwnPropertyDescriptor(proto, 'value').set.call(this, String(value));
   } else if (this.isContentEditable) {
-    this.focus();
+    focus();
     this.textContent = String(value);
   } else {
     throw new Error('not a field');
