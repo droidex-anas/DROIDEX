@@ -220,7 +220,7 @@ non-replaceable event. Approvals, questions, sidebar requests, errors,
 lifecycle boundaries, history responses, and turn settlement flush immediately.
 Each event is serialized once at enqueue; byte accounting, batch assembly, and replay reuse that snapshot.
 
-Renderers must advertise bridge protocol 8, apply one wire batch as one
+Renderers must advertise bridge protocol 9, apply one wire batch as one
 ordered store transition, and reconnect with the last fully applied generation
 and sequence. Same-generation reconnects replay the retained buffer. A new
 process generation or a replay gap delivers a compact `bridge.snapshot` of
