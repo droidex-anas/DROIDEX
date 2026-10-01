@@ -1,12 +1,13 @@
 import { AnimatePresence } from 'framer-motion';
-import type { ReactNode } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 
-import { useRelativeTimeNow } from '../../features/projects/useRelativeTimeNow';
 import { paceWarning } from '../../features/usage/usagePace';
 import { useProviderUsage, type UsageWatch } from '../../features/usage/useProviderUsage';
 import type { ProviderKind, UsageLimit } from '../../types/bridge';
 import { UsageLimitTab, UsageWarningTab } from './UsageLimitTab';
 import { UsagePanel } from './UsagePanel';
+
+const TICK_MS = 30_000;
 
 // The usage tab above the composer, one at a time: /usage while it is open,
 // then the limit the chat is held on, then a warning that the current pace
@@ -32,8 +33,9 @@ export function UsageTabs({
   if (panelOpen) watch = 'panel';
   else if (warns) watch = 'chat';
   const usage = useProviderUsage(provider, watch, connected);
-  const now = useRelativeTimeNow();
+  const now = Date.now();
   const warning = warns && usage ? paceWarning(usage.meters, now) : undefined;
+  useTicking(panelOpen || warning !== undefined);
 
   let tab: ReactNode = null;
   if (panelOpen)
@@ -64,4 +66,18 @@ export function UsageTabs({
       {tab}
     </AnimatePresence>
   );
+}
+
+// Renders again every half minute while a tab shows countdowns and a pace.
+function useTicking(active: boolean): void {
+  const [, setTick] = useState(0);
+  useEffect(() => {
+    if (!active) return;
+    const timer = setInterval(() => {
+      setTick((tick) => tick + 1);
+    }, TICK_MS);
+    return () => {
+      clearInterval(timer);
+    };
+  }, [active]);
 }
