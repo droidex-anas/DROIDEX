@@ -1,7 +1,7 @@
 // Factory's account limits, read with the API key DROIDEX was given: the same
 // windows Droid's own /limits shows, for the standard pool and Droid Core. A
 // Droid session never reports them, and DROIDEX never reads the CLI's login.
-import type { UsageWindow } from '../../protocol.js';
+import type { UsageLimit, UsageWindow } from '../../protocol.js';
 import { numberValue, objectValue } from '../../values.js';
 import { UsageReadError } from '../accountUsage.js';
 import { windowUsage } from '../usageLimit.js';
@@ -10,6 +10,8 @@ import type { ReportedMeter, UsageReading } from '../session.js';
 const LIMITS_URL = 'https://api.factory.ai/api/billing/limits';
 const HOUR_MS = 60 * 60_000;
 const DEFAULT_RETRY_AFTER_MS = 5 * 60_000;
+// Factory's name for the pool every model outside Droid Core draws on.
+const STANDARD_POOL = 'Standard';
 
 // Droid's three rolling windows, by the names Factory gives them.
 const WINDOWS: [key: string, window: UsageWindow, durationMs: number][] = [
@@ -34,6 +36,24 @@ export async function readFactoryUsage(
     );
   if (!response.ok) throw new Error(`Factory answered HTTP ${String(response.status)}.`);
   return factoryReading(await response.json());
+}
+
+// What Factory's windows say about a refused Droid turn: the spent window that
+// resets last, and the pool it belongs to only while the other pool still has
+// room, which is when another model can still run.
+export function factoryRefusalLimit(meters: readonly ReportedMeter[], now: number): UsageLimit {
+  const spent = meters
+    .filter((meter) => meter.usedPercent >= 100 && (meter.resetsAt ?? 0) > now)
+    .sort((left, right) => (right.resetsAt ?? 0) - (left.resetsAt ?? 0));
+  const last = spent.at(0);
+  if (last?.resetsAt === undefined) return {};
+  const limit: UsageLimit = {
+    ...(last.window ? { window: last.window } : {}),
+    resetsAt: last.resetsAt,
+  };
+  const otherPool = meters.filter((meter) => meter.model !== last.model);
+  const otherHasRoom = otherPool.length > 0 && otherPool.every((meter) => !spent.includes(meter));
+  return otherHasRoom ? { ...limit, model: last.model ?? STANDARD_POOL } : limit;
 }
 
 // An account on Factory's older billing has no windows to report; any other

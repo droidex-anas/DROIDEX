@@ -590,5 +590,6 @@ export function fakeProviderSession(
   return new DroidProviderSession(appSessionId, session, {
     processIdOf: () => undefined,
     isProcessAlive: () => false,
+    factoryApiKey: () => undefined,
   });
 }
