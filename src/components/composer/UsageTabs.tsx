@@ -38,7 +38,8 @@ export function UsageTabs({
   // The socket's own state too: a reconnect must refresh even where the
   // runtime never reported itself down.
   const socketUp = useRuntimeHealth().transport === 'connected';
-  const usage = useProviderUsage(provider, watch, connected && socketUp);
+  const reachable = connected && socketUp;
+  const usage = useProviderUsage(provider, watch, reachable);
   const now = Date.now();
   const warning = warns && usage ? paceWarning(usage.meters, now) : undefined;
   useTicking(panelOpen || warning !== undefined);
@@ -47,7 +48,13 @@ export function UsageTabs({
   if (panelOpen)
     tab = (
       <Suspense key="usage-panel" fallback={null}>
-        <UsagePanel provider={provider} usage={usage} now={now} onClose={onClosePanel} />
+        <UsagePanel
+          provider={provider}
+          usage={usage}
+          reachable={reachable}
+          now={now}
+          onClose={onClosePanel}
+        />
       </Suspense>
     );
   else if (chat?.usageLimit)
