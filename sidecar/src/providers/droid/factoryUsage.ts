@@ -71,11 +71,12 @@ function poolMeters(pool: string, value: unknown, model: string | undefined): Re
   });
 }
 
-// Read as Droid's own /limits reads it, with `new Date(windowEnd)`.
+// Read as Droid's own /limits reads it, with `new Date(windowEnd)`. A date at
+// or before the epoch is malformed, not a window that has already reset.
 function timestampMs(value: unknown): number | undefined {
   if (typeof value !== 'string' && typeof value !== 'number') return undefined;
   const ms = new Date(value).getTime();
-  return Number.isNaN(ms) ? undefined : ms;
+  return Number.isNaN(ms) || ms <= 0 ? undefined : ms;
 }
 
 // Seconds, or an HTTP date.
