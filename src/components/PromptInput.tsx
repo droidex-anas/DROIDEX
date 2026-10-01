@@ -2139,6 +2139,7 @@ export default function PromptInput({
             before a chat exists and steps aside while /usage is open. */}
         <UsageTabs
           provider={composerProvider}
+          connected={runtimeReady}
           panelOpen={usageOpen}
           onClosePanel={() => {
             setUsageOpen(false);

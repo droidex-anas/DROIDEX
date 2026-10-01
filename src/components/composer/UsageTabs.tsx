@@ -13,12 +13,14 @@ import { UsagePanel } from './UsagePanel';
 // runs a Claude Code or Codex limit out before it resets.
 export function UsageTabs({
   provider,
+  connected,
   panelOpen,
   onClosePanel,
   chat,
   onSwitchModel,
 }: {
   provider: ProviderKind;
+  connected: boolean;
   panelOpen: boolean;
   onClosePanel: () => void;
   // The top-level chat in the composer, and the limit it is held on.
@@ -29,7 +31,7 @@ export function UsageTabs({
   let watch: UsageWatch | null = null;
   if (panelOpen) watch = 'panel';
   else if (warns) watch = 'chat';
-  const usage = useProviderUsage(provider, watch);
+  const usage = useProviderUsage(provider, watch, connected);
   const now = useRelativeTimeNow();
   const warning = warns && usage ? paceWarning(usage.meters, now) : undefined;
 

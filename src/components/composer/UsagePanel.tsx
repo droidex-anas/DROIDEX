@@ -66,8 +66,7 @@ export function UsagePanel({
               type="button"
               disabled={refreshing}
               onClick={() => {
-                setRefreshedFrom(usage);
-                refreshUsage(provider, true, true);
+                if (refreshUsage(provider, true, true)) setRefreshedFrom(usage);
               }}
               className={`${ACTION_CLASS} text-droid-text-secondary disabled:opacity-60`}
             >
