@@ -84,6 +84,7 @@ export function NativeBrowserSurface({
   const anchor = useBrowserSlot(native ? visibleBrowserSessionId : undefined, {
     hidden: leaving || !surfaceReady,
     rounded: !expanded,
+    url,
   });
   const surface = useMemo(
     () => surfaceLayout(frameSize, viewport, viewportMode, expanded),
@@ -155,7 +156,9 @@ export function NativeBrowserSurface({
 
     return () => {
       disposed = true;
-      unlisteners.forEach((unlisten) => { unlisten(); });
+      unlisteners.forEach((unlisten) => {
+        unlisten();
+      });
     };
   }, [visibleBrowserSessionId]);
 
@@ -170,7 +173,9 @@ export function NativeBrowserSurface({
         detachDesignMode = attachIframeDesignMode(iframe, {
           designMode,
           pencilMode,
-          onSelection: (selection) => { onSelectionRef.current(selection); },
+          onSelection: (selection) => {
+            onSelectionRef.current(selection);
+          },
         });
         onLoadedRef.current({
           browserSessionId: visibleBrowserSessionId ?? browserKey,
@@ -195,8 +200,9 @@ export function NativeBrowserSurface({
         performIframeRequest(request, {
           currentUrl: urlRef.current,
           iframe: iframeRef,
-          onLoaded: (url) =>
-            { onLoadedRef.current({ browserSessionId: request.browserSessionId, url }); },
+          onLoaded: (url) => {
+            onLoadedRef.current({ browserSessionId: request.browserSessionId, url });
+          },
         }),
     });
   }, [native]);
@@ -366,7 +372,11 @@ function safeIframeSnapshot(iframe: HTMLIFrameElement, fallbackUrl: string) {
 
 function settleFrame(): Promise<void> {
   return new Promise((resolve) =>
-    requestAnimationFrame(() => requestAnimationFrame(() => { resolve(); })),
+    requestAnimationFrame(() =>
+      requestAnimationFrame(() => {
+        resolve();
+      }),
+    ),
   );
 }
 

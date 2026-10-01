@@ -296,7 +296,10 @@ interface DroidControlApi {
   filesPreview: (accessToken: string, relative: string) => Promise<FilePreviewPayload>;
   filesOpen: (accessToken: string, relative: string) => Promise<void>;
   filesReveal: (accessToken: string, relative: string) => Promise<void>;
-  nativeBrowserReserve: (browserSessionId: string) => Promise<{ src: string; generation: number }>;
+  nativeBrowserReserve: (
+    browserSessionId: string,
+    savedUrl?: string,
+  ) => Promise<{ src: string; generation: number }>;
   nativeBrowserRelease: (browserSessionId: string) => Promise<void>;
   nativeBrowserShown: (browserSessionId: string, shown: boolean) => Promise<void>;
   nativeBrowserOpen: (

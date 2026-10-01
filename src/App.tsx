@@ -537,7 +537,10 @@ export default function App() {
       if (event.type !== 'browser.native.request') return;
       // The agent works in the chat's page whether or not the pane shows it;
       // its requests never open or switch the pane.
-      void performNativeBrowserRequest(event.request)
+      const { browsers } = store.getState();
+      const { appSessionId } = event.request;
+      const savedUrl = appSessionId in browsers ? browsers[appSessionId].url : undefined;
+      void performNativeBrowserRequest(event.request, savedUrl)
         .then(sendNativeBrowserResult)
         .catch((err: unknown) => {
           sendNativeBrowserResult({

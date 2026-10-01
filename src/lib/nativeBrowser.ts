@@ -97,8 +97,9 @@ export function nativeBrowserAgentActionFromRequest(
 // Main issues the one-time token a page's <webview> must carry to attach.
 export async function reserveNativeBrowser(
   browserSessionId: string,
+  savedUrl?: string,
 ): Promise<{ src: string; generation: number }> {
-  return window.droidControl!.nativeBrowserReserve(browserSessionId);
+  return window.droidControl!.nativeBrowserReserve(browserSessionId, savedUrl);
 }
 
 export async function releaseNativeBrowser(browserSessionId: string): Promise<void> {
@@ -156,24 +157,32 @@ async function runNativeBrowserAgentAction(
       fn();
     };
     const timeout = window.setTimeout(() => {
-      finish(() => { reject(new Error(`The browser action ${request.action} timed out.`)); });
+      finish(() => {
+        reject(new Error(`The browser action ${request.action} timed out.`));
+      });
     }, timeoutMs);
 
     unlisten = window.droidControl!.onNativeBrowserAgentResult((result) => {
       if (result.requestId !== request.requestId) return;
       window.clearTimeout(timeout);
-      finish(() => { resolve(result); });
+      finish(() => {
+        resolve(result);
+      });
     });
     window
       .droidControl!.nativeBrowserAgentAction(request)
       .then((result) => {
         if (result?.requestId !== request.requestId) return;
         window.clearTimeout(timeout);
-        finish(() => { resolve(result); });
+        finish(() => {
+          resolve(result);
+        });
       })
       .catch((err) => {
         window.clearTimeout(timeout);
-        finish(() => { reject(err); });
+        finish(() => {
+          reject(err);
+        });
       });
   });
 }
@@ -337,21 +346,26 @@ async function waitForNextNativeBrowserLoad(
       unlisten?.();
       fn();
     };
-    const timeout = window.setTimeout(
-      () => { finish(() => { reject(new Error('The browser page did not finish loading in time.')); }); },
-      timeoutMs,
-    );
+    const timeout = window.setTimeout(() => {
+      finish(() => {
+        reject(new Error('The browser page did not finish loading in time.'));
+      });
+    }, timeoutMs);
     void onNativeBrowserLoaded((event) => {
       if (event.browserSessionId !== browserSessionId) return;
       window.clearTimeout(timeout);
-      finish(() => { resolve(event); });
+      finish(() => {
+        resolve(event);
+      });
     })
       .then((nextUnlisten) => {
         unlisten = nextUnlisten;
       })
       .catch((err) => {
         window.clearTimeout(timeout);
-        finish(() => { reject(err); });
+        finish(() => {
+          reject(err);
+        });
       });
   });
 }

@@ -4,16 +4,17 @@ const { randomUUID } = require('node:crypto');
 // decides everything about them. The renderer may only mount a guest with a
 // one-time token main issued for a browser session; main then replaces the
 // guest's preferences and parameters wholesale (a partial override let a
-// page-chosen user agent and popups through), binds the guest to its session
-// the moment it is created, and navigates it itself.
+// page-chosen user agent and popups through), claims the guest for its session
+// the moment it is created, binds it once it attaches, and navigates it itself.
 
 const TOKEN_SRC_PREFIX = 'about:blank#droidex=';
 const BIND_TIMEOUT_MS = 10_000;
 
 function createBrowserGuests({ partition, preloadPath, onBound }) {
   const reservations = new Map(); // token -> { browserSessionId, generation, hostId }
+  const claimed = new WeakMap(); // guest contents -> reservation, until it attaches
   const guests = new Map(); // browserSessionId -> { contents, generation }
-  const waiters = new Map(); // browserSessionId -> Set<(contents) => void>
+  const waiters = new Map(); // browserSessionId -> Set<{ resolve, reject }>
   let nextGeneration = 0;
   // The reservation accepted by will-attach-webview, claimed by the guest
   // created synchronously right after it.
@@ -49,7 +50,9 @@ function createBrowserGuests({ partition, preloadPath, onBound }) {
       plugins: false,
       disablePopups: true,
     });
-    replaceAll(params, { instanceId: params.instanceId, src: 'about:blank' });
+    // Electron loads `src` once the guest attaches, after main's own
+    // navigation; an empty one leaves every navigation to main.
+    replaceAll(params, { instanceId: params.instanceId, src: '' });
     attaching = reservation;
   }
 
@@ -63,14 +66,21 @@ function createBrowserGuests({ partition, preloadPath, onBound }) {
       contents.close();
       return;
     }
+    claimed.set(contents, reservation);
+  }
+
+  // The embedder's 'did-attach-webview': the guest can now be navigated.
+  function handleAttached(contents) {
+    const reservation = claimed.get(contents);
+    claimed.delete(contents);
+    if (!reservation || contents.isDestroyed()) return;
     const { browserSessionId, generation } = reservation;
     guests.set(browserSessionId, { contents, generation });
     contents.once('destroyed', () => {
       if (guests.get(browserSessionId)?.contents === contents) guests.delete(browserSessionId);
     });
     onBound(browserSessionId, contents);
-    for (const resolve of waiters.get(browserSessionId) ?? []) resolve(contents);
-    waiters.delete(browserSessionId);
+    settleWaiters(browserSessionId, (waiter) => waiter.resolve(contents));
   }
 
   function guestFor(browserSessionId) {
@@ -83,17 +93,31 @@ function createBrowserGuests({ partition, preloadPath, onBound }) {
     if (existing) return Promise.resolve(existing);
     return new Promise((resolve, reject) => {
       const set = waiters.get(browserSessionId) ?? new Set();
+      waiters.set(browserSessionId, set);
       const timer = setTimeout(() => {
-        set.delete(settle);
+        set.delete(waiter);
+        if (set.size === 0 && waiters.get(browserSessionId) === set)
+          waiters.delete(browserSessionId);
         reject(new Error('The browser page did not start in time.'));
       }, timeoutMs);
-      function settle(contents) {
-        clearTimeout(timer);
-        resolve(contents);
-      }
-      set.add(settle);
-      waiters.set(browserSessionId, set);
+      const waiter = {
+        resolve: (contents) => {
+          clearTimeout(timer);
+          resolve(contents);
+        },
+        reject: (error) => {
+          clearTimeout(timer);
+          reject(error);
+        },
+      };
+      set.add(waiter);
     });
+  }
+
+  function settleWaiters(browserSessionId, settle) {
+    const set = waiters.get(browserSessionId);
+    waiters.delete(browserSessionId);
+    for (const waiter of set ?? []) settle(waiter);
   }
 
   function release(browserSessionId) {
@@ -101,6 +125,9 @@ function createBrowserGuests({ partition, preloadPath, onBound }) {
       if (reservation.browserSessionId === browserSessionId) reservations.delete(token);
     }
     guests.delete(browserSessionId);
+    settleWaiters(browserSessionId, (waiter) =>
+      waiter.reject(new Error('The browser page was closed.')),
+    );
   }
 
   function sessionIdFor(contents) {
@@ -114,6 +141,7 @@ function createBrowserGuests({ partition, preloadPath, onBound }) {
     reserve,
     handleWillAttach,
     handleCreated,
+    handleAttached,
     guestFor,
     waitForGuest,
     release,

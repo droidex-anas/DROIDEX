@@ -32,16 +32,18 @@ const PAGELESS_ACTIONS = new Set<BrowserNativeAction>(['close', 'resize', 'netwo
 // whether or not the pane is open.
 export async function performNativeBrowserRequest(
   request: BrowserNativeRequest,
-  timeoutMs = 8_000,
+  savedUrl?: string,
 ): Promise<BrowserNativeResult> {
   if (isDesktop()) {
     if (request.action === 'close') closeBrowserPage(request.browserSessionId);
     if (PAGELESS_ACTIONS.has(request.action)) return performDesktopNativeBrowserRequest(request);
-    return withBrowserPage(request.browserSessionId, () =>
-      performDesktopNativeBrowserRequest(request),
+    return withBrowserPage(
+      request.browserSessionId,
+      () => performDesktopNativeBrowserRequest(request),
+      savedUrl,
     );
   }
-  const active = controller ?? (await waitForController(timeoutMs));
+  const active = controller ?? (await waitForController(8_000));
   return active.perform(request);
 }
 

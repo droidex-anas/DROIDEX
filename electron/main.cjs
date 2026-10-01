@@ -280,6 +280,9 @@ function createMainWindow() {
   mainWindow.webContents.on('will-attach-webview', (event, webPreferences, params) =>
     nativeBrowserManager.handleWillAttach(event, webPreferences, params, mainWindow.webContents),
   );
+  mainWindow.webContents.on('did-attach-webview', (_event, contents) =>
+    nativeBrowserManager.handleAttached(contents),
+  );
 
   installRendererNavigationGuard(mainWindow.webContents, rendererEntryUrl, (url) =>
     shell.openExternal(url),
@@ -889,9 +892,9 @@ function registerIpc() {
     return files.revealInFolder(filesRootAccess.resolve(accessToken), relative, shell);
   });
 
-  ipcMain.handle('native-browser-reserve', (event, { browserSessionId }) => {
+  ipcMain.handle('native-browser-reserve', (event, { browserSessionId, savedUrl }) => {
     assertMainRenderer(event);
-    return nativeBrowserManager.reserve(browserSessionId, mainWindow.webContents);
+    return nativeBrowserManager.reserve(browserSessionId, mainWindow.webContents, savedUrl);
   });
   ipcMain.handle('native-browser-release', (event, { browserSessionId }) => {
     assertMainRenderer(event);

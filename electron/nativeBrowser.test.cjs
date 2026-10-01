@@ -60,6 +60,7 @@ function createBrowser() {
       setBackgroundThrottling() {},
     });
     manager.handleCreated(guest);
+    manager.handleAttached(guest);
     return guest;
   }
 

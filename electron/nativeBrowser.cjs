@@ -54,7 +54,7 @@ function createNativeBrowserManager(options) {
   const page = createNativeBrowserPage({
     appName: options.appName,
     ensureEntry: ensureNativeBrowserEntry,
-    restoreForAction: requireNativeBrowserGuest,
+    restoreForAction: requireLoadedGuest,
     liveContents,
     normalizeBrowserViewport: urls.normalizeBrowserViewport,
     credentials,
@@ -78,10 +78,22 @@ function createNativeBrowserManager(options) {
   }
 
   // The renderer asks for a guest before it mounts one; the token it gets back
-  // is the only way that guest can attach.
-  function reserveNativeBrowser(browserSessionId, host) {
+  // is the only way that guest can attach. After an app restart main knows no
+  // URL for the page, so the one the renderer saved is restored, if allowed.
+  function reserveNativeBrowser(browserSessionId, host, savedUrl) {
     const entry = ensureNativeBrowserEntry(browserSessionId);
+    if (!entry.targetUrl && savedUrl && isAllowedUrl(savedUrl)) entry.targetUrl = savedUrl;
     return guests.reserve(entry.browserSessionId, host);
+  }
+
+  function isAllowedUrl(url) {
+    try {
+      urls.rejectHostAppUrl(url);
+      urls.validateUrl(url);
+      return true;
+    } catch {
+      return false;
+    }
   }
 
   function releaseNativeBrowser(browserSessionId) {
@@ -90,19 +102,34 @@ function createNativeBrowserManager(options) {
     guests.release(entry.browserSessionId);
     entry.contents = null;
     entry.shown = false;
+    forgetLoad(entry);
   }
 
   function bindNativeBrowserGuest(browserSessionId, contents) {
     const entry = ensureNativeBrowserEntry(browserSessionId);
+    forgetLoad(entry);
     views.bindGuest(entry, contents);
     const restoreUrl = urls.restorableUrlForEntry(entry, entry.targetUrl);
     if (restoreUrl) void loadNativeBrowserUrl(entry, restoreUrl, { force: true });
+  }
+
+  // A load belongs to the guest that started it; a new guest starts afresh.
+  function forgetLoad(entry) {
+    entry.loadingUrl = null;
+    entry.loadingPromise = null;
   }
 
   async function requireNativeBrowserGuest(browserSessionId) {
     const entry = ensureNativeBrowserEntry(browserSessionId);
     if (!liveContents(entry)) await guests.waitForGuest(entry.browserSessionId);
     if (entry.crashed) throw new Error(`The ${options.appName} browser page crashed. Reload it.`);
+    return entry;
+  }
+
+  // Page actions run against the restored page, not the blank one before it.
+  async function requireLoadedGuest(browserSessionId) {
+    const entry = await requireNativeBrowserGuest(browserSessionId);
+    await entry.loadingPromise;
     return entry;
   }
 
@@ -218,12 +245,12 @@ function createNativeBrowserManager(options) {
     const load = contents
       .loadURL(url)
       .then(() => {
-        const current = liveContents(entry);
-        if (!current || urls.isChromeErrorUrl(current.getURL())) return { ok: false };
+        if (liveContents(entry) !== contents || urls.isChromeErrorUrl(contents.getURL()))
+          return { ok: false };
         return { ok: true };
       })
       .catch((err) => {
-        if (entry.targetUrl === url) entry.targetUrl = null;
+        if (entry.contents === contents && entry.targetUrl === url) entry.targetUrl = null;
         if (!contents.isDestroyed() && !urls.isLoadAbortError(err))
           console.error(`failed to load browser URL: ${err.message}`);
         return { ok: false, error: err };
@@ -253,6 +280,7 @@ function createNativeBrowserManager(options) {
     release: releaseNativeBrowser,
     handleWillAttach: guests.handleWillAttach,
     handleCreated: guests.handleCreated,
+    handleAttached: guests.handleAttached,
     open: openNativeBrowser,
     setShown: setNativeBrowserShown,
     close: closeNativeBrowser,

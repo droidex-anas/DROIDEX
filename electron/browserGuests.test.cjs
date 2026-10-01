@@ -41,13 +41,15 @@ test('a reserved guest attaches once, hardened, and binds to its session', async
   const { event, webPreferences, params } = attach(guests, src, host);
   const guest = fakeGuest();
   guests.handleCreated(guest);
+  assert.deepEqual(bound, []);
+  guests.handleAttached(guest);
 
   assert.equal(event.prevented, false);
   assert.equal(webPreferences.partition, 'persist:droidex-browser');
   assert.equal(webPreferences.preload, '/app/page.cjs');
   assert.equal(webPreferences.webSecurity, true);
   assert.equal(webPreferences.disablePopups, true);
-  assert.deepEqual(params, { instanceId: '7', src: 'about:blank' });
+  assert.deepEqual(params, { instanceId: '7', src: '' });
   assert.equal(await waiting, guest);
   assert.deepEqual(bound, [['browser-1', guest]]);
   assert.equal(guests.sessionIdFor(guest), 'browser-1');

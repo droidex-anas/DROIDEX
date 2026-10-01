@@ -1,4 +1,4 @@
-import { useId, useLayoutEffect, useSyncExternalStore } from 'react';
+import { useId, useLayoutEffect, useRef, useSyncExternalStore } from 'react';
 import { releaseNativeBrowser, reserveNativeBrowser, setNativeBrowserShown } from './nativeBrowser';
 
 // Each chat's browser page is a <webview> the Browser host mounts once at the
@@ -69,17 +69,20 @@ function touch(browserSessionId: string): void {
   lastUsed.set(browserSessionId, ++useCounter);
 }
 
-/** Mounts the session's page if it is not mounted yet. */
-function ensureBrowserPage(browserSessionId: string): Promise<void> {
+/**
+ * Mounts the session's page if it is not mounted yet. `savedUrl` is the page
+ * the app last saw there, which main reopens after an app restart.
+ */
+function ensureBrowserPage(browserSessionId: string, savedUrl?: string): Promise<void> {
   touch(browserSessionId);
   if (state.pages.some((page) => page.browserSessionId === browserSessionId))
     return Promise.resolve();
   const pending = reserving.get(browserSessionId);
   if (pending) return pending;
-  const reservation = reserveNativeBrowser(browserSessionId)
+  const reservation = reserveNativeBrowser(browserSessionId, savedUrl)
     .then(({ src, generation }) => {
-      // Closed while main was issuing the token.
-      if (reserving.get(browserSessionId) !== reservation) return;
+      if (reserving.get(browserSessionId) !== reservation)
+        throw new Error('The browser page was closed.');
       update({
         pages: [
           ...state.pages,
@@ -95,20 +98,19 @@ function ensureBrowserPage(browserSessionId: string): Promise<void> {
   return reservation;
 }
 
-/** Runs agent work on a session's page, keeping the page mounted throughout. */
+/**
+ * Runs agent work on a session's page, keeping it mounted and awake
+ * throughout. Main lifts the page's own throttling for the work, so it renders
+ * even while the app window is hidden.
+ */
 export async function withBrowserPage<T>(
   browserSessionId: string,
   run: () => Promise<T>,
+  savedUrl?: string,
 ): Promise<T> {
-  const wasAwake =
-    isBrowserPageAwake(state, browserSessionId) &&
-    state.pages.some((page) => page.browserSessionId === browserSessionId);
   setWorking(browserSessionId, 1);
   try {
-    await ensureBrowserPage(browserSessionId);
-    // A sleeping page paints nothing, so a capture sent before the host has
-    // shown it again would wait forever.
-    if (!wasAwake) await nextPaint();
+    await ensureBrowserPage(browserSessionId, savedUrl);
     return await run();
   } finally {
     setWorking(browserSessionId, -1);
@@ -121,16 +123,6 @@ export function closeBrowserPage(browserSessionId: string): void {
   lastUsed.delete(browserSessionId);
   if (!state.pages.some((page) => page.browserSessionId === browserSessionId)) return;
   update({ pages: state.pages.filter((page) => page.browserSessionId !== browserSessionId) });
-}
-
-function nextPaint(): Promise<void> {
-  return new Promise((resolve) => {
-    requestAnimationFrame(() => {
-      requestAnimationFrame(() => {
-        resolve();
-      });
-    });
-  });
 }
 
 function setWorking(browserSessionId: string, delta: 1 | -1): void {
@@ -191,7 +183,6 @@ function setSlot(slot: BrowserSlot | null): void {
   if (previous === next) return;
   if (previous) void setNativeBrowserShown(previous, false).catch(() => undefined);
   if (next) void setNativeBrowserShown(next, true).catch(() => undefined);
-  unloadOverCap();
 }
 
 /**
@@ -200,16 +191,24 @@ function setSlot(slot: BrowserSlot | null): void {
  */
 export function useBrowserSlot(
   browserSessionId: string | undefined,
-  { hidden, rounded }: { hidden: boolean; rounded: boolean },
+  { hidden, rounded, url }: { hidden: boolean; rounded: boolean; url: string },
 ): string {
   const anchor = `--browser-slot-${useId().replace(/[^\w-]/g, '')}`;
+  const latest = useRef({ rounded, url });
+  latest.current = { rounded, url };
   useLayoutEffect(() => {
     if (!browserSessionId || hidden) return;
-    void ensureBrowserPage(browserSessionId).catch(() => undefined);
-    setSlot({ browserSessionId, anchor, rounded });
+    void ensureBrowserPage(browserSessionId, latest.current.url).catch(() => undefined);
+    setSlot({ browserSessionId, anchor, rounded: latest.current.rounded });
     return () => {
       if (state.slot?.anchor === anchor) setSlot(null);
     };
-  }, [anchor, browserSessionId, hidden, rounded]);
+  }, [anchor, browserSessionId, hidden]);
+  // Corners follow the pane in place; withdrawing the slot would put the page
+  // to sleep for a frame.
+  useLayoutEffect(() => {
+    if (state.slot?.anchor === anchor && state.slot.rounded !== rounded)
+      update({ slot: { ...state.slot, rounded } });
+  }, [anchor, rounded]);
   return anchor;
 }
