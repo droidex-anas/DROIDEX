@@ -13,8 +13,8 @@ const REFRESH_INTERVAL_MS = 5 * 60_000;
 // itself answers repeat reads within a minute from its own cache.
 const MIN_READ_GAP_MS = 60_000;
 const READ_TIMEOUT_MS = 30_000;
-// A server asking for a longer wait is asked again after this long.
-const MAX_RETRY_AFTER_MS = 15 * 60_000;
+// A server's wait is honoured in full, up to a day.
+const MAX_RETRY_AFTER_MS = 24 * 60 * 60_000;
 
 // A read the server turned away for now, saying how long to wait.
 export class UsageReadError extends Error {
