@@ -180,9 +180,11 @@ function createBrowserActions({
     await runWithWebContentsDebugger(contents, async (dbg) => {
       let sessionId;
       let document;
+      let refNode;
       if (request.ref) {
         const target = await reading.lookupRef(dbg, entry, request.ref);
         ({ document } = target);
+        refNode = target.backendNodeId;
         sessionId = target.frame.sessionId;
         await send(dbg, sessionId, 'DOM.focus', { backendNodeId: target.backendNodeId });
         // A focus handler can send the focus on to another element or frame.
@@ -192,13 +194,17 @@ function createBrowserActions({
       } else {
         ({ sessionId, document } = await focusedFrame(dbg));
       }
+      const stillOn = holdsKey(dbg, step, sessionId, document);
       // The text, and then Enter, go only to the document they were aimed at.
       await inputReady(dbg, step, sessionId, document);
       if (text) await send(dbg, sessionId, 'Input.insertText', { text });
       if (request.submit) {
         await inputReady(dbg, step, sessionId, document);
         await keepsFocus(dbg, sessionId, document);
-        await pressOn(dbg, sessionId, keyOf('Enter'));
+        // An input handler can move the focus on to another control.
+        if (request.ref && !(await reading.hasFocus(dbg, sessionId, refNode)))
+          throw new Error(`${request.ref} lost the focus before Enter; read the page again.`);
+        await pressOn(dbg, sessionId, keyOf('Enter'), stillOn);
       }
     });
   }
@@ -208,11 +214,12 @@ function createBrowserActions({
     const repeat = Math.min(MAX_REPEAT, Math.max(1, Math.round(Number(request.repeat) || 1)));
     await runWithWebContentsDebugger(contents, async (dbg) => {
       const { sessionId, document } = await focusedFrame(dbg);
+      const stillOn = holdsKey(dbg, step, sessionId, document);
       for (let i = 0; i < repeat; i++) {
         await inputReady(dbg, step, sessionId, document);
         // A key can move the focus; the rest go only to the frame they began in.
         if (i > 0) await keepsFocus(dbg, sessionId, document);
-        await pressOn(dbg, sessionId, key);
+        await pressOn(dbg, sessionId, key, stillOn);
       }
     });
   }
@@ -324,6 +331,12 @@ function createBrowserActions({
         await dbg.sendCommand('Input.dispatchMouseEvent', event);
       }
     });
+  }
+
+  // A key is released only on the page that took it.
+  function holdsKey(dbg, step, sessionId, document) {
+    return async () =>
+      !step.navigation.started() && (!document || (await frameHolds(dbg, sessionId, document)));
   }
 
   // Keys go on only while the frame they were aimed at still has the focus.

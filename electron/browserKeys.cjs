@@ -85,7 +85,9 @@ function modifiersOf(names) {
   return modifiers;
 }
 
-async function pressOn(dbg, sessionId, key) {
+// The key is released only while `held()` says the page that took the press
+// is still there: a press that navigates leaves nothing to release.
+async function pressOn(dbg, sessionId, key, held = async () => true) {
   const { text, commands, ...base } = key;
   await send(dbg, sessionId, 'Input.dispatchKeyEvent', {
     ...base,
@@ -94,7 +96,8 @@ async function pressOn(dbg, sessionId, key) {
     unmodifiedText: text,
     commands,
   });
-  await send(dbg, sessionId, 'Input.dispatchKeyEvent', { ...base, type: 'keyUp' });
+  if (await held())
+    await send(dbg, sessionId, 'Input.dispatchKeyEvent', { ...base, type: 'keyUp' });
 }
 
 module.exports = { keyOf, modifiersOf, pressOn };
