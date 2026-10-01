@@ -110,6 +110,7 @@ function createNativeBrowserPage({
     }
     if (request.action === 'evaluate') {
       const value = await devTools.evaluate(contents, request.script, () => {
+        if (liveContents(entry) !== contents) throw new Error('The browser page closed.');
         if (Date.now() >= request.startBy)
           throw new Error('The browser page did not finish in time.');
       });

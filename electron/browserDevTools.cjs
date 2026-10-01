@@ -16,23 +16,19 @@ function createBrowserDevTools({
   const answers = new Map(); // origin -> whether the user allowed it, or the question in flight
 
   // Runs the script as the body of an async function in the page and gives
-  // what it returns as JSON, cut to a length an agent can read. `notLate`
-  // throws once the caller has given up, which the user's answer can outlast.
-  async function evaluate(contents, script, notLate) {
+  // what it returns as JSON, cut to a length an agent can read. `stillWanted`
+  // throws once the caller has given up or the guest has gone, either of which
+  // the user's answer or the debugger's queue can outlast.
+  async function evaluate(contents, script, stillWanted) {
     const origin = originOf(contents.getURL());
     if (!(await allowed(origin)))
       throw new Error(
         `The user has not allowed developer tools on ${origin}. Work with the other browser tools, or ask the user.`,
       );
-    notLate();
-    const { result, exceptionDetails } = await runWithWebContentsDebugger(contents, (dbg) =>
-      dbg.sendCommand('Runtime.evaluate', {
-        expression: guarded(origin, String(script ?? '')),
-        awaitPromise: true,
-        returnByValue: true,
-        timeout: SCRIPT_MS,
-      }),
-    );
+    const { result, exceptionDetails } = await runWithWebContentsDebugger(contents, (dbg) => {
+      stillWanted();
+      return withinLimit(dbg, guarded(origin, String(script ?? '')));
+    });
     if (exceptionDetails) {
       // The first line says what went wrong; the rest is a stack through the wrapper.
       const [what] = String(exceptionDetails.exception?.description ?? exceptionDetails.text).split(
@@ -40,7 +36,7 @@ function createBrowserDevTools({
       );
       throw new Error(`The script failed: ${what}`.slice(0, 1000));
     }
-    const json = JSON.stringify(result.value) ?? 'undefined';
+    const json = result.value ?? 'undefined';
     if (json.length <= MAX_RESULT_CHARS) return json;
     return `${json.slice(0, MAX_RESULT_CHARS)}… (${String(json.length)} characters; return less)`;
   }
@@ -76,17 +72,38 @@ function createBrowserDevTools({
   return { evaluate };
 }
 
-// The script wrapped so that it runs only in a document of the allowed origin,
-// checked in the same step as it runs, and gives the debugger back within the
-// limit even when what it awaits never settles.
+// Sends the wrapped script. What it awaits is timed inside the page; a script
+// that keeps the page busy past that is stopped from here.
+async function withinLimit(dbg, expression) {
+  const stop = setTimeout(() => {
+    dbg.sendCommand('Runtime.terminateExecution').catch(() => undefined);
+  }, SCRIPT_MS + 1_000);
+  try {
+    return await dbg.sendCommand('Runtime.evaluate', {
+      expression,
+      awaitPromise: true,
+      returnByValue: true,
+      timeout: SCRIPT_MS,
+    });
+  } finally {
+    clearTimeout(stop);
+  }
+}
+
+// The wrapper around a script. The script goes in as text and is compiled
+// inside it, after the origin check and in the same step, so nothing in the
+// script can run in a document of another origin or change the wrapper. The
+// result is turned to JSON there, as the page would, and what the script awaits
+// is raced against a timer so a promise that never settles ends in time.
 function guarded(origin, script) {
-  return `(async (origin, ms) => {
+  return `(async (origin, ms, body) => {
   if (location.origin !== origin) throw new Error('the page changed before the script ran');
+  const run = new (async () => {}).constructor(body);
   const late = new Promise((_, reject) =>
     setTimeout(() => reject(new Error('it did not finish in ' + ms / 1000 + ' s')), ms),
   );
-  return Promise.race([(async () => {\n${script}\n})(), late]);
-})(${JSON.stringify(origin)}, ${String(SCRIPT_MS)})`;
+  return JSON.stringify(await Promise.race([run(), late]));
+})(${JSON.stringify(origin)}, ${String(SCRIPT_MS)}, ${JSON.stringify(script)})`;
 }
 
 module.exports = { createBrowserDevTools };
