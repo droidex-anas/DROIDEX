@@ -103,7 +103,8 @@ function createNativeBrowserPage({
       return { requestId: request.requestId, ok: true, ...shot };
     }
     if (request.action === 'awaitViewport') {
-      await laidOutAt(contents, request.viewport);
+      // The page takes its new size at full speed, shown or not.
+      await unthrottled(contents, () => laidOutAt(contents, request.viewport));
       return actions.act(contents, entry, { ...request, action: 'snapshot' });
     }
     if (request.action === 'wait') {
