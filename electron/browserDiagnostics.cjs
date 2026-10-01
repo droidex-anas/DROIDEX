@@ -42,7 +42,7 @@ function redactBrowserDiagnosticText(value) {
   // A URL inside a message is redacted like any other.
   const bounded = String(value || '')
     .slice(0, 4000)
-    .replace(/\bhttps?:\/\/[^\s"'<>]+/g, (url) => redactBrowserDiagnosticUrl(url));
+    .replace(/\bhttps?:\/\/[^\s"'<>]+/gi, (url) => redactBrowserDiagnosticUrl(url));
   return redactUnquotedAssignments(
     redactQuotedAssignments(redactAuthenticationSchemes(bounded)),
   ).slice(0, 1000);

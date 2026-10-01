@@ -28,9 +28,11 @@ function createBrowserActions({
   const { refuseCovered } = createBrowserCover({ reading });
 
   async function act(contents, entry, request) {
-    if (request.action === 'snapshot') return result(request, contents, entry, entry.consoleErrors);
+    // After a navigation or a wait, errors count from when the request came.
+    if (request.action === 'snapshot')
+      return result(request, contents, entry, request.receivedAt ?? Date.now());
     if (request.action === 'inspect') return inspect(contents, entry, request);
-    const errorsBefore = entry.consoleErrors;
+    const since = Date.now();
     const urlBefore = contents.getURL();
     const navigation = observeNavigation(contents);
     try {
@@ -52,7 +54,7 @@ function createBrowserActions({
         if (mayNavigate && step.sent && !navigation.started())
           await navigation.startsWithin(NAVIGATION_GRACE_MS);
         if (navigation.started()) await navigation.wait();
-        return result(request, contents, entry, errorsBefore, urlBefore);
+        return result(request, contents, entry, since, urlBefore);
       });
     } finally {
       navigation.dispose();
@@ -332,11 +334,11 @@ function createBrowserActions({
 
   // The page after an action, with what the agent reads about it: what
   // changed besides the action itself, then the [Title · url] footer.
-  async function result(request, contents, entry, errorsBefore, urlBefore = contents.getURL()) {
+  async function result(request, contents, entry, since, urlBefore = contents.getURL()) {
     const snapshot = await pageSnapshot(contents);
     const notes = [];
     if (snapshot.url !== urlBefore) notes.push('The page went to a new address.');
-    const errors = entry.consoleErrors - errorsBefore;
+    const errors = entry.errorTimes.filter((at) => at >= since).length;
     if (errors)
       notes.push(
         `${errors} new console error${errors === 1 ? '' : 's'}; browser_console has them.`,

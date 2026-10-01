@@ -295,7 +295,7 @@ export function createBrowserMcpServer(
       tool(
         'browser_network',
         [
-          'The requests the page finished since you last read them, the newest 100 at most: status or failure, method, URL, type, how long each took and its size when the server stated one.',
+          'The requests the page finished since you last read them, the newest 100 at most: status or failure, method, URL, type, how long each took once it was sent, and its size when the server stated one.',
           'No headers or bodies; credentials and sensitive URL parts are redacted.',
         ].join(' '),
         {},

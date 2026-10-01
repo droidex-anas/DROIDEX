@@ -84,7 +84,7 @@ function createNativeBrowserViewFactory({
       loadingPromise: null,
       networkEvents: [],
       consoleEvents: [],
-      consoleErrors: 0,
+      errorTimes: [],
     };
   }
 
@@ -101,8 +101,11 @@ function createNativeBrowserViewFactory({
       // Electron's own notices about the guest are not the page's.
       if (String(details.sourceId ?? '').startsWith('node:electron/')) return;
       const message = normalizeBrowserConsoleMessage(details);
-      // Counted apart from the log, which a read empties.
-      if (message.level === CONSOLE_ERROR) entry.consoleErrors += 1;
+      // When errors came in, kept apart from the log, which a read empties.
+      if (message.level === CONSOLE_ERROR) {
+        entry.errorTimes.push(Date.now());
+        if (entry.errorTimes.length > 100) entry.errorTimes.shift();
+      }
       entry.consoleEvents.push({ timestamp: Date.now(), ...message });
       if (entry.consoleEvents.length > 100) {
         entry.consoleEvents.splice(0, entry.consoleEvents.length - 100);
