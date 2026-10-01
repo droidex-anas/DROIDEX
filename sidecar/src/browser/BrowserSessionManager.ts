@@ -236,7 +236,9 @@ export class BrowserSessionManager {
       const state = await refresh();
       if (input.urlIncludes && !state.url.includes(input.urlIncludes)) return false;
       if (input.text && (await session.runtime.find(input.text)).matches === 0) return false;
+      stillOpen();
       if (input.ref && !(await refIsOnPage(session.runtime, input.ref))) return false;
+      stillOpen();
       return true;
     };
     while (!(await matches())) {

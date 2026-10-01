@@ -3,17 +3,15 @@
 // in one document and is never reused; a ref from a document that has since
 // gone fails plainly instead of acting on something else.
 
-const vm = require('node:vm');
 const { refFor, knownRef, forgetRefs } = require('./browserRefs.cjs');
 const { createBrowserMasking, fieldOf } = require('./browserMasking.cjs');
-const { cleanText, TEXT_ROLES } = require('./browserText.cjs');
+const { cleanText, matcher, TEXT_ROLES } = require('./browserText.cjs');
 
 const MAX_NODES = 20_000;
 const MAX_REFS = 5_000;
 const DEFAULT_MAX_CHARS = 12_000;
 const MAX_FIND_RESULTS = 20;
 const MAX_NAME_CHARS = 200;
-const REGEX_TIME_LIMIT_MS = 250;
 
 const INTERACTIVE_ROLES = new Set([
   'button',
@@ -75,7 +73,7 @@ function createBrowserReading({ runWithWebContentsDebugger, savedSecretsFor, red
         const root = tree.nodes.find((node) => node.backendDOMNodeId === target.backendNodeId);
         if (!root)
           throw new Error(`${options.ref} is not on the page any more; call browser_read_page.`);
-        if (await insideMaskedField(dbg, tree, root, contents.getURL()))
+        if (await masking.insideMaskedField(dbg, tree, root, contents.getURL()))
           throw new Error(`${options.ref} is inside a masked field.`);
         renderTree(render, tree, root, target.document, 0);
       } else {
@@ -143,17 +141,6 @@ function createBrowserReading({ runWithWebContentsDebugger, savedSecretsFor, red
       if (!frames.some((frame) => frame.loaderId === document))
         throw new Error('The page changed before the action ran; call browser_read_page.');
     });
-  }
-
-  // A ref inside a masked field reads as nothing, however the agent got it.
-  async function insideMaskedField(dbg, tree, node, url) {
-    const byId = new Map(tree.nodes.map((candidate) => [candidate.nodeId, candidate]));
-    const secrets = await masking.secretsFor(url);
-    for (let parent = byId.get(node.parentId); parent; parent = byId.get(parent.parentId)) {
-      const field = fieldOf(parent);
-      if (field && (await masking.isSensitive(dbg, field, secrets))) return true;
-    }
-    return false;
   }
 
   // Chooses an option on the ref's own <select>, wherever it lives; `before`
@@ -426,31 +413,6 @@ function ancestorsOf(lines, index) {
     }
   }
   return chain;
-}
-
-// Which lines match plain text, or a /regex/flags. An agent's pattern runs on
-// the main thread, so it runs under a time limit; flags that make a regex
-// stateful are dropped.
-function matcher(query) {
-  const regex = /^\/(.+)\/([a-z]*)$/.exec(String(query));
-  if (!regex) {
-    const needle = String(query).toLowerCase();
-    return (texts) => texts.map((text) => text.toLowerCase().includes(needle));
-  }
-  const pattern = new RegExp(regex[1], regex[2].replace(/[gy]/g, ''));
-  return (texts) => {
-    try {
-      return vm.runInNewContext(
-        'texts.map((text) => pattern.test(text))',
-        { texts, pattern },
-        {
-          timeout: REGEX_TIME_LIMIT_MS,
-        },
-      );
-    } catch {
-      throw new Error('That /regex/ took too long; search for plain text or a simpler pattern.');
-    }
-  };
 }
 
 // Shoelace area, so a rotated element still counts as visible.

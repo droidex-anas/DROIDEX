@@ -8,17 +8,29 @@ const { cleanText } = require('./browserText.cjs');
 const { dropRef } = require('./browserRefs.cjs');
 
 const MASK = '••••';
-const VALUE_ROLES = new Set(['textbox', 'searchbox', 'combobox', 'spinbutton', 'slider']);
+// Shorter values would scrub ordinary text such as a single digit.
+const MIN_SCRUBBED_CHARS = 3;
+const VALUE_ROLES = new Set([
+  'textbox',
+  'searchbox',
+  'combobox',
+  'listbox',
+  'spinbutton',
+  'slider',
+]);
 const SENSITIVE_FIELD =
-  /pass|otp|one.?time|verif|2fa|mfa|token|secret|credential|\bauth\b|api.?key|access.?key|private.?key|\bkey\b|cvc|cvv|csc|card.?num|cc-|security.?code|\bpin\b|ssn|iban/i;
+  /pass|otp|one.?time|verif|2fa|mfa|token|secret|credential|auth(?!ors?\b)|api.?key|access.?key|private.?key|\bkey\b|cvc|cvv|csc|card.?num|cc-|security.?code|\bpin\b|ssn|iban/i;
 
 function createBrowserMasking({ savedSecretsFor }) {
   // Field lines from browser_read_page show their value or the mask. What is
   // inside a masked field, such as a select's options, is hidden and its refs
-  // are forgotten.
+  // are forgotten; and since Chromium folds a field's value into the names of
+  // the elements around it (a heading or a cell holding the field), a masked
+  // value is scrubbed from every other line too.
   async function maskFields(dbg, render, url) {
     if (render.fields.length === 0) return;
     const secrets = await secretsFor(url);
+    const masked = new Set();
     for (const line of render.fields) {
       const { value } = line.field;
       // An empty field with nothing inside it has nothing to show or hide.
@@ -26,12 +38,26 @@ function createBrowserMasking({ savedSecretsFor }) {
       const sensitive = await isSensitive(dbg, line.field, secrets);
       if (value) line.text += `: ${sensitive ? MASK : value}`;
       if (!sensitive) continue;
+      if (value.length >= MIN_SCRUBBED_CHARS) masked.add(value);
       for (const inner of line.inside) {
         inner.hidden = true;
         if (inner.ref) dropRef(render.entry, inner.ref);
       }
     }
     render.lines = render.lines.filter((line) => !line.hidden);
+    for (const line of render.lines)
+      for (const value of masked) line.text = line.text.replaceAll(value, MASK);
+  }
+
+  // A ref inside a masked field reads as nothing, however the agent got it.
+  async function insideMaskedField(dbg, tree, node, url) {
+    const byId = new Map(tree.nodes.map((candidate) => [candidate.nodeId, candidate]));
+    const secrets = await secretsFor(url);
+    for (let parent = byId.get(node.parentId); parent; parent = byId.get(parent.parentId)) {
+      const field = fieldOf(parent);
+      if (field && (await isSensitive(dbg, field, secrets))) return true;
+    }
+    return false;
   }
 
   async function secretsFor(url) {
@@ -49,7 +75,7 @@ function createBrowserMasking({ savedSecretsFor }) {
     return !described || isSensitiveField(described.node.attributes ?? []);
   }
 
-  return { maskFields, secretsFor, isSensitive };
+  return { maskFields, insideMaskedField };
 }
 
 // A field whose value is shown or masked; the value may be empty, as in a
