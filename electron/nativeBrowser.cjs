@@ -21,6 +21,7 @@ const BROWSER_PARTITION = 'persist:droidex-browser';
 // guest bound to the session loads it again.
 function createNativeBrowserManager(options) {
   const nativeBrowsers = new Map();
+  const loadWaiters = new Map(); // browserSessionId -> Set<(loaded) => void>
   const urls = createNativeBrowserUrlPolicy({
     appName: options.appName,
     getHostAppUrl: options.getHostAppUrl,
@@ -103,11 +104,13 @@ function createNativeBrowserManager(options) {
     entry.contents = null;
     entry.shown = false;
     forgetLoad(entry);
+    forgetLoadWaiters(entry);
   }
 
   function bindNativeBrowserGuest(browserSessionId, contents) {
     const entry = ensureNativeBrowserEntry(browserSessionId);
     forgetLoad(entry);
+    forgetLoadWaiters(entry);
     views.bindGuest(entry, contents);
     const restoreUrl = urls.restorableUrlForEntry(entry, entry.targetUrl);
     if (restoreUrl) void loadNativeBrowserUrl(entry, restoreUrl, { force: true });
@@ -117,6 +120,11 @@ function createNativeBrowserManager(options) {
   function forgetLoad(entry) {
     entry.loadingUrl = null;
     entry.loadingPromise = null;
+  }
+
+  // Nobody waiting on a guest's next load hears about its replacement's loads.
+  function forgetLoadWaiters(entry) {
+    for (const settle of [...(loadWaiters.get(entry.browserSessionId) ?? [])]) settle(undefined);
   }
 
   async function waitForGuest(browserSessionId) {
@@ -221,11 +229,30 @@ function createNativeBrowserManager(options) {
 
   function emitNativeBrowserLoaded(entry, url) {
     const history = liveContents(entry)?.navigationHistory;
-    options.sendToRenderer('native-browser-loaded', {
+    const event = {
       browserSessionId: entry.browserSessionId,
       url,
       canGoBack: history?.canGoBack() ?? false,
       canGoForward: history?.canGoForward() ?? false,
+    };
+    options.sendToRenderer('native-browser-loaded', event);
+    for (const settle of [...(loadWaiters.get(entry.browserSessionId) ?? [])]) settle(event);
+  }
+
+  // The next page load in a session, or undefined once `timeoutMs` passes.
+  function nextNativeBrowserLoad(browserSessionId, timeoutMs) {
+    const id = urls.normalizeNativeBrowserSessionId(browserSessionId);
+    return new Promise((resolve) => {
+      const waiters = loadWaiters.get(id) ?? new Set();
+      loadWaiters.set(id, waiters);
+      const timer = setTimeout(() => settle(undefined), timeoutMs);
+      function settle(event) {
+        clearTimeout(timer);
+        waiters.delete(settle);
+        if (waiters.size === 0 && loadWaiters.get(id) === waiters) loadWaiters.delete(id);
+        resolve(event);
+      }
+      waiters.add(settle);
     });
   }
 
@@ -305,11 +332,19 @@ function createNativeBrowserManager(options) {
     close: closeNativeBrowser,
     reload: reloadNativeBrowser,
     reloadFocused: reloadFocusedNativeBrowser,
+    waitForPage: waitForGuest,
+    nextLoad: nextNativeBrowserLoad,
     goBack: (browserSessionId) => navigateNativeBrowserHistory(browserSessionId, 'back'),
     goForward: (browserSessionId) => navigateNativeBrowserHistory(browserSessionId, 'forward'),
     setDesignMode: page.setDesignMode,
     setPencilMode: page.setPencilMode,
     runAgentAction: page.runAgentAction,
+    waitForPaint: page.waitForPaint,
+    abandonWork: (browserSessionId) => {
+      const entry = nativeBrowsers.get(urls.normalizeNativeBrowserSessionId(browserSessionId));
+      const contents = liveContents(entry);
+      if (contents) page.abandonOperations(contents);
+    },
     capture: page.capture,
     captureDesignSelection: page.captureDesignSelection,
     handleCredentialCapture: credentials.handleCapture,

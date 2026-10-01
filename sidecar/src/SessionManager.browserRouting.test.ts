@@ -1,7 +1,12 @@
 import assert from 'node:assert/strict';
+import { EventEmitter } from 'node:events';
 import test from 'node:test';
 
-import type { ServerEvent } from './protocol.js';
+import {
+  createDesktopBrowserChannel,
+  type BrowserChannelProcess,
+} from './browser/desktopBrowserChannel.js';
+import type { BrowserNativeRequest, BrowserNativeResult, ServerEvent } from './protocol.js';
 import {
   nativeSnapshot,
   nativeSuccess,
@@ -13,12 +18,28 @@ import {
   createSessionManagerTestContext,
 } from './testing/sessionManagerTestContext.js';
 
-type NativeBrowserRequestEvent = Extract<ServerEvent, { type: 'browser.native.request' }>;
-
-function nativeRequests(events: ServerEvent[]): NativeBrowserRequestEvent[] {
-  return events.filter(
-    (event): event is NativeBrowserRequestEvent => event.type === 'browser.native.request',
-  );
+// Stands in for the desktop app's main process on the other end of the channel.
+function fakeDesktopApp() {
+  const channel = new EventEmitter() as EventEmitter & { connected: boolean; sent: unknown[] };
+  channel.connected = true;
+  channel.sent = [];
+  Object.assign(channel, {
+    send: (message: unknown, callback?: (error: Error | null) => void) => {
+      channel.sent.push(message);
+      callback?.(null);
+      return true;
+    },
+  });
+  return {
+    requestBrowser: createDesktopBrowserChannel(channel as unknown as BrowserChannelProcess, 5_000),
+    lastRequest: () =>
+      (channel.sent.at(-1) as { request: BrowserNativeRequest } | undefined)?.request,
+    answer: async (id: string, result: BrowserNativeResult) => {
+      channel.emit('message', { type: 'browser.result', id, result });
+      await Promise.resolve();
+      await Promise.resolve();
+    },
+  };
 }
 
 test('[B1] Browser command routing', { concurrency: false }, async () => {
@@ -155,9 +176,10 @@ test('[B1] Browser command routing', { concurrency: false }, async () => {
   }
 });
 
-test('[B2] Native request and result correlation', { concurrency: false }, async () => {
+test('[B2] Desktop browser requests and answers', { concurrency: false }, async () => {
   const timeouts = observeNativeBrowserTimeouts();
-  const h = createNativeBrowserTestContext();
+  const app = fakeDesktopApp();
+  const h = createNativeBrowserTestContext(app.requestBrowser);
 
   try {
     let opened = false;
@@ -169,24 +191,16 @@ test('[B2] Native request and result correlation', { concurrency: false }, async
     void open.then(() => {
       opened = true;
     });
-    const request = nativeRequests(h.events).at(-1)?.request;
+    const request = app.lastRequest();
     assert.ok(request);
 
-    await h.handle({
-      type: 'browser.native.result',
-      result: {
-        requestId: 'unknown',
-        appSessionId: 'app-b2',
-        browserSessionId: 'browser-b2',
-        ok: true,
-      },
-    });
+    await app.answer('unknown', { ...nativeSuccess(request), requestId: 'unknown' });
     assert.equal(opened, false);
 
-    await h.handle({
-      type: 'browser.native.result',
-      result: nativeSuccess(request, nativeSnapshot('https://example.test')),
-    });
+    await app.answer(
+      request.requestId,
+      nativeSuccess(request, nativeSnapshot('https://example.test')),
+    );
     await open;
     assert.equal(opened, true);
     assert.equal(
@@ -200,7 +214,7 @@ test('[B2] Native request and result correlation', { concurrency: false }, async
     );
 
     const reload = h.handle({ type: 'browser.reload', appSessionId: 'app-b2' });
-    const timedOutRequest = nativeRequests(h.events).at(-1)?.request;
+    const timedOutRequest = app.lastRequest();
     assert.ok(timedOutRequest);
     timeouts.fireCurrent();
     await reload;
@@ -214,17 +228,18 @@ test('[B2] Native request and result correlation', { concurrency: false }, async
       true,
     );
 
+    // A late answer is dropped; nothing is replayed.
     const eventCountBeforeLateResult = h.events.length;
-    await h.handle({
-      type: 'browser.native.result',
-      result: nativeSuccess(timedOutRequest, nativeSnapshot('https://example.test/reloaded')),
-    });
+    await app.answer(
+      timedOutRequest.requestId,
+      nativeSuccess(timedOutRequest, nativeSnapshot('https://example.test/reloaded')),
+    );
     assert.equal(h.events.length, eventCountBeforeLateResult);
 
     const close = h.handle({ type: 'browser.close', appSessionId: 'app-b2' });
-    const closeRequest = nativeRequests(h.events).at(-1)?.request;
+    const closeRequest = app.lastRequest();
     assert.ok(closeRequest);
-    await h.handle({ type: 'browser.native.result', result: nativeSuccess(closeRequest) });
+    await app.answer(closeRequest.requestId, nativeSuccess(closeRequest));
     await close;
   } finally {
     await h.dispose();

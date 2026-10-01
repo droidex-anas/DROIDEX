@@ -98,11 +98,11 @@ test('notification IPC returns the main-process delivery result unchanged', asyn
 test('native browser IPC carries browserSessionId', async () => {
   const { api, calls } = loadApi();
 
-  await api.nativeBrowserOpen('browser-1', 'https://example.test');
+  await api.nativeBrowserReserve('browser-1', 'https://example.test');
 
-  assert.equal(calls[0].channel, 'native-browser-open');
+  assert.equal(calls[0].channel, 'native-browser-reserve');
   assert.equal(calls[0].payload.browserSessionId, 'browser-1');
-  assert.equal(calls[0].payload.url, 'https://example.test');
+  assert.equal(calls[0].payload.savedUrl, 'https://example.test');
   assert.equal('sessionId' in calls[0].payload, false);
 });
 

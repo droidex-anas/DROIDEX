@@ -33,8 +33,8 @@ export interface BrowserHostState {
   /** Mounted pages in creation order; never reordered. */
   pages: readonly BrowserPage[];
   slot: BrowserSlot | null;
-  /** Sessions with agent work in flight, by request count. */
-  working: Readonly<Record<string, number>>;
+  /** Sessions main has agent work in flight on, as main last reported. */
+  working: Readonly<Record<string, true>>;
   /** Sessions whose page crashed and has not loaded since, even with the pane closed. */
   crashed: Readonly<Record<string, true>>;
 }
@@ -101,23 +101,26 @@ function ensureBrowserPage(browserSessionId: string, savedUrl?: string): Promise
 }
 
 /**
- * Runs agent work on a session's page, keeping it mounted and awake
- * throughout. Main lifts the page's own throttling for the work, so it renders
- * even while the app window is hidden.
+ * Main starts or finishes agent work on a session's page. The page stays
+ * mounted and awake while any work is in flight; main waits for it to attach
+ * and lifts its own throttling, so it renders even while the window is hidden.
  */
-export async function withBrowserPage<T>(
+export function setBrowserPageWorking(
   browserSessionId: string,
-  run: () => Promise<T>,
+  working: boolean,
   savedUrl?: string,
-): Promise<T> {
-  setWorking(browserSessionId, 1);
-  try {
-    await ensureBrowserPage(browserSessionId, savedUrl);
-    return await run();
-  } finally {
-    setWorking(browserSessionId, -1);
-    unloadOverCap();
+): void {
+  if (browserSessionId in state.working !== working) {
+    update({
+      working: working
+        ? { ...state.working, [browserSessionId]: true }
+        : Object.fromEntries(
+            Object.entries(state.working).filter(([id]) => id !== browserSessionId),
+          ),
+    });
   }
+  if (working) void ensureBrowserPage(browserSessionId, savedUrl).catch(() => undefined);
+  else unloadOverCap();
 }
 
 export function closeBrowserPage(browserSessionId: string): void {
@@ -143,16 +146,8 @@ export function useBrowserPageCrashed(browserSessionId: string | undefined): boo
   return useSyncExternalStore(subscribe, crashed, crashed);
 }
 
-function setWorking(browserSessionId: string, delta: 1 | -1): void {
-  const { [browserSessionId]: current = 0, ...others } = state.working;
-  const count = current + delta;
-  update({ working: count > 0 ? { ...others, [browserSessionId]: count } : others });
-}
-
 export function isBrowserPageAwake(host: BrowserHostState, browserSessionId: string): boolean {
-  return (
-    host.slot?.browserSessionId === browserSessionId || Boolean(host.working[browserSessionId])
-  );
+  return host.slot?.browserSessionId === browserSessionId || browserSessionId in host.working;
 }
 
 function unloadPages(browserSessionIds: Set<string>): void {

@@ -10,6 +10,7 @@ import {
 } from './automations/AutomationManager.js';
 import { SessionManager } from './SessionManager.js';
 import { startBridgeServer } from './bridgeServer.js';
+import { createDesktopBrowserChannel } from './browser/desktopBrowserChannel.js';
 import { droidexUserDataDir } from './droidexPaths.js';
 import { shutdownSidecar } from './shutdown.js';
 import { hotPathMetrics } from './telemetry/hotPathMetrics.js';
@@ -51,6 +52,7 @@ const manager = new SessionManager(
   },
   {
     assetUrlFor: (filePath) => server.browserAssetUrl(filePath),
+    requestBrowser: createDesktopBrowserChannel(),
     beforeFirstTurn: async (session, clientRef) => {
       await projectSessions.beforeFirstTurn(session, clientRef);
     },

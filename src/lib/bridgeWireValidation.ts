@@ -316,8 +316,6 @@ function isServerEvent(value: unknown): value is ServerEvent {
       return Array.isArray(value.sessions) && value.sessions.every(isSessionHistoryEntry);
     case 'browser.updated':
       return isBrowserState(value.state);
-    case 'browser.native.request':
-      return isBrowserNativeRequest(value.request);
     case 'sidebar.request':
       return isSidebarRequest(value.request);
     case 'mcp.authRequested':
@@ -640,13 +638,6 @@ function isBrowserState(value: unknown): boolean {
     isRecord(value.viewport) &&
     isRecord(value.scroll) &&
     recordArray(value.refs)
-  );
-}
-
-function isBrowserNativeRequest(value: unknown): boolean {
-  return (
-    isRecord(value) &&
-    hasStrings(value, ['requestId', 'appSessionId', 'browserSessionId', 'action'])
   );
 }
 
