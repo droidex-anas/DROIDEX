@@ -1187,6 +1187,101 @@ test('changed role is serialized after accepted in-flight settings', async () =>
   );
 });
 
+test('role model update queues behind accepted in-flight exact settings', async () => {
+  const record = childRecord('child', 'provider');
+  const h = createHarness([record]);
+  const runtime = await h.open(record);
+  const gate = runtime.deferNextUpdateSettings();
+  const exactUpdate = h.owner.updateSettings({
+    type: 'child.updateSettings',
+    parentAppSessionId: h.parentId,
+    childSessionId: record.childSessionId,
+    modelId: 'model-default',
+    reasoningEffort: ReasoningEffort.High,
+  });
+  await runtime.waitForSettings(1);
+
+  const roleUpdate = h.owner.updateRoleModelChildren(h.parentId, 'worker', 'role-default-model');
+  await Promise.resolve();
+
+  assert.deepEqual(
+    runtime.settings.map((settings) => settings.modelId),
+    ['model-default'],
+  );
+
+  gate.resolve();
+  await Promise.all([exactUpdate, roleUpdate]);
+
+  assert.deepEqual(
+    runtime.settings.map((settings) => settings.modelId),
+    ['model-default', 'role-default-model'],
+  );
+  assert.equal(h.owner.list(h.parentId)[0]?.modelId, 'role-default-model');
+  assert.equal(h.owner.list(h.parentId)[0]?.reasoningEffort, ReasoningEffort.High);
+});
+
+test('queued role model update skips a child whose role changed', async () => {
+  const record = childRecord('child', 'provider');
+  const h = createHarness([record]);
+  const runtime = await h.open(record);
+  const gate = runtime.deferNextUpdateSettings();
+  const exactUpdate = h.owner.updateSettings({
+    type: 'child.updateSettings',
+    parentAppSessionId: h.parentId,
+    childSessionId: record.childSessionId,
+    modelId: 'accepted-model',
+  });
+  await runtime.waitForSettings(1);
+
+  h.owner.admitChildObservation({
+    parentAppSessionId: h.parentId,
+    providerSessionId: record.providerSessionId,
+    role: 'validator',
+    ...(record.spawnLink ? { spawnLink: record.spawnLink } : {}),
+  });
+  const roleUpdate = h.owner.updateRoleModelChildren(h.parentId, 'worker', 'worker-model');
+
+  gate.resolve();
+  await Promise.all([exactUpdate, roleUpdate]);
+
+  assert.equal(h.owner.list(h.parentId)[0]?.role, 'validator');
+  assert.equal(h.owner.list(h.parentId)[0]?.modelId, 'accepted-model');
+  assert.deepEqual(
+    runtime.settings.map((settings) => settings.modelId),
+    ['accepted-model'],
+  );
+});
+
+test('a child completed while a role model update is queued no longer blocks the role default', async () => {
+  const record = childRecord('child', 'provider');
+  const h = createHarness([record]);
+  const runtime = await h.open(record);
+  const gate = runtime.deferNextUpdateSettings();
+  const exactUpdate = h.owner.updateSettings({
+    type: 'child.updateSettings',
+    parentAppSessionId: h.parentId,
+    childSessionId: record.childSessionId,
+    modelId: 'accepted-model',
+  });
+  await runtime.waitForSettings(1);
+  const roleUpdate = h.owner.updateRoleModelChildren(h.parentId, 'worker', 'worker-model');
+  h.owner.admitChildObservation({
+    parentAppSessionId: h.parentId,
+    providerSessionId: record.providerSessionId,
+    role: 'worker',
+    done: true,
+    ...(record.spawnLink ? { spawnLink: record.spawnLink } : {}),
+  });
+  gate.resolve();
+  await exactUpdate;
+  assert.equal(await roleUpdate, true);
+  assert.equal(h.owner.list(h.parentId)[0]?.status, 'completed');
+  assert.deepEqual(
+    runtime.settings.map((settings) => settings.modelId),
+    ['accepted-model'],
+  );
+});
+
 test('changed role cancels and invalidates its captured automatic target', async () => {
   const record = childRecord('child', 'provider');
   const h = createHarness([record]);

@@ -629,6 +629,8 @@ export class SessionManager {
       onPrimaryModelChanged: (summary, from, to) => {
         return this.appendSettingsStatus(summary, `Model switched: ${from} → ${to}`, { from, to });
       },
+      updateChildAgentModel: (appSessionId, agent, effectiveModelId) =>
+        this.childSessions.updateRoleModelChildren(appSessionId, agent, effectiveModelId),
       onSettled: (appSessionId) => {
         this.runtimeRetirement.arm();
         // A settled write is one of the states that made this session refuse a
