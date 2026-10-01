@@ -35,20 +35,20 @@ export async function readFactoryUsage(
   return factoryReading(await response.json());
 }
 
-// An account on Factory's older billing has no windows to report.
+// An account on Factory's older billing has no windows to report; any other
+// answer without them is not one this build can read.
 function factoryReading(value: unknown): UsageReading {
   const body = objectValue(value);
-  const limits = objectValue(body?.limits);
-  if (!limits || body?.usesTokenRateLimitsBilling === false)
+  if (body?.usesTokenRateLimitsBilling === false)
     return { meters: [], unavailable: 'no_plan_limits' };
+  const limits = objectValue(body?.limits);
+  const meters = [
+    ...poolMeters('standard', limits?.standard, undefined),
+    ...poolMeters('core', limits?.core, 'Droid Core'),
+  ];
+  if (meters.length === 0) throw new Error('Factory answered without any usage window.');
   const cents = Math.round(numberValue(body?.extraUsageBalanceCents) ?? 0);
-  return {
-    meters: [
-      ...poolMeters('standard', limits.standard, undefined),
-      ...poolMeters('core', limits.core, 'Droid Core'),
-    ],
-    ...(cents > 0 ? { extra: { kind: 'extra_balance', cents } } : {}),
-  };
+  return { meters, ...(cents > 0 ? { extra: { kind: 'extra_balance', cents } } : {}) };
 }
 
 function poolMeters(pool: string, value: unknown, model: string | undefined): UsageMeter[] {
