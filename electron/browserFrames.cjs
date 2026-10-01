@@ -172,11 +172,13 @@ async function focusedFrame(dbg) {
   }
 }
 
-// The element with the focus in the given document.
+// The element with the focus in the given document, inside shadow roots.
 async function activeElement(dbg, sessionId, documentId) {
   const { result } = await send(dbg, sessionId, 'Runtime.callFunctionOn', {
     objectId: documentId,
-    functionDeclaration: 'function () { return this.activeElement; }',
+    // Through shadow roots too: a frame focused inside one shows as its host.
+    functionDeclaration:
+      'function () { let a = this.activeElement; while (a?.shadowRoot?.activeElement) a = a.shadowRoot.activeElement; return a; }',
   });
   if (!result?.objectId) return undefined;
   try {
