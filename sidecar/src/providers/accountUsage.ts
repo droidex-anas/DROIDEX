@@ -123,9 +123,12 @@ export class AccountUsage {
     if (account.reading) return account.reading;
     const now = this.now();
     const source = this.source(provider, panelOpen);
-    const resting = !immediate && now - account.lastReadAt < MIN_READ_GAP_MS;
-    if (!source || account.outstanding || resting || now < account.retryAt) return undefined;
+    if (!source) return undefined;
+    // Before the gap check: a chat opening just after a read still needs the
+    // light reads that follow.
     this.startTimer();
+    const resting = !immediate && now - account.lastReadAt < MIN_READ_GAP_MS;
+    if (account.outstanding || resting || now < account.retryAt) return undefined;
     account.lastReadAt = now;
     account.outstanding = true;
     account.pushedDuringRead.clear();
