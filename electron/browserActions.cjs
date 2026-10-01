@@ -200,7 +200,7 @@ function createBrowserActions({
             ? `${request.ref} does not take typed text; use browser_fill or browser_click.`
             : 'Nothing that takes typed text has the focus; pass the ref of a field.',
         );
-      const stillOn = holdsKey(dbg, step, sessionId, document);
+      const stillOn = onSamePage(dbg, sessionId, document);
       // The text, and then Enter, go only to the document they were aimed at.
       await inputReady(dbg, step, sessionId, document);
       if (text) await send(dbg, sessionId, 'Input.insertText', { text });
@@ -221,7 +221,7 @@ function createBrowserActions({
     const repeat = Math.min(MAX_REPEAT, Math.max(1, Math.round(Number(request.repeat) || 1)));
     await runWithWebContentsDebugger(contents, async (dbg) => {
       const { sessionId, document } = await focusedFrame(dbg);
-      const stillOn = holdsKey(dbg, step, sessionId, document);
+      const stillOn = onSamePage(dbg, sessionId, document);
       for (let i = 0; i < repeat; i++) {
         // A key can move the focus; the rest go only to the frame they began in.
         if (i > 0) await keepsFocus(dbg, sessionId, document);
@@ -337,20 +337,23 @@ function createBrowserActions({
   // ref document stops the gesture.
   function dispatchMouse(contents, step, target, events) {
     return runWithWebContentsDebugger(contents, async (dbg) => {
+      const stillOn = onSamePage(dbg, target.sessionId, target.document);
       for (const event of events) {
+        // A press that went out is always released, on the page that took it.
+        if (event.type === 'mouseReleased') {
+          if (await stillOn()) await dbg.sendCommand('Input.dispatchMouseEvent', event);
+          continue;
+        }
         await inputReady(dbg, step, target.sessionId, target.document);
         await dbg.sendCommand('Input.dispatchMouseEvent', event);
       }
     });
   }
 
-  // A key is released only on the page that took it.
-  function holdsKey(dbg, step, sessionId, document) {
-    return async () => {
-      if (document && !(await frameHolds(dbg, sessionId, document))) return false;
-      // Asked after the await: a navigation can start while it is pending.
-      return !step.navigation.started();
-    };
+  // Whether the page that took a press is still there, so the press can be
+  // released: its document, which a navigation that aborts leaves in place.
+  function onSamePage(dbg, sessionId, document) {
+    return async () => !document || (await frameHolds(dbg, sessionId, document));
   }
 
   // Whether a node is what its own document or shadow root has focused.

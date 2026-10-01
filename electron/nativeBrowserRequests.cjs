@@ -84,7 +84,10 @@ function createNativeBrowserRequests({ manager, notifyRenderer }) {
       if (PAGELESS_ACTIONS.has(request.action)) return await performAction(request);
       return await withAwakePage(request.browserSessionId, timeoutMs, async (woke) => {
         if (woke) startPaintWait(request.browserSessionId);
-        if (!TURN_ACTIONS.has(request.action)) return performOnPage(request);
+        // A screenshot of a ref scrolls the page to it, so it takes a turn too.
+        const takesTurn =
+          TURN_ACTIONS.has(request.action) || (request.action === 'screenshot' && request.ref);
+        if (!takesTurn) return performOnPage(request);
         return inTurn(request.browserSessionId, request.startBy, async () => {
           if (INPUT_ACTIONS.has(request.action)) await painting.get(request.browserSessionId);
           return performOnPage(request);
