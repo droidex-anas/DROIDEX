@@ -53,12 +53,14 @@ const NOT_TEXT_ROLES = new Set([
   'InlineTextBox',
 ]);
 
-function markdownOf(tree, render, { redactUrl, maxNodes, skip }) {
+function markdownOf(tree, render, { redactUrl, maxNodes, skip, folded }) {
   const byId = new Map(tree.nodes.map((node) => [node.nodeId, node]));
   const childrenOf = (node) => (node.childIds ?? []).map((id) => byId.get(id)).filter(Boolean);
-  const root =
-    tree.nodes.find((node) => node.role?.value === 'main' && !node.ignored) ??
-    tree.nodes.find((node) => !node.parentId);
+  // Reading starts at main, unless main sits inside a field that is left out.
+  let root = tree.nodes.find((node) => node.role?.value === 'main' && !node.ignored);
+  for (let node = root; node; node = byId.get(node.parentId))
+    if (skip?.has(node.nodeId)) root = undefined;
+  root ??= tree.nodes.find((node) => !node.parentId);
   const blocks = [];
   let inline = [];
   let prefix = '';
@@ -110,7 +112,7 @@ function markdownOf(tree, render, { redactUrl, maxNodes, skip }) {
       const text = textOf(node) || labelOf(node);
       if (text) inline.push(url ? `[${text}](${redactUrl(url)})` : text);
     } else if (role === 'image') {
-      if (name) inline.push(`[image: ${name}]`);
+      if (name && !folded?.has(node.nodeId)) inline.push(`[image: ${name}]`);
     } else if (NOT_TEXT_ROLES.has(role)) {
       // left out
     } else if (role === 'heading') {

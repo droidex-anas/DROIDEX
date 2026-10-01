@@ -25,7 +25,7 @@ async function attachFrames(dbg) {
       pending.add(call);
       void call.finally(() => pending.delete(call));
     };
-    dbg.on('message', (_event, method, params, sessionId) => {
+    const onMessage = (_event, method, params, sessionId) => {
       if (method === 'Target.attachedToTarget' && params.targetInfo.type === 'iframe') {
         sessions.set(params.sessionId, {
           frameId: params.targetInfo.targetId,
@@ -35,8 +35,12 @@ async function attachFrames(dbg) {
       } else if (method === 'Target.detachedFromTarget') {
         sessions.delete(params.sessionId);
       }
+    };
+    dbg.on('message', onMessage);
+    dbg.once('detach', () => {
+      dbg.removeListener('message', onMessage);
+      attachments.delete(dbg);
     });
-    dbg.on('detach', () => attachments.delete(dbg));
     autoAttach(undefined);
   }
   while (attached.pending.size) await Promise.all(attached.pending);

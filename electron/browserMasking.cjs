@@ -60,8 +60,8 @@ function createBrowserMasking({ savedSecretsFor }) {
 
   // Boxes, in the page's viewport, of every sensitive field: the ones the
   // accessibility tree names, any field whose own attributes say so, and any
-  // input, textarea or select the tree hides (aria-hidden, inert), whose value
-  // nothing here can check. A frame that cannot be read fails the call, so a
+  // input, textarea, select or editable element the tree hides (aria-hidden,
+  // inert), whose value nothing here can check. A frame that cannot be read fails the call, so a
   // screenshot fails rather than show what it could not check.
   async function sensitiveBoxes(dbg) {
     const logins = savedLogins();
@@ -80,8 +80,10 @@ function createBrowserMasking({ savedSecretsFor }) {
     }
     for (const sessionId of new Set(frames.map((frame) => frame.sessionId)))
       for (const input of await inputsOf(dbg, sessionId)) {
+        const editable = attributeOf(input, 'contenteditable');
         const hidden =
-          ['INPUT', 'TEXTAREA', 'SELECT'].includes(input.nodeName) &&
+          (['INPUT', 'TEXTAREA', 'SELECT'].includes(input.nodeName) ||
+            (editable !== undefined && editable !== 'false')) &&
           !shown.has(`${sessionId}:${input.backendNodeId}`);
         if (hidden || isSensitiveField(input.attributes ?? [])) add(sessionId, input.backendNodeId);
       }
@@ -140,24 +142,43 @@ function createBrowserMasking({ savedSecretsFor }) {
   return { maskFields, sensitiveBoxes, insideMaskedField, sensitiveNodes };
 }
 
-// Nodes whose accessible name Chromium built from the page while a field sits
-// inside them: from their content, a legend or a caption, which folds in the
-// field's value ("Code 424242" for a heading holding a code field). They are
-// read without that name; their content reads on its own, with the field
-// masked like any other. A name from an attribute (aria-label, title, alt) is
-// kept.
+// Nodes whose accessible name Chromium built from a field's surroundings,
+// which folds in what the field holds ("Code 424242" for a heading holding a
+// code field): a name from the content, legend or caption of a node with a
+// field inside it, or one through aria-labelledby from a field, from what
+// holds one, or from what sits in one. They are read without that name; their
+// content reads on its own, with the field masked like any other. A name from
+// another attribute (aria-label, title, alt) is kept.
 function foldedNames(nodes) {
   const byId = new Map(nodes.map((node) => [node.nodeId, node]));
+  const byBackendId = new Map(nodes.map((node) => [node.backendDOMNodeId, node]));
   const holdsField = new Set();
+  const nearField = new Set(); // fields, what holds them and what they hold
+  const holdAll = (node) => {
+    nearField.add(node.nodeId);
+    for (const id of node.childIds ?? []) if (byId.has(id)) holdAll(byId.get(id));
+  };
   for (const node of nodes) {
-    if (!VALUE_ROLES.has(node.role?.value)) continue;
+    if (!isField(node)) continue;
+    holdAll(node);
     let parent = byId.get(node.parentId);
     while (parent && !holdsField.has(parent.nodeId)) {
       holdsField.add(parent.nodeId);
+      nearField.add(parent.nodeId);
       parent = byId.get(parent.parentId);
     }
   }
-  return new Set([...holdsField].filter((nodeId) => nameFromPage(byId.get(nodeId))));
+  const folded = new Set([...holdsField].filter((nodeId) => nameFromPage(byId.get(nodeId))));
+  for (const node of nodes) {
+    const source = nameSource(node);
+    if (source?.attribute !== 'aria-labelledby') continue;
+    // A field labelled by itself is masked with its own value.
+    const labels = (source.attributeValue?.relatedNodes ?? [])
+      .map((label) => byBackendId.get(label.backendDOMNodeId))
+      .filter((label) => label && label !== node);
+    if (labels.some((label) => nearField.has(label.nodeId))) folded.add(node.nodeId);
+  }
+  return folded;
 }
 
 // The name in effect is the first source with a value that nothing overrides;
@@ -174,13 +195,12 @@ function nameSource(node) {
 // A field whose value is shown or masked; the value may be empty, as in a
 // select with nothing chosen.
 function fieldOf(node, frame) {
-  const editable = isEditableRoot(node);
-  if ((!VALUE_ROLES.has(node.role?.value) && !editable) || node.ignored) return undefined;
+  if (!isField(node)) return undefined;
   return {
     backendNodeId: node.backendDOMNodeId,
     name: cleanText(node.name?.value),
     value: cleanText(node.value?.value),
-    editable,
+    editable: isEditableRoot(node),
     // A field labelled through aria-labelledby can be labelled by itself, and
     // then its name is its own content.
     labelledBy: nameSource(node)?.attribute === 'aria-labelledby',
@@ -212,6 +232,10 @@ async function inputsOf(dbg, sessionId) {
   }
 }
 
+function isField(node) {
+  return !node.ignored && (VALUE_ROLES.has(node.role?.value) || isEditableRoot(node));
+}
+
 // A contenteditable host: editable, and the one element of it that takes focus.
 function isEditableRoot(node) {
   const properties = node.properties ?? [];
@@ -219,6 +243,13 @@ function isEditableRoot(node) {
     properties.some((property) => property.name === 'editable') &&
     properties.some((property) => property.name === 'focusable' && property.value?.value)
   );
+}
+
+function attributeOf(node, name) {
+  const attributes = node.attributes ?? [];
+  for (let i = 0; i < attributes.length; i += 2)
+    if (attributes[i].toLowerCase() === name) return attributes[i + 1];
+  return undefined;
 }
 
 function isSensitiveField(attributes) {

@@ -107,7 +107,8 @@ function createBrowserReading({ runWithWebContentsDebugger, savedSecretsFor, red
       const render = newRender(undefined, {});
       const tree = await axTree(dbg, frame);
       const skip = await masking.sensitiveNodes(dbg, tree, frame);
-      const text = markdownOf(tree, render, { redactUrl, maxNodes: MAX_NODES, skip });
+      const folded = foldedNames(tree.nodes);
+      const text = markdownOf(tree, render, { redactUrl, maxNodes: MAX_NODES, skip, folded });
       return finish(render, text, options.maxChars, contents, 'raise max_chars');
     });
   }
@@ -174,7 +175,6 @@ function createBrowserReading({ runWithWebContentsDebugger, savedSecretsFor, red
     return { quad: (await viewportMapping(dbg, sessionId))(quad), document, sessionId };
   }
 
-  // The ref's element as a viewport box, for a screenshot crop.
   // The ref's element as a viewport box, for a screenshot crop, and the
   // session of the frame it is in.
   async function refBox(dbg, entry, ref) {
@@ -305,7 +305,7 @@ function createBrowserReading({ runWithWebContentsDebugger, savedSecretsFor, red
         role === 'InlineTextBox' ||
         role === 'ListMarker' ||
         (WRAPPER_ROLES.has(role) && !name && !field) ||
-        (interactiveOnly && !INTERACTIVE_ROLES.has(role));
+        (interactiveOnly && !INTERACTIVE_ROLES.has(role) && !field);
       if (skip) {
         visitChildren(childrenOf(node), depth, parentName);
         return;
