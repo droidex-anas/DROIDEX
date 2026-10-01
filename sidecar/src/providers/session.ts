@@ -185,7 +185,7 @@ export interface ProviderSession {
   readonly voice?: ProviderVoice;
   // Reads the account's usage through this session's own connection, for a
   // harness that can.
-  readonly usage?: { read(): Promise<UsageReading> };
+  readonly usage?: { read(signal: AbortSignal): Promise<UsageReading> };
   interrupt(): Promise<void>;
   close(): Promise<void>;
 }

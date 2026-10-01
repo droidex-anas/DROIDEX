@@ -40,15 +40,17 @@ export class CodexRateLimits {
   // A server that cannot answer (an older CLI, or a credential the backend
   // rejects) rejects the read and leaves the limits unknown. Reset credit
   // details are left out; their count still comes back.
-  async read(): Promise<UsageReading> {
+  async read(signal?: AbortSignal): Promise<UsageReading> {
     const inFlight: { updates?: RateLimitSnapshot } = {};
     this.reads.add(inFlight);
     let response: Record<string, unknown> | undefined;
     try {
       response = objectValue(
-        await this.client.request<unknown>('account/rateLimits/read', {
-          excludeResetCreditDetails: true,
-        }),
+        await this.client.request<unknown>(
+          'account/rateLimits/read',
+          { excludeResetCreditDetails: true },
+          signal,
+        ),
       );
     } finally {
       this.reads.delete(inFlight);
