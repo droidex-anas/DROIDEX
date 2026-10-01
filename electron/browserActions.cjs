@@ -15,11 +15,11 @@ const {
 const { callPageScript } = require('./browserPageScript.cjs');
 const { refFor } = require('./browserRefs.cjs');
 const { keyOf, modifiersOf, pressOn } = require('./browserKeys.cjs');
+const { observeNavigation, isNavigationError } = require('./browserNavigation.cjs');
 const { labelOf } = require('./browserText.cjs');
 const { isField } = require('./browserMasking.cjs');
 
 const PAGE_CHANGED = 'The page changed before the action ran; call browser_read_page.';
-const NAVIGATION_WAIT_MS = 7_000;
 const NAVIGATION_GRACE_MS = 150;
 const MAX_CLICKS = 3;
 const MAX_REPEAT = 50;
@@ -182,9 +182,7 @@ function createBrowserActions({
         sessionId = target.frame.sessionId;
         await send(dbg, sessionId, 'DOM.focus', { backendNodeId: target.backendNodeId });
         // A focus handler can send the focus on to another frame.
-        const focused = await focusedFrame(dbg);
-        if (focused.sessionId !== sessionId || focused.document !== document)
-          throw new Error(`${request.ref} did not keep the focus; read the page again.`);
+        await keepsFocus(dbg, sessionId, document);
       } else {
         ({ sessionId, document } = await focusedFrame(dbg));
       }
@@ -193,6 +191,7 @@ function createBrowserActions({
       if (text) await send(dbg, sessionId, 'Input.insertText', { text });
       if (request.submit) {
         await inputReady(dbg, step, sessionId, document);
+        await keepsFocus(dbg, sessionId, document);
         await pressOn(dbg, sessionId, keyOf('Enter'));
       }
     });
@@ -319,6 +318,13 @@ function createBrowserActions({
     });
   }
 
+  // Keys go on only while the frame they were aimed at still has the focus.
+  async function keepsFocus(dbg, sessionId, document) {
+    const focused = await focusedFrame(dbg);
+    if (focused.sessionId !== sessionId || focused.document !== document)
+      throw new Error('The focus moved to another frame; read the page again.');
+  }
+
   // Input goes out only while the document it was aimed at is still there.
   async function inputReady(dbg, step, sessionId, document) {
     if (document && !(await frameHolds(dbg, sessionId, document))) throw new Error(PAGE_CHANGED);
@@ -377,73 +383,6 @@ function createBrowserActions({
 function startInput(step) {
   if (step.navigation.started()) throw new Error(PAGE_CHANGED);
   step.sent = true;
-}
-
-function observeNavigation(contents) {
-  let started = false;
-  let settled = false;
-  let timeout;
-  let resolveCompletion;
-  let resolveStart;
-  const completion = new Promise((resolve) => {
-    resolveCompletion = resolve;
-  });
-  const start = new Promise((resolve) => {
-    resolveStart = resolve;
-  });
-  const finish = () => {
-    if (settled) return;
-    settled = true;
-    resolveCompletion();
-  };
-  // Only a new document counts: hash and History changes keep the page.
-  const onStart = (_event, _url, isInPlace, isMainFrame) => {
-    if (!isMainFrame || isInPlace || started) return;
-    started = true;
-    resolveStart();
-    timeout = setTimeout(finish, NAVIGATION_WAIT_MS);
-  };
-  const onFinish = () => {
-    if (started) finish();
-  };
-  const onFail = (_event, errorCode, _description, _url, isMainFrame) => {
-    if (isMainFrame && errorCode !== -3) finish();
-  };
-  contents.on('did-start-navigation', onStart);
-  contents.on('did-finish-load', onFinish);
-  contents.on('did-fail-load', onFail);
-  contents.on('destroyed', finish);
-  return {
-    started: () => started,
-    wait: () => completion,
-    startsWithin: (ms) => {
-      let timer;
-      return Promise.race([
-        start,
-        new Promise((resolve) => {
-          timer = setTimeout(resolve, ms);
-        }),
-      ]).finally(() => clearTimeout(timer));
-    },
-    dispose: () => {
-      clearTimeout(timeout);
-      contents.removeListener('did-start-navigation', onStart);
-      contents.removeListener('did-finish-load', onFinish);
-      contents.removeListener('did-fail-load', onFail);
-      contents.removeListener('destroyed', finish);
-    },
-  };
-}
-
-function isNavigationError(error) {
-  const message = String(error?.message || error).toLowerCase();
-  return [
-    'script execution was interrupted',
-    'execution context was destroyed',
-    'frame was disposed',
-    'object has been destroyed',
-    'cannot find context',
-  ].some((part) => message.includes(part));
 }
 
 // Run on the ref's own element. A value goes through the element's own

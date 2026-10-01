@@ -513,7 +513,7 @@ const FIELDS = [
   'select',
   '[contenteditable]:not([contenteditable="false"])',
   ...['textbox', 'searchbox', 'combobox', 'listbox', 'spinbutton', 'slider'].map(
-    (role) => `[role="${role}"]`,
+    (role) => `[role~="${role}"]`,
   ),
 ].join(', ');
 

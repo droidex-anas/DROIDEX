@@ -384,15 +384,15 @@ export class BrowserSessionManager {
   async close(appSessionId: string): Promise<void> {
     const session = this.resolveSession(appSessionId);
     if (!session) return;
-    await session.runtime.close();
+    // Gone before it shuts down, so nothing it answers meanwhile is shown.
     this.sessions.delete(keyFor(appSessionId));
+    await session.runtime.close();
   }
 
   async closeAll(): Promise<void> {
-    await Promise.all(
-      [...this.sessions.values()].map((session) => session.runtime.close().catch(() => {})),
-    );
+    const closing = [...this.sessions.values()];
     this.sessions.clear();
+    await Promise.all(closing.map((session) => session.runtime.close().catch(() => {})));
   }
 
   private sessionFor(
