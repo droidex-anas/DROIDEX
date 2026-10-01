@@ -32,31 +32,42 @@ const RATE_LIMIT_SCOPES: Record<NonNullable<SDKRateLimitInfo['rateLimitType']>, 
 // `rate_limit` also covers capacity refusals and model blocks. A usage refusal
 // is worded as one of the CLI's own limits, or arrives while the allowance is
 // spent: the CLI reports its allowance only when it changes, so the last
-// report still describes the window a later refusal hit.
+// report still describes the window a later refusal hit, until that window
+// resets.
 export function usageRefusal(
   text: string,
   lastRateLimit: SDKRateLimitInfo | undefined,
 ): UsageLimitError | undefined {
+  const rejected = currentRejection(lastRateLimit);
   const spent =
-    lastRateLimit?.status === 'rejected' &&
-    lastRateLimit.overageStatus !== 'allowed' &&
-    lastRateLimit.overageStatus !== 'allowed_warning';
+    rejected !== undefined &&
+    rejected.overageStatus !== 'allowed' &&
+    rejected.overageStatus !== 'allowed_warning';
   if (!spent && !USAGE_LIMIT_ERROR_PREFIXES.some((prefix) => text.startsWith(prefix)))
     return undefined;
-  return new UsageLimitError(text, refusedLimit(lastRateLimit));
+  return new UsageLimitError(text, refusedLimit(rejected));
 }
 
-// Only a rejected report describes the limit a refusal hit. Extra usage runs
-// out on its own clock.
+// Only a rejected report describes the limit a refusal hit, and only until its
+// window resets.
+function currentRejection(info: SDKRateLimitInfo | undefined): SDKRateLimitInfo | undefined {
+  if (info?.status !== 'rejected') return undefined;
+  const resetsAt = resetAtMillis(rejectionResetSeconds(info));
+  return resetsAt !== undefined && resetsAt <= Date.now() ? undefined : info;
+}
+
 function refusedLimit(info: SDKRateLimitInfo | undefined): UsageLimit {
-  if (info?.status !== 'rejected') return {};
-  const resetsAt = futureResetAt(
-    info.rateLimitType === 'overage' ? info.overageResetsAt : info.resetsAt,
-  );
+  if (!info) return {};
+  const resetsAt = futureResetAt(rejectionResetSeconds(info));
   return {
     ...(info.rateLimitType ? RATE_LIMIT_SCOPES[info.rateLimitType] : {}),
     ...(resetsAt === undefined ? {} : { resetsAt }),
   };
+}
+
+// Extra usage runs out on its own clock.
+function rejectionResetSeconds(info: SDKRateLimitInfo): number | undefined {
+  return info.rateLimitType === 'overage' ? info.overageResetsAt : info.resetsAt;
 }
 
 // A live session's account usage: read through its own query, and pushed as
