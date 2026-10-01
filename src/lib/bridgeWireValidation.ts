@@ -15,6 +15,7 @@ import {
   isModelInfo,
   isProviderKind,
   isProviderStatus,
+  isProviderUsage,
   isSkillInfo,
 } from '../features/providers/wireValidation';
 
@@ -267,6 +268,8 @@ function isServerEvent(value: unknown): value is ServerEvent {
       return value.catalog === 'tools';
     case 'provider.status':
       return Array.isArray(value.statuses) && value.statuses.every(isProviderStatus);
+    case 'usage.updated':
+      return isProviderUsage(value.usage);
     case 'settings.defaults':
       return isRecord(value.defaults);
     case 'error':

@@ -21,7 +21,7 @@ import type {
 import { errMsg } from '../../errors.js';
 import type { SkillInfo } from '../catalog.js';
 import type { ProviderInteractions } from '../interactions.js';
-import type { ProviderModelSettings, ProviderSession } from '../session.js';
+import type { ProviderModelSettings, ProviderSession, UsageMetersListener } from '../session.js';
 import { ClaudeCatalog } from './claudeCatalog.js';
 import { claudeLaunchModel, planningModelNotice, type ClaudeDefaultModel } from './claudeModels.js';
 import { ClaudeEventMapper } from './claudeEvents.js';
@@ -35,6 +35,7 @@ import {
 } from './claudeMessages.js';
 import { sessionOptions, claudeEffort } from './claudeOptions.js';
 import { ClaudePermissionModes } from './claudePermissionModes.js';
+import { ClaudeUsage } from './claudeRateLimits.js';
 
 export interface ClaudeSessionInput {
   // Claude pins the session id it is given, so DROIDEX's own identity is also
@@ -56,6 +57,7 @@ export interface ClaudeSessionInput {
   interactions: ProviderInteractions;
   // Set when reopening a stored session instead of starting a new one.
   resume?: boolean;
+  onUsage?: UsageMetersListener;
 }
 
 export class ClaudeSession implements ProviderSession {
@@ -73,6 +75,7 @@ export class ClaudeSession implements ProviderSession {
   // Control requests may only start after the CLI answers initialize.
   private readonly initialized: Promise<void>;
   private readonly catalog: ClaudeCatalog;
+  readonly usage: ClaudeUsage;
   // Resolves once the CLI process exists, which is all an open has to wait for.
   private readonly spawned: Promise<void>;
   private initializing = true;
@@ -155,6 +158,7 @@ export class ClaudeSession implements ProviderSession {
     // closure observer reports the failure without an unhandled rejection.
     void this.initialized.catch(() => undefined);
     this.catalog = new ClaudeCatalog(this.query, this.initialized);
+    this.usage = new ClaudeUsage(this.query, () => this.waitUntilInitialized(), input.onUsage);
     // A CLI that fails before it reaches spawn still settles initialization,
     // which is what releases the open instead of leaving it hanging.
     this.spawned = Promise.race([spawned, this.initialized]);
@@ -341,6 +345,7 @@ export class ClaudeSession implements ProviderSession {
 
   private dispatch(message: SDKMessage): void {
     this.catalog.observe(message);
+    this.usage.observe(message);
     // Mapping stays in wire order, including model and spawn-link observations.
     const events = this.mapper.map(message, this.fastMode);
     const turnEvents: NormalizedEvent[] = [];

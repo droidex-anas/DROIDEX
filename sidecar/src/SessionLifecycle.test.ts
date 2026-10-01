@@ -1734,6 +1734,7 @@ function claudeResumeProvider(
     kind: 'claude',
     create: () => Promise.reject(new Error('unexpected create')),
     fork: () => Promise.reject(new Error('unexpected fork')),
+    readUsage: () => Promise.reject(new Error('unexpected usage read')),
     resume: async (id, input) => {
       await beforeResume(id, input);
       return {

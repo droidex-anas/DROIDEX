@@ -158,6 +158,10 @@ export class ReplayFactoryRuntime implements FactoryRuntime {
     return { mode: 'cli_auth', droidPath: '/replay/droid', apiKeyConfigured: false };
   }
 
+  factoryApiKey(): undefined {
+    return undefined;
+  }
+
   createSession(options: CreateRuntimeSessionOptions): Promise<ReplayFactorySession> {
     const index = this.sessions.length;
     const session = new ReplayFactorySession(

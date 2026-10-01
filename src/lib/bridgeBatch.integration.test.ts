@@ -339,7 +339,7 @@ test('reconnect carries the last fully applied generation and sequence', async (
   const second = await reconnect();
   const url = new URL(second.url);
   const pageId = new URL(first.url).searchParams.get('pageId');
-  assert.equal(url.searchParams.get('bridgeProtocol'), '8');
+  assert.equal(url.searchParams.get('bridgeProtocol'), '9');
   assert.ok(pageId);
   assert.equal(url.searchParams.get('pageId'), pageId);
   assert.deepEqual(resumeCursor(second), { generation: 'generation-1', seq: '1' });

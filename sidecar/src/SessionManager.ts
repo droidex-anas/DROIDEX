@@ -109,6 +109,7 @@ import { McpSettings } from './McpSettings.js';
 import { loadFactoryMcpServers } from './FactoryMcpConfig.js';
 import { assertValidResponseFormat, formatAppPrompt, formatAppRepairPrompt } from './appPrompt.js';
 import { formatSideChatPrompt } from './sideChatPrompt.js';
+import { AccountUsage } from './providers/accountUsage.js';
 import { droidCatalogItems } from './providers/catalog.js';
 import { DroidProvider } from './providers/droid/DroidProvider.js';
 import { runPrimaryTurn, type PrimaryTurnRequest } from './providers/primaryTurn.js';
@@ -324,11 +325,25 @@ export class SessionManager {
   // Loaded with their first probe or session, after the sidecar is ready.
   private readonly claudeProvider = new LazyProvider('claude', async () => {
     const { ClaudeProvider } = await import('./providers/claude/ClaudeProvider.js');
-    return new ClaudeProvider();
+    return new ClaudeProvider((meters) => {
+      this.accountUsage.pushed('claude', meters);
+    });
   });
   private readonly codexProvider = new LazyProvider('codex', async () => {
     const { CodexProvider } = await import('./providers/codex/CodexProvider.js');
-    return new CodexProvider();
+    return new CodexProvider((meters) => {
+      this.accountUsage.pushed('codex', meters);
+    });
+  });
+  private readonly accountUsage = new AccountUsage({
+    liveSession: (provider) =>
+      this.registry
+        .liveSessionsSnapshot()
+        .find((live) => live.summary.provider === provider && !live.session.isClosed)?.session,
+    readWithoutSession: (provider, signal) => this.providerFor(provider).readUsage(signal),
+    emit: (event) => {
+      this.emit(event);
+    },
   });
   private readonly providerProbes: ProviderProbes;
   private readonly harnessClis = new HarnessCliUpdater(
@@ -955,6 +970,9 @@ export class SessionManager {
         await this.emitProviderStatus();
         await this.providerProbes.refresh();
         return;
+      case 'usage.refresh':
+        await this.accountUsage.refresh(cmd.provider, cmd);
+        return;
       case 'catalog.tools':
         await this.emitToolCatalog(cmd.providerSessionId);
         return;
@@ -1574,6 +1592,8 @@ export class SessionManager {
       liveSession,
       request,
     );
+    // Whatever the turn spent, the account says so now.
+    this.accountUsage.afterTurn(liveSession.summary.provider);
   }
 
   private isCurrentPrimarySession(liveSession: LiveSession): boolean {
@@ -2110,6 +2130,7 @@ export class SessionManager {
     this.runtimeRetirement.stop();
     this.runtimeWarmUp.stop();
     this.providerProbes.cancel();
+    this.accountUsage.close();
     let firstError: unknown;
     const run = async (action: () => void | Promise<void>): Promise<void> => {
       try {
