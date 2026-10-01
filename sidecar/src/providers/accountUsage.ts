@@ -73,8 +73,10 @@ export class AccountUsage {
     return Promise.resolve();
   }
 
+  // Only an account the renderer has asked for, or its harness has pushed, is
+  // kept current: a Droid turn with no /usage ever opened reads nothing.
   afterTurn(provider: ProviderKind): void {
-    void this.read(provider, false, false);
+    if (this.accounts.has(provider)) void this.read(provider, false, false);
   }
 
   // Codex sends its windows with nearly every token, so an unchanged push is
@@ -203,12 +205,14 @@ export class AccountUsage {
   }
 
   // Started by a read or push, so an app that never opens a session or /usage
-  // never ticks. Each tick reads through the live sessions, and with none left
-  // the timer stops until the next read or push.
+  // never ticks. Each tick reads the known accounts through their live
+  // sessions, and with none left the timer stops until the next read or push.
   private startTimer(): void {
     if (this.timer) return;
     this.timer = setInterval(() => {
-      const live = PROVIDER_KINDS.filter((provider) => this.host.liveSession(provider));
+      const live = PROVIDER_KINDS.filter(
+        (provider) => this.accounts.has(provider) && this.host.liveSession(provider),
+      );
       if (live.length === 0) {
         clearInterval(this.timer);
         this.timer = undefined;
