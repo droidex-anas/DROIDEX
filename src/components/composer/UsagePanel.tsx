@@ -50,10 +50,13 @@ export function UsagePanel({
           </div>
           <div className="ml-auto flex shrink-0 items-center gap-1 tabular-nums">
             {usage?.updatedAt !== undefined && (
-              <span className="pl-1.5 text-droid-text-muted">
-                {updatedLabel(usage.updatedAt, now)}
-                {usage.stale && ' · Couldn’t refresh'} ·
-              </span>
+              <>
+                <span className="pl-1.5 text-droid-text-muted">
+                  {updatedLabel(usage.updatedAt, now)}
+                  {usage.stale && ' · Couldn’t refresh'}
+                </span>
+                <span className="pl-1 text-droid-text-muted">·</span>
+              </>
             )}
             <button
               type="button"
