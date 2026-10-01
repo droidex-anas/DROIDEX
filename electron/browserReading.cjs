@@ -152,7 +152,7 @@ function createBrowserReading({ runWithWebContentsDebugger, savedSecretsFor, red
       const { quad, local, document, sessionId } = await visibleQuad(dbg, entry, ref);
       // The point in the ref's own frame stays unrounded, so mapped out of its
       // frame for the cover check it lands on the point that is clicked.
-      return { ...middleOf(quad), local: centreOf(local), document, sessionId };
+      return { ...centrePixelOf(quad), local: centreOf(local), document, sessionId };
     });
   }
 
@@ -479,7 +479,7 @@ function centreOf(quad) {
   };
 }
 
-function middleOf(quad) {
+function centrePixelOf(quad) {
   const { x, y } = centreOf(quad);
   return { x: Math.round(x), y: Math.round(y) };
 }
