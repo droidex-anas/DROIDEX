@@ -24,6 +24,7 @@ export function writeProviderSessionSettings(
   // leave to the transcript head's original one.
   if (modelId !== undefined) stored.modelId = modelId;
   if (reasoningEffort) stored.reasoningEffort = reasoningEffort;
+  else if (reasoningEffort === null) delete stored.reasoningEffort;
   if (fastMode !== undefined) stored.fastMode = fastMode;
   if (contextWindowTokens !== undefined) stored.contextWindowTokens = contextWindowTokens;
   mkdirSync(directory, { recursive: true });

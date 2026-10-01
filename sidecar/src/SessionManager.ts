@@ -636,6 +636,11 @@ export class SessionManager {
       runtime: this.runtime,
       getFactoryDefaults: () => this.getFactoryDefaults(),
       providerDefaultModelId: (provider) => this.providerProbes.status(provider)?.defaultModelId,
+      knownModel: (provider, modelId) =>
+        (provider === DEFAULT_PROVIDER
+          ? this.droidModels.known()
+          : (this.providerProbes.status(provider)?.models ?? [])
+        ).find((model) => model.id === modelId),
       maxContextTokensForModel: (modelId) => this.maxContextTokensForModel(modelId),
       isShutdownStarted: () => this.shutdownPromise !== undefined,
       refreshPrimary: async (live, modelChanged) => {
