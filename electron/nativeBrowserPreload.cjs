@@ -1173,6 +1173,8 @@ function showBox(rect, text) {
   // Kept inside the page at the size it is drawn, wrapping where it is narrow;
   // its own 16px of padding comes off the width it may take.
   label.style.maxWidth = `${Math.min(360, Math.floor((window.innerWidth - 16) / uiScale) - 16)}px`;
+  // Measured from the page's edge: where it last sat can squeeze its width.
+  label.style.left = '0px';
   const { width, height } = label.getBoundingClientRect();
   // One line sits where it always did; a wrapped label takes the room it needs.
   const tall = Math.max(height, 30 * uiScale);
