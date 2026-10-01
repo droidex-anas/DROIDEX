@@ -59,15 +59,17 @@ function createNativeBrowserRequests({ manager, notifyRenderer }) {
   async function handle(message, reply) {
     const request = browserRequestFrom(message);
     if (!request) return;
-    const deadlineMs = sidecarTimeoutMs(message.timeoutMs) + DEADLINE_MARGIN_MS;
     reply({
       type: 'browser.result',
       id: request.requestId,
-      result: await perform(request, deadlineMs),
+      result: await perform(
+        { ...request, receivedAt: Date.now() },
+        sidecarTimeoutMs(message.timeoutMs),
+      ),
     });
   }
 
-  async function perform(request, deadlineMs) {
+  async function perform(request, timeoutMs) {
     try {
       if (request.action === 'close') {
         manager.close(request.browserSessionId);
@@ -75,10 +77,10 @@ function createNativeBrowserRequests({ manager, notifyRenderer }) {
         return result(request, true);
       }
       if (PAGELESS_ACTIONS.has(request.action)) return await performAction(request);
-      return await withAwakePage(request.browserSessionId, deadlineMs, async (woke, deadline) => {
+      return await withAwakePage(request.browserSessionId, timeoutMs, async (woke, startBy) => {
         if (woke) startPaintWait(request.browserSessionId);
         if (!TURN_ACTIONS.has(request.action)) return performOnPage(request);
-        return inTurn(request.browserSessionId, deadline, async () => {
+        return inTurn(request.browserSessionId, startBy, async () => {
           if (INPUT_ACTIONS.has(request.action)) await painting.get(request.browserSessionId);
           return performOnPage(request);
         });
@@ -90,27 +92,23 @@ function createNativeBrowserRequests({ manager, notifyRenderer }) {
     }
   }
 
-  async function withAwakePage(browserSessionId, deadlineMs, run) {
+  // The work runs while the sidecar still waits for it, and a little past
+  // that; an action that has not started by the sidecar's own timeout never
+  // starts, so a caller that gave up never sees its input land later.
+  async function withAwakePage(browserSessionId, timeoutMs, run) {
     if ((waiting.get(browserSessionId) ?? 0) >= MAX_WAITING_PER_PAGE) {
       throw new Error('Too many browser actions are already waiting on this page.');
     }
     const woke = !waiting.has(browserSessionId);
     setWaiting(browserSessionId, 1);
     let timer;
-    const deadline = { passed: false };
-    deadline.reached = new Promise((resolve) => {
-      timer = setTimeout(() => {
-        deadline.passed = true;
-        resolve();
-      }, deadlineMs);
-    });
     try {
-      const work = run(woke, deadline);
+      const work = run(woke, Date.now() + timeoutMs);
       work.catch(() => undefined);
       return await Promise.race([
         work,
-        deadline.reached.then(() => {
-          throw new Error(LATE);
+        new Promise((_, reject) => {
+          timer = setTimeout(() => reject(new Error(LATE)), timeoutMs + DEADLINE_MARGIN_MS);
         }),
       ]);
     } finally {
@@ -119,16 +117,16 @@ function createNativeBrowserRequests({ manager, notifyRenderer }) {
     }
   }
 
-  // Actions on one page run one at a time, in the order they came. One whose
-  // request has given up never starts, and one that hangs holds the queue only
-  // until its request gives up.
-  function inTurn(browserSessionId, deadline, run) {
+  // Actions on one page run one at a time, in the order they came, each only
+  // once the one ahead has finished, even past its own deadline. One whose
+  // caller has given up never starts.
+  function inTurn(browserSessionId, startBy, run) {
     const previous = turns.get(browserSessionId) ?? Promise.resolve();
     const turn = previous.then(() => {
-      if (deadline.passed) throw new Error(LATE);
+      if (Date.now() >= startBy) throw new Error(LATE);
       return run();
     });
-    const over = Promise.race([turn, deadline.reached]).catch(() => undefined);
+    const over = turn.catch(() => undefined);
     turns.set(browserSessionId, over);
     void over.then(() => {
       if (turns.get(browserSessionId) === over) turns.delete(browserSessionId);
@@ -259,6 +257,7 @@ function agentAction(request) {
     textGone: request.textGone,
     urlIncludes: request.urlIncludes,
     waitMs: request.waitMs,
+    receivedAt: request.receivedAt,
     value: request.value,
     submit: request.submit,
     key: request.key,

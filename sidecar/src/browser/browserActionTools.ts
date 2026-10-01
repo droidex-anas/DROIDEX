@@ -12,6 +12,7 @@ const CLICK_VERBS: Record<number, string> = {
   3: 'Triple-clicked',
 };
 export const MAX_BATCH_STEPS = 20;
+const DEFAULT_WAIT_MS = 5_000;
 
 // The fields of each action, shared by its own tool and browser_batch.
 export const pointShape = {
@@ -86,8 +87,13 @@ export function browserActs(manager: BrowserSessionManager) {
   const act = {
     click: async (id: string, input: Input<typeof clickShape>): Promise<Did> => {
       const outcome = await manager.click({ appSessionId: id, ...input });
-      const verb = input.button === 'right' ? 'Right-clicked' : CLICK_VERBS[input.count ?? 1];
-      return { done: `${verb} ${pointed(input)}.`, outcome };
+      const count = input.count ?? 1;
+      const other = input.button === 'right' || input.button === 'middle';
+      const verb = other
+        ? `${input.button === 'right' ? 'Right' : 'Middle'}-clicked`
+        : CLICK_VERBS[count];
+      const times = other && count > 1 ? ` ${String(count)} times` : '';
+      return { done: `${verb} ${pointed(input)}${times}.`, outcome };
     },
     hover: async (id: string, input: Input<typeof pointShape>): Promise<Did> => ({
       done: `Hovered ${pointed(input)}.`,
@@ -118,7 +124,7 @@ export function browserActs(manager: BrowserSessionManager) {
     },
     wait: async (id: string, input: Input<typeof waitShape>): Promise<Did> => {
       const started = Date.now();
-      const { text, textGone, ref, urlIncludes, timeoutMs } = input;
+      const { text, textGone, ref, urlIncludes, timeoutMs = DEFAULT_WAIT_MS } = input;
       const outcome = await manager.wait(id, {
         text,
         textGone,
@@ -154,8 +160,12 @@ export function browserActs(manager: BrowserSessionManager) {
   async function batch(id: string, steps: Step[]): Promise<string> {
     const lines: string[] = [];
     let footer = '';
+    // Every step goes to the browser the batch started on.
+    const browserSessionId = manager.state(id)?.browserSessionId;
     for (const [index, step] of steps.entries()) {
       try {
+        if (manager.state(id)?.browserSessionId !== browserSessionId)
+          throw new Error('The browser was closed during the batch.');
         const { done, outcome } = await runStep(id, step);
         // An outcome's last line is its [Title · url] footer.
         const notes = outcome.text.split('\n');

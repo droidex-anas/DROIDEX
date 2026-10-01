@@ -7,15 +7,16 @@ const { callPageScript } = require('./browserPageScript.cjs');
 
 const MAX_WAIT_MS = 15_000;
 const RECHECK_MS = 500;
-// A page that never stops changing is still read at most this often.
-const MIN_GAP_MS = 100;
+// A page that never stops changing is still read at most four times a second.
+const MIN_GAP_MS = 250;
 
 function createBrowserWait({ reading }) {
   async function wait(contents, entry, request) {
     const waitMs = Math.min(MAX_WAIT_MS, Math.max(0, Number(request.waitMs ?? 5_000) || 0));
-    const deadline = Date.now() + waitMs;
+    // Counted from when the request arrived, however long the page took to wake.
+    const deadline = (request.receivedAt ?? Date.now()) + waitMs;
     if (!request.text && !request.textGone && !request.ref && !request.urlIncludes)
-      return delay(waitMs);
+      return delay(Math.max(0, deadline - Date.now()));
     for (;;) {
       const unmet = await unmetCondition(contents, entry, request);
       if (!unmet) return;
@@ -37,8 +38,12 @@ function createBrowserWait({ reading }) {
       return `the address does not have "${request.urlIncludes}"`;
     if (request.text && (await reading.find(contents, entry, request.text)).matches === 0)
       return `"${request.text}" is not on the page`;
-    if (request.textGone && (await reading.find(contents, entry, request.textGone)).matches > 0)
-      return `"${request.textGone}" is still on the page`;
+    if (request.textGone) {
+      // A page too large to search to the end has not shown the text is gone.
+      const found = await reading.find(contents, entry, request.textGone);
+      if (found.matches > 0 || !found.complete)
+        return `"${request.textGone}" is still on the page, or the page is too large to tell`;
+    }
     if (request.ref) {
       const there = await reading
         .readPage(contents, entry, { ref: request.ref, maxChars: 500 })

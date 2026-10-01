@@ -131,15 +131,18 @@ function createBrowserReading({ runWithWebContentsDebugger, savedSecretsFor, red
         : render.refsCut
           ? ` (refs stop after ${MAX_REFS} elements; read one ref for more)`
           : '';
+      const complete = !render.exhausted;
       if (results.length === 0)
         return {
           text: `No match for ${JSON.stringify(query)}${partial}.\n${footer(contents)}`,
           matches: 0,
+          complete,
         };
       const blocks = results.map((chain) => chain.map(indent).join('\n'));
       return {
         text: `${blocks.join('\n\n')}${partial ? `\n…${partial}` : ''}\n${footer(contents)}`,
         matches: results.length,
+        complete,
       };
     });
   }
