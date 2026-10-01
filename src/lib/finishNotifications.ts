@@ -122,7 +122,7 @@ export type FinishNotifyDecision =
  */
 export function decideFinishNotification(input: {
   settings: FinishNotificationSettings;
-  session: Pick<SessionSummary, 'appSessionId' | 'title' | 'phase'>;
+  session: Pick<SessionSummary, 'appSessionId' | 'title' | 'phase' | 'usageLimit'>;
   isActiveSession: boolean;
   assistantSnippet: string;
   appInForeground: boolean;
@@ -134,9 +134,10 @@ export function decideFinishNotification(input: {
 
   const failed = session.phase === 'failed';
   const sessionTitle = session.title.trim() || 'Chat';
+  const failure = session.usageLimit ? 'Usage limit reached' : 'Failed';
   return {
     kind: 'notify',
-    title: failed ? `Failed · ${sessionTitle}` : sessionTitle,
+    title: failed ? `${failure} · ${sessionTitle}` : sessionTitle,
     body: failed
       ? assistantSnippet || 'The model hit an error before finishing.'
       : assistantSnippet || 'The model finished its response.',

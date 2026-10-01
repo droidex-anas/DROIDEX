@@ -1,18 +1,29 @@
 import { useState } from 'react';
 import { GripVertical, ListPlus, MousePointerSquareDashed, Pencil, X } from 'lucide-react';
 import type { QueuedPrompt } from '../../hooks/useStore';
+import { formatResetTime } from '../../lib/usageLimit';
+import type { UsageLimit } from '../../types/bridge';
 import { PendingPromptPreview } from './PendingPromptPreview';
 
+function deliveryHint(usageLimit: UsageLimit | undefined): string {
+  if (!usageLimit) return 'sends after the current turn';
+  if (usageLimit.resetsAt === undefined) return 'held while the usage limit is reached';
+  return `sends when the limit resets at ${formatResetTime(usageLimit.resetsAt, Date.now())}`;
+}
+
 // Prompts staged while the model is busy; they send one at a time after the
-// current turn. Rows are HTML5-draggable to reorder; the drag state lives here
-// because nothing outside the list cares about an in-flight reorder.
+// current turn, or once the usage limit the chat is held on lifts. Rows are
+// HTML5-draggable to reorder; the drag state lives here because nothing
+// outside the list cares about an in-flight reorder.
 export function QueuedPrompts({
   queue,
+  usageLimit,
   onReorder,
   onEdit,
   onRemove,
 }: {
   queue: QueuedPrompt[];
+  usageLimit: UsageLimit | undefined;
   onReorder: (from: number, to: number) => void;
   onEdit: (prompt: QueuedPrompt) => void;
   onRemove: (id: string) => void;
@@ -32,7 +43,7 @@ export function QueuedPrompts({
     <div className="mb-2 flex flex-col gap-1.5">
       <div className="flex items-center gap-1.5 px-1 text-[11px] font-medium tracking-wide text-droid-text-muted">
         <ListPlus className="w-3 h-3" />
-        Queued · sends after the current turn
+        Queued · {deliveryHint(usageLimit)}
       </div>
       {queue.map((p, i) => {
         return (

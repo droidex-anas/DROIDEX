@@ -13,6 +13,7 @@ import type {
   ProviderStatus,
   SessionSummary,
   ModelInfo,
+  ModelSwitch,
   ReasoningEffort,
   ResponseFormat,
   ServerEvent,
@@ -626,9 +627,7 @@ export class SessionManager {
         const target = this.primaryContextTarget(live);
         if (target) await this.context.refresh(target);
       },
-      onPrimaryModelChanged: (summary, from, to) => {
-        return this.appendSettingsStatus(summary, `Model switched: ${from} → ${to}`, { from, to });
-      },
+      onPrimaryModelChanged: (summary, modelSwitch) => this.appendModelSwitch(summary, modelSwitch),
       onSettled: (appSessionId) => {
         this.runtimeRetirement.arm();
         // A settled write is one of the states that made this session refuse a
@@ -1516,10 +1515,9 @@ export class SessionManager {
     return targets;
   }
 
-  private async appendSettingsStatus(
+  private async appendModelSwitch(
     summary: SessionSummary,
-    text: string,
-    modelSwitch?: TranscriptEvent['modelSwitch'],
+    modelSwitch: ModelSwitch,
   ): Promise<void> {
     const id = summary.appSessionId;
     const closed = !this.registry.getLive(id);
@@ -1532,8 +1530,8 @@ export class SessionManager {
         role: 'primary',
         ts: Date.now(),
         kind: 'status',
-        text,
-        ...(modelSwitch ? { modelSwitch } : {}),
+        text: `Model switched: ${modelSwitch.from} → ${modelSwitch.to}`,
+        modelSwitch,
       });
     } finally {
       if (closed) await this.timeline.releaseTranscript(id);
@@ -1694,6 +1692,8 @@ export class SessionManager {
 
   private applyEventSideEffects(appSessionId: string, n: NormalizedSideEffects): void {
     this.missionControlPolicy.apply(appSessionId, n);
+    if (n.harnessModelSwitch)
+      this.modelSettings.adoptHarnessModel(appSessionId, n.harnessModelSwitch);
     if (n.childSession) {
       const { toolUseId, ...childSession } = n.childSession;
       this.childSessions.admitChildObservation({

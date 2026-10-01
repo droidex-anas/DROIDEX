@@ -25,6 +25,7 @@ export function activityReason(status: SessionActivityStatus, ctx: ActivityConte
         ? 'Plan is ready for your approval'
         : 'Ready to start';
     case 'failed':
+      if (ctx.session.usageLimit) return 'Usage limit reached';
       return join('Failed', ctx.session.interruptReason ?? ctx.digest?.snippet);
     case 'interrupted':
       return ctx.session.interruptReason ?? 'Turn was interrupted';

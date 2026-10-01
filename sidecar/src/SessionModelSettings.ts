@@ -1,10 +1,12 @@
 import { factoryReasoningEffort, type FactoryRuntime } from './DroidRuntime.js';
 import type { LiveSession } from './SessionLifecycle.js';
 import type { SessionRegistry } from './SessionRegistry.js';
+import type { HarnessModelSwitch } from './normalize.js';
 import type {
   ClientCommand,
   ConfigurableSessionRole,
   FactoryDefaultSettings,
+  ModelSwitch,
   ServerEvent,
   SessionSummary,
 } from './protocol.js';
@@ -29,11 +31,7 @@ interface Dependencies {
     settings: ProviderModelSettings,
   ) => Promise<void>;
   refreshPrimary: (live: LiveSession, modelChanged: boolean) => Promise<void>;
-  onPrimaryModelChanged: (
-    summary: SessionSummary,
-    from: string,
-    to: string,
-  ) => void | Promise<void>;
+  onPrimaryModelChanged: (summary: SessionSummary, modelSwitch: ModelSwitch) => Promise<void>;
   onSettled: (appSessionId: string) => void;
   emitError: (error: SettingsError) => void;
 }
@@ -171,7 +169,7 @@ export class SessionModelSettings {
         if (restart) live.restartBeforeNextTurn = true;
         if (agent !== 'primary') return true;
         // Only a model change earns a row; a new effort shows on the chip.
-        if (change) await this.d.onPrimaryModelChanged(next, change.from, change.to);
+        if (change) await this.d.onPrimaryModelChanged(next, change);
         if (!isCurrent()) return false;
         if (live)
           await this.d.refreshPrimary(
@@ -182,6 +180,25 @@ export class SessionModelSettings {
       },
       false,
     );
+  }
+
+  // The harness already runs the model it moved the chat to, so the chat
+  // follows at once rather than queueing behind user writes, and nothing is
+  // sent back to the provider.
+  adoptHarnessModel(appSessionId: string, harnessSwitch: HarnessModelSwitch): void {
+    const live = this.d.registry.getLive(appSessionId);
+    if (!live || live.summary.modelId === harnessSwitch.to) return;
+    const { from, to, cause, reasoningEffort } = harnessSwitch;
+    const settings = { modelId: to, ...(reasoningEffort ? { reasoningEffort } : {}) };
+    const provider = live.summary.provider;
+    this.d.registry.updateSummary(appSessionId, this.summaryPatch('primary', settings, provider));
+    if (provider !== DEFAULT_PROVIDER) writeProviderSessionSettings(appSessionId, settings);
+    void this.d.onPrimaryModelChanged(live.summary, { from, to, cause }).catch((error: unknown) => {
+      this.d.emitError({
+        appSessionId,
+        message: `Could not record the model switch: ${errMsg(error)}`,
+      });
+    });
   }
 
   applyPending(requestedId: string): Promise<boolean> {
