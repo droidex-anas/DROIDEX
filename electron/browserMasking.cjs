@@ -28,8 +28,9 @@ function createBrowserMasking({ savedSecretsFor }) {
     const secrets = await secretsFor(url);
     for (const line of render.fields) {
       const { value } = line.field;
-      // An empty field with nothing inside it has nothing to show or hide.
-      if (!value && line.inside.length === 0) continue;
+      // An empty field with nothing inside it, and a name that cannot carry
+      // its content, has nothing to show or hide.
+      if (!value && line.inside.length === 0 && !line.field.labelledBy) continue;
       const sensitive = await isSensitive(dbg, line.field, secrets);
       if (value) line.text += `: ${sensitive ? MASK : value}`;
       if (!sensitive) continue;
