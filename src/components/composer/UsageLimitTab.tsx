@@ -1,14 +1,16 @@
-import { motion, useReducedMotion } from 'framer-motion';
+import { Fragment } from 'react';
 import { ExternalLink, Gauge } from '@droidex/icons';
 import { PROVIDER_USAGE_URLS } from '../../features/providers/providerIdentity';
+import { formatDuration, limitName } from '../../features/usage/usageCopy';
+import type { PaceWarning } from '../../features/usage/usagePace';
 import { openExternal } from '../../lib/onboarding';
-import { limitLabel, resetLabel } from '../../lib/usageLimit';
+import { formatResetTime, limitLabel, resetLabel } from '../../lib/usageLimit';
 import type { ProviderKind, UsageLimit } from '../../types/bridge';
-import { inlineCardMotion } from '../inlineCardMotion';
+import { ComposerTab } from './ComposerTab';
 
 // StartInBar's pill. Each action adds its color: the one that can unblock the
 // chat reads brightest.
-const ACTION_CLASS =
+export const ACTION_CLASS =
   'group flex items-center gap-1.5 rounded-md px-1.5 py-1 text-[11px] transition-colors hover:bg-droid-bg/40 hover:text-droid-text focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-droid-accent/60';
 
 // The tab above the composer while the chat is held on a usage limit, in
@@ -24,17 +26,11 @@ export function UsageLimitTab({
   provider: ProviderKind;
   onSwitchModel: () => void;
 }) {
-  const reduceMotion = useReducedMotion();
   const headline = limitLabel(limit);
   const detail = resetLabel(limit.resetsAt, Date.now());
 
   return (
-    <motion.div
-      {...inlineCardMotion(reduceMotion)}
-      className="relative z-0 mx-[6%] -mb-3 min-w-0 border border-droid-border bg-droid-surface px-4 pb-4 pt-1.5"
-      // The composer's own 20px corner, carried onto the tab above it.
-      style={{ borderTopLeftRadius: 20, borderTopRightRadius: 20 }}
-    >
+    <ComposerTab>
       <div className="flex min-w-0 flex-wrap items-center gap-x-4 overflow-hidden">
         <div
           role="status"
@@ -61,19 +57,81 @@ export function UsageLimitTab({
               Switch model
             </button>
           )}
-          <button
-            type="button"
-            onClick={() => void openExternal(PROVIDER_USAGE_URLS[provider])}
-            className={`${ACTION_CLASS} text-droid-text-secondary`}
-          >
-            Manage usage
-            <ExternalLink
-              className="h-3 w-3 shrink-0 text-droid-text-muted transition-colors group-hover:text-droid-text-secondary"
-              strokeWidth={2}
-            />
-          </button>
+          <ManageUsageButton provider={provider} className="text-droid-text-secondary" />
         </div>
       </div>
-    </motion.div>
+    </ComposerTab>
+  );
+}
+
+// The quieter line before a limit: the window that runs out soonest at its
+// pace, one step dimmer than the reached tab throughout.
+export function UsageWarningTab({
+  warning: { meter, pace },
+  provider,
+  now,
+}: {
+  warning: PaceWarning;
+  provider: ProviderKind;
+  now: number;
+}) {
+  const headline = `${String(Math.round(meter.usedPercent))}% of your ${limitName(meter)} limit used`;
+  const details = [
+    meter.resetsAt === undefined ? undefined : `Resets ${formatResetTime(meter.resetsAt, now)}`,
+    pace.kind === 'reached' ? 'limit reached' : `runs out in ${formatDuration(pace.inMs)}`,
+  ].filter((part) => part !== undefined);
+
+  return (
+    <ComposerTab>
+      <div className="flex min-w-0 flex-wrap items-center gap-x-4 overflow-hidden">
+        <div
+          role="status"
+          aria-live="polite"
+          title={[headline, ...details].join(' · ')}
+          className="flex min-w-0 flex-auto items-center gap-1.5 px-1.5 py-1 text-[11px]"
+        >
+          <span className="shrink-0 text-droid-text-muted">
+            <Gauge className="h-3.5 w-3.5" strokeWidth={2} />
+          </span>
+          {/* Flows as text: on a narrow composer it wraps between details, so
+              neither the headline nor a time is ever cut short. */}
+          <span className="min-w-0 tabular-nums">
+            <span className="text-droid-text-secondary">{headline}</span>
+            {details.map((detail) => (
+              <Fragment key={detail}>
+                {' '}
+                <span className="whitespace-nowrap text-droid-text-muted">· {detail}</span>
+              </Fragment>
+            ))}
+          </span>
+        </div>
+        <div className="ml-auto flex shrink-0 items-center gap-1">
+          <ManageUsageButton provider={provider} className="text-droid-text-muted" />
+        </div>
+      </div>
+    </ComposerTab>
+  );
+}
+
+// Opens the harness's own usage page in the browser.
+export function ManageUsageButton({
+  provider,
+  className,
+}: {
+  provider: ProviderKind;
+  className: string;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={() => void openExternal(PROVIDER_USAGE_URLS[provider])}
+      className={`${ACTION_CLASS} ${className}`}
+    >
+      Manage usage
+      <ExternalLink
+        className="h-3 w-3 shrink-0 text-droid-text-muted transition-colors group-hover:text-droid-text-secondary"
+        strokeWidth={2}
+      />
+    </button>
   );
 }

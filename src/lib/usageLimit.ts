@@ -15,7 +15,7 @@ const fullDateFormat = new Intl.DateTimeFormat(undefined, {
   year: 'numeric',
 });
 
-const WINDOW_NAMES: Record<UsageWindow, string> = {
+export const WINDOW_NAMES: Record<UsageWindow, string> = {
   five_hour: '5-hour',
   daily: 'Daily',
   weekly: 'Weekly',

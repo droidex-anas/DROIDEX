@@ -17,8 +17,12 @@ import { hotPathMetrics } from '../../telemetry/hotPathMetrics.js';
 import type { ProviderModelSettings, ProviderSession } from '../session.js';
 import { UsageLimitError } from '../usageLimit.js';
 import { droidErrorDetails, droidSessionNotice } from './droidErrors.js';
+import { factoryRefusalLimit, readFactoryUsage } from './factoryUsage.js';
 
-type DroidProcessRuntime = Pick<FactoryRuntime, 'processIdOf' | 'isProcessAlive'>;
+type DroidProcessRuntime = Pick<FactoryRuntime, 'processIdOf' | 'isProcessAlive' | 'factoryApiKey'>;
+
+// The turn settles only once the billing read behind its refusal has answered.
+const REFUSAL_READ_TIMEOUT_MS = 10_000;
 
 export class DroidProviderSession implements ProviderSession {
   readonly provider = 'droid' as const;
@@ -79,6 +83,10 @@ export class DroidProviderSession implements ProviderSession {
           yield { harnessModelSwitch: pending };
           this.pendingSwitch = undefined;
         }
+        // Droid can stream the refusal as an error and still end the turn
+        // with a result.
+        if (event.type === 'error' && droidErrorDetails(event.message).errorKind)
+          limitDetail ??= event.message;
         const normalizeStartedAt = performance.now();
         const normalized = normalizeStreamEvent(
           this.appSessionId,
@@ -90,16 +98,33 @@ export class DroidProviderSession implements ProviderSession {
         if (normalized) yield normalized;
       }
     } catch (error) {
-      const details = droidErrorDetails(errMsg(error));
-      if (details.errorKind) throw new UsageLimitError(details.text);
-      throw error;
+      const message = errMsg(error);
+      if (!droidErrorDetails(message).errorKind) throw error;
+      limitDetail = message;
     } finally {
       stopListening();
       this.pendingSwitch = undefined;
     }
-    // A turn refused on the limit still ends in a successful result; only the
-    // notice says it was refused.
-    if (limitDetail !== undefined) throw new UsageLimitError(limitDetail);
+    // A turn refused on the limit can still end in a successful result; only
+    // the notice or the streamed error says it was refused.
+    if (limitDetail !== undefined) throw await this.usageLimitError(limitDetail);
+  }
+
+  // Droid's refusal names no reset. With a Factory key, one billing read says
+  // when the spent window resets and whether the other pool has room; without
+  // a key, or when that read fails, the refusal stands as Droid worded it.
+  private async usageLimitError(message: string): Promise<UsageLimitError> {
+    const apiKey = this.runtime.factoryApiKey();
+    if (!apiKey) return new UsageLimitError(message);
+    try {
+      const { meters } = await readFactoryUsage(
+        apiKey,
+        AbortSignal.timeout(REFUSAL_READ_TIMEOUT_MS),
+      );
+      return new UsageLimitError(message, factoryRefusalLimit(meters, Date.now()));
+    } catch {
+      return new UsageLimitError(message);
+    }
   }
 
   // A settings echo naming another model is Droid's own switch, unless a model

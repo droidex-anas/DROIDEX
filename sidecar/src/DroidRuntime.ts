@@ -120,6 +120,8 @@ export type FactorySession = FactorySessionMethods & {
 export interface FactoryRuntime {
   connect(apiKey?: string): void;
   status(): RuntimeStatus;
+  // The key set in DROIDEX's Settings, never one read from the CLI's login.
+  factoryApiKey(): string | undefined;
   createSession(options: CreateRuntimeSessionOptions): Promise<FactorySession>;
   loadSession(providerSessionId: string, handlers?: RuntimeHandlers): Promise<FactorySession>;
   readContextBreakdown(session: FactorySession): Promise<unknown>;
@@ -144,6 +146,10 @@ export class DroidRuntime implements FactoryRuntime {
       droidPath: this.resolveDroidPath(),
       apiKeyConfigured: this.explicitApiKey.length > 0,
     };
+  }
+
+  factoryApiKey(): string | undefined {
+    return this.explicitApiKey || undefined;
   }
 
   async readContextBreakdown(session: FactorySession): Promise<unknown> {

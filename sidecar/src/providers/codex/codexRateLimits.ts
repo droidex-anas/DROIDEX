@@ -1,10 +1,16 @@
-// Codex's account rate limits: read once when a session opens and kept current
-// by the server's updates, so a refused turn can say which window ran out and
-// when it resets. Codex's own turn error carries neither.
+// Codex's account rate limits: read when a session opens and kept current by
+// the server's updates, so a refused turn can say which window ran out and
+// when it resets (Codex's own turn error carries neither), and /usage can
+// show every window of the account's main bucket.
 import type { UsageLimit, UsageWindow } from '../../protocol.js';
 import { numberValue, objectValue } from '../../values.js';
-import { futureResetAt, UsageLimitError } from '../usageLimit.js';
+import type { ReportedMeter, UsageMetersListener, UsageReading } from '../session.js';
+import { futureResetAt, resetAtMillis, UsageLimitError, windowUsage } from '../usageLimit.js';
 import type { AppServerClient } from './appServer.js';
+
+// The bucket every Codex model draws on. Others (a model's own, such as
+// Spark's) are left out so they can never stand in for it.
+const MAIN_BUCKET = 'codex';
 
 interface RateLimitWindow {
   usedPercent: number;
@@ -22,35 +28,74 @@ interface RateLimitSnapshot {
 
 export class CodexRateLimits {
   private snapshot?: RateLimitSnapshot;
+  // Each read in flight gathers the updates that land meanwhile, which are
+  // newer than its answer.
+  private readonly reads = new Set<{ updates?: RateLimitSnapshot }>();
+  // Reads can answer out of order; only the newest one started may replace
+  // the snapshot.
+  private readsStarted = 0;
+  private newestApplied = 0;
 
-  // Never awaited by the open. A server that cannot answer (an older CLI, or a
-  // credential the backend rejects) leaves the limits unknown. Reset credit
-  // details are left out: nothing here spends one.
-  read(client: AppServerClient): void {
-    void client
-      .request<unknown>('account/rateLimits/read', { excludeResetCreditDetails: true })
-      .then((response) => {
-        const read = snapshotOf(objectValue(response)?.rateLimits);
-        if (!read) return;
-        // An update that landed while this read was in flight is newer.
-        const current = this.snapshot;
-        this.snapshot = current && current.limitId === read.limitId ? merged(read, current) : read;
-      })
-      .catch(() => undefined);
+  constructor(
+    private readonly client: AppServerClient,
+    private readonly onMeters?: UsageMetersListener,
+  ) {}
+
+  // A server that cannot answer (an older CLI, or a credential the backend
+  // rejects) rejects the read and leaves the limits unknown. Reset credit
+  // details are left out; their count still comes back. Codex cannot cancel
+  // a read, so one runs until it answers or the process ends.
+  async read(): Promise<UsageReading> {
+    const inFlight: { updates?: RateLimitSnapshot } = {};
+    const sequence = ++this.readsStarted;
+    this.reads.add(inFlight);
+    let response: Record<string, unknown> | undefined;
+    try {
+      response = objectValue(
+        await this.client.request<unknown>('account/rateLimits/read', {
+          excludeResetCreditDetails: true,
+        }),
+      );
+    } finally {
+      this.reads.delete(inFlight);
+    }
+    const bucket = objectValue(objectValue(response?.rateLimitsByLimitId)?.[MAIN_BUCKET]);
+    // A bucket without a window this build can read, or with one it cannot,
+    // is malformed, not an account without limits.
+    const read = bucket && wellFormed(bucket) ? snapshotOf(bucket) : undefined;
+    if (!read) throw new Error('Codex answered without the codex rate limits.');
+    if (sequence > this.newestApplied) {
+      this.newestApplied = sequence;
+      this.snapshot = inFlight.updates ? merged(read, inFlight.updates) : read;
+    }
+    // Free limit resets the account holds, shown only; nothing here spends one.
+    const available = numberValue(objectValue(response?.rateLimitResetCredits)?.availableCount);
+    return {
+      meters: windowMeters(this.snapshot ?? read),
+      ...(available === undefined
+        ? {}
+        : { extra: { kind: 'limit_resets', available: Math.max(0, Math.round(available)) } }),
+    };
   }
 
   // `account/rateLimits/updated` carries one bucket, and a field it leaves
   // null keeps the value that bucket already had. Before any read has
   // answered, an update for the account's main bucket stands on its own.
+  // Only the windows it carries are passed on.
   update(params: unknown): void {
     const update = snapshotOf(objectValue(params)?.rateLimits);
     if (!update) return;
     const current = this.snapshot;
-    if (!current) {
-      if (update.limitId === undefined || update.limitId === 'codex') this.snapshot = update;
-      return;
+    if (current) {
+      if (update.limitId !== current.limitId) return;
+      this.snapshot = merged(current, update);
+    } else {
+      if (update.limitId !== undefined && update.limitId !== MAIN_BUCKET) return;
+      this.snapshot = update;
     }
-    if (update.limitId === current.limitId) this.snapshot = merged(current, update);
+    for (const inFlight of this.reads)
+      inFlight.updates = inFlight.updates ? merged(inFlight.updates, update) : update;
+    this.onMeters?.(windowMeters(update));
   }
 
   usageLimitError(message: string): UsageLimitError {
@@ -74,6 +119,24 @@ export class CodexRateLimits {
       : undefined;
     return resetsAt === undefined ? {} : { resetsAt };
   }
+}
+
+// Each window by its place in the snapshot, which is where the next update
+// for it lands too.
+function windowMeters(snapshot: RateLimitSnapshot): ReportedMeter[] {
+  return (['primary', 'secondary'] as const).flatMap((id) => {
+    const window = snapshot[id];
+    if (!window) return [];
+    const name = usageWindow(window);
+    return [
+      {
+        id,
+        ...(name ? { window: name } : {}),
+        ...windowUsage(window.usedPercent, resetAtMillis(window.resetsAt)),
+        ...(window.windowDurationMins ? { durationMs: window.windowDurationMins * 60_000 } : {}),
+      },
+    ];
+  });
 }
 
 function merged(older: RateLimitSnapshot, newer: RateLimitSnapshot): RateLimitSnapshot {
@@ -106,6 +169,13 @@ function snapshotOf(value: unknown): RateLimitSnapshot | undefined {
     individualLimitResetsAt: numberValue(objectValue(snapshot.individualLimit)?.resetsAt),
     spendControlReached: typeof spendControlReached === 'boolean' ? spendControlReached : undefined,
   };
+}
+
+function wellFormed(bucket: Record<string, unknown>): boolean {
+  const windows = [bucket.primary, bucket.secondary].filter(
+    (value) => value !== undefined && value !== null,
+  );
+  return windows.length > 0 && windows.every((value) => windowOf(value) !== undefined);
 }
 
 function windowOf(value: unknown): RateLimitWindow | undefined {

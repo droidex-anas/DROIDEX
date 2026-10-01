@@ -4,6 +4,7 @@
 import type { SessionSummary, TranscriptEvent } from '../types/bridge';
 import { classifyEvent } from './transcript';
 import { sessionIsLive } from './sessions';
+import { resetLabel } from './usageLimit';
 
 export interface FinishNotificationSettings {
   enabled: boolean;
@@ -132,16 +133,28 @@ export function decideFinishNotification(input: {
   if (!settings.notifyActiveSession && isActiveSession) return { kind: 'skip' };
   if (settings.suppressWhenFocused && appInForeground) return { kind: 'skip' };
 
-  const failed = session.phase === 'failed';
   const sessionTitle = session.title.trim() || 'Chat';
-  const failure = session.usageLimit ? 'Usage limit reached' : 'Failed';
+  const silent = !settings.playSound;
+  if (session.phase !== 'failed')
+    return {
+      kind: 'notify',
+      title: sessionTitle,
+      body: assistantSnippet || 'The model finished its response.',
+      silent,
+    };
+  // A refused turn wrote no answer; the snippet would be an earlier turn's.
+  if (session.usageLimit)
+    return {
+      kind: 'notify',
+      title: `Usage limit reached · ${sessionTitle}`,
+      body: resetLabel(session.usageLimit.resetsAt, Date.now()),
+      silent,
+    };
   return {
     kind: 'notify',
-    title: failed ? `${failure} · ${sessionTitle}` : sessionTitle,
-    body: failed
-      ? assistantSnippet || 'The model hit an error before finishing.'
-      : assistantSnippet || 'The model finished its response.',
-    silent: !settings.playSound,
+    title: `Failed · ${sessionTitle}`,
+    body: assistantSnippet || 'The model hit an error before finishing.',
+    silent,
   };
 }
 

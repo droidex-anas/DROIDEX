@@ -37,7 +37,11 @@ function droidOn(modelId: string) {
       yield successfulResultEvent('droid-1');
     },
   } as unknown as FactorySession;
-  const runtime = { processIdOf: () => undefined, isProcessAlive: () => false };
+  const runtime = {
+    processIdOf: () => undefined,
+    isProcessAlive: () => false,
+    factoryApiKey: () => undefined,
+  };
   return { cli, session: new DroidProviderSession('app-1', droid, runtime) };
 }
 

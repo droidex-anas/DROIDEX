@@ -8,7 +8,12 @@ import type { SdkMcpServer } from '@factory/droid-sdk';
 import type { Autonomy } from '../../protocol.js';
 import type { ProviderMention, SkillInfo } from '../catalog.js';
 import type { ProviderInteractions } from '../interactions.js';
-import type { ProviderModelSettings, ProviderSession } from '../session.js';
+import type {
+  DelegatedTurnEnd,
+  ProviderModelSettings,
+  ProviderSession,
+  UsageMetersListener,
+} from '../session.js';
 import type { AppServerClient } from './appServer.js';
 import { codexAutonomy, codexSandboxPolicy, OpenPrompts } from './codexApprovals.js';
 import { CodexCatalog } from './codexCatalog.js';
@@ -37,6 +42,7 @@ export interface CodexSessionInput {
   model: ProviderModelSettings;
   interactions: ProviderInteractions;
   inAppMcpServers?: SdkMcpServer[];
+  onUsage?: UsageMetersListener;
 }
 
 interface ThreadResponse {
@@ -80,7 +86,9 @@ export class CodexSession implements ProviderSession {
   private readonly prompts: OpenPrompts;
   private readonly tools: CodexToolBridge;
   private readonly backgroundListeners = new Set<(event: NormalizedEvent) => void>();
-  private readonly delegatedListeners = new Set<(running: boolean, completed?: boolean) => void>();
+  private readonly delegatedListeners = new Set<
+    (running: boolean, end?: DelegatedTurnEnd) => void
+  >();
   // Steers the running turn holds, by the client id each was sent with, until
   // Codex reports the message delivered or the turn ends without it.
   private readonly steers = new Map<string, (delivered: boolean) => void>();
@@ -88,7 +96,7 @@ export class CodexSession implements ProviderSession {
   // has no transcript to land in yet and waits for the turn that follows.
   private readonly heldNotices: NormalizedEvent[] = [];
   private catalog?: CodexCatalog;
-  private readonly rateLimits = new CodexRateLimits();
+  readonly usage: CodexRateLimits;
 
   constructor(input: CodexSessionInput) {
     this.providerSessionId = input.appSessionId;
@@ -99,6 +107,7 @@ export class CodexSession implements ProviderSession {
       };
     });
     this.client = input.client;
+    this.usage = new CodexRateLimits(this.client, input.onUsage);
     this.cwd = input.cwd;
     this.autonomy = input.autonomy;
     this.model = input.model;
@@ -173,7 +182,8 @@ export class CodexSession implements ProviderSession {
     this.threadModel = response.model;
     this.mapper.setModel({ ...this.model, modelId: this.model.modelId ?? this.threadModel });
     this.catalog ??= new CodexCatalog(this.client, [this.cwd]);
-    this.rateLimits.read(this.client);
+    // Never awaited: the limits only add detail to a later refusal.
+    void this.usage.read().catch(() => undefined);
     await this.pushThreadSettings();
   }
 
@@ -404,7 +414,7 @@ export class CodexSession implements ProviderSession {
     return typeof threadId === 'string' && threadId !== this.threadId;
   }
 
-  onDelegatedTurn(listener: (running: boolean, completed?: boolean) => void): () => void {
+  onDelegatedTurn(listener: (running: boolean, end?: DelegatedTurnEnd) => void): () => void {
     this.delegatedListeners.add(listener);
     return () => {
       this.delegatedListeners.delete(listener);
@@ -413,13 +423,13 @@ export class CodexSession implements ProviderSession {
 
   // Announced only when the answer changes, so a repeated notification does
   // not settle the same turn twice.
-  private setDelegatedTurn(turnId: string | undefined, completed = false): void {
+  private setDelegatedTurn(turnId: string | undefined, end?: DelegatedTurnEnd): void {
     const was = this.delegatedTurnId !== undefined;
     this.delegatedTurnId = turnId;
     if (turnId && turnId !== this.interruptedTurnId) this.interruptedTurnId = undefined;
     const running = turnId !== undefined;
     if (running === was) return;
-    for (const listener of this.delegatedListeners) listener(running, completed);
+    for (const listener of this.delegatedListeners) listener(running, end);
   }
 
   onBackgroundEvent(listener: (event: NormalizedEvent) => void): () => void {
@@ -464,14 +474,14 @@ export class CodexSession implements ProviderSession {
     });
     // The account's, so it names no thread.
     this.client.onNotification('account/rateLimits/updated', (params) => {
-      this.rateLimits.update(params);
+      this.usage.update(params);
     });
     this.onThreadNotification('mcpServer/startupStatus/updated', (params) => {
       const failure = mcpServerFailure(params);
       if (failure) this.notice(this.mapper.mcpFailureEvents(failure));
     });
     this.onThreadNotification('turn/started', (params) => {
-      const turn = turnOf(params, this.rateLimits);
+      const turn = turnOf(params, this.usage);
       if (!turn) return;
       // A typed turn owns this only while it is still waiting to be told its
       // id. Once it has one, a different id belongs to a turn Codex started
@@ -480,11 +490,11 @@ export class CodexSession implements ProviderSession {
       else if (turn.id !== this.turnId) this.setDelegatedTurn(turn.id);
     });
     this.onThreadNotification('turn/completed', (params) => {
-      const turn = turnOf(params, this.rateLimits);
+      const turn = turnOf(params, this.usage);
       if (!turn) return;
       if (turn.id === this.delegatedTurnId) {
         this.dropSteers();
-        this.setDelegatedTurn(undefined, turn.status === 'completed' && !turn.error);
+        this.setDelegatedTurn(undefined, delegatedTurnEnd(turn));
         // Same as settle() does for a typed turn: an approval nobody can
         // answer any more leaves the screen with the turn that asked.
         this.prompts.cancel();
@@ -493,7 +503,7 @@ export class CodexSession implements ProviderSession {
       this.settle(turn);
     });
     this.onThreadNotification('error', (params) => {
-      const failure = errorOf(params, this.rateLimits);
+      const failure = errorOf(params, this.usage);
       if (!failure) return;
       // Through deliver(), so a turn Codex started for a spoken request
       // reports its failures in the chat too rather than stopping silently.
@@ -570,8 +580,7 @@ export class CodexSession implements ProviderSession {
   private settle(turn: CodexTurn): void {
     this.prompts.cancel();
     this.dropSteers();
-    if (turn.status === 'failed')
-      this.turn?.fail(turn.error ?? new Error('Codex ended the turn with an error.'));
+    if (turn.status === 'failed') this.turn?.fail(turnFailure(turn));
     else {
       // An interrupted turn settles quietly; the user asked for it.
       if (turn.status === 'completed') this.turn?.push([{ done: true }]);
@@ -583,4 +592,14 @@ export class CodexSession implements ProviderSession {
     this.turn = undefined;
     this.turnId = undefined;
   }
+}
+
+// Read the way settle() reads a typed turn.
+function delegatedTurnEnd(turn: CodexTurn): DelegatedTurnEnd {
+  if (turn.status === 'failed') return { status: 'failed', error: turnFailure(turn) };
+  return { status: turn.status === 'completed' && !turn.error ? 'completed' : 'interrupted' };
+}
+
+function turnFailure(turn: CodexTurn): Error {
+  return turn.error ?? new Error('Codex ended the turn with an error.');
 }

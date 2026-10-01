@@ -147,6 +147,37 @@ export interface UsageLimit {
   resetsAt?: number;
 }
 
+// One limit window of a harness account, as the harness reported it. `id` is
+// the harness's own name for the window, so an update that carries one window
+// lands on the row a full read drew. `durationMs` is the window's length, and
+// `updatedAt` (epoch ms) when this window was last read or pushed.
+export interface UsageMeter {
+  id: string;
+  window?: UsageWindow;
+  model?: string;
+  usedPercent: number;
+  resetsAt?: number;
+  durationMs?: number;
+  updatedAt: number;
+}
+
+// What an account holds beside its windows, shown and never spent: Codex limit
+// resets, Claude extra usage, a Factory extra-usage balance.
+export type UsageExtra =
+  | { kind: 'limit_resets'; available: number }
+  | { kind: 'extra_usage'; usedPercent?: number }
+  | { kind: 'extra_balance'; cents: number };
+
+// A harness account's usage. `stale` marks meters kept after a later read
+// failed; `unavailable` says why an account has no meters at all.
+export interface ProviderUsage {
+  provider: ProviderKind;
+  meters: UsageMeter[];
+  extra?: UsageExtra;
+  unavailable?: 'no_api_key' | 'no_plan_limits';
+  stale?: boolean;
+}
+
 // A model change the transcript records. `cause` is set when the harness made
 // the change by itself: 'usage_limit' when it said the limit was why.
 export interface ModelSwitch {
@@ -798,6 +829,11 @@ export type ClientCommand =
   | { type: 'droidproxy.factoryModels.apply' }
   | { type: 'catalog.models' }
   | { type: 'provider.refresh' }
+  // Asks for a harness's account usage, answered by `usage.updated`. With
+  // `panelOpen`, /usage shows it: the read may start a short-lived harness
+  // process when no session of the harness is live. `immediate` skips the
+  // pause kept between automatic reads.
+  | { type: 'usage.refresh'; provider: ProviderKind; panelOpen: boolean; immediate: boolean }
   | { type: 'catalog.tools'; providerSessionId?: string }
   | { type: 'catalog.skills'; providerSessionId?: string }
   | { type: 'settings.defaults' }
@@ -1197,6 +1233,7 @@ export type ServerEvent =
       providerSessionId?: string | null;
     }
   | { type: 'provider.status'; statuses: ProviderStatus[] }
+  | { type: 'usage.updated'; usage: ProviderUsage }
   | { type: 'settings.defaults'; defaults: FactoryDefaultSettings }
   | {
       type: 'error';
@@ -1261,7 +1298,7 @@ export type ServerEvent =
   | { type: 'browser.closed'; appSessionId: string }
   | { type: 'browser.error'; appSessionId?: string; message: string };
 
-export const BRIDGE_PROTOCOL_VERSION = 8 as const;
+export const BRIDGE_PROTOCOL_VERSION = 9 as const;
 
 export interface SequencedServerEvent {
   seq: number;

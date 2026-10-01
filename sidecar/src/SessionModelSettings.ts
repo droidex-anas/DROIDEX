@@ -6,7 +6,9 @@ import type {
   ClientCommand,
   ConfigurableSessionRole,
   FactoryDefaultSettings,
+  ModelInfo,
   ModelSwitch,
+  ReasoningEffort,
   ServerEvent,
   SessionSummary,
 } from './protocol.js';
@@ -24,6 +26,8 @@ interface Dependencies {
   runtime: FactoryRuntime;
   getFactoryDefaults: () => Promise<FactoryDefaultSettings>;
   providerDefaultModelId: (provider: ProviderKind) => string | undefined;
+  // A model as its harness lists it, when the catalog already knows it.
+  knownModel: (provider: ProviderKind, modelId: string) => ModelInfo | undefined;
   maxContextTokensForModel: (modelId?: string) => number | undefined;
   isShutdownStarted: () => boolean;
   validateModelSettings?: (
@@ -160,7 +164,10 @@ export class SessionModelSettings {
           live !== undefined && (windowChanged || live.restartBeforeNextTurn === true);
         const selection = summary.provider === DEFAULT_PROVIDER ? runtimeSettings : selected;
         const next = { ...summary, ...this.summaryPatch(agent, selection, summary.provider) };
-        const change = await this.primaryModelChange(summary, next, agent, changes);
+        // From the model the chat runs now: the harness may have moved it
+        // while this change was being prepared.
+        const current = this.d.registry.getCanonicalSummary(appSessionId) ?? summary;
+        const change = await this.primaryModelChange(current, next, agent, changes);
         if (!isCurrent()) return false;
         if (!restart) await this.applyProvider(summary, live, agent, runtimeSettings, isCurrent);
         if (!isCurrent()) return false;
@@ -188,9 +195,16 @@ export class SessionModelSettings {
   adoptHarnessModel(appSessionId: string, harnessSwitch: HarnessModelSwitch): void {
     const live = this.d.registry.getLive(appSessionId);
     if (!live || live.summary.modelId === harnessSwitch.to) return;
-    const { from, to, cause, reasoningEffort } = harnessSwitch;
-    const settings = { modelId: to, ...(reasoningEffort ? { reasoningEffort } : {}) };
+    const { from, to, cause } = harnessSwitch;
     const provider = live.summary.provider;
+    const settings: ProviderModelSettings = {
+      modelId: to,
+      ...effortAfterSwitch(
+        harnessSwitch.reasoningEffort,
+        live.summary.reasoningEffort,
+        this.d.knownModel(provider, to),
+      ),
+    };
     this.d.registry.updateSummary(appSessionId, this.summaryPatch('primary', settings, provider));
     if (provider !== DEFAULT_PROVIDER) writeProviderSessionSettings(appSessionId, settings);
     void this.d.onPrimaryModelChanged(live.summary, { from, to, cause }).catch((error: unknown) => {
@@ -457,6 +471,19 @@ export function createSessionSettingsForAgent(
     if (effort !== undefined) missionSettings.validationWorkerReasoningEffort = effort;
   }
   return Object.keys(missionSettings).length > 0 ? { missionSettings } : {};
+}
+
+// The harness's own effort when it reported one. Otherwise the saved effort
+// stands, unless the new model is known not to run it: then it is cleared, so
+// the chat never shows a level its model cannot use.
+function effortAfterSwitch(
+  reported: ReasoningEffort | undefined,
+  saved: ReasoningEffort | undefined,
+  model: ModelInfo | undefined,
+): Pick<ProviderModelSettings, 'reasoningEffort'> {
+  if (reported) return { reasoningEffort: reported };
+  if (!saved || !model || model.supportedReasoningEfforts?.includes(saved)) return {};
+  return { reasoningEffort: null };
 }
 
 function mergeSettings(

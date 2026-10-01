@@ -4,8 +4,10 @@ import type { NormalizedEvent } from '../normalize.js';
 import type {
   Autonomy,
   ContextWindowTokens,
+  ProviderUsage,
   ReasoningEffort,
   SessionInteractionMode,
+  UsageMeter,
   VoiceNarration,
 } from '../protocol.js';
 import type { ProviderMention, SkillInfo } from './catalog.js';
@@ -119,6 +121,25 @@ export interface ProviderVoice {
   onEvent(listener: (event: ProviderVoiceEvent) => void): () => void;
 }
 
+// A window as the harness reports it; the account stamps when it arrived.
+export type ReportedMeter = Omit<UsageMeter, 'updatedAt'>;
+
+// One read of a harness account's usage: every window it reports, replacing
+// what an earlier read said. A reading that `covers` only some windows leaves
+// every other one as it was.
+export type UsageReading = Pick<ProviderUsage, 'extra' | 'unavailable'> & {
+  meters: ReportedMeter[];
+  covers?: readonly string[];
+};
+
+// Windows the harness pushes as they change, each replacing only its own row.
+export type UsageMetersListener = (meters: ReportedMeter[]) => void;
+
+// How a turn the provider started by itself ended.
+export type DelegatedTurnEnd =
+  | { status: 'completed' | 'interrupted' }
+  | { status: 'failed'; error: Error };
+
 export interface ProviderSession {
   readonly provider: ProviderKind;
   // Native id of the session the provider holds open.
@@ -148,8 +169,8 @@ export interface ProviderSession {
    * for through the composer, and the rest of the app has to know so a typed
    * prompt queues behind it and Stop can reach it.
    */
-  // `completed` is true when a turn that ended finished without an error.
-  onDelegatedTurn?(listener: (running: boolean, completed?: boolean) => void): () => void;
+  // `end` says how a turn that ended did.
+  onDelegatedTurn?(listener: (running: boolean, end?: DelegatedTurnEnd) => void): () => void;
   // Hands a prompt to the running turn, which the harness delivers at its own
   // next step. Resolves true once the model has it, and false when the turn
   // cannot take it or ends without it; the session layer then sends it as an
@@ -167,6 +188,8 @@ export interface ProviderSession {
   setInteractionMode?(mode: SessionInteractionMode): Promise<void>;
   // Present only on a provider that can hold a voice conversation.
   readonly voice?: ProviderVoice;
+  // Present when the session's own connection can read the account's usage.
+  readonly usage?: { read(signal: AbortSignal): Promise<UsageReading> };
   interrupt(): Promise<void>;
   close(): Promise<void>;
 }
@@ -179,6 +202,9 @@ export interface Provider {
   // Copies a settled conversation into a new, independent one the provider can
   // resume. Nothing is opened; the caller resumes the copy.
   fork(source: ProviderForkSource): Promise<ProviderForkHandle>;
+  // Reads the account's usage with no session to go through. Claude Code and
+  // Codex start a short-lived process for it, which `signal` ends.
+  readUsage(signal: AbortSignal): Promise<UsageReading>;
 }
 
 // A provider backed by a CLI learns what it can do by probing that CLI; Droid's
