@@ -101,7 +101,7 @@ async function framePainted(dbg, sessionId) {
   let timer;
   return Promise.race([
     send(dbg, sessionId, 'Runtime.evaluate', { expression: painted, awaitPromise: true }).then(
-      () => true,
+      (result) => !result.exceptionDetails,
       () => false,
     ),
     new Promise((resolve) => {

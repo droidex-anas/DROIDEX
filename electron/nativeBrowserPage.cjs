@@ -1,6 +1,7 @@
 const { createBrowserReading } = require('./browserReading.cjs');
 const { createBrowserScreenshot } = require('./browserScreenshot.cjs');
 const { redactBrowserDiagnosticUrl } = require('./browserDiagnostics.cjs');
+const { documentFrames } = require('./browserFrames.cjs');
 
 const PAGE_CHANGED = 'The page changed before the action ran; call browser_read_page.';
 
@@ -186,7 +187,7 @@ function createNativeBrowserPage({
       const y = Math.round(Number(request.y));
       const pixels = Math.max(1, Math.round(Number(request.pixels) || 500));
       const horizontal = request.direction === 'left' || request.direction === 'right';
-      await dispatchMouse(contents, step, [
+      await dispatchMouse(contents, step, request.document, [
         {
           type: 'mouseWheel',
           x,
@@ -204,7 +205,7 @@ function createNativeBrowserPage({
         throw new Error('Browser pointer interaction requires finite viewport coordinates.');
       }
       const press = { x, y, button: 'left', clickCount: 1 };
-      await dispatchMouse(contents, step, [
+      await dispatchMouse(contents, step, request.document, [
         { type: 'mouseMoved', x, y },
         ...(request.action === 'click'
           ? [
@@ -223,12 +224,14 @@ function createNativeBrowserPage({
   }
 
   // Chromium's input router delivers these wherever the point lands, cross-site
-  // frames included; sendInputEvent stops at the top document. The navigation
-  // check runs inside the debugger queue, before every event, so a gesture
-  // stops as soon as a new document starts loading.
-  function dispatchMouse(contents, step, events) {
+  // frames included (sendInputEvent stops at the top document). Before each
+  // event, inside the debugger queue, a new page or a replaced ref document
+  // stops the gesture.
+  function dispatchMouse(contents, step, document, events) {
     return runWithWebContentsDebugger(contents, async (dbg) => {
       for (const event of events) {
+        if (document && !(await documentFrames(dbg)).some((frame) => frame.loaderId === document))
+          throw new Error(PAGE_CHANGED);
         startInput(step);
         await dbg.sendCommand('Input.dispatchMouseEvent', event);
       }
