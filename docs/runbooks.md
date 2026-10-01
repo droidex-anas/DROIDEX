@@ -112,6 +112,12 @@ The local index uses one canonical schema and has no migration or compatibility 
 These commands do not remove raw Factory session history. Do not delete the broader `~/.factory` directory.
 Do not remove `index.sqlite`; that filename remains reserved for older app/worktree schemas.
 
+## Mission Control role model change fails
+
+Changing a worker or validator model applies the model to matching live children and re-arms each child's automatic compaction limit. The parent role-model summary changes only after all matching live children accept the update. Completed children are skipped.
+
+If a live child rejects the change, DROIDEX reports its provider error and a parent-level error asking you to retry. Successfully updated siblings keep their accepted model. Resolve the provider error, then select the requested role model again; the retry reapplies the requested model and publishes the parent preference once all matching live children accept it. Resetting to Default fails immediately if the provider has no effective default model; choose an explicit model instead.
+
 ## Verify child navigation without Factory authentication
 
 Run the deterministic local Electron smoke:

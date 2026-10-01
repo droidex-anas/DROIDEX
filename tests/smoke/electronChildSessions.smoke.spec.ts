@@ -294,16 +294,26 @@ test('[E2] parent-scoped agents pane preserves the primary chat', async () => {
     await leftNavigation.locator('[data-app-session-id="parent-beta"]').click();
     await expect(chat.getByText('BETA PRIMARY OUTPUT', { exact: true })).toBeVisible();
     await expect(page.getByText('ALPHA CHILD TWO OUTPUT', { exact: false })).toHaveCount(0);
-    await expect(agentList.getByTestId('agent-pane-row')).toHaveCount(1);
-    await expect(agentList.getByText('Beta Worker Shared', { exact: true })).toBeVisible();
-    await expect(agentList.getByText('Alpha Worker Shared', { exact: true })).toHaveCount(0);
-    await agentList.locator('[data-child-session-id="shared-child"]').click();
+    // Utility tabs belong to each parent. Open Beta's own pane rather than
+    // interacting with Alpha's pane while its exit animation is finishing.
+    await page.getByRole('button', { name: 'Toggle context panel', exact: true }).click();
+    await expect(rightPanel).toBeVisible();
+    await subagentsSummary.click();
+    await expect(subagents.locator('[data-child-session-id]')).toHaveCount(1);
+    await expect(subagents.getByText('Beta Worker Shared', { exact: true })).toBeVisible();
+    await expect(subagents.getByText('Alpha Worker Shared', { exact: true })).toHaveCount(0);
+    await subagents
+      .locator('[data-child-session-id="shared-child"]')
+      .locator('button')
+      .first()
+      .click();
     await expect(detail.getByText('BETA SHARED CHILD OUTPUT', { exact: true })).toBeVisible();
     await expect(detail.getByText('ALPHA SHARED CHILD OUTPUT', { exact: true })).toHaveCount(0);
     await expect(chat.getByText('BETA PRIMARY OUTPUT', { exact: true })).toBeVisible();
     await expect(leftNavigation.getByText('Beta Worker Shared', { exact: true })).toHaveCount(0);
 
     await leftNavigation.locator('[data-app-session-id="parent-alpha"]').click();
+    await expect(detail.getByText('Alpha Worker Two', { exact: true })).toBeVisible();
     await detail.getByRole('button', { name: 'Back to agents', exact: true }).click();
     await agentList.locator('[data-child-session-id="alpha-history"]').click();
     await expect(detail.getByText('Alpha Historical Worker', { exact: true })).toBeVisible();
