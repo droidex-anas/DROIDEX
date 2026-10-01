@@ -222,8 +222,8 @@ function fieldOf(node, frame) {
 // Where an element's text is painted past its own box, as a quad in CDP's
 // coordinates: the page measures the text as shares of the element's box, laid
 // over that box as CDP has it, corner to corner, so a frame that is moved,
-// scaled, turned or mirrored carries the mask with it. Text an element turned
-// within its own page lets run outside cannot be placed, so the capture fails.
+// scaled, turned or mirrored carries the mask with it. Text that runs outside an
+// element transformed within its own page cannot be placed, so the capture fails.
 async function textQuads(dbg, sessionId, backendNodeId) {
   const { object } = await send(dbg, sessionId, 'DOM.resolveNode', { backendNodeId });
   try {
@@ -233,8 +233,10 @@ async function textQuads(dbg, sessionId, backendNodeId) {
       returnByValue: true,
     });
     if (!result?.value) return [];
-    if (result.value === 'turned')
-      throw new Error('A sensitive field on this page is turned, so it cannot be masked.');
+    if (result.value === 'transformed')
+      throw new Error(
+        'A sensitive field on this page is transformed, so its text cannot be masked.',
+      );
     const { model } = await send(dbg, sessionId, 'DOM.getBoxModel', { backendNodeId });
     const [x0, y0, x1, y1, , , x3, y3] = model.border;
     const at = (u, v) => [x0 + u * (x1 - x0) + v * (x3 - x0), y0 + u * (y1 - y0) + v * (y3 - y0)];
@@ -260,9 +262,12 @@ const TEXT_SHARE = `function () {
     text.left >= own.left - 1 && text.top >= own.top - 1 &&
     text.right <= own.right + 1 && text.bottom <= own.bottom + 1;
   if (inside) return null;
-  // Its box on screen has another shape than its layout: turned in its page.
-  if (Math.abs(own.width * this.offsetHeight - own.height * this.offsetWidth) > own.width * own.height * 0.02)
-    return 'turned';
+  // Turned, mirrored or scaled within its page, it has no known orientation.
+  for (let node = this; node; node = node.parentElement) {
+    const style = this.ownerDocument.defaultView.getComputedStyle(node);
+    if (style.transform !== 'none' || style.rotate !== 'none' || style.scale !== 'none')
+      return 'transformed';
+  }
   return [
     (text.left - own.left) / own.width,
     (text.top - own.top) / own.height,
