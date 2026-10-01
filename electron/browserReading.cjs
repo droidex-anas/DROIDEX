@@ -131,7 +131,7 @@ function createBrowserReading({ runWithWebContentsDebugger, savedSecretsFor, red
         : render.refsCut
           ? ` (refs stop after ${MAX_REFS} elements; read one ref for more)`
           : '';
-      const complete = !render.exhausted;
+      const complete = !render.exhausted && !render.skipped;
       if (results.length === 0)
         return {
           text: `No match for ${JSON.stringify(query)}${partial}.\n${footer(contents)}`,
@@ -150,9 +150,10 @@ function createBrowserReading({ runWithWebContentsDebugger, savedSecretsFor, red
   // A viewport point at the middle of the ref's element, scrolled into view,
   // the same point in its frame's own viewport, and the document it was
   // resolved in.
-  async function pointForRef(contents, entry, ref) {
+  // `before` runs right before the page is scrolled.
+  async function pointForRef(contents, entry, ref, before) {
     return withPage(contents, async (dbg) => {
-      const { quad, local, document, sessionId } = await visibleQuad(dbg, entry, ref);
+      const { quad, local, document, sessionId } = await visibleQuad(dbg, entry, ref, before);
       // The point in the ref's own frame stays unrounded, so mapped out of its
       // frame for the cover check it lands on the point that is clicked.
       return { ...centrePixelOf(quad), local: centreOf(local), document, sessionId };
@@ -161,9 +162,10 @@ function createBrowserReading({ runWithWebContentsDebugger, savedSecretsFor, red
 
   // The ref's element scrolled into view: its first visible quad in the page's
   // viewport, wherever its frame runs.
-  async function visibleQuad(dbg, entry, ref) {
+  async function visibleQuad(dbg, entry, ref, before) {
     const { backendNodeId, document, frame } = await lookupRef(dbg, entry, ref);
     const { sessionId } = frame;
+    before?.();
     await scrollFrameIntoView(dbg, sessionId).catch(() => undefined);
     await send(dbg, sessionId, 'DOM.scrollIntoViewIfNeeded', { backendNodeId }).catch(
       () => undefined,
@@ -285,7 +287,11 @@ function createBrowserReading({ runWithWebContentsDebugger, savedSecretsFor, red
   }
 
   async function renderFrames(dbg, render) {
-    const frames = await documentFrames(dbg);
+    const frames = await documentFrames(dbg, {
+      onSkip: () => {
+        render.skipped = true;
+      },
+    });
     for (const frame of frames) {
       const tree = await axTree(dbg, frame);
       const root = tree.nodes.find((node) => !node.parentId);

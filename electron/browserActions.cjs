@@ -91,7 +91,7 @@ function createBrowserActions({
   }
 
   async function pointer(contents, entry, request, step) {
-    const target = await targetOf(contents, entry, request);
+    const target = await targetOf(contents, entry, request, step);
     const { x, y } = target;
     const modifiers = modifiersOf(request.modifiers);
     await dispatchMouse(contents, step, target, [{ type: 'mouseMoved', x, y, modifiers }]);
@@ -121,14 +121,13 @@ function createBrowserActions({
   // given point; a ref with no direction is only brought into view.
   async function scroll(contents, entry, request, step) {
     if (request.ref && !request.direction) {
-      startInput(step);
-      await reading.pointForRef(contents, entry, request.ref);
+      await reading.pointForRef(contents, entry, request.ref, () => startInput(step));
       return;
     }
     // No cover check: the wheel scrolls whatever is under the point.
     const target = request.ref
-      ? await reading.pointForRef(contents, entry, request.ref)
-      : await targetOf(contents, entry, request);
+      ? await reading.pointForRef(contents, entry, request.ref, () => notLate(step))
+      : await targetOf(contents, entry, request, step);
     const pixels = Math.max(1, Math.round(Number(request.pixels) || 500));
     const sign = request.direction === 'up' || request.direction === 'left' ? -1 : 1;
     const horizontal = request.direction === 'left' || request.direction === 'right';
@@ -185,6 +184,7 @@ function createBrowserActions({
         ({ document } = target);
         refNode = target.backendNodeId;
         sessionId = target.frame.sessionId;
+        startInput(step);
         await send(dbg, sessionId, 'DOM.focus', { backendNodeId: target.backendNodeId });
         // A focus handler can send the focus on to another element or frame.
         ({ takesText } = await keepsFocus(dbg, sessionId, document));
@@ -233,7 +233,7 @@ function createBrowserActions({
 
   // A ref becomes the point at its middle, scrolled into view, and is refused
   // when something else would receive input there.
-  async function targetOf(contents, entry, request) {
+  async function targetOf(contents, entry, request, step) {
     if (!request.ref) {
       const x = Math.round(Number(request.x));
       const y = Math.round(Number(request.y));
@@ -241,7 +241,7 @@ function createBrowserActions({
         throw new Error('Pass a ref from browser_read_page, or viewport x and y.');
       return { x, y };
     }
-    const target = await reading.pointForRef(contents, entry, request.ref);
+    const target = await reading.pointForRef(contents, entry, request.ref, () => notLate(step));
     await refuseCovered(contents, entry, request.ref, target);
     return target;
   }
@@ -434,8 +434,13 @@ function createBrowserActions({
 // its caller has given up.
 function startInput(step) {
   if (step.navigation.started()) throw new Error(PAGE_CHANGED);
-  if (Date.now() >= step.startBy) throw new Error('The browser page did not finish in time.');
+  notLate(step);
   step.sent = true;
+}
+
+// Nothing more is done to the page once the caller has given up.
+function notLate(step) {
+  if (Date.now() >= step.startBy) throw new Error('The browser page did not finish in time.');
 }
 
 // Run on the ref's own element. A value goes through the element's own

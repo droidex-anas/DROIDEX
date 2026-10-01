@@ -48,8 +48,9 @@ async function attachFrames(dbg) {
 }
 
 // Frames in document order within each process, each with the session to ask.
-// A frame that cannot be read is skipped, or fails the call when `strict`.
-async function documentFrames(dbg, { strict = false } = {}) {
+// A frame that cannot be read is skipped (and reported to `onSkip`), or fails
+// the call when `strict`.
+async function documentFrames(dbg, { strict = false, onSkip } = {}) {
   const sessions = await attachFrames(dbg);
   const frames = [];
   const visit = async (sessionId) => {
@@ -63,6 +64,7 @@ async function documentFrames(dbg, { strict = false } = {}) {
       if (child.parent !== sessionId) continue;
       await visit(childId).catch((error) => {
         if (strict) throw error;
+        onSkip?.();
       });
     }
   };

@@ -163,19 +163,27 @@ function createNativeBrowserRequests({ manager, notifyRenderer }) {
 
   async function performOnPage(request) {
     const { browserSessionId } = request;
+    // A navigation goes out only while its caller still waits for it.
+    const stillWanted = () => {
+      if (Date.now() >= request.startBy) throw new Error(LATE);
+    };
     if (request.action === 'open') {
       const url = request.url ?? 'about:blank';
+      await manager.waitForPage(browserSessionId);
+      stillWanted();
       await manager.open(browserSessionId, url, request.viewport);
       return result(request, true, await snapshotAfter(request, url));
     }
     if (request.action === 'reload') {
       await manager.waitForPage(browserSessionId);
+      stillWanted();
       const loaded = manager.nextLoad(browserSessionId, LOAD_WAIT_MS);
       await manager.reload(browserSessionId);
       return result(request, true, await snapshotAfter(request, (await loaded)?.url));
     }
     if (request.action === 'goBack' || request.action === 'goForward') {
       await manager.waitForPage(browserSessionId);
+      stillWanted();
       const loaded = manager.nextLoad(browserSessionId, LOAD_WAIT_MS);
       const moved =
         request.action === 'goBack'
