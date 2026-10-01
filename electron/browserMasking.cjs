@@ -25,15 +25,15 @@ function createBrowserMasking({ savedSecretsFor }) {
   // Field lines from browser_read_page show their value or the mask. What is
   // inside a masked field, such as a select's options, is hidden and its refs
   // are forgotten.
-  async function maskFields(dbg, render, url) {
+  async function maskFields(dbg, render) {
     if (render.fields.length === 0) return;
-    const secrets = await secretsFor(url);
+    const logins = savedLogins();
     for (const line of render.fields) {
       const { value } = line.field;
       // An empty field with nothing inside it, and a name that cannot carry
       // its content, has nothing to show or hide.
       if (!value && line.inside.length === 0 && !line.field.labelledBy) continue;
-      const sensitive = await isSensitive(dbg, line.field, secrets);
+      const sensitive = await isSensitive(dbg, line.field, logins);
       if (value) line.text += `: ${sensitive ? MASK : value}`;
       if (!sensitive) continue;
       // A masked field's name goes too when it may carry what the field holds.
@@ -48,12 +48,12 @@ function createBrowserMasking({ savedSecretsFor }) {
   }
 
   // A ref inside a masked field reads as nothing, however the agent got it.
-  async function insideMaskedField(dbg, tree, node, frame, url) {
+  async function insideMaskedField(dbg, tree, node, frame) {
     const byId = new Map(tree.nodes.map((candidate) => [candidate.nodeId, candidate]));
-    const secrets = await secretsFor(url);
+    const logins = savedLogins();
     for (let parent = byId.get(node.parentId); parent; parent = byId.get(parent.parentId)) {
       const field = fieldOf(parent, frame);
-      if (field && (await isSensitive(dbg, field, secrets))) return true;
+      if (field && (await isSensitive(dbg, field, logins))) return true;
     }
     return false;
   }
@@ -63,8 +63,8 @@ function createBrowserMasking({ savedSecretsFor }) {
   // when it is hidden from that tree (aria-hidden, inside a shadow root). A
   // frame that cannot be read fails the call, so a screenshot fails rather
   // than show what it could not check.
-  async function sensitiveBoxes(dbg, url) {
-    const secrets = await secretsFor(url);
+  async function sensitiveBoxes(dbg) {
+    const logins = savedLogins();
     const nodes = new Map(); // `${sessionId}:${backendNodeId}` -> { sessionId, backendNodeId }
     const add = (sessionId, backendNodeId) =>
       nodes.set(`${sessionId}:${backendNodeId}`, { sessionId, backendNodeId });
@@ -72,7 +72,7 @@ function createBrowserMasking({ savedSecretsFor }) {
     for (const frame of frames) {
       for (const node of (await axTree(dbg, frame)).nodes) {
         const field = fieldOf(node, frame);
-        if (field?.value && (await isSensitive(dbg, field, secrets)))
+        if (field?.value && (await isSensitive(dbg, field, logins)))
           add(frame.sessionId, field.backendNodeId);
       }
     }
@@ -82,8 +82,12 @@ function createBrowserMasking({ savedSecretsFor }) {
     const boxes = [];
     for (const { sessionId, backendNodeId } of nodes.values()) {
       const shape = await send(dbg, sessionId, 'DOM.getContentQuads', { backendNodeId }).catch(
-        () => undefined,
-      ); // not rendered, so nothing to paint over
+        (error) => {
+          // Not rendered means nothing to paint over; anything else fails.
+          if (/could not compute content quads/i.test(String(error?.message))) return undefined;
+          throw error;
+        },
+      );
       if (!shape?.quads?.length) continue;
       const toViewport = await viewportMapping(dbg, sessionId);
       for (const quad of shape.quads) boxes.push(boundsOf(toViewport(quad)));
@@ -91,15 +95,23 @@ function createBrowserMasking({ savedSecretsFor }) {
     return boxes;
   }
 
-  async function secretsFor(url) {
-    const secrets = new Set((await savedSecretsFor(url)).map(cleanText));
-    secrets.delete('');
-    return secrets;
+  // The login saved for each origin, looked up once per call: a field is
+  // checked against the login of the frame it is in.
+  function savedLogins() {
+    const byOrigin = new Map();
+    return async (origin) => {
+      if (!byOrigin.has(origin)) {
+        const values = new Set((await savedSecretsFor(origin)).map(cleanText));
+        values.delete('');
+        byOrigin.set(origin, values);
+      }
+      return byOrigin.get(origin);
+    };
   }
 
-  async function isSensitive(dbg, field, secrets) {
-    const { backendNodeId, name, value, sessionId } = field;
-    if (secrets.has(value) || SENSITIVE_FIELD.test(name)) return true;
+  async function isSensitive(dbg, field, logins) {
+    const { backendNodeId, name, value, sessionId, origin } = field;
+    if ((await logins(origin)).has(value) || SENSITIVE_FIELD.test(name)) return true;
     const described =
       backendNodeId &&
       (await send(dbg, sessionId, 'DOM.describeNode', { backendNodeId }).catch(() => undefined));
@@ -152,6 +164,7 @@ function fieldOf(node, frame) {
     // then its name is its own content.
     labelledBy: nameSource(node)?.attribute === 'aria-labelledby',
     sessionId: frame.sessionId,
+    origin: frame.securityOrigin || frame.url,
   };
 }
 

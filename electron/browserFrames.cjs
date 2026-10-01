@@ -5,7 +5,7 @@
 // find its offset in the page's viewport.
 
 const AUTO_ATTACH = { autoAttach: true, waitForDebuggerOnStart: false, flatten: true };
-const SETTLE_MS = 200;
+const PAINT_WAIT_MS = 500;
 const attachments = new WeakMap(); // guest debugger -> { sessions, pending }
 
 function send(dbg, sessionId, method, params = {}) {
@@ -94,25 +94,20 @@ async function viewportMapping(dbg, sessionId) {
     );
 }
 
-// Waits, briefly, until the top frame and the given cross-site frame have
-// painted twice after a scroll, so a copy of the screen shows what the DOM
-// says now. Only frames on screen paint, so the others are never waited on.
-async function settleFrames(dbg, sessionId) {
+// Whether a frame painted twice within a short wait, so a copy of the screen
+// shows what its DOM says now.
+async function framePainted(dbg, sessionId) {
   const painted = 'new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done)))';
   let timer;
-  await Promise.race([
-    Promise.all(
-      [...new Set([undefined, sessionId])].map((session) =>
-        send(dbg, session, 'Runtime.evaluate', { expression: painted, awaitPromise: true }).catch(
-          () => undefined,
-        ),
-      ),
+  return Promise.race([
+    send(dbg, sessionId, 'Runtime.evaluate', { expression: painted, awaitPromise: true }).then(
+      () => true,
+      () => false,
     ),
     new Promise((resolve) => {
-      timer = setTimeout(resolve, SETTLE_MS);
+      timer = setTimeout(() => resolve(false), PAINT_WAIT_MS);
     }),
-  ]);
-  clearTimeout(timer);
+  ]).finally(() => clearTimeout(timer));
 }
 
 // Scrolls the owners of a cross-site frame into view, outermost first, so a
@@ -143,7 +138,7 @@ module.exports = {
   send,
   documentFrames,
   viewportMapping,
-  settleFrames,
+  framePainted,
   scrollFrameIntoView,
   axTree,
   boundsOf,

@@ -108,7 +108,9 @@ function markdownOf(tree, render, { redactUrl, maxNodes }) {
       flush();
       const level = node.properties?.find((property) => property.name === 'level')?.value?.value;
       const text = textOf(node);
-      if (text) blocks.push(`${'#'.repeat(Number(level) || 2)} ${text}`);
+      // A heading inside a link or cell reads as that link's or cell's text.
+      if (inlineOnly) inline.push(text);
+      else if (text) blocks.push(`${'#'.repeat(Number(level) || 2)} ${text}`);
     } else if (role === 'listitem') {
       flush();
       prefix = `${'  '.repeat(Math.max(0, lists - 1))}- `;

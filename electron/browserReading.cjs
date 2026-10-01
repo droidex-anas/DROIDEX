@@ -82,13 +82,13 @@ function createBrowserReading({ runWithWebContentsDebugger, savedSecretsFor, red
         const root = tree.nodes.find((node) => node.backendDOMNodeId === target.backendNodeId);
         if (!root)
           throw new Error(`${options.ref} is not on the page any more; call browser_read_page.`);
-        if (await masking.insideMaskedField(dbg, tree, root, target.frame, contents.getURL()))
+        if (await masking.insideMaskedField(dbg, tree, root, target.frame))
           throw new Error(`${options.ref} is inside a masked field.`);
         renderTree(render, tree, root, target.frame, 0);
       } else {
         await renderFrames(dbg, render);
       }
-      await masking.maskFields(dbg, render, contents.getURL());
+      await masking.maskFields(dbg, render);
       return finish(
         render,
         render.lines.map(indent).join('\n'),
@@ -115,7 +115,7 @@ function createBrowserReading({ runWithWebContentsDebugger, savedSecretsFor, red
       const matches = matcher(query);
       const render = newRender(entry, {});
       await renderFrames(dbg, render);
-      await masking.maskFields(dbg, render, contents.getURL());
+      await masking.maskFields(dbg, render);
       const hits = matches(render.lines.map((line) => line.text));
       const results = [];
       render.lines.forEach((line, index) => {

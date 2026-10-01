@@ -224,11 +224,14 @@ function createNativeBrowserPage({
 
   // Chromium's input router delivers these wherever the point lands, cross-site
   // frames included; sendInputEvent stops at the top document. The navigation
-  // check runs inside the debugger queue, right before the first event.
+  // check runs inside the debugger queue, before every event, so a gesture
+  // stops as soon as a new document starts loading.
   function dispatchMouse(contents, step, events) {
     return runWithWebContentsDebugger(contents, async (dbg) => {
-      startInput(step);
-      for (const event of events) await dbg.sendCommand('Input.dispatchMouseEvent', event);
+      for (const event of events) {
+        startInput(step);
+        await dbg.sendCommand('Input.dispatchMouseEvent', event);
+      }
     });
   }
 

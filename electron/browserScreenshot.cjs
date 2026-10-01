@@ -4,7 +4,7 @@
 // exactly. Sensitive fields are painted over here, in main, so the page the
 // user sees is never touched; the capture fails rather than leak one.
 
-const { settleFrames } = require('./browserFrames.cjs');
+const { framePainted } = require('./browserFrames.cjs');
 
 const MAX_EDGE = 1568;
 const JPEG_QUALITY = 80;
@@ -28,15 +28,18 @@ function createBrowserScreenshot({ reading, nativeImage, redactUrl }) {
   // the mask and the capture.
   async function attemptShot(dbg, contents, entry, options) {
     const box = options.ref ? await reading.refBox(dbg, entry, options.ref) : undefined;
-    if (box) await settleFrames(dbg, box.sessionId);
+    // CDP redraws the top frame before it copies; a cross-site frame the ref
+    // was just scrolled inside has to paint on its own first.
+    if (box?.sessionId && !(await framePainted(dbg, box.sessionId)))
+      throw new Error('The frame did not paint in time; no screenshot was taken.');
     const view = await viewOf(dbg);
     const clip = clipFor(view, options, box);
-    const masks = await masksFor(dbg, contents, view, options);
+    const masks = await masksFor(dbg, view, options);
     const scale = Math.min(1, MAX_EDGE / Math.max(clip.width, clip.height));
-    let image = await capture(dbg, contents, view, clip, scale, options);
+    let image = await capture(dbg, view, clip, scale, options);
     const after = await viewOf(dbg);
     if (after.key !== view.key) return undefined;
-    if (JSON.stringify(await masksFor(dbg, contents, after, options)) !== JSON.stringify(masks))
+    if (JSON.stringify(await masksFor(dbg, after, options)) !== JSON.stringify(masks))
       return undefined;
     if (masks.length) image = paint(nativeImage, image, masks, clip, scale);
     const png = options.format === 'png';
@@ -48,28 +51,22 @@ function createBrowserScreenshot({ reading, nativeImage, redactUrl }) {
     };
   }
 
-  // The full page goes through CDP, which renders beyond the viewport; the
-  // viewport and crops are copied from what is already composited.
-  async function capture(dbg, contents, view, clip, scale, options) {
-    if (options.fullPage) {
-      const { data } = await dbg.sendCommand('Page.captureScreenshot', {
-        format: 'png',
-        captureBeyondViewport: true,
-        clip: { ...clip, scale: scale / view.dpr },
-      });
-      return nativeImage.createFromBuffer(Buffer.from(data, 'base64'));
-    }
-    const captured = await contents.capturePage(clip);
-    if (captured.isEmpty()) throw new Error('The browser page has nothing to capture yet.');
-    return captured.resize({
-      width: Math.max(1, Math.round(clip.width * scale)),
-      height: Math.max(1, Math.round(clip.height * scale)),
-      quality: 'good',
+  // CDP redraws the page before it copies it, so the image matches the DOM
+  // the masks were read from (a copy of the composited surface can still
+  // show the frame before a scroll). Clips are in page coordinates, at CSS
+  // size; only the full page renders beyond the viewport.
+  async function capture(dbg, view, clip, scale, options) {
+    const origin = options.fullPage ? { x: 0, y: 0 } : { x: view.pageX, y: view.pageY };
+    const { data } = await dbg.sendCommand('Page.captureScreenshot', {
+      format: 'png',
+      captureBeyondViewport: Boolean(options.fullPage),
+      clip: { ...clip, x: origin.x + clip.x, y: origin.y + clip.y, scale: scale / view.dpr },
     });
+    return nativeImage.createFromBuffer(Buffer.from(data, 'base64'));
   }
 
-  async function masksFor(dbg, contents, view, options) {
-    const boxes = await reading.sensitiveBoxes(dbg, contents.getURL());
+  async function masksFor(dbg, view, options) {
+    const boxes = await reading.sensitiveBoxes(dbg);
     // Full-page clips are in page coordinates; the boxes are in the viewport's.
     const shift = options.fullPage ? { x: view.pageX, y: view.pageY } : { x: 0, y: 0 };
     return boxes.map((box) => ({
