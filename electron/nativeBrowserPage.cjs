@@ -314,7 +314,10 @@ function createNativeBrowserPage({
       await Promise.race([
         contents
           .executeJavaScript(
-            'new Promise((painted) => requestAnimationFrame(() => requestAnimationFrame(painted)))',
+            `new Promise((painted) => {
+              setTimeout(painted, ${timeoutMs});
+              requestAnimationFrame(() => requestAnimationFrame(painted));
+            })`,
             true,
           )
           .catch(() => undefined),
