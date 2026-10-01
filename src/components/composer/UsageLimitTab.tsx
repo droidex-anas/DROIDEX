@@ -1,3 +1,4 @@
+import { Fragment } from 'react';
 import { ExternalLink, Gauge } from '@droidex/icons';
 import { PROVIDER_USAGE_URLS } from '../../features/providers/providerIdentity';
 import { formatDuration, limitName } from '../../features/usage/usageCopy';
@@ -92,13 +93,15 @@ export function UsageWarningTab({
           <span className="shrink-0 text-droid-text-muted">
             <Gauge className="h-3.5 w-3.5" strokeWidth={2} />
           </span>
-          <span className="flex min-w-0 items-center gap-1 tabular-nums">
-            <span className="shrink-0 text-droid-text-secondary">{headline}</span>
+          {/* Flows as text: on a narrow composer it wraps between details, so
+              neither the headline nor a time is ever cut short. */}
+          <span className="min-w-0 tabular-nums">
+            <span className="text-droid-text-secondary">{headline}</span>
             {details.map((detail) => (
-              <span key={detail} className="flex min-w-0 items-center gap-1">
-                <span className="shrink-0 text-droid-text-muted">·</span>
-                <span className="min-w-0 truncate text-droid-text-muted">{detail}</span>
-              </span>
+              <Fragment key={detail}>
+                {' '}
+                <span className="whitespace-nowrap text-droid-text-muted">· {detail}</span>
+              </Fragment>
             ))}
           </span>
         </div>
