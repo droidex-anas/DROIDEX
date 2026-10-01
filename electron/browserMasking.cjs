@@ -33,6 +33,9 @@ function createBrowserMasking({ savedSecretsFor }) {
       const sensitive = await isSensitive(dbg, line.field, secrets);
       if (value) line.text += `: ${sensitive ? MASK : value}`;
       if (!sensitive) continue;
+      // A field labelled by itself (aria-labelledby) carries its value in its name.
+      if (value && line.field.name.includes(value))
+        line.text = line.text.replace(`"${line.name}"`, `"${MASK}"`);
       for (const inner of line.inside) {
         inner.hidden = true;
         if (inner.ref) dropRef(render.entry, inner.ref);

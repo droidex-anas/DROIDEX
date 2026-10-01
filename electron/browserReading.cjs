@@ -265,7 +265,13 @@ function createBrowserReading({ runWithWebContentsDebugger, savedSecretsFor, red
       } else if (node.backendDOMNodeId) {
         render.refsCut = true;
       }
-      const line = { depth, text: describe(node, role, name, ref), ref, field: fieldOf(node) };
+      const line = {
+        depth,
+        text: describe(node, role, name, ref),
+        name,
+        ref,
+        field: fieldOf(node),
+      };
       if (line.field) render.fields.push(line);
       const index = lines.push(line) - 1;
       if (!LEAF_ROLES.has(role))
