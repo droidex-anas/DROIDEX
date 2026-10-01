@@ -1,13 +1,10 @@
 import assert from 'node:assert/strict';
-import { chmodSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
-import { join } from 'node:path';
 import test from 'node:test';
 
 import { WebSocket } from 'ws';
 
 import { assertValidInteractionResponse } from './interactionResponses.js';
 import { startBridgeServer } from './bridgeServer.js';
-import { droidexUserDataDir } from './droidexPaths.js';
 import {
   BRIDGE_PROTOCOL_VERSION,
   type BridgeRuntimeSnapshot,
@@ -20,7 +17,6 @@ import { hotPathMetrics } from './telemetry/hotPathMetrics.js';
 interface Harness {
   port: number;
   token: string;
-  assetToken: string;
   broadcast(event: ServerEvent): void;
   close(): Promise<void>;
 }
@@ -31,11 +27,9 @@ async function withServer(
   getSnapshot?: () => Promise<BridgeRuntimeSnapshot> | BridgeRuntimeSnapshot,
 ): Promise<void> {
   const token = 'test-token';
-  const assetToken = 'test-asset-token';
   const server = startBridgeServer({
     requestedPort: 0,
     token,
-    assetToken,
     onCommand,
     ...(getSnapshot ? { getSnapshot } : {}),
   });
@@ -44,7 +38,6 @@ async function withServer(
     await handler({
       port: server.port,
       token,
-      assetToken,
       broadcast: server.broadcast,
       close: () => server.close(),
     });
@@ -159,30 +152,6 @@ test('broadcast after close is dropped instead of throwing', async () => {
     await harness.close();
     assert.doesNotThrow(() => harness.broadcast({ type: 'connection', status: 'connected' }));
   });
-});
-
-test('a browser-asset read error after headers leaves the bridge serving', async () => {
-  const root = join(droidexUserDataDir(), `bridge-asset-${String(Date.now())}`);
-  mkdirSync(root, { recursive: true });
-  try {
-    await withServer(async (harness) => {
-      const readablePath = join(root, 'ok.png');
-      const unreadablePath = join(root, 'blocked.png');
-      writeFileSync(readablePath, 'png-ok');
-      writeFileSync(unreadablePath, 'png-blocked');
-      chmodSync(unreadablePath, 0);
-
-      const blockedUrl = `http://127.0.0.1:${String(harness.port)}/browser-assets?path=${encodeURIComponent(unreadablePath)}&token=${harness.assetToken}`;
-      await fetch(blockedUrl).catch(() => undefined);
-
-      const readableUrl = `http://127.0.0.1:${String(harness.port)}/browser-assets?path=${encodeURIComponent(readablePath)}&token=${harness.assetToken}`;
-      const response = await fetch(readableUrl);
-      assert.equal(response.status, 200);
-      assert.equal(await response.text(), 'png-ok');
-    });
-  } finally {
-    rmSync(root, { recursive: true, force: true });
-  }
 });
 
 test('clients without the current bridge protocol are rejected', async () => {
