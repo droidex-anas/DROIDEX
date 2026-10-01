@@ -80,10 +80,12 @@ export function BrowserHost() {
     ];
     // Work main started before this host mounted (an app reload mid-request).
     // An event heard meanwhile is newer than this answer.
-    void listWorkingNativeBrowsers().then((ids) => {
-      for (const browserSessionId of ids)
-        if (!heard.has(browserSessionId)) setWorking(browserSessionId, true);
-    });
+    void listWorkingNativeBrowsers()
+      .then((ids) => {
+        for (const browserSessionId of ids)
+          if (!heard.has(browserSessionId)) setWorking(browserSessionId, true);
+      })
+      .catch(() => undefined);
     return () => {
       for (const unsubscribe of subscriptions) unsubscribe();
     };

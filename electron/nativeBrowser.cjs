@@ -104,21 +104,26 @@ function createNativeBrowserManager(options) {
     entry.contents = null;
     entry.shown = false;
     forgetLoad(entry);
+    forgetLoadWaiters(entry);
   }
 
   function bindNativeBrowserGuest(browserSessionId, contents) {
     const entry = ensureNativeBrowserEntry(browserSessionId);
     forgetLoad(entry);
+    forgetLoadWaiters(entry);
     views.bindGuest(entry, contents);
     const restoreUrl = urls.restorableUrlForEntry(entry, entry.targetUrl);
     if (restoreUrl) void loadNativeBrowserUrl(entry, restoreUrl, { force: true });
   }
 
-  // A load belongs to the guest that started it; a new guest starts afresh, and
-  // nobody waiting on the old one hears about the new one's loads.
+  // A load belongs to the guest that started it; a new guest starts afresh.
   function forgetLoad(entry) {
     entry.loadingUrl = null;
     entry.loadingPromise = null;
+  }
+
+  // Nobody waiting on a guest's next load hears about its replacement's loads.
+  function forgetLoadWaiters(entry) {
     for (const settle of [...(loadWaiters.get(entry.browserSessionId) ?? [])]) settle(undefined);
   }
 
@@ -334,6 +339,7 @@ function createNativeBrowserManager(options) {
     setDesignMode: page.setDesignMode,
     setPencilMode: page.setPencilMode,
     runAgentAction: page.runAgentAction,
+    waitForPaint: page.waitForPaint,
     abandonWork: (browserSessionId) => {
       const entry = nativeBrowsers.get(urls.normalizeNativeBrowserSessionId(browserSessionId));
       const contents = liveContents(entry);

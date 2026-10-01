@@ -302,6 +302,32 @@ function createNativeBrowserPage({
     }
   }
 
+  // A page that has just woken drops input until it paints again, so input
+  // waits for two frames first (bounded, in case the page cannot paint).
+  async function waitForPaint(browserSessionId, timeoutMs = 1_000) {
+    const entry = await restoreForAction(browserSessionId);
+    const contents = liveContents(entry);
+    if (!contents) return;
+    const operation = liftBackgroundThrottling(contents);
+    let timer;
+    try {
+      await Promise.race([
+        contents
+          .executeJavaScript(
+            'new Promise((painted) => requestAnimationFrame(() => requestAnimationFrame(painted)))',
+            true,
+          )
+          .catch(() => undefined),
+        new Promise((resolve) => {
+          timer = setTimeout(resolve, timeoutMs);
+        }),
+      ]);
+    } finally {
+      clearTimeout(timer);
+      restoreBackgroundThrottling(contents, operation);
+    }
+  }
+
   // A page runs unthrottled while any operation on it is in flight. Restored as
   // soon as the last one ends, shown or not: re-enabling throttling on a guest
   // that is already hidden does not take effect, so a flag left lifted would
@@ -425,6 +451,7 @@ function createNativeBrowserPage({
     capture,
     captureDesignSelection,
     abandonOperations,
+    waitForPaint,
   };
 }
 

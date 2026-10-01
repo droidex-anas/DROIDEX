@@ -228,7 +228,8 @@ function createSidecarSupervisor(options) {
       // Answers go back to the run that asked, never to a later one.
       nextChild.on?.('message', (message) => {
         options.onMessage?.(message, (reply) => {
-          if (nextChild.connected) nextChild.send(reply);
+          // A sidecar closing as the answer goes out simply never gets it.
+          if (nextChild.connected) nextChild.send(reply, () => undefined);
         });
       });
     });

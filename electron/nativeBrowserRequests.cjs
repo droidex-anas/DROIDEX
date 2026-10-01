@@ -26,6 +26,7 @@ const ACTIONS = new Set([
 ]);
 // Reading the logs or recording the viewport never needs the page itself.
 const PAGELESS_ACTIONS = new Set(['resize', 'network', 'console']);
+const INPUT_ACTIONS = new Set(['click', 'hover', 'selectOption', 'type', 'keypress', 'scroll']);
 const MAX_WAITING_PER_PAGE = 8;
 const LOAD_WAIT_MS = 8_000;
 // Work still running a little past the sidecar's own timeout stops holding its
@@ -56,9 +57,11 @@ function createNativeBrowserRequests({ manager, notifyRenderer }) {
         return result(request, true);
       }
       if (PAGELESS_ACTIONS.has(request.action)) return await performAction(request);
-      return await withAwakePage(request.browserSessionId, deadlineMs, () =>
-        performOnPage(request),
-      );
+      return await withAwakePage(request.browserSessionId, deadlineMs, async (woke) => {
+        if (woke && INPUT_ACTIONS.has(request.action))
+          await manager.waitForPaint(request.browserSessionId);
+        return performOnPage(request);
+      });
     } catch (error) {
       return result(request, false, {
         error: error instanceof Error ? error.message : String(error),
@@ -70,18 +73,19 @@ function createNativeBrowserRequests({ manager, notifyRenderer }) {
     if ((waiting.get(browserSessionId) ?? 0) >= MAX_WAITING_PER_PAGE) {
       throw new Error('Too many browser actions are already waiting on this page.');
     }
+    const woke = !waiting.has(browserSessionId);
     setWaiting(browserSessionId, 1);
     let deadline;
     try {
-      const work = run();
+      const work = run(woke);
       work.catch(() => undefined);
       return await Promise.race([
         work,
         new Promise((_, reject) => {
-          deadline = setTimeout(() => {
-            manager.abandonWork(browserSessionId);
-            reject(new Error('The browser page did not finish in time.'));
-          }, deadlineMs);
+          deadline = setTimeout(
+            () => reject(new Error('The browser page did not finish in time.')),
+            deadlineMs,
+          );
         }),
       ]);
     } finally {
@@ -95,9 +99,11 @@ function createNativeBrowserRequests({ manager, notifyRenderer }) {
     const after = before + delta;
     if (after > 0) waiting.set(browserSessionId, after);
     else waiting.delete(browserSessionId);
-    if (before > 0 !== after > 0) {
-      notifyRenderer('native-browser-working', { browserSessionId, working: after > 0 });
-    }
+    if (before > 0 === after > 0) return;
+    // With no request left on the page, operations still running belong to
+    // work main gave up on: they stop keeping the page unthrottled.
+    if (after === 0) manager.abandonWork(browserSessionId);
+    notifyRenderer('native-browser-working', { browserSessionId, working: after > 0 });
   }
 
   async function performOnPage(request) {

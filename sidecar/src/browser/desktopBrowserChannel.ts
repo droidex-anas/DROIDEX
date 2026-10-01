@@ -62,9 +62,15 @@ export function createDesktopBrowserChannel(
         );
       }, timeoutMs);
       pending.set(request.requestId, { resolve, reject, timer });
-      send({ type: 'browser.request', id: request.requestId, request, timeoutMs }, (error) => {
-        if (error) settle(request.requestId)?.reject(error);
-      });
+      try {
+        send({ type: 'browser.request', id: request.requestId, request, timeoutMs }, (error) => {
+          if (error) settle(request.requestId)?.reject(error);
+        });
+      } catch (error) {
+        settle(request.requestId)?.reject(
+          error instanceof Error ? error : new Error(String(error)),
+        );
+      }
     });
   };
 }
