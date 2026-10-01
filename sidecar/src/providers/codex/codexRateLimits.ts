@@ -5,7 +5,7 @@
 import type { UsageLimit, UsageWindow } from '../../protocol.js';
 import { numberValue, objectValue } from '../../values.js';
 import type { ReportedMeter, UsageMetersListener, UsageReading } from '../session.js';
-import { futureResetAt, UsageLimitError } from '../usageLimit.js';
+import { futureResetAt, resetAtMillis, UsageLimitError, windowUsage } from '../usageLimit.js';
 import type { AppServerClient } from './appServer.js';
 
 // The bucket every Codex model draws on. Others (a model's own, such as
@@ -129,13 +129,11 @@ function windowMeters(snapshot: RateLimitSnapshot): ReportedMeter[] {
     const window = snapshot[id];
     if (!window) return [];
     const name = usageWindow(window);
-    const resetsAt = futureResetAt(window.resetsAt);
     return [
       {
         id,
         ...(name ? { window: name } : {}),
-        usedPercent: Math.min(100, Math.max(0, window.usedPercent)),
-        ...(resetsAt === undefined ? {} : { resetsAt }),
+        ...windowUsage(window.usedPercent, resetAtMillis(window.resetsAt)),
         ...(window.windowDurationMins ? { durationMs: window.windowDurationMins * 60_000 } : {}),
       },
     ];

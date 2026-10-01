@@ -1,4 +1,5 @@
 import type { UsageLimit } from '../protocol.js';
+import type { ReportedMeter } from './session.js';
 
 export class UsageLimitError extends Error {
   readonly errorKind = 'usage_limit' as const;
@@ -37,4 +38,17 @@ export function resetAtMillis(seconds: unknown): number | undefined {
 export function futureResetAt(seconds: unknown): number | undefined {
   const millis = resetAtMillis(seconds);
   return millis !== undefined && millis > Date.now() ? millis : undefined;
+}
+
+// A window whose reset has passed has emptied, whatever figure a cached or
+// late answer still carries for it.
+export function windowUsage(
+  usedPercent: number,
+  resetsAt: number | undefined,
+): Pick<ReportedMeter, 'usedPercent' | 'resetsAt'> {
+  if (resetsAt !== undefined && resetsAt <= Date.now()) return { usedPercent: 0 };
+  return {
+    usedPercent: Math.min(100, Math.max(0, usedPercent)),
+    ...(resetsAt === undefined ? {} : { resetsAt }),
+  };
 }

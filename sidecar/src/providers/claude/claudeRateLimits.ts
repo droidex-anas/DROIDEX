@@ -12,7 +12,7 @@ import {
 
 import type { UsageExtra, UsageLimit } from '../../protocol.js';
 import type { ReportedMeter, UsageMetersListener, UsageReading } from '../session.js';
-import { futureResetAt, UsageLimitError } from '../usageLimit.js';
+import { futureResetAt, resetAtMillis, UsageLimitError, windowUsage } from '../usageLimit.js';
 
 const FIVE_HOURS_MS = 5 * 60 * 60_000;
 const WEEK_MS = 7 * 24 * 60 * 60_000;
@@ -112,7 +112,7 @@ function claudeUsageReading(response: SDKControlGetUsageResponse): UsageReading 
   for (const [scope, window] of windows) {
     if (typeof window?.utilization !== 'number') continue;
     const resetsAt = window.resets_at
-      ? futureResetAt(Date.parse(window.resets_at) / 1000)
+      ? resetAtMillis(Date.parse(window.resets_at) / 1000)
       : undefined;
     const meter = claudeMeter(scope, window.utilization, resetsAt);
     meters.set(meter.id, meter);
@@ -142,7 +142,7 @@ function extraUsage(
 function rateLimitMeter(info: SDKRateLimitInfo): ReportedMeter | undefined {
   const scope = info.rateLimitType ? RATE_LIMIT_SCOPES[info.rateLimitType] : undefined;
   if (!scope?.window || typeof info.utilization !== 'number') return undefined;
-  return claudeMeter(scope, info.utilization * 100, futureResetAt(info.resetsAt));
+  return claudeMeter(scope, info.utilization * 100, resetAtMillis(info.resetsAt));
 }
 
 // The read and the event name a window the same way, so both land on one row.
@@ -157,8 +157,7 @@ function claudeMeter(
     id,
     ...(window ? { window } : {}),
     ...(model ? { model } : {}),
-    usedPercent: percent(usedPercent),
-    ...(resetsAt === undefined ? {} : { resetsAt }),
+    ...windowUsage(usedPercent, resetsAt),
     durationMs: fiveHour ? FIVE_HOURS_MS : WEEK_MS,
   };
 }
