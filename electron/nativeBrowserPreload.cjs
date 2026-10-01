@@ -1397,7 +1397,8 @@ function mountPrompt() {
     promptBox.setAttribute(INTERNAL_ATTR, '1');
     const row = element('div', ['display:flex', 'align-items:center', 'gap:8px']);
     promptTag = element('div', [
-      'max-width:160px',
+      // A narrow composer still leaves the text field its room.
+      'max-width:min(160px,35%)',
       'overflow:hidden',
       'text-overflow:ellipsis',
       'white-space:nowrap',
@@ -1407,7 +1408,7 @@ function mountPrompt() {
     promptTag.textContent = '@ref';
     promptInput = element('input', [
       'flex:1',
-      'min-width:0',
+      'min-width:64px',
       'height:32px',
       'border:0',
       'outline:0',
