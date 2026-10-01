@@ -13,6 +13,7 @@ import {
 
 type Listener = (event: ServerEvent) => void;
 type BatchListener = (events: readonly ServerEvent[]) => void;
+type RuntimeReplacedListener = () => void;
 type ReconnectScheduler = (callback: () => void, delayMs: number) => void;
 type WireMessageValidator = (value: unknown) => ServerWireMessage | null;
 
@@ -29,6 +30,7 @@ export class Bridge {
   private ws: WebSocket | null = null;
   private readonly listeners = new Set<Listener>();
   private readonly batchListeners = new Set<BatchListener>();
+  private readonly runtimeReplacedListeners = new Set<RuntimeReplacedListener>();
   private queue: ClientCommand[] = [];
   private backoff = 500;
   private url = '';
@@ -175,6 +177,8 @@ export class Bridge {
   private receiveSnapshot(message: BridgeSnapshotMessage): void {
     this.lastGeneration = message.generation;
     this.lastSeq = message.lastSeq;
+    if (message.reason === 'generation_changed')
+      for (const listener of this.runtimeReplacedListeners) listener();
     this.publishEvents(eventsFromSnapshot(message));
   }
 
@@ -249,6 +253,14 @@ export class Bridge {
   subscribeBatch(listener: BatchListener): () => void {
     this.batchListeners.add(listener);
     return () => this.batchListeners.delete(listener);
+  }
+
+  // Called just before the events of a snapshot from a replaced sidecar. What
+  // the old process was still working on will never be answered; a command
+  // queued while the socket was down goes to the new one and is.
+  subscribeRuntimeReplaced(listener: RuntimeReplacedListener): () => void {
+    this.runtimeReplacedListeners.add(listener);
+    return () => this.runtimeReplacedListeners.delete(listener);
   }
 }
 

@@ -733,7 +733,9 @@ export type Action =
       requestId: string;
       settings: PendingModelSettings;
     }
-  | { type: 'MODEL_UPDATE_SETTLED'; appSessionId: string; requestId: string };
+  | { type: 'MODEL_UPDATE_SETTLED'; appSessionId: string; requestId: string }
+  // The sidecar was replaced: nothing it was working on will be answered.
+  | { type: 'MODEL_UPDATES_UNANSWERED' };
 
 // Loaded once at module scope so the theme loader can match saved colors
 // against custom presets when recovering a missing presetId.
@@ -2525,6 +2527,12 @@ export function reducer(state: AppState, action: Action): AppState {
         },
       };
 
+    case 'MODEL_UPDATES_UNANSWERED':
+      // The snapshot carries each chat's confirmed settings, which then show.
+      return Object.keys(state.pendingModelUpdates).length > 0
+        ? { ...state, pendingModelUpdates: {} }
+        : state;
+
     case 'MODEL_UPDATE_SETTLED': {
       if (state.pendingModelUpdates[action.appSessionId]?.requestId !== action.requestId)
         return state;
@@ -2902,8 +2910,13 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       }
       batcher.pushBridgeBatch(actions);
     });
+    // Queued ahead of the snapshot's own events, through the same batcher.
+    const unsubReplaced = bridge.subscribeRuntimeReplaced(() => {
+      batcher.pushBridgeBatch([{ type: 'MODEL_UPDATES_UNANSWERED' }]);
+    });
     return () => {
       unsub();
+      unsubReplaced();
       // StrictMode remounts this effect in dev; deliver anything in flight so
       // no event is lost across the resubscribe.
       batcher.dispose();

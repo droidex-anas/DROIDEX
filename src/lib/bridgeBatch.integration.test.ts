@@ -234,6 +234,12 @@ test(
       );
       const seen: ServerEvent[] = [];
       bridge.subscribe((event) => seen.push(event));
+      // The store drops pending setting changes here: the process that would
+      // have answered them is gone.
+      let replacedBeforeEvents = 0;
+      bridge.subscribeRuntimeReplaced(() => {
+        if (seen.length === 0) replacedBeforeEvents += 1;
+      });
       await bridge.start();
       const first = required(FakeWebSocket.instances.at(-1));
       first.open();
@@ -256,6 +262,7 @@ test(
         seen.map((event) => event.type),
         ['connection', 'runtime.updated', 'sessions.processes'],
       );
+      assert.equal(replacedBeforeEvents, 1);
 
       first.close();
       reconnects.shift()?.();
@@ -312,6 +319,11 @@ test('recovery snapshots replace process lists, including sessions that disappea
       const action = adaptEvent(event);
       if (action) state = reducer(state, action);
     });
+    // A snapshot from the same sidecar abandons nothing; one from a new one does.
+    let replaced = 0;
+    bridge.subscribeRuntimeReplaced(() => {
+      replaced += 1;
+    });
     await bridge.start();
     const socket = required(FakeWebSocket.instances.at(-1));
     socket.open();
@@ -345,6 +357,7 @@ test('recovery snapshots replace process lists, including sessions that disappea
     };
     socket.message(snapshot);
     assert.deepEqual(state.agentProcesses, { 'live-session': [process] });
+    assert.equal(replaced, 0);
     socket.message({
       ...snapshot,
       generation: 'generation-2',
@@ -352,6 +365,7 @@ test('recovery snapshots replace process lists, including sessions that disappea
       snapshot: { ...snapshot.snapshot, processes: {} },
     });
     assert.deepEqual(state.agentProcesses, {});
+    assert.equal(replaced, 1);
   } finally {
     restoreFakeRuntime(runtime);
   }
