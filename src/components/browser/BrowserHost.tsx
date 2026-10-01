@@ -2,13 +2,20 @@ import { useEffect, useMemo, useRef } from 'react';
 import type { CSSProperties } from 'react';
 import { useStoreDispatch, useStoreSelector } from '../../hooks/useStore';
 import {
+  closeBrowserPage,
   isBrowserPageAwake,
   setBrowserPageCrashed,
+  setBrowserPageWorking,
   useBrowserHost,
   type BrowserHostState,
   type BrowserPage,
 } from '../../lib/browserHost';
-import { onNativeBrowserLoadFailed, onNativeBrowserLoaded } from '../../lib/nativeBrowser';
+import {
+  onNativeBrowserClosed,
+  onNativeBrowserLoadFailed,
+  onNativeBrowserLoaded,
+  onNativeBrowserWorking,
+} from '../../lib/nativeBrowser';
 
 type Placement = 'shown' | 'working' | 'asleep';
 
@@ -36,10 +43,22 @@ export function BrowserHost() {
     return bySession;
   }, [browsers]);
 
-  // Pages navigate and crash while the pane is closed too, so their state is
-  // recorded here rather than by the pane.
+  // Pages work, navigate and crash while the pane is closed too, so all of it
+  // is followed here rather than by the pane.
   useEffect(() => {
+    const appSessionIdFor = (browserSessionId: string) =>
+      Object.keys(browsersRef.current).find(
+        (key) => browsersRef.current[key].browserSessionId === browserSessionId,
+      );
     const subscriptions = [
+      onNativeBrowserWorking(({ browserSessionId, working }) => {
+        const appSessionId = appSessionIdFor(browserSessionId);
+        const savedUrl = appSessionId ? browsersRef.current[appSessionId].url : undefined;
+        setBrowserPageWorking(browserSessionId, working, savedUrl);
+      }),
+      onNativeBrowserClosed(({ browserSessionId }) => {
+        closeBrowserPage(browserSessionId);
+      }),
       onNativeBrowserLoadFailed((failure) => {
         if (failure.crashed && failure.browserSessionId)
           setBrowserPageCrashed(failure.browserSessionId, true);
@@ -48,19 +67,13 @@ export function BrowserHost() {
         const { browserSessionId } = event;
         if (!browserSessionId) return;
         setBrowserPageCrashed(browserSessionId, false);
-        const appSessionId = Object.keys(browsersRef.current).find(
-          (key) => browsersRef.current[key].browserSessionId === browserSessionId,
-        );
+        const appSessionId = appSessionIdFor(browserSessionId);
         if (appSessionId)
           dispatch({ type: 'BROWSER_NAVIGATED', appSessionId, ...event, browserSessionId });
       }),
     ];
     return () => {
-      for (const subscription of subscriptions) {
-        void subscription.then((unlisten) => {
-          unlisten();
-        });
-      }
+      for (const unsubscribe of subscriptions) unsubscribe();
     };
   }, [dispatch]);
 

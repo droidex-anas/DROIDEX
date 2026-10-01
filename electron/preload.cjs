@@ -228,12 +228,6 @@ contextBridge.exposeInMainWorld('droidControl', {
     ipcRenderer.invoke('native-browser-release', { browserSessionId }),
   nativeBrowserShown: (browserSessionId, shown) =>
     ipcRenderer.invoke('native-browser-shown', { browserSessionId, shown }),
-  nativeBrowserOpen: (browserSessionId, url, viewport) =>
-    ipcRenderer.invoke('native-browser-open', { browserSessionId, url, viewport }),
-  nativeBrowserClose: (browserSessionId) =>
-    ipcRenderer.invoke('native-browser-close', { browserSessionId }),
-  nativeBrowserReload: (browserSessionId) =>
-    ipcRenderer.invoke('native-browser-reload', { browserSessionId }),
   nativeBrowserGoBack: (browserSessionId) =>
     ipcRenderer.invoke('native-browser-go-back', { browserSessionId }),
   nativeBrowserGoForward: (browserSessionId) =>
@@ -242,14 +236,11 @@ contextBridge.exposeInMainWorld('droidControl', {
     ipcRenderer.invoke('native-browser-set-design-mode', { browserSessionId, active }),
   nativeBrowserSetPencilMode: (browserSessionId, active) =>
     ipcRenderer.invoke('native-browser-set-pencil-mode', { browserSessionId, active }),
-  nativeBrowserAgentAction: (request) =>
-    ipcRenderer.invoke('native-browser-agent-action', { request }),
-  nativeBrowserCapture: (browserSessionId, box, options) =>
-    ipcRenderer.invoke('native-browser-capture', { browserSessionId, box, options }),
 
   onNativeBrowserSelection: (handler) => on('native-browser-selection', handler),
   onNativeBrowserDesignPrompt: (handler) => on('native-browser-design-prompt', handler),
   onNativeBrowserLoaded: (handler) => on('native-browser-loaded', handler),
   onNativeBrowserLoadFailed: (handler) => on('native-browser-load-failed', handler),
-  onNativeBrowserAgentResult: (handler) => on('native-browser-agent-result', handler),
+  onNativeBrowserWorking: (handler) => on('native-browser-working', handler),
+  onNativeBrowserClosed: (handler) => on('native-browser-closed', handler),
 });

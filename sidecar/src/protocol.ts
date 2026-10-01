@@ -1006,7 +1006,6 @@ export type ClientCommand =
       instruction: string;
       referenceIds: string[];
     }
-  | { type: 'browser.native.result'; result: BrowserNativeResult }
   | { type: 'sidebar.result'; result: SidebarResult };
 
 type ChildUpdatedEvent =
@@ -1235,7 +1234,6 @@ export type ServerEvent =
   | { type: 'history.persistenceRecovered' }
   | { type: 'history.list'; sessions: SessionHistoryEntry[] }
   | { type: 'browser.updated'; state: BrowserState }
-  | { type: 'browser.native.request'; request: BrowserNativeRequest }
   | { type: 'sidebar.request'; request: SidebarRequest }
   | { type: 'browser.closed'; appSessionId: string }
   | { type: 'browser.error'; appSessionId?: string; message: string };

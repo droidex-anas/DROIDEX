@@ -21,6 +21,7 @@ const BROWSER_PARTITION = 'persist:droidex-browser';
 // guest bound to the session loads it again.
 function createNativeBrowserManager(options) {
   const nativeBrowsers = new Map();
+  const loadWaiters = new Map(); // browserSessionId -> Set<(loaded) => void>
   const urls = createNativeBrowserUrlPolicy({
     appName: options.appName,
     getHostAppUrl: options.getHostAppUrl,
@@ -221,11 +222,30 @@ function createNativeBrowserManager(options) {
 
   function emitNativeBrowserLoaded(entry, url) {
     const history = liveContents(entry)?.navigationHistory;
-    options.sendToRenderer('native-browser-loaded', {
+    const event = {
       browserSessionId: entry.browserSessionId,
       url,
       canGoBack: history?.canGoBack() ?? false,
       canGoForward: history?.canGoForward() ?? false,
+    };
+    options.sendToRenderer('native-browser-loaded', event);
+    for (const settle of [...(loadWaiters.get(entry.browserSessionId) ?? [])]) settle(event);
+  }
+
+  // The next page load in a session, or undefined once `timeoutMs` passes.
+  function nextNativeBrowserLoad(browserSessionId, timeoutMs) {
+    const id = urls.normalizeNativeBrowserSessionId(browserSessionId);
+    return new Promise((resolve) => {
+      const waiters = loadWaiters.get(id) ?? new Set();
+      loadWaiters.set(id, waiters);
+      const timer = setTimeout(() => settle(undefined), timeoutMs);
+      function settle(event) {
+        clearTimeout(timer);
+        waiters.delete(settle);
+        if (waiters.size === 0 && loadWaiters.get(id) === waiters) loadWaiters.delete(id);
+        resolve(event);
+      }
+      waiters.add(settle);
     });
   }
 
@@ -305,6 +325,7 @@ function createNativeBrowserManager(options) {
     close: closeNativeBrowser,
     reload: reloadNativeBrowser,
     reloadFocused: reloadFocusedNativeBrowser,
+    nextLoad: nextNativeBrowserLoad,
     goBack: (browserSessionId) => navigateNativeBrowserHistory(browserSessionId, 'back'),
     goForward: (browserSessionId) => navigateNativeBrowserHistory(browserSessionId, 'forward'),
     setDesignMode: page.setDesignMode,
