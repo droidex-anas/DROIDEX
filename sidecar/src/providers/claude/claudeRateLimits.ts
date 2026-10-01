@@ -108,19 +108,19 @@ function claudeUsageReading(response: SDKControlGetUsageResponse): UsageReading 
   if (!response.rate_limits_available) return { meters: [], unavailable: 'no_plan_limits' };
   const limits = response.rate_limits;
   if (!limits) throw new Error('Claude Code reported plan limits without their windows.');
-  const windows: [LimitScope, ClaudeWindow][] = [
+  const general: [LimitScope, ClaudeWindow][] = [
     [RATE_LIMIT_SCOPES.five_hour, limits.five_hour],
     [RATE_LIMIT_SCOPES.seven_day, limits.seven_day],
     [RATE_LIMIT_SCOPES.seven_day_opus, limits.seven_day_opus],
     [RATE_LIMIT_SCOPES.seven_day_sonnet, limits.seven_day_sonnet],
-    ...(limits.model_scoped ?? []).map((scoped): [LimitScope, ClaudeWindow] => [
-      { window: 'weekly', model: scoped.display_name },
-      scoped,
-    ]),
   ];
+  const modelScoped = (limits.model_scoped ?? []).map((scoped): [LimitScope, ClaudeWindow] => [
+    { window: 'weekly', model: scoped.display_name },
+    scoped,
+  ]);
   // A model can be named both ways; its two rows share an id and the later stands.
   const meters = new Map<string, ReportedMeter>();
-  for (const [scope, window] of windows) {
+  for (const [scope, window] of [...general, ...modelScoped]) {
     if (typeof window?.utilization !== 'number') continue;
     const resetsAt = window.resets_at
       ? resetAtMillis(Date.parse(window.resets_at) / 1000)
@@ -134,8 +134,9 @@ function claudeUsageReading(response: SDKControlGetUsageResponse): UsageReading 
     meters: [...meters.values()],
     ...(extra ? { extra } : {}),
     // The per-model windows are absent when nothing is known of them, as in
-    // an answer from Claude Code's cache, so the ones already known stay.
-    ...(limits.model_scoped ? {} : { partial: true }),
+    // an answer from Claude Code's cache, which then speaks only for the
+    // general windows: the per-model ones already known stay.
+    ...(limits.model_scoped ? {} : { covers: general.map(([scope]) => meterId(scope)) }),
   };
 }
 
@@ -157,15 +158,20 @@ function rateLimitMeter(info: SDKRateLimitInfo): ReportedMeter | undefined {
 }
 
 // The read and the event name a window the same way, so both land on one row.
+function meterId({ window, model }: LimitScope): string {
+  if (window === 'five_hour') return 'five_hour';
+  return ['seven_day', model?.toLowerCase()].filter(Boolean).join('_');
+}
+
 function claudeMeter(
-  { window, model }: LimitScope,
+  scope: LimitScope,
   usedPercent: number,
   resetsAt: number | undefined,
 ): ReportedMeter {
+  const { window, model } = scope;
   const fiveHour = window === 'five_hour';
-  const id = fiveHour ? 'five_hour' : ['seven_day', model?.toLowerCase()].filter(Boolean).join('_');
   return {
-    id,
+    id: meterId(scope),
     ...(window ? { window } : {}),
     ...(model ? { model } : {}),
     ...windowUsage(usedPercent, resetsAt),

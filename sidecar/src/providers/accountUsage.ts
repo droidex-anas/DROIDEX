@@ -152,7 +152,7 @@ export class AccountUsage {
   }
 
   // A read replaces what was known, but a window pushed after it began is
-  // newer than its answer, and one a partial reading leaves out is unknown
+  // newer than its answer, and one outside what a reading covers is unknown
   // rather than gone. A failed read keeps the last good meters, stale.
   private async settle(
     provider: ProviderKind,
@@ -161,11 +161,12 @@ export class AccountUsage {
   ): Promise<void> {
     let usage: ProviderUsage;
     try {
-      const { meters, extra, unavailable, partial } = await answer;
+      const { meters, extra, unavailable, covers } = await answer;
       const listed = new Set(meters.map((meter) => meter.id));
       const kept = (account.usage?.meters ?? []).filter(
         (meter) =>
-          account.pushedDuringRead.has(meter.id) || (partial === true && !listed.has(meter.id)),
+          account.pushedDuringRead.has(meter.id) ||
+          (covers !== undefined && !covers.includes(meter.id) && !listed.has(meter.id)),
       );
       usage = {
         provider,
