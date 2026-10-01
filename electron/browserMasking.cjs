@@ -263,7 +263,8 @@ const TEXT_SHARE = `function () {
     text.right <= own.right + 1 && text.bottom <= own.bottom + 1;
   if (inside) return null;
   // Turned, mirrored or scaled within its page, it has no known orientation.
-  for (let node = this; node; node = node.parentElement) {
+  // Up the composed tree: through slots and out of shadow roots to their hosts.
+  for (let node = this; node; node = node.assignedSlot || node.parentElement || node.getRootNode().host) {
     const style = this.ownerDocument.defaultView.getComputedStyle(node);
     if (style.transform !== 'none' || style.rotate !== 'none' || style.scale !== 'none')
       return 'transformed';
