@@ -1,4 +1,4 @@
-const { contextBridge, ipcRenderer } = require('electron');
+const { ipcRenderer } = require('electron');
 const { isSensitiveBrowserKey, redactBrowserDiagnosticUrl } = require('./browserDiagnostics.cjs');
 
 let designMode = false;
@@ -121,12 +121,15 @@ label.setAttribute(INTERNAL_ATTR, '1');
 textHighlights.setAttribute(INTERNAL_ATTR, '1');
 penSvg.setAttribute(INTERNAL_ATTR, '1');
 
-contextBridge.exposeInMainWorld('__DROIDMAXX_APPLY_DESIGN_STATE', applyState);
-contextBridge.exposeInMainWorld('__DROIDMAXX_AGENT_ACTION', runAgentAction);
-// Credential autofill is driven entirely from the main process: the secret
-// arrives here only to be written into the page's inputs and is never returned
-// to any caller, so the agent can authorize a login without reading it.
-contextBridge.exposeInMainWorld('__DROIDMAXX_FILL_CREDENTIALS', fillCredentials);
+// Main calls these here, in the preload's isolated world (browserPageScript.cjs),
+// where the page's own scripts can neither see nor call them. A saved login
+// arrives only to be written into the page's inputs and is never returned, so
+// the agent can authorize a login without reading it.
+Object.assign(globalThis, {
+  __droidexApplyDesignState: applyState,
+  __droidexInspect: inspectElement,
+  __droidexFillCredentials: fillCredentials,
+});
 
 ipcRenderer.on('native-browser-design-prompt-sent', (_event, payload) => {
   // Ignore acks that do not match the capture currently in flight: a stale ack
@@ -461,123 +464,6 @@ function isVisible(el) {
   if (!el) return false;
   const rect = el.getBoundingClientRect();
   return rect.width > 0 && rect.height > 0;
-}
-
-async function runAgentAction(request) {
-  try {
-    const action = request && request.action;
-    if (action === 'inspect') {
-      return {
-        requestId: request.requestId,
-        ok: true,
-        inspection: inspectElement(request.selector),
-      };
-    }
-    if (action === 'click') clickAt(Number(request.x), Number(request.y));
-    else if (action === 'selectOption') selectOption(request.selector, request.text || '');
-    else if (action === 'type') typeIntoFocused(request.text || '');
-    else if (action === 'keypress') pressKey(request.key || '');
-    else if (action === 'scroll')
-      scrollPage(request.direction || 'down', Number(request.pixels || 500));
-    else if (action !== 'snapshot') throw new Error(`Unsupported browser action: ${action}`);
-    await settle();
-    return { requestId: request.requestId, ok: true, snapshot: pageSnapshot() };
-  } catch (err) {
-    return {
-      requestId: request && request.requestId,
-      ok: false,
-      error: err instanceof Error ? err.message : String(err),
-      snapshot: safeSnapshot(),
-    };
-  }
-}
-
-function clickAt(x, y) {
-  const target = document.elementFromPoint(x, y);
-  if (!target) throw new Error(`No element at ${x},${y}`);
-  target.focus && target.focus();
-  for (const type of ['mousedown', 'mouseup', 'click']) {
-    target.dispatchEvent(
-      new MouseEvent(type, { bubbles: true, cancelable: true, clientX: x, clientY: y, button: 0 }),
-    );
-  }
-}
-
-function typeIntoFocused(text) {
-  const active = document.activeElement;
-  if (!active) throw new Error('No focused element for typing.');
-  const value = String(text);
-  if (active instanceof HTMLInputElement || active instanceof HTMLTextAreaElement) {
-    const start = active.selectionStart == null ? active.value.length : active.selectionStart;
-    const end = active.selectionEnd == null ? active.value.length : active.selectionEnd;
-    active.setRangeText(value, start, end, 'end');
-    active.dispatchEvent(
-      new InputEvent('input', { bubbles: true, inputType: 'insertText', data: value }),
-    );
-    active.dispatchEvent(new Event('change', { bubbles: true }));
-    return;
-  }
-  if (active.isContentEditable) {
-    document.execCommand('insertText', false, value);
-    active.dispatchEvent(
-      new InputEvent('input', { bubbles: true, inputType: 'insertText', data: value }),
-    );
-    return;
-  }
-  throw new Error('Focused element is not text-editable.');
-}
-
-function selectOption(selector, value) {
-  if (!selector) throw new Error('Select option requires a target selector.');
-  const target = document.querySelector(selector);
-  if (!(target instanceof HTMLSelectElement)) {
-    throw new Error('Target is not a select element.');
-  }
-  const expected = String(value);
-  const option = Array.from(target.options).find(
-    (item) =>
-      item.value === expected ||
-      cleanText(item.label) === expected ||
-      cleanText(item.textContent) === expected,
-  );
-  if (!option) throw new Error(`Option "${expected}" is not available.`);
-  target.value = option.value;
-  target.dispatchEvent(new Event('input', { bubbles: true }));
-  target.dispatchEvent(new Event('change', { bubbles: true }));
-}
-
-function pressKey(key) {
-  const active = document.activeElement || document.body;
-  const value = String(key);
-  active.dispatchEvent(
-    new KeyboardEvent('keydown', { key: value, bubbles: true, cancelable: true }),
-  );
-  if (value === 'Enter' && active instanceof HTMLInputElement && active.form)
-    active.form.requestSubmit();
-  active.dispatchEvent(new KeyboardEvent('keyup', { key: value, bubbles: true, cancelable: true }));
-}
-
-function scrollPage(direction, pixels) {
-  const dx = direction === 'left' ? -pixels : direction === 'right' ? pixels : 0;
-  const dy = direction === 'up' ? -pixels : direction === 'down' ? pixels : 0;
-  window.scrollBy({ left: dx, top: dy, behavior: 'auto' });
-}
-
-function safeSnapshot() {
-  try {
-    return pageSnapshot();
-  } catch {
-    return { url: location.href, title: document.title, scroll: { x: 0, y: 0 } };
-  }
-}
-
-// Where the page is; what is on it comes from main's accessibility reading.
-function pageSnapshot() {
-  return {
-    url: location.href,
-    title: document.title,
-    scroll: { x: Math.round(window.scrollX), y: Math.round(window.scrollY) },
-  };
 }
 
 function inspectElement(selector) {
@@ -1319,10 +1205,6 @@ function sendSelection(payload) {
 
 function sendDesignPrompt(payload) {
   ipcRenderer.send('native-browser-design-prompt', payload);
-}
-
-function settle() {
-  return new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
 }
 
 function point(event) {

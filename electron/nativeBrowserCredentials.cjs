@@ -1,5 +1,6 @@
 const fs = require('node:fs');
 const path = require('node:path');
+const { callPageScript } = require('./browserPageScript.cjs');
 
 function createNativeBrowserCredentials({ app, appName, safeStorage, dialog, getMainWindow }) {
   const CREDENTIAL_VAULT_FILE = () => path.join(app.getPath('userData'), 'browser-credentials.enc');
@@ -150,57 +151,32 @@ function createNativeBrowserCredentials({ app, appName, safeStorage, dialog, get
     const credential = findCredential(origin);
     if (!credential) return false;
     try {
-      const result = await contents.executeJavaScript(
-        `window.__DROIDMAXX_FILL_CREDENTIALS?.(${JSON.stringify(credential)});`,
-        true,
-      );
+      const result = await callPageScript(contents, '__droidexFillCredentials', credential);
       return Boolean(result && result.filled);
     } catch {
       return false;
     }
   }
 
-  // Agent-blind login: the saved secret is decrypted and injected here in the
-  // main process. The request and the result never carry the values, and the
-  // returned snapshot has password fields redacted by the preload.
-  async function fillForAgent(contents, request) {
-    if (getCredentialConsent() !== 'enabled') {
-      return {
-        requestId: request.requestId,
-        ok: false,
-        error: `Saved logins are turned off for the ${appName} browser. Ask the user to sign in once; they will be prompted to enable and save the login first.`,
-      };
-    }
+  // Agent-blind login: the saved secret is decrypted here in main and handed
+  // to the page script in its isolated world, never through the page's own
+  // world, and nothing about it comes back to the agent.
+  async function fillForAgent(contents) {
+    if (getCredentialConsent() !== 'enabled')
+      throw new Error(
+        `Saved logins are turned off for the ${appName} browser. Ask the user to sign in once; they will be prompted to enable and save the login first.`,
+      );
     const origin = originFor(contents.getURL());
     const credential = origin ? findCredential(origin) : undefined;
-    if (!credential) {
-      return {
-        requestId: request.requestId,
-        ok: false,
-        error:
-          'No saved credentials for this site. The user can sign in once and choose to save the password.',
-      };
-    }
-    const fill = await contents
-      .executeJavaScript(
-        `window.__DROIDMAXX_FILL_CREDENTIALS?.(${JSON.stringify(credential)});`,
-        true,
-      )
-      .catch(() => undefined);
-    if (!fill || !fill.ok) {
-      return {
-        requestId: request.requestId,
-        ok: false,
-        error: (fill && fill.error) || 'Could not find a login form to fill on this page.',
-      };
-    }
-    const probe = await contents
-      .executeJavaScript(
-        `window.__DROIDMAXX_AGENT_ACTION?.(${JSON.stringify({ ...request, action: 'snapshot' })});`,
-        true,
-      )
-      .catch(() => undefined);
-    return { requestId: request.requestId, ok: true, snapshot: probe?.snapshot };
+    if (!credential)
+      throw new Error(
+        'No saved credentials for this site. The user can sign in once and choose to save the password.',
+      );
+    const fill = await callPageScript(contents, '__droidexFillCredentials', credential).catch(
+      () => undefined,
+    );
+    if (!fill?.ok)
+      throw new Error(fill?.error || 'Could not find a login form to fill on this page.');
   }
 
   // What page reads must never show an agent: the login saved for this site.

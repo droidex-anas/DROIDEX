@@ -15,9 +15,9 @@ const ACTIONS = new Set([
   'find',
   'click',
   'hover',
-  'selectOption',
+  'fill',
   'type',
-  'keypress',
+  'press',
   'scroll',
   'resize',
   'inspect',
@@ -30,7 +30,7 @@ const ACTIONS = new Set([
 ]);
 // Reading the logs or recording the viewport never needs the page itself.
 const PAGELESS_ACTIONS = new Set(['resize', 'network', 'console']);
-const INPUT_ACTIONS = new Set(['click', 'hover', 'selectOption', 'type', 'keypress', 'scroll']);
+const INPUT_ACTIONS = new Set(['click', 'hover', 'fill', 'type', 'press', 'scroll']);
 const MAX_WAITING_PER_PAGE = 8;
 const LOAD_WAIT_MS = 8_000;
 // Work still running a little past the sidecar's own timeout stops holding its
@@ -128,13 +128,13 @@ function createNativeBrowserRequests({ manager, notifyRenderer }) {
     if (request.action === 'open') {
       const url = request.url ?? 'about:blank';
       await manager.open(browserSessionId, url, request.viewport);
-      return result(request, true, { snapshot: await snapshotAfter(request, url) });
+      return result(request, true, await snapshotAfter(request, url));
     }
     if (request.action === 'reload') {
       await manager.waitForPage(browserSessionId);
       const loaded = manager.nextLoad(browserSessionId, LOAD_WAIT_MS);
       await manager.reload(browserSessionId);
-      return result(request, true, { snapshot: await snapshotAfter(request, (await loaded)?.url) });
+      return result(request, true, await snapshotAfter(request, (await loaded)?.url));
     }
     if (request.action === 'goBack' || request.action === 'goForward') {
       await manager.waitForPage(browserSessionId);
@@ -144,7 +144,7 @@ function createNativeBrowserRequests({ manager, notifyRenderer }) {
           ? await manager.goBack(browserSessionId)
           : await manager.goForward(browserSessionId);
       const url = moved ? (await loaded)?.url : undefined;
-      return result(request, true, { snapshot: await snapshotAfter(request, url) });
+      return result(request, true, await snapshotAfter(request, url));
     }
     if (request.action === 'capture') {
       const image = await manager.capture(browserSessionId, request.box);
@@ -168,6 +168,7 @@ function createNativeBrowserRequests({ manager, notifyRenderer }) {
     });
   }
 
+  // Where a navigation left the page, with the footer the agent reads.
   async function snapshotAfter(request, fallbackUrl = 'about:blank') {
     const outcome = await manager
       .runAgentAction({
@@ -177,8 +178,8 @@ function createNativeBrowserRequests({ manager, notifyRenderer }) {
       })
       .catch(() => undefined);
     return outcome?.ok && outcome.snapshot
-      ? outcome.snapshot
-      : { url: fallbackUrl, scroll: { x: 0, y: 0 } };
+      ? { snapshot: outcome.snapshot, text: outcome.text }
+      : { snapshot: { url: fallbackUrl, scroll: { x: 0, y: 0 } } };
   }
 
   return { handle, workingSessions: () => [...waiting.keys()] };
@@ -218,7 +219,13 @@ function agentAction(request) {
     y: request.y,
     selector: request.selector,
     text: request.text,
+    value: request.value,
+    submit: request.submit,
     key: request.key,
+    repeat: request.repeat,
+    button: request.button,
+    count: request.count,
+    modifiers: request.modifiers,
     direction: request.direction,
     pixels: request.pixels,
     viewport: request.viewport,

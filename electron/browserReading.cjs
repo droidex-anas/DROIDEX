@@ -191,12 +191,6 @@ function createBrowserReading({ runWithWebContentsDebugger, savedSecretsFor, red
     });
   }
 
-  // Chooses an option on the ref's own <select>, wherever it lives; `before`
-  // runs just before the page changes and can still stop it.
-  async function selectOption(contents, entry, ref, value, before) {
-    return (await callOnRef(contents, entry, ref, [value], SELECT_OPTION, before)).value;
-  }
-
   // A CSS path to the ref's element, for page-side helpers that only reach the
   // top document; elements in frames or shadow trees are refused plainly.
   async function selectorForRef(contents, entry, ref) {
@@ -427,7 +421,8 @@ function createBrowserReading({ runWithWebContentsDebugger, savedSecretsFor, red
     find,
     pointForRef,
     assertDocument,
-    selectOption,
+    lookupRef,
+    callOnRef,
     selectorForRef,
     refBox,
     sensitiveBoxes: masking.sensitiveBoxes,
@@ -435,18 +430,7 @@ function createBrowserReading({ runWithWebContentsDebugger, savedSecretsFor, red
 }
 
 // Run inside the page on the ref's own element.
-const SELECT_OPTION = `function (wanted) {
-  if (this.localName !== 'select') throw new Error('not a select element');
-  const options = [...this.options];
-  const option =
-    options.find((candidate) => candidate.value === wanted) ??
-    options.find((candidate) => candidate.label.trim() === wanted || candidate.text.trim() === wanted);
-  if (!option) throw new Error('no option "' + wanted + '"');
-  this.value = option.value;
-  this.dispatchEvent(new Event('input', { bubbles: true }));
-  this.dispatchEvent(new Event('change', { bubbles: true }));
-  return option.value;
-}`;
+
 const CSS_PATH = `function () {
   if (window !== window.top || !(this.getRootNode() instanceof Document)) return null;
   const parts = [];

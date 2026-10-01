@@ -1,9 +1,8 @@
 const { createBrowserReading } = require('./browserReading.cjs');
 const { createBrowserScreenshot } = require('./browserScreenshot.cjs');
 const { redactBrowserDiagnosticUrl } = require('./browserDiagnostics.cjs');
-const { frameHolds } = require('./browserFrames.cjs');
-
-const PAGE_CHANGED = 'The page changed before the action ran; call browser_read_page.';
+const { createBrowserActions } = require('./browserActions.cjs');
+const { callPageScript } = require('./browserPageScript.cjs');
 
 function createNativeBrowserPage({
   appName,
@@ -25,6 +24,13 @@ function createNativeBrowserPage({
   const screenshots = createBrowserScreenshot({
     reading,
     nativeImage,
+    redactUrl: redactBrowserDiagnosticUrl,
+  });
+  const actions = createBrowserActions({
+    reading,
+    runWithWebContentsDebugger,
+    credentials,
+    unthrottled,
     redactUrl: redactBrowserDiagnosticUrl,
   });
 
@@ -53,12 +59,9 @@ function createNativeBrowserPage({
     const designState = entry.shown
       ? entry.state
       : { ...entry.state, designMode: false, pencilMode: false };
-    return contents
-      .executeJavaScript(
-        `window.__DROIDMAXX_APPLY_DESIGN_STATE?.(${JSON.stringify(designState)});`,
-        true,
-      )
-      .catch((err) => console.error(`failed to apply browser design state: ${err.message}`));
+    return callPageScript(contents, '__droidexApplyDesignState', designState).catch((err) =>
+      console.error(`failed to apply browser design state: ${err.message}`),
+    );
   }
 
   async function runAgentAction(request) {
@@ -88,50 +91,7 @@ function createNativeBrowserPage({
       const shot = await unthrottled(contents, () => screenshots.take(contents, entry, request));
       return { requestId: request.requestId, ok: true, ...shot };
     }
-    const navigation = observeAgentNavigation(contents);
-    try {
-      return await unthrottled(contents, async () => {
-        if (request.action === 'fillCredentials') {
-          return withNativeBrowserHistory(
-            contents,
-            await credentials.fillForAgent(contents, request),
-          );
-        }
-        // Once a navigation starts, an action still resolving its target gives
-        // up rather than act on the next page; one that never sent its input
-        // did not run, whatever the page does next.
-        const step = { navigation, sent: false };
-        const execution = withRefTarget(contents, entry, request)
-          .then(async (target) => {
-            if (target.document) await reading.assertDocument(contents, target.document);
-            if (target.action !== 'selectOption') return executeAgentAction(contents, target, step);
-            const value = target.text ?? '';
-            await reading.selectOption(contents, entry, target.ref, value, () => startInput(step));
-            return snapshotOf(contents, target);
-          })
-          .then(
-            (result) => ({ type: 'result', result }),
-            (error) => ({ type: 'error', error }),
-          );
-        const outcome = await Promise.race([
-          execution,
-          navigation.wait().then(() => ({ type: 'navigation' })),
-        ]);
-        if (outcome.type === 'navigation') {
-          if (!step.sent) throw new Error(PAGE_CHANGED);
-          return await snapshotAfterNavigation(contents, request);
-        }
-        if (outcome.type === 'error') {
-          if (!navigation.started() || !isNavigationExecutionError(outcome.error))
-            throw outcome.error;
-          await navigation.wait();
-          return await snapshotAfterNavigation(contents, request);
-        }
-        return withNativeBrowserHistory(contents, outcome.result);
-      });
-    } finally {
-      navigation.dispose();
-    }
+    return actions.act(contents, entry, request);
   }
 
   // Reading the logs or recording the viewport never needs the page itself,
@@ -152,173 +112,6 @@ function createNativeBrowserPage({
     const consoleEvents = entry.consoleEvents.slice();
     if (request.clearConsoleLog) entry.consoleEvents.length = 0;
     return { requestId: request.requestId, ok: true, consoleEvents };
-  }
-
-  // A ref from browser_read_page becomes the point or selector the action needs.
-  async function withRefTarget(contents, entry, request) {
-    if (!request.ref || request.action === 'selectOption') return request;
-    if (request.action === 'inspect')
-      return { ...request, ...(await reading.selectorForRef(contents, entry, request.ref)) };
-    const { x, y, document, sessionId } = await reading.pointForRef(contents, entry, request.ref);
-    return { ...request, x, y, document, frameSession: sessionId, selector: undefined };
-  }
-
-  // Called right before an action changes the page.
-  function startInput(step) {
-    if (step.navigation.started()) throw new Error(PAGE_CHANGED);
-    step.sent = true;
-  }
-
-  // The page's state after an action, as the page script reports it.
-  function snapshotOf(contents, request) {
-    return contents.executeJavaScript(
-      `window.__DROIDMAXX_AGENT_ACTION?.(${JSON.stringify({ ...request, action: 'snapshot' })});`,
-      true,
-    );
-  }
-
-  async function executeAgentAction(contents, request, step) {
-    if (
-      request.action === 'scroll' &&
-      Number.isFinite(Number(request.x)) &&
-      Number.isFinite(Number(request.y))
-    ) {
-      const x = Math.round(Number(request.x));
-      const y = Math.round(Number(request.y));
-      const pixels = Math.max(1, Math.round(Number(request.pixels) || 500));
-      const horizontal = request.direction === 'left' || request.direction === 'right';
-      await dispatchMouse(contents, step, request, [
-        {
-          type: 'mouseWheel',
-          x,
-          y,
-          deltaX: horizontal ? (request.direction === 'left' ? -pixels : pixels) : 0,
-          deltaY: horizontal ? 0 : request.direction === 'up' ? -pixels : pixels,
-        },
-      ]);
-      return snapshotOf(contents, request);
-    }
-    if (request.action === 'click' || request.action === 'hover') {
-      const x = Math.round(Number(request.x));
-      const y = Math.round(Number(request.y));
-      if (!Number.isFinite(x) || !Number.isFinite(y)) {
-        throw new Error('Browser pointer interaction requires finite viewport coordinates.');
-      }
-      const press = { x, y, button: 'left', clickCount: 1 };
-      await dispatchMouse(contents, step, request, [
-        { type: 'mouseMoved', x, y },
-        ...(request.action === 'click'
-          ? [
-              { type: 'mousePressed', ...press },
-              { type: 'mouseReleased', ...press },
-            ]
-          : []),
-      ]);
-      return snapshotOf(contents, request);
-    }
-    startInput(step);
-    return contents.executeJavaScript(
-      `window.__DROIDMAXX_AGENT_ACTION?.(${JSON.stringify(request)});`,
-      true,
-    );
-  }
-
-  // Chromium's input router delivers these wherever the point lands, cross-site
-  // frames included (sendInputEvent stops at the top document). Before each
-  // event, inside the debugger queue, a new page or a replaced ref document
-  // stops the gesture.
-  function dispatchMouse(contents, step, target, events) {
-    return runWithWebContentsDebugger(contents, async (dbg) => {
-      for (const event of events) {
-        if (target.document && !(await frameHolds(dbg, target.frameSession, target.document)))
-          throw new Error(PAGE_CHANGED);
-        startInput(step);
-        await dbg.sendCommand('Input.dispatchMouseEvent', event);
-      }
-    });
-  }
-
-  async function snapshotAfterNavigation(contents, request) {
-    try {
-      const result = await contents.executeJavaScript(
-        `window.__DROIDMAXX_AGENT_ACTION?.(${JSON.stringify({
-          requestId: request.requestId,
-          action: 'snapshot',
-        })});`,
-        true,
-      );
-      return withNativeBrowserHistory(contents, result);
-    } catch {
-      return withNativeBrowserHistory(contents, { requestId: request.requestId, ok: true });
-    }
-  }
-
-  function withNativeBrowserHistory(contents, result) {
-    if (!result || typeof result !== 'object') return result;
-    if (contents.isDestroyed()) return result;
-    const history = contents.navigationHistory;
-    if (!history || !result.snapshot) return result;
-    return {
-      ...result,
-      snapshot: {
-        ...result.snapshot,
-        canGoBack: history.canGoBack(),
-        canGoForward: history.canGoForward(),
-      },
-    };
-  }
-
-  function observeAgentNavigation(contents, timeoutMs = 7_000) {
-    let didStart = false;
-    let settled = false;
-    let timeout;
-    let resolveCompletion;
-    const completion = new Promise((resolve) => {
-      resolveCompletion = resolve;
-    });
-    const finish = () => {
-      if (settled) return;
-      settled = true;
-      resolveCompletion();
-    };
-    // Only a new document counts: hash and History changes keep the page.
-    const onStart = (_event, _url, isInPlace, isMainFrame) => {
-      if (!isMainFrame || isInPlace || didStart) return;
-      didStart = true;
-      timeout = setTimeout(finish, timeoutMs);
-    };
-    const onFinish = () => {
-      if (didStart) finish();
-    };
-    const onFail = (_event, errorCode, _description, _url, isMainFrame) => {
-      if (isMainFrame && errorCode !== -3) finish();
-    };
-    const onDestroyed = () => finish();
-    contents.on('did-start-navigation', onStart);
-    contents.on('did-finish-load', onFinish);
-    contents.on('did-fail-load', onFail);
-    contents.on('destroyed', onDestroyed);
-    return {
-      started: () => didStart,
-      wait: () => completion,
-      dispose: () => {
-        clearTimeout(timeout);
-        contents.removeListener('did-start-navigation', onStart);
-        contents.removeListener('did-finish-load', onFinish);
-        contents.removeListener('did-fail-load', onFail);
-        contents.removeListener('destroyed', onDestroyed);
-      },
-    };
-  }
-
-  function isNavigationExecutionError(err) {
-    const message = String(err?.message || err).toLowerCase();
-    return (
-      message.includes('script execution was interrupted') ||
-      message.includes('execution context was destroyed') ||
-      message.includes('frame was disposed') ||
-      message.includes('object has been destroyed')
-    );
   }
 
   // A design-mode crop, as PNG; agent screenshots go through browserScreenshot.
