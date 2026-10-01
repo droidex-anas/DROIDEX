@@ -3,10 +3,12 @@ import type { CSSProperties } from 'react';
 import { useStoreSelector } from '../../hooks/useStore';
 import {
   isBrowserPageAwake,
+  setBrowserPageCrashed,
   useBrowserHost,
   type BrowserHostState,
   type BrowserPage,
 } from '../../lib/browserHost';
+import { onNativeBrowserLoadFailed, onNativeBrowserLoaded } from '../../lib/nativeBrowser';
 
 type Placement = 'shown' | 'working' | 'asleep';
 
@@ -30,6 +32,26 @@ export function BrowserHost() {
       bySession.set(browser.browserSessionId, browser.viewport);
     return bySession;
   }, [browsers]);
+
+  // A page can crash while the pane is closed; remember it until it loads again.
+  useEffect(() => {
+    const subscriptions = [
+      onNativeBrowserLoadFailed((failure) => {
+        if (failure.crashed && failure.browserSessionId)
+          setBrowserPageCrashed(failure.browserSessionId, true);
+      }),
+      onNativeBrowserLoaded((event) => {
+        if (event.browserSessionId) setBrowserPageCrashed(event.browserSessionId, false);
+      }),
+    ];
+    return () => {
+      for (const subscription of subscriptions) {
+        void subscription.then((unlisten) => {
+          unlisten();
+        });
+      }
+    };
+  }, []);
 
   return (
     <div className="contents">

@@ -32,6 +32,7 @@ import { BrowserToolbar } from './BrowserToolbar';
 import { DesignModeComposer } from './DesignModeComposer';
 import { composerStyleForReferences } from './browserComposerPosition';
 import { browserKeyForSession } from '../../lib/browserSessionIdentity';
+import { setBrowserPageCrashed, useBrowserPageCrashed } from '../../lib/browserHost';
 import { browserTranscriptReferencesFromDesignReferences } from './browserTranscriptReferences';
 import { browserAddressValue, isSelfBrowserUrl, safeBrowserUrl } from './browserUrlSafety';
 import { shouldResetBrowserLoading } from './browserLoading';
@@ -66,6 +67,7 @@ export default function BrowserWorkspace({
   const browser = browserKey ? state.browsers[browserKey] : undefined;
   const browserError = browserKey ? state.browserErrors[browserKey] : state.browserGlobalError;
   const designMode = isDesignModeOpen(state.designModes, browserKey);
+  const pageCrashed = useBrowserPageCrashed(browser?.browserSessionId);
   const sessionLive = useSessionLive(requestedChatId ?? null);
   const nativeBrowser = isDesktop();
   const frameRef = useRef<HTMLDivElement>(null);
@@ -442,10 +444,10 @@ export default function BrowserWorkspace({
         </div>
       )}
 
-      {loadFailure && (
+      {(pageCrashed || loadFailure) && (
         <div className="flex shrink-0 items-center gap-2 border-b border-droid-border bg-red-500/10 px-4 py-2 text-[12px] text-droid-text-secondary">
           <span className="min-w-0 flex-1 truncate">
-            {loadFailure.crashed
+            {pageCrashed || !loadFailure
               ? 'This page crashed. Retry to load it again.'
               : `Could not load ${loadFailure.url}${loadFailure.error ? ` (${loadFailure.error})` : ''}. Check that the server is running.`}
           </span>
@@ -466,6 +468,7 @@ export default function BrowserWorkspace({
             className="flex h-5 w-5 shrink-0 items-center justify-center rounded-md text-droid-text-muted transition-colors hover:bg-droid-elevated/60 hover:text-droid-text"
             onClick={() => {
               setLoadFailure(null);
+              if (browser) setBrowserPageCrashed(browser.browserSessionId, false);
             }}
             aria-label="Dismiss"
           >
@@ -509,7 +512,8 @@ export default function BrowserWorkspace({
             onPrompt={handleNativePrompt}
             onLoadFailed={(failure) => {
               stopLoading();
-              handleLoadFailed(failure);
+              // Crashes are tracked by the Browser host, pane open or not.
+              if (!failure.crashed) handleLoadFailed(failure);
             }}
             onViewportSizeChange={setActualViewport}
             expanded={expanded}

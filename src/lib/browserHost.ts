@@ -35,9 +35,11 @@ export interface BrowserHostState {
   slot: BrowserSlot | null;
   /** Sessions with agent work in flight, by request count. */
   working: Readonly<Record<string, number>>;
+  /** Sessions whose page crashed and has not loaded since, even with the pane closed. */
+  crashed: Readonly<Record<string, true>>;
 }
 
-let state: BrowserHostState = { pages: [], slot: null, working: {} };
+let state: BrowserHostState = { pages: [], slot: null, working: {}, crashed: {} };
 const listeners = new Set<() => void>();
 const reserving = new Map<string, Promise<void>>();
 const lastUsed = new Map<string, number>();
@@ -121,8 +123,23 @@ export async function withBrowserPage<T>(
 export function closeBrowserPage(browserSessionId: string): void {
   reserving.delete(browserSessionId);
   lastUsed.delete(browserSessionId);
+  setBrowserPageCrashed(browserSessionId, false);
   if (!state.pages.some((page) => page.browserSessionId === browserSessionId)) return;
   update({ pages: state.pages.filter((page) => page.browserSessionId !== browserSessionId) });
+}
+
+export function setBrowserPageCrashed(browserSessionId: string, crashed: boolean): void {
+  if (browserSessionId in state.crashed === crashed) return;
+  update({
+    crashed: crashed
+      ? { ...state.crashed, [browserSessionId]: true }
+      : Object.fromEntries(Object.entries(state.crashed).filter(([id]) => id !== browserSessionId)),
+  });
+}
+
+export function useBrowserPageCrashed(browserSessionId: string | undefined): boolean {
+  const crashed = () => browserSessionId !== undefined && browserSessionId in state.crashed;
+  return useSyncExternalStore(subscribe, crashed, crashed);
 }
 
 function setWorking(browserSessionId: string, delta: 1 | -1): void {
