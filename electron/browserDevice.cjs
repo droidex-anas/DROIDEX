@@ -33,11 +33,12 @@ function deviceOf({ viewportMode, colorScheme }) {
 
 // Gives a guest a new size's name, scheme or both, one change at a time. It
 // rejects when the guest refuses the change, and the guest keeps what it had.
-function useDevice(contents, change) {
+// `again` sends what the guest already has once more.
+function useDevice(contents, change, again = false) {
   if (!contents || contents.isDestroyed()) return Promise.resolve();
   const guest = guests.get(contents) ?? { settings: {}, device: {}, turn: undefined };
   guests.set(contents, guest);
-  const next = () => take(contents, guest, change);
+  const next = () => take(contents, guest, change, again);
   // The first change runs at once, so a guest has its user agent before it loads.
   guest.turn = guest.turn ? guest.turn.then(next, next) : next();
   return guest.turn;
@@ -46,11 +47,12 @@ function useDevice(contents, change) {
 // The user agent counts from the page's next load; touch and the scheme at
 // once. Each is sent only when it changes, so a size never touches the page's
 // scheme.
-async function take(contents, guest, change) {
+async function take(contents, guest, change, again) {
   if (contents.isDestroyed()) return;
   const settings = { ...guest.settings, ...change };
   const device = deviceOf(settings);
-  const had = guest.device;
+  // Sent again, a guest is measured against one with nothing set.
+  const had = again && guest.device !== UNKNOWN ? {} : guest.device;
   const defaultUserAgent = contents.session.getUserAgent();
   const touch = had.userAgent !== device.userAgent;
   if (touch) contents.setUserAgent(device.userAgent ?? defaultUserAgent);
@@ -74,11 +76,7 @@ function mountDevice(contents, entry) {
     if (!contents.isDestroyed())
       console.error(`failed to set up a browser page's device: ${error.message}`);
   };
-  contents.once('did-navigate', () => {
-    const device = deviceOf(entry);
-    const again = { touch: Boolean(device.userAgent), media: Boolean(device.scheme) };
-    emulate(contents, device, again).catch(failed);
-  });
+  contents.once('did-navigate', () => useDevice(contents, {}, true).catch(failed));
   const { viewportMode, colorScheme } = entry;
   useDevice(contents, { viewportMode, colorScheme }).catch(failed);
 }

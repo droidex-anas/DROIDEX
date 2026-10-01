@@ -150,8 +150,6 @@ function createNativeBrowserPage({
         entry[field] = before;
       throw error;
     }
-    // A change for the same value that failed just before may have put it back.
-    if (liveContents(entry) === contents) entry[field] = request[field];
     return { requestId: request.requestId, ok: true };
   }
 
