@@ -5,18 +5,27 @@ import {
   type FactoryRuntime,
   type FactorySession,
 } from '../../DroidRuntime.js';
-import { normalizeStreamEvent, type NormalizedEvent } from '../../normalize.js';
-import type { Autonomy, SessionInteractionMode } from '../../protocol.js';
+import {
+  extractNotification,
+  normalizeStreamEvent,
+  type HarnessModelSwitch,
+  type NormalizedEvent,
+} from '../../normalize.js';
+import type { Autonomy, ReasoningEffort, SessionInteractionMode } from '../../protocol.js';
 import { errMsg } from '../../errors.js';
 import { hotPathMetrics } from '../../telemetry/hotPathMetrics.js';
 import type { ProviderModelSettings, ProviderSession } from '../session.js';
 import { UsageLimitError } from '../usageLimit.js';
-import { droidErrorDetails } from './droidErrors.js';
+import { droidErrorDetails, droidSessionNotice } from './droidErrors.js';
 
 type DroidProcessRuntime = Pick<FactoryRuntime, 'processIdOf' | 'isProcessAlive'>;
 
 export class DroidProviderSession implements ProviderSession {
   readonly provider = 'droid' as const;
+  // The model the CLI runs as far as this session knows: the one it opened
+  // on, then each one DROIDEX set, then each one Droid switched to itself.
+  private modelId: string | undefined;
+  private modelWritesInFlight = 0;
 
   constructor(
     // Primary-session events are stamped with DROIDEX's identity, not the
@@ -25,7 +34,9 @@ export class DroidProviderSession implements ProviderSession {
     readonly droid: FactorySession,
     private readonly runtime: DroidProcessRuntime,
     private readonly permissions: { autonomy: Autonomy } = { autonomy: 'off' },
-  ) {}
+  ) {
+    this.modelId = droid.initResult.settings.modelId;
+  }
 
   get providerSessionId(): string {
     return this.droid.sessionId;
@@ -38,8 +49,31 @@ export class DroidProviderSession implements ProviderSession {
   }
 
   async *stream(prompt: string): AsyncGenerator<NormalizedEvent, void, undefined> {
+    // The raw listener hears each notification before the stream yields it. A
+    // switch waits until Droid says the usage limit caused it, or the turn ends.
+    let pendingSwitch: HarnessModelSwitch | undefined;
+    let limitDetail: string | undefined;
+    const stopListening = this.droid.onNotification((note) => {
+      const notice = droidSessionNotice(extractNotification(note));
+      switch (notice?.kind) {
+        case 'model': {
+          const next = this.observeModel(notice.modelId, notice.reasoningEffort);
+          if (next) pendingSwitch = pendingSwitch ? { ...next, from: pendingSwitch.from } : next;
+          return;
+        }
+        case 'core_fallback':
+          if (pendingSwitch) pendingSwitch.cause = 'usage_limit';
+          return;
+        case 'usage_limit':
+          limitDetail = notice.detail;
+      }
+    });
     try {
       for await (const event of this.droid.stream(prompt, { includePartialMessages: true })) {
+        if (pendingSwitch && (pendingSwitch.cause === 'usage_limit' || event.type === 'result')) {
+          yield { harnessModelSwitch: pendingSwitch };
+          pendingSwitch = undefined;
+        }
         const normalizeStartedAt = performance.now();
         const normalized = normalizeStreamEvent(
           this.appSessionId,
@@ -54,7 +88,26 @@ export class DroidProviderSession implements ProviderSession {
       const details = droidErrorDetails(errMsg(error));
       if (details.errorKind) throw new UsageLimitError(details.text);
       throw error;
+    } finally {
+      stopListening();
     }
+    // A turn refused on the limit still ends in a successful result; only the
+    // notice says it was refused.
+    if (limitDetail !== undefined) throw new UsageLimitError(limitDetail);
+  }
+
+  // A settings echo naming another model is Droid's own switch, unless a model
+  // write of ours is in flight: its echo, or a switch crossing it, cannot be
+  // told apart, and the write decides the model either way.
+  private observeModel(
+    modelId: string,
+    reasoningEffort: ReasoningEffort | undefined,
+  ): HarnessModelSwitch | undefined {
+    const from = this.modelId;
+    if (this.modelWritesInFlight > 0 || modelId === from) return undefined;
+    this.modelId = modelId;
+    if (!from) return undefined;
+    return { from, to: modelId, cause: 'harness', ...(reasoningEffort ? { reasoningEffort } : {}) };
   }
 
   async setAutonomy(autonomy: Autonomy): Promise<void> {
@@ -76,7 +129,18 @@ export class DroidProviderSession implements ProviderSession {
           }
         : {}),
     };
-    if (Object.keys(next).length > 0) await this.droid.updateSettings(next);
+    if (Object.keys(next).length === 0) return;
+    const previous = this.modelId;
+    if (modelId) this.modelId = modelId;
+    this.modelWritesInFlight += 1;
+    try {
+      await this.droid.updateSettings(next);
+    } catch (error) {
+      this.modelId = previous;
+      throw error;
+    } finally {
+      this.modelWritesInFlight -= 1;
+    }
   }
 
   // Spec has an entry point of its own; the daemon takes the other modes as a

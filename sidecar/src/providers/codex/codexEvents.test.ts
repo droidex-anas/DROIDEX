@@ -191,6 +191,7 @@ test('thread start, resume and every turn carry the requested service tier inclu
       if (method === 'skills/list') return Promise.resolve({ data: [] });
       if (method === 'plugin/installed') return Promise.resolve({ marketplaces: [] });
       if (method === 'app/list') return Promise.resolve({ data: [], nextCursor: null });
+      if (method === 'account/rateLimits/read') return Promise.resolve({});
       // The model and effort travel separately; only the tier is under test here.
       if (method === 'thread/settings/update') return Promise.resolve({});
       requests.push({ method, params });

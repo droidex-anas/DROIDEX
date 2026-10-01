@@ -364,7 +364,8 @@ test('[C2] Provider-session swap', { concurrency: false }, async () => {
       ['test-cli', 'test-browser', 'droidex-automations', 'droidex-sessions'],
     );
     assert.equal(callCount(h.calls, 'provider', 'onNotification', 'provider-2'), 1);
-    assert.equal(callCount(h.calls, 'cleanup', 'unsubscribe', 'provider-1'), 1);
+    // The first turn's own listener, then the compaction subscription.
+    assert.equal(callCount(h.calls, 'cleanup', 'unsubscribe', 'provider-1'), 2);
     assert.equal(
       h.provider
         .session('provider-2')
@@ -696,13 +697,14 @@ test('[C6] Close and shutdown clean keyed resources', { concurrency: false }, as
   assert.equal(close.replacementPollersDistinct, true);
   assert.deepEqual(close.watchdogsActiveAtClose, [0, 0]);
   assert.deepEqual(close.initialClearState, [1, 1, 1, 1]);
-  assert.deepEqual(close.cleanupAtClose, [1, 1, 1, 1, 1]);
+  // The parent's unsubscribes also count the listener each of its settled turns removed.
+  assert.deepEqual(close.cleanupAtClose, [1, 1, 3, 1, 1]);
   assert.deepEqual(close.closeTimerState, [1, 1, 1, 1]);
-  assert.deepEqual(close.cleanupAfterShutdown, [1, 1, 1, 1, 1]);
+  assert.deepEqual(close.cleanupAfterShutdown, [1, 1, 3, 1, 1]);
   assert.deepEqual([close.browserClose, close.browserCloseAll, close.historyClose], [1, 1, 1]);
 
   const shutdown = await runShutdownOnlyCleanupScenario();
-  assert.deepEqual(shutdown.cleanup, [1, 1, 1, 1, 1]);
+  assert.deepEqual(shutdown.cleanup, [1, 1, 2, 1, 1]);
   assert.deepEqual(shutdown.timerClears, [1, 1, 1, 1]);
   assert.deepEqual(shutdown.browserCounts, [1, 1]);
   assert.equal(shutdown.historyClose, 1);
