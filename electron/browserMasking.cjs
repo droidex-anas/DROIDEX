@@ -219,16 +219,25 @@ function fieldOf(node, frame) {
   };
 }
 
-// Where an element's text is painted, in its frame's viewport, as a quad.
+// Where an element's text is painted, as a quad in the same coordinates as
+// CDP's: the page measures the text as a share of the element's own box, which
+// is then laid over that box as CDP has it (an element in a same-process frame
+// is measured in that frame's viewport, CDP's boxes in the session's).
 async function textQuads(dbg, sessionId, backendNodeId) {
   const { object } = await send(dbg, sessionId, 'DOM.resolveNode', { backendNodeId });
   try {
     const { result } = await send(dbg, sessionId, 'Runtime.callFunctionOn', {
       objectId: object.objectId,
-      functionDeclaration: TEXT_QUAD,
+      functionDeclaration: TEXT_SHARE,
       returnByValue: true,
     });
-    return result?.value ? [result.value] : [];
+    if (!result?.value) return [];
+    const { model } = await send(dbg, sessionId, 'DOM.getBoxModel', { backendNodeId });
+    const box = boundsOf(model.border);
+    const [left, top, right, bottom] = result.value;
+    const x = (share) => box.x + share * box.width;
+    const y = (share) => box.y + share * box.height;
+    return [[x(left), y(top), x(right), y(top), x(right), y(bottom), x(left), y(bottom)]];
   } finally {
     await send(dbg, sessionId, 'Runtime.releaseObject', { objectId: object.objectId }).catch(
       () => undefined,
@@ -236,12 +245,19 @@ async function textQuads(dbg, sessionId, backendNodeId) {
   }
 }
 
-const TEXT_QUAD = `function () {
+// The element's text box as shares of its own border box: [left, top, right, bottom].
+const TEXT_SHARE = `function () {
   const range = this.ownerDocument.createRange();
   range.selectNodeContents(this);
-  const box = range.getBoundingClientRect();
-  if (!box.width && !box.height) return null;
-  return [box.left, box.top, box.right, box.top, box.right, box.bottom, box.left, box.bottom];
+  const text = range.getBoundingClientRect();
+  const own = this.getBoundingClientRect();
+  if ((!text.width && !text.height) || !own.width || !own.height) return null;
+  return [
+    (text.left - own.left) / own.width,
+    (text.top - own.top) / own.height,
+    (text.right - own.left) / own.width,
+    (text.bottom - own.top) / own.height,
+  ];
 }`;
 
 // Every input, textarea and select in a session's documents, shadow roots
