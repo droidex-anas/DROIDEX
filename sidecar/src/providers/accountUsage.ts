@@ -35,6 +35,9 @@ export interface AccountUsageHost {
 }
 
 interface Account {
+  // Ends the account's reads when the sidecar closes or another account
+  // signs in; what they answer is dropped.
+  readonly abort: AbortController;
   usage?: ProviderUsage;
   lastReadAt: number;
   retryAt: number;
@@ -50,7 +53,7 @@ type UsageSource = (signal: AbortSignal) => Promise<UsageReading>;
 
 export class AccountUsage {
   private readonly accounts = new Map<ProviderKind, Account>();
-  private readonly abort = new AbortController();
+  private closed = false;
   private timer?: ReturnType<typeof setInterval>;
 
   constructor(
@@ -67,8 +70,8 @@ export class AccountUsage {
     const reading = this.read(provider, panelOpen, immediate);
     if (reading) return reading;
     // What is already known still answers a renderer that has nothing yet.
-    const known = this.accounts.get(provider)?.usage;
-    if (known) this.publish(known);
+    const account = this.accounts.get(provider);
+    if (account?.usage) this.publish(account, account.usage);
     return Promise.resolve();
   }
 
@@ -79,7 +82,7 @@ export class AccountUsage {
   // Codex sends its windows with nearly every token, so an unchanged push is
   // only announced once the last announcement has aged.
   pushed(provider: ProviderKind, meters: ReportedMeter[]): void {
-    if (this.abort.signal.aborted || meters.length === 0) return;
+    if (this.closed || meters.length === 0) return;
     this.startTimer();
     const account = this.account(provider);
     const current = account.usage ?? { provider, meters: [] };
@@ -88,13 +91,24 @@ export class AccountUsage {
       const known = current.meters.find((entry) => entry.id === meter.id);
       return known?.usedPercent !== meter.usedPercent || known.resetsAt !== meter.resetsAt;
     });
-    account.usage = { ...current, meters: mergeMeters(current.meters, stamped(meters, now)) };
-    if (changed || now - account.emittedAt >= MIN_READ_GAP_MS) this.publish(account.usage);
+    const usage = { ...current, meters: mergeMeters(current.meters, stamped(meters, now)) };
+    account.usage = usage;
+    if (changed || now - account.emittedAt >= MIN_READ_GAP_MS) this.publish(account, usage);
+  }
+
+  // Another Factory key was set: nothing read with the last one, pending or
+  // kept, is this account's. A renderer shown the old figures gets new ones.
+  factoryKeyChanged(): void {
+    const previous = this.accounts.get('droid');
+    previous?.abort.abort();
+    this.accounts.delete('droid');
+    if (previous?.usage) void this.read('droid', true, true);
   }
 
   close(): void {
+    this.closed = true;
     clearInterval(this.timer);
-    this.abort.abort();
+    for (const account of this.accounts.values()) account.abort.abort();
   }
 
   // The read in flight, or a new one; undefined when none may run now.
@@ -103,7 +117,7 @@ export class AccountUsage {
     panelOpen: boolean,
     immediate: boolean,
   ): Promise<void> | undefined {
-    if (this.abort.signal.aborted) return undefined;
+    if (this.closed) return undefined;
     const account = this.account(provider);
     if (account.reading) return account.reading;
     const now = this.now();
@@ -112,7 +126,7 @@ export class AccountUsage {
     if (!source || account.outstanding || resting || now < account.retryAt) return undefined;
     this.startTimer();
     account.lastReadAt = now;
-    const signal = AbortSignal.any([this.abort.signal, AbortSignal.timeout(READ_TIMEOUT_MS)]);
+    const signal = AbortSignal.any([account.abort.signal, AbortSignal.timeout(READ_TIMEOUT_MS)]);
     const answer = source(signal);
     account.outstanding = true;
     void answer
@@ -163,25 +177,30 @@ export class AccountUsage {
         ...(unavailable ? { unavailable } : {}),
       };
     } catch (error) {
-      if (this.abort.signal.aborted) return;
       if (error instanceof UsageReadError)
         account.retryAt = this.now() + Math.min(error.retryAfterMs, MAX_RETRY_AFTER_MS);
       usage = { ...(account.usage ?? { provider, meters: [] }), stale: true };
     }
+    if (account.abort.signal.aborted) return;
     account.usage = usage;
-    this.publish(usage);
+    this.publish(account, usage);
   }
 
-  private publish(usage: ProviderUsage): void {
-    if (this.abort.signal.aborted) return;
-    this.account(usage.provider).emittedAt = this.now();
+  private publish(account: Account, usage: ProviderUsage): void {
+    account.emittedAt = this.now();
     this.host.emit({ type: 'usage.updated', usage });
   }
 
   private account(provider: ProviderKind): Account {
     let account = this.accounts.get(provider);
     if (!account) {
-      account = { lastReadAt: -Infinity, retryAt: 0, emittedAt: 0, outstanding: false };
+      account = {
+        abort: new AbortController(),
+        lastReadAt: -Infinity,
+        retryAt: 0,
+        emittedAt: 0,
+        outstanding: false,
+      };
       this.accounts.set(provider, account);
     }
     return account;
