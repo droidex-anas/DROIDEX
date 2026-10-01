@@ -78,10 +78,10 @@ export function NativeBrowserSurface({
   useEffect(() => {
     if (!visibleBrowserSessionId) return;
     Promise.all([
-      setNativeBrowserDesignMode(visibleBrowserSessionId, designMode),
+      setNativeBrowserDesignMode(visibleBrowserSessionId, designMode, surface.scale),
       setNativeBrowserPencilMode(visibleBrowserSessionId, designMode && pencilMode),
     ]).catch(() => {});
-  }, [designMode, pencilMode, visibleBrowserSessionId]);
+  }, [designMode, pencilMode, surface.scale, visibleBrowserSessionId]);
 
   useEffect(() => {
     const unsubscribes = [

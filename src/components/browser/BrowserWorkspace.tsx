@@ -233,31 +233,36 @@ export default function BrowserWorkspace({
     [frameSize, references, requestedViewport, viewportMode],
   );
 
+  // On Fit the page follows the pane: its size goes to the sidecar, which
+  // takes it only while the page is still on Fit there, so it never undoes a
+  // size an agent has just picked.
+  const followsPane = browser?.viewportMode === 'fit' && viewportMode === 'fit';
+  const currentViewport = browser?.viewport;
   useEffect(() => {
-    if (!browserKey || !browser) return;
-    if (browser.viewportMode === viewportMode && sameViewport(browser.viewport, requestedViewport))
-      return;
+    if (!browserKey || !currentViewport || !followsPane) return;
+    if (sameViewport(currentViewport, fitViewport)) return;
     const id = window.setTimeout(() => {
       resizeBrowserViewport({
         appSessionId: browserKey,
-        viewport: requestedViewport,
-        viewportMode,
+        viewport: fitViewport,
+        viewportMode: 'fit',
+        follow: true,
       });
     }, 120);
     return () => {
       window.clearTimeout(id);
     };
-  }, [
-    browser?.viewport.deviceScaleFactor,
-    browser?.viewport.height,
-    browser?.viewport.width,
-    browser?.viewportMode,
-    requestedViewport.deviceScaleFactor,
-    requestedViewport.height,
-    requestedViewport.width,
-    browserKey,
-    viewportMode,
-  ]);
+  }, [browserKey, currentViewport, fitViewport, followsPane]);
+
+  const pickViewport = (mode: BrowserViewportMode) => {
+    setViewportMode(mode);
+    if (browserKey)
+      resizeBrowserViewport({
+        appSessionId: browserKey,
+        viewport: viewportForMode(mode, fitViewport),
+        viewportMode: mode,
+      });
+  };
 
   const openCurrentUrl = () => {
     const normalizedUrl = normalizeUrl(urlInput);
@@ -532,7 +537,7 @@ export default function BrowserWorkspace({
         )}
 
         {browser && (
-          <ViewportMenu mode={viewportMode} fitViewport={fitViewport} onSelect={setViewportMode} />
+          <ViewportMenu mode={viewportMode} fitViewport={fitViewport} onSelect={pickViewport} />
         )}
       </div>
     </div>

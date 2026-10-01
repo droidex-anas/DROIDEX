@@ -20,6 +20,7 @@ export function ViewportMenu({
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
   const buttonRef = useRef<HTMLButtonElement>(null);
+  const optionRefs = useRef<(HTMLButtonElement | null)[]>([]);
   const size = (choice: BrowserViewportMode) => {
     const { width, height } = viewportForMode(choice, fitViewport);
     return `${String(width)} × ${String(height)}`;
@@ -32,14 +33,18 @@ export function ViewportMenu({
       setOpen(false);
       buttonRef.current?.focus();
     };
-    const onDown = (e: MouseEvent) => {
+    // A click on the page itself lands in its own document; it only shows
+    // here as the focus moving into the page.
+    const onAway = (e: Event) => {
       if (rootRef.current && !rootRef.current.contains(e.target as Node)) setOpen(false);
     };
     window.addEventListener('keydown', onKey);
-    window.addEventListener('mousedown', onDown);
+    window.addEventListener('mousedown', onAway);
+    window.addEventListener('focusin', onAway);
     return () => {
       window.removeEventListener('keydown', onKey);
-      window.removeEventListener('mousedown', onDown);
+      window.removeEventListener('mousedown', onAway);
+      window.removeEventListener('focusin', onAway);
     };
   }, [open]);
 
@@ -64,23 +69,35 @@ export function ViewportMenu({
           <motion.div
             role="menu"
             aria-label="Page size"
-            initial={{ opacity: 0, y: 8, scale: 0.98 }}
-            animate={{ opacity: 1, y: 0, scale: 1 }}
-            exit={{ opacity: 0, y: 8, scale: 0.98 }}
+            onKeyDown={(e) => {
+              if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return;
+              e.preventDefault();
+              const options = optionRefs.current.filter((el): el is HTMLButtonElement => !!el);
+              const index = options.indexOf(document.activeElement as HTMLButtonElement);
+              const step = e.key === 'ArrowDown' ? 1 : options.length - 1;
+              options[(index + step) % options.length]?.focus();
+            }}
+            initial={{ opacity: 0, x: '-50%', y: 8, scale: 0.98 }}
+            animate={{ opacity: 1, x: '-50%', y: 0, scale: 1 }}
+            exit={{ opacity: 0, x: '-50%', y: 8, scale: 0.98 }}
             transition={{ duration: 0.16, ease: [0.16, 1, 0.3, 1] }}
-            className="absolute bottom-full left-1/2 z-50 mb-2 w-[220px] -translate-x-1/2 overflow-hidden rounded-2xl border border-droid-border/60 bg-droid-raised p-1.5 shadow-droid"
+            className="absolute bottom-full left-1/2 z-50 mb-2 w-[220px] overflow-hidden rounded-2xl border border-droid-border/60 bg-droid-raised p-1.5 shadow-droid"
           >
-            {MODES.map((choice) => {
+            {MODES.map((choice, index) => {
               const selected = choice === mode;
               return (
                 <button
                   key={choice}
+                  ref={(el) => {
+                    optionRefs.current[index] = el;
+                  }}
                   type="button"
                   role="menuitemradio"
                   aria-checked={selected}
                   autoFocus={selected}
                   onClick={() => {
                     setOpen(false);
+                    buttonRef.current?.focus();
                     if (!selected) onSelect(choice);
                   }}
                   className={`flex w-full items-center gap-3 rounded-lg px-2.5 py-2 text-left transition-colors ${

@@ -623,7 +623,8 @@ type BrowserNativeAction =
   | 'screenshot'
   | 'close'
   | 'fillCredentials'
-  | 'wait';
+  | 'wait'
+  | 'awaitViewport';
 
 export interface BrowserNativeRequest {
   requestId: string;
@@ -980,6 +981,8 @@ export type ClientCommand =
       appSessionId: string;
       viewport: BrowserViewport;
       viewportMode: BrowserViewportMode;
+      /** The pane's size for Fit, taken only while the page is on Fit. */
+      follow?: boolean;
     }
   | { type: 'browser.design.addReference'; appSessionId: string; reference: DesignReference }
   | {

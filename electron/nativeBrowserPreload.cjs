@@ -5,6 +5,8 @@ let designMode = false;
 let pencilMode = false;
 let altHeld = false;
 let promptBox = null;
+// How much larger than the page the design labels are drawn: 1 / the pane's scale.
+let uiScale = 1;
 let promptInput = null;
 let promptTag = null;
 let promptSend = null;
@@ -199,6 +201,7 @@ function mount() {
 }
 
 function applyState(state) {
+  uiScale = 1 / (Number(state && state.scale) || 1);
   designMode = Boolean(state && state.designMode);
   pencilMode = designMode && Boolean(state && state.pencilMode);
   hoverTarget = null;
@@ -1159,8 +1162,9 @@ function showBox(rect, text) {
   positionBox(overlay, rect);
   label.style.display = 'block';
   label.textContent = text;
+  undoPaneScale(label);
   label.style.left = `${Math.min(window.innerWidth - 16, Math.max(8, Math.round(rect.x)))}px`;
-  label.style.top = `${Math.min(window.innerHeight - 36, Math.max(8, Math.round(rect.y - 38)))}px`;
+  label.style.top = `${Math.min(window.innerHeight - 36 * uiScale, Math.max(8, Math.round(rect.y - 38 * uiScale)))}px`;
 }
 
 function hideBox() {
@@ -1497,14 +1501,24 @@ function closeIconSvg() {
 }
 
 function positionPrompt(box) {
-  const width = Math.min(440, Math.max(280, window.innerWidth - 24));
-  const height = 50;
-  const left = clamp(box.x, 12, Math.max(12, window.innerWidth - width - 12));
-  const below = box.y + box.height + 10;
-  const above = box.y - height - 10;
-  const top = below + height <= window.innerHeight - 12 ? below : above;
+  // Sizes in the composer's own pixels; on screen they are `uiScale` times that.
+  const width = Math.min(440, Math.max(280, window.innerWidth / uiScale - 24));
+  const [shownWidth, shownHeight, gap, edge] = [width, 50, 10, 12].map((size) => size * uiScale);
+  const left = clamp(box.x, edge, Math.max(edge, window.innerWidth - shownWidth - edge));
+  const below = box.y + box.height + gap;
+  const above = box.y - shownHeight - gap;
+  const top = below + shownHeight <= window.innerHeight - edge ? below : above;
+  undoPaneScale(promptBox);
+  promptBox.style.width = `${Math.round(width)}px`;
   promptBox.style.left = `${Math.round(left)}px`;
-  promptBox.style.top = `${Math.round(clamp(top, 12, Math.max(12, window.innerHeight - height - 12)))}px`;
+  promptBox.style.top = `${Math.round(clamp(top, edge, Math.max(edge, window.innerHeight - shownHeight - edge)))}px`;
+}
+
+// The pane can draw the page scaled down (a standard size in a smaller pane);
+// the design labels and composer are drawn back up to their own size.
+function undoPaneScale(node) {
+  node.style.transformOrigin = '0 0';
+  node.style.transform = uiScale === 1 ? '' : `scale(${uiScale})`;
 }
 
 function isInternalEvent(event) {

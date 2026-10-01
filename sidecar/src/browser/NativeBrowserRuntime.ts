@@ -134,6 +134,10 @@ export class NativeBrowserRuntime implements BrowserRuntime {
     return result.consoleEvents ?? [];
   }
 
+  async awaitViewport(): Promise<BrowserActionResult> {
+    return this.act({ action: 'awaitViewport' });
+  }
+
   async wait(condition: BrowserWaitCondition): Promise<BrowserActionResult> {
     return this.act({ action: 'wait', ...condition });
   }

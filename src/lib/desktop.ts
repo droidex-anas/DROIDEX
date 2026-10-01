@@ -302,7 +302,11 @@ interface DroidControlApi {
   nativeBrowserShown: (browserSessionId: string, shown: boolean) => Promise<void>;
   nativeBrowserGoBack: (browserSessionId: string) => Promise<boolean>;
   nativeBrowserGoForward: (browserSessionId: string) => Promise<boolean>;
-  nativeBrowserSetDesignMode: (browserSessionId: string, active: boolean) => Promise<void>;
+  nativeBrowserSetDesignMode: (
+    browserSessionId: string,
+    active: boolean,
+    scale: number,
+  ) => Promise<void>;
   nativeBrowserSetPencilMode: (browserSessionId: string, active: boolean) => Promise<void>;
   onNativeBrowserSelection: (handler: (selection: NativeBrowserSelection) => void) => () => void;
   onNativeBrowserDesignPrompt: (handler: (prompt: NativeBrowserDesignPrompt) => void) => () => void;

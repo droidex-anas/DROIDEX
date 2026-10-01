@@ -97,6 +97,10 @@ class FakeRuntime implements BrowserRuntime {
     return this.result();
   }
 
+  async awaitViewport() {
+    return this.result();
+  }
+
   private result(url?: string) {
     return { snapshot: this.stateSnapshot(url), text: '[Droid Control · page]' };
   }

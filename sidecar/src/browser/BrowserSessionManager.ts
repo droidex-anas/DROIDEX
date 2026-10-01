@@ -65,6 +65,7 @@ export interface BrowserRuntime {
   ): Promise<BrowserActionResult>;
   inspect(target: { ref: string } | { selector: string }): Promise<BrowserElementInspection>;
   wait(condition: BrowserWaitCondition): Promise<BrowserActionResult>;
+  awaitViewport(): Promise<BrowserActionResult>;
   network(clear?: boolean): Promise<BrowserNetworkEvent[]>;
   console(clear?: boolean): Promise<BrowserConsoleEvent[]>;
   fillCredentials?(): Promise<BrowserActionResult>;
@@ -143,10 +144,13 @@ export class BrowserSessionManager {
     appSessionId: string;
     viewport: BrowserViewport;
     viewportMode: BrowserViewportMode;
+    follow?: boolean;
   }): Promise<BrowserState> {
     const session = this.requireSession(input.appSessionId);
     await session.runtime.setViewport(input.viewport);
     this.assertCurrent(session);
+    // The pane's size for Fit never undoes a size picked in the meantime.
+    if (input.follow && session.state.viewportMode !== 'fit') return session.state;
     session.state = {
       ...session.state,
       viewport: input.viewport,
@@ -157,10 +161,22 @@ export class BrowserSessionManager {
   }
 
   /** A standard size, or Fit, which keeps the size until the pane sets it. */
+  // A standard size answers once the page has taken it; the pane applies it a
+  // frame or two after the state goes out.
   async useViewport(appSessionId: string, mode: BrowserViewportMode): Promise<BrowserState> {
     const session = this.requireSession(appSessionId);
-    const viewport = mode === 'fit' ? session.state.viewport : STANDARD_VIEWPORTS[mode];
-    return this.resizeViewport({ appSessionId, viewport, viewportMode: mode });
+    if (mode === 'fit')
+      return this.resizeViewport({
+        appSessionId,
+        viewport: session.state.viewport,
+        viewportMode: mode,
+      });
+    await this.resizeViewport({
+      appSessionId,
+      viewport: STANDARD_VIEWPORTS[mode],
+      viewportMode: mode,
+    });
+    return this.applied(session, await session.runtime.awaitViewport()).state;
   }
 
   async click(
