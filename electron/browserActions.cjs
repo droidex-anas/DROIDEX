@@ -102,21 +102,25 @@ function createBrowserActions({
     const modifiers = modifiersOf(request.modifiers);
     await dispatchMouse(contents, step, target, [{ type: 'mouseMoved', x, y, modifiers }]);
     if (request.action !== 'click') return;
-    // The pointer arriving can move the ref, or open something over it.
-    if (request.ref) {
-      const now = await reading.pointForRef(contents, entry, request.ref);
-      if (Math.abs(now.x - x) > 1 || Math.abs(now.y - y) > 1)
-        throw new Error(`${request.ref} moved when the pointer reached it; try again.`);
-      await refuseCovered(contents, entry, request.ref, now);
-    }
     const button = ['left', 'right', 'middle'].includes(request.button) ? request.button : 'left';
     const clicks = Math.min(MAX_CLICKS, Math.max(1, Math.round(Number(request.count) || 1)));
-    const events = [];
     for (let clickCount = 1; clickCount <= clicks; clickCount++) {
+      // The pointer arriving can move the ref or open something over it, and
+      // each click can change the page for the next; a click that navigates
+      // is the last.
+      if (clickCount > 1 && step.navigation.started()) return;
+      if (request.ref) {
+        const now = await reading.pointForRef(contents, entry, request.ref);
+        if (Math.abs(now.x - x) > 1 || Math.abs(now.y - y) > 1)
+          throw new Error(`${request.ref} moved when the pointer reached it; try again.`);
+        await refuseCovered(contents, entry, request.ref, now);
+      }
       const press = { x, y, button, clickCount, modifiers };
-      events.push({ type: 'mousePressed', ...press }, { type: 'mouseReleased', ...press });
+      await dispatchMouse(contents, step, target, [
+        { type: 'mousePressed', ...press },
+        { type: 'mouseReleased', ...press },
+      ]);
     }
-    await dispatchMouse(contents, step, target, events);
   }
 
   // A wheel turn at the ref (scrolling whatever scrolls under it) or at the
@@ -335,8 +339,11 @@ function createBrowserActions({
 
   // A key is released only on the page that took it.
   function holdsKey(dbg, step, sessionId, document) {
-    return async () =>
-      !step.navigation.started() && (!document || (await frameHolds(dbg, sessionId, document)));
+    return async () => {
+      if (document && !(await frameHolds(dbg, sessionId, document))) return false;
+      // Asked after the await: a navigation can start while it is pending.
+      return !step.navigation.started();
+    };
   }
 
   // Keys go on only while the frame they were aimed at still has the focus.
@@ -358,9 +365,24 @@ function createBrowserActions({
       : { selector: request.selector };
     const inspection = await callPageScript(contents, '__droidexInspect', target.selector);
     // The selector ran on whatever document was there; the answer counts only
-    // if that is still the ref's.
+    // if that is still the ref's, and the selector still names the ref.
     if (target.document) await reading.assertDocument(contents, target.document);
+    if (request.ref) await stillSelects(contents, entry, request.ref, target.selector);
     return { requestId: request.requestId, ok: true, inspection };
+  }
+
+  async function stillSelects(contents, entry, ref, selector) {
+    await reading.withPage(contents, async (dbg) => {
+      const { backendNodeId } = await reading.lookupRef(dbg, entry, ref);
+      const { root } = await dbg.sendCommand('DOM.getDocument', { depth: 0 });
+      const { nodeId } = await dbg.sendCommand('DOM.querySelector', {
+        nodeId: root.nodeId,
+        selector,
+      });
+      const found = nodeId && (await dbg.sendCommand('DOM.describeNode', { nodeId })).node;
+      if (found?.backendNodeId !== backendNodeId)
+        throw new Error(`${ref} changed while it was inspected; read the page again.`);
+    });
   }
 
   // The page after an action, with what the agent reads about it: what
