@@ -397,7 +397,23 @@ function isSessionSummary(value: unknown): boolean {
         value.pendingSteers.every(
           (steer) => isRecord(steer) && hasStrings(steer, ['id', 'text']),
         ))) &&
-    (value.lineage === undefined || isSessionLineage(value.lineage))
+    (value.lineage === undefined || isSessionLineage(value.lineage)) &&
+    (value.usageLimit === undefined || isUsageLimit(value.usageLimit))
+  );
+}
+
+// As strict as the sidecar that writes it: one bad summary rejects the whole
+// session list.
+function isUsageLimit(value: unknown): boolean {
+  return (
+    isRecord(value) &&
+    (value.window === undefined ||
+      value.window === 'five_hour' ||
+      value.window === 'daily' ||
+      value.window === 'weekly' ||
+      value.window === 'monthly') &&
+    isOptionalString(value.model) &&
+    (value.resetsAt === undefined || nonNegativeSafeInteger(value.resetsAt))
   );
 }
 
@@ -433,7 +449,14 @@ function isChildSessionSummary(value: unknown): boolean {
 function isTranscriptEvent(value: unknown): boolean {
   if (!isRecord(value)) return false;
   const switched = value.modelSwitch;
-  if (switched !== undefined && (!isRecord(switched) || !hasStrings(switched, ['from', 'to'])))
+  if (
+    switched !== undefined &&
+    (!isRecord(switched) ||
+      !hasStrings(switched, ['from', 'to']) ||
+      (switched.cause !== undefined &&
+        switched.cause !== 'harness' &&
+        switched.cause !== 'usage_limit'))
+  )
     return false;
   return (
     hasStrings(value, ['id', 'appSessionId', 'sourceSessionId', 'role', 'kind']) &&

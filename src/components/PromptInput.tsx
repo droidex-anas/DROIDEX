@@ -117,6 +117,7 @@ import {
 } from '@droidex/icons';
 import { VisualizeIcon } from './icons/VisualizeIcon';
 import { ComposerSendButton } from './composer/ComposerSendButton';
+import { useActiveUsageLimit } from './composer/useActiveUsageLimit';
 import { useQueuedPromptDelivery } from './composer/useQueuedPromptDelivery';
 import AddMenu from './composer/AddMenu';
 import SelectionMenu from './composer/SelectionMenu';
@@ -456,6 +457,7 @@ export default function PromptInput({
 
   const activeSession = state.activeSession;
   const primaryIsLive = useSessionLive(appSessionId);
+  const usageLimit = useActiveUsageLimit(activeSession?.usageLimit, primaryIsLive);
 
   // A stored pick this build cannot run falls back to Droid, and the chip shows
   // the fallback rather than a selection the picker would render as disabled.
@@ -1636,6 +1638,7 @@ export default function PromptInput({
     appSessionId: activeSession?.appSessionId ?? null,
     cwd: primaryWorkingDirectory,
     isLive: primaryIsLive,
+    usageLimited: usageLimit !== undefined,
     appUpdateInstalling,
     appUpdateInstallResult,
   });
@@ -2096,6 +2099,7 @@ export default function PromptInput({
 
         <QueuedPrompts
           queue={queue}
+          usageLimit={usageLimit}
           onReorder={reorderQueue}
           onEdit={editQueuedInComposer}
           onRemove={removeQueued}
@@ -2109,6 +2113,8 @@ export default function PromptInput({
           </Suspense>
         )}
 
+        {/* A chat held on `usageLimit` shows its limit tab in this slot; StartInBar
+            only ever shows before a chat exists. */}
         {showStartIn && (
           <div
             className="relative z-0 mx-[6%] -mb-3 min-w-0 border border-droid-border bg-droid-surface px-4 pb-4 pt-1.5"
