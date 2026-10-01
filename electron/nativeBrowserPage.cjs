@@ -78,13 +78,12 @@ function createNativeBrowserPage({
           await credentials.fillForAgent(contents, request),
         );
       }
-      // Navigation can win the race while a ref is still being resolved; the
-      // action then gives up rather than act on the next page.
-      const action = { abandoned: false };
+      // Once a navigation starts, an action still resolving its target gives
+      // up rather than act on the next page.
       const execution = withRefTarget(contents, entry, request)
         .then(async (target) => {
           if (target.document) await reading.assertDocument(contents, target.document);
-          return executeAgentAction(contents, target, action);
+          return executeAgentAction(contents, target, navigation);
         })
         .then(
           (result) => ({ type: 'result', result }),
@@ -95,12 +94,11 @@ function createNativeBrowserPage({
         navigation.wait().then(() => ({ type: 'navigation' })),
       ]);
       if (outcome.type === 'navigation') {
-        action.abandoned = true;
         return await snapshotAfterNavigation(contents, request);
       }
       if (outcome.type === 'error') {
-        if (!navigation.started() || !isNavigationExecutionError(outcome.error))
-          throw outcome.error;
+        const navigated = outcome.error?.navigated || isNavigationExecutionError(outcome.error);
+        if (!navigation.started() || !navigated) throw outcome.error;
         await navigation.wait();
         return await snapshotAfterNavigation(contents, request);
       }
@@ -139,17 +137,20 @@ function createNativeBrowserPage({
       return { ...request, action: 'snapshot' };
     }
     if (request.action === 'inspect')
-      return { ...request, selector: await reading.selectorForRef(contents, entry, request.ref) };
+      return { ...request, ...(await reading.selectorForRef(contents, entry, request.ref)) };
     const { x, y, document } = await reading.pointForRef(contents, entry, request.ref);
     return { ...request, x, y, document, selector: undefined };
   }
 
-  function ensureCurrent(action) {
-    if (action.abandoned)
-      throw new Error('The page changed before the action ran; call browser_read_page.');
+  function ensureCurrent(navigation) {
+    if (!navigation.started()) return;
+    const error = new Error('The page changed before the action ran; call browser_read_page.');
+    error.navigated = true;
+    throw error;
   }
 
-  async function executeAgentAction(contents, request, action) {
+  async function executeAgentAction(contents, request, navigation) {
+    ensureCurrent(navigation);
     if (
       request.action === 'scroll' &&
       Number.isFinite(Number(request.x)) &&
@@ -159,7 +160,7 @@ function createNativeBrowserPage({
       const y = Math.round(Number(request.y));
       const pixels = Math.max(1, Math.round(Number(request.pixels) || 500));
       const horizontal = request.direction === 'left' || request.direction === 'right';
-      ensureCurrent(action);
+      ensureCurrent(navigation);
       contents.sendInputEvent({
         type: 'mouseWheel',
         x,
@@ -177,13 +178,12 @@ function createNativeBrowserPage({
       );
     }
     if (request.action === 'click' || request.action === 'hover') {
-      const point = await resolvePointer(contents, request);
-      const x = point.x;
-      const y = point.y;
+      const x = Math.round(Number(request.x));
+      const y = Math.round(Number(request.y));
       if (!Number.isFinite(x) || !Number.isFinite(y)) {
         throw new Error('Browser pointer interaction requires finite viewport coordinates.');
       }
-      ensureCurrent(action);
+      ensureCurrent(navigation);
       contents.sendInputEvent({ type: 'mouseMove', x, y, movementX: 0, movementY: 0 });
       if (request.action === 'click') {
         contents.sendInputEvent({ type: 'mouseDown', x, y, button: 'left', clickCount: 1 });
@@ -201,35 +201,6 @@ function createNativeBrowserPage({
       `window.__DROIDMAXX_AGENT_ACTION?.(${JSON.stringify(request)});`,
       true,
     );
-  }
-
-  async function resolvePointer(contents, request) {
-    if (typeof request.selector === 'string' && request.selector) {
-      const point = await contents.executeJavaScript(
-        `(() => {
-        const target = document.querySelector(${JSON.stringify(request.selector)});
-        if (!target) return null;
-        target.scrollIntoView({ block: 'center', inline: 'center', behavior: 'auto' });
-        const box = target.getBoundingClientRect();
-        if (box.width <= 0 || box.height <= 0) return null;
-        return {
-          x: Math.round(box.left + box.width / 2),
-          y: Math.round(box.top + box.height / 2)
-        };
-      })()`,
-        true,
-      );
-      if (!point) {
-        throw new Error(
-          'Browser target is no longer available. Refresh the snapshot and try again.',
-        );
-      }
-      return point;
-    }
-    return {
-      x: Math.round(Number(request.x)),
-      y: Math.round(Number(request.y)),
-    };
   }
 
   async function snapshotAfterNavigation(contents, request) {

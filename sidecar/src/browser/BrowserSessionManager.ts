@@ -131,7 +131,10 @@ export class BrowserSessionManager {
   }
 
   async refresh(appSessionId: string): Promise<BrowserState> {
-    const session = this.requireSession(appSessionId);
+    return this.refreshSession(this.requireSession(appSessionId));
+  }
+
+  private async refreshSession(session: ManagedBrowserSession): Promise<BrowserState> {
     session.state = await this.captureState(session);
     this.emitUpdated(session.state);
     return session.state;
@@ -218,8 +221,11 @@ export class BrowserSessionManager {
     }
     const deadline = Date.now() + timeoutMs;
     const session = this.requireSession(appSessionId);
+    // Polls the browser the wait started on; a browser closed meanwhile ends it.
     const matches = async () => {
-      const state = await this.refresh(appSessionId);
+      if (this.resolveSession(appSessionId) !== session)
+        throw new Error('The browser was closed while waiting.');
+      const state = await this.refreshSession(session);
       if (input.urlIncludes && !state.url.includes(input.urlIncludes)) return false;
       if (input.text && (await session.runtime.find(input.text)).matches === 0) return false;
       if (input.ref && !(await refIsOnPage(session.runtime, input.ref))) return false;

@@ -67,12 +67,11 @@ function createBrowserReading({ runWithWebContentsDebugger, savedSecretsFor, red
 
   function refFor(registry, document, backendNodeId) {
     const key = `${document}:${backendNodeId}`;
-    let ref = registry.byNode.get(key);
-    if (!ref) {
-      ref = `e${registry.next++}`;
-      registry.byNode.set(key, ref);
-      registry.byRef.set(ref, { document, backendNodeId });
-    }
+    const ref = registry.byNode.get(key) ?? `e${registry.next++}`;
+    registry.byNode.set(key, ref);
+    // Re-inserted, so eviction (oldest first) never drops a ref just handed out.
+    registry.byRef.delete(ref);
+    registry.byRef.set(ref, { document, backendNodeId });
     return ref;
   }
 
@@ -114,7 +113,12 @@ function createBrowserReading({ runWithWebContentsDebugger, savedSecretsFor, red
         if (results.length < MAX_FIND_RESULTS && matches(line.text))
           results.push([...ancestorsOf(render.lines, index), line]);
       });
-      const partial = render.exhausted ? ' (the page was too large to search to the end)' : '';
+      render.forget();
+      const partial = render.exhausted
+        ? ' (the page was too large to search to the end)'
+        : render.refsCut
+          ? ` (refs stop after ${MAX_REFS} elements; read one ref for more)`
+          : '';
       if (results.length === 0)
         return {
           text: `No match for ${JSON.stringify(query)}${partial}.\n${footer(contents)}`,
@@ -158,21 +162,21 @@ function createBrowserReading({ runWithWebContentsDebugger, savedSecretsFor, red
 
   // Chooses an option on the ref's own <select>, wherever it lives.
   async function selectOption(contents, entry, ref, value) {
-    return callOnRef(contents, entry, ref, [value], SELECT_OPTION);
+    return (await callOnRef(contents, entry, ref, [value], SELECT_OPTION)).value;
   }
 
   // A CSS path to the ref's element, for page-side helpers that only reach the
   // top document; elements in frames or shadow trees are refused plainly.
   async function selectorForRef(contents, entry, ref) {
-    const selector = await callOnRef(contents, entry, ref, [], CSS_PATH);
+    const { value: selector, document } = await callOnRef(contents, entry, ref, [], CSS_PATH);
     if (!selector)
       throw new Error(`${ref} is inside a frame or shadow tree, which this tool cannot reach yet.`);
-    return selector;
+    return { selector, document };
   }
 
   async function callOnRef(contents, entry, ref, args, functionDeclaration) {
     return withPage(contents, async (dbg) => {
-      const { backendNodeId } = await lookupRef(dbg, entry, ref);
+      const { backendNodeId, document } = await lookupRef(dbg, entry, ref);
       const { object } = await onNode(ref, () =>
         dbg.sendCommand('DOM.resolveNode', { backendNodeId }),
       );
@@ -187,7 +191,7 @@ function createBrowserReading({ runWithWebContentsDebugger, savedSecretsFor, red
           throw new Error(
             `${ref}: ${exceptionDetails.exception?.description?.split('\n')[0] ?? 'failed'}`,
           );
-        return result.value;
+        return { value: result.value, document };
       } finally {
         await dbg
           .sendCommand('Runtime.releaseObject', { objectId: object.objectId })
@@ -218,7 +222,6 @@ function createBrowserReading({ runWithWebContentsDebugger, savedSecretsFor, red
 
   function newRender(entry, options) {
     const registry = registryFor(entry);
-    const before = registry.byRef.size;
     return {
       registry,
       lines: [],
@@ -228,9 +231,9 @@ function createBrowserReading({ runWithWebContentsDebugger, savedSecretsFor, red
       refs: 0,
       exhausted: false,
       refsCut: false,
-      // Old refs are forgotten only after the answer that issued new ones.
+      // The least recently issued refs are forgotten once the answer is ready.
       forget: () => {
-        if (registry.byRef.size > MAX_REMEMBERED_REFS && registry.byRef.size > before)
+        if (registry.byRef.size > MAX_REMEMBERED_REFS)
           forgetOldest(registry, registry.byRef.size - MAX_REMEMBERED_REFS);
       },
     };
@@ -283,9 +286,11 @@ function createBrowserReading({ runWithWebContentsDebugger, savedSecretsFor, red
         line.field = { backendNodeId: node.backendDOMNodeId, name, value };
         render.fields.push(line);
       }
-      lines.push(line);
+      const index = lines.push(line) - 1;
       if (!LEAF_ROLES.has(role))
         visitChildren(childrenOf(node), interactiveOnly ? depth : depth + 1, name);
+      // A masked field hides what is inside it too, such as a select's options.
+      if (line.field) line.inside = lines.slice(index + 1);
     }
 
     // Text, including text inside unnamed inline wrappers such as <strong>,
@@ -302,8 +307,14 @@ function createBrowserReading({ runWithWebContentsDebugger, savedSecretsFor, red
         run = [];
       };
       for (const child of children) {
-        const text = flatText(child);
+        const counted = { nodes: 0 };
+        const text = flatText(child, counted);
         if (text !== null) {
+          render.processed += counted.nodes;
+          if (render.processed > MAX_NODES) {
+            render.exhausted = true;
+            break;
+          }
           run.push(text);
           continue;
         }
@@ -315,12 +326,13 @@ function createBrowserReading({ runWithWebContentsDebugger, savedSecretsFor, red
 
     // The text of a text node or of an unnamed wrapper holding only text; null
     // for anything with structure of its own.
-    function flatText(node) {
+    function flatText(node, counted) {
+      counted.nodes++;
       const role = node.role?.value ?? '';
       if (TEXT_ROLES.has(role) && !node.ignored) return node.name?.value ?? '';
       const wrapper = node.ignored || (WRAPPER_ROLES.has(role) && !cleanName(node.name?.value));
       if (!wrapper) return null;
-      const parts = childrenOf(node).map(flatText);
+      const parts = childrenOf(node).map((child) => flatText(child, counted));
       return parts.some((part) => part === null) ? null : parts.join(' ');
     }
 
@@ -348,7 +360,9 @@ function createBrowserReading({ runWithWebContentsDebugger, savedSecretsFor, red
         sensitive = !described || isSensitiveField(described.node.attributes ?? []);
       }
       line.text += `: ${sensitive ? MASK : value}`;
+      if (sensitive) for (const inner of line.inside) inner.hidden = true;
     }
+    render.lines = render.lines.filter((line) => !line.hidden);
   }
 
   function describe(node, role, name, ref) {
@@ -372,7 +386,8 @@ function createBrowserReading({ runWithWebContentsDebugger, savedSecretsFor, red
     let body = render.lines.map(indent).join('\n');
     const notes = [];
     if (body.length > limit) {
-      body = body.slice(0, body.lastIndexOf('\n', limit));
+      const lastLine = body.lastIndexOf('\n', limit);
+      body = body.slice(0, lastLine > 0 ? lastLine : limit);
       notes.push(
         `cut at ${limit} characters; read one ref, raise max_chars, or use filter "interactive"`,
       );
