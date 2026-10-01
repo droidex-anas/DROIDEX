@@ -150,7 +150,9 @@ function createBrowserReading({ runWithWebContentsDebugger, savedSecretsFor, red
   async function pointForRef(contents, entry, ref) {
     return withPage(contents, async (dbg) => {
       const { quad, local, document, sessionId } = await visibleQuad(dbg, entry, ref);
-      return { ...middleOf(quad), local: middleOf(local), document, sessionId };
+      // The point in the ref's own frame stays unrounded, so mapped out of its
+      // frame for the cover check it lands on the point that is clicked.
+      return { ...middleOf(quad), local: centreOf(local), document, sessionId };
     });
   }
 
@@ -470,11 +472,16 @@ function ancestorsOf(lines, index) {
 }
 
 // Shoelace area, so a rotated element still counts as visible.
-function middleOf(quad) {
+function centreOf(quad) {
   return {
-    x: Math.round((quad[0] + quad[2] + quad[4] + quad[6]) / 4),
-    y: Math.round((quad[1] + quad[3] + quad[5] + quad[7]) / 4),
+    x: (quad[0] + quad[2] + quad[4] + quad[6]) / 4,
+    y: (quad[1] + quad[3] + quad[5] + quad[7]) / 4,
   };
+}
+
+function middleOf(quad) {
+  const { x, y } = centreOf(quad);
+  return { x: Math.round(x), y: Math.round(y) };
 }
 
 function quadArea(quad) {
