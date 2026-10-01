@@ -5,19 +5,11 @@
 // whose input never went out fails rather than report a navigation it did not
 // cause.
 
-const {
-  send,
-  frameHolds,
-  focusedFrame,
-  frameStep,
-  documentFrames,
-} = require('./browserFrames.cjs');
+const { send, frameHolds, focusedFrame } = require('./browserFrames.cjs');
 const { callPageScript } = require('./browserPageScript.cjs');
-const { refFor } = require('./browserRefs.cjs');
 const { keyOf, modifiersOf, pressOn } = require('./browserKeys.cjs');
 const { observeNavigation, isNavigationError } = require('./browserNavigation.cjs');
-const { labelOf } = require('./browserText.cjs');
-const { isField } = require('./browserMasking.cjs');
+const { createBrowserCover } = require('./browserCover.cjs');
 
 const PAGE_CHANGED = 'The page changed before the action ran; call browser_read_page.';
 const NAVIGATION_GRACE_MS = 150;
@@ -34,6 +26,8 @@ function createBrowserActions({
   unthrottled,
   redactUrl,
 }) {
+  const { refuseCovered } = createBrowserCover({ reading });
+
   async function act(contents, entry, request) {
     if (request.action === 'snapshot') return result(request, contents, entry, Date.now());
     if (request.action === 'inspect') return inspect(contents, entry, request);
@@ -251,93 +245,6 @@ function createBrowserActions({
     return target;
   }
 
-  async function refuseCovered(contents, entry, ref, point) {
-    const cover = await coverOf(contents, entry, ref, point);
-    if (cover) throw new Error(`${ref} is covered by ${cover} there; deal with it first.`);
-  }
-
-  // What would receive input at a ref's point instead of the ref's element,
-  // described with a ref of its own; nothing when the ref would. The point is
-  // checked in the ref's own frame, then, for a ref in a cross-site frame, in
-  // each frame outside it, where the iframe it sits in must take the input.
-  function coverOf(contents, entry, ref, point) {
-    return reading.withPage(contents, async (dbg) => {
-      const target = await reading.lookupRef(dbg, entry, ref);
-      let { sessionId } = target.frame;
-      let at = [point.local.x, point.local.y];
-      const hit = await hitAt(dbg, sessionId, at);
-      if (
-        hit &&
-        !(
-          hit.frameId === target.frame.id &&
-          (await holds(dbg, sessionId, target.backendNodeId, hit))
-        )
-      )
-        return describeCover(dbg, sessionId, entry, hit);
-      while (sessionId) {
-        const { parent, owner, toParent } = await frameStep(dbg, sessionId);
-        at = toParent(at);
-        const outer = await hitAt(dbg, parent, at);
-        if (outer && outer.backendNodeId !== owner) return describeCover(dbg, parent, entry, outer);
-        sessionId = parent;
-      }
-      return undefined;
-    });
-  }
-
-  // The node that takes input at [x, y] in a frame's own viewport; the hit
-  // test takes that frame's page coordinates.
-  async function hitAt(dbg, sessionId, [x, y]) {
-    const { cssLayoutViewport: view } = await send(dbg, sessionId, 'Page.getLayoutMetrics');
-    return send(dbg, sessionId, 'DOM.getNodeForLocation', {
-      x: Math.round(x + view.pageX),
-      y: Math.round(y + view.pageY),
-      includeUserAgentShadowDOM: false,
-    }).catch((error) => {
-      // Nothing is drawn there; any other failure leaves the point unchecked.
-      if (/no node found/i.test(String(error?.message))) return undefined;
-      throw error;
-    });
-  }
-
-  async function holds(dbg, sessionId, backendNodeId, hit) {
-    const [{ object: ref }, { object: other }] = await Promise.all([
-      send(dbg, sessionId, 'DOM.resolveNode', { backendNodeId }),
-      send(dbg, sessionId, 'DOM.resolveNode', { backendNodeId: hit.backendNodeId }),
-    ]);
-    try {
-      const { result: held } = await send(dbg, sessionId, 'Runtime.callFunctionOn', {
-        objectId: ref.objectId,
-        functionDeclaration: CONTAINS,
-        arguments: [{ objectId: other.objectId }],
-        returnByValue: true,
-      });
-      return held.value === true;
-    } finally {
-      for (const { objectId } of [ref, other])
-        await send(dbg, sessionId, 'Runtime.releaseObject', { objectId }).catch(() => undefined);
-    }
-  }
-
-  async function describeCover(dbg, sessionId, entry, hit) {
-    const { nodes } = await send(dbg, sessionId, 'Accessibility.getPartialAXTree', {
-      backendNodeId: hit.backendNodeId,
-      fetchRelatives: false,
-    }).catch(() => ({ nodes: [] }));
-    const node = nodes.find((candidate) => !candidate.ignored);
-    // Only a label the page gave it, and never a field's: a name built from
-    // content, or a field's own, can hold what a masked field holds.
-    const name = node && !isField(node) ? labelOf(node).slice(0, 80) : '';
-    // An element the accessibility tree ignores is named by its tag.
-    const role =
-      node?.role?.value && (name || !['none', 'generic'].includes(node.role.value))
-        ? node.role.value
-        : `<${(await send(dbg, sessionId, 'DOM.describeNode', { backendNodeId: hit.backendNodeId })).node.localName}>`;
-    const frame = (await documentFrames(dbg)).find((candidate) => candidate.id === hit.frameId);
-    const ref = frame ? ` (${refFor(entry, frame.loaderId, hit.backendNodeId)})` : '';
-    return `${role}${name ? ` "${name}"` : ''}${ref}`;
-  }
-
   // Before each event, inside the debugger queue, a new page or a replaced
   // ref document stops the gesture.
   function dispatchMouse(contents, step, target, events) {
@@ -514,13 +421,6 @@ const SCROLLED = `(x, y) => {
   for (let node = document.elementFromPoint(x, y); node; node = node.parentElement)
     offsets.push(node.scrollLeft, node.scrollTop);
   return offsets.join();
-}`;
-
-// Run on a ref's element: whether a hit node is that element or inside it,
-// shadow roots included.
-const CONTAINS = `function (other) {
-  for (let node = other; node; node = node.parentNode || node.host) if (node === this) return true;
-  return false;
 }`;
 
 module.exports = { createBrowserActions };
