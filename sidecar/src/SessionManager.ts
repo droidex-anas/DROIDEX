@@ -336,10 +336,16 @@ export class SessionManager {
     });
   });
   private readonly accountUsage = new AccountUsage({
+    // A chat that has begun closing still holds a connection, but not for long.
     liveSession: (provider) =>
       this.registry
         .liveSessionsSnapshot()
-        .find((live) => live.summary.provider === provider && !live.session.isClosed)?.session,
+        .find(
+          (live) =>
+            live.summary.provider === provider &&
+            !hasSessionCloseStarted(live) &&
+            !live.session.isClosed,
+        )?.session,
     readWithoutSession: (provider, signal) => this.providerFor(provider).readUsage(signal),
     emit: (event) => {
       this.emit(event);
