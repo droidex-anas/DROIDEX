@@ -114,22 +114,12 @@ export class AppServerClient {
     if (this.failure) this.settle(this.failure);
   }
 
-  // A request whose signal aborts is dropped: an answer Codex still sends
-  // finds nothing waiting for it.
-  request<T>(method: string, params: unknown, signal?: AbortSignal): Promise<T> {
+  request<T>(method: string, params: unknown): Promise<T> {
     if (this.failure) return Promise.reject(this.failure);
-    if (signal?.aborted) return Promise.reject(cancelled(method));
     const id = this.nextRequestId++;
     return new Promise<T>((resolve, reject) => {
       // Registered before the write, so a response cannot arrive unclaimed.
       this.pending.set(id, { resolve: resolve as (result: unknown) => void, reject });
-      signal?.addEventListener(
-        'abort',
-        () => {
-          if (this.pending.delete(id)) reject(cancelled(method));
-        },
-        { once: true },
-      );
       this.write({ id, method, params });
     });
   }
@@ -257,10 +247,6 @@ export class AppServerClient {
       });
     });
   }
-}
-
-function cancelled(method: string): Error {
-  return new Error(`Codex ${method} was cancelled.`);
 }
 
 // The three envelopes this protocol has: a request (a method and an id), a
