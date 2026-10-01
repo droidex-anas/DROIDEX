@@ -6,7 +6,7 @@
 // first session or /usage.
 import type { ProviderUsage, ServerEvent, UsageMeter } from '../protocol.js';
 import { PROVIDER_KINDS, type ProviderKind } from './providerKind.js';
-import type { ProviderSession, UsageReading } from './session.js';
+import type { ProviderSession, ReportedMeter, UsageReading } from './session.js';
 
 const REFRESH_INTERVAL_MS = 5 * 60_000;
 // Automatic reads closer together than this keep the last answer. Claude Code
@@ -74,15 +74,18 @@ export class AccountUsage {
 
   // Codex sends its windows with nearly every token, so an unchanged push is
   // only announced once the last announcement has aged.
-  pushed(provider: ProviderKind, meters: UsageMeter[]): void {
+  pushed(provider: ProviderKind, meters: ReportedMeter[]): void {
     if (this.abort.signal.aborted || meters.length === 0) return;
     this.startTimer();
     const account = this.account(provider);
     const current = account.usage ?? { provider, meters: [] };
-    const merged = mergeMeters(current.meters, meters);
-    const changed = JSON.stringify(merged) !== JSON.stringify(current.meters);
-    account.usage = { ...current, meters: merged, updatedAt: this.now() };
-    if (changed || this.now() - account.emittedAt >= MIN_READ_GAP_MS) this.publish(account.usage);
+    const now = this.now();
+    const changed = meters.some((meter) => {
+      const known = current.meters.find((entry) => entry.id === meter.id);
+      return known?.usedPercent !== meter.usedPercent || known.resetsAt !== meter.resetsAt;
+    });
+    account.usage = { ...current, meters: mergeMeters(current.meters, stamped(meters, now)) };
+    if (changed || now - account.emittedAt >= MIN_READ_GAP_MS) this.publish(account.usage);
   }
 
   close(): void {
@@ -105,7 +108,7 @@ export class AccountUsage {
     if (!source || resting || now < account.retryAt) return undefined;
     this.startTimer();
     account.lastReadAt = now;
-    const reading = this.settle(provider, account, source).finally(() => {
+    const reading = this.settle(provider, account, source, now).finally(() => {
       account.reading = undefined;
     });
     account.reading = reading;
@@ -123,17 +126,25 @@ export class AccountUsage {
     return undefined;
   }
 
-  // A failed read keeps the last good meters and marks them stale.
+  // A read replaces what was known, but a window pushed after it began is
+  // newer than its answer. A failed read keeps the last good meters, stale.
   private async settle(
     provider: ProviderKind,
     account: Account,
     source: UsageSource,
+    startedAt: number,
   ): Promise<void> {
     const signal = AbortSignal.any([this.abort.signal, AbortSignal.timeout(READ_TIMEOUT_MS)]);
     let usage: ProviderUsage;
     try {
-      const reading = await untilAborted(source(signal), signal);
-      usage = { provider, ...reading, updatedAt: this.now() };
+      const { meters, extra, unavailable } = await untilAborted(source(signal), signal);
+      const pushed = (account.usage?.meters ?? []).filter((meter) => meter.updatedAt >= startedAt);
+      usage = {
+        provider,
+        meters: mergeMeters(stamped(meters, this.now()), pushed),
+        ...(extra ? { extra } : {}),
+        ...(unavailable ? { unavailable } : {}),
+      };
     } catch (error) {
       if (this.abort.signal.aborted) return;
       if (error instanceof UsageReadError)
@@ -170,6 +181,10 @@ export class AccountUsage {
     }, REFRESH_INTERVAL_MS);
     this.timer.unref();
   }
+}
+
+function stamped(meters: ReportedMeter[], updatedAt: number): UsageMeter[] {
+  return meters.map((meter) => ({ ...meter, updatedAt }));
 }
 
 // Each incoming window replaces the one with its id; the rest keep their place.

@@ -151,7 +151,8 @@ export interface UsageLimit {
 
 // One limit window of a harness account, as the harness reported it. `id` is
 // the harness's own name for the window, so an update that carries one window
-// lands on the row a full read drew. `durationMs` is the window's length.
+// lands on the row a full read drew. `durationMs` is the window's length, and
+// `updatedAt` (epoch ms) when this window was last read or pushed.
 export interface UsageMeter {
   id: string;
   window?: UsageWindow;
@@ -159,6 +160,7 @@ export interface UsageMeter {
   usedPercent: number;
   resetsAt?: number;
   durationMs?: number;
+  updatedAt: number;
 }
 
 // What an account holds beside its windows, shown and never spent: Codex limit
@@ -168,15 +170,13 @@ export type UsageExtra =
   | { kind: 'extra_usage'; usedPercent?: number }
   | { kind: 'extra_balance'; cents: number };
 
-// A harness account's usage. `updatedAt` (epoch ms) is when the meters were
-// last read; `stale` marks them kept after a later read failed. `unavailable`
-// says why an account has no meters at all.
+// A harness account's usage. `stale` marks meters kept after a later read
+// failed; `unavailable` says why an account has no meters at all.
 export interface ProviderUsage {
   provider: ProviderKind;
   meters: UsageMeter[];
   extra?: UsageExtra;
   unavailable?: 'no_api_key' | 'no_plan_limits';
-  updatedAt?: number;
   stale?: boolean;
 }
 

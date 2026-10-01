@@ -2,9 +2,9 @@
 // the server's updates, so a refused turn can say which window ran out and
 // when it resets (Codex's own turn error carries neither), and /usage can
 // show every window of the account's main bucket.
-import type { UsageLimit, UsageMeter, UsageWindow } from '../../protocol.js';
+import type { UsageLimit, UsageWindow } from '../../protocol.js';
 import { numberValue, objectValue } from '../../values.js';
-import type { UsageMetersListener, UsageReading } from '../session.js';
+import type { ReportedMeter, UsageMetersListener, UsageReading } from '../session.js';
 import { futureResetAt, UsageLimitError } from '../usageLimit.js';
 import type { AppServerClient } from './appServer.js';
 
@@ -51,7 +51,7 @@ export class CodexRateLimits {
     // Free limit resets the account holds, shown only; nothing here spends one.
     const available = numberValue(objectValue(response?.rateLimitResetCredits)?.availableCount);
     return {
-      meters: this.meters(),
+      meters: windowMeters(this.snapshot),
       ...(available === undefined
         ? {}
         : { extra: { kind: 'limit_resets', available: Math.max(0, Math.round(available)) } }),
@@ -61,6 +61,7 @@ export class CodexRateLimits {
   // `account/rateLimits/updated` carries one bucket, and a field it leaves
   // null keeps the value that bucket already had. Before any read has
   // answered, an update for the account's main bucket stands on its own.
+  // Only the windows it carries are passed on.
   update(params: unknown): void {
     const update = snapshotOf(objectValue(params)?.rateLimits);
     if (!update) return;
@@ -72,33 +73,11 @@ export class CodexRateLimits {
       if (update.limitId !== undefined && update.limitId !== MAIN_BUCKET) return;
       this.snapshot = update;
     }
-    this.onMeters?.(this.meters());
+    this.onMeters?.(windowMeters(update));
   }
 
   usageLimitError(message: string): UsageLimitError {
     return new UsageLimitError(message, this.reachedLimit());
-  }
-
-  // Each window by its place in the snapshot, which is where the next update
-  // for it lands too.
-  private meters(): UsageMeter[] {
-    const snapshot = this.snapshot;
-    if (!snapshot) return [];
-    return (['primary', 'secondary'] as const).flatMap((id) => {
-      const window = snapshot[id];
-      if (!window) return [];
-      const name = usageWindow(window);
-      const resetsAt = futureResetAt(window.resetsAt);
-      return [
-        {
-          id,
-          ...(name ? { window: name } : {}),
-          usedPercent: Math.min(100, Math.max(0, window.usedPercent)),
-          ...(resetsAt === undefined ? {} : { resetsAt }),
-          ...(window.windowDurationMins ? { durationMs: window.windowDurationMins * 60_000 } : {}),
-        },
-      ];
-    });
   }
 
   // The spent window that resets last, else the spend control that stopped the
@@ -118,6 +97,26 @@ export class CodexRateLimits {
       : undefined;
     return resetsAt === undefined ? {} : { resetsAt };
   }
+}
+
+// Each window by its place in the snapshot, which is where the next update
+// for it lands too.
+function windowMeters(snapshot: RateLimitSnapshot): ReportedMeter[] {
+  return (['primary', 'secondary'] as const).flatMap((id) => {
+    const window = snapshot[id];
+    if (!window) return [];
+    const name = usageWindow(window);
+    const resetsAt = futureResetAt(window.resetsAt);
+    return [
+      {
+        id,
+        ...(name ? { window: name } : {}),
+        usedPercent: Math.min(100, Math.max(0, window.usedPercent)),
+        ...(resetsAt === undefined ? {} : { resetsAt }),
+        ...(window.windowDurationMins ? { durationMs: window.windowDurationMins * 60_000 } : {}),
+      },
+    ];
+  });
 }
 
 function merged(older: RateLimitSnapshot, newer: RateLimitSnapshot): RateLimitSnapshot {

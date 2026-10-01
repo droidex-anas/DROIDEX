@@ -35,6 +35,10 @@ export function UsagePanel({
   const [refreshedFrom, setRefreshedFrom] = useState<ProviderUsage | undefined | null>(null);
   const refreshing = refreshedFrom !== null && refreshedFrom === usage;
   const extra = usage?.extra && extraLabel(usage.extra);
+  // The oldest window's time, so the line never claims one a read did not refresh.
+  const updatedAt = usage?.meters.length
+    ? Math.min(...usage.meters.map((meter) => meter.updatedAt))
+    : undefined;
 
   return (
     <ComposerTab>
@@ -49,11 +53,11 @@ export function UsagePanel({
             </span>
           </div>
           <div className="ml-auto flex shrink-0 items-center gap-1 tabular-nums">
-            {usage?.updatedAt !== undefined && (
+            {updatedAt !== undefined && (
               <>
                 <span className="pl-1.5 text-droid-text-muted">
-                  {updatedLabel(usage.updatedAt, now)}
-                  {usage.stale && ' · Couldn’t refresh'}
+                  {updatedLabel(updatedAt, now)}
+                  {usage?.stale && ' · Couldn’t refresh'}
                 </span>
                 <span className="pl-1 text-droid-text-muted">·</span>
               </>
