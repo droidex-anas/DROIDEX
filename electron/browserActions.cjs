@@ -181,6 +181,10 @@ function createBrowserActions({
         ({ document } = target);
         sessionId = target.frame.sessionId;
         await send(dbg, sessionId, 'DOM.focus', { backendNodeId: target.backendNodeId });
+        // A focus handler can send the focus on to another frame.
+        const focused = await focusedFrame(dbg);
+        if (focused.sessionId !== sessionId || focused.document !== document)
+          throw new Error(`${request.ref} did not keep the focus; read the page again.`);
       } else {
         ({ sessionId, document } = await focusedFrame(dbg));
       }

@@ -105,6 +105,7 @@ export class BrowserSessionManager {
     const url = normalizeBrowserUrl(input.url);
     if (input.viewport) {
       await session.runtime.setViewport(input.viewport);
+      this.assertCurrent(session);
     }
     session.state = {
       ...session.state,
@@ -139,13 +140,13 @@ export class BrowserSessionManager {
     viewportMode: BrowserViewportMode;
   }): Promise<BrowserState> {
     const session = this.requireSession(input.appSessionId);
-    const nextState = {
+    await session.runtime.setViewport(input.viewport);
+    this.assertCurrent(session);
+    session.state = {
       ...session.state,
       viewport: input.viewport,
       viewportMode: input.viewportMode,
     };
-    await session.runtime.setViewport(input.viewport);
-    session.state = nextState;
     this.emitUpdated(session.state);
     return session.state;
   }
@@ -465,11 +466,15 @@ export class BrowserSessionManager {
   // An answer for a browser that was closed, or replaced, while it ran is
   // never shown: it would bring back the closed one's state.
   private applied(session: ManagedBrowserSession, result: BrowserActionResult): BrowserOutcome {
-    if (this.resolveSession(session.appSessionId) !== session)
-      throw new Error('The browser was closed while the action ran.');
+    this.assertCurrent(session);
     session.state = this.stateFromSnapshot(session, result.snapshot);
     this.emitUpdated(session.state);
     return { state: session.state, text: result.text };
+  }
+
+  private assertCurrent(session: ManagedBrowserSession): void {
+    if (this.resolveSession(session.appSessionId) !== session)
+      throw new Error('The browser was closed while the action ran.');
   }
 
   private async captureAnchorImage(

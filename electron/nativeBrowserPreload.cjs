@@ -507,14 +507,22 @@ function inspectElement(selector) {
   };
 }
 
-// A copy of an element without what its fields hold (text areas, selects and
-// editable regions), its own included; an input's value never shows in its
-// markup either.
+// Native and ARIA fields, whose content is what someone entered or chose.
+const FIELDS = [
+  'textarea',
+  'select',
+  '[contenteditable]:not([contenteditable="false"])',
+  ...['textbox', 'searchbox', 'combobox', 'listbox', 'spinbutton', 'slider'].map(
+    (role) => `[role="${role}"]`,
+  ),
+].join(', ');
+
+// A copy of an element without what its fields hold, its own included; an
+// input's value never shows in its markup either.
 function withoutTypedContent(el) {
-  const fields = 'textarea, select, [contenteditable]:not([contenteditable="false"])';
   const clone = el.cloneNode(true);
-  if (el.isContentEditable || el.closest('textarea, select')) clone.textContent = '[redacted]';
-  else for (const field of clone.querySelectorAll(fields)) field.textContent = '[redacted]';
+  if (el.isContentEditable || el.closest(FIELDS)) clone.textContent = '[redacted]';
+  else for (const field of clone.querySelectorAll(FIELDS)) field.textContent = '[redacted]';
   return clone;
 }
 
