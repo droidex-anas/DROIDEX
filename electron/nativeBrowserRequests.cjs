@@ -140,13 +140,18 @@ function createNativeBrowserRequests({ manager, notifyRenderer }) {
       if (Date.now() >= startBy) throw new Error(LATE);
       return run();
     });
+    // Counted from its own turn, so one that never starts frees nothing ahead.
     let timer;
-    const over = Promise.race([
-      turn.catch(() => undefined),
-      new Promise((resolve) => {
-        timer = setTimeout(resolve, Math.max(0, releaseBy - Date.now()));
-      }),
-    ]).finally(() => clearTimeout(timer));
+    const over = queue.over
+      .then(() =>
+        Promise.race([
+          turn.catch(() => undefined),
+          new Promise((resolve) => {
+            timer = setTimeout(resolve, Math.max(0, releaseBy - Date.now()));
+          }),
+        ]),
+      )
+      .finally(() => clearTimeout(timer));
     queue.over = over;
     queues.set(browserSessionId, queue);
     void over.then(() => {

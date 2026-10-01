@@ -389,7 +389,7 @@ const FILL = `function (value, startBy) {
   // nothing changes once the caller has given up, or once a focus handler has
   // swapped the field for another.
   const inTime = () => {
-    if (startBy && Date.now() >= startBy) throw new Error('the browser page did not finish in time');
+    if (startBy && Date.now() >= startBy) throw new Error('The browser page did not finish in time.');
   };
   const focus = () => {
     inTime();
