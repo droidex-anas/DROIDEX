@@ -71,16 +71,25 @@ async function documentFrames(dbg, { strict = false } = {}) {
 }
 
 // Maps quads from a session's own coordinates into the page's viewport,
-// through the content box of the iframe that owns it, which may be scaled or
-// rotated, and on through every cross-site parent.
+// through every cross-site frame it sits in.
 async function viewportMapping(dbg, sessionId) {
   if (!sessionId) return (quad) => quad;
+  const { parent, toParent } = await frameStep(dbg, sessionId);
+  const outer = await viewportMapping(dbg, parent);
+  return (quad) => outer(toParent(quad));
+}
+
+// One step out of a cross-site frame: the iframe that owns it, in its parent's
+// session, and how points in the frame land in the parent, through that
+// iframe's content box, which may be scaled or rotated. Points are flat
+// [x, y, ...] lists, such as a quad.
+async function frameStep(dbg, sessionId) {
   const frame = attachments.get(dbg)?.sessions.get(sessionId);
   if (!frame) throw new Error('The frame closed.');
-  const { backendNodeId } = await send(dbg, frame.parent, 'DOM.getFrameOwner', {
+  const { backendNodeId: owner } = await send(dbg, frame.parent, 'DOM.getFrameOwner', {
     frameId: frame.frameId,
   });
-  const { model } = await send(dbg, frame.parent, 'DOM.getBoxModel', { backendNodeId });
+  const { model } = await send(dbg, frame.parent, 'DOM.getBoxModel', { backendNodeId: owner });
   const [x0, y0, x1, y1, x2, y2, x3, y3] = model.content;
   // Only an affine transform keeps the box a parallelogram.
   if (Math.abs(x0 + x2 - x1 - x3) > 1 || Math.abs(y0 + y2 - y1 - y3) > 1)
@@ -90,15 +99,13 @@ async function viewportMapping(dbg, sessionId) {
   // edge the content box keeps its share of the border box.
   const width = (model.width * Math.hypot(x1 - x0, y1 - y0)) / Math.hypot(bx1 - bx0, by1 - by0);
   const height = (model.height * Math.hypot(x3 - x0, y3 - y0)) / Math.hypot(bx3 - bx0, by3 - by0);
-  const parent = await viewportMapping(dbg, frame.parent);
-  return (quad) =>
-    parent(
-      quad.map((_, i) => {
-        const u = quad[i - (i % 2)] / width;
-        const v = quad[i - (i % 2) + 1] / height;
-        return i % 2 ? y0 + u * (y1 - y0) + v * (y3 - y0) : x0 + u * (x1 - x0) + v * (x3 - x0);
-      }),
-    );
+  const toParent = (points) =>
+    points.map((_, i) => {
+      const u = points[i - (i % 2)] / width;
+      const v = points[i - (i % 2) + 1] / height;
+      return i % 2 ? y0 + u * (y1 - y0) + v * (y3 - y0) : x0 + u * (x1 - x0) + v * (x3 - x0);
+    });
+  return { parent: frame.parent, owner, toParent };
 }
 
 // Whether a session's frames still hold a document, asked of that session
@@ -110,8 +117,15 @@ async function frameHolds(dbg, sessionId, loaderId) {
 }
 
 // The session of the frame that has the keyboard focus, followed down from the
-// top through each cross-site iframe that holds it. A same-process frame takes
-// keys through its parent's session.
+// top through each cross-site iframe that holds it, and the document of that
+// session's frame. A same-process frame takes keys through its parent's
+// session.
+async function focusedFrame(dbg) {
+  const sessionId = await focusedSession(dbg);
+  const { frameTree } = await send(dbg, sessionId, 'Page.getFrameTree');
+  return { sessionId, document: frameTree.frame.loaderId };
+}
+
 async function focusedSession(dbg) {
   const sessions = await attachFrames(dbg);
   let sessionId;
@@ -136,19 +150,6 @@ async function focusedSession(dbg) {
     if (!next) return sessionId;
     sessionId = next;
   }
-}
-
-// The iframe element in the top process that a cross-site frame sits in,
-// however deeply it is nested.
-async function topOwner(dbg, sessionId) {
-  const sessions = attachments.get(dbg)?.sessions;
-  let frame = sessions?.get(sessionId);
-  while (frame?.parent) frame = sessions.get(frame.parent);
-  if (!frame) throw new Error('The frame closed.');
-  const { backendNodeId } = await send(dbg, undefined, 'DOM.getFrameOwner', {
-    frameId: frame.frameId,
-  });
-  return backendNodeId;
 }
 
 // Whether a frame painted twice within a short wait, so a copy of the screen
@@ -197,8 +198,8 @@ module.exports = {
   viewportMapping,
   framePainted,
   frameHolds,
-  focusedSession,
-  topOwner,
+  focusedFrame,
+  frameStep,
   scrollFrameIntoView,
   axTree,
   boundsOf,

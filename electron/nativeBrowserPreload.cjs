@@ -463,7 +463,11 @@ function firstVisible(nodes) {
 function isVisible(el) {
   if (!el) return false;
   const rect = el.getBoundingClientRect();
-  return rect.width > 0 && rect.height > 0;
+  return (
+    rect.width > 0 &&
+    rect.height > 0 &&
+    el.checkVisibility({ opacityProperty: true, visibilityProperty: true })
+  );
 }
 
 function inspectElement(selector) {
@@ -471,12 +475,13 @@ function inspectElement(selector) {
   const el = document.querySelector(selector);
   if (!el) throw new Error('The inspected browser element is no longer available.');
   const rect = el.getBoundingClientRect();
-  const text = safeElementText(el, 1000);
+  const shown = withoutTypedContent(el);
+  const text = safeElementText(shown, 1000);
   const name = cleanText(
     el.getAttribute('aria-label') ||
       el.getAttribute('title') ||
       el.getAttribute('placeholder') ||
-      directText(el) ||
+      directText(shown) ||
       text,
     240,
   );
@@ -495,9 +500,20 @@ function inspectElement(selector) {
     text: text || undefined,
     attributes: attrsFor(el),
     box: boxFor(rect),
-    html: sanitizedOuterHtml(el),
+    html: sanitizedOuterHtml(shown),
     iframe,
   };
+}
+
+// A copy of an element without what was typed into its editable regions, its
+// own included; an input's typed value is never in its markup either.
+function withoutTypedContent(el) {
+  const clone = el.cloneNode(true);
+  if (el.isContentEditable) clone.textContent = '[redacted]';
+  else
+    for (const host of clone.querySelectorAll('[contenteditable]:not([contenteditable="false"])'))
+      host.textContent = '[redacted]';
+  return clone;
 }
 
 function canAccessFrame(frame) {

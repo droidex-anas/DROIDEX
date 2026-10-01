@@ -8,14 +8,15 @@
 const {
   send,
   frameHolds,
-  focusedSession,
-  topOwner,
+  focusedFrame,
+  frameStep,
   documentFrames,
 } = require('./browserFrames.cjs');
 const { callPageScript } = require('./browserPageScript.cjs');
 const { refFor } = require('./browserRefs.cjs');
 const { keyOf, modifiersOf, pressOn } = require('./browserKeys.cjs');
 const { labelOf } = require('./browserText.cjs');
+const { isField } = require('./browserMasking.cjs');
 
 const PAGE_CHANGED = 'The page changed before the action ran; call browser_read_page.';
 const NAVIGATION_WAIT_MS = 7_000;
@@ -95,14 +96,16 @@ function createBrowserActions({
     const target = await targetOf(contents, entry, request);
     const { x, y } = target;
     const modifiers = modifiersOf(request.modifiers);
-    const events = [{ type: 'mouseMoved', x, y, modifiers }];
-    if (request.action === 'click') {
-      const button = ['left', 'right', 'middle'].includes(request.button) ? request.button : 'left';
-      const clicks = Math.min(MAX_CLICKS, Math.max(1, Math.round(Number(request.count) || 1)));
-      for (let clickCount = 1; clickCount <= clicks; clickCount++) {
-        const press = { x, y, button, clickCount, modifiers };
-        events.push({ type: 'mousePressed', ...press }, { type: 'mouseReleased', ...press });
-      }
+    await dispatchMouse(contents, step, target, [{ type: 'mouseMoved', x, y, modifiers }]);
+    if (request.action !== 'click') return;
+    // The pointer arriving can open something over the ref, such as a menu.
+    if (request.ref) await refuseCovered(contents, entry, request.ref, target);
+    const button = ['left', 'right', 'middle'].includes(request.button) ? request.button : 'left';
+    const clicks = Math.min(MAX_CLICKS, Math.max(1, Math.round(Number(request.count) || 1)));
+    const events = [];
+    for (let clickCount = 1; clickCount <= clicks; clickCount++) {
+      const press = { x, y, button, clickCount, modifiers };
+      events.push({ type: 'mousePressed', ...press }, { type: 'mouseReleased', ...press });
     }
     await dispatchMouse(contents, step, target, events);
   }
@@ -174,18 +177,13 @@ function createBrowserActions({
         sessionId = target.frame.sessionId;
         await send(dbg, sessionId, 'DOM.focus', { backendNodeId: target.backendNodeId });
       } else {
-        sessionId = await focusedSession(dbg);
+        ({ sessionId, document } = await focusedFrame(dbg));
       }
       // The text, and then Enter, go only to the document they were aimed at.
-      const ready = async () => {
-        if (document && !(await frameHolds(dbg, sessionId, document)))
-          throw new Error(PAGE_CHANGED);
-        startInput(step);
-      };
-      await ready();
+      await inputReady(dbg, step, sessionId, document);
       if (text) await send(dbg, sessionId, 'Input.insertText', { text });
       if (request.submit) {
-        await ready();
+        await inputReady(dbg, step, sessionId, document);
         await pressOn(dbg, sessionId, keyOf('Enter'));
       }
     });
@@ -195,9 +193,9 @@ function createBrowserActions({
     const key = keyOf(request.key);
     const repeat = Math.min(MAX_REPEAT, Math.max(1, Math.round(Number(request.repeat) || 1)));
     await runWithWebContentsDebugger(contents, async (dbg) => {
-      const sessionId = await focusedSession(dbg);
+      const { sessionId, document } = await focusedFrame(dbg);
       for (let i = 0; i < repeat; i++) {
-        startInput(step);
+        await inputReady(dbg, step, sessionId, document);
         await pressOn(dbg, sessionId, key);
       }
     });
@@ -214,42 +212,51 @@ function createBrowserActions({
       return { x, y };
     }
     const target = await reading.pointForRef(contents, entry, request.ref);
-    const cover = await coverOf(contents, entry, request.ref, target);
-    if (cover) throw new Error(`${request.ref} is covered by ${cover} there; deal with it first.`);
+    await refuseCovered(contents, entry, request.ref, target);
     return target;
   }
 
+  async function refuseCovered(contents, entry, ref, point) {
+    const cover = await coverOf(contents, entry, ref, point);
+    if (cover) throw new Error(`${ref} is covered by ${cover} there; deal with it first.`);
+  }
+
   // What would receive input at a ref's point instead of the ref's element,
-  // described with a ref of its own; nothing when the ref would. A ref in a
-  // cross-site frame is checked in the top page, where its iframe must take
-  // the input, and again in its own frame.
+  // described with a ref of its own; nothing when the ref would. The point is
+  // checked in the ref's own frame, then, for a ref in a cross-site frame, in
+  // each frame outside it, where the iframe it sits in must take the input.
   function coverOf(contents, entry, ref, point) {
     return reading.withPage(contents, async (dbg) => {
       const target = await reading.lookupRef(dbg, entry, ref);
-      const { sessionId } = target.frame;
-      if (sessionId) {
-        const top = await hitAt(dbg, undefined, point);
-        if (top && top.backendNodeId !== (await topOwner(dbg, sessionId)))
-          return describeCover(dbg, undefined, entry, top);
-      }
-      const hit = await hitAt(dbg, sessionId, point.local);
-      if (!hit) return undefined;
+      let { sessionId } = target.frame;
+      let at = [point.local.x, point.local.y];
+      const hit = await hitAt(dbg, sessionId, at);
       if (
-        hit.frameId === target.frame.id &&
-        (await holds(dbg, sessionId, target.backendNodeId, hit))
+        hit &&
+        !(
+          hit.frameId === target.frame.id &&
+          (await holds(dbg, sessionId, target.backendNodeId, hit))
+        )
       )
-        return undefined;
-      return describeCover(dbg, sessionId, entry, hit);
+        return describeCover(dbg, sessionId, entry, hit);
+      while (sessionId) {
+        const { parent, owner, toParent } = await frameStep(dbg, sessionId);
+        at = toParent(at);
+        const outer = await hitAt(dbg, parent, at);
+        if (outer && outer.backendNodeId !== owner) return describeCover(dbg, parent, entry, outer);
+        sessionId = parent;
+      }
+      return undefined;
     });
   }
 
-  // The node that takes input at a point in a frame's own viewport; the hit
+  // The node that takes input at [x, y] in a frame's own viewport; the hit
   // test takes that frame's page coordinates.
-  async function hitAt(dbg, sessionId, point) {
+  async function hitAt(dbg, sessionId, [x, y]) {
     const { cssLayoutViewport: view } = await send(dbg, sessionId, 'Page.getLayoutMetrics');
     return send(dbg, sessionId, 'DOM.getNodeForLocation', {
-      x: point.x + view.pageX,
-      y: point.y + view.pageY,
+      x: x + view.pageX,
+      y: y + view.pageY,
       includeUserAgentShadowDOM: false,
     }).catch(() => undefined);
   }
@@ -279,9 +286,9 @@ function createBrowserActions({
       fetchRelatives: false,
     }).catch(() => ({ nodes: [] }));
     const node = nodes.find((candidate) => !candidate.ignored);
-    // Only a label the page gave it: a name built from its content can hold
-    // what a masked field holds.
-    const name = node ? labelOf(node).slice(0, 80) : '';
+    // Only a label the page gave it, and never a field's: a name built from
+    // content, or a field's own, can hold what a masked field holds.
+    const name = node && !isField(node) ? labelOf(node).slice(0, 80) : '';
     // An element the accessibility tree ignores is named by its tag.
     const role =
       node && (name || !['none', 'generic'].includes(node.role?.value))
@@ -297,12 +304,16 @@ function createBrowserActions({
   function dispatchMouse(contents, step, target, events) {
     return runWithWebContentsDebugger(contents, async (dbg) => {
       for (const event of events) {
-        if (target.document && !(await frameHolds(dbg, target.sessionId, target.document)))
-          throw new Error(PAGE_CHANGED);
-        startInput(step);
+        await inputReady(dbg, step, target.sessionId, target.document);
         await dbg.sendCommand('Input.dispatchMouseEvent', event);
       }
     });
+  }
+
+  // Input goes out only while the document it was aimed at is still there.
+  async function inputReady(dbg, step, sessionId, document) {
+    if (document && !(await frameHolds(dbg, sessionId, document))) throw new Error(PAGE_CHANGED);
+    startInput(step);
   }
 
   async function inspect(contents, entry, request) {

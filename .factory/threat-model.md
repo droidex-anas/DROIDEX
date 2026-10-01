@@ -972,7 +972,7 @@ Gaining higher privileges than intended. In this system, the critical escalation
 
 **Vulnerable Components:**
 
-- `electron/nativeBrowserPreload.cjs` (49KB, runs in untrusted page context, `sandbox: false`)
+- `electron/nativeBrowserPreload.cjs` (44KB, runs in untrusted page context, `sandbox: false`)
 - `electron/main.cjs` (line 671: `sandbox: false` on WebContentsView)
 
 **Attack Vector:**
@@ -1014,13 +1014,13 @@ const view = new WebContentsView({
 **Existing Mitigations:**
 
 - `contextIsolation: true` isolates preload context from page context (the page cannot directly access preload's globals)
-- Only 3 functions exposed via `contextBridge`
-- `executeJavaScript` calls use `JSON.stringify()` for parameter interpolation
+- The preload exposes nothing to the page: main calls its functions in the preload's isolated world (`executeJavaScriptInIsolatedWorld`, `electron/browserPageScript.cjs`), and agent input is CDP input from main, not page-script events
+- Arguments to those calls are interpolated with `JSON.stringify()`
 
 **Gaps:**
 
-- `sandbox: false` means any contextBridge bypass or prototype pollution in the preload grants full Node access
-- The preload is 49KB of DOM-processing code -- a large attack surface
+- `sandbox: false` means any isolated-world escape or prototype pollution in the preload grants full Node access
+- The preload is 44KB of DOM-processing code -- a large attack surface
 - `sandbox: true` would eliminate this risk but requires refactoring all Node-API usage to IPC
 
 **Severity:** HIGH | **Likelihood:** MEDIUM
