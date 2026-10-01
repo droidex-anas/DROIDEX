@@ -409,8 +409,10 @@ function onFormSubmit(event) {
 
 function fillCredentials(payload) {
   try {
-    const username = payload && typeof payload.username === 'string' ? payload.username : '';
-    const password = payload && typeof payload.password === 'string' ? payload.password : '';
+    if (!payload || payload.origin !== location.origin)
+      return { ok: false, filled: false, error: 'The page changed before the login was filled.' };
+    const username = typeof payload.username === 'string' ? payload.username : '';
+    const password = typeof payload.password === 'string' ? payload.password : '';
     if (!password) return { ok: false, filled: false };
     const passwordField = firstVisible(document.querySelectorAll('input[type="password"]'));
     if (!passwordField) return { ok: false, filled: false };
@@ -505,14 +507,14 @@ function inspectElement(selector) {
   };
 }
 
-// A copy of an element without what was typed into its editable regions, its
-// own included; an input's typed value is never in its markup either.
+// A copy of an element without what was typed into its text areas and
+// editable regions, its own included; an input's value never shows in its
+// markup either.
 function withoutTypedContent(el) {
+  const typed = 'textarea, [contenteditable]:not([contenteditable="false"])';
   const clone = el.cloneNode(true);
-  if (el.isContentEditable) clone.textContent = '[redacted]';
-  else
-    for (const host of clone.querySelectorAll('[contenteditable]:not([contenteditable="false"])'))
-      host.textContent = '[redacted]';
+  if (el.isContentEditable || el instanceof HTMLTextAreaElement) clone.textContent = '[redacted]';
+  else for (const field of clone.querySelectorAll(typed)) field.textContent = '[redacted]';
   return clone;
 }
 

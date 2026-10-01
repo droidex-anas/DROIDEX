@@ -98,8 +98,13 @@ function createBrowserActions({
     const modifiers = modifiersOf(request.modifiers);
     await dispatchMouse(contents, step, target, [{ type: 'mouseMoved', x, y, modifiers }]);
     if (request.action !== 'click') return;
-    // The pointer arriving can open something over the ref, such as a menu.
-    if (request.ref) await refuseCovered(contents, entry, request.ref, target);
+    // The pointer arriving can move the ref, or open something over it.
+    if (request.ref) {
+      const now = await reading.pointForRef(contents, entry, request.ref);
+      if (Math.abs(now.x - x) > 1 || Math.abs(now.y - y) > 1)
+        throw new Error(`${request.ref} moved when the pointer reached it; try again.`);
+      await refuseCovered(contents, entry, request.ref, now);
+    }
     const button = ['left', 'right', 'middle'].includes(request.button) ? request.button : 'left';
     const clicks = Math.min(MAX_CLICKS, Math.max(1, Math.round(Number(request.count) || 1)));
     const events = [];

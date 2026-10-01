@@ -116,40 +116,82 @@ async function frameHolds(dbg, sessionId, loaderId) {
   return holds(frameTree);
 }
 
-// The session of the frame that has the keyboard focus, followed down from the
-// top through each cross-site iframe that holds it, and the document of that
-// session's frame. A same-process frame takes keys through its parent's
-// session.
+// The frame that has the keyboard focus, followed down from the top through
+// every iframe that holds it: the session to send keys on (a same-process
+// frame takes them through its parent's session) and that frame's document.
 async function focusedFrame(dbg) {
-  const sessionId = await focusedSession(dbg);
-  const { frameTree } = await send(dbg, sessionId, 'Page.getFrameTree');
-  return { sessionId, document: frameTree.frame.loaderId };
-}
-
-async function focusedSession(dbg) {
   const sessions = await attachFrames(dbg);
   let sessionId;
-  for (;;) {
-    const { result } = await send(dbg, sessionId, 'Runtime.evaluate', {
-      expression: 'document.activeElement',
-    });
-    if (!result?.objectId) return sessionId;
-    const { node } = await send(dbg, sessionId, 'DOM.describeNode', { objectId: result.objectId });
+  let frameId; // the same-process frame in the session that holds the focus
+  let documentId; // its document, as a remote object
+  const held = [];
+  try {
+    for (;;) {
+      const node = await activeElement(dbg, sessionId, documentId);
+      if (node?.localName !== 'iframe' && node?.localName !== 'frame') break;
+      const child = await crossSiteChild(dbg, sessions, sessionId, node.backendNodeId);
+      if (child) {
+        [sessionId, frameId, documentId] = [child, undefined, undefined];
+        continue;
+      }
+      const { node: owner } = await send(dbg, sessionId, 'DOM.describeNode', {
+        backendNodeId: node.backendNodeId,
+        pierce: true,
+      });
+      if (!owner.contentDocument) break;
+      const { object } = await send(dbg, sessionId, 'DOM.resolveNode', {
+        backendNodeId: owner.contentDocument.backendNodeId,
+      });
+      held.push({ sessionId, objectId: object.objectId });
+      [frameId, documentId] = [owner.frameId, object.objectId];
+    }
+    const { frameTree } = await send(dbg, sessionId, 'Page.getFrameTree');
+    return { sessionId, document: loaderOf(frameTree, frameId) ?? frameTree.frame.loaderId };
+  } finally {
+    for (const object of held)
+      await send(dbg, object.sessionId, 'Runtime.releaseObject', {
+        objectId: object.objectId,
+      }).catch(() => undefined);
+  }
+}
+
+// The element with the focus in a session's top document, or in the given one.
+async function activeElement(dbg, sessionId, documentId) {
+  const { result } = documentId
+    ? await send(dbg, sessionId, 'Runtime.callFunctionOn', {
+        objectId: documentId,
+        functionDeclaration: 'function () { return this.activeElement; }',
+      })
+    : await send(dbg, sessionId, 'Runtime.evaluate', { expression: 'document.activeElement' });
+  if (!result?.objectId) return undefined;
+  try {
+    return (await send(dbg, sessionId, 'DOM.describeNode', { objectId: result.objectId })).node;
+  } finally {
     await send(dbg, sessionId, 'Runtime.releaseObject', { objectId: result.objectId }).catch(
       () => undefined,
     );
-    if (node.localName !== 'iframe' && node.localName !== 'frame') return sessionId;
-    let next;
-    for (const [childId, child] of sessions) {
-      if (child.parent !== sessionId) continue;
-      const owner = await send(dbg, sessionId, 'DOM.getFrameOwner', {
-        frameId: child.frameId,
-      }).catch(() => undefined);
-      if (owner?.backendNodeId === node.backendNodeId) next = childId;
-    }
-    if (!next) return sessionId;
-    sessionId = next;
   }
+}
+
+// The cross-site frame whose iframe element in this session is the given node.
+async function crossSiteChild(dbg, sessions, sessionId, backendNodeId) {
+  for (const [childId, child] of sessions) {
+    if (child.parent !== sessionId) continue;
+    const owner = await send(dbg, sessionId, 'DOM.getFrameOwner', {
+      frameId: child.frameId,
+    }).catch(() => undefined);
+    if (owner?.backendNodeId === backendNodeId) return childId;
+  }
+  return undefined;
+}
+
+function loaderOf(tree, frameId) {
+  if (tree.frame.id === frameId) return tree.frame.loaderId;
+  for (const child of tree.childFrames ?? []) {
+    const loaderId = loaderOf(child, frameId);
+    if (loaderId) return loaderId;
+  }
+  return undefined;
 }
 
 // Whether a frame painted twice within a short wait, so a copy of the screen
