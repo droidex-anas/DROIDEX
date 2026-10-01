@@ -116,7 +116,7 @@ test('a crashed page reports the crash and blocks actions until it is reloaded',
   assert.deepEqual(loadFailures, ['crashed']);
   await assert.rejects(manager.open('tab', 'https://app.test/next'), /crashed/);
 
-  manager.reload('tab');
+  await manager.reload('tab');
   await manager.open('tab', 'https://app.test/next');
   assert.deepEqual(loads, [
     'https://app.test/',

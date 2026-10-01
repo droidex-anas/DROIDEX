@@ -119,18 +119,32 @@ function createNativeBrowserManager(options) {
     entry.loadingPromise = null;
   }
 
-  async function requireNativeBrowserGuest(browserSessionId) {
+  async function waitForGuest(browserSessionId) {
     const entry = ensureNativeBrowserEntry(browserSessionId);
     if (!liveContents(entry)) await guests.waitForGuest(entry.browserSessionId);
+    return entry;
+  }
+
+  function rejectCrashed(entry) {
     if (entry.crashed) throw new Error(`The ${options.appName} browser page crashed. Reload it.`);
     return entry;
   }
 
+  async function requireNativeBrowserGuest(browserSessionId) {
+    return rejectCrashed(await waitForGuest(browserSessionId));
+  }
+
   // Page actions run against the restored page, not the blank one before it.
-  async function requireLoadedGuest(browserSessionId) {
-    const entry = await requireNativeBrowserGuest(browserSessionId);
-    await entry.loadingPromise;
+  // A failed load can start a retry before it settles, so wait for the
+  // current one until none is left.
+  async function waitForLoadedGuest(browserSessionId) {
+    const entry = await waitForGuest(browserSessionId);
+    while (entry.loadingPromise) await entry.loadingPromise;
     return entry;
+  }
+
+  async function requireLoadedGuest(browserSessionId) {
+    return rejectCrashed(await waitForLoadedGuest(browserSessionId));
   }
 
   async function openNativeBrowser(browserSessionId, url, viewport) {
@@ -157,8 +171,9 @@ function createNativeBrowserManager(options) {
     nativeBrowsers.delete(entry.browserSessionId);
   }
 
-  function reloadNativeBrowser(browserSessionId) {
-    const entry = nativeBrowsers.get(urls.normalizeNativeBrowserSessionId(browserSessionId));
+  // A crashed page can always be reloaded; that is how it recovers.
+  async function reloadNativeBrowser(browserSessionId) {
+    const entry = await waitForLoadedGuest(browserSessionId);
     const contents = liveContents(entry);
     if (!contents) throw new Error(`${options.appName} browser is not open.`);
     if (entry.failedRestoreUrl) {
@@ -171,8 +186,8 @@ function createNativeBrowserManager(options) {
     contents.reload();
   }
 
-  function navigateNativeBrowserHistory(browserSessionId, direction) {
-    const entry = nativeBrowsers.get(urls.normalizeNativeBrowserSessionId(browserSessionId));
+  async function navigateNativeBrowserHistory(browserSessionId, direction) {
+    const entry = await requireLoadedGuest(browserSessionId);
     const contents = liveContents(entry);
     if (!contents) throw new Error(`${options.appName} browser is not open.`);
     const history = contents.navigationHistory;
@@ -192,7 +207,7 @@ function createNativeBrowserManager(options) {
   function reloadFocusedNativeBrowser(focusedContents) {
     const browserSessionId = focusedContents && guests.sessionIdFor(focusedContents);
     if (!browserSessionId) return false;
-    reloadNativeBrowser(browserSessionId);
+    void reloadNativeBrowser(browserSessionId).catch(() => undefined);
     return true;
   }
 
