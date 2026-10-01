@@ -42,7 +42,7 @@ function createBrowserActions({
     const navigation = observeNavigation(contents);
     try {
       return await unthrottled(contents, async () => {
-        const step = { navigation, sent: false };
+        const step = { navigation, sent: false, startBy: request.startBy };
         // The action's own input ends before it reports, even when a navigation
         // settles first, so nothing of it lands under the next one.
         let failure;
@@ -430,9 +430,11 @@ function createBrowserActions({
   return { act, pageSnapshot };
 }
 
-// Called right before an action changes the page.
+// Called right before an action changes the page. No input goes out once
+// its caller has given up.
 function startInput(step) {
   if (step.navigation.started()) throw new Error(PAGE_CHANGED);
+  if (Date.now() >= step.startBy) throw new Error('The browser page did not finish in time.');
   step.sent = true;
 }
 

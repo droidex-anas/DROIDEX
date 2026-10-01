@@ -53,8 +53,10 @@ export function createDesktopBrowserChannel(
     if (!send || !channel.connected) {
       return Promise.reject(new Error('The browser is only available in the DROIDEX desktop app.'));
     }
-    // A wait is given its own length on top.
+    // A wait is given its own length on top. Main gets the expiry too, so the
+    // time a request spends on the way counts against it.
     const limitMs = timeoutMs + (request.waitMs ?? 0);
+    const expiresAt = Date.now() + limitMs;
     return new Promise((resolve, reject) => {
       const timer = setTimeout(() => {
         settle(request.requestId)?.reject(
@@ -66,7 +68,13 @@ export function createDesktopBrowserChannel(
       pending.set(request.requestId, { resolve, reject, timer });
       try {
         send(
-          { type: 'browser.request', id: request.requestId, request, timeoutMs: limitMs },
+          {
+            type: 'browser.request',
+            id: request.requestId,
+            request,
+            timeoutMs: limitMs,
+            expiresAt,
+          },
           (error) => {
             if (error) settle(request.requestId)?.reject(error);
           },

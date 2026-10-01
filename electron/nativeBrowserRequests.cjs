@@ -59,13 +59,18 @@ function createNativeBrowserRequests({ manager, notifyRenderer }) {
   async function handle(message, reply) {
     const request = browserRequestFrom(message);
     if (!request) return;
+    const timeoutMs = sidecarTimeoutMs(message.timeoutMs);
+    const receivedAt = Date.now();
+    // Nothing starts once the caller has given up, by its own expiry when it
+    // sent one.
+    const startBy = Math.min(
+      receivedAt + timeoutMs,
+      Number.isFinite(message.expiresAt) ? message.expiresAt : Infinity,
+    );
     reply({
       type: 'browser.result',
       id: request.requestId,
-      result: await perform(
-        { ...request, receivedAt: Date.now() },
-        sidecarTimeoutMs(message.timeoutMs),
-      ),
+      result: await perform({ ...request, receivedAt, startBy }, timeoutMs),
     });
   }
 
@@ -77,10 +82,10 @@ function createNativeBrowserRequests({ manager, notifyRenderer }) {
         return result(request, true);
       }
       if (PAGELESS_ACTIONS.has(request.action)) return await performAction(request);
-      return await withAwakePage(request.browserSessionId, timeoutMs, async (woke, startBy) => {
+      return await withAwakePage(request.browserSessionId, timeoutMs, async (woke) => {
         if (woke) startPaintWait(request.browserSessionId);
         if (!TURN_ACTIONS.has(request.action)) return performOnPage(request);
-        return inTurn(request.browserSessionId, startBy, async () => {
+        return inTurn(request.browserSessionId, request.startBy, async () => {
           if (INPUT_ACTIONS.has(request.action)) await painting.get(request.browserSessionId);
           return performOnPage(request);
         });
@@ -92,9 +97,7 @@ function createNativeBrowserRequests({ manager, notifyRenderer }) {
     }
   }
 
-  // The work runs while the sidecar still waits for it, and a little past
-  // that; an action that has not started by the sidecar's own timeout never
-  // starts, so a caller that gave up never sees its input land later.
+  // The work runs while the sidecar still waits for it, and a little past that.
   async function withAwakePage(browserSessionId, timeoutMs, run) {
     if ((waiting.get(browserSessionId) ?? 0) >= MAX_WAITING_PER_PAGE) {
       throw new Error('Too many browser actions are already waiting on this page.');
@@ -103,7 +106,7 @@ function createNativeBrowserRequests({ manager, notifyRenderer }) {
     setWaiting(browserSessionId, 1);
     let timer;
     try {
-      const work = run(woke, Date.now() + timeoutMs);
+      const work = run(woke);
       work.catch(() => undefined);
       return await Promise.race([
         work,
@@ -258,6 +261,7 @@ function agentAction(request) {
     urlIncludes: request.urlIncludes,
     waitMs: request.waitMs,
     receivedAt: request.receivedAt,
+    startBy: request.startBy,
     value: request.value,
     submit: request.submit,
     key: request.key,
