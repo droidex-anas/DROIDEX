@@ -171,14 +171,16 @@ function createNativeBrowserManager(options) {
     nativeBrowsers.delete(entry.browserSessionId);
   }
 
-  // A crashed page can always be reloaded; that is how it recovers.
+  // Reload never waits for a load: it is how a stalled, failed or crashed page
+  // recovers. A load still in flight or a failed restore starts over.
   async function reloadNativeBrowser(browserSessionId) {
-    const entry = await waitForLoadedGuest(browserSessionId);
+    const entry = await waitForGuest(browserSessionId);
     const contents = liveContents(entry);
     if (!contents) throw new Error(`${options.appName} browser is not open.`);
-    if (entry.failedRestoreUrl) {
-      const retryUrl = entry.failedRestoreUrl;
+    const retryUrl = entry.failedRestoreUrl ?? entry.loadingUrl;
+    if (retryUrl) {
       entry.failedRestoreUrl = null;
+      forgetLoad(entry);
       return loadNativeBrowserUrl(entry, retryUrl, { force: true });
     }
     entry.crashed = false;
@@ -265,7 +267,8 @@ function createNativeBrowserManager(options) {
         return { ok: true };
       })
       .catch((err) => {
-        if (entry.contents === contents && entry.targetUrl === url) entry.targetUrl = null;
+        // Only the current load may forget its URL; a superseded one was aborted.
+        if (entry.loadingPromise === load && entry.targetUrl === url) entry.targetUrl = null;
         if (!contents.isDestroyed() && !urls.isLoadAbortError(err))
           console.error(`failed to load browser URL: ${err.message}`);
         return { ok: false, error: err };
