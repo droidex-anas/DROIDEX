@@ -43,7 +43,8 @@ function createNativeBrowserPage({
   function setDesignMode(browserSessionId, active, scale) {
     const entry = ensureEntry(browserSessionId);
     const next = Boolean(active);
-    const shownAt = Math.min(1, Math.max(0.1, Number(scale) || 1));
+    // Any real scale down to fit; anything else counts as drawn at full size.
+    const shownAt = Number(scale) > 0 && Number(scale) <= 1 ? Number(scale) : 1;
     if (entry.state.designMode === next && entry.state.scale === shownAt) return;
     entry.state.designMode = next;
     entry.state.scale = shownAt;
