@@ -16,29 +16,6 @@ const VALUE_ROLES = new Set([
   'spinbutton',
   'slider',
 ]);
-const NAME_FROM_CONTENTS = new Set([
-  'button',
-  'link',
-  'heading',
-  'cell',
-  'gridcell',
-  'columnheader',
-  'rowheader',
-  'row',
-  'LayoutTableCell',
-  'LayoutTableRow',
-  'LabelText',
-  'checkbox',
-  'radio',
-  'switch',
-  'tab',
-  'menuitem',
-  'menuitemcheckbox',
-  'menuitemradio',
-  'option',
-  'treeitem',
-  'tooltip',
-]);
 const SENSITIVE_FIELD =
   /pass|otp|one.?time|verif|2fa|mfa|token|secret|credential|auth(?!or)|authoriz|api.?key|access.?key|private.?key|\bkey\b|cvc|cvv|csc|card.?num|cc-|security.?code|\bpin\b|ssn|iban/i;
 
@@ -93,19 +70,29 @@ function createBrowserMasking({ savedSecretsFor }) {
   return { maskFields, insideMaskedField };
 }
 
-// Nodes whose accessible name Chromium builds from their content, which folds
-// in the value of a field inside them ("Code 424242" for a heading holding a
-// code field). They are read without a name; their content reads on its own,
-// with the field masked like any other.
+// Nodes whose accessible name Chromium built from their content while a field
+// sits inside them: the name folds in the field's value ("Code 424242" for a
+// heading holding a code field). They are read without that name; their
+// content reads on its own, with the field masked like any other. A name from
+// aria-label or the like is kept.
 function foldedNames(nodes) {
   const byId = new Map(nodes.map((node) => [node.nodeId, node]));
-  const folded = new Set();
+  const holdsField = new Set();
   for (const node of nodes) {
-    if (!VALUE_ROLES.has(node.role?.value) || !node.value?.value) continue;
-    for (let parent = byId.get(node.parentId); parent; parent = byId.get(parent.parentId))
-      if (NAME_FROM_CONTENTS.has(parent.role?.value)) folded.add(parent.nodeId);
+    if (!VALUE_ROLES.has(node.role?.value)) continue;
+    let parent = byId.get(node.parentId);
+    while (parent && !holdsField.has(parent.nodeId)) {
+      holdsField.add(parent.nodeId);
+      parent = byId.get(parent.parentId);
+    }
   }
-  return folded;
+  return new Set([...holdsField].filter((nodeId) => nameFromContents(byId.get(nodeId))));
+}
+
+// The name in effect is the first source with a value that nothing overrides.
+function nameFromContents(node) {
+  const source = node.name?.sources?.find((candidate) => candidate.value && !candidate.superseded);
+  return source?.type === 'contents';
 }
 
 // A field whose value is shown or masked; the value may be empty, as in a
