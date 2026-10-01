@@ -178,9 +178,9 @@ const FOCUS_TAKES_TEXT = `function () {
   if (this.defaultView === null) return null;
   let a = this.activeElement;
   while (a?.shadowRoot?.activeElement) a = a.shadowRoot.activeElement;
-  if (!a || a.disabled || a.readOnly) return false;
+  if (!a || a.matches(':disabled') || a.readOnly) return false;
   if (a.isContentEditable || a.localName === 'textarea') return true;
-  const notText = ['button', 'checkbox', 'color', 'file', 'hidden', 'image', 'radio', 'range', 'reset', 'submit'];
+  const notText = ['button', 'checkbox', 'color', 'date', 'datetime-local', 'file', 'hidden', 'image', 'month', 'radio', 'range', 'reset', 'submit', 'time', 'week'];
   return a.localName === 'input' && !notText.includes(a.type);
 }`;
 

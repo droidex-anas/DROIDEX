@@ -34,6 +34,8 @@ const NAMED_KEYS = {
   pageup: ['PageUp', 'PageUp', 33],
   pagedown: ['PageDown', 'PageDown', 34],
 };
+// What Shift makes of each digit and symbol key on a US keyboard, in pairs.
+const SHIFTED = '1!2@3#4$5%6^7&8*9(0)-_=+[{]}\\|;:\'",<.>/?`~';
 // On macOS a Meta chord edits only when Chromium is given the command.
 const MAC_COMMANDS = { a: 'selectAll', c: 'copy', x: 'cut', v: 'paste', z: 'undo' };
 
@@ -54,7 +56,10 @@ function keyOf(spec) {
     [key, code, keyCode, text] = named;
   } else if (name.length === 1) {
     const upper = name.toUpperCase();
-    key = modifiers & SHIFT ? upper : name;
+    // At an even place is a plain key; after it, what Shift makes of it.
+    const plain = SHIFTED.indexOf(name);
+    const shifted = plain % 2 === 0 ? SHIFTED[plain + 1] : upper;
+    key = modifiers & SHIFT ? shifted : name;
     code = /[a-z]/i.test(name) ? `Key${upper}` : /\d/.test(name) ? `Digit${name}` : undefined;
     // A symbol's character code is another key's code ("%" is ArrowLeft's).
     keyCode = code ? upper.charCodeAt(0) : 0;
