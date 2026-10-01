@@ -12,7 +12,9 @@ import {
 } from '../types/bridge';
 
 type Listener = (event: ServerEvent) => void;
-type BatchListener = (events: readonly ServerEvent[]) => void;
+// `fromSnapshot` marks the events a fresh stream starts from: what the last
+// stream said may no longer hold.
+type BatchListener = (events: readonly ServerEvent[], fromSnapshot: boolean) => void;
 type ReconnectScheduler = (callback: () => void, delayMs: number) => void;
 type WireMessageValidator = (value: unknown) => ServerWireMessage | null;
 
@@ -175,7 +177,7 @@ export class Bridge {
   private receiveSnapshot(message: BridgeSnapshotMessage): void {
     this.lastGeneration = message.generation;
     this.lastSeq = message.lastSeq;
-    this.publishEvents(eventsFromSnapshot(message));
+    this.publishEvents(eventsFromSnapshot(message), true);
   }
 
   private handleMalformedBatch(ws: WebSocket): void {
@@ -193,13 +195,13 @@ export class Bridge {
     ws.close(4002, 'malformed bridge message');
   }
 
-  private publishEvents(events: readonly ServerEvent[]): void {
+  private publishEvents(events: readonly ServerEvent[], fromSnapshot = false): void {
     for (const event of events) {
       noteBridgeEventReceived(event);
       this.adoptTurnBaseline(event);
       for (const listener of this.listeners) listener(event);
     }
-    for (const listener of this.batchListeners) listener(events);
+    for (const listener of this.batchListeners) listener(events, fromSnapshot);
   }
 
   private adoptTurnBaseline(event: ServerEvent): void {

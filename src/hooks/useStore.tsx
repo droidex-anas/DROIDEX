@@ -106,6 +106,7 @@ import type {
   DesignReference,
   VoiceNarration,
 } from '../types/bridge';
+import { PROVIDER_KINDS } from '../types/bridge';
 import { addWorkspaceCwd, removeWorkspaceCwd } from '../lib/workspaces';
 import { createOrderedActionBatcher, type OrderedActionBatcher } from './orderedActionBatcher';
 import { isHistoryStatusError, applyHistoryServerEvent } from '../lib/historyHealth';
@@ -752,6 +753,7 @@ export type Action =
   | { type: 'MODELS_LIST'; models: ModelInfo[] }
   | { type: 'PROVIDER_STATUSES'; statuses: ProviderStatus[] }
   | { type: 'USAGE_UPDATED'; usage: ProviderUsage }
+  | { type: 'BRIDGE_SNAPSHOT' }
   | { type: 'SET_DRAFT_PROVIDER'; provider: ProviderKind }
   | {
       type: 'SKILLS_LIST';
@@ -2570,6 +2572,17 @@ export function reducer(state: AppState, action: Action): AppState {
     case 'USAGE_UPDATED':
       return { ...state, usage: { ...state.usage, [action.usage.provider]: action.usage } };
 
+    // A fresh stream may come from a new sidecar, maybe on another account:
+    // the usage the last one read is unconfirmed until this one answers.
+    case 'BRIDGE_SNAPSHOT': {
+      const usage: AppState['usage'] = {};
+      for (const provider of PROVIDER_KINDS) {
+        const known = state.usage[provider];
+        if (known) usage[provider] = { ...known, stale: true };
+      }
+      return { ...state, usage };
+    }
+
     case 'SKILLS_LIST':
       return {
         ...state,
@@ -3081,8 +3094,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       delayMs: 16,
     });
     bridgeActionBatcherRef.current = batcher;
-    const unsub = bridge.subscribeBatch((events) => {
-      const actions: Action[] = [];
+    const unsub = bridge.subscribeBatch((events, fromSnapshot) => {
+      const actions: Action[] = fromSnapshot ? [{ type: 'BRIDGE_SNAPSHOT' }] : [];
       for (const ev of events) {
         // Verbose per-event logging runs on every streaming token and eagerly
         // deep-clones + redacts the whole event, so keep it to dev builds only;
