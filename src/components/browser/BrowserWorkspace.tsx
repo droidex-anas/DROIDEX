@@ -456,6 +456,7 @@ export default function BrowserWorkspace({
             className="shrink-0 rounded-md border border-droid-border bg-droid-surface px-2 py-0.5 text-[11px] text-droid-text-muted transition-colors hover:bg-droid-elevated/60 hover:text-droid-text"
             onClick={() => {
               setLoadFailure(null);
+              if (browser) setBrowserPageCrashed(browser.browserSessionId, false);
               startLoading();
               if (browserKey && browser) reloadBrowser(browserKey);
               else openCurrentUrl();

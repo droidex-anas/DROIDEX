@@ -177,7 +177,8 @@ function createNativeBrowserManager(options) {
     const entry = await waitForGuest(browserSessionId);
     const contents = liveContents(entry);
     if (!contents) throw new Error(`${options.appName} browser is not open.`);
-    const retryUrl = entry.failedRestoreUrl ?? entry.loadingUrl;
+    const pendingUrl = entry.loadingUrl === entry.targetUrl ? entry.loadingUrl : null;
+    const retryUrl = entry.failedRestoreUrl ?? pendingUrl;
     if (retryUrl) {
       entry.failedRestoreUrl = null;
       forgetLoad(entry);
