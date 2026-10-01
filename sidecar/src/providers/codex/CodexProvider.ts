@@ -61,7 +61,6 @@ async function initialize(client: AppServerClient): Promise<InitializeResponse> 
 export class CodexProvider implements Provider {
   readonly kind = 'codex' as const;
 
-  // Every session hands the account windows Codex pushes to this listener.
   constructor(private readonly onUsage?: UsageMetersListener) {}
 
   create({
@@ -199,8 +198,6 @@ export class CodexProvider implements Provider {
     return status;
   }
 
-  // The account's usage with no session open: one short-lived app server
-  // that answers the read and is closed.
   async readUsage(signal: AbortSignal): Promise<UsageReading> {
     const executable = resolveCodexPath();
     if (!executable) throw new Error(INSTALL_HINT);

@@ -52,7 +52,6 @@ export class ClaudeProvider implements Provider {
   // CLI's own name for it, suffix included.
   private defaultModel?: ClaudeDefaultModel;
 
-  // Every session hands the account windows the CLI pushes to this listener.
   constructor(private readonly onUsage?: UsageMetersListener) {}
 
   validateModelSettings(settings: ProviderModelSettings): void {
@@ -223,9 +222,8 @@ export class ClaudeProvider implements Provider {
     }
   }
 
-  // The account's plan limits with no session open: the same never-yielding
-  // prompt as the probe, with the claude.ai connectors and IDE discovery off
-  // too, torn down once the CLI has answered.
+  // The probe's idle CLI, with the claude.ai connectors and IDE discovery off
+  // too, since it only has to answer the usage call.
   async readUsage(signal: AbortSignal): Promise<UsageReading> {
     const executable = this.requireExecutable();
     signal.throwIfAborted();

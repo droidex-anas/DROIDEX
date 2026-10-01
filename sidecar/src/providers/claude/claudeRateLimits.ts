@@ -60,8 +60,7 @@ function refusedLimit(info: SDKRateLimitInfo | undefined): UsageLimit {
 }
 
 // A live session's account usage: read through its own query, and pushed as
-// the CLI reports a window changing. The read is experimental in the SDK, so a
-// failure only leaves the last good meters standing.
+// the CLI reports a window changing.
 export class ClaudeUsage {
   constructor(
     private readonly query: Query,

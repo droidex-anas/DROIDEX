@@ -1,9 +1,7 @@
-// Each harness account's usage, kept current while DROIDEX runs: the windows a
-// harness pushes as they change, a read after every turn, a light read every
-// few minutes, and a read whenever the renderer asks. Reads go through a live
-// session's own connection; only an open /usage with no live session to read
-// through may start a short-lived harness process. Nothing runs before the
-// first session or /usage.
+// Each harness account's usage, kept current from the windows a harness
+// pushes, a read after every turn, a light read every few minutes and the
+// renderer's asks. Reads go through a live session's own connection; only an
+// open /usage with no live session may start a short-lived harness process.
 import type { ProviderUsage, ServerEvent, UsageMeter } from '../protocol.js';
 import { PROVIDER_KINDS, type ProviderKind } from './providerKind.js';
 import type { ProviderSession, ReportedMeter, UsageReading } from './session.js';
@@ -61,8 +59,6 @@ export class AccountUsage {
     private readonly now: () => number = Date.now,
   ) {}
 
-  // The renderer asks: /usage opened or its Refresh was pressed (`immediate`),
-  // the window came back into focus, or a chat on this harness came up.
   refresh(
     provider: ProviderKind,
     { panelOpen, immediate }: { panelOpen: boolean; immediate: boolean },
@@ -129,18 +125,14 @@ export class AccountUsage {
     const signal = AbortSignal.any([account.abort.signal, AbortSignal.timeout(READ_TIMEOUT_MS)]);
     const answer = source(signal);
     account.outstanding = true;
-    void answer
-      .catch(() => undefined)
-      .finally(() => {
-        account.outstanding = false;
-      });
-    const reading = this.settle(provider, account, untilAborted(answer, signal), now).finally(
-      () => {
-        account.reading = undefined;
-      },
-    );
-    account.reading = reading;
-    return reading;
+    void Promise.allSettled([answer]).then(() => {
+      account.outstanding = false;
+    });
+    const reading = this.settle(provider, account, untilAborted(answer, signal), now);
+    account.reading = reading.finally(() => {
+      account.reading = undefined;
+    });
+    return account.reading;
   }
 
   // A live session reads through its own connection. Droid's read is a plain

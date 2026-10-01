@@ -183,8 +183,7 @@ export interface ProviderSession {
   setInteractionMode?(mode: SessionInteractionMode): Promise<void>;
   // Present only on a provider that can hold a voice conversation.
   readonly voice?: ProviderVoice;
-  // Reads the account's usage through this session's own connection, for a
-  // harness that can.
+  // Present when the session's own connection can read the account's usage.
   readonly usage?: { read(signal: AbortSignal): Promise<UsageReading> };
   interrupt(): Promise<void>;
   close(): Promise<void>;
