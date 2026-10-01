@@ -14,6 +14,7 @@ function createNativeBrowserPage({
   restoreForAction,
   liveContents,
   credentials,
+  devTools,
   runWithWebContentsDebugger,
   findEntryForContents,
   nativeImage,
@@ -106,6 +107,14 @@ function createNativeBrowserPage({
       // The page takes its new size at full speed, shown or not.
       await unthrottled(contents, () => laidOutAt(contents, request.viewport));
       return actions.act(contents, entry, { ...request, action: 'snapshot' });
+    }
+    if (request.action === 'evaluate') {
+      const value = await devTools.evaluate(contents, request.script, () => {
+        if (Date.now() >= request.startBy)
+          throw new Error('The browser page did not finish in time.');
+      });
+      const after = await actions.act(contents, entry, { ...request, action: 'snapshot' });
+      return { ...after, text: `${value}\n${after.text}` };
     }
     if (request.action === 'wait') {
       // The page runs at full speed while the agent waits on it.
