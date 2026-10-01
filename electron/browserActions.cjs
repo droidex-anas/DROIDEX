@@ -203,11 +203,12 @@ function createBrowserActions({
       await inputReady(dbg, step, sessionId, document);
       if (text) await send(dbg, sessionId, 'Input.insertText', { text });
       if (request.submit) {
-        await inputReady(dbg, step, sessionId, document);
         await keepsFocus(dbg, sessionId, document);
         // An input handler can move the focus on to another control.
         if (request.ref && !(await reading.hasFocus(dbg, sessionId, refNode)))
           throw new Error(`${request.ref} lost the focus before Enter; read the page again.`);
+        // The page check comes last, right before the key.
+        await inputReady(dbg, step, sessionId, document);
         await pressOn(dbg, sessionId, keyOf('Enter'), stillOn);
       }
     });
@@ -220,9 +221,9 @@ function createBrowserActions({
       const { sessionId, document } = await focusedFrame(dbg);
       const stillOn = holdsKey(dbg, step, sessionId, document);
       for (let i = 0; i < repeat; i++) {
-        await inputReady(dbg, step, sessionId, document);
         // A key can move the focus; the rest go only to the frame they began in.
         if (i > 0) await keepsFocus(dbg, sessionId, document);
+        await inputReady(dbg, step, sessionId, document);
         await pressOn(dbg, sessionId, key, stillOn);
       }
     });
