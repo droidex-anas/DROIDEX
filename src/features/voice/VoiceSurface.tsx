@@ -2,7 +2,6 @@ import { memo, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 import { ChevronDown, Keyboard, Mic, MicOff, Settings2, X } from 'lucide-react';
-import { useObscuresNativeSurfaces } from '../../hooks/useObscuresNativeSurfaces';
 import { WINDOW_CONTROLS_INSET_PX } from '../../lib/windowChrome';
 import { pushEscapeLayer } from '../../components/environment/usePopover';
 import { MessageBody } from '../../components/MessageBody';
@@ -37,7 +36,6 @@ function VoiceSurfaceDialog({ voice, appSessionId }: { voice: Voice; appSessionI
   const [settingsOpen, setSettingsOpen] = useState(false);
   const { session } = voice;
   const live = session.status === 'live';
-  useObscuresNativeSurfaces();
 
   useEffect(() => {
     const opener = document.activeElement;

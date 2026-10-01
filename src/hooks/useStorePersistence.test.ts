@@ -56,7 +56,6 @@ test('loadPersistedUiState sanitizes persisted shell fields', () => {
           ],
         },
       },
-      browserOpenKeys: { 'chat-1': true, 'chat-2': false, '': true },
       browsers: {
         'chat-1': {
           browserSessionId: 'browser-chat-1',
@@ -92,7 +91,6 @@ test('loadPersistedUiState sanitizes persisted shell fields', () => {
             tabs: [{ id: 'review', tool: 'review', label: 'Review' }],
           },
         },
-        browserOpenKeys: { 'chat-1': true, 'chat-2': false },
         browsers: {
           'chat-1': {
             browserSessionId: 'browser-chat-1',

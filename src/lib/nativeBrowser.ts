@@ -15,13 +15,6 @@ import type {
   DesignStrokePoint,
 } from '../types/bridge';
 
-export interface NativeBrowserBounds {
-  x: number;
-  y: number;
-  width: number;
-  height: number;
-}
-
 export type NativeBrowserBox = BrowserBox;
 
 export interface NativeBrowserSelection {
@@ -46,6 +39,7 @@ export interface NativeBrowserLoadFailed {
   browserSessionId?: string;
   url: string;
   error?: string;
+  crashed?: boolean;
 }
 
 export interface NativeBrowserDesignPrompt {
@@ -100,57 +94,39 @@ export function nativeBrowserAgentActionFromRequest(
   };
 }
 
-export async function openNativeBrowser(
+// Main issues the one-time token a page's <webview> must carry to attach.
+export async function reserveNativeBrowser(
+  browserSessionId: string,
+): Promise<{ src: string; generation: number }> {
+  return window.droidControl!.nativeBrowserReserve(browserSessionId);
+}
+
+export async function releaseNativeBrowser(browserSessionId: string): Promise<void> {
+  await window.droidControl!.nativeBrowserRelease(browserSessionId);
+}
+
+export async function setNativeBrowserShown(
+  browserSessionId: string,
+  shown: boolean,
+): Promise<void> {
+  await window.droidControl!.nativeBrowserShown(browserSessionId, shown);
+}
+
+async function openNativeBrowser(
   browserSessionId: string,
   url: string,
-  bounds?: NativeBrowserBounds,
   viewport?: { width: number; height: number; deviceScaleFactor: number },
 ): Promise<void> {
   if (!isDesktop()) return;
-  await window.droidControl!.nativeBrowserOpen(
-    browserSessionId,
-    url,
-    bounds ? normalizeBounds(bounds) : undefined,
-    viewport,
-  );
+  await window.droidControl!.nativeBrowserOpen(browserSessionId, url, viewport);
 }
 
-export async function attachNativeBrowser(
-  browserSessionId: string,
-  bounds: NativeBrowserBounds,
-  url?: string,
-): Promise<void> {
-  if (!isDesktop()) return;
-  await window.droidControl!.nativeBrowserAttach(browserSessionId, normalizeBounds(bounds), url);
-}
-
-export async function detachNativeBrowser(browserSessionId?: string): Promise<void> {
-  if (!isDesktop()) return;
-  await window.droidControl!.nativeBrowserDetach(browserSessionId);
-}
-
-export async function setNativeBrowserBounds(
-  browserSessionId: string,
-  bounds: NativeBrowserBounds,
-): Promise<void> {
-  if (!isDesktop()) return;
-  await window.droidControl!.nativeBrowserSetBounds(browserSessionId, normalizeBounds(bounds));
-}
-
-export async function setNativeBrowserVisible(
-  browserSessionId: string,
-  visible: boolean,
-): Promise<void> {
-  if (!isDesktop()) return;
-  await window.droidControl!.nativeBrowserSetVisible(browserSessionId, visible);
-}
-
-export async function closeNativeBrowser(browserSessionId: string): Promise<void> {
+async function closeNativeBrowser(browserSessionId: string): Promise<void> {
   if (!isDesktop()) return;
   await window.droidControl!.nativeBrowserClose(browserSessionId);
 }
 
-export async function reloadNativeBrowser(browserSessionId: string): Promise<void> {
+async function reloadNativeBrowser(browserSessionId: string): Promise<void> {
   if (!isDesktop()) return;
   await window.droidControl!.nativeBrowserReload(browserSessionId);
 }
@@ -165,12 +141,11 @@ export async function goForwardNativeBrowser(browserSessionId: string): Promise<
   return window.droidControl!.nativeBrowserGoForward(browserSessionId);
 }
 
-export async function runNativeBrowserAgentAction(
+async function runNativeBrowserAgentAction(
   request: NativeBrowserAgentAction,
   timeoutMs = 10_000,
 ): Promise<NativeBrowserAgentResult> {
-  if (!isDesktop())
-    throw new Error('DroidMaxx native browser is only available in the desktop app.');
+  if (!isDesktop()) throw new Error('The browser is only available in the desktop app.');
   return new Promise((resolve, reject) => {
     let settled = false;
     let unlisten: (() => void) | undefined;
@@ -181,24 +156,24 @@ export async function runNativeBrowserAgentAction(
       fn();
     };
     const timeout = window.setTimeout(() => {
-      finish(() => reject(new Error(`Droid Control browser action ${request.action} timed out.`)));
+      finish(() => { reject(new Error(`The browser action ${request.action} timed out.`)); });
     }, timeoutMs);
 
     unlisten = window.droidControl!.onNativeBrowserAgentResult((result) => {
       if (result.requestId !== request.requestId) return;
       window.clearTimeout(timeout);
-      finish(() => resolve(result));
+      finish(() => { resolve(result); });
     });
     window
       .droidControl!.nativeBrowserAgentAction(request)
       .then((result) => {
-        if (!result || result.requestId !== request.requestId) return;
+        if (result?.requestId !== request.requestId) return;
         window.clearTimeout(timeout);
-        finish(() => resolve(result));
+        finish(() => { resolve(result); });
       })
       .catch((err) => {
         window.clearTimeout(timeout);
-        finish(() => reject(err));
+        finish(() => { reject(err); });
       });
   });
 }
@@ -207,14 +182,14 @@ export async function performDesktopNativeBrowserRequest(
   request: BrowserNativeRequest,
 ): Promise<BrowserNativeResult> {
   try {
-    if (!isDesktop()) throw new Error('The native browser is only available in the desktop app.');
+    if (!isDesktop()) throw new Error('The browser is only available in the desktop app.');
     if (request.action === 'close') {
       await closeNativeBrowser(request.browserSessionId);
       return nativeResult(request, true);
     }
     if (request.action === 'open') {
       const targetUrl = request.url ?? 'about:blank';
-      await openNativeBrowser(request.browserSessionId, targetUrl, undefined, request.viewport);
+      await openNativeBrowser(request.browserSessionId, targetUrl, request.viewport);
       return nativeResult(request, true, await detachedSnapshot(request, targetUrl));
     }
     if (request.action === 'reload') {
@@ -249,13 +224,15 @@ export async function performDesktopNativeBrowserRequest(
       error: result.error,
     };
   } catch (error) {
-    return nativeResult(
-      request,
-      false,
-      undefined,
-      error instanceof Error ? error.message : String(error),
-    );
+    return nativeResult(request, false, undefined, ipcErrorMessage(error));
   }
+}
+
+// Electron wraps errors thrown in main as "Error invoking remote method '…':
+// Error: <message>"; only the message means anything to an agent or the user.
+function ipcErrorMessage(error: unknown): string {
+  const message = error instanceof Error ? error.message : String(error);
+  return message.replace(/^Error invoking remote method '[^']*': (?:Error: )?/, '');
 }
 
 function nativeResult(
@@ -293,7 +270,7 @@ export interface NativeBrowserCaptureOptions {
   deviceScaleFactor?: number;
 }
 
-export async function nativeBrowserCapture(
+async function nativeBrowserCapture(
   browserSessionId: string,
   box?: NativeBrowserBox,
   options?: NativeBrowserCaptureOptions,
@@ -346,12 +323,11 @@ export async function onNativeBrowserLoadFailed(
   return window.droidControl!.onNativeBrowserLoadFailed(handler);
 }
 
-export async function waitForNextNativeBrowserLoad(
+async function waitForNextNativeBrowserLoad(
   browserSessionId: string,
   timeoutMs = 8_000,
 ): Promise<NativeBrowserLoaded> {
-  if (!isDesktop())
-    throw new Error('DroidMaxx native browser is only available in the desktop app.');
+  if (!isDesktop()) throw new Error('The browser is only available in the desktop app.');
   return new Promise((resolve, reject) => {
     let settled = false;
     let unlisten: (() => void) | undefined;
@@ -362,29 +338,20 @@ export async function waitForNextNativeBrowserLoad(
       fn();
     };
     const timeout = window.setTimeout(
-      () => finish(() => reject(new Error('Droid Control browser page load timed out.'))),
+      () => { finish(() => { reject(new Error('The browser page did not finish loading in time.')); }); },
       timeoutMs,
     );
     void onNativeBrowserLoaded((event) => {
       if (event.browserSessionId !== browserSessionId) return;
       window.clearTimeout(timeout);
-      finish(() => resolve(event));
+      finish(() => { resolve(event); });
     })
       .then((nextUnlisten) => {
         unlisten = nextUnlisten;
       })
       .catch((err) => {
         window.clearTimeout(timeout);
-        finish(() => reject(err));
+        finish(() => { reject(err); });
       });
   });
-}
-
-function normalizeBounds(bounds: NativeBrowserBounds): NativeBrowserBounds {
-  return {
-    x: Math.round(bounds.x),
-    y: Math.round(bounds.y),
-    width: Math.max(1, Math.round(bounds.width)),
-    height: Math.max(1, Math.round(bounds.height)),
-  };
 }

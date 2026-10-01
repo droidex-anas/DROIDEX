@@ -33,7 +33,7 @@ export function UtilityPane({
   onActivateTab: (tabId: string) => void;
   onCloseTab: (tab: UtilityTab) => void;
   onClosePane: () => void;
-  renderTab: (tab: UtilityTab, context: { overlayOpen: boolean }) => ReactNode;
+  renderTab: (tab: UtilityTab) => ReactNode;
   expanded?: boolean;
 }) {
   const [menuOpen, setMenuOpen] = useState(false);
@@ -180,7 +180,7 @@ export function UtilityPane({
 
       <div role="tabpanel" className="min-h-0 flex-1 overflow-hidden">
         {activeTab ? (
-          <Fragment key={activeTab.id}>{renderTab(activeTab, { overlayOpen: menuOpen })}</Fragment>
+          <Fragment key={activeTab.id}>{renderTab(activeTab)}</Fragment>
         ) : (
           <div className="flex h-full items-center justify-center px-3 pb-[8vh]">
             <div className="w-full max-w-[320px]">

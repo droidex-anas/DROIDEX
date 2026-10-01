@@ -38,13 +38,11 @@ test('SESSION_LIST keeps browser state keyed by stable app session identity', ()
   const start: AppState = {
     ...initialState,
     browsers: { 'app-1': browser },
-    browserOpenKeys: { 'app-1': true },
   };
 
   const next = reducer(start, { type: 'SESSION_LIST', sessions: [session('provider-2')] });
 
   assert.equal(next.browsers, start.browsers);
-  assert.equal(next.browserOpenKeys, start.browserOpenKeys);
   assert.equal(next.browsers['app-1'].browserSessionId, 'browser-1');
   assert.equal(next.sessions['app-1'].providerSessionId, 'provider-2');
 });

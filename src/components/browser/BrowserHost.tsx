@@ -1,0 +1,129 @@
+import { useEffect, useMemo, useRef } from 'react';
+import type { CSSProperties } from 'react';
+import { useStoreSelector } from '../../hooks/useStore';
+import {
+  isBrowserPageAwake,
+  useBrowserHost,
+  type BrowserHostState,
+  type BrowserPage,
+} from '../../lib/browserHost';
+
+type Placement = 'shown' | 'working' | 'asleep';
+
+interface PageSize {
+  width: number;
+  height: number;
+}
+
+const DEFAULT_PAGE_SIZE: PageSize = { width: 1280, height: 800 };
+
+/**
+ * The Browser host layer: every live chat browser page, mounted once at the
+ * app root and never moved (see lib/browserHost.ts).
+ */
+export function BrowserHost() {
+  const host = useBrowserHost();
+  const browsers = useStoreSelector((state) => state.browsers);
+  const sizes = useMemo(() => {
+    const bySession = new Map<string, PageSize>();
+    for (const browser of Object.values(browsers))
+      bySession.set(browser.browserSessionId, browser.viewport);
+    return bySession;
+  }, [browsers]);
+
+  return (
+    <div className="contents">
+      {host.pages.map((page) => {
+        const slot = host.slot?.browserSessionId === page.browserSessionId ? host.slot : null;
+        return (
+          <BrowserPageFrame
+            key={page.key}
+            page={page}
+            placement={placementOf(host, page.browserSessionId)}
+            anchor={slot?.anchor}
+            rounded={slot?.rounded ?? false}
+            size={sizes.get(page.browserSessionId) ?? DEFAULT_PAGE_SIZE}
+          />
+        );
+      })}
+    </div>
+  );
+}
+
+function BrowserPageFrame({
+  page,
+  placement,
+  anchor,
+  rounded,
+  size,
+}: {
+  page: BrowserPage;
+  placement: Placement;
+  anchor?: string;
+  rounded: boolean;
+  size: PageSize;
+}) {
+  const webviewRef = useRef<HTMLWebViewElement>(null);
+  const shown = placement === 'shown';
+
+  useEffect(() => {
+    // A page leaving the pane must not keep the keyboard.
+    const webview = webviewRef.current;
+    if (!shown && webview && document.activeElement === webview) webview.blur();
+  }, [shown]);
+
+  return (
+    <div style={frameStyle(placement, anchor, rounded)} aria-hidden={!shown}>
+      <webview
+        ref={webviewRef}
+        src={page.src}
+        tabIndex={shown ? undefined : -1}
+        style={shown ? FILL : { width: size.width, height: size.height }}
+      />
+    </div>
+  );
+}
+
+function placementOf(host: BrowserHostState, browserSessionId: string): Placement {
+  if (host.slot?.browserSessionId === browserSessionId) return 'shown';
+  return isBrowserPageAwake(host, browserSessionId) ? 'working' : 'asleep';
+}
+
+const FILL: CSSProperties = { width: '100%', height: '100%' };
+
+function frameStyle(placement: Placement, anchor: string | undefined, rounded: boolean) {
+  if (placement === 'shown' && anchor) {
+    // Anchored to the pane's slot, so the page follows the pane's layout with
+    // no measuring. The page is pane content: anything the app stacks (menus,
+    // the expanded composer, dialogs) draws over it.
+    return {
+      position: 'fixed',
+      zIndex: 1,
+      positionAnchor: anchor,
+      positionVisibility: 'always',
+      top: 'anchor(top)',
+      left: 'anchor(left)',
+      width: 'anchor-size(width)',
+      height: 'anchor-size(height)',
+      overflow: 'hidden',
+      borderRadius: rounded ? 6 : 0,
+    } satisfies CSSProperties;
+  }
+  // Parked in a 1x1 clip at the window's top-left corner, which the window's
+  // rounded edge masks. A working page keeps rendering at full rate there and
+  // its captures work; `visibility: hidden` stops a sleeping page's frames.
+  // `position-visibility: always` everywhere: by default a box whose anchor
+  // goes away is hidden, and Chromium keeps it hidden once the pane's slot
+  // unmounts, so a parked page would never paint (or capture) again.
+  return {
+    position: 'fixed',
+    top: 0,
+    left: 0,
+    width: 1,
+    height: 1,
+    overflow: 'hidden',
+    pointerEvents: 'none',
+    positionVisibility: 'always',
+    visibility: placement === 'asleep' ? 'hidden' : undefined,
+  } satisfies CSSProperties;
+}

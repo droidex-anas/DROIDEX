@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { X } from '@droidex/icons';
 import { isDesignModeOpen } from '../../hooks/designModeState';
-import { useNativeSurfacesObscured } from '../../hooks/useObscuresNativeSurfaces';
 import { shallowEqual, useStoreDispatch, useStoreSelector } from '../../hooks/useStore';
 import { useSessionLive } from '../../hooks/useSessionLive';
 import {
@@ -42,11 +41,9 @@ import { createLocalDesignTranscriptEvent, newQueueId } from '../../lib/promptQu
 
 export default function BrowserWorkspace({
   expanded = false,
-  externalObscured = false,
   onToggleExpanded,
 }: {
   expanded?: boolean;
-  externalObscured?: boolean;
   onToggleExpanded?: () => void;
 }) {
   const dispatch = useStoreDispatch();
@@ -59,11 +56,7 @@ export default function BrowserWorkspace({
       browserErrors: current.browserErrors,
       browserGlobalError: current.browserGlobalError,
       browsers: current.browsers,
-      commandPaletteOpen: current.commandPaletteOpen,
       designModes: current.designModes,
-      pendingQuestions: current.pendingQuestions,
-      pendingPermissions: current.pendingPermissions,
-      settingsOpen: current.settingsOpen,
     }),
     shallowEqual,
   );
@@ -75,16 +68,6 @@ export default function BrowserWorkspace({
   const designMode = isDesignModeOpen(state.designModes, browserKey);
   const sessionLive = useSessionLive(requestedChatId ?? null);
   const nativeBrowser = isDesktop();
-  // The native BrowserView is an OS-level layer painted above the React tree,
-  // so any full-screen overlay would otherwise be punched through by it. Detach
-  // it while such an overlay is visible and re-attach once it closes. Overlays
-  // with store state are read here; the ones that are just mounted components
-  // (the image viewers, the feedback modal, the spec wiki) register themselves
-  // instead. Questions and permissions are inline composer cards, not
-  // overlays, so they leave the view alone.
-  const portalledOverlayOpen = useNativeSurfacesObscured();
-  const obscured =
-    externalObscured || portalledOverlayOpen || state.settingsOpen || state.commandPaletteOpen;
   const frameRef = useRef<HTMLDivElement>(null);
   const urlInputRef = useRef<HTMLInputElement>(null);
   const appOrigin = typeof window === 'undefined' ? undefined : window.location.origin;
@@ -462,8 +445,9 @@ export default function BrowserWorkspace({
       {loadFailure && (
         <div className="flex shrink-0 items-center gap-2 border-b border-droid-border bg-red-500/10 px-4 py-2 text-[12px] text-droid-text-secondary">
           <span className="min-w-0 flex-1 truncate">
-            Could not load {loadFailure.url}
-            {loadFailure.error ? ` (${loadFailure.error})` : ''}. Check that the server is running.
+            {loadFailure.crashed
+              ? 'This page crashed. Retry to load it again.'
+              : `Could not load ${loadFailure.url}${loadFailure.error ? ` (${loadFailure.error})` : ''}. Check that the server is running.`}
           </span>
           <button
             type="button"
@@ -495,7 +479,6 @@ export default function BrowserWorkspace({
           <NativeBrowserSurface
             browserKey={browserKey}
             visibleBrowserSessionId={browser?.browserSessionId}
-            obscured={obscured}
             url={activeUrl}
             viewport={requestedViewport}
             viewportMode={viewportMode}

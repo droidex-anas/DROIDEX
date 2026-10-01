@@ -2,7 +2,6 @@ import { useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent }
 import { createPortal } from 'react-dom';
 import { motion, useReducedMotion } from 'framer-motion';
 import { Check, Crop, X } from 'lucide-react';
-import { useObscuresNativeSurfaces } from '../../hooks/useObscuresNativeSurfaces';
 import { IMAGE_VIEWER_TRANSITION, imageViewerContentMotion } from '../media/imageViewerMotion';
 import type { AttachedImage } from '../../hooks/useImageAttachments';
 import { displayedToNaturalRect, isFullImageRect, type CropRect } from '../../lib/images';
@@ -43,10 +42,6 @@ function ImageViewerModalContent({
   const imgRef = useRef<HTMLImageElement>(null);
   const dialogRef = useRef<HTMLDivElement>(null);
   const reduceMotion = useReducedMotion();
-
-  // The browser pane's native view is painted above the DOM by the OS; hide it
-  // while this covers the window, or it shows straight through the image.
-  useObscuresNativeSurfaces();
 
   // Modal focus boundary: without it, keyboard and AT users keep reaching the
   // composer controls behind this full-screen overlay. Move focus inside on

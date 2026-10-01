@@ -2,7 +2,6 @@ import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { motion, useReducedMotion } from 'framer-motion';
 import { ImageOff, X } from 'lucide-react';
-import { useObscuresNativeSurfaces } from '../../hooks/useObscuresNativeSurfaces';
 import { IMAGE_VIEWER_TRANSITION, imageViewerContentMotion } from './imageViewerMotion';
 
 /**
@@ -33,10 +32,6 @@ function ImageLightboxContent({
   const [failedSrc, setFailedSrc] = useState<string | null>(null);
   const failed = failedSrc === src;
   const reduceMotion = useReducedMotion();
-
-  // The browser pane's native view is painted above the DOM by the OS; hide it
-  // while this covers the window, or it shows straight through the image.
-  useObscuresNativeSurfaces();
 
   useEffect(() => {
     const opener = document.activeElement;

@@ -1,19 +1,18 @@
+// Wires a bound <webview> guest into its browser entry: the page listeners that
+// keep the entry's URL, history, console and load state current. The partition
+// handlers stay as they were for views: permissions and devices are denied.
 function createNativeBrowserViewFactory({
-  WebContentsView,
   session,
-  preloadPath,
   partition,
   normalizeBrowserConsoleMessage,
   redactBrowserDiagnosticUrl,
   urls,
-  safeWebContents,
   loadUrl,
   emitLoaded,
   emitLoadFailed,
   applyDesignState,
   autofill,
-  recoverRenderer,
-  onViewDestroyed,
+  onCrashed,
   listEntries,
 }) {
   let browserSessionConfigured = false;
@@ -40,7 +39,7 @@ function createNativeBrowserViewFactory({
 
   function recordNetworkEvent(details) {
     const entry = [...listEntries()].find(
-      (candidate) => safeWebContents(candidate.view)?.id === details.webContentsId,
+      (candidate) => candidate.contents?.id === details.webContentsId,
     );
     if (!entry) return;
     entry.networkEvents.push({
@@ -59,45 +58,27 @@ function createNativeBrowserViewFactory({
   function createEntry(browserSessionId) {
     return {
       browserSessionId,
-      view: null,
+      contents: null,
+      crashed: false,
+      shown: false,
       targetUrl: null,
       failedRestoreUrl: null,
       state: { designMode: false, pencilMode: false },
-      attached: false,
-      visible: true,
-      windowAttached: false,
-      hostWindow: null,
-      idleTimer: null,
       loadingUrl: null,
       loadingPromise: null,
       viewport: { width: 1200, height: 800, deviceScaleFactor: 2 },
       networkEvents: [],
       consoleEvents: [],
-      rendererCrashes: [],
-      lastUsedAt: Date.now(),
-      viewCloseReason: null,
-      serialized: null,
     };
   }
 
-  function attachView(entry) {
-    if (isBrowserViewUsable(entry.view)) return entry;
+  function bindGuest(entry, contents) {
     configureSession();
-    const view = new WebContentsView({
-      webPreferences: {
-        preload: preloadPath,
-        contextIsolation: true,
-        nodeIntegration: false,
-        sandbox: false,
-        backgroundThrottling: false,
-        partition,
-      },
-    });
-    entry.view = view;
-    entry.viewCloseReason = null;
-    const contents = view.webContents;
+    entry.contents = contents;
+    entry.crashed = false;
+    const current = () => entry.contents === contents && !contents.isDestroyed();
     contents.setWindowOpenHandler(({ url: nextUrl }) => {
-      if (entry.view === view) loadUrl(entry, nextUrl);
+      if (current()) void loadUrl(entry, nextUrl);
       return { action: 'deny' };
     });
     contents.on('console-message', (details) => {
@@ -110,34 +91,30 @@ function createNativeBrowserViewFactory({
       }
     });
     contents.on('will-navigate', (_event, requestedUrl) => {
-      if (entry.view !== view) return;
-      // This event is limited to page/user-initiated navigations; programmatic
-      // loadURL retries (including the HTTPS-to-HTTP fallback) do not emit it.
+      if (!current()) return;
+      // Page and user navigations only; main's own loadURL calls do not emit it.
       entry.failedRestoreUrl = null;
       entry.targetUrl = requestedUrl;
     });
     contents.on('did-navigate', (_event, loadedUrl) => {
-      if (entry.view !== view || urls.isChromeErrorUrl(loadedUrl)) return;
+      if (!current() || urls.isChromeErrorUrl(loadedUrl)) return;
       entry.failedRestoreUrl = null;
       entry.targetUrl = loadedUrl;
       emitLoaded(entry, loadedUrl);
     });
     contents.on('did-finish-load', () => {
-      const current = safeWebContents(view);
-      if (entry.view !== view || !current) return;
-      const loadedUrl = current.getURL();
+      if (!current()) return;
+      const loadedUrl = contents.getURL();
       if (urls.isChromeErrorUrl(loadedUrl)) {
         if (entry.targetUrl && !urls.isChromeErrorUrl(entry.targetUrl))
           emitLoaded(entry, entry.targetUrl);
         return;
       }
-      if (entry.state.designMode && entry.attached && entry.visible) {
-        applyDesignState(entry);
-      }
-      void autofill(current);
+      if (entry.state.designMode && entry.shown) applyDesignState(entry);
+      void autofill(contents);
     });
     contents.on('did-fail-load', (_event, errorCode, errorDescription, failedUrl, isMainFrame) => {
-      if (entry.view !== view || !isMainFrame || errorCode === -3) return;
+      if (!current() || !isMainFrame || errorCode === -3) return;
       const fallback = urls.httpFallbackUrl(failedUrl, errorCode);
       if (fallback) {
         urls.rememberFailedRestoreUrl(entry, entry.targetUrl || failedUrl);
@@ -148,38 +125,27 @@ function createNativeBrowserViewFactory({
       emitLoadFailed(entry, failedUrl, errorDescription || `net error ${errorCode}`);
     });
     contents.on('dom-ready', () => {
-      if (entry.view === view && entry.state.designMode && entry.attached && entry.visible) {
-        applyDesignState(entry);
-      }
-    });
-    contents.on('destroyed', () => {
-      if (entry.view === view) {
-        entry.view = null;
-        entry.attached = false;
-        entry.windowAttached = false;
-        entry.hostWindow = null;
-        onViewDestroyed(entry);
-      }
-    });
-    contents.on('render-process-gone', (_event, details) => {
-      if (entry.view === view) recoverRenderer(entry, view, details);
+      if (current() && entry.state.designMode && entry.shown) applyDesignState(entry);
     });
     contents.on('did-navigate-in-page', (_event, nextUrl) => {
-      if (entry.view !== view) return;
+      if (!current()) return;
       entry.targetUrl = nextUrl;
       emitLoaded(entry, nextUrl);
-      if (entry.state.designMode && entry.attached && entry.visible) {
-        applyDesignState(entry);
-      }
+      if (entry.state.designMode && entry.shown) applyDesignState(entry);
     });
-    return entry;
+    contents.on('render-process-gone', (_event, details) => {
+      if (entry.contents !== contents) return;
+      entry.crashed = true;
+      entry.loadingUrl = null;
+      entry.loadingPromise = null;
+      onCrashed(entry, details);
+    });
+    contents.once('destroyed', () => {
+      if (entry.contents === contents) entry.contents = null;
+    });
   }
 
-  function isBrowserViewUsable(view) {
-    return Boolean(view && safeWebContents(view));
-  }
-
-  return { attachView, configureSession, createEntry };
+  return { bindGuest, configureSession, createEntry };
 }
 
 module.exports = { createNativeBrowserViewFactory };
