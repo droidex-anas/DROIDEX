@@ -4,8 +4,10 @@ import type { NormalizedEvent } from '../normalize.js';
 import type {
   Autonomy,
   ContextWindowTokens,
+  ProviderUsage,
   ReasoningEffort,
   SessionInteractionMode,
+  UsageMeter,
   VoiceNarration,
 } from '../protocol.js';
 import type { ProviderMention, SkillInfo } from './catalog.js';
@@ -119,6 +121,13 @@ export interface ProviderVoice {
   onEvent(listener: (event: ProviderVoiceEvent) => void): () => void;
 }
 
+// One read of a harness account's usage: every window it reports, replacing
+// what an earlier read said.
+export type UsageReading = Pick<ProviderUsage, 'meters' | 'extra' | 'unavailable'>;
+
+// Windows the harness pushes as they change, each replacing only its own row.
+export type UsageMetersListener = (meters: UsageMeter[]) => void;
+
 export interface ProviderSession {
   readonly provider: ProviderKind;
   // Native id of the session the provider holds open.
@@ -167,6 +176,9 @@ export interface ProviderSession {
   setInteractionMode?(mode: SessionInteractionMode): Promise<void>;
   // Present only on a provider that can hold a voice conversation.
   readonly voice?: ProviderVoice;
+  // Reads the account's usage through this session's own connection, for a
+  // harness that can.
+  readonly usage?: { read(): Promise<UsageReading> };
   interrupt(): Promise<void>;
   close(): Promise<void>;
 }
@@ -179,6 +191,9 @@ export interface Provider {
   // Copies a settled conversation into a new, independent one the provider can
   // resume. Nothing is opened; the caller resumes the copy.
   fork(source: ProviderForkSource): Promise<ProviderForkHandle>;
+  // Reads the account's usage with no session to go through. Claude Code and
+  // Codex start a short-lived process for it, which `signal` ends.
+  readUsage(signal: AbortSignal): Promise<UsageReading>;
 }
 
 // A provider backed by a CLI learns what it can do by probing that CLI; Droid's

@@ -125,6 +125,7 @@ function harness(
       kind: 'droid',
       create: () => Promise.reject(new Error('not used')),
       resume: () => Promise.reject(new Error('not used')),
+      readUsage: () => Promise.reject(new Error('not used')),
       fork: (source) => {
         forkSources.push(source);
         options.duringFork?.(stored);

@@ -8,7 +8,7 @@ import type { SdkMcpServer } from '@factory/droid-sdk';
 import type { Autonomy } from '../../protocol.js';
 import type { ProviderMention, SkillInfo } from '../catalog.js';
 import type { ProviderInteractions } from '../interactions.js';
-import type { ProviderModelSettings, ProviderSession } from '../session.js';
+import type { ProviderModelSettings, ProviderSession, UsageMetersListener } from '../session.js';
 import type { AppServerClient } from './appServer.js';
 import { codexAutonomy, codexSandboxPolicy, OpenPrompts } from './codexApprovals.js';
 import { CodexCatalog } from './codexCatalog.js';
@@ -37,6 +37,7 @@ export interface CodexSessionInput {
   model: ProviderModelSettings;
   interactions: ProviderInteractions;
   inAppMcpServers?: SdkMcpServer[];
+  onUsage?: UsageMetersListener;
 }
 
 interface ThreadResponse {
@@ -88,7 +89,7 @@ export class CodexSession implements ProviderSession {
   // has no transcript to land in yet and waits for the turn that follows.
   private readonly heldNotices: NormalizedEvent[] = [];
   private catalog?: CodexCatalog;
-  private readonly rateLimits = new CodexRateLimits();
+  readonly usage: CodexRateLimits;
 
   constructor(input: CodexSessionInput) {
     this.providerSessionId = input.appSessionId;
@@ -99,6 +100,7 @@ export class CodexSession implements ProviderSession {
       };
     });
     this.client = input.client;
+    this.usage = new CodexRateLimits(this.client, input.onUsage);
     this.cwd = input.cwd;
     this.autonomy = input.autonomy;
     this.model = input.model;
@@ -173,7 +175,8 @@ export class CodexSession implements ProviderSession {
     this.threadModel = response.model;
     this.mapper.setModel({ ...this.model, modelId: this.model.modelId ?? this.threadModel });
     this.catalog ??= new CodexCatalog(this.client, [this.cwd]);
-    this.rateLimits.read(this.client);
+    // Never awaited: the limits only add detail to a later refusal.
+    void this.usage.read().catch(() => undefined);
     await this.pushThreadSettings();
   }
 
@@ -464,14 +467,14 @@ export class CodexSession implements ProviderSession {
     });
     // The account's, so it names no thread.
     this.client.onNotification('account/rateLimits/updated', (params) => {
-      this.rateLimits.update(params);
+      this.usage.update(params);
     });
     this.onThreadNotification('mcpServer/startupStatus/updated', (params) => {
       const failure = mcpServerFailure(params);
       if (failure) this.notice(this.mapper.mcpFailureEvents(failure));
     });
     this.onThreadNotification('turn/started', (params) => {
-      const turn = turnOf(params, this.rateLimits);
+      const turn = turnOf(params, this.usage);
       if (!turn) return;
       // A typed turn owns this only while it is still waiting to be told its
       // id. Once it has one, a different id belongs to a turn Codex started
@@ -480,7 +483,7 @@ export class CodexSession implements ProviderSession {
       else if (turn.id !== this.turnId) this.setDelegatedTurn(turn.id);
     });
     this.onThreadNotification('turn/completed', (params) => {
-      const turn = turnOf(params, this.rateLimits);
+      const turn = turnOf(params, this.usage);
       if (!turn) return;
       if (turn.id === this.delegatedTurnId) {
         this.dropSteers();
@@ -493,7 +496,7 @@ export class CodexSession implements ProviderSession {
       this.settle(turn);
     });
     this.onThreadNotification('error', (params) => {
-      const failure = errorOf(params, this.rateLimits);
+      const failure = errorOf(params, this.usage);
       if (!failure) return;
       // Through deliver(), so a turn Codex started for a spoken request
       // reports its failures in the chat too rather than stopping silently.

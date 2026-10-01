@@ -1843,6 +1843,9 @@ test('a context switch waits for the turn and resumes the same chat before queue
     fork: async () => {
       throw new Error('unexpected fork');
     },
+    readUsage: async () => {
+      throw new Error('unexpected usage read');
+    },
     resume: async (id, input) => {
       assert.equal(id, 'context-switch');
       assert.equal(input.contextWindowTokens, 200000);
@@ -1922,6 +1925,9 @@ test('a context switch waits for the turn and resumes the same chat before queue
     fork: async () => {
       throw new Error('unexpected fork');
     },
+    readUsage: async () => {
+      throw new Error('unexpected usage read');
+    },
     resume: async (id) => {
       await resuming;
       return {
@@ -1973,6 +1979,9 @@ test('a context switch waits for the turn and resumes the same chat before queue
     },
     fork: async () => {
       throw new Error('unexpected fork');
+    },
+    readUsage: async () => {
+      throw new Error('unexpected usage read');
     },
     resume: async (id) => {
       await resumingAgain;
