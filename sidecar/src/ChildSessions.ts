@@ -482,9 +482,9 @@ export class ChildSessions {
       parentGeneration: parent.generation,
       runtimeGeneration: runtime.generation,
     };
-    const update = (child.mutationTail ?? Promise.resolve())
-      .catch(ignoreError)
-      .then(() => this.performSettingsUpdate(target, command));
+    const update = (child.mutationTail ?? Promise.resolve()).catch(ignoreError).then(async () => {
+      await this.performSettingsUpdate(target, command);
+    });
     child.mutationTail = update;
     try {
       await update;
@@ -508,7 +508,7 @@ export class ChildSessions {
   ): Promise<void> {
     const parent = this.parents.get(parentAppSessionId);
     if (!parent || !this.isCurrentParent(parent)) return;
-    await Promise.allSettled(
+    const results = await Promise.allSettled(
       [...parent.children.values()].map(async (child) => {
         if (child.role !== role || !child.runtime || !this.isSettingsTarget(parent, child)) return;
         const target: ChildSettingsTarget = {
@@ -518,10 +518,15 @@ export class ChildSessions {
           parentGeneration: parent.generation,
           runtimeGeneration: child.runtime.generation,
         };
-        const update = (child.mutationTail ?? Promise.resolve()).catch(ignoreError).then(() => {
-          if (child.role !== role) return;
-          return this.performSettingsUpdate(target, { modelId: effectiveModelId });
-        });
+        const update = (child.mutationTail ?? Promise.resolve())
+          .catch(ignoreError)
+          .then(async () => {
+            if (child.role !== role) return;
+            if (
+              (await this.performSettingsUpdate(target, { modelId: effectiveModelId })) === 'failed'
+            )
+              throw new Error('Child provider rejected the role model change.');
+          });
         child.mutationTail = update;
         try {
           await update;
@@ -530,6 +535,11 @@ export class ChildSessions {
         }
       }),
     );
+    const failed = results.filter((result) => result.status === 'rejected').length;
+    if (failed > 0)
+      throw new Error(
+        `The ${role} default was saved, but ${String(failed)} live ${role} session${failed === 1 ? '' : 's'} could not update. Retry the model change to update those sessions.`,
+      );
   }
 
   resolveAutomaticTarget(key: CompactionResourceKey): ChildAutomaticCompactionTarget | undefined {
@@ -901,7 +911,7 @@ export class ChildSessions {
   private async performSettingsUpdate(
     target: ChildSettingsTarget,
     command: Pick<ChildSettingsCommand, 'modelId' | 'reasoningEffort'>,
-  ): Promise<void> {
+  ): Promise<'failed' | undefined> {
     if (!this.isSettingsTransaction(target)) return;
     const { parent, child, runtime } = target;
     target.configurationGeneration = child.configurationGeneration;
@@ -922,7 +932,7 @@ export class ChildSessions {
           : { reasoningEffort: factoryReasoningEffort(command.reasoningEffort) }),
       });
     } catch (error) {
-      if (this.isSettingsTransaction(target))
+      if (this.isSettingsTransaction(target)) {
         this.emitError(
           child.identity,
           'settings',
@@ -930,6 +940,8 @@ export class ChildSessions {
           'child.settings_update_failed',
           `Could not update child settings: ${errMsg(error)}`,
         );
+        return 'failed';
+      }
       return;
     }
     if (!this.isSettingsTransaction(target)) return;
