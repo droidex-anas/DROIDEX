@@ -31,7 +31,7 @@ function observeNavigation(contents) {
     if (started) finish();
   };
   const onFail = (_event, errorCode, _description, _url, isMainFrame) => {
-    if (isMainFrame && errorCode !== -3) finish();
+    if (started && isMainFrame && errorCode !== -3) finish();
   };
   contents.on('did-start-navigation', onStart);
   contents.on('did-finish-load', onFinish);

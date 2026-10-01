@@ -498,7 +498,7 @@ function inspectElement(selector) {
     selector,
     tagName: el.tagName.toLowerCase(),
     role: roleFor(el) || undefined,
-    name: name || undefined,
+    name: name && name !== '[redacted]' ? name : undefined,
     text: text || undefined,
     attributes: attrsFor(el),
     box: boxFor(rect),
@@ -513,7 +513,7 @@ const FIELDS = [
   'select',
   '[contenteditable]:not([contenteditable="false"])',
   ...['textbox', 'searchbox', 'combobox', 'listbox', 'spinbutton', 'slider'].map(
-    (role) => `[role~="${role}"]`,
+    (role) => `[role~="${role}" i]`,
   ),
 ].join(', ');
 
@@ -521,8 +521,11 @@ const FIELDS = [
 // input's value never shows in its markup either.
 function withoutTypedContent(el) {
   const clone = el.cloneNode(true);
-  if (el.isContentEditable || el.closest(FIELDS)) clone.textContent = '[redacted]';
-  else for (const field of clone.querySelectorAll(FIELDS)) field.textContent = '[redacted]';
+  const redact = (node) => {
+    if (node.textContent) node.textContent = '[redacted]';
+  };
+  if (el.isContentEditable || el.closest(FIELDS)) redact(clone);
+  else for (const field of clone.querySelectorAll(FIELDS)) redact(field);
   return clone;
 }
 
@@ -816,7 +819,9 @@ function attrsFor(el) {
 
 function isSensitiveAttribute(name, el) {
   if (name === 'nonce') return true;
-  if (name === 'value' || name.startsWith('on')) return true;
+  // A control's value, native or ARIA.
+  if (['value', 'aria-valuenow', 'aria-valuetext'].includes(name) || name.startsWith('on'))
+    return true;
   if (
     /(token|secret|password|passcode|credential|authorization|api[-_]?key|private[-_]?key|cookie|session|csrf|otp)/i.test(
       name,

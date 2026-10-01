@@ -43,13 +43,17 @@ function createBrowserActions({
     try {
       return await unthrottled(contents, async () => {
         const step = { navigation, sent: false };
+        const performing = perform(contents, entry, request, step).then(
+          () => ({ type: 'done' }),
+          (error) => ({ type: 'error', error }),
+        );
         const outcome = await Promise.race([
-          perform(contents, entry, request, step).then(
-            () => ({ type: 'done' }),
-            (error) => ({ type: 'error', error }),
-          ),
+          performing,
           navigation.wait().then(() => ({ type: 'navigation' })),
         ]);
+        // A navigation can settle first; the action's own input still ends
+        // before it reports, so nothing of it lands under the next one.
+        await performing;
         if (navigation.started() && !step.sent) throw new Error(PAGE_CHANGED);
         if (outcome.type === 'error' && !(navigation.started() && isNavigationError(outcome.error)))
           throw outcome.error;
@@ -181,8 +185,10 @@ function createBrowserActions({
         ({ document } = target);
         sessionId = target.frame.sessionId;
         await send(dbg, sessionId, 'DOM.focus', { backendNodeId: target.backendNodeId });
-        // A focus handler can send the focus on to another frame.
+        // A focus handler can send the focus on to another element or frame.
         await keepsFocus(dbg, sessionId, document);
+        if (!(await reading.hasFocus(dbg, sessionId, target.backendNodeId)))
+          throw new Error(`${request.ref} did not keep the focus; read the page again.`);
       } else {
         ({ sessionId, document } = await focusedFrame(dbg));
       }
@@ -301,7 +307,7 @@ function createBrowserActions({
     const name = node && !isField(node) ? labelOf(node).slice(0, 80) : '';
     // An element the accessibility tree ignores is named by its tag.
     const role =
-      node && (name || !['none', 'generic'].includes(node.role?.value))
+      node?.role?.value && (name || !['none', 'generic'].includes(node.role.value))
         ? node.role.value
         : `<${(await send(dbg, sessionId, 'DOM.describeNode', { backendNodeId: hit.backendNodeId })).node.localName}>`;
     const frame = (await documentFrames(dbg)).find((candidate) => candidate.id === hit.frameId);

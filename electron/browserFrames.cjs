@@ -126,6 +126,8 @@ async function focusedFrame(dbg) {
   const held = [];
   const documentOf = async (session) => {
     const { result } = await send(dbg, session, 'Runtime.evaluate', { expression: 'document' });
+    if (!result?.objectId)
+      throw new Error('The page changed before the action ran; call browser_read_page.');
     held.push({ sessionId: session, objectId: result.objectId });
     return result.objectId;
   };

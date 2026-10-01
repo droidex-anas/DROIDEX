@@ -236,6 +236,23 @@ function createBrowserReading({ runWithWebContentsDebugger, savedSecretsFor, red
     }
   }
 
+  // Whether a node is what its own document or shadow root has focused.
+  async function hasFocus(dbg, sessionId, backendNodeId) {
+    const { object } = await send(dbg, sessionId, 'DOM.resolveNode', { backendNodeId });
+    try {
+      const { result } = await send(dbg, sessionId, 'Runtime.callFunctionOn', {
+        objectId: object.objectId,
+        functionDeclaration: 'function () { return this.getRootNode().activeElement === this; }',
+        returnByValue: true,
+      });
+      return result?.value === true;
+    } finally {
+      await send(dbg, sessionId, 'Runtime.releaseObject', { objectId: object.objectId }).catch(
+        () => undefined,
+      );
+    }
+  }
+
   async function lookupRef(dbg, entry, ref) {
     const known = knownRef(entry, ref);
     if (!known) throw new Error(`Unknown ref ${ref}; call browser_read_page for current refs.`);
@@ -419,6 +436,7 @@ function createBrowserReading({ runWithWebContentsDebugger, savedSecretsFor, red
     pointForRef,
     assertDocument,
     lookupRef,
+    hasFocus,
     callOnRef,
     selectorForRef,
     refBox,
