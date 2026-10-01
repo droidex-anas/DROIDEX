@@ -216,7 +216,7 @@ export function createBrowserMcpServer(
         'browser_fill',
         [
           'Set a field by ref in one step: text, a select option (its value or visible label), a checkbox or radio (true or false), or a date (YYYY-MM-DD).',
-          'Frameworks see the change as typed input. For real keystrokes use browser_type.',
+          'Frameworks see the change as typed input. To type into the focused element use browser_type; for keys, browser_press.',
         ].join(' '),
         {
           ref: z.string().describe('Field ref from browser_read_page.'),
@@ -228,7 +228,7 @@ export function createBrowserMcpServer(
       ),
       tool(
         'browser_type',
-        'Type real keystrokes into a field by ref, or into whatever has focus, and optionally press Enter after.',
+        'Type text into a field by ref, or into whatever has focus, and optionally press Enter after. The page gets it as text input, not a key event per character; for keys use browser_press.',
         {
           text: z.string().describe('The text to type.'),
           ref: z.string().optional().describe('Field ref to focus first.'),

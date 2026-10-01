@@ -43,20 +43,14 @@ function createBrowserActions({
     try {
       return await unthrottled(contents, async () => {
         const step = { navigation, sent: false };
-        const performing = perform(contents, entry, request, step).then(
-          () => ({ type: 'done' }),
-          (error) => ({ type: 'error', error }),
-        );
-        const outcome = await Promise.race([
-          performing,
-          navigation.wait().then(() => ({ type: 'navigation' })),
-        ]);
-        // A navigation can settle first; the action's own input still ends
-        // before it reports, so nothing of it lands under the next one.
-        await performing;
+        // The action's own input ends before it reports, even when a navigation
+        // settles first, so nothing of it lands under the next one.
+        let failure;
+        await perform(contents, entry, request, step).catch((error) => {
+          failure = error;
+        });
         if (navigation.started() && !step.sent) throw new Error(PAGE_CHANGED);
-        if (outcome.type === 'error' && !(navigation.started() && isNavigationError(outcome.error)))
-          throw outcome.error;
+        if (failure && !(navigation.started() && isNavigationError(failure))) throw failure;
         // An action that started a navigation reports the page it led to; a
         // click on a link starts one a moment after the input lands.
         const mayNavigate =
