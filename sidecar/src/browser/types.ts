@@ -7,8 +7,20 @@ export interface BrowserViewport {
 export type BrowserViewportMode = 'fit' | 'desktop' | 'laptop' | 'tablet' | 'mobile' | 'custom';
 
 export interface BrowserScreenshotOptions {
+  /** Crop to this element from browser_read_page. */
+  ref?: string;
+  /** Crop to this viewport region, in CSS pixels. */
+  region?: BrowserBox;
   fullPage?: boolean;
-  deviceScaleFactor?: number;
+  format?: 'jpeg' | 'png';
+}
+
+export interface BrowserScreenshot {
+  /** Base64 image bytes. */
+  image: string;
+  mimeType: 'image/jpeg' | 'image/png';
+  /** The geometry line and the [Title · url] footer. */
+  text: string;
 }
 
 export interface BrowserBox {
@@ -74,8 +86,6 @@ export interface BrowserState extends BrowserSnapshot {
   appSessionId?: string;
   viewport: BrowserViewport;
   viewportMode: BrowserViewportMode;
-  screenshotPath?: string;
-  screenshotUrl?: string;
   agentCursor?: { x: number; y: number };
   error?: string;
 }

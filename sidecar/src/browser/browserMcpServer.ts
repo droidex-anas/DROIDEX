@@ -1,9 +1,8 @@
 import { createSdkMcpServer, tool } from '@factory/droid-sdk';
-import { readFile } from 'node:fs/promises';
 import { z } from 'zod';
 import type { BrowserSessionManager } from './BrowserSessionManager.js';
 import type { BrowserState, DesignReference } from './types.js';
-import { jsonResult, safeTool, type ToolHandlerResult } from '../mcpToolUtils.js';
+import { jsonResult, safeTool } from '../mcpToolUtils.js';
 
 const viewportSchema = z.object({
   width: z.number().int().min(240).max(4096),
@@ -97,6 +96,24 @@ export function createBrowserMcpServer(
         ),
       ),
       tool(
+        'browser_read_text',
+        [
+          'Read the main content of the page as light markdown: headings, paragraphs, lists, table rows and links.',
+          'Cheaper than browser_read_page for reading; it has no refs, so use browser_read_page to act.',
+          'Field values are left out. Ends with [Title · url].',
+        ].join(' '),
+        {
+          max_chars: z
+            .number()
+            .int()
+            .min(500)
+            .max(100_000)
+            .optional()
+            .describe('Longest answer to return. Defaults to 12000 characters.'),
+        },
+        safeTool(async (input) => manager.readText(appSessionId(), input.max_chars)),
+      ),
+      tool(
         'browser_find',
         'Find lines of the page tree that contain some text (or match a /regex/), each with the elements around it, up to 20.',
         {
@@ -133,27 +150,46 @@ export function createBrowserMcpServer(
       ),
       tool(
         'browser_screenshot',
-        'Capture the current live DROIDEX browser viewport as a high-detail PNG image for visual inspection. Use browser_read_page to read the page and get refs.',
+        [
+          'Capture the live DROIDEX browser as a JPEG (a PNG with format: "png"): the viewport, one ref, a region, or the full page.',
+          'One image pixel is one CSS pixel unless the long edge would pass 1568; the result states the scale and origin so image points convert exactly.',
+          'Sensitive fields are masked. Use browser_read_page to read the page and get refs.',
+        ].join(' '),
         {
-          fullPage: z
+          ref: z.string().optional().describe('Crop to this element from browser_read_page.'),
+          region: z
+            .object({
+              x: z.number(),
+              y: z.number(),
+              width: z.number().positive(),
+              height: z.number().positive(),
+            })
+            .optional()
+            .describe('Crop to this region of the viewport, in CSS pixels.'),
+          full_page: z
             .boolean()
             .optional()
-            .describe('Capture the full page instead of only the visible viewport.'),
-          deviceScaleFactor: z
-            .number()
-            .positive()
-            .max(4)
+            .describe('Capture the whole page instead of the viewport.'),
+          format: z
+            .enum(['jpeg', 'png'])
             .optional()
-            .describe(
-              'Temporary screenshot scale. Defaults to the current high-detail viewport scale.',
-            ),
+            .describe('png only for pixel-exact design checks; jpeg (default) is far smaller.'),
         },
         safeTool(async (input) => {
-          const path = await manager.screenshot(appSessionId(), {
-            fullPage: input.fullPage ?? false,
-            deviceScaleFactor: input.deviceScaleFactor,
+          if ([input.ref, input.region, input.full_page].filter(Boolean).length > 1)
+            throw new Error('Pass at most one of ref, region and full_page.');
+          const shot = await manager.screenshot(appSessionId(), {
+            ref: input.ref,
+            region: input.region,
+            fullPage: input.full_page,
+            format: input.format,
           });
-          return imageToolResult(path, { ok: true, screenshotPath: path, mimeType: 'image/png' });
+          return {
+            content: [
+              { type: 'text', text: `${shot.text}\nSaved at ${shot.path}` },
+              { type: 'image', data: shot.image, mimeType: shot.mimeType },
+            ],
+          };
         }),
       ),
       tool(
@@ -448,7 +484,6 @@ function stateForTool(
     title: state.title,
     viewport: state.viewport,
     viewportMode: state.viewportMode,
-    screenshotPath: state.screenshotPath,
     scroll: state.scroll,
     canGoBack: state.canGoBack ?? false,
     canGoForward: state.canGoForward ?? false,
@@ -498,14 +533,5 @@ function designReferenceDetail(ref: DesignReference): Record<string, unknown> {
           html: ref.detail.html,
         }
       : undefined,
-  };
-}
-
-async function imageToolResult(path: string, metadata: unknown): Promise<ToolHandlerResult> {
-  return {
-    content: [
-      { type: 'text', text: jsonResult(metadata) },
-      { type: 'image', data: await readFile(path, 'base64'), mimeType: 'image/png' },
-    ],
   };
 }

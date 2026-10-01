@@ -6,6 +6,7 @@ import type {
   BrowserConsoleEvent,
   BrowserNetworkEvent,
   BrowserReadOptions,
+  BrowserScreenshot,
   BrowserScreenshotOptions,
   BrowserSnapshot,
   BrowserTarget,
@@ -54,17 +55,16 @@ export class NativeBrowserRuntime implements BrowserRuntime {
     this.viewport = viewport;
   }
 
-  async screenshot(options: BrowserScreenshotOptions = {}): Promise<string> {
-    return this.capture(undefined, options);
+  async screenshot(options: BrowserScreenshotOptions = {}): Promise<BrowserScreenshot> {
+    const result = await this.send({ action: 'screenshot', ...options });
+    if (!result.ok) throw new Error(result.error ?? 'Native browser screenshot failed.');
+    if (!result.image || !result.mimeType)
+      throw new Error('Native browser did not return a screenshot.');
+    return { image: result.image, mimeType: result.mimeType, text: result.text ?? '' };
   }
 
-  async capture(box?: BrowserBox, options: BrowserScreenshotOptions = {}): Promise<string> {
-    const result = await this.send({
-      action: 'capture',
-      box,
-      fullPage: options.fullPage,
-      deviceScaleFactor: options.deviceScaleFactor,
-    });
+  async capture(box?: BrowserBox): Promise<string> {
+    const result = await this.send({ action: 'capture', box });
     if (!result.ok) throw new Error(result.error ?? 'Native browser capture failed.');
     if (!result.image) throw new Error('Native browser did not return a captured image.');
     return result.image;
@@ -76,6 +76,10 @@ export class NativeBrowserRuntime implements BrowserRuntime {
 
   async readPage(options: BrowserReadOptions = {}): Promise<string> {
     return this.textFrom(await this.send({ action: 'readPage', ...options }));
+  }
+
+  async readText(maxChars?: number): Promise<string> {
+    return this.textFrom(await this.send({ action: 'readText', maxChars }));
   }
 
   async find(query: string): Promise<{ text: string; matches: number }> {

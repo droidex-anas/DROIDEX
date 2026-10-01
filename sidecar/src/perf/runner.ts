@@ -56,7 +56,6 @@ export async function runReplay(options: ReplayRunOptions): Promise<ReplayReport
   process.env.HOME = home;
 
   const token = `perf-${randomUUID()}`;
-  const assetToken = `perf-asset-${randomUUID()}`;
   const providerEvents: ReplayYieldReport[] = [];
   const markerYields = new Map<string, number>();
   // First provider yield of each turn, keyed sessionIndex:turn.
@@ -83,7 +82,6 @@ export async function runReplay(options: ReplayRunOptions): Promise<ReplayReport
   const server = startBridgeServer({
     requestedPort: 0,
     token,
-    assetToken,
     onCommand: async (command) => {
       if (!manager) throw new Error('Replay command arrived before the manager existed.');
       await manager.handle(command);
@@ -103,7 +101,6 @@ export async function runReplay(options: ReplayRunOptions): Promise<ReplayReport
     },
   });
   const browsers = new BrowserSessionManager({
-    assetUrlFor: (path) => server.browserAssetUrl(path),
     emit: (event) => {
       server.broadcast(event);
     },

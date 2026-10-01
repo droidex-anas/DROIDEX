@@ -76,9 +76,17 @@ class FakeRuntime implements BrowserRuntime {
     this.viewport = viewport;
   }
 
-  async screenshot(options: BrowserScreenshotOptions = {}): Promise<string> {
+  async screenshot(options: BrowserScreenshotOptions = {}) {
     this.screenshots.push(options);
-    return Buffer.from('full-screenshot').toString('base64');
+    return {
+      image: Buffer.from('screenshot').toString('base64'),
+      mimeType: 'image/jpeg' as const,
+      text: 'Screenshot of the viewport',
+    };
+  }
+
+  async readText() {
+    return '# Page';
   }
 
   async capture(box?: BrowserBox): Promise<string> {
@@ -383,7 +391,7 @@ test('designPrompt requires a selected or sketched reference', async () => {
   );
 });
 
-test('screenshot forwards high-detail capture options', async () => {
+test('screenshot forwards its crop options', async () => {
   let runtime!: FakeRuntime;
   const manager = createManager({
     runtimeFactory: (_id, viewport) => {
@@ -393,9 +401,9 @@ test('screenshot forwards high-detail capture options', async () => {
   });
   await manager.open({ appSessionId: 'm1', url: 'http://127.0.0.1:1420/' });
 
-  await manager.screenshot('m1', { fullPage: true, deviceScaleFactor: 3 });
+  await manager.screenshot('m1', { ref: 'e3', format: 'png' });
 
-  assert.deepEqual(runtime.screenshots.at(-1), { fullPage: true, deviceScaleFactor: 3 });
+  assert.deepEqual(runtime.screenshots.at(-1), { ref: 'e3', format: 'png' });
 });
 
 test('open resizes an existing runtime before capture', async () => {

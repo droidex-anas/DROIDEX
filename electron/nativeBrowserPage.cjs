@@ -1,5 +1,7 @@
 const { createBrowserReading } = require('./browserReading.cjs');
+const { createBrowserScreenshot } = require('./browserScreenshot.cjs');
 const { redactBrowserDiagnosticUrl } = require('./browserDiagnostics.cjs');
+const { frameHolds } = require('./browserFrames.cjs');
 
 const PAGE_CHANGED = 'The page changed before the action ran; call browser_read_page.';
 
@@ -12,11 +14,17 @@ function createNativeBrowserPage({
   credentials,
   runWithWebContentsDebugger,
   findEntryForContents,
+  nativeImage,
 }) {
   const operationsOn = new WeakMap(); // guest contents -> { count, generation }
   const reading = createBrowserReading({
     runWithWebContentsDebugger,
     savedSecretsFor: (url) => credentials.savedSecretsFor(url),
+    redactUrl: redactBrowserDiagnosticUrl,
+  });
+  const screenshots = createBrowserScreenshot({
+    reading,
+    nativeImage,
     redactUrl: redactBrowserDiagnosticUrl,
   });
 
@@ -71,49 +79,58 @@ function createNativeBrowserPage({
       });
       return { requestId: request.requestId, ok: true, text };
     }
+    if (request.action === 'readText') {
+      const text = await reading.readText(contents, { maxChars: request.maxChars });
+      return { requestId: request.requestId, ok: true, text };
+    }
+    if (request.action === 'screenshot') {
+      // Capturing needs the page to keep producing frames.
+      const shot = await unthrottled(contents, () => screenshots.take(contents, entry, request));
+      return { requestId: request.requestId, ok: true, ...shot };
+    }
     const navigation = observeAgentNavigation(contents);
-    const operation = liftBackgroundThrottling(contents);
     try {
-      if (request.action === 'fillCredentials') {
-        return withNativeBrowserHistory(
-          contents,
-          await credentials.fillForAgent(contents, request),
-        );
-      }
-      // Once a navigation starts, an action still resolving its target gives
-      // up rather than act on the next page; one that never sent its input
-      // did not run, whatever the page does next.
-      const step = { navigation, sent: false };
-      const execution = withRefTarget(contents, entry, request)
-        .then(async (target) => {
-          if (target.document) await reading.assertDocument(contents, target.document);
-          if (target.action !== 'selectOption') return executeAgentAction(contents, target, step);
-          const value = target.text ?? '';
-          await reading.selectOption(contents, entry, target.ref, value, () => startInput(step));
-          return snapshotOf(contents, target);
-        })
-        .then(
-          (result) => ({ type: 'result', result }),
-          (error) => ({ type: 'error', error }),
-        );
-      const outcome = await Promise.race([
-        execution,
-        navigation.wait().then(() => ({ type: 'navigation' })),
-      ]);
-      if (outcome.type === 'navigation') {
-        if (!step.sent) throw new Error(PAGE_CHANGED);
-        return await snapshotAfterNavigation(contents, request);
-      }
-      if (outcome.type === 'error') {
-        if (!navigation.started() || !isNavigationExecutionError(outcome.error))
-          throw outcome.error;
-        await navigation.wait();
-        return await snapshotAfterNavigation(contents, request);
-      }
-      return withNativeBrowserHistory(contents, outcome.result);
+      return await unthrottled(contents, async () => {
+        if (request.action === 'fillCredentials') {
+          return withNativeBrowserHistory(
+            contents,
+            await credentials.fillForAgent(contents, request),
+          );
+        }
+        // Once a navigation starts, an action still resolving its target gives
+        // up rather than act on the next page; one that never sent its input
+        // did not run, whatever the page does next.
+        const step = { navigation, sent: false };
+        const execution = withRefTarget(contents, entry, request)
+          .then(async (target) => {
+            if (target.document) await reading.assertDocument(contents, target.document);
+            if (target.action !== 'selectOption') return executeAgentAction(contents, target, step);
+            const value = target.text ?? '';
+            await reading.selectOption(contents, entry, target.ref, value, () => startInput(step));
+            return snapshotOf(contents, target);
+          })
+          .then(
+            (result) => ({ type: 'result', result }),
+            (error) => ({ type: 'error', error }),
+          );
+        const outcome = await Promise.race([
+          execution,
+          navigation.wait().then(() => ({ type: 'navigation' })),
+        ]);
+        if (outcome.type === 'navigation') {
+          if (!step.sent) throw new Error(PAGE_CHANGED);
+          return await snapshotAfterNavigation(contents, request);
+        }
+        if (outcome.type === 'error') {
+          if (!navigation.started() || !isNavigationExecutionError(outcome.error))
+            throw outcome.error;
+          await navigation.wait();
+          return await snapshotAfterNavigation(contents, request);
+        }
+        return withNativeBrowserHistory(contents, outcome.result);
+      });
     } finally {
       navigation.dispose();
-      restoreBackgroundThrottling(contents, operation);
     }
   }
 
@@ -142,8 +159,8 @@ function createNativeBrowserPage({
     if (!request.ref || request.action === 'selectOption') return request;
     if (request.action === 'inspect')
       return { ...request, ...(await reading.selectorForRef(contents, entry, request.ref)) };
-    const { x, y, document } = await reading.pointForRef(contents, entry, request.ref);
-    return { ...request, x, y, document, selector: undefined };
+    const { x, y, document, sessionId } = await reading.pointForRef(contents, entry, request.ref);
+    return { ...request, x, y, document, frameSession: sessionId, selector: undefined };
   }
 
   // Called right before an action changes the page.
@@ -161,7 +178,6 @@ function createNativeBrowserPage({
   }
 
   async function executeAgentAction(contents, request, step) {
-    startInput(step);
     if (
       request.action === 'scroll' &&
       Number.isFinite(Number(request.x)) &&
@@ -171,15 +187,15 @@ function createNativeBrowserPage({
       const y = Math.round(Number(request.y));
       const pixels = Math.max(1, Math.round(Number(request.pixels) || 500));
       const horizontal = request.direction === 'left' || request.direction === 'right';
-      startInput(step);
-      contents.sendInputEvent({
-        type: 'mouseWheel',
-        x,
-        y,
-        deltaX: horizontal ? (request.direction === 'left' ? -pixels : pixels) : 0,
-        deltaY: horizontal ? 0 : request.direction === 'up' ? -pixels : pixels,
-        canScroll: true,
-      });
+      await dispatchMouse(contents, step, request, [
+        {
+          type: 'mouseWheel',
+          x,
+          y,
+          deltaX: horizontal ? (request.direction === 'left' ? -pixels : pixels) : 0,
+          deltaY: horizontal ? 0 : request.direction === 'up' ? -pixels : pixels,
+        },
+      ]);
       return snapshotOf(contents, request);
     }
     if (request.action === 'click' || request.action === 'hover') {
@@ -188,18 +204,38 @@ function createNativeBrowserPage({
       if (!Number.isFinite(x) || !Number.isFinite(y)) {
         throw new Error('Browser pointer interaction requires finite viewport coordinates.');
       }
-      startInput(step);
-      contents.sendInputEvent({ type: 'mouseMove', x, y, movementX: 0, movementY: 0 });
-      if (request.action === 'click') {
-        contents.sendInputEvent({ type: 'mouseDown', x, y, button: 'left', clickCount: 1 });
-        contents.sendInputEvent({ type: 'mouseUp', x, y, button: 'left', clickCount: 1 });
-      }
+      const press = { x, y, button: 'left', clickCount: 1 };
+      await dispatchMouse(contents, step, request, [
+        { type: 'mouseMoved', x, y },
+        ...(request.action === 'click'
+          ? [
+              { type: 'mousePressed', ...press },
+              { type: 'mouseReleased', ...press },
+            ]
+          : []),
+      ]);
       return snapshotOf(contents, request);
     }
+    startInput(step);
     return contents.executeJavaScript(
       `window.__DROIDMAXX_AGENT_ACTION?.(${JSON.stringify(request)});`,
       true,
     );
+  }
+
+  // Chromium's input router delivers these wherever the point lands, cross-site
+  // frames included (sendInputEvent stops at the top document). Before each
+  // event, inside the debugger queue, a new page or a replaced ref document
+  // stops the gesture.
+  function dispatchMouse(contents, step, target, events) {
+    return runWithWebContentsDebugger(contents, async (dbg) => {
+      for (const event of events) {
+        if (target.document && !(await frameHolds(dbg, target.frameSession, target.document)))
+          throw new Error(PAGE_CHANGED);
+        startInput(step);
+        await dbg.sendCommand('Input.dispatchMouseEvent', event);
+      }
+    });
   }
 
   async function snapshotAfterNavigation(contents, request) {
@@ -285,28 +321,23 @@ function createNativeBrowserPage({
     );
   }
 
-  async function capture(browserSessionId, box, options = {}) {
+  // A design-mode crop, as PNG; agent screenshots go through browserScreenshot.
+  async function capture(browserSessionId, box) {
     const entry = await restoreForAction(browserSessionId);
     const contents = liveContents(entry);
     if (!contents) throw new Error(`${appName} browser is not open.`);
-    const operation = liftBackgroundThrottling(contents);
-    try {
-      const fullPage = Boolean(options?.fullPage);
-      const scale =
-        typeof options?.deviceScaleFactor === 'number' && options.deviceScaleFactor > 0
-          ? options.deviceScaleFactor
-          : 2;
+    return unthrottled(contents, async () => {
       // A box crop is always already on-screen (the user just selected/sketched
       // it). Capture the composited frame directly: capturePage never re-renders
       // the page off-screen the way CDP's captureBeyondViewport does, so the live
       // pane no longer flickers on every selection or sketch.
-      if (box && !fullPage) {
+      if (box) {
         const rect = normalizeCaptureRect(entry, box);
         if (!rect) throw new Error('Requested capture region is empty or out of bounds.');
         const cropped = await contents.capturePage(rect).catch(() => undefined);
         if (cropped && !cropped.isEmpty()) return cropped.toPNG().toString('base64');
       }
-      const data = await captureViaCdp(contents, { fullPage, scale, box }).catch((err) => {
+      const data = await captureViaCdp(contents, { scale: 2, box }).catch((err) => {
         console.error(`cdp capture failed, falling back to viewport: ${err.message}`);
         return undefined;
       });
@@ -317,9 +348,7 @@ function createNativeBrowserPage({
       if (box && !rect) throw new Error('Requested capture region is empty or out of bounds.');
       const image = rect ? await contents.capturePage(rect) : await contents.capturePage();
       return image.isEmpty() ? undefined : image.toPNG().toString('base64');
-    } finally {
-      restoreBackgroundThrottling(contents, operation);
-    }
+    });
   }
 
   // A page that has just woken drops input until it paints again, so input
@@ -328,10 +357,9 @@ function createNativeBrowserPage({
     const entry = await restoreForAction(browserSessionId);
     const contents = liveContents(entry);
     if (!contents) return;
-    const operation = liftBackgroundThrottling(contents);
     let timer;
-    try {
-      await Promise.race([
+    await unthrottled(contents, () =>
+      Promise.race([
         contents
           .executeJavaScript(
             `new Promise((painted) => {
@@ -344,32 +372,27 @@ function createNativeBrowserPage({
         new Promise((resolve) => {
           timer = setTimeout(resolve, timeoutMs);
         }),
-      ]);
-    } finally {
-      clearTimeout(timer);
-      restoreBackgroundThrottling(contents, operation);
-    }
+      ]),
+    );
+    clearTimeout(timer);
   }
 
   // A page runs unthrottled while any operation on it is in flight. Restored as
   // soon as the last one ends, shown or not: re-enabling throttling on a guest
   // that is already hidden does not take effect, so a flag left lifted would
   // keep the page running after the pane closes.
-  function liftBackgroundThrottling(contents) {
+  async function unthrottled(contents, run) {
     const operations = operationsOn.get(contents) ?? { count: 0, generation: 0 };
-    operations.count += 1;
     operationsOn.set(contents, operations);
+    operations.count += 1;
     contents.setBackgroundThrottling(false);
-    return operations.generation;
-  }
-
-  function restoreBackgroundThrottling(contents, generation) {
-    const operations = operationsOn.get(contents);
-    // Abandoned operations were already accounted for.
-    if (!operations || operations.generation !== generation) return;
-    operations.count -= 1;
-    if (operations.count > 0) return;
-    throttle(contents);
+    const { generation } = operations;
+    try {
+      return await run();
+    } finally {
+      // Abandoned operations were already accounted for.
+      if (operations.generation === generation && --operations.count === 0) throttle(contents);
+    }
   }
 
   // Main gave up on the work in flight on this page: it stops keeping the page
@@ -391,9 +414,9 @@ function createNativeBrowserPage({
     }
   }
 
-  async function captureViaCdp(contents, { fullPage, scale, box }) {
+  async function captureViaCdp(contents, { scale, box }) {
     return runWithWebContentsDebugger(contents, async (dbg) => {
-      const params = { format: 'png', captureBeyondViewport: Boolean(fullPage) || Boolean(box) };
+      const params = { format: 'png', captureBeyondViewport: Boolean(box) };
       const metrics = await dbg.sendCommand('Page.getLayoutMetrics');
       const viewport = metrics.cssVisualViewport || metrics.visualViewport;
       const content = metrics.cssContentSize || metrics.contentSize;
@@ -407,10 +430,6 @@ function createNativeBrowserPage({
         if (width <= 0 || height <= 0)
           throw new Error('Requested capture region is empty or out of bounds.');
         params.clip = { x, y, width, height, scale };
-      } else if (fullPage) {
-        if (content.width > 0 && content.height > 0) {
-          params.clip = { x: 0, y: 0, width: content.width, height: content.height, scale };
-        }
       } else if (viewport.clientWidth > 0 && viewport.clientHeight > 0) {
         params.clip = {
           x: 0,
