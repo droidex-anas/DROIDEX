@@ -4,7 +4,8 @@ import { useDocumentVisible } from '../../hooks/useDocumentVisible';
 import { formatDuration } from '../../lib/tools';
 import { openExternal } from '../../lib/onboarding';
 import { useStoreSelector } from '../../hooks/useStore';
-import { providerModelCatalog } from '../../features/providers/providerIdentity';
+import { PROVIDER_LABELS, providerModelCatalog } from '../../features/providers/providerIdentity';
+import { resetLabel } from '../../lib/usageLimit';
 import type { ModelInfo, TranscriptEvent } from '../../types/bridge';
 
 const ACCENT = 'var(--droid-accent)';
@@ -289,20 +290,21 @@ export function TranscriptNotice({ event }: { event: TranscriptEvent }) {
         )
       : undefined,
   );
+  // A switch the harness made by itself names the harness that made it.
+  const harness = useStoreSelector((state) =>
+    event.modelSwitch?.cause
+      ? PROVIDER_LABELS[state.sessions[event.appSessionId].provider]
+      : undefined,
+  );
   const name = (id: string) => catalogModelName(models, id);
   let text: string;
   if (event.modelSwitch) {
-    text = `Model switched: ${name(event.modelSwitch.from)} → ${name(event.modelSwitch.to)}`;
+    const { from, to, cause } = event.modelSwitch;
+    const by = harness ? ` by ${harness}` : '';
+    const why = cause === 'usage_limit' ? ' · usage limit reached' : '';
+    text = `Model switched${by}: ${name(from)} → ${name(to)}${why}`;
   } else {
-    const reset = event.resetsAt !== undefined ? new Date(event.resetsAt) : undefined;
-    const when =
-      reset && Number.isFinite(reset.getTime())
-        ? new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' }).format(
-            reset,
-          )
-        : undefined;
-    text = "You've hit your usage limit. Upgrade your plan or add credits to continue";
-    text += when ? `, or try again at ${when}.` : '.';
+    text = `Usage limit reached · ${resetLabel(event.resetsAt, Date.now())}`;
   }
   return (
     <div

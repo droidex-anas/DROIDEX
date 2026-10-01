@@ -19,12 +19,15 @@ export function useQueuedPromptDelivery({
   appSessionId,
   cwd,
   isLive,
+  usageLimited,
   appUpdateInstalling,
   appUpdateInstallResult,
 }: {
   appSessionId: string | null;
   cwd: string | null;
   isLive: boolean;
+  // The chat is held on a usage limit: its queue waits until the limit lifts.
+  usageLimited: boolean;
   appUpdateInstalling: boolean;
   appUpdateInstallResult: 'downloaded' | 'presented' | null;
 }): void {
@@ -32,13 +35,16 @@ export function useQueuedPromptDelivery({
   const dispatch = useStoreDispatch();
   const guard = useMemo(createPromptQueueDeliveryGuard, []);
   const generation = useRef(0);
-  const previous = useRef<{ appSessionId: string | null; live: boolean }>({
+  const previous = useRef<{ appSessionId: string | null; live: boolean; limited: boolean }>({
     appSessionId: null,
     live: false,
+    limited: false,
   });
   const previousInstalling = useRef(appUpdateInstalling);
   const live = useRef(isLive);
   live.current = isLive;
+  const limited = useRef(usageLimited);
+  limited.current = usageLimited;
 
   useEffect(
     () => () => {
@@ -50,7 +56,7 @@ export function useQueuedPromptDelivery({
   const deliverPrompt = useCallback(async () => {
     if (!appSessionId || isAppUpdateInstalling()) return;
     if (!(store.getState().promptQueue[appSessionId] ?? []).length) return;
-    if (live.current) return;
+    if (live.current || limited.current) return;
     const capturedGeneration = generation.current;
     try {
       await guard.run(async () => {
@@ -61,6 +67,7 @@ export function useQueuedPromptDelivery({
         if (
           isAppUpdateInstalling() ||
           live.current ||
+          limited.current ||
           generation.current !== capturedGeneration ||
           store.getState().activeAppSessionId !== appSessionId
         )
@@ -123,15 +130,18 @@ export function useQueuedPromptDelivery({
 
   useEffect(() => {
     const was = previous.current;
-    // Either this session just settled, or the user came back to one that
-    // settled while they were away; both leave its queue to drain here.
-    const settled = was.live && !isLive && was.appSessionId === appSessionId;
-    const returned = was.appSessionId !== appSessionId && !isLive;
-    previous.current = { appSessionId, live: isLive };
-    if (!settled && !returned) return;
+    // This session just settled, the user came back to one that settled while
+    // they were away, or the limit an idle one was held on lifted; each leaves
+    // its queue to drain here.
+    const sameSession = was.appSessionId === appSessionId;
+    const settled = was.live && !isLive && sameSession;
+    const returned = !sameSession && !isLive;
+    const lifted = was.limited && !usageLimited && !isLive && sameSession;
+    previous.current = { appSessionId, live: isLive, limited: usageLimited };
+    if (!settled && !returned && !lifted) return;
     if (appSessionId && (store.getState().promptQueue[appSessionId] ?? []).length)
       void deliverPrompt();
-  }, [appSessionId, deliverPrompt, isLive, store]);
+  }, [appSessionId, deliverPrompt, isLive, store, usageLimited]);
 
   useEffect(() => {
     const hasQueued = Boolean(
