@@ -104,7 +104,7 @@ function createBrowserActions({
       // is the last.
       if (clickCount > 1 && step.navigation.started()) return;
       if (request.ref) {
-        const now = await reading.pointForRef(contents, entry, request.ref);
+        const now = await reading.pointForRef(contents, entry, request.ref, () => notLate(step));
         if (Math.abs(now.x - x) > 1 || Math.abs(now.y - y) > 1)
           throw new Error(`${request.ref} moved when the pointer reached it; try again.`);
         await refuseCovered(contents, entry, request.ref, now);

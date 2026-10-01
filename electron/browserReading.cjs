@@ -165,8 +165,8 @@ function createBrowserReading({ runWithWebContentsDebugger, savedSecretsFor, red
   async function visibleQuad(dbg, entry, ref, before) {
     const { backendNodeId, document, frame } = await lookupRef(dbg, entry, ref);
     const { sessionId } = frame;
+    await scrollFrameIntoView(dbg, sessionId, before);
     before?.();
-    await scrollFrameIntoView(dbg, sessionId).catch(() => undefined);
     await send(dbg, sessionId, 'DOM.scrollIntoViewIfNeeded', { backendNodeId }).catch(
       () => undefined,
     );

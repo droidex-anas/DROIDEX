@@ -182,13 +182,11 @@ function createNativeBrowserRequests({ manager, notifyRenderer }) {
       return result(request, true, await snapshotAfter(request, (await loaded)?.url));
     }
     if (request.action === 'goBack' || request.action === 'goForward') {
-      await manager.waitForPage(browserSessionId);
-      stillWanted();
       const loaded = manager.nextLoad(browserSessionId, LOAD_WAIT_MS);
       const moved =
         request.action === 'goBack'
-          ? await manager.goBack(browserSessionId)
-          : await manager.goForward(browserSessionId);
+          ? await manager.goBack(browserSessionId, stillWanted)
+          : await manager.goForward(browserSessionId, stillWanted);
       const url = moved ? (await loaded)?.url : undefined;
       return result(request, true, await snapshotAfter(request, url));
     }
