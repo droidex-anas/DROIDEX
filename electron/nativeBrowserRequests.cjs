@@ -43,6 +43,7 @@ const TURN_ACTIONS = new Set([
   'wait',
 ]);
 const LATE = 'The browser page did not finish in time.';
+const CLOSED = 'The browser was closed.';
 const MAX_WAITING_PER_PAGE = 8;
 const LOAD_WAIT_MS = 8_000;
 // Work still running a little past the sidecar's own timeout stops holding its
@@ -53,7 +54,7 @@ const DEFAULT_SIDECAR_TIMEOUT_MS = 12_000;
 function createNativeBrowserRequests({ manager, notifyRenderer }) {
   const waiting = new Map(); // browserSessionId -> requests in flight
   const painting = new Map(); // browserSessionId -> its first paint after waking
-  const turns = new Map(); // browserSessionId -> when the last action queued on it is over
+  const queues = new Map(); // browserSessionId -> { over, closed } for the actions queued on it
 
   // A message from the sidecar; only a well-formed browser request is answered.
   async function handle(message, reply) {
@@ -77,6 +78,10 @@ function createNativeBrowserRequests({ manager, notifyRenderer }) {
   async function perform(request, timeoutMs) {
     try {
       if (request.action === 'close') {
+        // Actions still queued on it never start.
+        const queue = queues.get(request.browserSessionId);
+        if (queue) queue.closed = true;
+        queues.delete(request.browserSessionId);
         manager.close(request.browserSessionId);
         notifyRenderer('native-browser-closed', { browserSessionId: request.browserSessionId });
         return result(request, true);
@@ -88,7 +93,8 @@ function createNativeBrowserRequests({ manager, notifyRenderer }) {
         const takesTurn =
           TURN_ACTIONS.has(request.action) || (request.action === 'screenshot' && request.ref);
         if (!takesTurn) return performOnPage(request);
-        return inTurn(request.browserSessionId, request.startBy, async () => {
+        const releaseBy = request.receivedAt + timeoutMs + DEADLINE_MARGIN_MS;
+        return inTurn(request.browserSessionId, request.startBy, releaseBy, async () => {
           if (INPUT_ACTIONS.has(request.action)) await painting.get(request.browserSessionId);
           return performOnPage(request);
         });
@@ -124,18 +130,28 @@ function createNativeBrowserRequests({ manager, notifyRenderer }) {
   }
 
   // Actions on one page run one at a time, in the order they came, each only
-  // once the one ahead has finished, even past its own deadline. One whose
-  // caller has given up never starts.
-  function inTurn(browserSessionId, startBy, run) {
-    const previous = turns.get(browserSessionId) ?? Promise.resolve();
-    const turn = previous.then(() => {
+  // once the one ahead has finished, even past its own deadline, until main
+  // gives up on it (`releaseBy`). One whose caller has given up, or whose
+  // browser was closed, never starts.
+  function inTurn(browserSessionId, startBy, releaseBy, run) {
+    const queue = queues.get(browserSessionId) ?? { over: Promise.resolve(), closed: false };
+    const turn = queue.over.then(() => {
+      if (queue.closed) throw new Error(CLOSED);
       if (Date.now() >= startBy) throw new Error(LATE);
       return run();
     });
-    const over = turn.catch(() => undefined);
-    turns.set(browserSessionId, over);
+    let timer;
+    const over = Promise.race([
+      turn.catch(() => undefined),
+      new Promise((resolve) => {
+        timer = setTimeout(resolve, Math.max(0, releaseBy - Date.now()));
+      }),
+    ]).finally(() => clearTimeout(timer));
+    queue.over = over;
+    queues.set(browserSessionId, queue);
     void over.then(() => {
-      if (turns.get(browserSessionId) === over) turns.delete(browserSessionId);
+      if (queue.over === over && queues.get(browserSessionId) === queue)
+        queues.delete(browserSessionId);
     });
     return turn;
   }

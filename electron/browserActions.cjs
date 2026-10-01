@@ -385,13 +385,19 @@ function notLate(step) {
 // and others) see the change; a checkbox or radio is clicked when it needs to
 // change. Nothing is read back, so a masked field stays unread.
 const FILL = `function (value, startBy) {
-  // The page can run this late; nothing changes once the caller has given up.
-  if (startBy && Date.now() >= startBy) throw new Error('the browser page did not finish in time');
-  // A focus handler can swap the field for another; nothing is written then.
+  // The page can run this late, and its focus handlers can take their time;
+  // nothing changes once the caller has given up, or once a focus handler has
+  // swapped the field for another.
+  const inTime = () => {
+    if (startBy && Date.now() >= startBy) throw new Error('the browser page did not finish in time');
+  };
   const focus = () => {
+    inTime();
     this.focus();
+    inTime();
     if (!this.isConnected) throw new Error('the field was replaced when it took the focus; read the page again');
   };
+  inTime();
   if (this instanceof HTMLSelectElement) {
     const wanted = String(value);
     const options = [...this.options];
