@@ -1,35 +1,14 @@
-import { useEffect, useSyncExternalStore } from 'react';
+import { useEffect } from 'react';
 
+import { useStoreSelector } from '../../hooks/useStore';
 import { bridge } from '../../lib/bridge';
-import type { ProviderKind, ProviderUsage, ServerEvent } from '../../types/bridge';
+import type { ProviderKind, ProviderUsage } from '../../types/bridge';
 
 // While /usage is open it asks again on the sidecar's own light cadence.
 const PANEL_REFRESH_MS = 5 * 60_000;
 
 // Who is looking: /usage itself, or a chat whose warning line reads the pace.
 export type UsageWatch = 'panel' | 'chat';
-
-// One account per harness, shared by every composer that shows it.
-const usageByProvider = new Map<ProviderKind, ProviderUsage>();
-const listeners = new Set<() => void>();
-let listening = false;
-
-function subscribe(listener: () => void): () => void {
-  if (!listening) {
-    listening = true;
-    bridge.subscribe(receive);
-  }
-  listeners.add(listener);
-  return () => {
-    listeners.delete(listener);
-  };
-}
-
-function receive(event: ServerEvent): void {
-  if (event.type !== 'usage.updated') return;
-  usageByProvider.set(event.usage.provider, event.usage);
-  for (const listener of listeners) listener();
-}
 
 // `immediate` is for the user's own asks: opening /usage and its Refresh.
 export function refreshUsage(provider: ProviderKind, panelOpen: boolean, immediate: boolean): void {
@@ -44,7 +23,7 @@ export function useProviderUsage(
   provider: ProviderKind,
   watch: UsageWatch | null,
 ): ProviderUsage | undefined {
-  const usage = useSyncExternalStore(subscribe, () => usageByProvider.get(provider));
+  const usage = useStoreSelector((state) => state.usage[provider]);
   useEffect(() => {
     if (!watch) return;
     const panelOpen = watch === 'panel';
