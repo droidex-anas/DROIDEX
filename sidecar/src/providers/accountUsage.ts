@@ -237,12 +237,14 @@ function mergeMeters(current: UsageMeter[], incoming: UsageMeter[]): UsageMeter[
 
 // A live session's read may never answer; the read gives up with the signal.
 function untilAborted<T>(work: Promise<T>, signal: AbortSignal): Promise<T> {
-  return Promise.race([
-    work,
-    new Promise<never>((_, reject) => {
-      signal.addEventListener('abort', () => {
-        reject(new Error('The usage read did not answer.'));
-      });
-    }),
-  ]);
+  let giveUp = (): void => undefined;
+  const abandoned = new Promise<never>((_, reject) => {
+    giveUp = () => {
+      reject(new Error('The usage read did not answer.'));
+    };
+    signal.addEventListener('abort', giveUp);
+  });
+  return Promise.race([work, abandoned]).finally(() => {
+    signal.removeEventListener('abort', giveUp);
+  });
 }
