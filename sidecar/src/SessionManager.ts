@@ -837,7 +837,9 @@ export class SessionManager {
   }
 
   connect(apiKey?: string): void {
+    const factoryApiKey = this.runtime.factoryApiKey();
     this.runtime.connect(apiKey);
+    if (this.runtime.factoryApiKey() !== factoryApiKey) this.accountUsage.factoryKeyChanged();
     this.ready = true;
     void this.adoption.adopt().catch((error: unknown) => {
       this.emit({
