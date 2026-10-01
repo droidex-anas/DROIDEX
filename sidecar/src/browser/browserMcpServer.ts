@@ -98,7 +98,7 @@ export function createBrowserMcpServer(
       tool(
         'browser_read_text',
         [
-          "Read the main content of the page as light markdown: headings, paragraphs, lists, table rows and links.",
+          'Read the main content of the page as light markdown: headings, paragraphs, lists, table rows and links.',
           'Cheaper than browser_read_page for reading; it has no refs, so use browser_read_page to act.',
           'Field values are left out. Ends with [Title · url].',
         ].join(' '),
@@ -176,6 +176,8 @@ export function createBrowserMcpServer(
             .describe('png only for pixel-exact design checks; jpeg (default) is far smaller.'),
         },
         safeTool(async (input) => {
+          if ([input.ref, input.region, input.full_page].filter(Boolean).length > 1)
+            throw new Error('Pass at most one of ref, region and full_page.');
           const shot = await manager.screenshot(appSessionId(), {
             ref: input.ref,
             region: input.region,

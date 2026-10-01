@@ -105,7 +105,9 @@ function createBrowserReading({ runWithWebContentsDebugger, savedSecretsFor, red
     return withPage(contents, async (dbg) => {
       const [frame] = await documentFrames(dbg);
       const render = newRender(undefined, {});
-      const text = markdownOf(await axTree(dbg, frame), render, { redactUrl, maxNodes: MAX_NODES });
+      const tree = await axTree(dbg, frame);
+      const skip = await masking.sensitiveNodes(dbg, tree, frame);
+      const text = markdownOf(tree, render, { redactUrl, maxNodes: MAX_NODES, skip });
       return finish(render, text, options.maxChars, contents, 'raise max_chars');
     });
   }

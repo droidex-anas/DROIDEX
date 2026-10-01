@@ -24,6 +24,12 @@ const INLINE_ROLES = new Set([
 const NOT_TEXT_ROLES = new Set([
   'LabelText',
   'button',
+  'tab',
+  'menuitem',
+  'menuitemcheckbox',
+  'menuitemradio',
+  'option',
+  'treeitem',
   'textbox',
   'searchbox',
   'combobox',
@@ -47,7 +53,7 @@ const NOT_TEXT_ROLES = new Set([
   'InlineTextBox',
 ]);
 
-function markdownOf(tree, render, { redactUrl, maxNodes }) {
+function markdownOf(tree, render, { redactUrl, maxNodes, skip }) {
   const byId = new Map(tree.nodes.map((node) => [node.nodeId, node]));
   const childrenOf = (node) => (node.childIds ?? []).map((id) => byId.get(id)).filter(Boolean);
   const root =
@@ -90,6 +96,8 @@ function markdownOf(tree, render, { redactUrl, maxNodes }) {
       return;
     }
     render.processed++;
+    // A sensitive field, editable host included, is left out with its content.
+    if (skip?.has(node.nodeId)) return;
     const role = node.role?.value ?? '';
     const name = cleanText(node.name?.value);
     if (node.ignored || role === 'none' || INLINE_ROLES.has(role)) {
@@ -110,7 +118,7 @@ function markdownOf(tree, render, { redactUrl, maxNodes }) {
       const text = textOf(node);
       // A heading inside a link or cell reads as that link's or cell's text.
       if (inlineOnly) inline.push(text);
-      else if (text) blocks.push(`${'#'.repeat(Number(level) || 2)} ${text}`);
+      else if (text) blocks.push(`${'#'.repeat(headingLevel(level))} ${text}`);
     } else if (role === 'listitem') {
       flush();
       prefix = `${'  '.repeat(Math.max(0, lists - 1))}- `;
@@ -134,6 +142,10 @@ function markdownOf(tree, render, { redactUrl, maxNodes }) {
   if (root) visit(root);
   flush();
   return blocks.join('\n');
+}
+
+function headingLevel(level) {
+  return Math.min(6, Math.max(1, Math.round(Number(level)) || 2));
 }
 
 function cleanText(value) {

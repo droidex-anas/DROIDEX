@@ -96,7 +96,7 @@ async function viewOf(dbg) {
     dpr: metrics.visualViewport.clientWidth / css.clientWidth || 1,
     contentWidth: Math.ceil(metrics.cssContentSize.width),
     contentHeight: Math.ceil(metrics.cssContentSize.height),
-    key: `${frameTree.frame.loaderId}:${css.pageX}:${css.pageY}:${css.clientWidth}:${css.clientHeight}`,
+    key: `${frameTree.frame.loaderId}:${frameTree.frame.url}:${css.pageX}:${css.pageY}:${css.clientWidth}:${css.clientHeight}`,
   };
 }
 

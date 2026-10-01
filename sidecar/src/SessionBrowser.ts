@@ -21,7 +21,6 @@ export type SessionBrowsers = Pick<
   | 'type'
   | 'keypress'
   | 'scroll'
-  | 'screenshot'
   | 'addReference'
   | 'designPrompt'
 >;

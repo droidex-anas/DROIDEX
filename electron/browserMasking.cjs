@@ -72,7 +72,7 @@ function createBrowserMasking({ savedSecretsFor }) {
     for (const frame of frames) {
       for (const node of (await axTree(dbg, frame)).nodes) {
         const field = fieldOf(node, frame);
-        if (field?.value && (await isSensitive(dbg, field, logins)))
+        if ((field?.value || field?.editable) && (await isSensitive(dbg, field, logins)))
           add(frame.sessionId, field.backendNodeId);
       }
     }
@@ -118,7 +118,19 @@ function createBrowserMasking({ savedSecretsFor }) {
     return !described || isSensitiveField(described.node.attributes ?? []);
   }
 
-  return { maskFields, sensitiveBoxes, insideMaskedField };
+  // The nodes of sensitive fields in one tree, for reads that leave them out.
+  async function sensitiveNodes(dbg, tree, frame) {
+    const logins = savedLogins();
+    const nodes = new Set();
+    for (const node of tree.nodes) {
+      const field = fieldOf(node, frame);
+      if ((field?.value || field?.editable) && (await isSensitive(dbg, field, logins)))
+        nodes.add(node.nodeId);
+    }
+    return nodes;
+  }
+
+  return { maskFields, sensitiveBoxes, insideMaskedField, sensitiveNodes };
 }
 
 // Nodes whose accessible name Chromium built from the page while a field sits
@@ -155,11 +167,13 @@ function nameSource(node) {
 // A field whose value is shown or masked; the value may be empty, as in a
 // select with nothing chosen.
 function fieldOf(node, frame) {
-  if (!VALUE_ROLES.has(node.role?.value) || node.ignored) return undefined;
+  const editable = isEditableRoot(node);
+  if ((!VALUE_ROLES.has(node.role?.value) && !editable) || node.ignored) return undefined;
   return {
     backendNodeId: node.backendDOMNodeId,
     name: cleanText(node.name?.value),
     value: cleanText(node.value?.value),
+    editable,
     // A field labelled through aria-labelledby can be labelled by itself, and
     // then its name is its own content.
     labelledBy: nameSource(node)?.attribute === 'aria-labelledby',
@@ -173,7 +187,7 @@ function fieldOf(node, frame) {
 async function inputsOf(dbg, sessionId) {
   await send(dbg, sessionId, 'DOM.getDocument', { depth: 0 });
   const { searchId, resultCount } = await send(dbg, sessionId, 'DOM.performSearch', {
-    query: 'input, textarea, select',
+    query: 'input, textarea, select, [contenteditable]',
   });
   try {
     if (!resultCount) return [];
@@ -189,6 +203,15 @@ async function inputsOf(dbg, sessionId) {
   } finally {
     await send(dbg, sessionId, 'DOM.discardSearchResults', { searchId }).catch(() => undefined);
   }
+}
+
+// A contenteditable host: editable, and the one element of it that takes focus.
+function isEditableRoot(node) {
+  const properties = node.properties ?? [];
+  return (
+    properties.some((property) => property.name === 'editable') &&
+    properties.some((property) => property.name === 'focusable' && property.value?.value)
+  );
 }
 
 function isSensitiveField(attributes) {
