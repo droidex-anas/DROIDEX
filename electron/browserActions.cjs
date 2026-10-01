@@ -73,8 +73,13 @@ function createBrowserActions({
         return press(contents, request, step);
       case 'fill':
         if (!request.ref) throw new Error('Filling a field needs its ref from browser_read_page.');
-        return reading.callOnRef(contents, entry, request.ref, [request.value], FILL, () =>
-          startInput(step),
+        return reading.callOnRef(
+          contents,
+          entry,
+          request.ref,
+          [request.value, step.startBy],
+          FILL,
+          () => startInput(step),
         );
       case 'fillCredentials':
         startInput(step);
@@ -379,7 +384,9 @@ function notLate(step) {
 // setter and the input and change events, so frameworks that track it (React
 // and others) see the change; a checkbox or radio is clicked when it needs to
 // change. Nothing is read back, so a masked field stays unread.
-const FILL = `function (value) {
+const FILL = `function (value, startBy) {
+  // The page can run this late; nothing changes once the caller has given up.
+  if (startBy && Date.now() >= startBy) throw new Error('the browser page did not finish in time');
   // A focus handler can swap the field for another; nothing is written then.
   const focus = () => {
     this.focus();
