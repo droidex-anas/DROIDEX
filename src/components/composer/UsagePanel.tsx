@@ -45,7 +45,11 @@ export function UsagePanel({
 
   return (
     <ComposerTab>
-      <div className="flex min-w-0 flex-col gap-1 text-[11px]">
+      <div
+        role="region"
+        aria-label={`${PROVIDER_LABELS[provider]} usage`}
+        className="flex min-w-0 flex-col gap-1 text-[11px]"
+      >
         <div className="flex min-w-0 flex-wrap items-center gap-x-4">
           <div className="flex min-w-0 flex-auto items-center gap-1.5 px-1.5 py-1">
             <span className="shrink-0 text-droid-text-muted">
