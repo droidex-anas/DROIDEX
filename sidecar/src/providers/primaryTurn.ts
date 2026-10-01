@@ -7,7 +7,7 @@ import type { ProviderMention } from './catalog.js';
 import type { LiveSession } from '../SessionLifecycle.js';
 import type { ScheduledTurnDelivery } from '../sessionAutomationDelivery.js';
 import { isReportedStreamingTranscriptError, type SessionTimeline } from '../SessionTimeline.js';
-import { usageLimitDetails } from './usageLimit.js';
+import { UsageLimitError, usageLimitDetails } from './usageLimit.js';
 
 export interface PrimaryTurnDependencies {
   eventFlow: Pick<SessionEventFlow, 'beginTurn' | 'apply'>;
@@ -126,6 +126,8 @@ export async function runPrimaryTurn(
   }
   if (!isCurrent()) return;
   if (turnError) settleTurnFailure(d, liveSession, turnError, reportedError, reportedUsageLimit);
+  // An answered turn is the only evidence that a limit has lifted.
+  else if (liveSession.summary.usageLimit) d.updateSummary(appSessionId, { usageLimit: undefined });
   // Keep streaming=true while the context refresh is in flight so concurrent
   // sends queue instead of racing a second lifecycle turn.
   await context.refresh();
@@ -156,7 +158,11 @@ function settleTurnFailure(
     }
     d.emitError({ appSessionId, message });
   }
-  d.updateSummary(appSessionId, { phase: 'failed' });
+  // Set only by a refusal, so a later failure of any other kind never reads as the limit.
+  d.updateSummary(appSessionId, {
+    phase: 'failed',
+    usageLimit: error instanceof UsageLimitError ? error.limit : undefined,
+  });
 }
 
 interface TurnContext {

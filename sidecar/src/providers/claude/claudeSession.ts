@@ -24,7 +24,7 @@ import type { ProviderInteractions } from '../interactions.js';
 import type { ProviderModelSettings, ProviderSession } from '../session.js';
 import { ClaudeCatalog } from './claudeCatalog.js';
 import { claudeLaunchModel, planningModelNotice, type ClaudeDefaultModel } from './claudeModels.js';
-import { ClaudeEventMapper, rateLimitRefusal } from './claudeEvents.js';
+import { ClaudeEventMapper } from './claudeEvents.js';
 import {
   answersTurn,
   commandLifecycle,
@@ -77,7 +77,6 @@ export class ClaudeSession implements ProviderSession {
   private readonly spawned: Promise<void>;
   private initializing = true;
   private child?: ChildProcess;
-  private modelId: string | undefined;
   private fastMode: boolean;
   private readonly permissions: ClaudePermissionModes;
   private activeTurnId?: string;
@@ -94,7 +93,6 @@ export class ClaudeSession implements ProviderSession {
 
   constructor(private readonly input: ClaudeSessionInput) {
     this.providerSessionId = input.appSessionId;
-    this.modelId = input.modelId;
     this.fastMode = input.fastMode ?? false;
     this.permissions = new ClaudePermissionModes(
       input.autonomy,
@@ -103,7 +101,7 @@ export class ClaudeSession implements ProviderSession {
         this.requireOpen();
       },
     );
-    this.mapper = new ClaudeEventMapper(input.appSessionId, input.modelId);
+    this.mapper = new ClaudeEventMapper(input.appSessionId, input.modelId, input.models);
     this.closed = new Promise((resolve) => {
       this.resolveClosed = resolve;
     });
@@ -229,7 +227,7 @@ export class ClaudeSession implements ProviderSession {
         const { message, events } = next.value;
         if (message.type === 'assistant' && !reportedPlanningModel) {
           const notice = this.permissions.planning
-            ? planningModelNotice(message, this.modelId)
+            ? planningModelNotice(message, this.mapper.modelId)
             : undefined;
           if (notice) {
             reportedPlanningModel = true;
@@ -246,14 +244,10 @@ export class ClaudeSession implements ProviderSession {
           yield { done: true };
           return;
         }
-        // A refused usage window is answered with no result at all, so the turn
-        // has to end here instead of waiting for one that never comes.
-        if (message.type === 'rate_limit_event') {
-          const refusal = rateLimitRefusal(message.rate_limit_info);
-          if (refusal) throw refusal;
-        }
         // The turn's own result, then that of each steer run as a CLI turn after it.
         if (message.type === 'result' && (this.turnAnswered || answersTurn(message, turnId))) {
+          const refusal = this.mapper.takeRefusal();
+          if (refusal) throw refusal;
           // A stopped turn settles quietly: the CLI still reports the
           // interruption as an error result carrying an internal diagnostic.
           if (message.subtype !== 'success' && this.interruptedTurnId !== turnId)
@@ -392,16 +386,15 @@ export class ClaudeSession implements ProviderSession {
   }: ProviderModelSettings): Promise<void> {
     await this.waitUntilInitialized();
     const resolvedModel = claudeLaunchModel(
-      modelId === undefined ? this.modelId : (modelId ?? undefined),
+      modelId === undefined ? this.mapper.modelId : (modelId ?? undefined),
       contextWindowTokens ?? this.input.contextWindowTokens,
       this.input.models,
       this.input.defaultModel,
     );
-    if (modelId !== undefined && resolvedModel !== this.modelId) {
+    if (modelId !== undefined && resolvedModel !== this.mapper.modelId) {
       await this.query.setModel(resolvedModel);
       this.requireOpen();
-      this.modelId = resolvedModel;
-      this.mapper.setModel(this.modelId);
+      this.mapper.setModel(resolvedModel);
     }
     this.requireOpen();
     if (fastMode !== undefined) {

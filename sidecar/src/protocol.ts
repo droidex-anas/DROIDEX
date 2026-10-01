@@ -137,6 +137,24 @@ export interface SessionLineage {
   forkedAt: number;
 }
 
+export type UsageWindow = 'five_hour' | 'daily' | 'weekly' | 'monthly';
+
+// A usage limit as the harness reported it. `model` names the one model family
+// the limit covers ('Opus'); `resetsAt` is epoch ms, set only while still ahead.
+export interface UsageLimit {
+  window?: UsageWindow;
+  model?: string;
+  resetsAt?: number;
+}
+
+// A model change the transcript records. `cause` is set when the harness made
+// the change by itself: 'usage_limit' when it said the limit was why.
+export interface ModelSwitch {
+  from: string;
+  to: string;
+  cause?: 'harness' | 'usage_limit';
+}
+
 export interface SessionSummary {
   appSessionId: string;
   providerSessionId?: string;
@@ -186,6 +204,9 @@ export interface SessionSummary {
   contextAccuracy?: 'exact' | 'estimated';
   contextUpdatedAt?: string;
   maxContextTokens?: number;
+  // Live-only: the limit this chat's last turn was refused on. The turn runner
+  // is its only writer; the next turn that ends without an error clears it.
+  usageLimit?: UsageLimit;
   // The auto-compaction trigger the sidecar last armed on the daemon for this
   // session (already clamped below the model window), cleared when arming
   // failed. Recorded as diagnostic/persisted truth; compaction itself is
@@ -249,7 +270,7 @@ export interface TranscriptEvent {
   // Set on a row whose text was said out loud in a voice conversation.
   spoken?: boolean;
   compactType?: 'auto' | 'manual';
-  modelSwitch?: { from: string; to: string };
+  modelSwitch?: ModelSwitch;
   errorKind?: 'usage_limit';
   resetsAt?: number;
   // A 'status' row that only says what the app is doing right now (booting a

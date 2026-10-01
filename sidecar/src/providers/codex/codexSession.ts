@@ -12,6 +12,7 @@ import type { ProviderModelSettings, ProviderSession } from '../session.js';
 import type { AppServerClient } from './appServer.js';
 import { codexAutonomy, codexSandboxPolicy, OpenPrompts } from './codexApprovals.js';
 import { CodexCatalog } from './codexCatalog.js';
+import { CodexRateLimits } from './codexRateLimits.js';
 import { canApproveWorkspaceEdits } from './codexEditPermissions.js';
 import {
   CodexEventMapper,
@@ -87,6 +88,7 @@ export class CodexSession implements ProviderSession {
   // has no transcript to land in yet and waits for the turn that follows.
   private readonly heldNotices: NormalizedEvent[] = [];
   private catalog?: CodexCatalog;
+  private readonly rateLimits = new CodexRateLimits();
 
   constructor(input: CodexSessionInput) {
     this.providerSessionId = input.appSessionId;
@@ -171,6 +173,7 @@ export class CodexSession implements ProviderSession {
     this.threadModel = response.model;
     this.mapper.setModel({ ...this.model, modelId: this.model.modelId ?? this.threadModel });
     this.catalog ??= new CodexCatalog(this.client, [this.cwd]);
+    this.rateLimits.read(this.client);
     await this.pushThreadSettings();
   }
 
@@ -459,12 +462,16 @@ export class CodexSession implements ProviderSession {
     this.client.onNotification('skills/changed', () => {
       this.catalog?.refreshSkills();
     });
+    // The account's, so it names no thread.
+    this.client.onNotification('account/rateLimits/updated', (params) => {
+      this.rateLimits.update(params);
+    });
     this.onThreadNotification('mcpServer/startupStatus/updated', (params) => {
       const failure = mcpServerFailure(params);
       if (failure) this.notice(this.mapper.mcpFailureEvents(failure));
     });
     this.onThreadNotification('turn/started', (params) => {
-      const turn = turnOf(params);
+      const turn = turnOf(params, this.rateLimits);
       if (!turn) return;
       // A typed turn owns this only while it is still waiting to be told its
       // id. Once it has one, a different id belongs to a turn Codex started
@@ -473,7 +480,7 @@ export class CodexSession implements ProviderSession {
       else if (turn.id !== this.turnId) this.setDelegatedTurn(turn.id);
     });
     this.onThreadNotification('turn/completed', (params) => {
-      const turn = turnOf(params);
+      const turn = turnOf(params, this.rateLimits);
       if (!turn) return;
       if (turn.id === this.delegatedTurnId) {
         this.dropSteers();
@@ -486,7 +493,7 @@ export class CodexSession implements ProviderSession {
       this.settle(turn);
     });
     this.onThreadNotification('error', (params) => {
-      const failure = errorOf(params);
+      const failure = errorOf(params, this.rateLimits);
       if (!failure) return;
       // Through deliver(), so a turn Codex started for a spoken request
       // reports its failures in the chat too rather than stopping silently.
