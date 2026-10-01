@@ -74,6 +74,7 @@ import type {
   ProviderKind,
   ProviderMention,
   ProviderStatus,
+  ProviderUsage,
   ChildSessionSummary,
   SkillInfo,
   ReasoningEffort,
@@ -399,6 +400,8 @@ export interface AppState {
   // pick is sticky: it survives session switches and restarts.
   providerStatuses: ProviderStatus[];
   draftProvider: ProviderKind;
+  // Each harness account's usage, as the sidecar last reported it.
+  usage: Partial<Record<ProviderKind, ProviderUsage>>;
 
   // Global compaction model applied to every session. 'current-model' = use
   // each session's active model; otherwise a specific model id.
@@ -702,6 +705,7 @@ export type Action =
   // Models / per-agent config
   | { type: 'MODELS_LIST'; models: ModelInfo[] }
   | { type: 'PROVIDER_STATUSES'; statuses: ProviderStatus[] }
+  | { type: 'USAGE_UPDATED'; usage: ProviderUsage }
   | { type: 'SET_DRAFT_PROVIDER'; provider: ProviderKind }
   | {
       type: 'SKILLS_LIST';
@@ -832,6 +836,7 @@ export const initialState: AppState = {
   models: [],
   providerStatuses: [],
   draftProvider: loadDraftProvider(),
+  usage: {},
   compactionModel: loadCompactionModel(),
   compactionTokenLimit: loadCompactionTokenLimit(),
   compactionTokenLimitPerModel: loadCompactionTokenLimitPerModel(),
@@ -2372,6 +2377,9 @@ export function reducer(state: AppState, action: Action): AppState {
     case 'SET_DRAFT_PROVIDER':
       return { ...state, draftProvider: action.provider };
 
+    case 'USAGE_UPDATED':
+      return { ...state, usage: { ...state.usage, [action.usage.provider]: action.usage } };
+
     case 'SKILLS_LIST':
       return {
         ...state,
@@ -2735,6 +2743,8 @@ export function adaptEvent(ev: ServerEvent): Action | null {
       return null;
     case 'provider.status':
       return { type: 'PROVIDER_STATUSES', statuses: ev.statuses };
+    case 'usage.updated':
+      return { type: 'USAGE_UPDATED', usage: ev.usage };
     case 'settings.defaults':
       return { type: 'FACTORY_DEFAULTS', defaults: ev.defaults };
     case 'browser.updated':
