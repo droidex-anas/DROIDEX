@@ -1,10 +1,11 @@
 import { AnimatePresence } from 'framer-motion';
 import { lazy, Suspense, useEffect, useState, type ReactNode } from 'react';
 
+import { PROVIDER_LABELS } from '../../features/providers/providerIdentity';
 import { paceWarning } from '../../features/usage/usagePace';
 import { useProviderUsage, type UsageWatch } from '../../features/usage/useProviderUsage';
 import { useRuntimeHealth } from '../../hooks/useRuntimeHealth';
-import type { ProviderKind, UsageLimit } from '../../types/bridge';
+import type { ProviderKind, ProviderUsage, UsageLimit } from '../../types/bridge';
 import { UsageLimitTab, UsageWarningTab } from './UsageLimitTab';
 
 // /usage opens on demand, so its panel loads with the first open.
@@ -71,10 +72,27 @@ export function UsageTabs({
 
   // One tab leaves before the next rises, so two never stack for a frame.
   return (
-    <AnimatePresence initial={false} mode="wait">
-      {tab}
-    </AnimatePresence>
+    <>
+      <span className="sr-only" role="status" aria-live="polite">
+        {panelOpen && panelAnnouncement(provider, usage, reachable)}
+      </span>
+      <AnimatePresence initial={false} mode="wait">
+        {tab}
+      </AnimatePresence>
+    </>
   );
+}
+
+// Tells a screen reader, whose focus stays in the composer, that /usage
+// opened and when its answer is in.
+function panelAnnouncement(
+  provider: ProviderKind,
+  usage: ProviderUsage | undefined,
+  reachable: boolean,
+): string {
+  const name = PROVIDER_LABELS[provider];
+  if (!usage && reachable) return `Checking ${name} usage…`;
+  return `${name} usage is open above the composer.`;
 }
 
 // Renders again every half minute while a tab shows countdowns and a pace.
