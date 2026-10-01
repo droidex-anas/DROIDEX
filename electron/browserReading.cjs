@@ -4,7 +4,7 @@
 // gone fails plainly instead of acting on something else.
 
 const { refFor, knownRef, forgetRefs } = require('./browserRefs.cjs');
-const { createBrowserMasking, fieldOf } = require('./browserMasking.cjs');
+const { createBrowserMasking, fieldOf, foldedNames } = require('./browserMasking.cjs');
 const { cleanText, matcher, TEXT_ROLES } = require('./browserText.cjs');
 
 const MAX_NODES = 20_000;
@@ -237,6 +237,8 @@ function createBrowserReading({ runWithWebContentsDebugger, savedSecretsFor, red
   function renderTree(render, tree, root, document, baseDepth) {
     const byId = new Map(tree.nodes.map((node) => [node.nodeId, node]));
     const { lines, interactiveOnly } = render;
+    const folded = foldedNames(tree.nodes);
+    const nameOf = (node) => (folded.has(node.nodeId) ? '' : cleanName(node.name?.value));
 
     function visit(node, depth, parentName) {
       if (render.processed >= MAX_NODES) {
@@ -245,7 +247,7 @@ function createBrowserReading({ runWithWebContentsDebugger, savedSecretsFor, red
       }
       render.processed++;
       const role = node.role?.value ?? '';
-      const name = cleanName(node.name?.value);
+      const name = nameOf(node);
       const skip =
         node.ignored ||
         role === 'InlineTextBox' ||
@@ -277,7 +279,7 @@ function createBrowserReading({ runWithWebContentsDebugger, savedSecretsFor, red
     function visitChildren(children, depth, parentName) {
       const names = new Set([parentName]);
       for (const child of children)
-        if (!TEXT_ROLES.has(child.role?.value ?? '')) names.add(cleanName(child.name?.value));
+        if (!TEXT_ROLES.has(child.role?.value ?? '')) names.add(nameOf(child));
       let run = [];
       const flush = () => {
         const text = cleanText(run.join(' '));
@@ -311,7 +313,7 @@ function createBrowserReading({ runWithWebContentsDebugger, savedSecretsFor, red
       if (render.processed + ++counted.nodes > MAX_NODES) return null;
       const role = node.role?.value ?? '';
       if (TEXT_ROLES.has(role) && !node.ignored) return node.name?.value ?? '';
-      const wrapper = node.ignored || (WRAPPER_ROLES.has(role) && !cleanName(node.name?.value));
+      const wrapper = node.ignored || (WRAPPER_ROLES.has(role) && !nameOf(node));
       if (!wrapper) return null;
       const parts = childrenOf(node).map((child) => flatText(child, counted));
       return parts.some((part) => part === null) ? null : parts.join(' ');
