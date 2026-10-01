@@ -123,15 +123,20 @@ async function focusedFrame(dbg) {
   const sessions = await attachFrames(dbg);
   let sessionId;
   let frameId; // the same-process frame in the session that holds the focus
-  let documentId; // its document, as a remote object
   const held = [];
+  const documentOf = async (session) => {
+    const { result } = await send(dbg, session, 'Runtime.evaluate', { expression: 'document' });
+    held.push({ sessionId: session, objectId: result.objectId });
+    return result.objectId;
+  };
+  let documentId = await documentOf(undefined); // the document walked, as a remote object
   try {
     for (;;) {
       const node = await activeElement(dbg, sessionId, documentId);
       if (node?.localName !== 'iframe' && node?.localName !== 'frame') break;
       const child = await crossSiteChild(dbg, sessions, sessionId, node.backendNodeId);
       if (child) {
-        [sessionId, frameId, documentId] = [child, undefined, undefined];
+        [sessionId, frameId, documentId] = [child, undefined, await documentOf(child)];
         continue;
       }
       const { node: owner } = await send(dbg, sessionId, 'DOM.describeNode', {
@@ -146,7 +151,17 @@ async function focusedFrame(dbg) {
       [frameId, documentId] = [owner.frameId, object.objectId];
     }
     const { frameTree } = await send(dbg, sessionId, 'Page.getFrameTree');
-    return { sessionId, document: loaderOf(frameTree, frameId) ?? frameTree.frame.loaderId };
+    const document = loaderOf(frameTree, frameId) ?? frameTree.frame.loaderId;
+    // That loader is the walked document's only if the document is still in
+    // its frame once the loader has been read.
+    const { result } = await send(dbg, sessionId, 'Runtime.callFunctionOn', {
+      objectId: documentId,
+      functionDeclaration: 'function () { return this.defaultView !== null; }',
+      returnByValue: true,
+    });
+    if (result?.value !== true)
+      throw new Error('The page changed before the action ran; call browser_read_page.');
+    return { sessionId, document };
   } finally {
     for (const object of held)
       await send(dbg, object.sessionId, 'Runtime.releaseObject', {
@@ -155,14 +170,12 @@ async function focusedFrame(dbg) {
   }
 }
 
-// The element with the focus in a session's top document, or in the given one.
+// The element with the focus in the given document.
 async function activeElement(dbg, sessionId, documentId) {
-  const { result } = documentId
-    ? await send(dbg, sessionId, 'Runtime.callFunctionOn', {
-        objectId: documentId,
-        functionDeclaration: 'function () { return this.activeElement; }',
-      })
-    : await send(dbg, sessionId, 'Runtime.evaluate', { expression: 'document.activeElement' });
+  const { result } = await send(dbg, sessionId, 'Runtime.callFunctionOn', {
+    objectId: documentId,
+    functionDeclaration: 'function () { return this.activeElement; }',
+  });
   if (!result?.objectId) return undefined;
   try {
     return (await send(dbg, sessionId, 'DOM.describeNode', { objectId: result.objectId })).node;

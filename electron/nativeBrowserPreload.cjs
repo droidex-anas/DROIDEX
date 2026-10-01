@@ -507,14 +507,14 @@ function inspectElement(selector) {
   };
 }
 
-// A copy of an element without what was typed into its text areas and
-// editable regions, its own included; an input's value never shows in its
+// A copy of an element without what its fields hold (text areas, selects and
+// editable regions), its own included; an input's value never shows in its
 // markup either.
 function withoutTypedContent(el) {
-  const typed = 'textarea, [contenteditable]:not([contenteditable="false"])';
+  const fields = 'textarea, select, [contenteditable]:not([contenteditable="false"])';
   const clone = el.cloneNode(true);
-  if (el.isContentEditable || el instanceof HTMLTextAreaElement) clone.textContent = '[redacted]';
-  else for (const field of clone.querySelectorAll(typed)) field.textContent = '[redacted]';
+  if (el.isContentEditable || el.closest('textarea, select')) clone.textContent = '[redacted]';
+  else for (const field of clone.querySelectorAll(fields)) field.textContent = '[redacted]';
   return clone;
 }
 

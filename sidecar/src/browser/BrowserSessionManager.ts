@@ -462,7 +462,11 @@ export class BrowserSessionManager {
     };
   }
 
+  // An answer for a browser that was closed, or replaced, while it ran is
+  // never shown: it would bring back the closed one's state.
   private applied(session: ManagedBrowserSession, result: BrowserActionResult): BrowserOutcome {
+    if (this.resolveSession(session.appSessionId) !== session)
+      throw new Error('The browser was closed while the action ran.');
     session.state = this.stateFromSnapshot(session, result.snapshot);
     this.emitUpdated(session.state);
     return { state: session.state, text: result.text };
