@@ -84,7 +84,7 @@ function createBrowserActions({
         );
       case 'fillCredentials':
         startInput(step);
-        return credentials.fillForAgent(contents);
+        return credentials.fillForAgent(contents, step.startBy);
       default:
         throw new Error(`Unsupported browser action: ${request.action}`);
     }
@@ -239,7 +239,12 @@ function createBrowserActions({
       const y = Math.round(Number(request.y));
       if (!Number.isFinite(x) || !Number.isFinite(y))
         throw new Error('Pass a ref from browser_read_page, or viewport x and y.');
-      return { x, y };
+      // A point is on the top document, which its input then has to stay on.
+      const document = await reading.withPage(
+        contents,
+        async (dbg) => (await dbg.sendCommand('Page.getFrameTree')).frameTree.frame.loaderId,
+      );
+      return { x, y, document };
     }
     const target = await reading.pointForRef(contents, entry, request.ref, () => notLate(step));
     await refuseCovered(contents, entry, request.ref, target);

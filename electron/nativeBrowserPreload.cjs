@@ -431,6 +431,8 @@ function fillCredentials(payload) {
   try {
     if (!payload || payload.origin !== location.origin)
       return { ok: false, filled: false, error: 'The page changed before the login was filled.' };
+    if (payload.startBy && Date.now() >= payload.startBy)
+      return { ok: false, filled: false, error: 'The browser page did not finish in time.' };
     const username = typeof payload.username === 'string' ? payload.username : '';
     const password = typeof payload.password === 'string' ? payload.password : '';
     if (!password) return { ok: false, filled: false };
