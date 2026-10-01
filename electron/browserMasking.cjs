@@ -14,6 +14,7 @@ const { cleanText } = require('./browserText.cjs');
 const { dropRef } = require('./browserRefs.cjs');
 
 const MASK = '••••';
+const TEXT_NODE = 3;
 const VALUE_ROLES = new Set([
   'textbox',
   'searchbox',
@@ -219,63 +220,55 @@ function fieldOf(node, frame) {
   };
 }
 
-// Where an element's text is painted past its own box, as a quad in CDP's
-// coordinates: the page measures the text as shares of the element's box, laid
-// over that box as CDP has it, corner to corner, so a frame that is moved,
-// scaled, turned or mirrored carries the mask with it. Text that runs outside an
-// element transformed within its own page cannot be placed, so the capture fails.
+// Where an element's text is painted once it runs past the element's own box:
+// CDP's quads for each of its text nodes, which Chromium lays out with every
+// transform on the way already applied (frames, the page, shadow trees, closed
+// ones included). The page only says whether the text overflows, which no
+// transform changes. A field with more text nodes than this fails the capture
+// rather than go unmasked.
+const MAX_TEXT_NODES = 300;
+
 async function textQuads(dbg, sessionId, backendNodeId) {
+  if (!(await overflows(dbg, sessionId, backendNodeId))) return [];
+  const { node } = await send(dbg, sessionId, 'DOM.describeNode', {
+    backendNodeId,
+    depth: -1,
+    pierce: true,
+  });
+  const texts = [];
+  const walk = (item) => {
+    if (item.nodeType === TEXT_NODE) texts.push(item.backendNodeId);
+    for (const child of [...(item.children ?? []), ...(item.shadowRoots ?? [])]) walk(child);
+  };
+  walk(node);
+  if (texts.length > MAX_TEXT_NODES)
+    throw new Error('A sensitive field on this page holds too much text to mask.');
+  const quads = [];
+  for (const text of texts) {
+    const shape = await send(dbg, sessionId, 'DOM.getContentQuads', { backendNodeId: text }).catch(
+      () => undefined,
+    );
+    quads.push(...(shape?.quads ?? []));
+  }
+  return quads;
+}
+
+async function overflows(dbg, sessionId, backendNodeId) {
   const { object } = await send(dbg, sessionId, 'DOM.resolveNode', { backendNodeId });
   try {
     const { result } = await send(dbg, sessionId, 'Runtime.callFunctionOn', {
       objectId: object.objectId,
-      functionDeclaration: TEXT_SHARE,
+      functionDeclaration:
+        'function () { return this.scrollWidth > this.clientWidth + 1 || this.scrollHeight > this.clientHeight + 1; }',
       returnByValue: true,
     });
-    if (!result?.value) return [];
-    if (result.value === 'transformed')
-      throw new Error(
-        'A sensitive field on this page is transformed, so its text cannot be masked.',
-      );
-    const { model } = await send(dbg, sessionId, 'DOM.getBoxModel', { backendNodeId });
-    const [x0, y0, x1, y1, , , x3, y3] = model.border;
-    const at = (u, v) => [x0 + u * (x1 - x0) + v * (x3 - x0), y0 + u * (y1 - y0) + v * (y3 - y0)];
-    const [left, top, right, bottom] = result.value;
-    return [[...at(left, top), ...at(right, top), ...at(right, bottom), ...at(left, bottom)]];
+    return result?.value === true;
   } finally {
     await send(dbg, sessionId, 'Runtime.releaseObject', { objectId: object.objectId }).catch(
       () => undefined,
     );
   }
 }
-
-// The element's text box as shares of its own border box, [left, top, right,
-// bottom]; nothing while the text stays inside the box, which the element's own
-// mask covers.
-const TEXT_SHARE = `function () {
-  const range = this.ownerDocument.createRange();
-  range.selectNodeContents(this);
-  const text = range.getBoundingClientRect();
-  const own = this.getBoundingClientRect();
-  if ((!text.width && !text.height) || !own.width || !own.height) return null;
-  const inside =
-    text.left >= own.left - 1 && text.top >= own.top - 1 &&
-    text.right <= own.right + 1 && text.bottom <= own.bottom + 1;
-  if (inside) return null;
-  // Turned, mirrored or scaled within its page, it has no known orientation.
-  // Up the composed tree: through slots and out of shadow roots to their hosts.
-  for (let node = this; node; node = node.assignedSlot || node.parentElement || node.getRootNode().host) {
-    const style = this.ownerDocument.defaultView.getComputedStyle(node);
-    if (style.transform !== 'none' || style.rotate !== 'none' || style.scale !== 'none')
-      return 'transformed';
-  }
-  return [
-    (text.left - own.left) / own.width,
-    (text.top - own.top) / own.height,
-    (text.right - own.left) / own.width,
-    (text.bottom - own.top) / own.height,
-  ];
-}`;
 
 // Every input, textarea and select in a session's documents, shadow roots
 // and same-process frames included.
