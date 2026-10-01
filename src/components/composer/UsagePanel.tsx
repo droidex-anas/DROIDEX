@@ -34,9 +34,12 @@ export function UsagePanel({
   now: number;
   onClose: () => void;
 }) {
-  // Refreshing until the answer arrives as a new snapshot.
-  const [refreshedFrom, setRefreshedFrom] = useState<ProviderUsage | undefined | null>(null);
-  const refreshing = refreshedFrom !== null && refreshedFrom === usage;
+  // Refreshing until the answer arrives as a new snapshot of the same harness.
+  const [refreshedFrom, setRefreshedFrom] = useState<{
+    provider: ProviderKind;
+    usage: ProviderUsage | undefined;
+  }>();
+  const refreshing = refreshedFrom?.provider === provider && refreshedFrom.usage === usage;
   const extra = usage?.extra && extraLabel(usage.extra);
   // The oldest window's time, so the line never claims one a read did not refresh.
   const updatedAt = usage?.meters.length
@@ -73,7 +76,7 @@ export function UsagePanel({
               type="button"
               disabled={refreshing}
               onClick={() => {
-                if (refreshUsage(provider, true, true)) setRefreshedFrom(usage);
+                if (refreshUsage(provider, true, true)) setRefreshedFrom({ provider, usage });
               }}
               className={`${ACTION_CLASS} text-droid-text-secondary disabled:opacity-60`}
             >
