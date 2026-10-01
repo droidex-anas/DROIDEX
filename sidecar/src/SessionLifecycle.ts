@@ -39,14 +39,14 @@ import {
 } from './sessionOpening.js';
 import type { ProviderInteractions } from './providers/interactions.js';
 import { requireProviderKind, type ProviderKind } from './providers/providerKind.js';
-import type { PrimaryTurnRequest } from './providers/primaryTurn.js';
+import { failedTurnSummary, type PrimaryTurnRequest } from './providers/primaryTurn.js';
 import {
   droidLaunchSettings,
   requireDroidReasoningSupported,
 } from './providers/droid/droidLaunch.js';
 import { droidSessionOf } from './providers/droid/DroidProviderSession.js';
 import { userPromptDisplay } from './sessionTranscriptParser.js';
-import type { Provider, ProviderSession } from './providers/session.js';
+import type { DelegatedTurnEnd, Provider, ProviderSession } from './providers/session.js';
 
 const MAX_SCHEDULED_SESSION_RUNTIMES = 8;
 // How long a settled turn waits for Send now's interrupt. A harness that never
@@ -1142,7 +1142,7 @@ export class SessionLifecycle {
     });
     // A turn the provider started by itself is the session's turn like any
     // other: it streams, it can be stopped, and a typed prompt waits behind it.
-    const delegated = liveSession.session.onDelegatedTurn?.((running, completed) => {
+    const delegated = liveSession.session.onDelegatedTurn?.((running, end) => {
       if (!isCurrent()) return;
       if (running) {
         liveSession.streaming = true;
@@ -1162,14 +1162,14 @@ export class SessionLifecycle {
       // starts under it.
       const interrupt = liveSession.sendNowInterrupt;
       if (!interrupt) {
-        this.settleDelegatedTurn(liveSession, completed);
+        this.settleDelegatedTurn(liveSession, end);
         return;
       }
       const turn = liveSession.delegatedTurns;
       void interrupt.then(() => {
         // The chat closed, or the provider started another turn, meanwhile.
         if (isCurrent() && liveSession.delegatedTurns === turn)
-          this.settleDelegatedTurn(liveSession, completed);
+          this.settleDelegatedTurn(liveSession, end);
       });
     });
     if (events ?? delegated)
@@ -1179,20 +1179,21 @@ export class SessionLifecycle {
       };
   }
 
-  private settleDelegatedTurn(liveSession: LiveSession, completed: boolean | undefined): void {
+  private settleDelegatedTurn(liveSession: LiveSession, end: DelegatedTurnEnd | undefined): void {
     liveSession.streaming = false;
+    const appSessionId = liveSession.summary.appSessionId;
     // A Stop lands before the turn reports itself finished, so the flags it
     // set are cleared here as they are for a typed turn.
     const stopped = liveSession.interrupting === true || liveSession.interruptingToSend === true;
     liveSession.interrupting = false;
     liveSession.interruptingToSend = false;
-    // A spoken turn that finished is an answer too, so a usage hold lifts.
-    if (completed && !stopped && liveSession.summary.usageLimit)
-      this.dependencies.registry.updateSummary(liveSession.summary.appSessionId, {
-        usageLimit: undefined,
-      });
+    // A spoken turn settles as a typed one does: a failure fails the chat,
+    // holding it on a refusal, and a finished turn is an answer that lifts a hold.
+    if (end?.status === 'failed')
+      this.dependencies.registry.updateSummary(appSessionId, failedTurnSummary(end.error));
+    else if (end?.status === 'completed' && !stopped && liveSession.summary.usageLimit)
+      this.dependencies.registry.updateSummary(appSessionId, { usageLimit: undefined });
     this.publishTurnSettled(liveSession);
-    const appSessionId = liveSession.summary.appSessionId;
     if (stopped) this.dependencies.childSessions.retryAgentWave(appSessionId);
     // A runtime that has gone takes the queue with it through the close
     // path, which reopens and redelivers. Taking a prompt off it here would

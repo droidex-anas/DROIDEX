@@ -135,6 +135,11 @@ export type UsageReading = Pick<ProviderUsage, 'extra' | 'unavailable'> & {
 // Windows the harness pushes as they change, each replacing only its own row.
 export type UsageMetersListener = (meters: ReportedMeter[]) => void;
 
+// How a turn the provider started by itself ended.
+export type DelegatedTurnEnd =
+  | { status: 'completed' | 'interrupted' }
+  | { status: 'failed'; error: Error };
+
 export interface ProviderSession {
   readonly provider: ProviderKind;
   // Native id of the session the provider holds open.
@@ -164,8 +169,8 @@ export interface ProviderSession {
    * for through the composer, and the rest of the app has to know so a typed
    * prompt queues behind it and Stop can reach it.
    */
-  // `completed` is true when a turn that ended finished without an error.
-  onDelegatedTurn?(listener: (running: boolean, completed?: boolean) => void): () => void;
+  // `end` says how a turn that ended did.
+  onDelegatedTurn?(listener: (running: boolean, end?: DelegatedTurnEnd) => void): () => void;
   // Hands a prompt to the running turn, which the harness delivers at its own
   // next step. Resolves true once the model has it, and false when the turn
   // cannot take it or ends without it; the session layer then sends it as an
