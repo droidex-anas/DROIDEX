@@ -1,7 +1,7 @@
 const { createBrowserReading } = require('./browserReading.cjs');
 const { createBrowserScreenshot } = require('./browserScreenshot.cjs');
 const { redactBrowserDiagnosticUrl } = require('./browserDiagnostics.cjs');
-const { documentFrames } = require('./browserFrames.cjs');
+const { frameHolds } = require('./browserFrames.cjs');
 
 const PAGE_CHANGED = 'The page changed before the action ran; call browser_read_page.';
 
@@ -159,8 +159,8 @@ function createNativeBrowserPage({
     if (!request.ref || request.action === 'selectOption') return request;
     if (request.action === 'inspect')
       return { ...request, ...(await reading.selectorForRef(contents, entry, request.ref)) };
-    const { x, y, document } = await reading.pointForRef(contents, entry, request.ref);
-    return { ...request, x, y, document, selector: undefined };
+    const { x, y, document, sessionId } = await reading.pointForRef(contents, entry, request.ref);
+    return { ...request, x, y, document, frameSession: sessionId, selector: undefined };
   }
 
   // Called right before an action changes the page.
@@ -187,7 +187,7 @@ function createNativeBrowserPage({
       const y = Math.round(Number(request.y));
       const pixels = Math.max(1, Math.round(Number(request.pixels) || 500));
       const horizontal = request.direction === 'left' || request.direction === 'right';
-      await dispatchMouse(contents, step, request.document, [
+      await dispatchMouse(contents, step, request, [
         {
           type: 'mouseWheel',
           x,
@@ -205,7 +205,7 @@ function createNativeBrowserPage({
         throw new Error('Browser pointer interaction requires finite viewport coordinates.');
       }
       const press = { x, y, button: 'left', clickCount: 1 };
-      await dispatchMouse(contents, step, request.document, [
+      await dispatchMouse(contents, step, request, [
         { type: 'mouseMoved', x, y },
         ...(request.action === 'click'
           ? [
@@ -227,10 +227,10 @@ function createNativeBrowserPage({
   // frames included (sendInputEvent stops at the top document). Before each
   // event, inside the debugger queue, a new page or a replaced ref document
   // stops the gesture.
-  function dispatchMouse(contents, step, document, events) {
+  function dispatchMouse(contents, step, target, events) {
     return runWithWebContentsDebugger(contents, async (dbg) => {
       for (const event of events) {
-        if (document && !(await documentFrames(dbg)).some((frame) => frame.loaderId === document))
+        if (target.document && !(await frameHolds(dbg, target.frameSession, target.document)))
           throw new Error(PAGE_CHANGED);
         startInput(step);
         await dbg.sendCommand('Input.dispatchMouseEvent', event);

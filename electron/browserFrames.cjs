@@ -94,6 +94,14 @@ async function viewportMapping(dbg, sessionId) {
     );
 }
 
+// Whether a session's frames still hold a document, asked of that session
+// alone so nothing else runs between the answer and what follows it.
+async function frameHolds(dbg, sessionId, loaderId) {
+  const { frameTree } = await send(dbg, sessionId, 'Page.getFrameTree');
+  const holds = (tree) => tree.frame.loaderId === loaderId || (tree.childFrames ?? []).some(holds);
+  return holds(frameTree);
+}
+
 // Whether a frame painted twice within a short wait, so a copy of the screen
 // shows what its DOM says now.
 async function framePainted(dbg, sessionId) {
@@ -139,6 +147,7 @@ module.exports = {
   documentFrames,
   viewportMapping,
   framePainted,
+  frameHolds,
   scrollFrameIntoView,
   axTree,
   boundsOf,

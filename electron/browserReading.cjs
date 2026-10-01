@@ -145,11 +145,12 @@ function createBrowserReading({ runWithWebContentsDebugger, savedSecretsFor, red
   // and the document it was resolved in.
   async function pointForRef(contents, entry, ref) {
     return withPage(contents, async (dbg) => {
-      const { quad, document } = await visibleQuad(dbg, entry, ref);
+      const { quad, document, sessionId } = await visibleQuad(dbg, entry, ref);
       return {
         x: Math.round((quad[0] + quad[2] + quad[4] + quad[6]) / 4),
         y: Math.round((quad[1] + quad[3] + quad[5] + quad[7]) / 4),
         document,
+        sessionId,
       };
     });
   }
