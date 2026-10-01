@@ -206,14 +206,18 @@ export class AccountUsage {
     return account;
   }
 
-  // Started by the first read or push, so an app that never opens a session
-  // or /usage never ticks. Each tick reads only through live sessions, and
-  // once nothing is live it reads nothing.
+  // Started by a read or push, so an app that never opens a session or /usage
+  // never ticks. Each tick reads through the live sessions, and with none left
+  // the timer stops until the next read or push.
   private startTimer(): void {
     if (this.timer) return;
     this.timer = setInterval(() => {
-      for (const provider of PROVIDER_KINDS)
-        if (this.host.liveSession(provider)) void this.read(provider, false, false);
+      const live = PROVIDER_KINDS.filter((provider) => this.host.liveSession(provider));
+      if (live.length === 0) {
+        clearInterval(this.timer);
+        this.timer = undefined;
+      }
+      for (const provider of live) void this.read(provider, false, false);
     }, REFRESH_INTERVAL_MS);
     this.timer.unref();
   }
