@@ -149,20 +149,7 @@ async function waitForCommand(
   return recordedCommands(logPath).find(predicate)!;
 }
 
-async function mountedFeedRows(page: Page): Promise<number> {
-  return page.evaluate(() => {
-    const performanceApi = Reflect.get(window, '__droidexPerf');
-    if (typeof performanceApi !== 'object' || performanceApi === null) return -1;
-    const getSnapshot = Reflect.get(performanceApi, 'getSnapshot');
-    if (typeof getSnapshot !== 'function') return -1;
-    const snapshot = Reflect.apply(getSnapshot, performanceApi, []);
-    if (typeof snapshot !== 'object' || snapshot === null) return -1;
-    const count = Reflect.get(snapshot, 'mountedFeedRows');
-    return typeof count === 'number' ? count : -1;
-  });
-}
-
-test('[E2] parent-scoped child navigation and visible commands', async () => {
+test('[E2] parent-scoped agents pane preserves the primary chat', async () => {
   for (const artifact of [
     'dist/index.html',
     'electron/main.cjs',
@@ -239,7 +226,6 @@ test('[E2] parent-scoped child navigation and visible commands', async () => {
 
     await leftNavigation.locator('[data-app-session-id="parent-alpha"]').click();
     const chat = page.getByTestId('chat-view');
-    const conversationScroll = chat.locator('div.overflow-y-auto').first();
     await expect(chat.getByText('ALPHA PRIMARY OUTPUT', { exact: true })).toBeVisible();
 
     const rightPanel = page.getByTestId('right-context-panel');
@@ -252,22 +238,37 @@ test('[E2] parent-scoped child navigation and visible commands', async () => {
     await expect(subagents.getByText('Alpha Worker Two', { exact: true })).toBeVisible();
     await expect(subagents.getByText('Alpha Historical Worker', { exact: true })).toBeVisible();
 
-    const alphaShared = subagents.locator('[data-child-session-id="shared-child"]');
-    const alphaSibling = subagents.locator('[data-child-session-id="alpha-sibling"]');
-    await alphaShared.locator('button').first().click();
-    await subagentsSummary.click();
-    await alphaSibling.locator('button').first().click();
-    await expect(chat.getByText('ALPHA CHILD TWO OUTPUT', { exact: false })).toBeVisible();
-    await expect(chat.getByText('ALPHA PRIMARY OUTPUT', { exact: true })).toHaveCount(0);
-    await expect(chat.getByText('Alpha Worker Two', { exact: true })).toBeVisible();
+    await subagents
+      .locator('[data-child-session-id="shared-child"]')
+      .locator('button')
+      .first()
+      .click();
+    const workspace = page.getByTestId('agents-workspace');
+    const detail = workspace.getByTestId('agent-pane-detail');
+    await expect(detail.getByText('ALPHA SHARED CHILD OUTPUT', { exact: true })).toBeVisible();
+    await expect(chat.getByText('ALPHA PRIMARY OUTPUT', { exact: true })).toBeVisible();
+    await expect(chat.getByText('ALPHA SHARED CHILD OUTPUT', { exact: true })).toHaveCount(0);
+    await expect(detail.getByRole('textbox')).toHaveCount(0);
 
+    await detail.getByRole('button', { name: 'Back to agents', exact: true }).click();
+    const agentList = workspace.getByTestId('agent-pane-list');
+    await expect(agentList.getByTestId('agent-pane-row')).toHaveCount(3);
+    await agentList.locator('[data-child-session-id="alpha-sibling"]').click();
+    await expect(detail.getByText('Alpha Worker Two', { exact: true })).toBeVisible();
+    const conversationScroll = detail.locator('div.overflow-y-auto').first();
     await expect
-      .poll(async () => {
-        const domRows = await conversationScroll.locator('[data-feed-row-id]').count();
-        const measuredRows = await mountedFeedRows(page);
-        return measuredRows === domRows && domRows > 0 && domRows < 80;
-      })
-      .toBe(true);
+      .poll(() => conversationScroll.locator('[data-feed-row-id]').count())
+      .toBeGreaterThan(0);
+    await expect
+      .poll(() => conversationScroll.locator('[data-feed-row-id]').count())
+      .toBeLessThan(80);
+    await conversationScroll.evaluate((element) => {
+      element.scrollTop = element.scrollHeight;
+      element.dispatchEvent(new Event('scroll', { bubbles: true }));
+    });
+    await expect(detail.getByText('ALPHA CHILD TWO OUTPUT', { exact: false })).toBeVisible();
+    await expect(chat.getByText('ALPHA PRIMARY OUTPUT', { exact: true })).toBeVisible();
+    await expect(chat.getByText('ALPHA CHILD TWO OUTPUT', { exact: false })).toHaveCount(0);
     await expect
       .poll(() =>
         conversationScroll
@@ -282,130 +283,54 @@ test('[E2] parent-scoped child navigation and visible commands', async () => {
       )
       .toBe(0);
 
-    await conversationScroll.evaluate((element) => {
-      element.scrollTop = 300;
-      element.dispatchEvent(new Event('scroll', { bubbles: true }));
-    });
-    const anchor = await conversationScroll.evaluate((element) => {
-      const root = element.getBoundingClientRect();
-      const row = Array.from(element.querySelectorAll<HTMLElement>('[data-feed-row-id]')).find(
-        (candidate) => candidate.getBoundingClientRect().bottom > root.top + 1,
-      );
-      if (!row?.dataset.feedRowId) throw new Error('No visible child transcript row found.');
-      return {
-        rowId: row.dataset.feedRowId,
-        offsetTop: row.getBoundingClientRect().top - root.top,
-      };
-    });
-    await waitForCommand(
-      commandLog,
-      (command) =>
-        command.type === 'child.loadHistory' &&
-        command.parentAppSessionId === 'parent-alpha' &&
-        command.childSessionId === 'alpha-sibling' &&
-        command.cursor === 'alpha-sibling:120',
+    await detail.getByRole('button', { name: 'Expand', exact: true }).click();
+    await expect(detail.getByRole('button', { name: 'Collapse', exact: true })).toHaveAttribute(
+      'aria-pressed',
+      'true',
     );
-    await expect
-      .poll(async () => {
-        const domRows = await conversationScroll.locator('[data-feed-row-id]').count();
-        const measuredRows = await mountedFeedRows(page);
-        return measuredRows === domRows && domRows > 0 && domRows < 80;
-      })
-      .toBe(true);
-    await expect
-      .poll(async () => {
-        const offsetTop = await conversationScroll.evaluate((element, rowId) => {
-          const row = Array.from(element.querySelectorAll<HTMLElement>('[data-feed-row-id]')).find(
-            (candidate) => candidate.dataset.feedRowId === rowId,
-          );
-          if (!row) throw new Error(`Child transcript row ${rowId} was not preserved.`);
-          return row.getBoundingClientRect().top - element.getBoundingClientRect().top;
-        }, anchor.rowId);
-        return Math.abs(offsetTop - anchor.offsetTop);
-      })
-      .toBeLessThan(1);
-
-    await chat.getByTitle('Back to primary session').click();
+    await detail.getByRole('button', { name: 'Collapse', exact: true }).click();
     await expect(chat.getByText('ALPHA PRIMARY OUTPUT', { exact: true })).toBeVisible();
-    await expect(chat.getByText('ALPHA CHILD TWO OUTPUT', { exact: false })).toHaveCount(0);
-    await subagentsSummary.click();
-    await alphaSibling.locator('button').first().click();
-    await expect(chat.getByText('Alpha Worker Two', { exact: true })).toBeVisible();
+
+    await leftNavigation.locator('[data-app-session-id="parent-beta"]').click();
+    await expect(chat.getByText('BETA PRIMARY OUTPUT', { exact: true })).toBeVisible();
+    await expect(page.getByText('ALPHA CHILD TWO OUTPUT', { exact: false })).toHaveCount(0);
+    await expect(agentList.getByTestId('agent-pane-row')).toHaveCount(1);
+    await expect(agentList.getByText('Beta Worker Shared', { exact: true })).toBeVisible();
+    await expect(agentList.getByText('Alpha Worker Shared', { exact: true })).toHaveCount(0);
+    await agentList.locator('[data-child-session-id="shared-child"]').click();
+    await expect(detail.getByText('BETA SHARED CHILD OUTPUT', { exact: true })).toBeVisible();
+    await expect(detail.getByText('ALPHA SHARED CHILD OUTPUT', { exact: true })).toHaveCount(0);
+    await expect(chat.getByText('BETA PRIMARY OUTPUT', { exact: true })).toBeVisible();
+    await expect(leftNavigation.getByText('Beta Worker Shared', { exact: true })).toHaveCount(0);
+
+    await leftNavigation.locator('[data-app-session-id="parent-alpha"]').click();
+    await detail.getByRole('button', { name: 'Back to agents', exact: true }).click();
+    await agentList.locator('[data-child-session-id="alpha-history"]').click();
+    await expect(detail.getByText('Alpha Historical Worker', { exact: true })).toBeVisible();
+    await expect
+      .poll(() => conversationScroll.locator('[data-feed-row-id]').count())
+      .toBeGreaterThan(0);
+    await expect
+      .poll(() => conversationScroll.locator('[data-feed-row-id]').count())
+      .toBeLessThan(80);
     await conversationScroll.evaluate((element) => {
       element.scrollTop = element.scrollHeight;
       element.dispatchEvent(new Event('scroll', { bubbles: true }));
     });
-    await expect(chat.getByText('ALPHA CHILD TWO OUTPUT', { exact: false })).toBeVisible();
-
-    const composer = page.getByRole('textbox', { name: 'Prompt', exact: true });
-    await composer.fill('STEER EXACT CHILD');
-    await composer.press('Control+Enter');
-    await waitForCommand(
-      commandLog,
-      (command) =>
-        command.type === 'child.send' &&
-        command.parentAppSessionId === 'parent-alpha' &&
-        command.childSessionId === 'alpha-sibling' &&
-        command.text === 'STEER EXACT CHILD',
+    await expect(detail.getByText('ALPHA HISTORICAL OUTPUT', { exact: true })).toBeVisible();
+    await expect(chat.getByText('ALPHA PRIMARY OUTPUT', { exact: true })).toBeVisible();
+    await expect(chat.getByText('ALPHA HISTORICAL OUTPUT', { exact: true })).toHaveCount(0);
+    await expect(leftNavigation.locator('[data-app-session-id]')).toHaveCount(2);
+    assert.equal(
+      recordedCommands(commandLog).some(
+        (command) =>
+          command.type === 'child.open' ||
+          command.type === 'child.send' ||
+          command.type === 'child.interrupt',
+      ),
+      false,
+      'Reading an agent must not open or mutate its runtime.',
     );
-    await chat.getByTitle('Stop child session').click();
-    await waitForCommand(
-      commandLog,
-      (command) =>
-        command.type === 'child.interrupt' &&
-        command.parentAppSessionId === 'parent-alpha' &&
-        command.childSessionId === 'alpha-sibling',
-    );
-
-    await conversationScroll.evaluate((element) => {
-      element.scrollTop = 300;
-      element.dispatchEvent(new Event('scroll', { bubbles: true }));
-    });
-    await waitForCommand(
-      commandLog,
-      (command) =>
-        command.type === 'child.loadHistory' &&
-        command.parentAppSessionId === 'parent-alpha' &&
-        command.childSessionId === 'alpha-sibling' &&
-        command.cursor === 'alpha-sibling:60',
-    );
-    await leftNavigation.locator('[data-app-session-id="parent-beta"]').click();
-    await expect(chat.getByText('BETA PRIMARY OUTPUT', { exact: true })).toBeVisible();
-    await expect(chat.getByText('ALPHA CHILD HISTORY 0001', { exact: false })).toHaveCount(0);
-    await subagentsSummary.click();
-    await expect(subagents.locator('[data-child-session-id]')).toHaveCount(1);
-    await expect(subagents.getByText('Beta Worker Shared', { exact: true })).toBeVisible();
-    await expect(subagents.getByText('Alpha Worker Shared', { exact: true })).toHaveCount(0);
-
-    const betaShared = subagents.locator('[data-child-session-id="shared-child"]');
-    await betaShared.locator('button').first().click();
-    await expect(chat.getByText('BETA SHARED CHILD OUTPUT', { exact: true })).toBeVisible();
-    await expect(chat.getByText('ALPHA SHARED CHILD OUTPUT', { exact: true })).toHaveCount(0);
-    await expect(leftNavigation.getByText('Beta Worker Shared', { exact: true })).toHaveCount(0);
-
-    await leftNavigation.locator('[data-app-session-id="parent-alpha"]').click();
-    await subagentsSummary.click();
-    const alphaHistorical = subagents.locator('[data-child-session-id="alpha-history"]');
-    await alphaHistorical.locator('button').first().click();
-    await expect(chat.getByText('ALPHA HISTORICAL OUTPUT', { exact: true })).toBeVisible();
-    await leftNavigation.locator('[data-app-session-id="parent-beta"]').click();
-    await expect(chat.getByText('BETA PRIMARY OUTPUT', { exact: true })).toBeVisible();
-    await leftNavigation.locator('[data-app-session-id="parent-alpha"]').click();
-    await subagentsSummary.click();
-    await alphaHistorical.locator('button').first().click();
-    await expect(chat.getByText('ALPHA HISTORICAL OUTPUT', { exact: true })).toBeVisible();
-    await expect
-      .poll(
-        () =>
-          recordedCommands(commandLog).filter(
-            (command) =>
-              command.type === 'child.loadHistory' &&
-              command.parentAppSessionId === 'parent-alpha' &&
-              command.childSessionId === 'alpha-history' &&
-              !command.cursor,
-          ).length,
-      )
-      .toBe(1);
   } finally {
     await cleanupSmokeResources(resources);
   }

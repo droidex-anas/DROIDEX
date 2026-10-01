@@ -120,7 +120,17 @@ Run the deterministic local Electron smoke:
 npm run test:smoke:electron-child-sessions
 ```
 
-The smoke uses the real Electron main process, preload, and built renderer with a local fixture sidecar. It strips `FACTORY_API_KEY` and `DROID_PATH`, makes no Factory/Droid calls, and verifies parent-only left navigation, parent-scoped child rows, exact transcripts, stale-open isolation, steer, and Stop targeting.
+The smoke uses the real Electron main process, preload, and built renderer with a local fixture sidecar. It strips `FACTORY_API_KEY` and `DROID_PATH`, makes no Factory/Droid calls, and verifies parent-only left navigation, parent-scoped child rows, isolated agent transcripts in the Subagents pane, long-conversation virtualization, pane expansion, and preservation of the primary chat. Reading an agent must not open or mutate its runtime.
+
+## Verify an authenticated desktop round trip
+
+Run `FACTORY_API_KEY=... npm run test:smoke:electron-droid` with a key supplied securely in your environment, or explicitly reuse your current Droid CLI login:
+
+```bash
+DROIDEX_SMOKE_AUTH=cli npm run test:smoke:electron-droid
+```
+
+CLI mode requires an existing `droid` sign-in and explicitly uses its current home and keychain. Droid records the smoke sessions in the normal Factory history. Electron app data remains in a private temporary profile. The smoke disables updates, completes onboarding, verifies the authenticated bridge, creates an idle Mission Control runtime, and updates worker and validator models while checking that the primary model and compaction limit remain unchanged. It also requests exactly `E1_OK` from a real chat. It closes the sessions and deletes the temporary app profile on completion or failure. It does not copy or log credentials. API-key mode remains the default, isolates the CLI home too, and fails immediately without `FACTORY_API_KEY`.
 
 ## Droid CLI cannot be found
 
