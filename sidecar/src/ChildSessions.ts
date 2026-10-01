@@ -73,7 +73,7 @@ import {
 import { RuntimeRetirementTimer } from './runtimeRetirementTimer.js';
 import { ChildProviderCleanup } from './childProviderCleanup.js';
 import { childTokenStream } from './childStreamFidelity.js';
-import { isSettledChildStatus, settledAgent, type SettledAgent } from './childWaveWake.js';
+import { isSettledChildStatus, type SettledAgent } from './childWaveWake.js';
 import { dequeueQueuedChild, prepareChildInterrupt } from './childTurnCancellation.js';
 
 type ChildSettingsCommand = Extract<ClientCommand, { type: 'child.updateSettings' }>;
@@ -991,18 +991,15 @@ export class ChildSessions {
     const agents: SettledAgent[] = [];
     let index = 0;
     for (const candidate of parent.children.values()) {
-      if (parent.settledSinceWake.has(candidate.identity.childSessionId))
-        agents.push(
-          settledAgent(
-            {
-              label: candidate.label,
-              role: candidate.role,
-              status: candidate.status,
-              activity: parent.settledSinceWake.get(candidate.identity.childSessionId),
-            },
-            index,
-          ),
-        );
+      if (parent.settledSinceWake.has(candidate.identity.childSessionId)) {
+        const role = candidate.role === 'validator' ? 'Validator' : 'Worker';
+        const preview = parent.settledSinceWake.get(candidate.identity.childSessionId)?.preview;
+        agents.push({
+          name: candidate.label ?? `${role} ${String(index + 1)}`,
+          status: candidate.status === 'failed' ? 'failed' : 'completed',
+          ...(preview ? { step: preview } : {}),
+        });
+      }
       index += 1;
     }
     // Compaction can refuse delivery; retain the wave until the lifecycle accepts it.

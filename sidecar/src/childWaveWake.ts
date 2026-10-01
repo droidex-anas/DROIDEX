@@ -1,4 +1,4 @@
-import type { ChildActivity, ChildRole, ChildStatus } from './protocol.js';
+import type { ChildStatus } from './protocol.js';
 
 /* Waking a chat whose agents have finished. A harness reports a background
    agent's ending to the host, but sends an idle parent nothing: the parent
@@ -20,18 +20,6 @@ export const AGENT_WAKE_NOTICE = 'Agents finished; continuing';
 
 export function isSettledChildStatus(status: ChildStatus): status is 'completed' | 'failed' {
   return status === 'completed' || status === 'failed';
-}
-
-export function settledAgent(
-  child: { label?: string; role: ChildRole; status: ChildStatus; activity?: ChildActivity },
-  index: number,
-): SettledAgent {
-  const role = child.role === 'validator' ? 'Validator' : 'Worker';
-  return {
-    name: child.label ?? `${role} ${String(index + 1)}`,
-    status: child.status === 'failed' ? 'failed' : 'completed',
-    ...(child.activity?.preview ? { step: child.activity.preview } : {}),
-  };
 }
 
 // One block per agent, claiming only what the app was told: the agent's name,

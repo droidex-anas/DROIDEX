@@ -217,8 +217,8 @@ test('timer flush failures stay owned by turn settlement', async () => {
     },
   ]);
   assert.doesNotThrow(() => timeline.flushStreamingFor('app-1', 'app-1'));
-  await assert.rejects(async () => await timeline.settleStreaming('app-1', 'app-1'), /disk full/);
-  await assert.doesNotReject(async () => await timeline.settleStreaming('app-1', 'app-1'));
+  await assert.rejects(timeline.settleStreaming('app-1', 'app-1'), /disk full/);
+  await assert.doesNotReject(timeline.settleStreaming('app-1', 'app-1'));
 });
 
 test('timer flush failures report once through the owning child conversation', async () => {
@@ -253,10 +253,7 @@ test('timer flush failures report once through the owning child conversation', a
     },
   ]);
   assert.doesNotThrow(() => timeline.flushStreamingFor('parent-1', 'child-1'));
-  await assert.rejects(
-    async () => await timeline.settleStreaming('parent-1', 'child-1'),
-    /disk full/,
-  );
+  await assert.rejects(timeline.settleStreaming('parent-1', 'child-1'), /disk full/);
   assert.equal(emitted.length, 1);
 });
 
@@ -293,10 +290,7 @@ test('one child persistence failure does not abort another child append', async 
     ['b'],
   );
   assert.deepEqual(emitted, [{ type: 'event.appended', event: recorded[0] }]);
-  await assert.rejects(
-    async () => await timeline.settleStreaming('parent-1', 'child-a'),
-    /child A disk failure/,
-  );
+  await assert.rejects(timeline.settleStreaming('parent-1', 'child-a'), /child A disk failure/);
   assert.deepEqual(emitted.slice(1), [
     {
       type: 'child.error',
@@ -309,7 +303,7 @@ test('one child persistence failure does not abort another child append', async 
       recoverable: true,
     },
   ]);
-  await assert.doesNotReject(async () => await timeline.settleStreaming('parent-1', 'child-b'));
+  await assert.doesNotReject(timeline.settleStreaming('parent-1', 'child-b'));
 });
 
 test('streaming byte budget flushes early without dropping or truncating content', () => {
