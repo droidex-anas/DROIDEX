@@ -80,6 +80,7 @@ function markdownOf(tree, render, { redactUrl, maxNodes, skip }) {
   // The text inside a node, read from its children rather than its name:
   // Chromium folds the values of fields inside into that name.
   const textOf = (node) => {
+    if (skip?.has(node.nodeId)) return '';
     const outer = inline;
     inline = [];
     inlineOnly++;

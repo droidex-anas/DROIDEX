@@ -297,11 +297,14 @@ function createBrowserReading({ runWithWebContentsDebugger, savedSecretsFor, red
       render.processed++;
       const role = node.role?.value ?? '';
       const name = nameOf(node);
+      // A field is never folded away, unnamed editable hosts included, so its
+      // value or content can be masked.
+      const field = fieldOf(node, frame);
       const skip =
         node.ignored ||
         role === 'InlineTextBox' ||
         role === 'ListMarker' ||
-        (WRAPPER_ROLES.has(role) && !name) ||
+        (WRAPPER_ROLES.has(role) && !name && !field) ||
         (interactiveOnly && !INTERACTIVE_ROLES.has(role));
       if (skip) {
         visitChildren(childrenOf(node), depth, parentName);
@@ -319,7 +322,7 @@ function createBrowserReading({ runWithWebContentsDebugger, savedSecretsFor, red
         text: describe(node, role, name, ref),
         name,
         ref,
-        field: fieldOf(node, frame),
+        field,
       };
       if (line.field) render.fields.push(line);
       const index = lines.push(line) - 1;
@@ -368,6 +371,7 @@ function createBrowserReading({ runWithWebContentsDebugger, savedSecretsFor, red
       if (render.processed + ++counted.nodes > MAX_NODES) return null;
       const role = node.role?.value ?? '';
       if (TEXT_ROLES.has(role) && !node.ignored) return node.name?.value ?? '';
+      if (fieldOf(node, frame)) return null;
       const wrapper = node.ignored || (WRAPPER_ROLES.has(role) && !nameOf(node));
       if (!wrapper) return null;
       const parts = childrenOf(node).map((child) => flatText(child, counted));
