@@ -115,16 +115,21 @@ function createNativeBrowserPage({
     return actions.act(contents, entry, request);
   }
 
-  // Reading the logs or recording the viewport never needs the page itself,
-  // so it never wakes or remounts one.
+  // Reading the logs or recording the viewport or scheme never needs the page
+  // itself, so it never wakes or remounts one.
   function runPagelessAction(request) {
-    if (!['resize', 'network', 'console'].includes(request.action)) return undefined;
+    if (!['resize', 'colorScheme', 'network', 'console'].includes(request.action)) return undefined;
     const entry = ensureEntry(request.browserSessionId);
     if (request.action === 'resize') {
       // The renderer sizes the page from the session's viewport; main keeps
       // the size's name for the device it asks for.
       entry.viewportMode = request.viewportMode;
-      useDevice(liveContents(entry), entry.viewportMode);
+      useDevice(liveContents(entry), entry);
+      return { requestId: request.requestId, ok: true };
+    }
+    if (request.action === 'colorScheme') {
+      entry.colorScheme = request.colorScheme;
+      useDevice(liveContents(entry), entry);
       return { requestId: request.requestId, ok: true };
     }
     if (request.action === 'network') {

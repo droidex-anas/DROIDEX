@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import { browserDesignReferenceDir } from './browserPaths.js';
 import { normalizeBrowserUrl } from './browserUrl.js';
 import { formatDesignPrompt, writeDesignPromptPack } from './designPromptPacks.js';
+import type { BrowserColorScheme } from '../protocol.js';
 import type {
   BrowserActionResult,
   BrowserBox,
@@ -47,6 +48,7 @@ export interface BrowserRuntime {
   goBack(): Promise<BrowserActionResult>;
   goForward(): Promise<BrowserActionResult>;
   setViewport(viewport: BrowserViewport, mode: BrowserViewportMode): Promise<void>;
+  setColorScheme(colorScheme: BrowserColorScheme): Promise<void>;
   screenshot(options?: BrowserScreenshotOptions): Promise<BrowserScreenshot>;
   capture(box?: BrowserBox): Promise<string>;
   readPage(options?: BrowserReadOptions): Promise<string>;
@@ -174,6 +176,13 @@ export class BrowserSessionManager {
     };
     this.emitUpdated(session.state);
     return session.state;
+  }
+
+  /** Asks the page for its light or dark scheme, or the app's with auto. */
+  async useColorScheme(appSessionId: string, colorScheme: BrowserColorScheme): Promise<void> {
+    const session = this.requireSession(appSessionId);
+    await session.runtime.setColorScheme(colorScheme);
+    this.assertCurrent(session);
   }
 
   /** A standard size, or Fit, which keeps the size until the pane sets it. */

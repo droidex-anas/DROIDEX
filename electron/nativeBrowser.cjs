@@ -114,7 +114,7 @@ function createNativeBrowserManager(options) {
     forgetLoadWaiters(entry);
     views.bindGuest(entry, contents);
     // Before the page loads, so a site sees the device from its first request.
-    mountDevice(contents, entry.viewportMode);
+    mountDevice(contents, entry);
     const restoreUrl = urls.restorableUrlForEntry(entry, entry.targetUrl);
     if (restoreUrl) void loadNativeBrowserUrl(entry, restoreUrl, { force: true });
   }

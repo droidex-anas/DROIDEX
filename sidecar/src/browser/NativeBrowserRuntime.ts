@@ -1,4 +1,4 @@
-import type { BrowserNativeRequest, BrowserNativeResult } from '../protocol.js';
+import type { BrowserColorScheme, BrowserNativeRequest, BrowserNativeResult } from '../protocol.js';
 import type { BrowserRuntime } from './BrowserSessionManager.js';
 import type {
   BrowserActionResult,
@@ -52,6 +52,11 @@ export class NativeBrowserRuntime implements BrowserRuntime {
     const result = await this.send({ action: 'resize', viewport, viewportMode });
     if (!result.ok) throw new Error(result.error ?? 'Native browser resize failed.');
     this.viewport = viewport;
+  }
+
+  async setColorScheme(colorScheme: BrowserColorScheme): Promise<void> {
+    const result = await this.send({ action: 'colorScheme', colorScheme });
+    if (!result.ok) throw new Error(result.error ?? 'Native browser scheme change failed.');
   }
 
   async screenshot(options: BrowserScreenshotOptions = {}): Promise<BrowserScreenshot> {

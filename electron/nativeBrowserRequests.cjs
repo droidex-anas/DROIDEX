@@ -20,6 +20,7 @@ const ACTIONS = new Set([
   'press',
   'scroll',
   'resize',
+  'colorScheme',
   'inspect',
   'network',
   'console',
@@ -30,8 +31,8 @@ const ACTIONS = new Set([
   'wait',
   'awaitViewport',
 ]);
-// Reading the logs or recording the viewport never needs the page itself.
-const PAGELESS_ACTIONS = new Set(['resize', 'network', 'console']);
+// Reading the logs or recording the viewport or scheme never needs the page itself.
+const PAGELESS_ACTIONS = new Set(['resize', 'colorScheme', 'network', 'console']);
 const INPUT_ACTIONS = new Set(['click', 'hover', 'fill', 'type', 'press', 'scroll']);
 // What moves a page on, and so takes its turn; reads run alongside.
 const TURN_ACTIONS = new Set([
@@ -307,6 +308,7 @@ function agentAction(request) {
     pixels: request.pixels,
     viewport: request.viewport,
     viewportMode: request.viewportMode,
+    colorScheme: request.colorScheme,
     clearNetworkLog: request.clearNetworkLog,
     clearConsoleLog: request.clearConsoleLog,
   };
