@@ -28,9 +28,10 @@ const ACTIONS = new Set([
 const PAGELESS_ACTIONS = new Set(['resize', 'network', 'console']);
 const MAX_WAITING_PER_PAGE = 8;
 const LOAD_WAIT_MS = 8_000;
-// A little past the sidecar's own timeout: work still running then stops
-// holding its page, and whatever it does afterwards is dropped.
-const REQUEST_DEADLINE_MS = 15_000;
+// Work still running a little past the sidecar's own timeout stops holding its
+// page, and whatever it does afterwards is dropped.
+const DEADLINE_MARGIN_MS = 3_000;
+const DEFAULT_SIDECAR_TIMEOUT_MS = 12_000;
 
 function createNativeBrowserRequests({ manager, notifyRenderer }) {
   const waiting = new Map(); // browserSessionId -> requests in flight
@@ -39,10 +40,15 @@ function createNativeBrowserRequests({ manager, notifyRenderer }) {
   async function handle(message, reply) {
     const request = browserRequestFrom(message);
     if (!request) return;
-    reply({ type: 'browser.result', id: request.requestId, result: await perform(request) });
+    const deadlineMs = sidecarTimeoutMs(message.timeoutMs) + DEADLINE_MARGIN_MS;
+    reply({
+      type: 'browser.result',
+      id: request.requestId,
+      result: await perform(request, deadlineMs),
+    });
   }
 
-  async function perform(request) {
+  async function perform(request, deadlineMs) {
     try {
       if (request.action === 'close') {
         manager.close(request.browserSessionId);
@@ -50,7 +56,9 @@ function createNativeBrowserRequests({ manager, notifyRenderer }) {
         return result(request, true);
       }
       if (PAGELESS_ACTIONS.has(request.action)) return await performAction(request);
-      return await withAwakePage(request.browserSessionId, () => performOnPage(request));
+      return await withAwakePage(request.browserSessionId, deadlineMs, () =>
+        performOnPage(request),
+      );
     } catch (error) {
       return result(request, false, {
         error: error instanceof Error ? error.message : String(error),
@@ -58,7 +66,7 @@ function createNativeBrowserRequests({ manager, notifyRenderer }) {
     }
   }
 
-  async function withAwakePage(browserSessionId, run) {
+  async function withAwakePage(browserSessionId, deadlineMs, run) {
     if ((waiting.get(browserSessionId) ?? 0) >= MAX_WAITING_PER_PAGE) {
       throw new Error('Too many browser actions are already waiting on this page.');
     }
@@ -70,10 +78,10 @@ function createNativeBrowserRequests({ manager, notifyRenderer }) {
       return await Promise.race([
         work,
         new Promise((_, reject) => {
-          deadline = setTimeout(
-            () => reject(new Error('The browser page did not finish in time.')),
-            REQUEST_DEADLINE_MS,
-          );
+          deadline = setTimeout(() => {
+            manager.abandonWork(browserSessionId);
+            reject(new Error('The browser page did not finish in time.'));
+          }, deadlineMs);
         }),
       ]);
     } finally {
@@ -150,6 +158,12 @@ function createNativeBrowserRequests({ manager, notifyRenderer }) {
   }
 
   return { handle, workingSessions: () => [...waiting.keys()] };
+}
+
+function sidecarTimeoutMs(value) {
+  return Number.isFinite(value)
+    ? Math.min(Math.max(value, 1_000), 60_000)
+    : DEFAULT_SIDECAR_TIMEOUT_MS;
 }
 
 function browserRequestFrom(message) {

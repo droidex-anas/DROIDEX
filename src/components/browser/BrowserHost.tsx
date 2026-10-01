@@ -56,8 +56,10 @@ export function BrowserHost() {
       const savedUrl = appSessionId ? browsersRef.current[appSessionId].url : undefined;
       setBrowserPageWorking(browserSessionId, working, savedUrl);
     };
+    const heard = new Set<string>();
     const subscriptions = [
       onNativeBrowserWorking(({ browserSessionId, working }) => {
+        heard.add(browserSessionId);
         setWorking(browserSessionId, working);
       }),
       onNativeBrowserClosed(({ browserSessionId }) => {
@@ -77,8 +79,10 @@ export function BrowserHost() {
       }),
     ];
     // Work main started before this host mounted (an app reload mid-request).
+    // An event heard meanwhile is newer than this answer.
     void listWorkingNativeBrowsers().then((ids) => {
-      for (const browserSessionId of ids) setWorking(browserSessionId, true);
+      for (const browserSessionId of ids)
+        if (!heard.has(browserSessionId)) setWorking(browserSessionId, true);
     });
     return () => {
       for (const unsubscribe of subscriptions) unsubscribe();

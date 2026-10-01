@@ -8,7 +8,7 @@ function createNativeBrowserPage({
   runWithWebContentsDebugger,
   findEntryForContents,
 }) {
-  const operationsOn = new WeakMap(); // guest contents -> operations in flight
+  const operationsOn = new WeakMap(); // guest contents -> { count, generation }
 
   function setDesignMode(browserSessionId, active) {
     const entry = ensureEntry(browserSessionId);
@@ -50,7 +50,7 @@ function createNativeBrowserPage({
     const contents = liveContents(entry);
     if (!contents) throw new Error(`${appName} browser is not open.`);
     const navigation = observeAgentNavigation(contents);
-    liftBackgroundThrottling(contents);
+    const operation = liftBackgroundThrottling(contents);
     try {
       if (request.action === 'fillCredentials') {
         return withNativeBrowserHistory(
@@ -78,7 +78,7 @@ function createNativeBrowserPage({
       return withNativeBrowserHistory(contents, outcome.result);
     } finally {
       navigation.dispose();
-      restoreBackgroundThrottling(contents);
+      restoreBackgroundThrottling(contents, operation);
     }
   }
 
@@ -269,7 +269,7 @@ function createNativeBrowserPage({
     const entry = await restoreForAction(browserSessionId);
     const contents = liveContents(entry);
     if (!contents) throw new Error(`${appName} browser is not open.`);
-    liftBackgroundThrottling(contents);
+    const operation = liftBackgroundThrottling(contents);
     try {
       const fullPage = Boolean(options?.fullPage);
       const scale =
@@ -298,7 +298,7 @@ function createNativeBrowserPage({
       const image = rect ? await contents.capturePage(rect) : await contents.capturePage();
       return image.isEmpty() ? undefined : image.toPNG().toString('base64');
     } finally {
-      restoreBackgroundThrottling(contents);
+      restoreBackgroundThrottling(contents, operation);
     }
   }
 
@@ -307,14 +307,34 @@ function createNativeBrowserPage({
   // that is already hidden does not take effect, so a flag left lifted would
   // keep the page running after the pane closes.
   function liftBackgroundThrottling(contents) {
-    operationsOn.set(contents, (operationsOn.get(contents) ?? 0) + 1);
+    const operations = operationsOn.get(contents) ?? { count: 0, generation: 0 };
+    operations.count += 1;
+    operationsOn.set(contents, operations);
     contents.setBackgroundThrottling(false);
+    return operations.generation;
   }
 
-  function restoreBackgroundThrottling(contents) {
-    const left = (operationsOn.get(contents) ?? 1) - 1;
-    operationsOn.set(contents, left);
-    if (left > 0) return;
+  function restoreBackgroundThrottling(contents, generation) {
+    const operations = operationsOn.get(contents);
+    // Abandoned operations were already accounted for.
+    if (!operations || operations.generation !== generation) return;
+    operations.count -= 1;
+    if (operations.count > 0) return;
+    throttle(contents);
+  }
+
+  // Main gave up on the work in flight on this page: it stops keeping the page
+  // unthrottled, and whatever it does afterwards is not counted.
+  function abandonOperations(contents) {
+    const operations = operationsOn.get(contents);
+    if (operations) {
+      operations.generation += 1;
+      operations.count = 0;
+    }
+    throttle(contents);
+  }
+
+  function throttle(contents) {
     try {
       if (!contents.isDestroyed()) contents.setBackgroundThrottling(true);
     } catch {
@@ -404,6 +424,7 @@ function createNativeBrowserPage({
     runAgentAction,
     capture,
     captureDesignSelection,
+    abandonOperations,
   };
 }
 

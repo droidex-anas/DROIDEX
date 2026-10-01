@@ -334,6 +334,11 @@ function createNativeBrowserManager(options) {
     setDesignMode: page.setDesignMode,
     setPencilMode: page.setPencilMode,
     runAgentAction: page.runAgentAction,
+    abandonWork: (browserSessionId) => {
+      const entry = nativeBrowsers.get(urls.normalizeNativeBrowserSessionId(browserSessionId));
+      const contents = liveContents(entry);
+      if (contents) page.abandonOperations(contents);
+    },
     capture: page.capture,
     captureDesignSelection: page.captureDesignSelection,
     handleCredentialCapture: credentials.handleCapture,

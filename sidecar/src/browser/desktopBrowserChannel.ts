@@ -62,7 +62,7 @@ export function createDesktopBrowserChannel(
         );
       }, timeoutMs);
       pending.set(request.requestId, { resolve, reject, timer });
-      send({ type: 'browser.request', id: request.requestId, request }, (error) => {
+      send({ type: 'browser.request', id: request.requestId, request, timeoutMs }, (error) => {
         if (error) settle(request.requestId)?.reject(error);
       });
     });
