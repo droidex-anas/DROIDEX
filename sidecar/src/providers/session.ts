@@ -125,9 +125,11 @@ export interface ProviderVoice {
 export type ReportedMeter = Omit<UsageMeter, 'updatedAt'>;
 
 // One read of a harness account's usage: every window it reports, replacing
-// what an earlier read said.
+// what an earlier read said. A `partial` reading leaves the windows it does
+// not list as they were.
 export type UsageReading = Pick<ProviderUsage, 'extra' | 'unavailable'> & {
   meters: ReportedMeter[];
+  partial?: boolean;
 };
 
 // Windows the harness pushes as they change, each replacing only its own row.

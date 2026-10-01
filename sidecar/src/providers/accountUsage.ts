@@ -127,7 +127,8 @@ export class AccountUsage {
   }
 
   // A read replaces what was known, but a window pushed after it began is
-  // newer than its answer. A failed read keeps the last good meters, stale.
+  // newer than its answer, and one a partial reading leaves out is unknown
+  // rather than gone. A failed read keeps the last good meters, stale.
   private async settle(
     provider: ProviderKind,
     account: Account,
@@ -137,11 +138,14 @@ export class AccountUsage {
     const signal = AbortSignal.any([this.abort.signal, AbortSignal.timeout(READ_TIMEOUT_MS)]);
     let usage: ProviderUsage;
     try {
-      const { meters, extra, unavailable } = await untilAborted(source(signal), signal);
-      const pushed = (account.usage?.meters ?? []).filter((meter) => meter.updatedAt >= startedAt);
+      const { meters, extra, unavailable, partial } = await untilAborted(source(signal), signal);
+      const listed = new Set(meters.map((meter) => meter.id));
+      const kept = (account.usage?.meters ?? []).filter(
+        (meter) => meter.updatedAt >= startedAt || (partial === true && !listed.has(meter.id)),
+      );
       usage = {
         provider,
-        meters: mergeMeters(stamped(meters, this.now()), pushed),
+        meters: mergeMeters(stamped(meters, this.now()), kept),
         ...(extra ? { extra } : {}),
         ...(unavailable ? { unavailable } : {}),
       };
