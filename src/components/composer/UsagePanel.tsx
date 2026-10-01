@@ -114,7 +114,8 @@ function UsageBody({
     return (
       <Note>
         Droid’s limits need a Factory API key, and DROIDEX has none. Droid’s own /limits shows them.
-        <ManageUsageButton provider={provider} className="text-droid-text-secondary" />
+        {/* Pulled back by its padding, so a wrapped button lines up with the note. */}
+        <ManageUsageButton provider={provider} className="-ml-1.5 text-droid-text-secondary" />
       </Note>
     );
   if (usage?.unavailable === 'no_plan_limits')
