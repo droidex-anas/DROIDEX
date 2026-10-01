@@ -79,6 +79,10 @@ export class DroidProviderSession implements ProviderSession {
           yield { harnessModelSwitch: pending };
           this.pendingSwitch = undefined;
         }
+        // Droid can stream the refusal as an error and still end the turn
+        // with a result.
+        if (event.type === 'error' && droidErrorDetails(event.message).errorKind)
+          limitDetail ??= event.message;
         const normalizeStartedAt = performance.now();
         const normalized = normalizeStreamEvent(
           this.appSessionId,
@@ -90,15 +94,15 @@ export class DroidProviderSession implements ProviderSession {
         if (normalized) yield normalized;
       }
     } catch (error) {
-      const details = droidErrorDetails(errMsg(error));
-      if (details.errorKind) throw new UsageLimitError(details.text);
-      throw error;
+      const message = errMsg(error);
+      if (!droidErrorDetails(message).errorKind) throw error;
+      limitDetail = message;
     } finally {
       stopListening();
       this.pendingSwitch = undefined;
     }
-    // A turn refused on the limit still ends in a successful result; only the
-    // notice says it was refused.
+    // A turn refused on the limit can still end in a successful result; only
+    // the notice or the streamed error says it was refused.
     if (limitDetail !== undefined) throw new UsageLimitError(limitDetail);
   }
 
