@@ -29,6 +29,10 @@ const RATE_LIMIT_SCOPES: Record<NonNullable<SDKRateLimitInfo['rateLimitType']>, 
   overage: {},
 };
 
+// The weekly quota for apps signed in to the account through OAuth, which only
+// the usage read reports. It is named like a model so its row reads apart.
+const OAUTH_APPS_SCOPE: LimitScope = { window: 'weekly', model: 'OAuth apps' };
+
 // `rate_limit` also covers capacity refusals and model blocks. A usage refusal
 // is worded as one of the CLI's own limits, or arrives while the allowance is
 // spent: the CLI reports its allowance only when it changes, so the last
@@ -111,6 +115,7 @@ function claudeUsageReading(response: SDKControlGetUsageResponse): UsageReading 
   const general: [LimitScope, ClaudeWindow][] = [
     [RATE_LIMIT_SCOPES.five_hour, limits.five_hour],
     [RATE_LIMIT_SCOPES.seven_day, limits.seven_day],
+    [OAUTH_APPS_SCOPE, limits.seven_day_oauth_apps],
     [RATE_LIMIT_SCOPES.seven_day_opus, limits.seven_day_opus],
     [RATE_LIMIT_SCOPES.seven_day_sonnet, limits.seven_day_sonnet],
   ];
