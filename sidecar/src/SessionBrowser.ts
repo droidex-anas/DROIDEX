@@ -62,7 +62,9 @@ export class SessionBrowser {
     await this.handleBrowser(cmd.appSessionId, async () => {
       const appSessionId = this.requireBrowserAppSessionId(cmd.appSessionId);
       await this.d.browsers.close(appSessionId);
-      this.d.emit({ type: 'browser.closed', appSessionId });
+      // A browser the chat opened again meanwhile is not the one that closed.
+      if (!this.d.browsers.hasSession(appSessionId))
+        this.d.emit({ type: 'browser.closed', appSessionId });
     });
   }
 

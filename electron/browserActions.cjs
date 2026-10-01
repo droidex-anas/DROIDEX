@@ -204,6 +204,8 @@ function createBrowserActions({
       const { sessionId, document } = await focusedFrame(dbg);
       for (let i = 0; i < repeat; i++) {
         await inputReady(dbg, step, sessionId, document);
+        // A key can move the focus; the rest go only to the frame they began in.
+        if (i > 0) await keepsFocus(dbg, sessionId, document);
         await pressOn(dbg, sessionId, key);
       }
     });
