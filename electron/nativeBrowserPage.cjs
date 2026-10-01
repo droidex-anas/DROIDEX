@@ -109,11 +109,16 @@ function createNativeBrowserPage({
       return actions.act(contents, entry, { ...request, action: 'snapshot' });
     }
     if (request.action === 'evaluate') {
+      // The user's answer can outlast the browser, its guest or the caller.
+      const stillOpen = () => {
+        if (findEntryForContents(contents) !== entry) throw new Error('The browser page closed.');
+      };
       const value = await devTools.evaluate(contents, request.script, () => {
-        if (liveContents(entry) !== contents) throw new Error('The browser page closed.');
+        stillOpen();
         if (Date.now() >= request.startBy)
           throw new Error('The browser page did not finish in time.');
       });
+      stillOpen();
       const after = await actions.act(contents, entry, { ...request, action: 'snapshot' });
       return { ...after, text: `${value}\n${after.text}` };
     }

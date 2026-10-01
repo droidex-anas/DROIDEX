@@ -25,10 +25,13 @@ function createBrowserDevTools({
       throw new Error(
         `The user has not allowed developer tools on ${origin}. Work with the other browser tools, or ask the user.`,
       );
-    const { result, exceptionDetails } = await runWithWebContentsDebugger(contents, (dbg) => {
+    const outcome = await runWithWebContentsDebugger(contents, (dbg) => {
       stillWanted();
       return withinLimit(dbg, guarded(origin, String(script ?? '')));
     });
+    // No answer at all: the guest was gone before its turn came.
+    if (!outcome) throw new Error('The browser page closed.');
+    const { result, exceptionDetails } = outcome;
     if (exceptionDetails) {
       // The first line says what went wrong; the rest is a stack through the wrapper.
       const [what] = String(exceptionDetails.exception?.description ?? exceptionDetails.text).split(
