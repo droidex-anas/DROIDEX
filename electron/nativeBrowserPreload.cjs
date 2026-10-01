@@ -180,6 +180,10 @@ document.addEventListener('keydown', onKey, true);
 document.addEventListener('keyup', onKey, true);
 window.addEventListener('scroll', queueReposition, true);
 window.addEventListener('resize', queueReposition, true);
+// An open composer fits itself to the page again.
+window.addEventListener('resize', () => {
+  if (promptVisible()) positionPrompt(promptSelection.anchor.box);
+});
 // passive:false so we can cancel wheel scrolling while a capture is pending.
 window.addEventListener('wheel', onWheel, { capture: true, passive: false });
 window.addEventListener('touchmove', onWheel, { capture: true, passive: false });

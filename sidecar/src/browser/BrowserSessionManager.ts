@@ -177,8 +177,10 @@ export class BrowserSessionManager {
     try {
       return this.applied(session, await session.runtime.awaitViewport(viewport)).state;
     } catch (error) {
-      // The user picked another size meanwhile; the answer says so.
-      if (session.state.viewportMode !== mode) return session.state;
+      // The user picked another size meanwhile, on this same browser; the
+      // answer says so.
+      if (this.resolveSession(appSessionId) === session && session.state.viewportMode !== mode)
+        return session.state;
       throw error;
     }
   }
