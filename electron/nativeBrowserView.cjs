@@ -66,7 +66,6 @@ function createNativeBrowserViewFactory({
       state: { designMode: false, pencilMode: false },
       loadingUrl: null,
       loadingPromise: null,
-      viewport: { width: 1200, height: 800, deviceScaleFactor: 2 },
       networkEvents: [],
       consoleEvents: [],
     };

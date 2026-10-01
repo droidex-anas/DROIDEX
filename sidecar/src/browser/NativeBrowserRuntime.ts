@@ -12,6 +12,7 @@ import type {
   BrowserScreenshotOptions,
   BrowserTarget,
   BrowserViewport,
+  BrowserViewportMode,
   BrowserWaitCondition,
   ScrollDirection,
 } from './types.js';
@@ -47,8 +48,8 @@ export class NativeBrowserRuntime implements BrowserRuntime {
     return this.act({ action: 'goForward' });
   }
 
-  async setViewport(viewport: BrowserViewport): Promise<void> {
-    const result = await this.send({ action: 'resize', viewport });
+  async setViewport(viewport: BrowserViewport, viewportMode: BrowserViewportMode): Promise<void> {
+    const result = await this.send({ action: 'resize', viewport, viewportMode });
     if (!result.ok) throw new Error(result.error ?? 'Native browser resize failed.');
     this.viewport = viewport;
   }

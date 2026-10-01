@@ -46,7 +46,7 @@ export interface BrowserRuntime {
   reload(): Promise<BrowserActionResult>;
   goBack(): Promise<BrowserActionResult>;
   goForward(): Promise<BrowserActionResult>;
-  setViewport(viewport: BrowserViewport): Promise<void>;
+  setViewport(viewport: BrowserViewport, mode: BrowserViewportMode): Promise<void>;
   screenshot(options?: BrowserScreenshotOptions): Promise<BrowserScreenshot>;
   capture(box?: BrowserBox): Promise<string>;
   readPage(options?: BrowserReadOptions): Promise<string>;
@@ -111,7 +111,7 @@ export class BrowserSessionManager {
     const session = this.sessionFor(input.appSessionId, input.viewport, input.viewportMode);
     const url = normalizeBrowserUrl(input.url);
     if (input.viewport) {
-      await session.runtime.setViewport(input.viewport);
+      await session.runtime.setViewport(input.viewport, session.state.viewportMode);
       this.assertCurrent(session);
     }
     session.state = {
@@ -164,7 +164,7 @@ export class BrowserSessionManager {
     // The pane's size for Fit never undoes a size picked in the meantime.
     const stale = () => input.follow && session.state.viewportMode !== 'fit';
     if (stale()) return session.state;
-    await session.runtime.setViewport(input.viewport);
+    await session.runtime.setViewport(input.viewport, input.viewportMode);
     this.assertCurrent(session);
     if (stale()) return session.state;
     session.state = {

@@ -199,7 +199,7 @@ function createNativeBrowserRequests({ manager, notifyRenderer }) {
       const url = request.url ?? 'about:blank';
       await manager.waitForPage(browserSessionId);
       stillWanted();
-      await manager.open(browserSessionId, url, request.viewport);
+      await manager.open(browserSessionId, url);
       return result(request, true, await snapshotAfter(request, url));
     }
     if (request.action === 'reload') {
@@ -306,6 +306,7 @@ function agentAction(request) {
     direction: request.direction,
     pixels: request.pixels,
     viewport: request.viewport,
+    viewportMode: request.viewportMode,
     clearNetworkLog: request.clearNetworkLog,
     clearConsoleLog: request.clearConsoleLog,
   };

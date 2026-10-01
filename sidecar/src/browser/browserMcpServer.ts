@@ -215,6 +215,7 @@ export function createBrowserMcpServer(
         [
           "Lay the page out at a standard size: desktop (1440×900, where a browser you open starts), laptop (1280×800), tablet (820×1180) or mobile (390×844); fit follows the size of the user's pane.",
           'The page reflows to it; the user sees the same page scaled to fit their pane. Use it to check a responsive layout.',
+          "Tablet and mobile also give the page touch input and Chrome for Android's user agent.",
         ].join(' '),
         {
           size: viewportModeSchema.describe('The size to lay the page out at.'),
@@ -225,7 +226,10 @@ export function createBrowserMcpServer(
             return `The user switched the page to ${viewportMode} meanwhile; browser_screenshot states its size.`;
           if (input.size === 'fit')
             return "The page follows the user's pane; browser_screenshot states its size.";
-          return `The page is laid out at ${input.size} size, ${String(viewport.width)} × ${String(viewport.height)} CSS px.`;
+          const size = `The page is laid out at ${input.size} size, ${String(viewport.width)} × ${String(viewport.height)} CSS px`;
+          if (input.size === 'tablet' || input.size === 'mobile')
+            return `${size}, with touch. Reload it if the site picks its mobile version on the server.`;
+          return `${size}.`;
         }),
       ),
       tool(

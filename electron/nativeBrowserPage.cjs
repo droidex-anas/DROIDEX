@@ -4,6 +4,7 @@ const { redactBrowserDiagnosticUrl } = require('./browserDiagnostics.cjs');
 const { createBrowserActions } = require('./browserActions.cjs');
 const { createBrowserWait } = require('./browserWait.cjs');
 const { callPageScript } = require('./browserPageScript.cjs');
+const { useDevice } = require('./browserDevice.cjs');
 
 const VIEWPORT_WAIT_MS = 2_000;
 
@@ -12,7 +13,6 @@ function createNativeBrowserPage({
   ensureEntry,
   restoreForAction,
   liveContents,
-  normalizeBrowserViewport,
   credentials,
   runWithWebContentsDebugger,
   findEntryForContents,
@@ -121,8 +121,10 @@ function createNativeBrowserPage({
     if (!['resize', 'network', 'console'].includes(request.action)) return undefined;
     const entry = ensureEntry(request.browserSessionId);
     if (request.action === 'resize') {
-      // The renderer sizes the page from the session's viewport.
-      entry.viewport = normalizeBrowserViewport(request.viewport);
+      // The renderer sizes the page from the session's viewport; main keeps
+      // the size's name for the device it asks for.
+      entry.viewportMode = request.viewportMode;
+      useDevice(liveContents(entry), entry.viewportMode);
       return { requestId: request.requestId, ok: true };
     }
     if (request.action === 'network') {

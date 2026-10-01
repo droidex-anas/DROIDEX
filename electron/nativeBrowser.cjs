@@ -4,6 +4,7 @@ const {
 } = require('./browserDiagnostics.cjs');
 const { createBrowserGuests } = require('./browserGuests.cjs');
 const { runWithWebContentsDebugger } = require('./nativeBrowserEmulation.cjs');
+const { mountDevice } = require('./browserDevice.cjs');
 const { createNativeBrowserUrlPolicy } = require('./nativeBrowserUrls.cjs');
 const { createNativeBrowserCredentials } = require('./nativeBrowserCredentials.cjs');
 const { createNativeBrowserPage } = require('./nativeBrowserPage.cjs');
@@ -57,7 +58,6 @@ function createNativeBrowserManager(options) {
     ensureEntry: ensureNativeBrowserEntry,
     restoreForAction: requireLoadedGuest,
     liveContents,
-    normalizeBrowserViewport: urls.normalizeBrowserViewport,
     credentials,
     runWithWebContentsDebugger,
     findEntryForContents: findNativeBrowserEntryForWebContents,
@@ -113,6 +113,8 @@ function createNativeBrowserManager(options) {
     forgetLoad(entry);
     forgetLoadWaiters(entry);
     views.bindGuest(entry, contents);
+    // Before the page loads, so a site sees the device from its first request.
+    mountDevice(contents, entry.viewportMode);
     const restoreUrl = urls.restorableUrlForEntry(entry, entry.targetUrl);
     if (restoreUrl) void loadNativeBrowserUrl(entry, restoreUrl, { force: true });
   }
@@ -156,9 +158,8 @@ function createNativeBrowserManager(options) {
     return rejectCrashed(await waitForLoadedGuest(browserSessionId));
   }
 
-  async function openNativeBrowser(browserSessionId, url, viewport) {
+  async function openNativeBrowser(browserSessionId, url) {
     const entry = await requireNativeBrowserGuest(browserSessionId);
-    if (viewport) entry.viewport = urls.normalizeBrowserViewport(viewport);
     urls.rejectHostAppUrl(url);
     url = urls.normalizeNativeBrowserUrl(entry, url);
     urls.validateUrl(url);
