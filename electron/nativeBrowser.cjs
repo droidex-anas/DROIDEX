@@ -181,11 +181,12 @@ function createNativeBrowserManager(options) {
     urls.validateUrl(url);
     entry.failedRestoreUrl = null;
     // A guest still taking its device loads this page once it has it, in place
-    // of its saved one.
-    const { setup } = entry;
-    if (setup) {
+    // of its saved one; a guest that replaced it meanwhile, the same.
+    while (entry.setup) {
+      const { setup } = entry;
       setup.restoreUrl = null;
       await setup.ready;
+      if (entry.setup === setup) entry.setup = null;
     }
     await loadNativeBrowserUrl(entry, url, { force: true });
   }
@@ -200,6 +201,8 @@ function createNativeBrowserManager(options) {
   function closeNativeBrowser(browserSessionId) {
     const entry = nativeBrowsers.get(urls.normalizeNativeBrowserSessionId(browserSessionId));
     if (!entry) return;
+    // A restore still waiting on the guest's setup never runs.
+    forgetLoad(entry);
     guests.release(entry.browserSessionId);
     nativeBrowsers.delete(entry.browserSessionId);
   }
@@ -341,7 +344,10 @@ function createNativeBrowserManager(options) {
   }
 
   function closeAllNativeBrowsers() {
-    for (const entry of nativeBrowsers.values()) guests.release(entry.browserSessionId);
+    for (const entry of nativeBrowsers.values()) {
+      forgetLoad(entry);
+      guests.release(entry.browserSessionId);
+    }
     nativeBrowsers.clear();
   }
 
