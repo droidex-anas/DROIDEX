@@ -107,7 +107,7 @@ function markdownOf(tree, render, { redactUrl, maxNodes, skip }) {
       inline.push(node.name?.value ?? '');
     } else if (role === 'link') {
       const url = node.properties?.find((property) => property.name === 'url')?.value?.value;
-      const text = textOf(node);
+      const text = textOf(node) || labelOf(node);
       if (text) inline.push(url ? `[${text}](${redactUrl(url)})` : text);
     } else if (role === 'image') {
       if (name) inline.push(`[image: ${name}]`);
@@ -119,7 +119,10 @@ function markdownOf(tree, render, { redactUrl, maxNodes, skip }) {
       const text = textOf(node);
       // A heading inside a link or cell reads as that link's or cell's text.
       if (inlineOnly) inline.push(text);
-      else if (text) blocks.push(`${'#'.repeat(headingLevel(level))} ${text}`);
+      else if (text) {
+        blocks.push(`${prefix}${'#'.repeat(headingLevel(level))} ${text}`);
+        prefix = '';
+      }
     } else if (role === 'listitem') {
       flush();
       prefix = `${'  '.repeat(Math.max(0, lists - 1))}- `;
@@ -129,8 +132,12 @@ function markdownOf(tree, render, { redactUrl, maxNodes, skip }) {
     } else if (role === 'row' || role === 'LayoutTableRow') {
       flush();
       const cells = childrenOf(node).map(textOf);
-      if (cells.some(Boolean)) blocks.push(`${prefix}| ${cells.join(' | ')} |`);
-      prefix = '';
+      // A table inside a heading, link or cell reads as part of its text.
+      if (inlineOnly) inline.push(` ${cells.join(' ')} `);
+      else if (cells.some(Boolean)) {
+        blocks.push(`${prefix}| ${cells.join(' | ')} |`);
+        prefix = '';
+      }
     } else {
       flush();
       if (role === 'list') lists++;
@@ -143,6 +150,13 @@ function markdownOf(tree, render, { redactUrl, maxNodes, skip }) {
   if (root) visit(root);
   flush();
   return blocks.join('\n');
+}
+
+// The label an author gave an element (aria-label, title), never a name
+// Chromium built from its content, which can hold a field's value.
+function labelOf(node) {
+  const source = node.name?.sources?.find((candidate) => candidate.value && !candidate.superseded);
+  return ['aria-label', 'title'].includes(source?.attribute) ? cleanText(node.name?.value) : '';
 }
 
 function headingLevel(level) {

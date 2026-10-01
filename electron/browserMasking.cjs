@@ -59,27 +59,34 @@ function createBrowserMasking({ savedSecretsFor }) {
   }
 
   // Boxes, in the page's viewport, of every sensitive field: the ones the
-  // accessibility tree names, and any input whose own attributes say so even
-  // when it is hidden from that tree (aria-hidden, inside a shadow root). A
-  // frame that cannot be read fails the call, so a screenshot fails rather
-  // than show what it could not check.
+  // accessibility tree names, any field whose own attributes say so, and any
+  // input, textarea or select the tree hides (aria-hidden, inert), whose value
+  // nothing here can check. A frame that cannot be read fails the call, so a
+  // screenshot fails rather than show what it could not check.
   async function sensitiveBoxes(dbg) {
     const logins = savedLogins();
     const nodes = new Map(); // `${sessionId}:${backendNodeId}` -> { sessionId, backendNodeId }
     const add = (sessionId, backendNodeId) =>
       nodes.set(`${sessionId}:${backendNodeId}`, { sessionId, backendNodeId });
+    const shown = new Set(); // `${sessionId}:${backendNodeId}` the tree does not hide
     const frames = await documentFrames(dbg, { strict: true });
     for (const frame of frames) {
       for (const node of (await axTree(dbg, frame)).nodes) {
+        if (!node.ignored) shown.add(`${frame.sessionId}:${node.backendDOMNodeId}`);
         const field = fieldOf(node, frame);
         if ((field?.value || field?.editable) && (await isSensitive(dbg, field, logins)))
           add(frame.sessionId, field.backendNodeId);
       }
     }
     for (const sessionId of new Set(frames.map((frame) => frame.sessionId)))
-      for (const input of await inputsOf(dbg, sessionId))
-        if (isSensitiveField(input.attributes ?? [])) add(sessionId, input.backendNodeId);
+      for (const input of await inputsOf(dbg, sessionId)) {
+        const hidden =
+          ['INPUT', 'TEXTAREA', 'SELECT'].includes(input.nodeName) &&
+          !shown.has(`${sessionId}:${input.backendNodeId}`);
+        if (hidden || isSensitiveField(input.attributes ?? [])) add(sessionId, input.backendNodeId);
+      }
     const boxes = [];
+    const mappings = new Map(); // sessionId -> its frame's mapping to the viewport
     for (const { sessionId, backendNodeId } of nodes.values()) {
       const shape = await send(dbg, sessionId, 'DOM.getContentQuads', { backendNodeId }).catch(
         (error) => {
@@ -89,8 +96,8 @@ function createBrowserMasking({ savedSecretsFor }) {
         },
       );
       if (!shape?.quads?.length) continue;
-      const toViewport = await viewportMapping(dbg, sessionId);
-      for (const quad of shape.quads) boxes.push(boundsOf(toViewport(quad)));
+      if (!mappings.has(sessionId)) mappings.set(sessionId, await viewportMapping(dbg, sessionId));
+      for (const quad of shape.quads) boxes.push(boundsOf(mappings.get(sessionId)(quad)));
     }
     return boxes;
   }

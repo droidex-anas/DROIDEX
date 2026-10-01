@@ -20,7 +20,7 @@ If the user names a site or domain, do not ask what URL to open. Call `browser_o
 3. Click, hover, select and scroll by ref with `droidex-browser___browser_click`, `droidex-browser___browser_hover`, `droidex-browser___browser_select` and `droidex-browser___browser_scroll`. `droidex-browser___browser_type` and `droidex-browser___browser_keypress` go to the focused element, so click the field first.
 4. Use `droidex-browser___browser_reload` when the user asks to reload the visible page.
 5. Read the page again after a navigation; a ref from an earlier page is refused rather than acted on.
-6. Use `droidex-browser___browser_screenshot` only when visual inspection is needed. It returns a JPEG of the viewport, of one `ref`, of a `region`, or of the `full_page`, and states how image points convert to CSS pixels. Sensitive fields are painted over.
+6. Use `droidex-browser___browser_screenshot` only when visual inspection is needed. It returns a JPEG (a PNG with `format: "png"`) of the viewport, of one `ref`, of a `region`, or of the `full_page`, and states how image points convert to CSS pixels. Sensitive fields are painted over.
 
 ## Design Mode
 
