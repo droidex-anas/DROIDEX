@@ -179,6 +179,7 @@ function createBrowserActions({
       let sessionId;
       let document;
       let refNode;
+      let takesText;
       if (request.ref) {
         const target = await reading.lookupRef(dbg, entry, request.ref);
         ({ document } = target);
@@ -186,12 +187,19 @@ function createBrowserActions({
         sessionId = target.frame.sessionId;
         await send(dbg, sessionId, 'DOM.focus', { backendNodeId: target.backendNodeId });
         // A focus handler can send the focus on to another element or frame.
-        await keepsFocus(dbg, sessionId, document);
+        ({ takesText } = await keepsFocus(dbg, sessionId, document));
         if (!(await reading.hasFocus(dbg, sessionId, target.backendNodeId)))
           throw new Error(`${request.ref} did not keep the focus; read the page again.`);
       } else {
-        ({ sessionId, document } = await focusedFrame(dbg));
+        ({ sessionId, document, takesText } = await focusedFrame(dbg));
       }
+      // The page acknowledges text it drops, so where it goes is checked first.
+      if (text && !takesText)
+        throw new Error(
+          request.ref
+            ? `${request.ref} does not take typed text; use browser_fill or browser_click.`
+            : 'Nothing that takes typed text has the focus; pass the ref of a field.',
+        );
       const stillOn = holdsKey(dbg, step, sessionId, document);
       // The text, and then Enter, go only to the document they were aimed at.
       await inputReady(dbg, step, sessionId, document);
@@ -277,10 +285,14 @@ function createBrowserActions({
   async function hitAt(dbg, sessionId, [x, y]) {
     const { cssLayoutViewport: view } = await send(dbg, sessionId, 'Page.getLayoutMetrics');
     return send(dbg, sessionId, 'DOM.getNodeForLocation', {
-      x: x + view.pageX,
-      y: y + view.pageY,
+      x: Math.round(x + view.pageX),
+      y: Math.round(y + view.pageY),
       includeUserAgentShadowDOM: false,
-    }).catch(() => undefined);
+    }).catch((error) => {
+      // Nothing is drawn there; any other failure leaves the point unchecked.
+      if (/no node found/i.test(String(error?.message))) return undefined;
+      throw error;
+    });
   }
 
   async function holds(dbg, sessionId, backendNodeId, hit) {
@@ -346,6 +358,7 @@ function createBrowserActions({
     const focused = await focusedFrame(dbg);
     if (focused.sessionId !== sessionId || focused.document !== document)
       throw new Error('The focus moved to another frame; read the page again.');
+    return focused;
   }
 
   // Input goes out only while the document it was aimed at is still there.

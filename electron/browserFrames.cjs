@@ -158,12 +158,12 @@ async function focusedFrame(dbg) {
     // its frame once the loader has been read.
     const { result } = await send(dbg, sessionId, 'Runtime.callFunctionOn', {
       objectId: documentId,
-      functionDeclaration: 'function () { return this.defaultView !== null; }',
+      functionDeclaration: FOCUS_TAKES_TEXT,
       returnByValue: true,
     });
-    if (result?.value !== true)
+    if (typeof result?.value !== 'boolean')
       throw new Error('The page changed before the action ran; call browser_read_page.');
-    return { sessionId, document };
+    return { sessionId, document, takesText: result.value };
   } finally {
     for (const object of held)
       await send(dbg, object.sessionId, 'Runtime.releaseObject', {
@@ -171,6 +171,18 @@ async function focusedFrame(dbg) {
       }).catch(() => undefined);
   }
 }
+
+// Null once the document has left its frame; otherwise whether the element
+// with its focus, inside shadow roots too, takes typed text.
+const FOCUS_TAKES_TEXT = `function () {
+  if (this.defaultView === null) return null;
+  let a = this.activeElement;
+  while (a?.shadowRoot?.activeElement) a = a.shadowRoot.activeElement;
+  if (!a || a.disabled || a.readOnly) return false;
+  if (a.isContentEditable || a.localName === 'textarea') return true;
+  const notText = ['button', 'checkbox', 'color', 'file', 'hidden', 'image', 'radio', 'range', 'reset', 'submit'];
+  return a.localName === 'input' && !notText.includes(a.type);
+}`;
 
 // The element with the focus in the given document, inside shadow roots.
 async function activeElement(dbg, sessionId, documentId) {
