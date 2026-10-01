@@ -1,6 +1,6 @@
 import { createSdkMcpServer, tool } from '@factory/droid-sdk';
 import { z } from 'zod';
-import type { BrowserSessionManager } from './BrowserSessionManager.js';
+import type { BrowserOutcome, BrowserSessionManager } from './BrowserSessionManager.js';
 import type { BrowserState, DesignReference } from './types.js';
 import { jsonResult, safeTool } from '../mcpToolUtils.js';
 
@@ -12,6 +12,11 @@ const viewportSchema = z.object({
 
 const viewportModeSchema = z.enum(['fit', 'desktop', 'laptop', 'tablet', 'mobile', 'custom']);
 const scrollDirectionSchema = z.enum(['up', 'down', 'left', 'right']);
+const CLICK_VERBS: Record<number, string> = {
+  1: 'Clicked',
+  2: 'Double-clicked',
+  3: 'Triple-clicked',
+};
 
 export function createBrowserMcpServer(
   manager: BrowserSessionManager,
@@ -30,44 +35,48 @@ export function createBrowserMcpServer(
       tool(
         'browser_open',
         [
-          'Open and show a URL in the live DROIDEX browser pane for this chat session.',
-          'This is the browser the user can see and control in DROIDEX.',
-          'When the user asks to open a site, navigate, click, inspect, or control a browser, call this tool first with the site URL.',
-          'If the user names a domain without a scheme, pass it directly; DROIDEX will load it as https.',
-          'Do not ask the user for a URL when they already named a site or domain.',
+          'Open a URL in the live DROIDEX browser for this chat, the one the user can see, or go back, forward or reload.',
+          'When the user asks to open a site, navigate, click or inspect, start here; a bare domain loads as https.',
+          'Do not ask the user for a URL they already named.',
           'Do not use Read, FetchUrl, curl, or agent-browser as a substitute for browser work.',
+          'Then call browser_read_page to see the page and get refs.',
         ].join(' '),
         {
           url: z
             .string()
             .min(1)
-            .describe(
-              'Absolute URL to open, such as https://example.com or http://127.0.0.1:1421/.',
-            ),
+            .optional()
+            .describe('URL to open, such as https://example.com or http://127.0.0.1:1421/.'),
+          action: z
+            .enum(['back', 'forward', 'reload'])
+            .optional()
+            .describe('Go back, forward or reload instead of opening a URL.'),
           viewport: viewportSchema.optional().describe('Optional explicit browser viewport.'),
           viewportMode: viewportModeSchema.optional().describe('Viewport preset label for the UI.'),
         },
         safeTool(async (input) => {
-          const state = await manager.open({
-            appSessionId: appSessionId(),
+          const id = appSessionId();
+          if (input.action === 'back') return said('Went back.', await manager.goBack(id));
+          if (input.action === 'forward') return said('Went forward.', await manager.goForward(id));
+          if (input.action === 'reload')
+            return said('Reloaded the page.', await manager.reload(id));
+          if (!input.url) throw new Error('Pass a url, or an action: back, forward or reload.');
+          const outcome = await manager.open({
+            appSessionId: id,
             url: input.url,
             viewport: input.viewport
               ? { ...input.viewport, deviceScaleFactor: input.viewport.deviceScaleFactor ?? 2 }
               : undefined,
             viewportMode: input.viewportMode ?? (input.viewport ? 'custom' : undefined),
           });
-          return jsonResult({
-            message:
-              'Opened the page in the live DROIDEX browser. Call browser_read_page to see it and to get refs for browser_click, browser_select and browser_scroll.',
-            ...stateForTool(state),
-          });
+          return said('Opened the page.', outcome);
         }),
       ),
       tool(
         'browser_read_page',
         [
           'Read the page as a compact accessibility tree, one element per line, such as - button "Sign in" [ref=e3].',
-          'Use the refs with browser_click, browser_hover, browser_select, browser_scroll and browser_inspect.',
+          'Use the refs with browser_click, browser_hover, browser_fill, browser_type, browser_scroll and browser_inspect.',
           'A ref stays valid while its element is on the page; after a navigation, read the page again.',
           'Ends with [Title · url]. Sensitive field values are masked.',
         ].join(' '),
@@ -122,33 +131,6 @@ export function createBrowserMcpServer(
         safeTool(async (input) => manager.find(appSessionId(), input.query)),
       ),
       tool(
-        'browser_reload',
-        'Reload the current page in the live DROIDEX browser. Call browser_read_page to see it again.',
-        {},
-        safeTool(async () => {
-          const state = await manager.reload(appSessionId());
-          return jsonResult(stateForTool(state));
-        }),
-      ),
-      tool(
-        'browser_back',
-        'Go back one page in the live DROIDEX browser history. Call browser_read_page to see the page.',
-        {},
-        safeTool(async () => {
-          const state = await manager.goBack(appSessionId());
-          return jsonResult(stateForTool(state));
-        }),
-      ),
-      tool(
-        'browser_forward',
-        'Go forward one page in the live DROIDEX browser history. Call browser_read_page to see the page.',
-        {},
-        safeTool(async () => {
-          const state = await manager.goForward(appSessionId());
-          return jsonResult(stateForTool(state));
-        }),
-      ),
-      tool(
         'browser_screenshot',
         [
           'Capture the live DROIDEX browser as a JPEG (a PNG with format: "png"): the viewport, one ref, a region, or the full page.',
@@ -194,78 +176,96 @@ export function createBrowserMcpServer(
       ),
       tool(
         'browser_click',
-        'Move the agent cursor and click in the live DROIDEX browser by ref or viewport coordinates. Prefer refs from browser_read_page.',
+        [
+          'Click in the live DROIDEX browser by ref (preferred) or viewport x and y.',
+          'A click by ref is refused, naming the element in the way, when something covers it.',
+        ].join(' '),
         {
-          ref: z
-            .string()
+          ref: z.string().optional().describe('Element ref from browser_read_page.'),
+          x: z.number().optional().describe('Viewport x, when there is no ref.'),
+          y: z.number().optional().describe('Viewport y, when there is no ref.'),
+          button: z.enum(['left', 'right', 'middle']).optional().describe('Defaults to left.'),
+          count: z.number().int().min(1).max(3).optional().describe('2 for a double click.'),
+          modifiers: z
+            .array(z.enum(['Alt', 'Control', 'Meta', 'Shift']))
             .optional()
-            .describe('Element ref from browser_read_page. Preferred when available.'),
-          x: z.number().optional().describe('Viewport x coordinate when clicking by coordinate.'),
-          y: z.number().optional().describe('Viewport y coordinate when clicking by coordinate.'),
+            .describe('Keys held during the click.'),
         },
         safeTool(async (input) => {
-          const state = await manager.click({
-            appSessionId: appSessionId(),
-            ref: input.ref,
-            x: input.x,
-            y: input.y,
-          });
-          return jsonResult(stateForTool(state));
+          const outcome = await manager.click({ appSessionId: appSessionId(), ...input });
+          const verb = input.button === 'right' ? 'Right-clicked' : CLICK_VERBS[input.count ?? 1];
+          return said(`${verb} ${pointed(input)}.`, outcome);
         }),
       ),
       tool(
         'browser_hover',
-        'Move the trusted browser pointer over an element by ref or viewport coordinates.',
+        'Move the pointer over an element by ref or viewport x and y, to open menus or tooltips.',
         {
           ref: z.string().optional().describe('Element ref from browser_read_page.'),
-          x: z.number().optional().describe('Viewport x coordinate when hovering by coordinate.'),
-          y: z.number().optional().describe('Viewport y coordinate when hovering by coordinate.'),
+          x: z.number().optional().describe('Viewport x, when there is no ref.'),
+          y: z.number().optional().describe('Viewport y, when there is no ref.'),
         },
-        safeTool(async (input) => {
-          const state = await manager.hover({
-            appSessionId: appSessionId(),
-            ref: input.ref,
-            x: input.x,
-            y: input.y,
-          });
-          return jsonResult(stateForTool(state));
-        }),
+        safeTool(async (input) =>
+          said(
+            `Hovered ${pointed(input)}.`,
+            await manager.hover({ appSessionId: appSessionId(), ...input }),
+          ),
+        ),
       ),
       tool(
-        'browser_select',
-        'Choose an option in a native select element by ref. The value may be the option value or visible label.',
+        'browser_fill',
+        [
+          'Set a field by ref in one step: text, a select option (its value or visible label), a checkbox or radio (true or false), or a date (YYYY-MM-DD).',
+          'Frameworks see the change as typed input. For real keystrokes use browser_type.',
+        ].join(' '),
         {
-          ref: z.string().describe('Select element ref from browser_read_page.'),
-          value: z.string().describe('Option value or exact visible label to select.'),
+          ref: z.string().describe('Field ref from browser_read_page.'),
+          value: z.string().describe('The value, option, true or false, or date.'),
         },
-        safeTool(async (input) => {
-          const state = await manager.selectOption(appSessionId(), input.ref, input.value);
-          return jsonResult(stateForTool(state));
-        }),
+        safeTool(async (input) =>
+          said(`Filled ${input.ref}.`, await manager.fill(appSessionId(), input.ref, input.value)),
+        ),
       ),
       tool(
         'browser_type',
-        'Type text into the currently focused element in the live DROIDEX browser. Click or focus an input first.',
+        'Type real keystrokes into a field by ref, or into whatever has focus, and optionally press Enter after.',
         {
-          text: z.string().describe('Text to type into the currently focused browser element.'),
+          text: z.string().describe('The text to type.'),
+          ref: z.string().optional().describe('Field ref to focus first.'),
+          submit: z.boolean().optional().describe('Press Enter after typing.'),
         },
         safeTool(async (input) => {
-          const state = await manager.type(appSessionId(), input.text);
-          return jsonResult(stateForTool(state));
+          const outcome = await manager.type(appSessionId(), input.text, {
+            ref: input.ref,
+            submit: input.submit,
+          });
+          const into = input.ref ? ` into ${input.ref}` : '';
+          return said(
+            `Typed ${String(input.text.length)} characters${into}${input.submit ? ' and pressed Enter' : ''}.`,
+            outcome,
+          );
         }),
       ),
       tool(
-        'browser_keypress',
-        'Press a key in the live DROIDEX browser.',
+        'browser_press',
+        'Press a key or chord on whatever has focus, such as Enter, Escape, Tab, ArrowDown, Shift+Tab or Meta+a.',
         {
           key: z
             .string()
             .min(1)
-            .describe('Key name to press, such as Enter, Escape, Tab, ArrowDown.'),
+            .describe('A key name or one character, with + between keys held together.'),
+          repeat: z
+            .number()
+            .int()
+            .min(1)
+            .max(50)
+            .optional()
+            .describe('How many times to press it.'),
         },
         safeTool(async (input) => {
-          const state = await manager.keypress(appSessionId(), input.key);
-          return jsonResult(stateForTool(state));
+          const outcome = await manager.press(appSessionId(), input.key, input.repeat);
+          const times = input.repeat && input.repeat > 1 ? ` ${String(input.repeat)} times` : '';
+          return said(`Pressed ${input.key}${times}.`, outcome);
         }),
       ),
       tool(
@@ -289,21 +289,21 @@ export function createBrowserMcpServer(
       ),
       tool(
         'browser_scroll',
-        'Scroll the live DROIDEX browser page, or inside the element a ref names. Call browser_read_page to see what came into view.',
+        'Scroll the page, or inside the element a ref names; a ref with no direction is only brought into view. Then read the page again to see what came into view.',
         {
-          direction: scrollDirectionSchema.describe('Direction to scroll.'),
-          pixels: z.number().positive().max(4000).optional().describe('Scroll amount in pixels.'),
-          ref: z.string().optional().describe('Optional ref inside a nested scroll container.'),
+          direction: scrollDirectionSchema.optional().describe('Direction to scroll.'),
+          pixels: z.number().positive().max(4000).optional().describe('Defaults to 500.'),
+          ref: z.string().optional().describe('Element to scroll in, or to bring into view.'),
         },
         safeTool(async (input) => {
-          const state = await manager.scroll(
-            appSessionId(),
-            input.direction,
-            input.pixels,
-            undefined,
-            input.ref,
+          const outcome = await manager.scroll(appSessionId(), input);
+          const where = input.ref ? ` in ${input.ref}` : '';
+          return said(
+            input.direction
+              ? `Scrolled ${input.direction}${where}.`
+              : `Brought ${input.ref ?? 'it'} into view.`,
+            outcome,
           );
-          return jsonResult(stateForTool(state));
         }),
       ),
       tool(
@@ -386,15 +386,14 @@ export function createBrowserMcpServer(
         'browser_fill_login',
         [
           'Fill the saved login for the current site in the live DROIDEX browser.',
-          'You never see the username or password: the values are injected securely in the app and are redacted from every snapshot. This lets you authorize a sign-in without reading the secret.',
-          'Saved logins are strictly opt-in. Use only when a sign-in form is visible and the user has previously enabled saved logins and saved a credential for this site.',
-          'Returns an error if saved logins are disabled or no credential is saved; in that case ask the user to sign in once and accept the save-login prompt. After filling, you may submit the form with browser_click or browser_keypress.',
+          'You never see the username or password: the app writes them into the form, and every read masks them. This lets you authorize a sign-in without reading the secret.',
+          'Saved logins are strictly opt-in. Use only when a sign-in form is visible and the user has enabled saved logins and saved one for this site.',
+          'Returns an error if saved logins are off or none is saved; then ask the user to sign in once and accept the save-login prompt. After filling, submit with browser_click or browser_press.',
         ].join(' '),
         {},
-        safeTool(async () => {
-          const state = await manager.fillCredentials(appSessionId());
-          return jsonResult(stateForTool(state));
-        }),
+        safeTool(async () =>
+          said('Filled the saved login.', await manager.fillCredentials(appSessionId())),
+        ),
       ),
       tool(
         'design-mode',
@@ -472,6 +471,15 @@ export function createBrowserMcpServer(
       ),
     ],
   });
+}
+
+// One line of what the action did, then what changed and the page footer.
+function said(done: string, outcome: BrowserOutcome): string {
+  return `${done}\n${outcome.text}`;
+}
+
+function pointed(input: { ref?: string; x?: number; y?: number }): string {
+  return input.ref ?? `(${String(input.x)}, ${String(input.y)})`;
 }
 
 function stateForTool(

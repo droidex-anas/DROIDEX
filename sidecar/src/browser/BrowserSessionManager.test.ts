@@ -53,22 +53,22 @@ class FakeRuntime implements BrowserRuntime {
 
   async open(url: string) {
     this.openedUrls.push(url);
-    return this.stateSnapshot(url);
+    return this.result(url);
   }
 
   async reload() {
     this.reloads += 1;
-    return this.stateSnapshot('https://example.com/reloaded');
+    return this.result('https://example.com/reloaded');
   }
 
   async goBack() {
     this.history.push('back');
-    return this.stateSnapshot('https://example.com/back');
+    return this.result('https://example.com/back');
   }
 
   async goForward() {
     this.history.push('forward');
-    return this.stateSnapshot('https://example.com/forward');
+    return this.result('https://example.com/forward');
   }
 
   async setViewport(viewport: BrowserViewport): Promise<void> {
@@ -99,6 +99,10 @@ class FakeRuntime implements BrowserRuntime {
     return this.stateSnapshot(url);
   }
 
+  private result(url?: string) {
+    return { snapshot: this.stateSnapshot(url), text: '[Droid Control · page]' };
+  }
+
   private stateSnapshot(url = 'http://127.0.0.1:1420/') {
     return {
       url,
@@ -119,26 +123,26 @@ class FakeRuntime implements BrowserRuntime {
   async click(target: BrowserTarget) {
     this.clicks.push(target);
     if (this.clickError) throw this.clickError;
-    return this.stateSnapshot();
+    return this.result();
   }
 
   async hover(target: BrowserTarget) {
     this.hovers.push(target);
-    return this.stateSnapshot();
+    return this.result();
   }
 
-  async selectOption(ref: string, value: string) {
+  async fill(ref: string, value: string) {
     this.selections.push({ ref, value });
-    return this.stateSnapshot();
+    return this.result();
   }
   async type() {
-    return this.stateSnapshot();
+    return this.result();
   }
-  async keypress() {
-    return this.stateSnapshot();
+  async press() {
+    return this.result();
   }
-  async scroll(_direction: ScrollDirection) {
-    return this.stateSnapshot();
+  async scroll(_direction: ScrollDirection | undefined) {
+    return this.result();
   }
   async inspect(target: { ref: string } | { selector: string }) {
     this.inspections.push(target);
@@ -169,7 +173,7 @@ test('runtime snapshots propagate navigation history state', async () => {
     },
   });
 
-  const opened = await manager.open({
+  const { state: opened } = await manager.open({
     appSessionId: 'm1',
     url: 'http://127.0.0.1:1420/',
   });
@@ -177,7 +181,7 @@ test('runtime snapshots propagate navigation history state', async () => {
   assert.equal(opened.canGoForward, false);
 
   runtime.canGoForward = true;
-  const reloaded = await manager.reload('m1');
+  const { state: reloaded } = await manager.reload('m1');
   assert.equal(reloaded.canGoBack, true);
   assert.equal(reloaded.canGoForward, true);
 });
@@ -195,7 +199,10 @@ test('opening a new page clears stale history when its snapshot omits navigation
 
   await manager.open({ appSessionId: 'm1', url: 'https://example.com/first' });
   runtime.omitHistory = true;
-  const opened = await manager.open({ appSessionId: 'm1', url: 'https://example.com/second' });
+  const { state: opened } = await manager.open({
+    appSessionId: 'm1',
+    url: 'https://example.com/second',
+  });
 
   assert.equal(opened.canGoBack, false);
   assert.equal(opened.canGoForward, false);
@@ -213,7 +220,7 @@ test('refs go straight to the page, which resolves them', async () => {
 
   await manager.click({ appSessionId: 'm1', ref: 'e1' });
   await manager.hover({ appSessionId: 'm1', ref: 'e1' });
-  await manager.selectOption('m1', 'e1', 'active');
+  await manager.fill('m1', 'e1', 'active');
   await manager.inspect('m1', { ref: 'e1' });
 
   assert.deepEqual(runtime.clicks, [{ ref: 'e1' }]);
@@ -277,7 +284,7 @@ test('agent click updates the visible agent cursor', async () => {
   const manager = createManager();
   await manager.open({ appSessionId: 'm1', url: 'http://127.0.0.1:1420/' });
 
-  const state = await manager.click({ appSessionId: 'm1', x: 50, y: 35 });
+  const { state: state } = await manager.click({ appSessionId: 'm1', x: 50, y: 35 });
 
   assert.deepEqual(state.agentCursor, { x: 50, y: 35 });
 });
@@ -299,15 +306,6 @@ test('failed agent click still emits the attempted cursor position', async () =>
 
   assert.equal(updates.length, updateCount + 1);
   assert.deepEqual(updates.at(-1)?.agentCursor, { x: 50, y: 35 });
-});
-
-test('user click does not move the visible agent cursor', async () => {
-  const manager = createManager();
-  await manager.open({ appSessionId: 'm1', url: 'http://127.0.0.1:1420/' });
-
-  const state = await manager.click({ appSessionId: 'm1', x: 50, y: 35, source: 'user' });
-
-  assert.equal(state.agentCursor, undefined);
 });
 
 test('addReference captures an anchor crop and current browser context', async () => {
@@ -420,7 +418,7 @@ test('open resizes an existing runtime before capture', async () => {
     viewport: { width: 1200, height: 800, deviceScaleFactor: 2 },
   });
 
-  const state = await manager.open({
+  const { state: state } = await manager.open({
     appSessionId: 'm1',
     url: 'https://example.com',
     viewport: { width: 524, height: 898, deviceScaleFactor: 2 },
@@ -446,7 +444,7 @@ test('open preserves existing viewport when agent omits viewport', async () => {
     viewportMode: 'custom',
   });
 
-  const state = await manager.open({ appSessionId: 'm1', url: 'https://example.org' });
+  const { state: state } = await manager.open({ appSessionId: 'm1', url: 'https://example.org' });
 
   assert.deepEqual(runtime.viewport, { width: 820, height: 620, deviceScaleFactor: 2 });
   assert.deepEqual(state.viewport, { width: 820, height: 620, deviceScaleFactor: 2 });
@@ -462,7 +460,7 @@ test('open normalizes bare domains before the native runtime sees them', async (
     },
   });
 
-  const state = await manager.open({ appSessionId: 'm1', url: 'skeina.tech' });
+  const { state: state } = await manager.open({ appSessionId: 'm1', url: 'skeina.tech' });
 
   assert.equal(runtime.openedUrls[0], 'https://skeina.tech');
   assert.equal(state.url, 'https://skeina.tech');
@@ -478,7 +476,7 @@ test('reload updates the managed browser state from the runtime snapshot', async
   });
   await manager.open({ appSessionId: 'm1', url: 'https://example.com' });
 
-  const state = await manager.reload('m1');
+  const { state: state } = await manager.reload('m1');
 
   assert.equal(runtime.reloads, 1);
   assert.equal(state.url, 'https://example.com/reloaded');
@@ -494,15 +492,15 @@ test('history navigation updates browser state through the runtime', async () =>
   });
   await manager.open({ appSessionId: 'm1', url: 'https://example.com' });
 
-  const back = await manager.goBack('m1');
-  const forward = await manager.goForward('m1');
+  const { state: back } = await manager.goBack('m1');
+  const { state: forward } = await manager.goForward('m1');
 
   assert.deepEqual(runtime.history, ['back', 'forward']);
   assert.equal(back.url, 'https://example.com/back');
   assert.equal(forward.url, 'https://example.com/forward');
 });
 
-test('open and refresh do not force screenshot capture', async () => {
+test('open does not force screenshot capture', async () => {
   let runtime!: FakeRuntime;
   const manager = createManager({
     runtimeFactory: (_id, viewport) => {
@@ -512,7 +510,6 @@ test('open and refresh do not force screenshot capture', async () => {
   });
 
   await manager.open({ appSessionId: 'm1', url: 'https://example.com' });
-  await manager.refresh('m1');
 
   assert.equal(runtime.screenshots.length, 0);
 });

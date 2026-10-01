@@ -26,25 +26,28 @@ test('NativeBrowserRuntime sends live requests with application and browser sess
     },
   });
 
-  const snapshot = await runtime.open('https://example.com/');
+  const { snapshot } = await runtime.open('https://example.com/');
   await runtime.reload();
   await runtime.goBack();
   await runtime.goForward();
   await runtime.click({ x: 12, y: 34 });
   await runtime.hover({ ref: 'e7' });
-  await runtime.selectOption('e9', 'Canada');
+  await runtime.fill('e9', 'Canada');
 
   assert.equal(snapshot.url, 'https://example.com/');
   assert.deepEqual(
     requests.map((request) => request.action),
-    ['open', 'reload', 'goBack', 'goForward', 'click', 'hover', 'selectOption'],
+    ['open', 'reload', 'goBack', 'goForward', 'click', 'hover', 'fill'],
   );
   assert.equal(requests[0].appSessionId, 'app-session-one');
   assert.equal(requests[0].browserSessionId, 'browser-one');
   assert.deepEqual(requests[0].viewport, { width: 900, height: 700, deviceScaleFactor: 2 });
   assert.deepEqual({ x: requests[4].x, y: requests[4].y }, { x: 12, y: 34 });
   assert.equal(requests[5].ref, 'e7');
-  assert.deepEqual({ ref: requests[6].ref, text: requests[6].text }, { ref: 'e9', text: 'Canada' });
+  assert.deepEqual(
+    { ref: requests[6].ref, value: requests[6].value },
+    { ref: 'e9', value: 'Canada' },
+  );
 });
 
 test('open remains usable when navigation succeeds before a DOM snapshot is ready', async () => {
@@ -60,7 +63,7 @@ test('open remains usable when navigation succeeds before a DOM snapshot is read
     }),
   });
 
-  const snapshot = await runtime.open('https://example.com/');
+  const { snapshot } = await runtime.open('https://example.com/');
   assert.deepEqual(snapshot, {
     url: 'https://example.com/',
     scroll: { x: 0, y: 0 },
@@ -93,7 +96,7 @@ test('open fallback clears metadata from the previous page', async () => {
   });
 
   await runtime.open('https://example.com/first');
-  const snapshot = await runtime.open('https://example.com/second');
+  const { snapshot } = await runtime.open('https://example.com/second');
 
   assert.deepEqual(snapshot, {
     url: 'https://example.com/second',
@@ -124,9 +127,9 @@ test('reload and snapshot actions never reuse a stale page snapshot', async () =
   });
 
   await runtime.open('https://example.com/current');
-  await assert.rejects(runtime.reload(), /navigation completed without a fresh page snapshot/);
-  await assert.rejects(runtime.snapshot(), /action completed without a fresh page snapshot/);
-  await assert.rejects(runtime.fillCredentials(), /action completed without a fresh page snapshot/);
+  await assert.rejects(runtime.reload(), /without a fresh page snapshot/);
+  await assert.rejects(runtime.snapshot(), /without a fresh page snapshot/);
+  await assert.rejects(runtime.fillCredentials(), /without a fresh page snapshot/);
 });
 
 test('history navigation never reuses a stale page snapshot', async () => {
@@ -158,7 +161,7 @@ test('history navigation never reuses a stale page snapshot', async () => {
   });
 
   await runtime.open('https://example.com/current');
-  await assert.rejects(runtime.goBack(), /navigation completed without a fresh page snapshot/);
+  await assert.rejects(runtime.goBack(), /without a fresh page snapshot/);
 });
 
 test('resize and diagnostic requests use dedicated native actions', async () => {
