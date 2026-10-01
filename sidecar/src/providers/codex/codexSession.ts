@@ -80,7 +80,7 @@ export class CodexSession implements ProviderSession {
   private readonly prompts: OpenPrompts;
   private readonly tools: CodexToolBridge;
   private readonly backgroundListeners = new Set<(event: NormalizedEvent) => void>();
-  private readonly delegatedListeners = new Set<(running: boolean) => void>();
+  private readonly delegatedListeners = new Set<(running: boolean, completed?: boolean) => void>();
   // Steers the running turn holds, by the client id each was sent with, until
   // Codex reports the message delivered or the turn ends without it.
   private readonly steers = new Map<string, (delivered: boolean) => void>();
@@ -404,7 +404,7 @@ export class CodexSession implements ProviderSession {
     return typeof threadId === 'string' && threadId !== this.threadId;
   }
 
-  onDelegatedTurn(listener: (running: boolean) => void): () => void {
+  onDelegatedTurn(listener: (running: boolean, completed?: boolean) => void): () => void {
     this.delegatedListeners.add(listener);
     return () => {
       this.delegatedListeners.delete(listener);
@@ -413,13 +413,13 @@ export class CodexSession implements ProviderSession {
 
   // Announced only when the answer changes, so a repeated notification does
   // not settle the same turn twice.
-  private setDelegatedTurn(turnId: string | undefined): void {
+  private setDelegatedTurn(turnId: string | undefined, completed = false): void {
     const was = this.delegatedTurnId !== undefined;
     this.delegatedTurnId = turnId;
     if (turnId && turnId !== this.interruptedTurnId) this.interruptedTurnId = undefined;
     const running = turnId !== undefined;
     if (running === was) return;
-    for (const listener of this.delegatedListeners) listener(running);
+    for (const listener of this.delegatedListeners) listener(running, completed);
   }
 
   onBackgroundEvent(listener: (event: NormalizedEvent) => void): () => void {
@@ -484,7 +484,7 @@ export class CodexSession implements ProviderSession {
       if (!turn) return;
       if (turn.id === this.delegatedTurnId) {
         this.dropSteers();
-        this.setDelegatedTurn(undefined);
+        this.setDelegatedTurn(undefined, turn.status === 'completed' && !turn.error);
         // Same as settle() does for a typed turn: an approval nobody can
         // answer any more leaves the screen with the turn that asked.
         this.prompts.cancel();

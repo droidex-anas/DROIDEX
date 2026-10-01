@@ -1142,7 +1142,7 @@ export class SessionLifecycle {
     });
     // A turn the provider started by itself is the session's turn like any
     // other: it streams, it can be stopped, and a typed prompt waits behind it.
-    const delegated = liveSession.session.onDelegatedTurn?.((running) => {
+    const delegated = liveSession.session.onDelegatedTurn?.((running, completed) => {
       if (!isCurrent()) return;
       if (running) {
         liveSession.streaming = true;
@@ -1162,14 +1162,14 @@ export class SessionLifecycle {
       // starts under it.
       const interrupt = liveSession.sendNowInterrupt;
       if (!interrupt) {
-        this.settleDelegatedTurn(liveSession);
+        this.settleDelegatedTurn(liveSession, completed);
         return;
       }
       const turn = liveSession.delegatedTurns;
       void interrupt.then(() => {
         // The chat closed, or the provider started another turn, meanwhile.
         if (isCurrent() && liveSession.delegatedTurns === turn)
-          this.settleDelegatedTurn(liveSession);
+          this.settleDelegatedTurn(liveSession, completed);
       });
     });
     if (events ?? delegated)
@@ -1179,13 +1179,18 @@ export class SessionLifecycle {
       };
   }
 
-  private settleDelegatedTurn(liveSession: LiveSession): void {
+  private settleDelegatedTurn(liveSession: LiveSession, completed: boolean | undefined): void {
     liveSession.streaming = false;
     // A Stop lands before the turn reports itself finished, so the flags it
     // set are cleared here as they are for a typed turn.
     const stopped = liveSession.interrupting === true || liveSession.interruptingToSend === true;
     liveSession.interrupting = false;
     liveSession.interruptingToSend = false;
+    // A spoken turn that finished is an answer too, so a usage hold lifts.
+    if (completed && !stopped && liveSession.summary.usageLimit)
+      this.dependencies.registry.updateSummary(liveSession.summary.appSessionId, {
+        usageLimit: undefined,
+      });
     this.publishTurnSettled(liveSession);
     const appSessionId = liveSession.summary.appSessionId;
     if (stopped) this.dependencies.childSessions.retryAgentWave(appSessionId);

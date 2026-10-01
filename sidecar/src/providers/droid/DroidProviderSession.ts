@@ -26,6 +26,8 @@ export class DroidProviderSession implements ProviderSession {
   // on, then each one DROIDEX set, then each one Droid switched to itself.
   private modelId: string | undefined;
   private modelWritesInFlight = 0;
+  // Droid's own switch this turn, held until it says why or the turn ends.
+  private pendingSwitch: HarnessModelSwitch | undefined;
 
   constructor(
     // Primary-session events are stamped with DROIDEX's identity, not the
@@ -51,18 +53,20 @@ export class DroidProviderSession implements ProviderSession {
   async *stream(prompt: string): AsyncGenerator<NormalizedEvent, void, undefined> {
     // The raw listener hears each notification before the stream yields it. A
     // switch waits until Droid says the usage limit caused it, or the turn ends.
-    let pendingSwitch: HarnessModelSwitch | undefined;
     let limitDetail: string | undefined;
     const stopListening = this.droid.onNotification((note) => {
       const notice = droidSessionNotice(extractNotification(note));
       switch (notice?.kind) {
         case 'model': {
           const next = this.observeModel(notice.modelId, notice.reasoningEffort);
-          if (next) pendingSwitch = pendingSwitch ? { ...next, from: pendingSwitch.from } : next;
+          if (next)
+            this.pendingSwitch = this.pendingSwitch
+              ? { ...next, from: this.pendingSwitch.from }
+              : next;
           return;
         }
         case 'core_fallback':
-          if (pendingSwitch) pendingSwitch.cause = 'usage_limit';
+          if (this.pendingSwitch) this.pendingSwitch.cause = 'usage_limit';
           return;
         case 'usage_limit':
           limitDetail = notice.detail;
@@ -70,9 +74,10 @@ export class DroidProviderSession implements ProviderSession {
     });
     try {
       for await (const event of this.droid.stream(prompt, { includePartialMessages: true })) {
-        if (pendingSwitch && (pendingSwitch.cause === 'usage_limit' || event.type === 'result')) {
-          yield { harnessModelSwitch: pendingSwitch };
-          pendingSwitch = undefined;
+        const pending = this.pendingSwitch;
+        if (pending && (pending.cause === 'usage_limit' || event.type === 'result')) {
+          yield { harnessModelSwitch: pending };
+          this.pendingSwitch = undefined;
         }
         const normalizeStartedAt = performance.now();
         const normalized = normalizeStreamEvent(
@@ -90,6 +95,7 @@ export class DroidProviderSession implements ProviderSession {
       throw error;
     } finally {
       stopListening();
+      this.pendingSwitch = undefined;
     }
     // A turn refused on the limit still ends in a successful result; only the
     // notice says it was refused.
@@ -130,8 +136,14 @@ export class DroidProviderSession implements ProviderSession {
         : {}),
     };
     if (Object.keys(next).length === 0) return;
+    if (!modelId) {
+      await this.droid.updateSettings(next);
+      return;
+    }
+    // The user's pick replaces any switch Droid made before it.
     const previous = this.modelId;
-    if (modelId) this.modelId = modelId;
+    this.modelId = modelId;
+    this.pendingSwitch = undefined;
     this.modelWritesInFlight += 1;
     try {
       await this.droid.updateSettings(next);
