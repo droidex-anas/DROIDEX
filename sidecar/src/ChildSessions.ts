@@ -505,12 +505,13 @@ export class ChildSessions {
     parentAppSessionId: string,
     role: PersistedChildSession['role'],
     effectiveModelId: string,
-  ): Promise<void> {
+  ): Promise<boolean> {
     const parent = this.parents.get(parentAppSessionId);
-    if (!parent || !this.isCurrentParent(parent)) return;
-    const results = await Promise.allSettled(
+    if (!parent || !this.isCurrentParent(parent)) return true;
+    const results = await Promise.all(
       [...parent.children.values()].map(async (child) => {
-        if (child.role !== role || !child.runtime || !this.isSettingsTarget(parent, child)) return;
+        if (child.role !== role || !child.runtime || !this.isSettingsTarget(parent, child))
+          return true;
         const target: ChildSettingsTarget = {
           parent,
           child,
@@ -518,28 +519,26 @@ export class ChildSessions {
           parentGeneration: parent.generation,
           runtimeGeneration: child.runtime.generation,
         };
+        let accepted = false;
         const update = (child.mutationTail ?? Promise.resolve())
           .catch(ignoreError)
           .then(async () => {
-            if (child.role !== role) return;
-            if (
-              (await this.performSettingsUpdate(target, { modelId: effectiveModelId })) === 'failed'
-            )
-              throw new Error('Child provider rejected the role model change.');
+            if (child.role !== role) {
+              accepted = true;
+              return;
+            }
+            accepted = await this.performSettingsUpdate(target, { modelId: effectiveModelId });
           });
         child.mutationTail = update;
         try {
           await update;
+          return child.role !== role || !this.isSettingsTarget(parent, child) || accepted;
         } finally {
           this.clearMutation(child, update);
         }
       }),
     );
-    const failed = results.filter((result) => result.status === 'rejected').length;
-    if (failed > 0)
-      throw new Error(
-        `The ${role} default was saved, but ${String(failed)} live ${role} session${failed === 1 ? '' : 's'} could not update. Retry the model change to update those sessions.`,
-      );
+    return results.every(Boolean);
   }
 
   resolveAutomaticTarget(key: CompactionResourceKey): ChildAutomaticCompactionTarget | undefined {
@@ -911,8 +910,8 @@ export class ChildSessions {
   private async performSettingsUpdate(
     target: ChildSettingsTarget,
     command: Pick<ChildSettingsCommand, 'modelId' | 'reasoningEffort'>,
-  ): Promise<'failed' | undefined> {
-    if (!this.isSettingsTransaction(target)) return;
+  ): Promise<boolean> {
+    if (!this.isSettingsTransaction(target)) return false;
     const { parent, child, runtime } = target;
     target.configurationGeneration = child.configurationGeneration;
     let modelId = command.modelId ?? undefined;
@@ -924,7 +923,7 @@ export class ChildSessions {
           child.role,
         ).modelId;
       if (!modelId) throw new Error(`No Factory default is available for ${child.role}.`);
-      if (!this.isSettingsTransaction(target)) return;
+      if (!this.isSettingsTransaction(target)) return false;
       await runtime.session.updateSettings({
         modelId,
         ...(command.reasoningEffort === undefined
@@ -932,7 +931,7 @@ export class ChildSessions {
           : { reasoningEffort: factoryReasoningEffort(command.reasoningEffort) }),
       });
     } catch (error) {
-      if (this.isSettingsTransaction(target)) {
+      if (this.isSettingsTransaction(target))
         this.emitError(
           child.identity,
           'settings',
@@ -940,11 +939,9 @@ export class ChildSessions {
           'child.settings_update_failed',
           `Could not update child settings: ${errMsg(error)}`,
         );
-        return 'failed';
-      }
-      return;
+      return false;
     }
-    if (!this.isSettingsTransaction(target)) return;
+    if (!this.isSettingsTransaction(target)) return false;
     if (child.turn.autoCompacting) this.d.compaction.cancel(this.automaticTarget(parent, child));
     child.modelId = modelId;
     if (command.reasoningEffort !== undefined) child.reasoningEffort = command.reasoningEffort;
@@ -960,6 +957,7 @@ export class ChildSessions {
         `[compaction] could not resolve exact-child limit for ${runtime.session.sessionId}: ${errMsg(error)}`,
       );
     }
+    return true;
   }
 
   private complete(

@@ -124,7 +124,7 @@ test(
       assert.equal(
         latestSessionList(h.events).find((session) => session.appSessionId === 'provider-1')
           ?.workerModelId,
-        'worker-role-accepted',
+        'worker-accepted',
       );
       assert.equal(child.settings.length, writesBeforeRoleUpdate + 1);
       assert.equal(child.settings.at(-1)?.['modelId'], 'worker-role-accepted');
@@ -138,7 +138,7 @@ test(
           (event) =>
             event.type === 'error' &&
             event.appSessionId === 'provider-1' &&
-            event.message.includes('1 live worker session') &&
+            event.message.includes('live worker child sessions') &&
             event.message.includes('Retry'),
         ),
         true,
@@ -190,9 +190,15 @@ test('partial role model failure warns the parent without blocking accepted sibl
         (event) =>
           event.type === 'error' &&
           event.appSessionId === 'provider-1' &&
-          event.message.includes('1 live worker session'),
+          event.message.includes('live worker child sessions'),
       ),
       true,
+    );
+    await h.handle({ type: 'sessions.list' });
+    assert.equal(
+      latestSessionList(h.events).find((session) => session.appSessionId === 'provider-1')
+        ?.workerModelId,
+      'worker-old',
     );
     await h.handle({
       type: 'settings.agent.update',
@@ -202,6 +208,12 @@ test('partial role model failure warns the parent without blocking accepted sibl
     });
     assert.equal(
       exactSettingsEvents(h.events, 'provider-1', 'rejected-worker').at(-1)?.modelId,
+      'worker-new',
+    );
+    await h.handle({ type: 'sessions.list' });
+    assert.equal(
+      latestSessionList(h.events).find((session) => session.appSessionId === 'provider-1')
+        ?.workerModelId,
       'worker-new',
     );
   } finally {

@@ -1252,6 +1252,36 @@ test('queued role model update skips a child whose role changed', async () => {
   );
 });
 
+test('a child completed while a role model update is queued no longer blocks the role default', async () => {
+  const record = childRecord('child', 'provider');
+  const h = createHarness([record]);
+  const runtime = await h.open(record);
+  const gate = runtime.deferNextUpdateSettings();
+  const exactUpdate = h.owner.updateSettings({
+    type: 'child.updateSettings',
+    parentAppSessionId: h.parentId,
+    childSessionId: record.childSessionId,
+    modelId: 'accepted-model',
+  });
+  await runtime.waitForSettings(1);
+  const roleUpdate = h.owner.updateRoleModelChildren(h.parentId, 'worker', 'worker-model');
+  h.owner.admitChildObservation({
+    parentAppSessionId: h.parentId,
+    providerSessionId: record.providerSessionId,
+    role: 'worker',
+    done: true,
+    ...(record.spawnLink ? { spawnLink: record.spawnLink } : {}),
+  });
+  gate.resolve();
+  await exactUpdate;
+  assert.equal(await roleUpdate, true);
+  assert.equal(h.owner.list(h.parentId)[0]?.status, 'completed');
+  assert.deepEqual(
+    runtime.settings.map((settings) => settings.modelId),
+    ['accepted-model'],
+  );
+});
+
 test('changed role cancels and invalidates its captured automatic target', async () => {
   const record = childRecord('child', 'provider');
   const h = createHarness([record]);
