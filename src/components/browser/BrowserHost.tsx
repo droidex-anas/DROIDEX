@@ -11,6 +11,7 @@ import {
   type BrowserPage,
 } from '../../lib/browserHost';
 import {
+  listWorkingNativeBrowsers,
   onNativeBrowserClosed,
   onNativeBrowserLoadFailed,
   onNativeBrowserLoaded,
@@ -50,11 +51,14 @@ export function BrowserHost() {
       Object.keys(browsersRef.current).find(
         (key) => browsersRef.current[key].browserSessionId === browserSessionId,
       );
+    const setWorking = (browserSessionId: string, working: boolean) => {
+      const appSessionId = appSessionIdFor(browserSessionId);
+      const savedUrl = appSessionId ? browsersRef.current[appSessionId].url : undefined;
+      setBrowserPageWorking(browserSessionId, working, savedUrl);
+    };
     const subscriptions = [
       onNativeBrowserWorking(({ browserSessionId, working }) => {
-        const appSessionId = appSessionIdFor(browserSessionId);
-        const savedUrl = appSessionId ? browsersRef.current[appSessionId].url : undefined;
-        setBrowserPageWorking(browserSessionId, working, savedUrl);
+        setWorking(browserSessionId, working);
       }),
       onNativeBrowserClosed(({ browserSessionId }) => {
         closeBrowserPage(browserSessionId);
@@ -72,6 +76,10 @@ export function BrowserHost() {
           dispatch({ type: 'BROWSER_NAVIGATED', appSessionId, ...event, browserSessionId });
       }),
     ];
+    // Work main started before this host mounted (an app reload mid-request).
+    void listWorkingNativeBrowsers().then((ids) => {
+      for (const browserSessionId of ids) setWorking(browserSessionId, true);
+    });
     return () => {
       for (const unsubscribe of subscriptions) unsubscribe();
     };

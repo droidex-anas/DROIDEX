@@ -226,6 +226,7 @@ contextBridge.exposeInMainWorld('droidControl', {
     ipcRenderer.invoke('native-browser-reserve', { browserSessionId, savedUrl }),
   nativeBrowserRelease: (browserSessionId) =>
     ipcRenderer.invoke('native-browser-release', { browserSessionId }),
+  nativeBrowserWorkingSessions: () => ipcRenderer.invoke('native-browser-working-sessions'),
   nativeBrowserShown: (browserSessionId, shown) =>
     ipcRenderer.invoke('native-browser-shown', { browserSessionId, shown }),
   nativeBrowserGoBack: (browserSessionId) =>

@@ -114,10 +114,12 @@ function createNativeBrowserManager(options) {
     if (restoreUrl) void loadNativeBrowserUrl(entry, restoreUrl, { force: true });
   }
 
-  // A load belongs to the guest that started it; a new guest starts afresh.
+  // A load belongs to the guest that started it; a new guest starts afresh, and
+  // nobody waiting on the old one hears about the new one's loads.
   function forgetLoad(entry) {
     entry.loadingUrl = null;
     entry.loadingPromise = null;
+    for (const settle of [...(loadWaiters.get(entry.browserSessionId) ?? [])]) settle(undefined);
   }
 
   async function waitForGuest(browserSessionId) {
@@ -325,6 +327,7 @@ function createNativeBrowserManager(options) {
     close: closeNativeBrowser,
     reload: reloadNativeBrowser,
     reloadFocused: reloadFocusedNativeBrowser,
+    waitForPage: waitForGuest,
     nextLoad: nextNativeBrowserLoad,
     goBack: (browserSessionId) => navigateNativeBrowserHistory(browserSessionId, 'back'),
     goForward: (browserSessionId) => navigateNativeBrowserHistory(browserSessionId, 'forward'),

@@ -298,6 +298,7 @@ interface DroidControlApi {
     savedUrl?: string,
   ) => Promise<{ src: string; generation: number }>;
   nativeBrowserRelease: (browserSessionId: string) => Promise<void>;
+  nativeBrowserWorkingSessions: () => Promise<string[]>;
   nativeBrowserShown: (browserSessionId: string, shown: boolean) => Promise<void>;
   nativeBrowserGoBack: (browserSessionId: string) => Promise<boolean>;
   nativeBrowserGoForward: (browserSessionId: string) => Promise<boolean>;

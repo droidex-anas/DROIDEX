@@ -75,6 +75,10 @@ function isBrowserResult(
   if (!message || typeof message !== 'object') return false;
   const { type, id, result } = message as Record<string, unknown>;
   return (
-    type === 'browser.result' && typeof id === 'string' && !!result && typeof result === 'object'
+    type === 'browser.result' &&
+    typeof id === 'string' &&
+    !!result &&
+    typeof result === 'object' &&
+    (result as Record<string, unknown>).requestId === id
   );
 }

@@ -95,12 +95,7 @@ const sidecarSupervisor = createSidecarSupervisor({
   userData: () => app.getPath('userData'),
   historyDir: () => (userDataOverride ? path.join(userDataOverride, 'history') : undefined),
   onUnexpectedExit: (error) => diagnostics.captureException(error, { process: 'sidecar' }),
-  onMessage: (message, reply) => {
-    if (message?.type !== 'browser.request' || typeof message.id !== 'string') return;
-    void nativeBrowserRequests
-      .perform(message.request)
-      .then((result) => reply({ type: 'browser.result', id: message.id, result }));
-  },
+  onMessage: (message, reply) => void nativeBrowserRequests.handle(message, reply),
 });
 // subscribe() replays the current status synchronously, so mainWindow must
 // already be initialized when this runs.
@@ -913,6 +908,10 @@ function registerIpc() {
   ipcMain.handle('native-browser-release', (event, { browserSessionId }) => {
     assertMainRenderer(event);
     return nativeBrowserManager.release(browserSessionId);
+  });
+  ipcMain.handle('native-browser-working-sessions', (event) => {
+    assertMainRenderer(event);
+    return nativeBrowserRequests.workingSessions();
   });
   ipcMain.handle('native-browser-shown', (event, { browserSessionId, shown }) => {
     assertMainRenderer(event);

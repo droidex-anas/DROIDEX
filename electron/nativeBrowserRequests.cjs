@@ -1,15 +1,46 @@
 // The sidecar's browser requests, run here because main owns the pages. A
-// request that needs its page wakes it for exactly as long as it runs: the
-// renderer's Browser host keeps that page mounted and rendering until main says
-// the work is over, whether or not the pane is open.
+// request that needs its page wakes it for exactly as long as main works on it:
+// main's count of that work is the only truth, and the renderer's Browser host
+// keeps the page mounted and rendering while it is above zero, whether or not
+// the pane is open.
 
+const ACTIONS = new Set([
+  'open',
+  'reload',
+  'goBack',
+  'goForward',
+  'snapshot',
+  'click',
+  'hover',
+  'selectOption',
+  'type',
+  'keypress',
+  'scroll',
+  'resize',
+  'inspect',
+  'network',
+  'console',
+  'capture',
+  'close',
+  'fillCredentials',
+]);
 // Reading the logs or recording the viewport never needs the page itself.
 const PAGELESS_ACTIONS = new Set(['resize', 'network', 'console']);
 const MAX_WAITING_PER_PAGE = 8;
 const LOAD_WAIT_MS = 8_000;
+// A little past the sidecar's own timeout: work still running then stops
+// holding its page, and whatever it does afterwards is dropped.
+const REQUEST_DEADLINE_MS = 15_000;
 
 function createNativeBrowserRequests({ manager, notifyRenderer }) {
   const waiting = new Map(); // browserSessionId -> requests in flight
+
+  // A message from the sidecar; only a well-formed browser request is answered.
+  async function handle(message, reply) {
+    const request = browserRequestFrom(message);
+    if (!request) return;
+    reply({ type: 'browser.result', id: request.requestId, result: await perform(request) });
+  }
 
   async function perform(request) {
     try {
@@ -18,7 +49,7 @@ function createNativeBrowserRequests({ manager, notifyRenderer }) {
         notifyRenderer('native-browser-closed', { browserSessionId: request.browserSessionId });
         return result(request, true);
       }
-      if (PAGELESS_ACTIONS.has(request.action)) return performAction(request);
+      if (PAGELESS_ACTIONS.has(request.action)) return await performAction(request);
       return await withAwakePage(request.browserSessionId, () => performOnPage(request));
     } catch (error) {
       return result(request, false, {
@@ -28,19 +59,36 @@ function createNativeBrowserRequests({ manager, notifyRenderer }) {
   }
 
   async function withAwakePage(browserSessionId, run) {
-    const count = waiting.get(browserSessionId) ?? 0;
-    if (count >= MAX_WAITING_PER_PAGE) {
+    if ((waiting.get(browserSessionId) ?? 0) >= MAX_WAITING_PER_PAGE) {
       throw new Error('Too many browser actions are already waiting on this page.');
     }
-    waiting.set(browserSessionId, count + 1);
-    notifyRenderer('native-browser-working', { browserSessionId, working: true });
+    setWaiting(browserSessionId, 1);
+    let deadline;
     try {
-      return await run();
+      const work = run();
+      work.catch(() => undefined);
+      return await Promise.race([
+        work,
+        new Promise((_, reject) => {
+          deadline = setTimeout(
+            () => reject(new Error('The browser page did not finish in time.')),
+            REQUEST_DEADLINE_MS,
+          );
+        }),
+      ]);
     } finally {
-      const left = (waiting.get(browserSessionId) ?? 1) - 1;
-      if (left > 0) waiting.set(browserSessionId, left);
-      else waiting.delete(browserSessionId);
-      notifyRenderer('native-browser-working', { browserSessionId, working: false });
+      clearTimeout(deadline);
+      setWaiting(browserSessionId, -1);
+    }
+  }
+
+  function setWaiting(browserSessionId, delta) {
+    const before = waiting.get(browserSessionId) ?? 0;
+    const after = before + delta;
+    if (after > 0) waiting.set(browserSessionId, after);
+    else waiting.delete(browserSessionId);
+    if (before > 0 !== after > 0) {
+      notifyRenderer('native-browser-working', { browserSessionId, working: after > 0 });
     }
   }
 
@@ -52,11 +100,13 @@ function createNativeBrowserRequests({ manager, notifyRenderer }) {
       return result(request, true, { snapshot: await snapshotAfter(request, url) });
     }
     if (request.action === 'reload') {
+      await manager.waitForPage(browserSessionId);
       const loaded = manager.nextLoad(browserSessionId, LOAD_WAIT_MS);
       await manager.reload(browserSessionId);
       return result(request, true, { snapshot: await snapshotAfter(request, (await loaded)?.url) });
     }
     if (request.action === 'goBack' || request.action === 'goForward') {
+      await manager.waitForPage(browserSessionId);
       const loaded = manager.nextLoad(browserSessionId, LOAD_WAIT_MS);
       const moved =
         request.action === 'goBack'
@@ -99,7 +149,18 @@ function createNativeBrowserRequests({ manager, notifyRenderer }) {
       : { url: fallbackUrl, scroll: { x: 0, y: 0 }, refs: [] };
   }
 
-  return { perform };
+  return { handle, workingSessions: () => [...waiting.keys()] };
+}
+
+function browserRequestFrom(message) {
+  if (message?.type !== 'browser.request' || typeof message.id !== 'string') return undefined;
+  const request = message.request;
+  if (!request || typeof request !== 'object') return undefined;
+  const { requestId, appSessionId, browserSessionId, action } = request;
+  if (requestId !== message.id || typeof appSessionId !== 'string') return undefined;
+  if (typeof browserSessionId !== 'string' || !browserSessionId || !ACTIONS.has(action))
+    return undefined;
+  return request;
 }
 
 // Only what an action reads goes to the page script.

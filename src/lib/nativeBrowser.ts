@@ -54,6 +54,11 @@ export async function releaseNativeBrowser(browserSessionId: string): Promise<vo
   await window.droidControl!.nativeBrowserRelease(browserSessionId);
 }
 
+/** Sessions main has agent work in flight on, for a host that just mounted. */
+export async function listWorkingNativeBrowsers(): Promise<string[]> {
+  return (await window.droidControl?.nativeBrowserWorkingSessions()) ?? [];
+}
+
 export async function setNativeBrowserShown(
   browserSessionId: string,
   shown: boolean,

@@ -8,6 +8,8 @@ function createNativeBrowserPage({
   runWithWebContentsDebugger,
   findEntryForContents,
 }) {
+  const operationsOn = new WeakMap(); // guest contents -> operations in flight
+
   function setDesignMode(browserSessionId, active) {
     const entry = ensureEntry(browserSessionId);
     const next = Boolean(active);
@@ -48,7 +50,7 @@ function createNativeBrowserPage({
     const contents = liveContents(entry);
     if (!contents) throw new Error(`${appName} browser is not open.`);
     const navigation = observeAgentNavigation(contents);
-    contents.setBackgroundThrottling(false);
+    liftBackgroundThrottling(contents);
     try {
       if (request.action === 'fillCredentials') {
         return withNativeBrowserHistory(
@@ -267,7 +269,7 @@ function createNativeBrowserPage({
     const entry = await restoreForAction(browserSessionId);
     const contents = liveContents(entry);
     if (!contents) throw new Error(`${appName} browser is not open.`);
-    contents.setBackgroundThrottling(false);
+    liftBackgroundThrottling(contents);
     try {
       const fullPage = Boolean(options?.fullPage);
       const scale =
@@ -300,10 +302,19 @@ function createNativeBrowserPage({
     }
   }
 
-  // Restored as soon as the work ends, shown or not: re-enabling throttling on a
-  // guest that is already hidden does not take effect, so a flag left lifted
-  // would keep the page running after the pane closes.
+  // A page runs unthrottled while any operation on it is in flight. Restored as
+  // soon as the last one ends, shown or not: re-enabling throttling on a guest
+  // that is already hidden does not take effect, so a flag left lifted would
+  // keep the page running after the pane closes.
+  function liftBackgroundThrottling(contents) {
+    operationsOn.set(contents, (operationsOn.get(contents) ?? 0) + 1);
+    contents.setBackgroundThrottling(false);
+  }
+
   function restoreBackgroundThrottling(contents) {
+    const left = (operationsOn.get(contents) ?? 1) - 1;
+    operationsOn.set(contents, left);
+    if (left > 0) return;
     try {
       if (!contents.isDestroyed()) contents.setBackgroundThrottling(true);
     } catch {
