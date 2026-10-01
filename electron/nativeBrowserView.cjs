@@ -1,6 +1,8 @@
 // Wires a bound <webview> guest into its browser entry: the page listeners that
 // keep the entry's URL, history, console and load state current. The partition
 // handlers stay as they were for views: permissions and devices are denied.
+const CONSOLE_ERROR = 3;
+
 function createNativeBrowserViewFactory({
   session,
   partition,
@@ -82,6 +84,7 @@ function createNativeBrowserViewFactory({
       loadingPromise: null,
       networkEvents: [],
       consoleEvents: [],
+      consoleErrors: 0,
     };
   }
 
@@ -97,10 +100,10 @@ function createNativeBrowserViewFactory({
     contents.on('console-message', (details) => {
       // Electron's own notices about the guest are not the page's.
       if (String(details.sourceId ?? '').startsWith('node:electron/')) return;
-      entry.consoleEvents.push({
-        timestamp: Date.now(),
-        ...normalizeBrowserConsoleMessage(details),
-      });
+      const message = normalizeBrowserConsoleMessage(details);
+      // Counted apart from the log, which a read empties.
+      if (message.level === CONSOLE_ERROR) entry.consoleErrors += 1;
+      entry.consoleEvents.push({ timestamp: Date.now(), ...message });
       if (entry.consoleEvents.length > 100) {
         entry.consoleEvents.splice(0, entry.consoleEvents.length - 100);
       }

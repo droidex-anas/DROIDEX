@@ -126,7 +126,9 @@ function createNativeBrowserPage({
       return deviceSet(entry, request, 'viewportMode');
     }
     if (request.action === 'colorScheme') return deviceSet(entry, request, 'colorScheme');
-    // A read hands over what came in since the last one.
+    // A read hands over what came in since the last one, so one whose caller
+    // has given up takes nothing.
+    if (Date.now() >= request.startBy) throw new Error('The browser page did not finish in time.');
     if (request.action === 'network')
       return {
         requestId: request.requestId,

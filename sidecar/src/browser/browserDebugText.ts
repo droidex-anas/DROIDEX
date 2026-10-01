@@ -41,7 +41,8 @@ export function networkText(events: BrowserNetworkEvent[]): string {
         event.resourceType,
         event.error,
         event.durationMs === undefined ? undefined : `${String(event.durationMs)} ms`,
-        event.cached ? 'cached' : event.bytes === undefined ? undefined : sizeText(event.bytes),
+        event.bytes === undefined ? undefined : sizeText(event.bytes),
+        event.cached ? 'cached' : undefined,
       ]
         .filter(Boolean)
         .join('  '),

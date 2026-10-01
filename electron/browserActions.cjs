@@ -18,7 +18,6 @@ const MAX_REPEAT = 50;
 const SCROLL_SETTLE_MS = 1_000;
 const SCROLL_START_MS = 300;
 const SCROLL_POLL_MS = 40;
-const CONSOLE_ERROR = 3;
 function createBrowserActions({
   reading,
   runWithWebContentsDebugger,
@@ -29,9 +28,9 @@ function createBrowserActions({
   const { refuseCovered } = createBrowserCover({ reading });
 
   async function act(contents, entry, request) {
-    if (request.action === 'snapshot') return result(request, contents, entry, Date.now());
+    if (request.action === 'snapshot') return result(request, contents, entry, entry.consoleErrors);
     if (request.action === 'inspect') return inspect(contents, entry, request);
-    const since = Date.now();
+    const errorsBefore = entry.consoleErrors;
     const urlBefore = contents.getURL();
     const navigation = observeNavigation(contents);
     try {
@@ -53,7 +52,7 @@ function createBrowserActions({
         if (mayNavigate && step.sent && !navigation.started())
           await navigation.startsWithin(NAVIGATION_GRACE_MS);
         if (navigation.started()) await navigation.wait();
-        return result(request, contents, entry, since, urlBefore);
+        return result(request, contents, entry, errorsBefore, urlBefore);
       });
     } finally {
       navigation.dispose();
@@ -333,13 +332,11 @@ function createBrowserActions({
 
   // The page after an action, with what the agent reads about it: what
   // changed besides the action itself, then the [Title · url] footer.
-  async function result(request, contents, entry, since, urlBefore = contents.getURL()) {
+  async function result(request, contents, entry, errorsBefore, urlBefore = contents.getURL()) {
     const snapshot = await pageSnapshot(contents);
     const notes = [];
     if (snapshot.url !== urlBefore) notes.push('The page went to a new address.');
-    const errors = entry.consoleEvents.filter(
-      (event) => event.level === CONSOLE_ERROR && event.timestamp >= since,
-    ).length;
+    const errors = entry.consoleErrors - errorsBefore;
     if (errors)
       notes.push(
         `${errors} new console error${errors === 1 ? '' : 's'}; browser_console has them.`,
