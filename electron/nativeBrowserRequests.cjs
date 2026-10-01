@@ -177,7 +177,7 @@ function createNativeBrowserRequests({ manager, notifyRenderer }) {
       .catch(() => undefined);
     return outcome?.ok && outcome.snapshot
       ? outcome.snapshot
-      : { url: fallbackUrl, scroll: { x: 0, y: 0 }, refs: [] };
+      : { url: fallbackUrl, scroll: { x: 0, y: 0 } };
   }
 
   return { handle, workingSessions: () => [...waiting.keys()] };

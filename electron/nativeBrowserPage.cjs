@@ -1,5 +1,5 @@
 const { createBrowserReading } = require('./browserReading.cjs');
-const { isSensitiveBrowserKey, redactBrowserDiagnosticUrl } = require('./browserDiagnostics.cjs');
+const { redactBrowserDiagnosticUrl } = require('./browserDiagnostics.cjs');
 
 function createNativeBrowserPage({
   appName,
@@ -14,7 +14,7 @@ function createNativeBrowserPage({
   const operationsOn = new WeakMap(); // guest contents -> { count, generation }
   const reading = createBrowserReading({
     runWithWebContentsDebugger,
-    isSensitiveName: isSensitiveBrowserKey,
+    savedSecretsFor: (url) => credentials.savedSecretsFor(url),
     redactUrl: redactBrowserDiagnosticUrl,
   });
 
@@ -78,8 +78,14 @@ function createNativeBrowserPage({
           await credentials.fillForAgent(contents, request),
         );
       }
+      // Navigation can win the race while a ref is still being resolved; the
+      // action then gives up rather than act on the next page.
+      const action = { abandoned: false };
       const execution = withRefTarget(contents, entry, request)
-        .then((target) => executeAgentAction(contents, target))
+        .then(async (target) => {
+          if (target.document) await reading.assertDocument(contents, target.document);
+          return executeAgentAction(contents, target, action);
+        })
         .then(
           (result) => ({ type: 'result', result }),
           (error) => ({ type: 'error', error }),
@@ -89,6 +95,7 @@ function createNativeBrowserPage({
         navigation.wait().then(() => ({ type: 'navigation' })),
       ]);
       if (outcome.type === 'navigation') {
+        action.abandoned = true;
         return await snapshotAfterNavigation(contents, request);
       }
       if (outcome.type === 'error') {
@@ -127,13 +134,22 @@ function createNativeBrowserPage({
   // A ref from browser_read_page becomes the point or selector the action needs.
   async function withRefTarget(contents, entry, request) {
     if (!request.ref) return request;
-    if (request.action === 'selectOption' || request.action === 'inspect')
+    if (request.action === 'selectOption') {
+      await reading.selectOption(contents, entry, request.ref, request.text ?? '');
+      return { ...request, action: 'snapshot' };
+    }
+    if (request.action === 'inspect')
       return { ...request, selector: await reading.selectorForRef(contents, entry, request.ref) };
-    const { x, y } = await reading.pointForRef(contents, entry, request.ref);
-    return { ...request, x, y, selector: undefined };
+    const { x, y, document } = await reading.pointForRef(contents, entry, request.ref);
+    return { ...request, x, y, document, selector: undefined };
   }
 
-  async function executeAgentAction(contents, request) {
+  function ensureCurrent(action) {
+    if (action.abandoned)
+      throw new Error('The page changed before the action ran; call browser_read_page.');
+  }
+
+  async function executeAgentAction(contents, request, action) {
     if (
       request.action === 'scroll' &&
       Number.isFinite(Number(request.x)) &&
@@ -143,6 +159,7 @@ function createNativeBrowserPage({
       const y = Math.round(Number(request.y));
       const pixels = Math.max(1, Math.round(Number(request.pixels) || 500));
       const horizontal = request.direction === 'left' || request.direction === 'right';
+      ensureCurrent(action);
       contents.sendInputEvent({
         type: 'mouseWheel',
         x,
@@ -166,6 +183,7 @@ function createNativeBrowserPage({
       if (!Number.isFinite(x) || !Number.isFinite(y)) {
         throw new Error('Browser pointer interaction requires finite viewport coordinates.');
       }
+      ensureCurrent(action);
       contents.sendInputEvent({ type: 'mouseMove', x, y, movementX: 0, movementY: 0 });
       if (request.action === 'click') {
         contents.sendInputEvent({ type: 'mouseDown', x, y, button: 'left', clickCount: 1 });

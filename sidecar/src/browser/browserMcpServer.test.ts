@@ -70,7 +70,6 @@ test('browser_open keeps high-detail viewport scale by default', async () => {
         viewport: input.viewport,
         viewportMode: 'custom',
         scroll: { x: 0, y: 0 },
-        refs: [],
       };
     },
   } as unknown as BrowserSessionManager;
@@ -95,7 +94,6 @@ test('browser_reload returns a fresh browser state', async () => {
         viewport: { width: 1200, height: 800, deviceScaleFactor: 2 },
         viewportMode: 'fit',
         scroll: { x: 0, y: 0 },
-        refs: [],
       };
     },
   } as unknown as BrowserSessionManager;
@@ -114,7 +112,6 @@ test('browser history tools return the resulting page state', async () => {
     viewport: { width: 1200, height: 800, deviceScaleFactor: 2 },
     viewportMode: 'fit' as const,
     scroll: { x: 0, y: 0 },
-    refs: [],
   };
   const manager = {
     async goBack() {
