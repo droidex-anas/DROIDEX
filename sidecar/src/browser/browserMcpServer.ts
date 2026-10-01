@@ -221,6 +221,8 @@ export function createBrowserMcpServer(
         },
         safeTool(async (input) => {
           const { viewport } = await manager.useViewport(appSessionId(), input.size);
+          if (input.size === 'fit')
+            return "The page follows the user's pane; read the page for its size.";
           return `The page is laid out at ${input.size} size, ${String(viewport.width)} × ${String(viewport.height)} CSS px.`;
         }),
       ),

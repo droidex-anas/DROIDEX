@@ -14,7 +14,6 @@ import type {
   BrowserReadOptions,
   BrowserScreenshot,
   BrowserScreenshotOptions,
-  BrowserSnapshot,
   BrowserState,
   BrowserTarget,
   BrowserViewport,
@@ -65,7 +64,7 @@ export interface BrowserRuntime {
   ): Promise<BrowserActionResult>;
   inspect(target: { ref: string } | { selector: string }): Promise<BrowserElementInspection>;
   wait(condition: BrowserWaitCondition): Promise<BrowserActionResult>;
-  awaitViewport(): Promise<BrowserActionResult>;
+  awaitViewport(viewport: BrowserViewport): Promise<BrowserActionResult>;
   network(clear?: boolean): Promise<BrowserNetworkEvent[]>;
   console(clear?: boolean): Promise<BrowserConsoleEvent[]>;
   fillCredentials?(): Promise<BrowserActionResult>;
@@ -147,10 +146,12 @@ export class BrowserSessionManager {
     follow?: boolean;
   }): Promise<BrowserState> {
     const session = this.requireSession(input.appSessionId);
+    // The pane's size for Fit never undoes a size picked in the meantime.
+    const stale = () => input.follow && session.state.viewportMode !== 'fit';
+    if (stale()) return session.state;
     await session.runtime.setViewport(input.viewport);
     this.assertCurrent(session);
-    // The pane's size for Fit never undoes a size picked in the meantime.
-    if (input.follow && session.state.viewportMode !== 'fit') return session.state;
+    if (stale()) return session.state;
     session.state = {
       ...session.state,
       viewport: input.viewport,
@@ -171,12 +172,9 @@ export class BrowserSessionManager {
         viewport: session.state.viewport,
         viewportMode: mode,
       });
-    await this.resizeViewport({
-      appSessionId,
-      viewport: STANDARD_VIEWPORTS[mode],
-      viewportMode: mode,
-    });
-    return this.applied(session, await session.runtime.awaitViewport()).state;
+    const viewport = STANDARD_VIEWPORTS[mode];
+    await this.resizeViewport({ appSessionId, viewport, viewportMode: mode });
+    return this.applied(session, await session.runtime.awaitViewport(viewport)).state;
   }
 
   async click(
@@ -378,7 +376,7 @@ export class BrowserSessionManager {
     const session = this.resolveSession(appSessionId);
     if (!session) return;
     // Gone before it shuts down, so nothing it answers meanwhile is shown.
-    this.sessions.delete(keyFor(appSessionId));
+    this.sessions.delete(appSessionId);
     await session.runtime.close();
   }
 
@@ -393,7 +391,7 @@ export class BrowserSessionManager {
     viewport?: BrowserViewport,
     viewportMode?: BrowserViewportMode,
   ): ManagedBrowserSession {
-    const key = keyFor(appSessionId);
+    const key = appSessionId;
     const existing = this.sessions.get(key);
     if (existing) {
       existing.state = {
@@ -439,24 +437,14 @@ export class BrowserSessionManager {
   }
 
   private resolveSession(appSessionId: string): ManagedBrowserSession | undefined {
-    return this.sessions.get(keyFor(appSessionId));
-  }
-
-  private stateFromSnapshot(
-    session: ManagedBrowserSession,
-    snapshot: BrowserSnapshot,
-  ): BrowserState {
-    return {
-      ...session.state,
-      ...snapshot,
-    };
+    return this.sessions.get(appSessionId);
   }
 
   // An answer for a browser that was closed, or replaced, while it ran is
   // never shown: it would bring back the closed one's state.
   private applied(session: ManagedBrowserSession, result: BrowserActionResult): BrowserOutcome {
     this.assertCurrent(session);
-    session.state = this.stateFromSnapshot(session, result.snapshot);
+    session.state = { ...session.state, ...result.snapshot };
     this.emitUpdated(session.state);
     return { state: session.state, text: result.text };
   }
@@ -496,10 +484,6 @@ export class BrowserSessionManager {
     session.state = { ...session.state, agentCursor: point };
     this.emitUpdated(session.state);
   }
-}
-
-function keyFor(appSessionId: string): string {
-  return appSessionId;
 }
 
 function targetFrom(input: { ref?: string; x?: number; y?: number }): BrowserTarget {

@@ -70,6 +70,12 @@ export function ViewportMenu({
             role="menu"
             aria-label="Page size"
             onKeyDown={(e) => {
+              if (e.key === 'Tab') {
+                e.preventDefault();
+                setOpen(false);
+                buttonRef.current?.focus();
+                return;
+              }
               if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return;
               e.preventDefault();
               const options = optionRefs.current.filter((el): el is HTMLButtonElement => !!el);
@@ -93,6 +99,7 @@ export function ViewportMenu({
                   }}
                   type="button"
                   role="menuitemradio"
+                  tabIndex={-1}
                   aria-checked={selected}
                   autoFocus={selected}
                   onClick={() => {

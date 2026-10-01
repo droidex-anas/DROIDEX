@@ -222,6 +222,7 @@ function applyState(state) {
   mount();
   hideBox();
   repositionAnnotations();
+  if (promptVisible()) positionPrompt(promptSelection.anchor.box);
 }
 
 function onWheel(event) {
@@ -1502,7 +1503,7 @@ function closeIconSvg() {
 
 function positionPrompt(box) {
   // Sizes in the composer's own pixels; on screen they are `uiScale` times that.
-  const width = Math.min(440, Math.max(280, window.innerWidth / uiScale - 24));
+  const width = Math.min(440, Math.max(160, window.innerWidth / uiScale - 24));
   const [shownWidth, shownHeight, gap, edge] = [width, 50, 10, 12].map((size) => size * uiScale);
   const left = clamp(box.x, edge, Math.max(edge, window.innerWidth - shownWidth - edge));
   const below = box.y + box.height + gap;
