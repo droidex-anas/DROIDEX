@@ -61,9 +61,9 @@ export class CodexRateLimits {
       this.reads.delete(inFlight);
     }
     const bucket = objectValue(objectValue(response?.rateLimitsByLimitId)?.[MAIN_BUCKET]);
-    // A bucket that names neither window is malformed, not an account without limits.
-    const read =
-      bucket && ('primary' in bucket || 'secondary' in bucket) ? snapshotOf(bucket) : undefined;
+    // A bucket that names neither window, or names one this build cannot read,
+    // is malformed, not an account without limits.
+    const read = bucket && wellFormed(bucket) ? snapshotOf(bucket) : undefined;
     if (!read) throw new Error('Codex answered without the codex rate limits.');
     if (sequence > this.newestApplied) {
       this.newestApplied = sequence;
@@ -172,6 +172,11 @@ function snapshotOf(value: unknown): RateLimitSnapshot | undefined {
     individualLimitResetsAt: numberValue(objectValue(snapshot.individualLimit)?.resetsAt),
     spendControlReached: typeof spendControlReached === 'boolean' ? spendControlReached : undefined,
   };
+}
+
+function wellFormed(bucket: Record<string, unknown>): boolean {
+  const named = (['primary', 'secondary'] as const).filter((key) => key in bucket);
+  return named.length > 0 && named.every((key) => bucket[key] === null || windowOf(bucket[key]));
 }
 
 function windowOf(value: unknown): RateLimitWindow | undefined {
