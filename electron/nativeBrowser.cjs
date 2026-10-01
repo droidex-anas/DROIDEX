@@ -61,6 +61,7 @@ function createNativeBrowserManager(options) {
     credentials,
     runWithWebContentsDebugger,
     findEntryForContents: findNativeBrowserEntryForWebContents,
+    nativeImage: options.nativeImage,
   });
 
   function ensureNativeBrowserEntry(browserSessionId) {

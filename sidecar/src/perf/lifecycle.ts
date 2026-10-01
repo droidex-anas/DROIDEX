@@ -42,7 +42,6 @@ export async function runSoak(spec: PerfScenarioSpec): Promise<ReplayReport> {
   const history = new HistoryPersistence();
   await history.flush();
   const browsers = new BrowserSessionManager({
-    assetUrlFor: (path) => `http://127.0.0.1/soak/${path}`,
     emit: () => undefined,
   });
   const dependencies: SessionManagerDependencies = {

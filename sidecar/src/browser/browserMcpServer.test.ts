@@ -12,6 +12,7 @@ test('browser MCP server exposes agent-facing names and typed inputs', () => {
     [
       'browser_open',
       'browser_read_page',
+      'browser_read_text',
       'browser_find',
       'browser_reload',
       'browser_back',
@@ -35,7 +36,7 @@ test('browser MCP server exposes agent-facing names and typed inputs', () => {
   );
   assert.ok(server.tools.find((tool) => tool.name === 'browser_open')?.inputSchema?.url);
   assert.ok(
-    server.tools.find((tool) => tool.name === 'browser_screenshot')?.inputSchema?.deviceScaleFactor,
+    server.tools.find((tool) => tool.name === 'browser_screenshot')?.inputSchema?.ref,
   );
   assert.match(
     server.tools.find((tool) => tool.name === 'browser_open')?.description ?? '',

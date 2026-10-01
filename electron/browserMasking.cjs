@@ -1,9 +1,17 @@
-// What agents never see: the value of a sensitive field. A field is sensitive
-// when its type, autocomplete, name, id, label or placeholder says so, or when
-// its value is the login saved for the site (agents never see what
-// browser_fill_login filled in). A field that cannot be checked counts as
-// sensitive.
+// What agents never see: the value of a sensitive field, whether they read the
+// page or look at it. A field is sensitive when its type, autocomplete, name,
+// id, label or placeholder says so, or when its value is the login saved for
+// the site (agents never see what browser_fill_login filled in). A field that
+// cannot be checked counts as sensitive.
 
+const {
+  send,
+  documentFrames,
+  frameOffset,
+  axTree,
+  inViewport,
+  boundsOf,
+} = require('./browserFrames.cjs');
 const { cleanText } = require('./browserText.cjs');
 const { dropRef } = require('./browserRefs.cjs');
 
@@ -16,6 +24,7 @@ const VALUE_ROLES = new Set([
   'spinbutton',
   'slider',
 ]);
+// A field holding one of these never shows its value to an agent.
 const SENSITIVE_FIELD =
   /pass|otp|one.?time|verif|2fa|mfa|token|secret|credential|auth(?!or)|authoriz|api.?key|access.?key|private.?key|\bkey\b|cvc|cvv|csc|card.?num|cc-|security.?code|\bpin\b|ssn|iban/i;
 
@@ -46,14 +55,35 @@ function createBrowserMasking({ savedSecretsFor }) {
   }
 
   // A ref inside a masked field reads as nothing, however the agent got it.
-  async function insideMaskedField(dbg, tree, node, url) {
+  async function insideMaskedField(dbg, tree, node, frame, url) {
     const byId = new Map(tree.nodes.map((candidate) => [candidate.nodeId, candidate]));
     const secrets = await secretsFor(url);
     for (let parent = byId.get(node.parentId); parent; parent = byId.get(parent.parentId)) {
-      const field = fieldOf(parent);
+      const field = fieldOf(parent, frame);
       if (field && (await isSensitive(dbg, field, secrets))) return true;
     }
     return false;
+  }
+
+  // Boxes, in the page's viewport, of every sensitive field. A frame that
+  // cannot be read fails the call, so a screenshot fails rather than show
+  // what it could not check.
+  async function sensitiveBoxes(dbg, url) {
+    const secrets = await secretsFor(url);
+    const boxes = [];
+    for (const frame of await documentFrames(dbg, { strict: true })) {
+      for (const node of (await axTree(dbg, frame)).nodes) {
+        const field = fieldOf(node, frame);
+        if (!field?.value || !(await isSensitive(dbg, field, secrets))) continue;
+        const shape = await send(dbg, frame.sessionId, 'DOM.getContentQuads', {
+          backendNodeId: field.backendNodeId,
+        }).catch(() => undefined); // not rendered, so nothing to paint over
+        if (!shape?.quads?.length) continue;
+        const offset = await frameOffset(dbg, frame.sessionId);
+        for (const quad of shape.quads) boxes.push(boundsOf(inViewport(quad, offset)));
+      }
+    }
+    return boxes;
   }
 
   async function secretsFor(url) {
@@ -63,15 +93,15 @@ function createBrowserMasking({ savedSecretsFor }) {
   }
 
   async function isSensitive(dbg, field, secrets) {
-    const { backendNodeId, name, value } = field;
+    const { backendNodeId, name, value, sessionId } = field;
     if (secrets.has(value) || SENSITIVE_FIELD.test(name)) return true;
     const described =
       backendNodeId &&
-      (await dbg.sendCommand('DOM.describeNode', { backendNodeId }).catch(() => undefined));
+      (await send(dbg, sessionId, 'DOM.describeNode', { backendNodeId }).catch(() => undefined));
     return !described || isSensitiveField(described.node.attributes ?? []);
   }
 
-  return { maskFields, insideMaskedField };
+  return { maskFields, sensitiveBoxes, insideMaskedField };
 }
 
 // Nodes whose accessible name Chromium built from the page while a field sits
@@ -107,7 +137,7 @@ function nameSource(node) {
 
 // A field whose value is shown or masked; the value may be empty, as in a
 // select with nothing chosen.
-function fieldOf(node) {
+function fieldOf(node, frame) {
   if (!VALUE_ROLES.has(node.role?.value) || node.ignored) return undefined;
   return {
     backendNodeId: node.backendDOMNodeId,
@@ -116,6 +146,7 @@ function fieldOf(node) {
     // A field labelled through aria-labelledby can be labelled by itself, and
     // then its name is its own content.
     labelledBy: nameSource(node)?.attribute === 'aria-labelledby',
+    sessionId: frame.sessionId,
   };
 }
 

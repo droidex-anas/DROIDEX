@@ -51,7 +51,6 @@ const manager = new SessionManager(
     server.broadcast(event);
   },
   {
-    assetUrlFor: (filePath) => server.browserAssetUrl(filePath),
     requestBrowser: createDesktopBrowserChannel(),
     beforeFirstTurn: async (session, clientRef) => {
       await projectSessions.beforeFirstTurn(session, clientRef);

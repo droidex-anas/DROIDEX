@@ -103,7 +103,6 @@ export async function runReplay(options: ReplayRunOptions): Promise<ReplayReport
     },
   });
   const browsers = new BrowserSessionManager({
-    assetUrlFor: (path) => server.browserAssetUrl(path),
     emit: (event) => {
       server.broadcast(event);
     },
