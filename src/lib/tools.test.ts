@@ -83,7 +83,7 @@ test('isWebFetchTool covers separators, MCP prefixes, and url verbs', () => {
 });
 
 test('isWebFetchTool never matches browser-automation tools', () => {
-  assert.equal(isWebFetchTool('droidmaxx-browser___browser_open'), false);
+  assert.equal(isWebFetchTool('droidex-browser___browser_open'), false);
   assert.equal(isWebFetchTool('browser_navigate'), false);
   assert.equal(isWebFetchTool('browser_click'), false);
 });
@@ -317,9 +317,9 @@ test('a tool with no card keeps its own name instead of borrowing a verb', () =>
 });
 
 test('describeToolCall categorises a namespaced tool by its bare name and keeps its server', () => {
-  const open = describeToolCall('droidmaxx-browser___browser_open', { url: 'https://a.dev' });
+  const open = describeToolCall('droidex-browser___browser_open', { url: 'https://a.dev' });
   assert.equal(open.verb, 'Browser open');
-  assert.equal(open.source, 'droidmaxx browser');
+  assert.equal(open.source, 'droidex browser');
   const read = describeToolCall('mcp__filesystem__read_file', { path: 'a.ts' });
   assert.equal(read.verb, 'Read');
   assert.equal(read.source, 'filesystem');

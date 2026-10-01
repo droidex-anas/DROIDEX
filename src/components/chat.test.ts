@@ -360,7 +360,7 @@ test('every automation proposal in one tool group gets its own card', () => {
   const secondCall = propose('p2');
   const unrelatedCall = ev({
     kind: 'tool_call',
-    toolName: 'droidmaxx-browser___automation_propose',
+    toolName: 'droidex-browser___automation_propose',
     toolArgs: { prompt: 'x' },
   });
 

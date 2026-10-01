@@ -31,42 +31,6 @@ let capturePending = false;
 let pendingCaptureId = null;
 let captureSeq = 0;
 
-const interactiveTags = new Set(['A', 'BUTTON', 'INPUT', 'TEXTAREA', 'SELECT', 'SUMMARY']);
-const interactiveRoles = new Set([
-  'button',
-  'checkbox',
-  'combobox',
-  'link',
-  'menuitem',
-  'option',
-  'radio',
-  'searchbox',
-  'switch',
-  'tab',
-  'textbox',
-]);
-const textTags = new Set([
-  'BLOCKQUOTE',
-  'CODE',
-  'EM',
-  'FIGCAPTION',
-  'H1',
-  'H2',
-  'H3',
-  'H4',
-  'H5',
-  'H6',
-  'LABEL',
-  'LI',
-  'P',
-  'PRE',
-  'SMALL',
-  'SPAN',
-  'STRONG',
-  'TD',
-  'TH',
-]);
-const mediaTags = new Set(['IMG', 'SVG', 'VIDEO', 'CANVAS', 'PICTURE', 'IFRAME']);
 const redactedTextTags = new Set(['SCRIPT', 'STYLE', 'NOSCRIPT']);
 const urlAttributes = new Set([
   'action',
@@ -603,51 +567,16 @@ function safeSnapshot() {
   try {
     return pageSnapshot();
   } catch {
-    return { url: location.href, title: document.title, scroll: { x: 0, y: 0 }, refs: [] };
+    return { url: location.href, title: document.title, scroll: { x: 0, y: 0 } };
   }
 }
 
+// Where the page is; what is on it comes from main's accessibility reading.
 function pageSnapshot() {
   return {
     url: location.href,
     title: document.title,
     scroll: { x: Math.round(window.scrollX), y: Math.round(window.scrollY) },
-    refs: collectRefs(),
-  };
-}
-
-function collectRefs() {
-  const refs = [];
-  const root = document.body || document.documentElement;
-  const walker = document.createTreeWalker(root, NodeFilter.SHOW_ELEMENT);
-  let node = root;
-  while (node && refs.length < 80) {
-    if (isCandidate(node)) refs.push(refFor(node));
-    node = walker.nextNode();
-  }
-  return refs;
-}
-
-function refFor(el) {
-  const rect = el.getBoundingClientRect();
-  const text = safeElementText(el);
-  const selector = selectorFor(el);
-  const name = cleanText(
-    el.getAttribute('aria-label') ||
-      el.getAttribute('title') ||
-      el.getAttribute('placeholder') ||
-      directText(el) ||
-      text,
-  );
-  return {
-    ref: `@b-${stableHash(selector)}`,
-    selector,
-    tagName: el.tagName.toLowerCase(),
-    role: roleFor(el) || undefined,
-    name: name || undefined,
-    text: text || undefined,
-    attributes: attrsFor(el),
-    box: boxFor(rect),
   };
 }
 
@@ -887,29 +816,6 @@ function labelText(tag, source, text) {
   const component = source && source.component ? `${source.component} \u203a ` : '';
   const quoted = text ? ` "${cleanText(text, 40)}"` : '';
   return `${component}<${tag}>${quoted}`;
-}
-
-function isCandidate(el) {
-  if (!el || el === document.body || el === document.documentElement) return false;
-  if (el.getAttribute(INTERNAL_ATTR)) return false;
-  const rect = el.getBoundingClientRect();
-  if (rect.width < 4 || rect.height < 4) return false;
-  const area = rect.width * rect.height;
-  const viewportArea = Math.max(1, window.innerWidth * window.innerHeight);
-  if (area > viewportArea * 0.72) return false;
-  const role = roleFor(el).toLowerCase();
-  if (
-    interactiveTags.has(el.tagName) ||
-    interactiveRoles.has(role) ||
-    el.onclick ||
-    el.tabIndex >= 0
-  )
-    return true;
-  if (textTags.has(el.tagName) && safeElementText(el)) return true;
-  if (mediaTags.has(el.tagName)) return true;
-  if (el.getAttribute('aria-label') || el.getAttribute('title') || el.getAttribute('data-testid'))
-    return true;
-  return Boolean(directText(el)) && area < viewportArea * 0.35;
 }
 
 function pickTarget(x, y, climb) {

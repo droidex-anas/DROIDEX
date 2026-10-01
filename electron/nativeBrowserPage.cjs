@@ -1,3 +1,6 @@
+const { createBrowserReading } = require('./browserReading.cjs');
+const { isSensitiveBrowserKey, redactBrowserDiagnosticUrl } = require('./browserDiagnostics.cjs');
+
 function createNativeBrowserPage({
   appName,
   ensureEntry,
@@ -9,6 +12,11 @@ function createNativeBrowserPage({
   findEntryForContents,
 }) {
   const operationsOn = new WeakMap(); // guest contents -> { count, generation }
+  const reading = createBrowserReading({
+    runWithWebContentsDebugger,
+    isSensitiveName: isSensitiveBrowserKey,
+    redactUrl: redactBrowserDiagnosticUrl,
+  });
 
   function setDesignMode(browserSessionId, active) {
     const entry = ensureEntry(browserSessionId);
@@ -49,6 +57,18 @@ function createNativeBrowserPage({
     const entry = await restoreForAction(request.browserSessionId);
     const contents = liveContents(entry);
     if (!contents) throw new Error(`${appName} browser is not open.`);
+    if (request.action === 'find') {
+      const found = await reading.find(contents, entry, request.query);
+      return { requestId: request.requestId, ok: true, ...found };
+    }
+    if (request.action === 'readPage') {
+      const text = await reading.readPage(contents, entry, {
+        ref: request.ref,
+        filter: request.filter,
+        maxChars: request.maxChars,
+      });
+      return { requestId: request.requestId, ok: true, text };
+    }
     const navigation = observeAgentNavigation(contents);
     const operation = liftBackgroundThrottling(contents);
     try {
@@ -58,10 +78,12 @@ function createNativeBrowserPage({
           await credentials.fillForAgent(contents, request),
         );
       }
-      const execution = executeAgentAction(contents, request).then(
-        (result) => ({ type: 'result', result }),
-        (error) => ({ type: 'error', error }),
-      );
+      const execution = withRefTarget(contents, entry, request)
+        .then((target) => executeAgentAction(contents, target))
+        .then(
+          (result) => ({ type: 'result', result }),
+          (error) => ({ type: 'error', error }),
+        );
       const outcome = await Promise.race([
         execution,
         navigation.wait().then(() => ({ type: 'navigation' })),
@@ -100,6 +122,15 @@ function createNativeBrowserPage({
     const consoleEvents = entry.consoleEvents.slice();
     if (request.clearConsoleLog) entry.consoleEvents.length = 0;
     return { requestId: request.requestId, ok: true, consoleEvents };
+  }
+
+  // A ref from browser_read_page becomes the point or selector the action needs.
+  async function withRefTarget(contents, entry, request) {
+    if (!request.ref) return request;
+    if (request.action === 'selectOption' || request.action === 'inspect')
+      return { ...request, selector: await reading.selectorForRef(contents, entry, request.ref) };
+    const { x, y } = await reading.pointForRef(contents, entry, request.ref);
+    return { ...request, x, y, selector: undefined };
   }
 
   async function executeAgentAction(contents, request) {
