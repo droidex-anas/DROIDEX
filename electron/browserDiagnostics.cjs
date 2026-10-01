@@ -42,9 +42,11 @@ function redactBrowserDiagnosticText(value) {
   // A URL's user and password go first and on their own, whatever characters
   // they hold: a URL cut short at one of them would not parse, and would be
   // left as it was.
-  const bounded = String(value || '')
-    .slice(0, 4000)
-    .replace(/\b(https?:\/\/)[^\s/?#]*@/gi, '$1');
+  const text = String(value || '');
+  const stripped = text.slice(0, 4000).replace(/\b(https?:\/\/)[^\s/?#]*@/gi, '$1');
+  // A URL the length limit cut before its host ended may have lost the "@"
+  // after its user and password, so what is left of it goes.
+  const bounded = text.length > 4000 ? stripped.replace(/\bhttps?:\/\/[^\s/?#]*$/i, '') : stripped;
   // Then values named like secrets, a quoted one whole; then what is left of
   // each URL, like any other URL.
   return redactUnquotedAssignments(redactQuotedAssignments(redactAuthenticationSchemes(bounded)))
