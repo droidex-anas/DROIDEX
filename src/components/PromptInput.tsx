@@ -1279,13 +1279,14 @@ export default function PromptInput({
       allFiles.length > 0 ||
       sideChatReplies.length > 0;
     if (!hasPayload) return;
-    // The app owns fast mode, so a typed /fast runs here instead of reaching
-    // the harness, whose own switch the app would never see.
-    const fastCommand = slashCommands.find(
-      (command) => command.cmd.startsWith('/fast') && command.cmd === text,
+    // The app owns fast mode and usage, so a typed /fast or /usage runs here
+    // instead of reaching the harness as a turn the app would never see.
+    const appCommand = slashCommands.find(
+      (command) =>
+        command.cmd === text && (command.cmd.startsWith('/fast') || command.cmd === '/usage'),
     );
-    if (fastCommand && activeSkills.length === 0 && allFiles.length === 0) {
-      fastCommand.run();
+    if (appCommand && activeSkills.length === 0 && allFiles.length === 0) {
+      appCommand.run();
       setInput('');
       return;
     }
