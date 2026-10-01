@@ -164,11 +164,16 @@ function settleTurnFailure(
     }
     d.emitError({ appSessionId, message });
   }
-  // Set only by a refusal, so a later failure of any other kind never reads as the limit.
-  d.updateSummary(appSessionId, {
+  d.updateSummary(appSessionId, failedTurnSummary(error));
+}
+
+// The limit is set only by a refusal, so a later failure of any other kind
+// never reads as the limit.
+export function failedTurnSummary(error: unknown): Pick<SessionSummary, 'phase' | 'usageLimit'> {
+  return {
     phase: 'failed',
     usageLimit: error instanceof UsageLimitError ? error.limit : undefined,
-  });
+  };
 }
 
 interface TurnContext {

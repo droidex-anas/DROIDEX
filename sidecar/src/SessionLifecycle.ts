@@ -39,7 +39,7 @@ import {
 } from './sessionOpening.js';
 import type { ProviderInteractions } from './providers/interactions.js';
 import { requireProviderKind, type ProviderKind } from './providers/providerKind.js';
-import type { PrimaryTurnRequest } from './providers/primaryTurn.js';
+import { failedTurnSummary, type PrimaryTurnRequest } from './providers/primaryTurn.js';
 import {
   droidLaunchSettings,
   requireDroidReasoningSupported,
@@ -1125,7 +1125,7 @@ export class SessionLifecycle {
     });
     // A turn the provider started by itself is the session's turn like any
     // other: it streams, it can be stopped, and a typed prompt waits behind it.
-    const delegated = liveSession.session.onDelegatedTurn?.((running, completed) => {
+    const delegated = liveSession.session.onDelegatedTurn?.((running, end) => {
       if (!isCurrent()) return;
       liveSession.streaming = running;
       if (running) {
@@ -1145,8 +1145,11 @@ export class SessionLifecycle {
       const stopped = liveSession.interrupting === true || liveSession.interruptingToSend === true;
       liveSession.interrupting = false;
       liveSession.interruptingToSend = false;
-      // A spoken turn that finished is an answer too, so a usage hold lifts.
-      if (completed && !stopped && liveSession.summary.usageLimit)
+      // A spoken turn settles as a typed one does: a failure fails the chat,
+      // holding it on a refusal, and a finished turn is an answer that lifts a hold.
+      if (end?.status === 'failed')
+        this.dependencies.registry.updateSummary(appSessionId, failedTurnSummary(end.error));
+      else if (end?.status === 'completed' && !stopped && liveSession.summary.usageLimit)
         this.dependencies.registry.updateSummary(appSessionId, { usageLimit: undefined });
       this.publishTurnSettled(liveSession);
       if (stopped) this.dependencies.childSessions.retryAgentWave(liveSession.summary.appSessionId);
