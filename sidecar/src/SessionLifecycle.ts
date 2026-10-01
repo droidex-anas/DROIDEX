@@ -218,9 +218,13 @@ export class SessionLifecycle {
   // but has not started its turn compares the count it was accepted at, so a
   // Stop takes it back even while there is no runtime to interrupt.
   private readonly stops = new Map<string, number>();
-  // The prompts waiting for a chat that is relaunching on a new context window,
-  // in the order they were sent. The chat has no runtime to queue them on.
-  private readonly relaunches = new Map<string, SessionPrompt[]>();
+  // A chat relaunching on a new context window: the prompts waiting for it, in
+  // the order they were sent, since it has no runtime to queue them on, and the
+  // usage limit it is held on, which its reopened summary carries.
+  private readonly relaunches = new Map<
+    string,
+    { waiting: SessionPrompt[]; usageLimit: SessionSummary['usageLimit'] }
+  >();
 
   constructor(private readonly dependencies: SessionLifecycleDependencies) {}
   // A branch is a session opened from another session's transcript: its goal
@@ -478,7 +482,12 @@ export class SessionLifecycle {
       // A closed settings write must settle before registration changes its target.
       await d.waitForSettingsMutations?.(appSessionId);
       requireCurrentResume();
-      const projectedSummary = d.applyPendingSettingsToSummary({ ...summary });
+      // A relaunching chat is still held on the limit its last turn was refused on.
+      const usageLimit = this.relaunches.get(appSessionId)?.usageLimit;
+      const projectedSummary = d.applyPendingSettingsToSummary({
+        ...summary,
+        ...(usageLimit ? { usageLimit } : {}),
+      });
       const liveSession = createLiveSession(projectedSummary, providerSession, session, mcp);
       if (projectedSummary.contextWindowTokens !== historical?.contextWindowTokens)
         liveSession.restartBeforeNextTurn = true;
@@ -809,7 +818,7 @@ export class SessionLifecycle {
 
   async interrupt(requestedAppSessionId: string): Promise<void> {
     this.noteStop(requestedAppSessionId);
-    this.relaunches.get(this.chatKey(requestedAppSessionId))?.splice(0);
+    this.relaunches.get(this.chatKey(requestedAppSessionId))?.waiting.splice(0);
     const liveSession = this.dependencies.registry.getLive(requestedAppSessionId);
     if (!liveSession) return;
     const appSessionId = liveSession.summary.appSessionId;
@@ -1492,9 +1501,10 @@ export class SessionLifecycle {
     const appSessionId = stale.summary.appSessionId;
     const usage = { tokensIn: stale.summary.tokensIn, tokensOut: stale.summary.tokensOut };
     const waiting = [prompt, ...stale.pendingSends.splice(0)];
-    this.relaunches.set(appSessionId, waiting);
+    const relaunch = { waiting, usageLimit: stale.summary.usageLimit };
+    this.relaunches.set(appSessionId, relaunch);
     // A discarding close removes the queue; a Stop only empties it.
-    const abandoned = () => d.isShutdownStarted() || this.relaunches.get(appSessionId) !== waiting;
+    const abandoned = () => d.isShutdownStarted() || this.relaunches.get(appSessionId) !== relaunch;
     let liveSession: LiveSession | undefined;
     let reason = '';
     try {
@@ -1513,7 +1523,7 @@ export class SessionLifecycle {
       if (abandoned()) return;
       reason = ` (${errMsg(error)})`;
     } finally {
-      if (this.relaunches.get(appSessionId) === waiting) this.relaunches.delete(appSessionId);
+      if (this.relaunches.get(appSessionId) === relaunch) this.relaunches.delete(appSessionId);
     }
     // From here to the turn nothing yields: a send that arrives later finds a
     // chat that is streaming and queues behind it.
@@ -1539,9 +1549,9 @@ export class SessionLifecycle {
 
   // True when the chat is relaunching and the prompt now waits for it.
   private waitForRelaunch(id: string, prompt: SessionPrompt): boolean {
-    const waiting = this.relaunches.get(this.chatKey(id));
-    waiting?.push(prompt);
-    return waiting !== undefined;
+    const relaunch = this.relaunches.get(this.chatKey(id));
+    relaunch?.waiting.push(prompt);
+    return relaunch !== undefined;
   }
 
   private stopCount(id: string): number {
