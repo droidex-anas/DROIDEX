@@ -61,7 +61,7 @@ export class CodexRateLimits {
       this.reads.delete(inFlight);
     }
     const bucket = objectValue(objectValue(response?.rateLimitsByLimitId)?.[MAIN_BUCKET]);
-    // A bucket that names neither window, or names one this build cannot read,
+    // A bucket without a window this build can read, or with one it cannot,
     // is malformed, not an account without limits.
     const read = bucket && wellFormed(bucket) ? snapshotOf(bucket) : undefined;
     if (!read) throw new Error('Codex answered without the codex rate limits.');
@@ -173,8 +173,10 @@ function snapshotOf(value: unknown): RateLimitSnapshot | undefined {
 }
 
 function wellFormed(bucket: Record<string, unknown>): boolean {
-  const named = (['primary', 'secondary'] as const).filter((key) => key in bucket);
-  return named.length > 0 && named.every((key) => bucket[key] === null || windowOf(bucket[key]));
+  const windows = [bucket.primary, bucket.secondary].filter(
+    (value) => value !== undefined && value !== null,
+  );
+  return windows.length > 0 && windows.every((value) => windowOf(value) !== undefined);
 }
 
 function windowOf(value: unknown): RateLimitWindow | undefined {
