@@ -151,7 +151,7 @@ export function createBrowserMcpServer(
       tool(
         'browser_screenshot',
         [
-          'Capture the live DROIDEX browser as a JPEG: the viewport, one ref, a region, or the full page.',
+          'Capture the live DROIDEX browser as a JPEG (a PNG with format: "png"): the viewport, one ref, a region, or the full page.',
           'One image pixel is one CSS pixel unless the long edge would pass 1568; the result states the scale and origin so image points convert exactly.',
           'Sensitive fields are masked. Use browser_read_page to read the page and get refs.',
         ].join(' '),

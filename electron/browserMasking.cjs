@@ -105,7 +105,7 @@ function createBrowserMasking({ savedSecretsFor }) {
         },
       );
       if (!shape?.quads?.length) continue;
-      // Text typed into an editable region can paint past its box.
+      // Text in an editable region can paint past its box.
       const quads = editable
         ? [...shape.quads, ...(await textQuads(dbg, sessionId, backendNodeId))]
         : shape.quads;
@@ -220,16 +220,14 @@ function fieldOf(node, frame) {
   };
 }
 
-// Where an element's text is painted once it runs past the element's own box:
-// CDP's quads for each of its text nodes, which Chromium lays out with every
-// transform on the way already applied (frames, the page, shadow trees, closed
-// ones included). The page only says whether the text overflows, which no
-// transform changes. A field with more text nodes than this fails the capture
-// rather than go unmasked.
+// Where an editable field's text is painted, inside its box or out of it on
+// any side: CDP's quads for each of its text nodes, which Chromium lays out with
+// every transform on the way already applied (frames, the page, shadow trees,
+// closed ones included). A field with more text nodes than this fails the
+// capture rather than go unmasked.
 const MAX_TEXT_NODES = 300;
 
 async function textQuads(dbg, sessionId, backendNodeId) {
-  if (!(await overflows(dbg, sessionId, backendNodeId))) return [];
   const { node } = await send(dbg, sessionId, 'DOM.describeNode', {
     backendNodeId,
     depth: -1,
@@ -251,23 +249,6 @@ async function textQuads(dbg, sessionId, backendNodeId) {
     quads.push(...(shape?.quads ?? []));
   }
   return quads;
-}
-
-async function overflows(dbg, sessionId, backendNodeId) {
-  const { object } = await send(dbg, sessionId, 'DOM.resolveNode', { backendNodeId });
-  try {
-    const { result } = await send(dbg, sessionId, 'Runtime.callFunctionOn', {
-      objectId: object.objectId,
-      functionDeclaration:
-        'function () { return this.scrollWidth > this.clientWidth + 1 || this.scrollHeight > this.clientHeight + 1; }',
-      returnByValue: true,
-    });
-    return result?.value === true;
-  } finally {
-    await send(dbg, sessionId, 'Runtime.releaseObject', { objectId: object.objectId }).catch(
-      () => undefined,
-    );
-  }
 }
 
 // Every input, textarea and select in a session's documents, shadow roots
