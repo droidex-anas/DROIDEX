@@ -31,6 +31,10 @@ export class CodexRateLimits {
   // Each read in flight gathers the updates that land meanwhile, which are
   // newer than its answer.
   private readonly reads = new Set<{ updates?: RateLimitSnapshot }>();
+  // Reads can answer out of order; only the newest one started may replace
+  // the snapshot.
+  private readsStarted = 0;
+  private newestApplied = 0;
 
   constructor(
     private readonly client: AppServerClient,
@@ -42,6 +46,7 @@ export class CodexRateLimits {
   // details are left out; their count still comes back.
   async read(signal?: AbortSignal): Promise<UsageReading> {
     const inFlight: { updates?: RateLimitSnapshot } = {};
+    const sequence = ++this.readsStarted;
     this.reads.add(inFlight);
     let response: Record<string, unknown> | undefined;
     try {
@@ -55,13 +60,19 @@ export class CodexRateLimits {
     } finally {
       this.reads.delete(inFlight);
     }
-    const read = snapshotOf(objectValue(response?.rateLimitsByLimitId)?.[MAIN_BUCKET]);
+    const bucket = objectValue(objectValue(response?.rateLimitsByLimitId)?.[MAIN_BUCKET]);
+    // A bucket that names neither window is malformed, not an account without limits.
+    const read =
+      bucket && ('primary' in bucket || 'secondary' in bucket) ? snapshotOf(bucket) : undefined;
     if (!read) throw new Error('Codex answered without the codex rate limits.');
-    this.snapshot = inFlight.updates ? merged(read, inFlight.updates) : read;
+    if (sequence > this.newestApplied) {
+      this.newestApplied = sequence;
+      this.snapshot = inFlight.updates ? merged(read, inFlight.updates) : read;
+    }
     // Free limit resets the account holds, shown only; nothing here spends one.
     const available = numberValue(objectValue(response?.rateLimitResetCredits)?.availableCount);
     return {
-      meters: windowMeters(read),
+      meters: windowMeters(this.snapshot ?? read),
       ...(available === undefined
         ? {}
         : { extra: { kind: 'limit_resets', available: Math.max(0, Math.round(available)) } }),
