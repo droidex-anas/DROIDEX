@@ -117,25 +117,28 @@ function createNativeBrowserManager(options) {
     const restoreUrl = urls.restorableUrlForEntry(entry, entry.targetUrl);
     views.bindGuest(entry, contents);
     // The device first, so a site sees it from its first request and script.
-    // Until then the entry counts as loading, and the blank page a touch device
-    // is set up on is not reported as the browser's page.
-    entry.settingUp = contents;
-    const setup = mountDevice(contents, entry).then(() => {
-      if (entry.settingUp === contents) entry.settingUp = null;
+    // Until the guest has it the entry counts as loading, an open waits for it
+    // and takes the saved page's place, and the blank page a touch device is
+    // set up on is not reported as the browser's page.
+    const setup = { contents, restoreUrl, ready: mountDevice(contents, entry) };
+    entry.setup = setup;
+    const restored = setup.ready.then(() => {
+      if (entry.setup === setup) entry.setup = null;
       // A load started meanwhile is the page now; otherwise the saved one returns.
-      if (entry.loadingPromise !== setup) return undefined;
+      if (entry.loadingPromise !== restored) return undefined;
       entry.loadingPromise = null;
-      if (restoreUrl && liveContents(entry) === contents)
-        return loadNativeBrowserUrl(entry, restoreUrl, { force: true });
+      if (setup.restoreUrl && liveContents(entry) === contents)
+        return loadNativeBrowserUrl(entry, setup.restoreUrl, { force: true });
       return undefined;
     });
-    entry.loadingPromise = setup;
+    entry.loadingPromise = restored;
   }
 
   // A load belongs to the guest that started it; a new guest starts afresh.
   function forgetLoad(entry) {
     entry.loadingUrl = null;
     entry.loadingPromise = null;
+    entry.setup = null;
   }
 
   // Nobody waiting on a guest's next load hears about its replacement's loads.
@@ -177,6 +180,13 @@ function createNativeBrowserManager(options) {
     url = urls.normalizeNativeBrowserUrl(entry, url);
     urls.validateUrl(url);
     entry.failedRestoreUrl = null;
+    // A guest still taking its device loads this page once it has it, in place
+    // of its saved one.
+    const { setup } = entry;
+    if (setup) {
+      setup.restoreUrl = null;
+      await setup.ready;
+    }
     await loadNativeBrowserUrl(entry, url, { force: true });
   }
 
