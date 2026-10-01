@@ -38,7 +38,7 @@ interface Dependencies {
     appSessionId: string,
     agent: Exclude<ConfigurableSessionRole, 'primary'>,
     effectiveModelId: string,
-  ) => Promise<void>;
+  ) => Promise<boolean>;
   onSettled: (appSessionId: string) => void;
   emitError: (error: SettingsError) => void;
 }
@@ -171,16 +171,22 @@ export class SessionModelSettings {
         if (!isCurrent()) return false;
         if (!restart) await this.applyProvider(summary, live, agent, runtimeSettings, isCurrent);
         if (!isCurrent()) return false;
+        if (agent !== 'primary' && changes.modelId !== undefined) {
+          if (!selection.modelId)
+            throw new Error(`No effective ${agent} model is available for live child sessions.`);
+          const childrenUpdated = await this.d.updateChildAgentModel(
+            appSessionId,
+            agent,
+            selection.modelId,
+          );
+          if (!childrenUpdated)
+            throw new Error(`Could not update every live ${agent} child session.`);
+          if (!isCurrent()) return false;
+        }
         await this.persistAccepted(summary, live, agent, selection);
         if (!isCurrent()) return false;
         if (restart) live.restartBeforeNextTurn = true;
-        if (agent !== 'primary') {
-          if (settings.modelId !== undefined && selection.modelId) {
-            await this.d.updateChildAgentModel(appSessionId, agent, selection.modelId);
-            if (!isCurrent()) return false;
-          }
-          return true;
-        }
+        if (agent !== 'primary') return true;
         // Only a model change earns a row; a new effort shows on the chip.
         if (change) await this.d.onPrimaryModelChanged(next, change.from, change.to);
         if (!isCurrent()) return false;

@@ -124,7 +124,7 @@ test(
       assert.equal(
         latestSessionList(h.events).find((session) => session.appSessionId === 'provider-1')
           ?.workerModelId,
-        'worker-role-accepted',
+        'worker-accepted',
       );
       assert.equal(child.settings.length, writesBeforeRoleUpdate + 1);
       assert.equal(child.settings.at(-1)?.['modelId'], 'worker-role-accepted');

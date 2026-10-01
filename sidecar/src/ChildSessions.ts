@@ -482,9 +482,9 @@ export class ChildSessions {
       parentGeneration: parent.generation,
       runtimeGeneration: runtime.generation,
     };
-    const update = (child.mutationTail ?? Promise.resolve())
-      .catch(ignoreError)
-      .then(() => this.performSettingsUpdate(target, command));
+    const update = (child.mutationTail ?? Promise.resolve()).catch(ignoreError).then(async () => {
+      await this.performSettingsUpdate(target, command);
+    });
     child.mutationTail = update;
     try {
       await update;
@@ -505,12 +505,13 @@ export class ChildSessions {
     parentAppSessionId: string,
     role: PersistedChildSession['role'],
     effectiveModelId: string,
-  ): Promise<void> {
+  ): Promise<boolean> {
     const parent = this.parents.get(parentAppSessionId);
-    if (!parent || !this.isCurrentParent(parent)) return;
-    await Promise.allSettled(
+    if (!parent || !this.isCurrentParent(parent)) return true;
+    const results = await Promise.all(
       [...parent.children.values()].map(async (child) => {
-        if (child.role !== role || !child.runtime || !this.isSettingsTarget(parent, child)) return;
+        if (child.role !== role || !child.runtime || !this.isSettingsTarget(parent, child))
+          return true;
         const target: ChildSettingsTarget = {
           parent,
           child,
@@ -518,18 +519,26 @@ export class ChildSessions {
           parentGeneration: parent.generation,
           runtimeGeneration: child.runtime.generation,
         };
-        const update = (child.mutationTail ?? Promise.resolve()).catch(ignoreError).then(() => {
-          if (child.role !== role) return;
-          return this.performSettingsUpdate(target, { modelId: effectiveModelId });
-        });
+        let accepted = false;
+        const update = (child.mutationTail ?? Promise.resolve())
+          .catch(ignoreError)
+          .then(async () => {
+            if (child.role !== role) {
+              accepted = true;
+              return;
+            }
+            accepted = await this.performSettingsUpdate(target, { modelId: effectiveModelId });
+          });
         child.mutationTail = update;
         try {
           await update;
+          return child.role !== role || accepted;
         } finally {
           this.clearMutation(child, update);
         }
       }),
     );
+    return results.every(Boolean);
   }
 
   resolveAutomaticTarget(key: CompactionResourceKey): ChildAutomaticCompactionTarget | undefined {
@@ -901,8 +910,8 @@ export class ChildSessions {
   private async performSettingsUpdate(
     target: ChildSettingsTarget,
     command: Pick<ChildSettingsCommand, 'modelId' | 'reasoningEffort'>,
-  ): Promise<void> {
-    if (!this.isSettingsTransaction(target)) return;
+  ): Promise<boolean> {
+    if (!this.isSettingsTransaction(target)) return false;
     const { parent, child, runtime } = target;
     target.configurationGeneration = child.configurationGeneration;
     let modelId = command.modelId ?? undefined;
@@ -914,7 +923,7 @@ export class ChildSessions {
           child.role,
         ).modelId;
       if (!modelId) throw new Error(`No Factory default is available for ${child.role}.`);
-      if (!this.isSettingsTransaction(target)) return;
+      if (!this.isSettingsTransaction(target)) return false;
       await runtime.session.updateSettings({
         modelId,
         ...(command.reasoningEffort === undefined
@@ -930,9 +939,9 @@ export class ChildSessions {
           'child.settings_update_failed',
           `Could not update child settings: ${errMsg(error)}`,
         );
-      return;
+      return false;
     }
-    if (!this.isSettingsTransaction(target)) return;
+    if (!this.isSettingsTransaction(target)) return false;
     if (child.turn.autoCompacting) this.d.compaction.cancel(this.automaticTarget(parent, child));
     child.modelId = modelId;
     if (command.reasoningEffort !== undefined) child.reasoningEffort = command.reasoningEffort;
@@ -948,6 +957,7 @@ export class ChildSessions {
         `[compaction] could not resolve exact-child limit for ${runtime.session.sessionId}: ${errMsg(error)}`,
       );
     }
+    return true;
   }
 
   private complete(
