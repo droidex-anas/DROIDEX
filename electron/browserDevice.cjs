@@ -33,12 +33,11 @@ function deviceOf({ viewportMode, colorScheme }) {
 
 // Gives a guest a new size's name, scheme or both, one change at a time. It
 // rejects when the guest refuses the change, and the guest keeps what it had.
-// `again` sends what the guest already has once more.
-function useDevice(contents, change, again = false) {
+function useDevice(contents, change) {
   if (!contents || contents.isDestroyed()) return Promise.resolve();
   const guest = guests.get(contents) ?? { settings: {}, device: {}, turn: undefined };
   guests.set(contents, guest);
-  const next = () => take(contents, guest, change, again);
+  const next = () => take(contents, guest, change);
   // The first change runs at once, so a guest has its user agent before it loads.
   guest.turn = guest.turn ? guest.turn.then(next, next) : next();
   return guest.turn;
@@ -47,12 +46,11 @@ function useDevice(contents, change, again = false) {
 // The user agent counts from the page's next load; touch and the scheme at
 // once. Each is sent only when it changes, so a size never touches the page's
 // scheme.
-async function take(contents, guest, change, again) {
+async function take(contents, guest, change) {
   if (contents.isDestroyed()) return;
   const settings = { ...guest.settings, ...change };
   const device = deviceOf(settings);
-  // Sent again, a guest is measured against one with nothing set.
-  const had = again && guest.device !== UNKNOWN ? {} : guest.device;
+  const had = guest.device;
   const defaultUserAgent = contents.session.getUserAgent();
   const touch = had.userAgent !== device.userAgent;
   if (touch) contents.setUserAgent(device.userAgent ?? defaultUserAgent);
@@ -68,17 +66,22 @@ async function take(contents, guest, change, again) {
   guest.device = device;
 }
 
-// A guest just mounted has no page yet to take touch or a scheme, so they are
-// sent again once its first page commits. Nobody waits on a mounted guest, so
-// a failure that is not the guest closing is logged.
-function mountDevice(contents, entry) {
-  const failed = (error) => {
+// Gives a guest that was just mounted what its entry asks for, and resolves
+// once its page may load. Such a guest has no page yet to take touch or a
+// scheme, so one that needs them is first given a blank page to take them on;
+// its real page then starts with them in place. A failure that is not the
+// guest closing is logged: nobody waits on a mounted guest.
+async function mountDevice(contents, entry) {
+  const { viewportMode, colorScheme } = entry;
+  const { userAgent, scheme } = deviceOf(entry);
+  try {
+    // A real load that overtakes the blank one ends it, which is fine.
+    if (userAgent || scheme) await contents.loadURL('about:blank').catch(() => undefined);
+    await useDevice(contents, { viewportMode, colorScheme });
+  } catch (error) {
     if (!contents.isDestroyed())
       console.error(`failed to set up a browser page's device: ${error.message}`);
-  };
-  contents.once('did-navigate', () => useDevice(contents, {}, true).catch(failed));
-  const { viewportMode, colorScheme } = entry;
-  useDevice(contents, { viewportMode, colorScheme }).catch(failed);
+  }
 }
 
 async function emulate(contents, { userAgent, scheme }, { touch, media }) {

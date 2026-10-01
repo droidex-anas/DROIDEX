@@ -62,6 +62,7 @@ function createNativeBrowserViewFactory({
       crashed: false,
       shown: false,
       targetUrl: null,
+      settingUp: null,
       failedRestoreUrl: null,
       state: { designMode: false, pencilMode: false },
       loadingUrl: null,
@@ -96,7 +97,7 @@ function createNativeBrowserViewFactory({
       entry.targetUrl = requestedUrl;
     });
     contents.on('did-navigate', (_event, loadedUrl) => {
-      if (!current() || urls.isChromeErrorUrl(loadedUrl)) return;
+      if (!current() || entry.settingUp === contents || urls.isChromeErrorUrl(loadedUrl)) return;
       entry.failedRestoreUrl = null;
       entry.targetUrl = loadedUrl;
       emitLoaded(entry, loadedUrl);

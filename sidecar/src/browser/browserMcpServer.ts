@@ -35,7 +35,8 @@ export function createBrowserMcpServer(
     const { viewport, viewportMode } = await manager.useViewport(appSessionId(), size);
     if (viewportMode !== size)
       return `The user switched the page to ${viewportMode} meanwhile; browser_screenshot states its size.`;
-    if (size === 'fit') return "The page follows the user's pane; browser_screenshot states its size.";
+    if (size === 'fit')
+      return "The page follows the user's pane; browser_screenshot states its size.";
     const laidOut = `The page is laid out at ${size} size, ${String(viewport.width)} × ${String(viewport.height)} CSS px`;
     if (size === 'tablet' || size === 'mobile')
       return `${laidOut}, as a touch device. Reload it if the site picks its mobile version on the server.`;

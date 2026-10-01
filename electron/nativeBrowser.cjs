@@ -114,11 +114,20 @@ function createNativeBrowserManager(options) {
     const entry = ensureNativeBrowserEntry(browserSessionId);
     forgetLoad(entry);
     forgetLoadWaiters(entry);
-    views.bindGuest(entry, contents);
-    // Before the page loads, so a site sees the device from its first request.
-    mountDevice(contents, entry);
     const restoreUrl = urls.restorableUrlForEntry(entry, entry.targetUrl);
-    if (restoreUrl) void loadNativeBrowserUrl(entry, restoreUrl, { force: true });
+    views.bindGuest(entry, contents);
+    // The device first, so a site sees it from its first request and script.
+    // Until then the entry counts as loading, and the blank page a touch device
+    // is set up on is not reported as the browser's page.
+    entry.settingUp = contents;
+    const setup = mountDevice(contents, entry).then(() => {
+      if (entry.settingUp === contents) entry.settingUp = null;
+      if (entry.loadingPromise === setup) entry.loadingPromise = null;
+      if (restoreUrl && liveContents(entry) === contents)
+        return loadNativeBrowserUrl(entry, restoreUrl, { force: true });
+      return undefined;
+    });
+    entry.loadingPromise = setup;
   }
 
   // A load belongs to the guest that started it; a new guest starts afresh.
