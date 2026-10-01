@@ -145,16 +145,12 @@ function createBrowserReading({ runWithWebContentsDebugger, savedSecretsFor, red
   }
 
   // A viewport point at the middle of the ref's element, scrolled into view,
-  // and the document it was resolved in.
+  // the same point in its frame's own viewport, and the document it was
+  // resolved in.
   async function pointForRef(contents, entry, ref) {
     return withPage(contents, async (dbg) => {
-      const { quad, document, sessionId } = await visibleQuad(dbg, entry, ref);
-      return {
-        x: Math.round((quad[0] + quad[2] + quad[4] + quad[6]) / 4),
-        y: Math.round((quad[1] + quad[3] + quad[5] + quad[7]) / 4),
-        document,
-        sessionId,
-      };
+      const { quad, local, document, sessionId } = await visibleQuad(dbg, entry, ref);
+      return { ...middleOf(quad), local: middleOf(local), document, sessionId };
     });
   }
 
@@ -172,7 +168,8 @@ function createBrowserReading({ runWithWebContentsDebugger, savedSecretsFor, red
     );
     const quad = quads?.find((candidate) => quadArea(candidate) > 1);
     if (!quad) throw new Error(`${ref} has no visible box to act on.`);
-    return { quad: (await viewportMapping(dbg, sessionId))(quad), document, sessionId };
+    const toViewport = await viewportMapping(dbg, sessionId);
+    return { quad: toViewport(quad), local: quad, document, sessionId };
   }
 
   // The ref's element as a viewport box, for a screenshot crop, and the
@@ -455,6 +452,13 @@ function ancestorsOf(lines, index) {
 }
 
 // Shoelace area, so a rotated element still counts as visible.
+function middleOf(quad) {
+  return {
+    x: Math.round((quad[0] + quad[2] + quad[4] + quad[6]) / 4),
+    y: Math.round((quad[1] + quad[3] + quad[5] + quad[7]) / 4),
+  };
+}
+
 function quadArea(quad) {
   let twice = 0;
   for (let i = 0; i < 8; i += 2) {

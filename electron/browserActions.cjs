@@ -15,6 +15,7 @@ const {
 const { callPageScript } = require('./browserPageScript.cjs');
 const { refFor } = require('./browserRefs.cjs');
 const { keyOf, modifiersOf, pressOn } = require('./browserKeys.cjs');
+const { labelOf } = require('./browserText.cjs');
 
 const PAGE_CHANGED = 'The page changed before the action ran; call browser_read_page.';
 const NAVIGATION_WAIT_MS = 7_000;
@@ -48,7 +49,7 @@ function createBrowserActions({
           ),
           navigation.wait().then(() => ({ type: 'navigation' })),
         ]);
-        if (outcome.type === 'navigation' && !step.sent) throw new Error(PAGE_CHANGED);
+        if (navigation.started() && !step.sent) throw new Error(PAGE_CHANGED);
         if (outcome.type === 'error' && !(navigation.started() && isNavigationError(outcome.error)))
           throw outcome.error;
         // An action that started a navigation reports the page it led to; a
@@ -121,7 +122,7 @@ function createBrowserActions({
     const pixels = Math.max(1, Math.round(Number(request.pixels) || 500));
     const sign = request.direction === 'up' || request.direction === 'left' ? -1 : 1;
     const horizontal = request.direction === 'left' || request.direction === 'right';
-    const before = await scrollPosition(contents);
+    const before = await scrollPosition(contents, target);
     await dispatchMouse(contents, step, target, [
       {
         type: 'mouseWheel',
@@ -131,28 +132,33 @@ function createBrowserActions({
         deltaY: horizontal ? 0 : sign * pixels,
       },
     ]);
-    await scrollSettled(contents, before);
+    await scrollSettled(contents, target, before);
   }
 
   // Wheel scrolling animates, so the page is read once it has moved and
   // stopped, or once nothing has moved for a moment (nothing could scroll).
-  async function scrollSettled(contents, before) {
+  async function scrollSettled(contents, point, before) {
     const started = Date.now();
     let last = before;
     while (Date.now() - started < SCROLL_SETTLE_MS) {
       await new Promise((resolve) => setTimeout(resolve, SCROLL_POLL_MS));
-      const now = await scrollPosition(contents);
+      const now = await scrollPosition(contents, point);
       if (now === before && Date.now() - started > SCROLL_START_MS) return;
       if (now !== before && now === last) return;
       last = now;
     }
   }
 
-  async function scrollPosition(contents) {
-    const metrics = await runWithWebContentsDebugger(contents, (dbg) =>
-      dbg.sendCommand('Page.getLayoutMetrics'),
+  // Where the page and every box around the element at the point are
+  // scrolled to.
+  async function scrollPosition(contents, { x, y }) {
+    const { result } = await runWithWebContentsDebugger(contents, (dbg) =>
+      dbg.sendCommand('Runtime.evaluate', {
+        expression: `(${SCROLLED})(${x}, ${y})`,
+        returnByValue: true,
+      }),
     );
-    return `${metrics?.cssVisualViewport.pageX},${metrics?.cssVisualViewport.pageY}`;
+    return result?.value;
   }
 
   // Text goes to the session of the frame that holds the focus (a cross-site
@@ -161,16 +167,27 @@ function createBrowserActions({
     const text = String(request.text ?? '');
     await runWithWebContentsDebugger(contents, async (dbg) => {
       let sessionId;
+      let document;
       if (request.ref) {
         const target = await reading.lookupRef(dbg, entry, request.ref);
+        ({ document } = target);
         sessionId = target.frame.sessionId;
         await send(dbg, sessionId, 'DOM.focus', { backendNodeId: target.backendNodeId });
       } else {
         sessionId = await focusedSession(dbg);
       }
-      startInput(step);
+      // The text, and then Enter, go only to the document they were aimed at.
+      const ready = async () => {
+        if (document && !(await frameHolds(dbg, sessionId, document)))
+          throw new Error(PAGE_CHANGED);
+        startInput(step);
+      };
+      await ready();
       if (text) await send(dbg, sessionId, 'Input.insertText', { text });
-      if (request.submit) await pressOn(dbg, sessionId, keyOf('Enter'));
+      if (request.submit) {
+        await ready();
+        await pressOn(dbg, sessionId, keyOf('Enter'));
+      }
     });
   }
 
@@ -204,38 +221,46 @@ function createBrowserActions({
 
   // What would receive input at a ref's point instead of the ref's element,
   // described with a ref of its own; nothing when the ref would. A ref in a
-  // cross-site frame is checked as far as that frame's iframe.
+  // cross-site frame is checked in the top page, where its iframe must take
+  // the input, and again in its own frame.
   function coverOf(contents, entry, ref, point) {
     return reading.withPage(contents, async (dbg) => {
       const target = await reading.lookupRef(dbg, entry, ref);
-      // The hit test takes page coordinates; the point is in the viewport.
-      const { cssLayoutViewport: view } = await dbg.sendCommand('Page.getLayoutMetrics');
-      const hit = await dbg
-        .sendCommand('DOM.getNodeForLocation', {
-          x: point.x + view.pageX,
-          y: point.y + view.pageY,
-          includeUserAgentShadowDOM: false,
-          ignorePointerEventsNone: true,
-        })
-        .catch(() => undefined);
-      if (!hit) return undefined;
-      if (target.frame.sessionId) {
-        const owner = await topOwner(dbg, target.frame.sessionId);
-        return owner === hit.backendNodeId ? undefined : describeCover(dbg, entry, hit);
+      const { sessionId } = target.frame;
+      if (sessionId) {
+        const top = await hitAt(dbg, undefined, point);
+        if (top && top.backendNodeId !== (await topOwner(dbg, sessionId)))
+          return describeCover(dbg, undefined, entry, top);
       }
-      if (hit.frameId === target.frame.id && (await holds(dbg, target.backendNodeId, hit)))
+      const hit = await hitAt(dbg, sessionId, point.local);
+      if (!hit) return undefined;
+      if (
+        hit.frameId === target.frame.id &&
+        (await holds(dbg, sessionId, target.backendNodeId, hit))
+      )
         return undefined;
-      return describeCover(dbg, entry, hit);
+      return describeCover(dbg, sessionId, entry, hit);
     });
   }
 
-  async function holds(dbg, backendNodeId, hit) {
+  // The node that takes input at a point in a frame's own viewport; the hit
+  // test takes that frame's page coordinates.
+  async function hitAt(dbg, sessionId, point) {
+    const { cssLayoutViewport: view } = await send(dbg, sessionId, 'Page.getLayoutMetrics');
+    return send(dbg, sessionId, 'DOM.getNodeForLocation', {
+      x: point.x + view.pageX,
+      y: point.y + view.pageY,
+      includeUserAgentShadowDOM: false,
+    }).catch(() => undefined);
+  }
+
+  async function holds(dbg, sessionId, backendNodeId, hit) {
     const [{ object: ref }, { object: other }] = await Promise.all([
-      dbg.sendCommand('DOM.resolveNode', { backendNodeId }),
-      dbg.sendCommand('DOM.resolveNode', { backendNodeId: hit.backendNodeId }),
+      send(dbg, sessionId, 'DOM.resolveNode', { backendNodeId }),
+      send(dbg, sessionId, 'DOM.resolveNode', { backendNodeId: hit.backendNodeId }),
     ]);
     try {
-      const { result: held } = await dbg.sendCommand('Runtime.callFunctionOn', {
+      const { result: held } = await send(dbg, sessionId, 'Runtime.callFunctionOn', {
         objectId: ref.objectId,
         functionDeclaration: CONTAINS,
         arguments: [{ objectId: other.objectId }],
@@ -244,24 +269,24 @@ function createBrowserActions({
       return held.value === true;
     } finally {
       for (const { objectId } of [ref, other])
-        await dbg.sendCommand('Runtime.releaseObject', { objectId }).catch(() => undefined);
+        await send(dbg, sessionId, 'Runtime.releaseObject', { objectId }).catch(() => undefined);
     }
   }
 
-  async function describeCover(dbg, entry, hit) {
-    const { nodes } = await dbg
-      .sendCommand('Accessibility.getPartialAXTree', {
-        backendNodeId: hit.backendNodeId,
-        fetchRelatives: false,
-      })
-      .catch(() => ({ nodes: [] }));
+  async function describeCover(dbg, sessionId, entry, hit) {
+    const { nodes } = await send(dbg, sessionId, 'Accessibility.getPartialAXTree', {
+      backendNodeId: hit.backendNodeId,
+      fetchRelatives: false,
+    }).catch(() => ({ nodes: [] }));
     const node = nodes.find((candidate) => !candidate.ignored);
-    const name = String(node?.name?.value ?? '').slice(0, 80);
+    // Only a label the page gave it: a name built from its content can hold
+    // what a masked field holds.
+    const name = node ? labelOf(node).slice(0, 80) : '';
     // An element the accessibility tree ignores is named by its tag.
     const role =
       node && (name || !['none', 'generic'].includes(node.role?.value))
         ? node.role.value
-        : `<${(await dbg.sendCommand('DOM.describeNode', { backendNodeId: hit.backendNodeId })).node.localName}>`;
+        : `<${(await send(dbg, sessionId, 'DOM.describeNode', { backendNodeId: hit.backendNodeId })).node.localName}>`;
     const frame = (await documentFrames(dbg)).find((candidate) => candidate.id === hit.frameId);
     const ref = frame ? ` (${refFor(entry, frame.loaderId, hit.backendNodeId)})` : '';
     return `${role}${name ? ` "${name}"` : ''}${ref}`;
@@ -284,8 +309,10 @@ function createBrowserActions({
     const target = request.ref
       ? await reading.selectorForRef(contents, entry, request.ref)
       : { selector: request.selector };
-    if (target.document) await reading.assertDocument(contents, target.document);
     const inspection = await callPageScript(contents, '__droidexInspect', target.selector);
+    // The selector ran on whatever document was there; the answer counts only
+    // if that is still the ref's.
+    if (target.document) await reading.assertDocument(contents, target.document);
     return { requestId: request.requestId, ok: true, inspection };
   }
 
@@ -415,6 +442,8 @@ const FILL = `function (value) {
   } else if (this instanceof HTMLInputElement && (this.type === 'checkbox' || this.type === 'radio')) {
     const checked = value === true || ['true', 'on', 'checked', 'yes'].includes(String(value).toLowerCase());
     if (this.checked !== checked) this.click();
+    if (this.checked !== checked)
+      throw new Error(this.type === 'radio' ? 'a radio turns off when another one is chosen' : 'the page kept it as it was');
     return;
   } else if (this instanceof HTMLInputElement || this instanceof HTMLTextAreaElement) {
     if (this.type === 'file') throw new Error('file inputs need the user');
@@ -429,6 +458,15 @@ const FILL = `function (value) {
   }
   this.dispatchEvent(new Event('input', { bubbles: true }));
   this.dispatchEvent(new Event('change', { bubbles: true }));
+}`;
+
+// The scroll offsets of the page and of each element around the one at a
+// viewport point.
+const SCROLLED = `(x, y) => {
+  const offsets = [scrollX, scrollY];
+  for (let node = document.elementFromPoint(x, y); node; node = node.parentElement)
+    offsets.push(node.scrollLeft, node.scrollTop);
+  return offsets.join();
 }`;
 
 // Run on a ref's element: whether a hit node is that element or inside it,

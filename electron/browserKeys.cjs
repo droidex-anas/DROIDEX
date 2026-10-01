@@ -37,10 +37,10 @@ const NAMED_KEYS = {
 // On macOS a Meta chord edits only when Chromium is given the command.
 const MAC_COMMANDS = { a: 'selectAll', c: 'copy', x: 'cut', v: 'paste', z: 'undo' };
 
-// A key or chord such as "Enter", "a", "Shift+Tab" or "cmd+a".
+// A key or chord such as "Enter", "a", "+", "Shift+Tab" or "cmd+a".
 function keyOf(spec) {
   const parts = String(spec ?? '')
-    .split('+')
+    .split(/\+(?=.)/)
     .map((part) => part.trim())
     .filter(Boolean);
   const name = parts.pop() ?? '';
@@ -56,7 +56,8 @@ function keyOf(spec) {
     const upper = name.toUpperCase();
     key = modifiers & SHIFT ? upper : name;
     code = /[a-z]/i.test(name) ? `Key${upper}` : /\d/.test(name) ? `Digit${name}` : undefined;
-    keyCode = upper.charCodeAt(0);
+    // A symbol's character code is another key's code ("%" is ArrowLeft's).
+    keyCode = code ? upper.charCodeAt(0) : 0;
     text = key;
   } else {
     throw new Error(
