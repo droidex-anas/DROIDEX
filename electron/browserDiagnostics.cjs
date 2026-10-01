@@ -39,16 +39,17 @@ function redactBrowserDiagnosticUrl(value, baseUrl) {
 }
 
 function redactBrowserDiagnosticText(value) {
-  // A URL inside a message is redacted like any other. Its user and password
-  // go first and on their own, whatever characters they hold: a URL that is cut
-  // short at one of them would not parse, and would be left as it was.
+  // A URL's user and password go first and on their own, whatever characters
+  // they hold: a URL cut short at one of them would not parse, and would be
+  // left as it was.
   const bounded = String(value || '')
     .slice(0, 4000)
-    .replace(/\b(https?:\/\/)[^\s/?#]*@/gi, '$1')
-    .replace(/\bhttps?:\/\/[^\s"'<>]+/gi, (url) => redactBrowserDiagnosticUrl(url));
-  return redactUnquotedAssignments(
-    redactQuotedAssignments(redactAuthenticationSchemes(bounded)),
-  ).slice(0, 1000);
+    .replace(/\b(https?:\/\/)[^\s/?#]*@/gi, '$1');
+  // Then values named like secrets, a quoted one whole; then what is left of
+  // each URL, like any other URL.
+  return redactUnquotedAssignments(redactQuotedAssignments(redactAuthenticationSchemes(bounded)))
+    .replace(/\bhttps?:\/\/[^\s"'<>]+/gi, (url) => redactBrowserDiagnosticUrl(url))
+    .slice(0, 1000);
 }
 
 function redactAuthenticationSchemes(value) {
