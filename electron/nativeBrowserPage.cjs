@@ -124,13 +124,11 @@ function createNativeBrowserPage({
       // The renderer sizes the page from the session's viewport; main keeps
       // the size's name for the device it asks for.
       entry.viewportMode = request.viewportMode;
-      useDevice(liveContents(entry), entry);
-      return { requestId: request.requestId, ok: true };
+      return deviceSet(entry, request);
     }
     if (request.action === 'colorScheme') {
       entry.colorScheme = request.colorScheme;
-      useDevice(liveContents(entry), entry);
-      return { requestId: request.requestId, ok: true };
+      return deviceSet(entry, request);
     }
     if (request.action === 'network') {
       const networkEvents = entry.networkEvents.slice();
@@ -140,6 +138,12 @@ function createNativeBrowserPage({
     const consoleEvents = entry.consoleEvents.slice();
     if (request.clearConsoleLog) entry.consoleEvents.length = 0;
     return { requestId: request.requestId, ok: true, consoleEvents };
+  }
+
+  // Answers once a live guest has taken what its entry asks of it now.
+  async function deviceSet(entry, request) {
+    await useDevice(liveContents(entry), entry);
+    return { requestId: request.requestId, ok: true };
   }
 
   // The pane resizes the page a frame or two after the sidecar sets a size; the

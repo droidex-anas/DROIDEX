@@ -112,8 +112,9 @@ export class BrowserSessionManager {
   }): Promise<BrowserOutcome> {
     const session = this.sessionFor(input.appSessionId, input.viewport, input.viewportMode);
     const url = normalizeBrowserUrl(input.url);
-    if (input.viewport) {
-      await session.runtime.setViewport(input.viewport, session.state.viewportMode);
+    if (input.viewport || input.viewportMode) {
+      // The size's name goes too: Tablet and Phone make the page a touch device.
+      await session.runtime.setViewport(session.state.viewport, session.state.viewportMode);
       this.assertCurrent(session);
     }
     session.state = {

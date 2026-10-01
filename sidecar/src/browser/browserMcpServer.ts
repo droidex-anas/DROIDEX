@@ -38,7 +38,7 @@ export function createBrowserMcpServer(
     if (size === 'fit') return "The page follows the user's pane; browser_screenshot states its size.";
     const laidOut = `The page is laid out at ${size} size, ${String(viewport.width)} × ${String(viewport.height)} CSS px`;
     if (size === 'tablet' || size === 'mobile')
-      return `${laidOut}, with touch. Reload it if the site picks its mobile version on the server.`;
+      return `${laidOut}, as a touch device. Reload it if the site picks its mobile version on the server.`;
     return `${laidOut}.`;
   }
 
@@ -227,7 +227,7 @@ export function createBrowserMcpServer(
         [
           "Lay the page out at a standard size: desktop (1440×900, where a browser you open starts), laptop (1280×800), tablet (820×1180) or mobile (390×844); fit follows the size of the user's pane.",
           'The page reflows to it; the user sees the same page scaled to fit their pane. Use it to check a responsive layout.',
-          "Tablet and mobile also give the page touch input and Chrome for Android's user agent. A scheme asks the page for its light or dark look.",
+          "Tablet and mobile also tell the page it is a touch device (touch points, a coarse pointer) with Chrome for Android's user agent; your clicks stay mouse clicks. A scheme asks the page for its light or dark look.",
         ].join(' '),
         {
           size: viewportModeSchema.optional().describe('The size to lay the page out at.'),
