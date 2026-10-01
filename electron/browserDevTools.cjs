@@ -94,7 +94,8 @@ async function withinLimit(dbg, expression) {
 // inside it, after the origin check and in the same step, so nothing in the
 // script can run in a document of another origin or change the wrapper. The
 // result is turned to JSON there, as the page would, and what the script awaits
-// is raced against a timer so a promise that never settles ends in time.
+// is raced against a timer so a promise that never settles ends in time. Work
+// the script left behind goes on in the page, like any script of the page.
 function guarded(origin, script) {
   return `(async (origin, ms, body) => {
   if (location.origin !== origin) throw new Error('the page changed before the script ran');
