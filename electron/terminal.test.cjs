@@ -5,6 +5,7 @@ const { join } = require('node:path');
 const {
   buildPtyEnv,
   createTerminalManager,
+  defaultShell,
   MAX_COLS,
   MAX_REPLAY_BYTES,
   MAX_ROWS,
@@ -112,7 +113,46 @@ test('terminal manager opens a folderless chat in its configured runtime directo
   assert.equal(instances[0].options.cwd, '/real/droidex/chats');
 });
 
-test('terminal manager caps dimensions before spawning and resizing the PTY', async () => {
+test('terminal manager spawns nothing for a cwd that is missing or not a directory', async () => {
+  const cases = [
+    ['', { stat: async () => ({ isDirectory: () => true }) }, /cwd is required/],
+    [
+      '/nope',
+      {
+        stat: async () => {
+          throw new Error('ENOENT');
+        },
+      },
+      /does not exist/,
+    ],
+    ['/a-file', { stat: async () => ({ isDirectory: () => false }) }, /not a directory/],
+  ];
+  for (const [cwd, fsp, error] of cases) {
+    const { manager, instances } = fixture({ fsp });
+    await assert.rejects(() => manager.create({ appSessionId: 's1', cwd }), error);
+    assert.equal(instances.length, 0, cwd);
+  }
+});
+
+test('defaultShell prefers $SHELL as a login shell and pwsh only when SHELL names it on Windows', () => {
+  const cases = [
+    ['darwin', { SHELL: '/bin/fish' }, { file: '/bin/fish', args: ['-l'] }],
+    ['darwin', {}, { file: '/bin/zsh', args: ['-l'] }],
+    ['linux', {}, { file: '/bin/bash', args: ['-l'] }],
+    [
+      'win32',
+      { SHELL: 'C:\\Program Files\\PowerShell\\7\\pwsh.exe' },
+      { file: 'C:\\Program Files\\PowerShell\\7\\pwsh.exe', args: ['-NoLogo'] },
+    ],
+    ['win32', { SHELL: '/bin/bash', COMSPEC: 'C:\\cmd.exe' }, { file: 'C:\\cmd.exe', args: [] }],
+    ['win32', {}, { file: 'cmd.exe', args: [] }],
+  ];
+  for (const [platform, env, shell] of cases) {
+    assert.deepEqual(defaultShell(platform, env), shell, `${platform} ${JSON.stringify(env)}`);
+  }
+});
+
+test('terminal manager caps dimensions and keeps the last size for unusable ones', async () => {
   const { manager, instances } = fixture();
   const terminal = await manager.create({
     appSessionId: 'session-1',
@@ -125,7 +165,11 @@ test('terminal manager caps dimensions before spawning and resizing the PTY', as
   assert.equal(terminal.rows, MAX_ROWS);
 
   manager.resize(terminal.id, Number.MAX_SAFE_INTEGER, Number.MAX_SAFE_INTEGER);
-  assert.deepEqual(instances[0].resizes, [[MAX_COLS, MAX_ROWS]]);
+  manager.resize(terminal.id, 0, Number.NaN);
+  assert.deepEqual(instances[0].resizes, [
+    [MAX_COLS, MAX_ROWS],
+    [MAX_COLS, MAX_ROWS],
+  ]);
 });
 
 test('terminal manager enforces per-session and global limits', async () => {
