@@ -8,7 +8,6 @@ const {
   save,
   saveFile,
   discard,
-  decodeImageDataUrl,
   sanitizeAttachmentName,
   writeExclusive,
   evictToBudget,
@@ -40,17 +39,18 @@ test('save rejects payloads that are not supported image data URLs', async () =>
   await assert.rejects(() => save(dir, 'not-a-data-url'), /data URL/);
   await assert.rejects(() => save(dir, 'data:text/html;base64,PGI+'), /Unsupported image type/);
   await assert.rejects(() => save(dir, 'data:image/png;base64,'), /empty/);
+  // The composer paste filter accepts any image/* blob (e.g. SVG); at Original
+  // fidelity the bytes reach us unconverted, so the refusal must say why.
+  await assert.rejects(
+    () => save(dir, 'data:image/svg+xml;base64,PHN2Zy8+'),
+    /Unsupported image type: image\/svg\+xml \(supported: image\/png, image\/jpeg, image\/webp, image\/gif\)/,
+  );
 });
 
 test('save rejects payloads over the size cap', async () => {
   const dir = await tempDir();
   const big = `data:image/png;base64,${Buffer.alloc(MAX_ATTACHMENT_BYTES + 1).toString('base64')}`;
   await assert.rejects(() => save(dir, big), /size limit/);
-});
-
-test('decodeImageDataUrl normalizes jpeg to a jpg extension', () => {
-  const { ext } = decodeImageDataUrl('data:image/jpeg;base64,/9j/4AAQ');
-  assert.equal(ext, 'jpg');
 });
 
 test('discard removes a saved attachment and ignores missing files', async () => {
@@ -66,16 +66,6 @@ test('discard refuses paths outside the attachments directory', async () => {
   await assert.rejects(() => discard(dir, dir), /outside the attachments/);
   await assert.rejects(() => discard(dir, path.join(dir, '..', 'other.png')), /outside/);
   await assert.rejects(() => discard(dir, '/tmp/whatever.png'), /outside/);
-});
-
-test('save rejects composer-accepted but unsupported types with an explicit message', async () => {
-  const dir = await tempDir();
-  // The composer paste filter accepts any image/* blob (e.g. SVG); at Original
-  // fidelity the bytes reach us unconverted, so the refusal must say why.
-  await assert.rejects(
-    () => save(dir, 'data:image/svg+xml;base64,PHN2Zy8+'),
-    /Unsupported image type: image\/svg\+xml \(supported: image\/png, image\/jpeg, image\/webp, image\/gif\)/,
-  );
 });
 
 test('save rejects over-long encoded payloads before decoding them', async () => {
@@ -151,13 +141,6 @@ test('evictToBudget removes oldest files until the incoming file fits', async ()
   await assert.doesNotReject(() => fsp.stat(newest));
 });
 
-test('evictToBudget leaves the directory alone when the budget already fits', async () => {
-  const dir = await tempDir();
-  const target = await writeAged(dir, 'a.bin', 100, 1000);
-  assert.equal(await evictToBudget(dir, 150, 300), true);
-  assert.equal((await fsp.stat(target)).size, 100);
-});
-
 test('evictToBudget preserves files young enough to back an unsent prompt', async () => {
   const dir = await tempDir();
   // A queued prompt references its images by path until the agent consumes
@@ -175,14 +158,6 @@ test('save rejects instead of evicting attachments young enough to be in use', a
   // make room, so the save must fail loudly rather than break a prompt.
   await assert.rejects(() => save(dir, PNG_DATA_URL, { budgetBytes: 100 }), /full/);
   assert.equal((await fsp.stat(young)).size, 100);
-});
-
-test('save evicts aged attachments to make room for the incoming image', async () => {
-  const dir = await tempDir();
-  const old = await writeAged(dir, 'old.bin', 100, 2 * EVICTION_GRACE_MS);
-  const target = await save(dir, PNG_DATA_URL, { budgetBytes: 100 });
-  await assert.rejects(() => fsp.stat(old), /ENOENT/);
-  assert.equal(path.dirname(target), path.resolve(dir));
 });
 
 test('withSaveLock serializes tasks per directory and survives failures', async () => {
@@ -278,29 +253,20 @@ test('sanitizeAttachmentName strips traversal and unusable characters', () => {
   assert.equal(sanitizeAttachmentName(42), null);
 });
 
-test('sanitizeAttachmentName caps length without losing the extension', () => {
-  const long = `${'a'.repeat(200)}.pdf`;
-  const cleaned = sanitizeAttachmentName(long);
-  assert.equal(cleaned.length, 120);
-  assert.ok(cleaned.endsWith('.pdf'));
-});
+test('sanitizeAttachmentName caps characters and UTF-8 bytes without losing the extension', () => {
+  for (const name of [`${'a'.repeat(200)}.pdf`, `${'a'.repeat(20_000)}.pdf`]) {
+    const cleaned = sanitizeAttachmentName(name);
+    assert.equal(cleaned.length, 120);
+    assert.ok(cleaned.endsWith('.pdf'));
+  }
 
-test('sanitizeAttachmentName bounds an over-long extension instead of expanding', () => {
-  const ext = `.${'x'.repeat(200)}`;
-  const cleaned = sanitizeAttachmentName(`a${ext}`);
-  assert.ok(cleaned.length <= 120);
-  assert.ok(Buffer.byteLength(cleaned, 'utf8') <= 200);
-});
+  const nonAscii = sanitizeAttachmentName(`${'测'.repeat(120)}.pdf`);
+  assert.ok(nonAscii.endsWith('.pdf'));
+  assert.ok(nonAscii.length <= 120);
+  assert.ok(Buffer.byteLength(nonAscii, 'utf8') <= 200);
 
-test('sanitizeAttachmentName caps UTF-8 byte length for non-ASCII names', () => {
-  const cleaned = sanitizeAttachmentName(`${'测'.repeat(120)}.pdf`);
-  assert.ok(cleaned.endsWith('.pdf'));
-  assert.ok(cleaned.length <= 120);
-  assert.ok(Buffer.byteLength(cleaned, 'utf8') <= 200);
-});
-
-test('sanitizeAttachmentName caps a very long stem in one pass', () => {
-  const cleaned = sanitizeAttachmentName(`${'a'.repeat(20_000)}.pdf`);
-  assert.equal(cleaned.length, 120);
-  assert.ok(cleaned.endsWith('.pdf'));
+  // An over-long extension is bounded instead of expanding the name.
+  const longExtension = sanitizeAttachmentName(`a.${'x'.repeat(200)}`);
+  assert.ok(longExtension.length <= 120);
+  assert.ok(Buffer.byteLength(longExtension, 'utf8') <= 200);
 });

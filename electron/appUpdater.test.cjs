@@ -91,20 +91,14 @@ test('manual menu checks do not change the background-check preference', async (
   ]);
 });
 
-test('Sparkle checks report no update when the appcast version matches', async () => {
-  const { updater } = harness({ installMode: 'sparkle', appcastVersion: '1.2.3' });
-  const result = await updater.check({ interactive: false });
+test('Sparkle checks report no update for a matching or older appcast', async () => {
+  for (const appcastVersion of ['1.2.3', '1.2.2']) {
+    const { updater } = harness({ installMode: 'sparkle', appcastVersion });
+    const result = await updater.check({ interactive: false });
 
-  assert.equal(result.latest, '1.2.3');
-  assert.equal(result.updateAvailable, false);
-});
-
-test('Sparkle checks report no update for an older appcast', async () => {
-  const { updater } = harness({ installMode: 'sparkle', appcastVersion: '1.2.2' });
-  const result = await updater.check({ interactive: false });
-
-  assert.equal(result.latest, '1.2.2');
-  assert.equal(result.updateAvailable, false);
+    assert.equal(result.latest, appcastVersion);
+    assert.equal(result.updateAvailable, false);
+  }
 });
 
 test('install waits for sidecar shutdown before handing control to the updater', async () => {

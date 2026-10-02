@@ -616,7 +616,6 @@ module.exports = {
   canonicalDirectory,
   createRootAccessRegistry,
   // constants (also useful to consumers / tests)
-  LISTING_CAP_DEFAULT,
   LISTING_CAP_MAX,
   TEXT_PREVIEW_CAP_BYTES,
   BINARY_PREVIEW_CAP_BYTES,
