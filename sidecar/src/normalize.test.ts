@@ -194,18 +194,23 @@ test('classifyPermission reads the SDK toolUses shape for MCP tools and exec', (
 test('permission grant keys hash automation payloads and name the kind of chat a spawn starts', () => {
   const params = (details: Record<string, unknown>, input: Record<string, unknown>) =>
     ({ toolUses: [{ details: { type: 'mcp_tool', ...details }, toolUse: { input } }] }) as never;
-  const automation = { serverName: 'droidex-automations', toolName: 'automation_update' };
   const prefix = 'x'.repeat(9_000);
-  // A grant for one automation payload must not cover a different one.
-  assert.notEqual(
-    permissionSignature(params(automation, { automationId: 'one', prompt: `${prefix}a` })),
-    permissionSignature(params(automation, { automationId: 'one', prompt: `${prefix}b` })),
-  );
-  // The same payload earns the same grant whatever order its keys arrive in.
-  assert.equal(
-    permissionSignature(params(automation, { automationId: 'one', prompt: 'p' })),
-    permissionSignature(params(automation, { prompt: 'p', automationId: 'one' })),
-  );
+  for (const automation of [
+    { serverName: 'droidex-automations', toolName: 'automation_update' },
+    // Droid names the server inside the tool.
+    { toolName: 'droidex_automations___automation_update' },
+  ]) {
+    // A grant for one automation payload must not cover a different one.
+    assert.notEqual(
+      permissionSignature(params(automation, { automationId: 'one', prompt: `${prefix}a` })),
+      permissionSignature(params(automation, { automationId: 'one', prompt: `${prefix}b` })),
+    );
+    // The same payload earns the same grant whatever order its keys arrive in.
+    assert.equal(
+      permissionSignature(params(automation, { automationId: 'one', prompt: 'p' })),
+      permissionSignature(params(automation, { prompt: 'p', automationId: 'one' })),
+    );
+  }
 
   const spawn = (input: Record<string, unknown>) =>
     permissionSignature(params({ toolName: 'droidex_sessions___thread_spawn' }, input));
