@@ -82,7 +82,7 @@ type ChildRole = 'worker' | 'validator';
 export type ChildStatus = 'pending' | 'running' | 'paused' | 'completed' | 'failed';
 export type StreamFidelity = 'token' | 'tool' | 'state';
 
-interface ChildSpawnLink {
+export interface ChildSpawnLink {
   kind: 'tool-use' | 'spawn';
   id: string;
 }

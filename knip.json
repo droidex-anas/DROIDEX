@@ -13,6 +13,7 @@
   ],
   "project": ["src/**/*.{ts,tsx}", "electron/**/*.cjs", "*.config.{js,ts}"],
   "ignore": ["sidecar/**"],
+  "ignoreExportsUsedInFile": { "interface": true, "type": true },
   "ignoreBinaries": ["iconutil", "xdotool"],
   "ignoreDependencies": [
     "@types/react",
