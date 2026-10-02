@@ -43,7 +43,7 @@ function childDelta(
   };
 }
 
-test('a turn opens at tick speed and then coalesces for the full window', (t) => {
+test('a turn opens at tick speed and then coalesces for the full window, unless the window is disabled', (t) => {
   t.mock.timers.enable({ apis: ['setTimeout'] });
   const waitTicks = () => t.mock.timers.tick(5);
   const waitWindow = () => t.mock.timers.tick(WINDOW_MS + SETTLE_MARGIN_MS);
@@ -71,6 +71,14 @@ test('a turn opens at tick speed and then coalesces for the full window', (t) =>
   coalescer.accept(childDelta('b1', 'child-1', { text: 'next turn' }));
   waitTicks();
   assert.equal(delivered.length, 3, 'the next turn opens at tick speed again');
+
+  const unbuffered = createCoalescer({ windowMs: 0 });
+  unbuffered.coalescer.accept(childDelta('c1', 'child-1'));
+  unbuffered.coalescer.accept(childDelta('c2', 'child-1'));
+  assert.deepEqual(
+    unbuffered.delivered.map((event) => event.id),
+    ['c1', 'c2'],
+  );
 });
 
 test('concurrent children each keep their own coalescing run', (t) => {
@@ -152,18 +160,6 @@ test('flushAll delivers every source even when one delivery fails', () => {
     ['a1', 'c1'],
   );
   assert.doesNotThrow(() => coalescer.flushAll());
-});
-
-test('a disabled window delivers every delta immediately', () => {
-  const { coalescer, delivered } = createCoalescer({ windowMs: 0 });
-
-  coalescer.accept(childDelta('a1', 'child-a'));
-  coalescer.accept(childDelta('a2', 'child-a'));
-
-  assert.deepEqual(
-    delivered.map((event) => event.id),
-    ['a1', 'a2'],
-  );
 });
 
 test('streamingEventOwner keys primaries by session and children by child id', () => {

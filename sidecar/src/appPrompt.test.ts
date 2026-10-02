@@ -31,7 +31,7 @@ test('hasAppFence recognizes the App answer shape the guidance asks for', () => 
 
 // The guidance is prose the model reads; only the names the host implements
 // are a contract, so a rewording must not break this test but a renamed API must.
-test('App guidance names the host APIs, attributes, and approved hosts the runtime provides', () => {
+test('App guidance names the host APIs the runtime provides; a follow-up may revise the existing App', () => {
   const prompt = formatAppPrompt('/visualize compare renderer timings', 'create');
 
   assert.match(prompt, /^DROIDEX App request:\n\/visualize compare renderer timings\n/);
@@ -58,6 +58,19 @@ test('App guidance names the host APIs, attributes, and approved hosts the runti
   ]) {
     assert.ok(prompt.includes(name), `guidance should name ${name}`);
   }
+  // Skill and file composition happen before sidecar formatting.
+  const composed = formatAppPrompt(
+    '/data-analysis /visualize compare the attached timings\n\n@timings.csv',
+    'create',
+  );
+  assert.match(composed, /Build the most useful interactive in-chat App/);
+  assert.doesNotMatch(composed, /chat already contains an interactive App/i);
+
+  const followup = formatAppPrompt('the hover interaction is not working, fix it', 'followup');
+  assert.match(followup, /chat already contains an interactive App/i);
+  assert.match(followup, /return a complete revised fenced `app` block/i);
+  assert.match(followup, /otherwise respond normally/i);
+  assert.match(followup, /the hover interaction is not working, fix it/);
 });
 
 test('App prompts display only what the user typed; Auto-fix also carries the exact source', () => {
@@ -73,18 +86,4 @@ test('App prompts display only what the user typed; Auto-fix also carries the ex
   const create = formatAppPrompt('/visualize compare renderer timings', 'create');
   assert.equal(appPromptDisplayFromText(create), '/visualize compare renderer timings');
   assert.equal(appPromptDisplayFromText('ordinary prompt'), null);
-});
-
-test('a follow-up may revise the existing App; an explicit creation survives prompt composition', () => {
-  const prompt = formatAppPrompt('the hover interaction is not working, fix it', 'followup');
-  assert.match(prompt, /chat already contains an interactive App/i);
-  assert.match(prompt, /return a complete revised fenced `app` block/i);
-  assert.match(prompt, /otherwise respond normally/i);
-  assert.match(prompt, /the hover interaction is not working, fix it/);
-
-  // Skill and file composition happen before sidecar formatting.
-  const composed = '/data-analysis /visualize compare the attached timings\n\n@timings.csv';
-  const created = formatAppPrompt(composed, 'create');
-  assert.match(created, /Build the most useful interactive in-chat App/);
-  assert.doesNotMatch(created, /chat already contains an interactive App/i);
 });

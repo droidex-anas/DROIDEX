@@ -23,11 +23,14 @@ function protocolRegion(source: string, marker: string, end: string): string {
   return source.slice(start, stop);
 }
 
-test('a token stream declaration is coupled to includePartialMessages', () => {
+test('the fidelity vocabulary is closed and a token stream declaration is coupled to includePartialMessages', () => {
   const stream = childTokenStream();
   assert.equal(stream.fidelity, 'token');
   assert.equal(stream.options.includePartialMessages, true);
   assert.equal(stream.options, CHILD_TOKEN_STREAM_OPTIONS);
+  for (const fidelity of ['token', 'tool', 'state']) assert.equal(isStreamFidelity(fidelity), true);
+  assert.equal(isStreamFidelity('streaming'), false);
+  assert.equal(isStreamFidelity(undefined), false);
 });
 
 test('observed children publish state fidelity until a token stream is declared', () => {
@@ -44,14 +47,6 @@ test('observed children publish state fidelity until a token stream is declared'
   assert.equal(childSummary(child).streamFidelity, 'state');
   child.streamFidelity = 'token';
   assert.equal(childSummary(child).streamFidelity, 'token');
-});
-
-test('stream fidelity vocabulary is closed', () => {
-  assert.equal(isStreamFidelity('token'), true);
-  assert.equal(isStreamFidelity('tool'), true);
-  assert.equal(isStreamFidelity('state'), true);
-  assert.equal(isStreamFidelity('streaming'), false);
-  assert.equal(isStreamFidelity(undefined), false);
 });
 
 test('protocol stream fidelity types stay mirrored with the renderer', () => {
