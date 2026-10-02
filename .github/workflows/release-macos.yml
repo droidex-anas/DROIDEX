@@ -91,9 +91,11 @@ jobs:
         run: |
           PREVIOUS_DIR="$RUNNER_TEMP/sparkle-previous"
           mkdir -p "$PREVIOUS_DIR"
-          for tag in $(gh release list --repo "$RELEASE_REPOSITORY" \
+          # Assigned first so a failed listing stops the job instead of looping over nothing.
+          TAGS="$(gh release list --repo "$RELEASE_REPOSITORY" \
             --exclude-drafts --exclude-pre-releases --limit 3 \
-            --json tagName --jq '.[].tagName'); do
+            --json tagName --jq '.[].tagName')"
+          for tag in $TAGS; do
             gh release download "$tag" --repo "$RELEASE_REPOSITORY" \
               --pattern 'droidex-arm64.zip' --pattern 'droidex-x64.zip' \
               --dir "$PREVIOUS_DIR/$tag" ||

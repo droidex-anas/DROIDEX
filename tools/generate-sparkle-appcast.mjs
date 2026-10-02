@@ -34,7 +34,7 @@ function runSparkleTool(name, args, failureMessage) {
 }
 
 function previousArchives(architecture) {
-  if (!previousReleasesDirectory) return [];
+  if (!previousReleasesDirectory || !existsSync(previousReleasesDirectory)) return [];
   return readdirSync(previousReleasesDirectory)
     .filter((tag) => tag !== releaseTag)
     .map((tag) => ({ tag, path: join(previousReleasesDirectory, tag, `droidex-${architecture}.zip`) }))
@@ -42,12 +42,15 @@ function previousArchives(architecture) {
 }
 
 // generate_appcast remembers a delta it judged too large as a marker named after
-// the delta file. Both architectures produce the same delta names, so clear the
-// markers before each run to keep one architecture from suppressing the other's.
+// the delta file (DROIDEX<new>-<old>.delta...ignore). Both architectures produce
+// the same delta names, so clear DROIDEX's markers before each architecture to
+// keep one architecture from suppressing the other's deltas.
 function clearIgnoredDeltaMarkers() {
   if (!existsSync(generatorCache)) return;
   for (const entry of readdirSync(generatorCache)) {
-    if (entry.endsWith('ignore')) rmSync(join(generatorCache, entry), { force: true });
+    if (entry.startsWith('DROIDEX') && entry.includes('.delta') && entry.endsWith('ignore')) {
+      rmSync(join(generatorCache, entry), { force: true });
+    }
   }
 }
 

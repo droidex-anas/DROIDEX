@@ -176,7 +176,9 @@ function verifySparkleAppcast(architecture) {
   for (const [, deltaUrl, deltaLength, deltaSignature] of deltas) {
     const deltaName = deltaUrl.slice(deltaPrefix.length);
     assert(
-      deltaUrl.startsWith(deltaPrefix) && deltaName.endsWith(`-${architecture}.delta`),
+      deltaUrl.startsWith(deltaPrefix) &&
+        releaseAssetNames.includes(deltaName) &&
+        deltaName.endsWith(`-${architecture}.delta`),
       `${appcastName} delta URL ${deltaUrl} is not a ${architecture} delta of this release`,
     );
     const deltaPath = join(releaseDirectory, deltaName);

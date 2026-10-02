@@ -166,6 +166,9 @@ gh release create "v$DROIDEX_VERSION" \
   --notes "DROIDEX v$DROIDEX_VERSION for Apple silicon and Intel Macs." \
   --draft
 
+# A release can have no deltas; let an unmatched release/*.delta expand to nothing.
+shopt -s nullglob # zsh: setopt null_glob
+
 gh release upload "v$DROIDEX_VERSION" \
   release/droidex-arm64.dmg \
   release/droidex-arm64.zip \
