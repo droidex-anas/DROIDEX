@@ -34,12 +34,14 @@ test('cached session summaries accept the complete canonical contract', () => {
   assert.deepEqual(parseCachedSessionSummary(serializeCachedSessionSummary(value)), value);
 });
 
-test('cached session summaries reject malformed required arrays and discriminants', () => {
+test('cached session summaries reject malformed required arrays, discriminants and inherited keys', () => {
   const missingFeatures = { ...summary(), features: undefined };
   const invalidPhase = { ...summary(), phase: 'sleeping' };
   const invalidReasoning = { ...summary(), reasoningEffort: 'extreme' };
   const invalidAccuracy = { ...summary(), contextAccuracy: 'guessed' };
   const invalidWorkspace = { ...summary(), workspaceKind: 'repository' };
+  // An inherited Object.prototype key is not a reasoning effort.
+  const inheritedReasoning = { ...summary(), reasoningEffort: 'toString' };
   assert.equal(
     parseCachedSessionSummary(JSON.stringify({ cacheVersion: 2, summary: missingFeatures })),
     undefined,
@@ -48,20 +50,12 @@ test('cached session summaries reject malformed required arrays and discriminant
     parseCachedSessionSummary(JSON.stringify({ cacheVersion: 2, summary: invalidPhase })),
     undefined,
   );
-  for (const invalid of [invalidReasoning, invalidAccuracy, invalidWorkspace]) {
+  for (const invalid of [invalidReasoning, invalidAccuracy, invalidWorkspace, inheritedReasoning]) {
     assert.equal(
       parseCachedSessionSummary(JSON.stringify({ cacheVersion: 2, summary: invalid })),
       undefined,
     );
   }
-});
-
-test('inherited Object.prototype keys are not restored as reasoning effort', () => {
-  const inherited = { ...summary(), reasoningEffort: 'toString' };
-  assert.equal(
-    parseCachedSessionSummary(JSON.stringify({ cacheVersion: 2, summary: inherited })),
-    undefined,
-  );
 });
 
 test('only SQL NULL represents an intentionally excluded session summary', () => {

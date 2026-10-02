@@ -86,49 +86,33 @@ test('browser_open keeps high-detail viewport scale by default', async () => {
   assert.match(String(result), /Opened the live DROIDEX browser/);
 });
 
-test('browser_reload returns a fresh browser state', async () => {
-  const manager = {
-    async reload() {
-      return {
-        url: 'https://example.com',
-        viewport: { width: 1200, height: 800, deviceScaleFactor: 2 },
-        viewportMode: 'fit',
-        scroll: { x: 0, y: 0 },
-        refs: [],
-      };
-    },
-  } as unknown as BrowserSessionManager;
-  const server = createBrowserMcpServer(manager, () => 'm1');
-  const browserReload = server.tools.find((tool) => tool.name === 'browser_reload');
-
-  const result = await browserReload?.handler({});
-
-  assert.match(String(result), /https:\/\/example.com/);
-});
-
-test('browser history tools return the resulting page state', async () => {
-  const calls: string[] = [];
-  const state = {
-    url: 'https://example.com/history',
+test('reload and history tools return the resulting page state', async () => {
+  const state = (url: string) => ({
+    url,
     viewport: { width: 1200, height: 800, deviceScaleFactor: 2 },
     viewportMode: 'fit' as const,
     scroll: { x: 0, y: 0 },
     refs: [],
-  };
+  });
   const manager = {
+    async reload() {
+      return state('https://example.com/reloaded');
+    },
     async goBack() {
-      calls.push('back');
-      return state;
+      return state('https://example.com/back');
     },
     async goForward() {
-      calls.push('forward');
-      return state;
+      return state('https://example.com/forward');
     },
   } as unknown as BrowserSessionManager;
   const server = createBrowserMcpServer(manager, () => 'm1');
 
-  await server.tools.find((tool) => tool.name === 'browser_back')?.handler({});
-  await server.tools.find((tool) => tool.name === 'browser_forward')?.handler({});
-
-  assert.deepEqual(calls, ['back', 'forward']);
+  for (const [name, url] of [
+    ['browser_reload', /example.com\/reloaded/],
+    ['browser_back', /example.com\/back/],
+    ['browser_forward', /example.com\/forward/],
+  ] as const) {
+    const result = await server.tools.find((tool) => tool.name === name)?.handler({});
+    assert.match(String(result), url, name);
+  }
 });

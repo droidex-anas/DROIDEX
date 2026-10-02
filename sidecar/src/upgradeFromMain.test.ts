@@ -230,7 +230,7 @@ test('an origin/main-shaped derived cache is dropped and recreated', () => {
   db.close();
 });
 
-test('a journal written without lastActiveAt adopts nothing and keeps children', () => {
+test('a journal written without lastActiveAt adopts nothing and keeps children; a missing one is empty', () => {
   const dir = mkdtempSync(join(tmpdir(), 'droidex-upgrade-journal-'));
   try {
     writeFileSync(
@@ -258,16 +258,13 @@ test('a journal written without lastActiveAt adopts nothing and keeps children',
     assert.deepEqual(identities.sessions, []);
     assert.equal(identities.children.length, 1);
     assert.equal(identities.children[0]?.childSessionId, 'worker-1');
-  } finally {
-    rmSync(dir, { recursive: true, force: true });
-  }
-});
 
-test('a missing live-runtime journal is an empty live set', () => {
-  const dir = mkdtempSync(join(tmpdir(), 'droidex-upgrade-no-journal-'));
-  try {
-    const journal = new LiveRuntimeJournal(liveRuntimeJournalPath(dir));
-    assert.deepEqual(journal.read(), { sessions: [], children: [], processes: [] });
+    // A missing journal is an empty live set.
+    assert.deepEqual(new LiveRuntimeJournal(liveRuntimeJournalPath(join(dir, 'none'))).read(), {
+      sessions: [],
+      children: [],
+      processes: [],
+    });
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }

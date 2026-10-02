@@ -321,7 +321,9 @@ test('a late answer never lands on a newer question', async (t) => {
     });
   };
   await ask('ask-1', 'Which format?');
+  // Mid-turn, but stopped on its question: the owner is told it is waiting.
   assert.equal(h.projects.read(main, child.appSessionId).questionId, 'ask-1');
+  assert.equal(h.projects.read(main, child.appSessionId).state, 'waiting');
   // The person answers in the thread itself, and the thread asks something else.
   h.asking.delete(child.appSessionId);
   await h.streaming(child.appSessionId, true);
@@ -1138,6 +1140,13 @@ test('a spawn carries a settled plan step, or none at all', async (t) => {
   await assert.rejects(h.projects.spawn(main, { ...input, step: 'Ship the moon' }), /No plan step/);
   const started = await h.projects.spawn(main, { ...input, step: 'Port the payments client' });
   assert.equal(h.projects.list()[0]?.plan[0]?.threadAppSessionId, started.appSessionId);
+
+  // A step named by number keeps that step when two share a title.
+  await h.projects.setPlan(main, [{ title: 'Review' }, { title: 'Review' }]);
+  const second = await h.projects.spawn(main, { ...input, step: '2' });
+  const plan = h.projects.list()[0]?.plan;
+  assert.equal(plan?.[0]?.threadAppSessionId, undefined);
+  assert.equal(plan?.[1]?.threadAppSessionId, second.appSessionId);
 });
 
 test('an ordinary chat that writes a plan becomes a project and spawns for its steps', async (t) => {
@@ -1202,47 +1211,6 @@ test('threads and started chats cannot start chats, and one chat runs at most ei
   // One that finished no longer counts.
   await h.finish(chats[0]?.appSessionId ?? '');
   await h.projects.startChat(main, input);
-});
-
-test('a spawn keeps the plan step it named when two steps share a title', async (t) => {
-  const h = await harness();
-  t.after(() => h.projects.close());
-  const { main } = await h.root();
-  await h.projects.setPlan(main, [{ title: 'Review' }, { title: 'Review' }]);
-  const started = await h.projects.spawn(main, { ...input, step: '2' });
-  const plan = h.projects.list()[0]?.plan;
-  assert.equal(plan?.[0]?.threadAppSessionId, undefined);
-  assert.equal(plan?.[1]?.threadAppSessionId, started.appSessionId);
-});
-
-test('a question withdrawn while its wake is in flight never reaches the owner', async (t) => {
-  const h = await harness();
-  t.after(() => h.projects.close());
-  const { main } = await h.root();
-  const child = await h.projects.spawn(main, input);
-  h.asking.set(child.appSessionId, 'ask');
-  const gate = deferred();
-  h.state.gate = gate.promise;
-  await h.projects.observe({
-    type: 'question.requested',
-    question: {
-      appSessionId: child.appSessionId,
-      requestId: 'ask',
-      questions: [{ index: 0, question: 'Which API?', options: [] }],
-    },
-  });
-  // Mid-turn, but stopped on its question: the owner is told it is waiting.
-  assert.equal(h.projects.read(main, child.appSessionId).state, 'waiting');
-  await tick();
-  await h.projects.observe({
-    type: 'interaction.cancelled',
-    appSessionId: child.appSessionId,
-    requestId: 'ask',
-  });
-  gate.resolve();
-  await drain();
-  assert.equal(h.sent.length, 0);
-  assert.equal(h.projects.list()[0]?.queued, 0);
 });
 
 test('durable project request identity avoids a duplicate root', async (t) => {

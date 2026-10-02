@@ -58,55 +58,33 @@ test('a workspace open lists only the newest pre-existing sessions and reports t
   assert.deepEqual(page.earlierSessionsByCwd, { '/repo/app': 2 });
 });
 
-test('sessions DROIDEX ran are listed regardless of how old they are', () => {
-  const summaries = [
+test('sessions DROIDEX ran are listed regardless of age, outside the pre-existing budget', () => {
+  const ancient = [
     summary('ours-ancient', '/repo/app', 1),
     ...Array.from({ length: 20 }, (_, i) => summary(`theirs-${String(i)}`, '/repo/app', i + 100)),
   ];
-
-  const page = filterSessionListSummaries(
-    summaries,
+  const old = filterSessionListSummaries(
+    ancient,
     { workspaceCwds: ['/repo/app'] },
     ownedBy(['ours-ancient']),
   );
+  assert.ok(old.sessions.some((row) => row.appSessionId === 'ours-ancient'));
+  assert.equal(old.sessions.length, FAMILIAR_PREEXISTING_SESSIONS_PER_WORKSPACE + 1);
+  assert.deepEqual(old.earlierSessionsByCwd, { '/repo/app': 15 });
 
-  assert.ok(page.sessions.some((row) => row.appSessionId === 'ours-ancient'));
-  assert.equal(page.sessions.length, FAMILIAR_PREEXISTING_SESSIONS_PER_WORKSPACE + 1);
-  assert.deepEqual(page.earlierSessionsByCwd, { '/repo/app': 15 });
-});
-
-test('app-owned sessions do not consume the pre-existing budget', () => {
-  const summaries = Array.from({ length: 12 }, (_, i) => summary(`s-${String(i)}`, '/repo/app', i));
-
-  const page = filterSessionListSummaries(
-    summaries,
+  const recent = filterSessionListSummaries(
+    Array.from({ length: 12 }, (_, i) => summary(`s-${String(i)}`, '/repo/app', i)),
     { workspaceCwds: ['/repo/app'] },
     ownedBy(['s-11', 's-10', 's-9']),
   );
-
   assert.deepEqual(
-    page.sessions.map((row) => row.appSessionId),
+    recent.sessions.map((row) => row.appSessionId),
     ['s-11', 's-10', 's-9', 's-8', 's-7', 's-6', 's-5', 's-4'],
   );
-  assert.deepEqual(page.earlierSessionsByCwd, { '/repo/app': 4 });
+  assert.deepEqual(recent.earlierSessionsByCwd, { '/repo/app': 4 });
 });
 
-test('revealing a workspace lists every session it has and clears its earlier count', () => {
-  const summaries = Array.from({ length: 9 }, (_, i) =>
-    summary(`app-${String(i)}`, '/repo/app', i),
-  );
-
-  const page = filterSessionListSummaries(
-    summaries,
-    { workspaceCwds: ['/repo/app'], revealEarlierCwds: ['/repo/app'] },
-    nothingIsAppOwned,
-  );
-
-  assert.equal(page.sessions.length, 9);
-  assert.deepEqual(page.earlierSessionsByCwd, {});
-});
-
-test('revealing one workspace leaves the others bounded', () => {
+test('revealing a workspace lists all its sessions and clears its count, leaving the others bounded', () => {
   const summaries = [
     ...Array.from({ length: 8 }, (_, i) => summary(`app-${String(i)}`, '/repo/app', i)),
     ...Array.from({ length: 8 }, (_, i) => summary(`api-${String(i)}`, '/repo/api', i + 100)),

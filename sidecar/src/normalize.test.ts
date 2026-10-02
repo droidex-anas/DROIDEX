@@ -10,6 +10,20 @@ import {
   normalizeStreamEvent,
 } from './normalize.js';
 
+function stream(event: Record<string, unknown>) {
+  return normalizeStreamEvent('app-session-1', 'app-session-1', 'primary', event as never);
+}
+
+function result(toolName: string | undefined, toolUseId: string, content: string, isError = false) {
+  return stream({ type: 'tool_result', toolName, toolUseId, content, isError });
+}
+
+function userMessage(message: Record<string, unknown>) {
+  return normalizeNotification('parent', 'parent', 'primary', {
+    params: { notification: { type: 'create_message', message: { role: 'user', ...message } } },
+  });
+}
+
 test('mapProgress keeps Mission provider and spawn correlation internal for policy projection', () => {
   assert.deepEqual(
     mapProgress([
@@ -35,149 +49,64 @@ test('mapProgress keeps Mission provider and spawn correlation internal for poli
   );
 });
 
-test('extractCompactionNotification detects the daemon compaction start', () => {
+test('extractCompactionNotification reads the daemon compaction start and completion only', () => {
+  const extract = (notification: Record<string, unknown>) =>
+    extractCompactionNotification({ params: { notification } });
   assert.deepEqual(
-    extractCompactionNotification({
-      params: {
-        notification: { type: 'droid_working_state_changed', newState: 'compacting_conversation' },
-      },
-    }),
+    extract({ type: 'droid_working_state_changed', newState: 'compacting_conversation' }),
     { kind: 'started', removedCount: 0 },
   );
-});
-
-test('extractCompactionNotification detects the compaction completion with removed count', () => {
-  assert.deepEqual(
-    extractCompactionNotification({
-      params: {
-        notification: { type: 'session_compacted', summaryId: 's1', removedCount: 42 },
-      },
-    }),
-    { kind: 'completed', removedCount: 42, summaryId: 's1' },
-  );
+  assert.deepEqual(extract({ type: 'session_compacted', summaryId: 's1', removedCount: 42 }), {
+    kind: 'completed',
+    removedCount: 42,
+    summaryId: 's1',
+  });
   // A missing or malformed count falls back to zero instead of NaN.
-  assert.deepEqual(
-    extractCompactionNotification({
-      params: { notification: { type: 'session_compacted', summaryId: 's1' } },
-    }),
-    { kind: 'completed', removedCount: 0, summaryId: 's1' },
-  );
-});
-
-test('extractCompactionNotification ignores unrelated notifications', () => {
-  assert.equal(
-    extractCompactionNotification({
-      params: { notification: { type: 'droid_working_state_changed', newState: 'thinking' } },
-    }),
-    null,
-  );
-  assert.equal(
-    extractCompactionNotification({
-      params: { notification: { type: 'message', role: 'assistant' } },
-    }),
-    null,
-  );
+  assert.deepEqual(extract({ type: 'session_compacted', summaryId: 's1' }), {
+    kind: 'completed',
+    removedCount: 0,
+    summaryId: 's1',
+  });
+  assert.equal(extract({ type: 'droid_working_state_changed', newState: 'thinking' }), null);
+  assert.equal(extract({ type: 'message', role: 'assistant' }), null);
   assert.equal(extractCompactionNotification({}), null);
 });
 
-test('normalizes internal background-task completion notifications', () => {
-  const normalized = normalizeNotification('parent', 'parent', 'primary', {
-    jsonrpc: '2.0',
-    method: 'droid.session_notification',
-    params: {
-      notification: {
-        type: 'create_message',
-        message: {
-          id: 'background-completed-1',
-          role: 'user',
-          content: [
-            {
-              type: 'text',
-              text: 'Background task completed.\ntask_id: child-background-1\noutput: done',
-            },
-          ],
-          createdAt: 1,
-          updatedAt: 1,
-        },
-      },
-    },
-  });
-
-  assert.deepEqual(normalized, [
-    {
-      childSession: {
-        providerSessionId: 'child-background-1',
-        done: true,
-      },
-    },
-  ]);
+test('only a terminal background-task notification completes its child', () => {
+  const background = (text: string) =>
+    userMessage({ id: 'background-1', content: [{ type: 'text', text }] });
+  assert.deepEqual(
+    background('Background task completed.\ntask_id: child-background-1\noutput: done'),
+    [{ childSession: { providerSessionId: 'child-background-1', done: true } }],
+  );
+  assert.deepEqual(background('Background task launched.\ntask_id: child-1'), []);
 });
 
-test('does not treat non-terminal background-task messages as completion', () => {
-  const normalized = normalizeNotification('parent', 'parent', 'primary', {
-    params: {
-      notification: {
-        type: 'create_message',
-        message: {
-          id: 'background-started-1',
-          role: 'user',
-          content: [{ type: 'text', text: 'Background task launched.\ntask_id: child-1' }],
-          createdAt: 1,
-          updatedAt: 1,
-        },
-      },
-    },
+test('user create_message notifications reach the transcript only as parsed harness signals', () => {
+  const activation = userMessage({
+    id: 'skill-activation-1',
+    visibility: 'user_only',
+    content: [{ type: 'text', text: 'Skill "review" activated: PR #100' }],
   });
+  // A skill activation is harness output and never echoes the prompt as the user's.
+  assert.equal(activation.length, 1);
+  assert.equal(activation[0].transcript?.author, undefined);
+  assert.equal(activation[0].transcript?.text, 'Skill "review" activated: PR #100');
 
-  assert.deepEqual(normalized, []);
+  // Internal skill bodies arrive through this generic shape and stay off the chat.
+  const instructions = userMessage({
+    id: 'skill-instructions-1',
+    content: [
+      { type: 'text', text: '<system-notification>private skill body</system-notification>' },
+    ],
+  });
+  assert.deepEqual(instructions, []);
 });
 
-test('normalizes a user-only skill activation as harness output without echoing the prompt', () => {
-  const normalized = normalizeNotification('parent', 'parent', 'primary', {
-    params: {
-      notification: {
-        type: 'create_message',
-        message: {
-          id: 'skill-activation-1',
-          role: 'user',
-          visibility: 'user_only',
-          content: [{ type: 'text', text: 'Skill "review" activated: PR #100' }],
-        },
-      },
-    },
-  });
-
-  assert.equal(normalized.length, 1);
-  assert.equal(normalized[0].transcript?.author, undefined);
-  assert.equal(normalized[0].transcript?.text, 'Skill "review" activated: PR #100');
-});
-
-test('keeps unrecognized user create_message notifications off the live transcript', () => {
-  const normalized = normalizeNotification('parent', 'parent', 'primary', {
-    params: {
-      notification: {
-        type: 'create_message',
-        message: {
-          id: 'skill-instructions-1',
-          role: 'user',
-          content: [
-            {
-              type: 'text',
-              // Internal skill bodies arrive through this generic notification
-              // shape. Only explicitly parsed harness signals may enter chat.
-              text: '<system-notification>private skill body</system-notification>',
-            },
-          ],
-        },
-      },
-    },
-  });
-
-  assert.deepEqual(normalized, []);
-});
-
-test('token usage maps context to the daemon threshold formula (in + out + cacheRead)', () => {
-  const normalized = normalizeStreamEvent('app-session-1', 'app-session-1', 'primary', {
+test('token usage counts context the way the daemon threshold does, never from cumulative usage', () => {
+  // The daemon's compaction threshold checks last-call input + output +
+  // cacheRead (never cacheCreation), so the meter must count the same way.
+  const lastCall = stream({
     type: 'session_token_usage_changed',
     inclusiveTokenUsage: {
       inputTokens: 100,
@@ -191,19 +120,10 @@ test('token usage maps context to the daemon threshold formula (in + out + cache
       cacheReadTokens: 3,
       cacheCreationTokens: 2,
     },
-  } as never);
-
-  // The daemon's compaction threshold checks last-call input + output +
-  // cacheRead (never cacheCreation), so the meter must count the same way.
-  assert.deepEqual(normalized?.tokens, {
-    tokensIn: 150,
-    tokensOut: 40,
-    contextTokens: 17,
   });
-});
+  assert.deepEqual(lastCall?.tokens, { tokensIn: 150, tokensOut: 40, contextTokens: 17 });
 
-test('cumulative session usage never masquerades as current context usage', () => {
-  const normalized = normalizeStreamEvent('app-session-1', 'app-session-1', 'primary', {
+  const cumulative = stream({
     type: 'session_token_usage_changed',
     inclusiveTokenUsage: {
       inputTokens: 1_235_355,
@@ -217,16 +137,12 @@ test('cumulative session usage never masquerades as current context usage', () =
       cacheReadTokens: 11_945_488,
       cacheCreationTokens: 0,
     },
-  } as never);
-
-  assert.deepEqual(normalized?.tokens, {
-    tokensIn: 14_099_891,
-    tokensOut: 242_687,
   });
+  assert.deepEqual(cumulative?.tokens, { tokensIn: 14_099_891, tokensOut: 242_687 });
 });
 
-test('classifyPermission reads the SDK toolUses shape for MCP tools', () => {
-  const params = {
+test('classifyPermission reads the SDK toolUses shape for MCP tools and exec', () => {
+  const mcp = {
     options: [{ value: 'proceed_once', label: 'Allow once' }],
     toolUses: [
       {
@@ -245,18 +161,15 @@ test('classifyPermission reads the SDK toolUses shape for MCP tools', () => {
       },
     ],
   } as never;
+  assert.equal(confirmationType(mcp), 'mcp_tool');
+  const tool = classifyPermission('m1', 'r1', mcp);
+  assert.equal(tool.kind, 'mcp');
+  assert.equal(tool.title, 'droidmaxx-browser · design_reference');
+  assert.match(tool.detail, /url: https:\/\/skeina\.app/);
+  assert.match(tool.detail, /Impact: low/);
+  assert.equal(permissionSignature(mcp), 'mcp::::droidmaxx-browser___design_reference');
 
-  assert.equal(confirmationType(params), 'mcp_tool');
-  const req = classifyPermission('m1', 'r1', params);
-  assert.equal(req.kind, 'mcp');
-  assert.equal(req.title, 'droidmaxx-browser · design_reference');
-  assert.match(req.detail, /url: https:\/\/skeina\.app/);
-  assert.match(req.detail, /Impact: low/);
-  assert.equal(permissionSignature(params), 'mcp::::droidmaxx-browser___design_reference');
-});
-
-test('classifyPermission reads the SDK toolUses shape for exec', () => {
-  const params = {
+  const exec = {
     options: [],
     toolUses: [
       {
@@ -271,59 +184,33 @@ test('classifyPermission reads the SDK toolUses shape for exec', () => {
       },
     ],
   } as never;
-
-  const req = classifyPermission('m1', 'r2', params);
-  assert.equal(req.kind, 'exec');
-  assert.equal(req.title, 'Run command');
-  assert.equal(req.detail, 'rtk rm -rf build');
-  assert.equal(permissionSignature(params), 'exec::rtk rm -rf build');
+  const command = classifyPermission('m1', 'r2', exec);
+  assert.equal(command.kind, 'exec');
+  assert.equal(command.title, 'Run command');
+  assert.equal(command.detail, 'rtk rm -rf build');
+  assert.equal(permissionSignature(exec), 'exec::rtk rm -rf build');
 });
 
-test('automation permission signatures hash the complete argument payload', () => {
+test('permission grant keys hash automation payloads and name the kind of chat a spawn starts', () => {
+  const params = (details: Record<string, unknown>, input: Record<string, unknown>) =>
+    ({ toolUses: [{ details: { type: 'mcp_tool', ...details }, toolUse: { input } }] }) as never;
+  const automation = { serverName: 'droidex-automations', toolName: 'automation_update' };
   const prefix = 'x'.repeat(9_000);
-  const params = (suffix: string) =>
-    ({
-      toolUses: [
-        {
-          details: {
-            type: 'mcp_tool',
-            serverName: 'droidex-automations',
-            toolName: 'automation_update',
-          },
-          toolUse: {
-            input: { prompt: `${prefix}${suffix}` },
-          },
-        },
-      ],
-    }) as never;
-
-  assert.notEqual(permissionSignature(params('a')), permissionSignature(params('b')));
-});
-
-test('a thread_spawn grant key names the kind of chat it starts', () => {
-  const params = (input: Record<string, unknown>) =>
-    ({
-      toolUses: [
-        {
-          details: { type: 'mcp_tool', toolName: 'droidex_sessions___thread_spawn' },
-          toolUse: { input },
-        },
-      ],
-    }) as never;
-
-  assert.equal(
-    permissionSignature(params({ reportBack: true })),
-    'mcp::::droidex_sessions___thread_spawn::thread',
+  // A grant for one automation payload must not cover a different one.
+  assert.notEqual(
+    permissionSignature(params(automation, { prompt: `${prefix}a` })),
+    permissionSignature(params(automation, { prompt: `${prefix}b` })),
   );
-  assert.equal(
-    permissionSignature(params({ reportBack: false })),
-    'mcp::::droidex_sessions___thread_spawn::chat',
-  );
-  assert.equal(permissionSignature(params({})), '');
+
+  const spawn = (input: Record<string, unknown>) =>
+    permissionSignature(params({ toolName: 'droidex_sessions___thread_spawn' }, input));
+  assert.equal(spawn({ reportBack: true }), 'mcp::::droidex_sessions___thread_spawn::thread');
+  assert.equal(spawn({ reportBack: false }), 'mcp::::droidex_sessions___thread_spawn::chat');
+  assert.equal(spawn({}), '');
 });
 
 test('captures Task prompt metadata before the subagent session id exists', () => {
-  const normalized = normalizeStreamEvent('app-session-1', 'app-session-1', 'primary', {
+  const normalized = stream({
     type: 'tool_call',
     toolUse: {
       id: 'tool-1',
@@ -334,7 +221,7 @@ test('captures Task prompt metadata before the subagent session id exists', () =
         prompt: 'Inspect the current diff and report correctness risks.',
       },
     },
-  } as never);
+  });
 
   assert.equal(normalized?.childSession?.label, 'code-reviewer');
   assert.equal(
@@ -348,87 +235,64 @@ test('captures Task prompt metadata before the subagent session id exists', () =
   assert.equal(normalized?.transcript?.toolUseId, 'tool-1');
 });
 
-test('stamps toolUseId on ordinary (non-subagent) tool_call transcripts', () => {
-  const normalized = normalizeStreamEvent('app-session-1', 'app-session-1', 'primary', {
+test('stamps toolUseId on ordinary (non-subagent) tool_call and tool_result transcripts', () => {
+  const call = stream({
     type: 'tool_call',
     toolUse: {
       id: 'edit-1',
       name: 'edit',
       input: { path: 'src/app.ts', old_string: 'a', new_string: 'b' },
     },
-  } as never);
-
-  assert.equal(normalized?.childSession, undefined);
-  assert.equal(normalized?.transcript?.kind, 'tool_call');
-  assert.equal(normalized?.transcript?.toolUseId, 'edit-1');
+  });
+  const done = result('edit', 'edit-1', 'ok');
+  for (const [normalized, kind] of [
+    [call, 'tool_call'],
+    [done, 'tool_result'],
+  ] as const) {
+    assert.equal(normalized?.childSession, undefined);
+    assert.equal(normalized?.transcript?.kind, kind);
+    assert.equal(normalized?.transcript?.toolUseId, 'edit-1');
+  }
 });
 
-test('stamps toolUseId on ordinary (non-subagent) tool_result transcripts', () => {
-  const normalized = normalizeStreamEvent('app-session-1', 'app-session-1', 'primary', {
-    type: 'tool_result',
-    toolName: 'edit',
-    toolUseId: 'edit-1',
-    content: 'ok',
-    isError: false,
-  } as never);
-
-  assert.equal(normalized?.childSession, undefined);
-  assert.equal(normalized?.transcript?.kind, 'tool_result');
-  assert.equal(normalized?.transcript?.toolUseId, 'edit-1');
-});
-
-test('captures subagent session ids from Task progress events', () => {
-  const normalized = normalizeStreamEvent('app-session-1', 'app-session-1', 'primary', {
+test('Task progress forwards the subagent id, linking it only from a spawn', () => {
+  const spawn = stream({
     type: 'tool_progress',
     toolUseId: 'tool-1',
-    update: {
-      subagentSessionId: 'worker-1',
-      parameters: { subagent_type: 'code-reviewer' },
-    },
-  } as never);
+    update: { subagentSessionId: 'worker-1', parameters: { subagent_type: 'code-reviewer' } },
+  });
+  assert.equal(spawn?.childSession?.providerSessionId, 'worker-1');
+  assert.equal(spawn?.childSession?.label, 'code-reviewer');
+  assert.equal(spawn?.childSession?.toolUseId, 'tool-1');
 
-  assert.equal(normalized?.childSession?.providerSessionId, 'worker-1');
-  assert.equal(normalized?.childSession?.label, 'code-reviewer');
-  assert.equal(normalized?.childSession?.toolUseId, 'tool-1');
-});
-
-test('marks Task results as correlated subagent completion', () => {
-  const normalized = normalizeStreamEvent('app-session-1', 'app-session-1', 'primary', {
-    type: 'tool_result',
-    toolName: 'Task',
-    toolUseId: 'tool-1',
-    content: 'done',
-    isError: false,
-  } as never);
-
-  assert.equal(normalized?.childSession?.done, true);
-  assert.equal(normalized?.childSession?.toolUseId, 'tool-1');
+  // A TaskOutput poll's progress lacks spawn params: its call id must not
+  // become the child's spawn link.
+  const poll = stream({
+    type: 'tool_progress',
+    toolUseId: 'poll-1',
+    update: { subagentSessionId: 'worker-1' },
+  });
+  assert.equal(poll?.childSession?.providerSessionId, 'worker-1');
+  assert.equal(poll?.childSession?.toolUseId, undefined);
 });
 
 test('captures the current SDK child session id from a successful Task result', () => {
-  const normalized = normalizeStreamEvent('app-session-1', 'app-session-1', 'primary', {
-    type: 'tool_result',
-    toolName: 'Task',
-    toolUseId: 'tool-current',
-    content: 'session_id: provider-child-current\nCHILD_SMOKE_OK',
-    isError: false,
-  } as never);
-
+  const normalized = result(
+    'Task',
+    'tool-current',
+    'session_id: provider-child-current\nCHILD_SMOKE_OK',
+  );
   assert.equal(normalized?.childSession?.providerSessionId, 'provider-child-current');
   assert.equal(normalized?.childSession?.done, true);
   assert.equal(normalized?.childSession?.toolUseId, 'tool-current');
 });
 
 test('registers a background subagent at launch instead of completion', () => {
-  const normalized = normalizeStreamEvent('app-session-1', 'app-session-1', 'primary', {
-    type: 'tool_result',
-    toolName: 'Task',
-    toolUseId: 'spawn-1',
-    content:
-      'Task launched in background.\ntask_id: 7d32cc8f-77d5\nsession_id: 7d32cc8f-77d5\n\nUse TaskOutput to read output.',
-    isError: false,
-  } as never);
-
+  const normalized = result(
+    'Task',
+    'spawn-1',
+    'Task launched in background.\ntask_id: 7d32cc8f-77d5\nsession_id: 7d32cc8f-77d5\n\nUse TaskOutput to read output.',
+  );
   assert.equal(normalized?.childSession?.providerSessionId, '7d32cc8f-77d5');
   assert.equal(normalized?.childSession?.done, false);
   // The launch acknowledgement is keyed by the spawning tool_use id.
@@ -436,23 +300,14 @@ test('registers a background subagent at launch instead of completion', () => {
   assert.equal(normalized?.transcript, undefined);
 });
 
-test('reads completion from TaskOutput poll results without stealing their link', () => {
-  const completed = normalizeStreamEvent('app-session-1', 'app-session-1', 'primary', {
-    type: 'tool_result',
-    toolName: 'TaskOutput',
-    toolUseId: 'poll-1',
-    content:
-      'Task ID: 7d32cc8f-77d5\nSubagent Type: Worker\nDescription: survey\nStatus: completed\nDuration: 208.3s\n\n<report>',
-    isError: false,
-  } as never);
-  const running = normalizeStreamEvent('app-session-1', 'app-session-1', 'primary', {
-    type: 'tool_result',
-    toolName: 'TaskOutput',
-    toolUseId: 'poll-2',
-    content: 'Task ID: 7d32cc8f-77d5\nSubagent Type: Worker\nStatus: running\nDuration: 12.0s',
-    isError: false,
-  } as never);
-
+test('a TaskOutput poll completes a child only on a terminal status, without stealing its link', () => {
+  const poll = (content: string) => result('TaskOutput', 'poll-1', content);
+  const completed = poll(
+    'Task ID: 7d32cc8f-77d5\nSubagent Type: Worker\nDescription: survey\nStatus: completed\nDuration: 208.3s\n\n<report>',
+  );
+  const running = poll(
+    'Task ID: 7d32cc8f-77d5\nSubagent Type: Worker\nStatus: running\nDuration: 12.0s',
+  );
   assert.equal(completed?.childSession?.providerSessionId, '7d32cc8f-77d5');
   assert.equal(completed?.childSession?.done, true);
   assert.equal(running?.childSession?.done, false);
@@ -462,40 +317,25 @@ test('reads completion from TaskOutput poll results without stealing their link'
   assert.equal(running?.childSession?.toolUseId, undefined);
   // Poll results stay visible in the feed; only the child signal is added.
   assert.equal(completed?.transcript?.kind, 'tool_result');
-});
-
-test('a poll only completes a child when it reports a terminal status', () => {
-  const poll = (content: string) =>
-    normalizeStreamEvent('app-session-1', 'app-session-1', 'primary', {
-      type: 'tool_result',
-      toolName: 'TaskOutput',
-      toolUseId: 'poll-1',
-      content,
-      isError: false,
-    } as never);
 
   // A long description must not push the status line out of the header window.
   const long = poll(
     `Task ID: 7d32cc8f-77d5\nSubagent Type: Worker\nDescription: ${'survey the sidecar '.repeat(40)}\nStatus: running\nDuration: 12.0s\n\nstill reading`,
   );
   assert.equal(long?.childSession?.done, false);
-
   // Without a status the poll says nothing about completion, so the child keeps
   // running instead of having its clock stopped on a guess.
-  const statusless = poll('Task ID: 7d32cc8f-77d5\nSubagent Type: Worker\n\nstill reading');
-  assert.equal(statusless?.childSession?.done, false);
+  assert.equal(
+    poll('Task ID: 7d32cc8f-77d5\nSubagent Type: Worker\n\nstill reading')?.childSession?.done,
+    false,
+  );
 });
 
 test('a poll result carries the subagent activity it observed', () => {
-  const running = normalizeStreamEvent('app-session-1', 'app-session-1', 'primary', {
-    type: 'tool_result',
-    toolName: 'TaskOutput',
-    toolUseId: 'poll-1',
-    content:
-      'Task ID: 7d32cc8f-77d5\nSubagent Type: Worker\nStatus: running\nDuration: 12.0s\n\nSearching the sidecar for the admit path',
-    isError: false,
-  } as never);
-
+  const poll = (content: string) => result('TaskOutput', 'poll-1', content);
+  const running = poll(
+    'Task ID: 7d32cc8f-77d5\nSubagent Type: Worker\nStatus: running\nDuration: 12.0s\n\nSearching the sidecar for the admit path',
+  );
   // An autonomous child streams nothing to the parent, so this poll is the only
   // place the UI can learn what it is doing.
   assert.equal(running?.childSession?.activity?.phase, 'Running');
@@ -506,124 +346,64 @@ test('a poll result carries the subagent activity it observed', () => {
 
   // Header-only polls still report the phase, and never invent a preview from
   // their own header lines.
-  const headerOnly = normalizeStreamEvent('app-session-1', 'app-session-1', 'primary', {
-    type: 'tool_result',
-    toolName: 'TaskOutput',
-    toolUseId: 'poll-2',
-    content: 'Task ID: 7d32cc8f-77d5\nStatus: running\n',
-    isError: false,
-  } as never);
+  const headerOnly = poll('Task ID: 7d32cc8f-77d5\nStatus: running\n');
   assert.equal(headerOnly?.childSession?.activity?.phase, 'Running');
   assert.equal(headerOnly?.childSession?.activity?.preview, undefined);
 
   // Every report field is header, including the ones that trail the status.
-  const emptyBody = normalizeStreamEvent('app-session-1', 'app-session-1', 'primary', {
-    type: 'tool_result',
-    toolName: 'TaskOutput',
-    toolUseId: 'poll-3',
-    content:
-      'Task ID: 7d32cc8f-77d5\nSubagent Type: Worker\nDescription: survey the sidecar\nStatus: running\nDuration: 12.0s\n\n',
-    isError: false,
-  } as never);
+  const emptyBody = poll(
+    'Task ID: 7d32cc8f-77d5\nSubagent Type: Worker\nDescription: survey the sidecar\nStatus: running\nDuration: 12.0s\n\n',
+  );
   assert.equal(emptyBody?.childSession?.activity?.preview, undefined);
 
   // A spawn result is the child's report, not an activity observation.
-  const spawn = normalizeStreamEvent('app-session-1', 'app-session-1', 'primary', {
-    type: 'tool_result',
-    toolName: 'Task',
-    toolUseId: 'tool-1',
-    content: 'session_id: real-child\n\n<report>',
-    isError: false,
-  } as never);
-  assert.equal(spawn?.childSession?.activity, undefined);
+  assert.equal(
+    result('Task', 'tool-1', 'session_id: real-child\n\n<report>')?.childSession?.activity,
+    undefined,
+  );
 });
 
-test('a report body mentioning statuses or task ids is not misparsed', () => {
-  const normalized = normalizeStreamEvent('app-session-1', 'app-session-1', 'primary', {
-    type: 'tool_result',
-    toolName: 'Task',
-    toolUseId: 'tool-1',
-    content: 'session_id: real-child\n\nFindings:\nStatus: running\nTask ID: unrelated',
-    isError: false,
-  } as never);
+test('Task result text is never misparsed as a session id or a status', () => {
+  // A report body mentioning statuses or task ids.
+  const report = result(
+    'Task',
+    'tool-1',
+    'session_id: real-child\n\nFindings:\nStatus: running\nTask ID: unrelated',
+  );
+  assert.equal(report?.childSession?.providerSessionId, 'real-child');
+  assert.equal(report?.childSession?.done, true);
+  assert.equal(report?.childSession?.toolUseId, 'tool-1');
 
-  assert.equal(normalized?.childSession?.providerSessionId, 'real-child');
-  assert.equal(normalized?.childSession?.done, true);
-  assert.equal(normalized?.childSession?.toolUseId, 'tool-1');
+  // Child output and a failed spawn's text are not the provider session id.
+  const laterOutput = result('Task', 'tool-later', 'child output\nsession_id: fake-provider');
+  const failed = result('Task', 'tool-failed', 'session_id: fake-provider\nspawn failed', true);
+  assert.equal(laterOutput?.childSession?.providerSessionId, undefined);
+  assert.equal(failed?.childSession?.providerSessionId, undefined);
 });
 
 test('a CRLF poll body cannot settle a child that reported no status', () => {
-  const normalized = normalizeStreamEvent('app-session-1', 'app-session-1', 'primary', {
-    type: 'tool_result',
-    toolName: 'TaskOutput',
-    toolUseId: 'poll-1',
-    // The header ends at the blank line, CRLF or not; the body's own
-    // "Status: completed" line belongs to the subagent's report.
-    content:
-      'Task ID: 7d32cc8f-77d5\r\nSubagent Type: Worker\r\nDuration: 12.0s\r\n\r\nStatus: completed\r\nstill reading',
-    isError: false,
-  } as never);
-
+  // The header ends at the blank line, CRLF or not; the body's own
+  // "Status: completed" line belongs to the subagent's report.
+  const normalized = result(
+    'TaskOutput',
+    'poll-1',
+    'Task ID: 7d32cc8f-77d5\r\nSubagent Type: Worker\r\nDuration: 12.0s\r\n\r\nStatus: completed\r\nstill reading',
+  );
   assert.equal(normalized?.childSession?.providerSessionId, '7d32cc8f-77d5');
   assert.equal(normalized?.childSession?.done, false);
   assert.equal(normalized?.childSession?.activity?.preview, 'still reading');
 });
 
 test('only Task-family results can describe a subagent', () => {
-  const shellOutput = normalizeStreamEvent('app-session-1', 'app-session-1', 'primary', {
-    type: 'tool_result',
-    toolName: 'Bash',
-    toolUseId: 'bash-1',
-    // A log, a paste, or a grep hit can open with these exact lines; treating it
-    // as a poll would mint a phantom running subagent nobody spawned.
-    content: 'Task ID: not-a-subagent\nStatus: running\n',
-    isError: false,
-  } as never);
-
+  // A log, a paste, or a grep hit can open with these exact lines; treating it
+  // as a poll would mint a phantom running subagent nobody spawned.
+  const shellOutput = result('Bash', 'bash-1', 'Task ID: not-a-subagent\nStatus: running\n');
   assert.equal(shellOutput?.childSession, undefined);
   assert.equal(shellOutput?.transcript?.kind, 'tool_result');
 
   // A result whose tool name never made it through still parses: dropping those
   // would lose real subagent completions.
-  const unnamed = normalizeStreamEvent('app-session-1', 'app-session-1', 'primary', {
-    type: 'tool_result',
-    toolUseId: 'poll-1',
-    content: 'Task ID: 7d32cc8f-77d5\nStatus: completed\n',
-    isError: false,
-  } as never);
+  const unnamed = result(undefined, 'poll-1', 'Task ID: 7d32cc8f-77d5\nStatus: completed\n');
   assert.equal(unnamed?.childSession?.providerSessionId, '7d32cc8f-77d5');
   assert.equal(unnamed?.childSession?.done, true);
-});
-
-test('ignores TaskOutput poll progress that lacks spawn params', () => {
-  const normalized = normalizeStreamEvent('app-session-1', 'app-session-1', 'primary', {
-    type: 'tool_progress',
-    toolUseId: 'poll-1',
-    update: { subagentSessionId: 'worker-1' },
-  } as never);
-
-  // Provider id forwards for correlation, but the polling call's id must not
-  // become the child's spawn link.
-  assert.equal(normalized?.childSession?.providerSessionId, 'worker-1');
-  assert.equal(normalized?.childSession?.toolUseId, undefined);
-});
-
-test('does not treat child output or failed Task text as a provider session id', () => {
-  const laterOutput = normalizeStreamEvent('app-session-1', 'app-session-1', 'primary', {
-    type: 'tool_result',
-    toolName: 'Task',
-    toolUseId: 'tool-later',
-    content: 'child output\nsession_id: fake-provider',
-    isError: false,
-  } as never);
-  const failed = normalizeStreamEvent('app-session-1', 'app-session-1', 'primary', {
-    type: 'tool_result',
-    toolName: 'Task',
-    toolUseId: 'tool-failed',
-    content: 'session_id: fake-provider\nspawn failed',
-    isError: true,
-  } as never);
-
-  assert.equal(laterOutput?.childSession?.providerSessionId, undefined);
-  assert.equal(failed?.childSession?.providerSessionId, undefined);
 });

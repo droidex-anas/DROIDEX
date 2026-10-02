@@ -7,13 +7,19 @@ function freshMetrics(): HotPathMetrics {
   return new HotPathMetrics();
 }
 
-test('snapshot before enable reports no event-loop monitor and no resources', () => {
+test('nothing is reported before enable, and enable keeps a stable start baseline', (t) => {
+  t.mock.timers.enable({ apis: ['Date'], now: 1_000 });
   const metrics = freshMetrics();
+  const before = metrics.snapshot();
+  assert.equal(before.eventLoop, null);
+  assert.equal(before.resources, null);
+  assert.equal(before.uptimeMs, 0);
 
-  const snapshot = metrics.snapshot();
-  assert.equal(snapshot.eventLoop, null);
-  assert.equal(snapshot.resources, null);
-  assert.equal(snapshot.uptimeMs, 0);
+  metrics.enable();
+  t.mock.timers.tick(15);
+  metrics.enable();
+  assert.equal(metrics.snapshot().startedAt, 1_000);
+  assert.equal(metrics.snapshot().uptimeMs, 15);
 });
 
 test('enable records counters without arming the event-loop sampler', () => {
@@ -48,6 +54,11 @@ test('enable records counters without arming the event-loop sampler', () => {
   assert.ok(snapshot.transport.bytesPerSecondAvg > 0);
   assert.ok(snapshot.process.rssBytes > 0);
   assert.ok(snapshot.process.cpuUserMs >= 0);
+
+  // Transport takes explicit aggregate bytes and send operations.
+  metrics.recordTransport(1, 300, 3);
+  assert.equal(metrics.snapshot().transport.bytesTotal, 1_300);
+  assert.equal(metrics.snapshot().counters.transportSends, 4);
 });
 
 test('event-loop sampling is opt-in and disarms on disable', () => {
@@ -65,16 +76,6 @@ test('event-loop sampling is opt-in and disarms on disable', () => {
 
   metrics.disable();
   assert.equal(metrics.snapshot().eventLoop, null);
-});
-
-test('transport records explicit aggregate bytes and send operations', () => {
-  const metrics = freshMetrics();
-  metrics.enable();
-  metrics.recordTransport(1, 300, 3);
-
-  const snapshot = metrics.snapshot();
-  assert.equal(snapshot.transport.bytesTotal, 300);
-  assert.equal(snapshot.counters.transportSends, 3);
 });
 
 test('phase 1 metrics expose reduction, queue peaks, replay and backpressure', () => {
@@ -204,17 +205,6 @@ test('reset clears samples so consecutive runs stay independent', () => {
   });
   assert.equal(snapshot.eventLoop, null);
   assert.equal(snapshot.uptimeMs, 0);
-});
-
-test('enable is idempotent and keeps a stable start baseline', async () => {
-  const metrics = freshMetrics();
-  metrics.enable();
-  const firstStartedAt = metrics.snapshot().startedAt;
-  await new Promise((resolve) => setTimeout(resolve, 15));
-  metrics.enable();
-
-  assert.equal(metrics.snapshot().startedAt, firstStartedAt);
-  assert.ok(metrics.snapshot().uptimeMs >= 5);
 });
 
 test('transport byte samples wrap the ring without losing totals', () => {

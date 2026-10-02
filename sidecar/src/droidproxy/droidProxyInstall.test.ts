@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
-import { mkdtempSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
@@ -57,45 +57,25 @@ async function withServer(
   }
 }
 
-test('downloadFile streams bytes with progress and total', async () => {
+test('downloadFile streams bytes with progress, with or without a content length', async () => {
   const payload = Buffer.alloc(256 * 1024, 7);
-  await withServer(
-    (_req, res) => {
-      res.writeHead(200, { 'content-length': String(payload.length) });
-      res.end(payload);
-    },
-    async (baseUrl) => {
-      const dir = mkdtempSync(join(tmpdir(), 'droidex-dl-'));
-      const dest = join(dir, 'out.bin');
-      const seen: Array<[number, number | undefined]> = [];
-      await downloadFile(`${baseUrl}/file`, dest, (received, total) => {
-        seen.push([received, total]);
-      });
-      const { readFileSync } = await import('node:fs');
-      assert.deepEqual(readFileSync(dest), payload);
-      assert.ok(seen.length > 0);
-      assert.deepEqual(seen.at(-1), [payload.length, payload.length]);
-    },
-  );
-});
-
-test('downloadFile works without a content length', async () => {
-  const payload = Buffer.from('chunked-ish');
-  await withServer(
-    (_req, res) => {
-      res.writeHead(200);
-      res.end(payload);
-    },
-    async (baseUrl) => {
-      const dir = mkdtempSync(join(tmpdir(), 'droidex-dl-'));
-      const dest = join(dir, 'out.bin');
-      let last: [number, number | undefined] = [0, undefined];
-      await downloadFile(`${baseUrl}/file`, dest, (received, total) => {
-        last = [received, total];
-      });
-      assert.deepEqual(last, [payload.length, undefined]);
-    },
-  );
+  for (const length of [String(payload.length), undefined]) {
+    await withServer(
+      (_req, res) => {
+        res.writeHead(200, length ? { 'content-length': length } : {});
+        res.end(payload);
+      },
+      async (baseUrl) => {
+        const dest = join(mkdtempSync(join(tmpdir(), 'droidex-dl-')), 'out.bin');
+        const seen: Array<[number, number | undefined]> = [];
+        await downloadFile(`${baseUrl}/file`, dest, (received, total) => {
+          seen.push([received, total]);
+        });
+        assert.deepEqual(readFileSync(dest), payload);
+        assert.deepEqual(seen.at(-1), [payload.length, length ? payload.length : undefined]);
+      },
+    );
+  }
 });
 
 test('downloadFile rejects a destination write error without hanging', async () => {
@@ -114,36 +94,26 @@ test('downloadFile rejects a destination write error without hanging', async () 
   );
 });
 
-test('downloadFile refuses an absurd content length before reading', async () => {
-  await withServer(
-    (_req, res) => {
-      res.writeHead(200, { 'content-length': '999999999999' });
-      res.end('nope');
-    },
-    async (baseUrl) => {
-      const dir = mkdtempSync(join(tmpdir(), 'droidex-dl-'));
-      await assert.rejects(
-        downloadFile(`${baseUrl}/file`, join(dir, 'out.bin'), () => {}),
-        /larger than expected/,
-      );
-    },
-  );
-});
-
-test('downloadFile surfaces HTTP failures', async () => {
-  await withServer(
-    (_req, res) => {
-      res.writeHead(404);
-      res.end('missing');
-    },
-    async (baseUrl) => {
-      const dir = mkdtempSync(join(tmpdir(), 'droidex-dl-'));
-      await assert.rejects(
-        downloadFile(`${baseUrl}/file`, join(dir, 'out.bin'), () => {}),
-        /HTTP 404/,
-      );
-    },
-  );
+test('downloadFile surfaces HTTP failures and refuses an absurd content length', async () => {
+  const failures: [number, Record<string, string>, RegExp][] = [
+    [404, {}, /HTTP 404/],
+    [200, { 'content-length': '999999999999' }, /larger than expected/],
+  ];
+  for (const [status, headers, error] of failures) {
+    await withServer(
+      (_req, res) => {
+        res.writeHead(status, headers);
+        res.end('nope');
+      },
+      async (baseUrl) => {
+        const dir = mkdtempSync(join(tmpdir(), 'droidex-dl-'));
+        await assert.rejects(
+          downloadFile(`${baseUrl}/file`, join(dir, 'out.bin'), () => {}),
+          error,
+        );
+      },
+    );
+  }
 });
 
 test('downloadFile aborts on signal', async () => {

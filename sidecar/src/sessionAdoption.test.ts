@@ -276,40 +276,26 @@ test('a settled session idle past the budget is not given a provider process at 
   }
 });
 
-test('a settled session inside the budget still gets its runtime back', async () => {
-  assert.equal(
-    await bootResumes('adoption-fresh', {
-      identity: { lastActiveAt: NOW - SESSION_RUNTIME_IDLE_RETIREMENT_MS + 60_000 },
-    }),
-    true,
-  );
-});
-
-test('a session interrupted mid-turn is resurrected however long it has been idle', async () => {
-  assert.equal(
-    await bootResumes('adoption-midturn', {
-      identity: { phase: 'running', streaming: true },
-    }),
-    true,
-  );
-});
-
-test('a session awaiting plan approval is resurrected however long it has been idle', async () => {
-  assert.equal(
-    await bootResumes('adoption-plan', {
-      identity: { phase: 'awaiting_plan_approval' },
-    }),
-    true,
-  );
-});
-
-test('a session whose children were still running is resurrected', async () => {
-  assert.equal(
-    await bootResumes('adoption-children', {
-      children: [{ parentAppSessionId: 'app-boot', childSessionId: 'child-1', status: 'running' }],
-    }),
-    true,
-  );
+test('a session still needed is given its runtime back however long it has been idle', async () => {
+  const cases: [string, BootCase][] = [
+    [
+      'inside the budget',
+      { identity: { lastActiveAt: NOW - SESSION_RUNTIME_IDLE_RETIREMENT_MS + 60_000 } },
+    ],
+    ['interrupted mid-turn', { identity: { phase: 'running', streaming: true } }],
+    ['awaiting plan approval', { identity: { phase: 'awaiting_plan_approval' } }],
+    [
+      'children still running',
+      {
+        children: [
+          { parentAppSessionId: 'app-boot', childSessionId: 'child-1', status: 'running' },
+        ],
+      },
+    ],
+  ];
+  for (const [label, options] of cases) {
+    assert.equal(await bootResumes('adoption-needed', options), true, label);
+  }
 });
 
 test('the journal carries when each live session was last active', async () => {

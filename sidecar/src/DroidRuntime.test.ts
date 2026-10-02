@@ -75,7 +75,7 @@ test('names the owning organization when Droid refuses a session file it has on 
   }
 });
 
-test('passes compaction settings when initializing a session', () => {
+test('passes compaction settings, including the current-model sentinel, when initializing a session', () => {
   const params = createInitializeSessionParams({
     cwd: '/tmp/project',
     interactionMode: 'auto',
@@ -86,17 +86,14 @@ test('passes compaction settings when initializing a session', () => {
 
   assert.equal(params.compactionModel, 'summary-model');
   assert.equal(params.compactionTokenLimit, 400_000);
-});
 
-test('passes current-model compaction sentinel when initializing a session', () => {
-  const params = createInitializeSessionParams({
+  const sentinel = createInitializeSessionParams({
     cwd: '/tmp/project',
     interactionMode: 'auto',
     modelId: 'main-model',
     compactionModel: 'current-model',
   });
-
-  assert.equal(params.compactionModel, 'current-model');
+  assert.equal(sentinel.compactionModel, 'current-model');
 });
 
 test('edits-only uses native Off so commands still reach the permission callback', () => {

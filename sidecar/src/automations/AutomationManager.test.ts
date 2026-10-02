@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { chmod, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import test from 'node:test';
+import test, { type TestContext } from 'node:test';
 import type { ClientCommand, SessionSummary } from '../protocol.js';
 import { AutomationManager } from './AutomationManager.js';
 import type { AutomationInput } from './types.js';
@@ -23,6 +23,66 @@ function createManager(dataDir: string, options: Partial<ManagerOptions> = {}): 
   });
 }
 
+/** A manager over a fresh data directory, recording launches, torn down after the test. */
+async function open(
+  t: TestContext,
+  options: Partial<ManagerOptions> | ((directory: string) => Partial<ManagerOptions>) = {},
+) {
+  const directory = await mkdtemp(join(tmpdir(), 'droidex-automations-'));
+  const launches: SessionCreate[] = [];
+  const manager = createManager(directory, {
+    launchSession: async (command) => {
+      launches.push(command);
+    },
+    ...(typeof options === 'function' ? options(directory) : options),
+  });
+  t.after(async () => {
+    await manager.shutdown();
+    await rm(directory, { recursive: true, force: true });
+  });
+  return { directory, worktree: join(directory, 'worktree'), manager, launches };
+}
+
+/** Runs the automation now and binds its launch to the chat `appSessionId`. */
+async function startRun(
+  manager: AutomationManager,
+  launches: SessionCreate[],
+  automationId: string,
+  session: Partial<SessionSummary> & { appSessionId: string },
+): Promise<void> {
+  await manager.runNow(automationId);
+  await waitFor(() => launches.length === 1);
+  const launch = launches[0];
+  if (!launch) throw new Error('Expected an automation session launch.');
+  await manager.observeSessionEvent({
+    type: 'session.created',
+    clientRef: launch.clientRef,
+    session: summary(session),
+  });
+}
+
+async function streaming(manager: AutomationManager, appSessionId: string, value: boolean) {
+  await manager.observeSessionEvent({
+    type: 'session.updated',
+    session: summary({ appSessionId, streaming: value }),
+  });
+}
+
+function text(appSessionId: string, id: string, value: string) {
+  return {
+    type: 'event.appended' as const,
+    event: {
+      id,
+      appSessionId,
+      sourceSessionId: appSessionId,
+      role: 'primary' as const,
+      ts: Date.now(),
+      kind: 'text' as const,
+      text: value,
+    },
+  };
+}
+
 function task(overrides: Partial<AutomationInput> = {}): AutomationInput {
   return {
     title: 'Task',
@@ -37,256 +97,100 @@ function task(overrides: Partial<AutomationInput> = {}): AutomationInput {
 }
 
 test('a run that resumes during settle grace stays open until the next turn ends', async (context) => {
-  const directory = await mkdtemp(join(tmpdir(), 'droidex-automations-'));
-  const launches: SessionCreate[] = [];
-  const manager = createManager(directory, {
-    launchSession: async (command) => {
-      launches.push(command);
-    },
-  });
-
+  const { manager, launches } = await open(context);
   try {
     const automation = await manager.create(task());
-    await manager.runNow(automation.id);
-    await waitFor(() => launches.length === 1);
-    const launch = launches[0];
-    if (!launch) throw new Error('Expected an automation session launch.');
-    await manager.observeSessionEvent({
-      type: 'session.created',
-      clientRef: launch.clientRef,
-      session: summary({ appSessionId: 'session-grace' }),
-    });
-    await manager.observeSessionEvent({
-      type: 'session.updated',
-      session: summary({ appSessionId: 'session-grace', streaming: true }),
-    });
+    await startRun(manager, launches, automation.id, { appSessionId: 'session-grace' });
+    await streaming(manager, 'session-grace', true);
     context.mock.timers.enable({ apis: ['setTimeout'] });
-    await manager.observeSessionEvent({
-      type: 'session.updated',
-      session: summary({ appSessionId: 'session-grace', streaming: false }),
-    });
+    await streaming(manager, 'session-grace', false);
     assert.equal((await manager.snapshot()).runs[0]?.status, 'running');
-    await manager.observeSessionEvent({
-      type: 'event.appended',
-      event: {
-        id: 'token-grace',
-        appSessionId: 'session-grace',
-        sourceSessionId: 'session-grace',
-        role: 'primary',
-        ts: Date.now(),
-        kind: 'text',
-        text: 'still working',
-      },
-    });
+    await manager.observeSessionEvent(text('session-grace', 'token-grace', 'still working'));
     context.mock.timers.tick(120);
     assert.equal((await manager.snapshot()).runs[0]?.status, 'running');
-    await manager.observeSessionEvent({
-      type: 'session.updated',
-      session: summary({ appSessionId: 'session-grace', streaming: false }),
-    });
+    await streaming(manager, 'session-grace', false);
     context.mock.timers.tick(80);
     context.mock.timers.reset();
     await waitFor(async () => (await manager.snapshot()).runs[0]?.status === 'completed');
-    assert.equal((await manager.snapshot()).runs[0]?.status, 'completed');
   } finally {
     context.mock.timers.reset();
-    await manager.shutdown();
-    await rm(directory, { recursive: true, force: true });
   }
 });
 
-test('a run still settles when turn events arrive during session adopt', async () => {
-  const directory = await mkdtemp(join(tmpdir(), 'droidex-automations-'));
-  const launches: SessionCreate[] = [];
-  const manager = createManager(directory, {
-    launchSession: async (command) => {
-      launches.push(command);
-    },
-  });
-
-  try {
-    const automation = await manager.create(task());
-    await manager.runNow(automation.id);
-    await waitFor(() => launches.length === 1);
-    const launch = launches[0];
-    if (!launch) throw new Error('Expected an automation session launch.');
-    assert.equal(launch.autonomy, 'low');
-    const created = manager.observeSessionEvent({
+test('a run still settles when turn events arrive during session adopt', async (t) => {
+  const { manager, launches } = await open(t);
+  const automation = await manager.create(task());
+  await manager.runNow(automation.id);
+  await waitFor(() => launches.length === 1);
+  const launch = launches[0];
+  if (!launch) throw new Error('Expected an automation session launch.');
+  assert.equal(launch.autonomy, 'low');
+  await Promise.all([
+    manager.observeSessionEvent({
       type: 'session.created',
       clientRef: launch.clientRef,
       session: summary({ appSessionId: 'session-race' }),
-    });
-    const appended = manager.observeSessionEvent({
-      type: 'event.appended',
-      event: {
-        id: 'token-race',
-        appSessionId: 'session-race',
-        sourceSessionId: 'session-race',
-        role: 'primary',
-        ts: Date.now(),
-        kind: 'text',
-        text: 'working',
-      },
-    });
-    const settled = manager.observeSessionEvent({
-      type: 'session.updated',
-      session: summary({ appSessionId: 'session-race', streaming: false }),
-    });
-    await Promise.all([created, appended, settled]);
-    await waitFor(async () => (await manager.snapshot()).runs[0]?.status === 'completed');
-    assert.equal((await manager.snapshot()).runs[0]?.status, 'completed');
-  } finally {
-    await manager.shutdown();
-    await rm(directory, { recursive: true, force: true });
-  }
+    }),
+    manager.observeSessionEvent(text('session-race', 'token-race', 'working')),
+    streaming(manager, 'session-race', false),
+  ]);
+  await waitFor(async () => (await manager.snapshot()).runs[0]?.status === 'completed');
 });
 
-test('closing a chat while it is still streaming fails the run', async () => {
-  const directory = await mkdtemp(join(tmpdir(), 'droidex-automations-'));
-  const launches: SessionCreate[] = [];
-  const manager = createManager(directory, {
-    launchSession: async (command) => {
-      launches.push(command);
-    },
-  });
-
-  try {
-    const automation = await manager.create(task());
-    await manager.runNow(automation.id);
-    await waitFor(() => launches.length === 1);
-    const launch = launches[0];
-    if (!launch) throw new Error('Expected an automation session launch.');
-    await manager.observeSessionEvent({
-      type: 'session.created',
-      clientRef: launch.clientRef,
-      session: summary({ appSessionId: 'session-mid-stream' }),
-    });
-    await manager.observeSessionEvent({
-      type: 'session.updated',
-      session: summary({ appSessionId: 'session-mid-stream', streaming: true }),
-    });
-    await manager.observeSessionEvent({
-      type: 'session.closed',
-      appSessionId: 'session-mid-stream',
-    });
-    await waitFor(async () => (await manager.snapshot()).runs[0]?.status === 'failed');
-    assert.match(
-      (await manager.snapshot()).runs[0]?.error ?? '',
-      /closed before its turn finished/,
-    );
-  } finally {
-    await manager.shutdown();
-    await rm(directory, { recursive: true, force: true });
-  }
+test('closing a chat while it is still streaming fails the run', async (t) => {
+  const { manager, launches } = await open(t);
+  const automation = await manager.create(task());
+  await startRun(manager, launches, automation.id, { appSessionId: 'session-mid-stream' });
+  await streaming(manager, 'session-mid-stream', true);
+  await manager.observeSessionEvent({ type: 'session.closed', appSessionId: 'session-mid-stream' });
+  await waitFor(async () => (await manager.snapshot()).runs[0]?.status === 'failed');
+  assert.match((await manager.snapshot()).runs[0]?.error ?? '', /closed before its turn finished/);
 });
 
-test('one automation cannot stack a second open run', async () => {
-  const directory = await mkdtemp(join(tmpdir(), 'droidex-automations-'));
-  const launches: SessionCreate[] = [];
+test('one automation cannot stack a second open run', async (t) => {
   let clock = Date.UTC(2026, 0, 1, 8, 0, 0);
   const dueAt = clock + 60_000;
-  const manager = createManager(directory, {
-    launchSession: async (command) => {
-      launches.push(command);
-    },
-    now: () => clock,
-    schedulerRecheckMs: 5,
-  });
-
-  try {
-    const automation = await manager.create(
-      task({ schedule: { kind: 'once', runAt: dueAt }, title: 'Once report' }),
-    );
-    await manager.runNow(automation.id);
-    await manager.runNow(automation.id);
-    await waitFor(() => launches.length === 1);
-    const launch = launches[0];
-    if (!launch) throw new Error('Expected a manual automation launch.');
-    await manager.observeSessionEvent({
-      type: 'session.created',
-      clientRef: launch.clientRef,
-      session: summary({ appSessionId: 'session-once' }),
-    });
-    await manager.observeSessionEvent({
-      type: 'session.updated',
-      session: summary({ appSessionId: 'session-once', streaming: true }),
-    });
-    clock = dueAt + 1_000;
-    await waitFor(async () => {
-      const snapshot = await manager.snapshot();
-      return (
-        snapshot.automations.find((entry) => entry.id === automation.id)?.completedAt === clock
-      );
-    });
+  const { manager, launches } = await open(t, { now: () => clock, schedulerRecheckMs: 5 });
+  const automation = await manager.create(
+    task({ schedule: { kind: 'once', runAt: dueAt }, title: 'Once report' }),
+  );
+  await manager.runNow(automation.id);
+  await startRun(manager, launches, automation.id, { appSessionId: 'session-once' });
+  await streaming(manager, 'session-once', true);
+  clock = dueAt + 1_000;
+  await waitFor(async () => {
     const snapshot = await manager.snapshot();
-    assert.equal(launches.length, 1);
-    assert.equal(snapshot.queuedRunCount, 0);
-  } finally {
-    await manager.shutdown();
-    await rm(directory, { recursive: true, force: true });
-  }
-});
-
-test('an enabled one-time schedule cannot be backdated', async () => {
-  const directory = await mkdtemp(join(tmpdir(), 'droidex-automations-'));
-  const manager = createManager(directory, {});
-
-  try {
-    await assert.rejects(
-      manager.create(task({ schedule: { kind: 'once', runAt: Date.now() - 1_000 } })),
-      /future date and time/i,
-    );
-    assert.equal((await manager.snapshot()).automations.length, 0);
-  } finally {
-    await manager.shutdown();
-    await rm(directory, { recursive: true, force: true });
-  }
-});
-
-test('ordinary chat transcript appends do not persist an automation snapshot', async () => {
-  const directory = await mkdtemp(join(tmpdir(), 'droidex-automations-'));
-  const published: string[] = [];
-  const manager = createManager(directory, {
-    emit: (event) => {
-      published.push(event.type);
-    },
+    return snapshot.automations.find((entry) => entry.id === automation.id)?.completedAt === clock;
   });
+  assert.equal(launches.length, 1);
+  assert.equal((await manager.snapshot()).queuedRunCount, 0);
+});
 
-  try {
-    await manager.snapshot();
-    published.length = 0;
-    await manager.observeSessionEvent({
-      type: 'event.appended',
-      event: {
-        id: 'token-1',
-        appSessionId: 'ordinary-chat',
-        sourceSessionId: 'ordinary-chat',
-        role: 'primary',
-        ts: Date.now(),
-        kind: 'text',
-        text: 'streaming',
-      },
-    });
-    assert.deepEqual(published, []);
-  } finally {
-    await manager.shutdown();
-    await rm(directory, { recursive: true, force: true });
-  }
+test('an enabled one-time schedule cannot be backdated', async (t) => {
+  const { manager } = await open(t);
+  await assert.rejects(
+    manager.create(task({ schedule: { kind: 'once', runAt: Date.now() - 1_000 } })),
+    /future date and time/i,
+  );
+  assert.equal((await manager.snapshot()).automations.length, 0);
+});
+
+test('ordinary chat transcript appends do not persist an automation snapshot', async (t) => {
+  const published: string[] = [];
+  const { manager } = await open(t, { emit: (event) => published.push(event.type) });
+  await manager.snapshot();
+  published.length = 0;
+  await manager.observeSessionEvent(text('ordinary-chat', 'token-1', 'streaming'));
+  assert.deepEqual(published, []);
 });
 
 test('a failed adoption write closes the unowned automation chat', async (context) => {
-  const directory = await mkdtemp(join(tmpdir(), 'droidex-automations-'));
-  const launches: SessionCreate[] = [];
   const closed: string[] = [];
-  const manager = createManager(directory, {
-    launchSession: async (command) => {
-      launches.push(command);
-    },
+  const { directory, manager, launches } = await open(context, {
     closeSession: async (appSessionId) => {
       closed.push(appSessionId);
     },
   });
-
   try {
     const automation = await manager.create(task());
     await manager.runNow(automation.id);
@@ -305,103 +209,59 @@ test('a failed adoption write closes the unowned automation chat', async (contex
     assert.equal((await manager.snapshot()).sessionOrigins['session-orphan'], undefined);
   } finally {
     await chmod(directory, 0o755).catch(() => undefined);
-    await manager.shutdown();
-    await rm(directory, { recursive: true, force: true });
   }
 });
 
-test('a completed run keeps its worktree until the review chat closes', async () => {
-  const directory = await mkdtemp(join(tmpdir(), 'droidex-automations-'));
-  const worktree = join(directory, 'worktree');
-  const launches: SessionCreate[] = [];
-  const released: string[] = [];
-  const manager = createManager(directory, {
-    prepareWorkspace: async () => worktree,
-    launchSession: async (command) => {
-      launches.push(command);
-    },
+/** Hands every run the worktree `<directory>/worktree` and records its release. */
+function worktreeOptions(released: string[]) {
+  return (directory: string): Partial<ManagerOptions> => ({
+    prepareWorkspace: async () => join(directory, 'worktree'),
     releaseWorkspace: async ({ resolvedCwd }) => {
       if (resolvedCwd) released.push(resolvedCwd);
     },
   });
+}
 
-  try {
-    const automation = await manager.create(
-      task({ executionMode: 'worktree', workspaceCwd: directory }),
-    );
-    await manager.runNow(automation.id);
-    await waitFor(() => launches.length === 1);
-    const launch = launches[0];
-    if (!launch) throw new Error('Expected an automation session launch.');
-    await manager.observeSessionEvent({
-      type: 'session.created',
-      clientRef: launch.clientRef,
-      session: summary({ appSessionId: 'session-review' }),
-    });
-    await manager.observeSessionEvent({
-      type: 'session.updated',
-      session: summary({ appSessionId: 'session-review', streaming: true }),
-    });
-    await manager.observeSessionEvent({
-      type: 'session.updated',
-      session: summary({ appSessionId: 'session-review', streaming: false }),
-    });
-    await waitFor(async () => (await manager.snapshot()).runs[0]?.status === 'completed');
-    assert.equal(released.length, 0);
-    assert.ok((await manager.snapshot()).sessionOrigins['session-review']);
-    await assert.rejects(manager.remove(automation.id), /review chat/i);
-    await manager.observeSessionEvent({
-      type: 'session.closed',
-      appSessionId: 'session-review',
-    });
-    await waitFor(() => released.includes(worktree));
-    assert.deepEqual(released, [worktree]);
-    assert.equal((await manager.snapshot()).sessionOrigins['session-review'], undefined);
-    await manager.remove(automation.id);
-    assert.equal((await manager.snapshot()).automations.length, 0);
-  } finally {
-    await manager.shutdown();
-    await rm(directory, { recursive: true, force: true });
-  }
+/** Runs a worktree automation through one turn in the review chat `appSessionId`. */
+async function completeWorktreeRun(
+  manager: AutomationManager,
+  launches: SessionCreate[],
+  directory: string,
+  appSessionId: string,
+) {
+  const automation = await manager.create(
+    task({ executionMode: 'worktree', workspaceCwd: directory }),
+  );
+  await startRun(manager, launches, automation.id, { appSessionId });
+  await streaming(manager, appSessionId, true);
+  await streaming(manager, appSessionId, false);
+  return automation;
+}
+
+test('a completed run keeps its worktree until the review chat closes', async (t) => {
+  const released: string[] = [];
+  const { directory, worktree, manager, launches } = await open(t, worktreeOptions(released));
+  const automation = await completeWorktreeRun(manager, launches, directory, 'session-review');
+  await waitFor(async () => (await manager.snapshot()).runs[0]?.status === 'completed');
+  assert.equal(released.length, 0);
+  assert.ok((await manager.snapshot()).sessionOrigins['session-review']);
+  await assert.rejects(manager.remove(automation.id), /review chat/i);
+  await manager.observeSessionEvent({ type: 'session.closed', appSessionId: 'session-review' });
+  await waitFor(() => released.includes(worktree));
+  assert.deepEqual(released, [worktree]);
+  assert.equal((await manager.snapshot()).sessionOrigins['session-review'], undefined);
+  await manager.remove(automation.id);
+  assert.equal((await manager.snapshot()).automations.length, 0);
 });
 
-test('review-chat close releases its worktree when the origin write fails', async () => {
-  const directory = await mkdtemp(join(tmpdir(), 'droidex-automations-'));
-  const worktree = join(directory, 'worktree');
-  const launches: SessionCreate[] = [];
+test('review-chat close releases its worktree when the origin write fails', async (t) => {
   const released: string[] = [];
-  const manager = createManager(directory, {
+  const { directory, worktree, manager, launches } = await open(t, (directory) => ({
+    ...worktreeOptions(released)(directory),
     turnSettleGraceMs: 20,
-    prepareWorkspace: async () => worktree,
-    launchSession: async (command) => {
-      launches.push(command);
-    },
-    releaseWorkspace: async ({ resolvedCwd }) => {
-      if (resolvedCwd) released.push(resolvedCwd);
-    },
-  });
-
+  }));
   try {
-    const automation = await manager.create(
-      task({ executionMode: 'worktree', workspaceCwd: directory }),
-    );
-    await manager.runNow(automation.id);
-    await waitFor(() => launches.length === 1);
-    const launch = launches[0];
-    if (!launch) throw new Error('Expected an automation session launch.');
-    await manager.observeSessionEvent({
-      type: 'session.created',
-      clientRef: launch.clientRef,
-      session: summary({ appSessionId: 'session-review-write-failure' }),
-    });
-    await manager.observeSessionEvent({
-      type: 'session.updated',
-      session: summary({ appSessionId: 'session-review-write-failure', streaming: true }),
-    });
-    await manager.observeSessionEvent({
-      type: 'session.updated',
-      session: summary({ appSessionId: 'session-review-write-failure', streaming: false }),
-    });
+    await completeWorktreeRun(manager, launches, directory, 'session-review-write-failure');
     const storePath = join(directory, 'automations.json');
     await waitFor(async () => {
       const store = parseAutomationStore(JSON.parse(await readFile(storePath, 'utf8')), Date.now());
@@ -418,51 +278,38 @@ test('review-chat close releases its worktree when the origin write fails', asyn
     assert.deepEqual(released, [worktree]);
   } finally {
     await chmod(directory, 0o755).catch(() => undefined);
-    await manager.shutdown();
-    await rm(directory, { recursive: true, force: true });
   }
 });
 
-test('an isolated worktree is not created until its path is persisted', async () => {
-  const directory = await mkdtemp(join(tmpdir(), 'droidex-automations-'));
-  const worktree = join(directory, 'worktree');
+test('an isolated worktree is not created until its path is persisted', async (t) => {
   const events: string[] = [];
-  const manager = createManager(directory, {
+  const { directory, manager } = await open(t, (directory) => ({
     prepareWorkspace: async () => {
       events.push('resolve');
-      return worktree;
+      return join(directory, 'worktree');
     },
     createWorkspace: async () => {
       const store = parseAutomationStore(
         JSON.parse(await readFile(join(directory, 'automations.json'), 'utf8')),
         Date.now(),
       );
-      assert.equal(store.runs[0]?.resolvedCwd, worktree);
+      assert.equal(store.runs[0]?.resolvedCwd, join(directory, 'worktree'));
       events.push('create');
     },
     launchSession: async () => {
       events.push('launch');
     },
-  });
-
-  try {
-    const automation = await manager.create(
-      task({ executionMode: 'worktree', workspaceCwd: directory }),
-    );
-    await manager.runNow(automation.id);
-    await waitFor(() => events.includes('launch'));
-    assert.deepEqual(events, ['resolve', 'create', 'launch']);
-  } finally {
-    await manager.shutdown();
-    await rm(directory, { recursive: true, force: true });
-  }
+  }));
+  const automation = await manager.create(
+    task({ executionMode: 'worktree', workspaceCwd: directory }),
+  );
+  await manager.runNow(automation.id);
+  await waitFor(() => events.includes('launch'));
+  assert.deepEqual(events, ['resolve', 'create', 'launch']);
 });
 
-test('shutdown releases a worktree materialized before launch', async () => {
-  const directory = await mkdtemp(join(tmpdir(), 'droidex-automations-'));
-  const worktree = join(directory, 'worktree');
+test('shutdown releases a worktree materialized before launch', async (t) => {
   const released: string[] = [];
-  const launches: SessionCreate[] = [];
   let finishMaterializing: () => void = () => undefined;
   const materializing = new Promise<void>((resolve) => {
     finishMaterializing = resolve;
@@ -471,153 +318,69 @@ test('shutdown releases a worktree materialized before launch', async () => {
   const materializingStarted = new Promise<void>((resolve) => {
     noteMaterializing = resolve;
   });
-  const manager = createManager(directory, {
-    prepareWorkspace: async () => worktree,
+  const { directory, worktree, manager, launches } = await open(t, (directory) => ({
+    ...worktreeOptions(released)(directory),
     createWorkspace: async () => {
       noteMaterializing();
       await materializing;
     },
-    launchSession: async (command) => {
-      launches.push(command);
-    },
-    releaseWorkspace: async ({ resolvedCwd }) => {
-      if (resolvedCwd) released.push(resolvedCwd);
-    },
-  });
-
-  try {
-    const automation = await manager.create(
-      task({ executionMode: 'worktree', workspaceCwd: directory }),
-    );
-    await manager.runNow(automation.id);
-    await materializingStarted;
-    const shutdown = manager.shutdown();
-    finishMaterializing();
-    await shutdown;
-    assert.deepEqual(launches, []);
-    assert.deepEqual(released, [worktree]);
-  } finally {
-    finishMaterializing();
-    await manager.shutdown();
-    await rm(directory, { recursive: true, force: true });
-  }
+  }));
+  t.after(finishMaterializing);
+  const automation = await manager.create(
+    task({ executionMode: 'worktree', workspaceCwd: directory }),
+  );
+  await manager.runNow(automation.id);
+  await materializingStarted;
+  const shutdown = manager.shutdown();
+  finishMaterializing();
+  await shutdown;
+  assert.deepEqual(launches, []);
+  assert.deepEqual(released, [worktree]);
 });
 
-test('a restarted sidecar can release a worktree created before launch', async () => {
-  const directory = await mkdtemp(join(tmpdir(), 'droidex-automations-'));
-  const worktree = join(directory, 'worktree');
-  const released: string[] = [];
-  const launches: SessionCreate[] = [];
-  const first = createManager(directory, {
-    prepareWorkspace: async () => worktree,
-    launchSession: async (command) => {
-      launches.push(command);
-    },
-    releaseWorkspace: async ({ resolvedCwd }) => {
-      if (resolvedCwd) released.push(resolvedCwd);
-    },
-  });
+/** A second manager over the same directory, as a restarted sidecar opens it. */
+function restart(t: TestContext, directory: string, options: Partial<ManagerOptions>) {
+  const second = createManager(directory, { prepareWorkspace: async () => '', ...options });
+  t.after(() => second.shutdown());
+  return second;
+}
 
-  try {
-    try {
-      const automation = await first.create(task());
-      await first.runNow(automation.id);
-      await waitFor(() => launches.length === 1);
-    } finally {
-      await first.shutdown();
-    }
-    assert.equal(released.length, 0);
-    const second = createManager(directory, {
-      prepareWorkspace: async () => '',
-      releaseWorkspace: async ({ resolvedCwd }) => {
-        if (resolvedCwd) released.push(resolvedCwd);
-      },
-    });
-    try {
-      await waitFor(() => released.includes(worktree));
-      assert.deepEqual(released, [worktree]);
-    } finally {
-      await second.shutdown();
-    }
-  } finally {
-    await rm(directory, { recursive: true, force: true });
-  }
+test('a restarted sidecar can release a worktree created before launch', async (t) => {
+  const released: string[] = [];
+  const { directory, worktree, manager, launches } = await open(t, worktreeOptions(released));
+  const automation = await manager.create(task());
+  await manager.runNow(automation.id);
+  await waitFor(() => launches.length === 1);
+  await manager.shutdown();
+  assert.equal(released.length, 0);
+  restart(t, directory, worktreeOptions(released)(directory));
+  await waitFor(() => released.includes(worktree));
+  assert.deepEqual(released, [worktree]);
 });
 
-test('a restarted sidecar releases a worktree after its review origin was dropped', async () => {
-  const directory = await mkdtemp(join(tmpdir(), 'droidex-automations-'));
-  const worktree = join(directory, 'worktree');
+test('a restarted sidecar releases a worktree after its review origin was dropped', async (t) => {
   const released: string[] = [];
-  const launches: SessionCreate[] = [];
-  const first = createManager(directory, {
-    prepareWorkspace: async () => worktree,
-    launchSession: async (command) => {
-      launches.push(command);
-    },
-    releaseWorkspace: async ({ resolvedCwd }) => {
-      if (resolvedCwd) released.push(resolvedCwd);
-    },
-  });
-
-  try {
-    try {
-      const automation = await first.create(
-        task({ executionMode: 'worktree', workspaceCwd: directory }),
-      );
-      await first.runNow(automation.id);
-      await waitFor(() => launches.length === 1);
-      const launch = launches[0];
-      if (!launch) throw new Error('Expected an automation session launch.');
-      await first.observeSessionEvent({
-        type: 'session.created',
-        clientRef: launch.clientRef,
-        session: summary({ appSessionId: 'session-review' }),
-      });
-      await first.observeSessionEvent({
-        type: 'session.updated',
-        session: summary({ appSessionId: 'session-review', streaming: true }),
-      });
-      await first.observeSessionEvent({
-        type: 'session.updated',
-        session: summary({ appSessionId: 'session-review', streaming: false }),
-      });
-      await waitFor(async () => (await first.snapshot()).runs[0]?.status === 'completed');
-    } finally {
-      await first.shutdown();
-    }
-    assert.equal(released.length, 0);
-    const storePath = join(directory, 'automations.json');
-    const store = parseAutomationStore(JSON.parse(await readFile(storePath, 'utf8')), Date.now());
-    delete store.sessionOrigins['session-review'];
-    await writeFile(storePath, JSON.stringify(store), 'utf8');
-    const second = createManager(directory, {
-      prepareWorkspace: async () => '',
-      releaseWorkspace: async ({ resolvedCwd }) => {
-        if (resolvedCwd) released.push(resolvedCwd);
-      },
-    });
-    try {
-      await waitFor(() => released.includes(worktree));
-      assert.deepEqual(released, [worktree]);
-    } finally {
-      await second.shutdown();
-    }
-  } finally {
-    await rm(directory, { recursive: true, force: true });
-  }
+  const { directory, worktree, manager, launches } = await open(t, worktreeOptions(released));
+  await completeWorktreeRun(manager, launches, directory, 'session-review');
+  await waitFor(async () => (await manager.snapshot()).runs[0]?.status === 'completed');
+  await manager.shutdown();
+  assert.equal(released.length, 0);
+  const storePath = join(directory, 'automations.json');
+  const store = parseAutomationStore(JSON.parse(await readFile(storePath, 'utf8')), Date.now());
+  delete store.sessionOrigins['session-review'];
+  await writeFile(storePath, JSON.stringify(store), 'utf8');
+  restart(t, directory, worktreeOptions(released)(directory));
+  await waitFor(() => released.includes(worktree));
+  assert.deepEqual(released, [worktree]);
 });
 
 test(
   'a failed store write does not keep scheduler advances in memory',
   { skip: process.platform === 'win32' },
-  async () => {
-    const directory = await mkdtemp(join(tmpdir(), 'droidex-automations-'));
+  async (t) => {
     let clock = Date.UTC(2026, 0, 1, 8, 0, 0);
     const dueAt = clock + 60_000;
-    const manager = createManager(directory, {
-      now: () => clock,
-    });
-
+    const { directory, manager } = await open(t, { now: () => clock });
     try {
       const once = await manager.create(
         task({ schedule: { kind: 'once', runAt: dueAt }, title: 'Once report' }),
@@ -634,185 +397,125 @@ test(
       assert.equal(snapshot.queuedRunCount, 0);
     } finally {
       await chmod(directory, 0o755).catch(() => undefined);
-      await manager.shutdown();
-      await rm(directory, { recursive: true, force: true });
     }
   },
 );
 
-test('overlapping creates both persist', async () => {
-  const directory = await mkdtemp(join(tmpdir(), 'droidex-automations-'));
-  const manager = createManager(directory, {});
-
-  try {
-    const [left, right] = await Promise.all([
-      manager.create(task({ title: 'Left' })),
-      manager.create(task({ title: 'Right' })),
-    ]);
-    const snapshot = await manager.snapshot();
-    assert.equal(snapshot.automations.length, 2);
-    const titles = snapshot.automations.map((automation) => automation.title).sort();
-    assert.deepEqual(titles, ['Left', 'Right']);
-    assert.notEqual(left.id, right.id);
-  } finally {
-    await manager.shutdown();
-    await rm(directory, { recursive: true, force: true });
-  }
+test('overlapping creates both persist', async (t) => {
+  const { manager } = await open(t);
+  const [left, right] = await Promise.all([
+    manager.create(task({ title: 'Left' })),
+    manager.create(task({ title: 'Right' })),
+  ]);
+  const snapshot = await manager.snapshot();
+  assert.deepEqual(snapshot.automations.map((automation) => automation.title).sort(), [
+    'Left',
+    'Right',
+  ]);
+  assert.notEqual(left.id, right.id);
 });
 
-test('overlapping updates merge against the latest stored definition', async () => {
-  const directory = await mkdtemp(join(tmpdir(), 'droidex-automations-'));
-  let validationCount = 0;
-  let releaseFirstUpdate: () => void = () => undefined;
-  const firstUpdateBlocked = new Promise<void>((resolve) => {
-    releaseFirstUpdate = resolve;
+/** A validateSelection whose `nth` call blocks until `release` is called. */
+function blockValidation(nth: number) {
+  let count = 0;
+  let release: () => void = () => undefined;
+  const blocked = new Promise<void>((resolve) => {
+    release = resolve;
   });
-  let firstUpdateStarted: () => void = () => undefined;
-  const firstUpdateIsValidating = new Promise<void>((resolve) => {
-    firstUpdateStarted = resolve;
+  let noteStarted: () => void = () => undefined;
+  const started = new Promise<void>((resolve) => {
+    noteStarted = resolve;
   });
-  const manager = createManager(directory, {
-    validateSelection: async () => {
-      validationCount += 1;
-      if (validationCount !== 2) return;
-      firstUpdateStarted();
-      await firstUpdateBlocked;
+  const validateSelection = async () => {
+    count += 1;
+    if (count !== nth) return;
+    noteStarted();
+    await blocked;
+  };
+  return { validateSelection, started, release: () => release() };
+}
+
+test('overlapping updates merge against the latest stored definition', async (t) => {
+  const gate = blockValidation(2);
+  t.after(gate.release);
+  const { manager } = await open(t, { validateSelection: gate.validateSelection });
+  const created = await manager.create(task());
+  const titleUpdate = manager.update(created.id, { title: 'Renamed' });
+  await gate.started;
+  const promptUpdate = manager.update(created.id, { prompt: 'Updated instructions.' });
+  gate.release();
+  await Promise.all([titleUpdate, promptUpdate]);
+
+  const updated = (await manager.snapshot()).automations[0];
+  assert.equal(updated?.title, 'Renamed');
+  assert.equal(updated?.prompt, 'Updated instructions.');
+});
+
+test('manual queue validation is serialized with deletion', async (t) => {
+  const gate = blockValidation(2);
+  t.after(gate.release);
+  const { manager } = await open(t, { validateSelection: gate.validateSelection });
+  const created = await manager.create(task());
+  const run = manager.runNow(created.id);
+  await gate.started;
+  let removed = false;
+  const removal = manager.remove(created.id).then(() => {
+    removed = true;
+  });
+  await Promise.resolve();
+  assert.equal(removed, false);
+  gate.release();
+  await Promise.all([run, removal]);
+  const snapshot = await manager.snapshot();
+  assert.deepEqual(snapshot.automations, []);
+  assert.deepEqual(snapshot.runs, []);
+});
+
+test('workspace paths keep meaningful leading and trailing spaces', async (t) => {
+  const { manager } = await open(t);
+  const created = await manager.create(
+    task({ enabled: false, workspaceCwd: ' /repo with spaces ', executionMode: 'worktree' }),
+  );
+  assert.equal(created.workspaceCwd, ' /repo with spaces ');
+  assert.equal(created.executionMode, 'worktree');
+});
+
+test('shutdown waits for recovered workspace cleanup already in progress', async (t) => {
+  const { directory, manager, launches } = await open(t, (directory) => ({
+    prepareWorkspace: async () => join(directory, 'worktree'),
+  }));
+  const automation = await manager.create(task());
+  await manager.runNow(automation.id);
+  await waitFor(() => launches.length === 1);
+  await manager.shutdown();
+
+  let releaseStarted: () => void = () => undefined;
+  const cleanupStarted = new Promise<void>((resolve) => {
+    releaseStarted = resolve;
+  });
+  let finishRelease: () => void = () => undefined;
+  const releaseBlocked = new Promise<void>((resolve) => {
+    finishRelease = resolve;
+  });
+  const second = createManager(directory, {
+    releaseWorkspace: async () => {
+      releaseStarted();
+      await releaseBlocked;
     },
   });
-
-  try {
-    const created = await manager.create(task());
-    const titleUpdate = manager.update(created.id, { title: 'Renamed' });
-    await firstUpdateIsValidating;
-    const promptUpdate = manager.update(created.id, { prompt: 'Updated instructions.' });
-    releaseFirstUpdate();
-    await Promise.all([titleUpdate, promptUpdate]);
-
-    const updated = (await manager.snapshot()).automations[0];
-    assert.equal(updated?.title, 'Renamed');
-    assert.equal(updated?.prompt, 'Updated instructions.');
-  } finally {
-    releaseFirstUpdate();
-    await manager.shutdown();
-    await rm(directory, { recursive: true, force: true });
-  }
+  let shutdownFinished = false;
+  const shutdown = second.shutdown().then(() => {
+    shutdownFinished = true;
+  });
+  await cleanupStarted;
+  await Promise.resolve();
+  assert.equal(shutdownFinished, false);
+  finishRelease();
+  await shutdown;
 });
 
-test('manual queue validation is serialized with deletion', async () => {
-  const directory = await mkdtemp(join(tmpdir(), 'droidex-automations-'));
-  let validationCount = 0;
-  let releaseRunValidation: () => void = () => undefined;
-  const runValidationBlocked = new Promise<void>((resolve) => {
-    releaseRunValidation = resolve;
-  });
-  let runValidationStarted: () => void = () => undefined;
-  const runIsValidating = new Promise<void>((resolve) => {
-    runValidationStarted = resolve;
-  });
-  const manager = createManager(directory, {
-    validateSelection: async () => {
-      validationCount += 1;
-      if (validationCount !== 2) return;
-      runValidationStarted();
-      await runValidationBlocked;
-    },
-  });
-
-  try {
-    const created = await manager.create(task());
-    const run = manager.runNow(created.id);
-    await runIsValidating;
-    let removed = false;
-    const removal = manager.remove(created.id).then(() => {
-      removed = true;
-    });
-    await Promise.resolve();
-    assert.equal(removed, false);
-    releaseRunValidation();
-    await Promise.all([run, removal]);
-    const snapshot = await manager.snapshot();
-    assert.deepEqual(snapshot.automations, []);
-    assert.deepEqual(snapshot.runs, []);
-  } finally {
-    releaseRunValidation();
-    await manager.shutdown();
-    await rm(directory, { recursive: true, force: true });
-  }
-});
-
-test('workspace paths keep meaningful leading and trailing spaces', async () => {
-  const directory = await mkdtemp(join(tmpdir(), 'droidex-automations-'));
-  const manager = createManager(directory, {});
-
-  try {
-    const created = await manager.create(
-      task({
-        enabled: false,
-        workspaceCwd: ' /repo with spaces ',
-        executionMode: 'worktree',
-      }),
-    );
-    assert.equal(created.workspaceCwd, ' /repo with spaces ');
-    assert.equal(created.executionMode, 'worktree');
-  } finally {
-    await manager.shutdown();
-    await rm(directory, { recursive: true, force: true });
-  }
-});
-
-test('shutdown waits for recovered workspace cleanup already in progress', async () => {
-  const directory = await mkdtemp(join(tmpdir(), 'droidex-automations-'));
-  const worktree = join(directory, 'worktree');
-  const launches: SessionCreate[] = [];
-  const first = createManager(directory, {
-    prepareWorkspace: async () => worktree,
-    launchSession: async (command) => {
-      launches.push(command);
-    },
-  });
-
-  try {
-    const automation = await first.create(task());
-    await first.runNow(automation.id);
-    await waitFor(() => launches.length === 1);
-    await first.shutdown();
-
-    let releaseStarted: () => void = () => undefined;
-    const cleanupStarted = new Promise<void>((resolve) => {
-      releaseStarted = resolve;
-    });
-    let finishRelease: () => void = () => undefined;
-    const releaseBlocked = new Promise<void>((resolve) => {
-      finishRelease = resolve;
-    });
-    const second = createManager(directory, {
-      releaseWorkspace: async () => {
-        releaseStarted();
-        await releaseBlocked;
-      },
-    });
-    let shutdownFinished = false;
-    const shutdown = second.shutdown().then(() => {
-      shutdownFinished = true;
-    });
-    await cleanupStarted;
-    await Promise.resolve();
-    assert.equal(shutdownFinished, false);
-    finishRelease();
-    await shutdown;
-  } finally {
-    await first.shutdown();
-    await rm(directory, { recursive: true, force: true });
-  }
-});
-
-test('an unattended run cannot create another automation', async () => {
-  const directory = await mkdtemp(join(tmpdir(), 'droidex-automations-'));
-  const launches: SessionCreate[] = [];
-  const manager = createManager(directory, {
-    launchSession: async (command) => {
-      launches.push(command);
-    },
+test('an unattended run cannot create another automation', async (t) => {
+  const { manager, launches } = await open(t, {
     resolveSessionContext: async () => ({
       cwd: '/repo',
       modelId: 'chat-model',
@@ -820,32 +523,20 @@ test('an unattended run cannot create another automation', async () => {
       autonomy: 'high',
     }),
   });
-
-  try {
-    const automation = await manager.create(task({ autonomy: 'high' }));
-    await manager.runNow(automation.id);
-    await waitFor(() => launches.length === 1);
-    const launch = launches[0];
-    if (!launch) throw new Error('Expected an automation session launch.');
-    await manager.observeSessionEvent({
-      type: 'session.created',
-      clientRef: launch.clientRef,
-      session: summary({ appSessionId: 'session-run', autonomy: 'high' }),
-    });
-    await assert.rejects(
-      manager.createFromSession(task({ timezone: 'UTC' }), 'session-run'),
-      /unattended/i,
-    );
-    assert.equal((await manager.snapshot()).automations.length, 1);
-  } finally {
-    await manager.shutdown();
-    await rm(directory, { recursive: true, force: true });
-  }
+  const automation = await manager.create(task({ autonomy: 'high' }));
+  await startRun(manager, launches, automation.id, {
+    appSessionId: 'session-run',
+    autonomy: 'high',
+  });
+  await assert.rejects(
+    manager.createFromSession(task({ timezone: 'UTC' }), 'session-run'),
+    /unattended/i,
+  );
+  assert.equal((await manager.snapshot()).automations.length, 1);
 });
 
-test('direct creation requires High autonomy', async () => {
-  const directory = await mkdtemp(join(tmpdir(), 'droidex-automations-'));
-  const manager = createManager(directory, {
+test('direct creation requires High autonomy', async (t) => {
+  const { manager } = await open(t, {
     resolveSessionContext: async () => ({
       cwd: '/repo',
       modelId: 'chat-model',
@@ -853,67 +544,40 @@ test('direct creation requires High autonomy', async () => {
       autonomy: 'low',
     }),
   });
-
-  try {
-    await assert.rejects(
-      manager.createFromSession(task({ timezone: 'UTC' }), 'chat'),
-      /High autonomy/i,
-    );
-  } finally {
-    await manager.shutdown();
-    await rm(directory, { recursive: true, force: true });
-  }
+  await assert.rejects(
+    manager.createFromSession(task({ timezone: 'UTC' }), 'chat'),
+    /High autonomy/i,
+  );
 });
 
-test('concurrent proposal confirmations create one automation from the first input', async () => {
-  const directory = await mkdtemp(join(tmpdir(), 'droidex-automations-'));
-  let validationStarted: () => void = () => undefined;
-  const started = new Promise<void>((resolve) => {
-    validationStarted = resolve;
-  });
-  let finishValidation: () => void = () => undefined;
-  const blocked = new Promise<void>((resolve) => {
-    finishValidation = resolve;
-  });
-  const manager = createManager(directory, {
-    validateSelection: async () => {
-      validationStarted();
-      await blocked;
-    },
-  });
+test('concurrent proposal confirmations create one automation from the first input', async (t) => {
+  const gate = blockValidation(1);
+  t.after(gate.release);
+  const { manager } = await open(t, { validateSelection: gate.validateSelection });
+  const proposal = await manager.propose(task({ enabled: false }), 'chat');
+  const first = manager.confirmProposal(proposal.id, task({ title: 'First', enabled: false }));
+  await gate.started;
+  const second = manager.confirmProposal(proposal.id, task({ title: 'Second', enabled: false }));
+  gate.release();
 
-  try {
-    const proposal = await manager.propose(task({ enabled: false }), 'chat');
-    const first = manager.confirmProposal(proposal.id, task({ title: 'First', enabled: false }));
-    await started;
-    const second = manager.confirmProposal(proposal.id, task({ title: 'Second', enabled: false }));
-    finishValidation();
+  const [firstAutomation, secondAutomation] = await Promise.all([first, second]);
+  assert.equal(firstAutomation.id, secondAutomation.id);
+  assert.equal(firstAutomation.title, 'First');
 
-    const [firstAutomation, secondAutomation] = await Promise.all([first, second]);
-    assert.equal(firstAutomation.id, secondAutomation.id);
-    assert.equal(firstAutomation.title, 'First');
-
-    const repeated = await manager.confirmProposal(
-      proposal.id,
-      task({ title: 'Ignored', enabled: false }),
-    );
-    const snapshot = await manager.snapshot();
-    assert.equal(repeated.id, firstAutomation.id);
-    assert.deepEqual(
-      snapshot.automations.map((automation) => automation.title),
-      ['First'],
-    );
-    assert.equal(snapshot.proposals[0]?.automationId, firstAutomation.id);
-  } finally {
-    finishValidation();
-    await manager.shutdown();
-    await rm(directory, { recursive: true, force: true });
-  }
+  const repeated = await manager.confirmProposal(
+    proposal.id,
+    task({ title: 'Ignored', enabled: false }),
+  );
+  const snapshot = await manager.snapshot();
+  assert.equal(repeated.id, firstAutomation.id);
+  assert.deepEqual(
+    snapshot.automations.map((automation) => automation.title),
+    ['First'],
+  );
+  assert.equal(snapshot.proposals[0]?.automationId, firstAutomation.id);
 });
 
 test('shutdown waits for work started by a run-limit timer', async (context) => {
-  const directory = await mkdtemp(join(tmpdir(), 'droidex-automations-'));
-  const launches: SessionCreate[] = [];
   let closeStarted: () => void = () => undefined;
   const started = new Promise<void>((resolve) => {
     closeStarted = resolve;
@@ -922,26 +586,20 @@ test('shutdown waits for work started by a run-limit timer', async (context) => 
   const blocked = new Promise<void>((resolve) => {
     finishClose = resolve;
   });
-  const manager = createManager(directory, {
+  const { manager, launches } = await open(context, {
     closeSession: async () => {
       closeStarted();
       await blocked;
     },
-    launchSession: async (command) => {
-      launches.push(command);
-    },
   });
-
   try {
     const automation = await manager.create(task({ enabled: false }));
     await manager.runNow(automation.id);
     await waitFor(() => launches.length === 1);
-    const launch = launches[0];
-    if (!launch) throw new Error('Expected an automation session launch.');
     context.mock.timers.enable({ apis: ['setTimeout'] });
     await manager.observeSessionEvent({
       type: 'session.created',
-      clientRef: launch.clientRef,
+      clientRef: launches[0]?.clientRef,
       session: summary({ appSessionId: 'session-timeout', streaming: true }),
     });
 
@@ -958,64 +616,48 @@ test('shutdown waits for work started by a run-limit timer', async (context) => 
     assert.equal((await manager.snapshot()).runs[0]?.status, 'failed');
   } finally {
     finishClose();
-    await manager.shutdown();
     context.mock.timers.reset();
-    await rm(directory, { recursive: true, force: true });
   }
 });
 
-test('unknown automations commands fail instead of succeeding empty', async () => {
-  const directory = await mkdtemp(join(tmpdir(), 'droidex-automations-'));
-  const results: Array<{ ok: boolean; error?: string }> = [];
-  const manager = createManager(directory, {
+test('bridge commands answer with an exact result', async (t) => {
+  const results: unknown[] = [];
+  const { manager } = await open(t, {
     emit: (event) => {
       if (event.type === 'automations.result') results.push(event);
     },
   });
-
-  try {
-    const handled = await manager.handleBridgeCommand({
-      type: 'automations.dismissProposal',
-      requestId: 'req-unknown',
-      id: 'proposal-1',
-    });
-    assert.equal(handled, true);
-    assert.equal(results[0]?.ok, false);
-    assert.match(results[0]?.error ?? '', /Unknown automations command/);
-  } finally {
-    await manager.shutdown();
-    await rm(directory, { recursive: true, force: true });
-  }
-});
-
-test('run-now bridge results identify the exact queued run', async () => {
-  const directory = await mkdtemp(join(tmpdir(), 'droidex-automations-'));
-  const results: Array<{ ok: boolean; runId?: string }> = [];
-  const manager = createManager(directory, {
-    emit: (event) => {
-      if (event.type === 'automations.result') results.push(event);
-    },
+  // An unknown command fails instead of succeeding empty.
+  const handled = await manager.handleBridgeCommand({
+    type: 'automations.dismissProposal',
+    requestId: 'req-unknown',
+    id: 'proposal-1',
+  });
+  assert.equal(handled, true);
+  assert.deepEqual(results[0], {
+    type: 'automations.result',
+    requestId: 'req-unknown',
+    ok: false,
+    error: 'Unknown automations command: automations.dismissProposal',
   });
 
-  try {
-    const automation = await manager.create(task());
-    await manager.handleBridgeCommand({
-      type: 'automations.runNow',
-      requestId: 'req-run-now',
-      id: automation.id,
-    });
-
-    const queued = (await manager.snapshot()).runs.find(
-      (run) => run.automationId === automation.id && run.trigger === 'manual',
-    );
-    assert.ok(queued);
-    assert.deepEqual(results, [
-      { type: 'automations.result', requestId: 'req-run-now', ok: true, runId: queued.id },
-    ]);
-  } finally {
-    await manager.shutdown();
-    await rm(directory, { recursive: true, force: true });
-  }
+  // Run-now names the exact run it queued.
+  const automation = await manager.create(task());
+  await manager.handleBridgeCommand({
+    type: 'automations.runNow',
+    requestId: 'req-run-now',
+    id: automation.id,
+  });
+  const queued = (await manager.snapshot()).runs.find(
+    (run) => run.automationId === automation.id && run.trigger === 'manual',
+  );
+  assert.ok(queued);
+  assert.deepEqual(results[1], {
+    type: 'automations.result',
+    requestId: 'req-run-now',
+    ok: true,
+    runId: queued.id,
+  });
 });
 
 async function waitFor(
