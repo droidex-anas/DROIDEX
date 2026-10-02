@@ -1,0 +1,21 @@
+name: Regression guard
+
+on:
+  pull_request:
+    types: [opened, reopened, synchronize, labeled, unlabeled]
+
+permissions:
+  contents: read
+
+jobs:
+  held-out-suite:
+    name: Held-out regression suite unchanged
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          fetch-depth: 0
+      - run: node tools/check-test-edits.mjs origin/${{ github.base_ref }} --regression-gate
+        env:
+          ALLOW_REGRESSION_EDITS: ${{ contains(github.event.pull_request.labels.*.name, 'regression-approved') }}

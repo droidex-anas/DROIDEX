@@ -278,9 +278,9 @@ count, coverage targets, or a wish to look thorough.
   throughput belong to the perf replay harness (`npm run quality:perf-gates`).
   No tests that only fail when the process lacks file permissions; inject the
   failure through a fake instead.
-- ESLint enforces the 800-line test file cap and the no-sleep rule. Files that
-  predate them are recorded in `eslint-suppressions.json`; that list only
-  shrinks.
+- ESLint enforces the 800-line test file cap (blank lines and comments not
+  counted) and the no-sleep rule. Files that predate them are recorded in
+  `eslint-suppressions.json`; that list only shrinks.
 - Write as many throwaway tests, probes, and reproduction scripts as you need
   while working; they are tools, not deliverables. Before committing, keep only
   the tests whose ongoing protection is worth their maintenance and delete the
@@ -297,7 +297,8 @@ count, coverage targets, or a wish to look thorough.
   read or edit it (denied in `.claude/settings.json`) and `npm test` skips it;
   `test:ci` runs it on every pull request, and
   `npm --prefix sidecar run test:regression` runs it alone. When it fails, fix
-  the code. Only a human changes these tests, deliberately.
+  the code. Only a human changes these tests, deliberately: CI fails on any
+  change there until a maintainer adds the `regression-approved` label.
 
 Tests are maintained code too. Keep the ones whose protection justifies their
 cost.
@@ -376,8 +377,9 @@ npm run build
 
 `npm run lint` blocks CI on new errors. The existing backlog is recorded in
 `eslint-suppressions.json`; never add to it to get a green run. When you fix old
-errors, prune it with `npx eslint . --prune-suppressions`. The pre-commit hook
-runs lint-staged, file size, tech-debt, and typecheck gates.
+errors, prune it with `npx eslint . --prune-suppressions`; lint fails until you
+do, so the backlog only shrinks. The pre-commit hook runs lint-staged, file
+size, tech-debt, and typecheck gates.
 
 Performance changes are validated with the deterministic replay harness
 (`npm run perf:replay -- --scenario <smoke|idle|streaming|multi-agent|agents-4|agents-16|agents-27|long-history|long-tail|session-switch|soak>`),

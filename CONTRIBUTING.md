@@ -146,7 +146,8 @@ npm run build               # Production build
 
 `npm run lint` blocks CI on new errors. The existing backlog is recorded in
 `eslint-suppressions.json`; never add to it to get a green run. When you fix old
-errors, prune it with `npx eslint . --prune-suppressions`.
+errors, prune it with `npx eslint . --prune-suppressions`; lint fails until you
+do, so the backlog only shrinks.
 
 If you changed scripts, environment variables, or onboarding commands,
 regenerate the docs:

@@ -6,6 +6,35 @@ import reactRefresh from 'eslint-plugin-react-refresh';
 import prettierConfig from 'eslint-config-prettier';
 import globals from 'globals';
 
+const SLEEP_MESSAGE = 'No sleeps in tests. Use controlled promises or mocked timers.';
+
+// A promise that a real-delay timer resolves is a sleep, whatever shape the
+// executor takes. Deadlines that only reject a hung test are allowed.
+const SLEEP_TIMER = '[arguments.length=2]:not([arguments.1.value=0])';
+const noSleepInTests = [
+  "CallExpression[callee.name='setTimeout']",
+  "CallExpression[callee.object.name='globalThis'][callee.property.name='setTimeout']",
+].flatMap((timer) =>
+  [
+    `${timer}[arguments.0.type='Identifier']`,
+    `${timer}[arguments.0.type='ArrowFunctionExpression'][arguments.0.body.callee.name=/^(resolve|done)$/]`,
+  ].map((call) => ({
+    selector: `NewExpression[callee.name='Promise'] ${call}${SLEEP_TIMER}`,
+    message: SLEEP_MESSAGE,
+  })),
+);
+
+const electronRestrictedSyntax = [
+  {
+    selector: "MemberExpression[property.name='enableDeviceEmulation']",
+    message: 'Chromium device emulation crashed the Browser pane.',
+  },
+  {
+    selector: "Literal[value='Emulation.setDeviceMetricsOverride']",
+    message: 'Chromium device emulation crashed the Browser pane.',
+  },
+];
+
 export default tseslint.config(
   {
     ignores: [
@@ -130,33 +159,32 @@ export default tseslint.config(
       sourceType: 'commonjs',
     },
     rules: {
-      'no-restricted-syntax': [
+      'no-restricted-syntax': ['error', ...electronRestrictedSyntax],
+    },
+  },
+
+  {
+    // Test budget; see "Verification and tests" in AGENTS.md.
+    files: ['**/*.test.{ts,tsx,cjs,mjs}'],
+    rules: {
+      'max-lines': ['error', { max: 800, skipBlankLines: true, skipComments: true }],
+      'no-restricted-syntax': ['error', ...noSleepInTests],
+      'no-restricted-imports': [
         'error',
         {
-          selector: "MemberExpression[property.name='enableDeviceEmulation']",
-          message: 'Chromium device emulation crashed the Browser pane.',
-        },
-        {
-          selector: "Literal[value='Emulation.setDeviceMetricsOverride']",
-          message: 'Chromium device emulation crashed the Browser pane.',
+          paths: ['timers/promises', 'node:timers/promises'].map((name) => ({
+            name,
+            message: SLEEP_MESSAGE,
+          })),
         },
       ],
     },
   },
 
   {
-    // Test budget; see "Verification and tests" in AGENTS.md.
-    files: ['**/*.test.{ts,tsx,cjs}'],
+    files: ['electron/**/*.test.cjs'],
     rules: {
-      'max-lines': ['error', { max: 800, skipBlankLines: true, skipComments: true }],
-      'no-restricted-syntax': [
-        'error',
-        {
-          selector:
-            "NewExpression[callee.name='Promise'] > ArrowFunctionExpression > CallExpression[callee.name='setTimeout'][arguments.length=2]:not([arguments.1.value=0])",
-          message: 'No sleeps in tests. Use controlled promises or mocked timers.',
-        },
-      ],
+      'no-restricted-syntax': ['error', ...electronRestrictedSyntax, ...noSleepInTests],
     },
   },
 

@@ -32,11 +32,6 @@
       "count": 1
     }
   },
-  "sidecar/src/browser/BrowserSessionManager.test.ts": {
-    "@typescript-eslint/no-unused-vars": {
-      "count": 1
-    }
-  },
   "sidecar/src/browser/BrowserSessionManager.ts": {
     "@typescript-eslint/no-empty-function": {
       "count": 1
@@ -203,14 +198,6 @@
       "count": 2
     }
   },
-  "src/components/browser/BrowserCanvas.tsx": {
-    "@typescript-eslint/no-unnecessary-condition": {
-      "count": 2
-    },
-    "@typescript-eslint/prefer-nullish-coalescing": {
-      "count": 1
-    }
-  },
   "src/components/browser/DesignModeComposer.tsx": {
     "@typescript-eslint/no-confusing-void-expression": {
       "count": 1
@@ -250,20 +237,12 @@
   },
   "src/components/browser/designModeTargeting.ts": {
     "@typescript-eslint/prefer-nullish-coalescing": {
-      "count": 6
+      "count": 3
     }
   },
   "src/components/browser/useElementSize.ts": {
     "@typescript-eslint/no-confusing-void-expression": {
       "count": 1
-    }
-  },
-  "src/components/canvas/SmoothCanvas.tsx": {
-    "@typescript-eslint/no-confusing-void-expression": {
-      "count": 1
-    },
-    "@typescript-eslint/restrict-template-expressions": {
-      "count": 3
     }
   },
   "src/components/environment/usePopover.ts": {
@@ -323,9 +302,6 @@
     "@typescript-eslint/no-unnecessary-condition": {
       "count": 23
     },
-    "@typescript-eslint/no-unnecessary-type-conversion": {
-      "count": 1
-    },
     "@typescript-eslint/prefer-nullish-coalescing": {
       "count": 1
     },
@@ -335,7 +311,7 @@
   },
   "src/hooks/useWorkspaceScopes.test.ts": {
     "no-restricted-syntax": {
-      "count": 4
+      "count": 5
     }
   },
   "src/lib/filePresentation.ts": {
