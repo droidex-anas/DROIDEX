@@ -19,6 +19,7 @@ import type {
   ProgressEntry,
   TranscriptEvent,
 } from './protocol.js';
+import { toolResultParts } from './toolResultImages.js';
 import { trimmedString as str } from './values.js';
 import {
   detectChildSession,
@@ -223,7 +224,7 @@ export function normalizeStreamEvent(
       const resultTranscript = () =>
         transcript(appSessionId, sourceProviderSessionId, role, 'tool_result', {
           toolName: ev.toolName,
-          text: typeof ev.content === 'string' ? ev.content : JSON.stringify(ev.content),
+          ...toolResultParts(ev.content),
           isError: ev.isError,
           ...(toolUseId ? { toolUseId } : {}),
         });

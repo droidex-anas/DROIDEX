@@ -6,7 +6,8 @@
 // mapping, the canonical event builder, and the text shaping (trimming,
 // system-text filtering, tool-result stringification) every parsed event
 // shares.
-import { dateMs, numberValue, objectValue, safeStringify, stringValue } from './values.js';
+import { toolResultParts } from './toolResultImages.js';
+import { dateMs, numberValue, objectValue, stringValue } from './values.js';
 import { designPromptDisplayFromText } from './browser/designPromptDisplay.js';
 import { appPromptDisplayFromText, hasAppFence } from './appPrompt.js';
 import { branchPromptDisplayFromText } from './branchPrompt.js';
@@ -143,10 +144,14 @@ function nonAssistantBlockEvent(
 ): TranscriptEvent | null {
   const type = stringValue(block.type);
   if (type === 'tool_result') {
+    const parts = toolResultParts(block.content);
+    // The app's own transcript files keep the saved paths beside the text.
+    const images = parts.images ?? storedImages(block.images);
     return event(base, index, 'tool_result', {
       toolName: stringValue(block.name),
       // Machine output, never a runnable App: the shared cap always applies.
-      text: trimText(stringifyToolResult(block.content), MAX_TEXT_CHARS),
+      text: trimText(parts.text, MAX_TEXT_CHARS),
+      ...(images ? { images } : {}),
       isError: Boolean(block.is_error ?? block.isError),
       // Carry the originating call's id so the renderer can correlate a
       // result to its tool_call exactly (result blocks have no name and
@@ -294,18 +299,10 @@ function skillActivationFromContent(content: unknown[]) {
   return parseSkillActivation(text);
 }
 
-function stringifyToolResult(value: unknown): string {
-  if (typeof value === 'string') return value;
-  if (Array.isArray(value)) {
-    return value
-      .map((item) => {
-        const block = objectValue(item);
-        return nonEmpty(stringValue(block?.text), safeStringify(item));
-      })
-      .filter(Boolean)
-      .join('\n');
-  }
-  return safeStringify(value);
+function storedImages(value: unknown): string[] | undefined {
+  if (!Array.isArray(value)) return undefined;
+  const paths = value.filter((path): path is string => typeof path === 'string');
+  return paths.length > 0 ? paths : undefined;
 }
 
 function trimText(text: string, max: number): string {

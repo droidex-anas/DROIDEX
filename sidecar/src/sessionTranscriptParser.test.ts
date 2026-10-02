@@ -376,3 +376,20 @@ test('a prompt sent with side-chat answers replays as the words typed plus the a
   assert.equal(event?.text, 'Use this');
   assert.deepEqual(event?.sideChatReplies, ['Sort by date first.', 'Then by name.']);
 });
+
+test('a stored tool result keeps the pictures it was saved with', () => {
+  // The app's own transcript files hold the saved paths beside the text.
+  const line = JSON.parse(
+    messageLine({
+      role: 'user',
+      content: [
+        { type: 'tool_result', tool_use_id: 't9', content: 'Saved.', images: ['/p/tool-a.jpg'] },
+      ],
+    }),
+  );
+  const result = parseSessionLineEvents('app', 'provider', 'primary', line).find(
+    (event) => event.kind === 'tool_result',
+  );
+  assert.equal(result?.text, 'Saved.');
+  assert.deepEqual(result?.images, ['/p/tool-a.jpg']);
+});
