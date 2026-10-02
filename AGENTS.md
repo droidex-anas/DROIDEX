@@ -288,6 +288,8 @@ count, coverage targets, or a wish to look thorough.
 
 Tests are maintained code too. Keep the ones whose protection justifies their
 cost.
+Before adding a test or pruning a suite, follow the `test-audit` skill
+(`.claude/skills/test-audit/SKILL.md`).
 
 ## Scope, Git, and delivery
 
