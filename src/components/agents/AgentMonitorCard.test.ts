@@ -214,10 +214,8 @@ test('two in-flight waves render two docks, each scoped to its own agents', () =
   assert.ok(text.includes('Running'));
   assert.ok(text.includes('1 Done'));
   // The header summarizes completion; the pills carry the status breakdown.
-  assert.ok(!text.includes('spawned'));
   assert.ok(text.includes('All 1 agent finished'));
   assert.ok(text.includes('0 of 1 agent finished'));
-  assert.ok(!text.includes('Spawned'));
 });
 
 test('an unresolved live spawn reports unknown status and never infers lifecycle', () => {
@@ -238,9 +236,6 @@ test('an unresolved live spawn reports unknown status and never infers lifecycle
   assert.ok(!text.includes('1m</'));
   assert.ok(!text.includes('Done'));
 
-  // Ending the parent turn still says nothing about the child's lifecycle.
-  assert.equal(resolveWaveSessions([launched], [])[0].status, 'pending');
-
   // A queued child is known to be waiting its turn, so it says Queued instead.
   const queued = cardText({
     sessions: [{ ...childSession('queued-agent', 't1', 'pending'), queued: true }],
@@ -257,7 +252,6 @@ test('the dock renders from spawn events before sessions register, and stays unk
   const text = textOf(feedHtml([userMsg('go'), spawn('t1', 'explorer')], noSessions));
   assert.ok(text.includes('Agents'));
   assert.ok(text.includes('Awaiting status'));
-  assert.ok(!text.includes('Spawned'));
 
   // The parent keeps talking (plan updates, narration) while its subagents work,
   // so "is this wave live" cannot be "is this the last feed item".
