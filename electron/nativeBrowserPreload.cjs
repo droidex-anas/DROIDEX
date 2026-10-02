@@ -862,7 +862,7 @@ function isSensitiveAttribute(name, el) {
   if (['value', 'aria-valuenow', 'aria-valuetext'].includes(name) || name.startsWith('on'))
     return true;
   if (
-    /(token|secret|password|passcode|credential|auth|signature|api[-_]?key|private[-_]?key|cookie|session|csrf|otp)/i.test(
+    /(token|secret|password|passcode|credential|auth(?!or)|signature|api[-_]?key|private[-_]?key|cookie|session|csrf|otp)/i.test(
       name,
     )
   )

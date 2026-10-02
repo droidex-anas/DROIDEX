@@ -238,8 +238,10 @@ function isAuthenticationTokenChar(value) {
   );
 }
 
+const CONSOLE_LEVELS = { debug: 0, info: 1, warning: 2, error: 3 };
+
 function normalizeBrowserConsoleMessage(details) {
-  const level = { debug: 0, info: 1, warning: 2, error: 3 }[details?.level] ?? 0;
+  const level = CONSOLE_LEVELS[details?.level] ?? 0;
   return {
     level,
     message: redactBrowserDiagnosticText(details?.message),
@@ -249,6 +251,7 @@ function normalizeBrowserConsoleMessage(details) {
 }
 
 module.exports = {
+  CONSOLE_LEVELS,
   isSensitiveBrowserKey,
   normalizeBrowserConsoleMessage,
   redactBrowserDiagnosticText,

@@ -284,7 +284,7 @@ export function createBrowserMcpServer(
         'browser_inspect',
         [
           'Look at one element: its role and name, box, key attributes, the computed styles that say how it looks (colours, font, display, spacing), its text and its markup.',
-          'Pass a ref from browser_read_page, or a CSS selector. What fields hold, tokens and sensitive URL parts are redacted.',
+          'Pass a ref from browser_read_page, or a CSS selector. Field values, tokens and sensitive URL parts are redacted.',
         ].join(' '),
         {
           ref: z.string().optional().describe('Element ref from browser_read_page.'),

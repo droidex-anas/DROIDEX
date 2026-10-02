@@ -1,7 +1,7 @@
 // Wires a bound <webview> guest into its browser entry: the page listeners that
 // keep the entry's URL, history, console and load state current. The partition
 // handlers stay as they were for views: permissions and devices are denied.
-const CONSOLE_ERROR = 3;
+const { CONSOLE_LEVELS } = require('./browserDiagnostics.cjs');
 
 function createNativeBrowserViewFactory({
   session,
@@ -102,7 +102,7 @@ function createNativeBrowserViewFactory({
       if (String(details.sourceId ?? '').startsWith('node:electron/')) return;
       const message = normalizeBrowserConsoleMessage(details);
       // When errors came in, kept apart from the log, which a read empties.
-      if (message.level === CONSOLE_ERROR) {
+      if (message.level === CONSOLE_LEVELS.error) {
         entry.errorTimes.push(Date.now());
         if (entry.errorTimes.length > 100) entry.errorTimes.shift();
       }

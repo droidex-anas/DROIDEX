@@ -17,7 +17,7 @@ export function consoleText(events: BrowserConsoleEvent[]): string {
     const where = event.source
       ? `  (${event.source}${event.line ? `:${String(event.line)}` : ''})`
       : '';
-    const text = `${LEVELS[event.level] ?? 'info'}  ${event.message}${where}`;
+    const text = `${LEVELS[event.level] ?? 'info'}  ${event.message.trimEnd()}${where}`;
     const last = lines.at(-1);
     if (last?.text === text) last.times += 1;
     else lines.push({ text, times: 1 });

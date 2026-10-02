@@ -135,6 +135,8 @@ function createNativeBrowserPage({
         ok: true,
         networkEvents: entry.networkEvents.splice(0),
       };
+    // What a read hands over is no longer news for an action's answer.
+    entry.errorTimes.length = 0;
     return { requestId: request.requestId, ok: true, consoleEvents: entry.consoleEvents.splice(0) };
   }
 
