@@ -91,7 +91,7 @@ test('closing a session drops its pending autonomy entry', () => {
   assert.equal(closed.pendingAutonomy['app-1'], undefined);
 });
 
-test('a failed autonomy update settles pending and toasts without failing the session', () => {
+test('a failed autonomy update settles its session and toasts; without a session it does nothing', () => {
   const failure = {
     type: 'error' as const,
     code: 'session.autonomy_update_failed',
@@ -113,14 +113,6 @@ test('a failed autonomy update settles pending and toasts without failing the se
   assert.equal(next.pendingAutonomy['app-1'], undefined);
   assert.equal(next.sessions['app-1']?.phase, 'running');
   assert.equal(next.sessions['app-1']?.autonomy, 'medium');
-});
 
-test('an autonomy failure without a session id produces no reducer action', () => {
-  const action = adaptEvent({
-    type: 'error',
-    code: 'session.autonomy_update_failed',
-    message: 'no session',
-    recoverable: true,
-  });
-  assert.equal(action, null);
+  assert.equal(adaptEvent({ ...failure, appSessionId: undefined }), null);
 });
