@@ -130,6 +130,7 @@ test('PR comments expose reactions next to the composer', () => {
     comments: [
       comment({
         body: 'Looks good to me',
+        url: 'https://example.test/comment/1',
         reactions: [
           { content: 'THUMBS_UP', count: 3 },
           { content: 'EYES', count: 1 },
