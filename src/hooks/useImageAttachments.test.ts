@@ -112,7 +112,7 @@ test('submit does not wait for a crop of an attachment past cutoff', async () =>
   crop.resolve();
 });
 
-test('itemsBeforeCutoff keeps only attachments reserved before submit', () => {
+test('submit takes only attachments reserved before its cutoff, in intake order', () => {
   const sequences = new Map([
     ['a', 0],
     ['b', 1],
@@ -122,9 +122,6 @@ test('itemsBeforeCutoff keeps only attachments reserved before submit', () => {
     itemsBeforeCutoff([img('a'), img('b'), img('late')], sequences, 2).map((item) => item.id),
     ['a', 'b'],
   );
-});
-
-test('pathsInSequence merges mixed attachment types by intake order', () => {
   assert.deepEqual(
     pathsInSequence([
       { path: '/tmp/notes.pdf', sequence: 1 },
@@ -134,52 +131,36 @@ test('pathsInSequence merges mixed attachment types by intake order', () => {
   );
 });
 
-test('invalidate marks earlier additions stale, not later ones', () => {
-  const additions = createPendingAdditions();
-  const beforeClear = additions.stamp();
-  additions.invalidate();
-  const afterClear = additions.stamp();
-  assert.equal(additions.isStale(beforeClear), true);
-  assert.equal(additions.isStale(afterClear), false);
-});
-
-test('saveImageUnlessStale deletes the fresh file when a clear landed mid-save', async () => {
+test('saveImageUnlessStale deletes a file a clear outdated mid-save and keeps a later one', async () => {
   // Regression for the addBlob/applyCrop submit races: a clear() while the
   // file is still being written must delete it on landing instead of letting
   // it surface (as a chip or an orphaned temp file) on a later prompt.
   const additions = createPendingAdditions();
-  const stamp = additions.stamp();
+  const beforeClear = additions.stamp();
   const write = deferred();
   const discarded: string[] = [];
+  const discard = async (path: string) => {
+    discarded.push(path);
+  };
   const saving = saveImageUnlessStale(
     additions,
-    stamp,
+    beforeClear,
     async () => {
       await write.promise;
-      return '/tmp/fresh.png';
+      return '/tmp/stale.png';
     },
-    async (path) => {
-      discarded.push(path);
-    },
+    discard,
   );
   additions.invalidate(); // clear() while the file is being written
   write.resolve();
   assert.equal(await saving, null);
-  assert.deepEqual(discarded, ['/tmp/fresh.png']);
-});
+  assert.deepEqual(discarded, ['/tmp/stale.png']);
 
-test('saveImageUnlessStale keeps the saved path when no clear landed', async () => {
-  const additions = createPendingAdditions();
-  const stamp = additions.stamp();
-  const discarded: string[] = [];
-  const path = await saveImageUnlessStale(
-    additions,
-    stamp,
-    () => Promise.resolve('/tmp/fresh.png'),
-    async (p) => {
-      discarded.push(p);
-    },
+  // An addition stamped after the clear is not stale.
+  const afterClear = additions.stamp();
+  assert.equal(
+    await saveImageUnlessStale(additions, afterClear, async () => '/tmp/fresh.png', discard),
+    '/tmp/fresh.png',
   );
-  assert.equal(path, '/tmp/fresh.png');
-  assert.deepEqual(discarded, []);
+  assert.deepEqual(discarded, ['/tmp/stale.png']);
 });
