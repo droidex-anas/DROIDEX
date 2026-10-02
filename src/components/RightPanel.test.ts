@@ -60,37 +60,49 @@ function renderPanel(
   );
 }
 
-test('model row shows the session-pinned reasoning effort, never autonomy', () => {
-  const html = renderPanel({ autonomy: 'medium', reasoningEffort: 'xhigh', modelId: 'm1' }, [
-    model({ supportedReasoningEfforts: ['low', 'xhigh'] }),
-  ]);
-  assert.match(html, /Model Alpha/);
-  assert.match(html, />xhigh</);
-  assert.doesNotMatch(html, />medium</);
-});
-
-test('model row leaves unset effort provider-managed instead of using the global default', () => {
-  const html = renderPanel(
-    { modelId: 'm1' },
-    [model({ supportedReasoningEfforts: ['max'], defaultReasoningEffort: 'max' })],
-    'max',
-  );
-  assert.match(html, /Model Alpha/);
-  assert.doesNotMatch(html, />max</);
-});
-
-test('model row hides the pill for a known model without reasoning support', () => {
-  const html = renderPanel({ reasoningEffort: 'xhigh', modelId: 'm1' }, [
-    model({ supportedReasoningEfforts: [] }),
-  ]);
-  assert.match(html, /Model Alpha/);
-  assert.doesNotMatch(html, />xhigh</);
-});
-
-test('model row keeps the pill while the model list has not loaded', () => {
-  const html = renderPanel({ reasoningEffort: 'xhigh', modelId: 'unlisted' }, []);
-  assert.match(html, />unlisted</);
-  assert.match(html, />xhigh</);
+test('the model row shows only a session-pinned effort the model supports', () => {
+  const cases: {
+    name: string;
+    session: Partial<SessionSummary>;
+    models: ModelInfo[];
+    shown: string[];
+    hidden: string[];
+  }[] = [
+    {
+      name: 'a pinned effort, never autonomy',
+      session: { autonomy: 'medium', reasoningEffort: 'xhigh', modelId: 'm1' },
+      models: [model({ supportedReasoningEfforts: ['low', 'xhigh'] })],
+      shown: ['Model Alpha', 'xhigh'],
+      hidden: ['medium'],
+    },
+    {
+      // Unset effort stays provider-managed instead of using the global default.
+      name: 'an unset effort',
+      session: { modelId: 'm1' },
+      models: [model({ supportedReasoningEfforts: ['max'], defaultReasoningEffort: 'max' })],
+      shown: ['Model Alpha'],
+      hidden: ['max'],
+    },
+    {
+      name: 'a known model without reasoning support',
+      session: { reasoningEffort: 'xhigh', modelId: 'm1' },
+      models: [model({ supportedReasoningEfforts: [] })],
+      shown: ['Model Alpha'],
+      hidden: ['xhigh'],
+    },
+    {
+      name: 'a model list that has not loaded',
+      session: { reasoningEffort: 'xhigh', modelId: 'unlisted' },
+      models: [],
+      shown: ['unlisted', 'xhigh'],
+      hidden: [],
+    },
+  ];
+  for (const { name, session: sessionOverrides, models, shown, hidden } of cases) {
+    const html = renderPanel(sessionOverrides, models, 'max');
+    for (const text of shown) assert.ok(html.includes(`>${text}<`), `${name}: ${text}`);
+    for (const text of hidden) assert.ok(!html.includes(`>${text}<`), `${name}: ${text}`);
+  }
 });
 
 test('folderless chats skip the git rows and never show a loading state', () => {
