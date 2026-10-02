@@ -285,6 +285,10 @@ count, coverage targets, or a wish to look thorough.
   test to look small.
 - Do not weaken assertions or delete failing tests to get a green run. Honor CI
   gates, including the coverage thresholds in `npm run test:ci`.
+- Existing tests are the regression record. When a code change makes one fail,
+  fix the code, not the test. Edit or delete an existing assertion only when the
+  behavior change is intended, and name each such test in the pull request; CI
+  flags these edits for the reviewer (`npm run quality:test-edits`).
 
 Tests are maintained code too. Keep the ones whose protection justifies their
 cost.

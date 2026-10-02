@@ -41,6 +41,7 @@
     "quality:bundle-budgets": "node tools/check-bundle-budgets.mjs",
     "quality:perf-gates": "npm --prefix sidecar run perf:replay -- --gates --enforce-gates",
     "quality:tech-debt": "node tools/check-tech-debt.mjs",
+    "quality:test-edits": "node tools/check-test-edits.mjs",
     "quality:deadcode": "knip --include files,exports,types --max-issues 35 --no-config-hints && knip --directory sidecar --include files,exports,types --max-issues 25 --no-config-hints",
     "quality:deps": "knip --dependencies --no-config-hints && knip --directory sidecar --dependencies --no-config-hints",
     "quality:duplicates": "jscpd --config .jscpd.json",
