@@ -71,14 +71,21 @@ function fixture(options = {}) {
   return { manager, instances };
 }
 
-test('terminal manager keeps a PTY alive until explicit kill and then retains nothing', async () => {
-  const cleanups = [];
-  const { manager, instances } = fixture({
+// Retention timers the test fires by hand by calling the collected callbacks.
+function manualRetention(cleanups) {
+  return {
     setTimeout: (callback) => {
       cleanups.push(callback);
       return { unref() {} };
     },
     clearTimeout: () => {},
+  };
+}
+
+test('terminal manager keeps a PTY alive until explicit kill and then retains nothing', async () => {
+  const cleanups = [];
+  const { manager, instances } = fixture({
+    ...manualRetention(cleanups),
     exitRetentionMs: 10,
   });
   const terminal = await manager.create({
@@ -169,11 +176,7 @@ test('concurrent terminal creation cannot exceed the per-session limit', async (
 test('exited terminals are reclaimed after the retention window', async () => {
   const cleanups = [];
   const { manager, instances } = fixture({
-    setTimeout: (callback) => {
-      cleanups.push(callback);
-      return { unref() {} };
-    },
-    clearTimeout: () => {},
+    ...manualRetention(cleanups),
     exitRetentionMs: 10,
   });
   const exited = [];
@@ -276,11 +279,7 @@ test('terminal manager releases capacity when node-pty fails to load', async () 
 test('an exited terminal drops its PTY immediately and keeps bounded replay for late subscribers', async () => {
   const cleanups = [];
   const { manager, instances } = fixture({
-    setTimeout: (callback) => {
-      cleanups.push(callback);
-      return { unref() {} };
-    },
-    clearTimeout: () => {},
+    ...manualRetention(cleanups),
     exitRetentionMs: 30_000,
   });
   const terminal = await manager.create({ appSessionId: 'session-1', cwd: '/repo' });
@@ -311,39 +310,34 @@ test('memory pressure trims live replay without dropping the terminal', async ()
   assert.equal(manager.resourceCounts().live, 1);
 });
 
-test('hasChildren asks the child-pid lister for the shell pid', async () => {
+test('hasChildren asks about the live shell pid and propagates a lookup failure', async () => {
+  let lookup = async () => [];
   const calls = [];
-  const { manager } = fixture({
-    listChildPids: async (pid) => {
+  const { manager, instances } = fixture({
+    listChildPids: (pid) => {
       calls.push(pid);
-      return pid === 4242 ? [5000] : [];
+      return lookup(pid);
     },
   });
   const info = await manager.create({ appSessionId: 's1', cwd: '/w' });
+
+  lookup = async (pid) => (pid === 4242 ? [5000] : []);
   assert.equal(await manager.hasChildren(info.id), true);
   assert.deepEqual(calls, [4242]);
   assert.equal(await manager.hasChildren('missing'), false);
-});
 
-test('hasChildren answers false for a shell that exits while pgrep runs', async () => {
-  const { manager, instances } = fixture({
-    listChildPids: async () => {
-      instances[0].emitExit(0, 0);
-      return [5000];
-    },
-  });
-  const info = await manager.create({ appSessionId: 's1', cwd: '/w' });
-  assert.equal(await manager.hasChildren(info.id), false);
-});
-
-test('hasChildren propagates a child-pid lookup failure so the caller can confirm', async () => {
-  const { manager } = fixture({
-    listChildPids: async () => {
-      throw new Error('pgrep: not found');
-    },
-  });
-  const info = await manager.create({ appSessionId: 's1', cwd: '/w' });
+  // The caller confirms with the user when the lookup itself fails.
+  lookup = async () => {
+    throw new Error('pgrep: not found');
+  };
   await assert.rejects(() => manager.hasChildren(info.id), /pgrep/);
+
+  // A shell that exits while pgrep runs has no children to protect.
+  lookup = async () => {
+    instances[0].emitExit(0, 0);
+    return [5000];
+  };
+  assert.equal(await manager.hasChildren(info.id), false);
 });
 
 test('a spawned shell does not inherit the app-private variables', () => {
