@@ -30,7 +30,7 @@ function automation(now: number, overrides: Partial<AutomationInput> = {}) {
   );
 }
 
-test('a store from another version, or missing a list, is refused instead of guessed at', () => {
+test('a store from another version or missing a list is refused, and invalid records in it are dropped and logged', (t) => {
   assert.throws(
     () => parseAutomationStore({ version: 2, automations: [], runs: [] }, Date.now()),
     /Unsupported automations store version 2/,
@@ -40,38 +40,8 @@ test('a store from another version, or missing a list, is refused instead of gue
     () => parseAutomationStore({ version: 1, automations: [], runs: [] }, Date.now()),
     /missing its automations, runs, or proposals list/,
   );
-});
 
-test('saved definitions, run history and proposal drafts default additive target and file fields', () => {
-  const now = 1_000;
-  const definition = automation(now);
-  const run = newQueuedRun(definition, now, now, 'manual');
-  Reflect.deleteProperty(definition, 'target');
-  Reflect.deleteProperty(definition, 'files');
-  Reflect.deleteProperty(run.automation, 'target');
-  Reflect.deleteProperty(run.automation, 'files');
-  const restored = parseAutomationStore(
-    {
-      version: 1,
-      automations: [definition],
-      runs: [run],
-      proposals: [{ id: 'proposal', sourceAppSessionId: 'source', draft: definition }],
-      sessionOrigins: {},
-    },
-    now,
-  );
-  for (const value of [
-    restored.automations[0],
-    restored.runs[0]?.automation,
-    restored.proposals[0]?.draft,
-  ]) {
-    assert.ok(value);
-    assert.deepEqual(value.target, { kind: 'new-session' });
-    assert.deepEqual(value.files, []);
-  }
-});
-
-test('invalid stored records, including an unknown schedule kind, are dropped and logged', (t) => {
+  // An unknown schedule kind is as invalid as a missing title.
   const messages: string[] = [];
   t.mock.method(console, 'error', (message?: unknown) => {
     messages.push(String(message));
@@ -120,7 +90,36 @@ test('invalid stored records, including an unknown schedule kind, are dropped an
   ]);
 });
 
-test('trim keeps the origins of in-flight runs and of review worktrees', () => {
+test('saved definitions, run history and proposal drafts default additive target and file fields', () => {
+  const now = 1_000;
+  const definition = automation(now);
+  const run = newQueuedRun(definition, now, now, 'manual');
+  Reflect.deleteProperty(definition, 'target');
+  Reflect.deleteProperty(definition, 'files');
+  Reflect.deleteProperty(run.automation, 'target');
+  Reflect.deleteProperty(run.automation, 'files');
+  const restored = parseAutomationStore(
+    {
+      version: 1,
+      automations: [definition],
+      runs: [run],
+      proposals: [{ id: 'proposal', sourceAppSessionId: 'source', draft: definition }],
+      sessionOrigins: {},
+    },
+    now,
+  );
+  for (const value of [
+    restored.automations[0],
+    restored.runs[0]?.automation,
+    restored.proposals[0]?.draft,
+  ]) {
+    assert.ok(value);
+    assert.deepEqual(value.target, { kind: 'new-session' });
+    assert.deepEqual(value.files, []);
+  }
+});
+
+test('trim keeps in-flight and review-worktree origins, and every unconfirmed proposal while capping confirmed ones', () => {
   const now = Date.now();
   const busy = automation(now, { title: 'Busy' });
   const isolated = automation(now, {
@@ -166,12 +165,8 @@ test('trim keeps the origins of in-flight runs and of review worktrees', () => {
   );
   assert.ok(store.sessionOrigins['session-review']);
   assert.ok(store.sessionOrigins['session-live']);
-});
 
-test('trim keeps every unconfirmed proposal while capping confirmed history', () => {
-  const now = Date.now();
   const definition = automation(now);
-  const store = emptyAutomationStore();
   store.automations = [definition];
   store.proposals = Array.from(
     { length: 60 },
