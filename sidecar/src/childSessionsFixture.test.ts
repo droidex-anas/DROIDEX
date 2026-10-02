@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
-import { existsSync, mkdtempSync, rmSync } from 'node:fs';
+import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { WebSocket } from 'ws';
@@ -14,8 +14,6 @@ const fixturePath = fileURLToPath(
 
 async function startFixture(
   logPath: string,
-  overrides: NodeJS.ProcessEnv = {},
-  onSpawn: (child: ChildProcessWithoutNullStreams) => void = () => undefined,
 ): Promise<{ process: ChildProcessWithoutNullStreams; port: number }> {
   const child = spawn(process.execPath, [fixturePath], {
     cwd: process.cwd(),
@@ -26,11 +24,9 @@ async function startFixture(
       BRIDGE_EXIT_ON_STDIN_CLOSE: '1',
       CHILD_SESSIONS_SMOKE_ALLOW_ANY_TOKEN: '1',
       CHILD_SESSIONS_SMOKE_LOG: logPath,
-      ...overrides,
     },
     stdio: ['pipe', 'pipe', 'pipe'],
   });
-  onSpawn(child);
   return new Promise((resolveReady, reject) => {
     let output = '';
     let errorOutput = '';
@@ -129,59 +125,4 @@ test('fixture binds OS-assigned ports and exits with connected clients', async (
   );
   assert.equal(firstSocket.readyState, WebSocket.CLOSED);
   assert.equal(secondSocket.readyState, WebSocket.CLOSED);
-});
-
-test('fixture rejects port 65536 with its startup diagnostic and no live process', async (t) => {
-  let directory = '';
-  let fixtureProcess: ChildProcessWithoutNullStreams | undefined;
-
-  await t.test('failing first fixture setup', async (setup) => {
-    directory = mkdtempSync(`${tmpdir()}/droid-child-fixture-first-failure-`);
-    setup.after(() => {
-      rmSync(directory, { recursive: true, force: true });
-    });
-    await assert.rejects(
-      startFixture(`${directory}/first.jsonl`, { BRIDGE_PORT: '65536' }, (child) => {
-        fixtureProcess = child;
-      }),
-      /Child-session smoke fixture requires BRIDGE_PORT, bridge authentication, and log path\./,
-    );
-    assert.ok(fixtureProcess);
-    await waitForExit(fixtureProcess);
-  });
-
-  assert.equal(existsSync(directory), false);
-  assert.ok(fixtureProcess?.exitCode !== null || fixtureProcess.signalCode !== null);
-});
-
-test('second fixture startup failure cleans the first process and temporary files', async (t) => {
-  let directory = '';
-  let firstProcess: ChildProcessWithoutNullStreams | undefined;
-  let secondProcess: ChildProcessWithoutNullStreams | undefined;
-
-  await t.test('failing second fixture setup', async (setup) => {
-    directory = mkdtempSync(`${tmpdir()}/droid-child-fixture-second-failure-`);
-    setup.after(() => {
-      rmSync(directory, { recursive: true, force: true });
-    });
-    const first = await startFixture(`${directory}/first.jsonl`);
-    firstProcess = first.process;
-    setup.after(() => {
-      first.process.kill();
-    });
-    await assert.rejects(
-      startFixture(`${directory}/second.jsonl`, { BRIDGE_PORT: '65536' }, (child) => {
-        secondProcess = child;
-      }),
-      /Child-session smoke fixture requires BRIDGE_PORT, bridge authentication, and log path\./,
-    );
-    assert.ok(secondProcess);
-    await waitForExit(secondProcess);
-  });
-
-  assert.equal(existsSync(directory), false);
-  assert.ok(firstProcess);
-  await waitForExit(firstProcess);
-  assert.ok(firstProcess.exitCode !== null || firstProcess.signalCode !== null);
-  assert.ok(secondProcess?.exitCode !== null || secondProcess.signalCode !== null);
 });

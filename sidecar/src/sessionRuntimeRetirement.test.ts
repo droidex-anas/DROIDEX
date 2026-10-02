@@ -43,17 +43,18 @@ test('a settled background session is retirable only once it passes the idle bud
 
   assert.deepEqual(retirableSessions(idle, 1_000 + IDLE_MS - 1, IDLE_MS), []);
   assert.deepEqual(retirableSessions(idle, 1_000 + IDLE_MS, IDLE_MS), ['a']);
+
+  // A monotonic timestamp ahead of the clock counts as zero elapsed idle time.
+  const ahead = [facts('a', 101)];
+  assert.deepEqual(retirableSessions(ahead, 100, 0), ['a']);
+  assert.deepEqual(retirableSessions(ahead, 100, 1), []);
+  assert.deepEqual(retirableSessions(ahead, 102, 1), ['a']);
 });
 
-test('a session the user is looking at is never retirable, however long it sits', () => {
-  const forever = 1_000 + IDLE_MS * 100;
-
-  assert.deepEqual(retirableSessions([facts('a', 1_000, { focused: true })], forever, IDLE_MS), []);
-});
-
-test('a session with work, unsaved intent, or a resource in use is never retirable', () => {
+test('a session on screen, with work, unsaved intent, or a resource in use is never retirable', () => {
   const forever = 1_000 + IDLE_MS * 100;
   const blocked: [string, Partial<SessionRetirementFacts>][] = [
+    ['on-screen', { focused: true }],
     ['mid-turn', { streaming: true }],
     ['mid-mission-turn', { phase: 'orchestrator_turn', streaming: true }],
     ['still-initializing', { phase: 'initializing' }],
@@ -363,11 +364,4 @@ test('the timer is armed only while a session is actually retirable', () => {
     Reflect.set(globalThis, 'setTimeout', realSetTimeout);
     Reflect.set(globalThis, 'clearTimeout', realClearTimeout);
   }
-});
-
-test('a monotonic timestamp ahead of the clock counts as zero elapsed idle time', () => {
-  const idle = [facts('a', 101)];
-  assert.deepEqual(retirableSessions(idle, 100, 0), ['a']);
-  assert.deepEqual(retirableSessions(idle, 100, 1), []);
-  assert.deepEqual(retirableSessions(idle, 102, 1), ['a']);
 });

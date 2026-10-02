@@ -143,12 +143,9 @@ describe('resolveVariant', () => {
 });
 
 describe('detectPresetId', () => {
-  it('matches built-in variants exactly', () => {
+  it('matches built-in variants exactly, ignoring hex case', () => {
     assert.equal(detectPresetId({ ...DEFAULT_THEME.dark }), DEFAULT_THEME.id);
     assert.equal(detectPresetId({ ...BUILT_IN_THEMES[1].light }), BUILT_IN_THEMES[1].id);
-  });
-
-  it('matches case-insensitively', () => {
     const upper = { ...DEFAULT_THEME.dark, bg: DEFAULT_THEME.dark.bg.toUpperCase() };
     assert.equal(detectPresetId(upper), DEFAULT_THEME.id);
   });
@@ -247,16 +244,13 @@ describe('parseCustomThemes', () => {
 });
 
 describe('parseThemePresetImport', () => {
-  it('accepts a valid export payload', () => {
+  it('accepts a valid export payload and rejects incomplete ones', () => {
     const payload = {
       name: EXAMPLE_CUSTOM.name,
       light: EXAMPLE_CUSTOM.light,
       dark: EXAMPLE_CUSTOM.dark,
     };
     assert.deepEqual(parseThemePresetImport(payload), payload);
-  });
-
-  it('rejects invalid payloads', () => {
     assert.equal(parseThemePresetImport(null), null);
     assert.equal(parseThemePresetImport({ name: 'x' }), null);
     assert.equal(

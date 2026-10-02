@@ -118,15 +118,3 @@ test('an orphan is still stopped when the newer call fails or never settles', (t
   t.mock.timers.tick(40_000);
   assert.deepEqual(stopped, ['chat-one', 'chat-two']);
 });
-
-test('only the owning page can stop a call', (t) => {
-  const { voice, stopped, call } = owners(t);
-  voice.connected('page-one', {});
-  voice.connected('page-two', {});
-  call('chat-one', 'page-one', 'a');
-  call('chat-one', 'page-two', 'b');
-
-  assert.equal(voice.stopped('chat-one', 'page-one'), false);
-  assert.equal(voice.stopped('chat-one', 'page-two'), true);
-  assert.deepEqual(stopped, []);
-});

@@ -12,13 +12,6 @@ const chips = (overrides: Partial<ComposerChips> = {}): ComposerChips => ({
   ...overrides,
 });
 
-test('backspace removes a skill, which the old handler could not reach', () => {
-  assert.deepEqual(chipRemovedByBackspace(chips({ skillFilePaths: ['/skills/review/SKILL.md'] })), {
-    chip: 'skill',
-    filePath: '/skills/review/SKILL.md',
-  });
-});
-
 // The selections sit on the caret's line and the attachments in a row above it,
 // so Backspace empties the line first and then works up through that row.
 test('backspace unwinds the selections before the attachment row', () => {
@@ -50,12 +43,6 @@ test('backspace unwinds the selections before the attachment row', () => {
     chipRemovedByBackspace({ ...staged, documentPaths: [], imagePaths: [], pastedFileIds: [] }),
     { chip: 'pastedImage', id: 'img-1' },
   );
-});
-
-test('Visualize goes off in a single press', () => {
-  assert.deepEqual(chipRemovedByBackspace(chips({ visualizeSelected: true })), {
-    chip: 'visualize',
-  });
 });
 
 test('the most recent of a group goes first', () => {

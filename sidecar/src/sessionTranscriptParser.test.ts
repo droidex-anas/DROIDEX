@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { parseSessionLineEvents } from './sessionTranscriptParser.js';
-import type { TranscriptEvent } from './protocol.js';
+import type { SessionRole, TranscriptEvent } from './protocol.js';
 import { storedNoticeLine } from './sessionNotices.js';
 import { formatBranchPrompt } from './branchPrompt.js';
 import { formatSideChatPrompt } from './sideChatPrompt.js';
@@ -24,168 +24,112 @@ function messageLine(opts: {
   });
 }
 
-test('a tool_result with missing content is preserved, not dropped', () => {
-  // Regression: block.content was undefined, so stringifyToolResult reached
-  // safeStringify(undefined) which returned undefined (not a string), made
-  // trimText(undefined) throw, and the surrounding try/catch dropped the whole
-  // line — losing this tool_result and any sibling events.
-  const line = JSON.parse(
-    messageLine({ role: 'user', content: [{ type: 'tool_result', tool_use_id: 't1' }] }),
-  );
-  const events = parseSessionLineEvents('app', 'provider', 'primary', line);
-  const result = events.find((e) => e.kind === 'tool_result');
-  assert.ok(result, 'tool_result must survive even with no content body');
-  assert.equal(result!.text, '');
-  assert.equal(result!.toolUseId, 't1');
-});
+/** Parses one stored message line as the primary session's replay does. */
+function replay(
+  opts: Parameters<typeof messageLine>[0],
+  provider = 'provider',
+  role: SessionRole = 'primary',
+): TranscriptEvent[] {
+  return parseSessionLineEvents('app', provider, role, JSON.parse(messageLine(opts)));
+}
 
-test('a tool_result with a null JSON literal in its content array is not dropped', () => {
-  // A degenerate array element (the literal null) must not crash the parse;
-  // the real text block beside it must still surface.
-  const line = JSON.parse(
-    messageLine({
-      role: 'user',
-      content: [null, { type: 'tool_result', tool_use_id: 't2', content: 'done' }],
-    }),
-  );
-  const events = parseSessionLineEvents('app', 'provider', 'primary', line);
-  const result = events.find((e) => e.kind === 'tool_result') as TranscriptEvent;
-  assert.ok(result, 'tool_result must survive a null sibling block');
-  assert.equal(result.text, 'done');
+function userText(text: string, visibility?: string) {
+  return { role: 'user', visibility, content: [{ type: 'text', text }] };
+}
+
+const truncated = (chars: number) => `\n\n[truncated ${String(chars)} chars]`;
+
+test('a tool_result without content, or beside a null block, is preserved, not dropped', () => {
+  // Regression: an undefined block.content made trimText throw, and the
+  // surrounding try/catch dropped the whole line with its sibling events.
+  const empty = replay({ role: 'user', content: [{ type: 'tool_result', tool_use_id: 't1' }] });
+  const result = empty.find((e) => e.kind === 'tool_result');
+  assert.ok(result, 'tool_result must survive even with no content body');
+  assert.equal(result.text, '');
+  assert.equal(result.toolUseId, 't1');
+
+  // A degenerate array element (the literal null) must not crash the parse.
+  const beside = replay({
+    role: 'user',
+    content: [null, { type: 'tool_result', tool_use_id: 't2', content: 'done' }],
+  });
+  assert.equal(beside.find((e) => e.kind === 'tool_result')?.text, 'done');
 });
 
 function assistantText(text: string): TranscriptEvent[] {
-  return parseSessionLineEvents(
-    'app',
-    'provider',
-    'primary',
-    JSON.parse(messageLine({ role: 'assistant', content: [{ type: 'text', text }] })),
-  );
+  return replay({ role: 'assistant', content: [{ type: 'text', text }] });
 }
 
-test('an oversized App answer replays with its fence closed', () => {
+test('an oversized App answer replays whole, with its fence closed, with either line ending', () => {
   // Regression: every replayed text block shared the 12k cap, so a real
-  // /visualize answer (25k-35k chars) came back without its closing fence.
-  // After a restart the App rendered its markup with a half-written script:
-  // no interactivity, an empty canvas, and nothing the renderer could recover.
-  const app = `Here is the lab.\n\n\`\`\`app\n<main data-droidex-app-root>${'<p>chart</p>'.repeat(2_000)}</main>\n\`\`\`\n\nSuggested exercise: set a = 6.`;
-  assert.ok(app.length > 12_000);
-
-  const events = assistantText(app);
-
-  assert.equal(events.length, 1);
-  assert.equal(events[0].text, app);
-  assert.doesNotMatch(events[0].text ?? '', /\[truncated/);
-});
-
-test('an App answer replays whole with either line ending', () => {
-  // Regression: the fence probe required a bare newline after the info word, so
-  // the same answer with CRLF endings replayed at the shared cap and came back
-  // cut mid-script, while the renderer's scanner would have run it.
+  // /visualize answer came back without its closing fence and rendered a
+  // half-written script after a restart. The fence probe once also required a
+  // bare newline, so the CRLF copy was cut mid-script.
   const body = `<main data-droidex-app-root>${'<p>chart</p>'.repeat(2_500)}</main>`;
-  const lf = `Here is the lab.\n\n\`\`\`app\n${body}\n\`\`\`\n`;
-  const crlf = lf.replaceAll('\n', '\r\n');
+  const lf = `Here is the lab.\n\n\`\`\`app\n${body}\n\`\`\`\n\nSuggested exercise: set a = 6.`;
   assert.ok(lf.length > 12_000);
 
-  for (const answer of [lf, crlf]) {
+  for (const answer of [lf, lf.replaceAll('\n', '\r\n')]) {
     const events = assistantText(answer);
+    assert.equal(events.length, 1);
     assert.equal(events[0].text, answer);
-    assert.doesNotMatch(events[0].text ?? '', /\[truncated/);
   }
 });
 
-test('an App answer keeps its own bound while prose keeps the shared cap', () => {
+test('only an assistant answer earns the App bound; everything else keeps the shared cap', () => {
   const prose = assistantText('x'.repeat(13_000));
-  assert.equal(prose[0].text, `${'x'.repeat(12_000)}\n\n[truncated 1000 chars]`);
+  assert.equal(prose[0].text, `${'x'.repeat(12_000)}${truncated(1000)}`);
 
   const fence = '```app\n';
   const app = assistantText(`${fence}${'y'.repeat(257_000 - fence.length)}`);
-  assert.equal(app[0].text?.length, 256_000 + '\n\n[truncated 1000 chars]'.length);
+  assert.equal(app[0].text?.length, 256_000 + truncated(1000).length);
   assert.match(app[0].text ?? '', /\[truncated 1000 chars\]$/);
 
-  const toolEvents = parseSessionLineEvents(
-    'app',
-    'provider',
-    'primary',
-    JSON.parse(
-      messageLine({
-        role: 'user',
-        // An `app` fence inside machine output is not a runnable App.
-        content: [
-          { type: 'tool_result', tool_use_id: 't3', content: `${fence}${'z'.repeat(13_000)}` },
-        ],
-      }),
-    ),
-  );
-  assert.equal(toolEvents[0].text?.length, 12_000 + '\n\n[truncated 1007 chars]'.length);
+  // An `app` fence in machine output, thinking or a user bubble is never a
+  // runnable App, so those blocks stay bounded by the shared cap.
+  const oversized = `${fence}${'z'.repeat(13_000)}`;
+  const capped = 12_000 + truncated(1007).length;
+  const [tool] = replay({
+    role: 'user',
+    content: [{ type: 'tool_result', tool_use_id: 't3', content: oversized }],
+  });
+  const [thinking] = replay({
+    role: 'assistant',
+    content: [{ type: 'thinking', thinking: oversized }],
+  });
+  const [user] = replay(userText(oversized));
+  assert.equal(tool?.text?.length, capped);
+  assert.equal(thinking?.kind, 'thinking');
+  assert.equal(thinking?.text?.length, capped);
+  assert.equal(user?.author, 'user');
+  assert.equal(user?.text?.length, capped);
 });
 
-test('only an assistant answer earns the App bound', () => {
-  // An `app` fence outside an assistant answer never becomes a runnable App:
-  // thinking has its own surface and a user bubble renders as plain text. Those
-  // blocks keep the shared cap so replay stays bounded.
-  const fence = '```app\n';
-  const oversized = `${fence}${'y'.repeat(13_000)}`;
-
-  const thinking = parseSessionLineEvents(
-    'app',
-    'provider',
-    'primary',
-    JSON.parse(
-      messageLine({ role: 'assistant', content: [{ type: 'thinking', thinking: oversized }] }),
-    ),
-  );
-  assert.equal(thinking[0].kind, 'thinking');
-  assert.equal(thinking[0].text?.length, 12_000 + '\n\n[truncated 1007 chars]'.length);
-
-  const user = parseSessionLineEvents(
-    'app',
-    'provider',
-    'primary',
-    JSON.parse(messageLine({ role: 'user', content: [{ type: 'text', text: oversized }] })),
-  );
-  assert.equal(user[0].author, 'user');
-  assert.equal(user[0].text?.length, 12_000 + '\n\n[truncated 1007 chars]'.length);
-});
-
-test('llm_only user messages stay hidden (filtering lives in the parser)', () => {
-  const visible = parseSessionLineEvents(
-    'app',
-    'provider',
-    'primary',
-    JSON.parse(messageLine({ role: 'user', content: [{ type: 'text', text: 'shown' }] })),
-  );
-  const hidden = parseSessionLineEvents(
-    'app',
-    'provider',
-    'primary',
-    JSON.parse(
-      messageLine({
-        role: 'user',
-        visibility: 'llm_only',
-        content: [{ type: 'text', text: 'hidden' }],
-      }),
-    ),
-  );
+test('hidden user content never replays as chat', () => {
   assert.deepEqual(
-    visible.map((e) => e.text),
+    replay(userText('shown')).map((e) => e.text),
     ['shown'],
   );
-  assert.deepEqual(hidden, []);
+  assert.deepEqual(replay(userText('hidden', 'llm_only')), []);
+  // Internal skill bodies arrive as ordinary user text.
+  const skillBody = ` <system-notification>
+Skills provide specialized capabilities and domain knowledge.
+<skill filePath="builtin:review">
+<name>review</name>
+Full private skill instructions
+</skill>
+</system-notification>`;
+  assert.deepEqual(replay(userText(skillBody)), []);
 });
 
-test('child user prompts replay with child ownership', () => {
-  const line = JSON.parse(
-    messageLine({ role: 'user', content: [{ type: 'text', text: 'continue the child task' }] }),
-  );
-
-  const events = parseSessionLineEvents('app', 'child-provider', 'worker', line);
+test('child sessions replay their prompts as the child, and never a skill activation', () => {
+  const events = replay(userText('continue the child task'), 'child-provider', 'worker');
   assert.deepEqual(
-    events.map((event) => ({
-      sourceSessionId: event.sourceSessionId,
-      role: event.role,
-      author: event.author,
-      text: event.text,
+    events.map(({ sourceSessionId, role, author, text }) => ({
+      sourceSessionId,
+      role,
+      author,
+      text,
     })),
     [
       {
@@ -196,86 +140,38 @@ test('child user prompts replay with child ownership', () => {
       },
     ],
   );
+
+  const activation = userText('Skill "review" activated: child task', 'user_only');
+  for (const role of ['worker', 'validator'] as const)
+    assert.deepEqual(replay(activation, 'child-provider', role), []);
 });
 
-test('app-generation guidance replays as only the concise user command', () => {
-  const line = JSON.parse(
-    messageLine({
-      role: 'user',
-      content: [
-        {
-          type: 'text',
-          text: `DROIDEX App request:\n/visualize compare renderer timings\n\nPrivate generation guidance:\nReturn one fenced app block using --app-background.`,
-        },
-      ],
-    }),
-  );
-
-  const events = parseSessionLineEvents('app', 'provider', 'primary', line);
-  assert.equal(events.length, 1);
-  assert.equal(events[0].text, '/visualize compare renderer timings');
-  assert.doesNotMatch(events[0].text ?? '', /Private generation guidance/);
-});
-
-test('a side-chat question replays without its guidance, also when branched across harnesses', () => {
+test('a prompt wrapped in DROIDEX guidance replays as only what the user typed', () => {
   const question = 'Why does the chart dip on Wednesday?';
-  for (const text of [
-    formatSideChatPrompt(question),
-    formatBranchPrompt(formatSideChatPrompt(question), '**User:** /visualize coffee sales'),
-  ]) {
-    const line = JSON.parse(messageLine({ role: 'user', content: [{ type: 'text', text }] }));
-    const events = parseSessionLineEvents('app', 'provider', 'primary', line);
+  const conversation = `**User:** earlier question\n\n**Assistant:** ${'long answer '.repeat(10_000)}`;
+  const cases: [string, string][] = [
+    [
+      'DROIDEX App request:\n/visualize compare renderer timings\n\nPrivate generation guidance:\nReturn one fenced app block using --app-background.',
+      '/visualize compare renderer timings',
+    ],
+    [formatSideChatPrompt(question), question],
+    // Also when the side chat was branched across harnesses.
+    [
+      formatBranchPrompt(formatSideChatPrompt(question), '**User:** /visualize coffee sales'),
+      question,
+    ],
+    // However long the copied conversation.
+    [formatBranchPrompt('Try it with Postgres', conversation), 'Try it with Postgres'],
+  ];
+  for (const [prompt, typed] of cases) {
+    const events = replay(userText(prompt));
     assert.equal(events.length, 1);
-    assert.equal(events[0].text, question);
+    assert.equal(events[0].text, typed);
   }
 });
 
-test('a branch prompt replays as only its request, however long the copied conversation', () => {
-  const conversation = `**User:** earlier question\n\n**Assistant:** ${'long answer '.repeat(10_000)}`;
-  const line = JSON.parse(
-    messageLine({
-      role: 'user',
-      content: [{ type: 'text', text: formatBranchPrompt('Try it with Postgres', conversation) }],
-    }),
-  );
-
-  const events = parseSessionLineEvents('app', 'provider', 'primary', line);
-  assert.equal(events.length, 1);
-  assert.equal(events[0].text, 'Try it with Postgres');
-});
-
-test('internal skill notifications never replay as user-authored chat', () => {
-  const line = JSON.parse(
-    messageLine({
-      role: 'user',
-      content: [
-        {
-          type: 'text',
-          text: ` <system-notification>
-Skills provide specialized capabilities and domain knowledge.
-<skill filePath="builtin:review">
-<name>review</name>
-Full private skill instructions
-</skill>
-</system-notification>`,
-        },
-      ],
-    }),
-  );
-
-  assert.deepEqual(parseSessionLineEvents('app', 'provider', 'primary', line), []);
-});
-
 test('user-only skill activation restores the prompt and harness acknowledgement separately', () => {
-  const line = JSON.parse(
-    messageLine({
-      role: 'user',
-      visibility: 'user_only',
-      content: [{ type: 'text', text: 'Skill "review" activated: PR #100' }],
-    }),
-  );
-
-  const events = parseSessionLineEvents('app', 'provider', 'primary', line);
+  const events = replay(userText('Skill "review" activated: PR #100', 'user_only'));
   assert.equal(events.length, 2);
   assert.deepEqual(
     {
@@ -303,19 +199,6 @@ test('user-only skill activation restores the prompt and harness acknowledgement
       text: 'Skill "review" activated: PR #100',
     },
   );
-});
-
-test('child skill activations never replay as primary user prompts', () => {
-  const line = JSON.parse(
-    messageLine({
-      role: 'user',
-      visibility: 'user_only',
-      content: [{ type: 'text', text: 'Skill "review" activated: child task' }],
-    }),
-  );
-
-  for (const role of ['worker', 'validator'] as const)
-    assert.deepEqual(parseSessionLineEvents('app', 'child-provider', role, line), []);
 });
 
 test('a mid-file compaction_state record replays as a divider event', () => {
@@ -371,8 +254,7 @@ test('a prompt sent with side-chat answers replays as the words typed plus the a
     '</reply>',
     '</side_chat_replies>',
   ].join('\n');
-  const line = JSON.parse(messageLine({ role: 'user', content: [{ type: 'text', text: prompt }] }));
-  const [event] = parseSessionLineEvents('app', 'provider', 'primary', line);
+  const [event] = replay(userText(prompt));
   assert.equal(event?.text, 'Use this');
   assert.deepEqual(event?.sideChatReplies, ['Sort by date first.', 'Then by name.']);
 });

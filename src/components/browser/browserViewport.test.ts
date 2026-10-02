@@ -2,15 +2,12 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { normalizeUrl, viewportForMode, viewportFromFrame } from './browserViewport';
 
-test('viewportFromFrame matches the fit browser surface inside the canvas frame', () => {
+test('viewportFromFrame fits the browser surface inside the canvas frame', () => {
   assert.deepEqual(viewportFromFrame({ width: 1325, height: 857 }), {
     width: 1289,
     height: 821,
     deviceScaleFactor: 2,
   });
-});
-
-test('viewportFromFrame follows the available browser surface', () => {
   assert.deepEqual(viewportFromFrame({ width: 320, height: 300 }), {
     width: 284,
     height: 264,

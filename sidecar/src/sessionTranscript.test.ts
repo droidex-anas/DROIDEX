@@ -104,13 +104,22 @@ function collectAll(path: string, limit: number): TranscriptEvent[] {
   return pages.flat();
 }
 
-test('backward windows reassemble the exact transcript with no gaps or duplicates', () => {
+test('backward windows reassemble the exact transcript in seq order, with no gaps or duplicates', () => {
   const path = writeSession([assistant('a1'), rich('r'), assistant('a2'), assistant('a3')]);
   const all = collectAll(path, 4);
   assert.deepEqual(
     all.map((e) => `${e.kind}:${e.text ?? e.toolName ?? ''}`),
     ['text:a1', 'thinking:r-think', 'text:r-text', 'tool_call:Read', 'text:a2', 'text:a3'],
   );
+  // seq is strictly increasing within and across pages.
+  const paged = collectAll(
+    writeSession([assistant('a1'), rich('r'), assistant('a2'), assistant('a3'), assistant('a4')]),
+    2,
+  );
+  assert.ok(paged.every((e) => typeof e.seq === 'number'));
+  for (let i = 1; i < paged.length; i++) {
+    assert.ok(paged[i].seq! > paged[i - 1].seq!, `seq must increase at index ${i}`);
+  }
 });
 
 test("a page boundary may split one line's events across pages", () => {
@@ -135,21 +144,6 @@ test("a page boundary may split one line's events across pages", () => {
   assert.equal(page3.older, undefined);
 });
 
-test('seq is strictly increasing within and across pages', () => {
-  const path = writeSession([
-    assistant('a1'),
-    rich('r'),
-    assistant('a2'),
-    assistant('a3'),
-    assistant('a4'),
-  ]);
-  const all = collectAll(path, 2);
-  assert.ok(all.every((e) => typeof e.seq === 'number'));
-  for (let i = 1; i < all.length; i++) {
-    assert.ok(all[i].seq! > all[i - 1].seq!, `seq must increase at index ${i}`);
-  }
-});
-
 test('corrupt lines are skipped without losing their neighbors', () => {
   const path = writeSession([assistant('a1'), '{not json', assistant('a2')]);
   const all = collectAll(path, 10);
@@ -159,52 +153,16 @@ test('corrupt lines are skipped without losing their neighbors', () => {
   );
 });
 
-test('LLM-only user messages stay hidden in eager and paged transcript replay', () => {
+test('eager and paged replay hide internal user messages and restore skill activations', () => {
+  const notification =
+    '<system-notification>\n<skill filePath="builtin:review">private instructions</skill>\n</system-notification>';
   const path = writeSession([
     userMessage('ordinary user prompt'),
     userMessage('internal child-session handoff', 'llm_only'),
     userMessage('user-only prompt', 'user_only'),
     userMessage('shared prompt', 'both'),
-    assistant('assistant reply'),
-  ]);
-
-  for (const events of [
-    collectAll(path, 2),
-    parseFullSessionTranscript('app', 'provider', path, 'primary'),
-  ]) {
-    assert.deepEqual(
-      events.map((event) => event.text),
-      ['ordinary user prompt', 'user-only prompt', 'shared prompt', 'assistant reply'],
-    );
-  }
-});
-
-test('system notifications stay hidden in eager and paged transcript replay', () => {
-  const path = writeSession([
-    userMessage('/review PR #100'),
-    userMessage(
-      '<system-notification>\n<skill filePath="builtin:review">private instructions</skill>\n</system-notification>',
-    ),
-    assistant('Review started'),
-  ]);
-
-  for (const events of [
-    collectAll(path, 1),
-    parseFullSessionTranscript('app', 'provider', path, 'primary'),
-  ]) {
-    assert.deepEqual(
-      events.map((event) => event.text),
-      ['/review PR #100', 'Review started'],
-    );
-  }
-});
-
-test('skill activation restores as a styled user prompt followed by harness acknowledgement', () => {
-  const path = writeSession([
     userMessage('Skill "review" activated: PR #100', 'user_only'),
-    userMessage(
-      '<system-notification>\n<skill filePath="builtin:review">private instructions</skill>\n</system-notification>',
-    ),
+    userMessage(notification),
     assistant('Review started'),
   ]);
 
@@ -215,12 +173,11 @@ test('skill activation restores as a styled user prompt followed by harness ackn
     assert.deepEqual(
       events.map((event) => ({ text: event.text, author: event.author, skills: event.skills })),
       [
+        { text: 'ordinary user prompt', author: 'user', skills: undefined },
+        { text: 'user-only prompt', author: 'user', skills: undefined },
+        { text: 'shared prompt', author: 'user', skills: undefined },
         { text: 'PR #100', author: 'user', skills: ['review'] },
-        {
-          text: 'Skill "review" activated: PR #100',
-          author: undefined,
-          skills: undefined,
-        },
+        { text: 'Skill "review" activated: PR #100', author: undefined, skills: undefined },
         { text: 'Review started', author: undefined, skills: undefined },
       ],
     );

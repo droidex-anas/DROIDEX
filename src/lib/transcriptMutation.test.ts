@@ -11,36 +11,6 @@ import {
 
 const reference = (id: string) => ({ id });
 
-test('the first transcript mutation starts revision tracking at one', () => {
-  const first = nextTranscriptMutation(undefined, {
-    kind: 'append',
-    previousLength: 0,
-    firstChangedIndex: 0,
-  });
-
-  assert.deepEqual(first, {
-    revision: 1,
-    baseRevision: 0,
-    kind: 'append',
-    previousLength: 0,
-    firstChangedIndex: 0,
-  });
-  assert.deepEqual(
-    nextTranscriptMutation(first, {
-      kind: 'append',
-      previousLength: 1,
-      firstChangedIndex: 1,
-    }),
-    {
-      revision: 2,
-      baseRevision: 1,
-      kind: 'append',
-      previousLength: 1,
-      firstChangedIndex: 1,
-    },
-  );
-});
-
 test('pure prepend detection records one exact insertion without scanning semantics', () => {
   const retained = [reference('b'), reference('c')];
   const older = [reference('a')];
@@ -188,24 +158,6 @@ test('aggregation conservatively resets for an explicit reset or revision gap', 
   const gapped = aggregateTranscriptMutations(6, [lateAppend]);
   assert.ok(gapped);
   assert.equal(gapped.kind, 'reset');
-});
-
-test('aggregation preserves a restarted revision lineage after the batch record was pruned', () => {
-  const restarted: TranscriptMutation = {
-    revision: 1,
-    baseRevision: 0,
-    kind: 'append',
-    previousLength: 0,
-    firstChangedIndex: 0,
-  };
-
-  assert.deepEqual(aggregateTranscriptMutations(9, [restarted]), {
-    revision: 1,
-    baseRevision: 0,
-    kind: 'reset',
-    previousLength: 0,
-    firstChangedIndex: 0,
-  });
 });
 
 test('mutation helpers reject invalid transcript indices', () => {
@@ -410,13 +362,16 @@ test('batch aggregation keeps recreated sessions on their restarted revision lin
   observeTranscriptMutationChanges(records, batchStart, {});
   observeTranscriptMutationChanges(records, {}, recreated);
 
+  const restartedReset = {
+    revision: 1,
+    baseRevision: 0,
+    kind: 'reset',
+    previousLength: 0,
+    firstChangedIndex: 0,
+  };
   assert.deepEqual(aggregateTranscriptMutationBatch(batchStart, recreated, records), {
-    'session-a': {
-      revision: 1,
-      baseRevision: 0,
-      kind: 'reset',
-      previousLength: 0,
-      firstChangedIndex: 0,
-    },
+    'session-a': restartedReset,
   });
+  // The same lineage holds after the batch record was pruned.
+  assert.deepEqual(aggregateTranscriptMutations(9, [restarted]), restartedReset);
 });

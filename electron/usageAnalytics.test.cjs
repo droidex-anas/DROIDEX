@@ -117,28 +117,18 @@ test('the id is not derived from device, account, or network identity', async ()
   ]);
 });
 
-test('development and test builds report nothing', async () => {
-  const analytics = createUsageAnalytics(options({ app: { isPackaged: false } }));
-  assert.deepEqual(await analytics.bootstrap(), { enabled: false });
-});
-
-test('a packaged build with no Datadog configuration reports nothing', async () => {
-  for (const config of [
-    {},
-    { ...CONFIG, applicationId: '' },
-    { ...CONFIG, clientToken: '' },
-    { ...CONFIG, site: '' },
-  ]) {
-    const analytics = createUsageAnalytics(options({ config }));
-    assert.deepEqual(await analytics.bootstrap(), { enabled: false });
-  }
-});
-
-test('the environment kill switch silences a packaged build', async () => {
-  const analytics = createUsageAnalytics(
+test('development builds, unconfigured builds, and the kill switch report nothing', async () => {
+  const silent = [
+    options({ app: { isPackaged: false } }),
+    options({ config: {} }),
+    options({ config: { ...CONFIG, applicationId: '' } }),
+    options({ config: { ...CONFIG, clientToken: '' } }),
+    options({ config: { ...CONFIG, site: '' } }),
     options({ env: { DROIDEX_DISABLE_USAGE_ANALYTICS: '1' } }),
-  );
-  assert.deepEqual(await analytics.bootstrap(), { enabled: false });
+  ];
+  for (const silentOptions of silent) {
+    assert.deepEqual(await createUsageAnalytics(silentOptions).bootstrap(), { enabled: false });
+  }
 });
 
 test('maintainer builds report the local channel, not release', async () => {

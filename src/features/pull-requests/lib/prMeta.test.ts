@@ -54,38 +54,18 @@ test('review state and unknown mergeability leave the merge to gh', () => {
   assert.equal(mergeBlockReason(pr({ mergeable: null })), null);
 });
 
-test('checks that all skipped are neutral, not a green run', () => {
-  assert.deepEqual(checksBadge(checksSummary(['skipping', 'skipping', 'skipping'].map(check))), {
-    label: '3 skipped',
-    tone: 'neutral',
-  });
-  assert.deepEqual(checksBadge(checksSummary(['pass', 'pass', 'pass'].map(check))), {
-    label: '3/3 passed',
-    tone: 'success',
-  });
-  assert.equal(checksBadge(checksSummary([])), null);
-});
-
-test('a run that passed some and skipped some is partial, not green', () => {
-  assert.deepEqual(checksBadge(checksSummary(['pass', 'skipping', 'skipping'].map(check))), {
-    label: '1/3 passed',
-    tone: 'neutral',
-  });
-  assert.deepEqual(checksBadge(checksSummary(['pass', 'pass', 'pass'].map(check))), {
-    label: '3/3 passed',
-    tone: 'success',
-  });
-});
-
-test('neutral and unknown checks are labelled honestly', () => {
-  assert.deepEqual(checksBadge(checksSummary(['neutral', 'neutral'].map(check))), {
-    label: '2 neutral',
-    tone: 'neutral',
-  });
-  assert.deepEqual(checksBadge(checksSummary(['mystery'].map(check))), {
-    label: '1 unknown',
-    tone: 'neutral',
-  });
+test('check badges are green only when every check passed', () => {
+  const cases: [string[], ReturnType<typeof checksBadge>][] = [
+    [['pass', 'pass', 'pass'], { label: '3/3 passed', tone: 'success' }],
+    [['skipping', 'skipping', 'skipping'], { label: '3 skipped', tone: 'neutral' }],
+    [['pass', 'skipping', 'skipping'], { label: '1/3 passed', tone: 'neutral' }],
+    [['neutral', 'neutral'], { label: '2 neutral', tone: 'neutral' }],
+    [['mystery'], { label: '1 unknown', tone: 'neutral' }],
+    [[], null],
+  ];
+  for (const [buckets, badge] of cases) {
+    assert.deepEqual(checksBadge(checksSummary(buckets.map(check))), badge, buckets.join(','));
+  }
 });
 
 test('pending reviews stay pending and current requests override old reviews', () => {

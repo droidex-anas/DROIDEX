@@ -84,7 +84,7 @@ test('aheadBehindLabel renders only the non-zero sides', () => {
   assert.equal(aheadBehindLabel(0, 0), null);
 });
 
-test('isWorktreeInUse matches the root and subdirectories, not sibling prefixes', () => {
+test('isWorktreeInUse matches the root and subdirectories across path spellings, not sibling prefixes', () => {
   const wt = '/repo/.worktrees/feature';
   assert.equal(isWorktreeInUse(wt, [wt]), true);
   assert.equal(isWorktreeInUse(wt, ['/repo/.worktrees/feature/src']), true);
@@ -92,9 +92,7 @@ test('isWorktreeInUse matches the root and subdirectories, not sibling prefixes'
   assert.equal(isWorktreeInUse(wt, ['/repo/.worktrees/feature-2']), false);
   assert.equal(isWorktreeInUse(wt, []), false);
   assert.equal(isWorktreeInUse('', [wt]), false);
-});
-
-test('isWorktreeInUse tolerates separator, trailing-slash, and case differences', () => {
+  // Separator, trailing-slash, and case differences still match.
   assert.equal(isWorktreeInUse('/repo/.worktrees/feature/', ['/repo/.worktrees/feature']), true);
   assert.equal(isWorktreeInUse('C:\\repo\\wt', ['C:/repo/wt/src']), true);
   assert.equal(isWorktreeInUse('/Repo/WT', ['/repo/wt']), true);

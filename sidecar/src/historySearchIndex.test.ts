@@ -86,6 +86,20 @@ function writeSession(
   };
 }
 
+async function withSearchDatabase(
+  run: (fixture: { directory: string; db: DatabaseSync; dbPath: string }) => Promise<void>,
+): Promise<void> {
+  const directory = mkdtempSync(join(tmpdir(), 'droid-history-fts-'));
+  const dbPath = join(directory, 'history.sqlite');
+  const db = createDatabase(dbPath);
+  try {
+    await run({ directory, db, dbPath });
+  } finally {
+    db.close();
+    rmSync(directory, { recursive: true, force: true });
+  }
+}
+
 async function reconcileAll(
   index: HistorySearchIndex,
   entries: SearchableSessionFileEntry[],
@@ -190,9 +204,7 @@ test(
   'canonical provider aliases ignore malformed alias lists for one row',
   { skip: FTS5_UNAVAILABLE_REASON },
   async () => {
-    const directory = mkdtempSync(join(tmpdir(), 'droid-history-fts-aliases-'));
-    const db = createDatabase(join(directory, 'history.sqlite'));
-    try {
+    await withSearchDatabase(async ({ directory, db }) => {
       const entry = writeSession(
         directory,
         'provider-malformed-alias',
@@ -215,10 +227,7 @@ test(
 
       assert.equal(index.search('malformed alias')[0]?.appSessionId, 'app-malformed-alias');
       assert.equal(index.search('old alias')[0]?.appSessionId, 'provider-old');
-    } finally {
-      db.close();
-      rmSync(directory, { recursive: true, force: true });
-    }
+    });
   },
 );
 
@@ -226,10 +235,7 @@ test(
   'canonical aliases refresh only when the summary identity revision advances',
   { skip: FTS5_UNAVAILABLE_REASON },
   async () => {
-    const directory = mkdtempSync(join(tmpdir(), 'droid-history-fts-identity-revision-'));
-    const dbPath = join(directory, 'history.sqlite');
-    const db = createDatabase(dbPath);
-    try {
+    await withSearchDatabase(async ({ directory, db, dbPath }) => {
       const entry = writeSession(
         directory,
         'provider-revision',
@@ -264,10 +270,7 @@ test(
       } finally {
         otherProcess.close();
       }
-    } finally {
-      db.close();
-      rmSync(directory, { recursive: true, force: true });
-    }
+    });
   },
 );
 
@@ -275,9 +278,7 @@ test(
   'one high-volume provider cannot starve another matching session',
   { skip: FTS5_UNAVAILABLE_REASON },
   async () => {
-    const directory = mkdtempSync(join(tmpdir(), 'droid-history-fts-fairness-'));
-    const db = createDatabase(join(directory, 'history.sqlite'));
-    try {
+    await withSearchDatabase(async ({ directory, db }) => {
       const noisy = writeSession(
         directory,
         'provider-noisy',
@@ -302,10 +303,7 @@ test(
           .sort(),
         ['provider-noisy', 'provider-quiet'],
       );
-    } finally {
-      db.close();
-      rmSync(directory, { recursive: true, force: true });
-    }
+    });
   },
 );
 
@@ -350,9 +348,7 @@ test(
   'reconciliation indexes only changed files and removes deleted sessions',
   { skip: FTS5_UNAVAILABLE_REASON },
   async () => {
-    const directory = mkdtempSync(join(tmpdir(), 'droid-history-fts-refresh-'));
-    const db = createDatabase(join(directory, 'history.sqlite'));
-    try {
+    await withSearchDatabase(async ({ directory, db }) => {
       const index = new HistorySearchIndex(db);
       const first = writeSession(
         directory,
@@ -375,10 +371,7 @@ test(
 
       assert.deepEqual(await reconcileAll(index, []), { indexedFiles: 0, removedFiles: 1 });
       assert.deepEqual(await index.search('compass'), []);
-    } finally {
-      db.close();
-      rmSync(directory, { recursive: true, force: true });
-    }
+    });
   },
 );
 
@@ -386,9 +379,7 @@ test(
   'a same-size rewrite with a new session revision rebuilds indexed content',
   { skip: FTS5_UNAVAILABLE_REASON },
   async () => {
-    const directory = mkdtempSync(join(tmpdir(), 'droid-history-fts-same-size-'));
-    const db = createDatabase(join(directory, 'history.sqlite'));
-    try {
+    await withSearchDatabase(async ({ directory, db }) => {
       const index = new HistorySearchIndex(db);
       const first = writeSession(
         directory,
@@ -412,10 +403,7 @@ test(
       assert.equal((await applyChanges(index, [sameStatRewrite], [])).indexedFiles, 1);
       assert.deepEqual(await index.search('first rewrite'), []);
       assert.equal((await index.search('other rewrite'))[0]?.appSessionId, 'provider-same-size');
-    } finally {
-      db.close();
-      rmSync(directory, { recursive: true, force: true });
-    }
+    });
   },
 );
 
@@ -423,9 +411,7 @@ test(
   'an appended session preserves indexed rows and adds only the new tail',
   { skip: FTS5_UNAVAILABLE_REASON },
   async () => {
-    const directory = mkdtempSync(join(tmpdir(), 'droid-history-fts-append-'));
-    const db = createDatabase(join(directory, 'history.sqlite'));
-    try {
+    await withSearchDatabase(async ({ directory, db }) => {
       const index = new HistorySearchIndex(db);
       const first = writeSession(
         directory,
@@ -461,10 +447,7 @@ test(
       assert.deepEqual(rowIds.slice(0, firstRowIds.length), firstRowIds);
       assert.equal(rowIds.length, firstRowIds.length + 1);
       assert.equal((await index.search('second appended'))[0]?.appSessionId, 'provider-append');
-    } finally {
-      db.close();
-      rmSync(directory, { recursive: true, force: true });
-    }
+    });
   },
 );
 
@@ -534,9 +517,7 @@ test(
   'invalid persisted byte cursors are discarded and rebuilt safely',
   { skip: FTS5_UNAVAILABLE_REASON },
   async () => {
-    const directory = mkdtempSync(join(tmpdir(), 'droid-history-fts-invalid-cursor-'));
-    const db = createDatabase(join(directory, 'history.sqlite'));
-    try {
+    await withSearchDatabase(async ({ directory, db }) => {
       const entry = writeSession(
         directory,
         'provider-invalid-cursor',
@@ -555,10 +536,7 @@ test(
       assert.equal(reopened.needsIndexing(entry), true);
       assert.equal((await reconcileAll(reopened, [entry])).indexedFiles, 1);
       assert.equal(reopened.search('cursor needle')[0]?.appSessionId, entry.providerSessionId);
-    } finally {
-      db.close();
-      rmSync(directory, { recursive: true, force: true });
-    }
+    });
   },
 );
 
@@ -566,9 +544,7 @@ test(
   'reconciliation indexes messages before the newest five megabytes',
   { skip: FTS5_UNAVAILABLE_REASON },
   async () => {
-    const directory = mkdtempSync(join(tmpdir(), 'droid-history-fts-full-file-'));
-    const db = createDatabase(join(directory, 'history.sqlite'));
-    try {
+    await withSearchDatabase(async ({ directory, db }) => {
       const entry = writeSession(
         directory,
         'provider-oversized',
@@ -586,10 +562,7 @@ test(
         (await index.search('archival albatross'))[0]?.appSessionId,
         'provider-oversized',
       );
-    } finally {
-      db.close();
-      rmSync(directory, { recursive: true, force: true });
-    }
+    });
   },
 );
 
@@ -597,9 +570,7 @@ test(
   'stale reconciliation and search stop without publishing results',
   { skip: FTS5_UNAVAILABLE_REASON },
   async () => {
-    const directory = mkdtempSync(join(tmpdir(), 'droid-history-fts-stale-'));
-    const db = createDatabase(join(directory, 'history.sqlite'));
-    try {
+    await withSearchDatabase(async ({ directory, db }) => {
       const entry = writeSession(
         directory,
         'provider-stale',
@@ -612,10 +583,7 @@ test(
         removedFiles: 0,
       });
       assert.deepEqual(await index.search('needle', () => true), []);
-    } finally {
-      db.close();
-      rmSync(directory, { recursive: true, force: true });
-    }
+    });
   },
 );
 
@@ -623,9 +591,7 @@ test(
   'a corrupt derived search schema rebuilds without touching canonical history rows',
   { skip: FTS5_UNAVAILABLE_REASON },
   async () => {
-    const directory = mkdtempSync(join(tmpdir(), 'droid-history-fts-recovery-'));
-    const db = createDatabase(join(directory, 'history.sqlite'));
-    try {
+    await withSearchDatabase(async ({ directory, db }) => {
       db.exec(`
       CREATE TABLE history_search_metadata (key TEXT PRIMARY KEY, value INTEGER NOT NULL);
       INSERT INTO history_search_metadata (key, value) VALUES ('version', 1);
@@ -644,9 +610,6 @@ test(
       assert.equal((await index.search('needle'))[0]?.appSessionId, 'provider-recovery');
       assert.equal(db.prepare('PRAGMA user_version').get()?.['user_version'], 2);
       assert.equal((db.prepare('SELECT id FROM events').get() as { id: string }).id, 'keep-me');
-    } finally {
-      db.close();
-      rmSync(directory, { recursive: true, force: true });
-    }
+    });
   },
 );

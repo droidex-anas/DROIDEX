@@ -35,24 +35,21 @@ test('serves batches after a same-generation reconnect cursor', () => {
   assert.equal(missing[0]?.lastSeq, 2);
 });
 
-test('reports a replay gap after bounded batch eviction', () => {
-  const replay = new BridgeReplayBuffer(10_000, 2);
-  store(replay, batch(1));
-  store(replay, batch(2));
-  store(replay, batch(3));
+test('reports a replay gap once batches are evicted by count or by bytes', () => {
+  const byCount = new BridgeReplayBuffer(10_000, 2);
+  store(byCount, batch(1));
+  store(byCount, batch(2));
+  store(byCount, batch(3));
+  assert.equal(byCount.snapshot().firstSeq, 2);
+  assert.equal(byCount.replayAfter(0), null);
+  assert.deepEqual(byCount.replayAfter(3), []);
 
-  assert.equal(replay.snapshot().firstSeq, 2);
-  assert.equal(replay.replayAfter(0), null);
-  assert.deepEqual(replay.replayAfter(3), []);
-});
-
-test('reports a replay gap when one batch exceeds the byte budget', () => {
-  const replay = new BridgeReplayBuffer(1, 10);
-  store(replay, batch(1));
-
-  assert.equal(replay.snapshot().batches, 0);
-  assert.equal(replay.snapshot().lastSeq, 1);
-  assert.equal(replay.replayAfter(0), null);
+  // One batch larger than the whole byte budget is never kept.
+  const byBytes = new BridgeReplayBuffer(1, 10);
+  store(byBytes, batch(1));
+  assert.equal(byBytes.snapshot().batches, 0);
+  assert.equal(byBytes.snapshot().lastSeq, 1);
+  assert.equal(byBytes.replayAfter(0), null);
 });
 
 test('rejects overlapping, out-of-order, or gapped batches', () => {

@@ -33,12 +33,9 @@ test('descendantsOf walks the tree under the roots only', () => {
   assert.deepEqual(descendantsOf(rows, [999]), []);
 });
 
-test('parseElapsedSeconds parses mm:ss, hh:mm:ss and dd-hh:mm:ss', () => {
+test('parseElapsedSeconds parses mm:ss, hh:mm:ss and dd-hh:mm:ss, and nothing else', () => {
   assert.equal(parseElapsedSeconds('11:40'), 700);
   assert.equal(parseElapsedSeconds('21:12:36'), 76_356);
   assert.equal(parseElapsedSeconds('1-02:03:04'), 93_784);
-});
-
-test('parseElapsedSeconds returns null for unparseable input', () => {
   assert.equal(parseElapsedSeconds('not-a-time'), null);
 });

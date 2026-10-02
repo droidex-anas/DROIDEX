@@ -71,8 +71,16 @@ function fixture(options = {}) {
   return { manager, instances };
 }
 
-test('terminal manager keeps a PTY alive until explicit kill', async () => {
-  const { manager, instances } = fixture();
+test('terminal manager keeps a PTY alive until explicit kill and then retains nothing', async () => {
+  const cleanups = [];
+  const { manager, instances } = fixture({
+    setTimeout: (callback) => {
+      cleanups.push(callback);
+      return { unref() {} };
+    },
+    clearTimeout: () => {},
+    exitRetentionMs: 10,
+  });
   const terminal = await manager.create({
     appSessionId: 'session-1',
     cwd: '/repo',
@@ -85,8 +93,13 @@ test('terminal manager keeps a PTY alive until explicit kill', async () => {
   assert.deepEqual(instances[0].writes, ['echo test\r']);
   assert.deepEqual(instances[0].resizes, [[120, 40]]);
   assert.equal(manager.list().length, 1);
+
   manager.kill(terminal.id);
   assert.equal(instances[0].killed, true);
+  assert.equal(manager.list().length, 0);
+  // The PTY's own exit after an explicit kill must not schedule retention.
+  instances[0].emitExit();
+  assert.equal(cleanups.length, 0);
   assert.equal(manager.list().length, 0);
 });
 
@@ -97,25 +110,6 @@ test('terminal manager opens a folderless chat in its configured runtime directo
 
   assert.equal(terminal.cwd, '/real/droidex/chats');
   assert.equal(instances[0].options.cwd, '/real/droidex/chats');
-});
-
-test('explicit kill does not retain the terminal after its PTY exits', async () => {
-  const cleanups = [];
-  const { manager, instances } = fixture({
-    setTimeout: (callback) => {
-      cleanups.push(callback);
-      return { unref() {} };
-    },
-    clearTimeout: () => {},
-    exitRetentionMs: 10,
-  });
-  const terminal = await manager.create({ appSessionId: 'session-1', cwd: '/repo' });
-
-  manager.kill(terminal.id);
-  instances[0].emitExit();
-
-  assert.equal(cleanups.length, 0);
-  assert.equal(manager.list().length, 0);
 });
 
 test('terminal manager caps dimensions before spawning and resizing the PTY', async () => {
@@ -132,20 +126,6 @@ test('terminal manager caps dimensions before spawning and resizing the PTY', as
 
   manager.resize(terminal.id, Number.MAX_SAFE_INTEGER, Number.MAX_SAFE_INTEGER);
   assert.deepEqual(instances[0].resizes, [[MAX_COLS, MAX_ROWS]]);
-});
-
-test('terminal subscribers receive bounded replay and exit state', async () => {
-  const { manager, instances } = fixture();
-  const terminal = await manager.create({ appSessionId: 'session-1', cwd: '/repo' });
-  instances[0].emitData('x'.repeat(MAX_REPLAY_BYTES + 32));
-  instances[0].emitExit(7, 0);
-  const events = [];
-  manager.subscribe(terminal.id, (event) => events.push(event));
-  assert.equal(events[0].kind, 'replay');
-  assert.equal(Buffer.byteLength(events[0].data), MAX_REPLAY_BYTES);
-  assert.equal(events[0].truncated, true);
-  assert.equal(events[1].kind, 'exit');
-  assert.equal(events[1].exitCode, 7);
 });
 
 test('terminal manager enforces per-session and global limits', async () => {

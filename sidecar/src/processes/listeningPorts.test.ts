@@ -12,14 +12,11 @@ test('parseLsofListeners groups ports by pid', () => {
   assert.deepEqual(ports.get(900), [3000, 3001]);
 });
 
-test('a failed lsof run yields null so the caller keeps its previous ports', async () => {
+test('lsof exit 1 without output clears ports; a failed or diagnosed run keeps the previous ones', async () => {
   assert.equal(
     await listListeningPorts(() => Promise.reject(new Error('spawn lsof ENOENT'))),
     null,
   );
-});
-
-test('lsof exit 1 without output clears ports but diagnostics preserve them', async () => {
   const empty = await listListeningPorts(() =>
     tolerantCommandRunner(process.execPath, ['-e', 'process.exit(1)']),
   );

@@ -8,11 +8,7 @@ import test from 'node:test';
 import { HistoryIndex, type PersistedChildSession } from './history.js';
 import { HistoryPersistence } from './HistoryPersistence.js';
 import { sqliteFts5UnavailableSkipReason } from './historySearchSchema.js';
-import type {
-  HistoryPersistenceCall,
-  HistoryPersistenceClient,
-  HistorySearchClient,
-} from './HistoryWorkerClient.js';
+import type { HistoryPersistenceClient, HistorySearchClient } from './HistoryWorkerClient.js';
 import type {
   HistoryPersistenceBatch,
   HistoryPersistenceResult,
@@ -66,6 +62,26 @@ function stubSearchClient(overrides: Partial<HistorySearchClient> = {}): History
   };
 }
 
+function stubPersistenceClient(
+  overrides: Partial<HistoryPersistenceClient> = {},
+): HistoryPersistenceClient {
+  return {
+    startPersist: (batch) => ({ promise: Promise.resolve(persistResult(batch)) }),
+    startDurabilityBarrier: () => ({ promise: Promise.resolve({ durable: true } as const) }),
+    close: () => Promise.resolve(),
+    ...overrides,
+  };
+}
+
+function persistResult(batch: HistoryPersistenceBatch): HistoryPersistenceResult {
+  return {
+    durationMs: 1,
+    eventsWritten: batch.events.length,
+    summariesWritten: batch.summaries.length,
+    childrenWritten: batch.children.length,
+  };
+}
+
 function summary(patch: Partial<SessionSummary> = {}): SessionSummary {
   return {
     appSessionId: 'app',
@@ -101,15 +117,6 @@ function child(status: PersistedChildSession['status']): PersistedChildSession {
     updatedAt: 1,
   };
 }
-
-test('test persistence helpers reject a missing canonical history schema', () => {
-  const { restore } = withTemporaryHome('droidex-missing-history-schema-');
-  try {
-    assert.throws(() => persistTestChild(child('paused')), /Canonical history schema is missing/);
-  } finally {
-    restore();
-  }
-});
 
 test('a failed settlement is held while live transcript output continues until recovery', async () => {
   const { home, restore } = withTemporaryHome('droidex-history-persistence-');
@@ -415,23 +422,12 @@ test('an active search cannot delay a persistence durability boundary', async ()
       }),
   });
   const persisted: HistoryPersistenceBatch[] = [];
-  const persistenceClient: HistoryPersistenceClient = {
-    startPersist: (batch): HistoryPersistenceCall<HistoryPersistenceResult> => {
+  const persistenceClient = stubPersistenceClient({
+    startPersist: (batch) => {
       persisted.push(batch);
-      const result = {
-        durationMs: 1,
-        eventsWritten: batch.events.length,
-        summariesWritten: batch.summaries.length,
-        childrenWritten: batch.children.length,
-      };
-      return { promise: Promise.resolve(result) };
+      return { promise: Promise.resolve(persistResult(batch)) };
     },
-    startDurabilityBarrier: () => {
-      const result = { durable: true } as const;
-      return { promise: Promise.resolve(result) };
-    },
-    close: () => Promise.resolve(),
-  };
+  });
   const persistence = new HistoryPersistence({ persistenceClient, searchClient });
   try {
     const search = persistence.searchSessions('needle');
@@ -521,15 +517,7 @@ test('a durability boundary does not wait for ordinary output to stop', async ()
   const { restore } = withTemporaryHome('droidex-history-boundary-');
   const barriers: (() => void)[] = [];
   let holdBarriers = true;
-  const persistenceClient: HistoryPersistenceClient = {
-    startPersist: (batch) => ({
-      promise: Promise.resolve({
-        durationMs: 1,
-        eventsWritten: batch.events.length,
-        summariesWritten: batch.summaries.length,
-        childrenWritten: batch.children.length,
-      }),
-    }),
+  const persistenceClient = stubPersistenceClient({
     startDurabilityBarrier: () => ({
       promise: new Promise((resolve) => {
         const release = () => {
@@ -539,8 +527,7 @@ test('a durability boundary does not wait for ordinary output to stop', async ()
         else release();
       }),
     }),
-    close: () => Promise.resolve(),
-  };
+  });
   const persistence = new HistoryPersistence({ persistenceClient });
   const output = (id: string): TranscriptEvent => ({
     id,
@@ -585,32 +572,20 @@ test('reconciliation drains pending commits without running a durability barrier
   const persisted: string[][] = [];
   let barriers = 0;
   let allowBarrier = false;
-  const persistenceClient: HistoryPersistenceClient = {
+  const persistenceClient = stubPersistenceClient({
     startPersist: (batch) => {
       persisted.push(batch.events.map((item) => item.id));
-      const result: HistoryPersistenceResult = {
-        durationMs: 1,
-        eventsWritten: batch.events.length,
-        summariesWritten: batch.summaries.length,
-        childrenWritten: batch.children.length,
-      };
-      return {
-        promise: Promise.resolve(result),
-      };
+      return { promise: Promise.resolve(persistResult(batch)) };
     },
     startDurabilityBarrier: () => {
       barriers += 1;
-      const result = { durable: true } as const;
       const promise = allowBarrier
-        ? Promise.resolve(result)
+        ? Promise.resolve({ durable: true } as const)
         : Promise.reject(new Error('unexpected barrier'));
       void promise.catch(() => undefined);
-      return {
-        promise,
-      };
+      return { promise };
     },
-    close: () => Promise.resolve(),
-  };
+  });
   const persistence = new HistoryPersistence({ persistenceClient });
   try {
     persistence.recordEvent({
@@ -642,22 +617,7 @@ test('reconciliation drains pending commits without running a durability barrier
 
 test('forgetSession removes live summary and child overlays', async () => {
   const { restore } = withTemporaryHome('droidex-history-forget-');
-  const persistenceClient: HistoryPersistenceClient = {
-    startPersist: (batch) => {
-      const result: HistoryPersistenceResult = {
-        durationMs: 1,
-        eventsWritten: batch.events.length,
-        summariesWritten: batch.summaries.length,
-        childrenWritten: batch.children.length,
-      };
-      return { promise: Promise.resolve(result) };
-    },
-    startDurabilityBarrier: () => {
-      const result = { durable: true } as const;
-      return { promise: Promise.resolve(result) };
-    },
-    close: () => Promise.resolve(),
-  };
+  const persistenceClient = stubPersistenceClient();
   const persistence = new HistoryPersistence({ persistenceClient });
   try {
     persistence.syncSummaries([summary()]);
@@ -684,26 +644,17 @@ test('persistence reports degraded state once and reports recovery after retaine
   const { restore } = withTemporaryHome('droidex-history-status-');
   const statuses: string[] = [];
   let attempts = 0;
-  const persistenceClient: HistoryPersistenceClient = {
+  const persistenceClient = stubPersistenceClient({
     startPersist: (batch) => {
       attempts += 1;
-      const result: HistoryPersistenceResult = {
-        durationMs: 1,
-        eventsWritten: batch.events.length,
-        summariesWritten: batch.summaries.length,
-        childrenWritten: batch.children.length,
-      };
-      const failure = attempts === 1 ? new Error('worker exited') : null;
       return {
-        promise: failure ? Promise.reject(failure) : Promise.resolve(result),
+        promise:
+          attempts === 1
+            ? Promise.reject(new Error('worker exited'))
+            : Promise.resolve(persistResult(batch)),
       };
     },
-    startDurabilityBarrier: () => {
-      const result = { durable: true } as const;
-      return { promise: Promise.resolve(result) };
-    },
-    close: () => Promise.resolve(),
-  };
+  });
   const searchClient = stubSearchClient();
   const persistence = new HistoryPersistence({
     persistenceClient,
@@ -732,30 +683,8 @@ test('persistence reports degraded state once and reports recovery after retaine
   }
 });
 
-test('persistence does not start the independent search worker until the first search', async () => {
+test('the search worker starts only when warmed or first searched, never for persistence', async () => {
   const { restore } = withTemporaryHome('droidex-lazy-search-worker-');
-  let searchWorkersCreated = 0;
-  const searchClient = stubSearchClient();
-  const persistence = new HistoryPersistence({
-    createSearchClient: () => {
-      searchWorkersCreated += 1;
-      return searchClient;
-    },
-  });
-  try {
-    await persistence.flush();
-    assert.equal(searchWorkersCreated, 0);
-
-    await persistence.searchSessions('needle');
-    assert.equal(searchWorkersCreated, 1);
-  } finally {
-    await persistence.close();
-    restore();
-  }
-});
-
-test('warmSearchWorker starts the search worker without searching or reconciling', async () => {
-  const { restore } = withTemporaryHome('droidex-warm-search-worker-');
   let searchWorkersCreated = 0;
   let searchCalls = 0;
   let reconcileCalls = 0;
@@ -777,10 +706,17 @@ test('warmSearchWorker starts the search worker without searching or reconciling
     },
   });
   try {
+    await persistence.flush();
+    assert.equal(searchWorkersCreated, 0);
+
     persistence.warmSearchWorker();
     assert.equal(searchWorkersCreated, 1);
     assert.equal(searchCalls, 0);
     assert.equal(reconcileCalls, 0);
+
+    await persistence.searchSessions('needle');
+    assert.equal(searchWorkersCreated, 1);
+    assert.equal(searchCalls, 1);
   } finally {
     await persistence.close();
     restore();

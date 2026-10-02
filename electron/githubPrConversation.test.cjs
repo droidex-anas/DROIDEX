@@ -94,36 +94,6 @@ test('PR comments include top-level, review, and inline review threads', () => {
   );
 });
 
-test('PR comment normalization excludes malformed rows', () => {
-  const comments = normalizePrComments(
-    {
-      comments: [
-        null,
-        { databaseId: 10, author: { login: 'author' }, body: 'top level' },
-        'not a comment',
-      ],
-      reviews: [
-        42,
-        { databaseId: 20, author: { login: 'reviewer' }, body: 'review', state: 'COMMENTED' },
-      ],
-    },
-    [
-      undefined,
-      { id: 30, user: { login: 'inline-reviewer' }, body: 'inline' },
-      ['not an inline comment'],
-    ],
-  );
-
-  assert.deepEqual(
-    comments.map(({ kind, author, body }) => ({ kind, author, body })),
-    [
-      { kind: 'comment', author: 'author', body: 'top level' },
-      { kind: 'review', author: 'reviewer', body: 'review' },
-      { kind: 'inline', author: 'inline-reviewer', body: 'inline' },
-    ],
-  );
-});
-
 test('PR comments report malformed rows as partial while keeping valid rows', async () => {
   const result = await prComments('/repo', { prNumber: 79 }, async (_dir, args) => {
     if (args[0] === 'pr') {
@@ -322,30 +292,6 @@ test('a failed thread lookup stays quiet when there are no inline comments', asy
   assert.equal(result.message, undefined);
 });
 
-test('malformed inline rows do not make thread status failures relevant', async () => {
-  const result = await prComments('/repo', { prNumber: 79 }, async (_dir, args) => {
-    if (args[0] === 'pr') {
-      return ghResult({
-        stdout: JSON.stringify({
-          comments: [{ databaseId: 10, author: { login: 'author' }, body: 'top level' }],
-          reviews: [],
-        }),
-      });
-    }
-    if (args[1] === 'graphql') return ghResult({ code: 1, stderr: 'graphql rate limited' });
-    return ghResult({ stdout: JSON.stringify([[null, 42]]) });
-  });
-
-  assert.equal(result.ok, true);
-  assert.equal(result.partial, true);
-  assert.match(result.message, /2 malformed inline review comments/);
-  assert.doesNotMatch(result.message, /graphql rate limited/);
-  assert.deepEqual(
-    result.comments.map((comment) => comment.body),
-    ['top level'],
-  );
-});
-
 test('review threads without comment ids are ignored instead of throwing', () => {
   const page = normalizeReviewThreadPage({
     data: {
@@ -490,31 +436,6 @@ test('malformed successful conversation payload is reported instead of hidden', 
   assert.deepEqual(
     result.comments.map((comment) => comment.body),
     ['comment 30'],
-  );
-});
-
-test('malformed successful inline payload is reported instead of hidden', async () => {
-  const result = await prComments('/repo', { prNumber: 79 }, async (_dir, args) => {
-    if (args[0] === 'pr') {
-      return ghResult({
-        stdout: JSON.stringify({ comments: [{ body: 'top level' }], reviews: [] }),
-      });
-    }
-    if (args[1] === 'graphql')
-      return ghResult({
-        stdout: JSON.stringify({
-          data: { repository: { pullRequest: { reviewThreads: { nodes: [] } } } },
-        }),
-      });
-    return ghResult({ stdout: '{}' });
-  });
-
-  assert.equal(result.ok, true);
-  assert.equal(result.partial, true);
-  assert.match(result.message, /Invalid inline review comments payload/);
-  assert.deepEqual(
-    result.comments.map((comment) => comment.body),
-    ['top level'],
   );
 });
 

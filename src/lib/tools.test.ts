@@ -62,7 +62,7 @@ test('isWebSearchTool covers engine names, MCP prefixes, and web queries', () =>
   assert.equal(isWebSearchTool('search_files'), false);
 });
 
-test('isWebFetchTool covers separators, MCP prefixes, and url verbs', () => {
+test('isWebFetchTool covers separators, MCP prefixes, and url verbs, not browser automation', () => {
   assert.equal(isWebFetchTool('fetch_url'), true);
   assert.equal(isWebFetchTool('open_url'), true);
   assert.equal(isWebFetchTool('getURL'), true);
@@ -80,9 +80,7 @@ test('isWebFetchTool covers separators, MCP prefixes, and url verbs', () => {
   assert.equal(isWebFetchTool('Read'), false);
   assert.equal(isWebFetchTool('TodoWrite'), false);
   assert.equal(isWebFetchTool('mcp__figma__get_design'), false);
-});
-
-test('isWebFetchTool never matches browser-automation tools', () => {
+  // Browser-automation tools are never fetches.
   assert.equal(isWebFetchTool('droidmaxx-browser___browser_open'), false);
   assert.equal(isWebFetchTool('browser_navigate'), false);
   assert.equal(isWebFetchTool('browser_click'), false);
@@ -175,41 +173,30 @@ test('parseWebFetch strips a first-line fallback title so it does not repeat in 
   );
   assert.equal(page.title, 'Electron Auto-Update Guide');
   assert.equal(page.body, 'Ship updates safely with differential releases.\n\nMore detail here.');
+  // A preamble URL line is still read as the source.
+  const withUrl = parseWebFetch('My Guide\nURL: https://example.com/guide\n\nBody text.');
+  assert.equal(withUrl.title, 'My Guide');
+  assert.equal(withUrl.url, 'https://example.com/guide');
+  assert.equal(withUrl.body, 'Body text.');
 });
 
-test('parseWebFetch strips a fallback title while keeping a preamble URL line', () => {
-  const page = parseWebFetch('My Guide\nURL: https://example.com/guide\n\nBody text.');
-  assert.equal(page.title, 'My Guide');
-  assert.equal(page.url, 'https://example.com/guide');
-  assert.equal(page.body, 'Body text.');
-});
-
-test('parseWebFetch leaves an empty body when the whole page is the fallback title', () => {
-  // A one-line fetch means the line is the title; restoring it as the body
-  // would render the same text twice in the card.
-  const page = parseWebFetch('Just A Title');
-  assert.equal(page.title, 'Just A Title');
-  assert.equal(page.body, '');
-  const withUrl = parseWebFetch('Just A Title\nURL: https://example.com');
-  assert.equal(withUrl.title, 'Just A Title');
-  assert.equal(withUrl.url, 'https://example.com');
-  assert.equal(withUrl.body, '');
-});
-
-test('parseWebFetch leaves an empty body when the whole page is an h1 title', () => {
-  // The h1 becomes the card title; restoring the stripped text as the body
-  // would render the same heading twice.
-  const page = parseWebFetch('# Just A Heading');
-  assert.equal(page.title, 'Just A Heading');
-  assert.equal(page.body, '');
-});
-
-test('parseWebFetch leaves an empty body when the page is only Title/URL metadata', () => {
-  // Both lines are card chrome (title + source row), never body content.
-  const page = parseWebFetch('Title: Some Page\nURL: https://example.com');
-  assert.equal(page.title, 'Some Page');
-  assert.equal(page.url, 'https://example.com');
-  assert.equal(page.body, '');
+test('parseWebFetch leaves an empty body when the page is only its title chrome', () => {
+  // The title (a fallback first line, an h1, or Title/URL metadata) and the
+  // source row are card chrome; restoring them as the body would render the
+  // same text twice in the card.
+  // [page, title, url]
+  const cases: Array<[string, string, string | undefined]> = [
+    ['Just A Title', 'Just A Title', undefined],
+    ['Just A Title\nURL: https://example.com', 'Just A Title', 'https://example.com'],
+    ['# Just A Heading', 'Just A Heading', undefined],
+    ['Title: Some Page\nURL: https://example.com', 'Some Page', 'https://example.com'],
+  ];
+  for (const [text, title, url] of cases) {
+    const page = parseWebFetch(text);
+    assert.equal(page.title, title, text);
+    if (url) assert.equal(page.url, url, text);
+    assert.equal(page.body, '', text);
+  }
 });
 
 test('webSourceName derives a capitalized registrable label', () => {
@@ -221,13 +208,10 @@ test('webSourceName derives a capitalized registrable label', () => {
   assert.equal(webSourceName('https://foo.com.dev/x'), 'Com');
 });
 
-test('toolArgString reads a string arg and ignores other values', () => {
+test('toolArgString and toolArgStringArray read only string values', () => {
   assert.equal(toolArgString({ query: 'droidex' }, 'query'), 'droidex');
   assert.equal(toolArgString({ query: 1 }, 'query'), undefined);
   assert.equal(toolArgString({}, 'query'), undefined);
-});
-
-test('toolArgStringArray reads a string array arg, ignoring non-strings', () => {
   assert.deepEqual(
     toolArgStringArray({ includeDomains: ['x.com', 1, 'y.com'] }, 'includeDomains'),
     ['x.com', 'y.com'],

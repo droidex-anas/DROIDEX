@@ -30,34 +30,27 @@ function makeQuestion(appSessionId: string) {
   return action;
 }
 
-test('permission requests stay scoped to the session that asked', () => {
-  const withFirst = reducer(initialState, makePermission('app-1'));
-  const withBoth = reducer(withFirst, makePermission('app-2'));
-
+test('permission requests stay scoped to the session that asked and clear only there', () => {
+  const withBoth = reducer(reducer(initialState, makePermission('app-1')), makePermission('app-2'));
   assert.equal(withBoth.pendingPermissions['app-1']?.[0]?.requestId, 'req-app-1');
   assert.equal(withBoth.pendingPermissions['app-2']?.[0]?.requestId, 'req-app-2');
-});
 
-test('answering a permission clears only that sessions request', () => {
-  const withBoth = reducer(reducer(initialState, makePermission('app-1')), makePermission('app-2'));
-  const next = reducer(withBoth, {
+  const answered = reducer(withBoth, {
     type: 'CLEAR_PERMISSION',
     appSessionId: 'app-1',
     requestId: 'req-app-1',
   });
+  assert.equal(answered.pendingPermissions['app-1'], undefined);
+  assert.equal(answered.pendingPermissions['app-2']?.[0]?.requestId, 'req-app-2');
 
-  assert.equal(next.pendingPermissions['app-1'], undefined);
-  assert.equal(next.pendingPermissions['app-2']?.[0]?.requestId, 'req-app-2');
-});
-
-test('clearing a permission that is not pending leaves other sessions intact', () => {
+  // Clearing a permission that is not pending leaves other sessions intact.
   const withOne = reducer(initialState, makePermission('app-1'));
-  const next = reducer(withOne, {
+  const notPending = reducer(withOne, {
     type: 'CLEAR_PERMISSION',
     appSessionId: 'app-2',
     requestId: 'req-app-2',
   });
-  assert.equal(next.pendingPermissions['app-1']?.[0]?.requestId, 'req-app-1');
+  assert.equal(notPending.pendingPermissions['app-1']?.[0]?.requestId, 'req-app-1');
 });
 
 test('two permissions settle by request id and reveal the oldest unanswered request', () => {

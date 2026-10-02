@@ -260,14 +260,12 @@ test('a same-harness side chat takes its question as the first message after the
   assert.equal(event.session.lineage?.kind, 'side');
   // The source's window belongs to its model; the picked model runs its own.
   assert.equal(event.session.contextWindowTokens, undefined);
-});
 
-test('a side chat left on the source model keeps its window', async (t) => {
-  const h = harness({ contextWindowTokens: 1000000 });
-  t.after(h.cleanup);
-
-  // The picker sends the source's model when the user leaves it alone.
-  await h.forks.fork({
+  // The picker sends the source's model when the user leaves it alone, and
+  // then the window carries over.
+  const unchanged = harness({ contextWindowTokens: 1000000 });
+  t.after(unchanged.cleanup);
+  await unchanged.forks.fork({
     type: 'session.fork',
     clientRef: 'ref-5',
     appSessionId: 'source',
@@ -276,29 +274,45 @@ test('a side chat left on the source model keeps its window', async (t) => {
     prompt: 'And the rollback?',
     modelId: 'claude-opus',
   });
-
-  const [event] = h.events;
-  if (event.type !== 'session.forked') return assert.fail('expected session.forked');
-  assert.equal(event.session.contextWindowTokens, 1000000);
+  const [kept] = unchanged.events;
+  if (kept.type !== 'session.forked') return assert.fail('expected session.forked');
+  assert.equal(kept.session.contextWindowTokens, 1000000);
 });
 
-test('a chat with a turn in progress is not forked', async (t) => {
-  const h = harness({ streaming: true });
-  t.after(h.cleanup);
-
-  await h.forks.fork({
+test('a fork that cannot run is refused with its client ref and copies nothing', async (t) => {
+  // A plain fork of a chat mid-turn would copy half an answer.
+  const streaming = harness({ streaming: true });
+  t.after(streaming.cleanup);
+  await streaming.forks.fork({
     type: 'session.fork',
     clientRef: 'ref-2',
     appSessionId: 'source',
     lineage: 'fork',
     title: 'Source chat (fork)',
   });
+  assert.deepEqual(streaming.forkSources, []);
+  assert.deepEqual(streaming.events, []);
+  assert.deepEqual(
+    streaming.errors.map((error) => [error.code, error.clientRef]),
+    [['session.create_failed', 'ref-2']],
+  );
 
-  assert.deepEqual(h.forkSources, []);
-  assert.deepEqual(h.events, []);
-  assert.equal(h.errors.length, 1);
-  assert.equal(h.errors[0].code, 'session.create_failed');
-  assert.equal(h.errors[0].clientRef, 'ref-2');
+  // Another harness cannot copy the transcript, so it needs a first message.
+  const crossHarness = harness();
+  t.after(crossHarness.cleanup);
+  await crossHarness.forks.fork({
+    type: 'session.fork',
+    clientRef: 'ref-3',
+    appSessionId: 'source',
+    lineage: 'side',
+    title: 'Side chat',
+    provider: 'codex',
+    prompt: '   ',
+  });
+  assert.deepEqual(crossHarness.forkSources, []);
+  assert.equal(crossHarness.errors.length, 1);
+  assert.equal(crossHarness.errors[0].clientRef, 'ref-3');
+  assert.match(crossHarness.errors[0].message, /first message/);
 });
 
 test('a side chat on a chat with a turn in progress branches from its stored transcript', async (t) => {
@@ -330,26 +344,6 @@ test('a side chat on a chat with a turn in progress branches from its stored tra
   assert.equal(branch.lineage.sourceAppSessionId, 'source');
   assert.match(branch.prompt, /Is step one safe\?/);
   assert.match(branch.prompt, /Step one moves the schema\./);
-});
-
-test('a fork to another harness needs a first message', async (t) => {
-  const h = harness();
-  t.after(h.cleanup);
-
-  await h.forks.fork({
-    type: 'session.fork',
-    clientRef: 'ref-3',
-    appSessionId: 'source',
-    lineage: 'side',
-    title: 'Side chat',
-    provider: 'codex',
-    prompt: '   ',
-  });
-
-  assert.deepEqual(h.forkSources, []);
-  assert.equal(h.errors.length, 1);
-  assert.equal(h.errors[0].clientRef, 'ref-3');
-  assert.match(h.errors[0].message, /first message/);
 });
 
 test('a copy taken while the source was replaced is not kept', async (t) => {

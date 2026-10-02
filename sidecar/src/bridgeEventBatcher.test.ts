@@ -124,7 +124,7 @@ function context(appSessionId: string, sourceSessionId: string, used: number): S
   };
 }
 
-test('an empty batcher does not arm the coalescing timer', () => {
+test('only queued work arms the coalescing timer, longer under transport pressure', () => {
   const harness = createHarness();
   assert.equal(harness.timers.length, 0);
   harness.batcher.flush();
@@ -135,6 +135,11 @@ test('an empty batcher does not arm the coalescing timer', () => {
   harness.fire();
   assert.equal(harness.batcher.snapshot().pendingLogicalEvents, 0);
   assert.equal(harness.batches.length, 1);
+
+  // Soft transport pressure uses the longer batching window.
+  const pressured = createHarness({ isUnderPressure: () => true });
+  pressured.batcher.enqueue(appended('a', '1'));
+  assert.equal(pressured.timers[0]?.delayMs, 32);
 });
 
 test('27 interleaved sources stay ordered in one frame batch', () => {
@@ -252,12 +257,13 @@ test('priority events flush queued work before their immediate batch', () => {
   assert.equal(harness.batches[1]?.batch.events[0]?.event.type, 'approval.requested');
 });
 
-test('user-action and domain error events bypass the normal frame window', () => {
+test('user-action, domain error and session-list events bypass the normal frame window', () => {
   const events: ServerEvent[] = [
     { type: 'mcp.authRequested', requestId: 'mcp-auth', serverName: 'github' },
     { type: 'mcp.error', requestId: 'mcp-error', message: 'authentication failed' },
     { type: 'browser.error', appSessionId: 'app', message: 'navigation failed' },
     { type: 'browser.closed', appSessionId: 'app' },
+    { type: 'sessions.list', sessions: [], earlierSessionsByCwd: {} },
   ];
 
   for (const event of events) {
@@ -268,15 +274,6 @@ test('user-action and domain error events bypass the normal frame window', () =>
     assert.equal(harness.batches[0]?.batch.events[0]?.event.type, event.type);
     assert.equal(harness.timers.length, 0);
   }
-});
-
-test('sessions.list bypasses the coalescing window', () => {
-  const harness = createHarness();
-  harness.batcher.enqueue({ type: 'sessions.list', sessions: [], earlierSessionsByCwd: {} });
-  assert.equal(harness.batches.length, 1);
-  assert.equal(harness.batches[0]?.metadata.immediate, true);
-  assert.equal(harness.batches[0]?.batch.events[0]?.event.type, 'sessions.list');
-  assert.equal(harness.timers.length, 0);
 });
 
 test('turn settlement is an immediate flush boundary', () => {
@@ -293,30 +290,24 @@ test('turn settlement is an immediate flush boundary', () => {
   assert.equal(harness.batches[1]?.metadata.immediate, true);
 });
 
-test('pending limits synchronously flush a bounded queue', () => {
+test('pending count and byte limits synchronously flush a bounded queue', () => {
   const harness = createHarness({ maxPendingEvents: 3 });
   harness.batcher.enqueue(appended('a', '1'));
   harness.batcher.enqueue(appended('b', '2'));
   harness.batcher.enqueue(appended('c', '3'));
-
   assert.equal(harness.batches.length, 1);
   assert.equal(harness.batches[0]?.batch.events.length, 3);
   assert.equal(harness.batcher.snapshot().pendingLogicalEvents, 0);
-});
 
-test('pending byte limits include the complete serialized event payload', () => {
-  const harness = createHarness({ maxPendingEstimatedBytes: 1_500 });
-  harness.batcher.enqueue({
+  // The byte estimate includes the complete serialized event payload.
+  const bytes = createHarness({ maxPendingEstimatedBytes: 1_500 });
+  bytes.batcher.enqueue({
     type: 'session.updated',
-    session: {
-      ...sessionSummary('app'),
-      title: 'x'.repeat(5_000),
-    },
+    session: { ...sessionSummary('app'), title: 'x'.repeat(5_000) },
   });
-
-  assert.equal(harness.batches.length, 1);
-  assert.ok((harness.batches[0]?.metadata.estimatedBytes ?? 0) > 5_000);
-  assert.equal(harness.batcher.snapshot().pendingLogicalEvents, 0);
+  assert.equal(bytes.batches.length, 1);
+  assert.ok((bytes.batches[0]?.metadata.estimatedBytes ?? 0) > 5_000);
+  assert.equal(bytes.batcher.snapshot().pendingLogicalEvents, 0);
 });
 
 test('queue snapshots publish the full dwell age before flush reset', () => {
@@ -331,12 +322,6 @@ test('queue snapshots publish the full dwell age before flush reset', () => {
 
   assert.ok(ages.includes(16));
   assert.equal(ages.at(-1), 0);
-});
-
-test('soft transport pressure uses the longer batching window', () => {
-  const harness = createHarness({ isUnderPressure: () => true });
-  harness.batcher.enqueue(appended('a', '1'));
-  assert.equal(harness.timers[0]?.delayMs, 32);
 });
 
 test('close flushes once and rejects later writes', () => {

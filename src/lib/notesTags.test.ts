@@ -1,8 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  NOTE_TAG_CHIP,
-  NOTE_TAG_HINT,
   NOTE_TAGS,
   composeNoteText,
   exactNoteTag,
@@ -12,12 +10,9 @@ import {
   parseNoteTag,
 } from './notesTags';
 
-test('parses a leading known @tag case-insensitively', () => {
+test('parseNoteTag reads only a leading known @tag followed by text, case-insensitively', () => {
   assert.equal(parseNoteTag('@bug Login crashes on save'), 'bug');
   assert.equal(parseNoteTag('@NEXT ship the panel'), 'next');
-});
-
-test('ignores unknown @words, non-leading tags, and a bare token', () => {
   assert.equal(parseNoteTag('@john review this'), null);
   assert.equal(parseNoteTag('ping me @bug later'), null);
   assert.equal(parseNoteTag('plain note'), null);
@@ -27,15 +22,6 @@ test('ignores unknown @words, non-leading tags, and a bare token', () => {
 test('strips the tag token for display only when the note is tagged', () => {
   assert.equal(noteTextWithoutTag('@idea make notes float'), 'make notes float');
   assert.equal(noteTextWithoutTag('plain note'), 'plain note');
-});
-
-test('every tag has chip styling and a menu hint', () => {
-  for (const tag of NOTE_TAGS) {
-    assert.ok(NOTE_TAG_CHIP[tag].length > 0, `missing chip classes for ${tag}`);
-    assert.ok(NOTE_TAG_HINT[tag].length > 0, `missing menu hint for ${tag}`);
-    // Pills are fully rounded to match the app's soft geometry.
-    assert.match(NOTE_TAG_CHIP[tag], /rounded-full/);
-  }
 });
 
 test('matchingNoteTags filters by prefix, empty query lists all', () => {

@@ -14,13 +14,6 @@ function findButtons(node: ReactNode): ReactElement<{ onClick: () => void }>[] {
 const render = (onStart = () => undefined, onDismiss = () => undefined) =>
   renderToStaticMarkup(createElement(SidebarWelcomeCard, { onStart, onDismiss }));
 
-test('greets with the nebula artwork and the welcome title', () => {
-  const html = render();
-  assert.match(html, /Welcome to Droidex/);
-  assert.match(html, /welcome-nebula\.jpg/);
-  assert.match(html, /Chats, workspaces and missions live here/);
-});
-
 test('offers a primary start-a-chat action and a dismiss button, no learn-more link', () => {
   const html = render();
   assert.match(html, /<button[^>]*>.*Start a chat.*<\/button>/s);

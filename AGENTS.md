@@ -266,6 +266,21 @@ count, coverage targets, or a wish to look thorough.
 - Extend an existing suite when the behavior belongs there. Do not add a test
   framework, expose private helpers, or add production indirection to make
   something testable.
+- One suite per production module. Test a behavior once, at the narrowest
+  entry point that owns it; a facade suite (for example `SessionManager`) only
+  covers the wiring, targeting, and races that the module suites cannot reach.
+  Do not split one module's tests across `Module.<topic>.test.ts` files.
+- Limits: a test file stays under 800 lines, a single test under about 60
+  lines including setup, and a bug fix adds at most one test. Over a limit,
+  trim or move shared setup into the existing `testing/` helpers first, and
+  justify any exception in the pull request.
+- No wall-clock thresholds or sleeps in unit tests. Timing and
+  throughput belong to the perf replay harness (`npm run quality:perf-gates`).
+  No tests that only fail when the process lacks file permissions; inject the
+  failure through a fake instead.
+- ESLint enforces the 800-line test file cap (blank lines and comments not
+  counted) and the no-sleep rule. Files that predate them are recorded in
+  `eslint-suppressions.json`; that list only shrinks.
 - Write as many throwaway tests, probes, and reproduction scripts as you need
   while working; they are tools, not deliverables. Before committing, keep only
   the tests whose ongoing protection is worth their maintenance and delete the
@@ -273,9 +288,22 @@ count, coverage targets, or a wish to look thorough.
   test to look small.
 - Do not weaken assertions or delete failing tests to get a green run. Honor CI
   gates, including the coverage thresholds in `npm run test:ci`.
+- Existing tests are the regression record. When a code change makes one fail,
+  fix the code, not the test. Edit or delete an existing assertion only when the
+  behavior change is intended, and name each such test in the pull request; CI
+  flags these edits for the reviewer (`npm run quality:test-edits`).
+- `sidecar/regression/` is the held-out regression suite: end-to-end contracts
+  for history durability, child persistence, and session races. Agents may not
+  read or edit it (denied in `.claude/settings.json`) and `npm test` skips it;
+  `test:ci` runs it on every pull request, and
+  `npm --prefix sidecar run test:regression` runs it alone. When it fails, fix
+  the code. Only a human changes these tests, deliberately: CI fails on any
+  change there until a maintainer adds the `regression-approved` label.
 
 Tests are maintained code too. Keep the ones whose protection justifies their
 cost.
+Before adding a test or pruning a suite, follow the `test-audit` skill
+(`.claude/skills/test-audit/SKILL.md`).
 
 ## Scope, Git, and delivery
 
@@ -349,8 +377,9 @@ npm run build
 
 `npm run lint` blocks CI on new errors. The existing backlog is recorded in
 `eslint-suppressions.json`; never add to it to get a green run. When you fix old
-errors, prune it with `npx eslint . --prune-suppressions`. The pre-commit hook
-runs lint-staged, file size, tech-debt, and typecheck gates.
+errors, prune it with `npx eslint . --prune-suppressions`; lint fails until you
+do, so the backlog only shrinks. The pre-commit hook runs lint-staged, file
+size, tech-debt, and typecheck gates.
 
 Performance changes are validated with the deterministic replay harness
 (`npm run perf:replay -- --scenario <smoke|idle|streaming|multi-agent|agents-4|agents-16|agents-27|long-history|long-tail|session-switch|soak>`),

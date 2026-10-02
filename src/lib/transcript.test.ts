@@ -20,55 +20,37 @@ function ev(extra: Partial<TranscriptEvent>): TranscriptEvent {
   } as TranscriptEvent;
 }
 
-test('user echo classifies as user', () => {
-  assert.equal(classifyEvent(ev({ kind: 'text', author: 'user', text: 'hi' })), 'user');
-});
-
-test('assistant text classifies as assistant_chat', () => {
-  assert.equal(classifyEvent(ev({ kind: 'text', text: 'answer' })), 'assistant_chat');
-});
-
-test('thinking classifies as thought', () => {
-  assert.equal(classifyEvent(ev({ kind: 'thinking', text: '...' })), 'thought');
-});
-
-test('TodoWrite classifies as plan_update, not a file edit', () => {
-  const e = ev({ kind: 'tool_call', toolName: 'TodoWrite', toolArgs: { todos: '1. [pending] x' } });
-  assert.equal(classifyEvent(e), 'plan_update');
-});
-
-test('Task spawn classifies as child_session_event', () => {
-  const e = ev({ kind: 'tool_call', toolName: 'Task', toolArgs: { subagent_type: 'worker' } });
-  assert.equal(classifyEvent(e), 'child_session_event');
-});
-
-test('edit tool classifies as file_edit', () => {
-  const e = ev({
-    kind: 'tool_call',
-    toolName: 'Edit',
-    toolArgs: { file_path: '/a.ts', old_str: 'a', new_str: 'b' },
-  });
-  assert.equal(classifyEvent(e), 'file_edit');
-});
-
-test('other tools classify as tool_activity', () => {
-  assert.equal(
-    classifyEvent(ev({ kind: 'tool_call', toolName: 'Grep', toolArgs: {} })),
-    'tool_activity',
-  );
-});
-
-test('compaction and status classify distinctly', () => {
-  assert.equal(classifyEvent(ev({ kind: 'compaction' })), 'compaction');
-  assert.equal(classifyEvent(ev({ kind: 'status', text: 'Working' })), 'status');
-});
-
-test('errors and failed tool results classify as error', () => {
-  assert.equal(classifyEvent(ev({ kind: 'error', text: 'boom', isError: true })), 'error');
-  assert.equal(
-    classifyEvent(ev({ kind: 'tool_result', toolName: 'Execute', isError: true })),
-    'error',
-  );
+test('classifyEvent separates chat, plan, child, edit, tool, and error content', () => {
+  const cases: Array<[Partial<TranscriptEvent>, string]> = [
+    [{ kind: 'text', author: 'user', text: 'hi' }, 'user'],
+    [{ kind: 'text', text: 'answer' }, 'assistant_chat'],
+    [{ kind: 'thinking', text: '...' }, 'thought'],
+    // A TodoWrite is a plan update, not a file edit.
+    [
+      { kind: 'tool_call', toolName: 'TodoWrite', toolArgs: { todos: '1. [pending] x' } },
+      'plan_update',
+    ],
+    [
+      { kind: 'tool_call', toolName: 'Task', toolArgs: { subagent_type: 'worker' } },
+      'child_session_event',
+    ],
+    [
+      {
+        kind: 'tool_call',
+        toolName: 'Edit',
+        toolArgs: { file_path: '/a.ts', old_str: 'a', new_str: 'b' },
+      },
+      'file_edit',
+    ],
+    [{ kind: 'tool_call', toolName: 'Grep', toolArgs: {} }, 'tool_activity'],
+    [{ kind: 'compaction' }, 'compaction'],
+    [{ kind: 'status', text: 'Working' }, 'status'],
+    [{ kind: 'error', text: 'boom', isError: true }, 'error'],
+    [{ kind: 'tool_result', toolName: 'Execute', isError: true }, 'error'],
+  ];
+  for (const [event, expected] of cases) {
+    assert.equal(classifyEvent(ev(event)), expected, JSON.stringify(event));
+  }
 });
 
 test('chat vs diagnostic partitioning', () => {
@@ -80,23 +62,16 @@ test('chat vs diagnostic partitioning', () => {
   assert.equal(isDiagnosticContent('assistant_chat'), false);
 });
 
-test('scopeTranscriptToAgent keeps primary-role events by default', () => {
-  const events = [
-    ev({ id: 'p1', role: 'primary', sourceSessionId: 'primary' }),
-    ev({ id: 'c1', role: 'worker', sourceSessionId: 'child-1' }),
-  ];
-  assert.deepEqual(
-    scopeTranscriptToAgent(events, null).map((e) => e.id),
-    ['p1'],
-  );
-});
-
-test('scopeTranscriptToAgent isolates a child session by its id', () => {
+test('scopeTranscriptToAgent keeps primary events by default and isolates a child by id', () => {
   const events = [
     ev({ id: 'p1', role: 'primary', sourceSessionId: 'primary' }),
     ev({ id: 'c1', role: 'worker', sourceSessionId: 'child-1' }),
     ev({ id: 'c2', role: 'worker', sourceSessionId: 'child-2' }),
   ];
+  assert.deepEqual(
+    scopeTranscriptToAgent(events, null).map((e) => e.id),
+    ['p1'],
+  );
   assert.deepEqual(
     scopeTranscriptToAgent(events, 'child-1').map((e) => e.id),
     ['c1'],

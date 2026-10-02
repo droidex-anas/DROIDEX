@@ -68,41 +68,25 @@ function titles(): string[] {
 // session file cache reconcile, so a change written between two scans must
 // show up in the second one.
 
-test('a session file rewritten between scans serves its new summary', () => {
+test('files created, rewritten, given settings, or deleted between scans show in the next scan', () => {
   seq += 1;
-  const id = `scan-rewrite-${seq}`;
+  const id = `scan-fresh-${seq}`;
+  const scanned = () => loadHistoricalSessions().find((row) => row.summary.appSessionId === id);
   writeSession(id, 'before the rewrite');
-  assert.ok(titles().includes('before the rewrite'));
+  assert.equal(scanned()?.summary.title, 'before the rewrite');
+  assert.equal(scanned()?.summary.modelId, undefined);
 
   writeSession(id, 'after the rewrite — changed on disk');
-  const after = titles();
-  assert.ok(after.includes('after the rewrite — changed on disk'));
-  assert.ok(!after.includes('before the rewrite'));
-});
-
-test('a settings sidecar written between scans invalidates the summary', () => {
-  seq += 1;
-  const id = `scan-settings-${seq}`;
-  writeSession(id, `settings session ${seq}`);
-  const before = loadHistoricalSessions().find((row) => row.summary.appSessionId === id);
-  assert.equal(before?.summary.modelId, undefined);
+  assert.equal(scanned()?.summary.title, 'after the rewrite — changed on disk');
 
   writeFileSync(
     join(home, '.factory', 'sessions', `${id}.settings.json`),
     JSON.stringify({ modelId: 'scan-test-model' }),
   );
-  const after = loadHistoricalSessions().find((row) => row.summary.appSessionId === id);
-  assert.equal(after?.summary.modelId, 'scan-test-model');
-});
-
-test('a session file created between scans appears, and a deleted one disappears', () => {
-  seq += 1;
-  const id = `scan-create-${seq}`;
-  writeSession(id, `created late ${seq}`);
-  assert.ok(titles().includes(`created late ${seq}`));
+  assert.equal(scanned()?.summary.modelId, 'scan-test-model');
 
   unlinkSync(join(home, '.factory', 'sessions', `${id}.jsonl`));
-  assert.ok(!titles().includes(`created late ${seq}`));
+  assert.equal(scanned(), undefined);
 });
 
 test('an unreadable subdirectory is skipped without aborting the scan', () => {

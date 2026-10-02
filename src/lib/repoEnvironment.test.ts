@@ -2,40 +2,31 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { environmentLabels } from './repoEnvironment';
 
-test('environmentLabels shows repo label, branch, and change count', () => {
-  const labels = environmentLabels('/Users/anas/Documents/droid-control', {
-    repoRoot: '/Users/anas/Documents/droid-control',
+test('environmentLabels shows the repo folder, branch, and change summary', () => {
+  const labelsFor = (repoRoot: string, branch: string | null, changed: number) =>
+    environmentLabels(repoRoot, {
+      repoRoot,
+      branch,
+      changed,
+      staged: changed ? 1 : 0,
+      unstaged: changed ? 1 : 0,
+      untracked: changed ? 1 : 0,
+    });
+  assert.deepEqual(labelsFor('/Users/anas/Documents/droid-control', 'feature/context', 3), {
+    location: 'droid-control',
     branch: 'feature/context',
-    changed: 3,
-    staged: 1,
-    unstaged: 1,
-    untracked: 1,
+    changes: '3 changes',
   });
-
-  assert.equal(labels.location, 'droid-control');
-  assert.equal(labels.branch, 'feature/context');
-  assert.equal(labels.changes, '3 changes');
-});
-
-test('environmentLabels handles a clean detached or branchless repo', () => {
-  const labels = environmentLabels('/repo/app-worktree', {
-    repoRoot: '/repo/app-worktree',
-    branch: null,
-    changed: 0,
-    staged: 0,
-    unstaged: 0,
-    untracked: 0,
+  // A clean detached or branchless repo.
+  assert.deepEqual(labelsFor('/repo/app-worktree', null, 0), {
+    location: 'app-worktree',
+    branch: 'No branch',
+    changes: 'Clean',
   });
-
-  assert.equal(labels.location, 'app-worktree');
-  assert.equal(labels.branch, 'No branch');
-  assert.equal(labels.changes, 'Clean');
-});
-
-test('environmentLabels falls back to folder labels outside a repo', () => {
-  const labels = environmentLabels('/Users/anas/Documents/plain-folder', null);
-
-  assert.equal(labels.location, 'plain-folder');
-  assert.equal(labels.branch, 'No branch');
-  assert.equal(labels.changes, 'No repo');
+  // Outside a repo the folder name stands alone.
+  assert.deepEqual(environmentLabels('/Users/anas/Documents/plain-folder', null), {
+    location: 'plain-folder',
+    branch: 'No branch',
+    changes: 'No repo',
+  });
 });

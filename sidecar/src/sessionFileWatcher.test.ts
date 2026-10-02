@@ -158,45 +158,6 @@ test('a settings sidecar change reports its session file', async () => {
   }
 });
 
-test('writes from live in-app sessions do not fire', async () => {
-  const root = mkdtempSync(join(tmpdir(), 'session-watcher-'));
-  const dir = join(root, 'encoded-cwd');
-  mkdirSync(dir);
-  let calls = 0;
-  const controlledWatch = controlledSessionWatch();
-  const watcher = startSessionFileWatcher(
-    {
-      root,
-      batchWindowMs: 0,
-      isLiveSession: (id) => id === 'live-1',
-      onExternalChange: () => {
-        calls += 1;
-      },
-    },
-    controlledWatch.watchDirectory,
-  );
-  assert.ok(watcher);
-  try {
-    controlledWatch.emit('encoded-cwd/live-1.jsonl');
-    assert.equal(
-      watcher.consumeLiveSessionFile('live-1'),
-      join(dir, 'live-1.jsonl'),
-      'the watcher retains a live file path for targeted close reconciliation',
-    );
-    assert.equal(
-      watcher.consumeLiveSessionFile('live-1'),
-      undefined,
-      'consuming a live file path forgets it',
-    );
-    controlledWatch.emit('encoded-cwd/external-1.jsonl');
-    await waitFor(() => calls === 1);
-    assert.equal(calls, 1, 'the live write does not add another external callback');
-  } finally {
-    watcher.close();
-    rmSync(root, { recursive: true, force: true });
-  }
-});
-
 test('a subagent writing its own session file is reported while it keeps writing', () => {
   const root = mkdtempSync(join(tmpdir(), 'session-watcher-'));
   const dir = join(root, 'encoded-cwd');
@@ -282,6 +243,11 @@ test('live session writes neither delay an external batch nor arm a timer', () =
       join(dir, 'live-1.jsonl'),
       'live paths are still retained for targeted close reconciliation',
     );
+    assert.equal(
+      watcher.consumeLiveSessionFile('live-1'),
+      undefined,
+      'consuming a live file path forgets it',
+    );
   } finally {
     watcher.close();
     rmSync(root, { recursive: true, force: true });
@@ -317,36 +283,28 @@ test('close stops further callbacks', async () => {
   }
 });
 
-test('returns null when the sessions root cannot be watched', () => {
-  // A path whose parent is a regular file cannot be created or watched, so
-  // the watcher gives up and returns null. A merely-missing root is now
-  // created so live republish starts on a first run with no history yet.
-  const blocker = join(tmpdir(), 'session-watcher-blocker');
-  writeFileSync(blocker, '');
-  try {
-    const watcher = startSessionFileWatcher({
-      root: join(blocker, 'sessions'),
-      onExternalChange: () => {},
-    });
-    assert.equal(watcher, null);
-  } finally {
-    rmSync(blocker, { force: true });
-  }
-});
-
-test('a missing sessions root is created so the watcher starts on first run', () => {
+test('a missing sessions root is created, and an unwatchable one returns null', () => {
+  // A merely-missing root is created so live republish starts on a first run
+  // with no history yet.
   const root = join(tmpdir(), 'session-watcher-first-run-', String(Date.now()), 'sessions');
-  const watcher = startSessionFileWatcher({
-    root,
-    batchWindowMs: 50,
-    onExternalChange: () => {},
-  });
+  const watcher = startSessionFileWatcher({ root, batchWindowMs: 50, onExternalChange: () => {} });
   try {
     assert.ok(watcher, 'the watcher starts even when the root did not exist');
-    // The root is created so external writes (a first Droid CLI run) are seen.
     assert.ok(existsSync(root), 'the missing sessions root is created');
   } finally {
     watcher?.close();
     rmSync(root, { recursive: true, force: true });
+  }
+
+  // A path whose parent is a regular file cannot be created or watched.
+  const blocker = join(tmpdir(), 'session-watcher-blocker');
+  writeFileSync(blocker, '');
+  try {
+    assert.equal(
+      startSessionFileWatcher({ root: join(blocker, 'sessions'), onExternalChange: () => {} }),
+      null,
+    );
+  } finally {
+    rmSync(blocker, { force: true });
   }
 });

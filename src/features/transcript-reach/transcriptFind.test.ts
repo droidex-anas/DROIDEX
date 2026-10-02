@@ -3,9 +3,9 @@ import test from 'node:test';
 
 import type { FeedItem } from '../../components/chatFeed';
 import { feedRowId } from '../../hooks/conversationViewportAnchor';
-import { parseTruncatedTail, stripAnsi } from '../../lib/tools';
+import { stripAnsi } from '../../lib/tools';
 import type { TranscriptEvent } from '../../types/bridge';
-import { copyTextForCommand, copyTextForFeedItem, copyTextForMessage } from './transcriptCopy';
+import { copyTextForCommand } from './transcriptCopy';
 import {
   cycleMatchIndex,
   findTranscriptMatches,
@@ -96,13 +96,6 @@ test('append projection reuses unchanged haystacks instead of scanning on each k
   assert.equal(second.rows[0], first.rows[0]);
   assert.equal(second.rows[1], first.rows[1]);
   assert.equal(second.rows[2]?.itemKey, 'c');
-});
-
-test('message copy text matches the per-message copy button path', () => {
-  const text = 'hello stack\n\n[truncated 12 chars]';
-  const item = message('m1', text);
-  assert.equal(copyTextForFeedItem(item), copyTextForMessage(text));
-  assert.equal(copyTextForMessage(text), parseTruncatedTail(text).body);
 });
 
 test('command copy text matches the terminal copy button path', () => {

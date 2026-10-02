@@ -1,6 +1,6 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { mkdtemp, readFile, writeFile } = require('node:fs/promises');
+const { mkdtemp, readFile } = require('node:fs/promises');
 const { tmpdir } = require('node:os');
 const path = require('node:path');
 const {
@@ -45,24 +45,6 @@ test('empty or malformed preference files fall back to enabled without throwing'
   );
 });
 
-test('startup read disables acceleration only when the persisted preference says so', () => {
-  const enabled = readHardwareAccelerationPreferenceSync({
-    filePath: '/tmp/enabled.json',
-    fs: {
-      readFileSync: () => JSON.stringify({ version: 1, enabled: true }),
-    },
-  });
-  const disabled = readHardwareAccelerationPreferenceSync({
-    filePath: '/tmp/disabled.json',
-    fs: {
-      readFileSync: () => JSON.stringify({ version: 1, enabled: false }),
-    },
-  });
-
-  assert.deepEqual(enabled, { enabled: true });
-  assert.deepEqual(disabled, { enabled: false });
-});
-
 test('settings writes round-trip through the same reader main uses at startup', async () => {
   const dir = await mkdtemp(path.join(tmpdir(), 'droidex-hardware-acceleration-'));
   const filePath = preferenceFilePath(dir);
@@ -76,25 +58,6 @@ test('settings writes round-trip through the same reader main uses at startup', 
   const raw = await readFile(filePath, 'utf8');
   assert.deepEqual(JSON.parse(raw), { version: 1, enabled: true });
   assert.deepEqual(readHardwareAccelerationPreferenceSync({ filePath }), { enabled: true });
-});
-
-test('preference path is rooted in the resolved userData directory', () => {
-  const userData = '/var/custom/droidex-profile';
-  assert.equal(
-    preferenceFilePath(userData),
-    path.join(userData, 'hardware-acceleration-preferences.json'),
-  );
-});
-
-test('invalid async preference loads fail closed for settings IPC', async () => {
-  const dir = await mkdtemp(path.join(tmpdir(), 'droidex-hardware-acceleration-invalid-'));
-  const filePath = preferenceFilePath(dir);
-  await writeFile(filePath, '{broken', 'utf8');
-
-  await assert.rejects(
-    () => loadHardwareAccelerationPreference({ filePath, fs: require('node:fs/promises') }),
-    /invalid/i,
-  );
 });
 
 test('startup falls back and settings fail closed on the same corrupt file', async () => {

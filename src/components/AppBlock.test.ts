@@ -34,35 +34,31 @@ test('only a closed app fence is ready for automatic playback', () => {
   assert.equal(hasCompleteAppBlock('````markdown\n```app\nexample\n```\n````'), false);
 });
 
-test('an app under construction is a status surface with no executable control', () => {
-  const html = renderToStaticMarkup(
+test('an App under construction or cut off offers no playback control or frame', () => {
+  const building = renderToStaticMarkup(
     createElement(AppBlock, {
       source: '<main><script>const points = [',
       isBuilding: true,
     }),
   );
+  assert.match(building, /role="status"/);
+  assert.match(building, /Building interactive app/);
+  assert.match(building, /shimmer-text/);
 
-  assert.match(html, /role="status"/);
-  assert.match(html, /Building interactive app/);
-  assert.match(html, /shimmer-text/);
-  assert.doesNotMatch(html, /aria-label="Play app"/);
-  assert.doesNotMatch(html, /<iframe/i);
-  assert.doesNotMatch(html, /const points/);
-});
-
-test('an App with a cut-off source offers no playback control', () => {
-  const html = renderToStaticMarkup(
+  const cutOff = renderToStaticMarkup(
     createElement(AppBlock, {
       source: '<main><script>const points = [',
       isCutOff: true,
     }),
   );
+  assert.match(cutOff, /role="alert"/);
+  assert.match(cutOff, /Saved history kept only part/);
 
-  assert.match(html, /role="alert"/);
-  assert.match(html, /Saved history kept only part/);
-  assert.doesNotMatch(html, /aria-label="Play app"/);
-  assert.doesNotMatch(html, /<iframe/i);
-  assert.doesNotMatch(html, /const points/);
+  for (const html of [building, cutOff]) {
+    assert.doesNotMatch(html, /aria-label="Play app"/);
+    assert.doesNotMatch(html, /<iframe/i);
+    assert.doesNotMatch(html, /const points/);
+  }
 });
 
 test('the running document preserves layout, theme, and the local bridge', () => {
@@ -372,9 +368,7 @@ test('the host accepts height updates only for the mounted app instance', () => 
     undefined,
   );
   assert.equal(appBlockHeightFromMessage(null, 'app-3'), undefined);
-});
-
-test('the host bridge rejects messages without the initial document token', () => {
+  // A message without the initial document token is rejected.
   assert.equal(
     appBlockHeightFromMessage(
       { type: 'droidex:app-height', instanceId: 'app-3', bridgeToken: 'wrong', height: 420 },
@@ -383,24 +377,9 @@ test('the host bridge rejects messages without the initial document token', () =
     ),
     undefined,
   );
-  assert.equal(
-    appBlockMathRequestFromMessage(
-      {
-        type: 'droidex:render-math',
-        instanceId: 'app-4',
-        bridgeToken: 'wrong',
-        requestId: 'math-1',
-        latex: 'x',
-        displayMode: false,
-      },
-      'app-4',
-      'expected',
-    ),
-    undefined,
-  );
 });
 
-test('the App bridge bounds math work and deduplicates repeated heights', () => {
+test('the App bridge bounds math work, deduplicates heights, and ignores a failed App', () => {
   const guard = createAppBridgeGuard(2, 1);
   assert.equal(guard.acceptHeight(400), true);
   assert.equal(guard.acceptHeight(400), false);
@@ -410,12 +389,11 @@ test('the App bridge bounds math work and deduplicates repeated heights', () => 
   assert.equal(guard.startMath(), true);
   guard.finishMath();
   assert.equal(guard.startMath(), false);
-});
 
-test('a failed App cannot resize the chat after its recovery surface is selected', () => {
-  const guard = createAppBridgeGuard();
-  guard.fail();
-  assert.equal(guard.acceptHeight(1_366), false);
+  // A failed App cannot resize the chat after its recovery surface is selected.
+  const failed = createAppBridgeGuard();
+  failed.fail();
+  assert.equal(failed.acceptHeight(1_366), false);
 });
 
 test('each iframe document gets an independent bridge token and work budget', () => {
@@ -755,6 +733,21 @@ test('the math bridge accepts only bounded requests for the mounted App', () => 
         displayMode: false,
       },
       'app-4',
+    ),
+    undefined,
+  );
+  assert.equal(
+    appBlockMathRequestFromMessage(
+      {
+        type: 'droidex:render-math',
+        instanceId: 'app-4',
+        bridgeToken: 'wrong',
+        requestId: 'math-1',
+        latex: 'x',
+        displayMode: false,
+      },
+      'app-4',
+      'expected',
     ),
     undefined,
   );

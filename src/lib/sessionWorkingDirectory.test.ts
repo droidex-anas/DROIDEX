@@ -47,76 +47,114 @@ function tool(id: string, toolName: string, toolArgs: unknown): TranscriptEvent 
   };
 }
 
-test('uses a linked worktree named in an execution working directory', () => {
-  const transcript = [
-    tool('1', 'exec_command', {
-      cmd: 'git status --short',
-      workdir: linked,
-    }),
+const nested = `${main}/.worktrees/reload-issue`;
+const sibling = '/Users/test/droid-control-sibling';
+const withNested = [worktrees[0], { ...worktrees[1], path: nested, branch: 'reload-issue' }];
+const withSibling = [...worktrees, { ...worktrees[1], path: sibling, branch: 'feat/sibling' }];
+const windowsPath = 'C:\\Users\\Test\\Droid-Control';
+const windowsWorktree: GitWorktree = { ...worktrees[0], path: windowsPath };
+const proseMention: TranscriptEvent = {
+  id: '1',
+  appSessionId: 'session-1',
+  sourceSessionId: 'primary',
+  role: 'primary',
+  ts: 1,
+  kind: 'text',
+  text: `I worked in ${linked}`,
+};
+const writeFile = (id: string, file_path: string) =>
+  tool(id, 'write_file', { file_path, content: 'export {}' });
+
+test('sessionWorkingDirectory follows registered worktree evidence from tool calls only', () => {
+  // [why, session cwd, transcript, registered worktrees, expected]
+  const cases: Array<[string, string, TranscriptEvent[], GitWorktree[], string]> = [
+    [
+      'an execution workdir names a linked worktree',
+      main,
+      [tool('1', 'exec_command', { cmd: 'git status --short', workdir: linked })],
+      worktrees,
+      linked,
+    ],
+    [
+      'a linked worktree nested beneath the main worktree is kept',
+      nested,
+      [writeFile('1', `${nested}/src/app.ts`)],
+      withNested,
+      nested,
+    ],
+    [
+      'a git worktree add command creates the worktree',
+      main,
+      [
+        tool('1', 'exec_command', {
+          cmd: `git -C ${main} worktree add ${linked} -b feat/review-panel-file-focus`,
+        }),
+      ],
+      worktrees,
+      linked,
+    ],
+    [
+      'a sibling path sharing a worktree prefix is not evidence',
+      main,
+      [tool('1', 'exec_command', { cmd: `git -C ${linked}-archive status --short` })],
+      worktrees,
+      main,
+    ],
+    [
+      'an absolute edited file is evidence',
+      main,
+      [writeFile('1', `${linked}/src/components/ReviewPanel.tsx`)],
+      worktrees,
+      linked,
+    ],
+    [
+      'assistant prose and unregistered directories are ignored',
+      main,
+      [
+        proseMention,
+        tool('2', 'exec_command', { workdir: '/tmp/unregistered', cmd: 'git status' }),
+      ],
+      worktrees,
+      main,
+    ],
+    [
+      'a relative edit resolves against the latest tool worktree',
+      main,
+      [tool('1', 'exec_command', { cwd: linked, cmd: 'git status' }), writeFile('2', 'src/app.ts')],
+      worktrees,
+      linked,
+    ],
+    [
+      'parent segments are canonicalized before matching a sibling worktree',
+      main,
+      [
+        tool('1', 'exec_command', { cwd: linked, cmd: 'git status' }),
+        writeFile('2', `../${sibling.split('/').at(-1)}/src/app.ts`),
+      ],
+      withSibling,
+      sibling,
+    ],
+    [
+      'a relative edit resolves against the latest tool subdirectory',
+      main,
+      [
+        tool('1', 'exec_command', { cwd: `${linked}/packages/web`, cmd: 'git status' }),
+        writeFile('2', '../../../droid-control-sibling/src/app.ts'),
+      ],
+      withSibling,
+      sibling,
+    ],
+    [
+      'Windows worktree paths match without case sensitivity',
+      'C:\\Users\\Test\\Other',
+      [tool('1', 'exec_command', { cwd: 'c:\\users\\test\\droid-control', cmd: 'git status' })],
+      [windowsWorktree],
+      windowsPath,
+    ],
   ];
-
-  assert.equal(sessionWorkingDirectory(main, transcript, worktrees), linked);
-});
-
-test('keeps a session in a linked worktree nested beneath the main worktree', () => {
-  const nested = `${main}/.worktrees/reload-issue`;
-  const registered = [worktrees[0], { ...worktrees[1], path: nested, branch: 'reload-issue' }];
-  const transcript = [
-    tool('1', 'write_file', {
-      file_path: `${nested}/src/app.ts`,
-      content: 'export {}',
-    }),
-  ];
-
-  assert.equal(sessionWorkingDirectory(nested, transcript, registered), nested);
-});
-
-test('detects the worktree created by a git worktree command', () => {
-  const transcript = [
-    tool('1', 'exec_command', {
-      cmd: `git -C ${main} worktree add ${linked} -b feat/review-panel-file-focus`,
-    }),
-  ];
-
-  assert.equal(sessionWorkingDirectory(main, transcript, worktrees), linked);
-});
-
-test('does not treat a sibling path sharing a worktree prefix as worktree evidence', () => {
-  const transcript = [
-    tool('1', 'exec_command', {
-      cmd: `git -C ${linked}-archive status --short`,
-    }),
-  ];
-
-  assert.equal(sessionWorkingDirectory(main, transcript, worktrees), main);
-});
-
-test('uses an absolute edited file as worktree evidence', () => {
-  const transcript = [
-    tool('1', 'write_file', {
-      file_path: `${linked}/src/components/ReviewPanel.tsx`,
-      content: 'export {}',
-    }),
-  ];
-
-  assert.equal(sessionWorkingDirectory(main, transcript, worktrees), linked);
-});
-
-test('ignores assistant prose and unregistered directories', () => {
-  const transcript: TranscriptEvent[] = [
-    {
-      id: '1',
-      appSessionId: 'session-1',
-      sourceSessionId: 'primary',
-      role: 'primary',
-      ts: 1,
-      kind: 'text',
-      text: `I worked in ${linked}`,
-    },
-    tool('2', 'exec_command', { workdir: '/tmp/unregistered', cmd: 'git status' }),
-  ];
-
-  assert.equal(sessionWorkingDirectory(main, transcript, worktrees), main);
+  for (const [why, cwd, transcript, registered, expected] of cases) {
+    assert.equal(sessionWorkingDirectory(cwd, transcript, registered), expected, why);
+  }
 });
 
 test('scopes worktree evidence to the visible child session', () => {
@@ -164,59 +202,4 @@ test('retains a migrated worktree until its discovery snapshot loads', () => {
   assert.equal(workingDirectoryDuringDiscovery(main, linked, false, [], main), linked);
   assert.equal(workingDirectoryDuringDiscovery(main, linked, true, [], main), linked);
   assert.equal(workingDirectoryDuringDiscovery(main, linked, true, worktrees, linked), linked);
-});
-
-test('resolves relative edits against the latest tool worktree', () => {
-  const transcript = [
-    tool('1', 'exec_command', { cwd: linked, cmd: 'git status' }),
-    tool('2', 'write_file', { file_path: 'src/app.ts', content: 'export {}' }),
-  ];
-
-  assert.equal(sessionWorkingDirectory(main, transcript, worktrees), linked);
-});
-
-test('canonicalizes parent segments before matching a sibling worktree', () => {
-  const sibling = '/Users/test/droid-control-sibling';
-  const registered = [...worktrees, { ...worktrees[1], path: sibling, branch: 'feat/sibling' }];
-  const transcript = [
-    tool('1', 'exec_command', { cwd: linked, cmd: 'git status' }),
-    tool('2', 'write_file', {
-      file_path: `../${sibling.split('/').at(-1)}/src/app.ts`,
-      content: 'export {}',
-    }),
-  ];
-
-  assert.equal(sessionWorkingDirectory(main, transcript, registered), sibling);
-});
-
-test('resolves relative edits against the latest tool subdirectory', () => {
-  const sibling = '/Users/test/droid-control-sibling';
-  const registered = [...worktrees, { ...worktrees[1], path: sibling, branch: 'feat/sibling' }];
-  const transcript = [
-    tool('1', 'exec_command', { cwd: `${linked}/packages/web`, cmd: 'git status' }),
-    tool('2', 'write_file', {
-      file_path: '../../../droid-control-sibling/src/app.ts',
-      content: 'export {}',
-    }),
-  ];
-
-  assert.equal(sessionWorkingDirectory(main, transcript, registered), sibling);
-});
-
-test('matches Windows worktree paths without case sensitivity', () => {
-  const windowsWorktree: GitWorktree = {
-    ...worktrees[0],
-    path: 'C:\\Users\\Test\\Droid-Control',
-  };
-  const transcript = [
-    tool('1', 'exec_command', {
-      cwd: 'c:\\users\\test\\droid-control',
-      cmd: 'git status',
-    }),
-  ];
-
-  assert.equal(
-    sessionWorkingDirectory('C:\\Users\\Test\\Other', transcript, [windowsWorktree]),
-    windowsWorktree.path,
-  );
 });

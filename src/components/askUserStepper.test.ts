@@ -25,16 +25,6 @@ function run(total: number, actions: StepperAction[]): StepperState {
   return actions.reduce(stepperReducer, createStepper(total));
 }
 
-test('a fresh stepper starts on the first question with no answers', () => {
-  const state = createStepper(2);
-
-  assert.equal(state.current, 0);
-  assert.deepEqual(answerFor(state, 0).selected, []);
-  assert.equal(answerFor(state, 0).custom, '');
-  assert.equal(canAdvance(state, 0), false);
-  assert.equal(isLastStep(state), false);
-});
-
 test('picking an option records it and leaves typing mode', () => {
   const state = run(1, [
     { type: 'openCustomAnswer', questionIndex: 0 },

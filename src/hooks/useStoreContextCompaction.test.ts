@@ -118,91 +118,48 @@ test('ordinary session updates retain the current context snapshot', () => {
   assert.equal(next.contextStats.primary.m1?.used, 80_000);
 });
 
-test('restored compaction history advances the meter generation and clears stale usage', () => {
-  const restored = (id: string, ts: number): TranscriptEvent => ({
-    id,
-    appSessionId: 'm1',
-    sourceSessionId: 'primary',
-    role: 'primary',
-    ts,
-    kind: 'compaction',
-  });
-  const start: AppState = {
+/** A session whose meter reads full, so a restored compaction must clear it. */
+function fullMeterState(transcript: TranscriptEvent[] = []): AppState {
+  return {
     ...initialState,
     sessions: { m1: session() },
+    transcripts: { m1: transcript },
     contextStats: { primary: { m1: snapshot(100_000) }, child: {} },
   };
+}
 
-  const next = reducer(start, {
-    type: 'SESSION_HISTORY',
-    appSessionId: 'm1',
-    progress: [],
-    transcripts: [restored('compact-1', 1), restored('compact-2', 2)],
-    mode: 'replace',
-    olderCursor: undefined,
-    hasMore: false,
-  });
+function assertMeterReset(state: AppState, autoCompactions: number): void {
+  assert.equal(state.sessions.m1.autoCompactions, autoCompactions);
+  assert.equal(state.sessions.m1.contextTokens, 0);
+  assert.equal(state.contextStats.primary.m1, undefined);
+}
 
-  assert.equal(next.sessions.m1.autoCompactions, 2);
-  assert.equal(next.sessions.m1.contextTokens, 0);
-  assert.equal(next.contextStats.primary.m1, undefined);
-});
-
-test('long replace restores count compactions released from the retained transcript tail', () => {
+test('long restores count compactions released from the retained transcript tail', () => {
   const restored = longTranscriptWithHistoricalCompactions();
-  const start: AppState = {
-    ...initialState,
-    sessions: { m1: session() },
-    contextStats: { primary: { m1: snapshot(100_000) }, child: {} },
-  };
-
-  const next = reducer(start, {
+  const replaced = reducer(fullMeterState(), {
     type: 'SESSION_HISTORY',
     appSessionId: 'm1',
     progress: [],
     transcripts: restored,
     mode: 'replace',
-    olderCursor: undefined,
   });
-
-  assert.ok(next.transcripts.m1.length <= 1_200);
-  assert.equal(
-    next.transcripts.m1.some((event) => event.kind === 'compaction'),
-    false,
-  );
-  assert.equal(next.sessions.m1.autoCompactions, 2);
-  assert.equal(next.sessions.m1.contextTokens, 0);
-  assert.equal(next.contextStats.primary.m1, undefined);
-});
-
-test('long prepend restores count compactions released from the retained transcript tail', () => {
-  const restored = longTranscriptWithHistoricalCompactions();
-  const olderPage = restored.slice(0, 2_000);
-  const existing = restored.slice(2_000);
-  const start: AppState = {
-    ...initialState,
-    sessions: { m1: session() },
-    transcripts: { m1: existing },
-    contextStats: { primary: { m1: snapshot(100_000) }, child: {} },
-  };
-
-  const next = reducer(start, {
+  const prepended = reducer(fullMeterState(restored.slice(2_000)), {
     type: 'SESSION_HISTORY',
     appSessionId: 'm1',
     progress: [],
-    transcripts: olderPage,
+    transcripts: restored.slice(0, 2_000),
     mode: 'prepend',
     olderCursor: 'older-page',
   });
 
-  assert.ok(next.transcripts.m1.length <= 1_200);
-  assert.equal(
-    next.transcripts.m1.some((event) => event.kind === 'compaction'),
-    false,
-  );
-  assert.equal(next.sessions.m1.autoCompactions, 2);
-  assert.equal(next.sessions.m1.contextTokens, 0);
-  assert.equal(next.contextStats.primary.m1, undefined);
+  for (const next of [replaced, prepended]) {
+    assert.ok(next.transcripts.m1.length <= 1_200);
+    assert.equal(
+      next.transcripts.m1.some((event) => event.kind === 'compaction'),
+      false,
+    );
+    assertMeterReset(next, 2);
+  }
 });
 
 test('live and provider-history dividers restore as one compaction generation', () => {
@@ -214,13 +171,8 @@ test('live and provider-history dividers restore as one compaction generation', 
     ts: 1,
     kind: 'compaction',
   });
-  const start: AppState = {
-    ...initialState,
-    sessions: { m1: session() },
-    contextStats: { primary: { m1: snapshot(100_000) }, child: {} },
-  };
 
-  const next = reducer(start, {
+  const next = reducer(fullMeterState(), {
     type: 'SESSION_HISTORY',
     appSessionId: 'm1',
     progress: [],
@@ -230,13 +182,10 @@ test('live and provider-history dividers restore as one compaction generation', 
       restored('compaction-worker-1-summary-1', 'worker'),
     ],
     mode: 'replace',
-    olderCursor: undefined,
     hasMore: false,
   });
 
-  assert.equal(next.sessions.m1.autoCompactions, 1);
-  assert.equal(next.sessions.m1.contextTokens, 0);
-  assert.equal(next.contextStats.primary.m1, undefined);
+  assertMeterReset(next, 1);
 });
 
 test('a delayed session summary cannot roll back a restored compaction generation', () => {

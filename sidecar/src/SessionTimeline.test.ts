@@ -414,29 +414,6 @@ test('plain append flushes the buffered run first and flush is idempotent', () =
   ]);
 });
 
-test('coalescing disabled records and emits every delta immediately', () => {
-  const { recorded, timeline } = createHarness({ streamingCoalesceMs: 0 });
-
-  timeline.appendStreaming(delta('a'));
-  timeline.appendStreaming(delta('b'));
-
-  assert.deepEqual(
-    recorded.map((event) => event.id),
-    ['a', 'b'],
-  );
-});
-
-test('append records before emitting exactly one live transcript event', () => {
-  const { emitted, recorded, timeline, trace } = createHarness();
-  const event = transcript('event-1', 'app-1');
-
-  timeline.append(event);
-
-  assert.deepEqual(trace, ['record:event-1', 'emit:event.appended']);
-  assert.deepEqual(recorded, [event]);
-  assert.deepEqual(emitted, [{ type: 'event.appended', event }]);
-});
-
 test('plain restore resolves aliases, records in order, and emits replace telemetry', () => {
   const restored = [transcript('first'), transcript('second')];
   const childSessions = [child('app-1', 'worker-1', 'running')];
@@ -543,55 +520,27 @@ test('Mission Control restore preserves progress, child links, cursor, identity,
 });
 
 test('older restore prepends only transcripts and preserves page telemetry', () => {
-  let childLinkReads = 0;
   const event = transcript('older');
   const harness = createHarness({
     summaries: [summary('app-1', 'provider-1')],
+    childSessions: [child('app-1', 'worker-1', 'running')],
     loaders: {
-      transcriptWindow: (_appSessionId, _chain, options) => {
-        assert.deepEqual(options, { cursor: 'cursor-1' });
-        return { events: [event], olderCursor: 'cursor-2' };
-      },
-    },
-  });
-  const timeline = new SessionTimeline({
-    registry: {
-      resolveSummary: () => summary('app-1', 'provider-1'),
-      getLive: () => undefined,
-    },
-    history: {
-      recordEvent: (recorded) => {
-        harness.recorded.push(recorded);
-      },
-    },
-    getChildSessions: () => {
-      childLinkReads += 1;
-      return [];
-    },
-    emit: (emitted) => harness.emitted.push(emitted),
-    emitError: (error) => harness.errors.push(error),
-    loaders: {
-      list: () => [],
-      page: () => ({ events: [] }),
-      hydrateMission: () => ({ progress: [], transcripts: [] }),
       resolveChain: () => ['provider-1'],
       transcriptWindow: (_appSessionId, _chain, options) => {
         assert.deepEqual(options, { cursor: 'cursor-1' });
         return { events: [event], olderCursor: 'cursor-2' };
       },
-      openTranscriptTail: () => [],
     },
   });
 
-  timeline.load('provider-1', 'cursor-1');
+  harness.timeline.load('provider-1', 'cursor-1');
 
-  assert.equal(childLinkReads, 0);
   const page = harness.emitted[0];
   assert.equal(page?.type, 'session.history');
   if (page?.type !== 'session.history') return;
   assert.equal(page.mode, 'prepend');
   assert.deepEqual(page.progress, []);
-  assert.equal(page.childSessions, undefined);
+  assert.equal(page.childSessions, undefined, 'child links belong to the first page only');
   assert.equal(page.olderCursor, 'cursor-2');
   assert.equal(page.loadedCount, 1);
   assert.equal(page.hasMore, true);

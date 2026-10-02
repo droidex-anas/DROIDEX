@@ -74,6 +74,44 @@ test('session.create without autonomy fails fast without starting a provider ses
   }
 });
 
+// Bridge version skew: the socket layer JSON-parses commands without runtime
+// validation, so a renderer newer than this sidecar can send a command this
+// build does not know. It must get an actionable error that echoes its
+// requestId (requesters correlate on it) instead of waiting out a timeout.
+test('an unknown command fails fast with a bridge.unsupported_command error for its request', async () => {
+  const h = createSessionManagerTestContext();
+  try {
+    const skewed = {
+      type: 'session.someFutureCommand',
+      requestId: 'req-7',
+    } as unknown as Protocol.ClientCommand;
+    await h.handle(skewed);
+
+    const errors = errorEvents(h.events);
+    assert.equal(errors.length, 1);
+    const [error] = errors;
+    assert.ok(error?.type === 'error');
+    assert.equal(error.code, 'bridge.unsupported_command');
+    assert.equal(error.requestId, 'req-7');
+    assert.match(error.message, /someFutureCommand/);
+    assert.match(error.message, /Restart the app/);
+  } finally {
+    await h.dispose();
+  }
+});
+
+test('runtime.status answers with the runtime state and no error', async () => {
+  const h = createSessionManagerTestContext();
+  try {
+    await h.handle({ type: 'runtime.status' });
+
+    assert.ok(h.events.some((event) => event.type === 'runtime.updated'));
+    assert.equal(errorEvents(h.events).length, 0);
+  } finally {
+    await h.dispose();
+  }
+});
+
 test('live autonomy update writes the provider first and publishes the confirmed level', async () => {
   const h = createSessionManagerTestContext();
   try {
@@ -83,56 +121,16 @@ test('live autonomy update writes the provider first and publishes the confirmed
     await updateAutonomy(h, 'provider-1', 'high');
     await h.waitForIdle();
 
-    assert.deepEqual(h.provider.session('provider-1').settings.at(-1), {
-      autonomyLevel: AutonomyLevel.High,
-    });
+    const settings = h.provider.session('provider-1').settings;
+    assert.deepEqual(settings.at(-1), { autonomyLevel: AutonomyLevel.High });
     assert.equal(sessionUpdates(h.events, 'provider-1').at(-1)?.autonomy, 'high');
-    assert.equal(errorEvents(h.events).length, 0);
-  } finally {
-    await h.dispose();
-  }
-});
 
-test('autonomy update to the current level is a no-op', async () => {
-  const h = createSessionManagerTestContext();
-  try {
-    await createChat(h, 'low');
-    await h.waitForIdle();
-    const writesBefore = h.provider.session('provider-1').settings.length;
-
-    await updateAutonomy(h, 'provider-1', 'low');
-    await h.waitForIdle();
-
-    assert.equal(h.provider.session('provider-1').settings.length, writesBefore);
-    assert.equal(errorEvents(h.events).length, 0);
-  } finally {
-    await h.dispose();
-  }
-});
-
-test('provider rejection surfaces a recoverable coded error and keeps the confirmed level', async () => {
-  const h = createSessionManagerTestContext();
-  try {
-    await createChat(h, 'low');
-    await h.waitForIdle();
-    h.provider.session('provider-1').nextUpdateSettingsError = new Error('provider rejected');
-
+    // Asking for the level already confirmed writes nothing.
+    const writesBefore = settings.length;
     await updateAutonomy(h, 'provider-1', 'high');
     await h.waitForIdle();
-
-    const errors = errorEvents(h.events);
-    assert.equal(errors.length, 1);
-    assert.equal(
-      errors[0]?.type === 'error' ? errors[0].code : undefined,
-      'session.autonomy_update_failed',
-    );
-    assert.equal(errors[0]?.type === 'error' ? errors[0].recoverable : undefined, true);
-    assert.equal(errors[0]?.type === 'error' ? errors[0].appSessionId : undefined, 'provider-1');
-    assert.match(errors[0]?.message ?? '', /Could not change autonomy/);
-    assert.equal(
-      sessionUpdates(h.events, 'provider-1').some((session) => session.autonomy === 'high'),
-      false,
-    );
+    assert.equal(settings.length, writesBefore);
+    assert.equal(errorEvents(h.events).length, 0);
   } finally {
     await h.dispose();
   }
@@ -173,7 +171,7 @@ test(
   },
 );
 
-test('a failed autonomy update does not drop changes queued behind it', async () => {
+test('a provider rejection is a recoverable coded error that keeps the confirmed level and the queue behind it', async () => {
   const h = createSessionManagerTestContext();
   try {
     await createChat(h, 'low');
@@ -182,21 +180,31 @@ test('a failed autonomy update does not drop changes queued behind it', async ()
     session.nextUpdateSettingsError = new Error('provider rejected');
     const writesBefore = session.settings.length;
 
-    // The first update rejects at the provider; the second, queued behind it,
-    // must still reach the provider once the queue advances.
     const first = updateAutonomy(h, 'provider-1', 'medium');
     const second = updateAutonomy(h, 'provider-1', 'high');
     await Promise.all([first, second]);
     await h.waitForIdle();
 
+    const errors = errorEvents(h.events);
+    assert.equal(errors.length, 1);
+    const [error] = errors;
+    assert.equal(
+      error?.type === 'error' ? error.code : undefined,
+      'session.autonomy_update_failed',
+    );
+    assert.equal(error?.type === 'error' ? error.recoverable : undefined, true);
+    assert.equal(error?.type === 'error' ? error.appSessionId : undefined, 'provider-1');
+    assert.match(error?.message ?? '', /Could not change autonomy/);
+    assert.equal(
+      sessionUpdates(h.events, 'provider-1').some((summary) => summary.autonomy === 'medium'),
+      false,
+    );
+    // The update queued behind the rejected one still reaches the provider.
     assert.deepEqual(session.settings.slice(writesBefore), [
       { autonomyLevel: AutonomyLevel.Medium },
       { autonomyLevel: AutonomyLevel.High },
     ]);
     assert.equal(sessionUpdates(h.events, 'provider-1').at(-1)?.autonomy, 'high');
-    const errors = errorEvents(h.events);
-    assert.equal(errors.length, 1);
-    assert.match(errors[0]?.message ?? '', /Could not change autonomy/);
   } finally {
     await h.dispose();
   }

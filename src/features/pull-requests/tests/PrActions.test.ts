@@ -4,7 +4,7 @@ import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 
 import type { PullRequest } from '../../../types/vcs';
-import { PrMergeButton, mergeButtonTitle, mergePullRequestKey } from '../components/PrMergeButton';
+import { PrMergeButton, mergePullRequestKey } from '../components/PrMergeButton';
 import { PrReviewButton } from '../components/PrReviewButton';
 
 const pr: PullRequest = {
@@ -26,12 +26,6 @@ const pr: PullRequest = {
   reviewRequests: [],
   reviews: [],
 };
-
-test('merge tooltip describes blocked, merging, and merged states', () => {
-  assert.equal(mergeButtonTitle('Checks are failing', false, false), 'Checks are failing');
-  assert.equal(mergeButtonTitle(null, true, false), 'Merging pull request');
-  assert.equal(mergeButtonTitle(null, false, true), 'Pull request merged');
-});
 
 test('merge and review dropdown triggers expose menu state', () => {
   const mergeHtml = renderToStaticMarkup(

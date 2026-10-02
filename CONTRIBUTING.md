@@ -114,6 +114,21 @@ targeting, ordering, cancellation, cleanup, or a cross-process contract, or when
 it pins a bug you just fixed. Keep the existing suites green and update the tests your
 change affects. "No new tests" is a normal and accepted outcome.
 
+The concrete limits, from `AGENTS.md`:
+
+- One suite per production module, and each behaviour tested once, at the
+  narrowest entry point that owns it.
+- A test file stays under 800 lines and a single test under about 60 lines.
+- A bug fix adds at most one regression test.
+- No sleeps or wall-clock thresholds in unit tests; timing belongs
+  to `npm run quality:perf-gates`.
+- Coverage floors in `test:ci` are a floor, not a target. Never add a test to
+  raise a number.
+- When a change breaks an existing test, fix the change. Rewrite the test only
+  for an intended behaviour change, and say so in the pull request.
+- `sidecar/regression/` holds end-to-end contracts that agents do not edit and
+  `npm test` skips. CI runs them on every pull request.
+
 ## Validating your change
 
 Run the checks that match what you touched. For a broad change, run all of them:
@@ -131,7 +146,8 @@ npm run build               # Production build
 
 `npm run lint` blocks CI on new errors. The existing backlog is recorded in
 `eslint-suppressions.json`; never add to it to get a green run. When you fix old
-errors, prune it with `npx eslint . --prune-suppressions`.
+errors, prune it with `npx eslint . --prune-suppressions`; lint fails until you
+do, so the backlog only shrinks.
 
 If you changed scripts, environment variables, or onboarding commands,
 regenerate the docs:

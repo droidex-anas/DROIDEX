@@ -212,7 +212,7 @@ test('limit resolution preserves UI, exposed, default, override, and window prec
   assert.equal(childCompactionModelId(summary, undefined, 'validator'), 'validator-model');
 });
 
-test('arm writes only while its exact provisional target remains current', async () => {
+test('arm writes only while its exact target remains current, up to the provider write', async () => {
   const h = createHarness();
   const live = primaryTarget(h);
   assert.equal(await h.compaction.arm(live.target, 500), true);
@@ -229,21 +229,20 @@ test('arm writes only while its exact provisional target remains current', async
   pending.setCurrent(false);
   gate.resolve();
   assert.equal(await arming, false);
-});
 
-test('provider rejection is best effort and clears a truthful primary limit', async () => {
-  const h = createHarness();
-  const primary = primaryTarget(h);
-  primary.session.nextUpdateSettingsError = new Error('provider rejected');
-  const originalError = console.error;
-  console.error = () => undefined;
-  try {
-    await h.compaction.rearmPrimary(primary.target);
-  } finally {
-    console.error = originalError;
-  }
-  assert.equal(h.patches.at(-1)?.appSessionId, 'app-1');
-  assert.equal(h.patches.at(-1)?.patch.compactionTokenLimit, undefined);
+  // A child invalidated by the final check before the provider write is never armed.
+  const child = childTarget(h, 'model-a');
+  let checks = 0;
+  const lastMoment: ChildCompactionTarget = {
+    ...child.target,
+    isCurrent: () => {
+      checks += 1;
+      return checks < 3;
+    },
+  };
+  await h.compaction.rearmModelChangedChild(lastMoment, 'model-a');
+  assert.equal(checks, 3);
+  assert.deepEqual(child.session.settings, []);
 });
 
 test('global retune uses each captured effective model and publishes only primary state', async () => {
@@ -265,47 +264,43 @@ test('global retune uses each captured effective model and publishes only primar
   assert.deepEqual(h.patches, [{ appSessionId: 'app-1', patch: { compactionTokenLimit: 300 } }]);
 });
 
-test('a superseded revision stops before provider issue', async () => {
-  const h = createHarness();
-  const primary = primaryTarget(h);
+test('a superseded retune neither issues nor publishes stale primary state', async () => {
+  // Superseded while its defaults are still loading: the provider never sees it.
+  const unissued = createHarness();
+  const pending = primaryTarget(unissued);
   const firstDefaults = deferredDefaults();
-  h.setDefaultsReader(() => firstDefaults.promise);
-  const first = h.compaction.updateLimits({ compactionTokenLimit: 300 }, [primary.target]);
+  unissued.setDefaultsReader(() => firstDefaults.promise);
+  const stale = unissued.compaction.updateLimits({ compactionTokenLimit: 300 }, [pending.target]);
   await Promise.resolve();
-
-  h.setDefaultsReader(() => Promise.resolve({ compactionTokenLimit: 900 }));
-  await h.compaction.updateLimits({ compactionTokenLimit: 500 }, [primary.target]);
+  unissued.setDefaultsReader(() => Promise.resolve({ compactionTokenLimit: 900 }));
+  await unissued.compaction.updateLimits({ compactionTokenLimit: 500 }, [pending.target]);
   firstDefaults.resolve();
-  await first;
-
+  await stale;
   assert.deepEqual(
-    primary.session.settings.map((settings) => settings['compactionTokenLimit']),
+    pending.session.settings.map((settings) => settings['compactionTokenLimit']),
     [500],
   );
   assert.deepEqual(
-    h.patches.map(({ patch }) => patch.compactionTokenLimit),
+    unissued.patches.map(({ patch }) => patch.compactionTokenLimit),
     [500],
   );
-});
 
-test('a superseded issued write cannot publish stale primary state', async () => {
-  const h = createHarness();
-  const primary = primaryTarget(h);
+  // Superseded after the provider write was issued: only the newest is published.
+  const issued = createHarness();
+  const primary = primaryTarget(issued);
   const firstWrite = primary.session.deferNextUpdateSettings();
-  const first = h.compaction.updateLimits({ compactionTokenLimit: 300 }, [primary.target]);
+  const first = issued.compaction.updateLimits({ compactionTokenLimit: 300 }, [primary.target]);
   await new Promise((resolve) => setImmediate(resolve));
   assert.equal(primary.session.settings.length, 1);
-
-  await h.compaction.updateLimits({ compactionTokenLimit: 500 }, [primary.target]);
+  await issued.compaction.updateLimits({ compactionTokenLimit: 500 }, [primary.target]);
   firstWrite.resolve();
   await first;
-
   assert.deepEqual(
     primary.session.settings.map((settings) => settings['compactionTokenLimit']),
     [300, 500],
   );
   assert.deepEqual(
-    h.patches.map(({ patch }) => patch.compactionTokenLimit),
+    issued.patches.map(({ patch }) => patch.compactionTokenLimit),
     [500],
   );
 });
@@ -338,24 +333,6 @@ test('child close and old-model replacement invalidate unresolved writes', async
   await oldRetune;
   assert.equal(changing.session.settings.length, 0);
   assert.equal(settingsLimit(replacement.session), 600);
-});
-
-test('child invalidation immediately before provider arm prevents the write', async () => {
-  const h = createHarness();
-  const child = childTarget(h, 'model-a');
-  let checks = 0;
-  const target: ChildCompactionTarget = {
-    ...child.target,
-    isCurrent: () => {
-      checks += 1;
-      return checks < 3;
-    },
-  };
-
-  await h.compaction.rearmModelChangedChild(target, 'model-a');
-
-  assert.equal(checks, 3);
-  assert.deepEqual(child.session.settings, []);
 });
 
 test('clearAll invalidates unresolved policy work and provider arming', async () => {

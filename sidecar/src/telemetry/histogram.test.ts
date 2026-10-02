@@ -3,8 +3,12 @@ import test from 'node:test';
 
 import { ReservoirHistogram } from './histogram.js';
 
-test('empty histogram reports no percentiles', () => {
+test('an empty or reset histogram reports no percentiles', () => {
   assert.deepEqual(new ReservoirHistogram().stats(), { count: 0 });
+  const histogram = new ReservoirHistogram();
+  histogram.add(5);
+  histogram.reset();
+  assert.deepEqual(histogram.stats(), { count: 0 });
 });
 
 test('histogram reports exact rank percentiles', () => {
@@ -48,12 +52,4 @@ test('histogram reservoir keeps only the most recent samples', () => {
   assert.equal(stats.count, 8192);
   assert.equal(stats.p50Ms, 1903);
   assert.equal(stats.maxMs, 5999);
-});
-
-test('reset empties the histogram', () => {
-  const histogram = new ReservoirHistogram();
-  histogram.add(5);
-  histogram.reset();
-
-  assert.deepEqual(histogram.stats(), { count: 0 });
 });

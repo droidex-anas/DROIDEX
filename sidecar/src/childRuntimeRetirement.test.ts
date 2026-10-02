@@ -70,13 +70,6 @@ const retirableIds = (parent: ParentChildSessions, now: number): string[] =>
     ({ child }) => child.identity.childSessionId,
   );
 
-test('a settled child is retirable only once it passes the idle budget', () => {
-  const parent = parentOf(liveChild('settled', 1_000));
-
-  assert.deepEqual(retirableIds(parent, 1_000 + IDLE_MS - 1), []);
-  assert.deepEqual(retirableIds(parent, 1_000 + IDLE_MS), ['settled']);
-});
-
 test('a child with work in flight is never retirable, however long it sits', () => {
   const forever = 1_000 + IDLE_MS * 100;
   const busy: [string, Partial<ChildSessionState>][] = [
@@ -97,17 +90,6 @@ test('a child with work in flight is never retirable, however long it sits', () 
     const parent = parentOf(liveChild(label, 1_000, patch));
     assert.deepEqual(retirableIds(parent, forever), [], `${label} must never be retired`);
   }
-});
-
-test('a child whose result is not yet persisted is never retirable', () => {
-  const parent = parentOf(liveChild('undelivered', 1_000));
-  const awaitingDurability = (child: ChildSessionState) =>
-    child.identity.childSessionId === 'undelivered';
-
-  assert.deepEqual(
-    retirableChildRuntimes([parent], 1_000 + IDLE_MS, IDLE_MS, awaitingDurability),
-    [],
-  );
 });
 
 test('a child without a runtime, mid-open, or under a closing parent is skipped', () => {

@@ -20,7 +20,9 @@ test('buildInstallCommand maps each channel to its command', () => {
   assert.equal(script.command, 'sh');
   assert.equal(script.args[0], '-c');
   assert.match(script.args[1] ?? '', /curl -fsSL https:\/\/app\.factory\.ai\/cli/);
-  assert.match(script.args[1] ?? '', /&& sh/);
+  // `&&` chaining means `sh` only runs after a successful curl, so a failed
+  // download cannot be reported as a successful install.
+  assert.match(script.args[1] ?? '', /curl[^&]*&&[^&]*sh/);
   assert.deepEqual(buildInstallCommand('brew'), {
     command: 'brew',
     args: ['install', '--cask', 'droid'],
@@ -29,12 +31,6 @@ test('buildInstallCommand maps each channel to its command', () => {
     command: 'npm',
     args: ['install', '-g', '@factory/cli'],
   });
-});
-
-test('the script install aborts when the download fails', () => {
-  // `&&` chaining means `sh` only runs after a successful curl, so a failed
-  // download cannot be reported as a successful install.
-  assert.match(buildInstallCommand('script').args[1] ?? '', /curl[^&]*&&[^&]*sh/);
 });
 
 test('streamingInvocation never enables a generic shell', () => {
@@ -65,14 +61,11 @@ test('signal termination is never reported as installer success', () => {
   assert.equal(completedProcessExitCode(9), 9);
 });
 
-test('buildUpdateCommand uses droid update when the CLI exists', () => {
+test('buildUpdateCommand uses droid update when the CLI exists, else the channel install', () => {
   assert.deepEqual(buildUpdateCommand('npm', '/usr/bin/droid', true), {
     command: '/usr/bin/droid',
     args: ['update'],
   });
-});
-
-test('buildUpdateCommand falls back to install when the CLI is missing', () => {
   assert.deepEqual(buildUpdateCommand('brew', 'droid', false), {
     command: 'brew',
     args: ['install', '--cask', 'droid'],

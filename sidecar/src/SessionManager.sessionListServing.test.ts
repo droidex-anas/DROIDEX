@@ -3,9 +3,15 @@ import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import test from 'node:test';
 
+import type * as Protocol from './protocol.js';
+import type { SessionFileChange } from './sessionFileCache.js';
+import { SessionFileServing } from './SessionFileServing.js';
 import type { SessionFileWatcherOptions } from './sessionFileWatcher.js';
 import { FakeFactorySession } from './testing/fakeFactoryRuntime.js';
-import { createSessionManagerTestContext } from './testing/sessionManagerTestContext.js';
+import {
+  createSessionManagerTestContext,
+  type SessionManagerTestContext,
+} from './testing/sessionManagerTestContext.js';
 import {
   providerSessionJsonl,
   type ProviderMessageRole,
@@ -18,11 +24,11 @@ function writeExternalSession(
   id: string,
   cwd: string,
   messageRoles: ProviderMessageRole[] = ['user', 'assistant'],
-): void {
-  const dir = join(home, '.factory', 'sessions', '2026', '08');
-  mkdirSync(dir, { recursive: true });
+): SessionFileChange {
+  const path = join(home, '.factory', 'sessions', '2026', '08', `${id}.jsonl`);
+  mkdirSync(join(path, '..'), { recursive: true });
   writeFileSync(
-    join(dir, `${id}.jsonl`),
+    path,
     providerSessionJsonl(
       {
         type: 'session_start',
@@ -33,100 +39,74 @@ function writeExternalSession(
       messageRoles,
     ),
   );
+  return { providerSessionId: id, path };
 }
 
-test('sessions created outside the app are republished live when the watcher fires', async () => {
-  let watcherOptions: SessionFileWatcherOptions | undefined;
-  let watcherClosed = false;
+// Captures the watcher callbacks the manager registers so a test can play the
+// part of the file system.
+function withCapturedWatcher(
+  consumeLiveSessionFile: (providerSessionId: string) => string | undefined = () => undefined,
+) {
+  let options: SessionFileWatcherOptions | undefined;
+  let closed = false;
   const ctx = createSessionManagerTestContext({
-    startSessionFileWatcher: (options) => {
-      watcherOptions = options;
+    startSessionFileWatcher: (watcherOptions) => {
+      options = watcherOptions;
       return {
         liveSessionFile: () => undefined,
-        consumeLiveSessionFile: () => undefined,
+        consumeLiveSessionFile,
         close: () => {
-          watcherClosed = true;
+          closed = true;
         },
       };
     },
   });
+  const fire = (changes: SessionFileChange[] | null): void => {
+    assert.ok(options, 'the watcher starts with the first sessions.list');
+    options.onExternalChange(changes);
+  };
+  return { ctx, fire, closed: () => closed };
+}
+
+const lists = (ctx: SessionManagerTestContext) =>
+  ctx.events.filter(
+    (event): event is Extract<Protocol.ServerEvent, { type: 'sessions.list' }> =>
+      event.type === 'sessions.list',
+  );
+
+const listed = (ctx: SessionManagerTestContext, appSessionId: string): boolean =>
+  lists(ctx)
+    .at(-1)
+    ?.sessions.some((session) => session.appSessionId === appSessionId) ?? false;
+
+test('sessions created outside the app are republished live when the watcher fires', async () => {
+  const { ctx, fire, closed } = withCapturedWatcher();
   try {
     await ctx.handle({ type: 'sessions.list' });
-    assert.ok(watcherOptions, 'watcher starts on the first sessions.list');
-    const listsBefore = ctx.events.filter((event) => event.type === 'sessions.list').length;
+    const listsBefore = lists(ctx).length;
 
-    writeExternalSession(ctx.home, 'external-session-1', '/tmp/external-workspace');
-    const sessionFile = join(
-      ctx.home,
-      '.factory',
-      'sessions',
-      '2026',
-      '08',
-      'external-session-1.jsonl',
-    );
-    watcherOptions.onExternalChange([
-      { providerSessionId: 'external-session-1', path: sessionFile },
-    ]);
+    const change = writeExternalSession(ctx.home, 'external-session-1', '/tmp/external-workspace');
+    const empty = writeExternalSession(ctx.home, 'empty-external', '/tmp/external-workspace', []);
+    fire([change, empty]);
     await ctx.waitForIdle();
 
     assert.deepEqual(
       ctx.history.targetedReconcileCalls,
-      [[{ providerSessionId: 'external-session-1', path: sessionFile }]],
-      'a targeted change list reconciles exactly the reported file',
+      [[change, empty]],
+      'a targeted change list reconciles exactly the reported files',
     );
     assert.equal(ctx.history.fullReconcileCalls, 1, 'only the boot reconcile walks the tree');
-
-    const lists = ctx.events.filter((event) => event.type === 'sessions.list');
-    assert.equal(lists.length, listsBefore + 1, 'external change republishes the list');
-    const republished = lists.at(-1);
-    assert.equal(republished?.type, 'sessions.list');
-    assert.ok(
-      republished?.sessions.some((session) => session.appSessionId === 'external-session-1'),
-      'republished list includes the externally created session',
-    );
-  } finally {
-    await ctx.dispose();
-  }
-  assert.equal(watcherClosed, true, 'watcher closes on shutdown');
-});
-
-test('metadata-only sessions created outside the app never become sidebar rows', async () => {
-  let watcherOptions: SessionFileWatcherOptions | undefined;
-  const ctx = createSessionManagerTestContext({
-    startSessionFileWatcher: (options) => {
-      watcherOptions = options;
-      return {
-        liveSessionFile: () => undefined,
-        consumeLiveSessionFile: () => undefined,
-        close: () => {},
-      };
-    },
-  });
-  try {
-    await ctx.handle({ type: 'sessions.list' });
-    writeExternalSession(ctx.home, 'empty-external-session', '/tmp/external-workspace', []);
-    const sessionFile = join(
-      ctx.home,
-      '.factory',
-      'sessions',
-      '2026',
-      '08',
-      'empty-external-session.jsonl',
-    );
-
-    watcherOptions?.onExternalChange([
-      { providerSessionId: 'empty-external-session', path: sessionFile },
-    ]);
-
-    const list = ctx.events.filter((event) => event.type === 'sessions.list').at(-1);
-    assert.ok(list?.type === 'sessions.list');
+    assert.equal(lists(ctx).length, listsBefore + 1, 'external change republishes the list');
+    assert.equal(listed(ctx, 'external-session-1'), true);
     assert.equal(
-      list.sessions.some((session) => session.appSessionId === 'empty-external-session'),
+      listed(ctx, 'empty-external'),
       false,
+      'metadata-only sessions never become sidebar rows',
     );
   } finally {
     await ctx.dispose();
   }
+  assert.equal(closed(), true, 'watcher closes on shutdown');
 });
 
 test('a live first turn stays visible before the provider writes its response', async () => {
@@ -144,43 +124,22 @@ test('a live first turn stays visible before the provider writes its response', 
 
     await ctx.handle({ type: 'sessions.list', workspaceCwds: ['/tmp/live-first-turn'] });
 
-    const created = ctx.events.find((event) => event.type === 'session.created');
-    const list = ctx.events.filter((event) => event.type === 'sessions.list').at(-1);
-    assert.ok(created?.type === 'session.created');
-    assert.ok(list?.type === 'sessions.list');
-    assert.ok(
-      list.sessions.some((session) => session.appSessionId === created.session.appSessionId),
-    );
+    assert.equal(listed(ctx, 'provider-1'), true);
   } finally {
     await ctx.dispose();
   }
 });
 
 test('unexplained watcher events fall back to a full reconcile before republishing', async () => {
-  let watcherOptions: SessionFileWatcherOptions | undefined;
-  const ctx = createSessionManagerTestContext({
-    startSessionFileWatcher: (options) => {
-      watcherOptions = options;
-      return {
-        liveSessionFile: () => undefined,
-        consumeLiveSessionFile: () => undefined,
-        close: () => {},
-      };
-    },
-  });
+  const { ctx, fire } = withCapturedWatcher();
   try {
     await ctx.handle({ type: 'sessions.list' });
-    assert.ok(watcherOptions, 'watcher starts on the first sessions.list');
     const fullReconcilesBefore = ctx.history.fullReconcileCalls;
 
-    watcherOptions.onExternalChange(null);
+    fire(null);
     await ctx.waitForIdle();
 
-    assert.equal(
-      ctx.history.fullReconcileCalls,
-      fullReconcilesBefore + 1,
-      'a null change list runs a full reconcile',
-    );
+    assert.equal(ctx.history.fullReconcileCalls, fullReconcilesBefore + 1);
     assert.equal(ctx.history.targetedReconcileCalls.length, 0);
   } finally {
     await ctx.dispose();
@@ -188,37 +147,18 @@ test('unexplained watcher events fall back to a full reconcile before republishi
 });
 
 test('a failed watcher reconcile marks the next list for an authoritative full retry', async () => {
-  let watcherOptions: SessionFileWatcherOptions | undefined;
-  const ctx = createSessionManagerTestContext({
-    startSessionFileWatcher: (options) => {
-      watcherOptions = options;
-      return {
-        liveSessionFile: () => undefined,
-        consumeLiveSessionFile: () => undefined,
-        close: () => {},
-      };
-    },
-  });
+  const { ctx, fire } = withCapturedWatcher();
   try {
     await ctx.handle({ type: 'sessions.list' });
-    const listsBefore = ctx.events.filter((event) => event.type === 'sessions.list').length;
+    const listsBefore = lists(ctx).length;
     ctx.history.failNextTargetedReconcile = new Error('derived database busy');
-    watcherOptions?.onExternalChange([
-      { providerSessionId: 'failed-watcher-session', path: '/tmp/failed-watcher.jsonl' },
-    ]);
+    fire([{ providerSessionId: 'failed-watcher-session', path: '/tmp/failed-watcher.jsonl' }]);
     await ctx.waitForIdle();
 
-    assert.equal(
-      ctx.events.filter((event) => event.type === 'sessions.list').length,
-      listsBefore,
-      'a failed delta never republishes a stale list',
-    );
+    assert.equal(lists(ctx).length, listsBefore, 'a failed delta never republishes a stale list');
     await ctx.handle({ type: 'sessions.list' });
     assert.equal(ctx.history.fullReconcileCalls, 2, 'the next list performs a full retry');
-    assert.equal(
-      ctx.events.filter((event) => event.type === 'sessions.list').length,
-      listsBefore + 1,
-    );
+    assert.equal(lists(ctx).length, listsBefore + 1);
   } finally {
     await ctx.dispose();
   }
@@ -227,13 +167,7 @@ test('a failed watcher reconcile marks the next list for an authoritative full r
 test('closing a live session reconciles its final file before republishing', async () => {
   const workspace = '/tmp/finalized-workspace';
   let finalizedSessionFile: string | undefined;
-  const ctx = createSessionManagerTestContext({
-    startSessionFileWatcher: () => ({
-      liveSessionFile: () => undefined,
-      consumeLiveSessionFile: () => finalizedSessionFile,
-      close: () => {},
-    }),
-  });
+  const { ctx } = withCapturedWatcher(() => finalizedSessionFile);
   try {
     await ctx.create({
       cwd: workspace,
@@ -244,8 +178,7 @@ test('closing a live session reconciles its final file before republishing', asy
       interactionMode: 'auto',
       autonomy: 'low',
     });
-    writeExternalSession(ctx.home, 'provider-1', workspace);
-    finalizedSessionFile = join(ctx.home, '.factory', 'sessions', '2026', '08', 'provider-1.jsonl');
+    finalizedSessionFile = writeExternalSession(ctx.home, 'provider-1', workspace).path;
     await ctx.handle({ type: 'sessions.list', workspaceCwds: [workspace] });
     const reconcilesBeforeClose = ctx.history.fullReconcileCalls;
     const targetedReconcilesBeforeClose = ctx.history.targetedReconcileCalls.length;
@@ -262,8 +195,8 @@ test('closing a live session reconciles its final file before republishing', asy
       [[{ providerSessionId: 'provider-1', path: finalizedSessionFile }]],
       'close reconciles only the finalized file after the live registry entry is removed',
     );
-    const list = ctx.events.filter((event) => event.type === 'sessions.list').at(-1);
-    assert.ok(list?.type === 'sessions.list');
+    const list = lists(ctx).at(-1);
+    assert.ok(list);
     assert.ok(
       list.sessions.some((session) => session.appSessionId === 'provider-1'),
       'the post-close list retains the newly historical session',
@@ -280,15 +213,9 @@ test('closing a live session reconciles its final file before republishing', asy
 test('provider replacement finalizes the retired file without treating its alias as live', async () => {
   const consumedProviderSessionIds: string[] = [];
   const retiredPath = '/tmp/provider-1.jsonl';
-  const ctx = createSessionManagerTestContext({
-    startSessionFileWatcher: () => ({
-      liveSessionFile: () => undefined,
-      consumeLiveSessionFile: (providerSessionId) => {
-        consumedProviderSessionIds.push(providerSessionId);
-        return providerSessionId === 'provider-1' ? retiredPath : undefined;
-      },
-      close: () => {},
-    }),
+  const { ctx } = withCapturedWatcher((providerSessionId) => {
+    consumedProviderSessionIds.push(providerSessionId);
+    return providerSessionId === 'provider-1' ? retiredPath : undefined;
   });
   try {
     await ctx.create({
@@ -366,26 +293,15 @@ test('the first sessions.list resolves only after the boot reconcile publishes',
     writeExternalSession(ctx.home, 'boot-external-session', '/tmp/boot-workspace');
 
     await ctx.handle({ type: 'sessions.list' });
-    assert.equal(
-      ctx.events.filter((event) => event.type === 'sessions.list').length,
-      1,
-      'the command resolves after publishing the reconciled list',
-    );
-
-    const lists = ctx.events.filter((event) => event.type === 'sessions.list');
-    assert.equal(lists.length, 1, 'the first list is emitted once the boot reconcile settles');
+    assert.equal(lists(ctx).length, 1, 'the command resolves after publishing the reconciled list');
     assert.equal(ctx.history.fullReconcileCalls, 1, 'the boot reconcile ran exactly once');
     assert.ok(
-      lists[0]?.sessions.some((session) => session.appSessionId === 'boot-external-session'),
+      listed(ctx, 'boot-external-session'),
       'the first list already includes sessions created while the app was away',
     );
 
     await ctx.handle({ type: 'sessions.list' });
-    assert.equal(
-      ctx.events.filter((event) => event.type === 'sessions.list').length,
-      2,
-      'lists after the boot reconcile are served immediately',
-    );
+    assert.equal(lists(ctx).length, 2, 'lists after the boot reconcile are served immediately');
   } finally {
     await ctx.dispose();
   }
@@ -400,15 +316,11 @@ test('sessions.list commands queued during the boot reconcile emit only the late
     const first = ctx.handle({ type: 'sessions.list', workspaceCwds: ['/tmp/first'] });
     const second = ctx.handle({ type: 'sessions.list', workspaceCwds: ['/tmp/second'] });
     await Promise.all([first, second]);
-    const lists = ctx.events.filter((event) => event.type === 'sessions.list');
-    assert.equal(lists.length, 1, 'only the latest queued request emits after the reconcile');
+    assert.equal(lists(ctx).length, 1, 'only the latest queued request emits after the reconcile');
     assert.equal(ctx.history.fullReconcileCalls, 1);
-    assert.ok(
-      lists[0]?.sessions.some((session) => session.appSessionId === 'queued-second-session'),
-      'the emit uses the latest request filter',
-    );
+    assert.ok(listed(ctx, 'queued-second-session'), 'the emit uses the latest request filter');
     assert.equal(
-      lists[0]?.sessions.some((session) => session.appSessionId === 'queued-first-session'),
+      listed(ctx, 'queued-first-session'),
       false,
       'the superseded request filter is not used',
     );
@@ -423,18 +335,10 @@ test('a boot reconcile failure rejects the stale list and retries on the next re
     ctx.history.sessionFileCacheSize = 2;
     ctx.history.failNextReconcile = new Error('sqlite busy');
     await assert.rejects(ctx.handle({ type: 'sessions.list' }), /sqlite busy/);
-    assert.equal(
-      ctx.events.filter((event) => event.type === 'sessions.list').length,
-      0,
-      'a failed authoritative reconcile never publishes stale history',
-    );
+    assert.equal(lists(ctx).length, 0, 'a failed authoritative reconcile never publishes');
 
     await ctx.handle({ type: 'sessions.list' });
-    assert.equal(
-      ctx.events.filter((event) => event.type === 'sessions.list').length,
-      1,
-      'the next request retries and publishes once the cache is authoritative',
-    );
+    assert.equal(lists(ctx).length, 1, 'the next request retries once the cache is authoritative');
     assert.equal(ctx.history.fullReconcileCalls, 2);
   } finally {
     await ctx.dispose();
@@ -471,18 +375,11 @@ test('a seeded cwd patch is respected before workspace filtering', async () => {
     ]);
 
     await ctx.handle({ type: 'sessions.list', workspaceCwds: ['/workspace-patched'] });
-    const list = ctx.events.filter((event) => event.type === 'sessions.list').at(-1);
-    assert.ok(list?.type === 'sessions.list');
-    assert.ok(
-      list.sessions.some((session) => session.appSessionId === 'moved-session'),
-      'a session whose patched cwd matches the requested workspace is listed',
-    );
+    assert.ok(listed(ctx, 'moved-session'), 'the patched cwd matches the requested workspace');
 
     await ctx.handle({ type: 'sessions.list', workspaceCwds: ['/workspace-on-disk'] });
-    const onDiskList = ctx.events.filter((event) => event.type === 'sessions.list').at(-1);
-    assert.ok(onDiskList?.type === 'sessions.list');
     assert.equal(
-      onDiskList.sessions.some((session) => session.appSessionId === 'moved-session'),
+      listed(ctx, 'moved-session'),
       false,
       'the session no longer belongs to its pre-patch workspace',
     );
@@ -492,57 +389,30 @@ test('a seeded cwd patch is respected before workspace filtering', async () => {
 });
 
 test('a watcher event during the worker boot reconcile is replayed before the first list', async () => {
-  let watcherOptions: SessionFileWatcherOptions | undefined;
-  const ctx = createSessionManagerTestContext({
-    startSessionFileWatcher: (options) => {
-      watcherOptions = options;
-      return {
-        liveSessionFile: () => undefined,
-        consumeLiveSessionFile: () => undefined,
-        close: () => {},
-      };
-    },
-  });
+  const { ctx, fire } = withCapturedWatcher();
   try {
     ctx.history.sessionFileCacheSize = 2;
-    writeExternalSession(ctx.home, 'boot-window-session', '/tmp/boot-window');
-    const firstList = ctx.handle({
-      type: 'sessions.list',
-      workspaceCwds: ['/tmp/boot-window'],
-    });
+    const change = writeExternalSession(ctx.home, 'boot-window-session', '/tmp/boot-window');
+    const firstList = ctx.handle({ type: 'sessions.list', workspaceCwds: ['/tmp/boot-window'] });
     // The boot reconcile is still pending. Changes in this window are held
     // and replayed after the full scan because the scan may already have
     // passed the changed path.
-    const sessionFile = join(
-      ctx.home,
-      '.factory',
-      'sessions',
-      '2026',
-      '08',
-      'boot-window-session.jsonl',
-    );
-    watcherOptions!.onExternalChange([
-      { providerSessionId: 'boot-window-session', path: sessionFile },
-    ]);
+    fire([change]);
     assert.equal(
       ctx.history.fullReconcileCalls,
       0,
       'a watcher reconcile is not scheduled during the boot window',
     );
     await firstList;
-    const lists = ctx.events.filter((event) => event.type === 'sessions.list');
-    assert.equal(lists.length, 1, 'only the authoritative boot reconcile list is emitted');
+    assert.equal(lists(ctx).length, 1, 'only the authoritative boot reconcile list is emitted');
     assert.equal(ctx.history.fullReconcileCalls, 1);
-    assert.deepEqual(ctx.history.targetedReconcileCalls, [
-      [{ providerSessionId: 'boot-window-session', path: sessionFile }],
-    ]);
+    assert.deepEqual(ctx.history.targetedReconcileCalls, [[change]]);
   } finally {
     await ctx.dispose();
   }
 });
 
 test('shutdown waits for an active watcher reconcile and suppresses its republish', async () => {
-  let watcherOptions: SessionFileWatcherOptions | undefined;
   let releaseReconcile: (() => void) | undefined;
   let markReconcileStarted: (() => void) | undefined;
   const reconcileStarted = new Promise<void>((resolve) => {
@@ -551,16 +421,7 @@ test('shutdown waits for an active watcher reconcile and suppresses its republis
   const reconcileGate = new Promise<void>((resolve) => {
     releaseReconcile = resolve;
   });
-  const ctx = createSessionManagerTestContext({
-    startSessionFileWatcher: (options) => {
-      watcherOptions = options;
-      return {
-        liveSessionFile: () => undefined,
-        consumeLiveSessionFile: () => undefined,
-        close: () => {},
-      };
-    },
-  });
+  const { ctx, fire } = withCapturedWatcher();
   try {
     await ctx.handle({ type: 'sessions.list' });
     const reconcile = ctx.history.reconcileSessionFilePaths.bind(ctx.history);
@@ -570,11 +431,9 @@ test('shutdown waits for an active watcher reconcile and suppresses its republis
       await reconcileGate;
       return 0;
     };
-    const listsBefore = ctx.events.filter((event) => event.type === 'sessions.list').length;
+    const listsBefore = lists(ctx).length;
 
-    watcherOptions!.onExternalChange([
-      { providerSessionId: 'external-during-shutdown', path: '/tmp/external.jsonl' },
-    ]);
+    fire([{ providerSessionId: 'external-during-shutdown', path: '/tmp/external.jsonl' }]);
     await reconcileStarted;
     let shutdownSettled = false;
     const shutdown = ctx.shutdown().then(() => {
@@ -586,12 +445,112 @@ test('shutdown waits for an active watcher reconcile and suppresses its republis
     releaseReconcile?.();
     await shutdown;
     assert.equal(
-      ctx.events.filter((event) => event.type === 'sessions.list').length,
+      lists(ctx).length,
       listsBefore,
       'a reconcile that finishes during shutdown does not publish renderer state',
     );
   } finally {
     releaseReconcile?.();
+    await ctx.dispose();
+  }
+});
+
+test('whenBootReconciled shares the in-flight boot reconcile without publishing a list', async () => {
+  let reconcileCalls = 0;
+  let emitted = 0;
+  let release: (() => void) | undefined;
+  const gate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const serving = new SessionFileServing({
+    history: {
+      async reconcileSessionFiles() {
+        reconcileCalls += 1;
+        await gate;
+        return 1;
+      },
+      async reconcileSessionFilePaths() {
+        return 0;
+      },
+    },
+    startWatcher: () => null,
+    isLiveSession: () => false,
+    isShutdownStarted: () => false,
+    retryPendingLaunchSettings: () => undefined,
+    listSummaries: () => ({ sessions: [] as Protocol.SessionSummary[], earlierSessionsByCwd: {} }),
+    emitList: () => {
+      emitted += 1;
+    },
+  });
+
+  serving.start();
+  let settled = false;
+  const ready = serving.whenBootReconciled().then(() => {
+    settled = true;
+  });
+  await Promise.resolve();
+  assert.equal(settled, false);
+  release?.();
+  await ready;
+  assert.equal(emitted, 0);
+  assert.equal(reconcileCalls, 1, 'start and restore share one boot reconcile');
+});
+
+test('sessions.search answers the requester with indexed results and their completeness', async () => {
+  const ctx = createSessionManagerTestContext();
+  try {
+    ctx.history.nextSearchResults = [
+      {
+        appSessionId: 'app-1',
+        matches: [{ snippet: '…hi bro whatsapp…', author: 'user', ts: 1_700_000_000_000 }],
+      },
+    ];
+    ctx.history.nextIndexingIncomplete = true;
+
+    await ctx.handle({ type: 'sessions.search', requestId: 'req-7', query: 'whatsapp' });
+
+    const reply = ctx.events.find((event) => event.type === 'sessions.searchResults');
+    assert.equal(reply?.type, 'sessions.searchResults');
+    assert.equal(reply.requestId, 'req-7');
+    assert.equal(reply.indexingIncomplete, true);
+    assert.equal(ctx.history.lastSearchQuery, 'whatsapp');
+    assert.deepEqual(reply.results, ctx.history.nextSearchResults);
+  } finally {
+    await ctx.dispose();
+  }
+});
+
+test('a superseded sessions.search scan does not emit its results', async () => {
+  const ctx = createSessionManagerTestContext();
+  try {
+    // Gate the scan so the newer query lands while the older one is in
+    // flight; determinism comes from the gate, not from timing.
+    let release = (): void => {};
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    ctx.history.searchSessions = async (
+      _query?: string,
+      isStale?: () => boolean,
+    ): Promise<Protocol.HistorySearchReply> => {
+      await gate;
+      return {
+        results: isStale?.()
+          ? []
+          : [{ appSessionId: 'app-1', matches: [{ snippet: 'hit', author: 'user', ts: 1 }] }],
+        indexingIncomplete: false,
+      };
+    };
+
+    const first = ctx.handle({ type: 'sessions.search', requestId: 'req-1', query: 'a' });
+    const second = ctx.handle({ type: 'sessions.search', requestId: 'req-2', query: 'ab' });
+    release();
+    await Promise.all([first, second]);
+
+    const replies = ctx.events.filter((event) => event.type === 'sessions.searchResults');
+    assert.equal(replies.length, 1);
+    assert.equal(replies[0]?.requestId, 'req-2');
+  } finally {
     await ctx.dispose();
   }
 });

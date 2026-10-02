@@ -1,21 +1,23 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { buildReplayPlan, mulberry32, resolveScenario } from './scenario.js';
+import { buildReplayPlan, mulberry32, PERF_SCENARIOS, resolveScenario } from './scenario.js';
 
-test('the same seed produces an identical plan', () => {
+test('a seed fully determines the plan, and a different seed changes it', () => {
   const spec = resolveScenario('streaming');
-  const first = buildReplayPlan(spec);
-  const second = buildReplayPlan(spec);
+  assert.deepEqual(buildReplayPlan(spec), buildReplayPlan(spec));
+  assert.notDeepEqual(
+    buildReplayPlan(resolveScenario('streaming', { seed: 1 })),
+    buildReplayPlan(resolveScenario('streaming', { seed: 2 })),
+  );
 
+  const firstRandom = mulberry32(99);
+  const secondRandom = mulberry32(99);
+  const first = Array.from({ length: 5 }, () => firstRandom());
+  const second = Array.from({ length: 5 }, () => secondRandom());
   assert.deepEqual(first, second);
-});
-
-test('different seeds change the workload', () => {
-  const first = buildReplayPlan(resolveScenario('streaming', { seed: 1 }));
-  const second = buildReplayPlan(resolveScenario('streaming', { seed: 2 }));
-
-  assert.notDeepEqual(first, second);
+  assert.equal(new Set(first).size, first.length, 'the generator must advance between draws');
+  assert.ok(first.every((value) => value >= 0 && value < 1));
 });
 
 test('plan shape matches the scenario parameters', () => {
@@ -45,21 +47,14 @@ test('steps inside a turn are scheduled in non-decreasing time order', () => {
   }
 });
 
-test('unknown scenario names fail fast', () => {
-  assert.throws(() => resolveScenario('does-not-exist'), /Unknown scenario/);
-});
-
-test('inherited object names are not scenario builders', () => {
-  assert.throws(() => resolveScenario('constructor'), /Unknown scenario/);
-  assert.throws(() => resolveScenario('toString'), /Unknown scenario/);
-});
-
-test('mulberry32 repeats deterministically for a seed', () => {
-  const firstRandom = mulberry32(99);
-  const secondRandom = mulberry32(99);
-  const first = Array.from({ length: 5 }, () => firstRandom());
-  const second = Array.from({ length: 5 }, () => secondRandom());
-  assert.deepEqual(first, second);
-  assert.equal(new Set(first).size, first.length, 'the generator must advance between draws');
-  assert.ok(first.every((value) => value >= 0 && value < 1));
+test('every listed scenario resolves under its own name, and unknown or inherited names do not', () => {
+  // Reports and drift stats key off spec.name, so a builder filed under the
+  // wrong key would misattribute every result it produces.
+  for (const name of Object.keys(PERF_SCENARIOS)) {
+    const spec = resolveScenario(name);
+    assert.equal(spec.name, name);
+    assert.ok(spec.expectedDurationMs > 0, name);
+  }
+  for (const name of ['does-not-exist', 'constructor', 'toString'])
+    assert.throws(() => resolveScenario(name), /Unknown scenario/);
 });

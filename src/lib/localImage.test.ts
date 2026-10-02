@@ -15,13 +15,10 @@ test('isImagePath accepts known extensions and rejects everything else', () => {
   assert.equal(isImagePath('/tmp/paste-1712'), false);
 });
 
-test('pathBaseName drops directories and query strings', () => {
+test('pathBaseName drops directories and query strings, and decodes droidex-img URLs', () => {
   assert.equal(pathBaseName('/var/folders/T/paste-1-ab.png'), 'paste-1-ab.png');
   assert.equal(pathBaseName('https://x.test/a/b.png?v=2'), 'b.png');
   assert.equal(pathBaseName('shot.png'), 'shot.png');
-});
-
-test('pathBaseName reads the file name back out of a droidex-img URL', () => {
   assert.equal(pathBaseName('droidex-img://local/?p=%2Ftmp%2Fattach%2Fpaste-1.png'), 'paste-1.png');
   assert.equal(
     pathBaseName('droidex-img://local/?p=%2Ftmp%2Fattach%2Fpaste%23final%3F.png'),
@@ -54,16 +51,17 @@ test('localImageFilePath resolves absolute, ~ and file:// references only', () =
   assert.equal(localImageFilePath('https://x.test/a.png'), null);
 });
 
-test('imageSrc passes remote and inline sources through untouched', () => {
+test('imageSrc passes remote and inline sources through and rewrites local paths', () => {
   assert.equal(imageSrc('https://x.test/a.png'), 'https://x.test/a.png');
   assert.equal(imageSrc('data:image/png;base64,AA'), 'data:image/png;base64,AA');
-});
-
-test('imageSrc rewrites a local path to the desktop image scheme', () => {
   assert.equal(
     imageSrc('/Users/me/Screen Shots/a b.png'),
     'droidex-img://local/?p=%2FUsers%2Fme%2FScreen%20Shots%2Fa%20b.png',
   );
+  // References it cannot resolve or display have no source.
+  assert.equal(imageSrc('./relative/a.png'), null);
+  assert.equal(imageSrc('/tmp/notes.txt'), null);
+  assert.equal(imageSrc('   '), null);
 });
 
 test('a repo-relative image is an image with no displayable source', () => {
@@ -72,10 +70,4 @@ test('a repo-relative image is an image with no displayable source', () => {
   // pair and used to drop the attachment when the src was null.
   assert.equal(isImagePath('assets/hero.png'), true);
   assert.equal(imageSrc('assets/hero.png'), null);
-});
-
-test('imageSrc refuses references it cannot resolve or display', () => {
-  assert.equal(imageSrc('./relative/a.png'), null);
-  assert.equal(imageSrc('/tmp/notes.txt'), null);
-  assert.equal(imageSrc('   '), null);
 });

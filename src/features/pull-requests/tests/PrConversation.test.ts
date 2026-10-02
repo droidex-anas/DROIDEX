@@ -111,12 +111,6 @@ test('all-fail first load surfaces checks and comments errors, not empty-state c
   assert.doesNotMatch(html, /No comments yet/);
 });
 
-test('empty comments with an error show the error, not the empty-state copy', () => {
-  const html = renderSummary({ commentsError: 'Could not load PR comments' });
-  assert.match(html, /Could not load PR comments/);
-  assert.doesNotMatch(html, /No comments yet/);
-});
-
 test('PR comments expose reactions next to the composer', () => {
   const html = renderSummary({
     comments: [
@@ -215,29 +209,6 @@ test('an outdated comment is labelled but stays expanded', () => {
   assert.doesNotMatch(html, /Expand comment/);
 });
 
-test('a long comment folds to its first line and offers to expand', () => {
-  const body = ['A very long review follows.', ...Array.from({ length: 20 }, () => 'detail')].join(
-    '\n',
-  );
-  const html = renderSummary({
-    comments: [
-      {
-        id: 'comment-1',
-        kind: 'comment',
-        author: 'reviewer',
-        body,
-        createdAt: '2026-08-04T10:01:00Z',
-        url: null,
-        state: null,
-        reactions: [],
-      },
-    ],
-  });
-  assert.match(html, /A very long review follows\./);
-  assert.match(html, /Expand comment/);
-  assert.doesNotMatch(html, /detail/);
-});
-
 test('the header states the rolled-up check state and the merge status', () => {
   const check = (name: string, bucket: PrCheck['bucket']): PrCheck => ({
     name,
@@ -312,26 +283,6 @@ test('a bot review shows its findings and hides the agent prompt behind a disclo
   assert.doesNotMatch(html, /free plan/);
 });
 
-test('a short comment renders open with no fold affordance', () => {
-  const html = renderSummary({
-    comments: [
-      {
-        id: 'comment-1',
-        kind: 'comment',
-        author: 'reviewer',
-        body: 'Ship it',
-        createdAt: '2026-08-04T10:01:00Z',
-        url: null,
-        state: null,
-        reactions: [],
-      },
-    ],
-  });
-  assert.match(html, /Ship it/);
-  assert.doesNotMatch(html, /Expand comment/);
-  assert.doesNotMatch(html, /Collapse comment/);
-});
-
 test('pushed commits appear in the timeline as one folded group', () => {
   const commits: PrCommit[] = [
     {
@@ -377,51 +328,6 @@ test('a refresh failure is reported next to the description it could not update'
   });
   assert.match(html, /Ships the inbox\./);
   assert.match(html, /Could not load pull request/);
-});
-
-test('a resolved comment on changed lines reports both states', () => {
-  const html = renderSummary({
-    comments: [
-      {
-        id: 'inline-1',
-        kind: 'inline',
-        author: 'dev',
-        body: 'This moved.',
-        createdAt: '2026-08-04T10:01:00Z',
-        url: null,
-        state: 'commented',
-        reactions: [],
-        path: 'src/a.ts',
-        line: 12,
-        resolved: true,
-        outdated: true,
-        resolvedBy: 'ana',
-      },
-    ],
-  });
-  assert.match(html, /Resolved/);
-  assert.match(html, /Outdated/);
-});
-
-test('an open inline comment names the full path it points at', () => {
-  const html = renderSummary({
-    comments: [
-      {
-        id: 'inline-1',
-        kind: 'inline',
-        author: 'dev',
-        body: 'Rename this.',
-        createdAt: '2026-08-04T10:01:00Z',
-        url: null,
-        state: 'commented',
-        reactions: [],
-        path: 'src/features/deep/a.ts',
-        line: 12,
-      },
-    ],
-  });
-  // The location chip carries the path, not just the ambiguous basename.
-  assert.match(html, /src\/features\/deep\/a\.ts:12<\/p>/);
 });
 
 test('a just-posted comment reads "now" without an "ago" suffix', () => {

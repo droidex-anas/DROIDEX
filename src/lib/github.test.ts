@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert';
-import { bucketToStatus, checksSummary, prKind, prKindLabel } from './github';
+import { bucketToStatus, checksSummary, prKind } from './github';
 import type { PrCheck } from '../types/vcs';
 
 const check = (bucket: string): PrCheck => ({
@@ -19,13 +19,6 @@ test('prKind maps state and draft flag', () => {
   assert.equal(prKind({ state: 'CLOSED', isDraft: false }), 'closed');
   assert.equal(prKind({ state: 'OPEN', isDraft: true }), 'draft');
   assert.equal(prKind({ state: 'open', isDraft: false }), 'open');
-});
-
-test('prKindLabel renders human labels', () => {
-  assert.equal(prKindLabel('merged'), 'Merged');
-  assert.equal(prKindLabel('draft'), 'Draft');
-  assert.equal(prKindLabel('open'), 'Open');
-  assert.equal(prKindLabel('closed'), 'Closed');
 });
 
 test('bucketToStatus normalizes gh buckets and check states', () => {

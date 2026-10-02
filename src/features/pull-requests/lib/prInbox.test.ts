@@ -49,34 +49,17 @@ const rows = [
   pr({ number: 3, title: 'Other', author: 'dev' }),
 ];
 
-test('all returns every row', () => {
-  assert.deepEqual(
-    filterPullRequests(rows, 'all', 'octocat').map((item) => item.number),
-    [1, 2, 3],
-  );
-});
-
-test('reviewing is requested or already reviewed by the viewer', () => {
+test('reviewing is requested or already reviewed by the viewer; no viewer means none, not all', () => {
   assert.deepEqual(
     filterPullRequests(rows, 'reviewing', 'octocat').map((item) => item.number),
     [1, 2],
   );
-});
-
-test('authored matches the viewer login case-insensitively', () => {
-  assert.deepEqual(
-    filterPullRequests(rows, 'authored', 'ANA').map((item) => item.number),
-    [1],
-  );
-});
-
-test('empty viewer makes reviewing and authored empty, not all', () => {
   assert.deepEqual(filterPullRequests(rows, 'reviewing', null), []);
   assert.deepEqual(filterPullRequests(rows, 'authored', ''), []);
   assert.equal(filterPullRequests(rows, 'all', null).length, 3);
 });
 
-test('search matches title, number, author, branch, and repo name', () => {
+test('search matches title, number, author, branch, and repo name; a bare hash is no filter', () => {
   assert.equal(searchPullRequests(rows, '#2')[0].number, 2);
   assert.equal(searchPullRequests(rows, 'inbox')[0].number, 1);
   assert.equal(searchPullRequests(rows, 'dev').length, 2);
@@ -87,9 +70,7 @@ test('search matches title, number, author, branch, and repo name', () => {
       .length,
     1,
   );
-});
-
-test('a hash with no number is not a filter', () => {
+  // A hash with no number is not a filter.
   assert.deepEqual(searchPullRequests(rows, '#'), rows);
   assert.deepEqual(searchPullRequests(rows, '#  '), rows);
   assert.deepEqual(

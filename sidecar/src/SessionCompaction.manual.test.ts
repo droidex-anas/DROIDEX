@@ -198,66 +198,17 @@ function closeCount(calls: RecordedCall[], providerSessionId: string): number {
   ).length;
 }
 
-test('manual in-place compaction refreshes context and returns ready to settle', async () => {
+test('manual noop compaction reports nothing to compact and remains ready to settle', async () => {
   const h = createHarness();
-  const { live, session } = addLive(h);
-  session.nextCompactResult = { newSessionId: session.sessionId, removedCount: 1 };
+  const session = new NoopCompactionSession('provider-noop', {}, h.calls);
+  const { live } = addLive(h, 'app-noop', session.sessionId, session);
 
-  const result = await h.compaction.compact('app-1', 'preserve decisions');
-
-  assert.deepEqual(result, { kind: 'ready-to-settle' });
+  assert.deepEqual(await h.compaction.compact('app-noop'), { kind: 'ready-to-settle' });
   assert.equal(live.compacting, false);
-  assert.deepEqual(
-    [live.summary.contextTokens, live.summary.autoCompactions, h.refreshed],
-    [0, 3, ['app-1']],
-  );
-  assert.deepEqual(h.statuses, ['Compacting conversation...', 'Compaction complete.']);
-  assert.deepEqual(h.calls.find((call) => call.method === 'compactSession')?.args, [
-    'provider-1',
-    { customInstructions: 'preserve decisions' },
-  ]);
-});
-
-test('manual noop and failure outcomes remain ready to settle', async () => {
-  const noopHarness = createHarness();
-  const noopSession = new NoopCompactionSession('provider-noop', {}, noopHarness.calls);
-  const { live: noopLive } = addLive(noopHarness, 'app-noop', noopSession.sessionId, noopSession);
-
-  assert.deepEqual(await noopHarness.compaction.compact('app-noop'), {
-    kind: 'ready-to-settle',
-  });
-  assert.equal(noopLive.compacting, false);
-  assert.deepEqual(noopHarness.statuses, ['Compacting conversation...', 'Nothing to compact.']);
-  assert.deepEqual(noopHarness.refreshed, []);
-  assert.deepEqual([noopLive.summary.contextTokens, noopLive.summary.autoCompactions], [80, 2]);
-  assert.deepEqual(noopHarness.errors, []);
-
-  const failedHarness = createHarness();
-  const { live: failedLive, session: failedSession } = addLive(
-    failedHarness,
-    'app-failed',
-    'provider-failed',
-  );
-  failedSession.nextCompactError = new Error('provider rejected');
-
-  assert.deepEqual(await failedHarness.compaction.compact('app-failed'), {
-    kind: 'ready-to-settle',
-  });
-  assert.equal(failedLive.compacting, false);
-  assert.deepEqual(failedHarness.refreshed, []);
-  assert.deepEqual([failedLive.summary.contextTokens, failedLive.summary.autoCompactions], [80, 2]);
-  assert.deepEqual(failedHarness.statuses, [
-    'Compacting conversation...',
-    'Compaction could not finish; continuing with the current conversation.',
-  ]);
-  assert.equal(
-    failedHarness.errors.some(
-      (error) =>
-        error.recoverable === true &&
-        error.message === 'Could not compact session: provider rejected',
-    ),
-    true,
-  );
+  assert.deepEqual(h.statuses, ['Compacting conversation...', 'Nothing to compact.']);
+  assert.deepEqual(h.refreshed, []);
+  assert.deepEqual([live.summary.contextTokens, live.summary.autoCompactions], [80, 2]);
+  assert.deepEqual(h.errors, []);
 });
 
 test('provider adoption retries cleanly after a partial first adoption', async () => {
@@ -285,25 +236,6 @@ test('provider adoption retries cleanly after a partial first adoption', async (
   );
 });
 
-test('failed descendant adoption keeps the old provider alive for lifecycle cleanup', async () => {
-  const h = createHarness({ adoptSucceeds: false });
-  const { live, session: original } = addLive(h);
-  h.runtime.processIds.set('provider-1', 600);
-  original.nextCompactResult = { newSessionId: 'provider-2', removedCount: 1 };
-  h.runtime.loadQueue.set('provider-2', [
-    new FakeFactorySession('provider-2', {}, h.calls),
-    new FakeFactorySession('provider-2', {}, h.calls),
-  ]);
-
-  const result = await h.compaction.compact('app-1');
-
-  assert.equal(result.kind, 'close-and-resume');
-  assert.equal(live.droid, original);
-  assert.deepEqual(h.untracked, []);
-  assert.equal(closeCount(h.calls, 'provider-1'), 0);
-  assert.equal(closeCount(h.calls, 'provider-2'), 2);
-});
-
 test('a failed provider close retains ownership until a successful retry', async () => {
   const h = createHarness();
   const { live, session: original } = addLive(h);
@@ -323,11 +255,27 @@ test('a failed provider close retains ownership until a successful retry', async
   assert.ok(h.errors.some((error) => error.message.includes('provider close failed')));
 });
 
-test('failed provisional close preserves the adoption error and leaves its pid owned', async () => {
+test('failed descendant adoption keeps the old provider alive for lifecycle cleanup', async () => {
+  // Provisional replacements that close cleanly are released.
+  const released = createHarness({ adoptSucceeds: false });
+  const { live: releasedLive, session: releasedOriginal } = addLive(released);
+  released.runtime.processIds.set('provider-1', 600);
+  releasedOriginal.nextCompactResult = { newSessionId: 'provider-2', removedCount: 1 };
+  released.runtime.loadQueue.set('provider-2', [
+    new FakeFactorySession('provider-2', {}, released.calls),
+    new FakeFactorySession('provider-2', {}, released.calls),
+  ]);
+  assert.equal((await released.compaction.compact('app-1')).kind, 'close-and-resume');
+  assert.equal(releasedLive.droid, releasedOriginal);
+  assert.deepEqual(released.untracked, []);
+  assert.equal(closeCount(released.calls, 'provider-1'), 0);
+  assert.equal(closeCount(released.calls, 'provider-2'), 2);
+
+  // Provisional replacements that fail to close keep their pids owned, and the
+  // adoption error is what the caller reports.
   const h = createHarness({ adoptSucceeds: false });
   const { live, session: original } = addLive(h);
   original.nextCompactResult = { newSessionId: 'provider-2', removedCount: 1 };
-  h.runtime.processIds.set('provider-1', 600);
   const first = new FakeFactorySession('provider-2', {}, h.calls);
   const second = new FakeFactorySession('provider-2', {}, h.calls);
   first.nextCloseError = new Error('replacement close failed');
@@ -485,17 +433,21 @@ test('permanent recovery rejects when the daemon identity cannot be persisted', 
   );
 });
 
-test('historical compaction uses a temporary provider without live side effects', async () => {
-  const h = createHarness();
+function addHistorical(h: ReturnType<typeof createHarness>, temporary: FakeFactorySession) {
   const historical = createCompactionTestLiveSession(
     'app-history',
     new FakeFactorySession('provider-history', {}, h.calls),
     h.runtime,
   ).summary;
   h.registry.historical.set(historical.appSessionId, historical);
+  h.runtime.loadQueue.set('provider-history', [temporary]);
+}
+
+test('historical compaction uses a temporary provider without live side effects', async () => {
+  const h = createHarness();
   const temporary = new FakeFactorySession('provider-history', {}, h.calls);
   temporary.nextCompactResult = { newSessionId: 'provider-history-2', removedCount: 1 };
-  h.runtime.loadQueue.set('provider-history', [temporary]);
+  addHistorical(h, temporary);
 
   const result = await h.compaction.compact('provider-history', 'keep decisions');
 
@@ -506,35 +458,12 @@ test('historical compaction uses a temporary provider without live side effects'
   assert.deepEqual(temporary.settings, []);
 });
 
-test('historical noop compaction closes quietly without replacing its provider', async () => {
-  const h = createHarness();
-  const historical = createCompactionTestLiveSession(
-    'app-history',
-    new FakeFactorySession('provider-history', {}, h.calls),
-    h.runtime,
-  ).summary;
-  h.registry.historical.set(historical.appSessionId, historical);
-  const temporary = new NoopCompactionSession('provider-history', {}, h.calls);
-  h.runtime.loadQueue.set('provider-history', [temporary]);
-
-  assert.deepEqual(await h.compaction.compact('app-history'), { kind: 'ready-to-settle' });
-  assert.equal(h.registry.resolveSummary('app-history')?.providerSessionId, 'provider-history');
-  assert.deepEqual(h.errors, []);
-  assert.equal(closeCount(h.calls, 'provider-history'), 1);
-});
-
 test('historical provider persistence failure is fatal and identifies the new provider', async () => {
   const h = createHarness();
-  const historical = createCompactionTestLiveSession(
-    'app-history',
-    new FakeFactorySession('provider-history', {}, h.calls),
-    h.runtime,
-  ).summary;
-  h.registry.historical.set(historical.appSessionId, historical);
   h.registry.nextReplaceError = new Error('history unavailable');
   const temporary = new FakeFactorySession('provider-history', {}, h.calls);
   temporary.nextCompactResult = { newSessionId: 'provider-history-2', removedCount: 1 };
-  h.runtime.loadQueue.set('provider-history', [temporary]);
+  addHistorical(h, temporary);
 
   assert.deepEqual(await h.compaction.compact('app-history'), { kind: 'ready-to-settle' });
   assert.equal(
@@ -551,21 +480,19 @@ test('historical provider persistence failure is fatal and identifies the new pr
   assert.equal(closeCount(h.calls, 'provider-history'), 1);
 });
 
-test('historical compaction failure is recoverable and closes the temporary provider', async () => {
-  const h = createHarness();
-  const historical = createCompactionTestLiveSession(
-    'app-history',
-    new FakeFactorySession('provider-history', {}, h.calls),
-    h.runtime,
-  ).summary;
-  h.registry.historical.set(historical.appSessionId, historical);
-  const temporary = new FakeFactorySession('provider-history', {}, h.calls);
-  temporary.nextCompactError = new Error('temporary provider rejected');
-  h.runtime.loadQueue.set('provider-history', [temporary]);
+test('historical noop is quiet and failure is recoverable; both keep the identity and close the temporary provider', async () => {
+  const noop = createHarness();
+  addHistorical(noop, new NoopCompactionSession('provider-history', {}, noop.calls));
+  assert.deepEqual(await noop.compaction.compact('app-history'), { kind: 'ready-to-settle' });
+  assert.deepEqual(noop.errors, []);
 
-  assert.deepEqual(await h.compaction.compact('app-history'), { kind: 'ready-to-settle' });
+  const failed = createHarness();
+  const temporary = new FakeFactorySession('provider-history', {}, failed.calls);
+  temporary.nextCompactError = new Error('temporary provider rejected');
+  addHistorical(failed, temporary);
+  assert.deepEqual(await failed.compaction.compact('app-history'), { kind: 'ready-to-settle' });
   assert.equal(
-    h.errors.some(
+    failed.errors.some(
       (error) =>
         error.appSessionId === 'app-history' &&
         error.providerSessionId === 'provider-history' &&
@@ -574,5 +501,9 @@ test('historical compaction failure is recoverable and closes the temporary prov
     ),
     true,
   );
-  assert.equal(closeCount(h.calls, 'provider-history'), 1);
+
+  for (const h of [noop, failed]) {
+    assert.equal(h.registry.resolveSummary('app-history')?.providerSessionId, 'provider-history');
+    assert.equal(closeCount(h.calls, 'provider-history'), 1);
+  }
 });

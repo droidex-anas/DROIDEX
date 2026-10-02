@@ -12,7 +12,7 @@ import type {
   SessionSummary,
 } from './protocol.js';
 import { SessionModelSettings } from './SessionModelSettings.js';
-import type { Provider } from './providers/session.js';
+import type { Provider, ProviderResumeInput } from './providers/session.js';
 import { DroidProvider } from './providers/droid/DroidProvider.js';
 import { DroidProviderSession } from './providers/droid/DroidProviderSession.js';
 import type { ProviderQuestionAnswers } from './providers/interactions.js';
@@ -720,14 +720,6 @@ test('post-registration failures retain cleanup ownership through a process outa
   );
 });
 
-test('send lazily resumes once and sends the prompt exactly once', async () => {
-  const harness = createHarness([summary('app-3', 'provider-3')]);
-  const provider = queueLoad(harness, 'provider-3');
-  await harness.lifecycle.send('app-3', 'only once');
-  assert.equal(harness.runtime.loadCalls.length, 1);
-  assert.deepEqual(provider.prompts, ['only once']);
-});
-
 test('an eager resume and immediate send share one provider load', async () => {
   const harness = createHarness([summary('warm-app', 'warm-provider')]);
   const provider = queueLoad(harness, 'warm-provider');
@@ -961,7 +953,7 @@ test('a steer is pending until the harness delivers it, and one refused late sti
   await late;
 });
 
-test('resuming a turn persists recent activity immediately and completion advances it again', async () => {
+test('a turn persists recent activity at start and completion while queued sends leave it alone', async () => {
   // Recency survives a restart mid-turn; streaming suppresses unread until
   // the response completes.
   const harness = createHarness();
@@ -980,29 +972,17 @@ test('resuming a turn persists recent activity immediately and completion advanc
   assert.ok(mid !== undefined && mid.updatedAt > before);
   assert.equal(harness.history.persisted.at(-1)?.updatedAt, mid.updatedAt);
 
+  await harness.lifecycle.send('touch', 'queued one');
+  await harness.lifecycle.send('touch', 'queued two');
+  const queued = harness.registry.getCanonicalSummary('touch');
+  assert.equal(queued?.queuedSends, 2);
+  assert.equal(queued?.updatedAt, mid.updatedAt);
+
   gate.resolve();
   await sending;
+  await provider.waitForPrompts(4);
   const after = harness.registry.getCanonicalSummary('touch');
-  assert.equal(after?.streaming, false);
   assert.ok(after !== undefined && after.updatedAt > mid.updatedAt);
-});
-
-test('queueing sends while streaming leaves updatedAt alone', async () => {
-  const harness = createHarness();
-  const provider = queueCreate(harness, 'queue-touch');
-  const gate = provider.deferNextStream();
-  await harness.lifecycle.create(createCommand());
-  await provider.waitForPrompts(1);
-  const before = harness.registry.getCanonicalSummary('queue-touch')?.updatedAt;
-
-  await harness.lifecycle.send('queue-touch', 'queued one');
-  await harness.lifecycle.send('queue-touch', 'queued two');
-  const mid = harness.registry.getCanonicalSummary('queue-touch');
-  assert.equal(mid?.queuedSends, 2);
-  assert.equal(mid?.updatedAt, before);
-
-  gate.resolve();
-  await provider.waitForPrompts(3);
 });
 
 test('interrupt handles idle, streaming, manual compaction, and auto-compaction states', async () => {
@@ -1730,25 +1710,23 @@ test('closing a scheduled target during cold resume invalidates its provisional 
   );
 });
 
-test('Droid resume reapplies canonical edits-only before publishing the stored session', async () => {
-  const harness = createHarness([
+test('Droid resume reapplies edits-only while keeping the stored or native autonomy', async () => {
+  const indexed = createHarness([
     summary('app-permissions', 'provider-permissions', { autonomy: 'low' }),
   ]);
-  const session = queueLoad(harness, 'provider-permissions');
-  await harness.lifecycle.resume('app-permissions');
-  assert.deepEqual(session.settings[0], { autonomyLevel: 'off' });
-  assert.equal(harness.registry.getLive('app-permissions')?.summary.autonomy, 'low');
-});
+  const stored = queueLoad(indexed, 'provider-permissions');
+  await indexed.lifecycle.resume('app-permissions');
+  assert.deepEqual(stored.settings[0], { autonomyLevel: 'off' });
+  assert.equal(indexed.registry.getLive('app-permissions')?.summary.autonomy, 'low');
 
-test('an unindexed Droid resume preserves its native selection before applying current semantics', async () => {
-  const harness = createHarness();
-  const session = new FakeFactorySession('external-session', {}, harness.calls, {
+  const unindexed = createHarness();
+  const external = new FakeFactorySession('external-session', {}, unindexed.calls, {
     settings: { autonomyLevel: 'low' },
   });
-  queueLoad(harness, 'external-session', session);
-  await harness.lifecycle.resume('external-session');
-  assert.deepEqual(session.settings[0], { autonomyLevel: 'off' });
-  assert.equal(harness.registry.getLive('external-session')?.summary.autonomy, 'low');
+  queueLoad(unindexed, 'external-session', external);
+  await unindexed.lifecycle.resume('external-session');
+  assert.deepEqual(external.settings[0], { autonomyLevel: 'off' });
+  assert.equal(unindexed.registry.getLive('external-session')?.summary.autonomy, 'low');
 });
 
 test('agent completion cannot start a turn while Stop or Send now is outstanding', async () => {
@@ -1821,6 +1799,35 @@ test('a Stop takes back a prompt that has not started its turn', async () => {
   await h.lifecycle.close('app-1');
 });
 
+// A Claude provider whose resume hands back a Droid fake, optionally after the
+// caller's hook (an assertion or a gate) has run.
+function claudeResumeProvider(
+  harness: Harness,
+  session: FakeFactorySession,
+  beforeResume: (id: string, input: ProviderResumeInput) => Promise<void> | void = () => undefined,
+  setInteractionMode?: (mode: string) => Promise<void>,
+): Provider {
+  const resumed = new DroidProviderSession(session.sessionId, session, harness.runtime);
+  return {
+    kind: 'claude',
+    create: () => Promise.reject(new Error('unexpected create')),
+    fork: () => Promise.reject(new Error('unexpected fork')),
+    resume: async (id, input) => {
+      await beforeResume(id, input);
+      return {
+        provider: 'claude',
+        providerSessionId: id,
+        ...(setInteractionMode ? { setInteractionMode } : {}),
+        stream: resumed.stream.bind(resumed),
+        setModel: resumed.setModel.bind(resumed),
+        setAutonomy: resumed.setAutonomy.bind(resumed),
+        interrupt: resumed.interrupt.bind(resumed),
+        close: resumed.close.bind(resumed),
+      };
+    },
+  };
+}
+
 test('a context switch waits for the turn and resumes the same chat before queued work', async () => {
   const stored: SessionSummary[] = [];
   const h = createHarness(stored);
@@ -1834,32 +1841,19 @@ test('a context switch waits for the turn and resumes the same chat before queue
   live.summary.contextWindowTokens = 1000000;
   live.summary.maxContextTokens = 1000000;
   const replacement = new FakeFactorySession('context-switch', {}, h.calls);
-  const resumed = new DroidProviderSession('context-switch', replacement, h.runtime);
-  h.setProvider({
-    kind: 'claude',
-    create: async () => {
-      throw new Error('unexpected create');
-    },
-    fork: async () => {
-      throw new Error('unexpected fork');
-    },
-    resume: async (id, input) => {
-      assert.equal(id, 'context-switch');
-      assert.equal(input.contextWindowTokens, 200000);
-      return {
-        provider: 'claude',
-        providerSessionId: id,
-        setInteractionMode: async (mode) => {
-          assert.equal(mode, 'spec');
-        },
-        stream: resumed.stream.bind(resumed),
-        setModel: resumed.setModel.bind(resumed),
-        setAutonomy: resumed.setAutonomy.bind(resumed),
-        interrupt: resumed.interrupt.bind(resumed),
-        close: resumed.close.bind(resumed),
-      };
-    },
-  });
+  h.setProvider(
+    claudeResumeProvider(
+      h,
+      replacement,
+      (id, input) => {
+        assert.equal(id, 'context-switch');
+        assert.equal(input.contextWindowTokens, 200000);
+      },
+      async (mode) => {
+        assert.equal(mode, 'spec');
+      },
+    ),
+  );
   const settings = new SessionModelSettings({
     registry: h.registry,
     runtime: h.runtime,
@@ -1913,28 +1907,7 @@ test('a context switch waits for the turn and resumes the same chat before queue
     finishResume = resolve;
   });
   const relaunched = new FakeFactorySession('context-switch', {}, h.calls);
-  const relaunchedSession = new DroidProviderSession('context-switch', relaunched, h.runtime);
-  h.setProvider({
-    kind: 'claude',
-    create: async () => {
-      throw new Error('unexpected create');
-    },
-    fork: async () => {
-      throw new Error('unexpected fork');
-    },
-    resume: async (id) => {
-      await resuming;
-      return {
-        provider: 'claude',
-        providerSessionId: id,
-        stream: relaunchedSession.stream.bind(relaunchedSession),
-        setModel: relaunchedSession.setModel.bind(relaunchedSession),
-        setAutonomy: relaunchedSession.setAutonomy.bind(relaunchedSession),
-        interrupt: relaunchedSession.interrupt.bind(relaunchedSession),
-        close: relaunchedSession.close.bind(relaunchedSession),
-      };
-    },
-  });
+  h.setProvider(claudeResumeProvider(h, relaunched, () => resuming));
   const sending = h.lifecycle.send('context-switch', 'stopped before it was sent');
   while (h.registry.getLive('context-switch'))
     await new Promise((resolve) => setImmediate(resolve));
@@ -1965,28 +1938,7 @@ test('a context switch waits for the turn and resumes the same chat before queue
     finishSecondResume = resolve;
   });
   const again = new FakeFactorySession('context-switch', {}, h.calls);
-  const againSession = new DroidProviderSession('context-switch', again, h.runtime);
-  h.setProvider({
-    kind: 'claude',
-    create: async () => {
-      throw new Error('unexpected create');
-    },
-    fork: async () => {
-      throw new Error('unexpected fork');
-    },
-    resume: async (id) => {
-      await resumingAgain;
-      return {
-        provider: 'claude',
-        providerSessionId: id,
-        stream: againSession.stream.bind(againSession),
-        setModel: againSession.setModel.bind(againSession),
-        setAutonomy: againSession.setAutonomy.bind(againSession),
-        interrupt: againSession.interrupt.bind(againSession),
-        close: againSession.close.bind(againSession),
-      };
-    },
-  });
+  h.setProvider(claudeResumeProvider(h, again, () => resumingAgain));
   let prepareSecond: () => void = () => undefined;
   let applies = 0;
   h.setPendingApply(async () => {

@@ -1,7 +1,6 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  existsSync,
   mkdirSync,
   mkdtempSync,
   readFileSync,
@@ -20,7 +19,7 @@ import {
 } from './droidProxyFactoryModels.js';
 
 describe('droidProxySettingsModels', () => {
-  it('emits one entry per catalog definition for enabled providers', () => {
+  it('emits one proxy entry per enabled definition, with the Muse variant set by contributor mode', () => {
     const models = droidProxySettingsModels(() => true);
     const ids = new Set(models.map((model) => model.id));
     assert.equal(ids.size, models.length);
@@ -33,15 +32,15 @@ describe('droidProxySettingsModels', () => {
       assert.equal(model.enableThinking, true);
       assert.ok(model.supportedReasoningEfforts.length > 0);
     }
-  });
 
-  it('omits disabled providers and swaps the Muse variant by contributor mode', () => {
-    const models = droidProxySettingsModels((key) => key !== 'codex', {
+    const contributor = droidProxySettingsModels((key) => key !== 'codex', {
       contributorMode: true,
     });
-    assert.ok(models.every((model) => !model.id.includes('gpt-6')));
-    assert.ok(models.some((model) => model.id === 'custom:droidproxy:muse-spark-1.3-contributor'));
-    assert.ok(!models.some((model) => model.id === 'custom:droidproxy:muse-spark-1.3'));
+    assert.ok(contributor.every((model) => !model.id.includes('gpt-6')));
+    assert.ok(
+      contributor.some((model) => model.id === 'custom:droidproxy:muse-spark-1.3-contributor'),
+    );
+    assert.ok(!contributor.some((model) => model.id === 'custom:droidproxy:muse-spark-1.3'));
 
     const base = droidProxySettingsModels(() => true, { contributorMode: false });
     assert.ok(base.some((model) => model.id === 'custom:droidproxy:muse-spark-1.3'));
@@ -72,7 +71,7 @@ describe('mergeFactoryModels', () => {
   });
 });
 
-it('applies and removes proxy models without losing other settings or overwriting backups', () => {
+it('applies and removes proxy models without losing other settings, and refuses an invalid shape untouched', () => {
   const home = mkdtempSync(join(tmpdir(), 'droidproxy-factory-models-'));
   const previousHome = process.env.HOME;
   process.env.HOME = home;
@@ -106,28 +105,13 @@ it('applies and removes proxy models without losing other settings or overwritin
       readdirSync(settingsDir).some((name) => name.endsWith('.tmp')),
       false,
     );
-  } finally {
-    if (previousHome === undefined) delete process.env.HOME;
-    else process.env.HOME = previousHome;
-    rmSync(home, { recursive: true, force: true });
-  }
-});
 
-it('leaves Factory settings untouched when customModels has an invalid shape', () => {
-  const home = mkdtempSync(join(tmpdir(), 'droidproxy-factory-models-'));
-  const previousHome = process.env.HOME;
-  process.env.HOME = home;
-  try {
-    const settingsDir = join(home, '.factory');
-    const path = join(settingsDir, 'settings.json');
-    mkdirSync(settingsDir);
-    const original = '{"customModels":[null]}\n';
-    writeFileSync(path, original);
-
+    const invalid = '{"customModels":[null]}\n';
+    writeFileSync(path, invalid);
+    const entries = readdirSync(settingsDir).length;
     assert.throws(() => applyDroidProxyFactoryModels(), /customModels must be an array/);
-    assert.equal(readFileSync(path, 'utf8'), original);
-    assert.equal(readdirSync(settingsDir).length, 1);
-    assert.ok(existsSync(path));
+    assert.equal(readFileSync(path, 'utf8'), invalid);
+    assert.equal(readdirSync(settingsDir).length, entries);
   } finally {
     if (previousHome === undefined) delete process.env.HOME;
     else process.env.HOME = previousHome;

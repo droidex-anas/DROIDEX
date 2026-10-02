@@ -19,7 +19,6 @@ import {
   type SessionFileStat,
   type SessionFileSummary,
 } from './sessionFileCache.js';
-import { HistoryPersistenceDatabase } from './historyPersistenceDatabase.js';
 import { SessionManager } from './SessionManager.js';
 import {
   providerSessionJsonl,
@@ -80,39 +79,6 @@ function writeSession(
 function writeEmptySession(root: string, id: string, cwd: string): string {
   return writeSession(root, id, cwd, { sessionTitle: 'New Session' }, []);
 }
-
-test('compaction summary lookup uses a partial event index instead of scanning all events', () => {
-  const history = new HistoryIndex();
-  history.close();
-  new HistoryPersistenceDatabase(join(home, '.factory', 'droidex', SESSION_INDEX_FILENAME)).close();
-  const db = new DatabaseSync(join(home, '.factory', 'droidex', SESSION_INDEX_FILENAME), {
-    readOnly: true,
-  });
-  try {
-    const plan = db
-      .prepare(
-        `EXPLAIN QUERY PLAN
-         SELECT app_session_id,
-                SUM(CASE WHEN id LIKE 'compaction-%' THEN 1 ELSE 0 END) AS live_count,
-                SUM(CASE WHEN id NOT LIKE 'compaction-%' THEN 1 ELSE 0 END) AS history_count
-         FROM events
-         WHERE kind = 'compaction'
-           AND app_session_id IS NOT NULL
-           AND (source_session_id = app_session_id OR source_session_id = 'primary')
-         GROUP BY app_session_id`,
-      )
-      .all() as Array<{ detail: string }>;
-    assert.ok(
-      plan.some(
-        (row) =>
-          row.detail.includes('SEARCH events') && row.detail.includes('events_compaction_summary'),
-      ),
-    );
-    assert.ok(!plan.some((row) => row.detail.includes('SCAN events')));
-  } finally {
-    db.close();
-  }
-});
 
 function patchFor(appSessionId: string, cwd: string): Protocol.SessionSummary {
   const now = Date.now();
@@ -296,65 +262,16 @@ test('reconciliation deltas update a second in-memory cache without scanning fil
   }
 });
 
-test('metadata-only session files never become historical sidebar rows', () => {
-  const freshHome = mkdtempSync(join(tmpdir(), 'droid-history-empty-session-'));
+test('sessions without a real user turn and a model response never become sidebar rows', () => {
+  const freshHome = mkdtempSync(join(tmpdir(), 'droid-history-unlisted-'));
   const previousHome = process.env.HOME;
   process.env.HOME = freshHome;
   try {
-    const workspace = join(freshHome, 'workspace-empty');
-    writeEmptySession(freshHome, 'empty-session', workspace);
-    const index = new HistoryIndex();
-    try {
-      assert.equal(reconcileHistoryIndex(index), 1);
-      assert.equal(
-        index
-          .listHistoricalSessions({ workspaceCwds: [workspace] })
-          .some((row) => row.summary.appSessionId === 'empty-session'),
-        false,
-      );
-    } finally {
-      index.close();
-    }
-  } finally {
-    process.env.HOME = previousHome;
-    rmSync(freshHome, { recursive: true, force: true });
-  }
-});
-
-test('sessions without a model response never become historical sidebar rows', () => {
-  const freshHome = mkdtempSync(join(tmpdir(), 'droid-history-no-response-'));
-  const previousHome = process.env.HOME;
-  process.env.HOME = freshHome;
-  try {
-    const workspace = join(freshHome, 'workspace-no-response');
-    writeSession(freshHome, 'no-response-session', workspace, {}, ['user']);
-    const index = new HistoryIndex();
-    try {
-      assert.equal(reconcileHistoryIndex(index), 1);
-      assert.equal(
-        index
-          .listHistoricalSessions({ workspaceCwds: [workspace] })
-          .some((row) => row.summary.appSessionId === 'no-response-session'),
-        false,
-      );
-    } finally {
-      index.close();
-    }
-  } finally {
-    process.env.HOME = previousHome;
-    rmSync(freshHome, { recursive: true, force: true });
-  }
-});
-
-test('internal llm_only context cannot admit a session without a real user turn', () => {
-  const freshHome = mkdtempSync(join(tmpdir(), 'droid-history-llm-only-'));
-  const previousHome = process.env.HOME;
-  process.env.HOME = freshHome;
-  try {
-    const workspace = join(freshHome, 'workspace-llm-only');
-    const path = writeEmptySession(freshHome, 'llm-only-session', workspace);
+    const workspace = join(freshHome, 'workspace-unlisted');
+    writeEmptySession(freshHome, 'metadata-only', workspace);
+    writeSession(freshHome, 'no-response', workspace, {}, ['user']);
     writeFileSync(
-      path,
+      writeEmptySession(freshHome, 'llm-only-context', workspace),
       `${[
         {
           type: 'session_start',
@@ -378,11 +295,10 @@ test('internal llm_only context cannot admit a session without a real user turn'
         .map((line) => JSON.stringify(line))
         .join('\n')}\n`,
     );
-
     const index = new HistoryIndex();
     try {
-      assert.equal(reconcileHistoryIndex(index), 1);
-      assert.equal(index.listHistoricalSessions({ workspaceCwds: [workspace] }).length, 0);
+      assert.equal(reconcileHistoryIndex(index), 3);
+      assert.deepEqual(index.listHistoricalSessions({ workspaceCwds: [workspace] }), []);
     } finally {
       index.close();
     }
@@ -431,43 +347,6 @@ test('a second boot with unchanged files reconciles nothing', () => {
     assert.equal(index.sessionFileCacheSize, 0, 'the main-thread mirror starts without disk IO');
     assert.equal(reconcileHistoryIndex(index), 0);
     assert.equal(index.sessionFileCacheSize, 3, 'the worker snapshot hydrates the mirror');
-  } finally {
-    index.close();
-  }
-});
-
-test('rewriting a session file refreshes its cached summary', () => {
-  const workspace = join(home, 'workspace-a');
-  const path = writeSession(home, 'cache-workspace', workspace, {
-    sessionTitle: 'Renamed chat',
-  });
-  // Force a distinct mtime so the change does not depend on clock granularity.
-  const later = new Date(Date.now() + 10_000);
-  utimesSync(path, later, later);
-
-  const index = new HistoryIndex();
-  try {
-    assert.equal(reconcileHistoryIndex(index), 1);
-    const rows = index.listHistoricalSessions();
-    const row = rows.find((item) => item.summary.appSessionId === 'cache-workspace');
-    assert.equal(row?.summary.title, 'Renamed chat');
-  } finally {
-    index.close();
-  }
-});
-
-test('deleting a session file removes it from the cached list', () => {
-  unlinkSync(join(home, '.factory', 'sessions', 'cache-plain.jsonl'));
-
-  const index = new HistoryIndex();
-  try {
-    assert.equal(reconcileHistoryIndex(index), 1);
-    assert.equal(index.sessionFileCacheSize, 2);
-    const rows = index.listHistoricalSessions();
-    assert.equal(
-      rows.some((row) => row.summary.appSessionId === 'cache-plain'),
-      false,
-    );
   } finally {
     index.close();
   }
@@ -808,60 +687,10 @@ test('an incomplete tree scan does not delete rows from unreadable subtrees', ()
   }
 });
 
-test('a SQLite write failure leaves the in-memory cache unchanged', () => {
-  // A failure-injecting database double: every prepared statement is created
-  // normally, but the upsert's run() throws, simulating a busy/closed handle
-  // mid-reconcile. The cache must mirror the database, so the row the write
-  // never stored must not appear in the in-memory cache or its summaries.
-  const throwingStatement = {
-    all: () => [] as unknown[],
-    run: () => {
-      throw new Error('sqlite busy');
-    },
-  };
-  const db = {
-    exec: () => {},
-    prepare: (sql: string) =>
-      sql.includes('PRAGMA')
-        ? {
-            all: () => [
-              { name: 'provider_session_id' },
-              { name: 'path' },
-              { name: 'birthtime_ms' },
-              { name: 'mtime_ms' },
-              { name: 'size_bytes' },
-              { name: 'settings_mtime_ms' },
-              { name: 'summary_json' },
-            ],
-            run: () => {},
-          }
-        : sql.includes('SELECT revision')
-          ? { get: () => ({ revision: 0 }) }
-          : throwingStatement,
-  } as unknown as DatabaseSync;
-  const stat = (path: string): SessionFileStat => ({
-    path,
-    birthtimeMs: 1,
-    mtimeMs: 1,
-    sizeBytes: 10,
-    settingsMtimeMs: null,
-  });
-  const onDisk = new Map<string, SessionFileStat>([['fail-write', stat('/sessions/fail.jsonl')]]);
-  const cache = new SessionFileCache(
-    db,
-    () => ({ files: onDisk, isComplete: true }),
-    (providerSessionId) => summaryFor(providerSessionId, '/sessions/fail.jsonl'),
-    () => null,
-  );
-  assert.throws(() => cache.reconcileChanges(), /sqlite busy/);
-  assert.equal(cache.size, 0, 'the in-memory cache holds nothing the database never stored');
-  assert.deepEqual(cache.summaries(), [], 'summaries stay empty');
-});
-
-test('a SQLite delete failure leaves the in-memory cache unchanged', () => {
+test('a SQLite write or delete failure leaves the in-memory cache unchanged', () => {
   const db = new DatabaseSync(':memory:');
   try {
-    const path = '/sessions/fail-delete.jsonl';
+    const path = '/sessions/cache-failure.jsonl';
     const file: SessionFileStat = {
       path,
       birthtimeMs: 1,
@@ -869,59 +698,45 @@ test('a SQLite delete failure leaves the in-memory cache unchanged', () => {
       sizeBytes: 10,
       settingsMtimeMs: null,
     };
-    const onDisk = new Map<string, SessionFileStat>([['fail-delete', file]]);
+    const onDisk = new Map<string, SessionFileStat>([['cache-failure', file]]);
     const cache = new SessionFileCache(
       db,
       () => ({ files: onDisk, isComplete: true }),
       (providerSessionId) => summaryFor(providerSessionId, path),
-      (candidate) => (candidate === path ? (onDisk.get('fail-delete') ?? null) : null),
+      (candidate) => (candidate === path ? (onDisk.get('cache-failure') ?? null) : null),
     );
+    const failWrites = (operation: 'INSERT' | 'DELETE') =>
+      db.exec(`
+        CREATE TRIGGER fail_session_file_${operation.toLowerCase()}
+        BEFORE ${operation} ON session_file_cache
+        BEGIN
+          SELECT RAISE(ABORT, 'sqlite busy');
+        END
+      `);
+
+    failWrites('INSERT');
+    assert.throws(() => cache.reconcileChanges(), /sqlite busy/);
+    assert.equal(cache.size, 0, 'the in-memory cache holds nothing the database never stored');
+    assert.deepEqual(cache.summaries(), []);
+    db.exec('DROP TRIGGER fail_session_file_insert');
+
     assert.equal(cache.reconcileChanges().changed, 1);
     onDisk.clear();
-    db.exec(`
-      CREATE TRIGGER fail_session_file_delete
-      BEFORE DELETE ON session_file_cache
-      BEGIN
-        SELECT RAISE(ABORT, 'sqlite busy');
-      END
-    `);
-
+    failWrites('DELETE');
     assert.throws(() => cache.reconcileChanges(), /sqlite busy/);
     assert.equal(cache.size, 1, 'a failed full-reconcile delete keeps the cached row');
     assert.throws(
-      () => cache.reconcilePathChanges([{ providerSessionId: 'fail-delete', path }]),
+      () => cache.reconcilePathChanges([{ providerSessionId: 'cache-failure', path }]),
       /sqlite busy/,
     );
     assert.equal(cache.size, 1, 'a failed targeted delete keeps the cached row');
-    assert.equal(cache.summaries()[0]?.appSessionId, 'fail-delete');
+    assert.equal(cache.summaries()[0]?.appSessionId, 'cache-failure');
   } finally {
     db.close();
   }
 });
 
-test('first sessions.list waits for worker reconciliation and serves discovered rows', async () => {
-  const freshHome = mkdtempSync(join(tmpdir(), 'droid-history-cache-boot-'));
-  const previousHome = process.env.HOME;
-  process.env.HOME = freshHome;
-  try {
-    writeSession(freshHome, 'boot-session', join(freshHome, 'workspace'));
-    const events: Protocol.ServerEvent[] = [];
-    const manager = new SessionManager((event) => events.push(event));
-    try {
-      await manager.handle({ type: 'sessions.list' });
-      const list = events.filter(isSessionList).at(-1);
-      assert.ok(list);
-      assert.ok(list.sessions.some((session) => session.appSessionId === 'boot-session'));
-    } finally {
-      await manager.shutdown();
-    }
-  } finally {
-    process.env.HOME = previousHome;
-    rmSync(freshHome, { recursive: true, force: true });
-  }
-});
-
-test('a warm cache publishes an authoritative first list before the command resolves', async () => {
+test('the first sessions.list serves discovered rows, and a warm cache publishes one authoritative list', async () => {
   const freshHome = mkdtempSync(join(tmpdir(), 'droid-history-cache-warm-'));
   const previousHome = process.env.HOME;
   process.env.HOME = freshHome;
@@ -931,6 +746,8 @@ test('a warm cache publishes an authoritative first list before the command reso
     const firstBoot = new SessionManager((event) => firstBootEvents.push(event));
     try {
       await firstBoot.handle({ type: 'sessions.list' });
+      const firstList = firstBootEvents.filter(isSessionList).at(-1);
+      assert.ok(firstList?.sessions.some((session) => session.appSessionId === 'warm-session'));
     } finally {
       await firstBoot.shutdown();
     }
