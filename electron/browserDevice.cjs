@@ -19,12 +19,14 @@ function touchUserAgent(viewportMode) {
 
 // What Chrome for Android says of itself in client hints, to match that user agent.
 function clientHints(userAgent) {
+  const mobile = userAgent.includes(' Mobile ');
   return {
     platform: 'Android',
     platformVersion: '10',
     architecture: '',
     model: 'K',
-    mobile: userAgent.includes(' Mobile '),
+    mobile,
+    formFactors: [mobile ? 'Mobile' : 'Tablet'],
   };
 }
 
