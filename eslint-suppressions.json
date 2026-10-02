@@ -311,7 +311,7 @@
   },
   "src/hooks/useWorkspaceScopes.test.ts": {
     "no-restricted-syntax": {
-      "count": 5
+      "count": 4
     }
   },
   "src/lib/filePresentation.ts": {
