@@ -152,7 +152,7 @@ export async function harness(t: TestContext, saved: Project[] = [], historyRead
     answer: (id, requestId, answers) => {
       answered.push({ id, requestId, answers });
       const live = asking.get(id) === requestId;
-      asking.delete(id);
+      if (live) asking.delete(id);
       return live;
     },
     interrupt: async (id) => {

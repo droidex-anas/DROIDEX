@@ -21,6 +21,7 @@ import {
   type StreamGate,
 } from './fakeFactoryRuntime.js';
 import { FakeHistoryIndex } from './historyCharacterizationSupport.js';
+import { sessionSummary } from './sessionSummaryFixture.js';
 
 /* eslint-disable @typescript-eslint/dot-notation -- ProcessEnv requires indexed access under strict TypeScript. */
 
@@ -317,28 +318,17 @@ export function historicalSummary(
   appSessionId: string,
   providerSessionId: string,
 ): Protocol.SessionSummary {
-  return {
+  return sessionSummary({
     appSessionId,
     providerSessionId,
-    provider: 'droid',
-    sessionPurpose: 'chat',
-    interactionMode: 'auto',
-    role: 'primary',
     title: `Historical ${appSessionId}`,
     goal: '',
-    cwd: '',
     workspaceKind: 'none',
-    autonomy: 'low',
-    phase: 'paused',
     streaming: false,
     queuedSends: 0,
-    features: [],
-    tokensIn: 0,
-    tokensOut: 0,
-    contextTokens: 0,
     createdAt: Date.now(),
     updatedAt: Date.now(),
-  };
+  });
 }
 
 export const errorEvents = (events: Protocol.ServerEvent[]): ErrorEvent[] =>

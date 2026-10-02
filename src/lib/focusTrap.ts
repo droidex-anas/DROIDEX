@@ -9,10 +9,15 @@ export const FOCUSABLE_SELECTOR =
 export function wrapTabFocus(event: KeyboardEvent, dialog: HTMLElement | null): void {
   if (event.key !== 'Tab' || !dialog) return;
   const focusables = dialog.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR);
-  if (focusables.length === 0) return;
+  // Every control disabled (work pending): Tab stays on the dialog.
+  if (focusables.length === 0) {
+    event.preventDefault();
+    dialog.focus();
+    return;
+  }
   const first = focusables[0];
   const last = focusables[focusables.length - 1];
-  const active = document.activeElement;
+  const active = dialog.ownerDocument.activeElement;
   const outside = active === dialog || !dialog.contains(active);
   if (event.shiftKey && (active === first || outside)) {
     event.preventDefault();
