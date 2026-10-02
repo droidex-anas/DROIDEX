@@ -98,6 +98,7 @@ test('renders review and inline comments as a GitHub-style conversation', () => 
         state: 'commented',
         path: 'src/a.ts',
         line: 12,
+        outdated: true,
       }),
     ],
   });
@@ -106,6 +107,8 @@ test('renders review and inline comments as a GitHub-style conversation', () => 
   assert.match(html, /commented on a file/);
   assert.match(html, /src\/a\.ts:12/);
   assert.match(html, /solid/);
+  // An outdated comment is labelled but stays expanded.
+  assert.match(html, /Outdated/);
   assert.match(html, /Please rename this\./);
   assert.match(html, /Leave a comment/);
 });

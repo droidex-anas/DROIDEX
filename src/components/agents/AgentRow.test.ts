@@ -81,11 +81,15 @@ test('a row is keyed by the child, never by the spawn tool-use id', () => {
   );
 });
 
-test('opening a row names the agent, and a placeholder has no stable id to name', () => {
+test('a row names the agent and its effort; a placeholder has no stable id to name', () => {
   const html = renderToStaticMarkup(
-    createElement(AgentRow, { ...props(), onOpen: () => undefined }),
+    createElement(AgentRow, {
+      ...props({ row: row({ reasoningEffort: 'ultra' }) }),
+      onOpen: () => undefined,
+    }),
   );
   assert.ok(html.includes('Open Worker 1'));
+  assert.ok(html.includes('data-effort="ultra"'));
   assert.equal(agentRowTitle('Worker 1', 'pending-tool-a'), 'Open Worker 1');
   assert.equal(
     agentRowTitle('Worker 1', 'child-stable-1'),
