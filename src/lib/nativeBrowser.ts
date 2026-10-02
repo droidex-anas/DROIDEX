@@ -44,6 +44,15 @@ export interface NativeBrowserAgentPoint {
   y: number;
 }
 
+/** One frame of a page's small live picture, for the transcript's Browser card. */
+export interface NativeBrowserFrame {
+  browserSessionId: string;
+  /** A JPEG, base64. */
+  image: string;
+  /** The page's own width in CSS pixels. */
+  width: number;
+}
+
 /** Main is running agent work on the session's page, or has finished it. */
 export interface NativeBrowserWorking {
   browserSessionId: string;
@@ -138,6 +147,34 @@ export function onNativeBrowserAgentPoint(
   handler: (event: NativeBrowserAgentPoint) => void,
 ): () => void {
   return window.droidControl?.onNativeBrowserAgentPoint(handler) ?? (() => undefined);
+}
+
+// How many cards are watching each page: main is told when the first one
+// starts and when the last one stops.
+const watchers = new Map<string, number>();
+
+/** Receives a page's live picture until the returned function is called. */
+export function watchNativeBrowser(
+  browserSessionId: string,
+  handler: (frame: NativeBrowserFrame) => void,
+): () => void {
+  const api = window.droidControl;
+  if (!api) return () => undefined;
+  const count = watchers.get(browserSessionId) ?? 0;
+  watchers.set(browserSessionId, count + 1);
+  if (count === 0) void api.nativeBrowserWatch(browserSessionId, true);
+  const unsubscribe = api.onNativeBrowserFrame((frame) => {
+    if (frame.browserSessionId === browserSessionId) handler(frame);
+  });
+  return () => {
+    unsubscribe();
+    const left = (watchers.get(browserSessionId) ?? 1) - 1;
+    if (left > 0) watchers.set(browserSessionId, left);
+    else {
+      watchers.delete(browserSessionId);
+      void api.nativeBrowserWatch(browserSessionId, false);
+    }
+  };
 }
 
 export function onNativeBrowserClosed(
