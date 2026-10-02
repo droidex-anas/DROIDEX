@@ -76,3 +76,12 @@ test('a picture is known by its own bytes', () => {
   ]);
   assert.match(withParameter.images?.[0] ?? '', /\.jpg$/);
 });
+
+test('a RIFF container is a picture only when it says WebP', () => {
+  const riff = (kind: string) =>
+    Buffer.concat([Buffer.from('RIFF'), Buffer.alloc(4), Buffer.from(kind)]).toString('base64');
+  const webp = toolResultParts([{ type: 'image', data: riff('WEBP') }]);
+  assert.match(webp.images?.[0] ?? '', /\.webp$/);
+  // WAV and AVI open with the same four bytes.
+  assert.equal(toolResultParts([{ type: 'image', data: riff('WAVE') }]).images, undefined);
+});
