@@ -388,7 +388,7 @@ test('provider adoption continuations become inert after shutdown starts', async
   assert.equal(h.statuses.length, statusesAfterCompaction);
 });
 
-test('permanent adoption failure persists the daemon identity before recovery', async () => {
+test('permanent adoption failure persists the daemon identity before recovery, and rejects if it cannot', async () => {
   const h = createHarness();
   const { live, session } = addLive(h);
   session.nextCompactResult = { newSessionId: 'provider-7', removedCount: 1 };
@@ -397,9 +397,7 @@ test('permanent adoption failure persists the daemon identity before recovery', 
     new Error('second adoption failed'),
   ]);
 
-  const result = await h.compaction.compact('app-1');
-
-  assert.deepEqual(result, {
+  assert.deepEqual(await h.compaction.compact('app-1'), {
     kind: 'close-and-resume',
     appSessionId: 'app-1',
     providerSessionId: 'provider-7',
@@ -409,21 +407,18 @@ test('permanent adoption failure persists the daemon identity before recovery', 
   assert.equal(live.summary.providerSessionId, 'provider-7');
   assert.equal(live.compacting, false);
   assert.equal(closeCount(h.calls, 'provider-1'), 0);
-});
 
-test('permanent recovery rejects when the daemon identity cannot be persisted', async () => {
-  const h = createHarness();
-  const { live, session } = addLive(h);
-  session.nextCompactResult = { newSessionId: 'provider-8', removedCount: 1 };
-  h.runtime.loadQueue.set('provider-8', [new Error('load one'), new Error('load two')]);
-  h.registry.nextReplaceError = new Error('history unavailable');
+  const unsaved = createHarness();
+  const target = addLive(unsaved);
+  target.session.nextCompactResult = { newSessionId: 'provider-8', removedCount: 1 };
+  unsaved.runtime.loadQueue.set('provider-8', [new Error('load one'), new Error('load two')]);
+  unsaved.registry.nextReplaceError = new Error('history unavailable');
 
-  await assert.rejects(h.compaction.compact('app-1'), /history unavailable/);
-
-  assert.equal(live.summary.providerSessionId, 'provider-1');
-  assert.equal(live.compacting, false);
+  await assert.rejects(unsaved.compaction.compact('app-1'), /history unavailable/);
+  assert.equal(target.live.summary.providerSessionId, 'provider-1');
+  assert.equal(target.live.compacting, false);
   assert.equal(
-    h.errors.some(
+    unsaved.errors.some(
       (error) =>
         error.providerSessionId === 'provider-8' &&
         error.recoverable === true &&
@@ -443,31 +438,29 @@ function addHistorical(h: ReturnType<typeof createHarness>, temporary: FakeFacto
   h.runtime.loadQueue.set('provider-history', [temporary]);
 }
 
-test('historical compaction uses a temporary provider without live side effects', async () => {
+test('historical compaction uses a temporary provider without live side effects, and a failed identity write is fatal', async () => {
   const h = createHarness();
   const temporary = new FakeFactorySession('provider-history', {}, h.calls);
   temporary.nextCompactResult = { newSessionId: 'provider-history-2', removedCount: 1 };
   addHistorical(h, temporary);
 
-  const result = await h.compaction.compact('provider-history', 'keep decisions');
-
-  assert.deepEqual(result, { kind: 'ready-to-settle' });
+  assert.deepEqual(await h.compaction.compact('provider-history', 'keep decisions'), {
+    kind: 'ready-to-settle',
+  });
   assert.equal(h.registry.resolveSummary('app-history')?.providerSessionId, 'provider-history-2');
   assert.equal(closeCount(h.calls, 'provider-history'), 1);
   assert.deepEqual([h.statuses, h.refreshed, h.preserved], [[], [], []]);
   assert.deepEqual(temporary.settings, []);
-});
 
-test('historical provider persistence failure is fatal and identifies the new provider', async () => {
-  const h = createHarness();
-  h.registry.nextReplaceError = new Error('history unavailable');
-  const temporary = new FakeFactorySession('provider-history', {}, h.calls);
-  temporary.nextCompactResult = { newSessionId: 'provider-history-2', removedCount: 1 };
-  addHistorical(h, temporary);
+  const unsaved = createHarness();
+  unsaved.registry.nextReplaceError = new Error('history unavailable');
+  const unsavedTemporary = new FakeFactorySession('provider-history', {}, unsaved.calls);
+  unsavedTemporary.nextCompactResult = { newSessionId: 'provider-history-2', removedCount: 1 };
+  addHistorical(unsaved, unsavedTemporary);
 
-  assert.deepEqual(await h.compaction.compact('app-history'), { kind: 'ready-to-settle' });
+  assert.deepEqual(await unsaved.compaction.compact('app-history'), { kind: 'ready-to-settle' });
   assert.equal(
-    h.errors.some(
+    unsaved.errors.some(
       (error) =>
         error.appSessionId === 'app-history' &&
         error.providerSessionId === 'provider-history-2' &&
@@ -476,8 +469,11 @@ test('historical provider persistence failure is fatal and identifies the new pr
     ),
     true,
   );
-  assert.equal(h.registry.resolveSummary('app-history')?.providerSessionId, 'provider-history');
-  assert.equal(closeCount(h.calls, 'provider-history'), 1);
+  assert.equal(
+    unsaved.registry.resolveSummary('app-history')?.providerSessionId,
+    'provider-history',
+  );
+  assert.equal(closeCount(unsaved.calls, 'provider-history'), 1);
 });
 
 test('historical noop is quiet and failure is recoverable; both keep the identity and close the temporary provider', async () => {
