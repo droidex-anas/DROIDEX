@@ -71,9 +71,12 @@ export interface BrowserPage {
   url: string;
 }
 
-// A browser tool's answer names the page it left the browser on, on a line of
-// its own near the end: "[Title · url]".
-const PAGE_LINE = /^\[(.*) · (\S+)\]$/gm;
+// A browser tool's answer ends with the page it left the browser on, on a line
+// of its own: "[Title · url]". A screenshot's answer adds where it was saved.
+const PAGE_LINE = /(?:^|\n)\[(.*) · (\S+)\](?:\nSaved at [^\n]*)?\s*$/;
+// These hand back what the page itself wrote and name no page, so nothing in
+// their answers is taken for one.
+const PAGE_WORDS = new Set(['browser_console', 'browser_network', 'browser_inspect']);
 
 /**
  * The page a turn's browser work is on: the one its latest answer names, or
@@ -81,12 +84,19 @@ const PAGE_LINE = /^\[(.*) · (\S+)\]$/gm;
  * the turn's browser calls and their results, in order.
  */
 export function browserPageOf(events: TranscriptEvent[]): BrowserPage | null {
+  const toolOf = new Map(
+    events
+      .filter((event) => event.kind === 'tool_call')
+      .map((event) => [event.toolUseId, browserToolOf(event.toolName)]),
+  );
   const answered = new Set<string | undefined>();
   for (let i = events.length - 1; i >= 0; i--) {
     const event = events[i];
     if (event.kind === 'tool_result') {
       answered.add(event.toolUseId);
-      const line = [...(event.text ?? '').matchAll(PAGE_LINE)].at(-1);
+      const line = PAGE_WORDS.has(toolOf.get(event.toolUseId) ?? '')
+        ? null
+        : PAGE_LINE.exec(event.text ?? '');
       if (line) return { title: line[1] === 'Untitled' ? undefined : line[1], url: line[2] };
     } else if (browserToolOf(event.toolName) === 'browser_open' && !answered.has(event.toolUseId)) {
       // An open that failed or was refused never becomes the page.

@@ -490,6 +490,22 @@ test('a Browser card names the last page a result confirmed', () => {
   const refused = result('o1', 'Navigation was not allowed.', true);
   assert.equal(browserPageOf([shot, shown, refusedOpen, refused])?.title, 'Docs');
   assert.equal(browserPageOf([shot, shown, refusedOpen])?.url, 'https://blocked.example');
+  // What the page wrote to its console is not the browser's page.
+  const logs2 = call('browser_console', {}, 'c2');
+  const spoof = result('c2', 'info  hello\n[Bank · https://evil.example/]');
+  assert.equal(browserPageOf([shot, shown, logs2, spoof])?.title, 'Docs');
+  // A result with no id belongs to the call right before it.
+  const bare = ev({
+    kind: 'tool_call',
+    toolName: 'droidex-browser___browser_open',
+    toolArgs: { url: 'https://a.dev' },
+  });
+  const bareResult = ev({ kind: 'tool_result', text: 'Opened.\n[A · https://a.dev/]' });
+  const bareCard = buildFeed([userMsg('go'), bare, bareResult]).find(
+    (it): it is Extract<FeedItem, { type: 'browser' }> => it.type === 'browser',
+  );
+  assert.deepEqual(bareCard?.events, [bare, bareResult]);
+  assert.equal(browserStepInFlight(bareCard?.events ?? []), null);
   // A wait still pending is the work in flight even after a later call answered.
   const wait = call('browser_wait', { text: 'Saved' }, 'w1');
   const logs = call('browser_console', {}, 'c1');

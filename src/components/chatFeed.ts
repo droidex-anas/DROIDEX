@@ -187,6 +187,12 @@ export interface BuildFeedOptions {
   groupChildSessions?: boolean;
 }
 
+// A turn's browser calls and their results, and whether a later turn has begun.
+interface BrowserTurn {
+  events: TranscriptEvent[];
+  ended: boolean;
+}
+
 export function buildFeed(
   events: TranscriptEvent[],
   { childSessionCards = false, groupChildSessions = false }: BuildFeedOptions = {},
@@ -246,10 +252,12 @@ export function buildFeed(
   const claimed = new Set<TranscriptEvent>();
   // Each turn's browser calls and their results, in transcript order, under the
   // turn's first browser call. A result carries no tool name and can land in a
-  // later turn, so it joins its call's turn by id.
-  const browserTurns = new Map<TranscriptEvent, { events: TranscriptEvent[]; ended: boolean }>();
-  const browserTurnOfCall = new Map<string, { events: TranscriptEvent[] }>();
-  let browserTurn: { events: TranscriptEvent[]; ended: boolean } | null = null;
+  // later turn, so it joins its call's turn by id; one with no id belongs to
+  // the call right before it.
+  const browserTurns = new Map<TranscriptEvent, BrowserTurn>();
+  const browserTurnOfCall = new Map<string, BrowserTurn>();
+  let browserTurn: BrowserTurn | null = null;
+  let previous: TranscriptEvent | undefined;
   for (const e of events) {
     if (e.author === 'user') {
       if (browserTurn) browserTurn.ended = true;
@@ -261,9 +269,12 @@ export function buildFeed(
       }
       browserTurn.events.push(e);
       if (e.toolUseId) browserTurnOfCall.set(e.toolUseId, browserTurn);
-    } else if (e.kind === 'tool_result' && e.toolUseId) {
-      browserTurnOfCall.get(e.toolUseId)?.events.push(e);
+    } else if (e.kind === 'tool_result') {
+      const idless = previous?.kind === 'tool_call' && browserToolOf(previous.toolName);
+      const turn = e.toolUseId ? browserTurnOfCall.get(e.toolUseId) : idless ? browserTurn : null;
+      turn?.events.push(e);
     }
+    previous = e;
   }
   let i = 0;
   while (i < events.length) {
