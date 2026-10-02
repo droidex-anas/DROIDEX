@@ -99,7 +99,7 @@ function createNativeBrowserViewFactory({
     });
     contents.on('console-message', (details) => {
       // Electron's own notices about the guest are not the page's.
-      if (String(details.sourceId ?? '').startsWith('node:electron/')) return;
+      if (!current() || String(details.sourceId ?? '').startsWith('node:electron/')) return;
       const message = normalizeBrowserConsoleMessage(details);
       // When errors came in, kept apart from the log, which a read empties.
       if (message.level === CONSOLE_LEVELS.error) {
