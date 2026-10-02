@@ -1,7 +1,5 @@
 import { useRef, type KeyboardEvent as ReactKeyboardEvent } from 'react';
-
-const FOCUSABLE_SELECTOR =
-  'button:not([disabled]), [href], input:not([disabled]), [tabindex]:not([tabindex="-1"])';
+import { wrapTabFocus } from '../../lib/focusTrap';
 
 /* ── Closing a shell that still has something running asks here, over the
    terminal the user is looking at, rather than in a popover hanging off the
@@ -15,33 +13,15 @@ export function TerminalCloseConfirm({
 }) {
   const dialogRef = useRef<HTMLDivElement>(null);
 
-  // aria-modal contract: Tab must cycle inside the dialog, same wrap logic as
-  // WorktreeRemovalDialog. This one overlays a live terminal, so without it
-  // Tab walks straight back into the shell behind the scrim.
+  // This dialog overlays a live terminal, so without the Tab wrap focus walks
+  // straight back into the shell behind the scrim.
   const onKeyDown = (event: ReactKeyboardEvent) => {
     if (event.key === 'Escape') {
       event.stopPropagation();
       onKeepOpen();
       return;
     }
-    if (event.key !== 'Tab') return;
-    const dialog = dialogRef.current;
-    if (!dialog) return;
-    const focusables = dialog.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR);
-    if (focusables.length === 0) return;
-    const first = focusables[0];
-    const last = focusables[focusables.length - 1];
-    const active = document.activeElement;
-    if (event.shiftKey && (active === first || active === dialog || !dialog.contains(active))) {
-      event.preventDefault();
-      last.focus();
-    } else if (
-      !event.shiftKey &&
-      (active === last || active === dialog || !dialog.contains(active))
-    ) {
-      event.preventDefault();
-      first.focus();
-    }
+    wrapTabFocus(event, dialogRef.current);
   };
 
   return (
