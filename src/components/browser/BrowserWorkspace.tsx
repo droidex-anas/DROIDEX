@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useIsPresent } from 'framer-motion';
 import { X } from '@droidex/icons';
 import { isDesignModeOpen } from '../../hooks/designModeState';
 import { shallowEqual, useStoreDispatch, useStoreSelector } from '../../hooks/useStore';
@@ -231,8 +232,11 @@ export default function BrowserWorkspace({
 
   // On Fit the page follows the pane: its size goes to the sidecar, which
   // takes it only while the page is still on Fit there, so it never undoes a
-  // size an agent has just picked.
-  const followsPane = browser?.viewportMode === 'fit';
+  // size an agent has just picked. A pane on its way out, however it was closed,
+  // is still mounted while it animates away; it is not followed, so the page
+  // keeps the size it had for the agent to work at.
+  const leaving = !useIsPresent();
+  const followsPane = browser?.viewportMode === 'fit' && !leaving;
   const currentViewport = browser?.viewport;
   useEffect(() => {
     if (!browserKey || !currentViewport || !followsPane) return;
