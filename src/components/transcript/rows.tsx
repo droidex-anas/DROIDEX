@@ -294,6 +294,7 @@ function ToolTarget({
 function ToolLine({
   event,
   output,
+  images,
   error = false,
   interrupted = false,
   running = false,
@@ -302,6 +303,7 @@ function ToolLine({
 }: {
   event: TranscriptEvent;
   output?: string;
+  images?: string[];
   error?: boolean;
   interrupted?: boolean;
   running?: boolean;
@@ -312,9 +314,9 @@ function ToolLine({
   const out = output ? stripAnsi(output).trimEnd() : '';
   const [open, setOpen] = useState(false);
   const expanded = open || forceOpen;
-  // Only a row with output can be collapsed again; detailed density still
-  // opens every call to its arguments, result or not.
-  const collapsible = out.length > 0;
+  // Only a row with output, text or pictures, can be collapsed again; detailed
+  // density still opens every call to its arguments, result or not.
+  const collapsible = out.length > 0 || Boolean(images?.length);
   const hasBody = collapsible || forceOpen;
   // An MCP tool wears its server's mark instead of spelling its source.
   const mark = useToolSourceMark(call.source);
@@ -366,6 +368,7 @@ function ToolLine({
                 </pre>
               }
               output={out}
+              images={images}
               error={error}
             />
           </div>
@@ -552,6 +555,7 @@ export function renderToolEvents(
             key={e.id}
             event={e}
             output={result?.text}
+            images={result?.images}
             error={isError}
             interrupted={interrupted}
             running={running}
