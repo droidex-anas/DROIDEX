@@ -107,6 +107,8 @@ test('a new Codex thread declares its tools and a resumed thread keeps its store
       sent.push({ method, params });
       if (method === 'thread/start' || method === 'thread/resume')
         return { thread: { id: 'thread-one' }, model: 'codex-model' };
+      if (method === 'config/read')
+        return { config: { developer_instructions: 'Workspace guidance.' } };
       if (method === 'skills/list') return { data: [] };
       if (method === 'plugin/installed') return { marketplaces: [] };
       if (method === 'app/list') return { data: [], nextCursor: null };
@@ -146,10 +148,18 @@ test('a new Codex thread declares its tools and a resumed thread keeps its store
     })),
     [{ name: 'droidex_sessions', deferred: true }],
   );
+  // The folder's own developer instructions stay, ahead of the note naming the tools.
+  const instructions = (start?.params as { developerInstructions: string }).developerInstructions;
+  assert.ok(instructions.startsWith('Workspace guidance.\n\n'));
+  assert.match(instructions, /droidex_sessions/);
   const resumed = new CodexSession(input);
   await resumed.open('thread-one');
   const resume = sent.find((entry) => entry.method === 'thread/resume');
   assert.equal('dynamicTools' in (resume?.params as object), false);
+  assert.equal(
+    (resume?.params as { developerInstructions: string }).developerInstructions,
+    instructions,
+  );
   await fresh.close();
   await resumed.close();
 });
@@ -455,6 +465,7 @@ test('a Stop sent before the turn has an id still refuses that turn its tools', 
     request: async (method: string) => {
       sent.push(method);
       if (method === 'thread/start') return { thread: { id: 'thread-one' }, model: 'codex-model' };
+      if (method === 'config/read') return { config: {} };
       if (method === 'turn/start') return await new Promise((resolve) => (releaseTurn = resolve));
       if (method === 'skills/list') return { data: [] };
       if (method === 'plugin/installed') return { marketplaces: [] };
