@@ -5,6 +5,7 @@ import { estimateTranscriptCost } from '../lib/transcriptWindow';
 import type { ChildSessionSummary, TranscriptEvent } from '../types/bridge';
 import { initialState, reducer, type AppState } from './useStore';
 import { sessionSummary } from '../test/sessionSummary';
+import { childSummary } from '../test/childSummary';
 
 const session = (appSessionId: string, streaming = false) =>
   sessionSummary(appSessionId, { cwd: '/tmp', autonomy: 'off', phase: 'running', streaming });
@@ -22,21 +23,12 @@ function events(appSessionId: string, count: number): TranscriptEvent[] {
   }));
 }
 
-function childSession(
+const childSession = (
   parentAppSessionId: string,
   childSessionId: string,
   role: 'worker' | 'validator' = 'worker',
-): ChildSessionSummary {
-  return {
-    parentAppSessionId,
-    childSessionId,
-    role,
-    status: 'completed',
-    modelId: 'model',
-    transcriptAvailable: true,
-    streamFidelity: 'state',
-  };
-}
+) =>
+  childSummary(parentAppSessionId, childSessionId, { role, status: 'completed', modelId: 'model' });
 
 /** `count` events from one child of the `active` session, ids `<child>-<index>`. */
 function childEvents(

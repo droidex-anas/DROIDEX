@@ -30,6 +30,7 @@ import {
   type VisibleSessionTarget,
 } from './childSessions';
 import { childSessionInfo } from './tools';
+import { childSummary } from '../test/childSummary';
 
 function ev(
   p: Partial<TranscriptEvent> &
@@ -38,18 +39,8 @@ function ev(
   return { appSessionId: 'app-1', ...p } as TranscriptEvent;
 }
 
-function child(overrides: Partial<ChildSessionInfo> = {}): ChildSessionInfo {
-  return {
-    parentAppSessionId: 'parent-a',
-    childSessionId: 'child-a',
-    role: 'worker',
-    status: 'running',
-    modelId: 'model-default',
-    transcriptAvailable: true,
-    streamFidelity: 'state',
-    ...overrides,
-  };
-}
+const child = (overrides: Partial<ChildSessionInfo> = {}): ChildSessionInfo =>
+  childSummary('parent-a', 'child-a', { status: 'running', ...overrides });
 
 const selection = { parentAppSessionId: 'parent-a', childSessionId: 'child-a' };
 

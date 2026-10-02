@@ -4,6 +4,7 @@ import { initialState, reducer, type AppState } from './useStore';
 import type { ContextStatsSnapshot, TranscriptEvent } from '../types/bridge';
 import { sessionSummary } from '../test/sessionSummary';
 import { textEvent } from '../test/textEvent';
+import { childSummary } from '../test/childSummary';
 
 const session = (autoCompactions = 0) =>
   sessionSummary('m1', {
@@ -184,15 +185,7 @@ test('a delayed session summary cannot roll back a restored compaction generatio
 });
 
 test('a replaced or closed child runtime clears only that child context snapshot', () => {
-  const child = {
-    parentAppSessionId: 'parent',
-    childSessionId: 'child',
-    role: 'worker' as const,
-    status: 'running' as const,
-    modelId: 'model-child',
-    transcriptAvailable: true,
-    streamFidelity: 'state' as const,
-  };
+  const child = childSummary('parent', 'child', { status: 'running', modelId: 'model-child' });
   const start: AppState = {
     ...initialState,
     childSessions: { parent: { child } },

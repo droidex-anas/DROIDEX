@@ -5,16 +5,7 @@ import { adaptEvent, initialState, reducer, type AppState } from './useStore';
 import { visibleSessionTarget } from '../lib/childSessions';
 import type { ChildSessionSummary, ServerEvent } from '../types/bridge';
 import { sessionSummary } from '../test/sessionSummary';
-
-const child = (parentAppSessionId: string, childSessionId: string): ChildSessionSummary => ({
-  parentAppSessionId,
-  childSessionId,
-  role: 'worker',
-  status: 'paused',
-  modelId: 'model-default',
-  transcriptAvailable: true,
-  streamFidelity: 'state',
-});
+import { childSummary } from '../test/childSummary';
 
 const session = (appSessionId: string) =>
   sessionSummary(appSessionId, {
@@ -36,7 +27,7 @@ function select(
       ...state.childSessions,
       [parentAppSessionId]: {
         ...(state.childSessions[parentAppSessionId] ?? {}),
-        [childSessionId]: child(parentAppSessionId, childSessionId),
+        [childSessionId]: childSummary(parentAppSessionId, childSessionId),
       },
     },
   };
@@ -69,7 +60,7 @@ function runtime(
   state: AppState,
   runtimeAvailable: boolean,
   runtimeGeneration: number,
-  summary: ChildSessionSummary = child('parent-a', 'child-a'),
+  summary: ChildSessionSummary = childSummary('parent-a', 'child-a'),
 ): AppState {
   return reducer(state, {
     type: 'SESSION_CHILD',
@@ -281,7 +272,7 @@ test('resuming a historical parent clears its terminal child access state', () =
 test('a stale runtime generation cannot roll back the child summary or close a newer runtime', () => {
   const state = ready(select(initialState, 'parent-a', 'child-a', 'request-a'), 'request-a', 4);
   const stale = runtime(state, false, 3, {
-    ...child('parent-a', 'child-a'),
+    ...childSummary('parent-a', 'child-a'),
     status: 'completed',
     modelId: 'stale-model',
   });
@@ -290,7 +281,7 @@ test('a stale runtime generation cannot roll back the child summary or close a n
   assert.equal(stale.childSessions['parent-a']?.['child-a']?.modelId, 'model-default');
 
   const sameRuntimeUpdate = runtime(state, true, 4, {
-    ...child('parent-a', 'child-a'),
+    ...childSummary('parent-a', 'child-a'),
     modelId: 'accepted-model',
   });
   assert.equal(sameRuntimeUpdate.childSessions['parent-a']?.['child-a']?.modelId, 'accepted-model');
@@ -353,7 +344,7 @@ test('canonical child summaries update only the exact parent-owned child', () =>
     type: 'session.child',
     event: 'upserted',
     child: {
-      ...child('parent-a', 'child-a'),
+      ...childSummary('parent-a', 'child-a'),
       modelId: 'model-new',
       reasoningEffort: 'high',
     },
@@ -373,7 +364,7 @@ test('a selected queued open stays pending and becomes usable when the runtime i
   state = dispatchEvent(state, {
     type: 'session.child',
     event: 'upserted',
-    child: { ...child('parent-a', 'child-a'), queued: true },
+    child: { ...childSummary('parent-a', 'child-a'), queued: true },
     runtimeAvailable: false,
     runtimeGeneration: 1,
   });
@@ -403,7 +394,7 @@ test('a selected queued open stays pending and becomes usable when the runtime i
   state = dispatchEvent(state, {
     type: 'session.child',
     event: 'upserted',
-    child: child('parent-a', 'child-a'),
+    child: childSummary('parent-a', 'child-a'),
     runtimeAvailable: false,
     runtimeGeneration: 1,
   });
@@ -415,7 +406,7 @@ test('a selected queued open stays pending and becomes usable when the runtime i
   state = dispatchEvent(state, {
     type: 'session.child',
     event: 'upserted',
-    child: child('parent-a', 'child-a'),
+    child: childSummary('parent-a', 'child-a'),
     runtimeAvailable: true,
     runtimeGeneration: 2,
   });

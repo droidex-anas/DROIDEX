@@ -4,6 +4,7 @@ import test from 'node:test';
 import type { ChildSessionSummary } from '../types/bridge';
 import { initialState, reducer, type Action } from './useStore';
 import { sessionSummary } from '../test/sessionSummary';
+import { childSummary } from '../test/childSummary';
 
 const session = (appSessionId: string) =>
   sessionSummary(appSessionId, {
@@ -14,18 +15,6 @@ const session = (appSessionId: string) =>
     cwd: '/workspace',
     workspaceKind: 'folder',
   });
-
-function child(parentAppSessionId: string, childSessionId: string): ChildSessionSummary {
-  return {
-    parentAppSessionId,
-    childSessionId,
-    role: 'worker',
-    status: 'paused',
-    modelId: 'model-default',
-    transcriptAvailable: true,
-    streamFidelity: 'state',
-  };
-}
 
 const contextStats = (used: number) => ({
   used,
@@ -67,7 +56,7 @@ test('same-event sibling progress remains distinct by exact child identity', () 
 
 test('closing a parent preserves historical parent and child discovery but clears live targeting', () => {
   const parent = session('parent');
-  const historicalChild = child('parent', 'child');
+  const historicalChild = childSummary('parent', 'child');
   historicalChild.status = 'running';
   const state = reducer(
     {
@@ -104,7 +93,7 @@ test('closing a parent preserves historical parent and child discovery but clear
 test('a chat is marked as having agents working only while one is running', () => {
   const upsert = (child: ChildSessionSummary) =>
     ({ type: 'SESSION_CHILD', child, runtimeAvailable: false, runtimeGeneration: 1 }) as const;
-  const running: ChildSessionSummary = { ...child('parent', 'child'), status: 'running' };
+  const running: ChildSessionSummary = { ...childSummary('parent', 'child'), status: 'running' };
 
   const started = reducer(initialState, upsert(running));
   assert.deepEqual(started.agentsWorkingByParent, { parent: true });
@@ -130,7 +119,7 @@ test('child batches preserve published state and sequential lifecycle transition
     available: boolean,
   ): Action => ({
     type: 'SESSION_CHILD',
-    child: { ...child(parentId, childId), status: available ? 'running' : 'completed' },
+    child: { ...childSummary(parentId, childId), status: available ? 'running' : 'completed' },
     runtimeAvailable: available,
     runtimeGeneration: generation,
   });

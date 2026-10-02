@@ -4,6 +4,7 @@ import type { ChildSessionSummary, TranscriptEvent } from '../types/bridge';
 import { estimateTranscriptCost } from '../lib/transcriptWindow';
 import { initialState, reducer, type AppState } from './useStore';
 import { sessionSummary } from '../test/sessionSummary';
+import { childSummary } from '../test/childSummary';
 
 const session = (appSessionId: string, streaming: boolean, updatedAt = streaming ? 1 : 2) =>
   sessionSummary(appSessionId, {
@@ -15,21 +16,11 @@ const session = (appSessionId: string, streaming: boolean, updatedAt = streaming
     updatedAt,
   });
 
-function childSession(
+const childSession = (
   parentAppSessionId: string,
   childSessionId: string,
   status: ChildSessionSummary['status'],
-): ChildSessionSummary {
-  return {
-    parentAppSessionId,
-    childSessionId,
-    role: 'worker',
-    status,
-    modelId: 'model',
-    transcriptAvailable: true,
-    streamFidelity: 'state',
-  };
-}
+) => childSummary(parentAppSessionId, childSessionId, { status, modelId: 'model' });
 
 function events(
   appSessionId: string,

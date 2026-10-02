@@ -4,6 +4,7 @@ import { reducer, initialState } from './useStore';
 import type { AppState } from './useStore';
 import type { TranscriptEvent } from '../types/bridge';
 import { textEvent } from '../test/textEvent';
+import { childSummary } from '../test/childSummary';
 
 const ev = (id: string, ts: number, text = id) => textEvent(id, { appSessionId: 'm1', ts, text });
 
@@ -518,15 +519,7 @@ test('opening an unloaded child creates explicit history loading state', () => {
     activeAppSessionId: 'm1',
     childSessions: {
       m1: {
-        'child-a': {
-          parentAppSessionId: 'm1',
-          childSessionId: 'child-a',
-          role: 'worker' as const,
-          status: 'completed' as const,
-          modelId: 'model-1',
-          transcriptAvailable: true,
-          streamFidelity: 'state',
-        },
+        'child-a': childSummary('m1', 'child-a', { status: 'completed', modelId: 'model-1' }),
       },
     },
   };
