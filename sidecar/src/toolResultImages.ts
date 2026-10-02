@@ -86,7 +86,11 @@ function savedImage(image: ImageBlock): string | undefined {
     renameSync(partial, path);
     return path;
   } catch {
-    rmSync(partial, { force: true });
+    try {
+      rmSync(partial, { force: true });
+    } catch {
+      // A profile that cannot be written cannot be cleaned either.
+    }
     return undefined;
   }
 }
