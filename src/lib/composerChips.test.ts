@@ -45,13 +45,11 @@ test('backspace unwinds the selections before the attachment row', () => {
   );
 });
 
-test('the most recent of a group goes first', () => {
+test('within a group the most recent chip goes first, and an empty composer removes nothing', () => {
   assert.deepEqual(chipRemovedByBackspace(chips({ documentPaths: ['/a.md', '/b.md', '/c.md'] })), {
     chip: 'attachment',
     path: '/c.md',
   });
-});
 
-test('an empty composer removes nothing', () => {
   assert.equal(chipRemovedByBackspace(chips()), null);
 });
