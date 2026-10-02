@@ -13,6 +13,7 @@ import type {
   SessionSummary,
   TranscriptEvent,
 } from './protocol.js';
+import { sessionSummary } from './testing/sessionSummaryFixture.js';
 
 interface FakeTimer {
   callback: () => void;
@@ -82,27 +83,8 @@ function appended(sourceSessionId: string, text: string): ServerEvent {
   return { type: 'event.appended', event: transcript(sourceSessionId, text) };
 }
 
-function sessionSummary(appSessionId: string, streaming = true): SessionSummary {
-  return {
-    appSessionId,
-    providerSessionId: `provider-${appSessionId}`,
-    provider: 'droid',
-    sessionPurpose: 'chat',
-    interactionMode: 'auto',
-    role: 'primary',
-    title: appSessionId,
-    goal: 'test',
-    cwd: '/repo',
-    autonomy: 'low',
-    phase: 'running',
-    streaming,
-    features: [],
-    tokensIn: 0,
-    tokensOut: 0,
-    contextTokens: 0,
-    createdAt: 1,
-    updatedAt: 1,
-  };
+function runningSummary(appSessionId: string, streaming = true): SessionSummary {
+  return sessionSummary({ appSessionId, phase: 'running', streaming });
 }
 
 function contextStats(used: number): ContextStatsSnapshot {
@@ -172,9 +154,9 @@ test('27 interleaved sources stay ordered in one frame batch', () => {
 test('replaceable telemetry collapses to its latest ordered occurrence', () => {
   const harness = createHarness();
   harness.batcher.enqueue(context('app', 'child-a', 1));
-  harness.batcher.enqueue({ type: 'session.updated', session: sessionSummary('app') });
+  harness.batcher.enqueue({ type: 'session.updated', session: runningSummary('app') });
   harness.batcher.enqueue(context('app', 'child-a', 2));
-  harness.batcher.enqueue({ type: 'session.updated', session: sessionSummary('app') });
+  harness.batcher.enqueue({ type: 'session.updated', session: runningSummary('app') });
   harness.batcher.flush();
 
   const delivered = required(harness.batches[0], 'missing delivered batch');
@@ -257,8 +239,9 @@ test('priority events flush queued work before their immediate batch', () => {
   assert.equal(harness.batches[1]?.batch.events[0]?.event.type, 'approval.requested');
 });
 
-test('user-action, domain error and session-list events bypass the normal frame window', () => {
+test('user-action, domain error, session-list and turn-settling events bypass the normal frame window', () => {
   const events: ServerEvent[] = [
+    { type: 'session.updated', session: runningSummary('app', false) },
     { type: 'mcp.authRequested', requestId: 'mcp-auth', serverName: 'github' },
     { type: 'mcp.error', requestId: 'mcp-error', message: 'authentication failed' },
     { type: 'browser.error', appSessionId: 'app', message: 'navigation failed' },
@@ -276,20 +259,6 @@ test('user-action, domain error and session-list events bypass the normal frame 
   }
 });
 
-test('turn settlement is an immediate flush boundary', () => {
-  const harness = createHarness();
-  harness.batcher.enqueue(appended('app', 'tail'));
-  harness.batcher.enqueue({
-    type: 'session.updated',
-    session: sessionSummary('app', false),
-  });
-
-  assert.equal(harness.batches.length, 2);
-  assert.equal(harness.batches[0]?.batch.events[0]?.event.type, 'event.appended');
-  assert.equal(harness.batches[1]?.batch.events[0]?.event.type, 'session.updated');
-  assert.equal(harness.batches[1]?.metadata.immediate, true);
-});
-
 test('pending count and byte limits synchronously flush a bounded queue', () => {
   const harness = createHarness({ maxPendingEvents: 3 });
   harness.batcher.enqueue(appended('a', '1'));
@@ -303,7 +272,7 @@ test('pending count and byte limits synchronously flush a bounded queue', () => 
   const bytes = createHarness({ maxPendingEstimatedBytes: 1_500 });
   bytes.batcher.enqueue({
     type: 'session.updated',
-    session: { ...sessionSummary('app'), title: 'x'.repeat(5_000) },
+    session: { ...runningSummary('app'), title: 'x'.repeat(5_000) },
   });
   assert.equal(bytes.batches.length, 1);
   assert.ok((bytes.batches[0]?.metadata.estimatedBytes ?? 0) > 5_000);
