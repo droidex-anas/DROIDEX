@@ -146,13 +146,6 @@ function transcript(id: string, appSessionId = 'provider-source'): TranscriptEve
 }
 
 const TEST_COALESCE_MS = 5;
-const TEST_COALESCE_SETTLE_MARGIN_MS = 20;
-
-function waitForTestCoalesce(): Promise<void> {
-  return new Promise((resolve) =>
-    setTimeout(resolve, TEST_COALESCE_MS + TEST_COALESCE_SETTLE_MARGIN_MS),
-  );
-}
 
 function historyEntry(providerSessionId: string, modifiedTime: number): SessionHistoryEntry {
   return {
@@ -180,7 +173,8 @@ function delta(
   };
 }
 
-test('streaming text deltas coalesce into one event flushed by the timer', async () => {
+test('streaming text deltas coalesce into one event flushed by the timer', (t) => {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
   const { emitted, recorded, timeline } = createHarness({
     streamingCoalesceMs: TEST_COALESCE_MS,
   });
@@ -190,14 +184,15 @@ test('streaming text deltas coalesce into one event flushed by the timer', async
   assert.deepEqual(emitted, []);
   assert.deepEqual(recorded, []);
 
-  await waitForTestCoalesce();
+  t.mock.timers.tick(TEST_COALESCE_MS);
 
   assert.equal(recorded.length, 1);
   assert.deepEqual(recorded[0], delta('a', { text: 'Hello', ts: 10, endTs: 12 }));
   assert.deepEqual(emitted, [{ type: 'event.appended', event: recorded[0] }]);
 });
 
-test('timer flush failures stay owned by turn settlement', async () => {
+test('timer flush failures stay owned by turn settlement', async (t) => {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
   const { emitted, errors, timeline } = createHarness({
     streamingCoalesceMs: TEST_COALESCE_MS,
     onRecordEvent: () => {
@@ -206,7 +201,7 @@ test('timer flush failures stay owned by turn settlement', async () => {
   });
 
   timeline.appendStreaming(delta('a', { text: 'buffered tail' }));
-  await waitForTestCoalesce();
+  t.mock.timers.tick(TEST_COALESCE_MS);
 
   assert.deepEqual(emitted, []);
   assert.deepEqual(errors, [
@@ -221,7 +216,8 @@ test('timer flush failures stay owned by turn settlement', async () => {
   await assert.doesNotReject(timeline.settleStreaming('app-1', 'app-1'));
 });
 
-test('timer flush failures report once through the owning child conversation', async () => {
+test('timer flush failures report once through the owning child conversation', async (t) => {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
   const { emitted, errors, timeline } = createHarness({
     streamingCoalesceMs: TEST_COALESCE_MS,
     onRecordEvent: () => {
@@ -237,7 +233,7 @@ test('timer flush failures report once through the owning child conversation', a
       text: 'buffered child tail',
     }),
   );
-  await waitForTestCoalesce();
+  t.mock.timers.tick(TEST_COALESCE_MS);
 
   assert.deepEqual(errors, []);
   assert.deepEqual(emitted, [
@@ -327,13 +323,12 @@ test('streaming byte budget flushes early without dropping or truncating content
   );
 });
 
-test('non-mergeable streaming events flush the buffer and keep order', () => {
+test('a non-mergeable event, a kind or source change, or a plain append ends the buffered run in order', () => {
   const { recorded, timeline, trace } = createHarness({ streamingCoalesceMs: 1000 });
 
   timeline.appendStreaming(delta('a', { text: 'thought ', kind: 'thinking' }));
   timeline.appendStreaming(delta('b', { text: 'stream', kind: 'thinking' }));
   timeline.appendStreaming(delta('echo', { author: 'user' }));
-
   assert.deepEqual(trace, [
     'record:a',
     'emit:event.appended',
@@ -341,22 +336,28 @@ test('non-mergeable streaming events flush the buffer and keep order', () => {
     'emit:event.appended',
   ]);
   assert.equal(recorded[0]?.text, 'thought stream');
+
+  timeline.appendStreaming(delta('c', { kind: 'thinking' }));
+  timeline.appendStreaming(delta('d', { kind: 'text' }));
+  timeline.appendStreaming(delta('e', { kind: 'text', sourceSessionId: 'source-2' }));
   timeline.flushStreaming();
-  assert.equal(recorded.length, 2);
-});
-
-test('a kind or source change starts a new buffered run instead of merging', () => {
-  const { recorded, timeline } = createHarness({ streamingCoalesceMs: 1000 });
-
-  timeline.appendStreaming(delta('a', { kind: 'thinking' }));
-  timeline.appendStreaming(delta('b', { kind: 'text' }));
-  timeline.appendStreaming(delta('c', { kind: 'text', sourceSessionId: 'source-2' }));
-  timeline.flushStreaming();
-
   assert.deepEqual(
     recorded.map((event) => event.id),
-    ['a', 'b', 'c'],
+    ['a', 'echo', 'c', 'd', 'e'],
   );
+
+  // A plain append flushes the buffered run first, and a second flush is a no-op.
+  const plain = createHarness({ streamingCoalesceMs: 1000 });
+  plain.timeline.appendStreaming(delta('buffered'));
+  plain.timeline.append(delta('status-line', { kind: 'status', author: 'user' }));
+  plain.timeline.flushStreaming();
+  plain.timeline.flushStreaming();
+  assert.deepEqual(plain.trace, [
+    'record:buffered',
+    'emit:event.appended',
+    'record:status-line',
+    'emit:event.appended',
+  ]);
 });
 
 test('tool_call deltas of one toolUseId collapse onto the latest snapshot', () => {
@@ -396,22 +397,6 @@ test('tool_call deltas of one toolUseId collapse onto the latest snapshot', () =
       ['d', undefined, undefined, undefined],
     ],
   );
-});
-
-test('plain append flushes the buffered run first and flush is idempotent', () => {
-  const { timeline, trace } = createHarness({ streamingCoalesceMs: 1000 });
-
-  timeline.appendStreaming(delta('buffered'));
-  timeline.append(delta('status-line', { kind: 'status', author: 'user' }));
-  timeline.flushStreaming();
-  timeline.flushStreaming();
-
-  assert.deepEqual(trace, [
-    'record:buffered',
-    'emit:event.appended',
-    'record:status-line',
-    'emit:event.appended',
-  ]);
 });
 
 test('plain restore resolves aliases, records in order, and emits replace telemetry', () => {
@@ -519,7 +504,7 @@ test('Mission Control restore preserves progress, child links, cursor, identity,
   assert.equal(page.mode, 'replace');
 });
 
-test('older restore prepends only transcripts and preserves page telemetry', () => {
+test('older restore prepends only transcripts, and a failed older page is an empty terminal prepend', () => {
   const event = transcript('older');
   const harness = createHarness({
     summaries: [summary('app-1', 'provider-1')],
@@ -544,10 +529,9 @@ test('older restore prepends only transcripts and preserves page telemetry', () 
   assert.equal(page.olderCursor, 'cursor-2');
   assert.equal(page.loadedCount, 1);
   assert.equal(page.hasMore, true);
-});
 
-test('older failure emits an empty terminal prepend without an error', () => {
-  const harness = createHarness({
+  // A failed older page is an empty terminal prepend, not an error.
+  const failed = createHarness({
     summaries: [summary('app-1', 'provider-1')],
     loaders: {
       transcriptWindow: () => {
@@ -556,17 +540,17 @@ test('older failure emits an empty terminal prepend without an error', () => {
     },
   });
 
-  harness.timeline.load('provider-1', 'cursor-1');
+  failed.timeline.load('provider-1', 'cursor-1');
 
-  assert.equal(harness.errors.length, 0);
-  assert.equal(harness.emitted.length, 1);
-  const page = harness.emitted[0];
-  assert.equal(page?.type, 'session.history');
-  if (page?.type !== 'session.history') return;
-  assert.equal(page.mode, 'prepend');
-  assert.deepEqual(page.transcripts, []);
-  assert.equal(page.olderCursor, undefined);
-  assert.equal(page.hasMore, false);
+  assert.equal(failed.errors.length, 0);
+  assert.equal(failed.emitted.length, 1);
+  const empty = failed.emitted[0];
+  assert.equal(empty?.type, 'session.history');
+  if (empty?.type !== 'session.history') return;
+  assert.equal(empty.mode, 'prepend');
+  assert.deepEqual(empty.transcripts, []);
+  assert.equal(empty.olderCursor, undefined);
+  assert.equal(empty.hasMore, false);
 });
 
 test('an open session reads its own transcript before the history index knows the file', async (t) => {
@@ -656,9 +640,9 @@ test('missing live history emits an authoritative empty replace page', () => {
   assert.equal(page.hasMore, false);
 });
 
-test('non-live failure emits stable recoverable errors and permits retry', () => {
+test('a failed load or a partial recording emits a recoverable error page and permits retry', () => {
   let fail = true;
-  const harness = createHarness({
+  const failing = createHarness({
     summaries: [summary('stable-app', 'provider-current')],
     loaders: {
       transcriptWindow: () => {
@@ -667,25 +651,21 @@ test('non-live failure emits stable recoverable errors and permits retry', () =>
       },
     },
   });
+  const recoverable = (message: string) => ({
+    appSessionId: 'stable-app',
+    providerSessionId: 'provider-current',
+    message,
+    recoverable: true,
+  });
 
-  harness.timeline.load('provider-current');
-  assert.equal(harness.emitted[0]?.type, 'session.history.error');
-  assert.deepEqual(harness.errors, [
-    {
-      appSessionId: 'stable-app',
-      providerSessionId: 'provider-current',
-      message: 'temporarily unavailable',
-      recoverable: true,
-    },
-  ]);
-
+  failing.timeline.load('provider-current');
+  assert.equal(failing.emitted[0]?.type, 'session.history.error');
+  assert.deepEqual(failing.errors, [recoverable('temporarily unavailable')]);
   fail = false;
-  harness.timeline.load('provider-current');
-  assert.equal(harness.emitted.at(-1)?.type, 'session.history');
-});
+  failing.timeline.load('provider-current');
+  assert.equal(failing.emitted.at(-1)?.type, 'session.history');
 
-test('recording failure prevents a history page after a partial write', () => {
-  const harness = createHarness({
+  const partial = createHarness({
     summaries: [summary('stable-app', 'provider-current')],
     loaders: {
       transcriptWindow: () => ({
@@ -696,26 +676,17 @@ test('recording failure prevents a history page after a partial write', () => {
       if (event.id === 'recording-fails') throw new Error('index unavailable');
     },
   });
-
-  harness.timeline.load('provider-current');
-
+  partial.timeline.load('provider-current');
   assert.deepEqual(
-    harness.recorded.map((event) => event.id),
+    partial.recorded.map((event) => event.id),
     ['recorded-first'],
   );
   assert.equal(
-    harness.emitted.some((event) => event.type === 'session.history'),
+    partial.emitted.some((event) => event.type === 'session.history'),
     false,
   );
-  assert.equal(harness.emitted[0]?.type, 'session.history.error');
-  assert.deepEqual(harness.errors, [
-    {
-      appSessionId: 'stable-app',
-      providerSessionId: 'provider-current',
-      message: 'index unavailable',
-      recoverable: true,
-    },
-  ]);
+  assert.equal(partial.emitted[0]?.type, 'session.history.error');
+  assert.deepEqual(partial.errors, [recoverable('index unavailable')]);
 });
 
 test('legacy provider pages keep their shape, identity, order, limit, and error behavior', () => {
@@ -828,40 +799,7 @@ test('child history loads a canonical replace batch and reports replay failures 
   });
 });
 
-test('a live child with no flushed provider file returns an empty successful history page', () => {
-  const harness = createHarness({
-    loaders: {
-      resolveChain: () => [],
-      transcriptWindow: (_appSessionId, chain) => {
-        assert.deepEqual(chain, ['child-provider']);
-        return { events: [] };
-      },
-    },
-  });
-
-  harness.timeline.loadChildHistory({
-    appSessionId: 'app-1',
-    childSessionId: 'child-logical',
-    childProviderSessionIds: ['child-provider'],
-    role: 'worker',
-  });
-
-  assert.equal(harness.errors.length, 0);
-  assert.deepEqual(harness.emitted, [
-    {
-      type: 'session.history',
-      appSessionId: 'app-1',
-      childSessionId: 'child-logical',
-      progress: [],
-      transcripts: [],
-      mode: 'replace',
-      loadedCount: 0,
-      hasMore: false,
-    },
-  ]);
-});
-
-test('child history older page prepends and reports cursor exhaustion', () => {
+test('child history pages prepend, report exhaustion, and stay successful before any flush', () => {
   const harness = createHarness({
     loaders: {
       resolveChain: () => ['child-provider'],
@@ -900,6 +838,38 @@ test('child history older page prepends and reports cursor exhaustion', () => {
   assert.equal(second.mode, 'prepend');
   assert.equal(second.loadedCount, 0);
   assert.equal(second.hasMore, false);
+
+  // A live child with no flushed provider file gets an empty successful page.
+  const live = createHarness({
+    loaders: {
+      resolveChain: () => [],
+      transcriptWindow: (_appSessionId, chain) => {
+        assert.deepEqual(chain, ['child-provider']);
+        return { events: [] };
+      },
+    },
+  });
+
+  live.timeline.loadChildHistory({
+    appSessionId: 'app-1',
+    childSessionId: 'child-logical',
+    childProviderSessionIds: ['child-provider'],
+    role: 'worker',
+  });
+
+  assert.equal(live.errors.length, 0);
+  assert.deepEqual(live.emitted, [
+    {
+      type: 'session.history',
+      appSessionId: 'app-1',
+      childSessionId: 'child-logical',
+      progress: [],
+      transcripts: [],
+      mode: 'replace',
+      loadedCount: 0,
+      hasMore: false,
+    },
+  ]);
 });
 
 test('notice appends keep unique IDs, one clock read, compact type, source, and role', () => {
@@ -944,14 +914,13 @@ test('notice appends keep unique IDs, one clock read, compact type, source, and 
     errorKind: 'usage_limit',
     resetsAt: 7,
   });
-});
 
-test('automatic compaction appends a persistent provider-identified divider', () => {
-  const harness = createHarness({ now: () => 200 });
+  // Automatic compaction appends a persistent divider identified by its provider.
+  const compacted = createHarness({ now: () => 200 });
 
-  harness.timeline.appendCompaction('app-1', 42, 'worker-1', 'worker', 'summary-1');
+  compacted.timeline.appendCompaction('app-1', 42, 'worker-1', 'worker', 'summary-1');
 
-  assert.deepEqual(harness.recorded, [
+  assert.deepEqual(compacted.recorded, [
     {
       id: 'compaction-worker-1-summary-1',
       appSessionId: 'app-1',
@@ -963,7 +932,10 @@ test('automatic compaction appends a persistent provider-identified divider', ()
       compactType: 'auto',
     },
   ]);
-  assert.deepEqual(harness.trace, ['record:compaction-worker-1-summary-1', 'emit:event.appended']);
+  assert.deepEqual(compacted.trace, [
+    'record:compaction-worker-1-summary-1',
+    'emit:event.appended',
+  ]);
 });
 
 test('history listing preserves loader ordering and reports loader failures', () => {

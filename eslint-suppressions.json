@@ -17,9 +17,6 @@
   "sidecar/src/SessionTimeline.test.ts": {
     "max-lines": {
       "count": 1
-    },
-    "no-restricted-syntax": {
-      "count": 1
     }
   },
   "sidecar/src/automations/AutomationManager.test.ts": {
