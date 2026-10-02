@@ -3,13 +3,9 @@ import test from 'node:test';
 
 import { HotPathMetrics } from './hotPathMetrics.js';
 
-function freshMetrics(): HotPathMetrics {
-  return new HotPathMetrics();
-}
-
-test('nothing is reported before enable, and enable keeps a stable start baseline', (t) => {
+test('nothing is reported before enable, enable keeps its start, and event-loop sampling is opt-in', (t) => {
   t.mock.timers.enable({ apis: ['Date'], now: 1_000 });
-  const metrics = freshMetrics();
+  const metrics = new HotPathMetrics();
   const before = metrics.snapshot();
   assert.equal(before.eventLoop, null);
   assert.equal(before.resources, null);
@@ -20,10 +16,20 @@ test('nothing is reported before enable, and enable keeps a stable start baselin
   metrics.enable();
   assert.equal(metrics.snapshot().startedAt, 1_000);
   assert.equal(metrics.snapshot().uptimeMs, 15);
+  assert.equal(metrics.snapshot().eventLoop, null);
+
+  metrics.enableEventLoop();
+  const armed = metrics.snapshot().eventLoop;
+  assert.ok(armed !== null);
+  assert.ok(Number.isFinite(armed.meanMs));
+  metrics.enableEventLoop();
+  assert.ok(metrics.snapshot().eventLoop !== null);
+  metrics.disable();
+  assert.equal(metrics.snapshot().eventLoop, null);
 });
 
-test('enable records counters without arming the event-loop sampler', () => {
-  const metrics = freshMetrics();
+test('recorded samples reach the snapshot, and reset clears them so runs stay independent', () => {
+  const metrics = new HotPathMetrics();
   metrics.enable();
   metrics.recordNormalize(0.5);
   metrics.recordNormalize(1.5);
@@ -33,54 +39,10 @@ test('enable records counters without arming the event-loop sampler', () => {
   metrics.recordPersistenceFailure();
   metrics.recordPersistenceRecovery();
   metrics.recordEmit(3);
-  metrics.recordTransport(0.25, 1_000, 1);
-  metrics.recordCoalesce(4);
-
-  const snapshot = metrics.snapshot();
-  assert.equal(snapshot.eventLoop, null);
-  assert.equal(snapshot.counters.normalized, 2);
-  assert.equal(snapshot.counters.persisted, 1);
-  assert.equal(snapshot.counters.persistenceFailures, 1);
-  assert.equal(snapshot.counters.persistenceRecoveries, 1);
-  assert.equal(snapshot.counters.emitted, 1);
-  assert.equal(snapshot.counters.transportSends, 1);
-  assert.equal(snapshot.counters.coalesceFlushes, 1);
-  assert.equal(snapshot.histograms.normalizeMs.p50Ms, 0.5);
-  assert.equal(snapshot.histograms.persistenceStartupMs.maxMs, 4);
-  assert.equal(snapshot.histograms.persistMs.maxMs, 2);
-  assert.equal(snapshot.histograms.persistenceBoundaryMs.maxMs, 7);
-  assert.equal(snapshot.histograms.coalesceMerged.maxMs, 4);
-  assert.equal(snapshot.transport.bytesTotal, 1_000);
-  assert.ok(snapshot.transport.bytesPerSecondAvg > 0);
-  assert.ok(snapshot.process.rssBytes > 0);
-  assert.ok(snapshot.process.cpuUserMs >= 0);
-
   // Transport takes explicit aggregate bytes and send operations.
+  metrics.recordTransport(0.25, 1_000, 1);
   metrics.recordTransport(1, 300, 3);
-  assert.equal(metrics.snapshot().transport.bytesTotal, 1_300);
-  assert.equal(metrics.snapshot().counters.transportSends, 4);
-});
-
-test('event-loop sampling is opt-in and disarms on disable', () => {
-  const metrics = freshMetrics();
-  metrics.enable();
-  assert.equal(metrics.snapshot().eventLoop, null);
-
-  metrics.enableEventLoop();
-  const armed = metrics.snapshot().eventLoop;
-  assert.ok(armed !== null);
-  assert.ok(Number.isFinite(armed.meanMs));
-
-  metrics.enableEventLoop();
-  assert.ok(metrics.snapshot().eventLoop !== null);
-
-  metrics.disable();
-  assert.equal(metrics.snapshot().eventLoop, null);
-});
-
-test('phase 1 metrics expose reduction, queue peaks, replay and backpressure', () => {
-  const metrics = freshMetrics();
-  metrics.enable();
+  metrics.recordCoalesce(4);
   metrics.recordTransportBatch({
     logicalEvents: 10,
     deliveredEvents: 7,
@@ -111,13 +73,31 @@ test('phase 1 metrics expose reduction, queue peaks, replay and backpressure', (
   metrics.recordReplayBuffer(4, 2_048);
 
   const snapshot = metrics.snapshot();
-  assert.equal(snapshot.counters.transportBatches, 2);
-  assert.equal(snapshot.counters.transportLogicalEvents, 11);
-  assert.equal(snapshot.counters.transportDeliveredEvents, 8);
-  assert.equal(snapshot.counters.transportImmediateBatches, 1);
-  assert.equal(snapshot.counters.transportReplayedBatches, 2);
-  assert.equal(snapshot.counters.transportReplayedEvents, 7);
-  assert.equal(snapshot.counters.transportBackpressureDisconnects, 1);
+  assert.deepEqual(snapshot.counters, {
+    normalized: 2,
+    persisted: 1,
+    persistenceFailures: 1,
+    persistenceRecoveries: 1,
+    emitted: 1,
+    transportSends: 4,
+    coalesceFlushes: 1,
+    transportBatches: 2,
+    transportLogicalEvents: 11,
+    transportDeliveredEvents: 8,
+    transportImmediateBatches: 1,
+    transportReplayedBatches: 2,
+    transportReplayedEvents: 7,
+    transportBackpressureDisconnects: 1,
+  });
+  assert.equal(snapshot.histograms.normalizeMs.p50Ms, 0.5);
+  assert.equal(snapshot.histograms.persistenceStartupMs.maxMs, 4);
+  assert.equal(snapshot.histograms.persistMs.maxMs, 2);
+  assert.equal(snapshot.histograms.persistenceBoundaryMs.maxMs, 7);
+  assert.equal(snapshot.histograms.coalesceMerged.maxMs, 4);
+  assert.equal(snapshot.histograms.transportBatchEvents.p50Ms, 1);
+  assert.equal(snapshot.histograms.transportBatchEvents.maxMs, 7);
+  assert.equal(snapshot.transport.bytesTotal, 1_300);
+  assert.ok(snapshot.transport.bytesPerSecondAvg > 0);
   assert.equal(snapshot.transport.eventReductionRatio, 0.273);
   assert.equal(snapshot.transport.queue.pendingEvents, 0);
   assert.equal(snapshot.transport.queue.pendingEventsMax, 12);
@@ -125,12 +105,22 @@ test('phase 1 metrics expose reduction, queue peaks, replay and backpressure', (
   assert.equal(snapshot.transport.clientBufferedBytesMax, 20_000);
   assert.equal(snapshot.transport.replayBytesTotal, 1_400);
   assert.equal(snapshot.transport.replayBuffer.batches, 4);
-  assert.equal(snapshot.histograms.transportBatchEvents.p50Ms, 1);
-  assert.equal(snapshot.histograms.transportBatchEvents.maxMs, 7);
+  assert.ok(snapshot.process.rssBytes > 0);
+  assert.ok(snapshot.process.cpuUserMs >= 0);
+
+  metrics.reset();
+  const cleared = metrics.snapshot();
+  assert.ok(Object.values(cleared.counters).every((count) => count === 0));
+  assert.equal(cleared.transport.bytesTotal, 0);
+  assert.equal(cleared.transport.eventReductionRatio, 0);
+  assert.ok(Object.values(cleared.transport.queue).every((value) => value === 0));
+  assert.ok(Object.values(cleared.transport.replayBuffer).every((value) => value === 0));
+  assert.equal(cleared.eventLoop, null);
+  assert.equal(cleared.uptimeMs, 0);
 });
 
 test('gauge provider supplies resource counts and failures degrade to null', () => {
-  const metrics = freshMetrics();
+  const metrics = new HotPathMetrics();
   metrics.enable();
   const counts = {
     livePrimarySessions: 2,
@@ -155,60 +145,8 @@ test('gauge provider supplies resource counts and failures degrade to null', () 
   assert.equal(metrics.snapshot().resources, null);
 });
 
-test('reset clears samples so consecutive runs stay independent', () => {
-  const metrics = freshMetrics();
-  metrics.enable();
-  metrics.recordNormalize(1);
-  metrics.recordTransport(1, 10, 1);
-  metrics.recordTransportBatch({
-    logicalEvents: 2,
-    deliveredEvents: 1,
-    bytes: 100,
-    queueDelayMs: 4,
-    immediate: false,
-  });
-  metrics.recordReplayBuffer(1, 100);
-  metrics.reset();
-
-  const snapshot = metrics.snapshot();
-  assert.deepEqual(snapshot.counters, {
-    normalized: 0,
-    persisted: 0,
-    persistenceFailures: 0,
-    persistenceRecoveries: 0,
-    emitted: 0,
-    transportSends: 0,
-    coalesceFlushes: 0,
-    transportBatches: 0,
-    transportLogicalEvents: 0,
-    transportDeliveredEvents: 0,
-    transportImmediateBatches: 0,
-    transportReplayedBatches: 0,
-    transportReplayedEvents: 0,
-    transportBackpressureDisconnects: 0,
-  });
-  assert.equal(snapshot.transport.bytesTotal, 0);
-  assert.equal(snapshot.transport.eventReductionRatio, 0);
-  assert.deepEqual(snapshot.transport.queue, {
-    pendingEvents: 0,
-    pendingEstimatedBytes: 0,
-    oldestPendingAgeMs: 0,
-    pendingEventsMax: 0,
-    pendingEstimatedBytesMax: 0,
-    oldestPendingAgeMsMax: 0,
-  });
-  assert.deepEqual(snapshot.transport.replayBuffer, {
-    batches: 0,
-    bytes: 0,
-    batchesMax: 0,
-    bytesMax: 0,
-  });
-  assert.equal(snapshot.eventLoop, null);
-  assert.equal(snapshot.uptimeMs, 0);
-});
-
 test('transport byte samples wrap the ring without losing totals', () => {
-  const metrics = freshMetrics();
+  const metrics = new HotPathMetrics();
   metrics.enable();
   const sends = 10_500;
   for (let index = 0; index < sends; index += 1) metrics.recordTransport(0.1, 2, 1);
