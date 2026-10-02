@@ -2,12 +2,10 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { compactPath, displayPath, relativeWorkspaceFilePath } from './pathDisplay';
 
-test('relativeWorkspaceFilePath joins relative review paths to the session folder', () => {
+test('relativeWorkspaceFilePath keeps previews inside the session folder, accepting relative and absolute descendants', () => {
   assert.equal(relativeWorkspaceFilePath('src/app.ts', '/repo'), 'src/app.ts');
   assert.equal(relativeWorkspaceFilePath('./src/app.ts', '/repo'), 'src/app.ts');
-});
 
-test('workspace previews reject paths outside their root', () => {
   for (const file of [
     '../shared/foo.ts',
     '/repository/file.ts',
@@ -17,9 +15,7 @@ test('workspace previews reject paths outside their root', () => {
     assert.throws(() => relativeWorkspaceFilePath(file, '/repo'), /outside/);
   }
   assert.throws(() => relativeWorkspaceFilePath('file.ts', ''), /required/);
-});
 
-test('workspace previews accept absolute descendants and root folders', () => {
   assert.equal(relativeWorkspaceFilePath('/repo/src/app.ts', '/repo'), 'src/app.ts');
   assert.equal(relativeWorkspaceFilePath('etc/hosts', '/'), 'etc/hosts');
   assert.equal(relativeWorkspaceFilePath('C:/Repo/src/app.ts', 'c:/repo'), 'src/app.ts');
