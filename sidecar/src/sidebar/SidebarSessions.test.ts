@@ -7,27 +7,18 @@ import type { SessionSummary } from '../protocol.js';
 import type { SidebarRow } from './protocol.js';
 import { SidebarSessions, type SidebarHost } from './SidebarSessions.js';
 import { SIDEBAR_REQUEST_TIMEOUT_MS, SidebarRequests } from './sidebarRequests.js';
+import { sessionSummary } from '../testing/sessionSummaryFixture.js';
 
 function summary(appSessionId: string, patch: Partial<SessionSummary> = {}): SessionSummary {
-  return {
+  return sessionSummary({
     appSessionId,
-    provider: 'droid',
-    sessionPurpose: 'chat',
-    interactionMode: 'auto',
-    role: 'primary',
-    title: appSessionId,
-    goal: '',
+    providerSessionId: undefined,
     cwd: '/work',
     autonomy: 'medium',
     phase: 'completed',
-    features: [],
-    tokensIn: 0,
-    tokensOut: 0,
-    contextTokens: 0,
-    createdAt: 0,
     updatedAt: 1_000,
     ...patch,
-  };
+  });
 }
 
 function row(appSessionId: string, patch: Partial<SidebarRow> = {}): SidebarRow {
@@ -301,6 +292,12 @@ test('answers reach the question a chat waits on, and a plain message is refused
   await assert.rejects(sidebar.send('caller', 'asking', 'Hurry up'), /waiting on the question/);
   await assert.rejects(sidebar.send('caller', 'asking', '', ['v3'], 'ask-1'), /asked 2 questions/);
   await assert.rejects(sidebar.send('caller', 'idle', '', ['v3']), /no question waiting/);
+  // Answers name their question, so a late one never lands on a newer question.
+  await assert.rejects(
+    sidebar.send('caller', 'asking', '', ['v3', 'no'], 'ask-0'),
+    /no longer waiting on that question/,
+  );
+  await assert.rejects(sidebar.send('caller', 'asking', '', ['v3', 'no']), /questionId/);
   assert.deepEqual(calls, []);
 
   const answered = await sidebar.send(
@@ -320,35 +317,6 @@ test('answers reach the question a chat waits on, and a plain message is refused
     'answer asking ask-1: v3, no',
     'note asking: Release notes, another chat, answered this question.',
   ]);
-});
-
-test('answers name their question, so a late one never lands on a newer question', async () => {
-  const { sidebar, calls } = harness({
-    rows: [
-      row('asking', {
-        status: 'input',
-        label: 'Needs input',
-        question: {
-          requestId: 'ask-2',
-          questions: [
-            {
-              index: 0,
-              question: 'Delete the old files?',
-              options: [{ label: 'yes' }, { label: 'no' }],
-            },
-          ],
-        },
-      }),
-    ],
-    sessions: [summary('caller'), summary('asking')],
-  });
-  // The caller read ask-1, which the user has since answered in the chat.
-  await assert.rejects(
-    sidebar.send('caller', 'asking', '', ['v3'], 'ask-1'),
-    /no longer waiting on that question/,
-  );
-  await assert.rejects(sidebar.send('caller', 'asking', '', ['yes']), /questionId/);
-  assert.deepEqual(calls, []);
 });
 
 test('a stop is refused to a chat waiting on the user or with no turn, and interrupts a working one', async () => {
