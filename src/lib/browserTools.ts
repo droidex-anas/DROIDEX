@@ -52,7 +52,7 @@ export function describeBrowserCall(tool: string, args: unknown): BrowserStep | 
   const text = (key: string) => (typeof record[key] === 'string' ? record[key] : '');
   const step = ([verb, liveVerb]: Verbs, object = ''): BrowserStep => ({ verb, liveVerb, object });
   if (tool === 'browser_open') {
-    return text('action') in HISTORY
+    return Object.hasOwn(HISTORY, text('action'))
       ? step(HISTORY[text('action')])
       : step(['Opened', 'Opening'], text('url'));
   }
@@ -66,7 +66,7 @@ export function describeBrowserCall(tool: string, args: unknown): BrowserStep | 
   }
   if (tool === 'browser_find') return step(['Looked for', 'Looking for'], text('query'));
   if (tool === 'browser_press') return step(['Pressed', 'Pressing'], text('key'));
-  return tool in STEPS ? step(STEPS[tool]) : null;
+  return Object.hasOwn(STEPS, tool) ? step(STEPS[tool]) : null;
 }
 
 export interface BrowserPage {
