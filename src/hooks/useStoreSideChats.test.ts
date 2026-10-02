@@ -70,20 +70,20 @@ test('a side chat branched across harnesses also stays beside its source', () =>
   assert.deepEqual(state.sideChats['source']?.view, { kind: 'current' });
 });
 
-test('a failed start hands the question back to the side-chat composer', () => {
-  let state = startSideChat(withSource(), 'ref-3', 'Keep this question');
-  state = reducer(state, { type: 'SESSION_CREATE_FAILED', clientRef: 'ref-3', message: 'nope' });
-
-  assert.deepEqual(state.pendingForks, {});
-  assert.deepEqual(state.sideChats['source']?.view, { kind: 'new', prompt: 'Keep this question' });
-});
-
-test('a lost bridge settles a start it will never answer', () => {
-  let state = startSideChat(withSource(), 'ref-5', 'Still waiting');
-  state = reducer(state, { type: 'SET_CONNECTION', status: 'connecting' });
-
-  assert.deepEqual(state.pendingForks, {});
-  assert.deepEqual(state.sideChats['source']?.view, { kind: 'new', prompt: 'Still waiting' });
+test('a failed or abandoned start hands the question back to the side-chat composer', () => {
+  const endings: Array<[string, Parameters<typeof reducer>[1]]> = [
+    ['create failed', { type: 'SESSION_CREATE_FAILED', clientRef: 'ref-3', message: 'nope' }],
+    ['bridge lost', { type: 'SET_CONNECTION', status: 'connecting' }],
+  ];
+  for (const [label, ending] of endings) {
+    const state = reducer(startSideChat(withSource(), 'ref-3', 'Keep this question'), ending);
+    assert.deepEqual(state.pendingForks, {}, label);
+    assert.deepEqual(
+      state.sideChats['source']?.view,
+      { kind: 'new', prompt: 'Keep this question' },
+      label,
+    );
+  }
 });
 
 test('a start that lands after the user moved on leaves their view alone', () => {
