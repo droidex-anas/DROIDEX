@@ -323,7 +323,7 @@ test('streaming byte budget flushes early without dropping or truncating content
   );
 });
 
-test('a non-mergeable event, a kind or source change, or a plain append ends the buffered run in order', () => {
+test('a non-mergeable event or a kind or source change ends the buffered run in order', () => {
   const { recorded, timeline, trace } = createHarness({ streamingCoalesceMs: 1000 });
 
   timeline.appendStreaming(delta('a', { text: 'thought ', kind: 'thinking' }));
@@ -345,14 +345,17 @@ test('a non-mergeable event, a kind or source change, or a plain append ends the
     recorded.map((event) => event.id),
     ['a', 'echo', 'c', 'd', 'e'],
   );
+});
 
-  // A plain append flushes the buffered run first, and a second flush is a no-op.
-  const plain = createHarness({ streamingCoalesceMs: 1000 });
-  plain.timeline.appendStreaming(delta('buffered'));
-  plain.timeline.append(delta('status-line', { kind: 'status', author: 'user' }));
-  plain.timeline.flushStreaming();
-  plain.timeline.flushStreaming();
-  assert.deepEqual(plain.trace, [
+test('plain append flushes the buffered run first and flush is idempotent', () => {
+  const { timeline, trace } = createHarness({ streamingCoalesceMs: 1000 });
+
+  timeline.appendStreaming(delta('buffered'));
+  timeline.append(delta('status-line', { kind: 'status', author: 'user' }));
+  timeline.flushStreaming();
+  timeline.flushStreaming();
+
+  assert.deepEqual(trace, [
     'record:buffered',
     'emit:event.appended',
     'record:status-line',
@@ -504,7 +507,7 @@ test('Mission Control restore preserves progress, child links, cursor, identity,
   assert.equal(page.mode, 'replace');
 });
 
-test('older restore prepends only transcripts, and a failed older page is an empty terminal prepend', () => {
+test('older restore prepends only transcripts and preserves page telemetry', () => {
   const event = transcript('older');
   const harness = createHarness({
     summaries: [summary('app-1', 'provider-1')],
@@ -529,9 +532,10 @@ test('older restore prepends only transcripts, and a failed older page is an emp
   assert.equal(page.olderCursor, 'cursor-2');
   assert.equal(page.loadedCount, 1);
   assert.equal(page.hasMore, true);
+});
 
-  // A failed older page is an empty terminal prepend, not an error.
-  const failed = createHarness({
+test('older failure emits an empty terminal prepend without an error', () => {
+  const harness = createHarness({
     summaries: [summary('app-1', 'provider-1')],
     loaders: {
       transcriptWindow: () => {
@@ -540,17 +544,17 @@ test('older restore prepends only transcripts, and a failed older page is an emp
     },
   });
 
-  failed.timeline.load('provider-1', 'cursor-1');
+  harness.timeline.load('provider-1', 'cursor-1');
 
-  assert.equal(failed.errors.length, 0);
-  assert.equal(failed.emitted.length, 1);
-  const empty = failed.emitted[0];
-  assert.equal(empty?.type, 'session.history');
-  if (empty?.type !== 'session.history') return;
-  assert.equal(empty.mode, 'prepend');
-  assert.deepEqual(empty.transcripts, []);
-  assert.equal(empty.olderCursor, undefined);
-  assert.equal(empty.hasMore, false);
+  assert.equal(harness.errors.length, 0);
+  assert.equal(harness.emitted.length, 1);
+  const page = harness.emitted[0];
+  assert.equal(page?.type, 'session.history');
+  if (page?.type !== 'session.history') return;
+  assert.equal(page.mode, 'prepend');
+  assert.deepEqual(page.transcripts, []);
+  assert.equal(page.olderCursor, undefined);
+  assert.equal(page.hasMore, false);
 });
 
 test('an open session reads its own transcript before the history index knows the file', async (t) => {
@@ -640,9 +644,9 @@ test('missing live history emits an authoritative empty replace page', () => {
   assert.equal(page.hasMore, false);
 });
 
-test('a failed load or a partial recording emits a recoverable error page and permits retry', () => {
+test('non-live failure emits stable recoverable errors and permits retry', () => {
   let fail = true;
-  const failing = createHarness({
+  const harness = createHarness({
     summaries: [summary('stable-app', 'provider-current')],
     loaders: {
       transcriptWindow: () => {
@@ -651,21 +655,25 @@ test('a failed load or a partial recording emits a recoverable error page and pe
       },
     },
   });
-  const recoverable = (message: string) => ({
-    appSessionId: 'stable-app',
-    providerSessionId: 'provider-current',
-    message,
-    recoverable: true,
-  });
 
-  failing.timeline.load('provider-current');
-  assert.equal(failing.emitted[0]?.type, 'session.history.error');
-  assert.deepEqual(failing.errors, [recoverable('temporarily unavailable')]);
+  harness.timeline.load('provider-current');
+  assert.equal(harness.emitted[0]?.type, 'session.history.error');
+  assert.deepEqual(harness.errors, [
+    {
+      appSessionId: 'stable-app',
+      providerSessionId: 'provider-current',
+      message: 'temporarily unavailable',
+      recoverable: true,
+    },
+  ]);
+
   fail = false;
-  failing.timeline.load('provider-current');
-  assert.equal(failing.emitted.at(-1)?.type, 'session.history');
+  harness.timeline.load('provider-current');
+  assert.equal(harness.emitted.at(-1)?.type, 'session.history');
+});
 
-  const partial = createHarness({
+test('recording failure prevents a history page after a partial write', () => {
+  const harness = createHarness({
     summaries: [summary('stable-app', 'provider-current')],
     loaders: {
       transcriptWindow: () => ({
@@ -676,17 +684,26 @@ test('a failed load or a partial recording emits a recoverable error page and pe
       if (event.id === 'recording-fails') throw new Error('index unavailable');
     },
   });
-  partial.timeline.load('provider-current');
+
+  harness.timeline.load('provider-current');
+
   assert.deepEqual(
-    partial.recorded.map((event) => event.id),
+    harness.recorded.map((event) => event.id),
     ['recorded-first'],
   );
   assert.equal(
-    partial.emitted.some((event) => event.type === 'session.history'),
+    harness.emitted.some((event) => event.type === 'session.history'),
     false,
   );
-  assert.equal(partial.emitted[0]?.type, 'session.history.error');
-  assert.deepEqual(partial.errors, [recoverable('index unavailable')]);
+  assert.equal(harness.emitted[0]?.type, 'session.history.error');
+  assert.deepEqual(harness.errors, [
+    {
+      appSessionId: 'stable-app',
+      providerSessionId: 'provider-current',
+      message: 'index unavailable',
+      recoverable: true,
+    },
+  ]);
 });
 
 test('legacy provider pages keep their shape, identity, order, limit, and error behavior', () => {
@@ -799,7 +816,40 @@ test('child history loads a canonical replace batch and reports replay failures 
   });
 });
 
-test('child history pages prepend, report exhaustion, and stay successful before any flush', () => {
+test('a live child with no flushed provider file returns an empty successful history page', () => {
+  const harness = createHarness({
+    loaders: {
+      resolveChain: () => [],
+      transcriptWindow: (_appSessionId, chain) => {
+        assert.deepEqual(chain, ['child-provider']);
+        return { events: [] };
+      },
+    },
+  });
+
+  harness.timeline.loadChildHistory({
+    appSessionId: 'app-1',
+    childSessionId: 'child-logical',
+    childProviderSessionIds: ['child-provider'],
+    role: 'worker',
+  });
+
+  assert.equal(harness.errors.length, 0);
+  assert.deepEqual(harness.emitted, [
+    {
+      type: 'session.history',
+      appSessionId: 'app-1',
+      childSessionId: 'child-logical',
+      progress: [],
+      transcripts: [],
+      mode: 'replace',
+      loadedCount: 0,
+      hasMore: false,
+    },
+  ]);
+});
+
+test('child history older page prepends and reports cursor exhaustion', () => {
   const harness = createHarness({
     loaders: {
       resolveChain: () => ['child-provider'],
@@ -838,38 +888,6 @@ test('child history pages prepend, report exhaustion, and stay successful before
   assert.equal(second.mode, 'prepend');
   assert.equal(second.loadedCount, 0);
   assert.equal(second.hasMore, false);
-
-  // A live child with no flushed provider file gets an empty successful page.
-  const live = createHarness({
-    loaders: {
-      resolveChain: () => [],
-      transcriptWindow: (_appSessionId, chain) => {
-        assert.deepEqual(chain, ['child-provider']);
-        return { events: [] };
-      },
-    },
-  });
-
-  live.timeline.loadChildHistory({
-    appSessionId: 'app-1',
-    childSessionId: 'child-logical',
-    childProviderSessionIds: ['child-provider'],
-    role: 'worker',
-  });
-
-  assert.equal(live.errors.length, 0);
-  assert.deepEqual(live.emitted, [
-    {
-      type: 'session.history',
-      appSessionId: 'app-1',
-      childSessionId: 'child-logical',
-      progress: [],
-      transcripts: [],
-      mode: 'replace',
-      loadedCount: 0,
-      hasMore: false,
-    },
-  ]);
 });
 
 test('notice appends keep unique IDs, one clock read, compact type, source, and role', () => {
@@ -914,13 +932,14 @@ test('notice appends keep unique IDs, one clock read, compact type, source, and 
     errorKind: 'usage_limit',
     resetsAt: 7,
   });
+});
 
-  // Automatic compaction appends a persistent divider identified by its provider.
-  const compacted = createHarness({ now: () => 200 });
+test('automatic compaction appends a persistent provider-identified divider', () => {
+  const harness = createHarness({ now: () => 200 });
 
-  compacted.timeline.appendCompaction('app-1', 42, 'worker-1', 'worker', 'summary-1');
+  harness.timeline.appendCompaction('app-1', 42, 'worker-1', 'worker', 'summary-1');
 
-  assert.deepEqual(compacted.recorded, [
+  assert.deepEqual(harness.recorded, [
     {
       id: 'compaction-worker-1-summary-1',
       appSessionId: 'app-1',
@@ -932,10 +951,7 @@ test('notice appends keep unique IDs, one clock read, compact type, source, and 
       compactType: 'auto',
     },
   ]);
-  assert.deepEqual(compacted.trace, [
-    'record:compaction-worker-1-summary-1',
-    'emit:event.appended',
-  ]);
+  assert.deepEqual(harness.trace, ['record:compaction-worker-1-summary-1', 'emit:event.appended']);
 });
 
 test('history listing preserves loader ordering and reports loader failures', () => {

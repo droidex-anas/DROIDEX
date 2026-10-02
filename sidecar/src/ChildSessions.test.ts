@@ -529,26 +529,28 @@ test('result-only completion admits the exact pending spawn as historical', () =
   assert.equal(h.history.childSessions(h.parentId)[0]?.providerSessionId, 'provider-child-current');
 });
 
-test('a state-only child is admitted without a model and keeps the moment it stopped', () => {
-  const settled = createHarness([]);
+test('a settled state-only child keeps the moment it stopped', () => {
+  const h = createHarness([]);
   const observation = {
-    parentAppSessionId: settled.parentId,
+    parentAppSessionId: h.parentId,
     providerSessionId: 'provider-state-only',
     role: 'worker' as const,
     modelId: 'model-default',
     transcriptAvailable: false,
     done: true,
   };
-  settled.owner.admitChildObservation(observation);
-  settled.advanceClock(60_000);
-  settled.owner.admitChildObservation(observation);
-  const child = settled.owner.list(settled.parentId)[0];
+  h.owner.admitChildObservation(observation);
+  h.advanceClock(60_000);
+  h.owner.admitChildObservation(observation);
+
+  const child = h.owner.list(h.parentId)[0];
   assert.equal(child?.status, 'completed');
   assert.equal(child?.settledAt, 100);
+});
 
-  // A Codex parent reports no model for its agents: it is admitted, not parked.
-  const modelless = createHarness([], { parentProvider: 'codex' });
-  const identity = observe(modelless, {
+test('a state-only child with no model is admitted rather than parked', () => {
+  const h = createHarness([], { parentProvider: 'codex' });
+  const identity = observe(h, {
     providerSessionId: 'agent-1',
     role: 'worker',
     label: 'echo:ONE',
@@ -556,9 +558,10 @@ test('a state-only child is admitted without a model and keeps the moment it sto
     transcriptAvailable: false,
     status: 'running',
   });
+
   assert.ok(identity);
   assert.deepEqual(
-    modelless.owner.list(modelless.parentId).map((item) => [item.label, item.status, item.modelId]),
+    h.owner.list(h.parentId).map((child) => [child.label, child.status, child.modelId]),
     [['echo:ONE', 'running', 'parent-model']],
   );
 });
@@ -944,46 +947,61 @@ test('completed child publication waits for durability recovery', async () => {
   );
 });
 
-test('completion rejects a stale role observation, whether queued behind settings or after it', async () => {
-  for (const order of ['queued behind settings', 'after completion'] as const) {
-    const record = childRecord('child', 'provider');
-    const h = createHarness([record]);
-    const runtime = await h.open(record);
-    h.events.length = 0;
-    const observeStaleRole = () =>
-      observe(h, {
-        providerSessionId: record.providerSessionId,
-        role: 'validator',
-        ...(record.spawnLink ? { spawnLink: record.spawnLink } : {}),
-      });
-    const complete = () =>
-      observe(h, { providerSessionId: 'provider', role: 'worker', done: true });
-    if (order === 'queued behind settings') {
-      const gate = runtime.deferNextUpdateSettings();
-      const update = updateModel(h, record, 'stale-model');
-      await new Promise<void>((resolve) => setImmediate(resolve));
-      observeStaleRole();
-      complete();
-      gate.resolve();
-      await update;
-    } else {
-      complete();
-      observeStaleRole();
-    }
-    await new Promise<void>((resolve) => setImmediate(resolve));
+test('completion invalidates a role observation queued behind settings', async () => {
+  const record = childRecord('child', 'provider');
+  const h = createHarness([record]);
+  const runtime = await h.open(record);
+  h.events.length = 0;
+  const gate = runtime.deferNextUpdateSettings();
+  const update = updateModel(h, record, 'stale-model');
+  await new Promise<void>((resolve) => setImmediate(resolve));
+  observe(h, {
+    providerSessionId: record.providerSessionId,
+    role: 'validator',
+    ...(record.spawnLink ? { spawnLink: record.spawnLink } : {}),
+  });
 
-    assert.equal(h.owner.list(h.parentId)[0]?.status, 'completed', order);
-    assert.equal(h.owner.list(h.parentId)[0]?.role, 'worker', order);
-    assert.equal(
-      h.events.some(
-        (event) =>
-          event.type === 'session.child' &&
-          (event.child.role === 'validator' || event.child.status === 'running'),
-      ),
-      false,
-      order,
-    );
-  }
+  observe(h, {
+    providerSessionId: 'provider',
+    role: 'worker',
+    done: true,
+  });
+  gate.resolve();
+  await update;
+  await new Promise<void>((resolve) => setImmediate(resolve));
+
+  assert.equal(h.owner.list(h.parentId)[0]?.status, 'completed');
+  assert.equal(h.owner.list(h.parentId)[0]?.role, 'worker');
+  assert.equal(
+    h.events.some((event) => event.type === 'session.child' && event.child.role === 'validator'),
+    false,
+  );
+});
+
+test('completion rejects an immediate stale provider observation', async () => {
+  const record = childRecord('child', 'provider');
+  const h = createHarness([record]);
+  await h.open(record);
+  h.events.length = 0;
+
+  observe(h, {
+    providerSessionId: 'provider',
+    role: 'worker',
+    done: true,
+  });
+  observe(h, {
+    providerSessionId: record.providerSessionId,
+    role: 'validator',
+    ...(record.spawnLink ? { spawnLink: record.spawnLink } : {}),
+  });
+  await new Promise<void>((resolve) => setImmediate(resolve));
+
+  assert.equal(h.owner.list(h.parentId)[0]?.status, 'completed');
+  assert.equal(h.owner.list(h.parentId)[0]?.role, 'worker');
+  assert.equal(
+    h.events.some((event) => event.type === 'session.child' && event.child.status === 'running'),
+    false,
+  );
 });
 
 test('repeated child observations publish only new task prompts', () => {
@@ -1010,35 +1028,43 @@ test('repeated child observations publish only new task prompts', () => {
   );
 });
 
-test('a repeated same-provider observation preserves in-flight compaction and settings settlement', async () => {
+test('repeated same-provider observation preserves automatic compaction settlement', async () => {
   const record = childRecord('child', 'provider');
-  const repeat = (h: Harness) =>
-    observe(h, {
-      providerSessionId: record.providerSessionId,
-      role: record.role,
-      ...(record.spawnLink ? { spawnLink: record.spawnLink } : {}),
-    });
-
-  const compacting = createHarness([record]);
-  const compactingRuntime = await compacting.open(record);
-  const target = compacting.target(record.childSessionId);
+  const h = createHarness([record]);
+  const runtime = await h.open(record);
+  const target = h.target(record.childSessionId);
   const captured = settlement(target);
   target.setAutoCompacting(true);
-  await compacting.owner.send(record, 'queued after compaction');
-  repeat(compacting);
-  compacting.owner.settleAutomatic(captured);
-  await new Promise<void>((resolve) => setImmediate(resolve));
-  assert.deepEqual(compactingRuntime.prompts, ['queued after compaction']);
+  await h.owner.send(record, 'queued after compaction');
 
-  const updating = createHarness([record]);
-  const updatingRuntime = await updating.open(record);
-  const gate = updatingRuntime.deferNextUpdateSettings();
-  const update = updateModel(updating, record, 'accepted-model');
+  observe(h, {
+    providerSessionId: record.providerSessionId,
+    role: record.role,
+    ...(record.spawnLink ? { spawnLink: record.spawnLink } : {}),
+  });
+  h.owner.settleAutomatic(captured);
   await new Promise<void>((resolve) => setImmediate(resolve));
-  repeat(updating);
+
+  assert.deepEqual(runtime.prompts, ['queued after compaction']);
+});
+
+test('repeated same-provider observation preserves in-flight settings settlement', async () => {
+  const record = childRecord('child', 'provider');
+  const h = createHarness([record]);
+  const runtime = await h.open(record);
+  const gate = runtime.deferNextUpdateSettings();
+  const update = updateModel(h, record, 'accepted-model');
+  await new Promise<void>((resolve) => setImmediate(resolve));
+
+  observe(h, {
+    providerSessionId: record.providerSessionId,
+    role: record.role,
+    ...(record.spawnLink ? { spawnLink: record.spawnLink } : {}),
+  });
   gate.resolve();
   await update;
-  assert.equal(updating.owner.list(updating.parentId)[0]?.modelId, 'accepted-model');
+
+  assert.equal(h.owner.list(h.parentId)[0]?.modelId, 'accepted-model');
 });
 
 test('changed role is serialized after accepted in-flight settings', async () => {
@@ -1798,46 +1824,57 @@ test('parent close waits for pending child adoption without reviving the child',
   assert.equal(h.calls.filter((call) => call.method === 'processes.untrack').length, 1);
 });
 
-test('a child is retired only once its turn settled and its result reached history', async () => {
+test('a child still working is never retired, however long its runtime sat unused', async () => {
   const record = childRecord('child', 'provider');
-  const working = createHarness([record], { childRuntimeIdleMs: 0 });
-  const runtime = await working.open(record);
+  const h = createHarness([record], { childRuntimeIdleMs: 0 });
+  const runtime = await h.open(record);
   const gate = runtime.deferNextStream();
-  const sending = working.owner.send(record, 'still working');
+  const sending = h.owner.send(
+    { parentAppSessionId: h.parentId, childSessionId: record.childSessionId },
+    'still working',
+  );
   await new Promise<void>((resolve) => setImmediate(resolve));
-  await working.owner.retireIdleRuntimes();
-  assert.equal(working.owner.counts().live, 1);
+
+  await h.owner.retireIdleRuntimes();
+  assert.equal(h.owner.counts().live, 1);
   assert.equal(
-    recorded(working, 'cleanup', 'session.close'),
+    recorded(h, 'cleanup', 'session.close'),
     false,
     'a streaming child must keep its provider session',
   );
+
   gate.resolve();
   await sending;
-  await working.owner.retireIdleRuntimes();
-  assert.equal(working.owner.counts().live, 0);
 
-  const undelivered = createHarness([record], { childRuntimeIdleMs: 0 });
-  await undelivered.open(record);
+  // Once its output has settled and been persisted the same child is releasable.
+  await h.owner.retireIdleRuntimes();
+  assert.equal(h.owner.counts().live, 0);
+});
+
+test('a child whose result has not reached history is not retired until it does', async () => {
+  const record = childRecord('child', 'provider');
+  const h = createHarness([record], { childRuntimeIdleMs: 0 });
+  await h.open(record);
   // Fail the settlement write once, so the turn's result exists but has not
   // reached history yet.
-  const upsert = undelivered.history.upsertChildSession.bind(undelivered.history);
-  undelivered.history.upsertChildSession = (child) => {
+  const upsert = h.history.upsertChildSession.bind(h.history);
+  h.history.upsertChildSession = (child) => {
     const durable = upsert(child);
     if (child.status !== 'paused') return durable;
-    undelivered.history.upsertChildSession = upsert;
+    h.history.upsertChildSession = upsert;
     return false;
   };
-  await undelivered.owner.send(record, 'produce a result');
-  await undelivered.owner.retireIdleRuntimes();
-  assert.equal(
-    undelivered.owner.counts().live,
-    1,
-    'an undelivered result must hold the runtime open',
+  await h.owner.send(
+    { parentAppSessionId: h.parentId, childSessionId: record.childSessionId },
+    'produce a result',
   );
-  undelivered.owner.retryPendingDurability();
-  await undelivered.owner.retireIdleRuntimes();
-  assert.equal(undelivered.owner.counts().live, 0);
+
+  await h.owner.retireIdleRuntimes();
+  assert.equal(h.owner.counts().live, 1, 'an undelivered result must hold the runtime open');
+
+  h.owner.retryPendingDurability();
+  await h.owner.retireIdleRuntimes();
+  assert.equal(h.owner.counts().live, 0);
 });
 
 test('a retired child reopens with its transcript and a fresh runtime', async () => {
