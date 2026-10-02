@@ -12,7 +12,7 @@ const {
   saveHardwareAccelerationPreference,
 } = require('./hardwareAcceleration.cjs');
 
-test('missing preference defaults to hardware acceleration enabled', () => {
+test('a missing, empty, or malformed preference file starts with hardware acceleration enabled', () => {
   assert.deepEqual(
     readHardwareAccelerationPreferenceSync({
       filePath: '/tmp/missing-hardware-acceleration.json',
@@ -26,9 +26,7 @@ test('missing preference defaults to hardware acceleration enabled', () => {
     }),
     { enabled: HARDWARE_ACCELERATION_DEFAULT },
   );
-});
 
-test('empty or malformed preference files fall back to enabled without throwing', () => {
   const cases = ['', '   ', '{broken', '{"version":2,"enabled":false}', '{"enabled":true}'];
   for (const raw of cases) {
     assert.deepEqual(
