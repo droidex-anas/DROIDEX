@@ -11,6 +11,7 @@ import type {
 import type { NormalizedSideEffects } from './SessionEventFlow.js';
 import type { ServerEvent, SessionSummary } from './protocol.js';
 import { FakeFactorySession, type RecordedCall } from './testing/fakeFactoryRuntime.js';
+import { sessionSummary } from './testing/sessionSummaryFixture.js';
 
 interface Harness {
   policy: MissionControlPolicy;
@@ -199,40 +200,30 @@ test('provider replacement preserves child identity and rejects stale provider c
   assert.equal(h.admissions.at(-1)?.providerSessionId, 'provider-new');
 });
 
-test('rejects one provider being rebound to a different spawn', () => {
-  const h = createHarness();
-  h.apply({ progress: [workerStarted('provider-shared', 'spawn-1')] });
-  h.apply({ progress: [workerStarted('provider-shared', 'spawn-2')] });
-
+test('progress names no child for a provider rebound to another spawn, a provider its owner rejected, or validation', () => {
+  const rebound = createHarness();
+  rebound.apply({ progress: [workerStarted('provider-shared', 'spawn-1')] });
+  rebound.apply({ progress: [workerStarted('provider-shared', 'spawn-2')] });
   assert.deepEqual(
-    progressEntries(h.events).map((entry) => entry.workerChildSessionId),
+    progressEntries(rebound.events).map((entry) => entry.workerChildSessionId),
     ['child-1', undefined],
   );
-  assert.equal(h.admissions.length, 1);
-});
+  assert.equal(rebound.admissions.length, 1);
 
-test('does not project a provider and spawn rejected by the generic owner', () => {
-  const h = createHarness();
-  h.rejectProvider('provider-conflict');
-  h.apply({ progress: [workerStarted('provider-conflict', 'spawn-conflict')] });
+  const rejected = createHarness();
+  rejected.rejectProvider('provider-conflict');
+  rejected.apply({ progress: [workerStarted('provider-conflict', 'spawn-conflict')] });
+  assert.equal(progressEntries(rejected.events)[0]?.workerChildSessionId, undefined);
 
-  assert.equal(progressEntries(h.events)[0]?.workerChildSessionId, undefined);
-});
-
-test('never infers a validator child from validation progress', () => {
-  const h = createHarness();
-  h.apply({
+  // A validator child is never inferred from validation progress.
+  const validation = createHarness();
+  validation.apply({
     progress: [
-      {
-        type: 'milestone_validation_triggered',
-        timestamp: 'now',
-        featureId: 'feature-validation',
-      },
+      { type: 'milestone_validation_triggered', timestamp: 'now', featureId: 'feature-validation' },
     ],
   });
-
-  assert.deepEqual(h.admissions, []);
-  assert.equal(progressEntries(h.events)[0]?.workerChildSessionId, undefined);
+  assert.deepEqual(validation.admissions, []);
+  assert.equal(progressEntries(validation.events)[0]?.workerChildSessionId, undefined);
 });
 
 test('ignores Mission effects for ordinary auto, spec, and agi chat sessions', () => {
@@ -299,25 +290,14 @@ function missionSummary(
   sessionPurpose: SessionSummary['sessionPurpose'],
   interactionMode: SessionSummary['interactionMode'],
 ): SessionSummary {
-  return {
+  return sessionSummary({
     appSessionId: 'parent-app',
     providerSessionId: 'parent-provider',
     missionId: 'mission-1',
-    provider: 'droid',
     sessionPurpose,
     interactionMode,
-    role: 'primary',
-    title: 'Mission',
-    goal: 'Ship',
-    cwd: '',
     workspaceKind: 'none',
     autonomy: 'medium',
     phase: 'running',
-    features: [],
-    tokensIn: 0,
-    tokensOut: 0,
-    contextTokens: 0,
-    createdAt: 1,
-    updatedAt: 1,
-  };
+  });
 }

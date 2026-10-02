@@ -250,73 +250,41 @@ test('primary notifications flush the stable app transcript after provider repla
   assert.deepEqual(harness.trace, ['flush:app-1:app-1', 'side:child']);
 });
 
-test('terminal gates are isolated across sources and app sessions', () => {
+test('terminal gates are per app and source, and reopen only for the source that begins or the app that is forgotten', () => {
   const harness = createHarness();
-  harness.eventFlow.applyStreamEvent(
-    'app-1',
-    'primary-1',
-    'primary',
-    successfulResultEvent('primary-1'),
-  );
-  harness.eventFlow.applyStreamEvent(
-    'app-1',
-    'worker-1',
-    'worker',
-    successfulResultEvent('worker-1'),
-  );
-
-  harness.eventFlow.applyStreamEvent(
-    'app-1',
-    'primary-1',
-    'primary',
-    assistantTextDelta('primary blocked'),
-  );
-  harness.eventFlow.applyStreamEvent(
-    'app-1',
-    'worker-1',
-    'worker',
-    assistantTextDelta('worker one blocked'),
-  );
-  harness.eventFlow.applyStreamEvent(
-    'app-1',
-    'worker-2',
-    'worker',
-    assistantTextDelta('worker two accepted'),
-  );
-  harness.eventFlow.applyStreamEvent(
-    'app-2',
-    'primary-1',
-    'primary',
-    assistantTextDelta('other app accepted'),
-  );
-
-  assert.deepEqual(
-    harness.transcripts.map((event) => event.text),
-    ['worker two accepted', 'other app accepted'],
-  );
-});
-
-test('terminal gates reopen only for the turn source that begins or the app that is forgotten', () => {
-  const harness = createHarness();
-  for (const [app, source] of [
-    ['app-1', 'worker-1'],
-    ['app-1', 'worker-2'],
-    ['app-2', 'worker-1'],
+  const text = (rows: Array<readonly [string, string, 'primary' | 'worker', string]>) => {
+    for (const [app, source, role, value] of rows)
+      harness.eventFlow.applyStreamEvent(app, source, role, assistantTextDelta(value));
+  };
+  for (const [app, source, role] of [
+    ['app-1', 'primary-1', 'primary'],
+    ['app-1', 'worker-1', 'worker'],
+    ['app-2', 'worker-1', 'worker'],
   ] as const)
-    harness.eventFlow.applyStreamEvent(app, source, 'worker', successfulResultEvent(source));
+    harness.eventFlow.applyStreamEvent(app, source, role, successfulResultEvent(source));
 
+  text([
+    ['app-1', 'primary-1', 'primary', 'primary blocked'],
+    ['app-1', 'worker-1', 'worker', 'worker one blocked'],
+    ['app-1', 'worker-2', 'worker', 'worker two accepted'],
+    ['app-2', 'primary-1', 'primary', 'other app accepted'],
+  ]);
   harness.eventFlow.beginTurn('app-1', 'worker-1');
   harness.eventFlow.forgetSession('app-2');
-  for (const [app, source, text] of [
-    ['app-1', 'worker-1', 'begun source accepted'],
-    ['app-1', 'worker-2', 'other source still blocked'],
-    ['app-2', 'worker-1', 'forgotten app accepted'],
-  ] as const)
-    harness.eventFlow.applyStreamEvent(app, source, 'worker', assistantTextDelta(text));
+  text([
+    ['app-1', 'worker-1', 'worker', 'begun source accepted'],
+    ['app-1', 'primary-1', 'primary', 'other source still blocked'],
+    ['app-2', 'worker-1', 'worker', 'forgotten app accepted'],
+  ]);
 
   assert.deepEqual(
     harness.transcripts.map((event) => event.text),
-    ['begun source accepted', 'forgotten app accepted'],
+    [
+      'worker two accepted',
+      'other app accepted',
+      'begun source accepted',
+      'forgotten app accepted',
+    ],
   );
 });
 
