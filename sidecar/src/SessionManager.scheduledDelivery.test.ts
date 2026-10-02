@@ -87,24 +87,32 @@ test('provider setup failure never reports delivery or submits the scheduled pro
   }
 });
 
-// The caller withdrawing a delivery is owned by SessionLifecycle's scheduled
-// delivery tests; these are the facade commands that end the target instead.
-for (const action of ['close', 'interrupt'] as const) {
+for (const action of ['cancel', 'close', 'interrupt'] as const) {
   test(`${action} during async provider setup prevents the scheduled send`, async () => {
     const h = await ready();
     const provider = h.provider.session('provider-1');
     const settings = provider.deferNextUpdateSettings();
+    let current = true;
     try {
       const count = provider.settings.length;
-      const delivery = h.deliverScheduledMessage('provider-1', prompt, () => true);
+      const delivery = h.deliverScheduledMessage('provider-1', prompt, () => current);
       await provider.waitForSettings(count + 1);
-      await h.handle({
-        type: action === 'close' ? 'session.close' : 'session.interrupt',
-        appSessionId: 'provider-1',
-      });
+      if (action === 'cancel') current = false;
+      else
+        await h.handle({
+          type: action === 'close' ? 'session.close' : 'session.interrupt',
+          appSessionId: 'provider-1',
+        });
       settings.resolve();
-      assert.equal((await delivery).status, 'unavailable');
+      // Nothing was dispatched, and only the caller withdrawing it is a cancellation.
+      assert.equal((await delivery).status, action === 'cancel' ? 'cancelled' : 'unavailable');
       assert.deepEqual(provider.prompts, ['Initial user prompt']);
+      if (action === 'cancel') {
+        assert.equal(
+          h.calls.some((call) => call.method === 'session.close'),
+          false,
+        );
+      }
     } finally {
       settings.resolve();
       await h.dispose();
