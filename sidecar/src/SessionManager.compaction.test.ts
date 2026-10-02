@@ -316,6 +316,40 @@ test('permanent swap failure settles after old-provider close rejects and reload
   }
 });
 
+test('a swap whose new identity cannot be persisted keeps the queued send off the old provider', async () => {
+  const h = createSessionManagerTestContext();
+  try {
+    await createChat(h);
+    const compactGate = h.provider.deferNextCompaction('provider-1');
+    h.provider.session('provider-1').nextCompactResult = {
+      newSessionId: 'provider-9',
+      removedCount: 1,
+    };
+    h.runtime.loadQueue.set('provider-9', [
+      new Error('first adoption failed'),
+      new Error('second adoption failed'),
+    ]);
+
+    const compacting = h.handle({ type: 'session.compact', appSessionId: 'provider-1' });
+    await h.waitForIdle();
+    await h.handle({ type: 'session.send', appSessionId: 'provider-1', text: 'must stay queued' });
+    h.history.nextSyncError = new Error('history unavailable');
+    compactGate.resolve();
+    await assert.rejects(compacting, /history unavailable/);
+    await h.waitForIdle();
+
+    assert.deepEqual(h.provider.session('provider-1').prompts, ['go']);
+    const errors = errorMessages(h, true);
+    assert.ok(errors.includes('Could not persist compacted session identity: history unavailable'));
+    assert.equal(
+      errors.some((message) => /reloading it failed/i.test(message)),
+      false,
+    );
+  } finally {
+    await h.dispose();
+  }
+});
+
 test('Stop reaches the parent and child providers while the daemon compacts them', async () => {
   const h = createSessionManagerTestContext();
   const interrupts = (id: string) => callCount(h.calls, 'provider', 'interrupt', id);
