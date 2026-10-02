@@ -11,6 +11,7 @@ import {
   MAX_SNAPSHOT_TRANSCRIPT_EVENTS,
   MAX_SNAPSHOT_TRANSCRIPT_BYTES,
 } from './sessionSnapshot';
+import { sessionSummary } from '../test/sessionSummary';
 
 const SNAPSHOT_KEY = 'droid-session-snapshot-v1';
 
@@ -27,26 +28,14 @@ function feature(id: string, overrides: Partial<BridgeFeature> = {}): BridgeFeat
   };
 }
 
-function summary(id: string, updatedAt = 1): SessionSummary {
-  return {
-    appSessionId: id,
-    provider: 'droid',
-    sessionPurpose: 'chat',
-    interactionMode: 'auto',
-    role: 'primary',
+const summary = (id: string, updatedAt = 1) =>
+  sessionSummary(id, {
     title: `Chat ${id}`,
     goal: `Chat ${id}`,
     cwd: '/repo',
-    autonomy: 'low',
-    phase: 'paused',
-    features: [],
-    tokensIn: 0,
-    tokensOut: 0,
-    contextTokens: 0,
     createdAt: updatedAt,
     updatedAt,
-  };
-}
+  });
 
 function event(id: string, ts: number, text = id): TranscriptEvent {
   return {

@@ -1,29 +1,14 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { initialState, reducer, type AppState } from './useStore';
-import type { SessionSummary } from '../types/bridge';
+import { sessionSummary } from '../test/sessionSummary';
 
-function sessionSummary(appSessionId: string): SessionSummary {
-  return {
-    appSessionId,
+const chat = (appSessionId: string) =>
+  sessionSummary(appSessionId, {
     providerSessionId: `provider-${appSessionId}`,
-    provider: 'droid',
-    sessionPurpose: 'chat',
-    interactionMode: 'auto',
-    role: 'primary',
-    title: appSessionId,
     goal: appSessionId,
     cwd: '/workspace',
-    autonomy: 'low',
-    phase: 'paused',
-    features: [],
-    tokensIn: 0,
-    tokensOut: 0,
-    contextTokens: 0,
-    createdAt: 1,
-    updatedAt: 1,
-  };
-}
+  });
 
 function activeState(appSessionId: string): AppState {
   return {
@@ -204,7 +189,7 @@ test('starting a new chat or creating another session drops a pending review foc
   created = reducer(created, {
     type: 'SESSION_CREATED',
     clientRef: 'ref-1',
-    session: sessionSummary('session-b'),
+    session: chat('session-b'),
   });
   assert.equal(created.activeAppSessionId, 'session-b');
   assert.equal(created.reviewFocusPath, null);
@@ -214,7 +199,7 @@ test('a background resume preserves the active session review-focus request', ()
   const state = reducer(focusReview(activeState('session-a'), 'src/app.ts'), {
     type: 'SESSION_CREATED',
     clientRef: 'resume:session-b',
-    session: sessionSummary('session-b'),
+    session: chat('session-b'),
   });
 
   assert.equal(state.activeAppSessionId, 'session-a');

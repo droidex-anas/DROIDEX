@@ -2,28 +2,15 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import { adaptEvent, initialState, reducer, toastMessageForEvent } from './useStore';
-import type { ServerEvent, SessionSummary } from '../types/bridge';
+import type { ServerEvent } from '../types/bridge';
+import { sessionSummary } from '../test/sessionSummary';
 
-const session: SessionSummary = {
-  appSessionId: 'app-1',
+const session = sessionSummary('app-1', {
   providerSessionId: 'provider-1',
-  provider: 'droid',
-  sessionPurpose: 'chat',
-  interactionMode: 'auto',
-  role: 'primary',
   title: 'Chat',
-  goal: '',
-  cwd: '',
   workspaceKind: 'none',
-  autonomy: 'low',
   phase: 'running',
-  features: [],
-  tokensIn: 0,
-  tokensOut: 0,
-  contextTokens: 0,
-  createdAt: 1,
-  updatedAt: 1,
-};
+});
 
 test('non-open child command failures are routed to user-visible toast feedback', () => {
   const failure = {

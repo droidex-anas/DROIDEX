@@ -2,28 +2,16 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { reducer, initialState } from './useStore';
 import type { AppState } from './useStore';
-import type { SessionSummary } from '../types/bridge';
+import { sessionSummary } from '../test/sessionSummary';
 
-function summary(id: string, updatedAt = 1): SessionSummary {
-  return {
-    appSessionId: id,
-    provider: 'droid',
-    sessionPurpose: 'chat',
-    interactionMode: 'auto',
-    role: 'primary',
+const summary = (id: string, updatedAt = 1) =>
+  sessionSummary(id, {
     title: `Chat ${id}`,
     goal: `Chat ${id}`,
     cwd: '/repo',
-    autonomy: 'low',
-    phase: 'paused',
-    features: [],
-    tokensIn: 0,
-    tokensOut: 0,
-    contextTokens: 0,
     createdAt: updatedAt,
     updatedAt,
-  };
-}
+  });
 
 function hydratedState(): AppState {
   return {

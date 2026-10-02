@@ -2,30 +2,12 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { transcriptRehydrationLimit } from '../lib/transcriptStoreMemory';
 import { estimateTranscriptCost } from '../lib/transcriptWindow';
-import type { ChildSessionSummary, SessionSummary, TranscriptEvent } from '../types/bridge';
+import type { ChildSessionSummary, TranscriptEvent } from '../types/bridge';
 import { initialState, reducer, type AppState } from './useStore';
+import { sessionSummary } from '../test/sessionSummary';
 
-function session(appSessionId: string, streaming = false): SessionSummary {
-  return {
-    appSessionId,
-    provider: 'droid',
-    sessionPurpose: 'chat',
-    interactionMode: 'auto',
-    role: 'primary',
-    title: appSessionId,
-    goal: '',
-    cwd: '/tmp',
-    autonomy: 'off',
-    phase: 'running',
-    streaming,
-    features: [],
-    tokensIn: 0,
-    tokensOut: 0,
-    contextTokens: 0,
-    createdAt: 1,
-    updatedAt: 1,
-  };
-}
+const session = (appSessionId: string, streaming = false) =>
+  sessionSummary(appSessionId, { cwd: '/tmp', autonomy: 'off', phase: 'running', streaming });
 
 function events(appSessionId: string, count: number): TranscriptEvent[] {
   return Array.from({ length: count }, (_, index) => ({

@@ -1,32 +1,20 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import type { ChildSessionSummary, SessionSummary } from '../types/bridge';
+import type { ChildSessionSummary } from '../types/bridge';
 import { childSessionIsLive } from '../lib/childSessions';
 import { initialState, reducer, type Action } from './useStore';
+import { sessionSummary } from '../test/sessionSummary';
 
-function session(appSessionId: string): SessionSummary {
-  return {
-    appSessionId,
+const session = (appSessionId: string) =>
+  sessionSummary(appSessionId, {
     providerSessionId: `provider-${appSessionId}`,
-    provider: 'droid',
     sessionPurpose: 'mission-control',
     interactionMode: 'agi',
-    role: 'primary',
-    title: appSessionId,
     goal: 'test',
     cwd: '/workspace',
     workspaceKind: 'folder',
-    autonomy: 'low',
-    phase: 'paused',
-    features: [],
-    tokensIn: 0,
-    tokensOut: 0,
-    contextTokens: 0,
-    createdAt: 1,
-    updatedAt: 1,
-  };
-}
+  });
 
 function child(parentAppSessionId: string, childSessionId: string): ChildSessionSummary {
   return {

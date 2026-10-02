@@ -13,28 +13,10 @@ import {
   notificationSnippet,
   saveFinishNotificationSettings,
 } from './finishNotifications';
+import { sessionSummary } from '../test/sessionSummary';
 
-const session = (over: Partial<SessionSummary> = {}): SessionSummary =>
-  ({
-    appSessionId: 's1',
-    provider: 'droid',
-    sessionPurpose: 'chat',
-    interactionMode: 'auto',
-    role: 'primary',
-    title: 'Refactor notifications',
-    goal: '',
-    cwd: '',
-    workspaceKind: 'none',
-    autonomy: 'low',
-    phase: 'paused',
-    features: [],
-    tokensIn: 0,
-    tokensOut: 0,
-    contextTokens: 0,
-    createdAt: 1,
-    updatedAt: 1,
-    ...over,
-  }) as SessionSummary;
+const session = (over: Partial<SessionSummary> = {}) =>
+  sessionSummary('s1', { title: 'Refactor notifications', workspaceKind: 'none', ...over });
 
 const textEvent = (text: string, over: Partial<TranscriptEvent> = {}): TranscriptEvent =>
   ({

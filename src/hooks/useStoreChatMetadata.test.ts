@@ -3,31 +3,18 @@ import test from 'node:test';
 
 import { initialState, reducer, type AppState } from './useStore';
 import { chatMatchesPullRequest } from '../lib/chatMetadata';
-import type { SessionSummary } from '../types/bridge';
+import { sessionSummary } from '../test/sessionSummary';
 
 // The metadata transforms themselves are owned by src/lib/chatMetadata.test.ts.
 // This suite covers only the reducer wiring around them.
 
-function makeSession(appSessionId: string, updatedAt = 1): SessionSummary {
-  return {
-    appSessionId,
-    provider: 'droid',
-    sessionPurpose: 'chat',
-    interactionMode: 'auto',
-    role: 'primary',
-    title: appSessionId,
-    goal: '',
-    cwd: '',
+const makeSession = (appSessionId: string, updatedAt = 1) =>
+  sessionSummary(appSessionId, {
     autonomy: 'off',
     phase: 'completed',
-    features: [],
-    tokensIn: 0,
-    tokensOut: 0,
-    contextTokens: 0,
     createdAt: updatedAt,
     updatedAt,
-  };
-}
+  });
 
 function stateWithSessions(...ids: string[]): AppState {
   return {

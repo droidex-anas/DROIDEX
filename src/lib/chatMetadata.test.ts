@@ -21,7 +21,7 @@ import {
   unpinChat,
   type ChatMetadataMap,
 } from './chatMetadata';
-import type { SessionSummary } from '../types/bridge';
+import { sessionSummary } from '../test/sessionSummary';
 
 /** Loads metadata from a stored payload: an object is JSON-encoded, a string is stored as is. */
 function loadStored(payload: unknown): ChatMetadataMap {
@@ -44,30 +44,14 @@ function pullRequest(number: number, title = 'PR') {
   };
 }
 
-function makeSession(
-  appSessionId: string,
-  updatedAt = 1_000,
-  title = appSessionId,
-): SessionSummary {
-  return {
-    appSessionId,
-    provider: 'droid',
-    sessionPurpose: 'chat',
-    interactionMode: 'auto',
-    role: 'primary',
+const makeSession = (appSessionId: string, updatedAt = 1_000, title = appSessionId) =>
+  sessionSummary(appSessionId, {
     title,
-    goal: '',
-    cwd: '',
     autonomy: 'off',
     phase: 'completed',
-    features: [],
-    tokensIn: 0,
-    tokensOut: 0,
-    contextTokens: 0,
     createdAt: updatedAt,
     updatedAt,
-  };
-}
+  });
 
 test('renameChat sets, changes, clears, trims, and caps the display title, preserving other flags', () => {
   const renamed = renameChat({}, 's1', 'My chat');

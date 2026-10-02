@@ -1,29 +1,14 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { initialState, reducer } from './useStore';
-import type { SessionSummary } from '../types/bridge';
+import { sessionSummary } from '../test/sessionSummary';
 
-function session(appSessionId: string): SessionSummary {
-  return {
-    appSessionId,
+const session = (appSessionId: string) =>
+  sessionSummary(appSessionId, {
     providerSessionId: `provider-${appSessionId}`,
-    provider: 'droid',
-    sessionPurpose: 'chat',
-    interactionMode: 'auto',
-    role: 'primary',
-    title: appSessionId,
     goal: appSessionId,
     cwd: '/workspace',
-    autonomy: 'low',
-    phase: 'paused',
-    features: [],
-    tokensIn: 0,
-    tokensOut: 0,
-    contextTokens: 0,
-    createdAt: 1,
-    updatedAt: 1,
-  };
-}
+  });
 
 test('OPEN_PULL_REQUESTS binds the view and keeps an omitted number only in the same repository', () => {
   const selected = reducer(initialState, {

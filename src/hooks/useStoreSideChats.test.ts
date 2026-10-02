@@ -3,37 +3,20 @@ import test from 'node:test';
 import { initialState, reducer, type AppState } from './useStore';
 import { currentSideChat } from '../lib/sideChats';
 import type { SessionSummary } from '../types/bridge';
+import { sessionSummary } from '../test/sessionSummary';
 
-function sessionSummary(
-  appSessionId: string,
-  overrides: Partial<SessionSummary> = {},
-): SessionSummary {
-  return {
-    appSessionId,
+const chat = (appSessionId: string, overrides: Partial<SessionSummary> = {}) =>
+  sessionSummary(appSessionId, {
     providerSessionId: appSessionId,
-    provider: 'droid',
-    sessionPurpose: 'chat',
-    interactionMode: 'auto',
-    role: 'primary',
-    title: appSessionId,
     goal: appSessionId,
     cwd: '/workspace',
-    autonomy: 'low',
-    phase: 'paused',
-    features: [],
-    tokensIn: 0,
-    tokensOut: 0,
-    contextTokens: 0,
-    createdAt: 1,
-    updatedAt: 1,
     ...overrides,
-  };
-}
+  });
 
 function withSource(): AppState {
   return {
     ...initialState,
-    sessions: { source: sessionSummary('source') },
+    sessions: { source: chat('source') },
     sessionOrder: ['source'],
     activeAppSessionId: 'source',
     utilityPanels: {},
@@ -63,7 +46,7 @@ test('a side chat opens beside its source without taking over the chat', () => {
   state = reducer(state, {
     type: 'SESSION_FORKED',
     clientRef: 'ref-1',
-    session: sessionSummary('side-1', { lineage: sideLineage }),
+    session: chat('side-1', { lineage: sideLineage }),
   });
 
   assert.equal(state.activeAppSessionId, 'source');
@@ -80,7 +63,7 @@ test('a side chat branched across harnesses also stays beside its source', () =>
   state = reducer(state, {
     type: 'SESSION_CREATED',
     clientRef: 'ref-2',
-    session: sessionSummary('side-2', { provider: 'codex', lineage: sideLineage }),
+    session: chat('side-2', { provider: 'codex', lineage: sideLineage }),
   });
 
   assert.equal(state.activeAppSessionId, 'source');
@@ -113,7 +96,7 @@ test('a start that lands after the user moved on leaves their view alone', () =>
   state = reducer(state, {
     type: 'SESSION_FORKED',
     clientRef: 'ref-4',
-    session: sessionSummary('side-4', { lineage: sideLineage }),
+    session: chat('side-4', { lineage: sideLineage }),
   });
 
   assert.deepEqual(state.sideChats['source']?.view, { kind: 'new', prompt: '' });
@@ -171,7 +154,7 @@ test('a new side chat opens where Settings says, and an open one stays where it 
   state = reducer(state, {
     type: 'SESSION_FORKED',
     clientRef: 'ref-7',
-    session: sessionSummary('side-7', { lineage: sideLineage }),
+    session: chat('side-7', { lineage: sideLineage }),
   });
   state = reducer(state, {
     type: 'PLACE_SIDE_CHATS',
@@ -197,7 +180,7 @@ test('closing a side chat deletes it, so the next question starts a fresh one', 
   state = reducer(state, {
     type: 'SESSION_FORKED',
     clientRef: 'ref-6',
-    session: sessionSummary('side-6', { lineage: sideLineage }),
+    session: chat('side-6', { lineage: sideLineage }),
   });
   assert.equal(
     currentSideChat(state.sessions, state.chatMetadata, 'source')?.appSessionId,

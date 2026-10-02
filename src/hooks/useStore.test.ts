@@ -1,28 +1,16 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { initialState, reducer, type AppState } from './useStore';
-import type { SessionSummary, TranscriptEvent } from '../types/bridge';
+import type { TranscriptEvent } from '../types/bridge';
+import { sessionSummary } from '../test/sessionSummary';
 
-function session(appSessionId: string, updatedAt: number): SessionSummary {
-  return {
-    appSessionId,
-    provider: 'droid',
-    sessionPurpose: 'chat',
-    interactionMode: 'auto',
-    role: 'primary',
-    title: appSessionId,
-    goal: '',
-    cwd: '',
+const session = (appSessionId: string, updatedAt: number) =>
+  sessionSummary(appSessionId, {
     autonomy: 'off',
     phase: 'completed',
-    features: [],
-    tokensIn: 0,
-    tokensOut: 0,
-    contextTokens: 0,
     createdAt: 1_000,
     updatedAt,
-  };
-}
+  });
 
 function assistantText(id: string, ts: number): TranscriptEvent {
   return {

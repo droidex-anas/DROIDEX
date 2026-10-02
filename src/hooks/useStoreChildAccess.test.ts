@@ -8,7 +8,8 @@ import {
   visibleSessionTarget,
 } from '../lib/childSessions';
 import { childStreamPhase } from '../lib/childSessionStream';
-import type { ChildSessionSummary, ServerEvent, SessionSummary } from '../types/bridge';
+import type { ChildSessionSummary, ServerEvent } from '../types/bridge';
+import { sessionSummary } from '../test/sessionSummary';
 
 const child = (parentAppSessionId: string, childSessionId: string): ChildSessionSummary => ({
   parentAppSessionId,
@@ -20,25 +21,12 @@ const child = (parentAppSessionId: string, childSessionId: string): ChildSession
   streamFidelity: 'state',
 });
 
-const session = (appSessionId: string): SessionSummary => ({
-  appSessionId,
-  providerSessionId: `provider-${appSessionId}`,
-  provider: 'droid',
-  sessionPurpose: 'chat',
-  interactionMode: 'auto',
-  role: 'primary',
-  title: appSessionId,
-  goal: appSessionId,
-  cwd: '/workspace',
-  autonomy: 'low',
-  phase: 'paused',
-  features: [],
-  tokensIn: 0,
-  tokensOut: 0,
-  contextTokens: 0,
-  createdAt: 1,
-  updatedAt: 1,
-});
+const session = (appSessionId: string) =>
+  sessionSummary(appSessionId, {
+    providerSessionId: `provider-${appSessionId}`,
+    goal: appSessionId,
+    cwd: '/workspace',
+  });
 
 function select(
   state: AppState,
