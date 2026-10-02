@@ -31,4 +31,4 @@ sidecar/node_modules
 docs/superpowers/
 
 # Dated output of agent security scans (regenerated per scan)
-security-findings.json
+/security-findings.json

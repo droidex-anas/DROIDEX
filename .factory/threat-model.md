@@ -4,7 +4,7 @@
 **Version:** 1.0.0
 **Methodology:** STRIDE + Natural Language Analysis
 
-**Scope note:** This is a codebase-wide threat inventory generated while reviewing PR #55. It includes pre-existing and explicitly accepted risks for architectural context; their presence here does not mean PR #55 introduced them. PR-specific conclusions are recorded separately in `security-findings.json`.
+**Scope note:** This is a codebase-wide threat inventory generated while reviewing PR #55. It includes pre-existing and explicitly accepted risks for architectural context; their presence here does not mean PR #55 introduced them. PR-specific conclusions belong in the pull request, not in the repository.
 
 ---
 
