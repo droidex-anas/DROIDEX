@@ -205,9 +205,8 @@ function createNativeBrowserRequests({ manager, notifyRenderer }) {
     }
     if (request.action === 'reload') {
       await manager.waitForPage(browserSessionId);
-      stillWanted();
       const loaded = manager.nextLoad(browserSessionId, LOAD_WAIT_MS);
-      await manager.reload(browserSessionId);
+      await manager.reload(browserSessionId, stillWanted);
       return result(request, true, await snapshotAfter(request, (await loaded)?.url));
     }
     if (request.action === 'goBack' || request.action === 'goForward') {

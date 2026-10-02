@@ -220,14 +220,16 @@ function createNativeBrowserManager(options) {
   }
 
   // Reload never waits for a load: it is how a stalled, failed or crashed page
-  // recovers. A load still in flight or a failed restore starts over.
-  async function reloadNativeBrowser(browserSessionId) {
+  // recovers. A load still in flight or a failed restore starts over. `before`
+  // runs right before the page moves, and throws when it should not.
+  async function reloadNativeBrowser(browserSessionId, before) {
     const entry = await waitForGuest(browserSessionId);
     // A guest still taking its device finishes that first, so the page is asked
-    // for as that device.
+    // for as that device. The browser may have been closed meanwhile.
     await deviceReady(entry);
-    const contents = liveContents(entry);
+    const contents = nativeBrowsers.get(entry.browserSessionId) === entry && liveContents(entry);
     if (!contents) throw new Error(`${options.appName} browser is not open.`);
+    before?.();
     const pendingUrl = entry.loadingUrl === entry.targetUrl ? entry.loadingUrl : null;
     const retryUrl = entry.failedRestoreUrl ?? pendingUrl;
     if (retryUrl) {
