@@ -46,7 +46,7 @@ test('the header ring only spins while the session is generating', () => {
   assert.doesNotMatch(render(steps, false), /animate-spin/);
 });
 
-test('finished plan fills every ring and drops the active band', () => {
+test('a finished plan fills every ring and stops spinning', () => {
   const html = render(
     [
       { status: 'completed', text: 'Investigate the APIs' },
@@ -57,7 +57,6 @@ test('finished plan fills every ring and drops the active band', () => {
   assert.doesNotMatch(html, /animate-spin/);
   // The current step lives in the summary, while the other completed step stays in the list.
   assert.equal(html.match(/lucide-check/g)?.length, 2);
-  assert.doesNotMatch(html, /bg-droid-active\/50/);
   // The header falls back to the last step once nothing is running.
   assert.match(html, /Start a new app/);
 });

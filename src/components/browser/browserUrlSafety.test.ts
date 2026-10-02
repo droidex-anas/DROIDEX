@@ -14,6 +14,11 @@ test('safeBrowserUrl keeps the host app out of the browser pane', () => {
   );
   assert.equal(safeBrowserUrl('127.0.0.1:3000', 'http://127.0.0.1:1427'), 'http://127.0.0.1:3000');
   assert.equal(safeBrowserUrl('localhost:3000', 'http://127.0.0.1:1427'), 'http://localhost:3000');
+  // Chromium internal error pages are dropped too.
+  assert.equal(
+    safeBrowserUrl('chrome-error://chromewebdata/', 'http://127.0.0.1:1427'),
+    DEFAULT_BROWSER_URL,
+  );
 });
 
 test('isSelfBrowserUrl compares origins instead of exact paths', () => {
@@ -21,13 +26,6 @@ test('isSelfBrowserUrl compares origins instead of exact paths', () => {
   assert.equal(isSelfBrowserUrl('http://localhost:1427/settings', 'http://127.0.0.1:1427'), true);
   assert.equal(isSelfBrowserUrl('http://localhost:17777/', 'http://127.0.0.1:1427'), false);
   assert.equal(isSelfBrowserUrl('https://example.com', 'http://127.0.0.1:1427'), false);
-});
-
-test('safeBrowserUrl drops Chromium internal error pages', () => {
-  assert.equal(
-    safeBrowserUrl('chrome-error://chromewebdata/', 'http://127.0.0.1:1427'),
-    DEFAULT_BROWSER_URL,
-  );
 });
 
 test('browserAddressValue hides internal blank and error pages', () => {
