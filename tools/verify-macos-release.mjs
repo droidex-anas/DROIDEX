@@ -49,7 +49,12 @@ const releaseAssetNames = requireSignedArtifacts
       'droidex-arm64.zip.blockmap',
       'latest-mac.yml',
     ]
-  : [...applicationAssetNames, 'appcast-x64.xml', 'appcast-arm64.xml'];
+  : [
+      ...applicationAssetNames,
+      'appcast-x64.xml',
+      'appcast-arm64.xml',
+      ...readdirSync(releaseDirectory).filter((name) => name.endsWith('.delta')),
+    ];
 const updateAssetNames = releaseAssetNames.filter((name) => /\.(?:dmg|zip)$/.test(name));
 
 function fail(message) {
@@ -157,6 +162,32 @@ function verifySparkleAppcast(architecture) {
     ),
     `${appcastName} has an invalid signed-feed signature`,
   );
+
+  const deltaPrefix = `https://github.com/droidex-anas/droidex-releases/releases/download/v${packageJson.version}/`;
+  const deltas = [
+    ...text.matchAll(
+      /<enclosure url="([^"]+)" sparkle:deltaFrom="[^"]+" length="(\d+)"[^>]*sparkle:edSignature="([^"]+)"/g,
+    ),
+  ];
+  assert(
+    deltas.length === (text.match(/sparkle:deltaFrom=/g)?.length ?? 0),
+    `${appcastName} has an unsigned or unrecognised delta enclosure`,
+  );
+  for (const [, deltaUrl, deltaLength, deltaSignature] of deltas) {
+    const deltaName = deltaUrl.slice(deltaPrefix.length);
+    assert(
+      deltaUrl.startsWith(deltaPrefix) &&
+        releaseAssetNames.includes(deltaName) &&
+        deltaName.endsWith(`-${architecture}.delta`),
+      `${appcastName} delta URL ${deltaUrl} is not a ${architecture} delta of this release`,
+    );
+    const deltaPath = join(releaseDirectory, deltaName);
+    assert(Number(deltaLength) === statSync(deltaPath).size, `${deltaName} size is stale`);
+    assert(
+      verify(null, readFileSync(deltaPath), publicKey, Buffer.from(deltaSignature, 'base64')),
+      `${deltaName} has an invalid EdDSA signature`,
+    );
+  }
   assertNoPrivateContent(text, appcastName);
 }
 

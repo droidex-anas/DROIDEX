@@ -95,7 +95,13 @@ The automated workflow executes the equivalent of these local commands:
 ```bash
 DROIDEX_UNSIGNED_RELEASE_BUILD=1 npm run dist:mac
 
-npm run sparkle:appcast -- release
+# The last three published ZIPs, one directory per tag, as Sparkle delta bases.
+for tag in $(gh release list --repo droidex-anas/droidex-releases \
+  --exclude-drafts --exclude-pre-releases --limit 3 --json tagName --jq '.[].tagName'); do
+  gh release download "$tag" --repo droidex-anas/droidex-releases \
+    --pattern 'droidex-*.zip' --dir "release/previous/$tag"
+done
+SPARKLE_PREVIOUS_RELEASES_DIR=release/previous npm run sparkle:appcast -- release
 npm run release:verify:mac -- release --write-checksums
 npm run release:preflight:unsigned
 ```
@@ -104,8 +110,8 @@ Every command must pass. The preflight verifies both repository identities and
 visibility, app versions, architecture-specific Sparkle feeds, EdDSA signatures,
 checksums, packaged native modules, and SQLite runtime.
 
-It uploads exactly these seven files to
-`droidex-anas/droidex-releases`:
+It uploads these seven files to `droidex-anas/droidex-releases`, plus one
+Sparkle delta per architecture for each of the last three releases:
 
 ```text
 droidex-arm64.dmg
@@ -115,7 +121,18 @@ droidex-x64.zip
 appcast-arm64.xml
 appcast-x64.xml
 SHA256SUMS
+DROIDEX<new>-<old>-arm64.delta
+DROIDEX<new>-<old>-x64.delta
 ```
+
+Deltas are binary patches from an older app bundle to the new one, so users
+updating from one of those three versions download only the changed bytes.
+Each delta is EdDSA-signed with the same Sparkle key as the ZIP, and Sparkle
+checks the before and after bundle hashes when it applies one. A user further
+behind, or whose installed bundle was modified, falls back to the full ZIP.
+`generate_appcast` drops a delta that is not meaningfully smaller than the ZIP,
+so a release can have fewer than three. The deltas need no extra secret or
+hosting: they sit in the same release as the ZIP they replace.
 
 Do not upload blockmaps, `latest-mac.yml`, app directories, source maps,
 certificates, environment files, or source archives for the current
@@ -149,6 +166,9 @@ gh release create "v$DROIDEX_VERSION" \
   --notes "DROIDEX v$DROIDEX_VERSION for Apple silicon and Intel Macs." \
   --draft
 
+# A release can have no deltas; let an unmatched release/*.delta expand to nothing.
+shopt -s nullglob # zsh: setopt null_glob
+
 gh release upload "v$DROIDEX_VERSION" \
   release/droidex-arm64.dmg \
   release/droidex-arm64.zip \
@@ -156,6 +176,7 @@ gh release upload "v$DROIDEX_VERSION" \
   release/droidex-x64.zip \
   release/appcast-arm64.xml \
   release/appcast-x64.xml \
+  release/*.delta \
   release/SHA256SUMS \
   --repo "$RELEASE_REPOSITORY"
 ```
@@ -167,7 +188,7 @@ update behavior. A mismatch must stop publication:
 ```bash
 test "$(gh release view "v$DROIDEX_VERSION" \
   --repo "$RELEASE_REPOSITORY" \
-  --json assets --jq '.assets | length')" = "7"
+  --json assets --jq '.assets | length')" = "$(( $(wc -l < release/SHA256SUMS) + 1 ))"
 
 for asset in \
   release/droidex-arm64.dmg \
@@ -176,6 +197,7 @@ for asset in \
   release/droidex-x64.zip \
   release/appcast-arm64.xml \
   release/appcast-x64.xml \
+  release/*.delta \
   release/SHA256SUMS; do
   name="${asset##*/}"
   local_digest="$(shasum -a 256 "$asset" | awk '{print $1}')"
@@ -200,6 +222,7 @@ for asset in \
   release/droidex-x64.zip \
   release/appcast-arm64.xml \
   release/appcast-x64.xml \
+  release/*.delta \
   release/SHA256SUMS; do
   gh release verify-asset "v$DROIDEX_VERSION" "$asset" \
     --repo "$RELEASE_REPOSITORY"
@@ -213,7 +236,9 @@ Release work is not complete until the public files work end to end:
 1. Install the previous public version on a clean test account.
 2. Use **DROIDEX → Check for Updates…**.
 3. Confirm Sparkle finds the new architecture-matched version.
-4. Approve the download, then choose **Install and Relaunch**.
+4. Approve the download, then choose **Install and Relaunch**. When the
+   previous version has a delta, the download should be far smaller than the
+   ZIP.
 5. Confirm the installed app reports the new version.
 6. Confirm the Sidebar update icon is absent when the installed version is
    current.
