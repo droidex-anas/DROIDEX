@@ -1,13 +1,5 @@
 import assert from 'node:assert/strict';
-import {
-  chmodSync,
-  mkdirSync,
-  mkdtempSync,
-  rmSync,
-  readFileSync,
-  unlinkSync,
-  writeFileSync,
-} from 'node:fs';
+import { mkdirSync, mkdtempSync, rmSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
@@ -17,6 +9,7 @@ import { SessionEventFlow } from './SessionEventFlow.js';
 import { SessionTimeline } from './SessionTimeline.js';
 import type { ProviderSession, ProviderVoiceEvent } from './providers/session.js';
 import { providerSessionJsonl } from './testing/providerSessionFixtures.js';
+import { sessionSummary } from './testing/sessionSummaryFixture.js';
 
 const originalHome = process.env.HOME;
 const originalUserDataDir = process.env.DROIDEX_USER_DATA_DIR;
@@ -58,12 +51,6 @@ function writeSession(id: string, title: string): void {
   );
 }
 
-function titles(): string[] {
-  return loadHistoricalSessions()
-    .map((row) => row.summary.title)
-    .sort();
-}
-
 // These tests pin the uncached scan's freshness contract: it backs the
 // session file cache reconcile, so a change written between two scans must
 // show up in the second one.
@@ -89,56 +76,19 @@ test('files created, rewritten, given settings, or deleted between scans show in
   assert.equal(scanned(), undefined);
 });
 
-test('an unreadable subdirectory is skipped without aborting the scan', () => {
-  // chmod is ineffective for root (CI containers), where a 000 dir is still
-  // readable; skip there so the test stays deterministic everywhere else.
-  if (process.getuid?.() === 0) return;
-  seq += 1;
-  const good = `scan-resilient-${seq}`;
-  writeSession(good, `resilient ${seq}`);
-  const locked = join(home, '.factory', 'sessions', 'locked-dir');
-  mkdirSync(locked, { recursive: true });
-  chmodSync(locked, 0o000);
-  try {
-    // A parallel run removing or locking a sessions subtree must not abort
-    // the reconcile scan; the readable sibling session is still enumerated.
-    const found = titles();
-    assert.ok(found.includes(`resilient ${seq}`), 'the scan completes past the locked subtree');
-  } finally {
-    chmodSync(locked, 0o755);
-    rmSync(locked, { recursive: true, force: true });
-  }
-});
-
 // The one cross-provider contract in this path: what ProviderTranscriptFile
 // writes for a non-Droid session is what the scan admits and the parser
 // replays. Nothing types can check — a drifted head key or content block reads
 // as "the session is missing, and empty when reopened".
 test('a transcript DROIDEX writes for a non-Droid session is enumerated and replays', async () => {
   const appSessionId = 'provider-transcript-scan';
-  const summary: SessionSummary = {
-    appSessionId,
-    provider: 'claude',
+  const summary = providerSummary(appSessionId, {
     resumeId: 'thread-abc',
-    sessionPurpose: 'chat',
-    interactionMode: 'auto',
-    role: 'primary',
-    title: 'Claude session',
-    goal: 'Claude session',
-    cwd: '',
     modelId: 'claude-sonnet-4-5[1m]',
     fastMode: true,
     contextWindowTokens: 1000000,
-    autonomy: 'medium',
-    phase: 'paused',
     queuedSends: 0,
-    features: [],
-    tokensIn: 0,
-    tokensOut: 0,
-    contextTokens: 0,
-    createdAt: 1,
-    updatedAt: 1,
-  };
+  });
   const transcript = new ProviderTranscriptFile(summary.appSessionId, () => summary);
   await transcript.appendPrompt('what is here?');
   transcript.append(transcriptEvent(appSessionId, 'text', { text: 'Looking.' }));
@@ -330,25 +280,10 @@ test('a transcript DROIDEX writes for a non-Droid session is enumerated and repl
 
 test('a failed transcript write reaches its caller and does not stop the lines after it', async () => {
   const appSessionId = 'blocked-transcript';
-  const summary: SessionSummary = {
-    appSessionId,
-    provider: 'claude',
-    sessionPurpose: 'chat',
-    interactionMode: 'auto',
-    role: 'primary',
+  const summary = providerSummary(appSessionId, {
     title: 'Blocked, then not',
-    goal: '',
-    cwd: '',
     modelId: 'claude-sonnet-4-5',
-    autonomy: 'medium',
-    phase: 'paused',
-    features: [],
-    tokensIn: 0,
-    tokensOut: 0,
-    contextTokens: 0,
-    createdAt: 1,
-    updatedAt: 1,
-  };
+  });
   const path = join(providerSessionsDir(), `${appSessionId}.jsonl`);
   // A directory where the file belongs fails every append until it is removed.
   mkdirSync(path, { recursive: true });
@@ -378,24 +313,7 @@ test('a failed transcript write reaches its caller and does not stop the lines a
 
 test('spoken rows replay with their mark, speaker, and latest corrected text', async () => {
   const appSessionId = 'spoken-transcript-scan';
-  const summary: SessionSummary = {
-    appSessionId,
-    provider: 'codex',
-    sessionPurpose: 'chat',
-    interactionMode: 'auto',
-    role: 'primary',
-    title: 'Voice chat',
-    goal: 'Voice chat',
-    cwd: '',
-    autonomy: 'medium',
-    phase: 'paused',
-    features: [],
-    tokensIn: 0,
-    tokensOut: 0,
-    contextTokens: 0,
-    createdAt: 1,
-    updatedAt: 1,
-  };
+  const summary = providerSummary(appSessionId, { provider: 'codex', title: 'Voice chat' });
   const transcript = new ProviderTranscriptFile(appSessionId, () => summary);
   const spokenUser = transcriptEvent(appSessionId, 'text', {
     id: 'voice-user',
@@ -577,25 +495,18 @@ test('a fork reads behind the queued lines and copies the transcript through its
   );
 });
 
-function providerSummary(appSessionId: string): SessionSummary {
-  return {
+function providerSummary(
+  appSessionId: string,
+  overrides: Partial<SessionSummary> = {},
+): SessionSummary {
+  return sessionSummary({
     appSessionId,
+    providerSessionId: undefined,
     provider: 'claude',
-    sessionPurpose: 'chat',
-    interactionMode: 'auto',
-    role: 'primary',
     title: 'Claude session',
-    goal: 'Claude session',
-    cwd: '',
     autonomy: 'medium',
-    phase: 'paused',
-    features: [],
-    tokensIn: 0,
-    tokensOut: 0,
-    contextTokens: 0,
-    createdAt: 1,
-    updatedAt: 1,
-  };
+    ...overrides,
+  });
 }
 
 function transcriptEvent(

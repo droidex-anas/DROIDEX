@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import test from 'node:test';
+import test, { type TestContext } from 'node:test';
 
 import type { ServerEvent, SessionSummary } from './protocol.js';
 import type { ProviderForkSource } from './providers/session.js';
@@ -10,6 +10,7 @@ import type { SessionBranch, SessionCreateCommand } from './SessionLifecycle.js'
 import { SessionLineageStore, sessionLineagePath } from './sessionLineage.js';
 import type { SessionSummaryPatch } from './SessionRegistry.js';
 import { formatSideChatPrompt } from './sideChatPrompt.js';
+import { sessionSummary } from './testing/sessionSummaryFixture.js';
 
 // A branch reads the source's stored transcript, so history lives in a
 // throwaway home.
@@ -69,28 +70,18 @@ function storeDroidTranscript(providerSessionId: string, assistantText: string):
 }
 
 function summary(overrides: Partial<SessionSummary> & { appSessionId: string }): SessionSummary {
-  return {
-    providerSessionId: overrides.appSessionId,
-    provider: 'droid',
-    sessionPurpose: 'chat',
+  return sessionSummary({
     interactionMode: 'spec',
-    role: 'primary',
     title: 'Source chat',
-    goal: 'Plan the migration',
     cwd: '/repo',
     autonomy: 'medium',
-    phase: 'paused',
-    features: [],
-    tokensIn: 0,
-    tokensOut: 0,
-    contextTokens: 0,
-    createdAt: 1,
-    updatedAt: 1,
     ...overrides,
-  };
+  });
 }
 
+/** SessionForks over a stored source chat and a lineage store removed after the test. */
 function harness(
+  t: TestContext,
   options: {
     streaming?: boolean;
     provider?: 'droid' | 'claude';
@@ -99,6 +90,7 @@ function harness(
   } = {},
 ) {
   const dir = mkdtempSync(join(tmpdir(), 'session-forks-'));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
   const lineage = new SessionLineageStore(sessionLineagePath(dir));
   const stored = new Map<string, SessionSummary>([
     [
@@ -186,15 +178,11 @@ function harness(
     order,
     created,
     dir,
-    cleanup: () => {
-      rmSync(dir, { recursive: true, force: true });
-    },
   };
 }
 
 test('a same-harness fork copies the conversation and answers with the copied chat', async (t) => {
-  const h = harness({ contextWindowTokens: 1000000 });
-  t.after(h.cleanup);
+  const h = harness(t, { contextWindowTokens: 1000000 });
 
   await h.forks.fork({
     type: 'session.fork',
@@ -233,8 +221,7 @@ test('a same-harness fork copies the conversation and answers with the copied ch
 });
 
 test('a same-harness side chat takes its question as the first message after the copy', async (t) => {
-  const h = harness({ contextWindowTokens: 1000000 });
-  t.after(h.cleanup);
+  const h = harness(t, { contextWindowTokens: 1000000 });
 
   await h.forks.fork({
     type: 'session.fork',
@@ -263,8 +250,7 @@ test('a same-harness side chat takes its question as the first message after the
 
   // The picker sends the source's model when the user leaves it alone, and
   // then the window carries over.
-  const unchanged = harness({ contextWindowTokens: 1000000 });
-  t.after(unchanged.cleanup);
+  const unchanged = harness(t, { contextWindowTokens: 1000000 });
   await unchanged.forks.fork({
     type: 'session.fork',
     clientRef: 'ref-5',
@@ -281,8 +267,7 @@ test('a same-harness side chat takes its question as the first message after the
 
 test('a fork that cannot run is refused with its client ref and copies nothing', async (t) => {
   // A plain fork of a chat mid-turn would copy half an answer.
-  const streaming = harness({ streaming: true });
-  t.after(streaming.cleanup);
+  const streaming = harness(t, { streaming: true });
   await streaming.forks.fork({
     type: 'session.fork',
     clientRef: 'ref-2',
@@ -298,8 +283,7 @@ test('a fork that cannot run is refused with its client ref and copies nothing',
   );
 
   // Another harness cannot copy the transcript, so it needs a first message.
-  const crossHarness = harness();
-  t.after(crossHarness.cleanup);
+  const crossHarness = harness(t);
   await crossHarness.forks.fork({
     type: 'session.fork',
     clientRef: 'ref-3',
@@ -316,8 +300,7 @@ test('a fork that cannot run is refused with its client ref and copies nothing',
 });
 
 test('a side chat on a chat with a turn in progress branches from its stored transcript', async (t) => {
-  const h = harness({ streaming: true });
-  t.after(h.cleanup);
+  const h = harness(t, { streaming: true });
   storeDroidTranscript('source', 'Step one moves the schema.');
 
   await h.forks.fork({
@@ -347,14 +330,13 @@ test('a side chat on a chat with a turn in progress branches from its stored tra
 });
 
 test('a copy taken while the source was replaced is not kept', async (t) => {
-  const h = harness({
+  const h = harness(t, {
     provider: 'claude',
     duringFork: (stored) => {
       const source = stored.get('source');
       if (source) stored.set('source', { ...source, providerSessionId: 'replacement' });
     },
   });
-  t.after(h.cleanup);
 
   await h.forks.fork({
     type: 'session.fork',
