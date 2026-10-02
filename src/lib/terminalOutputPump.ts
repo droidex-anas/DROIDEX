@@ -1,7 +1,7 @@
 const encoder = new TextEncoder();
 const decoder = new TextDecoder();
 
-export const TERMINAL_HIDDEN_BUFFER_BYTES = 2 * 1024 * 1024;
+const TERMINAL_HIDDEN_BUFFER_BYTES = 2 * 1024 * 1024;
 
 export function utf8ByteLength(text: string): number {
   return encoder.encode(text).byteLength;

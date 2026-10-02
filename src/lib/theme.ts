@@ -290,7 +290,7 @@ export function isHexColor(value: unknown): value is string {
   return typeof value === 'string' && HEX_COLOR.test(value);
 }
 
-export function readThemeColors(value: unknown): ThemeColors | null {
+function readThemeColors(value: unknown): ThemeColors | null {
   if (!value || typeof value !== 'object') return null;
   const raw = value as Record<string, unknown>;
   const colors = {
