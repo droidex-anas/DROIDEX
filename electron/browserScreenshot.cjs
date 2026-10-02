@@ -20,7 +20,13 @@ const NOT_DRAWN =
   'The page gave no picture, which happens while the screen is asleep or locked; no screenshot was taken. Read the page with browser_read_page or browser_read_text instead.';
 
 function createBrowserScreenshot({ reading, nativeImage, redactUrl }) {
+  // Guests with a capture the page never answered. Chromium changes the page's
+  // size for a capture and puts it back only when the capture ends, so no
+  // second one is sent on top of one still in flight.
+  const unanswered = new WeakSet();
+
   async function take(contents, entry, options = {}) {
+    if (unanswered.has(contents)) throw new Error(NOT_DRAWN);
     for (let attempt = 0; attempt < 2; attempt++) {
       const shot = await reading.withPage(contents, (dbg) =>
         attemptShot(dbg, contents, entry, options),
@@ -47,7 +53,7 @@ function createBrowserScreenshot({ reading, nativeImage, redactUrl }) {
     const clip = clipFor(view, options, box);
     const masks = await masksFor(dbg, view, options);
     const scale = Math.min(1, MAX_EDGE / Math.max(clip.width, clip.height));
-    let image = await capture(dbg, view, clip, scale, options);
+    let image = await capture(dbg, contents, view, clip, scale, options);
     const after = await viewOf(dbg);
     if (after.key !== view.key) return undefined;
     if (JSON.stringify(await masksFor(dbg, after, options)) !== JSON.stringify(masks))
@@ -66,18 +72,22 @@ function createBrowserScreenshot({ reading, nativeImage, redactUrl }) {
   // the masks were read from (a copy of the composited surface can still
   // show the frame before a scroll). Clips are in page coordinates, at CSS
   // size; only the full page renders beyond the viewport.
-  async function capture(dbg, view, clip, scale, options) {
+  async function capture(dbg, contents, view, clip, scale, options) {
     const origin = options.fullPage ? { x: 0, y: 0 } : { x: view.pageX, y: view.pageY };
     const captured = dbg.sendCommand('Page.captureScreenshot', {
       format: 'png',
       captureBeyondViewport: Boolean(options.fullPage),
       clip: { ...clip, x: origin.x + clip.x, y: origin.y + clip.y, scale: scale / view.dpr },
     });
-    // The capture left waiting ends on its own once the page draws again.
-    captured.catch(() => undefined);
     let timer;
     const late = new Promise((_, reject) => {
-      timer = setTimeout(() => reject(new Error(NOT_DRAWN)), CAPTURE_MS);
+      timer = setTimeout(() => {
+        // The capture left waiting ends on its own once the page draws again.
+        unanswered.add(contents);
+        const answered = () => unanswered.delete(contents);
+        captured.then(answered, answered);
+        reject(new Error(NOT_DRAWN));
+      }, CAPTURE_MS);
     });
     const { data } = await Promise.race([captured, late]).finally(() => clearTimeout(timer));
     return nativeImage.createFromBuffer(Buffer.from(data, 'base64'));
