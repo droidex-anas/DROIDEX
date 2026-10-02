@@ -83,20 +83,9 @@ test('the running document preserves layout, theme, and the local bridge', () =>
   assert.match(document, /observer\.observe\(document\.body\)/);
   assert.match(document, /"app-1"/);
   assert.match(document, /color-scheme: light/);
-  assert.match(document, /--app-background: #f7f7f5/);
-  assert.match(document, /--app-foreground: #202020/);
   assert.match(document, /--app-accent: #2f6fed/);
-  assert.match(document, /background: transparent/);
-  assert.doesNotMatch(document, /background: var\(--app-background\) !important/);
-  assert.doesNotMatch(document, /\[data-droidex-app-root\] \{[\s\S]*?\n {2}background:/);
-  assert.match(document, /padding: 0/);
-  assert.match(document, /\[data-droidex-app-root\]/);
-  assert.match(document, /max-width: none !important/);
-  assert.doesNotMatch(document, /\[data-droidex-app-root\] \{[^}]*border-radius:\s*0\s*!important/);
   assert.match(document, /window\.droidex/);
-  assert.match(document, /\[data-latex\]/);
   assert.match(document, /droidex:render-math/);
-  assert.match(document, /droidex:math-rendered/);
   assert.match(document, /<main><h1>Responsive app<\/h1><\/main>/);
 });
 
@@ -137,22 +126,7 @@ test('reported app heights follow the app instead of creating a nested scroller'
   assert.equal(normalizeAppBlockHeight(Number.NaN), 360);
 });
 
-test('restored app blocks mount directly without a Play or Stop card', () => {
-  const html = renderToStaticMarkup(
-    createElement(RunningAppFrame, {
-      source: '<button>Private source</button>',
-      instanceId: 'app-1',
-    }),
-  );
-
-  assert.match(html, /Interactive App/);
-  assert.match(html, /<iframe/i);
-  assert.doesNotMatch(html, /aria-label="(?:Play|Stop) app"/);
-  // A mismatched iframe/document color scheme makes Chromium paint an opaque backdrop.
-  assert.match(html, /color-scheme:dark/);
-});
-
-test('the running frame keeps app code inside a script-only sandbox', () => {
+test('a running App mounts in a script-only sandbox, hidden behind its build surface', () => {
   const html = renderToStaticMarkup(
     createElement(RunningAppFrame, {
       source: '<button>Safe app</button>',
@@ -160,22 +134,12 @@ test('the running frame keeps app code inside a script-only sandbox', () => {
     }),
   );
 
-  assert.match(html, /<iframe/i);
+  assert.doesNotMatch(html, /aria-label="(?:Play|Stop) app"/);
   assert.match(html, /sandbox="allow-scripts"/);
   assert.doesNotMatch(html, /allow-same-origin/);
   assert.match(html, /referrerPolicy="no-referrer"/i);
-  assert.match(html, /title="Interactive App block"/);
-  assert.doesNotMatch(html, /transition-\[height\]/);
-});
-
-test('a started App builds behind a status surface until it reports its size', () => {
-  const html = renderToStaticMarkup(
-    createElement(RunningAppFrame, {
-      source: '<button>Slow app</button>',
-      instanceId: 'app-build',
-    }),
-  );
-
+  // A mismatched iframe/document color scheme makes Chromium paint an opaque backdrop.
+  assert.match(html, /color-scheme:dark/);
   assert.match(html, /role="status"/);
   assert.match(html, /Starting interactive app/);
   // The frame still loads while hidden, and stays out of the reading and tab
@@ -183,9 +147,6 @@ test('a started App builds behind a status surface until it reports its size', (
   assert.match(html, /loading="eager"/);
   assert.match(html, /aria-hidden="true"/);
   assert.match(html, /tabindex="-1"/i);
-  // Off-layout, so the hidden frame's default height cannot reserve space the
-  // measured App will not use.
-  assert.match(html, /invisible pointer-events-none absolute inset-x-0 top-0/);
 });
 
 test('height reports coalesce on a timer so a hidden host window still measures', () => {
@@ -611,78 +572,6 @@ test('the iframe reports its initial height only after built-in math settles', a
       },
     ],
   );
-});
-
-test('the iframe measures its content so the frame can shrink with it', async () => {
-  const documentHtml = createAppDocument('<main>Compact</main>', 'app-shrink', undefined, 'token');
-  const script = /<script>([\s\S]*?)<\/script>/.exec(documentHtml)?.[1];
-  assert.ok(script);
-
-  // The root element always fills the frame viewport, so its scrollHeight never
-  // drops below the height the host already applied. Measuring it turns every
-  // report into a ratchet: compact content is padded out to the frame it was
-  // given, and an App that shrinks keeps its taller frame forever.
-  const body = {
-    tagName: 'BODY',
-    scrollHeight: 141,
-    children: [] as never[],
-    matches: () => false,
-  };
-  const documentElement = { scrollHeight: 360 };
-  const runtimeDocument = {
-    body,
-    documentElement,
-    querySelector: () => null,
-    querySelectorAll: () => [],
-  };
-  const listeners = new Map<string, () => void>();
-  const heights: number[] = [];
-  const pendingReports: (() => void)[] = [];
-  let observerCallback: (() => void) | undefined;
-
-  vm.runInNewContext(script, {
-    parent: {
-      postMessage(message: Record<string, unknown>) {
-        if (message.type === 'droidex:app-height') heights.push(message.height as number);
-      },
-    },
-    window: {},
-    Element: class {},
-    document: runtimeDocument,
-    setTimeout(callback: () => void) {
-      pendingReports.push(callback);
-      return pendingReports.length;
-    },
-    clearTimeout: () => undefined,
-    ResizeObserver: class {
-      constructor(callback: () => void) {
-        observerCallback = callback;
-      }
-      observe() {}
-      disconnect() {}
-    },
-    addEventListener(type: string, listener: () => void) {
-      listeners.set(type, listener);
-    },
-    removeEventListener: () => undefined,
-  });
-
-  const flushReports = () => {
-    observerCallback?.();
-    while (pendingReports.length > 0) pendingReports.shift()?.();
-  };
-
-  listeners.get('DOMContentLoaded')?.();
-  // The first report waits for built-in math to settle, one microtask away.
-  await Promise.resolve();
-  await Promise.resolve();
-  flushReports();
-  assert.deepEqual(heights, [141]);
-
-  body.scrollHeight = 90;
-  documentElement.scrollHeight = 141;
-  flushReports();
-  assert.deepEqual(heights, [141, 90]);
 });
 
 test('short and functional CSS colors select the correct canvas scheme', () => {

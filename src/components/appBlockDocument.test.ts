@@ -52,6 +52,7 @@ function documentRuntime() {
     }
   }
   const canvas = new Canvas();
+  const body = { children: [], scrollHeight: 200 };
   const parent = { postMessage: (message: unknown) => messages.push(message) };
   const style = {
     colorScheme: '',
@@ -81,7 +82,7 @@ function documentRuntime() {
     parent,
     document: {
       documentElement: { style, scrollHeight: 360 },
-      body: { children: [], scrollHeight: 200 },
+      body,
       querySelector: (selector: string) => (selector === '#plot' ? canvas : null),
       querySelectorAll: () => [],
     },
@@ -122,6 +123,7 @@ function documentRuntime() {
   };
   return {
     api,
+    body,
     canvas,
     events,
     window,
@@ -245,23 +247,31 @@ test('a failed first Canvas draw restores the context and releases its resources
   assert.equal(runtime.timers.size, 0);
 });
 
-test('hidden document startup reports natural height on a timer and stops on pagehide', async () => {
+test('hidden document reports content height on a timer, shrinks with it, and stops on pagehide', async () => {
   const runtime = documentRuntime();
+  const heights = () =>
+    runtime.messages.flatMap((message) =>
+      typeof message === 'object' &&
+      message !== null &&
+      'type' in message &&
+      message.type === 'droidex:app-height' &&
+      'height' in message
+        ? [message.height]
+        : [],
+    );
   runtime.events.dispatchEvent(new Event('DOMContentLoaded'));
   await Promise.resolve();
   await Promise.resolve();
   runtime.flush();
-  assert.ok(
-    runtime.messages.some(
-      (message) =>
-        typeof message === 'object' &&
-        message !== null &&
-        'type' in message &&
-        message.type === 'droidex:app-height' &&
-        'height' in message &&
-        message.height === 200,
-    ),
-  );
+  // The body, not the viewport-filling root (360), is the content height.
+  assert.deepEqual(heights(), [200]);
+
+  // Measuring the root would ratchet: a shrinking App would keep its taller frame.
+  runtime.body.scrollHeight = 90;
+  runtime.observers[0].callback();
+  runtime.flush();
+  assert.deepEqual(heights(), [200, 90]);
+
   runtime.observers[0].callback();
   runtime.events.dispatchEvent(new Event('pagehide'));
   runtime.sendTheme({ ...DEFAULT_APP_THEME, accent: '#123456' });
