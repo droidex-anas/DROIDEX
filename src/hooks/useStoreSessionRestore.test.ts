@@ -84,6 +84,56 @@ test('#29 restore status moves from loading to loaded, or paged while an older c
 
   const paged = applyHistory(start, [ev('c', 3), ev('d', 4)], { olderCursor: '1:end' });
   assert.deepEqual(paged.sessionRestore.m1, { status: 'paged', loadedCount: 2, hasMore: true });
+  assert.deepEqual(transcriptIds(paged), ['c', 'd']);
+  assert.equal(paged.historyCursor.m1, '1:end');
+  assert.equal(paged.historyLoadingOlder.m1, false);
+  assert.equal(paged.historyLoaded.m1, true);
+});
+
+test('a prepend puts older events ahead of the scrollback and records its provenance', () => {
+  const seeded = withLive([ev('c', 3), ev('d', 4)], {
+    historyCursor: { m1: '1:end' },
+    historyLoadingOlder: { m1: true },
+  });
+
+  const next = applyHistory(seeded, [ev('a', 1), ev('b', 2)], {
+    mode: 'prepend',
+    olderCursor: '0:end',
+  });
+
+  assert.deepEqual(transcriptIds(next), ['a', 'b', 'c', 'd']);
+  assert.equal(next.historyCursor.m1, '0:end');
+  assert.equal(next.historyLoadingOlder.m1, false);
+  assert.deepEqual(next.transcriptMutations.m1, {
+    revision: 1,
+    baseRevision: 0,
+    kind: 'prepend',
+    previousLength: 2,
+    firstChangedIndex: 0,
+    insertedCount: 2,
+  });
+});
+
+test('a prepend skips events already at the boundary; an all-duplicate page only settles loading', () => {
+  const overlapping = applyHistory(
+    withLive([ev('b', 2), ev('c', 3)], { historyLoadingOlder: { m1: true } }),
+    [ev('a', 1), ev('b', 2)],
+    { mode: 'prepend' },
+  );
+  assert.deepEqual(transcriptIds(overlapping), ['a', 'b', 'c']);
+  assert.equal(overlapping.historyCursor.m1, undefined);
+  assert.equal(overlapping.historyLoadingOlder.m1, false);
+  assert.equal(overlapping.transcriptMutations.m1.insertedCount, 1);
+
+  const existing = [ev('a', 1), ev('b', 2)];
+  const loading = reducer(withLive(existing), {
+    type: 'SESSION_HISTORY_LOADING_OLDER',
+    appSessionId: 'm1',
+  });
+  assert.equal(loading.historyLoadingOlder.m1, true);
+  const duplicate = applyHistory(loading, [ev('a', 1)], { mode: 'prepend' });
+  assert.equal(duplicate.transcripts.m1, existing);
+  assert.equal(duplicate.historyLoadingOlder.m1, false);
 });
 
 test('#29 a replace never clobbers live events that streamed in before the snapshot', () => {
@@ -572,4 +622,42 @@ test('#29 prepend grows the restore count and resolves to loaded when no cursor 
   assert.equal(next.sessionRestore.m1.status, 'loaded');
   assert.equal(next.sessionRestore.m1.hasMore, false);
   assert.equal(next.sessionRestore.m1.loadedCount, 4);
+});
+
+test('child history failures preserve the retry cursor and settle only that child', () => {
+  const seeded = {
+    ...initialState,
+    childHistory: {
+      m1: {
+        'child-1': {
+          status: 'paged',
+          loadedCount: 120,
+          hasMore: true,
+          isLoaded: true,
+          isLoadingOlder: true,
+          olderCursor: 'child-older',
+          isViewportPinned: false,
+        },
+      },
+    },
+  } as unknown as AppState;
+
+  const next = reducer(seeded, {
+    type: 'SESSION_HISTORY_FAILED',
+    appSessionId: 'm1',
+    childSessionId: 'child-1',
+    message: 'history unavailable',
+  });
+
+  assert.deepEqual(next.childHistory.m1['child-1'], {
+    status: 'failed',
+    loadedCount: 120,
+    hasMore: true,
+    error: 'history unavailable',
+    isLoaded: true,
+    isLoadingOlder: false,
+    olderCursor: 'child-older',
+    isViewportPinned: false,
+  });
+  assert.equal(next.sessionRestore.m1, undefined);
 });

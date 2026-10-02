@@ -153,39 +153,6 @@ test('viewport release removes only old in-memory events after a settled bottom-
   );
 });
 
-test('exact older-history insertion records prepend provenance', () => {
-  const transcript = events('active', 2);
-  const state = stateWithTranscript('active', transcript, {
-    transcriptMutations: {
-      active: {
-        revision: 3,
-        baseRevision: 2,
-        kind: 'append',
-        previousLength: 1,
-        firstChangedIndex: 1,
-      },
-    },
-  });
-  const older = events('active', 1).map((event) => ({ ...event, id: 'older', ts: -1 }));
-
-  const next = reducer(state, {
-    type: 'SESSION_HISTORY',
-    appSessionId: 'active',
-    progress: [],
-    transcripts: older,
-    mode: 'prepend',
-  });
-
-  assert.deepEqual(next.transcriptMutations.active, {
-    revision: 4,
-    baseRevision: 3,
-    kind: 'prepend',
-    previousLength: transcript.length,
-    firstChangedIndex: 0,
-    insertedCount: 1,
-  });
-});
-
 test('primary release preserves child-session transcripts owned by separate history', () => {
   const primary = events('active', 4_000);
   const child = childEvents('child-1', 500, 'worker', 0.5);
