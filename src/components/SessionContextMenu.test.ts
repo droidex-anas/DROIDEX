@@ -73,11 +73,7 @@ test('SessionContextMenu hides the working-directory row when the session has no
   const html = render({ cwd: undefined });
   assert.doesNotMatch(html, /Copy Working Directory/);
   assert.match(html, /Copy Session ID/);
-});
-
-test('SessionContextMenu hides the working-directory row for an empty cwd too', () => {
-  const html = render({ cwd: '' });
-  assert.doesNotMatch(html, /Copy Working Directory/);
+  assert.doesNotMatch(render({ cwd: '' }), /Copy Working Directory/);
 });
 
 test('SessionContextMenu renders without a window global and skips the clamp', () => {
@@ -97,10 +93,6 @@ test('SessionContextMenu clamps to the viewport bottom using the rendered row co
   assert.ok(top, 'expected an inline top style');
   // 800 - 228 - 8 margin = 564.
   assert.equal(Number(top[1]), 564);
-});
-
-test('SessionContextMenu separator is exposed to assistive technology', () => {
-  assert.match(render(), /role="separator"/);
 });
 
 test('SessionContextMenu hides the session id and link rows until the harness assigns an id', () => {

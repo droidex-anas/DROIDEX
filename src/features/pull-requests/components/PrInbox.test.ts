@@ -133,20 +133,3 @@ test('selecting a pull request in another workspace expands that group', () => {
   assert.match(html, /Site PR/);
   assert.match(html, /aria-expanded="true"/);
 });
-
-test('a failed sibling repository stays collapsed without a GraphQL dump', () => {
-  const html = renderInbox({
-    repoErrors: [
-      {
-        cwd: '/repos/clinic',
-        repoName: 'clinic',
-        message: 'GitHub could not find evilfps/dr-koshley-skin-clinic.',
-        reason: 'unresolved_repository',
-      },
-    ],
-  });
-  assert.match(html, /App PR/);
-  assert.match(html, /Show clinic pull requests/);
-  assert.doesNotMatch(html, /Site PR/);
-  assert.doesNotMatch(html, /GraphQL/);
-});

@@ -48,14 +48,10 @@ function render(githubReady: boolean, envOverrides: Partial<GitEnvironment> = {}
   );
 }
 
-test('local git actions remain while the PR row waits for GitHub setup', () => {
+test('local git actions remain while Create pull request waits for GitHub setup', () => {
   const html = render(false);
-
   assert.match(html, />Commit or push</);
   assert.doesNotMatch(html, />Create pull request</);
-});
-
-test('Create pull request returns when GitHub setup is ready', () => {
   assert.match(render(true), />Create pull request</);
 });
 

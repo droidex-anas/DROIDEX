@@ -28,31 +28,19 @@ const SINGLE = makeQuestion([
   },
 ]);
 
-test('renders the question, every option, and a custom-answer row', () => {
+test('a single question offers unselected toggles, a custom answer, and a disabled Submit', () => {
   const html = renderCard(SINGLE);
 
   assert.match(html, /Which database should I use\?/);
   assert.match(html, />SQLite</);
   assert.match(html, />Postgres</);
   assert.match(html, /Type your own answer/);
-});
-
-test('options are toggle buttons and start unselected', () => {
-  const html = renderCard(SINGLE);
-
+  // Options are toggle buttons and start unselected.
   assert.ok(!html.includes('aria-pressed="true"'));
   assert.equal((html.match(/aria-pressed="false"/g) ?? []).length, 2);
-});
-
-test('submit stays disabled until an answer exists', () => {
-  const html = renderCard(SINGLE);
-
+  // Submit stays disabled until an answer exists.
   assert.match(html, /<button[^>]*disabled=""[^>]*>Submit</);
-});
-
-test('a single question hides the step counter and Back', () => {
-  const html = renderCard(SINGLE);
-
+  // A single question hides the step counter and Back.
   assert.ok(!html.includes(' of '));
   assert.ok(!html.includes('>Back</button>'));
 });

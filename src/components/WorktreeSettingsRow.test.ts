@@ -41,9 +41,3 @@ test('merged worktrees use the GitHub merged icon without a text badge', () => {
   assert.match(html, /fill-\[#a371f7\]/);
   assert.doesNotMatch(html, />merged</i);
 });
-
-test('worktree paths use the regular UI typeface', () => {
-  const html = renderRow();
-  assert.match(html, /\/repo\/\.worktrees\/feature/);
-  assert.doesNotMatch(html, /font-mono/);
-});

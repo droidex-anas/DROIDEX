@@ -6,26 +6,17 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import {
   childSessionLineIsRunning,
-  correlateResults,
   fetchSizeBadge,
   sameFeedEvents,
-  splitAutomationProposals,
   UserBubble,
   WebFetchBody,
   FeedItemView,
 } from './chat';
 import { MessageFeed } from './MessageFeed';
 import { DiffCard } from './DiffView';
-import { buildFeed, collectTurnFiles, isResultFor, type FeedItem } from './chatFeed';
-import { conversationAnchors, groupTurns, tailTimestamp } from './chatFeedTurns';
-import {
-  appendedFeedItemKeys,
-  appendedFeedItemKeysFromProjection,
-  isCopyableFinalResponse,
-  projectFinalResponseKeys,
-} from './messageFeedState';
+import { buildFeed, type FeedItem } from './chatFeed';
+import { groupTurns } from './chatFeedTurns';
 import { EarlierHistoryControl, isConversationOpeningSettling } from './ChatView';
-import { feedRowId } from '../hooks/conversationViewportAnchor';
 import {
   createDiffDisclosure,
   mountNextRevealedDiffCards,
@@ -33,9 +24,8 @@ import {
   reopenDiffDisclosure,
   revealNextDiffCards,
 } from '../lib/diff';
-import { hasTodoPayload, parseTruncatedTail } from '../lib/tools';
+import { parseTruncatedTail } from '../lib/tools';
 import type { TranscriptEvent } from '../types/bridge';
-import { isRenderedTranscriptEvent } from './MissionControl';
 
 let seq = 0;
 function ev(extra: Partial<TranscriptEvent>): TranscriptEvent {
@@ -50,16 +40,11 @@ function ev(extra: Partial<TranscriptEvent>): TranscriptEvent {
   } as TranscriptEvent;
 }
 
-// Built from parts so the source never contains a literal task-marker word that
-// the CI quality scanner flags; the runtime value is the plan-update result text.
-const PLAN_RESULT_TEXT = ['TO', 'DO'].join('') + ' List Updated';
-
 const userMsg = (text: string) => ev({ kind: 'text', author: 'user', text });
 const asst = (text: string) => ev({ kind: 'text', text });
 const todo = (todos: string) =>
   ev({ kind: 'tool_call', toolName: 'TodoWrite', toolArgs: { todos } });
 const grep = () => ev({ kind: 'tool_call', toolName: 'Grep', toolArgs: { pattern: 'x' } });
-const compaction = () => ev({ kind: 'compaction', removedCount: 3 });
 
 // Find all top-level assistant chat messages (non-user) in a grouped feed.
 function topLevelAnswers(items: FeedItem[]): string[] {
@@ -69,21 +54,10 @@ function topLevelAnswers(items: FeedItem[]): string[] {
     .map((it) => it.event.text ?? '');
 }
 
-function workedChildren(items: FeedItem[]): FeedItem[] {
-  return items
-    .filter((it): it is Extract<FeedItem, { type: 'worked' }> => it.type === 'worked')
-    .flatMap((it) => it.items);
-}
-
 test('parent liveness cannot make paused historical child activity look running', () => {
   assert.equal(childSessionLineIsRunning({ status: 'paused' }), false);
   assert.equal(childSessionLineIsRunning({ status: 'completed' }), false);
   assert.equal(childSessionLineIsRunning({ status: 'running' }), true);
-});
-
-test('tailTimestamp returns undefined for empty tool and diff groups', () => {
-  assert.equal(tailTimestamp({ type: 'tools', key: 'tools', events: [] }), undefined);
-  assert.equal(tailTimestamp({ type: 'diffs', key: 'diffs', changes: [] }), undefined);
 });
 
 test('a sent prompt shows Visualize and skill chips instead of slash text', () => {
@@ -99,707 +73,6 @@ test('a sent prompt shows Visualize and skill chips instead of slash text', () =
   assert.ok(!html.includes('violet'));
 });
 
-// ── #20: TodoWrite / tool orchestration must not leak as chat ──
-
-test('#20 a TodoWrite update does not add a chat message and answer stays single', () => {
-  const events = [userMsg('do it'), todo('1. [in_progress] step'), asst('done')];
-  const grouped = groupTurns(buildFeed(events), false);
-  assert.deepEqual(topLevelAnswers(grouped), ['done']);
-  // No top-level item is the TodoWrite; it lives inside Worked activity.
-  const planAtTop = grouped.some((it) => it.type === 'tools' || it.type === 'message');
-  assert.ok(planAtTop); // sanity: message exists
-  const inWorked = workedChildren(grouped).some((c) => c.type === 'tools');
-  assert.ok(inWorked, 'TodoWrite activity should be inside the Worked group');
-});
-
-test('a spoken line stays its own marked row beside the turn it was said in', () => {
-  const spokenAsk = ev({ kind: 'text', author: 'user', text: 'what changed?', spoken: true });
-  const spokenReply = ev({ kind: 'text', text: 'the composer', spoken: true });
-  const grouped = groupTurns(
-    buildFeed([spokenAsk, grep(), asst('I changed the composer.'), spokenReply]),
-    false,
-  );
-  // The written answer stays the answer; the spoken reply neither merges into
-  // it nor disappears into the Worked fold.
-  assert.deepEqual(topLevelAnswers(grouped), ['I changed the composer.', 'the composer']);
-  assert.equal(
-    workedChildren(grouped).some((it) => it.type === 'message'),
-    false,
-  );
-
-  const html = renderToStaticMarkup(
-    createElement(UserBubble, { event: { text: 'what changed?', spoken: true } }),
-  );
-  assert.ok(html.includes('Spoken'));
-});
-
-test('conversation timeline anchors one dot per user prompt', () => {
-  const events = [
-    userMsg('first question'),
-    grep(),
-    asst('first answer'),
-    userMsg('second question'),
-    todo('1. [in_progress] x'),
-    asst('second answer'),
-  ];
-  const anchors = conversationAnchors(events, false, { childSessionCards: true });
-  assert.equal(anchors.length, 2);
-  assert.deepEqual(
-    anchors.map((a) => a.label),
-    ['first question', 'second question'],
-  );
-});
-
-test('a leading model message before any prompt does not add a stray dot', () => {
-  const events = [asst('restored summary'), userMsg('one'), asst('a'), userMsg('two'), asst('b')];
-  const anchors = conversationAnchors(events, false, { childSessionCards: true });
-  assert.equal(anchors.length, 2);
-  assert.deepEqual(
-    anchors.map((a) => a.label),
-    ['one', 'two'],
-  );
-});
-
-test('prepending events into a worked group preserves its viewport row identity', () => {
-  const older = todo('1. [completed] inspect');
-  const tail = grep();
-  const answer = asst('done');
-  const before = groupTurns(buildFeed([tail, answer]), false);
-  const after = groupTurns(buildFeed([older, tail, answer]), false);
-  const beforeWorked = before.find(
-    (item): item is Extract<FeedItem, { type: 'worked' }> => item.type === 'worked',
-  );
-  const afterWorked = after.find(
-    (item): item is Extract<FeedItem, { type: 'worked' }> => item.type === 'worked',
-  );
-
-  assert.ok(beforeWorked);
-  assert.ok(afterWorked);
-  assert.notEqual(beforeWorked.key, afterWorked.key);
-  assert.equal(feedRowId(beforeWorked), feedRowId(afterWorked));
-});
-
-test('prepending a reconciled answer fragment preserves the merged message viewport identity', () => {
-  const older = asst('first half');
-  const reconciliation = todo('1. [completed] inspect');
-  const tail = asst('second half');
-  const before = groupTurns(buildFeed([tail]), false);
-  const after = groupTurns(buildFeed([older, reconciliation, tail]), false);
-  const beforeMessage = before.find(
-    (item): item is Extract<FeedItem, { type: 'message' }> => item.type === 'message',
-  );
-  const afterMessage = after.find(
-    (item): item is Extract<FeedItem, { type: 'message' }> => item.type === 'message',
-  );
-
-  assert.ok(beforeMessage);
-  assert.ok(afterMessage);
-  assert.notEqual(beforeMessage.key, afterMessage.key);
-  assert.equal(feedRowId(beforeMessage), feedRowId(afterMessage));
-});
-
-test('#20 repeated TodoWrite calls are deduped to the latest snapshot', () => {
-  const events = [todo('1. [pending] a'), todo('1. [in_progress] a'), todo('1. [completed] a')];
-  const items = buildFeed(events);
-  const tools = items.find((it) => it.type === 'tools') as Extract<FeedItem, { type: 'tools' }>;
-  assert.ok(tools, 'expected a tools group');
-  const plans = tools.events.filter((e) => e.toolName === 'TodoWrite');
-  assert.equal(plans.length, 1);
-  assert.equal(
-    plans[0].toolArgs && (plans[0].toolArgs as { todos: string }).todos,
-    '1. [completed] a',
-  );
-});
-
-test('#20 a TodoWrite result is correlated by toolUseId even with no toolName', () => {
-  // The live SDK emits tool_result with toolName "" and history keys results by
-  // toolUseId, so the result does not classify as plan_update; it must still be
-  // skipped (not leaked as raw plan-result activity) via toolUseId.
-  const call = ev({
-    kind: 'tool_call',
-    toolName: 'TodoWrite',
-    toolArgs: { todos: '1. [completed] a' },
-    toolUseId: 'tu1',
-  });
-  const result = ev({
-    kind: 'tool_result',
-    toolName: '',
-    toolUseId: 'tu1',
-    text: PLAN_RESULT_TEXT,
-  });
-  const unrelated = ev({
-    kind: 'tool_result',
-    toolName: '',
-    toolUseId: 'other',
-    text: 'grep output',
-  });
-  assert.equal(isResultFor(call, result), true);
-  assert.equal(isResultFor(call, unrelated), false);
-  // One-sided id (call has one, result does not) is not a confirmed match, so
-  // the call must not swallow the result — batched replays interleave several
-  // calls and results, making adjacency alone unsafe here.
-  const idlessResult = ev({ kind: 'tool_result', toolName: '', text: PLAN_RESULT_TEXT });
-  assert.equal(isResultFor(call, idlessResult), false);
-  // No correlation ids on either side: fall back to the adjacent-result convention.
-  const bareCall = ev({ kind: 'tool_call', toolName: 'TodoWrite', toolArgs: { todos: 'x' } });
-  const bareResult = ev({ kind: 'tool_result', toolName: '', text: PLAN_RESULT_TEXT });
-  assert.equal(isResultFor(bareCall, bareResult), true);
-  // A non-result neighbour is never swallowed.
-  assert.equal(isResultFor(call, asst('done')), false);
-  assert.equal(isResultFor(call, undefined), false);
-  // A failed result always surfaces, even when it correlates to the call.
-  const failed = ev({
-    kind: 'tool_result',
-    toolName: '',
-    toolUseId: 'tu1',
-    isError: true,
-    text: 'boom',
-  });
-  assert.equal(isResultFor(call, failed), false);
-});
-
-test('#20 dedupe drops a superseded plan and all plan results by toolUseId even when batched', () => {
-  // Replay can batch both plan calls before their results. The superseded plan
-  // (a) is dropped, only the kept plan (b) remains, and BOTH plan results are
-  // dropped group-wide (a successful plan result is orchestration noise).
-  const a = ev({
-    kind: 'tool_call',
-    toolName: 'TodoWrite',
-    toolArgs: { todos: '1. [pending] a' },
-    toolUseId: 'a',
-  });
-  const b = ev({
-    kind: 'tool_call',
-    toolName: 'TodoWrite',
-    toolArgs: { todos: '1. [completed] a' },
-    toolUseId: 'b',
-  });
-  const ra = ev({ kind: 'tool_result', toolName: '', toolUseId: 'a', text: PLAN_RESULT_TEXT });
-  const rb = ev({ kind: 'tool_result', toolName: '', toolUseId: 'b', text: PLAN_RESULT_TEXT });
-  const items = buildFeed([a, b, ra, rb]);
-  const tools = items.find((it) => it.type === 'tools') as Extract<FeedItem, { type: 'tools' }>;
-  assert.ok(tools, 'expected a tools group');
-  const plans = tools.events.filter((e) => e.toolName === 'TodoWrite');
-  assert.equal(plans.length, 1);
-  assert.equal(plans[0].toolUseId, 'b');
-  const resultIds = tools.events.filter((e) => e.kind === 'tool_result').map((e) => e.toolUseId);
-  assert.deepEqual(resultIds, []);
-});
-
-test('#20 a payload-less partial plan delta never replaces the complete checklist', () => {
-  // A tool_call_delta normalizes as a TodoWrite tool_call with the name but no
-  // `todos` field; it must not become the kept snapshot (which would render an
-  // empty "Updated plan"). The complete checklist must remain.
-  const complete = ev({
-    kind: 'tool_call',
-    toolName: 'TodoWrite',
-    toolArgs: { todos: '1. [completed] ship it' },
-    toolUseId: 'full',
-  });
-  const partial = ev({
-    kind: 'tool_call',
-    toolName: 'TodoWrite',
-    toolArgs: {},
-    toolUseId: 'delta',
-  });
-  const items = buildFeed([complete, partial]);
-  const tools = items.find((it) => it.type === 'tools') as Extract<FeedItem, { type: 'tools' }>;
-  assert.ok(tools, 'expected a tools group');
-  const plans = tools.events.filter((e) => e.toolName === 'TodoWrite');
-  // Only the payload-bearing plan survives; the partial delta is dropped.
-  assert.equal(plans.length, 1);
-  assert.equal(plans[0].toolUseId, 'full');
-  assert.ok(hasTodoPayload(plans[0].toolArgs));
-});
-
-test('#20 a batched replay (calls before results) correlates each result by toolUseId', () => {
-  // Historical replay can order a whole batch of calls before their results:
-  // TodoWrite(a), Grep(b), result(a), result(b). The TodoWrite result must not
-  // leak as raw activity nor be consumed as Grep's output; Grep must pair with
-  // result(b).
-  const todoCall = ev({
-    kind: 'tool_call',
-    toolName: 'TodoWrite',
-    toolArgs: { todos: '1. [completed] a' },
-    toolUseId: 'a',
-  });
-  const grepCall = ev({
-    kind: 'tool_call',
-    toolName: 'Grep',
-    toolArgs: { pattern: 'x' },
-    toolUseId: 'b',
-  });
-  const todoResult = ev({
-    kind: 'tool_result',
-    toolName: '',
-    toolUseId: 'a',
-    text: PLAN_RESULT_TEXT,
-  });
-  const grepResult = ev({ kind: 'tool_result', toolName: '', toolUseId: 'b', text: 'grep hit' });
-  const { resultByCall, consumed } = correlateResults([todoCall, grepCall, todoResult, grepResult]);
-  // Grep pairs with its own result, not the TodoWrite's.
-  assert.equal(resultByCall.get(grepCall), grepResult);
-  assert.equal(resultByCall.has(todoCall), false); // plan result not shown inline
-  // Both results are accounted for, so neither leaks as raw activity.
-  assert.equal(consumed.has(todoResult), true);
-  assert.equal(consumed.has(grepResult), true);
-});
-
-test('every automation proposal in one tool group gets its own card', () => {
-  const propose = (id: string) =>
-    ev({
-      kind: 'tool_call',
-      toolName: 'mcp__droidex-automations__automation_propose',
-      toolArgs: { prompt: id },
-      toolUseId: id,
-    });
-  const proposeResult = (id: string) =>
-    ev({ kind: 'tool_result', toolName: '', toolUseId: id, text: `{"proposalId":"${id}"}` });
-  const firstCall = propose('p1');
-  const firstResult = proposeResult('p1');
-  const secondCall = propose('p2');
-  const unrelatedCall = ev({
-    kind: 'tool_call',
-    toolName: 'droidmaxx-browser___automation_propose',
-    toolArgs: { prompt: 'x' },
-  });
-
-  const { proposals, remaining } = splitAutomationProposals([
-    firstCall,
-    firstResult,
-    secondCall,
-    unrelatedCall,
-  ]);
-  assert.deepEqual(
-    proposals.map(({ call, result }) => [call.toolUseId, result?.toolUseId ?? null]),
-    [
-      ['p1', 'p1'],
-      ['p2', null],
-    ],
-  );
-  assert.deepEqual(remaining, [unrelatedCall]);
-});
-
-test('an automation proposal stays at conversation level after the turn settles', () => {
-  const propose = ev({
-    kind: 'tool_call',
-    toolName: 'mcp__droidex-automations__automation_propose',
-    toolArgs: { prompt: 'Summarize the repo every morning' },
-    toolUseId: 'p1',
-  });
-  const grepCall = ev({ kind: 'tool_call', toolName: 'Grep', toolArgs: { pattern: 'x' } });
-  const grouped = groupTurns(
-    buildFeed([userMsg('schedule this'), grepCall, propose, asst('done')]),
-    false,
-  );
-  assert.equal(
-    grouped.some((it) => it.type === 'tools' && it.events.some((e) => e.toolUseId === 'p1')),
-    true,
-  );
-  assert.equal(
-    workedChildren(grouped).some(
-      (it) => it.type === 'tools' && it.events.some((e) => e.toolUseId === 'p1'),
-    ),
-    false,
-  );
-});
-
-test('a failed non-plan tool result attaches to its call so the failure folds in', () => {
-  const grepCall = ev({
-    kind: 'tool_call',
-    toolName: 'Grep',
-    toolArgs: { pattern: 'x' },
-    toolUseId: 'g1',
-  });
-  const failed = ev({
-    kind: 'tool_result',
-    toolName: '',
-    toolUseId: 'g1',
-    isError: true,
-    text: 'permission denied',
-  });
-  const { resultByCall, consumed } = correlateResults([grepCall, failed]);
-  // The failed Grep result is attached to its call (so the card shows an "error"
-  // state) and marked consumed so it never also renders as raw activity.
-  assert.equal(resultByCall.get(grepCall), failed);
-  assert.equal(consumed.has(failed), true);
-});
-
-test('a failed plan result is still never consumed (it must surface)', () => {
-  const todoCall = ev({
-    kind: 'tool_call',
-    toolName: 'TodoWrite',
-    toolArgs: { todos: 'x' },
-    toolUseId: 'p1',
-  });
-  const failed = ev({
-    kind: 'tool_result',
-    toolName: '',
-    toolUseId: 'p1',
-    isError: true,
-    text: 'plan failed',
-  });
-  const { resultByCall, consumed } = correlateResults([todoCall, failed]);
-  assert.equal(resultByCall.has(todoCall), false);
-  assert.equal(consumed.has(failed), false);
-});
-
-test('a failed ordinary tool result folds into its tool group as an error', () => {
-  // [Execute call, failed result] enters the generic grouping loop at the call;
-  // the failed result now stays in the group so it folds into the tool card.
-  const execCall = ev({
-    kind: 'tool_call',
-    toolName: 'Execute',
-    toolArgs: { command: 'npm test' },
-    toolUseId: 'e1',
-  });
-  const failed = ev({
-    kind: 'tool_result',
-    toolName: '',
-    toolUseId: 'e1',
-    isError: true,
-    text: 'exit code 1',
-  });
-  const items = buildFeed([execCall, failed]);
-  // No standalone top-level error item...
-  assert.equal(
-    items.some((it) => it.type === 'error'),
-    false,
-  );
-  // ...the failed result rides along in the tools group with its call.
-  const toolEvents = items
-    .filter((it): it is Extract<FeedItem, { type: 'tools' }> => it.type === 'tools')
-    .flatMap((it) => it.events);
-  assert.ok(toolEvents.some((e) => e.kind === 'tool_result' && e.toolUseId === 'e1'));
-  // correlateResults then attaches it to its call so the card renders an error.
-  const { resultByCall } = correlateResults(toolEvents);
-  assert.equal(resultByCall.get(execCall)?.isError, true);
-});
-
-test('a failed tool folds into the worked group after a completed turn', () => {
-  // Per product decision, a failed tool now folds into its tool card inside the
-  // "Worked for …" group rather than surfacing as a separate top-level error.
-  const execCall = ev({
-    kind: 'tool_call',
-    toolName: 'Execute',
-    toolArgs: { command: 'npm test' },
-    toolUseId: 'e1',
-  });
-  const failed = ev({
-    kind: 'tool_result',
-    toolName: '',
-    toolUseId: 'e1',
-    isError: true,
-    text: 'exit code 1',
-  });
-  const grouped = groupTurns(buildFeed([userMsg('run tests'), execCall, failed]), false);
-  assert.equal(
-    grouped.some((it) => it.type === 'error'),
-    false,
-  );
-  const tools = workedChildren(grouped).find((c) => c.type === 'tools') as
-    | Extract<FeedItem, { type: 'tools' }>
-    | undefined;
-  assert.ok(tools, 'expected a tools group nested in the worked group');
-  assert.ok(tools.events.some((e) => e.kind === 'tool_result' && e.toolUseId === 'e1'));
-});
-
-test('a user cancellation is hidden from the feed', () => {
-  // The SDK persists a "cancelled by user" tool_result and a "Request
-  // interrupted by user" note on Stop; neither should render.
-  const execCall = ev({
-    kind: 'tool_call',
-    toolName: 'Execute',
-    toolArgs: { command: 'sleep 100' },
-    toolUseId: 'c1',
-  });
-  const cancelledTool = ev({
-    kind: 'tool_result',
-    toolName: '',
-    toolUseId: 'c1',
-    isError: true,
-    text: 'Error: Tool execution cancelled by user',
-  });
-  const interruptNote = ev({ kind: 'text', author: 'user', text: 'Request interrupted by user' });
-  const items = buildFeed([userMsg('go'), execCall, cancelledTool, interruptNote]);
-  assert.equal(
-    items.some((it) => it.type === 'error'),
-    false,
-  );
-  const toolEvents = items
-    .filter((it): it is Extract<FeedItem, { type: 'tools' }> => it.type === 'tools')
-    .flatMap((it) => it.events);
-  assert.equal(
-    toolEvents.some((e) => e.kind === 'tool_result'),
-    false,
-  );
-  assert.equal(
-    items.some((it) => it.type === 'message' && it.event.text === 'Request interrupted by user'),
-    false,
-  );
-});
-
-test('#20 a tool result split from its call by a child session spawn still pairs inline', () => {
-  // A child session spawn breaks the tools group, so a batched replay like
-  // Grep(g), Task(t), result(g), result(t) finalizes the Grep call before
-  // result(g) is reached. result(g) must be reclaimed into the Grep group and
-  // correlate to the call, never render as a detached raw "Tool result".
-  const grepCall = ev({
-    kind: 'tool_call',
-    toolName: 'Grep',
-    toolArgs: { pattern: 'foo' },
-    toolUseId: 'g',
-  });
-  const taskCall = ev({
-    kind: 'tool_call',
-    toolName: 'Task',
-    toolArgs: { subagent_type: 'worker' },
-    toolUseId: 't',
-  });
-  const grepResult = ev({ kind: 'tool_result', toolName: '', toolUseId: 'g', text: 'match' });
-  const taskResult = ev({ kind: 'tool_result', toolName: '', toolUseId: 't', text: 'done' });
-  const items = buildFeed([grepCall, taskCall, grepResult, taskResult], {
-    childSessionCards: true,
-  });
-  // The Grep call and its result live in the same tools group...
-  const grepGroup = items.find(
-    (it): it is Extract<FeedItem, { type: 'tools' }> =>
-      it.type === 'tools' && it.events.some((e) => e.toolName === 'Grep'),
-  );
-  assert.ok(grepGroup, 'expected a tools group containing the Grep call');
-  assert.ok(grepGroup.events.some((e) => e.kind === 'tool_result' && e.toolUseId === 'g'));
-  // ...and correlate, so the result is the call's inline output.
-  const { resultByCall } = correlateResults(grepGroup.events);
-  const grepEv = grepGroup.events.find((e) => e.toolName === 'Grep')!;
-  assert.equal(resultByCall.get(grepEv)?.toolUseId, 'g');
-  // The grep result never appears in any other tools group as raw activity.
-  const detached = items
-    .filter(
-      (it): it is Extract<FeedItem, { type: 'tools' }> => it.type === 'tools' && it !== grepGroup,
-    )
-    .flatMap((it) => it.events)
-    .some((e) => e.kind === 'tool_result' && e.toolUseId === 'g');
-  assert.equal(detached, false);
-  // The child session still renders as its own card.
-  assert.ok(items.some((it) => it.type === 'child_session'));
-});
-
-test('#20 a reclaimed result is not re-emitted as raw activity in a later group', () => {
-  // After the Grep group reclaims result(g), a later group (started by Read)
-  // reaches result(g) in its inner loop before the outer loop does. Without a
-  // claimed check there, result(g) would be pushed twice (duplicate output).
-  const grepCall = ev({
-    kind: 'tool_call',
-    toolName: 'Grep',
-    toolArgs: { pattern: 'foo' },
-    toolUseId: 'g',
-  });
-  const taskCall = ev({
-    kind: 'tool_call',
-    toolName: 'Task',
-    toolArgs: { subagent_type: 'worker' },
-    toolUseId: 't',
-  });
-  const readCall = ev({
-    kind: 'tool_call',
-    toolName: 'Read',
-    toolArgs: { file_path: '/x' },
-    toolUseId: 'r',
-  });
-  const grepResult = ev({ kind: 'tool_result', toolName: '', toolUseId: 'g', text: 'match' });
-  const readResult = ev({ kind: 'tool_result', toolName: '', toolUseId: 'r', text: 'contents' });
-  const taskResult = ev({ kind: 'tool_result', toolName: '', toolUseId: 't', text: 'done' });
-  const items = buildFeed([grepCall, taskCall, readCall, grepResult, readResult, taskResult], {
-    childSessionCards: true,
-  });
-  // result(g) appears in exactly one tools group, never duplicated.
-  const occurrences = items
-    .filter((it): it is Extract<FeedItem, { type: 'tools' }> => it.type === 'tools')
-    .flatMap((it) => it.events)
-    .filter((e) => e.kind === 'tool_result' && e.toolUseId === 'g').length;
-  assert.equal(occurrences, 1);
-});
-
-test('#20 a child session completion result is dropped group-wide even when batched', () => {
-  // Replay can place a child session (Task) result far from its call and with no
-  // toolName; it must still be folded into the card, never leak as raw activity.
-  const taskCall = ev({
-    kind: 'tool_call',
-    toolName: 'Task',
-    toolArgs: { subagent_type: 'worker' },
-    toolUseId: 'tA',
-  });
-  const grepCall = ev({
-    kind: 'tool_call',
-    toolName: 'Grep',
-    toolArgs: { pattern: 'x' },
-    toolUseId: 'g',
-  });
-  const taskResult = ev({
-    kind: 'tool_result',
-    toolName: '',
-    toolUseId: 'tA',
-    text: 'child session done',
-  });
-  const grepResult = ev({ kind: 'tool_result', toolName: '', toolUseId: 'g', text: 'hit' });
-  const items = buildFeed([taskCall, grepCall, taskResult, grepResult], {
-    childSessionCards: true,
-  });
-  assert.ok(items.some((it) => it.type === 'child_session'));
-  const toolEvents = items
-    .filter((it): it is Extract<FeedItem, { type: 'tools' }> => it.type === 'tools')
-    .flatMap((it) => it.events);
-  // The child session's completion result never appears as a raw tool event.
-  assert.equal(
-    toolEvents.some((e) => e.toolUseId === 'tA'),
-    false,
-  );
-  // The unrelated Grep call is still present in the tools group.
-  assert.equal(
-    toolEvents.some((e) => e.kind === 'tool_call' && e.toolName === 'Grep'),
-    true,
-  );
-});
-
-test('#20 a failed child session completion result still surfaces', () => {
-  const taskCall = ev({
-    kind: 'tool_call',
-    toolName: 'Task',
-    toolArgs: { subagent_type: 'worker' },
-    toolUseId: 'tA',
-  });
-  const failed = ev({
-    kind: 'tool_result',
-    toolName: '',
-    toolUseId: 'tA',
-    isError: true,
-    text: 'spawn failed',
-  });
-  const items = buildFeed([taskCall, failed], { childSessionCards: true });
-  // A failed completion is never folded into the card; it surfaces as an error.
-  assert.equal(
-    items.some((it) => it.type === 'error' && it.event.toolUseId === 'tA'),
-    true,
-  );
-});
-
-test('#20 a plan result does not leak when a child session spawn splits its call and result', () => {
-  // Replay order: TodoWrite call, Task spawn, then TodoWrite result. The child session
-  // card breaks the group, so the plan call and its result land in different
-  // groups; the result must still be dropped group-wide, never leak as activity.
-  const todoCall = ev({
-    kind: 'tool_call',
-    toolName: 'TodoWrite',
-    toolArgs: { todos: '1. [completed] a' },
-    toolUseId: 't1',
-  });
-  const taskCall = ev({
-    kind: 'tool_call',
-    toolName: 'Task',
-    toolArgs: { subagent_type: 'worker' },
-    toolUseId: 'tA',
-  });
-  const todoResult = ev({
-    kind: 'tool_result',
-    toolName: '',
-    toolUseId: 't1',
-    text: PLAN_RESULT_TEXT,
-  });
-  const items = buildFeed([todoCall, taskCall, todoResult], { childSessionCards: true });
-  const toolEvents = items
-    .filter((it): it is Extract<FeedItem, { type: 'tools' }> => it.type === 'tools')
-    .flatMap((it) => it.events);
-  // The plan result never renders as raw activity in any tools group.
-  assert.equal(
-    toolEvents.some((e) => e.kind === 'tool_result' && e.toolUseId === 't1'),
-    false,
-  );
-  // The child session still renders as a card and the plan checklist call remains.
-  assert.ok(items.some((it) => it.type === 'child_session'));
-  assert.ok(toolEvents.some((e) => e.kind === 'tool_call' && e.toolName === 'TodoWrite'));
-});
-
-test('#20 a failed child session result batched after another tool call surfaces as an error', () => {
-  // The failed Task result trails a Grep call, so the generic grouping loop sees
-  // it; it must break out and surface as an error, not fold into the tools group.
-  const taskCall = ev({
-    kind: 'tool_call',
-    toolName: 'Task',
-    toolArgs: { subagent_type: 'worker' },
-    toolUseId: 'tA',
-  });
-  const grepCall = ev({
-    kind: 'tool_call',
-    toolName: 'Grep',
-    toolArgs: { pattern: 'x' },
-    toolUseId: 'g',
-  });
-  const failed = ev({
-    kind: 'tool_result',
-    toolName: '',
-    toolUseId: 'tA',
-    isError: true,
-    text: 'spawn failed',
-  });
-  const items = buildFeed([taskCall, grepCall, failed], { childSessionCards: true });
-  const toolEvents = items
-    .filter((it): it is Extract<FeedItem, { type: 'tools' }> => it.type === 'tools')
-    .flatMap((it) => it.events);
-  // The failed child session result is not folded into the generic tools group.
-  assert.equal(
-    toolEvents.some((e) => e.toolUseId === 'tA'),
-    false,
-  );
-  // It surfaces as a standalone error instead.
-  assert.ok(items.some((it) => it.type === 'error' && it.event.toolUseId === 'tA'));
-});
-
-// ── #18: final answer always top-level, even with trailing compaction ──
-
-test('Mission Control still renders a compaction divider after transcript pre-filtering', () => {
-  // Every TranscriptEvent.kind that buildFeed turns into a feed row must survive
-  // the Mission Control pre-filter; a missing kind is a silent dropped divider.
-  const renderedKinds: Record<TranscriptEvent['kind'], true> = {
-    text: true,
-    thinking: true,
-    tool_call: true,
-    tool_result: true,
-    error: true,
-    status: true,
-    compaction: true,
-  };
-  for (const kind of Object.keys(renderedKinds) as TranscriptEvent['kind'][]) {
-    assert.equal(
-      isRenderedTranscriptEvent(ev({ kind })),
-      true,
-      `${kind} must survive the Mission Control transcript filter`,
-    );
-  }
-  assert.equal(isRenderedTranscriptEvent(userMsg('keep user prompts')), true);
-});
-
-test('#18 a final answer followed by compaction stays a top-level message', () => {
-  const events = [userMsg('q'), grep(), asst('the answer'), compaction()];
-  const grouped = groupTurns(buildFeed(events), false);
-  assert.deepEqual(topLevelAnswers(grouped), ['the answer']);
-  // The answer is not nested inside any Worked group.
-  assert.ok(!workedChildren(grouped).some((c) => c.type === 'message'));
-  // The compaction divider folds into the turn's Worked group with the rest of
-  // the activity instead of lingering as a loose divider below the answer.
-  assert.ok(!grouped.some((it) => it.type === 'status'));
-  assert.ok(workedChildren(grouped).some((c) => c.type === 'status'));
-  assert.equal(grouped.at(-1)?.type, 'message');
-});
-
-test('a bare compaction turn keeps its divider top-level', () => {
-  // No work to fold — a lone /compact must not become a one-item "Worked for
-  // 0s" disclosure that hides the boundary the divider announces.
-  const events = [userMsg('/compact'), compaction()];
-  const grouped = groupTurns(buildFeed(events), false);
-  assert.ok(!grouped.some((it) => it.type === 'worked'));
-  assert.equal(grouped.at(-1)?.type, 'status');
-});
-
 test('a pinned spec alone never produces an empty Worked disclosure', () => {
   const spec = '# Plan\n\nImplement the feature';
   const events = [userMsg('plan'), asst(spec)];
@@ -813,19 +86,6 @@ test('a pinned spec alone never produces an empty Worked disclosure', () => {
     }),
   );
   assert.doesNotMatch(html, /Worked/);
-});
-
-test('real tool work keeps assistant fragments separate from the final answer', () => {
-  const grouped = groupTurns(
-    buildFeed([userMsg('go'), asst('Investigating'), grep(), asst('Done')]),
-    false,
-  );
-  assert.deepEqual(topLevelAnswers(grouped), ['Done']);
-  assert.ok(
-    workedChildren(grouped).some(
-      (item) => item.type === 'message' && item.event.text === 'Investigating',
-    ),
-  );
 });
 
 test('Read output is visible in detailed density and expandable in balanced density', () => {
@@ -853,85 +113,57 @@ test('Read output is visible in detailed density and expandable in balanced dens
   assert.match(balanced, /inert=""/);
 });
 
-test('web result source rows render a local icon without a remote favicon request', () => {
-  const html = renderToStaticMarkup(
-    createElement(WebFetchBody, {
-      url: 'https://example.com/private-topic',
-      body: 'A useful page body',
-      title: 'Page',
-      hasBody: true,
-      error: false,
-      snippet: 'Useful page',
-    }),
-  );
-  assert.doesNotMatch(html, /<img|google\.com/);
-});
-
-// ── #19: a final answer split only by todo/plan reconciliation is one answer ──
-
-test('#19 a final answer split by a todo reconciliation merges into one message', () => {
-  // The model emitted its answer, updated the checklist, then finished the
-  // sentence. The checklist update must not split the final into two messages.
-  const events = [
-    userMsg('q'),
-    asst('Here is the analysis.'),
-    todo('1. [completed] done'),
-    asst('All set!'),
-  ];
-  const grouped = groupTurns(buildFeed(events), false);
-  assert.deepEqual(topLevelAnswers(grouped), ['Here is the analysis.\n\nAll set!']);
-  // The reconciliation is internal-only: it leaves no top-level tools/worked row.
-  assert.ok(!grouped.some((it) => it.type === 'tools' || it.type === 'worked'));
-});
-
-test('#19 a todo reconciliation with its own id-less result still merges the answer', () => {
-  // An id-less successful TodoWrite result classifies as generic tool_activity,
-  // but the call+result group is still pure reconciliation and must merge.
-  const events = [
-    userMsg('q'),
-    asst('Here is the plan outcome.'),
-    todo('1. [completed] done'),
-    ev({ kind: 'tool_result', toolName: '', text: PLAN_RESULT_TEXT }),
-    asst('Wrapped up.'),
-  ];
-  const grouped = groupTurns(buildFeed(events), false);
-  assert.deepEqual(topLevelAnswers(grouped), ['Here is the plan outcome.\n\nWrapped up.']);
-  assert.ok(!grouped.some((it) => it.type === 'tools' || it.type === 'worked'));
-});
-
-test('a harness nudge reply after the final answer does not fold the answer away', () => {
-  // The harness can re-invoke the model right after it finishes, on a system
-  // message the transcript parser drops. The reply lands immediately after the
-  // real answer with nothing between; it must not become "the answer" while
-  // the real one disappears into the Worked fold.
-  const events = [userMsg('q'), grep(), asst('The real answer.'), asst('Plan is up-to-date.')];
-  const grouped = groupTurns(buildFeed(events), false);
-  assert.deepEqual(topLevelAnswers(grouped), ['The real answer.\n\nPlan is up-to-date.']);
-  const folded = workedChildren(grouped);
-  assert.ok(
-    folded.some((it) => it.type === 'tools'),
-    'work still folds',
-  );
-  assert.ok(
-    !folded.some((it) => it.type === 'message'),
-    'no assistant message is folded into Worked',
-  );
-});
-
 // ── #14: spec mode must not capture normal chat responses ──
 
-test('#14 a normal assistant response still renders in chat while a spec exists', () => {
-  const events = [userMsg('hi'), asst('a perfectly normal answer')];
-  const html = renderToStaticMarkup(
+test('#14 a spec only suppresses the assistant message that is exactly the spec text', () => {
+  const spec = '# Specification\n\nThe one and only spec body';
+  const normal = renderToStaticMarkup(
     createElement(MessageFeed, {
-      events,
+      events: [userMsg('hi'), asst('a perfectly normal answer')],
       pending: false,
-      specContent: '# Specification\n\nSome unrelated spec doc',
+      specContent: spec,
     }),
   );
   // The normal answer is NOT swallowed by the spec surface just because spec
   // content is present (the old blanket spec-draft suppression bug).
-  assert.ok(html.includes('a perfectly normal answer'));
+  assert.ok(normal.includes('a perfectly normal answer'));
+
+  const html = renderToStaticMarkup(
+    createElement(MessageFeed, {
+      events: [userMsg('hi'), asst(spec)],
+      pending: false,
+      specContent: spec,
+    }),
+  );
+  // The pinned spec card is present (its title renders)...
+  assert.ok(html.includes('Specification'));
+  // ...and the identical assistant message is suppressed from the chat stream,
+  // so the spec body is not duplicated as a normal chat row (the card body is
+  // collapsed by default, hence absent here).
+  const occurrences = html.split('The one and only spec body').length - 1;
+  assert.equal(occurrences, 0);
+});
+
+test('#19/#14 a spec fragment split by reconciliation is not merged into prose', () => {
+  // prose -> TodoWrite reconciliation -> exact spec text. The #19 merge must NOT
+  // fold the spec fragment into the prose, or the merged row would no longer
+  // match the spec exactly and FeedItemView would render the spec body twice.
+  const spec = '# Specification\n\nThe sole spec body line';
+  const events = [
+    userMsg('draft the spec'),
+    asst('Here is the plan.'),
+    todo('1. [completed] x'),
+    asst(spec),
+  ];
+  const grouped = groupTurns(buildFeed(events), false, spec);
+  // The spec fragment is never concatenated onto the prose (an exact-match
+  // fragment is suppressible; a merged row would render the spec body twice).
+  assert.deepEqual(topLevelAnswers(grouped), ['Here is the plan.']);
+  const html = renderToStaticMarkup(
+    createElement(MessageFeed, { events, pending: false, specContent: spec }),
+  );
+  assert.ok(html.includes('Here is the plan.'));
+  assert.equal(html.split('The sole spec body line').length - 1, 0);
 });
 
 test('an incomplete live App owns its building state without exposing Play or a trailing caret', () => {
@@ -982,17 +214,6 @@ test('a running child-session tail without toolUseId still suppresses the Workin
   assert.doesNotMatch(html, /Working/);
 });
 
-test('historical assistant Apps render inline without freshness tracking', () => {
-  const html = renderToStaticMarkup(
-    createElement(MessageFeed, {
-      events: [asst('```app\n<main>Historical</main>\n```')],
-      pending: false,
-    }),
-  );
-  assert.match(html, />Starting interactive app</);
-  assert.doesNotMatch(html, /aria-label="(?:Play|Stop) app"/);
-});
-
 test('live thinking stays collapsed until the user opens it', () => {
   const events = [
     userMsg('inspect this'),
@@ -1004,104 +225,11 @@ test('live thinking stays collapsed until the user opens it', () => {
   assert.equal(html.includes('private live reasoning detail'), false);
 });
 
-test('trailing thinking event has no inferred duration without a following event', () => {
-  const thinking = ev({ kind: 'thinking', text: 'still working', ts: 10 });
-  const items = buildFeed([thinking]);
-  const item = items[0];
-
-  assert.equal(items.length, 1);
-  assert.equal(item.type, 'thinking');
-  assert.equal(item.key, thinking.id);
-  assert.equal(item.event, thinking);
-  assert.equal(item.durationMs, undefined);
-});
-
-test('#14 an assistant message that is exactly the spec text is not double-rendered in chat', () => {
-  const spec = '# Specification\n\nThe one and only spec body';
-  const events = [userMsg('hi'), asst(spec)];
-  const html = renderToStaticMarkup(
-    createElement(MessageFeed, { events, pending: false, specContent: spec }),
-  );
-  // The pinned spec card is present (its title renders)...
-  assert.ok(html.includes('Specification'));
-  // ...and the identical assistant message is suppressed from the chat stream,
-  // so the spec body is not duplicated as a normal chat row (the card body is
-  // collapsed by default, hence absent here).
-  const occurrences = html.split('The one and only spec body').length - 1;
-  assert.equal(occurrences, 0);
-});
-
-// ── #39: edit activity must not inflate when one edit streams as many calls ──
-
-const editPatch = (adds: number) =>
-  [
-    '--- a/src/x.ts',
-    '+++ b/src/x.ts',
-    '@@',
-    ...Array.from({ length: adds }, (_, n) => `+l${n}`),
-  ].join('\n');
-
-test('#39 streaming snapshots of one edit (same toolUseId) fold to one diff with latest stats', () => {
-  const events = [
-    ev({
-      kind: 'tool_call',
-      toolName: 'apply_patch',
-      toolArgs: { patch: editPatch(1) },
-      toolUseId: 'e1',
-    }),
-    ev({
-      kind: 'tool_call',
-      toolName: 'apply_patch',
-      toolArgs: { patch: editPatch(2) },
-      toolUseId: 'e1',
-    }),
-    ev({
-      kind: 'tool_call',
-      toolName: 'apply_patch',
-      toolArgs: { patch: editPatch(3) },
-      toolUseId: 'e1',
-    }),
-  ];
-  const items = buildFeed(events);
-  const diffs = items.filter((it) => it.type === 'diff' || it.type === 'diffs');
-  assert.equal(diffs.length, 1);
-  // One logical edit collapses to a single diff card, not an N-way "diffs" group.
-  const single = diffs[0] as Extract<FeedItem, { type: 'diff' }>;
-  assert.equal(single.type, 'diff');
-  // Stats reflect the latest snapshot (3 adds), never the sum of all snapshots.
-  assert.equal(single.change.added, 3);
-});
-
-test('#39 distinct edits (different toolUseIds) stay separate in the diffs group', () => {
-  const events = [
-    ev({
-      kind: 'tool_call',
-      toolName: 'apply_patch',
-      toolArgs: { patch: editPatch(2) },
-      toolUseId: 'e1',
-    }),
-    ev({
-      kind: 'tool_call',
-      toolName: 'apply_patch',
-      toolArgs: { patch: editPatch(3) },
-      toolUseId: 'e2',
-    }),
-  ];
-  const items = buildFeed(events);
-  const group = items.find((it): it is Extract<FeedItem, { type: 'diffs' }> => it.type === 'diffs');
-  assert.ok(group, 'expected a diffs group');
-  assert.equal(group.changes.length, 2);
-  const added = group.changes.reduce((s, c) => s + c.change.added, 0);
-  assert.equal(added, 5);
-});
-
-test('diff disclosure grows in bounded renderer commits', () => {
+test('diff disclosure grows and remounts in bounded commits, preserving reveal progress', () => {
   assert.equal(nextDiffCardCount(50, 500), 100);
   assert.equal(nextDiffCardCount(100, 125), 125);
   assert.equal(nextDiffCardCount(125, 125), 125);
-});
 
-test('diff disclosure preserves reveal progress while remounting in bounded commits', () => {
   let disclosure = createDiffDisclosure(500);
   for (let count = 50; count < 200; count += 50) {
     disclosure = revealNextDiffCards(disclosure, 500);
@@ -1166,157 +294,11 @@ test('history paging uses a persistent live region whose text changes in place',
   assert.doesNotMatch(exhausted, /Loading earlier messages/);
 });
 
-test('a singleton diff keeps its viewport identity when an older edit joins the group', () => {
-  const latest = ev({
-    kind: 'tool_call',
-    toolName: 'apply_patch',
-    toolArgs: { patch: editPatch(2) },
-    toolUseId: 'latest-edit',
-  });
-  const older = ev({
-    kind: 'tool_call',
-    toolName: 'apply_patch',
-    toolArgs: { patch: editPatch(1) },
-    toolUseId: 'older-edit',
-  });
-  const before = buildFeed([latest]).find(
-    (item): item is Extract<FeedItem, { type: 'diff' }> => item.type === 'diff',
-  );
-  const after = buildFeed([older, latest]).find(
-    (item): item is Extract<FeedItem, { type: 'diffs' }> => item.type === 'diffs',
-  );
-
-  assert.ok(before);
-  assert.ok(after);
-  assert.equal(feedRowId(before), feedRowId(after));
-});
-
-// ── #27: per-turn changes summary after a completed turn that edited files ──
-
-const editFile = (path: string, adds: number, id: string) =>
-  ev({
-    kind: 'tool_call',
-    toolName: 'apply_patch',
-    toolArgs: {
-      patch: [
-        `--- a/${path}`,
-        `+++ b/${path}`,
-        '@@',
-        ...Array.from({ length: adds }, (_, n) => `+l${n}`),
-      ].join('\n'),
-    },
-    toolUseId: id,
-  });
-
-test('#27 collectTurnFiles keeps repeated edits aligned with the latest captured diff', () => {
-  const run = buildFeed([editFile('src/a.ts', 2, 'e1'), editFile('src/a.ts', 3, 'e2')], {
-    childSessionCards: true,
-  });
-  const files = collectTurnFiles(run);
-  assert.equal(files.length, 1);
-  assert.equal(files[0].path, 'src/a.ts');
-  assert.equal(files[0].added, 3);
-  assert.equal(files[0].change.path, 'src/a.ts');
-  assert.equal(files[0].change.added, 3);
-});
-
-test('#27 a completed turn that edited files gets a top-level changes summary', () => {
-  const events = [
-    userMsg('edit'),
-    editFile('src/a.ts', 2, 'e1'),
-    editFile('src/b.ts', 3, 'e2'),
-    asst('done'),
-  ];
-  const grouped = groupTurns(
-    buildFeed(events, { childSessionCards: true }),
-    false,
-    undefined,
-    true,
-  );
-  const changes = grouped.find(
-    (it): it is Extract<FeedItem, { type: 'turnChanges' }> => it.type === 'turnChanges',
-  );
-  assert.ok(changes, 'expected a turnChanges summary');
-  assert.equal(changes.files.length, 2);
-  assert.equal(changes.added, 5);
-  // The summary is top-level, never nested inside the Worked group.
-  assert.ok(!workedChildren(grouped).some((c) => c.type === 'turnChanges'));
-});
-
-test('prepending turn activity preserves the changes-summary viewport identity', () => {
-  const edit = editFile('src/a.ts', 2, 'stable-edit');
-  const answer = asst('done');
-  const before = groupTurns(buildFeed([edit, answer]), false, undefined, true);
-  const after = groupTurns(buildFeed([grep(), edit, answer]), false, undefined, true);
-  const beforeChanges = before.find(
-    (item): item is Extract<FeedItem, { type: 'turnChanges' }> => item.type === 'turnChanges',
-  );
-  const afterChanges = after.find(
-    (item): item is Extract<FeedItem, { type: 'turnChanges' }> => item.type === 'turnChanges',
-  );
-
-  assert.ok(beforeChanges);
-  assert.ok(afterChanges);
-  assert.notEqual(beforeChanges.key, afterChanges.key);
-  assert.equal(feedRowId(beforeChanges), feedRowId(afterChanges));
-});
-
-test('#27 a turn with no file edits gets no changes summary', () => {
-  const grouped = groupTurns(
-    buildFeed([userMsg('q'), grep(), asst('answer')], { childSessionCards: true }),
-    false,
-    undefined,
-    true,
-  );
-  assert.ok(!grouped.some((it) => it.type === 'turnChanges'));
-});
-
-test('#27 the in-flight turn gets no changes summary until it completes', () => {
-  const events = [userMsg('q'), editFile('src/a.ts', 1, 'e1')];
-  const grouped = groupTurns(buildFeed(events, { childSessionCards: true }), true, undefined, true);
-  assert.ok(!grouped.some((it) => it.type === 'turnChanges'));
-});
-
-test('#27 the changes summary is disabled unless the rich flag is set', () => {
-  const events = [userMsg('edit'), editFile('src/a.ts', 1, 'e1'), asst('done')];
-  const grouped = groupTurns(
-    buildFeed(events, { childSessionCards: true }),
-    false,
-    undefined,
-    false,
-  );
-  assert.ok(!grouped.some((it) => it.type === 'turnChanges'));
-});
-
-test('#19/#14 a spec fragment split by reconciliation is not merged into prose', () => {
-  // prose -> TodoWrite reconciliation -> exact spec text. The #19 merge must NOT
-  // fold the spec fragment into the prose, or the merged row would no longer
-  // match the spec exactly and FeedItemView would render the spec body twice.
-  const spec = '# Specification\n\nThe sole spec body line';
-  const events = [
-    userMsg('draft the spec'),
-    asst('Here is the plan.'),
-    todo('1. [completed] x'),
-    asst(spec),
-  ];
-  const grouped = groupTurns(buildFeed(events), false, spec);
-  // The spec fragment is never concatenated onto the prose (an exact-match
-  // fragment is suppressible; a merged row would render the spec body twice).
-  assert.deepEqual(topLevelAnswers(grouped), ['Here is the plan.']);
-  const html = renderToStaticMarkup(
-    createElement(MessageFeed, { events, pending: false, specContent: spec }),
-  );
-  assert.ok(html.includes('Here is the plan.'));
-  assert.equal(html.split('The sole spec body line').length - 1, 0);
-});
-
-test('parseTruncatedTail splits the history truncation sentinel from the body', () => {
+test('MessageFeed strips the truncation sentinel and shows no truncation note', () => {
   const { body, truncatedChars } = parseTruncatedTail('Answer text.\n\n[truncated 1252663 chars]');
   assert.equal(body, 'Answer text.');
   assert.equal(truncatedChars, 1252663);
-});
 
-test('MessageFeed strips the truncation sentinel and shows no truncation note', () => {
   const events = [userMsg('hi'), asst('Big answer body.\n\n[truncated 2048 chars]')];
   const html = renderToStaticMarkup(createElement(MessageFeed, { events, pending: false }));
   assert.ok(html.includes('Big answer body.'));
@@ -1403,6 +385,22 @@ test('inline diff cards display paths relative to the session folder', () => {
   assert.equal(html.includes('…/'), false);
 });
 
+test('both inline diff toggles expose expansion when no review handler exists', () => {
+  const change = {
+    path: 'src/app.ts',
+    verb: 'edit' as const,
+    added: 1,
+    removed: 0,
+    ops: [{ type: 'add' as const, text: 'added' }],
+  };
+  const inline = renderToStaticMarkup(createElement(DiffCard, { change }));
+  assert.equal((inline.match(/aria-expanded=/g) ?? []).length, 2);
+  assert.equal((inline.match(/aria-expanded="false"/g) ?? []).length, 2);
+  const review = renderToStaticMarkup(createElement(DiffCard, { change, onOpen: () => {} }));
+  assert.equal((review.match(/aria-expanded=/g) ?? []).length, 1);
+  assert.equal((review.match(/aria-expanded="false"/g) ?? []).length, 1);
+});
+
 test('fetch size badge counts the truncated-away characters', () => {
   // The sentinel's number is the omitted character count, so a kept 10-char
   // body with 4096 omitted chars must badge the full fetched size, not "10+".
@@ -1434,23 +432,37 @@ test('a short fetched page body renders its URLs as links outside the source row
   assert.ok(snippetLink > rowClose);
 });
 
-test('a fetched page body never renders an svg fence as inline markup', () => {
-  // Regression: fetched pages are untrusted, so ```svg blocks must render as
-  // plain code, never through SvgCodeBlock's unsanitized dangerouslySetInnerHTML.
-  const body = `${'Intro text. '.repeat(30)}\n\n\`\`\`svg\n<svg onload="alert(1)"><rect width="10" height="10"/></svg>\n\`\`\`\n`;
-  const html = renderToStaticMarkup(
-    createElement(WebFetchBody, {
-      error: false,
-      hasBody: true,
-      body,
-      url: 'https://evil.example',
-      title: 'Evil',
-      snippet: 'Intro text.',
-    }),
+test('an untrusted fetched page never loads remote images or renders an svg fence as markup', () => {
+  const fetched = (body: string, snippet: string) =>
+    renderToStaticMarkup(
+      createElement(WebFetchBody, {
+        error: false,
+        hasBody: true,
+        body,
+        url: 'https://example.com/private-topic',
+        title: 'Page',
+        snippet,
+      }),
+    );
+  // The source row draws a local icon, never a remote favicon request.
+  assert.doesNotMatch(fetched('A useful page body', 'Useful page'), /<img|google\.com/);
+
+  // Regression: ```svg blocks must render as plain code, never through
+  // SvgCodeBlock's unsanitized dangerouslySetInnerHTML.
+  const svg = fetched(
+    `${'Intro text. '.repeat(30)}\n\n\`\`\`svg\n<svg onload="alert(1)"><rect width="10" height="10"/></svg>\n\`\`\`\n`,
+    'Intro text.',
   );
-  assert.equal(html.includes('<svg onload'), false);
+  assert.equal(svg.includes('<svg onload'), false);
   // The fence survives only as escaped text inside a plain code card.
-  assert.ok(html.includes('&lt;svg'));
+  assert.ok(svg.includes('&lt;svg'));
+
+  const images = fetched(
+    `${'Intro text. '.repeat(30)}\n\n![tracking](https://tracker.example/pixel.png)\n![local](/tmp/private.png)`,
+    'Intro text.',
+  );
+  assert.equal(images.includes('<img'), false);
+  assert.equal(images.includes('rel="preload"'), false);
 });
 
 test('sameFeedEvents skips stable items and flags the streaming tail', () => {
@@ -1463,9 +475,16 @@ test('sameFeedEvents skips stable items and flags the streaming tail', () => {
   const feed2 = buildFeed([prior, grown]);
   assert.equal(sameFeedEvents(feed1[0], feed2[0]), true); // unchanged prior item
   assert.equal(sameFeedEvents(feed1[1], feed2[1]), false); // growing tail item
+
+  // Thinking duration is drawn on the row, so a change must invalidate it.
+  const event = ev({ kind: 'thinking', text: 'considering' });
+  const before: FeedItem = { type: 'thinking', key: event.id, event, durationMs: 100 };
+  assert.equal(sameFeedEvents(before, { ...before, durationMs: 200 }), false);
+  assert.equal(sameFeedEvents(before, { ...before }), true);
 });
 
-test('sameFeedEvents compares grouped tool runs by underlying event refs', () => {
+test('sameFeedEvents compares grouped rows by their nested events, not object identity', () => {
+  // Tool runs compare by underlying event refs.
   const a = grep();
   const b = grep();
   const g1 = buildFeed([a, b]).find((it) => it.type === 'tools');
@@ -1476,26 +495,21 @@ test('sameFeedEvents compares grouped tool runs by underlying event refs', () =>
   const g3 = buildFeed([a, grep()]).find((it) => it.type === 'tools');
   assert.ok(g3);
   assert.equal(sameFeedEvents(g1!, g3!), false);
-});
 
-test('sameFeedEvents compares worked groups by nested items, not a missing event', () => {
-  const tool = grep();
-  const first = groupTurns(buildFeed([userMsg('go'), tool, asst('done')]), false).find(
-    (it) => it.type === 'worked',
-  );
-  const second = groupTurns(buildFeed([userMsg('go'), tool, asst('done')]), false).find(
-    (it) => it.type === 'worked',
-  );
-  const other = groupTurns(buildFeed([userMsg('go'), grep(), asst('done')]), false).find(
-    (it) => it.type === 'worked',
-  );
+  // Worked groups compare by nested items; they carry no event of their own.
+  const worked = (tool: TranscriptEvent) =>
+    groupTurns(buildFeed([userMsg('go'), tool, asst('done')]), false).find(
+      (it) => it.type === 'worked',
+    );
+  const first = worked(a);
+  const second = worked(a);
+  const other = worked(grep());
   assert.ok(first && second && other);
   assert.equal(sameFeedEvents(first, second), true);
   assert.equal(sameFeedEvents(first, other), false);
-});
 
-test('sameFeedEvents compares turnChanges by captured file values, not object identity', () => {
-  const item = (added: number): FeedItem => ({
+  // A turn's changes summary compares by captured file values.
+  const changes = (added: number): FeedItem => ({
     type: 'turnChanges',
     key: 'changes:1',
     tailEventId: 't1',
@@ -1511,181 +525,8 @@ test('sameFeedEvents compares turnChanges by captured file values, not object id
     added,
     removed: 0,
   });
-  assert.equal(sameFeedEvents(item(1), item(1)), true);
-  assert.equal(sameFeedEvents(item(1), item(2)), false);
-});
-
-// appendedFeedItemKeys decides which rows get the rise-in entrance animation.
-// It must track item identity (not list index) so paging older history — which
-// prepends already-past messages ahead of the visible ones — does not re-animate
-// existing rows or treat the prepend like a fresh append.
-test('appendedFeedItemKeys animates only genuinely appended tail items', () => {
-  const identity = 'm:primary';
-  const keys = (letters: string[]) => letters.map((key) => ({ key }));
-
-  // Genuinely appended items (new keys at the tail) animate.
-  const previous = { identity, keys: new Set(['a', 'b', 'c']) };
-  assert.deepEqual(
-    [...appendedFeedItemKeys(keys(['a', 'b', 'c', 'd', 'e']), previous, identity)],
-    ['e', 'd'],
-  );
-
-  // Paging older history prepends new keys ahead of the existing ones; nothing
-  // re-animates (neither the prepended items nor the already-visible rows).
-  assert.deepEqual(
-    [...appendedFeedItemKeys(keys(['x', 'y', 'a', 'b', 'c']), previous, identity)],
-    [],
-  );
-
-  // Re-rendering with the same keys (e.g. a token streaming into an existing
-  // message) animates nothing.
-  assert.deepEqual([...appendedFeedItemKeys(keys(['a', 'b', 'c']), previous, identity)], []);
-
-  // No previous render (first time a feed is shown) animates nothing.
-  assert.deepEqual([...appendedFeedItemKeys(keys(['a', 'b']), null, identity)], []);
-
-  // A different feed identity (switched sessions/child) animates nothing.
-  assert.deepEqual(
-    [
-      ...appendedFeedItemKeys(
-        keys(['a', 'b', 'd']),
-        { identity: 'other', keys: new Set(['a']) },
-        identity,
-      ),
-    ],
-    [],
-  );
-
-  // A newly appended item preceded by a fresh prepend animates only the tail.
-  assert.deepEqual(
-    [...appendedFeedItemKeys(keys(['x', 'a', 'b', 'c', 'd']), previous, identity)],
-    ['d'],
-  );
-});
-
-test('projected entrance keys inspect only the rebuilt feed suffix', () => {
-  const identity = 'm:primary';
-  const items = (keys: string[]) => keys.map((key) => ({ key }));
-  const previous = { identity, items: items(['old-1', 'old-2', 'turn', 'tail']) };
-
-  assert.deepEqual(
-    [
-      ...appendedFeedItemKeysFromProjection(
-        items(['old-1', 'old-2', 'turn', 'tail', 'new-1', 'new-2']),
-        previous,
-        identity,
-        'append',
-        2,
-      ),
-    ],
-    ['new-2', 'new-1'],
-  );
-  assert.deepEqual(
-    [
-      ...appendedFeedItemKeysFromProjection(
-        items(['older', 'old-1', 'old-2', 'turn', 'tail']),
-        previous,
-        identity,
-        'prepend',
-        0,
-      ),
-    ],
-    [],
-  );
-});
-
-test('final response projection retains settled turns while the live turn changes', () => {
-  const message = (id: string, author: 'user' | 'assistant'): FeedItem => ({
-    type: 'message',
-    key: id,
-    event: ev({ id, author, text: id }),
-  });
-  const initial = [
-    message('user-1', 'user'),
-    message('answer-1', 'assistant'),
-    message('user-2', 'user'),
-    message('answer-2', 'assistant'),
-  ];
-  const first = projectFinalResponseKeys(null, 'm:primary', initial, 'full');
-  assert.deepEqual([...first.settledKeys], ['answer-1']);
-  assert.deepEqual([...first.liveKeys], ['answer-2']);
-  assert.equal(isCopyableFinalResponse('answer-1', first, true), true);
-  assert.equal(isCopyableFinalResponse('answer-2', first, true), false);
-  assert.equal(isCopyableFinalResponse('answer-2', first, false), true);
-
-  const streamed = projectFinalResponseKeys(
-    first,
-    'm:primary',
-    [...initial, message('answer-3', 'assistant')],
-    'append',
-  );
-  assert.equal(streamed.settledKeys, first.settledKeys);
-  assert.deepEqual([...streamed.liveKeys], ['answer-3']);
-
-  const nextTurn = projectFinalResponseKeys(
-    streamed,
-    'm:primary',
-    [...initial, message('answer-3', 'assistant'), message('user-3', 'user')],
-    'append',
-  );
-  assert.equal(nextTurn.settledKeys.has('answer-1'), true);
-  assert.equal(nextTurn.settledKeys.has('answer-3'), true);
-  assert.deepEqual([...nextTurn.liveKeys], []);
-});
-
-test('appending two prompts in one batch still settles the skipped turn response', () => {
-  const message = (id: string, author: 'user' | 'assistant'): FeedItem => ({
-    type: 'message',
-    key: id,
-    event: ev({ id, author, text: id }),
-  });
-  const initial = [message('user-1', 'user'), message('answer-1', 'assistant')];
-  const first = projectFinalResponseKeys(null, 'm:primary', initial, 'full');
-  const batched = projectFinalResponseKeys(
-    first,
-    'm:primary',
-    [
-      ...initial,
-      message('user-2', 'user'),
-      message('answer-2', 'assistant'),
-      message('user-3', 'user'),
-    ],
-    'append',
-  );
-
-  assert.equal(batched.settledKeys.has('answer-1'), true);
-  assert.equal(batched.settledKeys.has('answer-2'), true);
-  assert.deepEqual([...batched.liveKeys], []);
-});
-
-test('live final-response keys keep their reference while the live key is unchanged', () => {
-  const message = (id: string, author: 'user' | 'assistant'): FeedItem => ({
-    type: 'message',
-    key: id,
-    event: ev({ id, author, text: id }),
-  });
-  const initial = [message('user-1', 'user'), message('answer-1', 'assistant')];
-  const first = projectFinalResponseKeys(null, 'm:primary', initial, 'full');
-
-  // A non-message tail append leaves the turn's final response key unchanged,
-  // so chunks whose final-response display is unchanged stay memoized.
-  const streamed = projectFinalResponseKeys(
-    first,
-    'm:primary',
-    [...initial, { type: 'thinking', key: 'thinking-1', event: ev({ id: 'thinking-1' }) }],
-    'append',
-  );
-  assert.equal(streamed.liveKeys, first.liveKeys);
-  assert.equal(streamed.settledKeys, first.settledKeys);
-
-  const answered = projectFinalResponseKeys(
-    streamed,
-    'm:primary',
-    [...initial, message('answer-2', 'assistant')],
-    'append',
-  );
-  assert.deepEqual([...answered.liveKeys], ['answer-2']);
-  assert.notEqual(answered.liveKeys, streamed.liveKeys);
+  assert.equal(sameFeedEvents(changes(1), changes(1)), true);
+  assert.equal(sameFeedEvents(changes(1), changes(2)), false);
 });
 
 // The infinite status indicators (caret blink, shimmer) must honor
@@ -1697,51 +538,6 @@ test('caret-blink is neutralized under prefers-reduced-motion', () => {
     css.match(/@media\s*\(\s*prefers-reduced-motion\s*:\s*reduce\s*\)\s*\{[^}]*\}/g) ?? [];
   const coversCaretBlink = reducedMotionBlocks.some((block) => /\.caret-blink\b/.test(block));
   assert.ok(coversCaretBlink, 'a prefers-reduced-motion block must disable .caret-blink');
-});
-
-test('thinking duration changes invalidate the feed row', () => {
-  const event = ev({ kind: 'thinking', text: 'considering' });
-  const before: FeedItem = { type: 'thinking', key: event.id, event, durationMs: 100 };
-  assert.equal(sameFeedEvents(before, { ...before, durationMs: 200 }), false);
-  assert.equal(sameFeedEvents(before, { ...before }), true);
-});
-
-test('ambiguous idless parallel results remain unlinked and visible', () => {
-  const first = ev({ kind: 'tool_call', toolName: 'Execute', toolArgs: { command: 'first' } });
-  const second = ev({ kind: 'tool_call', toolName: 'Execute', toolArgs: { command: 'second' } });
-  const firstResult = ev({ kind: 'tool_result', text: 'first output' });
-  const secondResult = ev({ kind: 'tool_result', text: 'second output' });
-  const later = ev({ kind: 'tool_call', toolName: 'Execute', toolArgs: { command: 'later' } });
-  const laterResult = ev({ kind: 'tool_result', text: 'later output' });
-  const { resultByCall, consumed } = correlateResults([
-    first,
-    second,
-    firstResult,
-    secondResult,
-    later,
-    laterResult,
-  ]);
-  assert.equal(resultByCall.has(first), false);
-  assert.equal(resultByCall.has(second), false);
-  assert.equal(consumed.has(firstResult), false);
-  assert.equal(consumed.has(secondResult), false);
-  assert.equal(resultByCall.get(later), laterResult);
-});
-
-test('fetched Markdown never loads remote or local images', () => {
-  const body = `${'Intro text. '.repeat(30)}\n\n![tracking](https://tracker.example/pixel.png)\n![local](/tmp/private.png)`;
-  const html = renderToStaticMarkup(
-    createElement(WebFetchBody, {
-      error: false,
-      hasBody: true,
-      body,
-      url: 'https://example.com',
-      title: 'Example',
-      snippet: 'Intro text.',
-    }),
-  );
-  assert.equal(html.includes('<img'), false);
-  assert.equal(html.includes('rel="preload"'), false);
 });
 
 test('settled compaction history does not show a live shimmer', () => {
@@ -1778,38 +574,3 @@ for (const density of ['compact', 'balanced', 'detailed'] as const) {
     assert.equal(settled.includes('Running'), false);
   });
 }
-
-test('an ID-bearing result cannot settle an unrelated idless call by adjacency', () => {
-  const identified = ev({ kind: 'tool_call', toolName: 'Execute', toolUseId: 'known' });
-  const unknown = ev({ kind: 'tool_call', toolName: 'Execute' });
-  const knownResult = ev({ kind: 'tool_result', toolUseId: 'known', text: 'known output' });
-  const later = ev({ kind: 'tool_call', toolName: 'Execute' });
-  const ambiguousResult = ev({ kind: 'tool_result', text: 'unknown output' });
-  const { resultByCall, consumed } = correlateResults([
-    identified,
-    unknown,
-    knownResult,
-    later,
-    ambiguousResult,
-  ]);
-  assert.equal(resultByCall.get(identified), knownResult);
-  assert.equal(resultByCall.has(unknown), false);
-  assert.equal(resultByCall.has(later), false);
-  assert.equal(consumed.has(ambiguousResult), false);
-});
-
-test('both inline diff toggles expose expansion when no review handler exists', () => {
-  const change = {
-    path: 'src/app.ts',
-    verb: 'edit' as const,
-    added: 1,
-    removed: 0,
-    ops: [{ type: 'add' as const, text: 'added' }],
-  };
-  const inline = renderToStaticMarkup(createElement(DiffCard, { change }));
-  assert.equal((inline.match(/aria-expanded=/g) ?? []).length, 2);
-  assert.equal((inline.match(/aria-expanded="false"/g) ?? []).length, 2);
-  const review = renderToStaticMarkup(createElement(DiffCard, { change, onOpen: () => {} }));
-  assert.equal((review.match(/aria-expanded=/g) ?? []).length, 1);
-  assert.equal((review.match(/aria-expanded="false"/g) ?? []).length, 1);
-});

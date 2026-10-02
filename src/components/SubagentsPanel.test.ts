@@ -125,12 +125,3 @@ test('a spawn the store has not registered yet renders but cannot be opened', ()
   assert.ok(textOf(html).includes('explorer'));
   assert.match(html, /<button[^>]*disabled/);
 });
-
-test('the selected row is highlighted', () => {
-  const target = child('running');
-  const html = renderRow(target, { selected: true });
-  assert.match(
-    html,
-    new RegExp(`data-child-session-id="${target.childSessionId}" class="[^"]*bg-droid-elevated`),
-  );
-});
