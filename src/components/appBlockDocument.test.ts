@@ -130,6 +130,16 @@ function documentRuntime() {
       { type: 'droidex:theme-update', instanceId: 'app', bridgeToken: 'token', theme },
       overrides,
     );
+  const heights = () =>
+    messages.flatMap((message) =>
+      typeof message === 'object' &&
+      message !== null &&
+      'type' in message &&
+      message.type === 'droidex:app-height' &&
+      'height' in message
+        ? [message.height]
+        : [],
+    );
   const flush = () => {
     const pending = [...timers.values()];
     timers.clear();
@@ -152,6 +162,7 @@ function documentRuntime() {
     send,
     sendTheme,
     flush,
+    heights,
     restores: () => restores,
   };
 }
@@ -266,28 +277,18 @@ test('a failed first Canvas draw restores the context and releases its resources
 
 test('hidden document reports content height on a timer, shrinks with it, and stops on pagehide', async () => {
   const runtime = documentRuntime();
-  const heights = () =>
-    runtime.messages.flatMap((message) =>
-      typeof message === 'object' &&
-      message !== null &&
-      'type' in message &&
-      message.type === 'droidex:app-height' &&
-      'height' in message
-        ? [message.height]
-        : [],
-    );
   runtime.events.dispatchEvent(new Event('DOMContentLoaded'));
   await Promise.resolve();
   await Promise.resolve();
   runtime.flush();
   // The body, not the viewport-filling root (360), is the content height.
-  assert.deepEqual(heights(), [200]);
+  assert.deepEqual(runtime.heights(), [200]);
 
   // Measuring the root would ratchet: a shrinking App would keep its taller frame.
   runtime.body.scrollHeight = 90;
   runtime.observers[0].callback();
   runtime.flush();
-  assert.deepEqual(heights(), [200, 90]);
+  assert.deepEqual(runtime.heights(), [200, 90]);
 
   runtime.observers[0].callback();
   runtime.events.dispatchEvent(new Event('pagehide'));
@@ -373,16 +374,6 @@ test('early math waits for an authenticated host handshake, and repeated handsha
 test('the first height report waits until built-in math has settled', async () => {
   const runtime = documentRuntime();
   runtime.mathElements.push(new runtime.MathElement('x^2'));
-  const heights = () =>
-    runtime.messages.flatMap((message) =>
-      typeof message === 'object' &&
-      message !== null &&
-      'type' in message &&
-      message.type === 'droidex:app-height' &&
-      'height' in message
-        ? [message.height]
-        : [],
-    );
 
   runtime.events.dispatchEvent(new Event('DOMContentLoaded'));
   await Promise.resolve();
@@ -390,7 +381,7 @@ test('the first height report waits until built-in math has settled', async () =
   // shows the App at its first reported height.
   runtime.observers[0].callback();
   runtime.flush();
-  assert.deepEqual(heights(), []);
+  assert.deepEqual(runtime.heights(), []);
 
   runtime.body.scrollHeight = 600;
   runtime.send({
@@ -402,5 +393,5 @@ test('the first height report waits until built-in math has settled', async () =
   });
   await new Promise<void>((resolve) => setImmediate(resolve));
   runtime.flush();
-  assert.deepEqual(heights(), [600]);
+  assert.deepEqual(runtime.heights(), [600]);
 });
