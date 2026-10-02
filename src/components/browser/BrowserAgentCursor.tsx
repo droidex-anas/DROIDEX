@@ -11,8 +11,8 @@ const TIP = {
   y: design.hotspot.y / design.viewBoxSize,
 };
 
-// Where the agent last pointed, in the page's own pixels, and the glide that
-// takes the cursor there at the scale the page was drawn at.
+// Where the agent last pointed, in the page's own pixels, the scale the page
+// is drawn at, and the glide that takes the cursor there.
 interface Cursor {
   x: number;
   y: number;
@@ -59,6 +59,10 @@ export function BrowserAgentCursor({
     [browserSessionId, scale],
   );
 
+  // A page drawn at a new size takes its cursor along at once: only a new
+  // point is a glide.
+  if (cursor && cursor.scale !== scale) setCursor({ ...cursor, scale, glideMs: 0 });
+
   if (!cursor || !shown) return null;
   return (
     <div
@@ -70,8 +74,7 @@ export function BrowserAgentCursor({
           height: SIZE,
           opacity: working ? 1 : 0,
           transform: `translate(${String(cursor.x * scale - TIP.x * SIZE)}px, ${String(cursor.y * scale - TIP.y * SIZE)}px)`,
-          // A page drawn at a new size takes its cursor along at once.
-          '--glide': `${String(cursor.scale === scale ? cursor.glideMs : 0)}ms`,
+          '--glide': `${String(cursor.glideMs)}ms`,
         } as CSSProperties
       }
     >
