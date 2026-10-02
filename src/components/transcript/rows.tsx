@@ -31,6 +31,7 @@ import {
 } from './primitives';
 import { CommandCard, CommandLine, ToolCallCard } from './commandCard';
 import { LinkBadge } from './LinkBadge';
+import { TranscriptImage } from '../media/TranscriptImage';
 import { useToolSourceMark } from './toolSourceMark';
 import { WebFetchCard, WebSearchCard } from './webCards';
 
@@ -533,6 +534,7 @@ export function renderToolEvents(
               key={e.id}
               command={command}
               output={result?.text}
+              images={result?.images}
               error={isError}
               interrupted={interrupted}
               running={running}
@@ -542,6 +544,7 @@ export function renderToolEvents(
               key={e.id}
               command={command}
               output={result?.text}
+              images={result?.images}
               error={isError}
               interrupted={interrupted}
               running={running}
@@ -569,6 +572,9 @@ export function renderToolEvents(
     // A result already shown as its call's inline output (or a silently consumed
     // plan result) must not also render as raw activity.
     if (e.kind === 'tool_result' && consumed.has(e)) continue;
+    // A result whose call is out of view still shows the pictures it carried.
+    for (const image of e.images ?? [])
+      nodes.push(<TranscriptImage key={`${e.id}-${image}`} reference={image} />);
     const body = stripAnsi(e.text ?? safeJson(e.toolArgs)).trimEnd();
     if (!body) continue;
     // A failed result with no call to fold into (e.g. a failed edit that broke

@@ -42,8 +42,27 @@ test('text results and unknown content read as before', () => {
       text: 'a\nb',
     },
   );
-  // A format the app cannot show is said, not dumped.
-  assert.deepEqual(toolResultParts([{ type: 'image', data: JPEG, mimeType: 'image/tiff' }]), {
-    text: 'An image this build cannot show.',
-  });
+  assert.deepEqual(
+    toolResultParts([
+      { type: 'text', text: 'a' },
+      { type: 'text', text: '' },
+      { type: 'text', text: 'b' },
+    ]).text,
+    'a\n\nb',
+  );
+});
+
+test('an image the app cannot save is one plain line, never its bytes', () => {
+  const unshown = { text: 'An image this build cannot show.' };
+  assert.deepEqual(
+    toolResultParts([{ type: 'image', data: JPEG, mimeType: 'image/tiff' }]),
+    unshown,
+  );
+  // An image block missing what it needs is still an image, not text.
+  assert.deepEqual(toolResultParts([{ type: 'image', data: JPEG }]), unshown);
+  // A data URL may carry parameters before its encoding.
+  const withParameter = toolResultParts([
+    { type: 'inputImage', imageUrl: `data:image/jpeg;charset=utf-8;base64,${JPEG}` },
+  ]);
+  assert.equal(withParameter.images?.length, 1);
 });

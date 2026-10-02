@@ -80,12 +80,14 @@ export function ToolCallCard({
 export function CommandCard({
   command,
   output,
+  images,
   error = false,
   interrupted = false,
   running = false,
 }: {
   command: string;
   output?: string;
+  images?: string[];
   error?: boolean;
   interrupted?: boolean;
   running?: boolean;
@@ -105,6 +107,7 @@ export function CommandCard({
         </div>
       }
       output={output}
+      images={images}
       error={error}
       interrupted={interrupted}
       running={running || alive}
@@ -118,6 +121,7 @@ export function CommandCard({
 export function CommandLine({
   command,
   output,
+  images,
   error = false,
   interrupted = false,
   running = false,
@@ -125,6 +129,7 @@ export function CommandLine({
 }: {
   command: string;
   output?: string;
+  images?: string[];
   error?: boolean;
   interrupted?: boolean;
   running?: boolean;
@@ -169,7 +174,7 @@ export function CommandLine({
       </button>
       <Expand open={expanded}>
         <div className="mt-1.5 pl-[18px]">
-          <CommandCard command={command} output={output} error={error} />
+          <CommandCard command={command} output={output} images={images} error={error} />
         </div>
       </Expand>
     </div>

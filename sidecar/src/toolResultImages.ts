@@ -3,7 +3,7 @@
 // its path, so the renderer shows the picture and its base64 never becomes
 // transcript text.
 import { createHash } from 'node:crypto';
-import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, renameSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { providerSessionsDir } from './droidexPaths.js';
@@ -14,6 +14,9 @@ const EXTENSIONS: Record<string, string> = {
   'image/webp': '.webp',
   'image/gif': '.gif',
 };
+// The most the app's local image scheme serves (electron/localImages.cjs).
+const MAX_IMAGE_BYTES = 40 * 1024 * 1024;
+const UNSHOWN = 'An image this build cannot show.';
 
 export interface ToolResultParts {
   text: string;
@@ -29,13 +32,16 @@ export function toolResultParts(content: unknown): ToolResultParts {
   const text: string[] = [];
   const images: string[] = [];
   for (const block of content as unknown[]) {
-    const image = imageOf(block);
-    const path = image && savedImage(image.data, image.mimeType);
+    if (!isImage(block)) {
+      text.push(textOf(block));
+      continue;
+    }
+    // An image is a saved file or one plain line, never its own bytes as text.
+    const path = savedImage(block);
     if (path) images.push(path);
-    else if (image) text.push('An image this build cannot show.');
-    else text.push(textOf(block));
+    else text.push(UNSHOWN);
   }
-  return { text: text.filter(Boolean).join('\n'), ...(images.length ? { images } : {}) };
+  return { text: text.join('\n'), ...(images.length ? { images } : {}) };
 }
 
 function textOf(block: unknown): string {
@@ -43,37 +49,47 @@ function textOf(block: unknown): string {
   return typeof text === 'string' ? text : JSON.stringify(block);
 }
 
+interface ImageBlock {
+  type: 'image' | 'inputImage';
+  data?: unknown;
+  mimeType?: unknown;
+  source?: { data?: unknown; media_type?: unknown };
+  imageUrl?: unknown;
+}
+
+function isImage(block: unknown): block is ImageBlock {
+  const type = (block as { type?: unknown } | null)?.type;
+  return type === 'image' || type === 'inputImage';
+}
+
 // An image block comes in MCP's shape (`data`, `mimeType`), the model API's
 // (`source.data`, `source.media_type`) or Codex's (`imageUrl`, a data URL).
-function imageOf(block: unknown): { data: string; mimeType: string } | undefined {
-  const image = block as {
-    type?: unknown;
-    data?: unknown;
-    mimeType?: unknown;
-    source?: { data?: unknown; media_type?: unknown };
-    imageUrl?: unknown;
-  } | null;
-  if (image?.type === 'inputImage' && typeof image.imageUrl === 'string') {
-    const url = /^data:([^;,]+);base64,(.+)$/s.exec(image.imageUrl);
+function bytesOf(image: ImageBlock): { data: string; mimeType: string } | undefined {
+  if (typeof image.imageUrl === 'string') {
+    const url = /^data:([^;,]+)[^,]*;base64,(.+)$/s.exec(image.imageUrl);
     return url ? { mimeType: url[1], data: url[2] } : undefined;
   }
-  if (image?.type !== 'image') return undefined;
   const data = image.data ?? image.source?.data;
   const mimeType = image.mimeType ?? image.source?.media_type;
   return typeof data === 'string' && typeof mimeType === 'string' ? { data, mimeType } : undefined;
 }
 
 // Named by its content, so replaying a session finds the file it wrote before.
-function savedImage(data: string, mimeType: string): string | undefined {
-  const extension = EXTENSIONS[mimeType.toLowerCase()];
-  if (!extension) return undefined;
+// Written beside its place and moved in, so a write that fails leaves no file
+// to be taken for the picture.
+function savedImage(image: ImageBlock): string | undefined {
+  const bytes = bytesOf(image);
+  const extension = bytes && EXTENSIONS[bytes.mimeType.toLowerCase()];
+  if (!bytes || !extension || bytes.data.length * 0.75 > MAX_IMAGE_BYTES) return undefined;
   try {
     const directory = join(providerSessionsDir(), 'images');
-    const name = createHash('sha256').update(data).digest('hex').slice(0, 32);
+    const name = createHash('sha256').update(bytes.data).digest('hex').slice(0, 32);
     const path = join(directory, `tool-${name}${extension}`);
     if (!existsSync(path)) {
       mkdirSync(directory, { recursive: true });
-      writeFileSync(path, Buffer.from(data, 'base64'));
+      const partial = `${path}.${String(process.pid)}.part`;
+      writeFileSync(partial, Buffer.from(bytes.data, 'base64'));
+      renameSync(partial, path);
     }
     return path;
   } catch {
