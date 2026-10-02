@@ -51,6 +51,17 @@ function documentRuntime() {
       this.disconnected = true;
     }
   }
+  class MathElement {
+    innerHTML = '';
+    constructor(readonly latex = '') {}
+    getAttribute(name: string) {
+      return name === 'data-latex' ? this.latex : null;
+    }
+    hasAttribute() {
+      return false;
+    }
+  }
+  const mathElements: MathElement[] = [];
   const canvas = new Canvas();
   const body = { children: [], scrollHeight: 200 };
   const parent = { postMessage: (message: unknown) => messages.push(message) };
@@ -66,6 +77,7 @@ function documentRuntime() {
     droidex: undefined as
       | {
           readonly theme: AppBlockTheme;
+          renderMath: (element: MathElement, latex: string) => Promise<boolean>;
           createCanvas: (
             target: string | Canvas,
             draw: (frame: DrawFrame) => void,
@@ -84,8 +96,9 @@ function documentRuntime() {
       documentElement: { style, scrollHeight: 360 },
       body,
       querySelector: (selector: string) => (selector === '#plot' ? canvas : null),
-      querySelectorAll: () => [],
+      querySelectorAll: (selector: string) => (selector === '[data-latex]' ? mathElements : []),
     },
+    Element: MathElement,
     HTMLCanvasElement: Canvas,
     CustomEvent,
     CSS: { supports: (_property: string, value: string) => /^#[\da-f]{6}$/i.test(value) },
@@ -107,15 +120,16 @@ function documentRuntime() {
   });
   assert.ok(window.droidex);
   const api = window.droidex;
-  const sendTheme = (theme: unknown, overrides: Record<string, unknown> = {}) => {
+  const send = (data: Record<string, unknown>, overrides: Record<string, unknown> = {}) => {
     const event = new Event('message');
-    Object.assign(event, {
-      source: parent,
-      data: { type: 'droidex:theme-update', instanceId: 'app', bridgeToken: 'token', theme },
-      ...overrides,
-    });
+    Object.assign(event, { source: parent, data, ...overrides });
     events.dispatchEvent(event);
   };
+  const sendTheme = (theme: unknown, overrides: Record<string, unknown> = {}) =>
+    send(
+      { type: 'droidex:theme-update', instanceId: 'app', bridgeToken: 'token', theme },
+      overrides,
+    );
   const flush = () => {
     const pending = [...timers.values()];
     timers.clear();
@@ -124,6 +138,8 @@ function documentRuntime() {
   return {
     api,
     body,
+    MathElement,
+    mathElements,
     canvas,
     events,
     window,
@@ -133,6 +149,7 @@ function documentRuntime() {
     style,
     observers,
     transforms,
+    send,
     sendTheme,
     flush,
     restores: () => restores,
@@ -279,4 +296,111 @@ test('hidden document reports content height on a timer, shrinks with it, and st
   assert.equal(runtime.api.theme.accent, DEFAULT_APP_THEME.accent);
   assert.equal(runtime.observers[0].disconnected, true);
   assert.equal(runtime.timers.size, 0);
+});
+
+test('a script failure is reported before the App can announce readiness', () => {
+  const runtime = documentRuntime();
+  const errors = () =>
+    runtime.messages.filter(
+      (message) =>
+        typeof message === 'object' &&
+        message !== null &&
+        'type' in message &&
+        message.type === 'droidex:app-error',
+    );
+
+  runtime.events.dispatchEvent(
+    Object.assign(new Event('error'), { message: 'Invalid or unexpected token' }),
+  );
+  runtime.events.dispatchEvent(
+    Object.assign(new Event('unhandledrejection'), { reason: new Error('   ') }),
+  );
+
+  assert.deepEqual(JSON.parse(JSON.stringify(errors())), [
+    {
+      type: 'droidex:app-error',
+      instanceId: 'app',
+      bridgeToken: 'token',
+      message: 'Invalid or unexpected token',
+    },
+    {
+      type: 'droidex:app-error',
+      instanceId: 'app',
+      bridgeToken: 'token',
+      message: 'The interactive App failed to start.',
+    },
+  ]);
+});
+
+test('early math waits for an authenticated host handshake, and repeated handshakes are answered', async () => {
+  const runtime = documentRuntime();
+  const element = new runtime.MathElement();
+  const rendered = runtime.api.renderMath(element, 'x^2');
+  await Promise.resolve();
+  assert.deepEqual(runtime.messages, []);
+
+  const handshake = { type: 'droidex:host-ready', instanceId: 'app', bridgeToken: 'token' };
+  runtime.send({ ...handshake, bridgeToken: 'wrong' });
+  await Promise.resolve();
+  assert.deepEqual(runtime.messages, []);
+  runtime.send(handshake);
+  runtime.send(handshake);
+  await Promise.resolve();
+
+  assert.deepEqual(JSON.parse(JSON.stringify(runtime.messages)), [
+    { type: 'droidex:app-ready', instanceId: 'app', bridgeToken: 'token' },
+    { type: 'droidex:app-ready', instanceId: 'app', bridgeToken: 'token' },
+    {
+      type: 'droidex:render-math',
+      instanceId: 'app',
+      bridgeToken: 'token',
+      requestId: 'app-math-1',
+      latex: 'x^2',
+      displayMode: false,
+    },
+  ]);
+  runtime.send({
+    type: 'droidex:math-rendered',
+    instanceId: 'app',
+    bridgeToken: 'token',
+    requestId: 'app-math-1',
+    html: '<math><msup><mi>x</mi><mn>2</mn></msup></math>',
+  });
+  assert.equal(await rendered, true);
+  assert.match(element.innerHTML, /<math>/);
+});
+
+test('the first height report waits until built-in math has settled', async () => {
+  const runtime = documentRuntime();
+  runtime.mathElements.push(new runtime.MathElement('x^2'));
+  const heights = () =>
+    runtime.messages.flatMap((message) =>
+      typeof message === 'object' &&
+      message !== null &&
+      'type' in message &&
+      message.type === 'droidex:app-height' &&
+      'height' in message
+        ? [message.height]
+        : [],
+    );
+
+  runtime.events.dispatchEvent(new Event('DOMContentLoaded'));
+  await Promise.resolve();
+  // A resize before math settles must not publish the pre-math layout: the host
+  // shows the App at its first reported height.
+  runtime.observers[0].callback();
+  runtime.flush();
+  assert.deepEqual(heights(), []);
+
+  runtime.body.scrollHeight = 600;
+  runtime.send({
+    type: 'droidex:math-rendered',
+    instanceId: 'app',
+    bridgeToken: 'token',
+    requestId: 'app-math-1',
+    html: '<math></math>',
+  });
+  await new Promise<void>((resolve) => setImmediate(resolve));
+  runtime.flush();
+  assert.deepEqual(heights(), [600]);
 });
