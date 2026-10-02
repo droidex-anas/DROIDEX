@@ -311,6 +311,16 @@ export function createBrowserMcpServer(
         safeTool(async () => consoleText(await manager.console(appSessionId()))),
       ),
       tool(
+        'browser_evaluate',
+        [
+          'Run JavaScript in the page. The script is the body of an async function: `return` what you want back and `await` as needed. The result comes back as JSON, cut at 4,000 characters, within 5 seconds.',
+          'It works only on a site the user has allowed for developer tools: the first call on a site asks them, and their answer stands until they quit the app.',
+          'Use it for what the other tools cannot reach, such as app state, storage or a computed value. Read and act with the other tools.',
+        ].join(' '),
+        { script: z.string().describe('The function body, such as `return document.title`.') },
+        safeTool(async (input) => (await manager.evaluate(appSessionId(), input.script)).text),
+      ),
+      tool(
         'browser_fill_login',
         [
           'Fill the saved login for the current site in the live DROIDEX browser.',

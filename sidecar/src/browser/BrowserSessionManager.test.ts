@@ -99,6 +99,10 @@ class FakeRuntime implements BrowserRuntime {
 
   async setColorScheme() {}
 
+  async evaluate() {
+    return this.result('https://example.com/');
+  }
+
   async awaitViewport() {
     return this.result();
   }
