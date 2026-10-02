@@ -37,7 +37,6 @@ export interface NativeBrowserDesignPrompt {
   instruction: string;
 }
 
-/** Main is running agent work on the session's page, or has finished it. */
 /** Where an agent's pointer action lands, in the page's own CSS pixels. */
 export interface NativeBrowserAgentPoint {
   browserSessionId: string;
@@ -45,6 +44,7 @@ export interface NativeBrowserAgentPoint {
   y: number;
 }
 
+/** Main is running agent work on the session's page, or has finished it. */
 export interface NativeBrowserWorking {
   browserSessionId: string;
   working: boolean;
