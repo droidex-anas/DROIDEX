@@ -23,14 +23,8 @@ class FakeClient implements HistoryPersistenceClient {
     this.batches.push(batch);
     const failure = this.failNext;
     this.failNext = null;
-    const result: HistoryPersistenceResult = {
-      durationMs: 1,
-      eventsWritten: batch.events.length,
-      summariesWritten: batch.summaries.length,
-      childrenWritten: batch.children.length,
-    };
     return {
-      promise: failure ? Promise.reject(failure) : Promise.resolve(result),
+      promise: failure ? Promise.reject(failure) : Promise.resolve(persistResult(batch)),
     };
   }
 
@@ -51,6 +45,15 @@ class FakeClient implements HistoryPersistenceClient {
   }
 
   async close(): Promise<void> {}
+}
+
+function persistResult(batch: HistoryPersistenceBatch): HistoryPersistenceResult {
+  return {
+    durationMs: 1,
+    eventsWritten: batch.events.length,
+    summariesWritten: batch.summaries.length,
+    childrenWritten: batch.children.length,
+  };
 }
 
 function summary(appSessionId: string, tokensIn: number): SessionSummary {
@@ -192,13 +195,7 @@ test('an asynchronous persistence failure restores events ahead of newer events'
     startPersist: (batch) => {
       attempts += 1;
       persistedIds.push(batch.events.map((item) => item.id));
-      const result: HistoryPersistenceResult = {
-        durationMs: 1,
-        eventsWritten: batch.events.length,
-        summariesWritten: batch.summaries.length,
-        childrenWritten: batch.children.length,
-      };
-      if (attempts > 1) return { promise: Promise.resolve(result) };
+      if (attempts > 1) return { promise: Promise.resolve(persistResult(batch)) };
       const promise = new Promise<HistoryPersistenceResult>((_resolve, reject) => {
         rejectFirst = reject;
       });
@@ -206,10 +203,7 @@ test('an asynchronous persistence failure restores events ahead of newer events'
         promise,
       };
     },
-    startDurabilityBarrier: () => {
-      const result = { durable: true } as const;
-      return { promise: Promise.resolve(result) };
-    },
+    startDurabilityBarrier: () => ({ promise: Promise.resolve({ durable: true } as const) }),
     close: () => Promise.resolve(),
   };
   const queue = new HistoryPersistenceQueue({
@@ -307,10 +301,7 @@ test('an asynchronous drain waits only for entries captured when it starts', asy
         promise,
       };
     },
-    startDurabilityBarrier: () => {
-      const result = { durable: true } as const;
-      return { promise: Promise.resolve(result) };
-    },
+    startDurabilityBarrier: () => ({ promise: Promise.resolve({ durable: true } as const) }),
     close: () => Promise.resolve(),
   };
   const queue = new HistoryPersistenceQueue({
@@ -416,7 +407,6 @@ test('hard capacity rejects unbounded event growth', () => {
 });
 
 test('a synchronous worker failure retains queued events and accepts live output until recovery', async () => {
-  const scheduledDelays: number[] = [];
   const scheduledCallbacks: Array<() => void> = [];
   const persistedIds: string[][] = [];
   let attempts = 0;
@@ -425,25 +415,15 @@ test('a synchronous worker failure retains queued events and accepts live output
       attempts += 1;
       if (attempts === 1) throw new Error('worker exited');
       persistedIds.push(batch.events.map((item) => item.id));
-      const result: HistoryPersistenceResult = {
-        durationMs: 1,
-        eventsWritten: batch.events.length,
-        summariesWritten: batch.summaries.length,
-        childrenWritten: batch.children.length,
-      };
-      return { promise: Promise.resolve(result) };
+      return { promise: Promise.resolve(persistResult(batch)) };
     },
-    startDurabilityBarrier: () => {
-      const result = { durable: true } as const;
-      return { promise: Promise.resolve(result) };
-    },
+    startDurabilityBarrier: () => ({ promise: Promise.resolve({ durable: true } as const) }),
     close: () => Promise.resolve(),
   };
   const queue = new HistoryPersistenceQueue({
     dbPath: '/unused',
     client: recoveringClient,
-    schedule: (callback, delayMs) => {
-      scheduledDelays.push(delayMs);
+    schedule: (callback) => {
       scheduledCallbacks.push(callback);
       return dormantTimer();
     },
@@ -455,7 +435,6 @@ test('a synchronous worker failure retains queued events and accepts live output
   await queue.flush();
 
   assert.equal(attempts, 2);
-  assert.deepEqual(scheduledDelays, [25, 250]);
   assert.deepEqual(persistedIds, [['one', 'two']]);
   assert.equal(queue.snapshot().pendingEntries, 0);
 });
@@ -468,18 +447,9 @@ test('repeated worker failures retry with bounded exponential backoff', () => {
     startPersist: (batch) => {
       attempts += 1;
       if (attempts <= 8) throw new Error('worker unavailable');
-      const result: HistoryPersistenceResult = {
-        durationMs: 1,
-        eventsWritten: batch.events.length,
-        summariesWritten: batch.summaries.length,
-        childrenWritten: batch.children.length,
-      };
-      return { promise: Promise.resolve(result) };
+      return { promise: Promise.resolve(persistResult(batch)) };
     },
-    startDurabilityBarrier: () => {
-      const result = { durable: true } as const;
-      return { promise: Promise.resolve(result) };
-    },
+    startDurabilityBarrier: () => ({ promise: Promise.resolve({ durable: true } as const) }),
     close: () => Promise.resolve(),
   };
   const queue = new HistoryPersistenceQueue({
@@ -498,79 +468,40 @@ test('repeated worker failures retry with bounded exponential backoff', () => {
   assert.deepEqual(delays, [25, 250, 500, 1_000, 2_000, 4_000, 5_000, 5_000, 5_000]);
 });
 
-test('a failed durability barrier retries without waiting for another write', async () => {
-  const callbacks: Array<() => void> = [];
-  const statuses: string[] = [];
-  const client = new FakeClient();
-  client.failNextBarrier = new Error('checkpoint failed');
-  const queue = new HistoryPersistenceQueue({
-    dbPath: '/unused',
-    client,
-    schedule: (callback) => {
-      callbacks.push(callback);
-      return dormantTimer();
-    },
-    onFailure: () => statuses.push('degraded'),
-    onRecovered: () => statuses.push('healthy'),
-  });
+test('a failed write or barrier stays degraded until a scheduled retry succeeds, even across a drain', async () => {
+  const cases = [
+    { failure: 'barrier', drainFirst: false, expectedBarriers: 2 },
+    { failure: 'barrier', drainFirst: true, expectedBarriers: 2 },
+    { failure: 'write', drainFirst: false, expectedBarriers: 1 },
+  ] as const;
+  for (const { failure, drainFirst, expectedBarriers } of cases) {
+    const label = `${failure}${drainFirst ? ' then drain' : ''}`;
+    const callbacks: Array<() => void> = [];
+    const statuses: string[] = [];
+    const client = new FakeClient();
+    if (failure === 'barrier') client.failNextBarrier = new Error('checkpoint failed');
+    else client.failNext = new Error('worker failed during boundary');
+    const queue = new HistoryPersistenceQueue({
+      dbPath: '/unused',
+      client,
+      schedule: (callback) => {
+        callbacks.push(callback);
+        return dormantTimer();
+      },
+      onFailure: () => statuses.push('degraded'),
+      onRecovered: () => statuses.push('healthy'),
+    });
 
-  queue.enqueueEvent(event('one'));
-  await assert.rejects(async () => await queue.flush(), /checkpoint failed/);
-  callbacks.at(-1)?.();
-  await Promise.resolve();
-  await Promise.resolve();
-  assert.deepEqual(statuses, ['degraded', 'healthy']);
-  assert.equal(client.durabilityBarriers, 2);
-});
-
-test('a consistency drain preserves a pending durability retry', async () => {
-  const callbacks: Array<() => void> = [];
-  const statuses: string[] = [];
-  const client = new FakeClient();
-  client.failNextBarrier = new Error('checkpoint failed');
-  const queue = new HistoryPersistenceQueue({
-    dbPath: '/unused',
-    client,
-    schedule: (callback) => {
-      callbacks.push(callback);
-      return dormantTimer();
-    },
-    onFailure: () => statuses.push('degraded'),
-    onRecovered: () => statuses.push('healthy'),
-  });
-
-  queue.enqueueEvent(event('one'));
-  await assert.rejects(async () => await queue.flush(), /checkpoint failed/);
-  await queue.drain();
-  callbacks.at(-1)?.();
-  await Promise.resolve();
-  await Promise.resolve();
-
-  assert.deepEqual(statuses, ['degraded', 'healthy']);
-});
-
-test('a failed boundary drain stays degraded until a later barrier succeeds', async () => {
-  const callbacks: Array<() => void> = [];
-  const statuses: string[] = [];
-  const client = new FakeClient();
-  client.failNext = new Error('worker failed during boundary');
-  const queue = new HistoryPersistenceQueue({
-    dbPath: '/unused',
-    client,
-    schedule: (callback) => {
-      callbacks.push(callback);
-      return dormantTimer();
-    },
-    onFailure: () => statuses.push('degraded'),
-    onRecovered: () => statuses.push('healthy'),
-  });
-
-  queue.enqueueEvent(event('one'));
-  await assert.rejects(async () => await queue.flush(), /worker failed during boundary/);
-  callbacks.at(-1)?.();
-  await Promise.resolve();
-  await Promise.resolve();
-  assert.deepEqual(statuses, ['degraded', 'healthy']);
+    queue.enqueueEvent(event('one'));
+    await assert.rejects(async () => await queue.flush(), /failed/, label);
+    if (drainFirst) await queue.drain();
+    assert.deepEqual(statuses, ['degraded'], label);
+    callbacks.at(-1)?.();
+    await Promise.resolve();
+    await Promise.resolve();
+    assert.deepEqual(statuses, ['degraded', 'healthy'], label);
+    assert.equal(client.durabilityBarriers, expectedBarriers, label);
+  }
 });
 
 test('a failed close cancels the retry it scheduled before closing the client', async () => {

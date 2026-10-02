@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import type { DroidStreamEvent, MessageOptions } from '@factory/droid-sdk';
 
+import { createMission } from './testing/childSettingsTestSupport.js';
 import { FakeFactorySession } from './testing/fakeFactoryRuntime.js';
 import {
   createSessionManagerTestContext,
@@ -46,6 +47,26 @@ class DirectPrimaryFailureSession extends FakeFactorySession {
   }
 }
 
+function seedPausedChild(
+  h: SessionManagerTestContext,
+  childSessionId: string,
+  providerSessionId: string,
+  role: 'worker' | 'validator',
+): void {
+  h.history.seedChildSessions([
+    {
+      parentAppSessionId: 'provider-1',
+      childSessionId,
+      providerSessionId,
+      role,
+      status: 'paused',
+      modelId: 'model-default',
+      transcriptAvailable: true,
+      updatedAt: Date.now(),
+    },
+  ]);
+}
+
 test('shutdown admission immediately suppresses a queued primary stream failure', async () => {
   const h = createSessionManagerTestContext();
   try {
@@ -85,29 +106,10 @@ test('shutdown admission immediately suppresses a queued primary stream failure'
 test('shutdown abandons a child open before map insertion and readiness', async () => {
   const h = createSessionManagerTestContext();
   try {
-    await h.create({
-      sessionPurpose: 'mission-control',
-      clientRef: 'open-race',
-      title: 'Open race',
-      goal: 'go',
-      interactionMode: 'agi',
-      autonomy: 'low',
-    });
-    await h.waitForIdle();
+    await createMission(h);
     const child = new FakeFactorySession('opening-backend', {}, h.calls);
     child.deferNextUpdateSettings();
-    h.history.seedChildSessions([
-      {
-        parentAppSessionId: 'provider-1',
-        childSessionId: 'opening-logical',
-        providerSessionId: 'opening-backend',
-        role: 'validator',
-        status: 'paused',
-        modelId: 'model-default',
-        transcriptAvailable: true,
-        updatedAt: Date.now(),
-      },
-    ]);
+    seedPausedChild(h, 'opening-logical', 'opening-backend', 'validator');
     h.runtime.loadQueue.set('opening-backend', [child]);
     const opening = h.handle({
       type: 'child.open',
@@ -189,29 +191,10 @@ test('pending settings completion after close cannot publish or re-arm', async (
 test('a child send waits for the shared parent-owned open attempt', async () => {
   const h = createSessionManagerTestContext();
   try {
-    await h.create({
-      sessionPurpose: 'mission-control',
-      clientRef: 'open-once',
-      title: 'Open once',
-      goal: 'go',
-      interactionMode: 'agi',
-      autonomy: 'low',
-    });
-    await h.waitForIdle();
+    await createMission(h);
     const child = new FakeFactorySession('same-backend', {}, h.calls);
     const armGate = child.deferNextUpdateSettings();
-    h.history.seedChildSessions([
-      {
-        parentAppSessionId: 'provider-1',
-        childSessionId: 'same-logical',
-        providerSessionId: 'same-backend',
-        role: 'worker',
-        status: 'paused',
-        modelId: 'model-default',
-        transcriptAvailable: true,
-        updatedAt: Date.now(),
-      },
-    ]);
+    seedPausedChild(h, 'same-logical', 'same-backend', 'worker');
     h.runtime.loadQueue.set('same-backend', [child]);
     const command = {
       type: 'child.open' as const,
@@ -252,30 +235,10 @@ test('a child send waits for the shared parent-owned open attempt', async () => 
 test('joined child opens cannot settle after the parent closes', async () => {
   const h = createSessionManagerTestContext();
   try {
-    await h.create({
-      sessionPurpose: 'mission-control',
-      clientRef: 'joined-open-close',
-      title: 'Joined open close',
-      goal: 'go',
-      interactionMode: 'agi',
-      autonomy: 'low',
-    });
-    await h.provider.waitForPrompts('provider-1', 1);
-    await h.waitForIdle();
+    await createMission(h);
     const child = new FakeFactorySession('joined-backend', {}, h.calls);
     child.deferNextUpdateSettings();
-    h.history.seedChildSessions([
-      {
-        parentAppSessionId: 'provider-1',
-        childSessionId: 'joined-logical',
-        providerSessionId: 'joined-backend',
-        role: 'worker',
-        status: 'paused',
-        modelId: 'model-default',
-        transcriptAvailable: true,
-        updatedAt: Date.now(),
-      },
-    ]);
+    seedPausedChild(h, 'joined-logical', 'joined-backend', 'worker');
     h.runtime.loadQueue.set('joined-backend', [child]);
 
     const first = h.handle({
@@ -324,28 +287,8 @@ test('joined child opens cannot settle after the parent closes', async () => {
 test('an existing child runtime cannot acknowledge after parent close admission', async () => {
   const h = createSessionManagerTestContext();
   try {
-    await h.create({
-      sessionPurpose: 'mission-control',
-      clientRef: 'existing-open-close',
-      title: 'Existing open close',
-      goal: 'go',
-      interactionMode: 'agi',
-      autonomy: 'low',
-    });
-    await h.provider.waitForPrompts('provider-1', 1);
-    await h.waitForIdle();
-    h.history.seedChildSessions([
-      {
-        parentAppSessionId: 'provider-1',
-        childSessionId: 'existing-logical',
-        providerSessionId: 'existing-backend',
-        role: 'worker',
-        status: 'paused',
-        modelId: 'model-default',
-        transcriptAvailable: true,
-        updatedAt: Date.now(),
-      },
-    ]);
+    await createMission(h);
+    seedPausedChild(h, 'existing-logical', 'existing-backend', 'worker');
     await h.handle({
       type: 'child.open',
       parentAppSessionId: 'provider-1',

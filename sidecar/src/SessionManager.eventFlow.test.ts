@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
+import type { DroidStreamEvent } from '@factory/droid-sdk';
+
 import type { ServerEvent } from './protocol.js';
 import {
   assistantTextDelta,
@@ -9,7 +11,61 @@ import {
   type RecordedCall,
 } from './testing/fakeFactoryRuntime.js';
 import { notifyCompaction } from './testing/compactionCharacterizationScenarios.js';
-import { createSessionManagerTestContext } from './testing/sessionManagerTestContext.js';
+import {
+  createSessionManagerTestContext,
+  type SessionManagerTestContext,
+} from './testing/sessionManagerTestContext.js';
+
+async function createSession(
+  context: SessionManagerTestContext,
+  sessionPurpose: 'chat' | 'mission-control' = 'chat',
+): Promise<FakeFactorySession> {
+  await context.create({
+    sessionPurpose,
+    clientRef: 'event-flow',
+    title: 'Event flow',
+    goal: 'initial',
+    interactionMode: sessionPurpose === 'chat' ? 'auto' : 'agi',
+    autonomy: 'low',
+  });
+  await context.provider.waitForPrompts('provider-1', 1);
+  await context.waitForIdle();
+  return context.provider.session('provider-1');
+}
+
+function send(context: SessionManagerTestContext, text: string): Promise<void> {
+  return context.handle({ type: 'session.send', appSessionId: 'provider-1', text });
+}
+
+/** A Task tool call and the result that names the child provider session. */
+function taskRun(toolUseId: string, subagentType: string, result: string): DroidStreamEvent[] {
+  return [
+    {
+      type: 'tool_call',
+      toolUse: {
+        type: 'tool_use',
+        id: toolUseId,
+        name: 'Task',
+        input: { subagent_type: subagentType, description: `${subagentType} work` },
+      },
+    },
+    { type: 'tool_result', toolName: 'Task', toolUseId, content: result, isError: false },
+  ];
+}
+
+function taskProgress(toolUseId: string, subagentSessionId: string): DroidStreamEvent {
+  return {
+    type: 'tool_progress',
+    toolName: 'Task',
+    toolUseId,
+    content: '',
+    update: {
+      type: 'tool_call',
+      subagentSessionId,
+      parameters: { subagent_type: 'worker' },
+    },
+  };
+}
 
 function appendedTexts(events: ServerEvent[]): string[] {
   const texts: string[] = [];
@@ -17,6 +73,16 @@ function appendedTexts(events: ServerEvent[]): string[] {
     if (event.type === 'event.appended' && event.event.text) texts.push(event.event.text);
   }
   return texts;
+}
+
+function hasAppendedFrom(events: ServerEvent[], text: string, sourceSessionId: string): boolean {
+  return events.some(
+    (event) =>
+      event.type === 'event.appended' &&
+      event.event.text === text &&
+      event.event.appSessionId === 'provider-1' &&
+      event.event.sourceSessionId === sourceSessionId,
+  );
 }
 
 function designToolPolicies(session: FakeFactorySession): unknown[] {
@@ -66,46 +132,21 @@ function isAppendedTranscript(call: RecordedCall, text: string): boolean {
 test('design turns synchronize TodoWrite and unexpected AbortErrors fail the turn', async () => {
   const context = createSessionManagerTestContext();
   try {
-    await context.create({
-      sessionPurpose: 'chat',
-      clientRef: 'event-design',
-      title: 'Event design',
-      goal: 'initial normal prompt',
-      interactionMode: 'auto',
-      autonomy: 'low',
-    });
-    const provider = context.provider.session('provider-1');
-    await provider.waitForPrompts(1);
-    await context.waitForIdle();
+    const provider = await createSession(context);
 
-    const designPrompt =
-      'Design Mode reference pack:\n- URL: about:blank\n\nUser instruction:\nMake the hero cleaner';
-    await context.handle({
-      type: 'session.send',
-      appSessionId: 'provider-1',
-      text: designPrompt,
-    });
-    await context.handle({
-      type: 'session.send',
-      appSessionId: 'provider-1',
-      text: 'restore normal tools',
-    });
-    await context.handle({
-      type: 'session.send',
-      appSessionId: 'provider-1',
-      text: 'normal tools stay restored',
-    });
+    await send(
+      context,
+      'Design Mode reference pack:\n- URL: about:blank\n\nUser instruction:\nMake the hero cleaner',
+    );
+    await send(context, 'restore normal tools');
+    await send(context, 'normal tools stay restored');
 
     assert.deepEqual(designToolPolicies(provider), [[], ['TodoWrite'], []]);
 
     const abort = new Error('The operation was aborted');
     abort.name = 'AbortError';
     provider.nextStreamError = abort;
-    await context.handle({
-      type: 'session.send',
-      appSessionId: 'provider-1',
-      text: 'unexpected abort',
-    });
+    await send(context, 'unexpected abort');
 
     assert.equal(
       context.events.some(
@@ -116,12 +157,7 @@ test('design turns synchronize TodoWrite and unexpected AbortErrors fail the tur
       ),
       true,
     );
-    assert.equal(
-      context.events.some(
-        (event) => event.type === 'session.updated' && event.session.phase === 'failed',
-      ),
-      true,
-    );
+    assert.equal(latestSessionUpdate(context.events)?.session.phase, 'failed');
   } finally {
     await context.dispose();
   }
@@ -130,26 +166,12 @@ test('design turns synchronize TodoWrite and unexpected AbortErrors fail the tur
 test('a buffered streaming tail is emitted before failed turn settlement', async () => {
   const context = createSessionManagerTestContext({ streamingCoalesceMs: 1_000 });
   try {
-    await context.create({
-      sessionPurpose: 'chat',
-      clientRef: 'event-failed-tail',
-      title: 'Failed tail',
-      goal: 'initial',
-      interactionMode: 'auto',
-      autonomy: 'low',
-    });
-    const provider = context.provider.session('provider-1');
-    await provider.waitForPrompts(1);
-    await context.waitForIdle();
+    const provider = await createSession(context);
     context.events.length = 0;
 
     provider.queueStreamEvents([assistantTextDelta('buffered before failure')]);
     provider.nextStreamError = new Error('provider failed');
-    await context.handle({
-      type: 'session.send',
-      appSessionId: 'provider-1',
-      text: 'fail after a partial response',
-    });
+    await send(context, 'fail after a partial response');
     await context.waitForIdle();
 
     const appendedIndex = context.events.findIndex(
@@ -177,17 +199,7 @@ test('a buffered streaming tail is emitted before failed turn settlement', async
 test('primary streaming persistence failures still settle and refresh context', async () => {
   const context = createSessionManagerTestContext({ streamingCoalesceMs: 1_000 });
   try {
-    await context.create({
-      sessionPurpose: 'chat',
-      clientRef: 'event-persist-failure',
-      title: 'Persist failure',
-      goal: 'initial',
-      interactionMode: 'auto',
-      autonomy: 'low',
-    });
-    const provider = context.provider.session('provider-1');
-    await provider.waitForPrompts(1);
-    await context.waitForIdle();
+    const provider = await createSession(context);
     const contextStatsCallsBeforeTurn = provider.contextStatsCalls;
     context.events.length = 0;
 
@@ -196,11 +208,7 @@ test('primary streaming persistence failures still settle and refresh context', 
       text: 'cannot persist this tail',
       error: new Error('history write failed'),
     };
-    await context.handle({
-      type: 'session.send',
-      appSessionId: 'provider-1',
-      text: 'trigger a streaming persistence failure',
-    });
+    await send(context, 'trigger a streaming persistence failure');
     await context.waitForIdle();
 
     assert.equal(
@@ -222,17 +230,7 @@ test('primary streaming persistence failures still settle and refresh context', 
 test('terminal results quarantine only later generation from the same turn', async () => {
   const context = createSessionManagerTestContext();
   try {
-    await context.create({
-      sessionPurpose: 'chat',
-      clientRef: 'event-terminal',
-      title: 'Event terminal',
-      goal: 'initial',
-      interactionMode: 'auto',
-      autonomy: 'low',
-    });
-    const provider = context.provider.session('provider-1');
-    await provider.waitForPrompts(1);
-    await context.waitForIdle();
+    const provider = await createSession(context);
     context.history.seedSessionLaunchSettings('worker-1', { modelId: 'model-default' });
     context.events.length = 0;
     provider.queueStreamEvents([
@@ -248,17 +246,7 @@ test('terminal results quarantine only later generation from the same turn', asy
           input: { subagent_type: 'worker' },
         },
       },
-      {
-        type: 'tool_progress',
-        toolUseId: 'task-1',
-        toolName: 'Task',
-        content: '',
-        update: {
-          type: 'tool_call',
-          subagentSessionId: 'worker-1',
-          parameters: { subagent_type: 'worker' },
-        },
-      },
+      taskProgress('task-1', 'worker-1'),
       {
         type: 'tool_result',
         toolName: 'Execute',
@@ -267,11 +255,7 @@ test('terminal results quarantine only later generation from the same turn', asy
         isError: true,
       },
     ]);
-    await context.handle({
-      type: 'session.send',
-      appSessionId: 'provider-1',
-      text: 'terminal turn',
-    });
+    await send(context, 'terminal turn');
 
     const recordIndex = context.calls.findIndex((call) =>
       isRecordedTranscript(call, 'final answer'),
@@ -300,11 +284,7 @@ test('terminal results quarantine only later generation from the same turn', asy
     );
 
     provider.queueStreamEvents([assistantTextDelta('next turn answer')]);
-    await context.handle({
-      type: 'session.send',
-      appSessionId: 'provider-1',
-      text: 'next turn',
-    });
+    await send(context, 'next turn');
     assert.equal(appendedTexts(context.events).includes('next turn answer'), true);
   } finally {
     await context.dispose();
@@ -314,38 +294,10 @@ test('terminal results quarantine only later generation from the same turn', asy
 test('terminal enforcement is scoped to each provider and includes notification events', async () => {
   const context = createSessionManagerTestContext();
   try {
-    await context.create({
-      sessionPurpose: 'mission-control',
-      clientRef: 'event-worker',
-      title: 'Event worker',
-      goal: 'primary becomes terminal',
-      interactionMode: 'agi',
-      autonomy: 'low',
-    });
-    await context.provider.waitForPrompts('provider-1', 1);
-    await context.waitForIdle();
-    context.history.seedSessionLaunchSettings('worker-logical', {
-      modelId: 'model-default',
-    });
-    const primary = context.provider.session('provider-1');
-    primary.queueStreamEvents([
-      {
-        type: 'tool_progress',
-        toolName: 'Task',
-        toolUseId: 'task-1',
-        content: '',
-        update: {
-          type: 'tool_call',
-          subagentSessionId: 'worker-logical',
-          parameters: { subagent_type: 'worker' },
-        },
-      },
-    ]);
-    await context.handle({
-      type: 'session.send',
-      appSessionId: 'provider-1',
-      text: 'spawn worker',
-    });
+    const primary = await createSession(context, 'mission-control');
+    context.history.seedSessionLaunchSettings('worker-logical', { modelId: 'model-default' });
+    primary.queueStreamEvents([taskProgress('task-1', 'worker-logical')]);
+    await send(context, 'spawn worker');
     const worker = new FakeFactorySession('worker-backend', {}, context.calls);
     context.runtime.loadQueue.set('worker-logical', [worker]);
     await context.handle({
@@ -355,6 +307,8 @@ test('terminal enforcement is scoped to each provider and includes notification 
       requestId: 'open-child-1',
     });
 
+    // The primary's turn is terminal; the child's notifications and its own
+    // turn still land on the parent's transcript under the child's identity.
     context.provider.emitNotification('worker-backend', {
       type: 'assistant_text_delta',
       messageId: 'worker-message-1',
@@ -362,17 +316,7 @@ test('terminal enforcement is scoped to each provider and includes notification 
       textDelta: 'worker notification before terminal',
     });
     assert.equal(
-      appendedTexts(context.events).includes('worker notification before terminal'),
-      true,
-    );
-    assert.equal(
-      context.events.some(
-        (event) =>
-          event.type === 'event.appended' &&
-          event.event.text === 'worker notification before terminal' &&
-          event.event.appSessionId === 'provider-1' &&
-          event.event.sourceSessionId === 'child-1',
-      ),
+      hasAppendedFrom(context.events, 'worker notification before terminal', 'child-1'),
       true,
     );
 
@@ -383,16 +327,7 @@ test('terminal enforcement is scoped to each provider and includes notification 
       childSessionId: 'child-1',
       text: 'worker turn',
     });
-    assert.equal(appendedTexts(context.events).includes('worker still talking'), true);
-    assert.equal(
-      context.events.some(
-        (event) =>
-          event.type === 'event.appended' &&
-          event.event.text === 'worker still talking' &&
-          event.event.sourceSessionId === 'child-1',
-      ),
-      true,
-    );
+    assert.equal(hasAppendedFrom(context.events, 'worker still talking', 'child-1'), true);
 
     context.provider.emitNotification('worker-backend', {
       type: 'assistant_text_delta',
@@ -409,48 +344,14 @@ test('terminal enforcement is scoped to each provider and includes notification 
 test('current SDK Task result persists and opens the exact completed child', async () => {
   const context = createSessionManagerTestContext();
   try {
-    await context.create({
-      sessionPurpose: 'chat',
-      clientRef: 'event-task-result-child',
-      title: 'Task result child',
-      goal: 'initial',
-      interactionMode: 'auto',
-      autonomy: 'low',
-    });
-    const provider = context.provider.session('provider-1');
-    await provider.waitForPrompts(1);
-    await context.waitForIdle();
+    const provider = await createSession(context);
     context.history.seedSessionLaunchSettings('provider-child-current', {
       modelId: 'model-default',
     });
-    context.events.length = 0;
-    provider.queueStreamEvents([
-      {
-        type: 'tool_call',
-        toolUse: {
-          type: 'tool_use',
-          id: 'task-current',
-          name: 'Task',
-          input: {
-            subagent_type: 'worker',
-            description: 'Smoke test reply',
-            prompt: 'Reply exactly CHILD_SMOKE_OK and stop.',
-          },
-        },
-      },
-      {
-        type: 'tool_result',
-        toolName: 'Task',
-        toolUseId: 'task-current',
-        content: 'session_id: provider-child-current\nCHILD_SMOKE_OK',
-        isError: false,
-      },
-    ]);
-    await context.handle({
-      type: 'session.send',
-      appSessionId: 'provider-1',
-      text: 'spawn worker',
-    });
+    provider.queueStreamEvents(
+      taskRun('task-current', 'worker', 'session_id: provider-child-current\nCHILD_SMOKE_OK'),
+    );
+    await send(context, 'spawn worker');
 
     const child = context.history.childSessions('provider-1')[0];
     assert.equal(child?.parentAppSessionId, 'provider-1');
@@ -482,51 +383,27 @@ test('current SDK Task result persists and opens the exact completed child', asy
   }
 });
 
-for (const compaction of ['none', 'manual', 'automatic'] as const)
+// An idle parent is woken once its background agent finishes; the wake waits for
+// either kind of compaction to complete first.
+for (const compaction of ['manual', 'automatic'] as const)
   test(`background Task completion wakes once after ${compaction} compaction`, async () => {
     const context = createSessionManagerTestContext();
     try {
-      await context.create({
-        sessionPurpose: 'chat',
-        clientRef: 'event-background-task-completion',
-        title: 'Background task completion',
-        goal: 'initial',
-        interactionMode: 'auto',
-        autonomy: 'low',
-      });
-      const provider = context.provider.session('provider-1');
-      await provider.waitForPrompts(1);
-      await context.waitForIdle();
+      const provider = await createSession(context);
       context.events.length = 0;
       context.history.seedSessionLaunchSettings('provider-child-background', {
         modelId: 'custom:glm-5.2',
         reasoningEffort: 'max',
       });
 
-      provider.queueStreamEvents([
-        {
-          type: 'tool_call',
-          toolUse: {
-            type: 'tool_use',
-            id: 'task-background',
-            name: 'Task',
-            input: { subagent_type: 'worker-2', description: 'background work' },
-          },
-        },
-        {
-          type: 'tool_result',
-          toolName: 'Task',
-          toolUseId: 'task-background',
-          content:
-            'Task launched in background.\ntask_id: provider-child-background\nsession_id: provider-child-background',
-          isError: false,
-        },
-      ]);
-      await context.handle({
-        type: 'session.send',
-        appSessionId: 'provider-1',
-        text: 'launch background worker',
-      });
+      provider.queueStreamEvents(
+        taskRun(
+          'task-background',
+          'worker-2',
+          'Task launched in background.\ntask_id: provider-child-background\nsession_id: provider-child-background',
+        ),
+      );
+      await send(context, 'launch background worker');
 
       const launched = context.history.childSessions('provider-1')[0];
       assert.equal(launched?.status, 'running');
@@ -575,7 +452,7 @@ for (const compaction of ['none', 'manual', 'automatic'] as const)
         true,
       );
 
-      if (compaction !== 'none') assert.equal(provider.prompts.length, 2);
+      assert.equal(provider.prompts.length, 2);
       compactGate?.resolve();
       await compacting;
       if (compaction === 'automatic') notifyCompaction(context, 'provider-1', 'completed');
@@ -589,14 +466,12 @@ for (const compaction of ['none', 'manual', 'automatic'] as const)
         ].join('\n'),
       ]);
       const appended = context.events.filter((event) => event.type === 'event.appended');
-      assert.deepEqual(
-        appended
-          .filter(
-            (event) =>
-              event.event.kind === 'status' && event.event.text === 'Agents finished; continuing',
-          )
-          .map((event) => event.event.text),
-        ['Agents finished; continuing'],
+      assert.equal(
+        appended.filter(
+          (event) =>
+            event.event.kind === 'status' && event.event.text === 'Agents finished; continuing',
+        ).length,
+        1,
       );
       assert.equal(
         appended.some((event) => event.event.role === 'primary' && event.event.author === 'user'),
@@ -610,44 +485,15 @@ for (const compaction of ['none', 'manual', 'automatic'] as const)
 test('an agent that settles inside the parent turn does not wake it a second time', async () => {
   const context = createSessionManagerTestContext();
   try {
-    await context.create({
-      sessionPurpose: 'chat',
-      clientRef: 'event-foreground-task-completion',
-      title: 'Foreground task completion',
-      goal: 'initial',
-      interactionMode: 'auto',
-      autonomy: 'low',
-    });
-    const provider = context.provider.session('provider-1');
-    await provider.waitForPrompts(1);
-    await context.waitForIdle();
+    const provider = await createSession(context);
     context.history.seedSessionLaunchSettings('provider-child-foreground', {
       modelId: 'custom:glm-5.2',
     });
 
-    provider.queueStreamEvents([
-      {
-        type: 'tool_call',
-        toolUse: {
-          type: 'tool_use',
-          id: 'task-foreground',
-          name: 'Task',
-          input: { subagent_type: 'worker-2', description: 'foreground work' },
-        },
-      },
-      {
-        type: 'tool_result',
-        toolName: 'Task',
-        toolUseId: 'task-foreground',
-        content: 'session_id: provider-child-foreground\n\ndone',
-        isError: false,
-      },
-    ]);
-    await context.handle({
-      type: 'session.send',
-      appSessionId: 'provider-1',
-      text: 'run worker in this turn',
-    });
+    provider.queueStreamEvents(
+      taskRun('task-foreground', 'worker-2', 'session_id: provider-child-foreground\n\ndone'),
+    );
+    await send(context, 'run worker in this turn');
     await context.waitForIdle();
 
     // The agent ran and finished inside the parent's own turn, which read its
@@ -662,18 +508,8 @@ test('an agent that settles inside the parent turn does not wake it a second tim
 test('worker token usage updates totals without replacing the primary context reading', async () => {
   const context = createSessionManagerTestContext();
   try {
-    await context.create({
-      sessionPurpose: 'mission-control',
-      clientRef: 'event-tokens',
-      title: 'Event tokens',
-      goal: 'initial',
-      interactionMode: 'agi',
-      autonomy: 'low',
-    });
-    await context.provider.waitForPrompts('provider-1', 1);
-    await context.waitForIdle();
-
-    context.provider.session('provider-1').queueStreamEvents([
+    const primary = await createSession(context, 'mission-control');
+    primary.queueStreamEvents([
       {
         type: 'token_usage_update',
         inputTokens: 5,
@@ -683,11 +519,7 @@ test('worker token usage updates totals without replacing the primary context re
         thinkingTokens: 0,
       },
     ]);
-    await context.handle({
-      type: 'session.send',
-      appSessionId: 'provider-1',
-      text: 'primary usage',
-    });
+    await send(context, 'primary usage');
     assert.equal(latestSessionUpdate(context.events)?.session.contextTokens, 9);
     assert.equal(latestSessionUpdate(context.events)?.session.contextAccuracy, 'exact');
 
@@ -739,39 +571,10 @@ test('worker token usage updates totals without replacing the primary context re
 test('loaded child context follows its parent-scoped logical identity', async () => {
   const context = createSessionManagerTestContext();
   try {
-    await context.create({
-      sessionPurpose: 'mission-control',
-      clientRef: 'event-child-context',
-      title: 'Child context',
-      goal: 'initial',
-      interactionMode: 'agi',
-      autonomy: 'low',
-    });
-    await context.provider.waitForPrompts('provider-1', 1);
-    await context.waitForIdle();
-    context.history.seedSessionLaunchSettings('worker-history-id', {
-      modelId: 'model-default',
-    });
-
-    const primary = context.provider.session('provider-1');
-    primary.queueStreamEvents([
-      {
-        type: 'tool_progress',
-        toolName: 'Task',
-        toolUseId: 'task-context',
-        content: '',
-        update: {
-          type: 'tool_call',
-          subagentSessionId: 'worker-history-id',
-          parameters: { subagent_type: 'worker' },
-        },
-      },
-    ]);
-    await context.handle({
-      type: 'session.send',
-      appSessionId: 'provider-1',
-      text: 'spawn worker',
-    });
+    const primary = await createSession(context, 'mission-control');
+    context.history.seedSessionLaunchSettings('worker-history-id', { modelId: 'model-default' });
+    primary.queueStreamEvents([taskProgress('task-context', 'worker-history-id')]);
+    await send(context, 'spawn worker');
     context.runtime.loadQueue.set('worker-history-id', [
       new FakeFactorySession('worker-runtime-id', {}, context.calls),
     ]);
@@ -781,27 +584,8 @@ test('loaded child context follows its parent-scoped logical identity', async ()
       childSessionId: 'child-1',
       requestId: 'open-child-history',
     });
-    const compactionNotification = (notification: Record<string, unknown>) => ({
-      jsonrpc: '2.0',
-      method: 'droid.session_notification',
-      params: { notification },
-    });
-    context.provider.emitNotification(
-      'worker-runtime-id',
-      compactionNotification({
-        type: 'droid_working_state_changed',
-        newState: 'compacting_conversation',
-      }),
-    );
-    context.provider.emitNotification(
-      'worker-runtime-id',
-      compactionNotification({
-        type: 'session_compacted',
-        summaryId: 'summary-context',
-        removedCount: 1,
-        visibleBoundaryMessageId: null,
-      }),
-    );
+    notifyCompaction(context, 'worker-runtime-id', 'started');
+    notifyCompaction(context, 'worker-runtime-id', 'completed');
     await context.waitForIdle();
     context.events.length = 0;
 

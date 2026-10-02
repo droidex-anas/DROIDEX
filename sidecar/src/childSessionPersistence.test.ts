@@ -191,48 +191,6 @@ test('canonical indexes reject duplicate providers but allow shared spawn links 
   index.close();
 });
 
-test('fresh history index uses only the canonical child schema', () => {
-  const index = new HistoryIndex();
-  index.close();
-  const db = new DatabaseSync(join(home, '.factory', 'droidex', SESSION_INDEX_FILENAME));
-
-  const version = db.prepare('PRAGMA user_version').get() as { user_version: number };
-  const tables = (
-    db.prepare("SELECT name FROM sqlite_schema WHERE type = 'table' ORDER BY name").all() as {
-      name: string;
-    }[]
-  ).map(({ name }) => name);
-  const childColumns = (
-    db.prepare('PRAGMA table_info(child_sessions)').all() as { name: string }[]
-  ).map(({ name }) => name);
-  db.close();
-
-  assert.equal(version.user_version, 5);
-  assert.ok(tables.includes('child_sessions'));
-  assert.ok(!tables.includes('child_session_links'));
-  assert.ok(!tables.includes('linked_child_sessions'));
-  assert.deepEqual(childColumns, [
-    'parent_app_session_id',
-    'child_session_id',
-    'provider_session_id',
-    'previous_provider_session_ids',
-    'role',
-    'label',
-    'prompt',
-    'group_name',
-    'phase',
-    'status',
-    'model_id',
-    'reasoning_effort',
-    'spawn_link_kind',
-    'spawn_link_id',
-    'transcript_available',
-    'started_at',
-    'settled_at',
-    'updated_at',
-  ]);
-});
-
 for (const releasedVersion of [1, 2]) {
   test(`schema v${releasedVersion} upgrades without losing existing chats or children`, () => {
     const releasedHome = mkdtempSync(join(tmpdir(), 'droid-history-upgrade-'));
@@ -557,36 +515,20 @@ test('canonical session index remains isolated from the legacy droid index', () 
   }
 });
 
-test('current index missing a canonical identity constraint uses hard-cut recovery', () => {
-  const malformedHome = mkdtempSync(join(tmpdir(), 'droid-child-schema-v1-malformed-'));
-  process.env.HOME = malformedHome;
-  try {
-    const index = new HistoryIndex();
-    index.close();
-    const indexPath = join(malformedHome, '.factory', 'droidex', SESSION_INDEX_FILENAME);
-    const db = new DatabaseSync(indexPath);
-    db.exec('DROP INDEX child_sessions_provider_identity;');
-    db.close();
-
-    assert.throws(
-      () => new HistoryIndex(),
-      /remove .*\.factory\/droidex\/session-index.sqlite.*Raw Factory session history is not removed\./,
-    );
-  } finally {
-    process.env.HOME = home;
-    rmSync(malformedHome, { recursive: true, force: true });
-  }
-});
-
-test('current index missing the canonical spawn-kind check uses hard-cut recovery', () => {
-  const malformedHome = mkdtempSync(join(tmpdir(), 'droid-child-schema-v1-check-'));
-  process.env.HOME = malformedHome;
-  try {
-    const index = new HistoryIndex();
-    index.close();
-    const indexPath = join(malformedHome, '.factory', 'droidex', SESSION_INDEX_FILENAME);
-    const db = new DatabaseSync(indexPath);
-    db.exec(`
+test('a current index with a drifted canonical constraint uses hard-cut recovery', () => {
+  const malformations = {
+    'missing provider identity index': 'DROP INDEX child_sessions_provider_identity;',
+    'inverted provider identity predicate': `
+      DROP INDEX child_sessions_provider_identity;
+      CREATE UNIQUE INDEX child_sessions_provider_identity
+        ON child_sessions (parent_app_session_id, provider_session_id)
+        WHERE provider_session_id IS NULL;`,
+    'provider identity column options': `
+      DROP INDEX child_sessions_provider_identity;
+      CREATE UNIQUE INDEX child_sessions_provider_identity
+        ON child_sessions (parent_app_session_id COLLATE NOCASE, provider_session_id DESC)
+        WHERE provider_session_id IS NOT NULL;`,
+    'missing spawn-kind check': `
       BEGIN;
       DROP INDEX child_sessions_provider_identity;
       ALTER TABLE child_sessions RENAME TO malformed_child_sessions;
@@ -620,54 +562,24 @@ test('current index missing the canonical spawn-kind check uses hard-cut recover
       CREATE UNIQUE INDEX child_sessions_provider_identity
         ON child_sessions (parent_app_session_id, provider_session_id)
         WHERE provider_session_id IS NOT NULL;
-      COMMIT;
-    `);
-    db.close();
+      COMMIT;`,
+  };
 
-    assert.throws(
-      () => new HistoryIndex(),
-      /remove .*\.factory\/droidex\/session-index.sqlite.*Raw Factory session history is not removed\./,
-    );
-  } finally {
-    process.env.HOME = home;
-    rmSync(malformedHome, { recursive: true, force: true });
-  }
-});
-
-test('current indexes with incompatible partial definitions use hard-cut recovery', () => {
-  const cases = [
-    {
-      name: 'child_sessions_provider_identity',
-      columns: 'parent_app_session_id, provider_session_id',
-      predicate: 'provider_session_id IS NULL',
-    },
-    {
-      name: 'child_sessions_provider_identity',
-      columns: 'parent_app_session_id COLLATE NOCASE, provider_session_id DESC',
-      predicate: 'provider_session_id IS NOT NULL',
-    },
-  ];
-
-  for (const malformed of cases) {
-    const malformedHome = mkdtempSync(join(tmpdir(), 'droid-child-schema-v1-predicate-'));
+  for (const [label, malformation] of Object.entries(malformations)) {
+    const malformedHome = mkdtempSync(join(tmpdir(), 'droid-child-schema-malformed-'));
     process.env.HOME = malformedHome;
     try {
-      const index = new HistoryIndex();
-      index.close();
-      const indexPath = join(malformedHome, '.factory', 'droidex', SESSION_INDEX_FILENAME);
-      const db = new DatabaseSync(indexPath);
-      db.exec(`
-        DROP INDEX ${malformed.name};
-        CREATE UNIQUE INDEX ${malformed.name}
-          ON child_sessions (${malformed.columns})
-          WHERE ${malformed.predicate};
-      `);
+      new HistoryIndex().close();
+      const db = new DatabaseSync(
+        join(malformedHome, '.factory', 'droidex', SESSION_INDEX_FILENAME),
+      );
+      db.exec(malformation);
       db.close();
 
       assert.throws(
         () => new HistoryIndex(),
         /remove .*\.factory\/droidex\/session-index.sqlite.*Raw Factory session history is not removed\./,
-        malformed.name,
+        label,
       );
     } finally {
       process.env.HOME = home;

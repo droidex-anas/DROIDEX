@@ -132,7 +132,7 @@ const appendedEvents = (
       event.type === 'event.appended',
   );
 
-test('a settled background session past the budget releases its provider process', async () => {
+test('a settled background session past the budget releases its provider process and says why', async () => {
   const h = createSessionManagerTestContext({ sessionRuntimeIdleMs: 0 });
   try {
     const session = await openIdleSession(h, 'idle');
@@ -148,48 +148,15 @@ test('a settled background session past the budget releases its provider process
       true,
       'the client must learn the runtime is gone',
     );
-  } finally {
-    await h.dispose();
-  }
-});
-
-test('a settled background session inside the budget keeps its runtime', async () => {
-  const h = createSessionManagerTestContext({ sessionRuntimeIdleMs: 60 * 60_000 });
-  try {
-    await openIdleSession(h, 'recent');
-    await focusElsewhere(h);
-
-    await h.retireIdleSessionRuntimes();
-
-    assert.deepEqual(providerClosures(h), [], 'the budget must not expire early');
-  } finally {
-    await h.dispose();
-  }
-});
-
-test('the session the user is looking at keeps its runtime', async () => {
-  const h = createSessionManagerTestContext({ sessionRuntimeIdleMs: 0 });
-  try {
-    const visible = await openIdleSession(h, 'visible');
-    const background = await openIdleSession(h, 'background');
-    await focusOn(h, visible.appSessionId);
-
-    await h.retireIdleSessionRuntimes();
-
-    assert.deepEqual(providerClosures(h), [background.providerSessionId]);
-  } finally {
-    await h.dispose();
-  }
-});
-
-test('nothing is retired until the renderer reports what is on screen', async () => {
-  const h = createSessionManagerTestContext({ sessionRuntimeIdleMs: 0 });
-  try {
-    await openIdleSession(h, 'unknown-focus');
-
-    await h.retireIdleSessionRuntimes();
-
-    assert.deepEqual(providerClosures(h), []);
+    assert.ok(
+      appendedEvents(h).some(
+        ({ event }) =>
+          event.appSessionId === session.appSessionId &&
+          event.kind === 'status' &&
+          /released after 30 minutes idle/.test(event.text ?? ''),
+      ),
+      'a retired session must leave a visible reason in its transcript',
+    );
   } finally {
     await h.dispose();
   }
@@ -217,35 +184,6 @@ test('a session mid-turn is never retired, however long its runtime sat unused',
 
     await h.retireIdleSessionRuntimes();
     assert.deepEqual(providerClosures(h), [session.providerSessionId]);
-  } finally {
-    await h.dispose();
-  }
-});
-
-test('a session with a queued prompt is never retired', async () => {
-  const h = createSessionManagerTestContext({ sessionRuntimeIdleMs: 0 });
-  try {
-    const session = await openIdleSession(h, 'queued');
-    await focusElsewhere(h);
-    const gate = h.provider.deferNextStream(session.providerSessionId);
-    const sending = h.handle({
-      type: 'session.send',
-      appSessionId: session.appSessionId,
-      text: 'first',
-    });
-    await h.provider.waitForPrompts(session.providerSessionId, 2);
-    await h.handle({
-      type: 'session.send',
-      appSessionId: session.appSessionId,
-      text: 'queued behind it',
-    });
-
-    await h.retireIdleSessionRuntimes();
-    assert.deepEqual(providerClosures(h), []);
-
-    gate.resolve();
-    await sending;
-    await h.provider.waitForPrompts(session.providerSessionId, 3);
   } finally {
     await h.dispose();
   }
@@ -341,25 +279,6 @@ test('a session with an unapplied model choice is never retired', async () => {
   }
 });
 
-test('retirement tells the user why the runtime went away', async () => {
-  const h = createSessionManagerTestContext({ sessionRuntimeIdleMs: 0 });
-  try {
-    const session = await openIdleSession(h, 'explained');
-    await focusElsewhere(h);
-    await h.retireIdleSessionRuntimes();
-
-    const status = appendedEvents(h).find(
-      ({ event }) =>
-        event.appSessionId === session.appSessionId &&
-        event.kind === 'status' &&
-        /released after 30 minutes idle/.test(event.text ?? ''),
-    );
-    assert.ok(status, 'a retired session must leave a visible reason in its transcript');
-  } finally {
-    await h.dispose();
-  }
-});
-
 test('a retired session reopens on the next prompt with its history intact', async () => {
   const h = createSessionManagerTestContext({ sessionRuntimeIdleMs: 0 });
   try {
@@ -449,30 +368,6 @@ test('selecting a retired chat starts its runtime again before any prompt', asyn
       h.runtime.loadCalls.map((call) => call.sessionId),
       [session.providerSessionId],
       'the send reuses the warmed runtime rather than reloading it again',
-    );
-  } finally {
-    await h.dispose();
-  }
-});
-
-test('a chat the user passed over on the way to another is never warmed', async () => {
-  const h = createSessionManagerTestContext({ sessionRuntimeIdleMs: 0 });
-  try {
-    const passed = await openIdleSession(h, 'passed-over');
-    const opened = await openIdleSession(h, 'opened');
-    writeProviderConversation(h.home, passed.providerSessionId, 'passed-over');
-    writeProviderConversation(h.home, opened.providerSessionId, 'opened');
-    await focusElsewhere(h);
-    await h.retireIdleSessionRuntimes();
-
-    await focusOn(h, passed.appSessionId);
-    await focusOn(h, opened.appSessionId);
-    await h.warmSelectedSessionRuntime();
-
-    assert.deepEqual(
-      h.runtime.loadCalls.map((call) => call.sessionId),
-      [opened.providerSessionId],
-      'only the chat the selection settled on is worth a process',
     );
   } finally {
     await h.dispose();

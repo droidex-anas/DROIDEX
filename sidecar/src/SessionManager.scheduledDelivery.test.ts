@@ -1,11 +1,17 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { FakeFactorySession } from './testing/fakeFactoryRuntime.js';
-import { createSessionManagerTestContext } from './testing/sessionManagerTestContext.js';
+import {
+  createSessionManagerTestContext,
+  type SessionManagerTestContext,
+} from './testing/sessionManagerTestContext.js';
 
 const prompt = 'Design Mode reference pack:\nScheduled follow-up';
 
-async function ready(onSessionAvailable?: (appSessionId: string) => void) {
+async function ready(
+  onSessionAvailable?: (appSessionId: string) => void,
+  beforeCreate?: (h: SessionManagerTestContext) => void,
+) {
   let finish: () => void = () => undefined;
   const initialTurn = new Promise<void>((resolve) => {
     finish = resolve;
@@ -19,6 +25,7 @@ async function ready(onSessionAvailable?: (appSessionId: string) => void) {
       else if (streaming) finish();
     },
   });
+  beforeCreate?.(h);
   await h.create({
     clientRef: 'scheduled-target',
     cwd: h.home,
@@ -80,30 +87,24 @@ test('provider setup failure never reports delivery or submits the scheduled pro
   }
 });
 
-for (const action of ['cancel', 'close', 'interrupt']) {
+// The caller withdrawing a delivery is owned by SessionLifecycle's scheduled
+// delivery tests; these are the facade commands that end the target instead.
+for (const action of ['close', 'interrupt'] as const) {
   test(`${action} during async provider setup prevents the scheduled send`, async () => {
     const h = await ready();
     const provider = h.provider.session('provider-1');
     const settings = provider.deferNextUpdateSettings();
-    let current = true;
     try {
       const count = provider.settings.length;
-      const delivery = h.deliverScheduledMessage('provider-1', prompt, () => current);
+      const delivery = h.deliverScheduledMessage('provider-1', prompt, () => true);
       await provider.waitForSettings(count + 1);
-      if (action === 'cancel') current = false;
-      else if (action === 'interrupt')
-        await h.handle({ type: 'session.interrupt', appSessionId: 'provider-1' });
-      else await h.handle({ type: 'session.close', appSessionId: 'provider-1' });
+      await h.handle({
+        type: action === 'close' ? 'session.close' : 'session.interrupt',
+        appSessionId: 'provider-1',
+      });
       settings.resolve();
-      // Nothing was dispatched, and only the caller withdrawing it is a cancellation.
-      assert.equal((await delivery).status, action === 'cancel' ? 'cancelled' : 'unavailable');
+      assert.equal((await delivery).status, 'unavailable');
       assert.deepEqual(provider.prompts, ['Initial user prompt']);
-      if (action === 'cancel') {
-        assert.equal(
-          h.calls.some((call) => call.method === 'session.close'),
-          false,
-        );
-      }
     } finally {
       settings.resolve();
       await h.dispose();
@@ -230,22 +231,11 @@ test('only the last pending question response rearms delivery, without protocol 
 });
 
 test('acknowledged delivery need not wait for turn cleanup', async () => {
-  let finish: () => void = () => undefined;
-  const initialTurn = new Promise<void>((resolve) => {
-    finish = resolve;
-  });
-  let streaming = false;
-  const h = createSessionManagerTestContext({
-    onEvent: (event) => {
-      if (event.type !== 'session.updated') return;
-      if (event.session.streaming) streaming = true;
-      else if (streaming) finish();
-    },
-  });
   let release: () => void = () => undefined;
   const settlement = new Promise<void>((resolve) => {
     release = resolve;
   });
+  let provider: DeferredSettlementSession | undefined;
   class DeferredSettlementSession extends FakeFactorySession {
     waitForSettlement = false;
     override async *stream(text: string, options: Parameters<FakeFactorySession['stream']>[1]) {
@@ -253,19 +243,12 @@ test('acknowledged delivery need not wait for turn cleanup', async () => {
       if (this.waitForSettlement) await settlement;
     }
   }
-  const provider = new DeferredSettlementSession('provider-delivery', {}, h.calls);
-  h.runtime.createQueue.push(provider);
+  const h = await ready(undefined, (context) => {
+    provider = new DeferredSettlementSession('provider-delivery', {}, context.calls);
+    context.runtime.createQueue.push(provider);
+  });
   try {
-    await h.create({
-      clientRef: 'scheduled-settlement',
-      cwd: h.home,
-      sessionPurpose: 'chat',
-      goal: 'Initial user prompt',
-      title: 'User conversation',
-      interactionMode: 'auto',
-      autonomy: 'low',
-    });
-    await initialTurn;
+    assert.ok(provider);
     provider.waitForSettlement = true;
     const receipt = await h.deliverScheduledMessage('provider-delivery', 'Later', () => true);
     assert.equal(receipt.status, 'accepted');

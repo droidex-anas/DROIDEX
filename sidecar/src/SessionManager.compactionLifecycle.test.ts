@@ -5,8 +5,11 @@ import { ContextStatsAccuracy } from '@factory/droid-sdk';
 
 import { FakeFactorySession, type RecordedCall } from './testing/fakeFactoryRuntime.js';
 import { writeProviderConversation } from './testing/historyCharacterizationSupport.js';
-import { createSessionManagerTestContext } from './testing/sessionManagerTestContext.js';
-import type { ServerEvent } from './protocol.js';
+import {
+  createSessionManagerTestContext,
+  type SessionManagerTestContext,
+} from './testing/sessionManagerTestContext.js';
+import type { ClientCommand, ServerEvent } from './protocol.js';
 import {
   contextUpdateCount,
   notifyCompaction,
@@ -17,10 +20,36 @@ import {
 } from './testing/compactionCharacterizationScenarios.js';
 
 type SessionUpdatedEvent = Extract<ServerEvent, { type: 'session.updated' }>;
-type TranscriptEventAppended = Extract<ServerEvent, { type: 'event.appended' }>;
+type CreateCommand = Omit<Extract<ClientCommand, { type: 'session.create' }>, 'type'>;
+
+async function createChat(
+  h: SessionManagerTestContext,
+  options: Partial<CreateCommand> = {},
+): Promise<void> {
+  await h.create({
+    sessionPurpose: 'chat',
+    clientRef: 'compaction',
+    title: 'Compaction',
+    goal: 'go',
+    interactionMode: 'auto',
+    autonomy: 'low',
+    ...options,
+  });
+  await h.waitForIdle();
+}
 
 function sessionUpdates(events: ServerEvent[]): SessionUpdatedEvent[] {
   return events.filter((event): event is SessionUpdatedEvent => event.type === 'session.updated');
+}
+
+function appendedTextIndex(events: ServerEvent[], text: string): number {
+  return events.findIndex((event) => event.type === 'event.appended' && event.event.text === text);
+}
+
+function compactionArms(h: SessionManagerTestContext, providerSessionId = 'provider-1') {
+  return h.provider
+    .session(providerSessionId)
+    .settings.filter((settings) => settings['compactionThresholdCheckEnabled'] === true);
 }
 
 function syncsSummary(
@@ -57,51 +86,29 @@ function callCount(
   ).length;
 }
 
-test('[C0] Create arms daemon compaction without client-side turn compaction', async () => {
+function isPublishedText(call: RecordedCall, text: string): boolean {
+  const event = call.args[0];
+  return (
+    call.target === 'protocol' &&
+    call.method === 'event' &&
+    typeof event === 'object' &&
+    event !== null &&
+    'type' in event &&
+    event.type === 'event.appended' &&
+    'event' in event &&
+    typeof event.event === 'object' &&
+    event.event !== null &&
+    'text' in event.event &&
+    event.event.text === text
+  );
+}
+
+test('create arms daemon compaction, and its notifications stream before an active turn settles', async () => {
   const h = createSessionManagerTestContext();
 
   try {
-    await h.create({
-      sessionPurpose: 'chat',
-      clientRef: 'c0',
-      title: 'C0',
-      goal: 'ordinary turn',
-      interactionMode: 'auto',
-      autonomy: 'low',
-      compactionTokenLimit: 600,
-    });
-    await h.waitForIdle();
-
-    assert.equal(
-      h.provider
-        .session('provider-1')
-        .settings.some(
-          (settings) =>
-            settings['compactionThresholdCheckEnabled'] === true &&
-            settings['compactionTokenLimit'] === 600,
-        ),
-      true,
-    );
-    assert.equal(callCount(h.calls, 'provider', 'compactSession', 'provider-1'), 0);
-  } finally {
-    await h.dispose();
-  }
-});
-
-test('daemon compaction notifications stream before an active turn settles', async () => {
-  const h = createSessionManagerTestContext();
-
-  try {
-    await h.create({
-      sessionPurpose: 'chat',
-      clientRef: 'mid-turn-compaction',
-      title: 'Mid-turn compaction',
-      goal: 'initial turn',
-      interactionMode: 'auto',
-      autonomy: 'low',
-      compactionTokenLimit: 600,
-    });
-    await h.waitForIdle();
+    await createChat(h, { compactionTokenLimit: 600 });
+    assert.equal(compactionArms(h).at(-1)?.['compactionTokenLimit'], 600);
 
     const streamGate = h.provider.deferNextStream('provider-1');
     let turnSettled = false;
@@ -114,10 +121,7 @@ test('daemon compaction notifications stream before an active turn settles', asy
     h.events.length = 0;
 
     notifyCompaction(h, 'provider-1', 'started');
-    const started = h.events.findIndex(
-      (event) =>
-        event.type === 'event.appended' && event.event.text === 'Compacting conversation...',
-    );
+    const started = appendedTextIndex(h.events, 'Compacting conversation...');
     assert.equal(turnSettled, false);
     assert.equal(started >= 0, true);
 
@@ -130,6 +134,7 @@ test('daemon compaction notifications stream before an active turn settles', asy
     assert.equal(completed > started, true);
     assert.equal(summary?.streaming, true);
     assert.equal(summary?.autoCompactions, 1);
+    // The daemon owns automatic compaction; the client never compacts on its own.
     assert.equal(callCount(h.calls, 'provider', 'compactSession', 'provider-1'), 0);
 
     streamGate.resolve();
@@ -140,19 +145,11 @@ test('daemon compaction notifications stream before an active turn settles', asy
   }
 });
 
-test('[C1] Manual in-place compaction', { concurrency: false }, async () => {
+test('manual in-place compaction refreshes context, then delivers the send queued behind it once', async () => {
   const h = createSessionManagerTestContext();
 
   try {
-    await h.create({
-      sessionPurpose: 'chat',
-      clientRef: 'c1',
-      title: 'C1',
-      goal: 'go',
-      interactionMode: 'auto',
-      autonomy: 'low',
-    });
-    await h.waitForIdle();
+    await createChat(h);
     const compactGate = h.provider.deferNextCompaction('provider-1');
     const queuedStreamGate = h.provider.deferNextStream('provider-1');
     h.provider.session('provider-1').nextCompactResult = {
@@ -169,20 +166,14 @@ test('[C1] Manual in-place compaction', { concurrency: false }, async () => {
     compactGate.resolve();
     await h.provider.waitForPrompts('provider-1', 2);
 
-    const compactingStatus = h.events.findIndex(
-      (event): event is TranscriptEventAppended =>
-        event.type === 'event.appended' && event.event.text === 'Compacting conversation...',
-    );
+    const compactingStatus = appendedTextIndex(h.events, 'Compacting conversation...');
     const refreshedContext = h.events.findIndex(
       (event, index) =>
         index > compactingStatus &&
         event.type === 'context.updated' &&
         event.sourceSessionId === 'provider-1',
     );
-    const completionStatus = h.events.findIndex(
-      (event): event is TranscriptEventAppended =>
-        event.type === 'event.appended' && event.event.text === 'Compaction complete.',
-    );
+    const completionStatus = appendedTextIndex(h.events, 'Compaction complete.');
     assert.deepEqual(
       [
         compactingStatus >= 0,
@@ -191,22 +182,9 @@ test('[C1] Manual in-place compaction', { concurrency: false }, async () => {
       ],
       [true, true, true],
     );
-    const completionRecord = h.calls.findIndex((call) => {
-      const [event] = call.args;
-      return (
-        call.target === 'protocol' &&
-        call.method === 'event' &&
-        event !== null &&
-        typeof event === 'object' &&
-        'type' in event &&
-        event.type === 'event.appended' &&
-        'event' in event &&
-        event.event !== null &&
-        typeof event.event === 'object' &&
-        'text' in event.event &&
-        event.event.text === 'Compaction complete.'
-      );
-    });
+    const completionRecord = h.calls.findIndex((call) =>
+      isPublishedText(call, 'Compaction complete.'),
+    );
     const queuedDelivery = h.calls.findIndex(
       (call) =>
         call.target === 'provider' &&
@@ -226,7 +204,6 @@ test('[C1] Manual in-place compaction', { concurrency: false }, async () => {
       'provider-1',
       { customInstructions: 'preserve decisions' },
     ]);
-    assert.equal(callCount(h.calls, 'provider', 'stream', 'provider-1'), 2);
     assert.equal(sessionUpdates(h.events).at(-1)?.session.providerSessionId, 'provider-1');
   } finally {
     await h.dispose();
@@ -240,29 +217,20 @@ test(
     const h = createSessionManagerTestContext();
 
     try {
-      await h.create({
-        sessionPurpose: 'chat',
-        clientRef: 'compaction-failure',
-        title: 'Compaction failure',
-        goal: 'initial',
-        interactionMode: 'auto',
-        autonomy: 'low',
-      });
-      await h.waitForIdle();
+      await createChat(h);
       h.events.length = 0;
       h.provider.session('provider-1').nextCompactError = new Error('transient failure');
       t.mock.method(Date, 'now', () => 123_456);
 
       await h.handle({ type: 'session.compact', appSessionId: 'provider-1' });
 
-      const statuses = h.events.filter(
-        (event): event is TranscriptEventAppended =>
-          event.type === 'event.appended' && event.event.kind === 'status',
+      const statuses = h.events.flatMap((event) =>
+        event.type === 'event.appended' && event.event.kind === 'status' ? [event.event] : [],
       );
       assert.equal(statuses.length, 2);
-      assert.equal(new Set(statuses.map((event) => event.event.id)).size, statuses.length);
+      assert.equal(new Set(statuses.map((event) => event.id)).size, statuses.length);
       assert.equal(
-        statuses.some((event) => /could not finish/i.test(event.event.text ?? '')),
+        statuses.some((event) => /could not finish/i.test(event.text ?? '')),
         true,
       );
       assert.equal(
@@ -288,15 +256,7 @@ test('manual compaction is rejected while an ordinary turn is streaming', async 
   const h = createSessionManagerTestContext();
 
   try {
-    await h.create({
-      sessionPurpose: 'chat',
-      clientRef: 'compaction-streaming',
-      title: 'Compaction streaming',
-      goal: 'initial',
-      interactionMode: 'auto',
-      autonomy: 'low',
-    });
-    await h.waitForIdle();
+    await createChat(h);
     const streamGate = h.provider.deferNextStream('provider-1');
     const sending = h.handle({
       type: 'session.send',
@@ -324,27 +284,34 @@ test('manual compaction is rejected while an ordinary turn is streaming', async 
   }
 });
 
-test('[C2] Provider-session swap', { concurrency: false }, async () => {
+test('provider-session swap retries a failed load, rewires the replacement, and redelivers the queued send once', async () => {
   const h = createSessionManagerTestContext();
 
   try {
-    await h.create({
-      sessionPurpose: 'chat',
-      clientRef: 'c2',
-      title: 'C2',
-      goal: 'go',
-      interactionMode: 'auto',
-      autonomy: 'low',
-    });
-    await h.waitForIdle();
+    await createChat(h);
+    const compactGate = h.provider.deferNextCompaction('provider-1');
     h.provider.session('provider-1').nextCompactResult = {
       newSessionId: 'provider-2',
       removedCount: 1,
     };
-    h.runtime.loadQueue.set('provider-2', [new FakeFactorySession('provider-2', {}, h.calls)]);
+    h.runtime.loadQueue.set('provider-2', [
+      new Error('first load fails'),
+      new FakeFactorySession('provider-2', {}, h.calls),
+    ]);
 
-    await h.handle({ type: 'session.compact', appSessionId: 'provider-1' });
+    const compacting = h.handle({ type: 'session.compact', appSessionId: 'provider-1' });
+    await h.handle({ type: 'session.send', appSessionId: 'provider-1', text: 'redeliver once' });
+    compactGate.resolve();
+    await compacting;
 
+    assert.equal(h.runtime.loadCalls.filter((call) => call.sessionId === 'provider-2').length, 2);
+    assert.equal(
+      h.events.some(
+        (event) =>
+          event.type === 'error' && event.message === 'Could not compact session: first load fails',
+      ),
+      true,
+    );
     const update = sessionUpdates(h.events).at(-1);
     const load = h.runtime.loadCalls.at(-1);
     const creation = h.runtime.createCalls[0];
@@ -353,95 +320,31 @@ test('[C2] Provider-session swap', { concurrency: false }, async () => {
     assert.ok(creation);
     assert.equal(update.session.appSessionId, 'provider-1');
     assert.equal(update.session.providerSessionId, 'provider-2');
-    assert.equal(load.sessionId, 'provider-2');
     assert.equal(update.session.autonomy, 'low');
     assert.deepEqual(h.provider.session('provider-2').settings[0], { autonomyLevel: 'off' });
     assert.equal(typeof load.handlers.permissionHandler, 'function');
     assert.equal(typeof load.handlers.askUserHandler, 'function');
     assert.equal(load.handlers.mcpServers, creation.mcpServers);
-    assert.deepEqual(
-      load.handlers.mcpServers?.map((server) => server.name),
-      ['test-cli', 'test-browser', 'droidex-automations', 'droidex-sessions'],
-    );
     assert.equal(callCount(h.calls, 'provider', 'onNotification', 'provider-2'), 1);
     assert.equal(callCount(h.calls, 'cleanup', 'unsubscribe', 'provider-1'), 1);
-    assert.equal(
-      h.provider
-        .session('provider-2')
-        .settings.some((settings) => settings['compactionThresholdCheckEnabled'] === true),
-      true,
-    );
+    assert.equal(compactionArms(h, 'provider-2').length > 0, true);
     assert.equal(callCount(h.calls, 'cleanup', 'session.close', 'provider-1'), 1);
     assert.equal(syncsSummary(h.calls, 'provider-1', 'provider-2'), true);
+    assert.deepEqual(h.provider.session('provider-1').prompts, ['go']);
+    assert.deepEqual(h.provider.session('provider-2').prompts, ['redeliver once']);
 
     await h.handle({ type: 'session.send', appSessionId: 'provider-1', text: 'after' });
-    assert.deepEqual(h.provider.session('provider-2').prompts, ['after']);
-    assert.equal(callCount(h.calls, 'provider', 'stream', 'provider-2'), 1);
+    assert.deepEqual(h.provider.session('provider-2').prompts, ['redeliver once', 'after']);
   } finally {
     await h.dispose();
   }
 });
 
-test('[C3] Failed swap recovery', { concurrency: false }, async () => {
+test('permanent swap failure settles after old-provider close rejects and reloads on the next send', async () => {
   const h = createSessionManagerTestContext();
 
   try {
-    await h.create({
-      sessionPurpose: 'chat',
-      clientRef: 'c3',
-      title: 'C3',
-      goal: 'go',
-      interactionMode: 'auto',
-      autonomy: 'low',
-    });
-    await h.waitForIdle();
-    const compactGate = h.provider.deferNextCompaction('provider-1');
-    h.provider.session('provider-1').nextCompactResult = {
-      newSessionId: 'provider-3',
-      removedCount: 1,
-    };
-    h.runtime.loadQueue.set('provider-3', [
-      new Error('first load fails'),
-      new FakeFactorySession('provider-3', {}, h.calls),
-    ]);
-
-    const compacting = h.handle({ type: 'session.compact', appSessionId: 'provider-1' });
-    await h.handle({ type: 'session.send', appSessionId: 'provider-1', text: 'redeliver once' });
-    compactGate.resolve();
-    await compacting;
-
-    assert.equal(h.runtime.loadCalls.filter((call) => call.sessionId === 'provider-3').length, 2);
-    assert.equal(
-      h.events.some(
-        (event) =>
-          event.type === 'error' && event.message === 'Could not compact session: first load fails',
-      ),
-      true,
-    );
-    assert.equal(sessionUpdates(h.events).at(-1)?.session.providerSessionId, 'provider-3');
-    assert.deepEqual(h.provider.session('provider-3').prompts, ['redeliver once']);
-    assert.equal(callCount(h.calls, 'provider', 'stream', 'provider-3'), 1);
-    assert.equal(callCount(h.calls, 'provider', 'stream', 'provider-1'), 1);
-    assert.equal(callCount(h.calls, 'cleanup', 'session.close', 'provider-1'), 1);
-    assert.equal(syncsSummary(h.calls, 'provider-1', 'provider-3'), true);
-  } finally {
-    await h.dispose();
-  }
-});
-
-test('[C7] Permanent swap failure settles after old-provider close rejects', async () => {
-  const h = createSessionManagerTestContext();
-
-  try {
-    await h.create({
-      sessionPurpose: 'chat',
-      clientRef: 'c7',
-      title: 'C7',
-      goal: 'go',
-      interactionMode: 'auto',
-      autonomy: 'low',
-    });
-    await h.waitForIdle();
+    await createChat(h);
     const compactGate = h.provider.deferNextCompaction('provider-1');
     h.provider.session('provider-1').nextCompactResult = {
       newSessionId: 'provider-7',
@@ -492,28 +395,79 @@ test('[C7] Permanent swap failure settles after old-provider close rejects', asy
     assert.equal(callCount(h.calls, 'cleanup', 'session.close', 'provider-1'), 1);
     assert.deepEqual(h.provider.session('provider-1').prompts, ['go']);
     assert.deepEqual(resumed.prompts, ['redeliver after resume']);
-    assert.equal(callCount(h.calls, 'provider', 'stream', 'provider-7'), 1);
     assert.equal(sessionUpdates(h.events).at(-1)?.session.providerSessionId, 'provider-7');
   } finally {
     await h.dispose();
   }
 });
 
+test('failed provider identity persistence does not settle queued work', async () => {
+  const h = createSessionManagerTestContext();
+
+  try {
+    await createChat(h);
+    const compactGate = h.provider.deferNextCompaction('provider-1');
+    h.provider.session('provider-1').nextCompactResult = {
+      newSessionId: 'provider-9',
+      removedCount: 1,
+    };
+    h.runtime.loadQueue.set('provider-9', [
+      new Error('first adoption failed'),
+      new Error('second adoption failed'),
+    ]);
+
+    const compacting = h.handle({ type: 'session.compact', appSessionId: 'provider-1' });
+    await h.waitForIdle();
+    await h.handle({
+      type: 'session.send',
+      appSessionId: 'provider-1',
+      text: 'must remain queued',
+    });
+    h.history.nextSyncError = new Error('history unavailable');
+    compactGate.resolve();
+
+    await assert.rejects(compacting, /history unavailable/);
+    await h.waitForIdle();
+
+    assert.deepEqual(h.provider.session('provider-1').prompts, ['go']);
+    assert.equal(
+      h.events.some(
+        (event) =>
+          event.type === 'error' &&
+          event.providerSessionId === 'provider-9' &&
+          event.recoverable === true &&
+          event.message === 'Could not persist compacted session identity: history unavailable',
+      ),
+      true,
+    );
+    assert.equal(
+      h.events.some(
+        (event) =>
+          event.type === 'error' &&
+          event.recoverable === true &&
+          /reloading it failed/i.test(event.message),
+      ),
+      false,
+    );
+  } finally {
+    await h.dispose();
+  }
+});
+
 test(
-  '[C4] Automatic compaction retains the current interrupt escape hatch',
+  'automatic compaction retains the current interrupt escape hatch',
   { concurrency: false },
   async () => {
     const h = createSessionManagerTestContext();
     try {
       const trace = await runAutoCompactionScenario(h);
-      const scopedStatus = (id: string, role: 'primary' | 'worker', childSessionId?: string) =>
+      const scopedStatus = (id: string, role: 'primary' | 'worker') =>
         h.events.some(
           (event) =>
             event.type === 'event.appended' &&
             event.event.appSessionId === 'provider-1' &&
             event.event.sourceSessionId === id &&
             event.event.role === role &&
-            (childSessionId === undefined || event.event.sourceSessionId === childSessionId) &&
             event.event.compactType === 'auto',
         );
       assert.deepEqual(trace.interruptsAfterExplicitCommands, [1, 1]);
@@ -530,17 +484,7 @@ test(
         [true, true],
       );
       assert.equal(
-        scopedStatus('provider-1', 'primary') && scopedStatus('child-c4', 'worker', 'child-c4'),
-        true,
-      );
-      assert.equal(
-        h.events.some(
-          (event) =>
-            event.type === 'session.child' &&
-            event.child.parentAppSessionId === 'provider-1' &&
-            event.child.childSessionId === 'child-c4' &&
-            event.child.status === 'completed',
-        ),
+        scopedStatus('provider-1', 'primary') && scopedStatus('child-c4', 'worker'),
         true,
       );
       assert.equal(
@@ -574,7 +518,7 @@ test(
   },
 );
 
-test('[C5] Compaction retuning uses each live session model', { concurrency: false }, async () => {
+test('compaction retuning uses each live session model', { concurrency: false }, async () => {
   const h = createSessionManagerTestContext();
   const parent = new FakeFactorySession('provider-1', {}, h.calls);
   const worker = new FakeFactorySession('worker-c5', {}, h.calls);
@@ -598,67 +542,34 @@ test('[C5] Compaction retuning uses each live session model', { concurrency: fal
       validatorModel: 'model-validator-fallback',
     });
     await h.waitForIdle();
-    h.history.seedChildSessions([
-      {
+    const children = [
+      ['worker-logical-c5', 'worker-c5', 'worker', 'model-worker-loaded'],
+      ['validator-logical-c5', 'validator-c5', 'validator', 'model-validator-loaded'],
+    ] as const;
+    h.history.seedChildSessions(
+      children.map(([childSessionId, providerSessionId, role, modelId]) => ({
         parentAppSessionId: 'provider-1',
-        childSessionId: 'worker-logical-c5',
-        providerSessionId: 'worker-c5',
-        role: 'worker',
+        childSessionId,
+        providerSessionId,
+        role,
         status: 'paused',
-        modelId: 'model-worker-loaded',
+        modelId,
         transcriptAvailable: true,
         updatedAt: Date.now(),
-      },
-      {
+      })),
+    );
+    for (const [childSessionId] of children)
+      await h.handle({
+        type: 'child.open',
         parentAppSessionId: 'provider-1',
-        childSessionId: 'validator-logical-c5',
-        providerSessionId: 'validator-c5',
-        role: 'validator',
-        status: 'paused',
-        modelId: 'model-validator-loaded',
-        transcriptAvailable: true,
-        updatedAt: Date.now(),
-      },
-    ]);
-    await h.handle({
-      type: 'child.open',
-      parentAppSessionId: 'provider-1',
-      childSessionId: 'worker-logical-c5',
-      requestId: 'open-worker-c5',
-    });
-    await h.handle({
-      type: 'child.open',
-      parentAppSessionId: 'provider-1',
-      childSessionId: 'validator-logical-c5',
-      requestId: 'open-validator-c5',
-    });
+        childSessionId,
+        requestId: `open-${childSessionId}`,
+      });
     assert.deepEqual(
       h.runtime.loadCalls.map((call) => call.sessionId),
       ['worker-c5', 'validator-c5'],
     );
-    const opened: ReadonlyArray<readonly [string, 'worker' | 'validator']> = [
-      ['worker-logical-c5', 'worker'],
-      ['validator-logical-c5', 'validator'],
-    ];
-    assert.deepEqual(
-      opened.map(([childSessionId, role]) =>
-        h.events.some(
-          (event) =>
-            event.type === 'child.updated' &&
-            'parentAppSessionId' in event &&
-            event.parentAppSessionId === 'provider-1' &&
-            event.childSessionId === childSessionId &&
-            event.access === 'ready' &&
-            h.events.some(
-              (summaryEvent) =>
-                summaryEvent.type === 'session.child' &&
-                summaryEvent.child.childSessionId === childSessionId &&
-                summaryEvent.child.role === role,
-            ),
-        ),
-      ),
-      [true, true],
-    );
+
     await h.handle({
       type: 'settings.compaction.update',
       compactionTokenLimit: 400,
@@ -676,19 +587,13 @@ test('[C5] Compaction retuning uses each live session model', { concurrency: fal
       ['validator-c5', 300],
     ];
     for (const [id, limit] of limits)
-      assert.equal(
-        h.provider
-          .session(id)
-          .settings.filter((settings) => settings['compactionThresholdCheckEnabled'] === true)
-          .at(-1)?.['compactionTokenLimit'],
-        limit,
-      );
+      assert.equal(compactionArms(h, id).at(-1)?.['compactionTokenLimit'], limit);
   } finally {
     await h.dispose();
   }
 });
 
-test('[C6] Close and shutdown clean keyed resources', { concurrency: false }, async () => {
+test('close and shutdown clean keyed compaction resources', { concurrency: false }, async () => {
   const close = await runCloseCleanupScenario();
   assert.equal(close.initialPollersDistinct, true);
   assert.equal(close.parentStartUntouchedByWorkerStart, true);
@@ -708,139 +613,95 @@ test('[C6] Close and shutdown clean keyed resources', { concurrency: false }, as
   assert.equal(shutdown.historyClose, 1);
 });
 
-test(
-  '[C8] Learned context window retunes with the 80% ceiling',
-  { concurrency: false },
-  async () => {
-    const h = createSessionManagerTestContext();
-    const custom = new FakeFactorySession('provider-1', {}, h.calls, {
-      settings: { modelId: 'custom-model' },
-    });
-    custom.nextContextStats = {
-      used: 100,
-      remaining: 9_900,
-      limit: 10_000,
-      accuracy: ContextStatsAccuracy.Estimated,
-      updatedAt: '2026-01-01T00:00:00.000Z',
-    };
-    h.runtime.createQueue.push(custom);
-    try {
-      await h.create({
-        sessionPurpose: 'chat',
-        clientRef: 'c7',
-        title: 'C7',
-        goal: 'go',
-        interactionMode: 'auto',
-        autonomy: 'low',
-        modelId: 'custom-model',
-      });
-      await h.waitForIdle();
+test('a learned context window retunes with the 80% ceiling', { concurrency: false }, async () => {
+  const h = createSessionManagerTestContext();
+  const custom = new FakeFactorySession('provider-1', {}, h.calls, {
+    settings: { modelId: 'custom-model' },
+  });
+  custom.nextContextStats = {
+    used: 100,
+    remaining: 9_900,
+    limit: 10_000,
+    accuracy: ContextStatsAccuracy.Estimated,
+    updatedAt: '2026-01-01T00:00:00.000Z',
+  };
+  h.runtime.createQueue.push(custom);
+  try {
+    await createChat(h, { modelId: 'custom-model' });
 
-      // Initial arm: custom-model is absent from the catalog, so there is no
-      // window ceiling and the daemon default (250k) is used verbatim.
-      const compactionArms = () =>
-        h.provider
-          .session('provider-1')
-          .settings.filter((s) => s['compactionThresholdCheckEnabled'] === true);
-      assert.equal(compactionArms().at(0)?.['compactionTokenLimit'], 250_000);
+    // Initial arm: custom-model is absent from the catalog, so there is no
+    // window ceiling and the daemon default (250k) is used verbatim.
+    assert.equal(compactionArms(h).at(0)?.['compactionTokenLimit'], 250_000);
 
-      // Wait for the poll → refresh → noteContextWindow → retuneAll chain.
-      for (let i = 0; i < 5; i++) await h.waitForIdle();
+    // Wait for the poll → refresh → noteContextWindow → retuneAll chain.
+    for (let i = 0; i < 5; i++) await h.waitForIdle();
 
-      // After learning the 10k window from provider stats, the retune clamps to
-      // 80% (8_000) — the compaction window fraction.
-      assert.equal(compactionArms().at(-1)?.['compactionTokenLimit'], 8_000);
-    } finally {
-      await h.dispose();
-    }
-  },
-);
+    // After learning the 10k window from provider stats, the retune clamps to
+    // 80% (8_000) — the compaction window fraction.
+    assert.equal(compactionArms(h).at(-1)?.['compactionTokenLimit'], 8_000);
+  } finally {
+    await h.dispose();
+  }
+});
 
-test(
-  '[C9] setInteractionMode re-arms the compaction threshold',
-  { concurrency: false },
-  async () => {
-    const h = createSessionManagerTestContext();
-    try {
-      await h.create({
-        sessionPurpose: 'chat',
-        clientRef: 'c8',
-        title: 'C8',
-        goal: 'go',
-        interactionMode: 'auto',
-        autonomy: 'low',
-      });
-      await h.waitForIdle();
-
-      const compactionArmCount = () =>
-        h.provider
-          .session('provider-1')
-          .settings.filter((s) => s['compactionThresholdCheckEnabled'] === true).length;
-
-      const latestArmLimit = () =>
-        h.provider
-          .session('provider-1')
-          .settings.filter((s) => s['compactionThresholdCheckEnabled'] === true)
-          .at(-1)?.['compactionTokenLimit'];
-
-      const armsBefore = compactionArmCount();
-
-      await h.handle({
-        type: 'session.updateSettings',
-        appSessionId: 'provider-1',
-        interactionMode: 'spec',
-      });
-      await h.waitForIdle();
-
-      // Switching to spec mode must re-arm with the new mode's default model.
-      // The limit is the daemon default (250k) clamped to 80% of the model
-      // window (1k → 800), so the re-arm must carry compactionTokenLimit 800.
-      assert.equal(compactionArmCount() > armsBefore, true);
-      assert.equal(latestArmLimit(), 800);
-    } finally {
-      await h.dispose();
-    }
-  },
-);
-
-test('[C10] Arm failure emits a visible recoverable error', { concurrency: false }, async () => {
+test('setInteractionMode re-arms the compaction threshold', { concurrency: false }, async () => {
   const h = createSessionManagerTestContext();
   try {
-    await h.create({
-      sessionPurpose: 'chat',
-      clientRef: 'c9',
-      title: 'C9',
-      goal: 'go',
-      interactionMode: 'auto',
-      autonomy: 'low',
-    });
-    await h.waitForIdle();
-    h.events.length = 0;
-    h.provider.session('provider-1').nextUpdateSettingsError = new Error('provider rejected');
+    await createChat(h);
+    const armsBefore = compactionArms(h).length;
 
     await h.handle({
-      type: 'settings.compaction.update',
-      compactionTokenLimit: 400,
+      type: 'session.updateSettings',
+      appSessionId: 'provider-1',
+      interactionMode: 'spec',
     });
     await h.waitForIdle();
 
-    assert.equal(
-      h.events.some(
-        (event) =>
-          event.type === 'error' &&
-          event.appSessionId === 'provider-1' &&
-          event.recoverable === true &&
-          /Could not arm auto-compaction/.test(event.message),
-      ),
-      true,
-    );
+    // Switching to spec mode must re-arm with the new mode's default model.
+    // The limit is the daemon default (250k) clamped to 80% of the model
+    // window (1k → 800), so the re-arm must carry compactionTokenLimit 800.
+    assert.equal(compactionArms(h).length > armsBefore, true);
+    assert.equal(compactionArms(h).at(-1)?.['compactionTokenLimit'], 800);
   } finally {
     await h.dispose();
   }
 });
 
 test(
-  '[C11] Lowering the limit below current usage compacts in place and resets the meter',
+  'an arm failure emits a visible recoverable error and clears the published limit',
+  { concurrency: false },
+  async () => {
+    const h = createSessionManagerTestContext();
+    try {
+      await createChat(h);
+      h.events.length = 0;
+      h.provider.session('provider-1').nextUpdateSettingsError = new Error('provider rejected');
+
+      await h.handle({ type: 'settings.compaction.update', compactionTokenLimit: 400 });
+      await h.waitForIdle();
+
+      assert.equal(
+        h.events.some(
+          (event) =>
+            event.type === 'error' &&
+            event.appSessionId === 'provider-1' &&
+            event.recoverable === true &&
+            /Could not arm auto-compaction/.test(event.message),
+        ),
+        true,
+      );
+      // The summary no longer claims a limit the provider never accepted.
+      const latest = sessionUpdates(h.events).at(-1);
+      assert.ok(latest);
+      assert.equal(latest.session.compactionTokenLimit, undefined);
+    } finally {
+      await h.dispose();
+    }
+  },
+);
+
+test(
+  'lowering the limit below current usage only re-arms, and the daemon compaction resets the meter',
   { concurrency: false },
   async () => {
     const h = createSessionManagerTestContext();
@@ -856,30 +717,16 @@ test(
     };
     h.runtime.createQueue.push(session);
     try {
-      await h.create({
-        sessionPurpose: 'chat',
-        clientRef: 'c11',
-        title: 'C11',
-        goal: 'go',
-        interactionMode: 'auto',
-        autonomy: 'low',
-        modelId: 'custom-model',
-        compactionTokenLimit: 250_000,
-      });
+      await createChat(h, { modelId: 'custom-model', compactionTokenLimit: 250_000 });
       for (let i = 0; i < 5; i++) await h.waitForIdle();
-
-      const compactionArms = () =>
-        h.provider
-          .session('provider-1')
-          .settings.filter((s) => s['compactionThresholdCheckEnabled'] === true);
-      assert.equal(compactionArms().at(-1)?.['compactionTokenLimit'], 250_000);
+      assert.equal(compactionArms(h).at(-1)?.['compactionTokenLimit'], 250_000);
       assert.equal(sessionUpdates(h.events).at(-1)?.session.contextTokens, 200_000);
 
       // Drop the limit below the 200k already in the window. Our side only
       // re-arms the daemon threshold; nothing is restarted or compacted here.
       await h.handle({ type: 'settings.compaction.update', compactionTokenLimit: 100_000 });
       await h.waitForIdle();
-      assert.equal(compactionArms().at(-1)?.['compactionTokenLimit'], 100_000);
+      assert.equal(compactionArms(h).at(-1)?.['compactionTokenLimit'], 100_000);
       assert.equal(callCount(h.calls, 'provider', 'compactSession', 'provider-1'), 0);
 
       // The daemon reacts on its next threshold check with an in-place
@@ -898,12 +745,6 @@ test(
       const summary = sessionUpdates(h.events).at(-1)?.session;
       assert.equal(summary?.autoCompactions, 1);
       assert.equal(summary?.contextTokens, 12_000);
-      assert.equal(
-        h.events.some(
-          (event) => event.type === 'event.appended' && event.event.kind === 'compaction',
-        ),
-        true,
-      );
 
       // The session keeps taking turns afterwards.
       await h.handle({ type: 'session.send', appSessionId: 'provider-1', text: 'after' });

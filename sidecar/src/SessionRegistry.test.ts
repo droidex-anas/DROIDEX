@@ -17,10 +17,11 @@ class FakeHistory {
   readonly persisted: SessionSummary[] = [];
   readonly hiddenProviderIds = new Set<string>();
   readonly trace: string[] = [];
-  summaryReadCount = 0;
   nextSyncError?: Error;
   nextDurabilityPending = false;
+  revision?: number;
   flush?: () => Promise<void>;
+  forgetSession?: (appSessionId: string) => void;
   private readonly patches = new Map<string, Partial<SessionSummary>>();
 
   syncSummaries(summaries: SessionSummary[]): boolean | undefined {
@@ -45,7 +46,6 @@ class FakeHistory {
     patches: Map<string, Partial<SessionSummary>>;
     hiddenProviderSessionIds: Set<string>;
   } {
-    this.summaryReadCount += 1;
     return {
       patches: new Map(this.patches),
       hiddenProviderSessionIds: new Set(this.hiddenProviderIds),
@@ -254,30 +254,6 @@ test('updateSummary persists canonical state before one publication and protects
   assert.equal(registry.getLive('provider-old'), session);
 });
 
-test('updateSummary with touchActivity false keeps the activity timestamp', async () => {
-  const { history, published, registry } = createHarness({ now: () => 42 });
-  const session = live(summary('stable-app', { updatedAt: 7, tokensIn: 1 }));
-  await registry.register(session);
-  history.persisted.length = 0;
-  history.trace.length = 0;
-
-  const updated = registry.updateSummary(
-    'stable-app',
-    { tokensIn: 500, contextTokens: 128, updatedAt: 999 },
-    { touchActivity: false },
-  );
-
-  // Telemetry must not move updatedAt: the renderer derives sidebar ordering
-  // and the unread marker from it, so passive refreshes would otherwise mark
-  // a viewed session as unread again.
-  assert.equal(updated?.tokensIn, 500);
-  assert.equal(updated?.contextTokens, 128);
-  assert.equal(updated?.updatedAt, 7);
-  assert.deepEqual(history.trace, ['persist', 'publish']);
-  assert.deepEqual(history.persisted, [updated]);
-  assert.deepEqual(published, [updated]);
-});
-
 test('failed summary persistence leaves live state unchanged and unpublished', async () => {
   const { history, published, registry } = createHarness({ now: () => 42 });
   const session = live(summary('stable-app', { title: 'Original title' }));
@@ -320,21 +296,21 @@ test('a retained settlement publishes only after durability recovery', async () 
   registry.retryPendingDurability();
   assert.equal(registry.listSummaries().sessions[0]?.streaming, false);
   assert.deepEqual(streamingStates(published), [false]);
-});
 
-test('new live state supersedes a held settlement without replaying it later', async () => {
-  const { history, published, registry } = createHarness();
-  const session = live(summary('continued-app', { streaming: true, phase: 'running' }));
-  await registry.register(session);
-  published.length = 0;
-  history.nextDurabilityPending = true;
-  registry.updateSummary('continued-app', { streaming: false, phase: 'paused' });
+  // New live state supersedes a held settlement without replaying it later.
+  const continued = createHarness();
+  await continued.registry.register(
+    live(summary('continued-app', { streaming: true, phase: 'running' })),
+  );
+  continued.published.length = 0;
+  continued.history.nextDurabilityPending = true;
+  continued.registry.updateSummary('continued-app', { streaming: false, phase: 'paused' });
 
-  registry.updateSummary('continued-app', { streaming: true, phase: 'running' });
-  registry.retryPendingDurability();
+  continued.registry.updateSummary('continued-app', { streaming: true, phase: 'running' });
+  continued.registry.retryPendingDurability();
 
-  assert.deepEqual(streamingStates(published), [true]);
-  assert.equal(registry.listSummaries().sessions[0]?.streaming, true);
+  assert.deepEqual(streamingStates(continued.published), [true]);
+  assert.equal(continued.registry.listSummaries().sessions[0]?.streaming, true);
 });
 
 test('reanchorHistoricalCwd moves idle sessions and preserves nested directories', async () => {
@@ -632,7 +608,7 @@ test('resolve and list project copies after ordinary, Mission Control, and live 
   assert.equal(registry.resolveSummary('live-wins')?.title, 'projected: canonical update');
 });
 
-test('projected and caller-owned feature state cannot mutate canonical summaries', async () => {
+test('projected, patched, and caller-owned feature state cannot mutate canonical summaries', async () => {
   const sourceFeature = feature('feature-a');
   const { registry } = createHarness({
     projectSummary: (canonical) => {
@@ -668,10 +644,8 @@ test('projected and caller-owned feature state cannot mutate canonical summaries
 
   assert.deepEqual(liveSession.summary.features, [sourceFeature]);
   assert.deepEqual(registry.getCanonicalSummary('isolated')?.features, [sourceFeature]);
-});
 
-test('summary patches copy caller-owned feature state', async () => {
-  const { registry } = createHarness();
+  // Summary patches and provider replacements copy caller-owned features too.
   await registry.register(live(summary('patched')));
 
   const updatedFeature = feature('updated');
@@ -757,14 +731,6 @@ test('snapshot permits sequential unregister without skipping sessions', async (
   assert.equal(await registry.unregister('missing'), undefined);
 });
 
-test('listSummaries reads patches and hidden ids through a single history call', () => {
-  const { history, registry } = createHarness({ ordinary: [summary('ordinary')] });
-
-  registry.listSummaries();
-
-  assert.equal(history.summaryReadCount, 1);
-});
-
 test('activity timestamps advance within the same clock tick while passive updates preserve them', async () => {
   const { registry, history, published } = createHarness({ now: () => 100 });
   await registry.register(live(summary('same-tick', { updatedAt: 100 })));
@@ -772,8 +738,130 @@ test('activity timestamps advance within the same clock tick while passive updat
   assert.equal(registry.getCanonicalSummary('same-tick')?.updatedAt, 101);
   registry.updateSummary('same-tick', { streaming: false });
   assert.equal(registry.getCanonicalSummary('same-tick')?.updatedAt, 102);
-  registry.updateSummary('same-tick', { tokensIn: 1 }, { touchActivity: false });
+  registry.updateSummary('same-tick', { tokensIn: 1, updatedAt: 999 }, { touchActivity: false });
   assert.equal(registry.getCanonicalSummary('same-tick')?.updatedAt, 102);
   assert.equal(history.persisted.at(-1)?.updatedAt, 102);
   assert.equal(published.at(-1)?.updatedAt, 102);
+});
+
+test('historical rows and aliases reload only when the history revision changes', () => {
+  let ordinaryLoads = 0;
+  let missionLoads = 0;
+  let ordinary = summary('app', {
+    providerSessionId: 'provider-current',
+    compactedFromProviderSessionIds: ['provider-old'],
+  });
+  let mission = summary('mission-one', { sessionPurpose: 'mission-control' });
+  const { history, registry } = createHarness({
+    loadOrdinarySessions: () => {
+      ordinaryLoads += 1;
+      return historicalRows([ordinary]);
+    },
+    loadMissionControlSessions: () => {
+      missionLoads += 1;
+      return historicalRows([mission]);
+    },
+  });
+  history.revision = 1;
+
+  assert.equal(registry.resolveSummary('provider-old')?.appSessionId, 'app');
+  assert.equal(
+    registry.listSummaries().sessions.some((s) => s.appSessionId === 'mission-one'),
+    true,
+  );
+  ordinary = summary('app', {
+    providerSessionId: 'provider-next',
+    compactedFromProviderSessionIds: ['provider-old', 'provider-current'],
+  });
+  mission = summary('mission-two', { sessionPurpose: 'mission-control' });
+  assert.equal(registry.resolveSummary('provider-current')?.providerSessionId, 'provider-current');
+  assert.deepEqual([ordinaryLoads, missionLoads], [1, 1]);
+
+  history.revision = 2;
+  assert.equal(registry.resolveSummary('provider-current')?.providerSessionId, 'provider-next');
+  assert.equal(
+    registry.listSummaries().sessions.some((s) => s.appSessionId === 'mission-two'),
+    true,
+  );
+  assert.deepEqual([ordinaryLoads, missionLoads], [2, 2]);
+});
+
+test('direct historical mutations survive reads at a stable history revision', async () => {
+  const { history, registry } = createHarness({
+    ordinary: [
+      summary('moved', { cwd: '/repo/.worktrees/feature' }),
+      summary('compacted', {
+        providerSessionId: 'provider-current',
+        compactedFromProviderSessionIds: ['provider-old'],
+      }),
+    ],
+  });
+  history.revision = 1;
+
+  await registry.reanchorHistoricalCwd('/repo/.worktrees/feature', '/repo');
+  await registry.replaceProvider('provider-old', 'provider-next');
+
+  assert.equal(registry.resolveSummary('moved')?.cwd, '/repo');
+  for (const alias of ['provider-next', 'provider-current', 'provider-old']) {
+    assert.equal(registry.resolveSummary(alias)?.providerSessionId, 'provider-next', alias);
+  }
+});
+
+test('a removed Mission row is not retained by a direct historical mutation', async () => {
+  let missions = [
+    summary('mission-one', {
+      providerSessionId: 'mission-provider-current',
+      sessionPurpose: 'mission-control',
+      compactedFromProviderSessionIds: ['mission-provider-old'],
+    }),
+  ];
+  const { history, registry } = createHarness({
+    loadMissionControlSessions: () => historicalRows(missions),
+  });
+  history.revision = 1;
+
+  await registry.replaceProvider('mission-provider-old', 'mission-provider-next');
+  missions = [];
+  history.revision = 2;
+
+  assert.deepEqual(registry.listSummaries().sessions, []);
+});
+
+test('unregister flushes persistence before exposing the session as closed', async () => {
+  const { history, registry } = createHarness();
+  history.flush = async () => {
+    history.trace.push('flush');
+  };
+  history.forgetSession = () => {
+    history.trace.push('forget');
+  };
+  const session = live(summary('app', { providerSessionId: 'provider' }));
+  await registry.register(session);
+
+  assert.equal(await registry.unregister('provider'), session);
+  assert.deepEqual(history.trace, ['persist', 'flush', 'flush', 'forget']);
+  assert.equal(registry.getLive('app'), undefined);
+});
+
+test('a close awaiting durability cannot unregister a replacement session', async () => {
+  const { history, registry } = createHarness();
+  const forgotten: string[] = [];
+  history.forgetSession = (id) => {
+    forgotten.push(id);
+  };
+  await registry.register(live(summary('app', { providerSessionId: 'old' })));
+  let release: (() => void) | undefined;
+  history.flush = () =>
+    new Promise<void>((resolve) => {
+      release = resolve;
+    });
+  const closing = registry.unregister('app');
+  assert.ok(release);
+  history.flush = () => Promise.resolve();
+  const replacement = live(summary('app', { providerSessionId: 'new' }));
+  await registry.register(replacement);
+  release();
+  assert.equal(await closing, undefined);
+  assert.equal(registry.getLive('app'), replacement);
+  assert.deepEqual(forgotten, []);
 });

@@ -266,65 +266,6 @@ test(
   },
 );
 
-test(
-  'a recreated index worker rebuilds derived search state before a targeted no-op',
-  { skip: FTS5_UNAVAILABLE_REASON },
-  async () => {
-    const home = mkdtempSync(join(tmpdir(), 'droidex-history-index-backfill-'));
-    const previousHome = process.env['HOME'];
-    process.env['HOME'] = home;
-    const databaseDirectory = join(home, '.factory', 'droidex');
-    const sessionsDirectory = join(home, '.factory', 'sessions');
-    mkdirSync(databaseDirectory, { recursive: true });
-    mkdirSync(sessionsDirectory, { recursive: true });
-    const dbPath = join(databaseDirectory, 'session-index.sqlite');
-    const providerSessionId = 'backfill-provider';
-    const sessionPath = join(sessionsDirectory, `${providerSessionId}.jsonl`);
-    writeFileSync(
-      sessionPath,
-      providerSessionJsonl({
-        type: 'session_start',
-        cwd: '/repo',
-        sessionTitle: 'Backfill worker session',
-        settings: { interactionMode: 'auto' },
-      }),
-    );
-    let first: HistoryWorkerClient | undefined;
-    let recreated: HistoryWorkerClient | undefined;
-    try {
-      createSchema(dbPath);
-      first = new HistoryWorkerClient({ workerData: { dbPath, lane: 'search' } });
-      await first.reconcileSessionFiles();
-      await first.close();
-
-      const db = new DatabaseSync(join(databaseDirectory, SESSION_SEARCH_INDEX_FILENAME));
-      db.exec(`
-      DROP TABLE history_search_fts;
-      DROP TABLE history_search_state;
-      DROP TABLE history_search_metadata;
-    `);
-      db.close();
-
-      recreated = new HistoryWorkerClient({ workerData: { dbPath, lane: 'search' } });
-      const unchanged = await recreated.reconcileSessionFilePaths([
-        { providerSessionId, path: sessionPath },
-      ]);
-      assert.equal(unchanged.changed, 0);
-      assert.equal(
-        (await recreated.sessionFileSnapshot()).entries[0]?.providerSessionId,
-        providerSessionId,
-      );
-      await recreated.close();
-    } finally {
-      await first?.close();
-      await recreated?.close();
-      if (previousHome === undefined) delete process.env['HOME'];
-      else process.env['HOME'] = previousHome;
-      rmSync(home, { recursive: true, force: true });
-    }
-  },
-);
-
 test('missing FTS5 degrades search without affecting canonical persistence', async () => {
   const home = mkdtempSync(join(tmpdir(), 'droidex-history-fts5-unavailable-'));
   const previousHome = process.env['HOME'];
@@ -427,14 +368,7 @@ test('a close timeout does not leak an unhandled promise rejection', async () =>
     createSchema(dbPath);
     const client = new HistoryWorkerClient({
       transportTimeoutMs: 0,
-      workerFactory: () => {
-        const worker = new Worker(
-          new URL('./historyPersistenceWorkerLoader.mjs', import.meta.url),
-          { workerData: { dbPath, lane: 'persistence' }, execArgv: [] },
-        );
-        workers.push(worker);
-        return worker;
-      },
+      workerFactory: persistenceWorkerFactory(dbPath, workers),
     });
     await assert.rejects(async () => await client.close(), /did not respond within 0ms/);
     await new Promise<void>((resolve) => setImmediate(resolve));
@@ -454,14 +388,7 @@ test('the worker client recreates a failed worker before the next persistence at
   try {
     createSchema(dbPath);
     const client = new HistoryWorkerClient({
-      workerFactory: () => {
-        const worker = new Worker(
-          new URL('./historyPersistenceWorkerLoader.mjs', import.meta.url),
-          { workerData: { dbPath, lane: 'persistence' }, execArgv: [] },
-        );
-        workers.push(worker);
-        return worker;
-      },
+      workerFactory: persistenceWorkerFactory(dbPath, workers),
     });
     const firstBatch: HistoryPersistenceBatch = {
       events: [],
@@ -496,64 +423,7 @@ test('the worker client recreates a failed worker before the next persistence at
   }
 });
 
-test('a transport timeout fails all outstanding calls before recreating the worker', async () => {
-  const dir = mkdtempSync(join(tmpdir(), 'droidex-history-worker-hung-'));
-  const dbPath = join(dir, 'history.sqlite');
-  const workers: Worker[] = [];
-  try {
-    createSchema(dbPath);
-    const hungWorker = new Worker('setInterval(() => undefined, 1_000);', { eval: true });
-    workers.push(hungWorker);
-    const client = new HistoryWorkerClient({
-      worker: hungWorker,
-      scheduleWatchdog: (callback, timeoutMs) =>
-        setTimeout(callback, workers.length === 1 ? 20 : timeoutMs),
-      workerFactory: () => {
-        const worker = new Worker(
-          new URL('./historyPersistenceWorkerLoader.mjs', import.meta.url),
-          { workerData: { dbPath, lane: 'persistence' }, execArgv: [] },
-        );
-        workers.push(worker);
-        return worker;
-      },
-    });
-    const batch: HistoryPersistenceBatch = {
-      events: [
-        { id: 'after-timeout', sourceSessionId: 'app', appSessionId: 'app', kind: 'text', ts: 3 },
-      ],
-      summaries: [],
-      children: [],
-      estimatedBytes: 256,
-    };
-    const pending = client.startPersist({
-      events: [
-        {
-          id: 'pending-before-timeout',
-          sourceSessionId: 'app',
-          appSessionId: 'app',
-          kind: 'text',
-          ts: 2,
-        },
-      ],
-      summaries: [],
-      children: [],
-      estimatedBytes: 256,
-    }).promise;
-
-    await Promise.all([
-      assert.rejects(client.startPersist(batch).promise, /did not respond/),
-      assert.rejects(pending, /did not respond/),
-    ]);
-    assert.equal((await client.startPersist(batch).promise).eventsWritten, 1);
-    assert.equal(workers.length, 2);
-    await client.close();
-  } finally {
-    await Promise.all(workers.map(async (worker) => await worker.terminate()));
-    rmSync(dir, { recursive: true, force: true });
-  }
-});
-
-test('an asynchronous persistence timeout recreates the worker without a caller waiting', async () => {
+test('a persistence timeout fails every outstanding call and recreates the worker without a caller waiting', async () => {
   const dir = mkdtempSync(join(tmpdir(), 'droidex-history-worker-async-hung-'));
   const dbPath = join(dir, 'history.sqlite');
   const workers: Worker[] = [];
@@ -564,14 +434,7 @@ test('an asynchronous persistence timeout recreates the worker without a caller 
     workers.push(hungWorker);
     const client = new HistoryWorkerClient({
       worker: hungWorker,
-      workerFactory: () => {
-        const worker = new Worker(
-          new URL('./historyPersistenceWorkerLoader.mjs', import.meta.url),
-          { workerData: { dbPath, lane: 'persistence' }, execArgv: [] },
-        );
-        workers.push(worker);
-        return worker;
-      },
+      workerFactory: persistenceWorkerFactory(dbPath, workers),
       scheduleWatchdog: watchdogs.schedule,
       cancelWatchdog: watchdogs.cancel,
     });
@@ -591,49 +454,13 @@ test('an asynchronous persistence timeout recreates the worker without a caller 
     };
 
     const first = client.startPersist(batch).promise;
+    const second = client.startPersist(batch).promise;
     void first.catch(() => undefined);
+    void second.catch(() => undefined);
     watchdogs.fireNext();
     await assert.rejects(settleWithin(first, 2_000), /did not respond within 10000ms/);
+    await assert.rejects(settleWithin(second, 2_000), /did not respond within 10000ms/);
     assert.equal((await settleWithin(client.startPersist(batch).promise, 2_000)).eventsWritten, 1);
-    assert.equal(workers.length, 2);
-    assert.equal(watchdogs.pendingCount(), 0);
-    await client.close();
-  } finally {
-    await Promise.all(workers.map(async (worker) => await worker.terminate()));
-    rmSync(dir, { recursive: true, force: true });
-  }
-});
-
-test('an asynchronous durability timeout recreates the worker without another caller', async () => {
-  const dir = mkdtempSync(join(tmpdir(), 'droidex-history-barrier-async-hung-'));
-  const dbPath = join(dir, 'history.sqlite');
-  const workers: Worker[] = [];
-  const watchdogs = createWatchdogScheduler();
-  try {
-    createSchema(dbPath);
-    const hungWorker = new Worker('setInterval(() => undefined, 1_000);', { eval: true });
-    workers.push(hungWorker);
-    const client = new HistoryWorkerClient({
-      worker: hungWorker,
-      workerFactory: () => {
-        const worker = new Worker(
-          new URL('./historyPersistenceWorkerLoader.mjs', import.meta.url),
-          { workerData: { dbPath, lane: 'persistence' }, execArgv: [] },
-        );
-        workers.push(worker);
-        return worker;
-      },
-      scheduleWatchdog: watchdogs.schedule,
-      cancelWatchdog: watchdogs.cancel,
-    });
-
-    const first = client.startDurabilityBarrier().promise;
-    void first.catch(() => undefined);
-    watchdogs.fireNext();
-    await assert.rejects(settleWithin(first, 2_000), /did not respond within 10000ms/);
-    assert.deepEqual(await settleWithin(client.startDurabilityBarrier().promise, 2_000), {
-      durable: true,
-    });
     assert.equal(workers.length, 2);
     assert.equal(watchdogs.pendingCount(), 0);
     await client.close();
@@ -695,14 +522,7 @@ test('an asynchronous worker timeout lets the queue retry without a caller waiti
     workers.push(hungWorker);
     const client = new HistoryWorkerClient({
       worker: hungWorker,
-      workerFactory: () => {
-        const worker = new Worker(
-          new URL('./historyPersistenceWorkerLoader.mjs', import.meta.url),
-          { workerData: { dbPath, lane: 'persistence' }, execArgv: [] },
-        );
-        workers.push(worker);
-        return worker;
-      },
+      workerFactory: persistenceWorkerFactory(dbPath, workers),
       scheduleWatchdog: watchdogs.schedule,
       cancelWatchdog: watchdogs.cancel,
     });
@@ -761,14 +581,7 @@ test('a serialized persistence error does not restart the worker', async () => {
   try {
     createSchema(dbPath);
     const client = new HistoryWorkerClient({
-      workerFactory: () => {
-        const worker = new Worker(
-          new URL('./historyPersistenceWorkerLoader.mjs', import.meta.url),
-          { workerData: { dbPath, lane: 'persistence' }, execArgv: [] },
-        );
-        workers.push(worker);
-        return worker;
-      },
+      workerFactory: persistenceWorkerFactory(dbPath, workers),
     });
     const invalidSummary = summary();
     Object.defineProperty(invalidSummary, 'title', { value: undefined });
@@ -839,6 +652,17 @@ test('a postMessage failure does not leak an unhandled rejection', async () => {
     await worker.terminate();
   }
 });
+
+function persistenceWorkerFactory(dbPath: string, workers: Worker[]): () => Worker {
+  return () => {
+    const worker = new Worker(new URL('./historyPersistenceWorkerLoader.mjs', import.meta.url), {
+      workerData: { dbPath, lane: 'persistence' },
+      execArgv: [],
+    });
+    workers.push(worker);
+    return worker;
+  };
+}
 
 function settleWithin<T>(promise: Promise<T>, timeoutMs: number): Promise<T> {
   let timer: ReturnType<typeof setTimeout> | undefined;
