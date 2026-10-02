@@ -100,6 +100,10 @@ function createNativeBrowserViewFactory({
       // The blank page a guest is set up on is not the browser's page.
       if (entry.setup?.contents === contents && loadedUrl === 'about:blank') return;
       if (!current() || urls.isChromeErrorUrl(loadedUrl)) return;
+      // Nor is it part of the browser's history: it goes once a page follows it.
+      const history = contents.navigationHistory;
+      if (history.getActiveIndex() === 1 && history.getEntryAtIndex(0)?.url === 'about:blank')
+        history.removeEntryAtIndex(0);
       entry.failedRestoreUrl = null;
       entry.targetUrl = loadedUrl;
       emitLoaded(entry, loadedUrl);
