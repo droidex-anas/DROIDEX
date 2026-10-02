@@ -66,6 +66,7 @@ export function NativeBrowserSurface({
     rounded: !expanded,
     scale: surface.scale,
     url,
+    viewportMode,
   });
 
   useEffect(() => {

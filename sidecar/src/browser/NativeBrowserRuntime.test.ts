@@ -199,7 +199,7 @@ test('resize and diagnostic requests use dedicated native actions', async () => 
     },
   });
 
-  await runtime.setViewport({ width: 390, height: 844, deviceScaleFactor: 2 });
+  await runtime.setViewport({ width: 390, height: 844, deviceScaleFactor: 2 }, 'mobile');
   const inspection = await runtime.inspect({ selector: '#frame' });
   const network = await runtime.network(true);
   const consoleEvents = await runtime.console(true);

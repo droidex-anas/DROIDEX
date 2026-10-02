@@ -4,6 +4,7 @@ const {
 } = require('./browserDiagnostics.cjs');
 const { createBrowserGuests } = require('./browserGuests.cjs');
 const { runWithWebContentsDebugger } = require('./nativeBrowserEmulation.cjs');
+const { mountDevice } = require('./browserDevice.cjs');
 const { createNativeBrowserUrlPolicy } = require('./nativeBrowserUrls.cjs');
 const { createNativeBrowserCredentials } = require('./nativeBrowserCredentials.cjs');
 const { createNativeBrowserPage } = require('./nativeBrowserPage.cjs');
@@ -13,6 +14,7 @@ const { createNativeBrowserViewFactory } = require('./nativeBrowserView.cjs');
 // passkeys alive across reloads, dev-server restarts, and app restarts so the
 // user does not have to sign in again every time.
 const BROWSER_PARTITION = 'persist:droidex-browser';
+const VIEWPORT_MODES = ['fit', 'desktop', 'laptop', 'tablet', 'mobile'];
 
 // Pages live in <webview> guests the app renderer mounts and unmounts; main
 // keeps one entry per browser session with the page's URL, history, logs and
@@ -57,7 +59,6 @@ function createNativeBrowserManager(options) {
     ensureEntry: ensureNativeBrowserEntry,
     restoreForAction: requireLoadedGuest,
     liveContents,
-    normalizeBrowserViewport: urls.normalizeBrowserViewport,
     credentials,
     runWithWebContentsDebugger,
     findEntryForContents: findNativeBrowserEntryForWebContents,
@@ -81,10 +82,12 @@ function createNativeBrowserManager(options) {
 
   // The renderer asks for a guest before it mounts one; the token it gets back
   // is the only way that guest can attach. After an app restart main knows no
-  // URL for the page, so the one the renderer saved is restored, if allowed.
-  function reserveNativeBrowser(browserSessionId, host, savedUrl) {
+  // URL or size for the page, so the ones the renderer saved are taken up
+  // again: the URL if allowed, the size's name for the device it asks for.
+  function reserveNativeBrowser(browserSessionId, host, savedUrl, savedMode) {
     const entry = ensureNativeBrowserEntry(browserSessionId);
     if (!entry.targetUrl && savedUrl && isAllowedUrl(savedUrl)) entry.targetUrl = savedUrl;
+    if (!entry.viewportMode && VIEWPORT_MODES.includes(savedMode)) entry.viewportMode = savedMode;
     return guests.reserve(entry.browserSessionId, host);
   }
 
@@ -112,15 +115,31 @@ function createNativeBrowserManager(options) {
     const entry = ensureNativeBrowserEntry(browserSessionId);
     forgetLoad(entry);
     forgetLoadWaiters(entry);
-    views.bindGuest(entry, contents);
     const restoreUrl = urls.restorableUrlForEntry(entry, entry.targetUrl);
-    if (restoreUrl) void loadNativeBrowserUrl(entry, restoreUrl, { force: true });
+    views.bindGuest(entry, contents);
+    // The device first, so a site sees it from its first request and script.
+    // Until the guest has it the entry counts as loading, an open waits for it
+    // and takes the saved page's place, and the blank page a touch device is
+    // set up on is not reported as the browser's page.
+    const setup = { contents, restoreUrl, ready: mountDevice(contents, entry) };
+    entry.setup = setup;
+    const restored = setup.ready.then(() => {
+      if (entry.setup === setup) entry.setup = null;
+      // A load started meanwhile is the page now; otherwise the saved one returns.
+      if (entry.loadingPromise !== restored) return undefined;
+      entry.loadingPromise = null;
+      if (setup.restoreUrl && liveContents(entry) === contents)
+        return loadNativeBrowserUrl(entry, setup.restoreUrl, { force: true });
+      return undefined;
+    });
+    entry.loadingPromise = restored;
   }
 
   // A load belongs to the guest that started it; a new guest starts afresh.
   function forgetLoad(entry) {
     entry.loadingUrl = null;
     entry.loadingPromise = null;
+    entry.setup = null;
   }
 
   // Nobody waiting on a guest's next load hears about its replacement's loads.
@@ -156,13 +175,31 @@ function createNativeBrowserManager(options) {
     return rejectCrashed(await waitForLoadedGuest(browserSessionId));
   }
 
-  async function openNativeBrowser(browserSessionId, url, viewport) {
+  // Resolves once no guest of the entry is still taking its device. With
+  // `replacing`, the saved page gives way to what the caller loads next.
+  async function deviceReady(entry, replacing = false) {
+    while (entry.setup) {
+      const { setup } = entry;
+      if (replacing) setup.restoreUrl = null;
+      await setup.ready;
+      if (entry.setup === setup) entry.setup = null;
+    }
+  }
+
+  // `before` runs right before the page moves, and throws when it should not.
+  async function openNativeBrowser(browserSessionId, url, before) {
     const entry = await requireNativeBrowserGuest(browserSessionId);
-    if (viewport) entry.viewport = urls.normalizeBrowserViewport(viewport);
     urls.rejectHostAppUrl(url);
     url = urls.normalizeNativeBrowserUrl(entry, url);
     urls.validateUrl(url);
     entry.failedRestoreUrl = null;
+    // A guest still taking its device loads this page once it has it, in place
+    // of its saved one. The browser may have been closed, or the caller have
+    // given up, while this waited.
+    await deviceReady(entry, true);
+    if (nativeBrowsers.get(entry.browserSessionId) !== entry)
+      throw new Error(`${options.appName} browser is not open.`);
+    before?.();
     await loadNativeBrowserUrl(entry, url, { force: true });
   }
 
@@ -176,16 +213,23 @@ function createNativeBrowserManager(options) {
   function closeNativeBrowser(browserSessionId) {
     const entry = nativeBrowsers.get(urls.normalizeNativeBrowserSessionId(browserSessionId));
     if (!entry) return;
+    // A restore still waiting on the guest's setup never runs.
+    forgetLoad(entry);
     guests.release(entry.browserSessionId);
     nativeBrowsers.delete(entry.browserSessionId);
   }
 
   // Reload never waits for a load: it is how a stalled, failed or crashed page
-  // recovers. A load still in flight or a failed restore starts over.
-  async function reloadNativeBrowser(browserSessionId) {
+  // recovers. A load still in flight or a failed restore starts over. `before`
+  // runs right before the page moves, and throws when it should not.
+  async function reloadNativeBrowser(browserSessionId, before) {
     const entry = await waitForGuest(browserSessionId);
-    const contents = liveContents(entry);
+    // A guest still taking its device finishes that first, so the page is asked
+    // for as that device. The browser may have been closed meanwhile.
+    await deviceReady(entry);
+    const contents = nativeBrowsers.get(entry.browserSessionId) === entry && liveContents(entry);
     if (!contents) throw new Error(`${options.appName} browser is not open.`);
+    before?.();
     const pendingUrl = entry.loadingUrl === entry.targetUrl ? entry.loadingUrl : null;
     const retryUrl = entry.failedRestoreUrl ?? pendingUrl;
     if (retryUrl) {
@@ -317,7 +361,10 @@ function createNativeBrowserManager(options) {
   }
 
   function closeAllNativeBrowsers() {
-    for (const entry of nativeBrowsers.values()) guests.release(entry.browserSessionId);
+    for (const entry of nativeBrowsers.values()) {
+      forgetLoad(entry);
+      guests.release(entry.browserSessionId);
+    }
     nativeBrowsers.clear();
   }
 

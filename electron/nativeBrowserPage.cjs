@@ -4,6 +4,7 @@ const { redactBrowserDiagnosticUrl } = require('./browserDiagnostics.cjs');
 const { createBrowserActions } = require('./browserActions.cjs');
 const { createBrowserWait } = require('./browserWait.cjs');
 const { callPageScript } = require('./browserPageScript.cjs');
+const { useDevice } = require('./browserDevice.cjs');
 
 const VIEWPORT_WAIT_MS = 2_000;
 
@@ -12,7 +13,6 @@ function createNativeBrowserPage({
   ensureEntry,
   restoreForAction,
   liveContents,
-  normalizeBrowserViewport,
   credentials,
   runWithWebContentsDebugger,
   findEntryForContents,
@@ -115,16 +115,17 @@ function createNativeBrowserPage({
     return actions.act(contents, entry, request);
   }
 
-  // Reading the logs or recording the viewport never needs the page itself,
-  // so it never wakes or remounts one.
+  // Reading the logs or recording the viewport or scheme never needs the page
+  // itself, so it never wakes or remounts one.
   function runPagelessAction(request) {
-    if (!['resize', 'network', 'console'].includes(request.action)) return undefined;
+    if (!['resize', 'colorScheme', 'network', 'console'].includes(request.action)) return undefined;
     const entry = ensureEntry(request.browserSessionId);
     if (request.action === 'resize') {
-      // The renderer sizes the page from the session's viewport.
-      entry.viewport = normalizeBrowserViewport(request.viewport);
-      return { requestId: request.requestId, ok: true };
+      // The renderer sizes the page from the session's viewport; main keeps
+      // the size's name for the device it asks for.
+      return deviceSet(entry, request, 'viewportMode');
     }
+    if (request.action === 'colorScheme') return deviceSet(entry, request, 'colorScheme');
     if (request.action === 'network') {
       const networkEvents = entry.networkEvents.slice();
       if (request.clearNetworkLog) entry.networkEvents.length = 0;
@@ -133,6 +134,23 @@ function createNativeBrowserPage({
     const consoleEvents = entry.consoleEvents.slice();
     if (request.clearConsoleLog) entry.consoleEvents.length = 0;
     return { requestId: request.requestId, ok: true, consoleEvents };
+  }
+
+  // Records the size's name or the scheme and answers once a live guest has
+  // taken it. It is recorded first, so a guest mounted meanwhile takes it too;
+  // a guest that refuses it keeps what it had, and so does its entry.
+  async function deviceSet(entry, request, field) {
+    const contents = liveContents(entry);
+    const before = entry[field];
+    entry[field] = request[field];
+    try {
+      await useDevice(contents, { [field]: request[field] });
+    } catch (error) {
+      if (liveContents(entry) === contents && entry[field] === request[field])
+        entry[field] = before;
+      throw error;
+    }
+    return { requestId: request.requestId, ok: true };
   }
 
   // The pane resizes the page a frame or two after the sidecar sets a size; the

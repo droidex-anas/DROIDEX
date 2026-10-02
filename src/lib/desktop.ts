@@ -5,6 +5,7 @@ import type {
   NativeBrowserSelection,
   NativeBrowserWorking,
 } from './nativeBrowser';
+import type { BrowserViewportMode } from '../types/bridge';
 import type { EditorId, EditorTarget } from './editorOpen';
 import type { RepoStatus } from './repoEnvironment';
 import type {
@@ -296,6 +297,7 @@ interface DroidControlApi {
   nativeBrowserReserve: (
     browserSessionId: string,
     savedUrl?: string,
+    savedMode?: BrowserViewportMode,
   ) => Promise<{ src: string; generation: number }>;
   nativeBrowserRelease: (browserSessionId: string) => Promise<void>;
   nativeBrowserWorkingSessions: () => Promise<string[]>;
