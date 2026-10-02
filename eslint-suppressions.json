@@ -19,11 +19,6 @@
       "count": 1
     }
   },
-  "sidecar/src/automations/AutomationManager.test.ts": {
-    "no-restricted-syntax": {
-      "count": 1
-    }
-  },
   "sidecar/src/browser/BrowserSessionManager.ts": {
     "@typescript-eslint/no-empty-function": {
       "count": 1
@@ -284,11 +279,6 @@
     },
     "@typescript-eslint/restrict-template-expressions": {
       "count": 1
-    }
-  },
-  "src/hooks/useWorkspaceScopes.test.ts": {
-    "no-restricted-syntax": {
-      "count": 4
     }
   },
   "src/lib/filePresentation.ts": {
