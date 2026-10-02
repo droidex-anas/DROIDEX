@@ -4,6 +4,7 @@ import type { ThemePreset } from '../lib/theme';
 import { loadTheme, persistCustomThemes } from './persistedThemePreferences';
 import { loadAgentConfig, loadHarnessModels, sanitizeAgentConfig } from './persistedUiPreferences';
 import type { ModelInfo } from '../types/bridge';
+import { withLocalStorageMap } from '../test/localStorage';
 
 const CUSTOM_PRESET: ThemePreset = {
   id: 'custom-test',
@@ -12,7 +13,7 @@ const CUSTOM_PRESET: ThemePreset = {
   dark: { bg: '#101010', fg: '#f0f0f0', surface: '#181818', border: '#282828', accent: '#e8e8e8' },
 };
 
-test('loadTheme keeps hand-edited colors and defaults the fields it cannot read', () => {
+test('loadTheme keeps hand-edited colors, defaults unreadable fields, and resolves a lost preset', () => {
   const colors = { ...CUSTOM_PRESET.dark, accent: '#123456' };
   withLocalStorageMap(
     {
@@ -30,19 +31,10 @@ test('loadTheme keeps hand-edited colors and defaults the fields it cannot read'
       assert.equal(uiFontSize, 14);
     },
   );
-});
-
-test('loadTheme resolves presetId from saved colors and custom presets', () => {
   withLocalStorageMap(
-    {
-      'droid-theme': JSON.stringify({
-        ...CUSTOM_PRESET.dark,
-        presetId: '',
-      }),
-    },
+    { 'droid-theme': JSON.stringify({ ...CUSTOM_PRESET.dark, presetId: '' }) },
     () => {
-      const theme = loadTheme([CUSTOM_PRESET]);
-      assert.equal(theme.presetId, 'custom-test');
+      assert.equal(loadTheme([CUSTOM_PRESET]).presetId, 'custom-test');
     },
   );
 });
@@ -125,37 +117,3 @@ test('sanitizeAgentConfig drops unknown models and coerces unsupported reasoning
     validator: { modelId: 'model-a', reasoning: 'low' },
   });
 });
-
-function withLocalStorageMap(
-  seed: Record<string, string> | Map<string, string>,
-  fn: () => void,
-): void {
-  const previous = Object.getOwnPropertyDescriptor(globalThis, 'localStorage');
-  const values = seed instanceof Map ? seed : new Map(Object.entries(seed));
-  const mock: Storage = {
-    getItem: (key) => values.get(key) ?? null,
-    setItem: (key, next) => {
-      values.set(key, next);
-    },
-    removeItem: (key) => {
-      values.delete(key);
-    },
-    clear: () => {
-      values.clear();
-    },
-    key: (index) => Array.from(values.keys())[index] ?? null,
-    get length() {
-      return values.size;
-    },
-  };
-  Object.defineProperty(globalThis, 'localStorage', {
-    configurable: true,
-    value: mock,
-  });
-  try {
-    fn();
-  } finally {
-    if (previous) Object.defineProperty(globalThis, 'localStorage', previous);
-    else delete (globalThis as { localStorage?: Storage }).localStorage;
-  }
-}

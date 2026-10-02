@@ -9,6 +9,7 @@ import {
   compactionSettingsSnapshot,
   loadCompactionTokenLimitPerModel,
 } from '../lib/compactionSettings';
+import { withLocalStorageMap } from '../test/localStorage';
 
 test('a commit saves only the persisted fields it changed', () => {
   const storage = new Map<string, string>();
@@ -247,38 +248,4 @@ test('factory defaults seed empty settings but never turn into an explicit UI ov
 
 function withLocalStorage(value: string, fn: () => void): void {
   withLocalStorageMap({ 'droid-ui-state-v2': value }, fn);
-}
-
-function withLocalStorageMap(
-  seed: Record<string, string> | Map<string, string>,
-  fn: () => void,
-): void {
-  const previous = Object.getOwnPropertyDescriptor(globalThis, 'localStorage');
-  const values = seed instanceof Map ? seed : new Map(Object.entries(seed));
-  const mock: Storage = {
-    getItem: (key) => values.get(key) ?? null,
-    setItem: (key, next) => {
-      values.set(key, next);
-    },
-    removeItem: (key) => {
-      values.delete(key);
-    },
-    clear: () => {
-      values.clear();
-    },
-    key: (index) => Array.from(values.keys())[index] ?? null,
-    get length() {
-      return values.size;
-    },
-  };
-  Object.defineProperty(globalThis, 'localStorage', {
-    configurable: true,
-    value: mock,
-  });
-  try {
-    fn();
-  } finally {
-    if (previous) Object.defineProperty(globalThis, 'localStorage', previous);
-    else delete (globalThis as { localStorage?: Storage }).localStorage;
-  }
 }

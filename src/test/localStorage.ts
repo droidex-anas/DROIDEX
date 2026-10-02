@@ -1,6 +1,10 @@
-export function withLocalStorageMap(seed: Record<string, string>, fn: () => void): void {
+/** Runs `fn` against an in-memory localStorage; pass a Map to inspect what it wrote. */
+export function withLocalStorageMap(
+  seed: Record<string, string> | Map<string, string>,
+  fn: () => void,
+): void {
   const previous = Object.getOwnPropertyDescriptor(globalThis, 'localStorage');
-  const values = new Map(Object.entries(seed));
+  const values = seed instanceof Map ? seed : new Map(Object.entries(seed));
   const mock: Storage = {
     getItem: (key) => values.get(key) ?? null,
     setItem: (key, next) => {
