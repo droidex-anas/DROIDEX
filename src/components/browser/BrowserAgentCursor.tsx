@@ -11,48 +11,55 @@ const TIP = {
   y: design.hotspot.y / design.viewBoxSize,
 };
 
+// Where the agent last pointed, in the page's own pixels, and the glide that
+// takes the cursor there at the scale the page was drawn at.
 interface Cursor {
   x: number;
   y: number;
   glideMs: number;
+  scale: number;
 }
 
 /**
  * The agent's cursor over a page in the pane. It glides to where the agent
- * points and, while the agent works, rests there tilting about its tip. The
+ * points and, while the agent works, rests there rocking about its tip. The
  * app draws it above the page, so it is never part of the page or of the
- * agent's screenshots, and input never waits for it.
+ * agent's screenshots, and input never waits for it. It follows the page's
+ * points whether the pane shows the page or not, and draws only when it does.
  */
 export function BrowserAgentCursor({
   browserSessionId,
   scale,
+  shown,
   working,
 }: {
   browserSessionId: string;
-  /** How large the pane draws the page; points arrive in the page's own pixels. */
+  /** How large the pane draws the page. */
   scale: number;
+  shown: boolean;
   working: boolean;
 }) {
   const [cursor, setCursor] = useState<Cursor | null>(null);
 
   useEffect(
     () =>
-      onNativeBrowserAgentPoint((event) => {
-        if (event.browserSessionId !== browserSessionId) return;
-        const next = { x: event.x * scale, y: event.y * scale };
+      onNativeBrowserAgentPoint(({ browserSessionId: id, x, y }) => {
+        if (id !== browserSessionId) return;
         // The first point is where it appears; after that, a longer way takes
         // a little longer, from 120 to 220 ms.
         setCursor((from) => ({
-          ...next,
+          x,
+          y,
           glideMs: from
-            ? Math.round(Math.min(220, 120 + Math.hypot(next.x - from.x, next.y - from.y) / 8))
+            ? Math.round(Math.min(220, 120 + (Math.hypot(x - from.x, y - from.y) * scale) / 8))
             : 0,
+          scale,
         }));
       }),
     [browserSessionId, scale],
   );
 
-  if (!cursor) return null;
+  if (!cursor || !shown) return null;
   return (
     <div
       aria-hidden
@@ -62,8 +69,9 @@ export function BrowserAgentCursor({
           width: SIZE,
           height: SIZE,
           opacity: working ? 1 : 0,
-          transform: `translate(${String(cursor.x - TIP.x * SIZE)}px, ${String(cursor.y - TIP.y * SIZE)}px)`,
-          '--glide': `${String(cursor.glideMs)}ms`,
+          transform: `translate(${String(cursor.x * scale - TIP.x * SIZE)}px, ${String(cursor.y * scale - TIP.y * SIZE)}px)`,
+          // A page drawn at a new size takes its cursor along at once.
+          '--glide': `${String(cursor.scale === scale ? cursor.glideMs : 0)}ms`,
         } as CSSProperties
       }
     >

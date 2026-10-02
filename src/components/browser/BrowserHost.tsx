@@ -148,13 +148,12 @@ function BrowserPageFrame({
         tabIndex={shown ? undefined : -1}
         style={shown && scale === undefined ? FILL : pageStyle(size, shown ? scale : undefined)}
       />
-      {shown && (
-        <BrowserAgentCursor
-          browserSessionId={page.browserSessionId}
-          scale={scale ?? 1}
-          working={working}
-        />
-      )}
+      <BrowserAgentCursor
+        browserSessionId={page.browserSessionId}
+        scale={scale ?? 1}
+        shown={shown}
+        working={working}
+      />
     </div>
   );
 }

@@ -399,17 +399,23 @@
     will-change: transform;
   }
 
+  /* A working hand rocks about its tip and rests a moment at each end. */
   @keyframes agent-cursor-tilt {
-    from {
-      transform: rotate(-5deg);
+    0%,
+    19% {
+      transform: rotate(-10deg);
     }
-    to {
-      transform: rotate(5deg);
+    50%,
+    69% {
+      transform: rotate(10deg);
+    }
+    100% {
+      transform: rotate(-10deg);
     }
   }
 
   .agent-cursor-tilt {
-    animation: agent-cursor-tilt 1400ms ease-in-out infinite alternate;
+    animation: agent-cursor-tilt 1400ms ease-in-out infinite;
   }
 
   @media (prefers-reduced-motion: reduce) {
