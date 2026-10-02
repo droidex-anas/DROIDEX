@@ -140,43 +140,30 @@ function createHarness(
     autonomy: 'low',
     interactionMode: 'auto',
   };
+  const record = (target: RecordedCall['target'], method: string, ...args: unknown[]): void => {
+    calls.push({ target, method, args });
+  };
   const lifecycle = new SessionLifecycle({
     beforeFirstTurn,
     eventFlow: { apply: () => undefined, beginTurn: () => undefined },
     provider: () => provider,
     registry,
-    ensureConnected: () => {
-      calls.push({ target: 'runtime', method: 'ensureConnected', args: [] });
-    },
+    ensureConnected: () => record('runtime', 'ensureConnected'),
     getFactoryDefaults: () => Promise.resolve(defaults),
     maxContextTokensForModel: () => 1_000,
     childSessions: {
-      retryAgentWave: (appSessionId) => {
-        calls.push({ target: 'cleanup', method: 'children.retryWave', args: [appSessionId] });
-      },
-      attachParent: (appSessionId) => {
-        calls.push({ target: 'cleanup', method: 'children.attach', args: [appSessionId] });
-      },
+      retryAgentWave: (appSessionId) => record('cleanup', 'children.retryWave', appSessionId),
+      attachParent: (appSessionId) => record('cleanup', 'children.attach', appSessionId),
       closeParent: (appSessionId) => closeChildren(appSessionId),
     },
     startLocalMcpServers: () => {
       const resourceId = ++mcpId;
-      calls.push({ target: 'runtime', method: 'mcp.start', args: [resourceId] });
-      return Promise.resolve({
-        servers: [
-          {
-            close: () => {
-              calls.push({
-                target: 'cleanup',
-                method: 'mcp.close',
-                args: [`mcp-${resourceId}`],
-              });
-              return Promise.resolve();
-            },
-          },
-        ],
-        configs: mcpConfigs,
-      });
+      record('runtime', 'mcp.start', resourceId);
+      const close = () => {
+        record('cleanup', 'mcp.close', `mcp-${resourceId}`);
+        return Promise.resolve();
+      };
+      return Promise.resolve({ servers: [{ close }], configs: mcpConfigs });
     },
     interactionsFor: () => ({
       requestApproval: () => new Promise<PermissionOutcome>(() => undefined),
@@ -188,58 +175,30 @@ function createHarness(
       resolveLimit: () => compactionLimit(),
       arm: async (target, limit) => {
         if (!target.isCurrent()) return false;
-        calls.push({
-          target: 'provider',
-          method: 'autoCompaction.arm',
-          args: [target.session.sessionId, limit],
-        });
+        record('provider', 'autoCompaction.arm', target.session.sessionId, limit);
         const armed = await enableAutoCompaction();
         return target.isCurrent() && armed;
       },
       subscribePrimary: (target) => {
         target.liveSession.unsubscribe = target.session.onNotification(() => undefined);
       },
-      afterTurn: (target) => {
-        calls.push({
-          target: 'cleanup',
-          method: 'autoCompaction.settled',
-          args: [target.appSessionId],
-        });
-      },
+      afterTurn: (target) => record('cleanup', 'autoCompaction.settled', target.appSessionId),
       cancel: (target) => {
         if (target.kind === 'primary') target.liveSession.autoCompacting = false;
         else target.setAutoCompacting(false);
-        calls.push({
-          target: 'cleanup',
-          method: 'watchdog.clear',
-          args: [target.kind === 'primary' ? target.appSessionId : target.childSessionId],
-        });
+        const id = target.kind === 'primary' ? target.appSessionId : target.childSessionId;
+        record('cleanup', 'watchdog.clear', id);
       },
-      forgetSession: (appSessionId) => {
-        calls.push({
-          target: 'cleanup',
-          method: 'compaction.forgetSession',
-          args: [appSessionId],
-        });
-      },
+      forgetSession: (appSessionId) => record('cleanup', 'compaction.forgetSession', appSessionId),
     },
     isShutdownStarted: () => shutdownStarted,
     agentProcesses: {
-      setIgnoredCommands: (appSessionId, patterns) => {
-        calls.push({
-          target: 'runtime',
-          method: 'processes.setIgnoredCommands',
-          args: [appSessionId, ...patterns],
-        });
-      },
-      track: (appSessionId, pid) => {
-        calls.push({ target: 'runtime', method: 'processes.track', args: [appSessionId, pid] });
-      },
-      untrack: (pid) => {
-        calls.push({ target: 'cleanup', method: 'processes.untrack', args: [pid] });
-      },
+      setIgnoredCommands: (appSessionId, patterns) =>
+        record('runtime', 'processes.setIgnoredCommands', appSessionId, ...patterns),
+      track: (appSessionId, pid) => record('runtime', 'processes.track', appSessionId, pid),
+      untrack: (pid) => record('cleanup', 'processes.untrack', pid),
       killSession: (appSessionId) => {
-        calls.push({ target: 'cleanup', method: 'processes.killSession', args: [appSessionId] });
+        record('cleanup', 'processes.killSession', appSessionId);
         return killProcesses(appSessionId);
       },
     },
@@ -259,36 +218,16 @@ function createHarness(
     context: {
       preserveUsage: () => undefined,
       refresh: (target) => {
-        calls.push({
-          target: 'provider',
-          method: 'context.refresh',
-          args: [target.sourceSessionId],
-        });
+        record('provider', 'context.refresh', target.sourceSessionId);
         return Promise.resolve();
       },
-      stopPolling: (sourceSessionId) => {
-        calls.push({ target: 'cleanup', method: 'poll.stop', args: [sourceSessionId] });
-      },
+      stopPolling: (sourceSessionId) => record('cleanup', 'poll.stop', sourceSessionId),
       stopSession: (live) => {
-        calls.push({
-          target: 'cleanup',
-          method: 'poll.stop',
-          args: [live.summary.appSessionId],
-        });
+        record('cleanup', 'poll.stop', live.summary.appSessionId);
         if (live.summary.providerSessionId)
-          calls.push({
-            target: 'cleanup',
-            method: 'poll.stop',
-            args: [live.summary.providerSessionId],
-          });
+          record('cleanup', 'poll.stop', live.summary.providerSessionId);
       },
-      forgetSession: (live) => {
-        calls.push({
-          target: 'cleanup',
-          method: 'runtimeCaches.clear',
-          args: [live.summary.appSessionId],
-        });
-      },
+      forgetSession: (live) => record('cleanup', 'runtimeCaches.clear', live.summary.appSessionId),
     },
     openProviderTranscript: () => {},
     forgetProviderTranscript: () => {},
@@ -298,38 +237,31 @@ function createHarness(
     },
     forgetInteractions: (appSessionId) => {
       forgettingAfterUnregister.push(registry.getLive(appSessionId) === undefined);
-      calls.push({ target: 'cleanup', method: 'interactions.forget', args: [appSessionId] });
+      record('cleanup', 'interactions.forget', appSessionId);
     },
     forgetEventFlow: (appSessionId) => {
       eventFlowForgettingAfterUnregister.push(registry.getLive(appSessionId) === undefined);
-      calls.push({ target: 'cleanup', method: 'eventFlow.forget', args: [appSessionId] });
+      record('cleanup', 'eventFlow.forget', appSessionId);
     },
     forgetMissionControl: (appSessionId) => {
       missionForgettingAfterUnregister.push(registry.getLive(appSessionId) === undefined);
-      calls.push({ target: 'cleanup', method: 'missionControl.forget', args: [appSessionId] });
+      record('cleanup', 'missionControl.forget', appSessionId);
     },
-    forgetPendingSettings: (appSessionId) => {
-      calls.push({ target: 'cleanup', method: 'pendingSettings.forget', args: [appSessionId] });
-    },
+    forgetPendingSettings: (appSessionId) =>
+      record('cleanup', 'pendingSettings.forget', appSessionId),
     closeBrowserSession: (appSessionId) => {
-      calls.push({ target: 'browser', method: 'browser.close', args: [appSessionId] });
+      record('browser', 'browser.close', appSessionId);
       return Promise.resolve();
     },
     stopVoiceSession: (appSessionId) => {
-      calls.push({ target: 'cleanup', method: 'voice.stop', args: [appSessionId] });
+      record('cleanup', 'voice.stop', appSessionId);
       return Promise.resolve();
     },
     emit: recordEvent,
     emitError: (error) => recordEvent({ type: 'error', ...error }),
-    appendProgress: (appSessionId, text) => {
-      calls.push({ target: 'protocol', method: 'progress', args: [appSessionId, text] });
-    },
-    appendError: (appSessionId, message) => {
-      calls.push({ target: 'protocol', method: 'error', args: [appSessionId, message] });
-    },
-    appendSteer: (appSessionId, text) => {
-      calls.push({ target: 'protocol', method: 'appendSteer', args: [appSessionId, text] });
-    },
+    appendProgress: (appSessionId, text) => record('protocol', 'progress', appSessionId, text),
+    appendError: (appSessionId, message) => record('protocol', 'error', appSessionId, message),
+    appendSteer: (appSessionId, text) => record('protocol', 'appendSteer', appSessionId, text),
     catalogUpdated: () => undefined,
     emitSessionList: (closedProviderSessionId) => emitSessionList(closedProviderSessionId),
   });
@@ -553,18 +485,24 @@ test('create omits an unarmed daemon compaction limit from its summary', async (
   );
 });
 
-test('create failure closes started MCP resources without publishing', async () => {
-  const harness = createHarness();
-  harness.runtime.createQueue.push(new Error('create failed'));
-  await harness.lifecycle.create(createCommand());
-  assert.equal(harness.calls.filter((call) => call.method === 'mcp.close').length, 1);
-  assert.equal(harness.history.persisted.length, 0);
+function openedResourceCloses(harness: Harness): unknown[][] {
+  return harness.calls
+    .filter((call) => call.method === 'mcp.close' || call.method === 'session.close')
+    .map((call) => [call.method, call.args[0]]);
+}
+
+test('a create or resume that fails at any stage closes what it opened and publishes nothing', async () => {
+  const unopened = createHarness();
+  unopened.runtime.createQueue.push(new Error('create failed'));
+  await unopened.lifecycle.create(createCommand());
+  assert.deepEqual(openedResourceCloses(unopened), [['mcp.close', 'mcp-1']]);
+  assert.equal(unopened.history.persisted.length, 0);
   assert.equal(
-    harness.events.some((event) => event.type === 'session.created'),
+    unopened.events.some((event) => event.type === 'session.created'),
     false,
   );
   assert.equal(
-    harness.events.some(
+    unopened.events.some(
       (event) =>
         event.type === 'error' &&
         event.code === 'session.create_failed' &&
@@ -573,66 +511,48 @@ test('create failure closes started MCP resources without publishing', async () 
     ),
     true,
   );
-});
 
-test('post-open create and resume failures close provider and MCP resources', async () => {
   const created = createHarness();
   queueCreate(created, 'failed-create');
   created.setEnableAutoCompaction(() => Promise.reject(new Error('create setup failed')));
   await created.lifecycle.create(createCommand());
-  assert.deepEqual(
-    created.calls
-      .filter((call) => call.method === 'mcp.close' || call.method === 'session.close')
-      .map((call) => [call.method, call.args[0]]),
-    [
-      ['mcp.close', 'mcp-1'],
-      ['session.close', 'failed-create'],
-    ],
-  );
+  assert.deepEqual(openedResourceCloses(created), [
+    ['mcp.close', 'mcp-1'],
+    ['session.close', 'failed-create'],
+  ]);
   assert.equal(created.registry.getLive('failed-create'), undefined);
 
   const resumed = createHarness([summary('failed-resume-app', 'failed-resume-provider')]);
   queueLoad(resumed, 'failed-resume-provider');
   resumed.setEnableAutoCompaction(() => Promise.reject(new Error('resume setup failed')));
   await resumed.lifecycle.resume('failed-resume-app');
-  assert.deepEqual(
-    resumed.calls
-      .filter((call) => call.method === 'mcp.close' || call.method === 'session.close')
-      .map((call) => [call.method, call.args[0]]),
-    [
-      ['mcp.close', 'mcp-1'],
-      ['session.close', 'failed-resume-provider'],
-    ],
-  );
+  assert.deepEqual(openedResourceCloses(resumed), [
+    ['mcp.close', 'mcp-1'],
+    ['session.close', 'failed-resume-provider'],
+  ]);
   assert.equal(resumed.registry.getLive('failed-resume-app'), undefined);
-});
 
-test('registration failure closes resources without indexing the failed session', async () => {
-  const harness = createHarness();
-  queueCreate(harness, 'failed-registration');
-  harness.runtime.processIds.set('failed-registration', 4321);
-  harness.history.nextSyncError = new Error('persist failed');
-
-  await harness.lifecycle.create(createCommand());
-
-  assert.deepEqual(
-    harness.calls
-      .filter((call) => call.method === 'mcp.close' || call.method === 'session.close')
-      .map((call) => [call.method, call.args[0]]),
-    [
-      ['mcp.close', 'mcp-1'],
-      ['session.close', 'failed-registration'],
-    ],
-  );
-  assert.equal(harness.registry.getLive('failed-registration'), undefined);
+  // A registration that cannot persist leaves nothing indexed.
+  const unregistered = createHarness();
+  queueCreate(unregistered, 'failed-registration');
+  unregistered.runtime.processIds.set('failed-registration', 4321);
+  unregistered.history.nextSyncError = new Error('persist failed');
+  await unregistered.lifecycle.create(createCommand());
+  assert.deepEqual(openedResourceCloses(unregistered), [
+    ['mcp.close', 'mcp-1'],
+    ['session.close', 'failed-registration'],
+  ]);
+  assert.equal(unregistered.registry.getLive('failed-registration'), undefined);
   assert.equal(
-    harness.events.some((event) => event.type === 'error' && event.message === 'persist failed'),
+    unregistered.events.some(
+      (event) => event.type === 'error' && event.message === 'persist failed',
+    ),
     true,
   );
   // Kill-then-untrack, same order as the normal close path: anything the
   // provider spawned before the failure is only reachable while it is alive.
   assert.deepEqual(
-    harness.calls
+    unregistered.calls
       .filter((call) => call.method.startsWith('processes.') && call.method !== 'processes.track')
       .map((call) => call.method),
     ['processes.killSession', 'processes.untrack'],
@@ -1474,8 +1394,12 @@ test('accepted settings stay durable through resume and precede first-send appli
   assert.equal(failed.registry.resolveSummary('app-pending')?.modelId, 'model-pending');
 });
 
-test('closing a session kills its agent processes while the provider is still their parent', async () => {
+test('a session tracks its provider pid and close kills its processes while the provider is their parent', async () => {
   const h = createHarness();
+  h.setMcpConfigs([
+    { name: 'local', command: 'npx', args: ['-y', 'some-mcp'], env: {} },
+    { name: 'remote', type: 'http', url: 'https://mcp.example', headers: [] },
+  ]);
   const provider = queueCreate(h, 'created-pid');
   h.runtime.processIds.set('created-pid', 4321);
   h.setChildCloser((appSessionId) => {
@@ -1497,7 +1421,8 @@ test('closing a session kills its agent processes while the provider is still th
       )
       .map((call) => [call.method, ...call.args]),
     [
-      ['processes.setIgnoredCommands', 'created-pid'],
+      // Configured stdio MCP servers are the session's own processes, not leaks.
+      ['processes.setIgnoredCommands', 'created-pid', 'npx -y some-mcp'],
       ['processes.track', 'created-pid', 4321],
       // The kill has to precede every provider close of the session: once
       // `droid` exits, its dev servers are reparented and no longer reachable
@@ -1509,37 +1434,14 @@ test('closing a session kills its agent processes while the provider is still th
       ['processes.untrack', 4321],
     ],
   );
-});
 
-test('a resumed session tracks the pid of the provider it reloaded', async () => {
-  const h = createHarness([summary('app-2', 'provider-2')]);
-  queueLoad(h, 'provider-2');
-  h.runtime.processIds.set('provider-2', 991);
-
-  await h.lifecycle.resume('app-2');
-
+  const resumed = createHarness([summary('app-2', 'provider-2')]);
+  queueLoad(resumed, 'provider-2');
+  resumed.runtime.processIds.set('provider-2', 991);
+  await resumed.lifecycle.resume('app-2');
   assert.deepEqual(
-    h.calls.filter((call) => call.method === 'processes.track').map((call) => call.args),
+    resumed.calls.filter((call) => call.method === 'processes.track').map((call) => call.args),
     [['app-2', 991]],
-  );
-});
-
-test("configured stdio MCP servers become the session's ignored command lines", async () => {
-  const h = createHarness();
-  h.setMcpConfigs([
-    { name: 'local', command: 'npx', args: ['-y', 'some-mcp'], env: {} },
-    { name: 'remote', type: 'http', url: 'https://mcp.example', headers: [] },
-  ]);
-  const provider = queueCreate(h, 'created-ignored');
-  h.runtime.processIds.set('created-ignored', 4321);
-  await h.lifecycle.create(createCommand());
-  await provider.waitForPrompts(1);
-
-  assert.deepEqual(
-    h.calls
-      .filter((call) => call.method === 'processes.setIgnoredCommands')
-      .map((call) => call.args),
-    [['created-ignored', 'npx -y some-mcp']],
   );
 });
 
@@ -1965,7 +1867,7 @@ test('a context switch waits for the turn and resumes the same chat before queue
   await h.lifecycle.close('context-switch');
 });
 
-test('dependent ownership is committed before the first provider turn', async () => {
+test('dependent ownership is committed before the first provider turn, and a failed commit runs nothing', async () => {
   let release = () => {};
   let entered = () => {};
   const gate = new Promise<void>((resolve) => {
@@ -1991,21 +1893,19 @@ test('dependent ownership is committed before the first provider turn', async ()
   await creating;
   await provider.waitForPrompts(1);
   await h.lifecycle.closeAll();
-});
 
-test('a failed ownership commit releases the session without executing its goal', async () => {
-  const h = createHarness([], async () => {
+  const failed = createHarness([], async () => {
     throw new Error('Project ledger is full');
   });
-  queueCreate(h, 'failed-bind');
-  await h.lifecycle.create(createCommand());
+  queueCreate(failed, 'failed-bind');
+  await failed.lifecycle.create(createCommand());
   assert.equal(
-    h.calls.some((call) => call.method === 'stream'),
+    failed.calls.some((call) => call.method === 'stream'),
     false,
   );
-  assert.equal(h.registry.getLive('failed-bind'), undefined);
+  assert.equal(failed.registry.getLive('failed-bind'), undefined);
   assert.ok(
-    h.events.some(
+    failed.events.some(
       (event) => event.type === 'error' && event.message.includes('Project ledger is full'),
     ),
   );

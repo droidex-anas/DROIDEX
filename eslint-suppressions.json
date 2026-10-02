@@ -14,16 +14,8 @@
       "count": 1
     }
   },
-  "sidecar/src/SessionManager.sessionRetirement.test.ts": {
-    "no-restricted-syntax": {
-      "count": 1
-    }
-  },
   "sidecar/src/SessionTimeline.test.ts": {
     "max-lines": {
-      "count": 1
-    },
-    "no-restricted-syntax": {
       "count": 1
     }
   },

@@ -72,6 +72,9 @@ function createHarness(
     failDriveSetup = undefined;
     throw new Error(`${stage} failed`);
   };
+  const record = (target: RecordedCall['target'], method: string, ...args: unknown[]): void => {
+    calls.push({ target, method, args });
+  };
   const upsertChildSession = history.upsertChildSession.bind(history);
   history.upsertChildSession = (child) => {
     if (child.status === 'running') throwDriveSetup('commit');
@@ -92,29 +95,19 @@ function createHarness(
   const dependencies: ChildSessionsDependencies = {
     runtime,
     agentProcesses: {
-      track: (appSessionId, pid) => {
-        calls.push({ target: 'runtime', method: 'processes.track', args: [appSessionId, pid] });
-      },
-      untrack: (pid) => {
-        calls.push({ target: 'cleanup', method: 'processes.untrack', args: [pid] });
-      },
+      track: (appSessionId, pid) => record('runtime', 'processes.track', appSessionId, pid),
+      untrack: (pid) => record('cleanup', 'processes.untrack', pid),
       adoptDescendantsAsRoots: (appSessionId, pid, isCurrent = () => true) => {
-        calls.push({ target: 'cleanup', method: 'processes.adopt', args: [appSessionId, pid] });
+        record('cleanup', 'processes.adopt', appSessionId, pid);
         return options.adoptDescendants?.(isCurrent) ?? Promise.resolve(true);
       },
     },
     registry: { getLive: (id) => (id === parentId ? parent : undefined) },
     history,
     timeline: {
-      append: (event) => {
-        calls.push({ target: 'protocol', method: 'timeline.append', args: [event] });
-      },
-      appendStatus: (...args) => {
-        calls.push({ target: 'protocol', method: 'timeline.status', args });
-      },
-      appendPrompt: (...args) => {
-        calls.push({ target: 'protocol', method: 'timeline.prompt', args });
-      },
+      append: (event) => record('protocol', 'timeline.append', event),
+      appendStatus: (...args) => record('protocol', 'timeline.status', ...args),
+      appendPrompt: (...args) => record('protocol', 'timeline.prompt', ...args),
       flushStreamingFor: () => {
         sequence.push('timeline.flushStreaming');
         if (!failFlushStreaming) return;
@@ -132,17 +125,15 @@ function createHarness(
           missReplayChildOnce = false;
           return;
         }
-        calls.push({ target: 'protocol', method: 'timeline.loadChildHistory', args });
+        record('protocol', 'timeline.loadChildHistory', ...args);
       },
     },
     eventFlow: {
       beginTurn: (...args) => {
         throwDriveSetup('beginTurn');
-        calls.push({ target: 'protocol', method: 'turn.begin', args });
+        record('protocol', 'turn.begin', ...args);
       },
-      applyNotification: (...args) => {
-        calls.push({ target: 'protocol', method: 'notification.apply', args });
-      },
+      applyNotification: (...args) => record('protocol', 'notification.apply', ...args),
       applyStreamEvent: () => undefined,
     },
     interactions: {
@@ -156,21 +147,13 @@ function createHarness(
     context: {
       forgetChild: (identity) => {
         if (identity.childSessionId === options.failForgetChild) throw new Error('forget failed');
-        calls.push({
-          target: 'cleanup',
-          method: 'context.forgetChild',
-          args: [identity.childSessionId],
-        });
+        record('cleanup', 'context.forgetChild', identity.childSessionId);
       },
       refresh: () => Promise.resolve(),
       startPolling: () => throwDriveSetup('startPolling'),
       stopPolling: (target) => {
         sequence.push('context.stopPolling');
-        calls.push({
-          target: 'cleanup',
-          method: 'context.stopPolling',
-          args: [target.sourceSessionId],
-        });
+        record('cleanup', 'context.stopPolling', target.sourceSessionId);
       },
     },
     compaction: {
@@ -179,15 +162,10 @@ function createHarness(
       cancel: (target) => {
         if (target.kind === 'child') target.setAutoCompacting(false);
       },
-      forgetChild: (identity) => {
-        calls.push({
-          target: 'cleanup',
-          method: 'compaction.forgetChild',
-          args: [identity.parentAppSessionId, identity.childSessionId],
-        });
-      },
+      forgetChild: ({ parentAppSessionId, childSessionId }) =>
+        record('cleanup', 'compaction.forgetChild', parentAppSessionId, childSessionId),
       handleChildNotification: (_target, note) => {
-        calls.push({ target: 'protocol', method: 'compaction.notification', args: [note] });
+        record('protocol', 'compaction.notification', note);
         return false;
       },
       rearmModelChangedChild: () => Promise.resolve(),
@@ -198,15 +176,13 @@ function createHarness(
       },
     },
     onAgentWaveSettled: (parentAppSessionId, agents) => {
-      calls.push({
-        target: 'protocol',
-        method: 'agents.waveSettled',
-        args: [
-          parentAppSessionId,
-          agents.map((agent) => `${agent.name}:${agent.status}`).join(','),
-          ...agents.flatMap((agent) => (agent.step ? [agent.step] : [])),
-        ],
-      });
+      record(
+        'protocol',
+        'agents.waveSettled',
+        parentAppSessionId,
+        agents.map((agent) => `${agent.name}:${agent.status}`).join(','),
+        ...agents.flatMap((agent) => (agent.step ? [agent.step] : [])),
+      );
       return options.acceptAgentWave?.() ?? true;
     },
     resolveDefaultSettings: () => ({
@@ -1028,26 +1004,6 @@ test('completion rejects an immediate stale provider observation', async () => {
   );
 });
 
-test('repeated same-provider observation preserves automatic compaction settlement', async () => {
-  const record = childRecord('child', 'provider');
-  const h = createHarness([record]);
-  const runtime = await h.open(record);
-  const target = h.target(record.childSessionId);
-  const captured = settlement(target);
-  target.setAutoCompacting(true);
-  await h.owner.send(record, 'queued after compaction');
-
-  observe(h, {
-    providerSessionId: record.providerSessionId,
-    role: record.role,
-    ...(record.spawnLink ? { spawnLink: record.spawnLink } : {}),
-  });
-  h.owner.settleAutomatic(captured);
-  await new Promise<void>((resolve) => setImmediate(resolve));
-
-  assert.deepEqual(runtime.prompts, ['queued after compaction']);
-});
-
 test('repeated child observations publish only new task prompts', () => {
   const record = childRecord('child', 'provider');
   const h = createHarness([record]);
@@ -1070,6 +1026,26 @@ test('repeated child observations publish only new task prompts', () => {
       .map((call) => call.args[1]),
     ['first prompt', 'changed prompt'],
   );
+});
+
+test('repeated same-provider observation preserves automatic compaction settlement', async () => {
+  const record = childRecord('child', 'provider');
+  const h = createHarness([record]);
+  const runtime = await h.open(record);
+  const target = h.target(record.childSessionId);
+  const captured = settlement(target);
+  target.setAutoCompacting(true);
+  await h.owner.send(record, 'queued after compaction');
+
+  observe(h, {
+    providerSessionId: record.providerSessionId,
+    role: record.role,
+    ...(record.spawnLink ? { spawnLink: record.spawnLink } : {}),
+  });
+  h.owner.settleAutomatic(captured);
+  await new Promise<void>((resolve) => setImmediate(resolve));
+
+  assert.deepEqual(runtime.prompts, ['queued after compaction']);
 });
 
 test('repeated same-provider observation preserves in-flight settings settlement', async () => {

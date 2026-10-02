@@ -186,18 +186,14 @@ test('register persists once and resolves stable, current, and superseded identi
   assert.equal(published.length, 0);
 });
 
-test('register rejects a runtime child shape at the top-level boundary', async () => {
+test('a rejected or failed registration leaves the previous live identity intact', async () => {
   const { history, registry } = createHarness();
   const child = live(summary('child-shape'));
   Reflect.set(child.summary, 'role', 'worker');
-
   await assert.rejects(registry.register(child), /top-level sessions only/);
   assert.deepEqual(history.persisted, []);
   assert.equal(registry.getLive('child-shape'), undefined);
-});
 
-test('failed registration leaves the previous live identity intact', async () => {
-  const { history, registry } = createHarness();
   const previous = live(
     summary('stable', {
       providerSessionId: 'provider-previous',
@@ -663,9 +659,12 @@ test('projected, patched, and caller-owned feature state cannot mutate canonical
   ]);
 });
 
-test('workspace scoping applies after canonical source precedence', () => {
-  const { registry } = createHarness({
-    ordinary: [summary('shared', { title: 'ordinary', updatedAt: 100 })],
+test('workspace scoping applies after canonical source precedence and persisted patches', () => {
+  const { history, registry } = createHarness({
+    ordinary: [
+      summary('shared', { title: 'ordinary', updatedAt: 100 }),
+      summary('moved', { cwd: '/workspace-on-disk' }),
+    ],
     missionControl: [
       summary('shared', {
         title: 'mission control',
@@ -681,6 +680,15 @@ test('workspace scoping applies after canonical source precedence', () => {
       .sessions.map((item) => [item.appSessionId, item.title]),
     [['shared', 'mission control']],
   );
+
+  // A persisted app-session patch moves a session to another workspace.
+  history.syncSummaries([summary('moved', { cwd: '/workspace-patched' })]);
+  const listedIn = (cwd: string) =>
+    registry
+      .listSummaries({ workspaceCwds: [cwd] })
+      .sessions.some((item) => item.appSessionId === 'moved');
+  assert.equal(listedIn('/workspace-patched'), true);
+  assert.equal(listedIn('/workspace-on-disk'), false);
 });
 
 test('a persisted app-session row keeps an old session listed past the pre-existing bound', () => {

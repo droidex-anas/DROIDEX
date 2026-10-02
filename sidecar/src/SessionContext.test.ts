@@ -2,7 +2,6 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { ContextStatsAccuracy, ReasoningEffort } from '@factory/droid-sdk';
 
-import { DroidRuntime } from './DroidRuntime.js';
 import { requireDroidSession } from './providers/droid/DroidProviderSession.js';
 import type { ServerEvent, SessionSummary } from './protocol.js';
 import {
@@ -202,6 +201,20 @@ test('plausible exact primary usage wins while child usage changes totals only',
   assert.equal(event?.stats.accuracy, 'exact');
 });
 
+test('usage without current-context telemetry updates totals only', async () => {
+  const h = createHarness();
+  const { live } = await registerLive(h, 'app-1');
+  live.summary.contextTokens = 320;
+  live.summary.contextAccuracy = 'estimated';
+
+  h.context.recordUsage('app-1', 'app-1', { tokensIn: 900, tokensOut: 40 });
+
+  assert.equal(live.summary.tokensIn, 900);
+  assert.equal(live.summary.tokensOut, 40);
+  assert.equal(live.summary.contextTokens, 320);
+  assert.equal(live.summary.contextAccuracy, 'estimated');
+});
+
 test('identical usage readings publish once, unless their write failed', async () => {
   const h = createHarness();
   const { live } = await registerLive(h, 'app-1');
@@ -255,6 +268,7 @@ test('unchanged in-turn poll readings emit context once until the reading change
   assert.equal(contextEvents(h).length, 3);
   assert.equal(h.history.summaryPatchesAndHidden().patches.get('app-1')?.contextTokens, 260);
 });
+
 test('deduplicated in-turn polls still synchronize exact context summary fields', async () => {
   const h = createHarness();
   const { live, session } = await registerLive(h, 'app-1');
@@ -387,20 +401,6 @@ test('a zero-limit provider reading cannot poison a live compaction baseline', a
   const rebased = contextEvents(h).at(-1)?.stats;
   assert.equal(rebased?.used, 50);
   assert.equal(rebased?.remaining, 950);
-});
-
-test('usage without current-context telemetry updates totals only', async () => {
-  const h = createHarness();
-  const { live } = await registerLive(h, 'app-1');
-  live.summary.contextTokens = 320;
-  live.summary.contextAccuracy = 'estimated';
-
-  h.context.recordUsage('app-1', 'app-1', { tokensIn: 900, tokensOut: 40 });
-
-  assert.equal(live.summary.tokensIn, 900);
-  assert.equal(live.summary.tokensOut, 40);
-  assert.equal(live.summary.contextTokens, 320);
-  assert.equal(live.summary.contextAccuracy, 'estimated');
 });
 
 test('child refresh never inherits the parent exact context reading', async () => {
@@ -707,30 +707,6 @@ test('breakdown failures and malformed values keep valid context stats', async (
   const before = contextEvents(h).length;
   await h.context.refresh(primaryTarget(h, live));
   assert.equal(contextEvents(h).length, before);
-});
-
-test('DroidRuntime reads public and private context breakdown seams best effort', async () => {
-  const calls: RecordedCall[] = [];
-  const session = new FakeFactorySession('backend', {}, calls);
-  const runtime = new DroidRuntime();
-  Reflect.set(session, 'getContextBreakdown', () => Promise.resolve({ usedTokens: 10 }));
-  assert.deepEqual(await runtime.readContextBreakdown(session), { usedTokens: 10 });
-
-  Reflect.deleteProperty(session, 'getContextBreakdown');
-  let rpcMethod = '';
-  Reflect.set(session, '_client', {
-    _sessionRpcWithoutParams: (method: string) => {
-      rpcMethod = method;
-      return Promise.resolve({ freeTokens: 90 });
-    },
-  });
-  assert.deepEqual(await runtime.readContextBreakdown(session), { freeTokens: 90 });
-  assert.equal(rpcMethod, 'droid.get_context_breakdown');
-
-  Reflect.set(session, '_client', {
-    _sessionRpcWithoutParams: () => Promise.reject(new Error('transport closed')),
-  });
-  assert.equal(await runtime.readContextBreakdown(session), undefined);
 });
 
 test('hidden background work pauses context pollers and still refreshes on demand', async (t) => {
