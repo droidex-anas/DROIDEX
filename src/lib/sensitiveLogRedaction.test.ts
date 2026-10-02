@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { sanitizeForLog } from './sensitiveLogRedaction';
 
-test('sanitizeForLog redacts sensitive object fields', () => {
+test('sanitizeForLog redacts sensitive fields, bearer tokens, and secret assignments without leaking cycles', () => {
   assert.deepEqual(
     sanitizeForLog({
       type: 'bridge.connected',
@@ -23,16 +23,12 @@ test('sanitizeForLog redacts sensitive object fields', () => {
       },
     },
   );
-});
 
-test('sanitizeForLog redacts bearer tokens and secret assignments inside strings', () => {
   assert.equal(
     sanitizeForLog('Authorization: Bearer abc.def.ghi FACTORY_API_KEY=configured-placeholder'),
     'Authorization: Bearer [REDACTED] FACTORY_API_KEY=[REDACTED]',
   );
-});
 
-test('sanitizeForLog keeps cycles from leaking raw objects', () => {
   const event: Record<string, unknown> = { type: 'mission.progress' };
   event.self = event;
 
