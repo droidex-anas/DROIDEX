@@ -2,17 +2,14 @@ import assert from 'node:assert/strict';
 import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import test from 'node:test';
+import test, { type TestContext } from 'node:test';
 
 import {
   sessionIdFromSessionFileName,
   startSessionFileWatcher,
   type SessionFileChange,
+  type SessionFileWatcherOptions,
 } from './sessionFileWatcher.js';
-
-function delay(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
 
 function controlledSessionWatch(): {
   watchDirectory: (
@@ -35,14 +32,6 @@ function controlledSessionWatch(): {
       onChange(filename);
     },
   };
-}
-
-async function waitFor(predicate: () => boolean, timeoutMs = 5000): Promise<void> {
-  const deadline = Date.now() + timeoutMs;
-  while (!predicate()) {
-    if (Date.now() > deadline) throw new Error('Timed out waiting for watcher condition');
-    await delay(10);
-  }
 }
 
 function manualClock(): {
@@ -82,6 +71,35 @@ function manualClock(): {
   };
 }
 
+/**
+ * A watcher over a scratch sessions root with one encoded-cwd folder, fed by a
+ * controlled watch and closed when the test ends.
+ */
+function watch(t: TestContext, options: Partial<SessionFileWatcherOptions> = {}) {
+  const root = mkdtempSync(join(tmpdir(), 'session-watcher-'));
+  const dir = join(root, 'encoded-cwd');
+  mkdirSync(dir);
+  const payloads: (SessionFileChange[] | null)[] = [];
+  const controlledWatch = controlledSessionWatch();
+  const watcher = startSessionFileWatcher(
+    {
+      root,
+      batchWindowMs: 0,
+      onExternalChange: (changes) => {
+        payloads.push(changes);
+      },
+      ...options,
+    },
+    controlledWatch.watchDirectory,
+  );
+  assert.ok(watcher);
+  t.after(() => {
+    watcher.close();
+    rmSync(root, { recursive: true, force: true });
+  });
+  return { dir, payloads, emit: controlledWatch.emit, watcher };
+}
+
 test('sessionIdFromSessionFileName extracts the provider session id', () => {
   assert.equal(sessionIdFromSessionFileName('encoded-cwd/dir/abc-123.jsonl'), 'abc-123');
   assert.equal(sessionIdFromSessionFileName('abc-123.jsonl'), 'abc-123');
@@ -91,196 +109,93 @@ test('sessionIdFromSessionFileName extracts the provider session id', () => {
   assert.equal(sessionIdFromSessionFileName(null), undefined);
 });
 
-test('external session file changes fire once with the changed files after writes settle', async () => {
-  const root = mkdtempSync(join(tmpdir(), 'session-watcher-'));
-  const dir = join(root, 'encoded-cwd');
-  mkdirSync(dir);
-  const payloads: (SessionFileChange[] | null)[] = [];
-  const controlledWatch = controlledSessionWatch();
-  const watcher = startSessionFileWatcher(
-    {
-      root,
-      batchWindowMs: 0,
-      onExternalChange: (changes) => {
-        payloads.push(changes);
-      },
-    },
-    controlledWatch.watchDirectory,
-  );
-  assert.ok(watcher);
-  try {
-    controlledWatch.emit('encoded-cwd/a.jsonl');
-    controlledWatch.emit('encoded-cwd/b.jsonl');
-    controlledWatch.emit('encoded-cwd/c.jsonl');
-    await waitFor(() => payloads.length === 1);
-    assert.equal(payloads.length, 1, 'a burst of changes coalesces into one callback');
-    const changes = payloads[0];
-    assert.ok(changes, 'file events explained by the batch reconcile exactly those files');
-    assert.deepEqual(
-      new Set(changes.map((change) => change.providerSessionId)),
-      new Set(['a', 'b', 'c']),
-    );
-    for (const change of changes) {
-      assert.equal(change.path, join(dir, `${change.providerSessionId}.jsonl`));
-    }
-  } finally {
-    watcher.close();
-    rmSync(root, { recursive: true, force: true });
-  }
-});
-
-test('a settings sidecar change reports its session file', async () => {
-  const root = mkdtempSync(join(tmpdir(), 'session-watcher-'));
-  const dir = join(root, 'encoded-cwd');
-  mkdirSync(dir);
-  const payloads: (SessionFileChange[] | null)[] = [];
-  const controlledWatch = controlledSessionWatch();
-  const watcher = startSessionFileWatcher(
-    {
-      root,
-      batchWindowMs: 0,
-      onExternalChange: (changes) => {
-        payloads.push(changes);
-      },
-    },
-    controlledWatch.watchDirectory,
-  );
-  assert.ok(watcher);
-  try {
-    controlledWatch.emit('encoded-cwd/a.settings.json');
-    await waitFor(() => payloads.length === 1);
-    const changes = payloads[0];
-    assert.ok(changes, 'a settings event next to its session file stays targeted');
-    assert.deepEqual(changes, [{ providerSessionId: 'a', path: join(dir, 'a.jsonl') }]);
-  } finally {
-    watcher.close();
-    rmSync(root, { recursive: true, force: true });
-  }
-});
-
-test('a subagent writing its own session file is reported while it keeps writing', () => {
-  const root = mkdtempSync(join(tmpdir(), 'session-watcher-'));
-  const dir = join(root, 'encoded-cwd');
-  mkdirSync(dir);
-  const payloads: (SessionFileChange[] | null)[] = [];
+test('external session and settings file changes fire once with their session files, until close', (t) => {
   const clock = manualClock();
-  const controlledWatch = controlledSessionWatch();
-  const watcher = startSessionFileWatcher(
-    {
-      root,
-      batchWindowMs: 1_500,
-      onExternalChange: (changes) => {
-        payloads.push(changes);
-      },
-      now: clock.now,
-      schedule: clock.schedule,
-      cancel: clock.cancel,
-    },
-    controlledWatch.watchDirectory,
+  const { dir, payloads, emit, watcher } = watch(t, {
+    now: clock.now,
+    schedule: clock.schedule,
+    cancel: clock.cancel,
+  });
+  emit('encoded-cwd/a.jsonl');
+  emit('encoded-cwd/b.jsonl');
+  // A settings sidecar reports the session file beside it.
+  emit('encoded-cwd/c.settings.json');
+  clock.advance(50);
+  assert.equal(payloads.length, 1, 'a burst of changes coalesces into one callback');
+  const changes = payloads[0];
+  assert.ok(changes, 'file events explained by the batch reconcile exactly those files');
+  assert.deepEqual(
+    new Set(changes.map((change) => change.providerSessionId)),
+    new Set(['a', 'b', 'c']),
   );
-  assert.ok(watcher);
+  for (const change of changes) {
+    assert.equal(change.path, join(dir, `${change.providerSessionId}.jsonl`));
+  }
+
+  watcher.close();
+  emit('encoded-cwd/d.jsonl');
+  clock.advance(50);
+  assert.equal(payloads.length, 1, 'close stops further callbacks');
+});
+
+test('a subagent writing its own session file is reported while it keeps writing', (t) => {
+  const clock = manualClock();
+  const { dir, payloads, emit } = watch(t, {
+    batchWindowMs: 1_500,
+    now: clock.now,
+    schedule: clock.schedule,
+    cancel: clock.cancel,
+  });
   const subagent = [{ providerSessionId: 'subagent', path: join(dir, 'subagent.jsonl') }];
-  try {
-    // A spawned subagent creates its session file and then writes to it for as
-    // long as it works.
-    controlledWatch.emit('encoded-cwd/subagent.jsonl');
-    clock.advance(50);
-    assert.deepEqual(payloads, [subagent], 'a file nobody has reported yet is not made to wait');
+  // A spawned subagent creates its session file and then writes to it for as
+  // long as it works.
+  emit('encoded-cwd/subagent.jsonl');
+  clock.advance(50);
+  assert.deepEqual(payloads, [subagent], 'a file nobody has reported yet is not made to wait');
 
-    for (let elapsed = 0; elapsed < 1_500; elapsed += 100) {
-      controlledWatch.emit('encoded-cwd/subagent.jsonl');
-      clock.advance(100);
-    }
-    assert.deepEqual(payloads, [subagent, subagent], 'later writes report once per batch window');
-  } finally {
-    watcher.close();
-    rmSync(root, { recursive: true, force: true });
+  for (let elapsed = 0; elapsed < 1_500; elapsed += 100) {
+    emit('encoded-cwd/subagent.jsonl');
+    clock.advance(100);
   }
+  assert.deepEqual(payloads, [subagent, subagent], 'later writes report once per batch window');
 });
 
-test('live session writes neither delay an external batch nor arm a timer', () => {
-  const root = mkdtempSync(join(tmpdir(), 'session-watcher-'));
-  const dir = join(root, 'encoded-cwd');
-  mkdirSync(dir);
-  const payloads: (SessionFileChange[] | null)[] = [];
+test('live session writes neither delay an external batch nor arm a timer', (t) => {
   const clock = manualClock();
-  const controlledWatch = controlledSessionWatch();
-  const watcher = startSessionFileWatcher(
-    {
-      root,
-      batchWindowMs: 1_500,
-      isLiveSession: (id) => id === 'live-1',
-      onExternalChange: (changes) => {
-        payloads.push(changes);
-      },
-      now: clock.now,
-      schedule: clock.schedule,
-      cancel: clock.cancel,
-    },
-    controlledWatch.watchDirectory,
-  );
-  assert.ok(watcher);
-  try {
-    for (let elapsed = 0; elapsed < 5_000; elapsed += 100) {
-      controlledWatch.emit('encoded-cwd/live-1.jsonl');
-      clock.advance(100);
-    }
-    assert.equal(clock.pendingTimers(), 0, 'a live session streaming alone schedules no work');
-    assert.equal(payloads.length, 0);
-
-    controlledWatch.emit('encoded-cwd/external-1.jsonl');
-    for (let elapsed = 0; elapsed < 1_500; elapsed += 100) {
-      controlledWatch.emit('encoded-cwd/live-1.jsonl');
-      clock.advance(100);
-    }
-    assert.deepEqual(
-      payloads,
-      [[{ providerSessionId: 'external-1', path: join(dir, 'external-1.jsonl') }]],
-      'the live stream neither delayed nor duplicated the external report',
-    );
-    assert.equal(
-      watcher.consumeLiveSessionFile('live-1'),
-      join(dir, 'live-1.jsonl'),
-      'live paths are still retained for targeted close reconciliation',
-    );
-    assert.equal(
-      watcher.consumeLiveSessionFile('live-1'),
-      undefined,
-      'consuming a live file path forgets it',
-    );
-  } finally {
-    watcher.close();
-    rmSync(root, { recursive: true, force: true });
+  const { dir, payloads, emit, watcher } = watch(t, {
+    batchWindowMs: 1_500,
+    isLiveSession: (id) => id === 'live-1',
+    now: clock.now,
+    schedule: clock.schedule,
+    cancel: clock.cancel,
+  });
+  for (let elapsed = 0; elapsed < 5_000; elapsed += 100) {
+    emit('encoded-cwd/live-1.jsonl');
+    clock.advance(100);
   }
-});
+  assert.equal(clock.pendingTimers(), 0, 'a live session streaming alone schedules no work');
+  assert.equal(payloads.length, 0);
 
-test('close stops further callbacks', async () => {
-  const root = mkdtempSync(join(tmpdir(), 'session-watcher-'));
-  const dir = join(root, 'encoded-cwd');
-  mkdirSync(dir);
-  let calls = 0;
-  const controlledWatch = controlledSessionWatch();
-  const watcher = startSessionFileWatcher(
-    {
-      root,
-      batchWindowMs: 0,
-      onExternalChange: () => {
-        calls += 1;
-      },
-    },
-    controlledWatch.watchDirectory,
-  );
-  assert.ok(watcher);
-  try {
-    controlledWatch.emit('encoded-cwd/a.jsonl');
-    await waitFor(() => calls === 1);
-    watcher.close();
-    controlledWatch.emit('encoded-cwd/b.jsonl');
-    assert.equal(calls, 1);
-  } finally {
-    watcher.close();
-    rmSync(root, { recursive: true, force: true });
+  emit('encoded-cwd/external-1.jsonl');
+  for (let elapsed = 0; elapsed < 1_500; elapsed += 100) {
+    emit('encoded-cwd/live-1.jsonl');
+    clock.advance(100);
   }
+  assert.deepEqual(
+    payloads,
+    [[{ providerSessionId: 'external-1', path: join(dir, 'external-1.jsonl') }]],
+    'the live stream neither delayed nor duplicated the external report',
+  );
+  assert.equal(
+    watcher.consumeLiveSessionFile('live-1'),
+    join(dir, 'live-1.jsonl'),
+    'live paths are still retained for targeted close reconciliation',
+  );
+  assert.equal(
+    watcher.consumeLiveSessionFile('live-1'),
+    undefined,
+    'consuming a live file path forgets it',
+  );
 });
 
 test('a missing sessions root is created, and an unwatchable one returns null', () => {
