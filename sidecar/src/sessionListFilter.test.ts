@@ -5,33 +5,10 @@ import {
   FAMILIAR_PREEXISTING_SESSIONS_PER_WORKSPACE,
   filterSessionListSummaries,
 } from './sessionListFilter.js';
+import { sessionSummary } from './testing/sessionSummaryFixture.js';
 
-const summary = (
-  appSessionId: string,
-  cwd: string,
-  updatedAt: number,
-  extra: Partial<SessionSummary> = {},
-): SessionSummary => ({
-  appSessionId,
-  providerSessionId: appSessionId,
-  provider: 'droid',
-  sessionPurpose: 'chat',
-  interactionMode: 'auto',
-  role: 'primary',
-  title: appSessionId,
-  goal: appSessionId,
-  cwd,
-  workspaceKind: cwd ? 'folder' : 'none',
-  autonomy: 'low',
-  phase: 'paused',
-  features: [],
-  tokensIn: 0,
-  tokensOut: 0,
-  contextTokens: 0,
-  createdAt: updatedAt,
-  updatedAt,
-  ...extra,
-});
+const summary = (appSessionId: string, cwd: string, updatedAt: number): SessionSummary =>
+  sessionSummary({ appSessionId, cwd, updatedAt });
 
 const nothingIsAppOwned = () => false;
 const ownedBy = (appSessionIds: string[]) => (row: SessionSummary) =>
@@ -101,7 +78,7 @@ test('revealing a workspace lists all its sessions and clears its count, leaving
   assert.deepEqual(page.earlierSessionsByCwd, { '/repo/app': 3 });
 });
 
-test('folder-less chats are never withheld', () => {
+test('folder-less chats are never withheld, and an unscoped list is not bounded', () => {
   const summaries = [
     ...Array.from({ length: 7 }, (_, i) => summary(`plain-${String(i)}`, '', i + 1)),
     ...Array.from({ length: 7 }, (_, i) => summary(`app-${String(i)}`, '/repo/app', i + 20)),
@@ -132,15 +109,8 @@ test('folder-less chats are never withheld', () => {
     ],
   );
   assert.deepEqual(page.earlierSessionsByCwd, { '/repo/app': 2 });
-});
 
-test('an unscoped list is not bounded', () => {
-  const summaries = Array.from({ length: 9 }, (_, i) =>
-    summary(`app-${String(i)}`, '/repo/app', i),
-  );
-
-  const page = filterSessionListSummaries(summaries, {}, nothingIsAppOwned);
-
-  assert.equal(page.sessions.length, 9);
-  assert.deepEqual(page.earlierSessionsByCwd, {});
+  const unscoped = filterSessionListSummaries(summaries, {}, nothingIsAppOwned);
+  assert.equal(unscoped.sessions.length, summaries.length);
+  assert.deepEqual(unscoped.earlierSessionsByCwd, {});
 });

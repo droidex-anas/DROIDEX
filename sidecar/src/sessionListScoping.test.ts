@@ -89,18 +89,7 @@ test('opening a folder lists the newest pre-existing sessions, every session DRO
   assert.equal(list.sessions.length, FAMILIAR_PREEXISTING_SESSIONS_PER_WORKSPACE + 1);
 });
 
-test('showing earlier sessions lists the whole folder and clears its count', async () => {
-  const list = await listSessions({
-    type: 'sessions.list',
-    workspaceCwds: [workspace],
-    revealEarlierCwds: [workspace],
-  });
-
-  assert.equal(list.sessions.length, PREEXISTING_COUNT + 1);
-  assert.deepEqual(list.earlierSessionsByCwd, {});
-});
-
-test('a revealed session still opens with its complete history', async () => {
+test('showing earlier sessions lists the whole folder, clears its count, and opens their complete history', async () => {
   const events: Protocol.ServerEvent[] = [];
   const manager = new SessionManager((event) => events.push(event));
   try {
@@ -114,6 +103,11 @@ test('a revealed session still opens with its complete history', async () => {
   } finally {
     await manager.shutdown();
   }
+
+  const list = events.filter((event) => event.type === 'sessions.list').at(-1);
+  assert.ok(list?.type === 'sessions.list');
+  assert.equal(list.sessions.length, PREEXISTING_COUNT + 1);
+  assert.deepEqual(list.earlierSessionsByCwd, {});
 
   const history = events.filter((event) => event.type === 'session.history').at(-1);
   assert.ok(history?.type === 'session.history');
