@@ -85,7 +85,8 @@ test('a turn that thinks, fails and goes idle ends, whichever of the error and t
       const settlement = stream.next();
       if (!idleBeforeConsumption)
         h.notify({ type: 'droid_working_state_changed', newState: 'idle' });
-      assert.equal((await settlement).done, true);
+      assert.deepEqual((await settlement).value, { done: true });
+      assert.equal((await stream.next()).done, true);
     } finally {
       await h.session.close();
     }

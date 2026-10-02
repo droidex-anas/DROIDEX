@@ -56,12 +56,15 @@ export class DroidProviderSession implements ProviderSession {
         if (normalized) yield normalized;
         if (event.type === 'error') failed = true;
         // Idle after an error is the end of the turn; its error is already shown.
+        // The turn is marked done the way the SDK's result would have marked it.
         else if (
           failed &&
           event.type === 'working_state_changed' &&
           event.state === DroidWorkingState.Idle
-        )
+        ) {
+          yield { done: true };
           return;
+        }
       }
     } catch (error) {
       const details = droidErrorDetails(errMsg(error));
