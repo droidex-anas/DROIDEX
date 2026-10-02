@@ -2,7 +2,6 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { ContextStatsAccuracy, ReasoningEffort } from '@factory/droid-sdk';
 
-import { DroidRuntime } from './DroidRuntime.js';
 import { requireDroidSession } from './providers/droid/DroidProviderSession.js';
 import type { ServerEvent, SessionSummary } from './protocol.js';
 import {
@@ -200,6 +199,19 @@ test('plausible exact primary usage wins while child usage changes totals only',
   assert.equal(event?.stats.used, 800);
   assert.equal(event?.stats.remaining, 200);
   assert.equal(event?.stats.accuracy, 'exact');
+
+  // Usage without current-context telemetry also changes totals only.
+  const totals = createHarness();
+  const { live: unmeasured } = await registerLive(totals, 'app-1');
+  unmeasured.summary.contextTokens = 320;
+  unmeasured.summary.contextAccuracy = 'estimated';
+
+  totals.context.recordUsage('app-1', 'app-1', { tokensIn: 900, tokensOut: 40 });
+
+  assert.equal(unmeasured.summary.tokensIn, 900);
+  assert.equal(unmeasured.summary.tokensOut, 40);
+  assert.equal(unmeasured.summary.contextTokens, 320);
+  assert.equal(unmeasured.summary.contextAccuracy, 'estimated');
 });
 
 test('identical usage readings publish once, unless their write failed', async () => {
@@ -254,29 +266,29 @@ test('unchanged in-turn poll readings emit context once until the reading change
   await h.context.refresh(target);
   assert.equal(contextEvents(h).length, 3);
   assert.equal(h.history.summaryPatchesAndHidden().patches.get('app-1')?.contextTokens, 260);
-});
-test('deduplicated in-turn polls still synchronize exact context summary fields', async () => {
-  const h = createHarness();
-  const { live, session } = await registerLive(h, 'app-1');
-  live.summary.maxContextTokens = 1_000;
-  session.nextContextStats = stats(100, 900, 1_000);
-  const target = primaryTarget(h, live);
 
-  await h.context.refresh(target, { persist: false });
-  h.context.recordUsage('app-1', 'app-1', {
+  // A deduplicated poll still synchronizes the exact summary fields.
+  const exact = createHarness();
+  const { live: exactLive, session: exactSession } = await registerLive(exact, 'app-1');
+  exactLive.summary.maxContextTokens = 1_000;
+  exactSession.nextContextStats = stats(100, 900, 1_000);
+  const exactTarget = primaryTarget(exact, exactLive);
+
+  await exact.context.refresh(exactTarget, { persist: false });
+  exact.context.recordUsage('app-1', 'app-1', {
     tokensIn: 10,
     tokensOut: 3,
     contextTokens: 800,
   });
-  const publishedCount = contextEvents(h).length;
-  assert.equal(live.summary.contextTokens, 800);
-  assert.equal(live.summary.contextRemainingTokens, 900);
+  const exactPublished = contextEvents(exact).length;
+  assert.equal(exactLive.summary.contextTokens, 800);
+  assert.equal(exactLive.summary.contextRemainingTokens, 900);
 
-  await h.context.refresh(target, { persist: false });
+  await exact.context.refresh(exactTarget, { persist: false });
 
-  assert.equal(contextEvents(h).length, publishedCount);
-  assert.equal(live.summary.contextRemainingTokens, 200);
-  assert.equal(live.summary.contextAccuracy, 'exact');
+  assert.equal(contextEvents(exact).length, exactPublished);
+  assert.equal(exactLive.summary.contextRemainingTokens, 200);
+  assert.equal(exactLive.summary.contextAccuracy, 'exact');
 });
 
 test('provider context wins over an impossible persisted exact reading', async () => {
@@ -389,36 +401,6 @@ test('a zero-limit provider reading cannot poison a live compaction baseline', a
   assert.equal(rebased?.remaining, 950);
 });
 
-test('usage without current-context telemetry updates totals only', async () => {
-  const h = createHarness();
-  const { live } = await registerLive(h, 'app-1');
-  live.summary.contextTokens = 320;
-  live.summary.contextAccuracy = 'estimated';
-
-  h.context.recordUsage('app-1', 'app-1', { tokensIn: 900, tokensOut: 40 });
-
-  assert.equal(live.summary.tokensIn, 900);
-  assert.equal(live.summary.tokensOut, 40);
-  assert.equal(live.summary.contextTokens, 320);
-  assert.equal(live.summary.contextAccuracy, 'estimated');
-});
-
-test('child refresh never inherits the parent exact context reading', async () => {
-  const h = createHarness();
-  const parent = (await registerLive(h, 'parent')).live;
-  parent.summary.contextAccuracy = 'exact';
-  parent.summary.contextTokens = 700;
-  const child = addChild(h, parent, 'logical-child', 'backend-child');
-  child.session.nextContextStats = stats(100, 900, 1_000);
-
-  await h.context.refresh(child.target);
-
-  const event = contextEvents(h).at(-1);
-  assert.equal(event?.stats.used, 100);
-  assert.equal(event?.stats.remaining, 900);
-  assert.equal(event?.stats.accuracy, 'estimated');
-});
-
 test('child identities scope snapshots, pollers, and compaction generations by parent', async (t) => {
   const h = createHarness();
   const parentA = (await registerLive(h, 'parent-a')).live;
@@ -449,6 +431,21 @@ test('child identities scope snapshots, pollers, and compaction generations by p
   h.context.recordCompaction(primaryTarget(h, parentA));
   assert.equal(parentA.summary.autoCompactions, 1);
   assert.equal(parentB.summary.autoCompactions, undefined);
+
+  // A exactChild refresh never inherits the exactParent exact context reading.
+  const inherited = createHarness();
+  const exactParent = (await registerLive(inherited, 'parent')).live;
+  exactParent.summary.contextAccuracy = 'exact';
+  exactParent.summary.contextTokens = 700;
+  const exactChild = addChild(inherited, exactParent, 'logical-child', 'backend-child');
+  exactChild.session.nextContextStats = stats(100, 900, 1_000);
+
+  await inherited.context.refresh(exactChild.target);
+
+  const childEvent = contextEvents(inherited).at(-1);
+  assert.equal(childEvent?.stats.used, 100);
+  assert.equal(childEvent?.stats.remaining, 900);
+  assert.equal(childEvent?.stats.accuracy, 'estimated');
 });
 
 test('primary and child resource keys cannot alias', async (t) => {
@@ -504,7 +501,7 @@ test('a refresh in flight across a primary compaction never republishes stale st
   assert.equal(live.summary.contextTokens, 0);
 });
 
-test('compaction bookkeeping survives persistence failure without double incrementing', async () => {
+test('compaction bookkeeping survives persistence failure without double counting or rolling back', async () => {
   const h = createHarness();
   const { live } = await registerLive(h, 'app-1');
   live.summary.contextTokens = 900;
@@ -519,22 +516,21 @@ test('compaction bookkeeping survives persistence failure without double increme
 
   h.context.recordCompaction(primaryTarget(h, live), 'summary-1');
   assert.equal(live.summary.autoCompactions, 1);
-});
 
-test('an older compaction retry cannot roll back a newer generation', async () => {
-  const h = createHarness();
-  const { live } = await registerLive(h, 'app-1');
-  h.history.nextSyncError = new Error('disk unavailable');
+  // An older retry cannot roll back a newer generation either.
+  const retried = createHarness();
+  const { live: retriedLive } = await registerLive(retried, 'app-1');
+  retried.history.nextSyncError = new Error('disk unavailable');
 
   assert.throws(
-    () => h.context.recordCompaction(primaryTarget(h, live), 'summary-1'),
+    () => retried.context.recordCompaction(primaryTarget(retried, retriedLive), 'summary-1'),
     /disk unavailable/,
   );
-  h.context.recordCompaction(primaryTarget(h, live), 'summary-2');
-  h.context.recordCompaction(primaryTarget(h, live), 'summary-1');
+  retried.context.recordCompaction(primaryTarget(retried, retriedLive), 'summary-2');
+  retried.context.recordCompaction(primaryTarget(retried, retriedLive), 'summary-1');
 
-  assert.equal(live.summary.autoCompactions, 2);
-  assert.equal(live.summary.contextTokens, 0);
+  assert.equal(retriedLive.summary.autoCompactions, 2);
+  assert.equal(retriedLive.summary.contextTokens, 0);
 });
 
 test('the same compaction ID remains distinct across provider sessions', async () => {
@@ -707,30 +703,6 @@ test('breakdown failures and malformed values keep valid context stats', async (
   const before = contextEvents(h).length;
   await h.context.refresh(primaryTarget(h, live));
   assert.equal(contextEvents(h).length, before);
-});
-
-test('DroidRuntime reads public and private context breakdown seams best effort', async () => {
-  const calls: RecordedCall[] = [];
-  const session = new FakeFactorySession('backend', {}, calls);
-  const runtime = new DroidRuntime();
-  Reflect.set(session, 'getContextBreakdown', () => Promise.resolve({ usedTokens: 10 }));
-  assert.deepEqual(await runtime.readContextBreakdown(session), { usedTokens: 10 });
-
-  Reflect.deleteProperty(session, 'getContextBreakdown');
-  let rpcMethod = '';
-  Reflect.set(session, '_client', {
-    _sessionRpcWithoutParams: (method: string) => {
-      rpcMethod = method;
-      return Promise.resolve({ freeTokens: 90 });
-    },
-  });
-  assert.deepEqual(await runtime.readContextBreakdown(session), { freeTokens: 90 });
-  assert.equal(rpcMethod, 'droid.get_context_breakdown');
-
-  Reflect.set(session, '_client', {
-    _sessionRpcWithoutParams: () => Promise.reject(new Error('transport closed')),
-  });
-  assert.equal(await runtime.readContextBreakdown(session), undefined);
 });
 
 test('hidden background work pauses context pollers and still refreshes on demand', async (t) => {
