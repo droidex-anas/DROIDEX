@@ -4,11 +4,13 @@ import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import {
   childSessionLineIsRunning,
+  feedItemPropsEqual,
   fetchSizeBadge,
   sameFeedEvents,
   UserBubble,
   WebFetchBody,
   FeedItemView,
+  type FeedItemViewProps,
 } from './chat';
 import { MessageFeed } from './MessageFeed';
 import { DiffCard } from './DiffView';
@@ -23,7 +25,7 @@ import {
   revealNextDiffCards,
 } from '../lib/diff';
 import { parseTruncatedTail } from '../lib/tools';
-import type { TranscriptEvent } from '../types/bridge';
+import type { ChildSessionSummary, TranscriptEvent } from '../types/bridge';
 
 let seq = 0;
 function ev(extra: Partial<TranscriptEvent>): TranscriptEvent {
@@ -533,6 +535,71 @@ test('settled compaction history does not show a live shimmer', () => {
     }),
   );
   assert.equal(html.includes('shimmer-text'), false);
+});
+
+test('feedItemPropsEqual re-renders agent rows, and folds holding them, only when agent data changes', () => {
+  const props = (
+    item: FeedItem,
+    overrides: Partial<FeedItemViewProps> = {},
+  ): FeedItemViewProps => ({
+    item,
+    live: false,
+    sessionLive: true,
+    ...overrides,
+  });
+  const spawn = ev({
+    kind: 'tool_call',
+    toolName: 'Task',
+    toolUseId: 't1',
+    toolArgs: { subagent_type: 'explorer' },
+  });
+  const wave: FeedItem = { type: 'child_sessions', key: 'wave', events: [spawn] };
+  const worked: FeedItem = { type: 'worked', key: 'worked', durationMs: 10, items: [wave] };
+  const prose: FeedItem = { type: 'message', key: 'prompt', event: userMsg('prompt') };
+  const dock = { sessions: [] as ChildSessionSummary[], models: [] };
+  const nextDock = { sessions: [] as ChildSessionSummary[], models: [] };
+  const running = () => ({ status: 'running' as const });
+  const completed = () => ({ status: 'completed' as const });
+
+  for (const item of [wave, worked]) {
+    assert.equal(
+      feedItemPropsEqual(props(item, { agentMonitor: dock }), props(item, { agentMonitor: dock })),
+      true,
+    );
+    assert.equal(
+      feedItemPropsEqual(
+        props(item, { agentMonitor: dock }),
+        props(item, { agentMonitor: nextDock }),
+      ),
+      false,
+    );
+    assert.equal(
+      feedItemPropsEqual(
+        props(item, { childSessionActivity: running }),
+        props(item, { childSessionActivity: completed }),
+      ),
+      false,
+    );
+  }
+  assert.equal(
+    feedItemPropsEqual(props(worked, { sessionLive: false }), props(worked, { sessionLive: true })),
+    false,
+  );
+  // Prose ignores agent data entirely.
+  assert.equal(
+    feedItemPropsEqual(
+      props(prose, { agentMonitor: dock }),
+      props(prose, { agentMonitor: nextDock }),
+    ),
+    true,
+  );
+  assert.equal(
+    feedItemPropsEqual(
+      props(prose, { childSessionActivity: running }),
+      props(prose, { childSessionActivity: completed }),
+    ),
+    true,
+  );
 });
 
 test('live commands show an activity cue at every density until their result lands', () => {

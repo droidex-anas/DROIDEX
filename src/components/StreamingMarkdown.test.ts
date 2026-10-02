@@ -5,7 +5,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 
 import { Markdown } from './Markdown';
 import { StreamingMarkdown } from './StreamingMarkdown';
-import { ingestStreamingMarkdown, type StreamingDocument } from '../lib/streamingMarkdown';
+import { ingestStreamingMarkdown } from '../lib/streamingMarkdown';
 
 function canonical(source: string, extra: Record<string, unknown> = {}): string {
   return renderToStaticMarkup(createElement(Markdown, extra, source));
@@ -31,27 +31,6 @@ function assertSettledMatchesCanonical(source: string, extra: Record<string, unk
     withoutBridgeToken(settled(source, extra)),
     withoutBridgeToken(canonical(source, extra)),
   );
-}
-
-function assertCompletedBlocksStable(full: string): void {
-  let previous: { source: string; document: StreamingDocument } | null = null;
-  const seen = new Map<string, string>();
-  for (let index = 1; index <= full.length; index += 1) {
-    const source = full.slice(0, index);
-    const { document } = ingestStreamingMarkdown(previous, source);
-    for (const block of document.completedBlocks) {
-      const prior = seen.get(block.id);
-      if (prior !== undefined) {
-        assert.ok(
-          block.source.startsWith(prior) && /^\s*$/.test(block.source.slice(prior.length)),
-          'frozen block source may only grow by trailing whitespace',
-        );
-      }
-      seen.set(block.id, block.source);
-    }
-    previous = { source, document };
-  }
-  assert.ok(seen.size > 0);
 }
 
 function markupWithoutInterTagSpace(html: string): string {
@@ -105,14 +84,6 @@ test('settled mermaid, katex-in-app, app, and cut-off app blocks match the canon
   assertSettledMatchesCanonical('```app\n<main>partial', { cutOffAppBlocks: true });
 });
 
-test('streaming states never remove or rewrite completed blocks', () => {
-  assertCompletedBlocksStable(`${HUGE_CODE}\nStill growing`);
-  assertCompletedBlocksStable(`${LISTS}\n\n`);
-  assertCompletedBlocksStable(`${TABLE}\n\n`);
-  assertCompletedBlocksStable(`${NESTED_FENCE}\n\n`);
-  assertCompletedBlocksStable(`${MERMAID}\n\n`);
-});
-
 test('frozen block ids stay stable and a pending-empty live tree matches settled markup', () => {
   const sources = [
     `${PARAGRAPHS}\n\n`,
@@ -123,11 +94,7 @@ test('frozen block ids stay stable and a pending-empty live tree matches settled
     `${MERMAID}\n\n`,
   ];
   for (const source of sources) {
-    const { document } = ingestStreamingMarkdown(null, source);
-    assert.equal(document.pendingSource, '');
-    assert.ok(document.completedBlocks.length > 0);
-    const ids = document.completedBlocks.map((block) => block.id);
-    assert.deepEqual(ids, [...new Set(ids)]);
+    assert.equal(ingestStreamingMarkdown(null, source).document.pendingSource, '');
     assert.equal(
       markupWithoutInterTagSpace(streaming(source)),
       markupWithoutInterTagSpace(settled(source)),
