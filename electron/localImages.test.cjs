@@ -23,16 +23,14 @@ test('imageMimeForPath maps known extensions case-insensitively', () => {
   assert.equal(imageMimeForPath('/tmp/noextension'), null);
 });
 
-test('localImageRequestPath round-trips spaces and slashes and expands a leading ~', () => {
+test('localImageRequestPath round-trips spaces, expands a leading ~, and refuses another scheme, a missing path, or a relative path', () => {
   const target = '/Users/me/Screen Shots/a b/c.png';
   assert.equal(localImageRequestPath(requestUrl(target)), target);
   assert.equal(
     localImageRequestPath(requestUrl('~/shots/a.png'), '/Users/me'),
     '/Users/me/shots/a.png',
   );
-});
 
-test('localImageRequestPath refuses another scheme, a missing path, and a relative path', () => {
   assert.throws(() => localImageRequestPath('file:///tmp/a.png'), /Unsupported scheme/);
   assert.throws(() => localImageRequestPath(`${LOCAL_IMAGE_SCHEME}://local/`), /missing a path/);
   assert.throws(() => localImageRequestPath(requestUrl('shots/a.png')), /must be absolute/);
