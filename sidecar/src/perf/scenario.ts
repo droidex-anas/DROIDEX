@@ -206,6 +206,25 @@ export function resolveScenario(name: string, overrides: ScenarioOverrides = {})
   return merged;
 }
 
+// The global plan orders turns across sessions for schedule fidelity, but
+// the replay runtime selects a session's plan by prompt count, so each
+// session's list must be in strict turn order before consumption.
+export function groupTurnsBySession(plan: ReplayPlan): Map<number, ReplayTurnPlan[]> {
+  const turnsBySession = new Map<number, ReplayTurnPlan[]>();
+  for (const turn of plan.turns) {
+    const existing = turnsBySession.get(turn.sessionIndex) ?? [];
+    existing.push(turn);
+    turnsBySession.set(turn.sessionIndex, existing);
+  }
+  for (const [index, turns] of turnsBySession) {
+    turnsBySession.set(
+      index,
+      turns.toSorted((a, b) => a.turn - b.turn),
+    );
+  }
+  return turnsBySession;
+}
+
 export function buildReplayPlan(spec: PerfScenarioSpec): ReplayPlan {
   const random = mulberry32(spec.seed);
   const turns: ReplayTurnPlan[] = [];

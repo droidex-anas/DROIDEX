@@ -1,5 +1,5 @@
 {
-  "threshold": 4,
+  "threshold": 2,
   "minTokens": 70,
   "minLines": 8,
   "reporters": ["console", "json"],
@@ -10,6 +10,7 @@
     "**/sidecar/dist/**",
     "**/package-lock.json",
     "**/*.test.ts",
-    "**/*.test.tsx"
+    "**/*.test.tsx",
+    "**/*.test.cjs"
   ]
 }

@@ -21,6 +21,7 @@ const os = require('node:os');
 const path = require('node:path');
 const { pathToFileURL } = require('node:url');
 const gitVcs = require('./git.cjs');
+const { expandHome } = gitVcs;
 const githubVcs = require('./github.cjs');
 const githubPrConversation = require('./githubPrConversation.cjs');
 const { createTerminalManager } = require('./terminal.cjs');
@@ -1287,9 +1288,4 @@ async function listFiles(dir) {
 
 function readFile(filePath) {
   return fsp.readFile(expandHome(filePath), 'utf8');
-}
-
-function expandHome(value) {
-  if (!value.startsWith('~/')) return value;
-  return path.join(app.getPath('home'), value.slice(2));
 }

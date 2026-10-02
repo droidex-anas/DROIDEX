@@ -439,20 +439,6 @@ function clampCap(value) {
   return Math.min(Math.floor(n), LISTING_CAP_MAX);
 }
 
-/**
- * Reads a preview payload for a single file under the session root.
- *
- * Behaviour by category:
- *   - text:  returns `{ text }` decoded as UTF-8, capped at TEXT_PREVIEW_CAP_BYTES.
- *   - image/pdf/docx/xlsx: returns `{ data: Buffer }` capped at BINARY_PREVIEW_CAP_BYTES.
- *   - external: no payload is read; the UI should fall back to opening the file
- *     in its OS default application. Returning early avoids hauling large
- *     macro-enabled or legacy payloads through IPC.
- *
- * Files larger than the category cap return `{ oversize: true }` with metadata
- * and no payload, so the UI can prompt the user to open externally rather than
- * silently truncating.
- */
 async function readExactBytes(handle, length) {
   const buffer = Buffer.alloc(length);
   let offset = 0;
@@ -467,10 +453,12 @@ async function readExactBytes(handle, length) {
   return buffer;
 }
 
-async function readPreview(rootDir, relativePath) {
-  const resolved = await resolveWithin(rootDir, relativePath);
+// Opens the target without following a final symlink and confirms the open
+// handle is a regular file that still sits at that path, so a swap between
+// resolution and open cannot redirect the read or the launch.
+async function openRegularFile(target, changedMessage) {
   const noFollow = process.platform === 'win32' ? 0 : fs.constants.O_NOFOLLOW;
-  const handle = await fsp.open(resolved.target, fs.constants.O_RDONLY | noFollow);
+  const handle = await fsp.open(target, fs.constants.O_RDONLY | noFollow);
   try {
     const stat = await handle.stat();
     if (!stat.isFile()) {
@@ -478,10 +466,35 @@ async function readPreview(rootDir, relativePath) {
       err.code = 'EINVAL';
       throw err;
     }
-    const pathStat = await fsp.lstat(resolved.target);
+    const pathStat = await fsp.lstat(target);
     if (stat.dev !== pathStat.dev || stat.ino !== pathStat.ino) {
-      throw new Error('file changed during preview');
+      throw new Error(changedMessage);
     }
+    return { handle, stat };
+  } catch (error) {
+    await handle.close();
+    throw error;
+  }
+}
+
+/**
+ * Reads a preview payload for a single file under the session root.
+ *
+ * Behaviour by category:
+ *   - text:  returns `{ text }` decoded as UTF-8, capped at TEXT_PREVIEW_CAP_BYTES.
+ *   - image/pdf/docx/xlsx: returns `{ data: Buffer }` capped at BINARY_PREVIEW_CAP_BYTES.
+ *   - external: no payload is read; the UI should fall back to opening the file
+ *     in its OS default application. Returning early avoids hauling large
+ *     macro-enabled or legacy payloads through IPC.
+ *
+ * Files larger than the category cap return `{ oversize: true }` with metadata
+ * and no payload, so the UI can prompt the user to open externally rather than
+ * silently truncating.
+ */
+async function readPreview(rootDir, relativePath) {
+  const resolved = await resolveWithin(rootDir, relativePath);
+  const { handle, stat } = await openRegularFile(resolved.target, 'file changed during preview');
+  try {
     const name = path.basename(resolved.target);
     const category = classifyByName(name);
     const totalSize = stat.size;
@@ -565,19 +578,8 @@ async function openDefault(rootDir, relativePath, shell) {
   if (typeof openPath !== 'function') {
     throw new Error('shell.openPath is required');
   }
-  const noFollow = process.platform === 'win32' ? 0 : fs.constants.O_NOFOLLOW;
-  const handle = await fsp.open(resolved.target, fs.constants.O_RDONLY | noFollow);
+  const { handle } = await openRegularFile(resolved.target, 'file changed before open');
   try {
-    const stat = await handle.stat();
-    if (!stat.isFile()) {
-      const err = new Error('not a file');
-      err.code = 'EINVAL';
-      throw err;
-    }
-    const pathStat = await fsp.lstat(resolved.target);
-    if (stat.dev !== pathStat.dev || stat.ino !== pathStat.ino) {
-      throw new Error('file changed before open');
-    }
     const openError = await openPath(resolved.target);
     if (typeof openError === 'string' && openError !== '') {
       throw new Error(openError);

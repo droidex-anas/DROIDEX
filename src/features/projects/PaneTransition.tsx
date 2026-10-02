@@ -2,8 +2,9 @@ import type { ReactNode } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { INLINE_CARD_DURATION_S, INLINE_CARD_EASE } from '../../components/inlineCardMotion';
 
-/* Going into a thread or a project and coming back is a lateral move, so the
-   list and the open view slide past each other the way the Subagents pane's do. */
+/* Going into a thread, a project or a subagent and coming back is a lateral
+   move, so the list and the open view slide past each other. Reduced motion
+   keeps the swap but drops the travel. */
 export function PaneTransition({
   open,
   reduceMotion,
