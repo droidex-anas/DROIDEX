@@ -40,7 +40,7 @@ test('a typed slash invocation separates the exact catalog skill from its prompt
   assert.equal(parseSlashSkillInvocation('/unknown leave this alone', skills), undefined);
 });
 
-test('a multi-skill prompt with no body peels the wrapper for display', () => {
+test('a prompt with no free text displays its Visualize and skill labels, peeling a multi-skill wrapper', () => {
   const composed = composePrompt('', ['review', 'semgrep'], []);
   assert.equal(composed, 'Use these skills: "review", "semgrep".');
   assert.deepEqual(promptDisplayParts(composed), {
@@ -54,6 +54,12 @@ test('a multi-skill prompt with no body peels the wrapper for display', () => {
     visualize: false,
   });
   assert.equal(promptDisplayText(composed), 'review, semgrep');
+
+  assert.equal(promptDisplayText('/visualize', []), 'Visualize');
+  assert.equal(promptDisplayText('/visualize', ['review']), 'Visualize, review');
+  assert.equal(promptDisplayText('/review', ['review']), 'review');
+  const ordinary = 'Use these skills: documentation.';
+  assert.equal(promptDisplayText(ordinary), ordinary);
 });
 
 test('promptDisplayParts peels Visualize and slash skills off composed text', () => {
@@ -101,7 +107,7 @@ test('promptDisplayParts peels Visualize and slash skills off composed text', ()
   }
 });
 
-test('the Visualize chip sends exactly what typing the command sends', () => {
+test('the Visualize chip sends what typing the command sends, and an existing App keeps follow-ups App-capable', () => {
   assert.equal(
     promptTextWithVisualize('compare renderer timings', true),
     '/visualize compare renderer timings',
@@ -113,9 +119,7 @@ test('the Visualize chip sends exactly what typing the command sends', () => {
   // /visualize stays an app command even when a provider skill has the same name.
   assert.equal(isVisualizeCommand('/visualize chart these results'), true);
   assert.equal(isVisualizeCommand('/visualizer is a different prompt'), false);
-});
 
-test('an existing App keeps follow-up prompts App-capable without another slash command', () => {
   assert.equal(responseFormatForPrompt('make the points larger', true), 'app-followup');
   assert.equal(responseFormatForPrompt('ordinary question', false), undefined);
   assert.equal(responseFormatForPrompt('/visualize a histogram', false), 'app-create');
@@ -136,12 +140,4 @@ test('a bare compact alias runs as a command only when nothing is staged', () =>
     false,
   );
   assert.equal(runsAsCompactCommand('/compact', { ...nothingStaged, skillCount: 1 }), false);
-});
-
-test('promptDisplayText keeps Visualize and skill labels when there is no free text', () => {
-  assert.equal(promptDisplayText('/visualize', []), 'Visualize');
-  assert.equal(promptDisplayText('/visualize', ['review']), 'Visualize, review');
-  assert.equal(promptDisplayText('/review', ['review']), 'review');
-  const ordinary = 'Use these skills: documentation.';
-  assert.equal(promptDisplayText(ordinary), ordinary);
 });

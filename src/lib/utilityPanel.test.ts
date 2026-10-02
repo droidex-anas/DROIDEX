@@ -41,7 +41,7 @@ test('terminal tabs are independent and closing the active tab chooses its neigh
   assert.equal(closeUtilityTab(closed, 'tab-1').open, false);
 });
 
-test('persisted utility panels are bounded, sanitized, and never keep terminal tabs', () => {
+test('persisted utility panels are bounded, sanitized, never keep terminal tabs, and drop a removed session', () => {
   assert.deepEqual(
     sanitizeUtilityPanels({
       session: {
@@ -70,19 +70,7 @@ test('persisted utility panels are bounded, sanitized, and never keep terminal t
   assert.deepEqual(persistUtilityPanels({ session: terminal }), {
     session: { open: false, tabs: [], activeTabId: null },
   });
-});
 
-test('running terminal tabs pin their session worktree', () => {
-  let panel = openUtilityTool(undefined, 'terminal', () => 'terminal', {
-    cwd: '/repo/original-worktree',
-  });
-  panel = updateUtilityTab(panel, 'terminal', { terminalId: 'pty-1' });
-  assert.deepEqual(utilityTerminalCwds({ session: panel }, { session: '/repo/new-worktree' }), [
-    '/repo/original-worktree',
-  ]);
-});
-
-test('removeSessionPanel drops only the given session', () => {
   const panels = {
     a: { open: true, tabs: [], activeTabId: null },
     b: { open: false, tabs: [], activeTabId: null },
@@ -92,7 +80,15 @@ test('removeSessionPanel drops only the given session', () => {
   assert.equal(removeSessionPanel(next, 'zzz'), next);
 });
 
-test('terminal cleanup retains terminal tabs from open and closed session panels in order', () => {
+test('running terminal tabs pin their worktree and terminal cleanup retains every session terminal tab in order', () => {
+  let panel = openUtilityTool(undefined, 'terminal', () => 'terminal', {
+    cwd: '/repo/original-worktree',
+  });
+  panel = updateUtilityTab(panel, 'terminal', { terminalId: 'pty-1' });
+  assert.deepEqual(utilityTerminalCwds({ session: panel }, { session: '/repo/new-worktree' }), [
+    '/repo/original-worktree',
+  ]);
+
   assert.equal(terminalTabIds({}), '');
   assert.equal(
     terminalTabIds({
