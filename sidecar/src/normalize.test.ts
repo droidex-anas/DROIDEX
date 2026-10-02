@@ -198,8 +198,13 @@ test('permission grant keys hash automation payloads and name the kind of chat a
   const prefix = 'x'.repeat(9_000);
   // A grant for one automation payload must not cover a different one.
   assert.notEqual(
-    permissionSignature(params(automation, { prompt: `${prefix}a` })),
-    permissionSignature(params(automation, { prompt: `${prefix}b` })),
+    permissionSignature(params(automation, { automationId: 'one', prompt: `${prefix}a` })),
+    permissionSignature(params(automation, { automationId: 'one', prompt: `${prefix}b` })),
+  );
+  // The same payload earns the same grant whatever order its keys arrive in.
+  assert.equal(
+    permissionSignature(params(automation, { automationId: 'one', prompt: 'p' })),
+    permissionSignature(params(automation, { prompt: 'p', automationId: 'one' })),
   );
 
   const spawn = (input: Record<string, unknown>) =>
