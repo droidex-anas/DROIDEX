@@ -4,14 +4,14 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'nod
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
-import type { PersistedChildSession } from './history.js';
-import { persistTestChild } from './testing/historyPersistenceFixture.js';
+import type { PersistedChildSession } from '../src/history.js';
+import { persistTestChild } from '../src/testing/historyPersistenceFixture.js';
 
 const originalHome = process.env.HOME;
 const home = mkdtempSync(join(tmpdir(), 'droid-child-session-persistence-'));
 process.env.HOME = home;
 
-const { HistoryIndex, SESSION_INDEX_FILENAME } = await import('./history.js');
+const { HistoryIndex, SESSION_INDEX_FILENAME } = await import('../src/history.js');
 
 test.after(() => {
   if (originalHome === undefined) delete process.env.HOME;

@@ -1,17 +1,20 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import type { PersistedChildSession } from './history.js';
+import type { PersistedChildSession } from '../src/history.js';
 import {
   HistoryPersistenceBackpressureError,
   HistoryPersistenceQueue,
-} from './HistoryPersistenceQueue.js';
-import type { HistoryPersistenceCall, HistoryPersistenceClient } from './HistoryWorkerClient.js';
+} from '../src/HistoryPersistenceQueue.js';
+import type {
+  HistoryPersistenceCall,
+  HistoryPersistenceClient,
+} from '../src/HistoryWorkerClient.js';
 import type {
   HistoryPersistenceBatch,
   HistoryPersistenceResult,
-} from './historyPersistenceProtocol.js';
-import type { SessionSearchResult, SessionSummary, TranscriptEvent } from './protocol.js';
+} from '../src/historyPersistenceProtocol.js';
+import type { SessionSearchResult, SessionSummary, TranscriptEvent } from '../src/protocol.js';
 
 class FakeClient implements HistoryPersistenceClient {
   readonly batches: HistoryPersistenceBatch[] = [];

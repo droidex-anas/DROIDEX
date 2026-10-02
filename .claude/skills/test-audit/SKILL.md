@@ -82,6 +82,9 @@ delete it.
    against the baseline. For a contract whose proof moved, mutate the
    production owner once and confirm the keeper goes red, then restore it.
 
+Never move a test into or out of `sidecar/regression/`, or edit one there;
+that held-out suite is changed only by a human.
+
 ## Validation
 
 1. `npm --prefix sidecar run typecheck` / `npm run typecheck`.

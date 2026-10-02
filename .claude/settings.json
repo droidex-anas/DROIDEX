@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "deny": [
+      "Read(/sidecar/regression/**)",
+      "Edit(/sidecar/regression/**)",
+      "Write(/sidecar/regression/**)"
+    ]
+  }
+}

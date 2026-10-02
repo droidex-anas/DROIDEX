@@ -124,6 +124,10 @@ The concrete limits, from `AGENTS.md`:
   to `npm run quality:perf-gates`.
 - Coverage floors in `test:ci` are a floor, not a target. Never add a test to
   raise a number.
+- When a change breaks an existing test, fix the change. Rewrite the test only
+  for an intended behaviour change, and say so in the pull request.
+- `sidecar/regression/` holds end-to-end contracts that agents do not edit and
+  `npm test` skips. CI runs them on every pull request.
 
 ## Validating your change
 

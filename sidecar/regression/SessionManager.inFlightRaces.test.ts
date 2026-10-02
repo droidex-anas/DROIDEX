@@ -2,12 +2,12 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import type { DroidStreamEvent, MessageOptions } from '@factory/droid-sdk';
 
-import { createMission } from './testing/childSettingsTestSupport.js';
-import { FakeFactorySession } from './testing/fakeFactoryRuntime.js';
+import { createMission } from '../src/testing/childSettingsTestSupport.js';
+import { FakeFactorySession } from '../src/testing/fakeFactoryRuntime.js';
 import {
   createSessionManagerTestContext,
   type SessionManagerTestContext,
-} from './testing/sessionManagerTestContext.js';
+} from '../src/testing/sessionManagerTestContext.js';
 
 class DirectPrimaryFailureSession extends FakeFactorySession {
   readonly streamStarted: Promise<void>;

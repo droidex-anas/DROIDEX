@@ -289,6 +289,12 @@ count, coverage targets, or a wish to look thorough.
   fix the code, not the test. Edit or delete an existing assertion only when the
   behavior change is intended, and name each such test in the pull request; CI
   flags these edits for the reviewer (`npm run quality:test-edits`).
+- `sidecar/regression/` is the held-out regression suite: end-to-end contracts
+  for history durability, child persistence, and session races. Agents may not
+  read or edit it (denied in `.claude/settings.json`) and `npm test` skips it;
+  `test:ci` runs it on every pull request, and
+  `npm --prefix sidecar run test:regression` runs it alone. When it fails, fix
+  the code. Only a human changes these tests, deliberately.
 
 Tests are maintained code too. Keep the ones whose protection justifies their
 cost.

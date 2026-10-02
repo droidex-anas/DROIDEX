@@ -5,10 +5,13 @@ import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import test from 'node:test';
 
-import { HistoryIndex } from './history.js';
-import { HistoryPersistenceDatabase } from './historyPersistenceDatabase.js';
-import type { HistoryPersistenceBatch, HistoryWriterLease } from './historyPersistenceProtocol.js';
-import type { SessionSummary } from './protocol.js';
+import { HistoryIndex } from '../src/history.js';
+import { HistoryPersistenceDatabase } from '../src/historyPersistenceDatabase.js';
+import type {
+  HistoryPersistenceBatch,
+  HistoryWriterLease,
+} from '../src/historyPersistenceProtocol.js';
+import type { SessionSummary } from '../src/protocol.js';
 
 function createSchema(path: string): void {
   const db = new DatabaseSync(path);
