@@ -474,58 +474,34 @@ test('browser authentication requires final gh auth verification and releases th
   assert.notEqual((await authenticate({ resolveGh: async () => null })).reason, 'busy');
 });
 
-test('timed-out browser authentication escalates when its child ignores SIGTERM', async () => {
-  const child = stubbornChild();
-  const { timers, ...timerOptions } = manualTimers();
-  const pending = authenticate({
-    resolveGh: async () => '/opt/homebrew/bin/gh',
-    spawnProcess: () => child,
-    verifyAuth: async () => true,
-    authTimeoutMs: 100,
-    terminationGraceMs: 25,
-    ...timerOptions,
-  });
-  await Promise.resolve();
+test('a timed-out or cancelled browser authentication escalates when its child ignores SIGTERM', async () => {
+  const outcomes = [
+    ['timeout', (timers) => timers[0].callback(), 'GitHub sign-in timed out.'],
+    ['cancelled', () => cancelSetup(), 'GitHub sign-in was cancelled.'],
+  ];
+  for (const [reason, interrupt, message] of outcomes) {
+    const child = stubbornChild();
+    const { timers, ...timerOptions } = manualTimers();
+    const pending = authenticate({
+      resolveGh: async () => '/opt/homebrew/bin/gh',
+      spawnProcess: () => child,
+      verifyAuth: async () => true,
+      authTimeoutMs: 100,
+      terminationGraceMs: 25,
+      ...timerOptions,
+    });
+    await Promise.resolve();
 
-  assert.equal(timers[0].timeoutMs, 100);
-  timers[0].callback();
-  await Promise.resolve();
-  assert.deepEqual(child.signals, ['SIGTERM']);
+    assert.equal(timers[0].timeoutMs, 100, reason);
+    interrupt(timers);
+    await Promise.resolve();
+    assert.deepEqual(child.signals, ['SIGTERM'], reason);
 
-  assert.equal(timers[1].timeoutMs, 25);
-  timers[1].callback();
-  assert.deepEqual(child.signals, ['SIGTERM', 'SIGKILL']);
-  assert.deepEqual(await pending, {
-    ok: false,
-    reason: 'timeout',
-    message: 'GitHub sign-in timed out.',
-  });
-});
-
-test('cancelling browser authentication escalates when its child ignores SIGTERM', async () => {
-  const child = stubbornChild();
-  const { timers, ...timerOptions } = manualTimers();
-  const pending = authenticate({
-    resolveGh: async () => '/opt/homebrew/bin/gh',
-    spawnProcess: () => child,
-    verifyAuth: async () => true,
-    authTimeoutMs: 1_000,
-    terminationGraceMs: 25,
-    ...timerOptions,
-  });
-  await Promise.resolve();
-
-  cancelSetup();
-  assert.deepEqual(child.signals, ['SIGTERM']);
-  assert.equal(timers[1].timeoutMs, 25);
-  timers[1].callback();
-
-  assert.deepEqual(child.signals, ['SIGTERM', 'SIGKILL']);
-  assert.deepEqual(await pending, {
-    ok: false,
-    reason: 'cancelled',
-    message: 'GitHub sign-in was cancelled.',
-  });
+    assert.equal(timers[1].timeoutMs, 25, reason);
+    timers[1].callback();
+    assert.deepEqual(child.signals, ['SIGTERM', 'SIGKILL'], reason);
+    assert.deepEqual(await pending, { ok: false, reason, message });
+  }
 });
 
 test('cancelling during final authentication verification cannot report success', async () => {
@@ -575,11 +551,25 @@ test('authentication cannot report success when its deadline expires during veri
   });
 });
 
-test('PR selectors accept only bare positive digit strings', () => {
+test('PR selectors accept only bare non-negative digit strings', () => {
   assert.equal(prSelector(78), '78');
   assert.equal(prSelector('078'), '078');
-  assert.equal(prSelector('--repo=other/repo'), null);
-  assert.equal(prSelector('https://github.com/example/repo/pull/78'), null);
+  assert.equal(prSelector(0), '0');
+  for (const value of [
+    null,
+    undefined,
+    '',
+    '-1',
+    '--repo=other/repo',
+    '12abc',
+    '1.5',
+    'feature/foo',
+    'https://github.com/example/repo/pull/78',
+    ' 12',
+    '12 ',
+  ]) {
+    assert.equal(prSelector(value), null, String(value));
+  }
 });
 
 test('listPrs returns normalized rows and the viewer login', async () => {

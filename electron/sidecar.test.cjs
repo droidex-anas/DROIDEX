@@ -160,22 +160,6 @@ test('stop resolves only after the sidecar process exits', async () => {
   assert.equal(stopped, true);
 });
 
-test('unexpected sidecar exits are forwarded to diagnostics', async () => {
-  const child = fakeChild();
-  const crashes = [];
-  const { supervisor } = harness([child, fakeChild()], {
-    onUnexpectedExit: (error) => crashes.push(error.message),
-  });
-  const started = supervisor.start();
-  child.stdout.write('SIDECAR_READY 43001\n');
-  await started;
-
-  child.emit('exit', 1, null);
-
-  assert.deepEqual(crashes, ['Sidecar exited unexpectedly (1).']);
-  assert.equal(supervisor.snapshot().lifecycle, 'restarting');
-});
-
 test('heartbeat arms one timeout at the interval and does not stack', async () => {
   const child = fakeChild();
   const { supervisor, scheduled } = harness([child]);
@@ -251,15 +235,20 @@ test('a live sidecar whose /health is blocked is degraded and is not restarted',
   );
 });
 
-test('bridge-info waits for the supervisor restart and does not spawn a second sidecar', async () => {
+test('an unexpected exit reports a crash and bridge-info waits for one supervised restart', async () => {
   const firstChild = fakeChild();
   const secondChild = fakeChild();
-  const { supervisor, calls, flushScheduled } = harness([firstChild, secondChild]);
+  const crashes = [];
+  const { supervisor, calls, flushScheduled } = harness([firstChild, secondChild], {
+    onUnexpectedExit: (error) => crashes.push(error.message),
+  });
   firstChild.stdout.write('SIDECAR_READY 43001\n');
   await supervisor.start();
   assert.equal(calls.length, 1);
 
   firstChild.emit('exit', 1, null);
+  assert.deepEqual(crashes, ['Sidecar exited unexpectedly (1).']);
+  assert.equal(supervisor.snapshot().lifecycle, 'restarting');
   const waiting = supervisor.getBridgeInfo();
   assert.equal(calls.length, 1);
 
