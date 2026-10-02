@@ -6,6 +6,7 @@ import { join } from 'node:path';
 import type { SessionSummary } from './protocol.js';
 import { providerSessionJsonl } from './testing/providerSessionFixtures.js';
 import { persistTestEvent, persistTestSummaries } from './testing/historyPersistenceFixture.js';
+import { sessionSummary } from './testing/sessionSummaryFixture.js';
 
 const originalHome = process.env.HOME;
 const home = mkdtempSync(join(tmpdir(), 'droid-history-home-'));
@@ -36,28 +37,14 @@ function writeSession(id: string, cwd: string, extra: Record<string, unknown> = 
 
 function summary(appSessionId: string, cwd: string): SessionSummary {
   const now = Date.now();
-  return {
+  return sessionSummary({
     appSessionId,
-    providerSessionId: appSessionId,
-    provider: 'droid',
-    sessionPurpose: 'chat',
-    interactionMode: 'auto',
-    role: 'primary',
     title: 'Plain chat',
-    goal: 'Plain chat',
     cwd,
     workspaceKind: cwd ? 'folder' : 'none',
-    autonomy: 'low',
-    phase: 'paused',
-    streaming: false,
-    queuedSends: 0,
-    features: [],
-    tokensIn: 0,
-    tokensOut: 0,
-    contextTokens: 0,
     createdAt: now,
     updatedAt: now,
-  };
+  });
 }
 
 test('loadHistoricalSessions applies app summaries before plain chat filtering', () => {
@@ -131,71 +118,26 @@ test('historical compaction markers hydrate the summary generation', () => {
   assert.equal(row?.summary.autoCompactions, 4);
 });
 
-test('loadHistoricalSessions hides a Task-spawned child from its raw parent link', () => {
-  const cwd = join(home, 'workspace-child');
-  writeSession('real-session', cwd);
-  writeSession('child-session', cwd, {
-    callingSessionId: 'real-session',
-    callingToolUseId: 'tool-1',
-  });
-  const rows = loadHistoricalSessions({ workspaceCwds: [cwd] });
-
-  assert.deepEqual(
-    rows.map((row) => row.summary.appSessionId),
-    ['real-session'],
-  );
-});
-
-test('loadHistoricalSessions hides a Task child session even when its link is missing', () => {
-  const cwd = join(home, 'workspace-orphan');
-  writeSession('orphan-parent', cwd);
-  // Task children never appear as top-level sessions. A missing canonical link
-  // is an invalid local state, not a second history behavior.
-  writeSession('orphan-child', cwd, {
-    callingSessionId: 'orphan-parent',
-    callingToolUseId: 'tool-7',
-  });
-
-  const rows = loadHistoricalSessions({ workspaceCwds: [cwd] });
-
-  assert.deepEqual(
-    rows.map((row) => row.summary.appSessionId),
-    ['orphan-parent'],
-  );
-});
-
-test('loadHistoricalSessions keeps a rekeyed worker hidden under its superseded id', () => {
-  const cwd = join(home, 'workspace-rekey');
-  writeSession('rekey-parent', cwd);
-  writeSession('worker-old', cwd, { callingSessionId: 'rekey-parent', callingToolUseId: 'tool-r' });
-  writeSession('worker-new', cwd, { callingSessionId: 'rekey-parent', callingToolUseId: 'tool-r' });
-
-  const rows = loadHistoricalSessions({ workspaceCwds: [cwd] });
-
-  // Both the pre- and post-rekey worker sessions stay hidden; only the parent shows.
-  assert.deepEqual(
-    rows.map((row) => row.summary.appSessionId),
-    ['rekey-parent'],
-  );
-});
-
-test('loadHistoricalSessions keeps forked chats (bare parent, no spawn markers) visible', () => {
-  const cwd = join(home, 'workspace-fork');
-  writeSession('source-session', cwd);
-  // A forked chat carries a `parent` link but no callingSessionId/callingToolUseId;
-  // it is a standalone conversation and must stay in history.
-  writeSession('forked-session', cwd, { parent: 'source-session' });
-  // A real Task child (spawn markers present) must still be hidden.
-  writeSession('task-child', cwd, {
-    parent: 'source-session',
-    callingSessionId: 'source-session',
+test('loadHistoricalSessions hides Task children under any id, while forked chats stay visible', () => {
+  const cwd = join(home, 'workspace-children');
+  writeSession('parent', cwd);
+  writeSession('task-child', cwd, { callingSessionId: 'parent', callingToolUseId: 'tool-1' });
+  // A rekeyed worker leaves its pre- and post-rekey files under one spawn.
+  writeSession('worker-old', cwd, { callingSessionId: 'parent', callingToolUseId: 'tool-r' });
+  writeSession('worker-new', cwd, { callingSessionId: 'parent', callingToolUseId: 'tool-r' });
+  // A forked chat carries a `parent` link but no spawn markers: it is a
+  // standalone conversation. A Task child of it still has both.
+  writeSession('forked-session', cwd, { parent: 'parent' });
+  writeSession('fork-task-child', cwd, {
+    parent: 'forked-session',
+    callingSessionId: 'forked-session',
     callingToolUseId: 'tool-9',
   });
   const rows = loadHistoricalSessions({ workspaceCwds: [cwd] });
 
   assert.deepEqual(rows.map((row) => row.summary.appSessionId).sort(), [
     'forked-session',
-    'source-session',
+    'parent',
   ]);
 });
 
