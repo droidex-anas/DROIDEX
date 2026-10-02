@@ -26,7 +26,6 @@ function createBrowserScreenshot({ reading, nativeImage, redactUrl }) {
   const unanswered = new WeakSet();
 
   async function take(contents, entry, options = {}) {
-    if (unanswered.has(contents)) throw new Error(NOT_DRAWN);
     for (let attempt = 0; attempt < 2; attempt++) {
       const shot = await reading.withPage(contents, (dbg) =>
         attemptShot(dbg, contents, entry, options),
@@ -39,6 +38,9 @@ function createBrowserScreenshot({ reading, nativeImage, redactUrl }) {
   // Undefined when the page moved, navigated or changed its fields between
   // the mask and the capture.
   async function attemptShot(dbg, contents, entry, options) {
+    // Checked when the page's turn comes: a capture queued behind one that
+    // then went unanswered must not be sent either.
+    if (unanswered.has(contents)) throw new Error(NOT_DRAWN);
     // A ref is scrolled into view only while the caller still waits.
     const notLate = () => {
       if (Date.now() >= options.startBy)
