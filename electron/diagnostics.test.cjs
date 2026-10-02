@@ -350,31 +350,30 @@ test('manual feedback retains retry state on network failure and timeout', async
   );
 });
 
-test('manual feedback timeout remains active while Sentry acknowledgment stalls', async () => {
-  const diagnostics = createDiagnostics(
-    diagnosticsOptions(
-      {},
-      {
-        deliveryTimeoutMs: 5,
-        fetch: async () => ({
-          ok: true,
-          status: 200,
-          json: async () => new Promise(() => undefined),
-        }),
-      },
-    ),
-  );
+test(
+  'manual feedback timeout remains active while Sentry acknowledgment stalls',
+  { timeout: 1_000 },
+  async () => {
+    const diagnostics = createDiagnostics(
+      diagnosticsOptions(
+        {},
+        {
+          deliveryTimeoutMs: 5,
+          fetch: async () => ({
+            ok: true,
+            status: 200,
+            json: async () => new Promise(() => undefined),
+          }),
+        },
+      ),
+    );
 
-  const outcome = await Promise.race([
-    diagnostics.reportFeedback({ category: 'other', description: 'Useful details' }).then(
-      () => 'unexpected success',
-      (error) => String(error.message),
-    ),
-    new Promise((resolve) => setTimeout(() => resolve('hung'), 50)),
-  ]);
-
-  assert.match(outcome, /delivery timed out/);
-});
+    await assert.rejects(
+      () => diagnostics.reportFeedback({ category: 'other', description: 'Useful details' }),
+      /delivery timed out/,
+    );
+  },
+);
 
 test('crash payloads remove requests and user fields except id, keep filtered breadcrumbs', () => {
   assert.deepEqual(

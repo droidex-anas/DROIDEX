@@ -4,6 +4,34 @@
       "count": 98
     }
   },
+  "sidecar/src/ChildSessions.test.ts": {
+    "max-lines": {
+      "count": 1
+    }
+  },
+  "sidecar/src/SessionLifecycle.test.ts": {
+    "max-lines": {
+      "count": 1
+    }
+  },
+  "sidecar/src/SessionManager.sessionRetirement.test.ts": {
+    "no-restricted-syntax": {
+      "count": 1
+    }
+  },
+  "sidecar/src/SessionTimeline.test.ts": {
+    "max-lines": {
+      "count": 1
+    },
+    "no-restricted-syntax": {
+      "count": 1
+    }
+  },
+  "sidecar/src/automations/AutomationManager.test.ts": {
+    "no-restricted-syntax": {
+      "count": 1
+    }
+  },
   "sidecar/src/browser/BrowserSessionManager.test.ts": {
     "@typescript-eslint/no-unused-vars": {
       "count": 1
@@ -75,6 +103,16 @@
     },
     "@typescript-eslint/prefer-nullish-coalescing": {
       "count": 29
+    }
+  },
+  "sidecar/src/projects/ProjectService.test.ts": {
+    "max-lines": {
+      "count": 1
+    }
+  },
+  "sidecar/src/sessionFileWatcher.test.ts": {
+    "no-restricted-syntax": {
+      "count": 1
     }
   },
   "sidecar/src/skillSignals.ts": {
@@ -293,6 +331,11 @@
     },
     "@typescript-eslint/restrict-template-expressions": {
       "count": 1
+    }
+  },
+  "src/hooks/useWorkspaceScopes.test.ts": {
+    "no-restricted-syntax": {
+      "count": 4
     }
   },
   "src/lib/filePresentation.ts": {

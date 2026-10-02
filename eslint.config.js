@@ -144,5 +144,21 @@ export default tseslint.config(
     },
   },
 
+  {
+    // Test budget; see "Verification and tests" in AGENTS.md.
+    files: ['**/*.test.{ts,tsx,cjs}'],
+    rules: {
+      'max-lines': ['error', { max: 800, skipBlankLines: true, skipComments: true }],
+      'no-restricted-syntax': [
+        'error',
+        {
+          selector:
+            "NewExpression[callee.name='Promise'] > ArrowFunctionExpression > CallExpression[callee.name='setTimeout'][arguments.length=2]:not([arguments.1.value=0])",
+          message: 'No sleeps in tests. Use controlled promises or mocked timers.',
+        },
+      ],
+    },
+  },
+
   prettierConfig,
 );

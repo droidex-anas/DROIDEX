@@ -278,6 +278,9 @@ count, coverage targets, or a wish to look thorough.
   throughput belong to the perf replay harness (`npm run quality:perf-gates`).
   No tests that only fail when the process lacks file permissions; inject the
   failure through a fake instead.
+- ESLint enforces the 800-line test file cap and the no-sleep rule. Files that
+  predate them are recorded in `eslint-suppressions.json`; that list only
+  shrinks.
 - Write as many throwaway tests, probes, and reproduction scripts as you need
   while working; they are tools, not deliverables. Before committing, keep only
   the tests whose ongoing protection is worth their maintenance and delete the
