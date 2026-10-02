@@ -2,9 +2,16 @@ import assert from 'node:assert/strict';
 import { mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import test from 'node:test';
+import test, { type TestContext } from 'node:test';
 import { fitLedger, LEDGER_LIMITS, ProjectStore, threadInputSchema } from './store.js';
 import type { Project } from './types.js';
+
+/** The ledger path in a scratch directory removed after the test. */
+async function ledgerPath(t: TestContext): Promise<string> {
+  const directory = await mkdtemp(join(tmpdir(), 'droidex-projects-'));
+  t.after(() => rm(directory, { recursive: true, force: true }));
+  return join(directory, 'projects.json');
+}
 
 function project(): Project {
   return {
@@ -19,9 +26,7 @@ function project(): Project {
 }
 
 test('a missing ledger is empty, writes are ordered, and a fresh reader restores the last snapshot', async (t) => {
-  const directory = await mkdtemp(join(tmpdir(), 'droidex-projects-'));
-  t.after(() => rm(directory, { recursive: true, force: true }));
-  const path = join(directory, 'projects.json');
+  const path = await ledgerPath(t);
   const store = new ProjectStore(path);
   assert.deepEqual(await store.load(), []);
   const first = project();
@@ -39,9 +44,7 @@ test('a missing ledger is empty, writes are ordered, and a fresh reader restores
 });
 
 test('a ledger past its budget sheds the oldest replies first and still saves', async (t) => {
-  const directory = await mkdtemp(join(tmpdir(), 'droidex-projects-'));
-  t.after(() => rm(directory, { recursive: true, force: true }));
-  const path = join(directory, 'projects.json');
+  const path = await ledgerPath(t);
   const reply = 'x'.repeat(LEDGER_LIMITS.text);
   // Fifteen projects whose nine threads each hold every reply the ledger keeps.
   const projects: Project[] = Array.from({ length: 15 }, (_, index) => ({
@@ -74,9 +77,7 @@ test('a ledger past its budget sheds the oldest replies first and still saves', 
 });
 
 test('a thread whose final reply was shed says so after a reload', async (t) => {
-  const directory = await mkdtemp(join(tmpdir(), 'droidex-projects-'));
-  t.after(() => rm(directory, { recursive: true, force: true }));
-  const path = join(directory, 'projects.json');
+  const path = await ledgerPath(t);
   const reply = 'x'.repeat(LEDGER_LIMITS.text);
   // Final replies alone past the budget, with no earlier replies left to shed.
   const projects: Project[] = [
@@ -107,21 +108,14 @@ test('a thread whose final reply was shed says so after a reload', async (t) => 
   assert.equal(threads.find((thread) => thread.appSessionId === 'main')?.repliesShed, undefined);
 });
 
-test('corruption is reported without overwriting the user’s saved data', async (t) => {
-  const directory = await mkdtemp(join(tmpdir(), 'droidex-projects-'));
-  t.after(() => rm(directory, { recursive: true, force: true }));
-  const path = join(directory, 'projects.json');
-  const raw = '{broken';
-  await writeFile(path, raw);
-  await assert.rejects(new ProjectStore(path).load());
-  assert.equal(await readFile(path, 'utf8'), raw);
-});
-
-test('unknown owners, duplicate identities, cycles and foreign message targets are rejected', async (t) => {
-  const directory = await mkdtemp(join(tmpdir(), 'droidex-projects-'));
-  t.after(() => rm(directory, { recursive: true, force: true }));
-  const path = join(directory, 'projects.json');
+test('corrupt ledgers, unknown owners, duplicates, cycles and foreign targets are refused, and a renderer cannot name an owner', async (t) => {
+  const path = await ledgerPath(t);
   const store = new ProjectStore(path);
+  // Corruption is reported without overwriting the user's saved data.
+  await writeFile(path, '{broken');
+  await assert.rejects(store.load());
+  assert.equal(await readFile(path, 'utf8'), '{broken');
+
   const duplicate = project();
   await writeFile(path, JSON.stringify([duplicate, { ...duplicate, id: 'other' }]));
   await assert.rejects(store.load(), /multiple projects/);
@@ -155,9 +149,7 @@ test('unknown owners, duplicate identities, cycles and foreign message targets a
   });
   await writeFile(path, JSON.stringify([foreign]));
   await assert.rejects(store.load(), /target/);
-});
 
-test('a renderer command cannot name a thread owner', () => {
   const input = { title: 'Task', prompt: 'Work', provider: 'droid', autonomy: 'low' };
   assert.equal(
     threadInputSchema.safeParse({ ...input, ownerAppSessionId: 'spoofed' }).success,
