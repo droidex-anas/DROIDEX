@@ -16,6 +16,7 @@ import {
   typeShape,
   waitShape,
 } from './browserActionTools.js';
+import { consoleText, inspectionText, networkText } from './browserDebugText.js';
 
 const viewportModeSchema = z.enum(['fit', 'desktop', 'laptop', 'tablet', 'mobile']);
 
@@ -282,55 +283,32 @@ export function createBrowserMcpServer(
       tool(
         'browser_inspect',
         [
-          'Inspect one element without enabling Design Mode or taking another full-page snapshot.',
-          'Returns bounded HTML, sanitized attributes, geometry, and iframe source/accessibility metadata.',
-          'Use a ref from browser_read_page when possible, or provide a CSS selector.',
-          'Credential values, auth tokens, and sensitive URL parameters are redacted.',
+          'Look at one element: its role and name, box, key attributes, the computed styles that say how it looks (colours, font, display, spacing), its text and its markup.',
+          'Pass a ref from browser_read_page, or a CSS selector. Field values, tokens and sensitive URL parts are redacted.',
         ].join(' '),
         {
           ref: z.string().optional().describe('Element ref from browser_read_page.'),
           selector: z.string().optional().describe('CSS selector when no ref is available.'),
         },
-        safeTool(async (input) => {
-          const inspection = await manager.inspect(appSessionId(), input);
-          return jsonResult({ ok: true, inspection });
-        }),
+        safeTool(async (input) => inspectionText(await manager.inspect(appSessionId(), input))),
       ),
       tool(
         'browser_network',
         [
-          'Read the latest bounded network diagnostics for this browser session.',
-          'Returns at most 100 completed or failed requests with method, URL, resource type, status, and error.',
-          'Headers and response bodies are never captured; credentials and sensitive URL parameters are redacted.',
+          'The requests the page finished since you last read them, the newest 100 at most: status or failure, method, URL, type, how long each took once it was sent, and its size when the server stated one.',
+          'No headers or bodies; credentials and sensitive URL parts are redacted.',
         ].join(' '),
-        {
-          clear: z
-            .boolean()
-            .optional()
-            .describe('Return the current events and clear the retained buffer afterward.'),
-        },
-        safeTool(async (input) => {
-          const events = await manager.network(appSessionId(), input.clear ?? false);
-          return jsonResult({ ok: true, events });
-        }),
+        {},
+        safeTool(async () => networkText(await manager.network(appSessionId()))),
       ),
       tool(
         'browser_console',
         [
-          'Read the latest bounded JavaScript console diagnostics for this browser session.',
-          'Returns at most 100 entries with level, message, line, and source.',
-          'Messages and source URLs are length-limited and credential-like values are redacted.',
+          'The console messages and uncaught errors since you last read them, the newest 100 at most: level, message and where it came from.',
+          "Messages are length-limited, and the usual shapes of a credential in them (in a URL, or after a name such as token=) are redacted; this is the page's own text, not a guarantee that no secret is in it.",
         ].join(' '),
-        {
-          clear: z
-            .boolean()
-            .optional()
-            .describe('Return the current entries and clear the retained buffer afterward.'),
-        },
-        safeTool(async (input) => {
-          const events = await manager.console(appSessionId(), input.clear ?? false);
-          return jsonResult({ ok: true, events });
-        }),
+        {},
+        safeTool(async () => consoleText(await manager.console(appSessionId()))),
       ),
       tool(
         'browser_fill_login',

@@ -183,6 +183,7 @@ test('resize and diagnostic requests use dedicated native actions', async () => 
                 selector: '#frame',
                 tagName: 'iframe',
                 attributes: { src: 'https://video.example/embed' },
+                styles: {},
                 box: { x: 0, y: 0, width: 640, height: 360 },
                 html: '<iframe src="https://video.example/embed"></iframe>',
               }
@@ -201,8 +202,8 @@ test('resize and diagnostic requests use dedicated native actions', async () => 
 
   await runtime.setViewport({ width: 390, height: 844, deviceScaleFactor: 2 }, 'mobile');
   const inspection = await runtime.inspect({ selector: '#frame' });
-  const network = await runtime.network(true);
-  const consoleEvents = await runtime.console(true);
+  const network = await runtime.network();
+  const consoleEvents = await runtime.console();
 
   assert.equal(inspection.tagName, 'iframe');
   assert.equal(network[0]?.status, 200);
@@ -211,6 +212,4 @@ test('resize and diagnostic requests use dedicated native actions', async () => 
     requests.map((request) => request.action),
     ['resize', 'inspect', 'network', 'console'],
   );
-  assert.equal(requests[2]?.clearNetworkLog, true);
-  assert.equal(requests[3]?.clearConsoleLog, true);
 });

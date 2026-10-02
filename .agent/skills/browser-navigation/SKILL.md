@@ -22,6 +22,7 @@ If the user names a site or domain, do not ask what URL to open. Call `browser_o
 5. Use `droidex-browser___browser_open` with `action: "back"`, `"forward"` or `"reload"` to move through history or reload.
 6. Read the page again after a navigation; a ref from an earlier page is refused rather than acted on.
 7. Use `droidex-browser___browser_screenshot` only when visual inspection is needed. It returns a JPEG (a PNG with `format: "png"`) of the viewport, of one `ref`, of a `region`, or of the `full_page`, and states how image points convert to CSS pixels. Sensitive fields are painted over.
+8. When a page misbehaves, `droidex-browser___browser_console` gives the console messages and uncaught errors since you last read them, `droidex-browser___browser_network` the requests finished since then (status or failure, time, size), and `droidex-browser___browser_inspect` one element's box, attributes, key styles and markup. An action's answer says when new console errors appeared.
 
 ## Design Mode
 
