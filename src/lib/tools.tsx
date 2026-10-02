@@ -1,4 +1,5 @@
 import type { TranscriptEvent } from '../types/bridge';
+import { browserToolOf, describeBrowserCall } from './browserTools';
 import { isChildSessionTool } from './childSessionEvents';
 export { childSessionInfo, isChildSessionTool } from './childSessionEvents';
 
@@ -157,6 +158,10 @@ export function describeToolCall(name?: string, args?: unknown): ToolCallLabel {
   // Every namespaced tool names its server, categorised or not, so a GitHub
   // server's create call can wear the octocat like its uncategorised siblings.
   const source = server ? server.replace(/[_-]+/g, ' ') : undefined;
+  // The app's own browser tools say what the agent did on the page.
+  const browserTool = browserToolOf(name);
+  const step = browserTool ? describeBrowserCall(browserTool, a) : null;
+  if (step) return { ...step, objectKind: step.object ? 'text' : 'none', source };
   if (cat === 'other') {
     // No card, no borrowed verb: the tool says its own name, and one argument
     // stands in for what it was asked to do.
