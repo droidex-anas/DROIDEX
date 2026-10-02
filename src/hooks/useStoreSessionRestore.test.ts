@@ -3,50 +3,22 @@ import assert from 'node:assert/strict';
 import { reducer, initialState } from './useStore';
 import type { AppState } from './useStore';
 import type { TranscriptEvent } from '../types/bridge';
+import { textEvent } from '../test/textEvent';
 
-function ev(id: string, ts: number, text = id): TranscriptEvent {
-  return {
-    id,
-    appSessionId: 'm1',
-    sourceSessionId: 'primary',
-    role: 'primary',
-    kind: 'text',
-    text,
-    ts,
-  };
-}
+const ev = (id: string, ts: number, text = id) => textEvent(id, { appSessionId: 'm1', ts, text });
 
-function userEv(id: string, ts: number, text: string): TranscriptEvent {
-  return {
-    id,
-    appSessionId: 'm1',
-    sourceSessionId: 'user',
-    role: 'primary',
-    kind: 'text',
-    text,
-    ts,
-    author: 'user',
-  };
-}
+const userEv = (id: string, ts: number, text: string) =>
+  textEvent(id, { appSessionId: 'm1', sourceSessionId: 'user', ts, text, author: 'user' });
 
-function childEv(
-  childSessionId: string,
-  id: string,
-  ts: number,
-  text = id,
-  author?: 'user',
-): TranscriptEvent {
-  return {
-    id,
+const childEv = (childSessionId: string, id: string, ts: number, text = id, author?: 'user') =>
+  textEvent(id, {
     appSessionId: 'm1',
     sourceSessionId: childSessionId,
     role: 'worker',
-    kind: 'text',
-    text,
     ts,
+    text,
     author,
-  };
-}
+  });
 
 /** Seeds m1 with live transcript events (and any other state) before a restore. */
 function withLive(events: TranscriptEvent[], extra: Partial<AppState> = {}): AppState {

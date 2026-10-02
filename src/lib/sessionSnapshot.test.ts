@@ -12,6 +12,7 @@ import {
   MAX_SNAPSHOT_TRANSCRIPT_BYTES,
 } from './sessionSnapshot';
 import { sessionSummary } from '../test/sessionSummary';
+import { textEvent } from '../test/textEvent';
 
 const SNAPSHOT_KEY = 'droid-session-snapshot-v1';
 
@@ -37,17 +38,8 @@ const summary = (id: string, updatedAt = 1) =>
     updatedAt,
   });
 
-function event(id: string, ts: number, text = id): TranscriptEvent {
-  return {
-    id,
-    appSessionId: 's1',
-    sourceSessionId: 'primary',
-    role: 'primary',
-    kind: 'text',
-    text,
-    ts,
-  };
-}
+const event = (id: string, ts: number, text = id) =>
+  textEvent(id, { appSessionId: 's1', ts, text });
 
 /** Loads the snapshot from a stored payload, as a relaunch would. */
 function loadStored(payload: unknown): ReturnType<typeof loadSessionSnapshot> {

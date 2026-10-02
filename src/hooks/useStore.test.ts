@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { initialState, reducer, type AppState } from './useStore';
 import type { TranscriptEvent } from '../types/bridge';
 import { sessionSummary } from '../test/sessionSummary';
+import { textEvent } from '../test/textEvent';
 
 const session = (appSessionId: string, updatedAt: number) =>
   sessionSummary(appSessionId, {
@@ -12,18 +13,8 @@ const session = (appSessionId: string, updatedAt: number) =>
     updatedAt,
   });
 
-function assistantText(id: string, ts: number): TranscriptEvent {
-  return {
-    id,
-    appSessionId: 'sess-a',
-    sourceSessionId: 'primary',
-    role: 'primary',
-    kind: 'text',
-    author: 'assistant',
-    text: id,
-    ts,
-  };
-}
+const assistantText = (id: string, ts: number) =>
+  textEvent(id, { appSessionId: 'sess-a', author: 'assistant', ts });
 
 test('mark all sessions read advances every current session and ignores stale order ids', () => {
   const state: AppState = {
