@@ -200,7 +200,7 @@ function createNativeBrowserRequests({ manager, notifyRenderer }) {
       const url = request.url ?? 'about:blank';
       await manager.waitForPage(browserSessionId);
       stillWanted();
-      await manager.open(browserSessionId, url);
+      await manager.open(browserSessionId, url, stillWanted);
       return result(request, true, await snapshotAfter(request, url));
     }
     if (request.action === 'reload') {

@@ -175,23 +175,31 @@ function createNativeBrowserManager(options) {
     return rejectCrashed(await waitForLoadedGuest(browserSessionId));
   }
 
-  async function openNativeBrowser(browserSessionId, url) {
+  // Resolves once no guest of the entry is still taking its device. With
+  // `replacing`, the saved page gives way to what the caller loads next.
+  async function deviceReady(entry, replacing = false) {
+    while (entry.setup) {
+      const { setup } = entry;
+      if (replacing) setup.restoreUrl = null;
+      await setup.ready;
+      if (entry.setup === setup) entry.setup = null;
+    }
+  }
+
+  // `before` runs right before the page moves, and throws when it should not.
+  async function openNativeBrowser(browserSessionId, url, before) {
     const entry = await requireNativeBrowserGuest(browserSessionId);
     urls.rejectHostAppUrl(url);
     url = urls.normalizeNativeBrowserUrl(entry, url);
     urls.validateUrl(url);
     entry.failedRestoreUrl = null;
     // A guest still taking its device loads this page once it has it, in place
-    // of its saved one; a guest that replaced it meanwhile, the same.
-    while (entry.setup) {
-      const { setup } = entry;
-      setup.restoreUrl = null;
-      await setup.ready;
-      if (entry.setup === setup) entry.setup = null;
-    }
-    // The browser may have been closed while this waited.
+    // of its saved one. The browser may have been closed, or the caller have
+    // given up, while this waited.
+    await deviceReady(entry, true);
     if (nativeBrowsers.get(entry.browserSessionId) !== entry)
       throw new Error(`${options.appName} browser is not open.`);
+    before?.();
     await loadNativeBrowserUrl(entry, url, { force: true });
   }
 
@@ -215,6 +223,9 @@ function createNativeBrowserManager(options) {
   // recovers. A load still in flight or a failed restore starts over.
   async function reloadNativeBrowser(browserSessionId) {
     const entry = await waitForGuest(browserSessionId);
+    // A guest still taking its device finishes that first, so the page is asked
+    // for as that device.
+    await deviceReady(entry);
     const contents = liveContents(entry);
     if (!contents) throw new Error(`${options.appName} browser is not open.`);
     const pendingUrl = entry.loadingUrl === entry.targetUrl ? entry.loadingUrl : null;
