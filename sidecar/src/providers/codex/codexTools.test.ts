@@ -186,32 +186,30 @@ test('a new Codex thread declares its tools and a resumed thread keeps its store
   await resumed.close();
 });
 
-test('executes a known tool through approval and returns Codex content items', async () => {
-  const { bridge, approvals, calls } = harness();
-  assert.deepEqual(await bridge.call(spawn), {
-    contentItems: [{ type: 'inputText', text: '{"reportBack":true}' }],
-    success: true,
-  });
-  assert.equal(calls(), 1);
-  assert.equal(approvals[0].signature, 'mcp::droidex-sessions::thread_spawn::thread');
-  assert.deepEqual(approvals[0].mcpTool, {
-    serverName: 'droidex-sessions',
-    toolName: 'thread_spawn',
-  });
-});
-
-test('rejects unknown tools, other threads, and denied requests before the handler', async () => {
+test('a known tool runs through approval; unknown tools, other threads, and denials never reach the handler', async () => {
   const state = harness();
   assert.equal((await state.bridge.call({ ...spawn, namespace: 'other' })).success, false);
   assert.equal((await state.bridge.call({ ...spawn, tool: 'other' })).success, false);
   assert.equal((await state.bridge.call({ ...spawn, threadId: 'other' })).success, false);
   assert.equal(state.approvals.length, 0);
+
+  assert.deepEqual(await state.bridge.call(spawn), {
+    contentItems: [{ type: 'inputText', text: '{"reportBack":true}' }],
+    success: true,
+  });
+  assert.equal(state.calls(), 1);
+  assert.equal(state.approvals[0].signature, 'mcp::droidex-sessions::thread_spawn::thread');
+  assert.deepEqual(state.approvals[0].mcpTool, {
+    serverName: 'droidex-sessions',
+    toolName: 'thread_spawn',
+  });
+
   state.deny();
   assert.deepEqual(await state.bridge.call(spawn), {
     contentItems: [{ type: 'inputText', text: 'The user declined this tool.' }],
     success: false,
   });
-  assert.equal(state.calls(), 0);
+  assert.equal(state.calls(), 1);
   state.switchThread();
   assert.equal((await state.bridge.call(spawn)).success, false);
   state.close();

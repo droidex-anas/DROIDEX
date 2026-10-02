@@ -60,7 +60,7 @@ function assistantText(text: string): TranscriptEvent[] {
   return replay({ role: 'assistant', content: [{ type: 'text', text }] });
 }
 
-test('an oversized App answer replays whole, with its fence closed, with either line ending', () => {
+test('only an assistant App answer replays past the shared cap, whole and fenced under either line ending', () => {
   // Regression: every replayed text block shared the 12k cap, so a real
   // /visualize answer came back without its closing fence and rendered a
   // half-written script after a restart. The fence probe once also required a
@@ -74,9 +74,7 @@ test('an oversized App answer replays whole, with its fence closed, with either 
     assert.equal(events.length, 1);
     assert.equal(events[0].text, answer);
   }
-});
 
-test('only an assistant answer earns the App bound; everything else keeps the shared cap', () => {
   const prose = assistantText('x'.repeat(13_000));
   assert.equal(prose[0].text, `${'x'.repeat(12_000)}${truncated(1000)}`);
 
@@ -129,7 +127,7 @@ test('child sessions replay their prompts as the child, and never a skill activa
     assert.deepEqual(replay(activation, 'child-provider', role), []);
 });
 
-test('a prompt wrapped in DROIDEX guidance replays as only what the user typed', () => {
+test('a prompt wrapped in DROIDEX guidance or side-chat answers replays as only what the user typed', () => {
   const question = 'Why does the chart dip on Wednesday?';
   const conversation = `**User:** earlier question\n\n**Assistant:** ${'long answer '.repeat(10_000)}`;
   const cases: [string, string][] = [
@@ -151,6 +149,24 @@ test('a prompt wrapped in DROIDEX guidance replays as only what the user typed',
     assert.equal(events.length, 1);
     assert.equal(events[0].text, typed);
   }
+
+  // The block as the renderer's promptWithSideChatReplies writes it.
+  const withReplies = [
+    'Use this',
+    '',
+    '<side_chat_replies>',
+    'The user attached these answers from a side chat about this conversation.',
+    '<reply>',
+    'Sort by date first.',
+    '</reply>',
+    '<reply>',
+    'Then by name.',
+    '</reply>',
+    '</side_chat_replies>',
+  ].join('\n');
+  const [event] = replay(userText(withReplies));
+  assert.equal(event?.text, 'Use this');
+  assert.deepEqual(event?.sideChatReplies, ['Sort by date first.', 'Then by name.']);
 });
 
 test('a stored model-switch or usage-limit notice replays exactly as it was written', () => {
@@ -177,24 +193,4 @@ test('a stored model-switch or usage-limit notice replays exactly as it was writ
       [original],
     );
   }
-});
-
-test('a prompt sent with side-chat answers replays as the words typed plus the answers', () => {
-  // The block as the renderer's promptWithSideChatReplies writes it.
-  const prompt = [
-    'Use this',
-    '',
-    '<side_chat_replies>',
-    'The user attached these answers from a side chat about this conversation.',
-    '<reply>',
-    'Sort by date first.',
-    '</reply>',
-    '<reply>',
-    'Then by name.',
-    '</reply>',
-    '</side_chat_replies>',
-  ].join('\n');
-  const [event] = replay(userText(prompt));
-  assert.equal(event?.text, 'Use this');
-  assert.deepEqual(event?.sideChatReplies, ['Sort by date first.', 'Then by name.']);
 });

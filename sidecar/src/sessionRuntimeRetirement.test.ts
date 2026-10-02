@@ -175,7 +175,7 @@ test('nothing is retirable until the renderer has reported what is on screen', a
   );
 });
 
-test('a session stays warm for a full budget after the user switches away from it', async () => {
+test('a session stays warm for a full budget after the user switches away, until it closes', async () => {
   const h = ownerHarness();
   h.add('read-for-a-while', 0);
   h.focus.current = 'read-for-a-while';
@@ -192,6 +192,19 @@ test('a session stays warm for a full budget after the user switches away from i
   h.clock.now += IDLE_MS;
   await h.owner.sweep();
   assert.deepEqual(h.retired, ['read-for-a-while']);
+
+  // A closed session forgets when the user last looked at it, so one resumed
+  // with nothing newer than its last turn is not kept warm by that moment.
+  h.add('reopened', 0);
+  h.focus.current = 'reopened';
+  h.owner.noteFocus(null);
+  h.focus.current = 'elsewhere';
+  h.owner.noteFocus('reopened');
+  h.live.delete('reopened');
+  h.owner.arm();
+  h.add('reopened', 0);
+  await h.owner.sweep();
+  assert.deepEqual(h.retired, ['read-for-a-while', 'reopened']);
 });
 
 test('a prompt that arrives during an earlier release saves the session behind it', async () => {
@@ -224,25 +237,6 @@ test('a prompt that arrives during an earlier release saves the session behind i
     ['first'],
     'a session that started a turn must not be told its runtime went away',
   );
-});
-
-test('a closed session stops carrying the moment the user last looked at it', async () => {
-  const h = ownerHarness();
-  h.add('reopened', 0);
-  h.focus.current = 'reopened';
-  h.owner.noteFocus(null);
-  h.clock.now = IDLE_MS * 10;
-
-  h.focus.current = 'elsewhere';
-  h.owner.noteFocus('reopened');
-  h.live.delete('reopened');
-  h.owner.arm();
-
-  // Resumed with nothing newer than its last turn: the pre-close switch-away
-  // must not be what keeps it warm.
-  h.add('reopened', 0);
-  await h.owner.sweep();
-  assert.deepEqual(h.retired, ['reopened']);
 });
 
 test('overlapping retirement sweeps wait for the same pending close', async () => {
