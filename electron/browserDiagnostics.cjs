@@ -1,3 +1,18 @@
+// Redaction for what the browser's debug tools hand to an agent: request URLs
+// and console text.
+//
+// What it covers. A URL on its own (a request's, a console message's source)
+// loses its user and password, its fragment, and the values of parameters named
+// like secrets. Console text is free text a page wrote, so it gets the shapes a
+// secret usually has there: a well-formed URL (no spaces in it), and a value
+// that follows a name like `token=` or `password:`, quoted or not, or an
+// authentication scheme such as `Bearer`.
+//
+// What it does not cover. It is not a secret detector. A page that prints a
+// secret with no name beside it, or inside a URL that is not well formed (a
+// space in its password, an encoded parameter name with a quoted value), is
+// outside it. Console text is the page's own words; the tool says so.
+
 const SENSITIVE_KEY_PARTS = [
   'token',
   'key',

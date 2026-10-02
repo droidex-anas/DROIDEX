@@ -305,7 +305,7 @@ export function createBrowserMcpServer(
         'browser_console',
         [
           'The console messages and uncaught errors since you last read them, the newest 100 at most: level, message and where it came from.',
-          'Messages are length-limited and credential-like values are redacted.',
+          "Messages are length-limited, and the usual shapes of a credential in them (in a URL, or after a name such as token=) are redacted; this is the page's own text, not a guarantee that no secret is in it.",
         ].join(' '),
         {},
         safeTool(async () => consoleText(await manager.console(appSessionId()))),
