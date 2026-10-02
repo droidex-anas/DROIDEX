@@ -32,90 +32,64 @@ const pr = (overrides: Partial<PullRequest> = {}): PullRequest => ({
   ...overrides,
 });
 
-function render(githubReady: boolean, envOverrides: Partial<GitEnvironment> = {}): string {
+function render(
+  overrides: Partial<Parameters<typeof GitActionsBar>[0]> = {},
+  envOverrides: Partial<GitEnvironment> = {},
+): string {
   return renderToStaticMarkup(
     createElement(GitActionsBar, {
       cwd: '/repo',
       env: { ...env, ...envOverrides },
       branches: null,
       isGitHub: true,
-      githubReady,
+      githubReady: true,
       hasPr: false,
       pr: null,
       onOpenPr: () => undefined,
       onChanged: () => undefined,
+      ...overrides,
     }),
   );
 }
 
 test('local git actions remain while Create pull request waits for GitHub setup', () => {
-  const html = render(false);
+  const html = render({ githubReady: false });
   assert.match(html, />Commit or push</);
   assert.doesNotMatch(html, />Create pull request</);
-  assert.match(render(true), />Create pull request</);
+  assert.match(render(), />Create pull request</);
 });
 
-test('a detected PR swaps into the create slot instead of adding a row', () => {
-  const html = renderToStaticMarkup(
-    createElement(GitActionsBar, {
-      cwd: '/repo',
-      env,
-      branches: null,
-      isGitHub: true,
-      githubReady: true,
-      hasPr: true,
-      pr: pr(),
-      onOpenPr: () => undefined,
-      onChanged: () => undefined,
-    }),
-  );
+test('a detected PR swaps into the create slot; a merged one leaves create available', () => {
   // The PR row replaces the create action in place, so the panel's height
   // does not change when detection resolves.
-  assert.match(html, />#7 Fix the thing</);
-  assert.doesNotMatch(html, />Create pull request</);
+  const open = render({ hasPr: true, pr: pr() });
+  assert.match(open, />#7 Fix the thing</);
+  assert.doesNotMatch(open, />Create pull request</);
+
+  // A merged PR is not open or draft, so the section reports no current PR
+  // while the detection payload is still around.
+  const merged = render({ pr: pr({ number: 212, title: 'Tool activity UI', state: 'MERGED' }) });
+  assert.match(merged, />Create pull request</);
+  assert.doesNotMatch(merged, /#212/);
 });
 
-test('a merged or closed PR leaves the create action available', () => {
-  const html = renderToStaticMarkup(
-    createElement(GitActionsBar, {
-      cwd: '/repo',
-      env,
-      branches: null,
-      isGitHub: true,
-      githubReady: true,
-      // prKind of a merged PR is not open/draft, so the section reports no
-      // current PR while the detection payload is still around.
-      hasPr: false,
-      pr: pr({ number: 212, title: 'Tool activity UI', state: 'MERGED' }),
-      onOpenPr: () => undefined,
-      onChanged: () => undefined,
-    }),
-  );
-  assert.match(html, />Create pull request</);
-  assert.doesNotMatch(html, /#212/);
-});
-
-test('the push pill only appears while ahead of upstream', () => {
+test('the push pill appears only with commits to publish and somewhere to push them', () => {
   // The fixture branch has no upstream and no remotes, so a flat ahead=0 has
   // nothing to publish.
-  assert.doesNotMatch(render(true, { ahead: 0 }), /aria-label="Push/);
-  assert.match(render(true, { ahead: 2 }), /aria-label="Push 2 commits"/);
-  assert.match(render(true, { ahead: 1 }), /aria-label="Push 1 commit"/);
-});
-
-test('a branch that was never pushed still offers push, which sets the upstream', () => {
-  // Git reports ahead=0 until an upstream exists; without the pill the panel
-  // would never offer the push that creates one.
-  const html = render(true, { upstream: null, remotes: ['origin'], ahead: 0 });
-  assert.match(html, /aria-label="Push branch and set upstream"/);
-});
-
-test('a branch with no remote has nowhere to push to', () => {
-  assert.doesNotMatch(render(true, { upstream: null, remotes: [], ahead: 0 }), /aria-label="Push/);
+  assert.doesNotMatch(render({}, { ahead: 0 }), /aria-label="Push/);
+  assert.match(render({}, { ahead: 2 }), /aria-label="Push 2 commits"/);
+  assert.match(render({}, { ahead: 1 }), /aria-label="Push 1 commit"/);
+  // Git reports ahead=0 until an upstream exists; the pill offers the push
+  // that creates one, unless there is no remote to push to.
+  assert.match(
+    render({}, { upstream: null, remotes: ['origin'], ahead: 0 }),
+    /aria-label="Push branch and set upstream"/,
+  );
+  assert.doesNotMatch(render({}, { upstream: null, remotes: [], ahead: 0 }), /aria-label="Push/);
 });
 
 test('the create-PR row exposes its disclosure state', () => {
-  const html = render(true);
+  const html = render();
   const buttons = html.match(/<button[^>]*>.*?<\/button>/gs) ?? [];
   const prRow = buttons.find((button) => button.includes('Create pull request'));
   assert.ok(prRow?.includes('aria-expanded="false"'));
