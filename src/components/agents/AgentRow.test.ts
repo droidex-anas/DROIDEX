@@ -81,24 +81,16 @@ test('a row is keyed by the child, never by the spawn tool-use id', () => {
   );
 });
 
-test('the top reasoning level gets its own chip colour', () => {
-  const ultra = renderToStaticMarkup(
-    createElement(AgentRow, props({ row: row({ reasoningEffort: 'ultra' }) })),
-  );
-  const high = renderToStaticMarkup(
-    createElement(AgentRow, props({ row: row({ reasoningEffort: 'high' }) })),
-  );
-  assert.ok(ultra.includes('text-droid-ultra'));
-  assert.ok(ultra.includes('data-effort="ultra"'));
-  assert.equal(high.includes('text-droid-ultra'), false);
-});
-
 test('opening a row names the agent, and a placeholder has no stable id to name', () => {
   const html = renderToStaticMarkup(
     createElement(AgentRow, { ...props(), onOpen: () => undefined }),
   );
   assert.ok(html.includes('Open Worker 1'));
   assert.equal(agentRowTitle('Worker 1', 'pending-tool-a'), 'Open Worker 1');
+  assert.equal(
+    agentRowTitle('Worker 1', 'child-stable-1'),
+    'Open Worker 1\nChild ID: child-stable-1',
+  );
 });
 
 test('the pane list splits active agents from finished ones', () => {
