@@ -2,14 +2,8 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import type { FeedItem } from '../../components/chatFeed';
-import { parseTruncatedTail, stripAnsi } from '../../lib/tools';
 import type { TranscriptEvent } from '../../types/bridge';
-import {
-  copyTextForCommand,
-  copyTextForFeedItem,
-  copyTextForFeedItemRange,
-  copyTextForMessage,
-} from './transcriptCopy';
+import { copyTextForFeedItem, copyTextForFeedItemRange } from './transcriptCopy';
 
 let seq = 0;
 function ev(extra: Partial<TranscriptEvent>): TranscriptEvent {
@@ -24,11 +18,13 @@ function ev(extra: Partial<TranscriptEvent>): TranscriptEvent {
   };
 }
 
-test('copying a range of unmounted rows matches per-message copy text in order', () => {
-  const firstText = 'turn 1 answer\n\n[truncated 40 chars]';
-  const thirdText = 'turn 2 stack trace';
+test('copying a range of unmounted rows joins their copy text in order, either way round', () => {
   const items: FeedItem[] = [
-    { type: 'message', key: 'm1', event: ev({ id: 'm1', text: firstText }) },
+    {
+      type: 'message',
+      key: 'm1',
+      event: ev({ id: 'm1', text: 'turn 1 answer\n\n[truncated 40 chars]' }),
+    },
     {
       type: 'tools',
       key: 'tools-1',
@@ -48,42 +44,15 @@ test('copying a range of unmounted rows matches per-message copy text in order',
         }),
       ],
     },
-    { type: 'message', key: 'm2', event: ev({ id: 'm2', text: thirdText }) },
+    { type: 'message', key: 'm2', event: ev({ id: 'm2', text: 'turn 2 stack trace' }) },
     { type: 'message', key: 'm3', event: ev({ id: 'm3', text: 'not in range' }) },
   ];
 
-  const expected = [
-    copyTextForMessage(firstText),
-    copyTextForCommand(
-      'npm test',
-      items[1] && items[1].type === 'tools' ? items[1].events[1]?.text : '',
-    ),
-    copyTextForMessage(thirdText),
-  ].join('\n\n');
-
+  const expected = 'turn 1 answer\n\nnpm test\n\nError: boom\n\nturn 2 stack trace';
   assert.equal(copyTextForFeedItemRange(items, 'm1', 'm2'), expected);
-  assert.equal(copyTextForFeedItem(items[0]!), parseTruncatedTail(firstText).body);
-  assert.equal(
-    copyTextForFeedItem(items[1]!),
-    copyTextForCommand('npm test', '\u001b[31mError: boom\u001b[0m'),
-  );
-  assert.equal(
-    copyTextForCommand('npm test', '\u001b[31mError: boom\u001b[0m').includes(
-      stripAnsi('\u001b[31mError: boom\u001b[0m'),
-    ),
-    true,
-  );
-});
-
-test('range copy is order-independent for the selected endpoints', () => {
-  const items: FeedItem[] = [
-    { type: 'message', key: 'a', event: ev({ id: 'a', text: 'alpha' }) },
-    { type: 'message', key: 'b', event: ev({ id: 'b', text: 'beta' }) },
-    { type: 'message', key: 'c', event: ev({ id: 'c', text: 'gamma' }) },
-  ];
-  assert.equal(
-    copyTextForFeedItemRange(items, 'c', 'a'),
-    copyTextForFeedItemRange(items, 'a', 'c'),
-  );
-  assert.equal(copyTextForFeedItemRange(items, 'a', 'c'), 'alpha\n\nbeta\n\ngamma');
+  assert.equal(copyTextForFeedItemRange(items, 'm2', 'm1'), expected);
+  // A message drops the truncation sentinel; a command copies like the
+  // terminal copy button: the command, then its output without ANSI codes.
+  assert.equal(copyTextForFeedItem(items[0]!), 'turn 1 answer');
+  assert.equal(copyTextForFeedItem(items[1]!), 'npm test\n\nError: boom');
 });

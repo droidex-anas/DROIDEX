@@ -6,7 +6,11 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { TranscriptReachBar } from './TranscriptReachBar';
 import { INITIAL_TRANSCRIPT_REACH_STATE, transcriptReachReducer } from './transcriptReachState';
 
-test('next and previous wrap, including a single-match list', () => {
+test('next and previous wrap through the matches, and stay put with none', () => {
+  assert.equal(
+    transcriptReachReducer(INITIAL_TRANSCRIPT_REACH_STATE, { type: 'next' }).activeIndex,
+    0,
+  );
   const withMatches = transcriptReachReducer(INITIAL_TRANSCRIPT_REACH_STATE, {
     type: 'setMatches',
     query: 'foo',

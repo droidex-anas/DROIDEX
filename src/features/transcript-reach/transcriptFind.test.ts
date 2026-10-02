@@ -3,15 +3,11 @@ import test from 'node:test';
 
 import type { FeedItem } from '../../components/chatFeed';
 import { feedRowId } from '../../hooks/conversationViewportAnchor';
-import { stripAnsi } from '../../lib/tools';
 import type { TranscriptEvent } from '../../types/bridge';
-import { copyTextForCommand } from './transcriptCopy';
 import {
-  cycleMatchIndex,
   findTranscriptMatches,
   formatFindCount,
   projectTranscriptSearchIndex,
-  TRANSCRIPT_FIND_DEBOUNCE_MS,
   transcriptFindScopeNotice,
 } from './transcriptFind';
 
@@ -80,15 +76,7 @@ test('bounded loaded history is labelled instead of a silent no-match', () => {
   );
 });
 
-test('next and previous wrap through the match list', () => {
-  assert.equal(cycleMatchIndex(2, 3, 1), 0);
-  assert.equal(cycleMatchIndex(0, 3, -1), 2);
-  assert.equal(cycleMatchIndex(1, 3, 1), 2);
-  assert.equal(cycleMatchIndex(0, 0, 1), 0);
-});
-
 test('append projection reuses unchanged haystacks instead of scanning on each keystroke', () => {
-  assert.ok(TRANSCRIPT_FIND_DEBOUNCE_MS > 0);
   const initial = [message('a', 'alpha'), message('b', 'beta')];
   const first = projectTranscriptSearchIndex(null, 'chat:primary', initial, 'full', 0);
   const nextItems = [...initial, message('c', 'gamma')];
@@ -96,10 +84,4 @@ test('append projection reuses unchanged haystacks instead of scanning on each k
   assert.equal(second.rows[0], first.rows[0]);
   assert.equal(second.rows[1], first.rows[1]);
   assert.equal(second.rows[2]?.itemKey, 'c');
-});
-
-test('command copy text matches the terminal copy button path', () => {
-  const command = 'npm test';
-  const output = '\u001b[31mFAIL\u001b[0m stack trace';
-  assert.equal(copyTextForCommand(command, output), `${command}\n\n${stripAnsi(output).trimEnd()}`);
 });
