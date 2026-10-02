@@ -33,6 +33,7 @@ import {
   reopenDiffDisclosure,
   revealNextDiffCards,
 } from '../lib/diff';
+import { browserPageOf, browserStepInFlight } from '../lib/browserTools';
 import { hasTodoPayload, parseTruncatedTail } from '../lib/tools';
 import type { TranscriptEvent } from '../types/bridge';
 import { isRenderedTranscriptEvent } from './MissionControl';
@@ -402,6 +403,66 @@ test('an automation proposal stays at conversation level after the turn settles'
     ),
     false,
   );
+});
+
+test('a turn that used the browser gets one Browser card outside the Worked fold', () => {
+  const open = ev({
+    kind: 'tool_call',
+    toolName: 'droidex-browser___browser_open',
+    toolArgs: { url: 'https://example.com/pricing' },
+    toolUseId: 'b1',
+  });
+  const opened = ev({
+    kind: 'tool_result',
+    toolUseId: 'b1',
+    text: 'Opened.\n[Pricing · https://example.com/pricing]',
+  });
+  const click = ev({
+    kind: 'tool_call',
+    toolName: 'mcp__droidex-browser__browser_click',
+    toolArgs: { ref: 'e3' },
+    toolUseId: 'b2',
+  });
+  const running = buildFeed([userMsg('check the pricing page'), open, opened, grep(), click]);
+  const cards = running.filter(
+    (it): it is Extract<FeedItem, { type: 'browser' }> => it.type === 'browser',
+  );
+  assert.equal(cards.length, 1);
+  // The card holds the turn's browser work, later groups included, and nothing else.
+  assert.deepEqual(cards[0].events, [open, opened, click]);
+  assert.deepEqual(browserPageOf(cards[0].events), {
+    title: 'Pricing',
+    url: 'https://example.com/pricing',
+  });
+  assert.equal(browserStepInFlight(cards[0].events)?.liveVerb, 'Clicking');
+
+  const clicked = ev({
+    kind: 'tool_result',
+    toolUseId: 'b2',
+    text: '[Plans · https://example.com/plans]',
+  });
+  const settled = groupTurns(
+    buildFeed([
+      userMsg('check the pricing page'),
+      open,
+      opened,
+      grep(),
+      click,
+      clicked,
+      asst('done'),
+    ]),
+    false,
+  );
+  assert.deepEqual(
+    settled.map((it) => it.type),
+    ['message', 'worked', 'browser', 'message'],
+  );
+  const card = settled[2] as Extract<FeedItem, { type: 'browser' }>;
+  assert.equal(browserPageOf(card.events)?.title, 'Plans');
+  assert.equal(browserStepInFlight(card.events), null);
+  // A later turn that uses the browser gets its own card.
+  const next = buildFeed([userMsg('a'), open, opened, asst('ok'), userMsg('b'), click]);
+  assert.equal(next.filter((it) => it.type === 'browser').length, 2);
 });
 
 test('a failed non-plan tool result attaches to its call so the failure folds in', () => {

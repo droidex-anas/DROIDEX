@@ -1,4 +1,5 @@
 import { extractFileChange, type FileChange } from '../lib/diff';
+import { browserToolOf } from '../lib/browserTools';
 import { mergeChildSessionSpawn } from '../lib/childSessions';
 import { classifyEvent } from '../lib/transcript';
 import { hasTodoPayload, isChildSessionTool, isImageGenerationTool } from '../lib/tools';
@@ -60,6 +61,9 @@ export type FeedItem =
   // folded into the tool run, so the generating state is visible while it runs.
   | { type: 'generated_image'; key: string; event: TranscriptEvent; result?: TranscriptEvent }
   | { type: 'tools'; key: string; events: TranscriptEvent[] }
+  // The page a turn worked on in the browser: one card for the turn, holding
+  // its browser calls and their results. The calls stay in their tool rows.
+  | { type: 'browser'; key: string; events: TranscriptEvent[] }
   | { type: 'worked'; key: string; items: FeedItem[]; durationMs: number }
   | TurnChangesItem;
 
@@ -101,7 +105,10 @@ export function sameFeedEvents(a: FeedItem, b: FeedItem): boolean {
       a.changes.every((c, i) => c.event === b.changes[i].event)
     );
   }
-  if (a.type === 'child_sessions' && b.type === 'child_sessions') {
+  if (
+    (a.type === 'child_sessions' && b.type === 'child_sessions') ||
+    (a.type === 'browser' && b.type === 'browser')
+  ) {
     return a.events.length === b.events.length && a.events.every((e, i) => e === b.events[i]);
   }
   if (a.type === 'worked' && b.type === 'worked') {
@@ -232,6 +239,18 @@ export function buildFeed(
     if (!e.isError) resultById.set(e.toolUseId, e);
   }
   const claimed = new Set<TranscriptEvent>();
+  // Results carry no tool name, so a browser call's result is known by its id.
+  const browserCallIds = new Set<string>();
+  for (const e of events) {
+    if (e.kind === 'tool_call' && e.toolUseId && browserToolOf(e.toolName))
+      browserCallIds.add(e.toolUseId);
+  }
+  const isBrowserEvent = (e: TranscriptEvent) =>
+    e.kind === 'tool_call'
+      ? browserToolOf(e.toolName) !== null
+      : !!e.toolUseId && browserCallIds.has(e.toolUseId);
+  // The current turn's Browser card, once the turn has used the browser.
+  let browserCard: Extract<FeedItem, { type: 'browser' }> | null = null;
   let i = 0;
   while (i < events.length) {
     const ev = events[i];
@@ -249,6 +268,7 @@ export function buildFeed(
       continue;
     }
     if (ev.author === 'user' || ev.kind === 'text') {
+      if (ev.author === 'user') browserCard = null;
       items.push({ type: 'message', key: ev.id, event: ev });
       i++;
       continue;
@@ -447,6 +467,16 @@ export function buildFeed(
         }
       }
       items.push({ type: 'tools', key: group[0].id, events: dedupePlanUpdates(group) });
+      const browserWork = group.filter(isBrowserEvent);
+      if (browserWork.length > 0) {
+        // The card appears where the turn first used the browser and gathers
+        // the turn's later browser work too.
+        if (!browserCard) {
+          browserCard = { type: 'browser', key: `browser-${browserWork[0].id}`, events: [] };
+          items.push(browserCard);
+        }
+        browserCard.events.push(...browserWork);
+      }
     } else i++;
     continue;
   }
