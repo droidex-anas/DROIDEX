@@ -30,37 +30,28 @@ test('splitTrailingMentions leaves prose with @words or trailing words as prose'
   }
 });
 
-test('userMessageAttachments prefers event metadata over parsing', () => {
+test('userMessageAttachments trusts live event metadata, even over attachment-shaped text', () => {
   assert.deepEqual(userMessageAttachments('look at this', ['/tmp/a.png']), {
     text: 'look at this',
     files: ['/tmp/a.png'],
   });
+  const typed = 'nothing\n\n@/tmp/a.png';
+  assert.deepEqual(userMessageAttachments(typed, []), { text: typed, files: [] });
 });
 
-test('userMessageAttachments keeps typed attachment-shaped text in live events', () => {
-  const text = 'nothing\n\n@/tmp/a.png';
-  assert.deepEqual(userMessageAttachments(text, []), { text, files: [] });
-});
-
-test('userMessageAttachments parses a replayed message that has no metadata', () => {
-  const composed = composePrompt('what is wrong here', [], ['/tmp/paste-1.png']);
-  assert.deepEqual(userMessageAttachments(composed, undefined), {
+test('userMessageAttachments parses a replayed message this app composed, keeping its skill', () => {
+  const plain = composePrompt('what is wrong here', [], ['/tmp/paste-1.png']);
+  assert.deepEqual(userMessageAttachments(plain, undefined), {
     text: 'what is wrong here',
     files: ['/tmp/paste-1.png'],
   });
-});
-
-test('userMessageAttachments keeps the skill invocation with the message text', () => {
-  const composed = composePrompt('fix the bug', ['debugger'], ['/tmp/paste-1.png']);
-  assert.deepEqual(userMessageAttachments(composed, undefined), {
+  const withSkill = composePrompt('fix the bug', ['debugger'], ['/tmp/paste-1.png']);
+  assert.deepEqual(userMessageAttachments(withSkill, undefined), {
     text: '/debugger fix the bug',
     files: ['/tmp/paste-1.png'],
   });
-});
-
-test('userMessageAttachments declines text this app did not compose', () => {
   // Mentions separated by newlines instead of the single spaces composePrompt
   // emits: not our format, so the text is left exactly as persisted.
-  const text = 'see these\n\n@/tmp/a.png\n@/tmp/b.png';
-  assert.deepEqual(userMessageAttachments(text, undefined), { text, files: [] });
+  const foreign = 'see these\n\n@/tmp/a.png\n@/tmp/b.png';
+  assert.deepEqual(userMessageAttachments(foreign, undefined), { text: foreign, files: [] });
 });
