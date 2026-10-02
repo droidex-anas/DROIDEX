@@ -7,24 +7,20 @@ const USER_DATA = '/tmp/droidex-usage-analytics-test';
 
 // Minimal in-memory userData. Writes go through a temporary file and a rename,
 // exactly as the module does on disk.
+function missing(filePath) {
+  return Object.assign(new Error(`missing ${filePath}`), { code: 'ENOENT' });
+}
+
 function memoryFs(seed = {}) {
   const files = new Map(Object.entries(seed));
   return {
     files,
     readFile: async (filePath) => {
-      if (!files.has(filePath)) {
-        const error = new Error(`missing ${filePath}`);
-        error.code = 'ENOENT';
-        throw error;
-      }
+      if (!files.has(filePath)) throw missing(filePath);
       return files.get(filePath);
     },
     stat: async (filePath) => {
-      if (!files.has(filePath)) {
-        const error = new Error(`missing ${filePath}`);
-        error.code = 'ENOENT';
-        throw error;
-      }
+      if (!files.has(filePath)) throw missing(filePath);
       return { isFile: () => true };
     },
     mkdir: async () => undefined,
@@ -36,11 +32,7 @@ function memoryFs(seed = {}) {
       files.delete(from);
     },
     unlink: async (filePath) => {
-      if (!files.has(filePath)) {
-        const error = new Error(`missing ${filePath}`);
-        error.code = 'ENOENT';
-        throw error;
-      }
+      if (!files.has(filePath)) throw missing(filePath);
       files.delete(filePath);
     },
   };
@@ -139,7 +131,7 @@ test('maintainer builds report the local channel, not release', async () => {
   assert.equal(bootstrap.context.distribution_channel, 'local');
 });
 
-test('first launch is reported once per installation', async () => {
+test('first launch is reported once per installation, retrying until it is recorded', async () => {
   const fs = memoryFs();
   const analytics = createUsageAnalytics(options({ fs }));
   const first = await analytics.bootstrap();
@@ -150,32 +142,28 @@ test('first launch is reported once per installation', async () => {
   const relaunch = await createUsageAnalytics(options({ fs })).bootstrap();
   assert.equal(relaunch.firstLaunch, false);
   assert.equal(relaunch.installationId, first.installationId);
+
+  // A launch that quits before recording its report retries on the next one.
+  const unreported = memoryFs();
+  const minted = await createUsageAnalytics(options({ fs: unreported })).bootstrap();
+  const retried = await createUsageAnalytics(options({ fs: unreported })).bootstrap();
+  assert.equal(retried.installationId, minted.installationId);
+  assert.equal(retried.firstLaunch, true);
 });
 
-test('a first launch that quits before recording its report retries next launch', async () => {
-  const fs = memoryFs();
-  const first = await createUsageAnalytics(options({ fs })).bootstrap();
-  // No markFirstLaunchReported: the app quit after minting the ID.
-  const relaunch = await createUsageAnalytics(options({ fs })).bootstrap();
-  assert.equal(relaunch.installationId, first.installationId);
-  assert.equal(relaunch.firstLaunch, true);
-});
-
-test('an existing user updating into an instrumented build is tagged as such', async () => {
+test('only files from before this run tag an update into an instrumented build as existing', async () => {
   // Older builds already wrote these into userData.
   const fs = memoryFs({ [path.join(USER_DATA, 'diagnostics.json')]: '{}' });
   const bootstrap = await createUsageAnalytics(options({ fs })).bootstrap();
   assert.equal(bootstrap.firstLaunch, true);
   assert.equal(bootstrap.installOrigin, 'existing_install');
-});
 
-test('files this run writes at startup do not make a new install look existing', async () => {
-  const fs = memoryFs();
-  const analytics = createUsageAnalytics(options({ fs }));
-  analytics.notePriorInstall();
-  // Diagnostics writes its identity file during startup, before any window.
-  fs.files.set(path.join(USER_DATA, 'diagnostics.json'), '{}');
-  assert.equal((await analytics.bootstrap()).installOrigin, 'new_install');
+  // Files this run writes at startup (diagnostics' identity) do not count.
+  const freshFs = memoryFs();
+  const fresh = createUsageAnalytics(options({ fs: freshFs }));
+  fresh.notePriorInstall();
+  freshFs.files.set(path.join(USER_DATA, 'diagnostics.json'), '{}');
+  assert.equal((await fresh.bootstrap()).installOrigin, 'new_install');
 });
 
 test('opting out stops reporting and deletes the stored id', async () => {
