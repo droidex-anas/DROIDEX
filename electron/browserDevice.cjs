@@ -22,6 +22,7 @@ const guests = new WeakMap();
 // After a send failed, what the guest has is not known: the next change sends
 // everything.
 const UNKNOWN = { userAgent: null, scheme: null };
+const EMULATE_MS = 15_000;
 
 // The device a size's name and a scheme ask for.
 function deviceOf({ viewportMode, colorScheme }) {
@@ -85,9 +86,11 @@ async function mountDevice(contents, entry) {
   }
 }
 
+// A command the guest never answers is given up on, so it cannot hold the
+// guest's later changes for good.
 async function emulate(contents, { userAgent, scheme }, { touch, media }) {
   if (!touch && !media) return;
-  await runWithWebContentsDebugger(contents, async (dbg) => {
+  const sent = runWithWebContentsDebugger(contents, async (dbg) => {
     if (touch)
       await dbg.sendCommand(
         'Emulation.setTouchEmulationEnabled',
@@ -98,6 +101,14 @@ async function emulate(contents, { userAgent, scheme }, { touch, media }) {
         features: scheme ? [{ name: 'prefers-color-scheme', value: scheme }] : [],
       });
   });
+  let timer;
+  const late = new Promise((_, reject) => {
+    timer = setTimeout(
+      () => reject(new Error('The browser page did not take its device in time.')),
+      EMULATE_MS,
+    );
+  });
+  await Promise.race([sent, late]).finally(() => clearTimeout(timer));
 }
 
 module.exports = { useDevice, mountDevice };

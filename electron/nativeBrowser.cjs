@@ -14,6 +14,7 @@ const { createNativeBrowserViewFactory } = require('./nativeBrowserView.cjs');
 // passkeys alive across reloads, dev-server restarts, and app restarts so the
 // user does not have to sign in again every time.
 const BROWSER_PARTITION = 'persist:droidex-browser';
+const VIEWPORT_MODES = ['fit', 'desktop', 'laptop', 'tablet', 'mobile'];
 
 // Pages live in <webview> guests the app renderer mounts and unmounts; main
 // keeps one entry per browser session with the page's URL, history, logs and
@@ -86,7 +87,7 @@ function createNativeBrowserManager(options) {
   function reserveNativeBrowser(browserSessionId, host, savedUrl, savedMode) {
     const entry = ensureNativeBrowserEntry(browserSessionId);
     if (!entry.targetUrl && savedUrl && isAllowedUrl(savedUrl)) entry.targetUrl = savedUrl;
-    if (!entry.viewportMode && typeof savedMode === 'string') entry.viewportMode = savedMode;
+    if (!entry.viewportMode && VIEWPORT_MODES.includes(savedMode)) entry.viewportMode = savedMode;
     return guests.reserve(entry.browserSessionId, host);
   }
 
@@ -188,6 +189,9 @@ function createNativeBrowserManager(options) {
       await setup.ready;
       if (entry.setup === setup) entry.setup = null;
     }
+    // The browser may have been closed while this waited.
+    if (nativeBrowsers.get(entry.browserSessionId) !== entry)
+      throw new Error(`${options.appName} browser is not open.`);
     await loadNativeBrowserUrl(entry, url, { force: true });
   }
 

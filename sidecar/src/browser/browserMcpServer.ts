@@ -39,7 +39,7 @@ export function createBrowserMcpServer(
       return "The page follows the user's pane; browser_screenshot states its size.";
     const laidOut = `The page is laid out at ${size} size, ${String(viewport.width)} × ${String(viewport.height)} CSS px`;
     if (size === 'tablet' || size === 'mobile')
-      return `${laidOut}, as a touch device. Reload it if the site picks its mobile version on the server.`;
+      return `${laidOut}, as a touch device. Reload it if the site picks its version for the device on the server.`;
     return `${laidOut}.`;
   }
 
@@ -235,7 +235,9 @@ export function createBrowserMcpServer(
           scheme: z
             .enum(['light', 'dark', 'auto'])
             .optional()
-            .describe("The colour scheme to ask the page for; auto follows the system's setting."),
+            .describe(
+              "The colour scheme to ask the page for, until the app quits; auto follows the system's setting.",
+            ),
         },
         safeTool(async (input) => {
           const answers: string[] = [];
