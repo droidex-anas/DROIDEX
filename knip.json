@@ -13,9 +13,6 @@
   ],
   "project": ["src/**/*.{ts,tsx}", "electron/**/*.cjs", "*.config.{js,ts}"],
   "ignore": ["sidecar/**"],
-  "ignoreIssues": {
-    "src/types/bridge.ts": ["types"]
-  },
   "ignoreBinaries": ["iconutil", "xdotool"],
   "ignoreDependencies": [
     "@types/react",
