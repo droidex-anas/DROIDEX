@@ -210,7 +210,7 @@ test('a corrupt preference or an unwritable identity skips diagnostics without b
     },
   };
   for (const [fs, cause] of [
-    [corruptPreference, /./],
+    [corruptPreference, /JSON/],
     [unwritableIdentity, /disk unavailable/],
   ]) {
     const failures = [];

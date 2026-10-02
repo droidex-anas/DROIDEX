@@ -167,21 +167,27 @@ test('a failed or malformed comment source is reported while the other source is
     reviews: [],
   };
   const cases = [
-    ['inline pagination fails', { conversation, inline: ghFailure('REST rate limited') }],
-    [
-      'conversation lookup fails',
-      { conversation: ghFailure('GraphQL unavailable'), inline: inlineRows([30]) },
-    ],
-    ['conversation payload is malformed', { conversation: '{', inline: inlineRows([30]) }],
+    {
+      label: 'inline pagination fails',
+      sources: { conversation, inline: ghFailure('REST rate limited') },
+      message: /REST rate limited/,
+      bodies: ['comment 10'],
+    },
+    {
+      label: 'conversation lookup fails',
+      sources: { conversation: ghFailure('GraphQL unavailable'), inline: inlineRows([30]) },
+      message: /GraphQL unavailable/,
+      bodies: ['comment 30'],
+    },
+    {
+      label: 'conversation payload is malformed',
+      sources: { conversation: '{', inline: inlineRows([30]) },
+      message: /Invalid PR conversation payload/,
+      bodies: ['comment 30'],
+    },
   ];
-  const expected = [
-    [/REST rate limited/, ['comment 10']],
-    [/GraphQL unavailable/, ['comment 30']],
-    [/Invalid PR conversation payload/, ['comment 30']],
-  ];
-  for (const [index, [label, sources]] of cases.entries()) {
+  for (const { label, sources, message, bodies } of cases) {
     const result = await prComments('/repo', { prNumber: 79 }, ghSources(sources));
-    const [message, bodies] = expected[index];
     assert.equal(result.ok, true, label);
     assert.equal(result.partial, true, label);
     assert.match(result.message, message, label);
