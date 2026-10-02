@@ -59,8 +59,9 @@ export function ToolCallCard({
         {interrupted && <InterruptedTag />}
         {images.length > 0 && (
           <div className="mt-2 border-t border-droid-border/60 pt-1">
-            {images.map((image) => (
-              <TranscriptImage key={image} reference={image} />
+            {images.map((image, index) => (
+              // One result can carry the same picture twice.
+              <TranscriptImage key={`${String(index)}-${image}`} reference={image} />
             ))}
           </div>
         )}

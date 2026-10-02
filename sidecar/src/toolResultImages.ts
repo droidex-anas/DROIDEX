@@ -3,17 +3,12 @@
 // its path, so the renderer shows the picture and its base64 never becomes
 // transcript text.
 import { createHash, randomUUID } from 'node:crypto';
-import { existsSync, mkdirSync, renameSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { providerSessionsDir } from './droidexPaths.js';
+import { imageExtension } from './imageSignature.js';
 
-const EXTENSIONS: Record<string, string> = {
-  'image/png': '.png',
-  'image/jpeg': '.jpg',
-  'image/webp': '.webp',
-  'image/gif': '.gif',
-};
 // The most the app's local image scheme serves (electron/localImages.cjs).
 const MAX_IMAGE_BYTES = 40 * 1024 * 1024;
 const UNSHOWN = 'An image this build cannot show.';
@@ -52,8 +47,7 @@ function textOf(block: unknown): string {
 interface ImageBlock {
   type: 'image' | 'inputImage';
   data?: unknown;
-  mimeType?: unknown;
-  source?: { data?: unknown; media_type?: unknown; mediaType?: unknown };
+  source?: { data?: unknown };
   imageUrl?: unknown;
 }
 
@@ -62,38 +56,37 @@ function isImage(block: unknown): block is ImageBlock {
   return type === 'image' || type === 'inputImage';
 }
 
-// An image block comes in MCP's shape (`data`, `mimeType`), the model API's
-// (`source.data` with `source.media_type`, which the Droid SDK spells
-// `mediaType`) or Codex's (`imageUrl`, a data URL).
-function bytesOf(image: ImageBlock): { data: string; mimeType: string } | undefined {
-  if (typeof image.imageUrl === 'string') {
-    const url = /^data:([^;,]+)[^,]*;base64,(.+)$/s.exec(image.imageUrl);
-    return url ? { mimeType: url[1], data: url[2] } : undefined;
-  }
+// An image block carries its bytes in MCP's shape (`data`), the model API's
+// (`source.data`) or Codex's (`imageUrl`, a data URL).
+function base64Of(image: ImageBlock): string | undefined {
+  if (typeof image.imageUrl === 'string')
+    return /^data:[^,]*;base64,(.+)$/s.exec(image.imageUrl)?.[1];
   const data = image.data ?? image.source?.data;
-  const mimeType = image.mimeType ?? image.source?.media_type ?? image.source?.mediaType;
-  return typeof data === 'string' && typeof mimeType === 'string' ? { data, mimeType } : undefined;
+  return typeof data === 'string' ? data : undefined;
 }
 
-// Named by its content, so replaying a session finds the file it wrote before.
-// Written beside its place under a name of its own and moved in, so a write
-// that fails, or two that race, leave no half file to be taken for the picture.
+// Named by its content, so replaying a session finds the file it wrote before,
+// and typed by its own first bytes, whatever the block called it. Written
+// beside its place under a name of its own and moved in, so a write that
+// fails, or two that race, leave no half file to be taken for the picture.
 function savedImage(image: ImageBlock): string | undefined {
-  const bytes = bytesOf(image);
-  const extension = bytes && EXTENSIONS[bytes.mimeType.toLowerCase()];
-  if (!bytes || !extension || bytes.data.length * 0.75 > MAX_IMAGE_BYTES) return undefined;
+  const data = base64Of(image);
+  if (!data || data.length * 0.75 > MAX_IMAGE_BYTES) return undefined;
+  const bytes = Buffer.from(data, 'base64');
+  const extension = imageExtension(bytes);
+  if (!extension) return undefined;
+  const directory = join(providerSessionsDir(), 'images');
+  const name = createHash('sha256').update(data).digest('hex').slice(0, 32);
+  const path = join(directory, `tool-${name}${extension}`);
+  if (existsSync(path)) return path;
+  const partial = `${path}.${randomUUID()}.part`;
   try {
-    const directory = join(providerSessionsDir(), 'images');
-    const name = createHash('sha256').update(bytes.data).digest('hex').slice(0, 32);
-    const path = join(directory, `tool-${name}${extension}`);
-    if (!existsSync(path)) {
-      mkdirSync(directory, { recursive: true });
-      const partial = `${path}.${randomUUID()}.part`;
-      writeFileSync(partial, Buffer.from(bytes.data, 'base64'));
-      renameSync(partial, path);
-    }
+    mkdirSync(directory, { recursive: true });
+    writeFileSync(partial, bytes);
+    renameSync(partial, path);
     return path;
   } catch {
+    rmSync(partial, { force: true });
     return undefined;
   }
 }

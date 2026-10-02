@@ -58,15 +58,21 @@ test('text results and unknown content read as before', () => {
 
 test('an image the app cannot save is one plain line, never its bytes', () => {
   const unshown = { text: 'An image this build cannot show.' };
+  // Bytes that are not a picture, whatever the block calls them.
+  const notAnImage = Buffer.from('not a picture').toString('base64');
   assert.deepEqual(
-    toolResultParts([{ type: 'image', data: JPEG, mimeType: 'image/tiff' }]),
+    toolResultParts([{ type: 'image', data: notAnImage, mimeType: 'image/png' }]),
     unshown,
   );
-  // An image block missing what it needs is still an image, not text.
-  assert.deepEqual(toolResultParts([{ type: 'image', data: JPEG }]), unshown);
-  // A data URL may carry parameters before its encoding.
+  // An image block with nothing in it is still an image, not text.
+  assert.deepEqual(toolResultParts([{ type: 'image' }]), unshown);
+});
+
+test('a picture is known by its own bytes', () => {
+  // The type a block claims is not needed, and a data URL may carry parameters.
+  assert.equal(toolResultParts([{ type: 'image', data: JPEG }]).images?.length, 1);
   const withParameter = toolResultParts([
     { type: 'inputImage', imageUrl: `data:image/jpeg;charset=utf-8;base64,${JPEG}` },
   ]);
-  assert.equal(withParameter.images?.length, 1);
+  assert.match(withParameter.images?.[0] ?? '', /\.jpg$/);
 });
