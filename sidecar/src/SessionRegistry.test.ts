@@ -794,7 +794,7 @@ test('historical rows and aliases reload only when the history revision changes'
   assert.deepEqual([ordinaryLoads, missionLoads], [2, 2]);
 });
 
-test('direct historical mutations survive reads at a stable history revision', async () => {
+test('direct historical mutations survive reads at a stable revision and end with their row', async () => {
   const { history, registry } = createHarness({
     ordinary: [
       summary('moved', { cwd: '/repo/.worktrees/feature' }),
@@ -813,9 +813,8 @@ test('direct historical mutations survive reads at a stable history revision', a
   for (const alias of ['provider-next', 'provider-current', 'provider-old']) {
     assert.equal(registry.resolveSummary(alias)?.providerSessionId, 'provider-next', alias);
   }
-});
 
-test('a removed Mission row is not retained by a direct historical mutation', async () => {
+  // A row removed at the next revision is not kept alive by that mutation.
   let missions = [
     summary('mission-one', {
       providerSessionId: 'mission-provider-current',
@@ -823,16 +822,12 @@ test('a removed Mission row is not retained by a direct historical mutation', as
       compactedFromProviderSessionIds: ['mission-provider-old'],
     }),
   ];
-  const { history, registry } = createHarness({
-    loadMissionControlSessions: () => historicalRows(missions),
-  });
-  history.revision = 1;
-
-  await registry.replaceProvider('mission-provider-old', 'mission-provider-next');
+  const removed = createHarness({ loadMissionControlSessions: () => historicalRows(missions) });
+  removed.history.revision = 1;
+  await removed.registry.replaceProvider('mission-provider-old', 'mission-provider-next');
   missions = [];
-  history.revision = 2;
-
-  assert.deepEqual(registry.listSummaries().sessions, []);
+  removed.history.revision = 2;
+  assert.deepEqual(removed.registry.listSummaries().sessions, []);
 });
 
 test('unregister flushes persistence before exposing the session as closed', async () => {
