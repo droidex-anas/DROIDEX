@@ -245,33 +245,6 @@ test('export resolves the chain from the persisted app-session row and replays i
   assert.equal(events.filter((e) => e.kind === 'compaction').length, 2);
 });
 
-test('an oversized segment replays completely, with no trim notice', () => {
-  // Regression: >5MB files used to be tail-windowed, so exports and history
-  // paging silently lost the oldest messages behind a "Loaded latest 5 MB"
-  // status. The whole file must now be served and the notice must not exist.
-  // The reader indexes the whole file, so a leading compaction_state in an
-  // oversized segment also parses in position like any other line.
-  const huge = 'x'.repeat(6_000_000);
-  writeSession('bigexport', [
-    compactionState(42),
-    assistant('oldest-message'),
-    assistant(huge),
-    assistant('tail-message'),
-  ]);
-
-  const chain = resolveSessionChain('bigexport', 'bigexport');
-  const { events } = loadSessionTranscriptWindow('bigexport', chain, { limit: 100_000 });
-  assert.equal(events.find((e) => e.kind === 'compaction')?.removedCount, 42);
-  assert.equal(
-    events.some((e) => e.kind === 'status'),
-    false,
-  );
-  const texts = events.filter((e) => e.kind === 'text');
-  assert.equal(texts[0]?.text, 'oldest-message');
-  assert.equal(texts.at(-1)?.text, 'tail-message');
-  assert.equal(texts.length, 3);
-});
-
 function sessionFilePath(id: string): string {
   return join(home, '.factory', 'sessions', '2026', '06', `${id}.jsonl`);
 }

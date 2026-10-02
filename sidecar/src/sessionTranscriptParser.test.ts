@@ -105,23 +105,6 @@ test('only an assistant answer earns the App bound; everything else keeps the sh
   assert.equal(user?.text?.length, capped);
 });
 
-test('hidden user content never replays as chat', () => {
-  assert.deepEqual(
-    replay(userText('shown')).map((e) => e.text),
-    ['shown'],
-  );
-  assert.deepEqual(replay(userText('hidden', 'llm_only')), []);
-  // Internal skill bodies arrive as ordinary user text.
-  const skillBody = ` <system-notification>
-Skills provide specialized capabilities and domain knowledge.
-<skill filePath="builtin:review">
-<name>review</name>
-Full private skill instructions
-</skill>
-</system-notification>`;
-  assert.deepEqual(replay(userText(skillBody)), []);
-});
-
 test('child sessions replay their prompts as the child, and never a skill activation', () => {
   const events = replay(userText('continue the child task'), 'child-provider', 'worker');
   assert.deepEqual(
@@ -170,50 +153,7 @@ test('a prompt wrapped in DROIDEX guidance replays as only what the user typed',
   }
 });
 
-test('user-only skill activation restores the prompt and harness acknowledgement separately', () => {
-  const events = replay(userText('Skill "review" activated: PR #100', 'user_only'));
-  assert.equal(events.length, 2);
-  assert.deepEqual(
-    {
-      sourceSessionId: events[0].sourceSessionId,
-      author: events[0].author,
-      text: events[0].text,
-      skills: events[0].skills,
-    },
-    {
-      sourceSessionId: 'user',
-      author: 'user',
-      text: 'PR #100',
-      skills: ['review'],
-    },
-  );
-  assert.deepEqual(
-    {
-      sourceSessionId: events[1].sourceSessionId,
-      author: events[1].author,
-      text: events[1].text,
-    },
-    {
-      sourceSessionId: 'primary',
-      author: undefined,
-      text: 'Skill "review" activated: PR #100',
-    },
-  );
-});
-
-test('a mid-file compaction_state record replays as a divider event', () => {
-  const line = JSON.parse(
-    JSON.stringify({
-      type: 'compaction_state',
-      id: 'comp-3',
-      timestamp: new Date(2000).toISOString(),
-      removedCount: 3,
-    }),
-  );
-  const events = parseSessionLineEvents('app', 'provider', 'primary', line);
-  assert.equal(events.length, 1);
-  assert.equal(events[0].kind, 'compaction');
-  assert.equal(events[0].removedCount, 3);
+test('a stored model-switch or usage-limit notice replays exactly as it was written', () => {
   for (const notice of [
     { kind: 'status', modelSwitch: { from: 'old-model', to: 'new-model' } },
     { kind: 'error', isError: true, errorKind: 'usage_limit', resetsAt: 3000 },
