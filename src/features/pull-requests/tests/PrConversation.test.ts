@@ -203,6 +203,18 @@ test('the header states the rolled-up check state and the merge status', () => {
   assert.doesNotMatch(failed, /No checks reported/);
 });
 
+test('a generated description renders as prose instead of raw HTML', () => {
+  const html = renderSummary({
+    body: [
+      '## Summary by cubic',
+      '<sup>Written for commit 7387c06.</sup>',
+      '<a href="https://cubic.dev/pr/1"><picture><img alt="Review in cubic" src="https://cubic.dev/b.svg"></picture></a>',
+    ].join('\n\n'),
+  });
+  assert.match(html, /Written for commit 7387c06\./);
+  assert.doesNotMatch(html, /&lt;a href|&lt;picture|&lt;sup/);
+});
+
 test('a bot review shows its findings and hides the agent prompt behind a disclosure', () => {
   const html = renderSummary({
     comments: [

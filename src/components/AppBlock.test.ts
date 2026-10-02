@@ -137,6 +137,7 @@ test('a running App mounts in a script-only sandbox, hidden behind its build sur
   assert.match(html, /sandbox="allow-scripts"/);
   assert.doesNotMatch(html, /allow-same-origin/);
   assert.match(html, /referrerPolicy="no-referrer"/i);
+  assert.match(html, /title="Interactive App block"/);
   // A mismatched iframe/document color scheme makes Chromium paint an opaque backdrop.
   assert.match(html, /color-scheme:dark/);
   assert.match(html, /role="status"/);

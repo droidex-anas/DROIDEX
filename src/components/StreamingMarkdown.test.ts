@@ -94,7 +94,11 @@ test('frozen block ids stay stable and a pending-empty live tree matches settled
     `${MERMAID}\n\n`,
   ];
   for (const source of sources) {
-    assert.equal(ingestStreamingMarkdown(null, source).document.pendingSource, '');
+    const { document } = ingestStreamingMarkdown(null, source);
+    assert.equal(document.pendingSource, '');
+    // Block ids are React keys, so each frozen block needs its own.
+    const ids = document.completedBlocks.map((block) => block.id);
+    assert.deepEqual(ids, [...new Set(ids)]);
     assert.equal(
       markupWithoutInterTagSpace(streaming(source)),
       markupWithoutInterTagSpace(settled(source)),

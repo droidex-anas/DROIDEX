@@ -90,7 +90,7 @@ test('a query with no matches uses search-specific empty copy', () => {
   assert.equal(prInboxEmptyCopy('all', '', true), 'No open pull requests in these workspaces.');
 });
 
-test('the current workspace lists its pull requests openly; other workspaces start collapsed', () => {
+test('the current workspace lists its pull requests openly; others stay collapsed until selected', () => {
   const html = renderInbox();
   assert.match(html, /App PR/);
   assert.doesNotMatch(html, /Show droid-control pull requests/);
@@ -98,6 +98,9 @@ test('the current workspace lists its pull requests openly; other workspaces sta
   assert.match(html, /aria-expanded="false"/);
   assert.match(html, /Show clinic pull requests/);
   assert.doesNotMatch(html, /Site PR/);
+
+  // Selecting a pull request in another workspace opens that group.
+  assert.match(renderInbox({ selectedCwd: '/repos/clinic', selectedNumber: 3 }), /Site PR/);
 });
 
 test('an empty other workspace does not show a zero count', () => {
