@@ -53,19 +53,25 @@ function redactBrowserDiagnosticUrl(value, baseUrl) {
   }
 }
 
+// Where a URL starts in text, whatever its scheme: https, wss, ftp.
+const URL_START = String.raw`\b[a-z][a-z0-9+.-]*:\/\/`;
+const URL_CREDENTIALS = new RegExp(`(${URL_START})[^\\s/?#]*@`, 'gi');
+const URL_CUT_IN_HOST = new RegExp(`${URL_START}[^\\s/?#]*$`, 'i');
+const URL_IN_TEXT = new RegExp(`${URL_START}[^\\s"'<>]+`, 'gi');
+
 function redactBrowserDiagnosticText(value) {
   // A URL's user and password go first and on their own, whatever characters
   // they hold: a URL cut short at one of them would not parse, and would be
   // left as it was.
   const text = String(value || '');
-  const stripped = text.slice(0, 4000).replace(/\b(https?:\/\/)[^\s/?#]*@/gi, '$1');
+  const stripped = text.slice(0, 4000).replace(URL_CREDENTIALS, '$1');
   // A URL the length limit cut before its host ended may have lost the "@"
   // after its user and password, so what is left of it goes.
-  const bounded = text.length > 4000 ? stripped.replace(/\bhttps?:\/\/[^\s/?#]*$/i, '') : stripped;
+  const bounded = text.length > 4000 ? stripped.replace(URL_CUT_IN_HOST, '') : stripped;
   // Then values named like secrets, a quoted one whole; then what is left of
   // each URL, like any other URL.
   return redactUnquotedAssignments(redactQuotedAssignments(redactAuthenticationSchemes(bounded)))
-    .replace(/\bhttps?:\/\/[^\s"'<>]+/gi, (url) => redactBrowserDiagnosticUrl(url))
+    .replace(URL_IN_TEXT, (url) => redactBrowserDiagnosticUrl(url))
     .slice(0, 1000);
 }
 
