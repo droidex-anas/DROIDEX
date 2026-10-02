@@ -141,17 +141,24 @@ test('live runtime summaries advance generation and stale generations cannot rol
   assert.deepEqual(stale.childAccess, state.childAccess);
 });
 
-test('a late ready acknowledgement cannot resurrect a runtime closed while opening', () => {
-  let state = select(initialState, 'parent-a', 'child-a', 'request-a');
-  state = runtime(state, true, 2);
-  state = runtime(state, false, 3);
-  const afterLateReady = ready(state, 'request-a', 2);
+test('a late ready acknowledgement cannot resurrect a runtime closed while opening or ready', () => {
+  const opening = runtime(select(initialState, 'parent-a', 'child-a', 'request-a'), true, 2);
+  const readyChild = ready(opening, 'request-a', 2);
+  for (const [label, live] of [
+    ['opening', opening],
+    ['ready', readyChild],
+  ] as const) {
+    const closed = runtime(live, false, 3);
+    assert.deepEqual(accessOf(closed), CLOSED, label);
 
-  assert.deepEqual(afterLateReady.childRuntime['parent-a']?.['child-a'], {
-    available: false,
-    runtimeGeneration: 3,
-  });
-  assert.deepEqual(accessOf(afterLateReady), CLOSED);
+    const afterLateReady = ready(closed, 'request-a', 2);
+    assert.deepEqual(
+      afterLateReady.childRuntime['parent-a']?.['child-a'],
+      { available: false, runtimeGeneration: 3 },
+      label,
+    );
+    assert.deepEqual(accessOf(afterLateReady), CLOSED, label);
+  }
 });
 
 test('leaving an opening child invalidates its request before reselection', () => {
@@ -398,6 +405,7 @@ test('a selected queued open stays pending and becomes usable when the runtime i
     runtimeAvailable: false,
     runtimeGeneration: 1,
   });
+  assert.equal(state.childSessions['parent-a']?.['child-a']?.queued, undefined);
   assert.deepEqual(state.childAccess['parent-a']?.['child-a'], {
     state: 'opening',
     requestId: 'request-a',
