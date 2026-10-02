@@ -266,6 +266,18 @@ count, coverage targets, or a wish to look thorough.
 - Extend an existing suite when the behavior belongs there. Do not add a test
   framework, expose private helpers, or add production indirection to make
   something testable.
+- One suite per production module. Test a behavior once, at the narrowest
+  entry point that owns it; a facade suite (for example `SessionManager`) only
+  covers the wiring, targeting, and races that the module suites cannot reach.
+  Do not split one module's tests across `Module.<topic>.test.ts` files.
+- Limits: a test file stays under 800 lines, a single test under about 60
+  lines including setup, and a bug fix adds at most one test. Over a limit,
+  trim or move shared setup into the existing `testing/` helpers first, and
+  justify any exception in the pull request.
+- No wall-clock thresholds or sleeps in unit tests. Timing and
+  throughput belong to the perf replay harness (`npm run quality:perf-gates`).
+  No tests that only fail when the process lacks file permissions; inject the
+  failure through a fake instead.
 - Write as many throwaway tests, probes, and reproduction scripts as you need
   while working; they are tools, not deliverables. Before committing, keep only
   the tests whose ongoing protection is worth their maintenance and delete the

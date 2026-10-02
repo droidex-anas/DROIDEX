@@ -114,6 +114,17 @@ targeting, ordering, cancellation, cleanup, or a cross-process contract, or when
 it pins a bug you just fixed. Keep the existing suites green and update the tests your
 change affects. "No new tests" is a normal and accepted outcome.
 
+The concrete limits, from `AGENTS.md`:
+
+- One suite per production module, and each behaviour tested once, at the
+  narrowest entry point that owns it.
+- A test file stays under 800 lines and a single test under about 60 lines.
+- A bug fix adds at most one regression test.
+- No sleeps or wall-clock thresholds in unit tests; timing belongs
+  to `npm run quality:perf-gates`.
+- Coverage floors in `test:ci` are a floor, not a target. Never add a test to
+  raise a number.
+
 ## Validating your change
 
 Run the checks that match what you touched. For a broad change, run all of them:
