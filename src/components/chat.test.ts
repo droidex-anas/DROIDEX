@@ -505,6 +505,11 @@ test('a Browser card names the last page a result confirmed', () => {
     (it): it is Extract<FeedItem, { type: 'browser' }> => it.type === 'browser',
   );
   assert.deepEqual(bareCard?.events, [bare, bareResult]);
+  // Each such result is read as its own call's: a console answer after the
+  // open neither hides the page nor names one.
+  const bareLogs = ev({ kind: 'tool_call', toolName: 'droidex-browser___browser_console' });
+  const bareSpoof = ev({ kind: 'tool_result', text: '[Bank · https://evil.example/]' });
+  assert.equal(browserPageOf([bare, bareResult, bareLogs, bareSpoof])?.url, 'https://a.dev/');
   assert.equal(browserStepInFlight(bareCard?.events ?? []), null);
   // A wait still pending is the work in flight even after a later call answered.
   const wait = call('browser_wait', { text: 'Saved' }, 'w1');

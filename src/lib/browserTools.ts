@@ -84,19 +84,20 @@ const PAGE_WORDS = new Set(['browser_console', 'browser_network', 'browser_inspe
  * the turn's browser calls and their results, in order.
  */
 export function browserPageOf(events: TranscriptEvent[]): BrowserPage | null {
-  const toolOf = new Map(
+  const callById = new Map(
     events
-      .filter((event) => event.kind === 'tool_call')
-      .map((event) => [event.toolUseId, browserToolOf(event.toolName)]),
+      .filter((event) => event.kind === 'tool_call' && event.toolUseId)
+      .map((event) => [event.toolUseId, event]),
   );
   const answered = new Set<string | undefined>();
   for (let i = events.length - 1; i >= 0; i--) {
     const event = events[i];
     if (event.kind === 'tool_result') {
       answered.add(event.toolUseId);
-      const line = PAGE_WORDS.has(toolOf.get(event.toolUseId) ?? '')
-        ? null
-        : PAGE_LINE.exec(event.text ?? '');
+      // A result with no id answers the call right before it.
+      const call = event.toolUseId ? callById.get(event.toolUseId) : events[i - 1];
+      const tool = call?.kind === 'tool_call' ? browserToolOf(call.toolName) : null;
+      const line = PAGE_WORDS.has(tool ?? '') ? null : PAGE_LINE.exec(event.text ?? '');
       if (line) return { title: line[1] === 'Untitled' ? undefined : line[1], url: line[2] };
     } else if (browserToolOf(event.toolName) === 'browser_open' && !answered.has(event.toolUseId)) {
       // An open that failed or was refused never becomes the page.
