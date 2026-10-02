@@ -3,6 +3,7 @@ const { createBrowserScreenshot } = require('./browserScreenshot.cjs');
 const { redactBrowserDiagnosticUrl } = require('./browserDiagnostics.cjs');
 const { createBrowserActions } = require('./browserActions.cjs');
 const { createBrowserWait } = require('./browserWait.cjs');
+const { observeNavigation, NAVIGATION_GRACE_MS } = require('./browserNavigation.cjs');
 const { callPageScript } = require('./browserPageScript.cjs');
 const { useDevice } = require('./browserDevice.cjs');
 
@@ -113,17 +114,27 @@ function createNativeBrowserPage({
       const stillOpen = () => {
         if (findEntryForContents(contents) !== entry) throw new Error('The browser page closed.');
       };
-      // The page runs at full speed for the script, shown or not.
-      const value = await unthrottled(contents, () =>
-        devTools.evaluate(contents, request.script, () => {
-          stillOpen();
-          if (Date.now() >= request.startBy)
-            throw new Error('The browser page did not finish in time.');
-        }),
-      );
-      stillOpen();
-      const after = await actions.act(contents, entry, { ...request, action: 'snapshot' });
-      return { ...after, text: `${value}\n${after.text}` };
+      const navigation = observeNavigation(contents);
+      try {
+        // The page runs at full speed for the script, shown or not.
+        const value = await unthrottled(contents, async () => {
+          const result = await devTools.evaluate(contents, request.script, () => {
+            stillOpen();
+            if (Date.now() >= request.startBy)
+              throw new Error('The browser page did not finish in time.');
+          });
+          // A script can send the page elsewhere; the answer names the page
+          // that led to, and the next action finds it loaded.
+          if (!navigation.started()) await navigation.startsWithin(NAVIGATION_GRACE_MS);
+          if (navigation.started()) await navigation.wait();
+          return result;
+        });
+        stillOpen();
+        const after = await actions.act(contents, entry, { ...request, action: 'snapshot' });
+        return { ...after, text: `${value}\n${after.text}` };
+      } finally {
+        navigation.dispose();
+      }
     }
     if (request.action === 'wait') {
       // The page runs at full speed while the agent waits on it.
