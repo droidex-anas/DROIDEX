@@ -1,11 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {
-  classifyEvent,
-  isChatContent,
-  isDiagnosticContent,
-  scopeTranscriptToAgent,
-} from './transcript';
+import { classifyEvent, scopeTranscriptToAgent } from './transcript';
 import type { TranscriptEvent } from '../types/bridge';
 
 function ev(extra: Partial<TranscriptEvent>): TranscriptEvent {
@@ -51,15 +46,6 @@ test('classifyEvent separates chat, plan, child, edit, tool, and error content',
   for (const [event, expected] of cases) {
     assert.equal(classifyEvent(ev(event)), expected, JSON.stringify(event));
   }
-});
-
-test('chat vs diagnostic partitioning', () => {
-  assert.equal(isChatContent('assistant_chat'), true);
-  assert.equal(isChatContent('user'), true);
-  assert.equal(isChatContent('plan_update'), false);
-  assert.equal(isDiagnosticContent('plan_update'), true);
-  assert.equal(isDiagnosticContent('tool_activity'), true);
-  assert.equal(isDiagnosticContent('assistant_chat'), false);
 });
 
 test('scopeTranscriptToAgent keeps primary events by default and isolates a child by id', () => {

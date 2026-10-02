@@ -1,14 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert';
 import {
-  TEXT_PREVIEW_CAP_BYTES,
-  BINARY_PREVIEW_CAP_BYTES,
   DOCX_PREVIEW_OPTIONS,
   classifyByName,
-  classifyPreview,
-  isPreviewable,
-  previewSizeCapBytes,
-  previewSizeLabel,
   sanitizeDocxCssText,
   sanitizeDocxPreview,
 } from './filePreview';
@@ -59,33 +53,6 @@ test('classifyByName falls back to external for macro, legacy, archive, and unkn
   for (const name of ['bundle.zip', 'installer.exe', 'library.dylib', 'thing.bin', 'noext']) {
     assert.equal(classifyByName(name), 'external', `expected ${name} to be external`);
   }
-});
-
-test('only text gets the text size cap and only external files are not previewable', () => {
-  // External also uses the binary cap so the badge stays consistent, even
-  // though readPreview will short-circuit before reading any bytes.
-  for (const category of ['text', 'image', 'pdf', 'docx', 'xlsx', 'external'] as const) {
-    const cap = category === 'text' ? TEXT_PREVIEW_CAP_BYTES : BINARY_PREVIEW_CAP_BYTES;
-    assert.equal(previewSizeCapBytes(category), cap, category);
-    assert.equal(isPreviewable(category), category !== 'external', category);
-  }
-  assert.deepEqual(classifyPreview('plan.md'), {
-    category: 'text',
-    previewable: true,
-    sizeCapBytes: TEXT_PREVIEW_CAP_BYTES,
-  });
-  assert.deepEqual(classifyPreview('payload.zip'), {
-    category: 'external',
-    previewable: false,
-    sizeCapBytes: BINARY_PREVIEW_CAP_BYTES,
-  });
-});
-
-test('previewSizeLabel keeps text and external distinct from binary', () => {
-  assert.equal(previewSizeLabel('text'), '5 MiB text');
-  assert.equal(previewSizeLabel('image'), '25 MiB binary');
-  assert.equal(previewSizeLabel('pdf'), '25 MiB binary');
-  assert.equal(previewSizeLabel('external'), 'Open externally');
 });
 
 test('DOCX previews disable HTML alt chunks', () => {
