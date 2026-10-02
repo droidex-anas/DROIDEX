@@ -144,11 +144,13 @@ function nonAssistantBlockEvent(
 ): TranscriptEvent | null {
   const type = stringValue(block.type);
   if (type === 'tool_result') {
-    const { text, images } = toolResultParts(block.content);
+    const parts = toolResultParts(block.content);
+    // The app's own transcript files keep the saved paths beside the text.
+    const images = parts.images ?? storedImages(block.images);
     return event(base, index, 'tool_result', {
       toolName: stringValue(block.name),
       // Machine output, never a runnable App: the shared cap always applies.
-      text: trimText(text, MAX_TEXT_CHARS),
+      text: trimText(parts.text, MAX_TEXT_CHARS),
       ...(images ? { images } : {}),
       isError: Boolean(block.is_error ?? block.isError),
       // Carry the originating call's id so the renderer can correlate a
@@ -295,6 +297,12 @@ function skillActivationFromContent(content: unknown[]) {
   const text = stringValue(block?.text);
   if (!text) return undefined;
   return parseSkillActivation(text);
+}
+
+function storedImages(value: unknown): string[] | undefined {
+  if (!Array.isArray(value)) return undefined;
+  const paths = value.filter((path): path is string => typeof path === 'string');
+  return paths.length > 0 ? paths : undefined;
 }
 
 function trimText(text: string, max: number): string {
