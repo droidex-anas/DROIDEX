@@ -1,7 +1,7 @@
 // Tablet and Phone show a page the way a touch device gets it: Chrome for
-// Android's user agent, for sites that choose their version on the server, and
-// touch (touch points and a coarse pointer), for pages that look for it; input
-// stays mouse input. A page can also be asked for its light or dark scheme. All
+// Android's user agent and client hints, for sites that choose their version
+// from either, and touch (touch points and a coarse pointer), for pages that
+// look for it; input stays mouse input. A page can also be asked for its light or dark scheme. All
 // of it belongs to the guest, so a guest mounted again for the same page is
 // given it again. It reaches the page's own process: a cross-site frame keeps
 // its own touch and scheme, and takes the user agent like the rest.
@@ -15,6 +15,17 @@ function touchUserAgent(viewportMode) {
   const chrome = `${process.versions.chrome.split('.')[0]}.0.0.0`;
   const mobile = viewportMode === 'mobile' ? 'Mobile ' : '';
   return `Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/${chrome} ${mobile}Safari/537.36`;
+}
+
+// What Chrome for Android says of itself in client hints, to match that user agent.
+function clientHints(userAgent) {
+  return {
+    platform: 'Android',
+    platformVersion: '10',
+    architecture: '',
+    model: 'K',
+    mobile: userAgent.includes(' Mobile '),
+  };
 }
 
 // guest contents -> { settings and device it has taken, its change in progress }
@@ -91,11 +102,17 @@ async function mountDevice(contents, entry) {
 async function emulate(contents, { userAgent, scheme }, { touch, media }) {
   if (!touch && !media) return;
   const sent = runWithWebContentsDebugger(contents, async (dbg) => {
-    if (touch)
+    if (touch) {
+      // The client hints say the same device as the user agent does.
+      await dbg.sendCommand(
+        'Emulation.setUserAgentOverride',
+        userAgent ? { userAgent, userAgentMetadata: clientHints(userAgent) } : { userAgent: '' },
+      );
       await dbg.sendCommand(
         'Emulation.setTouchEmulationEnabled',
         userAgent ? { enabled: true, maxTouchPoints: 5 } : { enabled: false },
       );
+    }
     if (media)
       await dbg.sendCommand('Emulation.setEmulatedMedia', {
         features: scheme ? [{ name: 'prefers-color-scheme', value: scheme }] : [],
