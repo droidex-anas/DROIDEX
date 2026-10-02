@@ -499,7 +499,7 @@ export const FeedItemView = memo(function FeedItemView({
         />
       );
     case 'browser':
-      return <BrowserCard events={item.events} working={sessionLive ?? live} />;
+      return <BrowserCard events={item.events} working={!item.ended && (sessionLive ?? live)} />;
     case 'tools':
       return (
         <ToolGroupWithCards

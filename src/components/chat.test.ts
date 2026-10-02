@@ -34,7 +34,7 @@ import {
   revealNextDiffCards,
 } from '../lib/diff';
 import { browserPageOf, browserStepInFlight } from '../lib/browserTools';
-import { hasTodoPayload, parseTruncatedTail } from '../lib/tools';
+import { describeToolCall, hasTodoPayload, parseTruncatedTail } from '../lib/tools';
 import type { TranscriptEvent } from '../types/bridge';
 import { isRenderedTranscriptEvent } from './MissionControl';
 
@@ -460,9 +460,52 @@ test('a turn that used the browser gets one Browser card outside the Worked fold
   const card = settled[2] as Extract<FeedItem, { type: 'browser' }>;
   assert.equal(browserPageOf(card.events)?.title, 'Plans');
   assert.equal(browserStepInFlight(card.events), null);
-  // A later turn that uses the browser gets its own card.
-  const next = buildFeed([userMsg('a'), open, opened, asst('ok'), userMsg('b'), click]);
-  assert.equal(next.filter((it) => it.type === 'browser').length, 2);
+  // A later turn that uses the browser gets its own card, and the earlier
+  // turn's card is over: a call it left unanswered is not work in flight.
+  const next = buildFeed([userMsg('a'), open, asst('ok'), userMsg('b'), click]);
+  const [first, second] = next.filter(
+    (it): it is Extract<FeedItem, { type: 'browser' }> => it.type === 'browser',
+  );
+  assert.deepEqual([first.ended, second.ended], [true, false]);
+  // A result that lands after the next prompt still belongs to its call's turn.
+  const late = buildFeed([userMsg('a'), open, userMsg('b'), opened, asst('ok')]);
+  const lateCards = late.filter(
+    (it): it is Extract<FeedItem, { type: 'browser' }> => it.type === 'browser',
+  );
+  assert.equal(lateCards.length, 1);
+  assert.deepEqual(lateCards[0].events, [open, opened]);
+});
+
+test('a Browser card names the last page a result confirmed', () => {
+  const call = (tool: string, toolArgs: unknown, toolUseId: string) =>
+    ev({ kind: 'tool_call', toolName: `droidex-browser___${tool}`, toolArgs, toolUseId });
+  const result = (toolUseId: string, text: string, isError = false) =>
+    ev({ kind: 'tool_result', toolUseId, text, isError });
+  const shot = call('browser_screenshot', {}, 's1');
+  // A screenshot's answer goes on after its page line.
+  const shown = result('s1', '[Docs · https://example.com/docs]\nSaved at /tmp/shot.jpg');
+  assert.equal(browserPageOf([shot, shown])?.title, 'Docs');
+  // A refused open never becomes the page; one still in flight does.
+  const refusedOpen = call('browser_open', { url: 'https://blocked.example' }, 'o1');
+  const refused = result('o1', 'Navigation was not allowed.', true);
+  assert.equal(browserPageOf([shot, shown, refusedOpen, refused])?.title, 'Docs');
+  assert.equal(browserPageOf([shot, shown, refusedOpen])?.url, 'https://blocked.example');
+  // A wait still pending is the work in flight even after a later call answered.
+  const wait = call('browser_wait', { text: 'Saved' }, 'w1');
+  const logs = call('browser_console', {}, 'c1');
+  assert.equal(
+    browserStepInFlight([wait, logs, result('c1', 'No messages.')])?.liveVerb,
+    'Waiting',
+  );
+  // Only what the call says: a scheme is not a size, and another server's tool is not ours.
+  assert.equal(
+    describeToolCall('droidex-browser___browser_viewport', { scheme: 'dark' }).verb,
+    'Changed the color scheme',
+  );
+  assert.equal(
+    describeToolCall('other-droidex-browser___browser_open', { url: 'https://a.dev' }).verb,
+    'Browser open',
+  );
 });
 
 test('a failed non-plan tool result attaches to its call so the failure folds in', () => {

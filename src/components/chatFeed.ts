@@ -63,7 +63,8 @@ export type FeedItem =
   | { type: 'tools'; key: string; events: TranscriptEvent[] }
   // The page a turn worked on in the browser: one card for the turn, holding
   // its browser calls and their results. The calls stay in their tool rows.
-  | { type: 'browser'; key: string; events: TranscriptEvent[] }
+  // `ended` once a later turn has begun: the card's work is over then.
+  | { type: 'browser'; key: string; events: TranscriptEvent[]; ended: boolean }
   | { type: 'worked'; key: string; items: FeedItem[]; durationMs: number }
   | TurnChangesItem;
 
@@ -105,11 +106,15 @@ export function sameFeedEvents(a: FeedItem, b: FeedItem): boolean {
       a.changes.every((c, i) => c.event === b.changes[i].event)
     );
   }
-  if (
-    (a.type === 'child_sessions' && b.type === 'child_sessions') ||
-    (a.type === 'browser' && b.type === 'browser')
-  ) {
+  if (a.type === 'child_sessions' && b.type === 'child_sessions') {
     return a.events.length === b.events.length && a.events.every((e, i) => e === b.events[i]);
+  }
+  if (a.type === 'browser' && b.type === 'browser') {
+    return (
+      a.ended === b.ended &&
+      a.events.length === b.events.length &&
+      a.events.every((e, i) => e === b.events[i])
+    );
   }
   if (a.type === 'worked' && b.type === 'worked') {
     return (
@@ -239,18 +244,27 @@ export function buildFeed(
     if (!e.isError) resultById.set(e.toolUseId, e);
   }
   const claimed = new Set<TranscriptEvent>();
-  // Results carry no tool name, so a browser call's result is known by its id.
-  const browserCallIds = new Set<string>();
+  // Each turn's browser calls and their results, in transcript order, under the
+  // turn's first browser call. A result carries no tool name and can land in a
+  // later turn, so it joins its call's turn by id.
+  const browserTurns = new Map<TranscriptEvent, { events: TranscriptEvent[]; ended: boolean }>();
+  const browserTurnOfCall = new Map<string, { events: TranscriptEvent[] }>();
+  let browserTurn: { events: TranscriptEvent[]; ended: boolean } | null = null;
   for (const e of events) {
-    if (e.kind === 'tool_call' && e.toolUseId && browserToolOf(e.toolName))
-      browserCallIds.add(e.toolUseId);
+    if (e.author === 'user') {
+      if (browserTurn) browserTurn.ended = true;
+      browserTurn = null;
+    } else if (e.kind === 'tool_call' && browserToolOf(e.toolName)) {
+      if (!browserTurn) {
+        browserTurn = { events: [], ended: false };
+        browserTurns.set(e, browserTurn);
+      }
+      browserTurn.events.push(e);
+      if (e.toolUseId) browserTurnOfCall.set(e.toolUseId, browserTurn);
+    } else if (e.kind === 'tool_result' && e.toolUseId) {
+      browserTurnOfCall.get(e.toolUseId)?.events.push(e);
+    }
   }
-  const isBrowserEvent = (e: TranscriptEvent) =>
-    e.kind === 'tool_call'
-      ? browserToolOf(e.toolName) !== null
-      : !!e.toolUseId && browserCallIds.has(e.toolUseId);
-  // The current turn's Browser card, once the turn has used the browser.
-  let browserCard: Extract<FeedItem, { type: 'browser' }> | null = null;
   let i = 0;
   while (i < events.length) {
     const ev = events[i];
@@ -268,7 +282,6 @@ export function buildFeed(
       continue;
     }
     if (ev.author === 'user' || ev.kind === 'text') {
-      if (ev.author === 'user') browserCard = null;
       items.push({ type: 'message', key: ev.id, event: ev });
       i++;
       continue;
@@ -467,15 +480,10 @@ export function buildFeed(
         }
       }
       items.push({ type: 'tools', key: group[0].id, events: dedupePlanUpdates(group) });
-      const browserWork = group.filter(isBrowserEvent);
-      if (browserWork.length > 0) {
-        // The card appears where the turn first used the browser and gathers
-        // the turn's later browser work too.
-        if (!browserCard) {
-          browserCard = { type: 'browser', key: `browser-${browserWork[0].id}`, events: [] };
-          items.push(browserCard);
-        }
-        browserCard.events.push(...browserWork);
+      // The turn's Browser card appears where the turn first used the browser.
+      for (const call of group) {
+        const turn = browserTurns.get(call);
+        if (turn) items.push({ type: 'browser', key: `browser-${call.id}`, ...turn });
       }
     } else i++;
     continue;

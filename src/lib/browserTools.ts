@@ -5,7 +5,7 @@ import type { TranscriptEvent } from '../types/bridge';
 
 // The bare tool behind a call's name, whichever way the harness spells the
 // server: `droidex-browser___browser_open`, `mcp__droidex-browser__browser_open`.
-const BROWSER_TOOL = /droidex[-_]browser_{2,3}(browser_[a-z_]+)$/i;
+const BROWSER_TOOL = /^(?:mcp__)?droidex[-_]browser_{2,3}(browser_[a-z_]+)$/i;
 
 export function browserToolOf(name?: string): string | null {
   return BROWSER_TOOL.exec(name ?? '')?.[1].toLowerCase() ?? null;
@@ -31,7 +31,6 @@ const STEPS: Record<string, Verbs> = {
   browser_type: ['Typed', 'Typing'],
   browser_scroll: ['Scrolled', 'Scrolling'],
   browser_wait: ['Waited', 'Waiting'],
-  browser_viewport: ['Changed the page size', 'Changing the page size'],
   browser_batch: ['Ran steps on the page', 'Running steps on the page'],
   browser_inspect: ['Inspected an element', 'Inspecting an element'],
   browser_network: ['Read network activity', 'Reading network activity'],
@@ -56,6 +55,12 @@ export function describeBrowserCall(tool: string, args: unknown): BrowserStep | 
       ? step(HISTORY[text('action')])
       : step(['Opened', 'Opening'], text('url'));
   }
+  if (tool === 'browser_viewport') {
+    if (!text('size')) return step(['Changed the color scheme', 'Changing the color scheme']);
+    return text('scheme')
+      ? step(['Changed the page size and color scheme', 'Changing the page size and color scheme'])
+      : step(['Changed the page size', 'Changing the page size']);
+  }
   if (tool === 'browser_find') return step(['Looked for', 'Looking for'], text('query'));
   if (tool === 'browser_press') return step(['Pressed', 'Pressing'], text('key'));
   return tool in STEPS ? step(STEPS[tool]) : null;
@@ -66,22 +71,25 @@ export interface BrowserPage {
   url: string;
 }
 
-// A browser tool's answer ends with the page it left the browser on, on a line
-// of its own: "[Title · url]".
-const PAGE_LINE = /(?:^|\n)\[(.*) · (\S+)\]\s*$/;
+// A browser tool's answer names the page it left the browser on, on a line of
+// its own near the end: "[Title · url]".
+const PAGE_LINE = /^\[(.*) · (\S+)\]$/gm;
 
 /**
  * The page a turn's browser work is on: the one its latest answer names, or
- * the address it is opening when nothing has answered yet. `events` are the
- * turn's browser calls and their results, in order.
+ * the address it is opening when that open has not answered yet. `events` are
+ * the turn's browser calls and their results, in order.
  */
 export function browserPageOf(events: TranscriptEvent[]): BrowserPage | null {
+  const answered = new Set<string | undefined>();
   for (let i = events.length - 1; i >= 0; i--) {
     const event = events[i];
     if (event.kind === 'tool_result') {
-      const line = PAGE_LINE.exec(event.text ?? '');
+      answered.add(event.toolUseId);
+      const line = [...(event.text ?? '').matchAll(PAGE_LINE)].at(-1);
       if (line) return { title: line[1] === 'Untitled' ? undefined : line[1], url: line[2] };
-    } else if (browserToolOf(event.toolName) === 'browser_open') {
+    } else if (browserToolOf(event.toolName) === 'browser_open' && !answered.has(event.toolUseId)) {
+      // An open that failed or was refused never becomes the page.
       const url = describeBrowserCall('browser_open', event.toolArgs)?.object;
       if (url) return { url };
     }
@@ -89,13 +97,20 @@ export function browserPageOf(events: TranscriptEvent[]): BrowserPage | null {
   return null;
 }
 
-/** What the agent is doing on the page right now, or null when no call is in flight. */
+/**
+ * What the agent is doing on the page right now: its latest call that has no
+ * answer yet, or null when none is in flight.
+ */
 export function browserStepInFlight(events: TranscriptEvent[]): BrowserStep | null {
-  const call = events.findLast((event) => event.kind === 'tool_call');
-  const tool = browserToolOf(call?.toolName);
-  if (!call || !tool || call.interrupted) return null;
-  const answered = events.some(
-    (event) => event.kind === 'tool_result' && event.toolUseId === call.toolUseId,
-  );
-  return answered ? null : describeBrowserCall(tool, call.toolArgs);
+  const answered = new Set<string | undefined>();
+  for (let i = events.length - 1; i >= 0; i--) {
+    const event = events[i];
+    if (event.kind === 'tool_result') answered.add(event.toolUseId);
+    else {
+      const tool = browserToolOf(event.toolName);
+      if (tool && !event.interrupted && !answered.has(event.toolUseId))
+        return describeBrowserCall(tool, event.toolArgs);
+    }
+  }
+  return null;
 }
