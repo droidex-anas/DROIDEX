@@ -1,3 +1,4 @@
+import { DroidWorkingState } from '@factory/droid-sdk';
 import {
   factoryReasoningEffort,
   mapAutonomy,
@@ -38,6 +39,10 @@ export class DroidProviderSession implements ProviderSession {
   }
 
   async *stream(prompt: string): AsyncGenerator<NormalizedEvent, void, undefined> {
+    // The SDK ends a turn when the harness goes idle after working, but it
+    // does not know the "thinking" state: a turn that only thought and then
+    // failed never ends for it, and the chat would stay running for good.
+    let failed = false;
     try {
       for await (const event of this.droid.stream(prompt, { includePartialMessages: true })) {
         const normalizeStartedAt = performance.now();
@@ -49,6 +54,14 @@ export class DroidProviderSession implements ProviderSession {
         );
         hotPathMetrics.recordNormalize(performance.now() - normalizeStartedAt);
         if (normalized) yield normalized;
+        if (event.type === 'error') failed = true;
+        // Idle after an error is the end of the turn; its error is already shown.
+        else if (
+          failed &&
+          event.type === 'working_state_changed' &&
+          event.state === DroidWorkingState.Idle
+        )
+          return;
       }
     } catch (error) {
       const details = droidErrorDetails(errMsg(error));
