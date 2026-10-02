@@ -1,10 +1,13 @@
 import assert from 'node:assert/strict';
+import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
 import test, { type TestContext } from 'node:test';
 
 import { WebSocket } from 'ws';
 
 import { assertValidInteractionResponse } from './interactionResponses.js';
 import { startBridgeServer } from './bridgeServer.js';
+import { droidexUserDataDir } from './droidexPaths.js';
 import {
   BRIDGE_PROTOCOL_VERSION,
   type BridgeRuntimeSnapshot,
@@ -17,6 +20,7 @@ import { hotPathMetrics } from './telemetry/hotPathMetrics.js';
 interface Harness {
   port: number;
   token: string;
+  assetToken: string;
   broadcast(event: ServerEvent): void;
   close(): Promise<void>;
 }
@@ -28,16 +32,23 @@ async function bridgeServer(
   getSnapshot?: () => Promise<BridgeRuntimeSnapshot> | BridgeRuntimeSnapshot,
 ): Promise<Harness> {
   const token = 'test-token';
+  const assetToken = 'test-asset-token';
   const server = startBridgeServer({
     requestedPort: 0,
     token,
-    assetToken: 'test-asset-token',
+    assetToken,
     onCommand,
     ...(getSnapshot ? { getSnapshot } : {}),
   });
   await server.ready;
   t.after(() => server.close());
-  return { port: server.port, token, broadcast: server.broadcast, close: () => server.close() };
+  return {
+    port: server.port,
+    token,
+    assetToken,
+    broadcast: server.broadcast,
+    close: () => server.close(),
+  };
 }
 
 /** The bridge socket URL with a valid token and the current protocol, plus `query`. */
@@ -130,6 +141,22 @@ test('broadcast after close is dropped instead of throwing', async (t) => {
   const harness = await bridgeServer(t);
   await harness.close();
   assert.doesNotThrow(() => harness.broadcast({ type: 'connection', status: 'connected' }));
+});
+
+test('browser assets are served only with the asset token', async (t) => {
+  const harness = await bridgeServer(t);
+  const root = join(droidexUserDataDir(), `bridge-asset-${String(Date.now())}`);
+  mkdirSync(root, { recursive: true });
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  const asset = join(root, 'ok.png');
+  writeFileSync(asset, 'png-ok');
+  const assetUrl = (path: string, token = harness.assetToken) =>
+    `http://127.0.0.1:${String(harness.port)}/browser-assets?path=${encodeURIComponent(path)}&token=${token}`;
+
+  assert.equal((await fetch(assetUrl(asset, harness.token))).status, 401);
+  const response = await fetch(assetUrl(asset));
+  assert.equal(response.status, 200);
+  assert.equal(await response.text(), 'png-ok');
 });
 
 test('the socket handshake rejects a wrong token and stale bridge protocols', async (t) => {
