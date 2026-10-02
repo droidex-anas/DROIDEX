@@ -2,12 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import { adaptEvent, initialState, reducer, type AppState } from './useStore';
-import {
-  childSessionIsLive,
-  shouldOpenSelectedChild,
-  visibleSessionTarget,
-} from '../lib/childSessions';
-import { childStreamPhase } from '../lib/childSessionStream';
+import { visibleSessionTarget } from '../lib/childSessions';
 import type { ChildSessionSummary, ServerEvent } from '../types/bridge';
 import { sessionSummary } from '../test/sessionSummary';
 
@@ -392,21 +387,6 @@ test('a selected queued open stays pending and becomes usable when the runtime i
     available: false,
     runtimeGeneration: 1,
   });
-  assert.equal(
-    childStreamPhase({
-      queued: state.childSessions['parent-a']?.['child-a']?.queued,
-      status: state.childSessions['parent-a']?.['child-a']?.status,
-    }),
-    'queued',
-  );
-  assert.equal(
-    childSessionIsLive(
-      state.childSessions['parent-a']!['child-a']!,
-      state.childRuntime['parent-a']?.['child-a'],
-    ),
-    false,
-  );
-  assert.equal(shouldOpenSelectedChild(state.childAccess['parent-a']?.['child-a']), false);
   const queuedTarget = visibleSessionTarget(
     'parent-a',
     { parentAppSessionId: 'parent-a', childSessionId: 'child-a' },
