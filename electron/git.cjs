@@ -1546,6 +1546,7 @@ async function workingTreeDiff(root) {
 }
 
 module.exports = {
+  expandHome,
   environment,
   repoStatus,
   projectRoot,
