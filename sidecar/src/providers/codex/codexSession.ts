@@ -185,10 +185,16 @@ export class CodexSession implements ProviderSession {
   private async developerInstructions(): Promise<string | undefined> {
     const note = this.tools.instructions;
     if (!note) return undefined;
-    const { config } = await this.client.request<{
-      config: { developer_instructions?: string | null };
-    }>('config/read', { cwd: this.cwd });
-    return [config.developer_instructions, note].filter(Boolean).join('\n\n');
+    try {
+      const { config } = await this.client.request<{
+        config: { developer_instructions?: string | null };
+      }>('config/read', { cwd: this.cwd });
+      return [config.developer_instructions, note].filter(Boolean).join('\n\n');
+    } catch {
+      // A server that cannot parse the whole config refuses this request and
+      // still runs chats, so the note goes alone rather than stopping one.
+      return note;
+    }
   }
 
   catalogItems(): Promise<SkillInfo[]> {
