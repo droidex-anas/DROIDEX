@@ -2,7 +2,7 @@
 // the agent read. Each is kept as a file in the profile and the event carries
 // its path, so the renderer shows the picture and its base64 never becomes
 // transcript text.
-import { createHash } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { existsSync, mkdirSync, renameSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
@@ -53,7 +53,7 @@ interface ImageBlock {
   type: 'image' | 'inputImage';
   data?: unknown;
   mimeType?: unknown;
-  source?: { data?: unknown; media_type?: unknown };
+  source?: { data?: unknown; media_type?: unknown; mediaType?: unknown };
   imageUrl?: unknown;
 }
 
@@ -63,20 +63,21 @@ function isImage(block: unknown): block is ImageBlock {
 }
 
 // An image block comes in MCP's shape (`data`, `mimeType`), the model API's
-// (`source.data`, `source.media_type`) or Codex's (`imageUrl`, a data URL).
+// (`source.data` with `source.media_type`, which the Droid SDK spells
+// `mediaType`) or Codex's (`imageUrl`, a data URL).
 function bytesOf(image: ImageBlock): { data: string; mimeType: string } | undefined {
   if (typeof image.imageUrl === 'string') {
     const url = /^data:([^;,]+)[^,]*;base64,(.+)$/s.exec(image.imageUrl);
     return url ? { mimeType: url[1], data: url[2] } : undefined;
   }
   const data = image.data ?? image.source?.data;
-  const mimeType = image.mimeType ?? image.source?.media_type;
+  const mimeType = image.mimeType ?? image.source?.media_type ?? image.source?.mediaType;
   return typeof data === 'string' && typeof mimeType === 'string' ? { data, mimeType } : undefined;
 }
 
 // Named by its content, so replaying a session finds the file it wrote before.
-// Written beside its place and moved in, so a write that fails leaves no file
-// to be taken for the picture.
+// Written beside its place under a name of its own and moved in, so a write
+// that fails, or two that race, leave no half file to be taken for the picture.
 function savedImage(image: ImageBlock): string | undefined {
   const bytes = bytesOf(image);
   const extension = bytes && EXTENSIONS[bytes.mimeType.toLowerCase()];
@@ -87,7 +88,7 @@ function savedImage(image: ImageBlock): string | undefined {
     const path = join(directory, `tool-${name}${extension}`);
     if (!existsSync(path)) {
       mkdirSync(directory, { recursive: true });
-      const partial = `${path}.${String(process.pid)}.part`;
+      const partial = `${path}.${randomUUID()}.part`;
       writeFileSync(partial, Buffer.from(bytes.data, 'base64'));
       renameSync(partial, path);
     }

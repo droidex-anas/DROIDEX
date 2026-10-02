@@ -22,6 +22,10 @@ test('every harness shape of an image block is the same picture', () => {
   const api = toolResultParts([
     { type: 'image', source: { type: 'base64', data: JPEG, media_type: 'image/jpeg' } },
   ]);
+  const droid = toolResultParts([
+    { type: 'image', source: { type: 'base64', data: JPEG, mediaType: 'image/jpeg' } },
+  ]);
+  assert.deepEqual(droid.images, mcp.images);
   const codex = toolResultParts([
     { type: 'inputText', text: 'Done.' },
     { type: 'inputImage', imageUrl: `data:image/jpeg;base64,${JPEG}` },
