@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import type { BridgeFeature, SessionSummary, TranscriptEvent } from '../types/bridge';
-import { withLocalStorageMap } from '../test/localStorage';
+import { withFailingLocalStorage, withLocalStorageMap } from '../test/localStorage';
 import {
   createSnapshotScheduler,
   loadSessionSnapshot,
@@ -259,25 +259,10 @@ test('cancel discards a pending write', (t) => {
 });
 
 test('storage failures are swallowed on both read and write', () => {
-  const previous = Object.getOwnPropertyDescriptor(globalThis, 'localStorage');
-  Object.defineProperty(globalThis, 'localStorage', {
-    configurable: true,
-    value: {
-      getItem: () => {
-        throw new Error('denied');
-      },
-      setItem: () => {
-        throw new Error('denied');
-      },
-    },
-  });
-  try {
+  withFailingLocalStorage(() => {
     assert.equal(loadSessionSnapshot(), undefined);
     saveSessionSnapshot({ s1: summary('s1') }, ['s1']);
-  } finally {
-    if (previous) Object.defineProperty(globalThis, 'localStorage', previous);
-    else delete (globalThis as { localStorage?: Storage }).localStorage;
-  }
+  });
 });
 
 test('malformed features are dropped and bad optional feature fields cleared on save and load', () => {

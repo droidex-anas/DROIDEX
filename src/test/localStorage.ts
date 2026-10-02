@@ -1,9 +1,22 @@
+function withGlobalStorage(storage: Storage, fn: () => void): void {
+  const previous = Object.getOwnPropertyDescriptor(globalThis, 'localStorage');
+  Object.defineProperty(globalThis, 'localStorage', {
+    configurable: true,
+    value: storage,
+  });
+  try {
+    fn();
+  } finally {
+    if (previous) Object.defineProperty(globalThis, 'localStorage', previous);
+    else delete (globalThis as { localStorage?: Storage }).localStorage;
+  }
+}
+
 /** Runs `fn` against an in-memory localStorage; pass a Map to inspect what it wrote. */
 export function withLocalStorageMap(
   seed: Record<string, string> | Map<string, string>,
   fn: () => void,
 ): void {
-  const previous = Object.getOwnPropertyDescriptor(globalThis, 'localStorage');
   const values = seed instanceof Map ? seed : new Map(Object.entries(seed));
   const mock: Storage = {
     getItem: (key) => values.get(key) ?? null,
@@ -21,14 +34,13 @@ export function withLocalStorageMap(
       return values.size;
     },
   };
-  Object.defineProperty(globalThis, 'localStorage', {
-    configurable: true,
-    value: mock,
-  });
-  try {
-    fn();
-  } finally {
-    if (previous) Object.defineProperty(globalThis, 'localStorage', previous);
-    else delete (globalThis as { localStorage?: Storage }).localStorage;
-  }
+  withGlobalStorage(mock, fn);
+}
+
+/** Runs `fn` against a localStorage whose reads and writes throw, as a denied or full store does. */
+export function withFailingLocalStorage(fn: () => void): void {
+  const fail = () => {
+    throw new Error('storage denied');
+  };
+  withGlobalStorage({ getItem: fail, setItem: fail } as unknown as Storage, fn);
 }

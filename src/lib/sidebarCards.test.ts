@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { dismissSidebarCard, loadSidebarCardSeen } from './sidebarCards';
-import { withLocalStorageMap } from '../test/localStorage';
+import { withFailingLocalStorage, withLocalStorageMap } from '../test/localStorage';
 
 test('dismissing a card persists the seen flag for that card id only', () => {
   withLocalStorageMap({}, () => {
@@ -15,23 +15,8 @@ test('dismissing a card persists the seen flag for that card id only', () => {
 });
 
 test('storage failures stay quiet and report seen', () => {
-  const previous = Object.getOwnPropertyDescriptor(globalThis, 'localStorage');
-  Object.defineProperty(globalThis, 'localStorage', {
-    configurable: true,
-    value: {
-      getItem: () => {
-        throw new Error('denied');
-      },
-      setItem: () => {
-        throw new Error('denied');
-      },
-    },
-  });
-  try {
+  withFailingLocalStorage(() => {
     assert.equal(loadSidebarCardSeen('welcome-to-droidex'), true);
     dismissSidebarCard('welcome-to-droidex');
-  } finally {
-    if (previous) Object.defineProperty(globalThis, 'localStorage', previous);
-    else delete (globalThis as { localStorage?: Storage }).localStorage;
-  }
+  });
 });

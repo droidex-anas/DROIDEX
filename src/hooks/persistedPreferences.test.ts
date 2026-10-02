@@ -4,7 +4,7 @@ import type { ThemePreset } from '../lib/theme';
 import { loadTheme, persistCustomThemes } from './persistedThemePreferences';
 import { loadAgentConfig, loadHarnessModels, sanitizeAgentConfig } from './persistedUiPreferences';
 import type { ModelInfo } from '../types/bridge';
-import { withLocalStorageMap } from '../test/localStorage';
+import { withFailingLocalStorage, withLocalStorageMap } from '../test/localStorage';
 
 const CUSTOM_PRESET: ThemePreset = {
   id: 'custom-test',
@@ -42,20 +42,9 @@ test('loadTheme keeps hand-edited colors, defaults unreadable fields, and resolv
 // A failed write must reach the handler (throw) instead of being swallowed,
 // so the UI can keep state untouched and show a retryable error.
 test('persistCustomThemes propagates storage failure instead of faking success', () => {
-  const previous = Object.getOwnPropertyDescriptor(globalThis, 'localStorage');
-  const throwing = {
-    getItem: () => null,
-    setItem: () => {
-      throw new Error('quota exceeded');
-    },
-  } as unknown as Storage;
-  Object.defineProperty(globalThis, 'localStorage', { configurable: true, value: throwing });
-  try {
+  withFailingLocalStorage(() => {
     assert.throws(() => persistCustomThemes([CUSTOM_PRESET]));
-  } finally {
-    if (previous) Object.defineProperty(globalThis, 'localStorage', previous);
-    else delete (globalThis as { localStorage?: Storage }).localStorage;
-  }
+  });
 });
 
 test('malformed agent config sanitizes to defaults', () => {
