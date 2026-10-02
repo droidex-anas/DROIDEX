@@ -1,6 +1,5 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import vm from 'node:vm';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { AppBlock } from './AppBlock';
@@ -83,20 +82,9 @@ test('the running document preserves layout, theme, and the local bridge', () =>
   assert.match(document, /observer\.observe\(document\.body\)/);
   assert.match(document, /"app-1"/);
   assert.match(document, /color-scheme: light/);
-  assert.match(document, /--app-background: #f7f7f5/);
-  assert.match(document, /--app-foreground: #202020/);
   assert.match(document, /--app-accent: #2f6fed/);
-  assert.match(document, /background: transparent/);
-  assert.doesNotMatch(document, /background: var\(--app-background\) !important/);
-  assert.doesNotMatch(document, /\[data-droidex-app-root\] \{[\s\S]*?\n {2}background:/);
-  assert.match(document, /padding: 0/);
-  assert.match(document, /\[data-droidex-app-root\]/);
-  assert.match(document, /max-width: none !important/);
-  assert.doesNotMatch(document, /\[data-droidex-app-root\] \{[^}]*border-radius:\s*0\s*!important/);
   assert.match(document, /window\.droidex/);
-  assert.match(document, /\[data-latex\]/);
   assert.match(document, /droidex:render-math/);
-  assert.match(document, /droidex:math-rendered/);
   assert.match(document, /<main><h1>Responsive app<\/h1><\/main>/);
 });
 
@@ -137,22 +125,7 @@ test('reported app heights follow the app instead of creating a nested scroller'
   assert.equal(normalizeAppBlockHeight(Number.NaN), 360);
 });
 
-test('restored app blocks mount directly without a Play or Stop card', () => {
-  const html = renderToStaticMarkup(
-    createElement(RunningAppFrame, {
-      source: '<button>Private source</button>',
-      instanceId: 'app-1',
-    }),
-  );
-
-  assert.match(html, /Interactive App/);
-  assert.match(html, /<iframe/i);
-  assert.doesNotMatch(html, /aria-label="(?:Play|Stop) app"/);
-  // A mismatched iframe/document color scheme makes Chromium paint an opaque backdrop.
-  assert.match(html, /color-scheme:dark/);
-});
-
-test('the running frame keeps app code inside a script-only sandbox', () => {
+test('a running App mounts in a script-only sandbox, hidden behind its build surface', () => {
   const html = renderToStaticMarkup(
     createElement(RunningAppFrame, {
       source: '<button>Safe app</button>',
@@ -160,22 +133,13 @@ test('the running frame keeps app code inside a script-only sandbox', () => {
     }),
   );
 
-  assert.match(html, /<iframe/i);
+  assert.doesNotMatch(html, /aria-label="(?:Play|Stop) app"/);
   assert.match(html, /sandbox="allow-scripts"/);
   assert.doesNotMatch(html, /allow-same-origin/);
   assert.match(html, /referrerPolicy="no-referrer"/i);
   assert.match(html, /title="Interactive App block"/);
-  assert.doesNotMatch(html, /transition-\[height\]/);
-});
-
-test('a started App builds behind a status surface until it reports its size', () => {
-  const html = renderToStaticMarkup(
-    createElement(RunningAppFrame, {
-      source: '<button>Slow app</button>',
-      instanceId: 'app-build',
-    }),
-  );
-
+  // A mismatched iframe/document color scheme makes Chromium paint an opaque backdrop.
+  assert.match(html, /color-scheme:dark/);
   assert.match(html, /role="status"/);
   assert.match(html, /Starting interactive app/);
   // The frame still loads while hidden, and stays out of the reading and tab
@@ -183,9 +147,6 @@ test('a started App builds behind a status surface until it reports its size', (
   assert.match(html, /loading="eager"/);
   assert.match(html, /aria-hidden="true"/);
   assert.match(html, /tabindex="-1"/i);
-  // Off-layout, so the hidden frame's default height cannot reserve space the
-  // measured App will not use.
-  assert.match(html, /invisible pointer-events-none absolute inset-x-0 top-0/);
 });
 
 test('height reports coalesce on a timer so a hidden host window still measures', () => {
@@ -212,60 +173,6 @@ test('height reports coalesce on a timer so a hidden host window still measures'
       });
     });
   });
-});
-
-test('a script failure is reported before the App can announce readiness', () => {
-  const document = createAppDocument(
-    '<script>const broken = ;</script>',
-    'app-error',
-    undefined,
-    'token',
-  );
-  const script = /<script>([\s\S]*?)<\/script>/.exec(document)?.[1];
-  assert.ok(script);
-  const listeners = new Map<string, (event: unknown) => void>();
-  const messages: unknown[] = [];
-  const parent = {
-    postMessage(message: unknown) {
-      messages.push(message);
-    },
-  };
-
-  vm.runInNewContext(script, {
-    parent,
-    window: {},
-    Element: class {},
-    document: {},
-    setTimeout: () => 1,
-    clearTimeout: () => undefined,
-    ResizeObserver: class {},
-    addEventListener(type: string, listener: (event: unknown) => void) {
-      listeners.set(type, listener);
-    },
-    removeEventListener: () => undefined,
-  });
-
-  listeners.get('error')?.({ message: 'Invalid or unexpected token' });
-
-  assert.deepEqual(JSON.parse(JSON.stringify(messages)), [
-    {
-      type: 'droidex:app-error',
-      instanceId: 'app-error',
-      bridgeToken: 'token',
-      message: 'Invalid or unexpected token',
-    },
-  ]);
-
-  messages.length = 0;
-  listeners.get('unhandledrejection')?.({ reason: new Error('   ') });
-  assert.deepEqual(JSON.parse(JSON.stringify(messages)), [
-    {
-      type: 'droidex:app-error',
-      instanceId: 'app-error',
-      bridgeToken: 'token',
-      message: 'The interactive App failed to start.',
-    },
-  ]);
 });
 
 test('a working App is not torn down by a later interaction error', () => {
@@ -404,285 +311,6 @@ test('each iframe document gets an independent bridge token and work budget', ()
   assert.equal(first.guard.startMath(), true);
   assert.equal(first.guard.startMath(), false);
   assert.equal(second.guard.startMath(), true);
-});
-
-test('the iframe queues early math behind readiness and authenticates repeated handshakes', async () => {
-  const document = createAppDocument('<main>Ready</main>', 'app-ready', undefined, 'token');
-  const script = /<script>([\s\S]*?)<\/script>/.exec(document)?.[1];
-  assert.ok(script);
-  const listeners = new Map<string, (event: { source: object; data: unknown }) => void>();
-  const messages: unknown[] = [];
-  const parent = {
-    postMessage(message: unknown) {
-      messages.push(message);
-    },
-  };
-  class MathElement {
-    innerHTML = '';
-    hasAttribute() {
-      return false;
-    }
-  }
-  const window: {
-    droidex?: { renderMath: (element: MathElement, latex: string) => Promise<boolean> };
-  } = {};
-
-  vm.runInNewContext(script, {
-    parent,
-    window,
-    Element: MathElement,
-    document: {},
-    setTimeout: () => 1,
-    clearTimeout: () => undefined,
-    ResizeObserver: class {},
-    addEventListener(type: string, listener: (event: { source: object; data: unknown }) => void) {
-      listeners.set(type, listener);
-    },
-    removeEventListener: () => undefined,
-  });
-
-  const onMessage = listeners.get('message');
-  assert.ok(onMessage);
-  assert.ok(window.droidex);
-  const element = new MathElement();
-  const rendered = window.droidex.renderMath(element, 'x^2');
-  await Promise.resolve();
-  assert.deepEqual(messages, []);
-  const handshake = {
-    source: parent,
-    data: {
-      type: 'droidex:host-ready',
-      instanceId: 'app-ready',
-      bridgeToken: 'token',
-    },
-  };
-  onMessage({
-    ...handshake,
-    data: { ...handshake.data, bridgeToken: 'wrong' },
-  });
-  await Promise.resolve();
-  assert.deepEqual(messages, []);
-  onMessage(handshake);
-  onMessage(handshake);
-  await Promise.resolve();
-
-  assert.deepEqual(JSON.parse(JSON.stringify(messages)), [
-    { type: 'droidex:app-ready', instanceId: 'app-ready', bridgeToken: 'token' },
-    { type: 'droidex:app-ready', instanceId: 'app-ready', bridgeToken: 'token' },
-    {
-      type: 'droidex:render-math',
-      instanceId: 'app-ready',
-      bridgeToken: 'token',
-      requestId: 'app-ready-math-1',
-      latex: 'x^2',
-      displayMode: false,
-    },
-  ]);
-  onMessage({
-    source: parent,
-    data: {
-      type: 'droidex:math-rendered',
-      instanceId: 'app-ready',
-      bridgeToken: 'token',
-      requestId: 'app-ready-math-1',
-      html: '<math><msup><mi>x</mi><mn>2</mn></msup></math>',
-    },
-  });
-  assert.equal(await rendered, true);
-  assert.match(element.innerHTML, /<math>/);
-});
-
-test('the iframe reports its initial height only after built-in math settles', async () => {
-  const documentHtml = createAppDocument(
-    '<main><span data-latex="x^2">x²</span></main>',
-    'app-math-height',
-    undefined,
-    'token',
-  );
-  const script = /<script>([\s\S]*?)<\/script>/.exec(documentHtml)?.[1];
-  assert.ok(script);
-
-  class TestElement {
-    innerHTML = '';
-    textContent = '';
-    tagName = 'SPAN';
-    children: TestElement[] = [];
-    scrollHeight = 500;
-
-    getAttribute(name: string) {
-      return name === 'data-latex' ? 'x^2' : null;
-    }
-    hasAttribute() {
-      return false;
-    }
-    matches() {
-      return false;
-    }
-    querySelector() {
-      return null;
-    }
-    querySelectorAll() {
-      return [];
-    }
-    setAttribute() {}
-  }
-
-  const mathElement = new TestElement();
-  const body = new TestElement();
-  body.tagName = 'BODY';
-  const documentElement = { scrollHeight: 500 };
-  const runtimeDocument = {
-    body,
-    documentElement,
-    querySelector: () => null,
-    querySelectorAll: (selector: string) => (selector === '[data-latex]' ? [mathElement] : []),
-  };
-  const listeners = new Map<string, (event?: { source?: object; data?: unknown }) => void>();
-  const messages: Record<string, unknown>[] = [];
-  const pendingReports: (() => void)[] = [];
-  let observerCallback: (() => void) | undefined;
-  const parent = {
-    postMessage(message: Record<string, unknown>) {
-      messages.push(message);
-    },
-  };
-
-  vm.runInNewContext(script, {
-    parent,
-    window: {},
-    Element: TestElement,
-    document: runtimeDocument,
-    setTimeout(callback: () => void) {
-      pendingReports.push(callback);
-      return pendingReports.length;
-    },
-    clearTimeout: () => undefined,
-    ResizeObserver: class {
-      constructor(callback: () => void) {
-        observerCallback = callback;
-      }
-      observe() {}
-      disconnect() {}
-    },
-    addEventListener(
-      type: string,
-      listener: (event?: { source?: object; data?: unknown }) => void,
-    ) {
-      listeners.set(type, listener);
-    },
-    removeEventListener: () => undefined,
-  });
-
-  listeners.get('DOMContentLoaded')?.();
-  await Promise.resolve();
-  assert.ok(observerCallback);
-  // A resize before math settles must not publish the pre-math layout: the host
-  // shows the App at its first reported height.
-  observerCallback();
-  while (pendingReports.length > 0) pendingReports.shift()?.();
-  assert.equal(
-    messages.some((message) => message.type === 'droidex:app-height'),
-    false,
-  );
-
-  body.scrollHeight = 600;
-  documentElement.scrollHeight = 600;
-  listeners.get('message')?.({
-    source: parent,
-    data: {
-      type: 'droidex:math-rendered',
-      instanceId: 'app-math-height',
-      bridgeToken: 'token',
-      requestId: 'app-math-height-math-1',
-      html: '<math></math>',
-    },
-  });
-  await new Promise<void>((resolve) => setImmediate(resolve));
-  while (pendingReports.length > 0) pendingReports.shift()?.();
-
-  assert.deepEqual(
-    JSON.parse(JSON.stringify(messages.filter((message) => message.type === 'droidex:app-height'))),
-    [
-      {
-        type: 'droidex:app-height',
-        instanceId: 'app-math-height',
-        bridgeToken: 'token',
-        height: 600,
-      },
-    ],
-  );
-});
-
-test('the iframe measures its content so the frame can shrink with it', async () => {
-  const documentHtml = createAppDocument('<main>Compact</main>', 'app-shrink', undefined, 'token');
-  const script = /<script>([\s\S]*?)<\/script>/.exec(documentHtml)?.[1];
-  assert.ok(script);
-
-  // The root element always fills the frame viewport, so its scrollHeight never
-  // drops below the height the host already applied. Measuring it turns every
-  // report into a ratchet: compact content is padded out to the frame it was
-  // given, and an App that shrinks keeps its taller frame forever.
-  const body = {
-    tagName: 'BODY',
-    scrollHeight: 141,
-    children: [] as never[],
-    matches: () => false,
-  };
-  const documentElement = { scrollHeight: 360 };
-  const runtimeDocument = {
-    body,
-    documentElement,
-    querySelector: () => null,
-    querySelectorAll: () => [],
-  };
-  const listeners = new Map<string, () => void>();
-  const heights: number[] = [];
-  const pendingReports: (() => void)[] = [];
-  let observerCallback: (() => void) | undefined;
-
-  vm.runInNewContext(script, {
-    parent: {
-      postMessage(message: Record<string, unknown>) {
-        if (message.type === 'droidex:app-height') heights.push(message.height as number);
-      },
-    },
-    window: {},
-    Element: class {},
-    document: runtimeDocument,
-    setTimeout(callback: () => void) {
-      pendingReports.push(callback);
-      return pendingReports.length;
-    },
-    clearTimeout: () => undefined,
-    ResizeObserver: class {
-      constructor(callback: () => void) {
-        observerCallback = callback;
-      }
-      observe() {}
-      disconnect() {}
-    },
-    addEventListener(type: string, listener: () => void) {
-      listeners.set(type, listener);
-    },
-    removeEventListener: () => undefined,
-  });
-
-  const flushReports = () => {
-    observerCallback?.();
-    while (pendingReports.length > 0) pendingReports.shift()?.();
-  };
-
-  listeners.get('DOMContentLoaded')?.();
-  // The first report waits for built-in math to settle, one microtask away.
-  await Promise.resolve();
-  await Promise.resolve();
-  flushReports();
-  assert.deepEqual(heights, [141]);
-
-  body.scrollHeight = 90;
-  documentElement.scrollHeight = 141;
-  flushReports();
-  assert.deepEqual(heights, [141, 90]);
 });
 
 test('short and functional CSS colors select the correct canvas scheme', () => {

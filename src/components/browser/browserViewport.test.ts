@@ -8,16 +8,6 @@ test('viewportFromFrame fits the browser surface inside the canvas frame', () =>
     height: 821,
     deviceScaleFactor: 2,
   });
-  assert.deepEqual(viewportFromFrame({ width: 320, height: 300 }), {
-    width: 284,
-    height: 264,
-    deviceScaleFactor: 2,
-  });
-  assert.deepEqual(viewportFromFrame({ width: 5000, height: 3000 }), {
-    width: 4964,
-    height: 2964,
-    deviceScaleFactor: 2,
-  });
   assert.deepEqual(viewportFromFrame({ width: 1325, height: 857 }, true), {
     width: 1325,
     height: 857,

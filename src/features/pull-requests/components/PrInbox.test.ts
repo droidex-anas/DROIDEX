@@ -59,17 +59,13 @@ test('an initial list failure does not also claim the repository is empty', () =
   assert.equal(shouldShowPrInboxEmpty(null, 2), false);
 });
 
-test('selected row shows the title, additions, and both branches', () => {
+test('only the selected row is current, and it shows the title, additions, and both branches', () => {
   const html = renderInbox({ selectedNumber: 12 });
   assert.match(html, /App PR/);
   assert.match(html, /\+8/);
   assert.match(html, /main ← feat/);
   assert.match(html, /aria-current="true"/);
-});
-
-test('an unselected row carries no current state', () => {
-  const html = renderInbox({ selectedNumber: null });
-  assert.doesNotMatch(html, /aria-current/);
+  assert.doesNotMatch(renderInbox({ selectedNumber: null }), /aria-current/);
 });
 
 test('empty All tab shows the repo empty sentence', () => {
@@ -85,7 +81,6 @@ test('the filters are a labelled tab list and the search field names itself', ()
   assert.match(html, /role="tab" aria-selected="false"[^>]*>Reviewing</);
   assert.match(html, /role="tab" aria-selected="false"[^>]*>Backlog</);
   assert.match(html, /aria-label="Search pull requests"/);
-  assert.match(html, /focus-visible:ring-2/);
 });
 
 test('a query with no matches uses search-specific empty copy', () => {
@@ -95,19 +90,17 @@ test('a query with no matches uses search-specific empty copy', () => {
   assert.equal(prInboxEmptyCopy('all', '', true), 'No open pull requests in these workspaces.');
 });
 
-test('the current workspace lists its pull requests without a group header', () => {
+test('the current workspace lists its pull requests openly; others stay collapsed until selected', () => {
   const html = renderInbox();
   assert.match(html, /App PR/);
   assert.doesNotMatch(html, /Show droid-control pull requests/);
   assert.match(html, /Move to backlog/);
-  assert.doesNotMatch(html, /Archive/);
-});
-
-test('other workspaces start collapsed until the group is opened', () => {
-  const html = renderInbox();
   assert.match(html, /aria-expanded="false"/);
   assert.match(html, /Show clinic pull requests/);
   assert.doesNotMatch(html, /Site PR/);
+
+  // Selecting a pull request in another workspace opens that group.
+  assert.match(renderInbox({ selectedCwd: '/repos/clinic', selectedNumber: 3 }), /Site PR/);
 });
 
 test('an empty other workspace does not show a zero count', () => {
@@ -123,13 +116,4 @@ test('an empty other workspace does not show a zero count', () => {
   });
   assert.match(html, /Show clinic pull requests/);
   assert.doesNotMatch(html, />0</);
-});
-
-test('selecting a pull request in another workspace expands that group', () => {
-  const html = renderInbox({
-    selectedCwd: '/repos/clinic',
-    selectedNumber: 3,
-  });
-  assert.match(html, /Site PR/);
-  assert.match(html, /aria-expanded="true"/);
 });

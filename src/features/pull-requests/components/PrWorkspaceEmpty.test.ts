@@ -52,34 +52,30 @@ test('authenticating with a device code shows the existing prompt, not a dead bu
   assert.doesNotMatch(html, /Waiting for GitHub/);
 });
 
-test('authenticating without a device code keeps an explicit cancellation action', () => {
-  const html = renderSetup({ action: 'authenticating' });
-
-  assert.match(html, /Waiting for GitHub…/);
-  assert.match(html, /Cancel sign-in/);
-  assert.doesNotMatch(html, /ABCD-7HJK/);
-});
-
-test('idle signed-out setup still uses the primary sign-in action', () => {
-  const html = renderSetup();
-
-  assert.match(html, /Sign in to GitHub/);
-  assert.doesNotMatch(html, /Enter this code on GitHub/);
-  assert.doesNotMatch(html, /Cancel sign-in/);
-});
-
-test('manual installation does not offer a nonfunctional cancellation action', () => {
-  const html = renderSetup({
-    availability: {
-      installed: false,
-      authenticated: false,
-      installMethod: 'manual',
-    },
-    action: 'installing',
-  });
-
-  assert.match(html, /Installing…/);
-  assert.doesNotMatch(html, /Cancel installation/);
+test('each setup state offers only the action that works in it', () => {
+  const cases: [string, Partial<GithubSetupController>, RegExp[], RegExp[]][] = [
+    ['signed out', {}, [/Sign in to GitHub/], [/Enter this code on GitHub/, /Cancel sign-in/]],
+    [
+      'authenticating without a device code',
+      { action: 'authenticating' },
+      [/Waiting for GitHub…/, /Cancel sign-in/],
+      [/ABCD-7HJK/],
+    ],
+    [
+      'installing manually',
+      {
+        availability: { installed: false, authenticated: false, installMethod: 'manual' },
+        action: 'installing',
+      },
+      [/Installing…/],
+      [/Cancel installation/],
+    ],
+  ];
+  for (const [name, overrides, present, absent] of cases) {
+    const html = renderSetup(overrides);
+    for (const pattern of present) assert.match(html, pattern, name);
+    for (const pattern of absent) assert.doesNotMatch(html, pattern, name);
+  }
 });
 
 test('setup errors are announced when they change', () => {

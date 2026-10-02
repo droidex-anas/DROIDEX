@@ -33,13 +33,6 @@ test('one queued image renders a thumbnail without a count badge', () => {
   assert.doesNotMatch(html, /min-w-3\.5/);
 });
 
-test('a queued non-image file renders a FileChip', () => {
-  const html = render([prompt({ files: ['/tmp/notes.pdf'] })]);
-  assert.match(html, /notes\.pdf/);
-  assert.match(html, />PDF</);
-  assert.doesNotMatch(html, /droidex-img/);
-});
-
 test('queued mixed attachments keep paste order', () => {
   const html = render([
     prompt({ files: ['/tmp/notes.pdf', '/tmp/a.png', '/tmp/b.png', '/tmp/spec.md'] }),
@@ -51,6 +44,7 @@ test('queued mixed attachments keep paste order', () => {
   const spec = html.indexOf('title="spec.md"');
   assert.ok(pdf >= 0 && img >= 0 && spec >= 0);
   assert.ok(pdf < img && img < spec);
+  assert.match(html, />PDF</);
   assert.equal(html.match(/<img src="droidex-img:\/\/local/g)?.length, 1);
   assert.match(html, /min-w-3\.5[^>]*">2</);
 });

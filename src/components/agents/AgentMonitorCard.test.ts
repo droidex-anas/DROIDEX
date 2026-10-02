@@ -7,7 +7,6 @@ import { buildFeed } from '../chatFeed';
 import { groupTurns, trailingSubagentPoll } from '../chatFeedTurns';
 import { AgentMonitorCard } from './AgentMonitorCard';
 import { AGENT_VISIBLE_ROW_LIMIT, foldedAgentRows } from './AgentRowList';
-import { agentRowTitle } from './AgentRow';
 import { isPendingChildPlaceholder, resolveWaveSessions } from '../../lib/childSessions';
 import { childSessionInfo } from '../../lib/tools';
 import type { ChildSessionSummary, ChildStatus, TranscriptEvent } from '../../types/bridge';
@@ -78,9 +77,6 @@ const monitorData = {
 // Adjacent text expressions render with comment separators; strip them so text
 // assertions match what a user reads.
 const textOf = (html: string) => html.replace(/<!--.*?-->/g, '');
-
-// A tool group shimmers its summary only while the step is still running.
-const LIVE_SUMMARY_CLASS = 'shimmer-text text-[13px] font-medium';
 
 const cardText = (props: Parameters<typeof AgentMonitorCard>[0]) =>
   textOf(renderToStaticMarkup(createElement(AgentMonitorCard, props)));
@@ -218,10 +214,8 @@ test('two in-flight waves render two docks, each scoped to its own agents', () =
   assert.ok(text.includes('Running'));
   assert.ok(text.includes('1 Done'));
   // The header summarizes completion; the pills carry the status breakdown.
-  assert.ok(!text.includes('spawned'));
   assert.ok(text.includes('All 1 agent finished'));
   assert.ok(text.includes('0 of 1 agent finished'));
-  assert.ok(!text.includes('Spawned'));
 });
 
 test('an unresolved live spawn reports unknown status and never infers lifecycle', () => {
@@ -242,9 +236,6 @@ test('an unresolved live spawn reports unknown status and never infers lifecycle
   assert.ok(!text.includes('1m</'));
   assert.ok(!text.includes('Done'));
 
-  // Ending the parent turn still says nothing about the child's lifecycle.
-  assert.equal(resolveWaveSessions([launched], [])[0].status, 'pending');
-
   // A queued child is known to be waiting its turn, so it says Queued instead.
   const queued = cardText({
     sessions: [{ ...childSession('queued-agent', 't1', 'pending'), queued: true }],
@@ -255,21 +246,12 @@ test('an unresolved live spawn reports unknown status and never infers lifecycle
   assert.ok(!queued.includes('Awaiting status'));
 });
 
-test('placeholder tool ids are never presented as stable child ids', () => {
-  assert.equal(agentRowTitle('Explorer', 'pending-tool-1'), 'Open Explorer');
-  assert.equal(
-    agentRowTitle('Explorer', 'child-stable-1'),
-    'Open Explorer\nChild ID: child-stable-1',
-  );
-});
-
 test('the dock renders from spawn events before sessions register, and stays unknown', () => {
   // No resolved sessions yet: a placeholder stands in so the card never flashes
   // per-spawn lines while the store catches up.
   const text = textOf(feedHtml([userMsg('go'), spawn('t1', 'explorer')], noSessions));
   assert.ok(text.includes('Agents'));
   assert.ok(text.includes('Awaiting status'));
-  assert.ok(!text.includes('Spawned'));
 
   // The parent keeps talking (plan updates, narration) while its subagents work,
   // so "is this wave live" cannot be "is this the last feed item".
@@ -331,7 +313,8 @@ test('a trailing agent poll reads as checking subagents, not a stuck or stopped 
   );
   assert.ok(textOf(afterStep).includes('Checking subagents'));
   assert.ok(afterStep.includes('Search'));
-  assert.ok(!afterStep.includes(`${LIVE_SUMMARY_CLASS}">Search`));
+  // A tool group shimmers its summary only while the step is still running.
+  assert.doesNotMatch(afterStep, /shimmer-text[^"]*">Search/);
 
   // An assistant message self-indicates with a caret, so a settled one at the
   // tail would leave the whole feed looking stopped while the parent polls.

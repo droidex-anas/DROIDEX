@@ -118,11 +118,7 @@ test('scroll-to-row lookup remains accurate for prompt, tool, and turn identitie
   const prompt = messageItem('prompt-1', 'user');
   const answer = messageItem('answer-1', 'assistant');
   const toolCall: TranscriptEvent = {
-    id: 'tool-1',
-    appSessionId: 'm',
-    sourceSessionId: 'primary',
-    role: 'primary',
-    ts: 3,
+    ...messageItem('tool-1').event,
     kind: 'tool_call',
     toolName: 'Grep',
     toolArgs: { pattern: 'x' },
@@ -132,11 +128,7 @@ test('scroll-to-row lookup remains accurate for prompt, tool, and turn identitie
     type: 'child_session',
     key: 'child-session-wave',
     event: {
-      id: 'child-1',
-      appSessionId: 'm',
-      sourceSessionId: 'primary',
-      role: 'primary',
-      ts: 4,
+      ...messageItem('child-1').event,
       kind: 'tool_call',
       toolName: 'Task',
       toolUseId: 'tu-child',

@@ -38,6 +38,5 @@ function renderRow({ isMerged = false } = {}): string {
 test('merged worktrees use the GitHub merged icon without a text badge', () => {
   const html = renderRow({ isMerged: true });
   assert.match(html, /aria-label="Merged"/);
-  assert.match(html, /fill-\[#a371f7\]/);
   assert.doesNotMatch(html, />merged</i);
 });

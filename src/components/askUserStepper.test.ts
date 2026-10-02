@@ -25,7 +25,7 @@ function run(total: number, actions: StepperAction[]): StepperState {
   return actions.reduce(stepperReducer, createStepper(total));
 }
 
-test('picking an option records it and leaves typing mode', () => {
+test('picking an option records it and leaves typing mode; a blank answer cannot advance', () => {
   const state = run(1, [
     { type: 'openCustomAnswer', questionIndex: 0 },
     { type: 'pickOption', questionIndex: 0, option: 'Postgres' },
@@ -34,6 +34,9 @@ test('picking an option records it and leaves typing mode', () => {
   assert.deepEqual(answerFor(state, 0).selected, ['Postgres']);
   assert.equal(answerFor(state, 0).typing, false);
   assert.equal(canAdvance(state, 0), true);
+
+  const blank = run(1, [{ type: 'typeAnswer', questionIndex: 0, value: '   ' }]);
+  assert.equal(canAdvance(blank, 0), false);
 });
 
 test('one choice replaces the last one, several toggle inside the answer', () => {
@@ -95,12 +98,6 @@ test('the custom field opens on the answer already held', () => {
   assert.equal(answerFor(picked, 0).typing, true);
 });
 
-test('a whitespace-only answer cannot advance', () => {
-  const state = run(1, [{ type: 'typeAnswer', questionIndex: 0, value: '   ' }]);
-
-  assert.equal(canAdvance(state, 0), false);
-});
-
 test('forward and back clamp to the question range', () => {
   const atEnd = run(2, [{ type: 'forward' }, { type: 'forward' }]);
   assert.equal(atEnd.current, 1);
@@ -126,7 +123,7 @@ test('answers stay attached to their own question across back and forward', () =
   assert.equal(answerFor(state, 1).typing, true);
 });
 
-test('the submission payload carries every question with what it holds', () => {
+test('the submission payload carries every question with what it holds, even unanswered', () => {
   const state = run(2, [
     { type: 'pickOption', questionIndex: 0, option: 'Postgres', multiSelect: true },
     { type: 'pickOption', questionIndex: 0, option: 'SQLite', multiSelect: true },
@@ -138,12 +135,9 @@ test('the submission payload carries every question with what it holds', () => {
     { index: 0, question: 'Which database?', selected: ['Postgres', 'SQLite'] },
     { index: 1, question: 'Which host?', selected: [], custom: 'Fly.io' },
   ]);
-});
 
-test('unanswered questions submit as empty answers rather than being dropped', () => {
-  const state = run(2, [{ type: 'pickOption', questionIndex: 0, option: 'SQLite' }]);
-
-  assert.deepEqual(submissionAnswers(QUESTIONS, state), [
+  const partial = run(2, [{ type: 'pickOption', questionIndex: 0, option: 'SQLite' }]);
+  assert.deepEqual(submissionAnswers(QUESTIONS, partial), [
     { index: 0, question: 'Which database?', selected: ['SQLite'] },
     { index: 1, question: 'Which host?', selected: [] },
   ]);

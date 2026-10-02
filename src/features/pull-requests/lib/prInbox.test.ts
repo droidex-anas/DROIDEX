@@ -180,44 +180,17 @@ test('ensureCurrentInboxGroup inserts an empty current repository when listing m
 });
 
 test('inboxGroupIsExpanded keeps the current repo open and others closed', () => {
-  assert.equal(
+  const expanded = (cwd: string, selectedCwd: string, searching = false) =>
     inboxGroupIsExpanded({
-      cwd: '/app',
+      cwd,
       currentCwd: '/app',
       expandedOther: new Set(),
-      searching: false,
-      selectedCwd: '/app',
-    }),
-    true,
-  );
-  assert.equal(
-    inboxGroupIsExpanded({
-      cwd: '/site',
-      currentCwd: '/app',
-      expandedOther: new Set(),
-      searching: false,
-      selectedCwd: '/app',
-    }),
-    false,
-  );
-  assert.equal(
-    inboxGroupIsExpanded({
-      cwd: '/site',
-      currentCwd: '/app',
-      expandedOther: new Set(),
-      searching: false,
-      selectedCwd: '/site',
-    }),
-    true,
-  );
-  assert.equal(
-    inboxGroupIsExpanded({
-      cwd: '/site',
-      currentCwd: '/app',
-      expandedOther: new Set(),
-      searching: true,
-      selectedCwd: '/app',
-    }),
-    true,
-  );
+      searching,
+      selectedCwd,
+    });
+  assert.equal(expanded('/app', '/app'), true);
+  assert.equal(expanded('/site', '/app'), false);
+  // Selecting a pull request in another workspace, or searching, opens it.
+  assert.equal(expanded('/site', '/site'), true);
+  assert.equal(expanded('/site', '/app', true), true);
 });

@@ -65,15 +65,19 @@ test('SessionContextMenu lists organization actions first, then the copy actions
   assert.match(html, /aria-label="Chat actions"/);
 });
 
-test('SessionContextMenu swaps the pin label for a pinned chat', () => {
+test('SessionContextMenu rows follow what the chat has', () => {
   assert.match(render({ pinned: true }), /Unpin chat/);
-});
-
-test('SessionContextMenu hides the working-directory row when the session has none', () => {
-  const html = render({ cwd: undefined });
-  assert.doesNotMatch(html, /Copy Working Directory/);
-  assert.match(html, /Copy Session ID/);
-  assert.doesNotMatch(render({ cwd: '' }), /Copy Working Directory/);
+  for (const cwd of [undefined, '']) {
+    const html = render({ cwd });
+    assert.doesNotMatch(html, /Copy Working Directory/);
+    assert.match(html, /Copy Session ID/);
+  }
+  // The session id and link rows wait until the harness assigns an id.
+  const unassigned = render({ providerSessionId: undefined, resumeSessionId: undefined });
+  assert.doesNotMatch(unassigned, /Copy Session ID/);
+  assert.doesNotMatch(unassigned, /Copy Session Link/);
+  assert.match(unassigned, /Copy Working Directory/);
+  assert.match(unassigned, /Copy as Markdown/);
 });
 
 test('SessionContextMenu renders without a window global and skips the clamp', () => {
@@ -93,12 +97,4 @@ test('SessionContextMenu clamps to the viewport bottom using the rendered row co
   assert.ok(top, 'expected an inline top style');
   // 800 - 228 - 8 margin = 564.
   assert.equal(Number(top[1]), 564);
-});
-
-test('SessionContextMenu hides the session id and link rows until the harness assigns an id', () => {
-  const html = render({ providerSessionId: undefined, resumeSessionId: undefined });
-  assert.doesNotMatch(html, /Copy Session ID/);
-  assert.doesNotMatch(html, /Copy Session Link/);
-  assert.match(html, /Copy Working Directory/);
-  assert.match(html, /Copy as Markdown/);
 });

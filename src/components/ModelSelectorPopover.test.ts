@@ -92,7 +92,7 @@ test('a dangling active session id keeps using the visible global defaults', () 
 
   // The selected model names the popover; the search box stays a plain search box.
   assert.match(html, /placeholder="Search models"/);
-  assert.match(html, /text-droid-text truncate"[^>]*>Global Model</);
+  assert.match(html, />Global Model</);
   // The selected row shows the session's effort; the meter has one dot per supported effort.
   assert.match(html, /aria-selected="true"[\s\S]*?capitalize[^>]*>low<\/span>/);
   assert.equal((html.match(/aria-selected="true"/g) ?? []).length, 1);

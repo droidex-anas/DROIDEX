@@ -4,7 +4,7 @@ import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 
 import { initialState, StaticStoreProvider } from '../../../hooks/useStore';
-import { applyCommentPostSettlement, CodePane } from './PrDetail';
+import { applyCommentPostSettlement, CodePane, PrDetail } from './PrDetail';
 
 function renderCodePane(diff: string | null, diffError: string | null): string {
   return renderToStaticMarkup(
@@ -15,6 +15,27 @@ function renderCodePane(diff: string | null, diffError: string | null): string {
     ),
   );
 }
+
+test('the Summary and Code views are an accessible tab list', () => {
+  const html = renderToStaticMarkup(
+    createElement(PrDetail, {
+      cwd: '/repo',
+      number: 4,
+      pr: null,
+      viewerLogin: null,
+      onOpenChat: () => undefined,
+      onReviewWithDroid: () => undefined,
+    }),
+  );
+  assert.match(html, /role="tablist" aria-label="Pull request views"/);
+  assert.match(html, /role="tab"[^>]*aria-selected="true"[^>]*>Summary</);
+  assert.match(html, /role="tab"[^>]*aria-selected="false"[^>]*>Code</);
+  assert.match(html, /id="pull-request-summary-tab" aria-controls="pull-request-summary-tabpanel"/);
+  assert.match(
+    html,
+    /role="tabpanel" id="pull-request-summary-tabpanel" aria-labelledby="pull-request-summary-tab"/,
+  );
+});
 
 test('comment submit settlement applies only to the pull request it was posted on', () => {
   const submitted = { cwd: '/repo', number: 1 };
@@ -30,25 +51,26 @@ test('comment submit settlement applies only to the pull request it was posted o
   });
 });
 
-test('diff-success with an empty remote patch shows no file changes, not the skeleton', () => {
-  const html = renderCodePane('', null);
-  assert.match(html, /No file changes\./);
-  assert.doesNotMatch(html, /bg-droid-elevated\/40/);
-});
+test('the code pane keeps its skeleton until a patch arrives, and a refresh error replaces the patch', () => {
+  // The loading skeleton is the only element carrying this surface tone.
+  const skeleton = /bg-droid-elevated\/40/;
+  const loading = renderCodePane(null, null);
+  assert.match(loading, skeleton);
+  assert.doesNotMatch(loading, /No file changes\./);
 
-test('unset diff still shows the loading skeleton until a patch arrives', () => {
-  const html = renderCodePane(null, null);
-  assert.match(html, /bg-droid-elevated\/40/);
-  assert.doesNotMatch(html, /No file changes\./);
-});
+  const empty = renderCodePane('', null);
+  assert.match(empty, /No file changes\./);
+  assert.doesNotMatch(empty, skeleton);
 
-test('a refresh error replaces a stale cached diff with the failure', () => {
-  const html = renderCodePane(
-    ['diff --git a/a.ts b/a.ts', '--- a/a.ts', '+++ b/a.ts', '@@ -1 +1 @@', '-old', '+new'].join(
-      '\n',
-    ),
-    'Could not refresh diff',
-  );
-  assert.match(html, /Could not refresh diff/);
-  assert.doesNotMatch(html, /a\.ts/);
+  const stalePatch = [
+    'diff --git a/a.ts b/a.ts',
+    '--- a/a.ts',
+    '+++ b/a.ts',
+    '@@ -1 +1 @@',
+    '-old',
+    '+new',
+  ].join('\n');
+  const failed = renderCodePane(stalePatch, 'Could not refresh diff');
+  assert.match(failed, /Could not refresh diff/);
+  assert.doesNotMatch(failed, /a\.ts/);
 });
