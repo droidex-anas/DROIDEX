@@ -154,8 +154,9 @@ test('corrupt lines are skipped without losing their neighbors', () => {
 });
 
 test('eager and paged replay hide internal user messages and restore skill activations', () => {
+  // Internal skill bodies arrive as ordinary user text, after leading whitespace.
   const notification =
-    '<system-notification>\n<skill filePath="builtin:review">private instructions</skill>\n</system-notification>';
+    ' <system-notification>\n<skill filePath="builtin:review">private instructions</skill>\n</system-notification>';
   const path = writeSession([
     userMessage('ordinary user prompt'),
     userMessage('internal child-session handoff', 'llm_only'),
