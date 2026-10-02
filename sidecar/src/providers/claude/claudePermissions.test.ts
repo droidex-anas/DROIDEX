@@ -17,7 +17,7 @@ test('Claude maps product permission modes to distinct CLI modes', () => {
   );
 });
 
-test('Auto is probed once, with one notice and default fallback when refused', async () => {
+test('Auto is probed once, with one notice and default fallback when refused, withdrawn if the user moves on', async () => {
   const calls: PermissionMode[] = [];
   const query = {
     setPermissionMode: async (mode: PermissionMode) => {
@@ -33,6 +33,12 @@ test('Auto is probed once, with one notice and default fallback when refused', a
   await modes.change(query, Promise.resolve(), () => ({ autonomy: 'medium', planning: false }));
   assert.deepEqual(calls, ['auto', 'default', 'acceptEdits', 'default']);
   assert.equal(modes.takeNotice(), undefined);
+
+  // The notice is withdrawn when the user selects another mode before it is delivered.
+  const reselected = new ClaudePermissionModes('medium', false, () => undefined);
+  await reselected.initialize(query);
+  await reselected.change(query, Promise.resolve(), () => ({ autonomy: 'high', planning: false }));
+  assert.equal(reselected.takeNotice(), undefined);
 });
 
 test('Spec restores the chosen permission mode and rejected changes keep the selection', async () => {
@@ -77,18 +83,6 @@ test('closing during the Auto probe prevents restoration and later publication',
     /closed/,
   );
   assert.deepEqual(calls, ['auto']);
-  assert.equal(modes.takeNotice(), undefined);
-});
-
-test('a fallback notice is withdrawn when the user selects another mode before delivery', async () => {
-  const modes = new ClaudePermissionModes('medium', false, () => undefined);
-  const query = {
-    setPermissionMode: async (mode: PermissionMode) => {
-      if (mode === 'auto') throw new Error('unsupported');
-    },
-  };
-  await modes.initialize(query);
-  await modes.change(query, Promise.resolve(), () => ({ autonomy: 'high', planning: false }));
   assert.equal(modes.takeNotice(), undefined);
 });
 

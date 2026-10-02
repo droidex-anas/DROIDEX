@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
-import { chmodSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import test from 'node:test';
+import test, { type TestContext } from 'node:test';
 
 import { WebSocket } from 'ws';
 
@@ -25,11 +25,12 @@ interface Harness {
   close(): Promise<void>;
 }
 
-async function withServer(
-  handler: (harness: Harness) => Promise<void>,
+/** A bridge server on a free port, closed when the test ends. */
+async function bridgeServer(
+  t: TestContext,
   onCommand: (command: ClientCommand) => Promise<void> = async () => undefined,
   getSnapshot?: () => Promise<BridgeRuntimeSnapshot> | BridgeRuntimeSnapshot,
-): Promise<void> {
+): Promise<Harness> {
   const token = 'test-token';
   const assetToken = 'test-asset-token';
   const server = startBridgeServer({
@@ -40,17 +41,14 @@ async function withServer(
     ...(getSnapshot ? { getSnapshot } : {}),
   });
   await server.ready;
-  try {
-    await handler({
-      port: server.port,
-      token,
-      assetToken,
-      broadcast: server.broadcast,
-      close: () => server.close(),
-    });
-  } finally {
-    await server.close();
-  }
+  t.after(() => server.close());
+  return {
+    port: server.port,
+    token,
+    assetToken,
+    broadcast: server.broadcast,
+    close: () => server.close(),
+  };
 }
 
 /** The bridge socket URL with a valid token and the current protocol, plus `query`. */
@@ -58,381 +56,342 @@ function bridgeUrl(harness: Harness, query = ''): string {
   return `ws://127.0.0.1:${String(harness.port)}?token=${harness.token}&bridgeProtocol=${String(BRIDGE_PROTOCOL_VERSION)}${query}`;
 }
 
-test('voice ownership moves only on a successful start, and only the owner can stop', async () => {
+/** An open bridge socket recording every message it receives, closed when the test ends. */
+async function connect(t: TestContext, harness: Harness, query = '') {
+  const received: string[] = [];
+  const socket = new WebSocket(bridgeUrl(harness, query));
+  socket.on('message', (raw) => received.push(String(raw)));
+  t.after(() => closeSocket(socket));
+  await socketOpen(socket);
+  return { socket, received };
+}
+
+function resumeQuery(batch: ServerEventBatch): string {
+  return `&resumeGeneration=${encodeURIComponent(batch.generation)}&resumeSeq=${String(batch.lastSeq)}`;
+}
+
+test('voice ownership moves only on a successful start, and only the owner can stop', async (t) => {
   const commands: string[] = [];
-  await withServer(
-    async (harness) => {
-      const url = (pageId: string) => bridgeUrl(harness, `&pageId=${pageId}`);
-      const first = new WebSocket(url('page-one'));
-      const second = new WebSocket(url('page-two'));
-      await Promise.all([socketOpen(first), socketOpen(second)]);
-      const send = async (socket: WebSocket, command: object, expected: string) => {
-        socket.send(JSON.stringify(command));
-        await waitFor(() => commands.includes(expected));
-      };
-      try {
-        await send(
-          first,
-          { type: 'voice.start', appSessionId: 'chat-one', attempt: 'first' },
-          'start:first',
-        );
-        // A start that fails leaves the first page the owner, so its stop is refused.
-        await send(
-          second,
-          { type: 'voice.start', appSessionId: 'chat-one', attempt: 'failed' },
-          'start:failed',
-        );
-        second.send(JSON.stringify({ type: 'voice.stop', appSessionId: 'chat-one' }));
-        await send(
-          second,
-          { type: 'voice.start', appSessionId: 'chat-one', attempt: 'second' },
-          'start:second',
-        );
-        // The second page owns the call now: the first page's late stop is refused.
-        first.send(JSON.stringify({ type: 'voice.stop', appSessionId: 'chat-one' }));
-        await send(second, { type: 'voice.stop', appSessionId: 'chat-one' }, 'stop');
-        assert.deepEqual(commands, ['start:first', 'start:failed', 'start:second', 'stop']);
-      } finally {
-        await Promise.all([closeSocket(first), closeSocket(second)]);
-      }
-    },
-    async (command) => {
-      if (command.type === 'voice.start') {
-        commands.push(`start:${command.attempt}`);
-        if (command.attempt === 'failed') throw new Error('failed start');
-      }
-      if (command.type === 'voice.stop') commands.push('stop');
-    },
+  const harness = await bridgeServer(t, async (command) => {
+    if (command.type === 'voice.start') {
+      commands.push(`start:${command.attempt}`);
+      if (command.attempt === 'failed') throw new Error('failed start');
+    }
+    if (command.type === 'voice.stop') commands.push('stop');
+  });
+  const { socket: first } = await connect(t, harness, '&pageId=page-one');
+  const { socket: second } = await connect(t, harness, '&pageId=page-two');
+  const send = async (socket: WebSocket, command: object, expected: string) => {
+    socket.send(JSON.stringify(command));
+    await waitFor(() => commands.includes(expected));
+  };
+  await send(
+    first,
+    { type: 'voice.start', appSessionId: 'chat-one', attempt: 'first' },
+    'start:first',
   );
+  // A start that fails leaves the first page the owner, so its stop is refused.
+  await send(
+    second,
+    { type: 'voice.start', appSessionId: 'chat-one', attempt: 'failed' },
+    'start:failed',
+  );
+  second.send(JSON.stringify({ type: 'voice.stop', appSessionId: 'chat-one' }));
+  await send(
+    second,
+    { type: 'voice.start', appSessionId: 'chat-one', attempt: 'second' },
+    'start:second',
+  );
+  // The second page owns the call now: the first page's late stop is refused.
+  first.send(JSON.stringify({ type: 'voice.stop', appSessionId: 'chat-one' }));
+  await send(second, { type: 'voice.stop', appSessionId: 'chat-one' }, 'stop');
+  assert.deepEqual(commands, ['start:first', 'start:failed', 'start:second', 'stop']);
 });
 
 test('orphan voice cleanup publishes a closed state', async (t) => {
   const stops: string[] = [];
   let started = false;
-  await withServer(
-    async (harness) => {
-      const url = (pageId: string) => bridgeUrl(harness, `&pageId=${pageId}`);
-      const owner = new WebSocket(url('page-one'));
-      const observer = new WebSocket(url('page-two'));
-      await Promise.all([socketOpen(owner), socketOpen(observer)]);
-      try {
-        owner.send(
-          JSON.stringify({ type: 'voice.start', appSessionId: 'chat-one', attempt: 'first' }),
-        );
-        await waitFor(() => started);
-        t.mock.timers.enable({ apis: ['setTimeout'] });
-        await closeSocket(owner);
-        const closed = new Promise<ServerEvent>((resolve) => {
-          observer.on('message', (raw) => {
-            const batch = JSON.parse(String(raw)) as ServerEventBatch;
-            const event = batch.events.find((entry) => entry.event.type === 'voice.state')?.event;
-            if (event) resolve(event);
-          });
-        });
-        // The server sees the close, stops the call and broadcasts over real
-        // I/O, so fake time moves in small steps, past the reclaim window,
-        // until the event arrives.
-        let event: ServerEvent | undefined;
-        void closed.then((value) => {
-          event = value;
-        });
-        for (let step = 0; step < 400 && !event; step += 1) {
-          await new Promise((resolve) => setImmediate(resolve));
-          t.mock.timers.tick(100);
-        }
-        assert.deepEqual(event, {
-          type: 'voice.state',
-          appSessionId: 'chat-one',
-          status: 'closed',
-        });
-        assert.deepEqual(stops, ['chat-one']);
-      } finally {
-        await closeSocket(observer);
-      }
-    },
-    async (command) => {
-      if (command.type === 'voice.start') started = true;
-      if (command.type === 'voice.stop') stops.push(command.appSessionId);
-    },
-  );
-});
-
-test('broadcast after close is dropped instead of throwing', async () => {
-  await withServer(async (harness) => {
-    await harness.close();
-    assert.doesNotThrow(() => harness.broadcast({ type: 'connection', status: 'connected' }));
+  const harness = await bridgeServer(t, async (command) => {
+    if (command.type === 'voice.start') started = true;
+    if (command.type === 'voice.stop') stops.push(command.appSessionId);
   });
+  const owner = new WebSocket(bridgeUrl(harness, '&pageId=page-one'));
+  await socketOpen(owner);
+  const { socket: observer } = await connect(t, harness, '&pageId=page-two');
+  owner.send(JSON.stringify({ type: 'voice.start', appSessionId: 'chat-one', attempt: 'first' }));
+  await waitFor(() => started);
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  await closeSocket(owner);
+  let event: ServerEvent | undefined;
+  observer.on('message', (raw) => {
+    const batch = JSON.parse(String(raw)) as ServerEventBatch;
+    event ??= batch.events.find((entry) => entry.event.type === 'voice.state')?.event;
+  });
+  // The server sees the close, stops the call and broadcasts over real I/O, so
+  // fake time moves in small steps, past the reclaim window, until it arrives.
+  for (let step = 0; step < 400 && !event; step += 1) {
+    await new Promise((resolve) => setImmediate(resolve));
+    t.mock.timers.tick(100);
+  }
+  assert.deepEqual(event, { type: 'voice.state', appSessionId: 'chat-one', status: 'closed' });
+  assert.deepEqual(stops, ['chat-one']);
 });
 
-test('a browser-asset read error after headers leaves the bridge serving', async () => {
+test('broadcast after close is dropped instead of throwing', async (t) => {
+  const harness = await bridgeServer(t);
+  await harness.close();
+  assert.doesNotThrow(() => harness.broadcast({ type: 'connection', status: 'connected' }));
+});
+
+test('browser assets are served only with the asset token', async (t) => {
+  const harness = await bridgeServer(t);
   const root = join(droidexUserDataDir(), `bridge-asset-${String(Date.now())}`);
   mkdirSync(root, { recursive: true });
-  try {
-    await withServer(async (harness) => {
-      const readablePath = join(root, 'ok.png');
-      const unreadablePath = join(root, 'blocked.png');
-      writeFileSync(readablePath, 'png-ok');
-      writeFileSync(unreadablePath, 'png-blocked');
-      chmodSync(unreadablePath, 0);
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  const asset = join(root, 'ok.png');
+  writeFileSync(asset, 'png-ok');
+  const assetUrl = (path: string, token = harness.assetToken) =>
+    `http://127.0.0.1:${String(harness.port)}/browser-assets?path=${encodeURIComponent(path)}&token=${token}`;
 
-      const blockedUrl = `http://127.0.0.1:${String(harness.port)}/browser-assets?path=${encodeURIComponent(unreadablePath)}&token=${harness.assetToken}`;
-      await fetch(blockedUrl).catch(() => undefined);
+  assert.equal((await fetch(assetUrl(asset, harness.token))).status, 401);
+  const response = await fetch(assetUrl(asset));
+  assert.equal(response.status, 200);
+  assert.equal(await response.text(), 'png-ok');
+});
 
-      const readableUrl = `http://127.0.0.1:${String(harness.port)}/browser-assets?path=${encodeURIComponent(readablePath)}&token=${harness.assetToken}`;
-      const response = await fetch(readableUrl);
-      assert.equal(response.status, 200);
-      assert.equal(await response.text(), 'png-ok');
-    });
-  } finally {
-    rmSync(root, { recursive: true, force: true });
+test('the socket handshake rejects a wrong token and stale bridge protocols', async (t) => {
+  const harness = await bridgeServer(t);
+  const wrongToken = new WebSocket(`ws://127.0.0.1:${String(harness.port)}?token=wrong`);
+  assert.equal(await socketCloseCode(wrongToken), 1008);
+  for (const protocol of ['', '&bridgeProtocol=3']) {
+    const socket = new WebSocket(
+      `ws://127.0.0.1:${String(harness.port)}?token=${harness.token}${protocol}`,
+    );
+    assert.equal(await socketCloseCode(socket), 1002);
   }
 });
 
-test('the socket handshake rejects a wrong token and stale bridge protocols', async () => {
-  await withServer(async (harness) => {
-    const wrongToken = new WebSocket(`ws://127.0.0.1:${String(harness.port)}?token=wrong`);
-    assert.equal(await socketCloseCode(wrongToken), 1008);
-    for (const protocol of ['', '&bridgeProtocol=3']) {
-      const socket = new WebSocket(
-        `ws://127.0.0.1:${String(harness.port)}?token=${harness.token}${protocol}`,
-      );
-      assert.equal(await socketCloseCode(socket), 1002);
-    }
-  });
+test('batch-capable client receives one ordered event envelope', async (t) => {
+  const harness = await bridgeServer(t);
+  const { received } = await connect(t, harness);
+
+  harness.broadcast({ type: 'mission.progress', appSessionId: 'app', entries: [] });
+  harness.broadcast({ type: 'mission.progress', appSessionId: 'app', entries: [] });
+  await waitFor(() => received.length === 1);
+
+  const batch = JSON.parse(received[0] ?? '') as ServerEventBatch;
+  assert.equal(batch.type, 'events.batch');
+  assert.equal(batch.firstSeq, 1);
+  assert.equal(batch.lastSeq, 2);
+  assert.deepEqual(
+    batch.events.map((entry) => entry.event.type),
+    ['mission.progress', 'mission.progress'],
+  );
 });
 
-test('batch-capable client receives one ordered event envelope', async () => {
-  await withServer(async (harness) => {
-    const received: string[] = [];
-    const socket = new WebSocket(bridgeUrl(harness));
-    const opened = new Promise<void>((resolve) => socket.once('open', resolve));
-    socket.on('message', (raw) => received.push(String(raw)));
-    await opened;
+test('same-process reconnect replays batches after the acknowledged sequence', async (t) => {
+  const harness = await bridgeServer(t);
+  const first = await connect(t, harness);
+  harness.broadcast({ type: 'connection', status: 'connected' });
+  await waitFor(() => first.received.length === 1);
+  const acknowledged = JSON.parse(first.received[0] ?? '') as ServerEventBatch;
+  await closeSocket(first.socket);
 
-    harness.broadcast({ type: 'mission.progress', appSessionId: 'app', entries: [] });
-    harness.broadcast({ type: 'mission.progress', appSessionId: 'app', entries: [] });
-    await waitFor(() => received.length === 1);
-
-    const batch = JSON.parse(received[0] ?? '') as ServerEventBatch;
-    assert.equal(batch.type, 'events.batch');
-    assert.equal(batch.firstSeq, 1);
-    assert.equal(batch.lastSeq, 2);
-    assert.deepEqual(
-      batch.events.map((entry) => entry.event.type),
-      ['mission.progress', 'mission.progress'],
-    );
-    await closeSocket(socket);
+  harness.broadcast({
+    type: 'runtime.updated',
+    status: { mode: 'cli_auth', droidPath: '/bin/droid', apiKeyConfigured: false },
   });
+
+  const { received: replayed } = await connect(t, harness, resumeQuery(acknowledged));
+  await waitFor(() => replayed.length === 1);
+  const batch = JSON.parse(replayed[0] ?? '') as ServerEventBatch;
+  assert.equal(batch.firstSeq, acknowledged.lastSeq + 1);
+  assert.equal(batch.events[0]?.event.type, 'runtime.updated');
 });
 
-test('same-process reconnect replays batches after the acknowledged sequence', async () => {
-  await withServer(async (harness) => {
-    const firstReceived: string[] = [];
-    const first = new WebSocket(bridgeUrl(harness));
-    const firstOpened = new Promise<void>((resolve) => first.once('open', resolve));
-    first.on('message', (raw) => firstReceived.push(String(raw)));
-    await firstOpened;
+test('resume reset flushes pending sequences before admitting the client', async (t) => {
+  const harness = await bridgeServer(t);
+  harness.broadcast({ type: 'mission.progress', appSessionId: 'app', entries: [] });
 
-    harness.broadcast({ type: 'connection', status: 'connected' });
-    await waitFor(() => firstReceived.length === 1);
-    const acknowledged = JSON.parse(firstReceived[0] ?? '') as ServerEventBatch;
-    await closeSocket(first);
-
-    harness.broadcast({
-      type: 'runtime.updated',
-      status: { mode: 'cli_auth', droidPath: '/bin/droid', apiKeyConfigured: false },
-    });
-
-    const replayed: string[] = [];
-    const second = new WebSocket(
-      bridgeUrl(
-        harness,
-        `&resumeGeneration=${encodeURIComponent(acknowledged.generation)}&resumeSeq=${String(acknowledged.lastSeq)}`,
-      ),
-    );
-    const secondOpened = new Promise<void>((resolve) => second.once('open', resolve));
-    second.on('message', (raw) => replayed.push(String(raw)));
-    await secondOpened;
-    await waitFor(() => replayed.length === 1);
-
-    const batch = JSON.parse(replayed[0] ?? '') as ServerEventBatch;
-    assert.equal(batch.firstSeq, acknowledged.lastSeq + 1);
-    assert.equal(batch.events[0]?.event.type, 'runtime.updated');
-    await closeSocket(second);
-  });
-});
-
-test('resume reset flushes pending sequences before admitting the client', async () => {
-  await withServer(async (harness) => {
-    harness.broadcast({ type: 'mission.progress', appSessionId: 'app', entries: [] });
-
-    const received: string[] = [];
-    const socket = new WebSocket(bridgeUrl(harness, '&resumeSeq=999'));
-    const opened = new Promise<void>((resolve) => socket.once('open', resolve));
-    socket.on('message', (raw) => received.push(String(raw)));
-    await opened;
-    await waitFor(() => received.length === 1);
-    const reset = JSON.parse(received[0] ?? '') as {
-      type: string;
-      generation: string;
-      lastSeq: number;
-      reason: string;
-    };
-    assert.equal(reset.type, 'bridge.reset');
-    assert.equal(typeof reset.generation, 'string');
-    assert.equal(reset.lastSeq, 1);
-    assert.equal(reset.reason, 'invalid_resume');
-
-    harness.broadcast({ type: 'connection', status: 'connected' });
-    await waitFor(() => received.length === 2);
-    const boundary = JSON.parse(received[1] ?? '') as ServerEventBatch;
-    assert.equal(boundary.firstSeq, 2);
-    assert.equal(boundary.lastSeq, 2);
-    assert.deepEqual(
-      received.map((message) => JSON.parse(message) as { type: string }).map(({ type }) => type),
-      ['bridge.reset', 'events.batch'],
-    );
-    await closeSocket(socket);
-  });
-});
-
-test('an oversized batch resets a reconnect cursor instead of replaying the payload', async () => {
-  await withServer(async (harness) => {
-    const firstReceived: string[] = [];
-    const first = new WebSocket(bridgeUrl(harness));
-    const firstOpened = new Promise<void>((resolve) => first.once('open', resolve));
-    const firstClosed = socketCloseCode(first);
-    first.on('message', (raw) => firstReceived.push(String(raw)));
-    await firstOpened;
-
-    harness.broadcast({ type: 'connection', status: 'connected' });
-    await waitFor(() => firstReceived.length === 1);
-    const acknowledged = JSON.parse(firstReceived[0] ?? '') as ServerEventBatch;
-    harness.broadcast({ type: 'error', message: 'x'.repeat(8 * 1024 * 1024) });
-    assert.equal(await firstClosed, 1006);
-
-    const resumed: string[] = [];
-    const second = new WebSocket(
-      bridgeUrl(
-        harness,
-        `&resumeGeneration=${encodeURIComponent(acknowledged.generation)}&resumeSeq=${String(acknowledged.lastSeq)}`,
-      ),
-    );
-    const secondOpened = new Promise<void>((resolve) => second.once('open', resolve));
-    second.on('message', (raw) => resumed.push(String(raw)));
-    await secondOpened;
-    await waitFor(() => resumed.length === 1);
-
-    const snapshot = JSON.parse(resumed[0] ?? '') as {
-      type: string;
-      lastSeq: number;
-      reason: string;
-    };
-    assert.equal(snapshot.type, 'bridge.snapshot');
-    assert.equal(snapshot.lastSeq, 2);
-    assert.equal(snapshot.reason, 'replay_unavailable');
-
-    harness.broadcast({ type: 'connection', status: 'connected' });
-    await waitFor(() => resumed.length === 2);
-    const next = JSON.parse(resumed[1] ?? '') as ServerEventBatch;
-    assert.equal(next.firstSeq, 3);
-    assert.equal(next.lastSeq, 3);
-    await closeSocket(second);
-  });
-});
-
-test('a generation change sends a snapshot, delivered before later broadcasts', async () => {
-  let releaseSnapshot: ((snapshot: BridgeRuntimeSnapshot) => void) | undefined;
-  const snapshot = {
-    runtime: { mode: 'cli_auth' as const, droidPath: '/bin/droid', apiKeyConfigured: false },
-    sessions: [],
-    children: [],
-    processes: {},
-    persistence: { durable: true, hadUnflushedWork: false },
-    interrupted: [],
+  const { received } = await connect(t, harness, '&resumeSeq=999');
+  await waitFor(() => received.length === 1);
+  const reset = JSON.parse(received[0] ?? '') as {
+    type: string;
+    generation: string;
+    lastSeq: number;
+    reason: string;
   };
-  await withServer(
-    async (harness) => {
-      const received: string[] = [];
-      const socket = new WebSocket(
-        bridgeUrl(harness, '&resumeGeneration=old-generation&resumeSeq=1'),
-      );
-      socket.on('message', (raw) => received.push(String(raw)));
-      await waitFor(() => releaseSnapshot !== undefined);
-      harness.broadcast({ type: 'connection', status: 'connected' });
-      releaseSnapshot?.(snapshot);
-      await waitFor(() => received.length >= 2);
-      const first = JSON.parse(received[0] ?? '') as { type: string; reason: string };
-      assert.equal(first.type, 'bridge.snapshot');
-      assert.equal(first.reason, 'generation_changed');
-      const batch = JSON.parse(received[1] ?? '') as ServerEventBatch;
-      assert.equal(batch.type, 'events.batch');
-      assert.equal(batch.firstSeq, 1);
-      await closeSocket(socket);
-    },
+  assert.equal(reset.type, 'bridge.reset');
+  assert.equal(typeof reset.generation, 'string');
+  assert.equal(reset.lastSeq, 1);
+  assert.equal(reset.reason, 'invalid_resume');
+
+  harness.broadcast({ type: 'connection', status: 'connected' });
+  await waitFor(() => received.length === 2);
+  const boundary = JSON.parse(received[1] ?? '') as ServerEventBatch;
+  assert.equal(boundary.type, 'events.batch');
+  assert.equal(boundary.firstSeq, 2);
+  assert.equal(boundary.lastSeq, 2);
+});
+
+test('an oversized batch resets a reconnect cursor instead of replaying the payload', async (t) => {
+  const harness = await bridgeServer(t);
+  const first = await connect(t, harness);
+  const firstClosed = socketCloseCode(first.socket);
+  harness.broadcast({ type: 'connection', status: 'connected' });
+  await waitFor(() => first.received.length === 1);
+  const acknowledged = JSON.parse(first.received[0] ?? '') as ServerEventBatch;
+  harness.broadcast({ type: 'error', message: 'x'.repeat(8 * 1024 * 1024) });
+  assert.equal(await firstClosed, 1006);
+
+  const { received: resumed } = await connect(t, harness, resumeQuery(acknowledged));
+  await waitFor(() => resumed.length === 1);
+  const snapshot = JSON.parse(resumed[0] ?? '') as {
+    type: string;
+    lastSeq: number;
+    reason: string;
+  };
+  assert.equal(snapshot.type, 'bridge.snapshot');
+  assert.equal(snapshot.lastSeq, 2);
+  assert.equal(snapshot.reason, 'replay_unavailable');
+
+  harness.broadcast({ type: 'connection', status: 'connected' });
+  await waitFor(() => resumed.length === 2);
+  const next = JSON.parse(resumed[1] ?? '') as ServerEventBatch;
+  assert.equal(next.firstSeq, 3);
+  assert.equal(next.lastSeq, 3);
+});
+
+test('a generation change sends a snapshot, delivered before later broadcasts', async (t) => {
+  let releaseSnapshot: ((snapshot: BridgeRuntimeSnapshot) => void) | undefined;
+  const harness = await bridgeServer(
+    t,
     async () => undefined,
     () =>
       new Promise<BridgeRuntimeSnapshot>((resolve) => {
         releaseSnapshot = resolve;
       }),
   );
+  const received: string[] = [];
+  const socket = new WebSocket(bridgeUrl(harness, '&resumeGeneration=old-generation&resumeSeq=1'));
+  socket.on('message', (raw) => received.push(String(raw)));
+  t.after(() => closeSocket(socket));
+  await waitFor(() => releaseSnapshot !== undefined);
+  harness.broadcast({ type: 'connection', status: 'connected' });
+  releaseSnapshot?.({
+    runtime: { mode: 'cli_auth', droidPath: '/bin/droid', apiKeyConfigured: false },
+    sessions: [],
+    children: [],
+    processes: {},
+    persistence: { durable: true, hadUnflushedWork: false },
+    interrupted: [],
+  });
+  await waitFor(() => received.length >= 2);
+  const first = JSON.parse(received[0] ?? '') as { type: string; reason: string };
+  assert.equal(first.type, 'bridge.snapshot');
+  assert.equal(first.reason, 'generation_changed');
+  const batch = JSON.parse(received[1] ?? '') as ServerEventBatch;
+  assert.equal(batch.type, 'events.batch');
+  assert.equal(batch.firstSeq, 1);
 });
 
-test('health endpoint requires the bridge token and reports generation', async () => {
+test('health and perf metrics require the bridge token, and event-loop sampling arms only on demand', async (t) => {
   hotPathMetrics.disable();
-  await withServer(async (harness) => {
-    const denied = await fetch(`http://127.0.0.1:${String(harness.port)}/health`);
-    assert.equal(denied.status, 401);
-    const allowed = await fetch(
-      `http://127.0.0.1:${String(harness.port)}/health?token=${harness.token}`,
-    );
-    assert.equal(allowed.status, 200);
-    const body = (await allowed.json()) as {
+  t.after(() => hotPathMetrics.disable());
+  const harness = await bridgeServer(t);
+  const base = `http://127.0.0.1:${String(harness.port)}`;
+  const health = async () => {
+    const response = await fetch(`${base}/health?token=${harness.token}`);
+    assert.equal(response.status, 200);
+    return (await response.json()) as {
       ok: boolean;
       generation: string;
       lastSeq: number;
       eventLoopDelayMs: number;
     };
-    assert.equal(body.ok, true);
-    assert.equal(typeof body.generation, 'string');
-    assert.equal(typeof body.lastSeq, 'number');
-    assert.equal(typeof body.eventLoopDelayMs, 'number');
-    assert.equal(body.eventLoopDelayMs, 0);
-  });
+  };
+  assert.equal((await fetch(`${base}/health`)).status, 401);
+  assert.equal((await fetch(`${base}/perf/metrics`)).status, 401);
+  const before = await health();
+  assert.equal(before.ok, true);
+  assert.equal(typeof before.generation, 'string');
+  assert.equal(typeof before.lastSeq, 'number');
+  assert.equal(before.eventLoopDelayMs, 0);
+
+  const idle = await fetch(`${base}/perf/metrics?token=${harness.token}`);
+  assert.equal(idle.status, 200);
+  const idleBody = (await idle.json()) as {
+    pid: number;
+    counters: Record<string, number>;
+    eventLoop: { meanMs: number } | null;
+  };
+  assert.equal(typeof idleBody.pid, 'number');
+  assert.ok(idleBody.counters);
+  assert.equal(idleBody.eventLoop, null);
+
+  const armed = await fetch(`${base}/perf/metrics?token=${harness.token}&eventLoop=1`);
+  const armedBody = (await armed.json()) as { eventLoop: { meanMs: number } | null };
+  assert.ok(armedBody.eventLoop !== null);
+  assert.ok(Number.isFinite(armedBody.eventLoop.meanMs));
+
+  // Arming sampling does not change /health liveness.
+  const after = await health();
+  assert.equal(after.ok, true);
+  assert.equal(typeof after.eventLoopDelayMs, 'number');
 });
-test('perf metrics require the bridge token and arm event-loop sampling only on demand', async () => {
-  await withServer(async (harness) => {
-    const base = `http://127.0.0.1:${String(harness.port)}`;
-    try {
-      const denied = await fetch(`${base}/perf/metrics`);
-      assert.equal(denied.status, 401);
 
-      const idle = await fetch(`${base}/perf/metrics?token=${harness.token}`);
-      assert.equal(idle.status, 200);
-      const idleBody = (await idle.json()) as {
-        pid: number;
-        counters: Record<string, number>;
-        eventLoop: { meanMs: number } | null;
-      };
-      assert.equal(typeof idleBody.pid, 'number');
-      assert.ok(idleBody.counters);
-      assert.equal(idleBody.eventLoop, null);
+test('interaction responses require correlation and structured answers at the command boundary', () => {
+  const approval = {
+    type: 'approval.respond',
+    appSessionId: 'app',
+    requestId: 'approval',
+    outcome: 'refuse',
+  };
+  assert.doesNotThrow(() => assertValidInteractionResponse(approval));
+  assert.throws(() => assertValidInteractionResponse({ ...approval, requestId: '' }), /requestId/);
+  assert.throws(
+    () => assertValidInteractionResponse({ ...approval, outcome: 'unknown' }),
+    /Unsupported permission outcome/,
+  );
+  const question = {
+    type: 'question.respond',
+    appSessionId: 'app',
+    requestId: 'question',
+    cancelled: false,
+    answers: [{ index: 0, question: 'Choose', selected: ['A', 'B'], custom: 'C' }],
+  };
+  assert.doesNotThrow(() => assertValidInteractionResponse(question));
+  for (const answer of [
+    { index: 0, question: 'Choose', answer: 'A' },
+    { ...question.answers[0], selected: [42] },
+  ]) {
+    assert.throws(
+      () => assertValidInteractionResponse({ ...question, answers: [answer] }),
+      /structured answers/,
+    );
+  }
+});
 
-      const armed = await fetch(`${base}/perf/metrics?token=${harness.token}&eventLoop=1`);
-      const armedBody = (await armed.json()) as { eventLoop: { meanMs: number } | null };
-      assert.ok(armedBody.eventLoop !== null);
-      assert.ok(Number.isFinite(armedBody.eventLoop.meanMs));
-
-      // Arming sampling does not change /health liveness.
-      const health = await fetch(`${base}/health?token=${harness.token}`);
-      assert.equal(health.status, 200);
-      const healthBody = (await health.json()) as { ok: boolean; eventLoopDelayMs: number };
-      assert.equal(healthBody.ok, true);
-      assert.equal(typeof healthBody.eventLoopDelayMs, 'number');
-    } finally {
-      hotPathMetrics.disable();
-    }
+test('fast mode rejects non-booleans before command dispatch', async (t) => {
+  let commands = 0;
+  const harness = await bridgeServer(t, async () => {
+    commands += 1;
   });
+  const { socket } = await connect(t, harness);
+  for (const type of ['session.create', 'session.updateSettings']) {
+    for (const fastMode of [null, 'true', 1, {}]) {
+      const received = new Promise<string>((resolve) =>
+        socket.once('message', (raw) => resolve(String(raw))),
+      );
+      socket.send(JSON.stringify({ type, fastMode }));
+      assert.match(await received, /fastMode must be a boolean/);
+    }
+  }
+  assert.equal(commands, 0);
+  socket.send(
+    JSON.stringify({ type: 'session.updateSettings', appSessionId: 'app', fastMode: false }),
+  );
+  await waitFor(() => commands === 1);
 });
 
 function socketOpen(socket: WebSocket): Promise<void> {
@@ -443,6 +402,7 @@ function socketOpen(socket: WebSocket): Promise<void> {
 }
 
 function closeSocket(socket: WebSocket, timeoutMs = 2_000): Promise<void> {
+  if (socket.readyState === WebSocket.CLOSED) return Promise.resolve();
   return new Promise((resolve, reject) => {
     const timer = setTimeout(() => reject(new Error('socket close timed out')), timeoutMs);
     socket.once('close', () => {
@@ -481,73 +441,3 @@ function waitFor(predicate: () => boolean, timeoutMs = 2_000): Promise<void> {
     }, 10);
   });
 }
-
-test('interaction responses require correlation and structured answers at the command boundary', () => {
-  const approval = {
-    type: 'approval.respond',
-    appSessionId: 'app',
-    requestId: 'approval',
-    outcome: 'refuse',
-  };
-  assert.doesNotThrow(() => assertValidInteractionResponse(approval));
-  assert.throws(() => assertValidInteractionResponse({ ...approval, requestId: '' }), /requestId/);
-  assert.throws(
-    () => assertValidInteractionResponse({ ...approval, outcome: 'unknown' }),
-    /Unsupported permission outcome/,
-  );
-  const question = {
-    type: 'question.respond',
-    appSessionId: 'app',
-    requestId: 'question',
-    cancelled: false,
-    answers: [{ index: 0, question: 'Choose', selected: ['A', 'B'], custom: 'C' }],
-  };
-  assert.doesNotThrow(() => assertValidInteractionResponse(question));
-  assert.throws(
-    () =>
-      assertValidInteractionResponse({
-        ...question,
-        answers: [{ index: 0, question: 'Choose', answer: 'A' }],
-      }),
-    /structured answers/,
-  );
-  assert.throws(
-    () =>
-      assertValidInteractionResponse({
-        ...question,
-        answers: [{ ...question.answers[0], selected: [42] }],
-      }),
-    /structured answers/,
-  );
-});
-
-test('fast mode rejects non-booleans before command dispatch', async () => {
-  let commands = 0;
-  await withServer(
-    async (harness) => {
-      const socket = new WebSocket(bridgeUrl(harness));
-      await new Promise<void>((resolve) => socket.once('open', resolve));
-      try {
-        for (const type of ['session.create', 'session.updateSettings']) {
-          for (const fastMode of [null, 'true', 1, {}]) {
-            const received = new Promise<string>((resolve) =>
-              socket.once('message', (raw) => resolve(String(raw))),
-            );
-            socket.send(JSON.stringify({ type, fastMode }));
-            assert.match(await received, /fastMode must be a boolean/);
-          }
-        }
-        assert.equal(commands, 0);
-        socket.send(
-          JSON.stringify({ type: 'session.updateSettings', appSessionId: 'app', fastMode: false }),
-        );
-        await waitFor(() => commands === 1);
-      } finally {
-        await closeSocket(socket);
-      }
-    },
-    async () => {
-      commands += 1;
-    },
-  );
-});

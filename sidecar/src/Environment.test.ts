@@ -59,7 +59,7 @@ test('resolveDroidPath trusts an executable DROID_PATH and ignores a stale one',
   });
 });
 
-test('wrapDroidInvocation routes a Windows .cmd shim through cmd.exe and spawns POSIX directly', () => {
+test('Windows launches route a .cmd shim through cmd.exe and keep default PATHEXT; POSIX spawns directly', () => {
   const shim = 'C\\\\npm\\\\droid.cmd';
   withEnv('ComSpec', 'C\\\\Windows\\\\System32\\\\cmd.exe', () => {
     assert.deepEqual(wrapDroidInvocation(shim, ['exec'], 'win32'), {
@@ -77,9 +77,6 @@ test('wrapDroidInvocation routes a Windows .cmd shim through cmd.exe and spawns 
     execPath: '/usr/local/bin/droid',
     execArgs: ['exec'],
   });
-});
-
-test('windowsExecutableExtensions retains defaults for an empty PATHEXT', () => {
   assert.deepEqual(windowsExecutableExtensions(''), ['.COM', '.EXE', '.BAT', '.CMD']);
   assert.deepEqual(windowsExecutableExtensions('.EXE;.CMD'), ['.EXE', '.CMD']);
 });

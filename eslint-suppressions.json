@@ -92,16 +92,6 @@
       "count": 29
     }
   },
-  "sidecar/src/projects/ProjectService.test.ts": {
-    "max-lines": {
-      "count": 1
-    }
-  },
-  "sidecar/src/sessionFileWatcher.test.ts": {
-    "no-restricted-syntax": {
-      "count": 1
-    }
-  },
   "sidecar/src/skillSignals.ts": {
     "@typescript-eslint/no-unnecessary-condition": {
       "count": 2

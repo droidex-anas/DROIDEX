@@ -8,14 +8,12 @@ import {
   streamingInvocation,
 } from './CliInstaller.js';
 
-test('pickInstallChannel prefers script, then brew, then npm', () => {
+test('each install channel maps to its install and update command, preferring script, brew, then npm', () => {
   assert.equal(pickInstallChannel({ availableChannels: ['script', 'brew', 'npm'] }), 'script');
   assert.equal(pickInstallChannel({ availableChannels: ['brew', 'npm'] }), 'brew');
   assert.equal(pickInstallChannel({ availableChannels: ['npm'] }), 'npm');
   assert.equal(pickInstallChannel({ availableChannels: [] }), null);
-});
 
-test('buildInstallCommand maps each channel to its command', () => {
   const script = buildInstallCommand('script');
   assert.equal(script.command, 'sh');
   assert.equal(script.args[0], '-c');
@@ -31,6 +29,14 @@ test('buildInstallCommand maps each channel to its command', () => {
     command: 'npm',
     args: ['install', '-g', '@factory/cli'],
   });
+
+  // An installed CLI updates itself; otherwise the channel installs it again.
+  assert.deepEqual(buildUpdateCommand('npm', '/usr/bin/droid', true), {
+    command: '/usr/bin/droid',
+    args: ['update'],
+  });
+  assert.deepEqual(buildUpdateCommand('brew', 'droid', false), buildInstallCommand('brew'));
+  assert.equal(buildUpdateCommand('npm', 'droid', false).command, 'npm');
 });
 
 test('streamingInvocation never enables a generic shell', () => {
@@ -59,16 +65,4 @@ test('signal termination is never reported as installer success', () => {
   assert.equal(completedProcessExitCode(null), 1);
   assert.equal(completedProcessExitCode(0), 0);
   assert.equal(completedProcessExitCode(9), 9);
-});
-
-test('buildUpdateCommand uses droid update when the CLI exists, else the channel install', () => {
-  assert.deepEqual(buildUpdateCommand('npm', '/usr/bin/droid', true), {
-    command: '/usr/bin/droid',
-    args: ['update'],
-  });
-  assert.deepEqual(buildUpdateCommand('brew', 'droid', false), {
-    command: 'brew',
-    args: ['install', '--cask', 'droid'],
-  });
-  assert.equal(buildUpdateCommand('npm', 'droid', false).command, 'npm');
 });

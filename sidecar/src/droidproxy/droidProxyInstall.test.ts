@@ -1,9 +1,10 @@
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
-import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { createServer, type RequestListener } from 'node:http';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import test from 'node:test';
+import test, { type TestContext } from 'node:test';
 
 import {
   downloadFile,
@@ -13,19 +14,15 @@ import {
 } from './droidProxyInstall.js';
 import { droidProxyInstallUnavailable } from './droidProxy.js';
 
-test('parseSha256File accepts coreutils and bare-hash formats, rejects junk', () => {
+test('checksum files parse in coreutils and bare-hash form, and file hashes match the platform', async (t) => {
   const hash = '1ba65a863cd82cf3a122f78503edf6424a75453c39290df70aceefe1bd4a650e';
   assert.equal(parseSha256File(`${hash}  DroidProxy-arm64.zip\n`), hash);
   assert.equal(parseSha256File(`${hash}\n`), hash);
   assert.equal(parseSha256File(`${hash.toUpperCase()}  file.zip`), hash);
-  assert.equal(parseSha256File('<html>proxy error page</html>'), undefined);
-  assert.equal(parseSha256File(''), undefined);
-  assert.equal(parseSha256File('xyz  file.zip'), undefined);
-});
+  for (const junk of ['<html>proxy error page</html>', '', 'xyz  file.zip'])
+    assert.equal(parseSha256File(junk), undefined);
 
-test('sha256FileHex matches the platform hash of file bytes', async () => {
-  const dir = mkdtempSync(join(tmpdir(), 'droidex-sha-'));
-  const path = join(dir, 'payload.bin');
+  const path = join(scratchDir(t), 'payload.bin');
   const bytes = Buffer.from('droidproxy-install-fixture');
   writeFileSync(path, bytes);
   assert.equal(await sha256FileHex(path), createHash('sha256').update(bytes).digest('hex'));
@@ -38,102 +35,82 @@ test('droidProxyInstallUnavailable gates on platform and architecture', () => {
   assert.equal(droidProxyInstallUnavailable('win32', 'x64'), 'unsupported-platform');
 });
 
-async function withServer(
-  handler: (
-    req: import('node:http').IncomingMessage,
-    res: import('node:http').ServerResponse,
-  ) => void,
-  run: (baseUrl: string) => Promise<void>,
-): Promise<void> {
-  const { createServer } = await import('node:http');
-  const server = createServer(handler);
-  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', () => resolve()));
-  try {
-    const address = server.address();
-    assert.ok(address && typeof address === 'object');
-    await run(`http://127.0.0.1:${String(address.port)}`);
-  } finally {
-    server.close();
-  }
+function scratchDir(t: TestContext): string {
+  const dir = mkdtempSync(join(tmpdir(), 'droidex-dl-'));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  return dir;
 }
 
-test('downloadFile streams bytes with progress, with or without a content length', async () => {
+/** A local HTTP server answering every request with `handler`, closed after the test. */
+async function serve(t: TestContext, handler: RequestListener): Promise<string> {
+  const server = createServer(handler);
+  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', () => resolve()));
+  t.after(() => server.close());
+  const address = server.address();
+  assert.ok(address && typeof address === 'object');
+  return `http://127.0.0.1:${String(address.port)}/file`;
+}
+
+test('downloadFile streams bytes with progress, with or without a content length', async (t) => {
   const payload = Buffer.alloc(256 * 1024, 7);
   for (const length of [String(payload.length), undefined]) {
-    await withServer(
-      (_req, res) => {
-        res.writeHead(200, length ? { 'content-length': length } : {});
-        res.end(payload);
-      },
-      async (baseUrl) => {
-        const dest = join(mkdtempSync(join(tmpdir(), 'droidex-dl-')), 'out.bin');
-        const seen: Array<[number, number | undefined]> = [];
-        await downloadFile(`${baseUrl}/file`, dest, (received, total) => {
-          seen.push([received, total]);
-        });
-        assert.deepEqual(readFileSync(dest), payload);
-        assert.deepEqual(seen.at(-1), [payload.length, length ? payload.length : undefined]);
-      },
-    );
+    const url = await serve(t, (_req, res) => {
+      res.writeHead(200, length ? { 'content-length': length } : {});
+      res.end(payload);
+    });
+    const dest = join(scratchDir(t), 'out.bin');
+    const seen: Array<[number, number | undefined]> = [];
+    await downloadFile(url, dest, (received, total) => {
+      seen.push([received, total]);
+    });
+    assert.deepEqual(readFileSync(dest), payload);
+    assert.deepEqual(seen.at(-1), [payload.length, length ? payload.length : undefined]);
   }
 });
 
-test('downloadFile rejects a destination write error without hanging', async () => {
-  await withServer(
-    (_req, res) => {
-      res.writeHead(200);
-      res.end(Buffer.alloc(256 * 1024));
-    },
-    async (baseUrl) => {
-      const dir = mkdtempSync(join(tmpdir(), 'droidex-dl-'));
-      await assert.rejects(
-        downloadFile(`${baseUrl}/file`, dir, () => {}),
-        (error: unknown) => error instanceof Error && 'code' in error && error.code === 'EISDIR',
-      );
-    },
-  );
-});
-
-test('downloadFile surfaces HTTP failures and refuses an absurd content length', async () => {
-  const failures: [number, Record<string, string>, RegExp][] = [
-    [404, {}, /HTTP 404/],
-    [200, { 'content-length': '999999999999' }, /larger than expected/],
+test('downloadFile rejects HTTP failures, an absurd length and a destination write error', async (t) => {
+  const failures: [
+    number,
+    Record<string, string>,
+    boolean,
+    RegExp | ((error: unknown) => boolean),
+  ][] = [
+    [404, {}, false, /HTTP 404/],
+    [200, { 'content-length': '999999999999' }, false, /larger than expected/],
+    // The destination is a directory, and the write error must not hang the download.
+    [
+      200,
+      {},
+      true,
+      (error) => error instanceof Error && 'code' in error && error.code === 'EISDIR',
+    ],
   ];
-  for (const [status, headers, error] of failures) {
-    await withServer(
-      (_req, res) => {
-        res.writeHead(status, headers);
-        res.end('nope');
-      },
-      async (baseUrl) => {
-        const dir = mkdtempSync(join(tmpdir(), 'droidex-dl-'));
-        await assert.rejects(
-          downloadFile(`${baseUrl}/file`, join(dir, 'out.bin'), () => {}),
-          error,
-        );
-      },
+  for (const [status, headers, intoDirectory, expected] of failures) {
+    const url = await serve(t, (_req, res) => {
+      res.writeHead(status, headers);
+      res.end(status === 200 && !headers['content-length'] ? Buffer.alloc(256 * 1024) : 'nope');
+    });
+    const dir = scratchDir(t);
+    await assert.rejects(
+      downloadFile(url, intoDirectory ? dir : join(dir, 'out.bin'), () => {}),
+      expected,
     );
   }
 });
 
-test('downloadFile aborts on signal', async () => {
+test('downloadFile aborts on signal', async (t) => {
   const payload = Buffer.alloc(1024 * 1024, 9);
-  await withServer(
-    (_req, res) => {
-      res.writeHead(200, { 'content-length': String(payload.length) });
-      res.write(payload.subarray(0, 1024));
-      // Hold the connection open; the abort below must win, not the body.
-    },
-    async (baseUrl) => {
-      const dir = mkdtempSync(join(tmpdir(), 'droidex-dl-'));
-      const abort = new AbortController();
-      const done = downloadFile(`${baseUrl}/file`, join(dir, 'out.bin'), () => {}, abort.signal);
-      abort.abort();
-      await assert.rejects(
-        done,
-        (error: unknown) => error instanceof Error && error.name === 'AbortError',
-      );
-    },
+  const url = await serve(t, (_req, res) => {
+    res.writeHead(200, { 'content-length': String(payload.length) });
+    res.write(payload.subarray(0, 1024));
+    // Hold the connection open; the abort below must win, not the body.
+  });
+  const abort = new AbortController();
+  const done = downloadFile(url, join(scratchDir(t), 'out.bin'), () => {}, abort.signal);
+  abort.abort();
+  await assert.rejects(
+    done,
+    (error: unknown) => error instanceof Error && error.name === 'AbortError',
   );
 });
 

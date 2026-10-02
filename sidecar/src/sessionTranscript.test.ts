@@ -154,8 +154,9 @@ test('corrupt lines are skipped without losing their neighbors', () => {
 });
 
 test('eager and paged replay hide internal user messages and restore skill activations', () => {
+  // Internal skill bodies arrive as ordinary user text, after leading whitespace.
   const notification =
-    '<system-notification>\n<skill filePath="builtin:review">private instructions</skill>\n</system-notification>';
+    ' <system-notification>\n<skill filePath="builtin:review">private instructions</skill>\n</system-notification>';
   const path = writeSession([
     userMessage('ordinary user prompt'),
     userMessage('internal child-session handoff', 'llm_only'),
@@ -171,14 +172,21 @@ test('eager and paged replay hide internal user messages and restore skill activ
     parseFullSessionTranscript('app', 'provider', path, 'primary'),
   ]) {
     assert.deepEqual(
-      events.map((event) => ({ text: event.text, author: event.author, skills: event.skills })),
+      events.map(({ text, author, skills, sourceSessionId }) => [
+        text,
+        author,
+        skills,
+        sourceSessionId,
+      ]),
       [
-        { text: 'ordinary user prompt', author: 'user', skills: undefined },
-        { text: 'user-only prompt', author: 'user', skills: undefined },
-        { text: 'shared prompt', author: 'user', skills: undefined },
-        { text: 'PR #100', author: 'user', skills: ['review'] },
-        { text: 'Skill "review" activated: PR #100', author: undefined, skills: undefined },
-        { text: 'Review started', author: undefined, skills: undefined },
+        ['ordinary user prompt', 'user', undefined, 'user'],
+        ['user-only prompt', 'user', undefined, 'user'],
+        ['shared prompt', 'user', undefined, 'user'],
+        // A user-only skill activation restores the prompt and the harness
+        // acknowledgement as separate rows.
+        ['PR #100', 'user', ['review'], 'user'],
+        ['Skill "review" activated: PR #100', undefined, undefined, 'primary'],
+        ['Review started', undefined, undefined, 'primary'],
       ],
     );
   }
@@ -200,26 +208,21 @@ test('a leading compaction_state surfaces exactly one divider at the very top', 
   assert.equal(page2.older, undefined);
 });
 
-test('a leading compaction_state without a timestamp still dedupes to one divider', () => {
-  // Regression: ts=0 compaction events must feed the head-dedupe set — the
-  // old eager parser matched `e.ts === comp.ts`, where 0 === 0 holds, but a
-  // truthiness guard on the reader's set-add would emit the divider twice.
+test('a leading compaction_state yields one divider without a timestamp or behind non-object lines', () => {
+  // A ts=0 divider must still feed the head-dedupe set, and a valid `null` or
+  // number literal between session_start and the divider is noise to skip,
+  // not a value to dereference.
   const noTimestamp = JSON.stringify({ type: 'compaction_state', id: 'comp-0', removedCount: 7 });
-  const path = writeSession([noTimestamp, assistant('after')]);
-  const dividers = collectAll(path, 100).filter((e) => e.kind === 'compaction');
-  assert.equal(dividers.length, 1);
-  assert.equal(dividers[0].removedCount, 7);
-});
-
-test('a non-object JSONL literal in the head does not crash the reader', () => {
-  // A syntactically valid `null` (or number/boolean/array) literal between
-  // session_start and compaction_state is noise and must be skipped, not
-  // crash the parse by dereferencing null.
-  const path = writeSession(['null', '42', compactionState(9), assistant('after')]);
-  assert.doesNotThrow(() => reader(path));
-  const dividers = collectAll(path, 100).filter((e) => e.kind === 'compaction');
-  assert.equal(dividers.length, 1);
-  assert.equal(dividers[0].removedCount, 9);
+  for (const [lines, removedCount] of [
+    [[noTimestamp, assistant('after')], 7],
+    [['null', '42', compactionState(9), assistant('after')], 9],
+  ] as const) {
+    const dividers = collectAll(writeSession([...lines]), 100).filter(
+      (e) => e.kind === 'compaction',
+    );
+    assert.equal(dividers.length, 1);
+    assert.equal(dividers[0].removedCount, removedCount);
+  }
 });
 
 test('an oversized file pages back to its very first message without trimming', () => {

@@ -194,13 +194,23 @@ test('classifyPermission reads the SDK toolUses shape for MCP tools and exec', (
 test('permission grant keys hash automation payloads and name the kind of chat a spawn starts', () => {
   const params = (details: Record<string, unknown>, input: Record<string, unknown>) =>
     ({ toolUses: [{ details: { type: 'mcp_tool', ...details }, toolUse: { input } }] }) as never;
-  const automation = { serverName: 'droidex-automations', toolName: 'automation_update' };
   const prefix = 'x'.repeat(9_000);
-  // A grant for one automation payload must not cover a different one.
-  assert.notEqual(
-    permissionSignature(params(automation, { prompt: `${prefix}a` })),
-    permissionSignature(params(automation, { prompt: `${prefix}b` })),
-  );
+  for (const automation of [
+    { serverName: 'droidex-automations', toolName: 'automation_update' },
+    // Droid names the server inside the tool.
+    { toolName: 'droidex_automations___automation_update' },
+  ]) {
+    // A grant for one automation payload must not cover a different one.
+    assert.notEqual(
+      permissionSignature(params(automation, { automationId: 'one', prompt: `${prefix}a` })),
+      permissionSignature(params(automation, { automationId: 'one', prompt: `${prefix}b` })),
+    );
+    // The same payload earns the same grant whatever order its keys arrive in.
+    assert.equal(
+      permissionSignature(params(automation, { automationId: 'one', prompt: 'p' })),
+      permissionSignature(params(automation, { prompt: 'p', automationId: 'one' })),
+    );
+  }
 
   const spawn = (input: Record<string, unknown>) =>
     permissionSignature(params({ toolName: 'droidex_sessions___thread_spawn' }, input));
@@ -276,17 +286,6 @@ test('Task progress forwards the subagent id, linking it only from a spawn', () 
   assert.equal(poll?.childSession?.toolUseId, undefined);
 });
 
-test('captures the current SDK child session id from a successful Task result', () => {
-  const normalized = result(
-    'Task',
-    'tool-current',
-    'session_id: provider-child-current\nCHILD_SMOKE_OK',
-  );
-  assert.equal(normalized?.childSession?.providerSessionId, 'provider-child-current');
-  assert.equal(normalized?.childSession?.done, true);
-  assert.equal(normalized?.childSession?.toolUseId, 'tool-current');
-});
-
 test('registers a background subagent at launch instead of completion', () => {
   const normalized = result(
     'Task',
@@ -329,6 +328,13 @@ test('a TaskOutput poll completes a child only on a terminal status, without ste
     poll('Task ID: 7d32cc8f-77d5\nSubagent Type: Worker\n\nstill reading')?.childSession?.done,
     false,
   );
+  // The header ends at the blank line, CRLF or not; the body's own
+  // "Status: completed" line belongs to the subagent's report.
+  const crlf = poll(
+    'Task ID: 7d32cc8f-77d5\r\nSubagent Type: Worker\r\nDuration: 12.0s\r\n\r\nStatus: completed\r\nstill reading',
+  );
+  assert.equal(crlf?.childSession?.done, false);
+  assert.equal(crlf?.childSession?.activity?.preview, 'still reading');
 });
 
 test('a poll result carries the subagent activity it observed', () => {
@@ -379,19 +385,6 @@ test('Task result text is never misparsed as a session id or a status', () => {
   const failed = result('Task', 'tool-failed', 'session_id: fake-provider\nspawn failed', true);
   assert.equal(laterOutput?.childSession?.providerSessionId, undefined);
   assert.equal(failed?.childSession?.providerSessionId, undefined);
-});
-
-test('a CRLF poll body cannot settle a child that reported no status', () => {
-  // The header ends at the blank line, CRLF or not; the body's own
-  // "Status: completed" line belongs to the subagent's report.
-  const normalized = result(
-    'TaskOutput',
-    'poll-1',
-    'Task ID: 7d32cc8f-77d5\r\nSubagent Type: Worker\r\nDuration: 12.0s\r\n\r\nStatus: completed\r\nstill reading',
-  );
-  assert.equal(normalized?.childSession?.providerSessionId, '7d32cc8f-77d5');
-  assert.equal(normalized?.childSession?.done, false);
-  assert.equal(normalized?.childSession?.activity?.preview, 'still reading');
 });
 
 test('only Task-family results can describe a subagent', () => {

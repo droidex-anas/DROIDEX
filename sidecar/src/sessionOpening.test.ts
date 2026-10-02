@@ -4,29 +4,16 @@ import test from 'node:test';
 import type { SessionInitResult } from './DroidRuntime.js';
 import type { SessionSummary } from './protocol.js';
 import { buildResumedSession } from './sessionOpening.js';
+import { sessionSummary } from './testing/sessionSummaryFixture.js';
 
 function storedChat(overrides: Partial<SessionSummary> = {}): SessionSummary {
-  return {
+  return sessionSummary({
     appSessionId: 'chat-app',
     providerSessionId: 'chat-provider',
-    provider: 'droid',
-    sessionPurpose: 'chat',
-    interactionMode: 'auto',
-    role: 'primary',
-    title: 'Chat',
-    goal: '',
     cwd: '/workspace',
     workspaceKind: 'folder',
-    autonomy: 'low',
-    phase: 'paused',
-    features: [],
-    tokensIn: 0,
-    tokensOut: 0,
-    contextTokens: 0,
-    createdAt: 1,
-    updatedAt: 1,
     ...overrides,
-  };
+  });
 }
 
 function resume(init: SessionInitResult, historical?: SessionSummary) {

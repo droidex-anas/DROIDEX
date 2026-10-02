@@ -514,15 +514,19 @@ test('shutdown waits for recovered workspace cleanup already in progress', async
   await shutdown;
 });
 
-test('an unattended run cannot create another automation', async (t) => {
+test('a chat creates automations directly only at High autonomy, and never from an unattended run', async (t) => {
   const { manager, launches } = await open(t, {
-    resolveSessionContext: async () => ({
+    resolveSessionContext: async (appSessionId) => ({
       cwd: '/repo',
       modelId: 'chat-model',
       reasoningEffort: 'high',
-      autonomy: 'high',
+      autonomy: appSessionId === 'low-chat' ? 'low' : 'high',
     }),
   });
+  await assert.rejects(
+    manager.createFromSession(task({ timezone: 'UTC' }), 'low-chat'),
+    /High autonomy/i,
+  );
   const automation = await manager.create(task({ autonomy: 'high' }));
   await startRun(manager, launches, automation.id, {
     appSessionId: 'session-run',
@@ -533,21 +537,6 @@ test('an unattended run cannot create another automation', async (t) => {
     /unattended/i,
   );
   assert.equal((await manager.snapshot()).automations.length, 1);
-});
-
-test('direct creation requires High autonomy', async (t) => {
-  const { manager } = await open(t, {
-    resolveSessionContext: async () => ({
-      cwd: '/repo',
-      modelId: 'chat-model',
-      reasoningEffort: 'high',
-      autonomy: 'low',
-    }),
-  });
-  await assert.rejects(
-    manager.createFromSession(task({ timezone: 'UTC' }), 'chat'),
-    /High autonomy/i,
-  );
 });
 
 test('concurrent proposal confirmations create one automation from the first input', async (t) => {

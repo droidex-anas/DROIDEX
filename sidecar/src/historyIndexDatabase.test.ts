@@ -11,13 +11,13 @@ import {
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
-import test from 'node:test';
+import test, { type TestContext } from 'node:test';
 
 import { HistoryIndexDatabase } from './historyIndexDatabase.js';
 import { SESSION_SEARCH_INDEX_FILENAME } from './history.js';
 import { sqliteFts5UnavailableSkipReason, sqliteSupportsFts5 } from './historySearchSchema.js';
 
-const FTS5_UNAVAILABLE_REASON = sqliteFts5UnavailableSkipReason();
+const needsFts5 = { skip: sqliteFts5UnavailableSkipReason() };
 
 const DAY_MS = 24 * 60 * 60 * 1_000;
 
@@ -105,20 +105,14 @@ function createCanonicalDatabase(path: string): void {
   db.close();
 }
 
-interface IndexFixture {
-  database: HistoryIndexDatabase;
-  slices: ReturnType<typeof scheduler>;
-  sessionsDirectory: string;
-  clock: { now: number };
-}
-
-async function withIndexDatabase(
-  seed: (sessionsDirectory: string, now: number) => void,
-  run: (fixture: IndexFixture) => Promise<void>,
-): Promise<void> {
+/**
+ * A HistoryIndexDatabase over an empty HOME whose sessions `seed` writes first,
+ * with its slices held on a manual scheduler. Closed when the test ends.
+ */
+function indexDatabase(t: TestContext, seed: (sessionsDirectory: string, now: number) => void) {
   const home = mkdtempSync(join(tmpdir(), 'droidex-progressive-index-'));
-  const previousHome = process.env['HOME'];
-  process.env['HOME'] = home;
+  const previousHome = process.env.HOME;
+  process.env.HOME = home;
   const databaseDirectory = join(home, '.factory', 'droidex');
   const sessionsDirectory = join(home, '.factory', 'sessions');
   mkdirSync(databaseDirectory, { recursive: true });
@@ -133,14 +127,12 @@ async function withIndexDatabase(
     schedule: slices.schedule,
     cancel: slices.cancel,
   });
-  try {
-    await run({ database, slices, sessionsDirectory, clock });
-  } finally {
+  t.after(async () => {
     await database.close();
-    if (previousHome === undefined) delete process.env['HOME'];
-    else process.env['HOME'] = previousHome;
+    process.env.HOME = previousHome;
     rmSync(home, { recursive: true, force: true });
-  }
+  });
+  return { database, slices, sessionsDirectory, clock };
 }
 
 function writeOldSession(
@@ -220,290 +212,209 @@ function writeSession(
 
 test(
   'recent histories index first at the active pace while old histories wait for idle slices',
-  { skip: FTS5_UNAVAILABLE_REASON },
-  async () => {
-    await withIndexDatabase(
-      (sessionsDirectory, now) => {
-        writeSession(sessionsDirectory, 'recent-provider', 'recent narwhal', now - DAY_MS);
-        writeOldSession(sessionsDirectory, 'old-provider', 'old albatross', now);
-      },
-      async ({ database, slices }) => {
-        const reconciliation = database.reconcileSessionFiles();
-        assert.equal(reconciliation.upserts.length, 2);
-        assert.equal(slices.nextDelay(), 2_000, 'recent history is paced while the user is active');
-        database.setIdle(true);
-        assert.equal(slices.nextDelay(), 5_000, 'an idle desktop slows recent slices');
-        database.setIdle(false);
-        assert.equal(slices.nextDelay(), 2_000, 'activity restores the interactive delay');
-        assert.equal(database.isIndexingIncomplete(), true);
-        assert.deepEqual(await database.search('old albatross'), []);
-        assert.deepEqual(
-          await database.search('recent narwhal'),
-          [],
-          'interactive search returns the committed index without doing file work',
-        );
-
-        await slices.runNext();
-        assert.equal(await waitForSearch(database, 'recent narwhal'), 'recent-provider');
-        assert.equal(database.isIndexingIncomplete(), true, 'older history is still unindexed');
-        assert.equal(slices.nextDelay(), undefined, 'archive backfill stays unarmed while active');
-
-        database.setIdle(true);
-        assert.equal(slices.nextDelay(), 5_000, 'old history uses the slower idle-only pace');
-        database.setIdle(false);
-        assert.equal(slices.nextDelay(), undefined);
-        database.setIdle(true);
-        await slices.runNext();
-        assert.equal((await database.search('old albatross'))[0]?.appSessionId, 'old-provider');
-        assert.equal(database.isIndexingIncomplete(), false);
-      },
+  needsFts5,
+  async (t) => {
+    const { database, slices } = indexDatabase(t, (sessionsDirectory, now) => {
+      writeSession(sessionsDirectory, 'recent-provider', 'recent narwhal', now - DAY_MS);
+      writeOldSession(sessionsDirectory, 'old-provider', 'old albatross', now);
+    });
+    const reconciliation = database.reconcileSessionFiles();
+    assert.equal(reconciliation.upserts.length, 2);
+    assert.equal(slices.nextDelay(), 2_000, 'recent history is paced while the user is active');
+    database.setIdle(true);
+    assert.equal(slices.nextDelay(), 5_000, 'an idle desktop slows recent slices');
+    database.setIdle(false);
+    assert.equal(slices.nextDelay(), 2_000, 'activity restores the interactive delay');
+    assert.equal(database.isIndexingIncomplete(), true);
+    assert.deepEqual(await database.search('old albatross'), []);
+    assert.deepEqual(
+      await database.search('recent narwhal'),
+      [],
+      'interactive search returns the committed index without doing file work',
     );
+
+    await slices.runNext();
+    assert.equal(await waitForSearch(database, 'recent narwhal'), 'recent-provider');
+    assert.equal(database.isIndexingIncomplete(), true, 'older history is still unindexed');
+    assert.equal(slices.nextDelay(), undefined, 'archive backfill stays unarmed while active');
+
+    database.setIdle(true);
+    assert.equal(slices.nextDelay(), 5_000, 'old history uses the slower idle-only pace');
+    database.setIdle(false);
+    assert.equal(slices.nextDelay(), undefined);
+    database.setIdle(true);
+    await slices.runNext();
+    assert.equal((await database.search('old albatross'))[0]?.appSessionId, 'old-provider');
+    assert.equal(database.isIndexingIncomplete(), false);
   },
 );
 
-test('a corrupt derived database is deleted and rebuilt without touching canonical history', async () => {
+test('a corrupt derived database is deleted and rebuilt without touching canonical history', async (t) => {
   const directory = mkdtempSync(join(tmpdir(), 'droidex-derived-corruption-'));
+  t.after(() => rmSync(directory, { recursive: true, force: true }));
   const dbPath = join(directory, 'session-index.sqlite');
   const derivedPath = join(directory, SESSION_SEARCH_INDEX_FILENAME);
   createCanonicalDatabase(dbPath);
   writeFileSync(derivedPath, 'not a sqlite database');
 
   const database = new HistoryIndexDatabase(dbPath);
-  try {
-    assert.deepEqual(database.sessionFileSnapshot(), { revision: 0, changed: 0, entries: [] });
-  } finally {
-    await database.close();
-  }
+  assert.deepEqual(database.sessionFileSnapshot(), { revision: 0, changed: 0, entries: [] });
+  await database.close();
 
-  const canonical = new DatabaseSync(dbPath, { readOnly: true });
-  const derived = new DatabaseSync(derivedPath, { readOnly: true });
-  try {
-    assert.equal(
-      canonical
-        .prepare("SELECT count(*) AS count FROM sqlite_schema WHERE name = 'app_sessions'")
-        .get()?.['count'],
-      1,
-    );
-    assert.equal(
-      derived
-        .prepare("SELECT count(*) AS count FROM sqlite_schema WHERE name = 'session_file_cache'")
-        .get()?.['count'],
-      1,
-    );
-    assert.equal(
-      derived
-        .prepare("SELECT count(*) AS count FROM sqlite_schema WHERE name = 'history_search_fts'")
-        .get()?.['count'],
-      sqliteSupportsFts5() ? 1 : 0,
-    );
-  } finally {
-    derived.close();
-    canonical.close();
-    rmSync(directory, { recursive: true, force: true });
-  }
+  const tableCount = (path: string, name: string) => {
+    const db = new DatabaseSync(path, { readOnly: true });
+    try {
+      return db.prepare('SELECT count(*) AS count FROM sqlite_schema WHERE name = ?').get(name)?.[
+        'count'
+      ];
+    } finally {
+      db.close();
+    }
+  };
+  assert.equal(tableCount(dbPath, 'app_sessions'), 1);
+  assert.equal(tableCount(derivedPath, 'session_file_cache'), 1);
+  assert.equal(tableCount(derivedPath, 'history_search_fts'), sqliteSupportsFts5() ? 1 : 0);
+});
+
+test('a transient file read failure stays queued for a later slice', needsFts5, async (t) => {
+  let path = '';
+  const { database, slices, clock } = indexDatabase(t, (sessionsDirectory, now) => {
+    path = writeSession(sessionsDirectory, 'retry-provider', 'retry capybara', now);
+  });
+  const unavailablePath = `${path}.unavailable`;
+  database.reconcileSessionFiles();
+  renameSync(path, unavailablePath);
+  await slices.runNext();
+  await waitFor(() => slices.nextDelay() !== undefined);
+  assert.equal(slices.nextDelay(), 1_000, 'the unreadable recent file backs off before retrying');
+
+  renameSync(unavailablePath, path);
+  clock.now += 1_000;
+  await slices.runNext();
+  assert.equal(await waitForSearch(database, 'retry capybara'), 'retry-provider');
 });
 
 test(
-  'a transient file read failure stays queued for a later slice',
-  { skip: FTS5_UNAVAILABLE_REASON },
-  async () => {
-    let path = '';
-    await withIndexDatabase(
-      (sessionsDirectory, now) => {
-        path = writeSession(sessionsDirectory, 'retry-provider', 'retry capybara', now);
-      },
-      async ({ database, slices, clock }) => {
-        const unavailablePath = `${path}.unavailable`;
-        database.reconcileSessionFiles();
-        renameSync(path, unavailablePath);
-        await slices.runNext();
-        await waitFor(() => slices.nextDelay() !== undefined);
-        assert.equal(
-          slices.nextDelay(),
-          1_000,
-          'the unreadable recent file backs off before retrying',
-        );
-
-        renameSync(unavailablePath, path);
-        clock.now += 1_000;
-        await slices.runNext();
-        assert.equal(await waitForSearch(database, 'retry capybara'), 'retry-provider');
-      },
-    );
-  },
-);
-
-test(
   'one unreadable provider does not delay a healthy provider in the same lane',
-  { skip: FTS5_UNAVAILABLE_REASON },
-  async () => {
+  needsFts5,
+  async (t) => {
     let unreadablePath = '';
-    await withIndexDatabase(
-      (sessionsDirectory, now) => {
-        unreadablePath = writeSession(sessionsDirectory, 'a-unreadable', 'blocked kiwi', now);
-        writeSession(sessionsDirectory, 'b-healthy', 'healthy kiwi', now - 1);
-      },
-      async ({ database, slices }) => {
-        database.reconcileSessionFiles();
-        renameSync(unreadablePath, `${unreadablePath}.unavailable`);
-        await slices.runNext();
-        await waitFor(() => slices.nextDelay() !== undefined);
-        assert.equal(slices.nextDelay(), 2_000, 'the healthy recent provider keeps normal pacing');
+    const { database, slices } = indexDatabase(t, (sessionsDirectory, now) => {
+      unreadablePath = writeSession(sessionsDirectory, 'a-unreadable', 'blocked kiwi', now);
+      writeSession(sessionsDirectory, 'b-healthy', 'healthy kiwi', now - 1);
+    });
+    database.reconcileSessionFiles();
+    renameSync(unreadablePath, `${unreadablePath}.unavailable`);
+    await slices.runNext();
+    await waitFor(() => slices.nextDelay() !== undefined);
+    assert.equal(slices.nextDelay(), 2_000, 'the healthy recent provider keeps normal pacing');
 
-        await slices.runNext();
-        assert.equal(await waitForSearch(database, 'healthy kiwi'), 'b-healthy');
-      },
-    );
+    await slices.runNext();
+    assert.equal(await waitForSearch(database, 'healthy kiwi'), 'b-healthy');
   },
 );
 
-test(
-  'a newly changed recent chat preempts a pending archive timer',
-  { skip: FTS5_UNAVAILABLE_REASON },
-  async () => {
-    await withIndexDatabase(
-      (sessionsDirectory, now) => {
-        writeOldSession(sessionsDirectory, 'priority-old', 'old priority', now);
-      },
-      async ({ database, slices, sessionsDirectory, clock }) => {
-        database.reconcileSessionFiles();
-        database.setIdle(true);
-        assert.equal(slices.nextDelay(), 5_000);
+test('a newly changed recent chat preempts a pending archive timer', needsFts5, (t) => {
+  const { database, slices, sessionsDirectory, clock } = indexDatabase(
+    t,
+    (sessionsDirectory, now) => {
+      writeOldSession(sessionsDirectory, 'priority-old', 'old priority', now);
+    },
+  );
+  database.reconcileSessionFiles();
+  database.setIdle(true);
+  assert.equal(slices.nextDelay(), 5_000);
 
-        const recentPath = writeSession(
-          sessionsDirectory,
-          'priority-recent',
-          'recent priority',
-          clock.now,
-        );
-        database.reconcileSessionFilePaths([
-          { providerSessionId: 'priority-recent', path: recentPath },
-        ]);
-        assert.equal(slices.nextDelay(), 5_000);
-      },
-    );
-  },
-);
+  const recentPath = writeSession(
+    sessionsDirectory,
+    'priority-recent',
+    'recent priority',
+    clock.now,
+  );
+  database.reconcileSessionFilePaths([{ providerSessionId: 'priority-recent', path: recentPath }]);
+  assert.equal(slices.nextDelay(), 5_000);
+});
 
-test(
-  'an in-flight old slice cannot overwrite a newer watcher entry',
-  { skip: FTS5_UNAVAILABLE_REASON },
-  async () => {
-    let path = '';
-    await withIndexDatabase(
-      (sessionsDirectory, now) => {
-        path = writeMultiSliceSession(
-          sessionsDirectory,
-          'racing-provider',
-          'old searchable row',
-          now,
-        );
-      },
-      async ({ database, slices, clock }) => {
-        database.reconcileSessionFiles();
-        const activeSlice = slices.runNext();
+test('an in-flight old slice cannot overwrite a newer watcher entry', needsFts5, async (t) => {
+  let path = '';
+  const { database, slices, clock } = indexDatabase(t, (sessionsDirectory, now) => {
+    path = writeMultiSliceSession(sessionsDirectory, 'racing-provider', 'old searchable row', now);
+  });
+  database.reconcileSessionFiles();
+  const activeSlice = slices.runNext();
 
-        appendFileSync(
-          path,
-          `${JSON.stringify({
-            id: 'new-concurrent-row',
-            type: 'message',
-            timestamp: new Date(clock.now + 3_000).toISOString(),
-            message: {
-              role: 'assistant',
-              content: [{ type: 'text', text: 'concurrent octopus marker' }],
-            },
-          })}\n`,
-        );
-        database.reconcileSessionFilePaths([{ providerSessionId: 'racing-provider', path }]);
-
-        await activeSlice;
-        await slices.drain();
-        assert.equal(
-          (await database.search('concurrent octopus'))[0]?.appSessionId,
-          'racing-provider',
-        );
+  appendFileSync(
+    path,
+    `${JSON.stringify({
+      id: 'new-concurrent-row',
+      type: 'message',
+      timestamp: new Date(clock.now + 3_000).toISOString(),
+      message: {
+        role: 'assistant',
+        content: [{ type: 'text', text: 'concurrent octopus marker' }],
       },
-    );
-  },
-);
+    })}\n`,
+  );
+  database.reconcileSessionFilePaths([{ providerSessionId: 'racing-provider', path }]);
 
-test(
-  'a stable truncated tail parks until a watcher reports new bytes',
-  { skip: FTS5_UNAVAILABLE_REASON },
-  async () => {
-    let path = '';
-    await withIndexDatabase(
-      (sessionsDirectory, now) => {
-        path = writeSession(sessionsDirectory, 'truncated-provider', 'stable dolphin', now);
-        appendFileSync(path, '{"id":"unfinished"');
-      },
-      async ({ database, slices }) => {
-        database.reconcileSessionFiles();
-        await slices.runNext();
-        await slices.runNext();
-        assert.equal(
-          slices.nextDelay(),
-          undefined,
-          'a zero-progress tail does not spin every 250ms',
-        );
-        assert.equal(
-          (await database.search('stable dolphin'))[0]?.appSessionId,
-          'truncated-provider',
-        );
+  await activeSlice;
+  await slices.drain();
+  assert.equal((await database.search('concurrent octopus'))[0]?.appSessionId, 'racing-provider');
+});
 
-        appendFileSync(path, '}\n');
-        database.reconcileSessionFilePaths([{ providerSessionId: 'truncated-provider', path }]);
-        await waitFor(() => slices.nextDelay() !== undefined);
-        assert.equal(
-          slices.nextDelay(),
-          2_000,
-          'a real file change makes the parked tail eligible again',
-        );
-      },
-    );
-  },
-);
+test('a stable truncated tail parks until a watcher reports new bytes', needsFts5, async (t) => {
+  let path = '';
+  const { database, slices } = indexDatabase(t, (sessionsDirectory, now) => {
+    path = writeSession(sessionsDirectory, 'truncated-provider', 'stable dolphin', now);
+    appendFileSync(path, '{"id":"unfinished"');
+  });
+  database.reconcileSessionFiles();
+  await slices.runNext();
+  await slices.runNext();
+  assert.equal(slices.nextDelay(), undefined, 'a zero-progress tail does not spin every 250ms');
+  assert.equal((await database.search('stable dolphin'))[0]?.appSessionId, 'truncated-provider');
+
+  appendFileSync(path, '}\n');
+  database.reconcileSessionFilePaths([{ providerSessionId: 'truncated-provider', path }]);
+  await waitFor(() => slices.nextDelay() !== undefined);
+  assert.equal(
+    slices.nextDelay(),
+    2_000,
+    'a real file change makes the parked tail eligible again',
+  );
+});
 
 test(
   'a full reconcile cancels a deleted file in flight before stale rows commit',
-  { skip: FTS5_UNAVAILABLE_REASON },
-  async () => {
+  needsFts5,
+  async (t) => {
     let path = '';
-    await withIndexDatabase(
-      (sessionsDirectory, now) => {
-        path = writeMultiSliceSession(
-          sessionsDirectory,
-          'deleted-provider',
-          'deleted narwhal marker',
-          now,
-        );
-      },
-      async ({ database, slices }) => {
-        database.reconcileSessionFiles();
-        const activeSlice = slices.runNext();
-        rmSync(path);
-        database.reconcileSessionFiles();
+    const { database, slices } = indexDatabase(t, (sessionsDirectory, now) => {
+      path = writeMultiSliceSession(
+        sessionsDirectory,
+        'deleted-provider',
+        'deleted narwhal marker',
+        now,
+      );
+    });
+    database.reconcileSessionFiles();
+    const activeSlice = slices.runNext();
+    rmSync(path);
+    database.reconcileSessionFiles();
 
-        await activeSlice;
-        await slices.drain();
-        assert.deepEqual(await database.search('deleted narwhal'), []);
-      },
-    );
+    await activeSlice;
+    await slices.drain();
+    assert.deepEqual(await database.search('deleted narwhal'), []);
   },
 );
 
-test('indexing does not arm a slice timer when there is nothing to index', async () => {
-  await withIndexDatabase(
-    () => undefined,
-    async ({ database, slices }) => {
-      database.reconcileSessionFiles();
-      assert.equal(slices.nextDelay(), undefined);
-      assert.equal(database.isIndexingIncomplete(), false);
-      database.setIdle(true);
-      assert.equal(slices.nextDelay(), undefined);
-      database.setIdle(false);
-      assert.equal(slices.nextDelay(), undefined);
-    },
-  );
+test('indexing does not arm a slice timer when there is nothing to index', (t) => {
+  const { database, slices } = indexDatabase(t, () => undefined);
+  database.reconcileSessionFiles();
+  assert.equal(slices.nextDelay(), undefined);
+  assert.equal(database.isIndexingIncomplete(), false);
+  database.setIdle(true);
+  assert.equal(slices.nextDelay(), undefined);
+  database.setIdle(false);
+  assert.equal(slices.nextDelay(), undefined);
 });

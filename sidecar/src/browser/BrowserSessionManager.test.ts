@@ -167,7 +167,7 @@ function recordUpdates(updates: BrowserState[]): BrowserSessionManagerOptions['e
   };
 }
 
-test('reload and history navigation adopt the runtime snapshot and its history state', async () => {
+test('reload and history navigation adopt the runtime history state, and a new page without one clears it', async () => {
   const { manager, runtime } = await opened({}, 'https://example.com');
   runtime.canGoBack = true;
   runtime.canGoForward = true;
@@ -182,16 +182,9 @@ test('reload and history navigation adopt the runtime snapshot and its history s
   assert.deepEqual(runtime.history, ['back', 'forward']);
   assert.equal(back.url, 'https://example.com/back');
   assert.equal(forward.url, 'https://example.com/forward');
-});
 
-test('opening a new page clears stale history when its snapshot omits navigation state', async () => {
-  const { manager, runtime } = await opened({}, 'https://example.com/first');
-  runtime.canGoBack = true;
-  runtime.canGoForward = true;
-  assert.equal((await manager.reload('m1')).canGoBack, true);
   runtime.omitHistory = true;
   const second = await manager.open({ appSessionId: 'm1', url: 'https://example.com/second' });
-
   assert.equal(second.canGoBack, false);
   assert.equal(second.canGoForward, false);
 });
@@ -224,39 +217,28 @@ test('click by missing ref fails without issuing a runtime action', async () => 
   assert.deepEqual(runtime.clicks, []);
 });
 
-test('resize clears stale refs without requesting a snapshot', async () => {
-  const { manager, runtime } = await opened();
-  const state = await manager.resizeViewport({
-    appSessionId: 'm1',
-    viewport: { width: 390, height: 844, deviceScaleFactor: 2 },
-    viewportMode: 'mobile',
-  });
-
-  assert.deepEqual(state.refs, []);
-  assert.equal(runtime.snapshotRequests, 0);
-});
-
-test('failed resize preserves the previous viewport and emits no optimistic update', async () => {
+test('a failed resize keeps the viewport and emits nothing, and a resize clears refs without a snapshot', async () => {
   const updates: BrowserState[] = [];
   const { manager, runtime } = await opened({ emit: recordUpdates(updates) });
+  const mobile = {
+    appSessionId: 'm1',
+    viewport: { width: 390, height: 844, deviceScaleFactor: 2 },
+    viewportMode: 'mobile' as const,
+  };
   const updateCount = updates.length;
   runtime.viewportError = new Error('resize failed');
-
-  await assert.rejects(
-    manager.resizeViewport({
-      appSessionId: 'm1',
-      viewport: { width: 390, height: 844, deviceScaleFactor: 2 },
-      viewportMode: 'mobile',
-    }),
-    /resize failed/,
-  );
-
+  await assert.rejects(manager.resizeViewport(mobile), /resize failed/);
   assert.equal(updates.length, updateCount);
   assert.deepEqual(manager.state('m1')?.viewport, {
     width: 1200,
     height: 800,
     deviceScaleFactor: 2,
   });
+
+  delete runtime.viewportError;
+  const state = await manager.resizeViewport(mobile);
+  assert.deepEqual(state.refs, []);
+  assert.equal(runtime.snapshotRequests, 0);
 });
 
 test('only agent clicks move the visible agent cursor, even when the click fails', async () => {
@@ -342,8 +324,11 @@ test('screenshots are taken only on request, with the requested detail', async (
   assert.deepEqual(runtime.screenshots, [{ fullPage: true, deviceScaleFactor: 3 }]);
 });
 
-test('open resizes an existing runtime only when given a viewport', async () => {
-  const { manager, runtime } = await opened();
+test('open normalizes bare domains and resizes an existing runtime only when given a viewport', async () => {
+  const { manager, runtime, state: first } = await opened({}, 'skeina.tech');
+  // A bare domain is made loadable before the native runtime sees it.
+  assert.equal(runtime.openedUrls[0], 'https://skeina.tech');
+  assert.equal(first.url, 'https://skeina.tech');
   const custom = { width: 820, height: 620, deviceScaleFactor: 2 };
   await manager.open({
     appSessionId: 'm1',
@@ -364,12 +349,6 @@ test('open resizes an existing runtime only when given a viewport', async () => 
   assert.deepEqual(runtime.viewport, custom);
   assert.deepEqual(state.viewport, custom);
   assert.equal(state.viewportMode, 'custom');
-});
-
-test('open normalizes bare domains before the native runtime sees them', async () => {
-  const { runtime, state } = await opened({}, 'skeina.tech');
-  assert.equal(runtime.openedUrls[0], 'https://skeina.tech');
-  assert.equal(state.url, 'https://skeina.tech');
 });
 
 function buttonRef(): BrowserElementRef {

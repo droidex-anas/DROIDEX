@@ -3,10 +3,10 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
-import test from 'node:test';
+import test, { type TestContext } from 'node:test';
 
 import { HistoryIndex, type PersistedChildSession } from './history.js';
-import { HistoryPersistence } from './HistoryPersistence.js';
+import { HistoryPersistence, type HistoryPersistenceOptions } from './HistoryPersistence.js';
 import { sqliteFts5UnavailableSkipReason } from './historySearchSchema.js';
 import type { HistoryPersistenceClient, HistorySearchClient } from './HistoryWorkerClient.js';
 import type {
@@ -17,43 +17,44 @@ import type { HistorySearchReply, SessionSummary, TranscriptEvent } from './prot
 import { hotPathMetrics } from './telemetry/hotPathMetrics.js';
 import { providerSessionJsonl } from './testing/providerSessionFixtures.js';
 import { persistTestChild } from './testing/historyPersistenceFixture.js';
+import { sessionSummary } from './testing/sessionSummaryFixture.js';
 
 const FTS5_UNAVAILABLE_REASON = sqliteFts5UnavailableSkipReason();
 
-function withTemporaryHome(prefix: string): { home: string; restore: () => void } {
-  const home = mkdtempSync(join(tmpdir(), prefix));
-  const previousHome = process.env['HOME'];
-  const previousUserProfile = process.env['USERPROFILE'];
-  process.env['HOME'] = home;
-  process.env['USERPROFILE'] = home;
-  return {
-    home,
-    restore: () => {
-      if (previousHome === undefined) delete process.env['HOME'];
-      else process.env['HOME'] = previousHome;
-      if (previousUserProfile === undefined) delete process.env['USERPROFILE'];
-      else process.env['USERPROFILE'] = previousUserProfile;
-      rmSync(home, { recursive: true, force: true });
-    },
-  };
+/**
+ * A HistoryPersistence over an empty HOME, closed when the test ends. `seed`
+ * runs against that HOME before the persistence opens it.
+ */
+function openPersistence(
+  t: TestContext,
+  options: HistoryPersistenceOptions = {},
+  seed?: () => void,
+): { home: string; persistence: HistoryPersistence } {
+  const home = mkdtempSync(join(tmpdir(), 'droidex-history-persistence-'));
+  const previousHome = process.env.HOME;
+  process.env.HOME = home;
+  seed?.();
+  const persistence = new HistoryPersistence(options);
+  t.after(async () => {
+    await persistence.close();
+    process.env.HOME = previousHome;
+    rmSync(home, { recursive: true, force: true });
+  });
+  return { home, persistence };
 }
+
+const emptyReconciliation = {
+  previousRevision: 0,
+  revision: 0,
+  changed: 0,
+  upserts: [],
+  removedProviderSessionIds: [],
+};
 
 function stubSearchClient(overrides: Partial<HistorySearchClient> = {}): HistorySearchClient {
   return {
-    reconcileSessionFiles: async () => ({
-      previousRevision: 0,
-      revision: 0,
-      changed: 0,
-      upserts: [],
-      removedProviderSessionIds: [],
-    }),
-    reconcileSessionFilePaths: async () => ({
-      previousRevision: 0,
-      revision: 0,
-      changed: 0,
-      upserts: [],
-      removedProviderSessionIds: [],
-    }),
+    reconcileSessionFiles: async () => emptyReconciliation,
+    reconcileSessionFilePaths: async () => emptyReconciliation,
     sessionFileSnapshot: async () => ({ revision: 0, changed: 0, entries: [] }),
     setIndexingIdle: async () => undefined,
     search: async () => ({ results: [], indexingIncomplete: false }),
@@ -83,27 +84,16 @@ function persistResult(batch: HistoryPersistenceBatch): HistoryPersistenceResult
 }
 
 function summary(patch: Partial<SessionSummary> = {}): SessionSummary {
-  return {
-    appSessionId: 'app',
+  return sessionSummary({
     providerSessionId: 'provider',
-    provider: 'droid',
-    sessionPurpose: 'chat',
-    interactionMode: 'auto',
-    role: 'primary',
     title: 'Durable session',
-    goal: 'Persist settled state',
     cwd: '/repo',
-    autonomy: 'low',
     phase: 'running',
     streaming: true,
-    features: [],
-    tokensIn: 0,
     tokensOut: 1,
     contextTokens: 1,
-    createdAt: 1,
-    updatedAt: 1,
     ...patch,
-  };
+  });
 }
 
 function child(status: PersistedChildSession['status']): PersistedChildSession {
@@ -118,153 +108,129 @@ function child(status: PersistedChildSession['status']): PersistedChildSession {
   };
 }
 
-test('a failed settlement is held while live transcript output continues until recovery', async () => {
-  const { home, restore } = withTemporaryHome('droidex-history-persistence-');
-  const persistence = new HistoryPersistence();
-  try {
-    persistence.syncSummaries([summary()]);
-    await persistence.flush();
+function output(id: string, appSessionId = 'app'): TranscriptEvent {
+  return {
+    id,
+    appSessionId,
+    sourceSessionId: appSessionId,
+    role: 'primary',
+    ts: 1,
+    kind: 'text',
+    text: 'live output',
+  };
+}
 
-    const invalidSettlement = summary({ phase: 'paused', streaming: false, tokensOut: 2 });
-    Object.defineProperty(invalidSettlement, 'title', { value: undefined });
-    assert.equal(persistence.syncSummaries([invalidSettlement]), false);
-    await assert.rejects(persistence.flush(), /cannot be bound/);
-
-    assert.doesNotThrow(() =>
-      persistence.recordEvent({
-        id: 'live-after-boundary-failure',
-        appSessionId: 'app',
-        sourceSessionId: 'app',
-        role: 'primary',
-        ts: 2,
-        kind: 'text',
-        text: 'live output continues',
-      }),
-    );
-
-    assert.equal(
-      persistence.syncSummaries([summary({ phase: 'paused', streaming: false, tokensOut: 2 })]),
-      false,
-    );
-    await persistence.flush();
-
-    const db = new DatabaseSync(join(home, '.factory', 'droidex', 'session-index.sqlite'), {
-      readOnly: true,
-    });
-    try {
-      const row = db
-        .prepare('SELECT tokens_out FROM app_sessions WHERE app_session_id = ?')
-        .get('app') as { tokens_out: number };
-      assert.equal(row.tokens_out, 2);
-    } finally {
-      db.close();
-    }
-  } finally {
-    await persistence.close();
-    restore();
-  }
-});
-
-test('a failed child settlement is held until a later strict boundary recovers durability', async () => {
-  const { home, restore } = withTemporaryHome('droidex-child-persistence-');
-  const persistence = new HistoryPersistence();
-  try {
-    persistence.upsertChildSession(child('running'));
-    await persistence.flush();
-
-    const invalidSettlement = child('paused');
-    Object.defineProperty(invalidSettlement, 'modelId', { value: undefined });
-    assert.equal(persistence.upsertChildSession(invalidSettlement), false);
-    await assert.rejects(persistence.flush(), /cannot be bound/);
-
-    assert.equal(persistence.upsertChildSession(child('paused')), false);
-    await persistence.flush();
-
-    const db = new DatabaseSync(join(home, '.factory', 'droidex', 'session-index.sqlite'), {
-      readOnly: true,
-    });
-    try {
-      const row = db
-        .prepare(
-          'SELECT status FROM child_sessions WHERE parent_app_session_id = ? AND child_session_id = ?',
-        )
-        .get('app', 'child') as { status: string };
-      assert.equal(row.status, 'paused');
-    } finally {
-      db.close();
-    }
-  } finally {
-    await persistence.close();
-    restore();
-  }
-});
-
-test('a hydrated running child replacement crosses a durability boundary', async () => {
-  const { restore } = withTemporaryHome('droidex-hydrated-child-durability-');
-  new HistoryIndex().close();
-  persistTestChild({
-    ...child('running'),
-    providerSessionId: 'provider-old',
-    previousProviderSessionIds: [],
+function readRow<T>(home: string, sql: string, ...params: string[]): T {
+  const db = new DatabaseSync(join(home, '.factory', 'droidex', 'session-index.sqlite'), {
+    readOnly: true,
   });
-  const persistence = new HistoryPersistence();
   try {
-    assert.equal(persistence.childSession('app', 'child')?.providerSessionId, 'provider-old');
-    hotPathMetrics.reset();
-    assert.equal(
-      persistence.upsertChildSession({
-        ...child('running'),
-        providerSessionId: 'provider-new',
-        previousProviderSessionIds: ['provider-old'],
-      }),
-      false,
-    );
-    await persistence.flush();
-    assert.equal(hotPathMetrics.snapshot().histograms.persistenceBoundaryMs.count, 1);
+    return db.prepare(sql).get(...params) as T;
   } finally {
-    await persistence.close();
-    hotPathMetrics.reset();
-    restore();
+    db.close();
   }
+}
+
+test('a failed settlement is held while live transcript output continues until recovery', async (t) => {
+  const { home, persistence } = openPersistence(t);
+  persistence.syncSummaries([summary()]);
+  await persistence.flush();
+
+  const invalidSettlement = summary({ phase: 'paused', streaming: false, tokensOut: 2 });
+  Object.defineProperty(invalidSettlement, 'title', { value: undefined });
+  assert.equal(persistence.syncSummaries([invalidSettlement]), false);
+  await assert.rejects(persistence.flush(), /cannot be bound/);
+
+  assert.doesNotThrow(() => persistence.recordEvent(output('live-after-boundary-failure')));
+
+  assert.equal(
+    persistence.syncSummaries([summary({ phase: 'paused', streaming: false, tokensOut: 2 })]),
+    false,
+  );
+  await persistence.flush();
+  const row = readRow<{ tokens_out: number }>(
+    home,
+    'SELECT tokens_out FROM app_sessions WHERE app_session_id = ?',
+    'app',
+  );
+  assert.equal(row.tokens_out, 2);
+});
+
+test('a failed child settlement is held until a later strict boundary recovers durability', async (t) => {
+  const { home, persistence } = openPersistence(t);
+  persistence.upsertChildSession(child('running'));
+  await persistence.flush();
+
+  const invalidSettlement = child('paused');
+  Object.defineProperty(invalidSettlement, 'modelId', { value: undefined });
+  assert.equal(persistence.upsertChildSession(invalidSettlement), false);
+  await assert.rejects(persistence.flush(), /cannot be bound/);
+
+  assert.equal(persistence.upsertChildSession(child('paused')), false);
+  await persistence.flush();
+  const row = readRow<{ status: string }>(
+    home,
+    'SELECT status FROM child_sessions WHERE parent_app_session_id = ? AND child_session_id = ?',
+    'app',
+    'child',
+  );
+  assert.equal(row.status, 'paused');
+});
+
+test('a hydrated running child replacement crosses a durability boundary', async (t) => {
+  const { persistence } = openPersistence(t, {}, () => {
+    new HistoryIndex().close();
+    persistTestChild({
+      ...child('running'),
+      providerSessionId: 'provider-old',
+      previousProviderSessionIds: [],
+    });
+  });
+  t.after(() => hotPathMetrics.reset());
+  assert.equal(persistence.childSession('app', 'child')?.providerSessionId, 'provider-old');
+  hotPathMetrics.reset();
+  assert.equal(
+    persistence.upsertChildSession({
+      ...child('running'),
+      providerSessionId: 'provider-new',
+      previousProviderSessionIds: ['provider-old'],
+    }),
+    false,
+  );
+  await persistence.flush();
+  assert.equal(hotPathMetrics.snapshot().histograms.persistenceBoundaryMs.count, 1);
 });
 
 test(
   'search excludes session files that the canonical history cache did not admit',
   { skip: FTS5_UNAVAILABLE_REASON },
-  async () => {
-    const { home, restore } = withTemporaryHome('droidex-history-search-');
-    const persistence = new HistoryPersistence();
-    try {
-      const sessionsDirectory = join(home, '.factory', 'sessions', '2026', '08');
-      mkdirSync(sessionsDirectory, { recursive: true });
-      writeFileSync(
-        join(sessionsDirectory, 'abandoned.jsonl'),
-        providerSessionJsonl(
-          {
-            type: 'session_start',
-            cwd: '/repo',
-            sessionTitle: 'Abandoned session',
-            settings: { interactionMode: 'auto' },
-          },
-          ['user'],
-        ),
-      );
+  async (t) => {
+    const { home, persistence } = openPersistence(t);
+    const sessionsDirectory = join(home, '.factory', 'sessions', '2026', '08');
+    mkdirSync(sessionsDirectory, { recursive: true });
+    writeFileSync(
+      join(sessionsDirectory, 'abandoned.jsonl'),
+      providerSessionJsonl(
+        {
+          type: 'session_start',
+          cwd: '/repo',
+          sessionTitle: 'Abandoned session',
+          settings: { interactionMode: 'auto' },
+        },
+        ['user'],
+      ),
+    );
 
-      await persistence.reconcileSessionFiles();
+    await persistence.reconcileSessionFiles();
 
-      assert.deepEqual(await persistence.searchSessions('hello'), {
-        results: [],
-        indexingIncomplete: false,
-      });
-    } finally {
-      await persistence.close();
-      restore();
-    }
+    assert.deepEqual(await persistence.searchSessions('hello'), {
+      results: [],
+      indexingIncomplete: false,
+    });
   },
 );
 
-test('search results resolve through pending in-memory provider aliases', async () => {
-  const { restore } = withTemporaryHome('droidex-history-search-alias-overlay-');
+test('search results resolve through pending in-memory provider aliases', async (t) => {
   const searchClient = stubSearchClient({
     search: async () => ({
       results: [
@@ -276,144 +242,97 @@ test('search results resolve through pending in-memory provider aliases', async 
       indexingIncomplete: false,
     }),
   });
-  const persistence = new HistoryPersistence({ searchClient });
-  try {
-    persistence.syncSummaries([summary({ appSessionId: 'stable-app' })]);
-    persistence.syncSummaries([
-      summary({ appSessionId: 'stable-app', title: 'Pending overlay', tokensOut: 2 }),
-    ]);
+  const { persistence } = openPersistence(t, { searchClient });
+  persistence.syncSummaries([summary({ appSessionId: 'stable-app' })]);
+  persistence.syncSummaries([
+    summary({ appSessionId: 'stable-app', title: 'Pending overlay', tokensOut: 2 }),
+  ]);
 
-    assert.equal(
-      (await persistence.searchSessions('needle')).results[0]?.appSessionId,
-      'stable-app',
-    );
-  } finally {
-    await persistence.close();
-    restore();
-  }
+  assert.equal((await persistence.searchSessions('needle')).results[0]?.appSessionId, 'stable-app');
 });
 
-test('reconciliation awaits the index worker and applies its delta to the live historical cache', async () => {
-  const { restore } = withTemporaryHome('droidex-history-worker-reconcile-');
+function historicalEntry(id: string, title: string) {
+  return {
+    providerSessionId: `${id}-provider`,
+    path: `/sessions/${id}-provider.jsonl`,
+    birthtimeMs: 1,
+    mtimeMs: 2,
+    sizeBytes: 3,
+    settingsMtimeMs: null,
+    summary: summary({
+      appSessionId: `${id}-app`,
+      providerSessionId: `${id}-provider`,
+      title,
+      phase: 'paused',
+      streaming: false,
+    }),
+  };
+}
+
+test('reconciliation awaits the index worker and applies its delta to the live historical cache', async (t) => {
   let reconciles = 0;
-  const historical = summary({
-    appSessionId: 'historical-app',
-    providerSessionId: 'historical-provider',
-    title: 'Worker reconciled history',
-    phase: 'paused',
-    streaming: false,
-  });
   const searchClient = stubSearchClient({
     reconcileSessionFiles: async () => {
       reconciles += 1;
       await new Promise<void>((resolve) => setImmediate(resolve));
       return {
-        previousRevision: 0,
+        ...emptyReconciliation,
         revision: 1,
         changed: 1,
-        upserts: [
-          {
-            providerSessionId: 'historical-provider',
-            path: '/sessions/historical-provider.jsonl',
-            birthtimeMs: 1,
-            mtimeMs: 2,
-            sizeBytes: 3,
-            settingsMtimeMs: null,
-            summary: historical,
-          },
-        ],
-        removedProviderSessionIds: [],
+        upserts: [historicalEntry('historical', 'Worker reconciled history')],
       };
     },
     sessionFileSnapshot: async () => ({ revision: 1, changed: 0, entries: [] }),
   });
-  const persistence = new HistoryPersistence({ searchClient });
-  try {
-    const operation = persistence.reconcileSessionFiles();
-    assert.ok(operation instanceof Promise, 'raw reconciliation stays off the caller thread');
-    assert.deepEqual(persistence.listHistoricalSessions({ workspaceCwds: ['/repo'] }), []);
+  const { persistence } = openPersistence(t, { searchClient });
+  const operation = persistence.reconcileSessionFiles();
+  assert.ok(operation instanceof Promise, 'raw reconciliation stays off the caller thread');
+  assert.deepEqual(persistence.listHistoricalSessions({ workspaceCwds: ['/repo'] }), []);
 
-    assert.equal(await operation, 1);
-    assert.equal(reconciles, 1);
-    assert.equal(
-      persistence.listHistoricalSessions({ workspaceCwds: ['/repo'] })[0]?.summary.title,
-      'Worker reconciled history',
-    );
-  } finally {
-    await persistence.close();
-    restore();
-  }
+  assert.equal(await operation, 1);
+  assert.equal(reconciles, 1);
+  assert.equal(
+    persistence.listHistoricalSessions({ workspaceCwds: ['/repo'] })[0]?.summary.title,
+    'Worker reconciled history',
+  );
 });
 
-test('a reconciliation revision gap replaces the main cache from an authoritative snapshot', async () => {
-  const { restore } = withTemporaryHome('droidex-history-worker-resync-');
-  const oldEntry = {
-    providerSessionId: 'old-provider',
-    path: '/sessions/old-provider.jsonl',
-    birthtimeMs: 1,
-    mtimeMs: 1,
-    sizeBytes: 1,
-    settingsMtimeMs: null,
-    summary: summary({
-      appSessionId: 'old-app',
-      providerSessionId: 'old-provider',
-      title: 'Old session',
-      phase: 'paused',
-      streaming: false,
-    }),
-  };
-  const newEntry = {
-    ...oldEntry,
-    providerSessionId: 'new-provider',
-    path: '/sessions/new-provider.jsonl',
-    summary: summary({
-      appSessionId: 'new-app',
-      providerSessionId: 'new-provider',
-      title: 'Recovered session',
-      phase: 'paused',
-      streaming: false,
-    }),
-  };
+test('a reconciliation revision gap replaces the main cache from an authoritative snapshot', async (t) => {
+  const oldEntry = historicalEntry('old', 'Old session');
+  const newEntry = historicalEntry('new', 'Recovered session');
   let snapshotRequests = 0;
   const searchClient = stubSearchClient({
     reconcileSessionFiles: async () => ({
-      previousRevision: 0,
+      ...emptyReconciliation,
       revision: 1,
       changed: 1,
       upserts: [oldEntry],
-      removedProviderSessionIds: [],
     }),
     reconcileSessionFilePaths: async () => ({
+      ...emptyReconciliation,
       previousRevision: 2,
       revision: 3,
       changed: 1,
       upserts: [newEntry],
-      removedProviderSessionIds: [],
     }),
     sessionFileSnapshot: async () => {
       snapshotRequests += 1;
       return { revision: 3, changed: 0, entries: [newEntry] };
     },
   });
-  const persistence = new HistoryPersistence({ searchClient });
-  try {
-    await persistence.reconcileSessionFiles();
-    assert.equal(await persistence.reconcileSessionFilePaths([]), 1);
-    assert.equal(snapshotRequests, 1);
-    assert.deepEqual(
-      persistence
-        .listHistoricalSessions({ workspaceCwds: ['/repo'] })
-        .map((item) => item.summary.title),
-      ['Recovered session'],
-    );
-  } finally {
-    await persistence.close();
-    restore();
-  }
+  const { persistence } = openPersistence(t, { searchClient });
+  await persistence.reconcileSessionFiles();
+  assert.equal(await persistence.reconcileSessionFilePaths([]), 1);
+  assert.equal(snapshotRequests, 1);
+  assert.deepEqual(
+    persistence
+      .listHistoricalSessions({ workspaceCwds: ['/repo'] })
+      .map((item) => item.summary.title),
+    ['Recovered session'],
+  );
 });
 
-test('an active search cannot delay a persistence durability boundary', async () => {
-  const { restore } = withTemporaryHome('droidex-history-lanes-');
+test('an active search cannot delay a persistence durability boundary', async (t) => {
   let resolveSearch: ((reply: HistorySearchReply) => void) | undefined;
   const searchClient = stubSearchClient({
     search: () =>
@@ -428,93 +347,47 @@ test('an active search cannot delay a persistence durability boundary', async ()
       return { promise: Promise.resolve(persistResult(batch)) };
     },
   });
-  const persistence = new HistoryPersistence({ persistenceClient, searchClient });
-  try {
-    const search = persistence.searchSessions('needle');
-    await new Promise<void>((resolve) => setImmediate(resolve));
+  const { persistence } = openPersistence(t, { persistenceClient, searchClient });
+  const search = persistence.searchSessions('needle');
+  await new Promise<void>((resolve) => setImmediate(resolve));
 
-    const event: TranscriptEvent = {
-      id: 'during-search',
-      appSessionId: 'app',
-      sourceSessionId: 'app',
-      role: 'primary',
-      ts: 1,
-      kind: 'text',
-      text: 'live output',
-    };
-    persistence.recordEvent(event);
-    await persistence.flush();
+  persistence.recordEvent(output('during-search'));
+  await persistence.flush();
 
-    assert.deepEqual(
-      persisted.flatMap((batch) => batch.events.map((item) => item.id)),
-      ['during-search'],
-    );
-    resolveSearch?.({ results: [], indexingIncomplete: false });
-    await search;
-  } finally {
-    await persistence.close();
-    restore();
-  }
+  assert.deepEqual(
+    persisted.flatMap((batch) => batch.events.map((item) => item.id)),
+    ['during-search'],
+  );
+  resolveSearch?.({ results: [], indexingIncomplete: false });
+  await search;
 });
 
-test('live transcript work pauses an idle history backfill until the next desktop sample', async () => {
-  const { restore } = withTemporaryHome('droidex-history-idle-pause-');
+test('live work pauses an idle history backfill, and idle samples cannot resume it while work is active', async (t) => {
   const idleStates: boolean[] = [];
   const searchClient = stubSearchClient({
     setIndexingIdle: async (isIdle) => {
       idleStates.push(isIdle);
     },
   });
-  const persistence = new HistoryPersistence({ searchClient });
-  try {
-    await persistence.setIndexingIdle(true);
-    persistence.recordEvent({
-      id: 'live-event',
-      appSessionId: 'app',
-      sourceSessionId: 'app',
-      role: 'primary',
-      ts: 1,
-      kind: 'text',
-      text: 'live work wins',
-    });
-    await new Promise<void>((resolve) => setImmediate(resolve));
+  const { persistence } = openPersistence(t, { searchClient });
+  await persistence.setIndexingIdle(true);
+  persistence.recordEvent(output('live-event'));
+  await new Promise<void>((resolve) => setImmediate(resolve));
+  assert.deepEqual(idleStates, [true, false]);
+  await persistence.flush();
 
-    assert.deepEqual(idleStates, [true, false]);
-  } finally {
-    await persistence.close();
-    restore();
-  }
+  idleStates.length = 0;
+  persistence.syncSummaries([summary()]);
+  await persistence.setIndexingIdle(true);
+  persistence.syncSummaries([summary({ streaming: false })]);
+  persistence.upsertChildSession(child('running'));
+  await persistence.setIndexingIdle(true);
+  persistence.upsertChildSession(child('completed'));
+  await persistence.setIndexingIdle(true);
+  assert.deepEqual(idleStates, [false, false, true]);
 });
 
-test('desktop idle samples do not resume archive indexing while live work is active', async () => {
-  const { restore } = withTemporaryHome('droidex-history-idle-active-');
-  const idleStates: boolean[] = [];
-  const searchClient = stubSearchClient({
-    setIndexingIdle: async (isIdle) => {
-      idleStates.push(isIdle);
-    },
-  });
-  const persistence = new HistoryPersistence({ searchClient });
-  try {
-    persistence.syncSummaries([summary()]);
-    await persistence.setIndexingIdle(true);
-
-    persistence.syncSummaries([summary({ streaming: false })]);
-    persistence.upsertChildSession(child('running'));
-    await persistence.setIndexingIdle(true);
-
-    persistence.upsertChildSession(child('completed'));
-    await persistence.setIndexingIdle(true);
-
-    assert.deepEqual(idleStates, [false, false, true]);
-  } finally {
-    await persistence.close();
-    restore();
-  }
-});
-
-test('a durability boundary does not wait for ordinary output to stop', async () => {
-  const { restore } = withTemporaryHome('droidex-history-boundary-');
+test('a durability boundary does not wait for ordinary output to stop', async (t) => {
   const barriers: (() => void)[] = [];
   let holdBarriers = true;
   const persistenceClient = stubPersistenceClient({
@@ -528,46 +401,34 @@ test('a durability boundary does not wait for ordinary output to stop', async ()
       }),
     }),
   });
-  const persistence = new HistoryPersistence({ persistenceClient });
-  const output = (id: string): TranscriptEvent => ({
-    id,
-    appSessionId: 'another-chat',
-    sourceSessionId: 'another-chat',
-    role: 'primary',
-    ts: 1,
-    kind: 'text',
-    text: 'live output',
+  // Release held barriers before the persistence closes, or close waits on them.
+  t.after(() => {
+    holdBarriers = false;
+    for (const release of barriers) release();
   });
+  const { persistence } = openPersistence(t, { persistenceClient });
   const nextBarrier = async (count: number) => {
     while (barriers.length < count) await new Promise<void>((resolve) => setImmediate(resolve));
     barriers[count - 1]?.();
   };
-  try {
-    persistence.recordEvent(output('before'));
-    const boundary = persistence.flush();
-    persistence.recordEvent(output('during'));
-    await nextBarrier(1);
-    await boundary;
-    assert.equal(barriers.length, 1);
+  persistence.recordEvent(output('before', 'another-chat'));
+  const boundary = persistence.flush();
+  persistence.recordEvent(output('during', 'another-chat'));
+  await nextBarrier(1);
+  await boundary;
+  assert.equal(barriers.length, 1);
 
-    // Durability asked for while a boundary is in flight is a different matter:
-    // that request was not in its snapshot, so it takes one more pass.
-    const first = persistence.flush();
-    const second = persistence.flush();
-    await nextBarrier(2);
-    await nextBarrier(3);
-    await Promise.all([first, second]);
-    assert.equal(barriers.length, 3);
-  } finally {
-    holdBarriers = false;
-    for (const release of barriers) release();
-    await persistence.close();
-    restore();
-  }
+  // Durability asked for while a boundary is in flight is a different matter:
+  // that request was not in its snapshot, so it takes one more pass.
+  const first = persistence.flush();
+  const second = persistence.flush();
+  await nextBarrier(2);
+  await nextBarrier(3);
+  await Promise.all([first, second]);
+  assert.equal(barriers.length, 3);
 });
 
-test('reconciliation drains pending commits without running a durability barrier', async () => {
-  const { restore } = withTemporaryHome('droidex-history-reconcile-drain-');
+test('reconciliation drains pending commits without running a durability barrier', async (t) => {
   hotPathMetrics.reset();
   const persisted: string[][] = [];
   let barriers = 0;
@@ -586,62 +447,43 @@ test('reconciliation drains pending commits without running a durability barrier
       return { promise };
     },
   });
-  const persistence = new HistoryPersistence({ persistenceClient });
-  try {
-    persistence.recordEvent({
-      id: 'pending-before-reconcile',
-      appSessionId: 'app',
-      sourceSessionId: 'app',
-      role: 'primary',
-      ts: 1,
-      kind: 'text',
-      text: 'live output',
-    });
-
-    await assert.doesNotReject(persistence.reconcileSessionFiles());
-    assert.deepEqual(persisted, [['pending-before-reconcile']]);
-    assert.equal(barriers, 0);
-    assert.equal(hotPathMetrics.snapshot().histograms.persistenceBoundaryMs.count, 0);
-
+  t.after(() => {
     allowBarrier = true;
-    await persistence.flush();
-    assert.equal(barriers, 1);
-    assert.equal(hotPathMetrics.snapshot().histograms.persistenceBoundaryMs.count, 1);
-  } finally {
-    allowBarrier = true;
-    await persistence.close();
     hotPathMetrics.reset();
-    restore();
-  }
+  });
+  const { persistence } = openPersistence(t, { persistenceClient });
+  persistence.recordEvent(output('pending-before-reconcile'));
+
+  await assert.doesNotReject(persistence.reconcileSessionFiles());
+  assert.deepEqual(persisted, [['pending-before-reconcile']]);
+  assert.equal(barriers, 0);
+  assert.equal(hotPathMetrics.snapshot().histograms.persistenceBoundaryMs.count, 0);
+
+  allowBarrier = true;
+  await persistence.flush();
+  assert.equal(barriers, 1);
+  assert.equal(hotPathMetrics.snapshot().histograms.persistenceBoundaryMs.count, 1);
 });
 
-test('forgetSession removes live summary and child overlays', async () => {
-  const { restore } = withTemporaryHome('droidex-history-forget-');
-  const persistenceClient = stubPersistenceClient();
-  const persistence = new HistoryPersistence({ persistenceClient });
-  try {
-    persistence.syncSummaries([summary()]);
-    persistence.syncSummaries([summary({ tokensIn: 2 })]);
-    persistence.upsertChildSession(child('running'));
+test('forgetSession removes live summary and child overlays', (t) => {
+  const { persistence } = openPersistence(t, { persistenceClient: stubPersistenceClient() });
+  persistence.syncSummaries([summary()]);
+  persistence.syncSummaries([summary({ tokensIn: 2 })]);
+  persistence.upsertChildSession(child('running'));
 
-    assert.equal(persistence.summaryPatchesAndHidden().patches.get('app')?.tokensIn, 2);
-    assert.deepEqual(
-      persistence.childSessions('app').map((item) => item.childSessionId),
-      ['child'],
-    );
+  assert.equal(persistence.summaryPatchesAndHidden().patches.get('app')?.tokensIn, 2);
+  assert.deepEqual(
+    persistence.childSessions('app').map((item) => item.childSessionId),
+    ['child'],
+  );
 
-    persistence.forgetSession('app');
+  persistence.forgetSession('app');
 
-    assert.equal(persistence.summaryPatchesAndHidden().patches.has('app'), false);
-    assert.deepEqual(persistence.childSessions('app'), []);
-  } finally {
-    await persistence.close();
-    restore();
-  }
+  assert.equal(persistence.summaryPatchesAndHidden().patches.has('app'), false);
+  assert.deepEqual(persistence.childSessions('app'), []);
 });
 
-test('persistence reports degraded state once and reports recovery after retained work commits', async () => {
-  const { restore } = withTemporaryHome('droidex-history-status-');
+test('persistence reports degraded state once and reports recovery after retained work commits', async (t) => {
   const statuses: string[] = [];
   let attempts = 0;
   const persistenceClient = stubPersistenceClient({
@@ -655,41 +497,25 @@ test('persistence reports degraded state once and reports recovery after retaine
       };
     },
   });
-  const searchClient = stubSearchClient();
-  const persistence = new HistoryPersistence({
+  const { persistence } = openPersistence(t, {
     persistenceClient,
-    searchClient,
+    searchClient: stubSearchClient(),
     onStatusChanged: (status) => statuses.push(status.state),
   });
-  const first: TranscriptEvent = {
-    id: 'one',
-    appSessionId: 'app',
-    sourceSessionId: 'app',
-    role: 'primary',
-    ts: 1,
-    kind: 'text',
-    text: 'one',
-  };
-  try {
-    persistence.recordEvent(first);
-    await assert.rejects(async () => await persistence.flush(), /worker exited/);
-    assert.doesNotThrow(() => persistence.recordEvent({ ...first, id: 'two', text: 'two' }));
-    await persistence.flush();
+  persistence.recordEvent(output('one'));
+  await assert.rejects(async () => await persistence.flush(), /worker exited/);
+  assert.doesNotThrow(() => persistence.recordEvent(output('two')));
+  await persistence.flush();
 
-    assert.deepEqual(statuses, ['degraded', 'healthy']);
-  } finally {
-    await persistence.close();
-    restore();
-  }
+  assert.deepEqual(statuses, ['degraded', 'healthy']);
 });
 
-test('the search worker starts only when warmed or first searched, never for persistence', async () => {
-  const { restore } = withTemporaryHome('droidex-lazy-search-worker-');
+test('the search worker starts only when warmed or first searched, never for persistence', async (t) => {
   let searchWorkersCreated = 0;
   let searchCalls = 0;
   let reconcileCalls = 0;
   const searchClient = stubSearchClient();
-  const persistence = new HistoryPersistence({
+  const { persistence } = openPersistence(t, {
     createSearchClient: () => {
       searchWorkersCreated += 1;
       return {
@@ -705,20 +531,15 @@ test('the search worker starts only when warmed or first searched, never for per
       };
     },
   });
-  try {
-    await persistence.flush();
-    assert.equal(searchWorkersCreated, 0);
+  await persistence.flush();
+  assert.equal(searchWorkersCreated, 0);
 
-    persistence.warmSearchWorker();
-    assert.equal(searchWorkersCreated, 1);
-    assert.equal(searchCalls, 0);
-    assert.equal(reconcileCalls, 0);
+  persistence.warmSearchWorker();
+  assert.equal(searchWorkersCreated, 1);
+  assert.equal(searchCalls, 0);
+  assert.equal(reconcileCalls, 0);
 
-    await persistence.searchSessions('needle');
-    assert.equal(searchWorkersCreated, 1);
-    assert.equal(searchCalls, 1);
-  } finally {
-    await persistence.close();
-    restore();
-  }
+  await persistence.searchSessions('needle');
+  assert.equal(searchWorkersCreated, 1);
+  assert.equal(searchCalls, 1);
 });

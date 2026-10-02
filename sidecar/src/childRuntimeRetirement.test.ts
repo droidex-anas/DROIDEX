@@ -92,32 +92,29 @@ test('a child with work in flight is never retirable, however long it sits', () 
   }
 });
 
-test('a child without a runtime, mid-open, or under a closing parent is skipped', () => {
+const openAttempt = {
+  settled: Promise.resolve(),
+  settle: () => undefined,
+  cancelled: Promise.resolve(),
+  cancel: () => undefined,
+  isCancelled: false,
+};
+
+test('idle children retire oldest first, and one without a runtime, mid-open, or under a closing parent is skipped', () => {
+  const idle = parentOf(liveChild('older', 1_000), liveChild('newer', 4_000));
+  assert.equal(nextChildRuntimeRetirementAt([idle], IDLE_MS, nothingUndelivered), 1_000 + IDLE_MS);
+  assert.deepEqual(retirableIds(idle, 1_000 + IDLE_MS), ['older']);
+  assert.equal(nextChildRuntimeRetirementAt([parentOf()], IDLE_MS, nothingUndelivered), undefined);
+
   const noRuntime = childStateFromRecord(record('cold'));
   const opening = liveChild('opening', 1_000);
   const parent = parentOf(noRuntime, opening);
-  parent.openAttempts.set('opening', {
-    settled: Promise.resolve(),
-    settle: () => undefined,
-    cancelled: Promise.resolve(),
-    cancel: () => undefined,
-    isCancelled: false,
-  });
+  parent.openAttempts.set('opening', openAttempt);
   assert.deepEqual(retirableIds(parent, 1_000 + IDLE_MS), []);
 
   const closing = parentOf(liveChild('settled', 1_000));
   closing.closing = true;
   assert.deepEqual(retirableIds(closing, 1_000 + IDLE_MS), []);
-});
-
-test('the next deadline follows the child that went idle first', () => {
-  const parent = parentOf(liveChild('older', 1_000), liveChild('newer', 4_000));
-
-  assert.equal(
-    nextChildRuntimeRetirementAt([parent], IDLE_MS, nothingUndelivered),
-    1_000 + IDLE_MS,
-  );
-  assert.equal(nextChildRuntimeRetirementAt([parentOf()], IDLE_MS, nothingUndelivered), undefined);
 });
 
 test('the timer arms for the earliest deadline and disarms when nothing is idle', () => {
@@ -160,58 +157,25 @@ test('the timer arms for the earliest deadline and disarms when nothing is idle'
 
 test('a parent is unsettled while anything in its child subtree is still in flight', () => {
   const settled = liveChild('settled', 1_000);
-  assert.equal(
-    parentHasUnsettledChildren(undefined, () => false),
-    false,
-  );
-  assert.equal(
-    parentHasUnsettledChildren(parentOf(settled), () => false),
-    false,
-  );
+  assert.equal(parentHasUnsettledChildren(undefined, nothingUndelivered), false);
+  assert.equal(parentHasUnsettledChildren(parentOf(settled), nothingUndelivered), false);
 
-  const pending = parentOf(settled);
-  pending.pendingSpawns.set('spawn', {
-    parentAppSessionId: 'parent',
-    role: 'worker',
-  });
-  assert.equal(
-    parentHasUnsettledChildren(pending, () => false),
-    true,
-  );
-
-  const opening = parentOf(settled);
-  opening.openAttempts.set('settled', {
-    settled: Promise.resolve(),
-    settle: () => undefined,
-    cancelled: Promise.resolve(),
-    cancel: () => undefined,
-    isCancelled: false,
-  });
-  assert.equal(
-    parentHasUnsettledChildren(opening, () => false),
-    true,
-  );
-
-  const reserved = parentOf(settled);
-  reserved.reservedOpenSlots.add('other');
-  assert.equal(
-    parentHasUnsettledChildren(reserved, () => false),
-    true,
-  );
-
-  const queued = parentOf(settled);
-  queued.runtimeQueue = ['other'];
-  assert.equal(
-    parentHasUnsettledChildren(queued, () => false),
-    true,
-  );
-
+  const inFlight: Array<[string, (parent: ParentChildSessions) => void]> = [
+    [
+      'pending spawn',
+      (p) => p.pendingSpawns.set('spawn', { parentAppSessionId: 'parent', role: 'worker' }),
+    ],
+    ['open attempt', (p) => p.openAttempts.set('settled', openAttempt)],
+    ['reserved slot', (p) => p.reservedOpenSlots.add('other')],
+    ['queued runtime', (p) => (p.runtimeQueue = ['other'])],
+  ];
+  for (const [label, mark] of inFlight) {
+    const parent = parentOf(settled);
+    mark(parent);
+    assert.equal(parentHasUnsettledChildren(parent, nothingUndelivered), true, label);
+  }
   const working = parentOf(liveChild('working', 1_000, { status: 'running' }));
-  assert.equal(
-    parentHasUnsettledChildren(working, () => false),
-    true,
-  );
-
+  assert.equal(parentHasUnsettledChildren(working, nothingUndelivered), true);
   assert.equal(
     parentHasUnsettledChildren(
       parentOf(settled),

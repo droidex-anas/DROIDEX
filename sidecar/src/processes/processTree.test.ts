@@ -13,7 +13,7 @@ const TABLE = [
   '  900     1 15:00 unrelated',
 ].join('\n');
 
-test('parsePsTable reads pid, ppid, elapsed seconds and command', () => {
+test('parsePsTable reads pid, ppid, elapsed seconds and command, and descendantsOf walks under the roots only', () => {
   const rows = parsePsTable(TABLE, 10_000);
   assert.equal(rows.length, 6);
   assert.deepEqual(rows[4], {
@@ -22,10 +22,6 @@ test('parsePsTable reads pid, ppid, elapsed seconds and command', () => {
     startedAt: 10_000 - 700 * 1000,
     command: 'node /w/node_modules/.bin/vite',
   });
-});
-
-test('descendantsOf walks the tree under the roots only', () => {
-  const rows = parsePsTable(TABLE, 10_000);
   assert.deepEqual(
     descendantsOf(rows, [600]).map((r) => r.pid),
     [700, 800],

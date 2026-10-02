@@ -176,22 +176,19 @@ test('a tracked root with no visible descendants still emits once', async () => 
   await h.monitor.killSession('s1');
 });
 
-test('stop validates the pid against the session snapshot and tree-kills it', async () => {
+test('stop kills only a pid in the session snapshot whose identity still matches', async () => {
   const h = harness(rows);
   h.monitor.track('s1', 600, () => true);
   await h.monitor.scan();
   assert.equal(await h.monitor.stop('s1', 4242), false);
-  assert.equal(await h.monitor.stop('s1', 800), true);
-  assert.deepEqual(h.killed[0], [800, 'SIGTERM']);
-});
-
-test('stop validates identity before SIGTERM when a snapshot PID was reused', async () => {
-  const h = harness(rows);
-  h.monitor.track('s1', 600, () => true);
-  await h.monitor.scan();
+  // The snapshot's pid now belongs to an unrelated process.
   h.setRows([rows[0], { pid: 800, ppid: 1, startedAt: 50_000, command: 'unrelated-service' }]);
   await h.monitor.stop('s1', 800);
   assert.deepEqual(h.killed, []);
+  h.setRows(rows);
+  await h.monitor.scan();
+  assert.equal(await h.monitor.stop('s1', 800), true);
+  assert.deepEqual(h.killed[0], [800, 'SIGTERM']);
 });
 
 test('overlapping session kills wait for the same process cleanup', async () => {
@@ -338,7 +335,7 @@ test('the grace sweep discovers new descendants and counts process-read time', a
   h.monitor.dispose();
 });
 
-test('killRecorded only touches pids whose start time still matches', async () => {
+test('killRecorded only touches pids whose start time still matches, and nothing when ps fails', async () => {
   const h = harness(rows);
   await h.monitor.killRecorded([
     { pid: 800, startedAt: 0 },
@@ -348,6 +345,12 @@ test('killRecorded only touches pids whose start time still matches', async () =
     h.killed.map(([pid]) => pid),
     [800],
   );
+
+  const unreadable = harness(rows, new Map(), {
+    listProcesses: () => Promise.reject(new Error('ps failed')),
+  });
+  await assert.doesNotReject(() => unreadable.monitor.killRecorded([{ pid: 800, startedAt: 0 }]));
+  assert.deepEqual(unreadable.killed, []);
 });
 
 test('scan leaves the previous snapshot untouched when listProcesses rejects, and resumes after', async () => {
@@ -485,14 +488,6 @@ test('untrack during the in-flight ports scan drops the stale snapshot instead o
   assert.deepEqual(h.emitted.at(-1), ['s1', []]);
 });
 
-test('killRecorded resolves without killing anything when listProcesses rejects', async () => {
-  const h = harness(rows, new Map(), {
-    listProcesses: () => Promise.reject(new Error('ps failed')),
-  });
-  await assert.doesNotReject(() => h.monitor.killRecorded([{ pid: 800, startedAt: 0 }]));
-  assert.deepEqual(h.killed, []);
-});
-
 test('a root added during port discovery survives the stale scan', async () => {
   let releasePorts: (ports: Map<number, number[]>) => void = () => {};
   let portsStarted: () => void = () => {};
@@ -592,18 +587,6 @@ const compactionRows: ProcessRecord[] = [
   { pid: 900, ppid: 600, startedAt: 0, command: 'node /w/node_modules/.bin/tsc --watch' },
 ];
 
-test('a pid reachable from two roots is published once', async () => {
-  const h = harness(compactionRows);
-  h.monitor.track('s1', 600, () => true);
-  await h.monitor.adoptDescendantsAsRoots('s1', 600);
-  await h.monitor.scan();
-
-  assert.deepEqual(
-    h.monitor.processesFor('s1').map((entry) => entry.pid),
-    [800, 900],
-  );
-});
-
 test("pruning a session's last adopted root publishes an empty list", async () => {
   const h = harness(compactionRows, new Map(), {
     emit: (id, processes) => {
@@ -626,10 +609,16 @@ test("pruning a session's last adopted root publishes an empty list", async () =
   assert.deepEqual(h.emitted.at(-1), ['s1', []]);
 });
 
-test('an adopted root whose pid is recycled is dropped, not re-attached', async () => {
+test('an adopted root is published once, and dropped rather than re-attached when its pid is recycled', async () => {
   const h = harness(compactionRows);
   h.monitor.track('s1', 600, () => true);
   await h.monitor.adoptDescendantsAsRoots('s1', 600);
+  // Reachable from the retiring provider and as its own root, each pid shows once.
+  await h.monitor.scan();
+  assert.deepEqual(
+    h.monitor.processesFor('s1').map((entry) => entry.pid),
+    [800, 900],
+  );
   h.monitor.untrack(600, 's1');
   await h.monitor.scan();
   assert.deepEqual(

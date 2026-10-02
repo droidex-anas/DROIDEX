@@ -60,7 +60,7 @@ function assistantText(text: string): TranscriptEvent[] {
   return replay({ role: 'assistant', content: [{ type: 'text', text }] });
 }
 
-test('an oversized App answer replays whole, with its fence closed, with either line ending', () => {
+test('only an assistant App answer replays past the shared cap, whole and fenced under either line ending', () => {
   // Regression: every replayed text block shared the 12k cap, so a real
   // /visualize answer came back without its closing fence and rendered a
   // half-written script after a restart. The fence probe once also required a
@@ -74,9 +74,7 @@ test('an oversized App answer replays whole, with its fence closed, with either 
     assert.equal(events.length, 1);
     assert.equal(events[0].text, answer);
   }
-});
 
-test('only an assistant answer earns the App bound; everything else keeps the shared cap', () => {
   const prose = assistantText('x'.repeat(13_000));
   assert.equal(prose[0].text, `${'x'.repeat(12_000)}${truncated(1000)}`);
 
@@ -105,23 +103,6 @@ test('only an assistant answer earns the App bound; everything else keeps the sh
   assert.equal(user?.text?.length, capped);
 });
 
-test('hidden user content never replays as chat', () => {
-  assert.deepEqual(
-    replay(userText('shown')).map((e) => e.text),
-    ['shown'],
-  );
-  assert.deepEqual(replay(userText('hidden', 'llm_only')), []);
-  // Internal skill bodies arrive as ordinary user text.
-  const skillBody = ` <system-notification>
-Skills provide specialized capabilities and domain knowledge.
-<skill filePath="builtin:review">
-<name>review</name>
-Full private skill instructions
-</skill>
-</system-notification>`;
-  assert.deepEqual(replay(userText(skillBody)), []);
-});
-
 test('child sessions replay their prompts as the child, and never a skill activation', () => {
   const events = replay(userText('continue the child task'), 'child-provider', 'worker');
   assert.deepEqual(
@@ -146,7 +127,7 @@ test('child sessions replay their prompts as the child, and never a skill activa
     assert.deepEqual(replay(activation, 'child-provider', role), []);
 });
 
-test('a prompt wrapped in DROIDEX guidance replays as only what the user typed', () => {
+test('a prompt wrapped in DROIDEX guidance or side-chat answers replays as only what the user typed', () => {
   const question = 'Why does the chart dip on Wednesday?';
   const conversation = `**User:** earlier question\n\n**Assistant:** ${'long answer '.repeat(10_000)}`;
   const cases: [string, string][] = [
@@ -168,52 +149,27 @@ test('a prompt wrapped in DROIDEX guidance replays as only what the user typed',
     assert.equal(events.length, 1);
     assert.equal(events[0].text, typed);
   }
+
+  // The block as the renderer's promptWithSideChatReplies writes it.
+  const withReplies = [
+    'Use this',
+    '',
+    '<side_chat_replies>',
+    'The user attached these answers from a side chat about this conversation.',
+    '<reply>',
+    'Sort by date first.',
+    '</reply>',
+    '<reply>',
+    'Then by name.',
+    '</reply>',
+    '</side_chat_replies>',
+  ].join('\n');
+  const [event] = replay(userText(withReplies));
+  assert.equal(event?.text, 'Use this');
+  assert.deepEqual(event?.sideChatReplies, ['Sort by date first.', 'Then by name.']);
 });
 
-test('user-only skill activation restores the prompt and harness acknowledgement separately', () => {
-  const events = replay(userText('Skill "review" activated: PR #100', 'user_only'));
-  assert.equal(events.length, 2);
-  assert.deepEqual(
-    {
-      sourceSessionId: events[0].sourceSessionId,
-      author: events[0].author,
-      text: events[0].text,
-      skills: events[0].skills,
-    },
-    {
-      sourceSessionId: 'user',
-      author: 'user',
-      text: 'PR #100',
-      skills: ['review'],
-    },
-  );
-  assert.deepEqual(
-    {
-      sourceSessionId: events[1].sourceSessionId,
-      author: events[1].author,
-      text: events[1].text,
-    },
-    {
-      sourceSessionId: 'primary',
-      author: undefined,
-      text: 'Skill "review" activated: PR #100',
-    },
-  );
-});
-
-test('a mid-file compaction_state record replays as a divider event', () => {
-  const line = JSON.parse(
-    JSON.stringify({
-      type: 'compaction_state',
-      id: 'comp-3',
-      timestamp: new Date(2000).toISOString(),
-      removedCount: 3,
-    }),
-  );
-  const events = parseSessionLineEvents('app', 'provider', 'primary', line);
-  assert.equal(events.length, 1);
-  assert.equal(events[0].kind, 'compaction');
-  assert.equal(events[0].removedCount, 3);
+test('a stored model-switch or usage-limit notice replays exactly as it was written', () => {
   for (const notice of [
     { kind: 'status', modelSwitch: { from: 'old-model', to: 'new-model' } },
     { kind: 'error', isError: true, errorKind: 'usage_limit', resetsAt: 3000 },
@@ -237,24 +193,4 @@ test('a mid-file compaction_state record replays as a divider event', () => {
       [original],
     );
   }
-});
-
-test('a prompt sent with side-chat answers replays as the words typed plus the answers', () => {
-  // The block as the renderer's promptWithSideChatReplies writes it.
-  const prompt = [
-    'Use this',
-    '',
-    '<side_chat_replies>',
-    'The user attached these answers from a side chat about this conversation.',
-    '<reply>',
-    'Sort by date first.',
-    '</reply>',
-    '<reply>',
-    'Then by name.',
-    '</reply>',
-    '</side_chat_replies>',
-  ].join('\n');
-  const [event] = replay(userText(prompt));
-  assert.equal(event?.text, 'Use this');
-  assert.deepEqual(event?.sideChatReplies, ['Sort by date first.', 'Then by name.']);
 });

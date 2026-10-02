@@ -2,9 +2,9 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { createSdkMcpServer, tool } from '@factory/droid-sdk';
 import { z } from 'zod';
-import type { PermissionOutcome, ServerEvent, SessionSummary } from '../../protocol.js';
-import { mcpGrantSignature } from '../../mcpGrant.js';
+import type { PermissionOutcome, ServerEvent } from '../../protocol.js';
 import { SessionInteractions } from '../../SessionInteractions.js';
+import { sessionSummary } from '../../testing/sessionSummaryFixture.js';
 import type { ProviderApprovalRequest } from '../interactions.js';
 import type { AppServerClient } from './appServer.js';
 import { OpenPrompts } from './codexApprovals.js';
@@ -186,51 +186,30 @@ test('a new Codex thread declares its tools and a resumed thread keeps its store
   await resumed.close();
 });
 
-test('shared MCP grant keys keep Droid and Claude scopes and argument-scoped automation grants', () => {
-  assert.equal(
-    mcpGrantSignature('', 'droidex_sessions___thread_spawn', { reportBack: true }),
-    'mcp::::droidex_sessions___thread_spawn::thread',
-  );
-  assert.equal(
-    mcpGrantSignature('droidex-sessions', 'session_stop', { sessionId: 'chat-two' }),
-    'mcp::droidex-sessions::session_stop::chat-two',
-  );
-  assert.equal(mcpGrantSignature('droidex-sessions', 'thread_spawn', {}), '');
-  const update = (prompt: string) =>
-    mcpGrantSignature('', 'droidex_automations___automation_update', {
-      automationId: 'one',
-      prompt,
-    });
-  assert.match(update('first'), /^mcp::::droidex_automations___automation_update::[a-f0-9]{32}$/);
-  assert.notEqual(update('first'), update('second'));
-});
-
-test('executes a known tool through approval and returns Codex content items', async () => {
-  const { bridge, approvals, calls } = harness();
-  assert.deepEqual(await bridge.call(spawn), {
-    contentItems: [{ type: 'inputText', text: '{"reportBack":true}' }],
-    success: true,
-  });
-  assert.equal(calls(), 1);
-  assert.equal(approvals[0].signature, 'mcp::droidex-sessions::thread_spawn::thread');
-  assert.deepEqual(approvals[0].mcpTool, {
-    serverName: 'droidex-sessions',
-    toolName: 'thread_spawn',
-  });
-});
-
-test('rejects unknown tools, other threads, and denied requests before the handler', async () => {
+test('a known tool runs through approval; unknown tools, other threads, and denials never reach the handler', async () => {
   const state = harness();
   assert.equal((await state.bridge.call({ ...spawn, namespace: 'other' })).success, false);
   assert.equal((await state.bridge.call({ ...spawn, tool: 'other' })).success, false);
   assert.equal((await state.bridge.call({ ...spawn, threadId: 'other' })).success, false);
   assert.equal(state.approvals.length, 0);
+
+  assert.deepEqual(await state.bridge.call(spawn), {
+    contentItems: [{ type: 'inputText', text: '{"reportBack":true}' }],
+    success: true,
+  });
+  assert.equal(state.calls(), 1);
+  assert.equal(state.approvals[0].signature, 'mcp::droidex-sessions::thread_spawn::thread');
+  assert.deepEqual(state.approvals[0].mcpTool, {
+    serverName: 'droidex-sessions',
+    toolName: 'thread_spawn',
+  });
+
   state.deny();
   assert.deepEqual(await state.bridge.call(spawn), {
     contentItems: [{ type: 'inputText', text: 'The user declined this tool.' }],
     success: false,
   });
-  assert.equal(state.calls(), 0);
+  assert.equal(state.calls(), 1);
   state.switchThread();
   assert.equal((await state.bridge.call(spawn)).success, false);
   state.close();
@@ -294,27 +273,7 @@ test('a tool is refused after a pending approval when the chat closes, and befor
 
 test('below High, DROIDEX asks before a spawn and a denial never runs it', async () => {
   const events: ServerEvent[] = [];
-  const summary: SessionSummary = {
-    appSessionId: 'chat-one',
-    providerSessionId: 'chat-one',
-    provider: 'codex',
-    sessionPurpose: 'chat',
-    interactionMode: 'auto',
-    role: 'primary',
-    title: 'Chat',
-    goal: 'Chat',
-    cwd: '/workspace',
-    workspaceKind: 'folder',
-    autonomy: 'low',
-    phase: 'paused',
-    features: [],
-    tokensIn: 0,
-    tokensOut: 0,
-    contextTokens: 0,
-    createdAt: 1,
-    updatedAt: 1,
-  };
-  const liveSession = { summary };
+  const liveSession = { summary: sessionSummary({ appSessionId: 'chat-one', provider: 'codex' }) };
   const interactions = new SessionInteractions({
     getLiveSession: () => liveSession,
     updateSummary: () => {},

@@ -57,36 +57,8 @@ test('browser MCP handlers return visible tool errors', async () => {
   assert.match(JSON.stringify(result), /Browser session is not open yet/);
 });
 
-test('browser_open keeps high-detail viewport scale by default', async () => {
+test('browser_open keeps high-detail viewport scale by default, and navigation tools return the page state', async () => {
   let openedViewport: { width: number; height: number; deviceScaleFactor?: number } | undefined;
-  const manager = {
-    async open(input: {
-      viewport?: { width: number; height: number; deviceScaleFactor?: number };
-    }) {
-      openedViewport = input.viewport;
-      return {
-        url: 'https://example.com',
-        viewport: input.viewport,
-        viewportMode: 'custom',
-        scroll: { x: 0, y: 0 },
-        refs: [],
-      };
-    },
-  } as unknown as BrowserSessionManager;
-  const server = createBrowserMcpServer(manager, () => 'm1');
-  const browserOpen = server.tools.find((tool) => tool.name === 'browser_open');
-
-  const result = await browserOpen?.handler({
-    url: 'https://example.com',
-    viewport: { width: 1000, height: 700 },
-    viewportMode: 'custom',
-  });
-
-  assert.equal(openedViewport?.deviceScaleFactor, 2);
-  assert.match(String(result), /Opened the live DROIDEX browser/);
-});
-
-test('reload and history tools return the resulting page state', async () => {
   const state = (url: string) => ({
     url,
     viewport: { width: 1200, height: 800, deviceScaleFactor: 2 },
@@ -95,6 +67,12 @@ test('reload and history tools return the resulting page state', async () => {
     refs: [],
   });
   const manager = {
+    async open(input: {
+      viewport?: { width: number; height: number; deviceScaleFactor?: number };
+    }) {
+      openedViewport = input.viewport;
+      return state('https://example.com');
+    },
     async reload() {
       return state('https://example.com/reloaded');
     },
@@ -106,13 +84,21 @@ test('reload and history tools return the resulting page state', async () => {
     },
   } as unknown as BrowserSessionManager;
   const server = createBrowserMcpServer(manager, () => 'm1');
+  const handler = (name: string) => server.tools.find((tool) => tool.name === name)?.handler;
+
+  const opened = await handler('browser_open')?.({
+    url: 'https://example.com',
+    viewport: { width: 1000, height: 700 },
+    viewportMode: 'custom',
+  });
+  assert.equal(openedViewport?.deviceScaleFactor, 2);
+  assert.match(String(opened), /Opened the live DROIDEX browser/);
 
   for (const [name, url] of [
     ['browser_reload', /example.com\/reloaded/],
     ['browser_back', /example.com\/back/],
     ['browser_forward', /example.com\/forward/],
   ] as const) {
-    const result = await server.tools.find((tool) => tool.name === name)?.handler({});
-    assert.match(String(result), url, name);
+    assert.match(String(await handler(name)?.({})), url, name);
   }
 });

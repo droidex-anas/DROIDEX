@@ -8,6 +8,7 @@ import type * as Protocol from './protocol.js';
 import { FAMILIAR_PREEXISTING_SESSIONS_PER_WORKSPACE } from './sessionListFilter.js';
 import { providerSessionJsonl } from './testing/providerSessionFixtures.js';
 import { persistTestSummaries } from './testing/historyPersistenceFixture.js';
+import { sessionSummary } from './testing/sessionSummaryFixture.js';
 
 const originalHome = process.env.HOME;
 const home = mkdtempSync(join(tmpdir(), 'droid-session-scoping-home-'));
@@ -44,31 +45,6 @@ function writePreexistingSession(id: string, cwd: string, ageRank: number): stri
   return path;
 }
 
-function appSummary(appSessionId: string, cwd: string, updatedAt: number): Protocol.SessionSummary {
-  return {
-    appSessionId,
-    providerSessionId: appSessionId,
-    provider: 'droid',
-    sessionPurpose: 'chat',
-    interactionMode: 'auto',
-    role: 'primary',
-    title: `DROIDEX chat ${appSessionId}`,
-    goal: `DROIDEX chat ${appSessionId}`,
-    cwd,
-    workspaceKind: 'folder',
-    autonomy: 'low',
-    phase: 'paused',
-    streaming: false,
-    queuedSends: 0,
-    features: [],
-    tokensIn: 0,
-    tokensOut: 0,
-    contextTokens: 0,
-    createdAt: updatedAt,
-    updatedAt,
-  };
-}
-
 async function listSessions(
   command: Extract<Protocol.ClientCommand, { type: 'sessions.list' }>,
 ): Promise<Extract<Protocol.ServerEvent, { type: 'sessions.list' }>> {
@@ -91,10 +67,12 @@ for (let rank = 0; rank < PREEXISTING_COUNT; rank++) {
 // The oldest file in the folder, but DROIDEX ran it.
 writePreexistingSession('ours-oldest', workspace, PREEXISTING_COUNT + 10);
 const index = new HistoryIndex();
-persistTestSummaries([appSummary('ours-oldest', workspace, 1)]);
+persistTestSummaries([
+  sessionSummary({ appSessionId: 'ours-oldest', cwd: workspace, workspaceKind: 'folder' }),
+]);
 index.close();
 
-test('opening a folder lists the newest pre-existing sessions and reports the rest', async () => {
+test('opening a folder lists the newest pre-existing sessions, every session DROIDEX ran, and a count of the rest', async () => {
   const list = await listSessions({ type: 'sessions.list', workspaceCwds: [workspace] });
 
   const preexisting = list.sessions.filter((session) => session.appSessionId.startsWith('cli-'));
@@ -106,27 +84,12 @@ test('opening a folder lists the newest pre-existing sessions and reports the re
   assert.deepEqual(list.earlierSessionsByCwd, {
     [workspace]: PREEXISTING_COUNT - FAMILIAR_PREEXISTING_SESSIONS_PER_WORKSPACE,
   });
-});
-
-test('a session DROIDEX ran stays listed even as the oldest file in the folder', async () => {
-  const list = await listSessions({ type: 'sessions.list', workspaceCwds: [workspace] });
-
+  // The oldest file in the folder stays listed because DROIDEX ran it.
   assert.ok(list.sessions.some((session) => session.appSessionId === 'ours-oldest'));
   assert.equal(list.sessions.length, FAMILIAR_PREEXISTING_SESSIONS_PER_WORKSPACE + 1);
 });
 
-test('showing earlier sessions lists the whole folder and clears its count', async () => {
-  const list = await listSessions({
-    type: 'sessions.list',
-    workspaceCwds: [workspace],
-    revealEarlierCwds: [workspace],
-  });
-
-  assert.equal(list.sessions.length, PREEXISTING_COUNT + 1);
-  assert.deepEqual(list.earlierSessionsByCwd, {});
-});
-
-test('a revealed session still opens with its complete history', async () => {
+test('showing earlier sessions lists the whole folder, clears its count, and opens their complete history', async () => {
   const events: Protocol.ServerEvent[] = [];
   const manager = new SessionManager((event) => events.push(event));
   try {
@@ -140,6 +103,11 @@ test('a revealed session still opens with its complete history', async () => {
   } finally {
     await manager.shutdown();
   }
+
+  const list = events.filter((event) => event.type === 'sessions.list').at(-1);
+  assert.ok(list?.type === 'sessions.list');
+  assert.equal(list.sessions.length, PREEXISTING_COUNT + 1);
+  assert.deepEqual(list.earlierSessionsByCwd, {});
 
   const history = events.filter((event) => event.type === 'session.history').at(-1);
   assert.ok(history?.type === 'session.history');
