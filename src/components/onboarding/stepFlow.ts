@@ -4,14 +4,7 @@ import type { EnvironmentReport } from '../../types/bridge';
 // the flow can be tested without mounting React.
 export type StepId = 'welcome' | 'system' | 'install' | 'signin' | 'preferences' | 'done';
 
-export const STEP_ORDER: StepId[] = [
-  'welcome',
-  'system',
-  'install',
-  'signin',
-  'preferences',
-  'done',
-];
+const STEP_ORDER: StepId[] = ['welcome', 'system', 'install', 'signin', 'preferences', 'done'];
 
 export function stepsForEnv(env: EnvironmentReport | null): StepId[] {
   const steps: StepId[] = ['welcome', 'system'];
