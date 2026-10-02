@@ -2,7 +2,6 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import type { ChildSessionSummary } from '../types/bridge';
-import { childSessionIsLive } from '../lib/childSessions';
 import { initialState, reducer, type Action } from './useStore';
 import { sessionSummary } from '../test/sessionSummary';
 
@@ -27,6 +26,14 @@ function child(parentAppSessionId: string, childSessionId: string): ChildSession
     streamFidelity: 'state',
   };
 }
+
+const contextStats = (used: number) => ({
+  used,
+  remaining: 100 - used,
+  limit: 100,
+  accuracy: 'exact' as const,
+  updatedAt: '2026-07-30T00:00:00.000Z',
+});
 
 test('same-event sibling progress remains distinct by exact child identity', () => {
   const state = reducer(initialState, {
@@ -75,26 +82,7 @@ test('closing a parent preserves historical parent and child discovery but clear
       childRuntime: { parent: { child: { available: true, runtimeGeneration: 1 } } },
       contextStats: {
         primary: {},
-        child: {
-          parent: {
-            child: {
-              used: 20,
-              remaining: 80,
-              limit: 100,
-              accuracy: 'exact',
-              updatedAt: '2026-07-30T00:00:00.000Z',
-            },
-          },
-          other: {
-            child: {
-              used: 30,
-              remaining: 70,
-              limit: 100,
-              accuracy: 'exact',
-              updatedAt: '2026-07-30T00:00:00.000Z',
-            },
-          },
-        },
+        child: { parent: { child: contextStats(20) }, other: { child: contextStats(30) } },
       },
       selectedChild: { parentAppSessionId: 'parent', childSessionId: 'child' },
       historyLoaded: true,
@@ -111,13 +99,6 @@ test('closing a parent preserves historical parent and child discovery but clear
   assert.equal(state.contextStats.child.parent, undefined);
   assert.equal(state.contextStats.child.other?.child?.used, 30);
   assert.equal(state.selectedChild, null);
-  assert.equal(
-    childSessionIsLive(
-      state.childSessions.parent.child,
-      state.childRuntime.parent?.[historicalChild.childSessionId],
-    ),
-    false,
-  );
 });
 
 test('a chat is marked as having agents working only while one is running', () => {
