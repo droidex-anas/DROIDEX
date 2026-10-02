@@ -20,29 +20,25 @@ test('a seed fully determines the plan, and a different seed changes it', () => 
   assert.ok(first.every((value) => value >= 0 && value < 1));
 });
 
-test('plan shape matches the scenario parameters', () => {
-  const spec = resolveScenario('smoke');
-  const plan = buildReplayPlan(spec);
+test('a plan matches its scenario parameters and schedules each turn in time order', () => {
+  for (const name of ['smoke', 'multi-agent']) {
+    const spec = resolveScenario(name);
+    const plan = buildReplayPlan(spec);
 
-  assert.equal(plan.turns.length, spec.sessions * spec.turnsPerSession);
-  const deltas = plan.turns
-    .flatMap((turn) => turn.steps)
-    .filter((step) => String(step.event.type).endsWith('_text_delta'));
-  const markers = plan.turns.flatMap((turn) => turn.steps).filter((step) => step.marker !== null);
-  assert.equal(deltas.length, spec.sessions * spec.turnsPerSession * spec.deltasPerTurn);
-  assert.ok(markers.length > 0);
-  assert.ok(
-    markers.every((step) => step.marker?.startsWith('call:') || step.marker?.startsWith('result:')),
-  );
-});
-
-test('steps inside a turn are scheduled in non-decreasing time order', () => {
-  const plan = buildReplayPlan(resolveScenario('multi-agent'));
-  for (const turn of plan.turns) {
-    let previous = -1;
-    for (const step of turn.steps) {
-      assert.ok(step.atMs >= previous, `step at ${String(step.atMs)} after ${String(previous)}`);
-      previous = step.atMs;
+    assert.equal(plan.turns.length, spec.sessions * spec.turnsPerSession, name);
+    const steps = plan.turns.flatMap((turn) => turn.steps);
+    const deltas = steps.filter((step) => String(step.event.type).endsWith('_text_delta'));
+    const markers = steps.filter((step) => step.marker !== null);
+    assert.equal(deltas.length, spec.sessions * spec.turnsPerSession * spec.deltasPerTurn, name);
+    assert.ok(markers.length > 0, name);
+    assert.ok(
+      markers.every(
+        (step) => step.marker?.startsWith('call:') || step.marker?.startsWith('result:'),
+      ),
+    );
+    for (const turn of plan.turns) {
+      for (const [index, step] of turn.steps.entries())
+        assert.ok(index === 0 || step.atMs >= (turn.steps[index - 1]?.atMs ?? 0), name);
     }
   }
 });
