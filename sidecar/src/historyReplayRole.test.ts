@@ -64,43 +64,24 @@ function writeTranscript(
   );
 }
 
-test('loadSessionPage replays a marker-only Task child with worker role keyed to its provider id', () => {
+test('loadSessionPage replays a Task child as a worker under its provider id, whatever it opens under, and a top-level session as primary', () => {
+  const firstText = (providerSessionId: string, appSessionId: string) => {
+    const text = loadSessionPage(providerSessionId, appSessionId, undefined, 200).events.find(
+      (e) => e.kind === 'text',
+    );
+    assert.ok(text, 'expected a text event');
+    return [text.sourceSessionId, text.role];
+  };
   writeTranscript('child-session', {
     callingSessionId: 'parent-session',
     callingToolUseId: 'tool-1',
   });
+  assert.deepEqual(firstText('child-session', 'parent-app'), ['child-session', 'worker']);
+  // Opened as its own session, it is still never reclassified as top-level.
+  assert.deepEqual(firstText('child-session', 'child-session'), ['child-session', 'worker']);
 
-  const page = loadSessionPage('child-session', 'parent-app', undefined, 200);
-  const text = page.events.find((e) => e.kind === 'text');
-
-  assert.ok(text, 'expected a text event');
-  assert.equal(text!.sourceSessionId, 'child-session');
-  assert.equal(text!.role, 'worker');
-});
-
-test('loadSessionPage replays a top-level session as primary', () => {
   writeTranscript('plain-session', {});
-
-  const page = loadSessionPage('plain-session', 'plain-session', undefined, 200);
-  const text = page.events.find((e) => e.kind === 'text');
-
-  assert.ok(text, 'expected a text event');
-  assert.equal(text!.sourceSessionId, 'primary');
-  assert.equal(text!.role, 'primary');
-});
-
-test('loadSessionPage never reclassifies a Task child as a top-level session', () => {
-  writeTranscript('orphan-child', {
-    callingSessionId: 'gone-parent',
-    callingToolUseId: 'tool-x',
-  });
-
-  const page = loadSessionPage('orphan-child', 'orphan-child', undefined, 200);
-  const text = page.events.find((e) => e.kind === 'text');
-
-  assert.ok(text, 'expected a text event');
-  assert.equal(text!.role, 'worker');
-  assert.equal(text!.sourceSessionId, 'orphan-child');
+  assert.deepEqual(firstText('plain-session', 'plain-session'), ['primary', 'primary']);
 });
 
 test('transcript windows parse child-only skill messages with the child role', () => {
