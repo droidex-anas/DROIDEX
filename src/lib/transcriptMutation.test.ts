@@ -11,22 +11,14 @@ import {
 
 const reference = (id: string) => ({ id });
 
-/** The mutation at `revision`, one step after its base revision. */
+/** The append or reset at `revision`, one step after its base revision. */
 function mutation(
-  kind: TranscriptMutation['kind'],
+  kind: 'append' | 'reset',
   revision: number,
   previousLength: number,
   firstChangedIndex: number,
-  insertedCount?: number,
 ): TranscriptMutation {
-  return {
-    revision,
-    baseRevision: revision - 1,
-    kind,
-    previousLength,
-    firstChangedIndex,
-    ...(insertedCount === undefined ? {} : { insertedCount }),
-  };
+  return { revision, baseRevision: revision - 1, kind, previousLength, firstChangedIndex };
 }
 
 test('pure prepend detection records one exact insertion without scanning semantics', () => {
@@ -65,7 +57,14 @@ test('prepend detection rejects replacement, removal, and cloned retained entrie
 });
 
 test('aggregation preserves one linked prepend and resets mixed mutation chains', () => {
-  const prepend = mutation('prepend', 11, 100, 0, 40);
+  const prepend: TranscriptMutation = {
+    revision: 11,
+    baseRevision: 10,
+    kind: 'prepend',
+    previousLength: 100,
+    firstChangedIndex: 0,
+    insertedCount: 40,
+  };
 
   assert.deepEqual(aggregateTranscriptMutations(10, [prepend]), prepend);
   const mixed = aggregateTranscriptMutations(10, [prepend, mutation('append', 12, 140, 140)]);
