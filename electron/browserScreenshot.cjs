@@ -12,6 +12,12 @@ const REF_PADDING = 8;
 const MASK_PADDING = 2;
 // Opaque mid grey, in the bitmap's BGRA order.
 const MASK_PIXEL = Buffer.from([0x80, 0x80, 0x80, 0xff]);
+// A page that is not being drawn never answers a capture: with the screen
+// asleep or locked nothing is composited. The agent is told soon, so it can
+// read the page instead of waiting out its whole request.
+const CAPTURE_MS = 6_000;
+const NOT_DRAWN =
+  'The page gave no picture, which happens while the screen is asleep or locked; no screenshot was taken. Read the page with browser_read_page or browser_read_text instead.';
 
 function createBrowserScreenshot({ reading, nativeImage, redactUrl }) {
   async function take(contents, entry, options = {}) {
@@ -62,11 +68,18 @@ function createBrowserScreenshot({ reading, nativeImage, redactUrl }) {
   // size; only the full page renders beyond the viewport.
   async function capture(dbg, view, clip, scale, options) {
     const origin = options.fullPage ? { x: 0, y: 0 } : { x: view.pageX, y: view.pageY };
-    const { data } = await dbg.sendCommand('Page.captureScreenshot', {
+    const captured = dbg.sendCommand('Page.captureScreenshot', {
       format: 'png',
       captureBeyondViewport: Boolean(options.fullPage),
       clip: { ...clip, x: origin.x + clip.x, y: origin.y + clip.y, scale: scale / view.dpr },
     });
+    // The capture left waiting ends on its own once the page draws again.
+    captured.catch(() => undefined);
+    let timer;
+    const late = new Promise((_, reject) => {
+      timer = setTimeout(() => reject(new Error(NOT_DRAWN)), CAPTURE_MS);
+    });
+    const { data } = await Promise.race([captured, late]).finally(() => clearTimeout(timer));
     return nativeImage.createFromBuffer(Buffer.from(data, 'base64'));
   }
 
