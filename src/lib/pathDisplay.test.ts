@@ -23,29 +23,23 @@ test('workspace previews accept absolute descendants and root folders', () => {
   assert.equal(relativeWorkspaceFilePath('/repo/src/app.ts', '/repo'), 'src/app.ts');
   assert.equal(relativeWorkspaceFilePath('etc/hosts', '/'), 'etc/hosts');
   assert.equal(relativeWorkspaceFilePath('C:/Repo/src/app.ts', 'c:/repo'), 'src/app.ts');
+  // Whitespace in directory and file names is preserved.
+  assert.equal(relativeWorkspaceFilePath('/repo / file ', '/repo '), ' file ');
+  assert.equal(relativeWorkspaceFilePath(' file ', '/repo '), ' file ');
 });
 
-test('displayPath relativizes descendants of a filesystem-root session folder', () => {
+test('displayPath relativizes descendants of the session folder, including filesystem roots', () => {
   assert.equal(displayPath('/etc/hosts', '/'), 'etc/hosts');
   assert.equal(displayPath('/', '/'), '.');
   assert.equal(displayPath('C:/Windows/System32', 'C:/'), 'Windows/System32');
-});
-
-test('displayPath treats drive-letter case as the same session folder', () => {
+  // Drive-letter case names the same session folder.
   assert.equal(displayPath('C:/Repo/src/app.ts', 'c:/repo'), 'src/app.ts');
   assert.equal(displayPath('c:/repo', 'C:/Repo'), '.');
-});
-
-test('displayPath does not treat a sibling directory with the same prefix as a descendant', () => {
+  // A sibling directory that shares the prefix is not a descendant.
   assert.equal(displayPath('/repository/src/app.ts', '/repo'), 'repository/src/app.ts');
 });
 
 test('compactPath shortens long relative read paths', () => {
   assert.equal(compactPath('src/a/b/c/d.ts'), '…/b/c/d.ts');
   assert.equal(compactPath('src/app.ts'), 'src/app.ts');
-});
-
-test('workspace file previews preserve whitespace in directory and file names', () => {
-  assert.equal(relativeWorkspaceFilePath('/repo / file ', '/repo '), ' file ');
-  assert.equal(relativeWorkspaceFilePath(' file ', '/repo '), ' file ');
 });

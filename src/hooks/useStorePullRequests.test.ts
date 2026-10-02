@@ -25,23 +25,15 @@ function session(appSessionId: string): SessionSummary {
   };
 }
 
-test('OPEN_PULL_REQUESTS binds the view and optional number', () => {
-  const state = reducer(initialState, {
-    type: 'OPEN_PULL_REQUESTS',
-    cwd: '/repo',
-    number: 12,
-  });
-  assert.equal(state.mainView, 'pull-requests');
-  assert.equal(state.prWorkspaceCwd, '/repo');
-  assert.equal(state.prWorkspaceNumber, 12);
-});
-
-test('OPEN_PULL_REQUESTS preserves an omitted number only within the same repository', () => {
+test('OPEN_PULL_REQUESTS binds the view and keeps an omitted number only in the same repository', () => {
   const selected = reducer(initialState, {
     type: 'OPEN_PULL_REQUESTS',
     cwd: '/repo-a',
     number: 12,
   });
+  assert.equal(selected.mainView, 'pull-requests');
+  assert.equal(selected.prWorkspaceCwd, '/repo-a');
+  assert.equal(selected.prWorkspaceNumber, 12);
   const sameRepository = reducer(selected, {
     type: 'OPEN_PULL_REQUESTS',
     cwd: '/repo-a',

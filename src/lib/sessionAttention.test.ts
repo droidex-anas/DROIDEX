@@ -24,32 +24,13 @@ function makeQuestion(appSessionId: string): SessionQuestion {
   };
 }
 
-test('sessionAttention: a pending approval needs attention', () => {
-  assert.equal(sessionAttention('app-1', { 'app-1': [makePermission('app-1')] }, {}), 'approval');
-});
-
-test('sessionAttention: a pending question needs attention', () => {
-  assert.equal(sessionAttention('app-1', {}, { 'app-1': [makeQuestion('app-1')] }), 'question');
-});
-
-test('sessionAttention: a pending request from another session does not leak over', () => {
-  assert.equal(
-    sessionAttention(
-      'app-2',
-      { 'app-1': [makePermission('app-1')] },
-      { 'app-1': [makeQuestion('app-1')] },
-    ),
-    null,
-  );
-});
-
-test('sessionAttention: approval wins when both are pending', () => {
-  assert.equal(
-    sessionAttention(
-      'app-1',
-      { 'app-1': [makePermission('app-1')] },
-      { 'app-1': [makeQuestion('app-1')] },
-    ),
-    'approval',
-  );
+test('sessionAttention reports the session own approval first, then its question', () => {
+  const permissions = { 'app-1': [makePermission('app-1')] };
+  const questions = { 'app-1': [makeQuestion('app-1')] };
+  assert.equal(sessionAttention('app-1', permissions, {}), 'approval');
+  assert.equal(sessionAttention('app-1', {}, questions), 'question');
+  // Approval wins when both are pending.
+  assert.equal(sessionAttention('app-1', permissions, questions), 'approval');
+  // A pending request from another session does not leak over.
+  assert.equal(sessionAttention('app-2', permissions, questions), null);
 });

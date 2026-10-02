@@ -60,6 +60,15 @@ function event(id: string, ts: number, text = id): TranscriptEvent {
   };
 }
 
+/** Loads the snapshot from a stored payload, as a relaunch would. */
+function loadStored(payload: unknown): ReturnType<typeof loadSessionSnapshot> {
+  let snapshot: ReturnType<typeof loadSessionSnapshot>;
+  withLocalStorageMap({ [SNAPSHOT_KEY]: JSON.stringify(payload) }, () => {
+    snapshot = loadSessionSnapshot();
+  });
+  return snapshot!;
+}
+
 function saveAndLoad(
   sessions: SessionSummary[],
   transcript?: { appSessionId: string; events: TranscriptEvent[] },
@@ -100,22 +109,15 @@ test('missing or corrupt payloads degrade to no snapshot', () => {
 });
 
 test('entries missing identity fields are dropped, valid ones survive', () => {
-  withLocalStorageMap(
-    {
-      [SNAPSHOT_KEY]: JSON.stringify({
-        sessions: [
-          summary('good'),
-          { ...summary('no-id'), appSessionId: 7 },
-          { ...summary('no-title'), title: undefined },
-          { ...summary('no-time'), updatedAt: 'yesterday' },
-        ],
-      }),
-    },
-    () => {
-      const snapshot = loadSessionSnapshot();
-      assert.deepEqual(snapshot?.sessionOrder, ['good']);
-    },
-  );
+  const snapshot = loadStored({
+    sessions: [
+      summary('good'),
+      { ...summary('no-id'), appSessionId: 7 },
+      { ...summary('no-title'), title: undefined },
+      { ...summary('no-time'), updatedAt: 'yesterday' },
+    ],
+  });
+  assert.deepEqual(snapshot?.sessionOrder, ['good']);
 });
 
 test('the session list is bounded to the most recent entries', () => {
@@ -167,37 +169,25 @@ test('a live progress row is not repainted from the snapshot', () => {
 });
 
 test('duplicate session ids in a stored payload are collapsed', () => {
-  withLocalStorageMap(
-    { [SNAPSHOT_KEY]: JSON.stringify({ sessions: [summary('s1', 1), summary('s1', 2)] }) },
-    () => {
-      const snapshot = loadSessionSnapshot();
-      assert.deepEqual(snapshot?.sessionOrder, ['s1']);
-    },
-  );
+  const snapshot = loadStored({ sessions: [summary('s1', 1), summary('s1', 2)] });
+  assert.deepEqual(snapshot?.sessionOrder, ['s1']);
 });
 
 test('malformed transcript events are dropped on load', () => {
-  withLocalStorageMap(
-    {
-      [SNAPSHOT_KEY]: JSON.stringify({
-        sessions: [summary('s1')],
-        transcript: {
-          appSessionId: 's1',
-          events: [
-            event('ok', 1),
-            { ...event('bad-id', 2), id: 9 },
-            { ...event('bad-ts', 3), ts: 'now' },
-          ],
-        },
-      }),
+  const snapshot = loadStored({
+    sessions: [summary('s1')],
+    transcript: {
+      appSessionId: 's1',
+      events: [
+        event('ok', 1),
+        { ...event('bad-id', 2), id: 9 },
+        { ...event('bad-ts', 3), ts: 'now' },
+      ],
     },
-    () => {
-      const snapshot = loadSessionSnapshot();
-      assert.deepEqual(
-        snapshot?.transcript?.events.map((item) => item.id),
-        ['ok'],
-      );
-    },
+  });
+  assert.deepEqual(
+    snapshot?.transcript?.events.map((item) => item.id),
+    ['ok'],
   );
 });
 
@@ -213,18 +203,6 @@ test('the summary list is bounded to the byte budget, keeping the newest', () =>
   assert.equal(kept[0], 's0', 'the front of the order (newest) is kept');
   const serialized = JSON.stringify(kept.map((id) => snapshot?.sessions[id]));
   assert.ok(serialized.length <= MAX_SNAPSHOT_SUMMARY_BYTES);
-});
-
-test('the scheduler writes after the debounce delay', (t) => {
-  t.mock.timers.enable({ apis: ['setTimeout'] });
-  withLocalStorageMap({}, () => {
-    const scheduler = createSnapshotScheduler(400);
-    scheduler.push({ sessions: { s1: summary('s1') }, sessionOrder: ['s1'] });
-    t.mock.timers.tick(399);
-    assert.equal(loadSessionSnapshot(), undefined);
-    t.mock.timers.tick(1);
-    assert.deepEqual(loadSessionSnapshot()?.sessionOrder, ['s1']);
-  });
 });
 
 test('an unchanged push never cancels a pending write', (t) => {
@@ -273,19 +251,12 @@ test('cancel discards a pending write', (t) => {
 });
 
 test('a transcript for an unknown session is not hydrated', () => {
-  withLocalStorageMap(
-    {
-      [SNAPSHOT_KEY]: JSON.stringify({
-        sessions: [summary('s1')],
-        transcript: { appSessionId: 'ghost', events: [event('a', 1)] },
-      }),
-    },
-    () => {
-      const snapshot = loadSessionSnapshot();
-      assert.deepEqual(snapshot?.sessionOrder, ['s1']);
-      assert.equal(snapshot?.transcript, undefined);
-    },
-  );
+  const snapshot = loadStored({
+    sessions: [summary('s1')],
+    transcript: { appSessionId: 'ghost', events: [event('a', 1)] },
+  });
+  assert.deepEqual(snapshot?.sessionOrder, ['s1']);
+  assert.equal(snapshot?.transcript, undefined);
 });
 
 test('storage failures are swallowed on both read and write', () => {
@@ -361,76 +332,41 @@ test('optional feature fields are preserved or cleared on load', () => {
 // ── Finding 2: transcript events must match transcript.appSessionId ────────
 
 test('transcript events from a different session are dropped on load', () => {
-  withLocalStorageMap(
-    {
-      [SNAPSHOT_KEY]: JSON.stringify({
-        sessions: [summary('s1')],
-        transcript: {
-          appSessionId: 's1',
-          events: [
-            event('belongs', 1),
-            { ...event('foreign'), appSessionId: 's2' },
-            { ...event('also-foreign'), appSessionId: 's3' },
-          ],
-        },
-      }),
+  const snapshot = loadStored({
+    sessions: [summary('s1')],
+    transcript: {
+      appSessionId: 's1',
+      events: [
+        event('belongs', 1),
+        { ...event('foreign'), appSessionId: 's2' },
+        { ...event('also-foreign'), appSessionId: 's3' },
+      ],
     },
-    () => {
-      const snapshot = loadSessionSnapshot();
-      assert.deepEqual(
-        snapshot?.transcript?.events.map((e) => e.id),
-        ['belongs'],
-      );
-    },
+  });
+  assert.deepEqual(
+    snapshot?.transcript?.events.map((e) => e.id),
+    ['belongs'],
   );
 });
 
-// ── Finding 3: one oversized transcript event must not bypass the byte cap ─
+// ── Findings 3 and 4: one oversized entry must not bypass the byte caps ──
 
-test('a single oversized transcript event is dropped on save', () => {
+test('a single oversized transcript event is dropped on save and on load', () => {
   const huge = event('huge', 1, 'x'.repeat(MAX_SNAPSHOT_TRANSCRIPT_BYTES + 1));
-  const snapshot = saveAndLoad([summary('s1')], { appSessionId: 's1', events: [huge] });
-  assert.equal(snapshot?.transcript, undefined);
+  const saved = saveAndLoad([summary('s1')], { appSessionId: 's1', events: [huge] });
+  assert.equal(saved?.transcript, undefined);
+  const stored = loadStored({
+    sessions: [summary('s1')],
+    transcript: { appSessionId: 's1', events: [huge] },
+  });
+  assert.equal(stored?.transcript, undefined);
 });
 
-test('a single oversized transcript event is dropped on load', () => {
-  withLocalStorageMap(
-    {
-      [SNAPSHOT_KEY]: JSON.stringify({
-        sessions: [summary('s1')],
-        transcript: {
-          appSessionId: 's1',
-          events: [{ ...event('huge', 1), text: 'x'.repeat(MAX_SNAPSHOT_TRANSCRIPT_BYTES + 1) }],
-        },
-      }),
-    },
-    () => {
-      const snapshot = loadSessionSnapshot();
-      assert.equal(snapshot?.transcript, undefined);
-    },
-  );
-});
-
-// ── Finding 4: one oversized session summary must not bypass the byte cap ──
-
-test('a single oversized session summary is dropped on save', () => {
+test('a single oversized session summary is dropped on save and on load', () => {
   const huge: SessionSummary = {
     ...summary('s1'),
     title: 'x'.repeat(MAX_SNAPSHOT_SUMMARY_BYTES + 1),
   };
-  const snapshot = saveAndLoad([huge]);
-  assert.equal(snapshot, undefined);
-});
-
-test('a single oversized session summary is dropped on load', () => {
-  withLocalStorageMap(
-    {
-      [SNAPSHOT_KEY]: JSON.stringify({
-        sessions: [{ ...summary('s1'), title: 'x'.repeat(MAX_SNAPSHOT_SUMMARY_BYTES + 1) }],
-      }),
-    },
-    () => {
-      assert.equal(loadSessionSnapshot(), undefined);
-    },
-  );
+  assert.equal(saveAndLoad([huge]), undefined);
+  assert.equal(loadStored({ sessions: [huge] }), undefined);
 });

@@ -3,22 +3,7 @@ import test from 'node:test';
 
 import { createOrderedActionBatcher } from './orderedActionBatcher';
 
-test('an idle server batch commits once in order', () => {
-  const dispatched: string[] = [];
-  const batcher = createOrderedActionBatcher<string, number>({
-    dispatchOne: (action) => dispatched.push(`one:${action}`),
-    dispatchBatch: (actions) => dispatched.push(`batch:${actions.join(',')}`),
-    schedule: () => 1,
-    cancel: () => undefined,
-    delayMs: 16,
-  });
-
-  batcher.pushBridgeBatch(['a', 'b', 'c']);
-
-  assert.deepEqual(dispatched, ['batch:a,b,c']);
-});
-
-test('later server batches in the same frame join the follower queue', () => {
+test('an idle server batch commits at once and later batches in the frame follow it', () => {
   const dispatched: string[] = [];
   let flush: (() => void) | undefined;
   const batcher = createOrderedActionBatcher<string, number>({
@@ -33,6 +18,7 @@ test('later server batches in the same frame join the follower queue', () => {
   });
 
   batcher.pushBridgeBatch(['leading-a', 'leading-b']);
+  assert.deepEqual(dispatched, ['batch:leading-a,leading-b']);
   batcher.pushBridgeBatch(['follower-a', 'follower-b']);
   flush?.();
 

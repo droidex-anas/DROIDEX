@@ -12,10 +12,19 @@ import {
   runsAsCompactCommand,
 } from './composePrompt';
 
-test('one selected skill uses the provider-native slash invocation', () => {
+test('composePrompt uses a slash invocation for one skill, an explicit instruction for several, and leaves /visualize alone', () => {
   assert.equal(composePrompt('PR #100', ['review'], []), '/review PR #100');
   assert.equal(composePrompt('', ['review'], []), '/review');
   assert.equal(composePrompt('PR #100', ['review'], ['src/a.ts']), '/review PR #100\n\n@src/a.ts');
+  assert.equal(
+    composePrompt('inspect this', ['review', 'semgrep'], []),
+    'Use these skills: "review", "semgrep".\n\ninspect this',
+  );
+  assert.equal(
+    composePrompt('/visualize compare renderer timings', [], []),
+    '/visualize compare renderer timings',
+  );
+  assert.equal(composePrompt('/visualize', [], []), '/visualize');
 });
 
 test('a typed slash invocation separates the exact catalog skill from its prompt', () => {
@@ -29,13 +38,6 @@ test('a typed slash invocation separates the exact catalog skill from its prompt
     prompt: 'what is this for?',
   });
   assert.equal(parseSlashSkillInvocation('/unknown leave this alone', skills), undefined);
-});
-
-test('multiple selected skills keep the explicit multi-skill instruction', () => {
-  assert.equal(
-    composePrompt('inspect this', ['review', 'semgrep'], []),
-    'Use these skills: "review", "semgrep".\n\ninspect this',
-  );
 });
 
 test('a multi-skill prompt with no body peels the wrapper for display', () => {
@@ -52,24 +54,6 @@ test('a multi-skill prompt with no body peels the wrapper for display', () => {
     visualize: false,
   });
   assert.equal(promptDisplayText(composed), 'review, semgrep');
-});
-
-test('promptDisplayParts leaves ordinary Use these skills text alone', () => {
-  const text = 'Use these skills: documentation.';
-  assert.deepEqual(promptDisplayParts(text), {
-    text,
-    skills: [],
-    visualize: false,
-  });
-  assert.equal(promptDisplayText(text), text);
-});
-
-test('composePrompt leaves /visualize as the session payload', () => {
-  assert.equal(
-    composePrompt('/visualize compare renderer timings', [], []),
-    '/visualize compare renderer timings',
-  );
-  assert.equal(composePrompt('/visualize', [], []), '/visualize');
 });
 
 test('promptDisplayParts peels Visualize and slash skills off composed text', () => {
@@ -108,6 +92,10 @@ test('promptDisplayParts peels Visualize and slash skills off composed text', ()
       text: '/settings',
       want: { text: '/settings', skills: [], visualize: false },
     },
+    {
+      text: 'Use these skills: documentation.',
+      want: { text: 'Use these skills: documentation.', skills: [], visualize: false },
+    },
   ]) {
     assert.deepEqual(promptDisplayParts(example.text, example.skills), example.want);
   }
@@ -122,9 +110,7 @@ test('the Visualize chip sends exactly what typing the command sends', () => {
   // Already typed: the chip must not double the command.
   assert.equal(promptTextWithVisualize('/visualize a histogram', true), '/visualize a histogram');
   assert.equal(promptTextWithVisualize('leave this alone', false), 'leave this alone');
-});
-
-test('/visualize remains an app command even when a provider skill has the same name', () => {
+  // /visualize stays an app command even when a provider skill has the same name.
   assert.equal(isVisualizeCommand('/visualize chart these results'), true);
   assert.equal(isVisualizeCommand('/visualizer is a different prompt'), false);
 });
@@ -137,17 +123,14 @@ test('an existing App keeps follow-up prompts App-capable without another slash 
 
 const nothingStaged = { visualizeSelected: false, skillCount: 0, fileCount: 0 };
 
-test('a bare command runs as a command, including the compact aliases', () => {
+// Skills and files already made the same words a prompt. Visualize did not, so
+// staging it and typing /compact compacted the session and dropped the plugin.
+test('a bare compact alias runs as a command only when nothing is staged', () => {
   for (const alias of ['/compact', '/compaction', '/compression']) {
     assert.equal(runsAsCompactCommand(alias, nothingStaged), true);
   }
   assert.equal(runsAsCompactCommand('/compact this thread please', nothingStaged), false);
   assert.equal(runsAsCompactCommand('what does /compact do?', nothingStaged), false);
-});
-
-// Skills and files already made the same words a prompt. Visualize did not, so
-// staging it and typing /compact compacted the session and dropped the plugin.
-test('anything staged makes the same words a prompt instead of a command', () => {
   assert.equal(
     runsAsCompactCommand('/compact', { ...nothingStaged, visualizeSelected: true }),
     false,
@@ -159,4 +142,6 @@ test('promptDisplayText keeps Visualize and skill labels when there is no free t
   assert.equal(promptDisplayText('/visualize', []), 'Visualize');
   assert.equal(promptDisplayText('/visualize', ['review']), 'Visualize, review');
   assert.equal(promptDisplayText('/review', ['review']), 'review');
+  const ordinary = 'Use these skills: documentation.';
+  assert.equal(promptDisplayText(ordinary), ordinary);
 });

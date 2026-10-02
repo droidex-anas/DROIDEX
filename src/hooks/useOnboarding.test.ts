@@ -31,26 +31,13 @@ test('shouldShowOnboarding only when not completed', () => {
   assert.equal(shouldShowOnboarding({ completed: true }), false);
 });
 
-test('hasSetupBlocker flags a missing CLI', () => {
+test('hasSetupBlocker flags a missing CLI or missing sign-in without an api key', () => {
   assert.equal(hasSetupBlocker(env({ cli: { present: false, path: 'droid' } })), true);
-});
-
-test('hasSetupBlocker flags missing auth when no api key', () => {
-  assert.equal(
-    hasSetupBlocker(env({ auth: { apiKeyConfigured: false, loginPresent: false } })),
-    true,
-  );
-});
-
-test('no blocker when signed in or api key configured', () => {
-  assert.equal(
-    hasSetupBlocker(env({ auth: { apiKeyConfigured: false, loginPresent: true } })),
-    false,
-  );
-  assert.equal(
-    hasSetupBlocker(env({ auth: { apiKeyConfigured: true, loginPresent: false } })),
-    false,
-  );
+  const auth = (apiKeyConfigured: boolean, loginPresent: boolean) =>
+    hasSetupBlocker(env({ auth: { apiKeyConfigured, loginPresent } }));
+  assert.equal(auth(false, false), true);
+  assert.equal(auth(false, true), false);
+  assert.equal(auth(true, false), false);
   assert.equal(hasSetupBlocker(null), false);
 });
 

@@ -2,44 +2,46 @@ import test from 'node:test';
 import assert from 'node:assert';
 import { extractFileChange } from './diff';
 
-test('apply_patch recovers the path from a "*** Update File" header', () => {
-  const patch = [
-    '*** Begin Patch',
-    '*** Update File: src/components/App.tsx',
-    '@@',
-    '-const a = 1;',
-    '+const a = 2;',
-    '*** End Patch',
-  ].join('\n');
-  const change = extractFileChange('apply_patch', { input: patch });
-  assert.ok(change);
-  assert.equal(change?.path, 'src/components/App.tsx');
-  assert.equal(change?.verb, 'patch');
-});
-
-test('apply_patch recovers the path from a unified-diff +++ header', () => {
-  const patch = ['--- a/src/x.ts', '+++ b/src/x.ts', '@@', '-old', '+new'].join('\n');
-  const change = extractFileChange('apply_patch', { patch });
-  assert.equal(change?.path, 'src/x.ts');
-});
-
-test('recovers the path from the --- header for a delete-only diff (+++ /dev/null)', () => {
-  const patch = ['--- a/src/gone.ts', '+++ /dev/null', '@@', '-old line 1', '-old line 2'].join(
-    '\n',
-  );
-  const change = extractFileChange('apply_patch', { patch });
-  assert.equal(change?.path, 'src/gone.ts');
-});
-
-test('an explicit path arg still wins over the patch body', () => {
-  const patch = ['*** Update File: ignored.ts', '-old', '+new'].join('\n');
-  const change = extractFileChange('apply_patch', { file_path: 'real.ts', patch });
-  assert.equal(change?.path, 'real.ts');
-});
-
-test('falls back to "file" when no path is present anywhere', () => {
-  const change = extractFileChange('apply_patch', { patch: '-old\n+new' });
-  assert.equal(change?.path, 'file');
+test('apply_patch recovers the edited path from the patch headers', () => {
+  const lines = (...parts: string[]) => parts.join('\n');
+  // [why, tool args, expected path]
+  const cases: Array<[string, Record<string, string>, string]> = [
+    [
+      '"*** Update File" header',
+      {
+        input: lines(
+          '*** Begin Patch',
+          '*** Update File: src/components/App.tsx',
+          '@@',
+          '-a',
+          '+b',
+          '*** End Patch',
+        ),
+      },
+      'src/components/App.tsx',
+    ],
+    [
+      'unified-diff +++ header',
+      { patch: lines('--- a/src/x.ts', '+++ b/src/x.ts', '@@', '-old', '+new') },
+      'src/x.ts',
+    ],
+    [
+      '--- header of a delete-only diff (+++ /dev/null)',
+      { patch: lines('--- a/src/gone.ts', '+++ /dev/null', '@@', '-old line 1', '-old line 2') },
+      'src/gone.ts',
+    ],
+    [
+      'an explicit path arg wins over the patch body',
+      { file_path: 'real.ts', patch: lines('*** Update File: ignored.ts', '-old', '+new') },
+      'real.ts',
+    ],
+    ['no path anywhere falls back to "file"', { patch: '-old\n+new' }, 'file'],
+  ];
+  for (const [why, args, path] of cases) {
+    assert.equal(extractFileChange('apply_patch', args)?.path, path, why);
+  }
+  const updated = extractFileChange('apply_patch', cases[0][1]);
+  assert.equal(updated?.verb, 'patch');
 });
 
 test('a line inside a hunk is content even when it reads like a header', () => {

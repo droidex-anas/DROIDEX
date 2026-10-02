@@ -50,7 +50,7 @@ test('removeWorkspaceCwd drops a repository and its worktrees', () => {
   assert.equal(removeWorkspaceCwd(listed, ''), listed);
 });
 
-test('uniqueRepositoryWorkspaceCwds collapses worktrees of the same repository', () => {
+test('worktree paths collapse to their repository root and empty values drop', () => {
   assert.deepEqual(
     uniqueRepositoryWorkspaceCwds([
       '/repo/app/.worktrees/feature',
@@ -61,52 +61,54 @@ test('uniqueRepositoryWorkspaceCwds collapses worktrees of the same repository',
     ]),
     ['/repo/app', '/repo/site'],
   );
-});
-
-test('repositoryRootCwd collapses a worktree path and ignores empty values', () => {
   assert.equal(repositoryRootCwd('/repo/app/.worktrees/feature'), '/repo/app');
   assert.equal(repositoryRootCwd('/repo/app'), '/repo/app');
   assert.equal(repositoryRootCwd(null), null);
   assert.equal(repositoryRootCwd('  '), null);
 });
 
-test('resolveNewChatCwd inherits the active workspace session folder', () => {
-  assert.equal(
-    resolveNewChatCwd({ cwd: '/repo/droid-control', workspaceKind: 'folder' }, { cwd: '' }),
-    '/repo/droid-control',
-  );
-  // Active workspace wins over a stale non-empty draft path.
-  assert.equal(
-    resolveNewChatCwd(
+test('resolveNewChatCwd follows the active session workspace, using the draft only with no selection', () => {
+  const cases: Array<
+    [string, Parameters<typeof resolveNewChatCwd>[0], { cwd: string } | null, string]
+  > = [
+    [
+      'active folder',
+      { cwd: '/repo/droid-control', workspaceKind: 'folder' },
+      { cwd: '' },
+      '/repo/droid-control',
+    ],
+    [
+      'active folder beats a stale draft',
       { cwd: '/repo/droid-control', workspaceKind: 'folder' },
       { cwd: '/repo/stale' },
-    ),
-    '/repo/droid-control',
+      '/repo/droid-control',
+    ],
+    [
+      'folder-less active chat ignores a leftover draft',
+      { cwd: '', workspaceKind: 'none' },
+      { cwd: '/repo/stale' },
+      '',
+    ],
+    ['folder-less active chat with no draft', { cwd: '', workspaceKind: 'none' }, null, ''],
+    ['missing cwd still means no workspace', { workspaceKind: 'none' }, { cwd: '/repo/stale' }, ''],
+    ['null cwd still means no workspace', { cwd: null }, { cwd: '/repo/stale' }, ''],
+    ['no selection uses the draft', null, { cwd: '/repo/draft' }, '/repo/draft'],
+    ['no selection and an empty draft', undefined, { cwd: '' }, ''],
+    ['nothing at all', null, null, ''],
+  ];
+  for (const [why, active, draft, expected] of cases) {
+    assert.equal(resolveNewChatCwd(active, draft), expected, why);
+  }
+});
+
+test('buildWorkspaceSections includes every known session for an explicit workspace unless capped', () => {
+  const repoSessions = Array.from({ length: SIDEBAR_VISIBLE_SESSION_LIMIT + 2 }, (_, i) =>
+    session(`repo-${i}`, '/repo/app', i + 1),
   );
-});
-
-test('resolveNewChatCwd starts folder-less when the active chat has no workspace', () => {
-  // Empty cwd must not fall through to a leftover draft workspace path.
-  assert.equal(resolveNewChatCwd({ cwd: '', workspaceKind: 'none' }, { cwd: '/repo/stale' }), '');
-  assert.equal(resolveNewChatCwd({ cwd: '', workspaceKind: 'none' }, null), '');
-  // Missing cwd on an active session still means "no workspace".
-  assert.equal(resolveNewChatCwd({ workspaceKind: 'none' }, { cwd: '/repo/stale' }), '');
-  assert.equal(resolveNewChatCwd({ cwd: null }, { cwd: '/repo/stale' }), '');
-});
-
-test('resolveNewChatCwd falls back to draft only when nothing is selected', () => {
-  assert.equal(resolveNewChatCwd(null, { cwd: '/repo/draft' }), '/repo/draft');
-  assert.equal(resolveNewChatCwd(undefined, { cwd: '' }), '');
-  assert.equal(resolveNewChatCwd(null, null), '');
-});
-
-test('buildWorkspaceSections includes every known session for explicitly added workspaces', () => {
   const sessions = [
     session('plain-chat', '', 100),
     session('other-workspace', '/repo/other', 200),
-    ...Array.from({ length: SIDEBAR_VISIBLE_SESSION_LIMIT + 2 }, (_, i) =>
-      session(`repo-${i}`, '/repo/app', i + 1),
-    ),
+    ...repoSessions,
   ];
 
   const sections = buildWorkspaceSections(['/repo/app'], sessions);
@@ -117,19 +119,12 @@ test('buildWorkspaceSections includes every known session for explicitly added w
     sections[0].sessions.map((item) => item.appSessionId),
     ['repo-6', 'repo-5', 'repo-4', 'repo-3', 'repo-2', 'repo-1', 'repo-0'],
   );
-});
 
-test('buildWorkspaceSections can still cap an explicit bootstrap list', () => {
-  const sessions = Array.from({ length: SIDEBAR_VISIBLE_SESSION_LIMIT + 2 }, (_, i) =>
-    session(`repo-${i}`, '/repo/app', i + 1),
-  );
-
-  const sections = buildWorkspaceSections(['/repo/app'], sessions, {
+  const capped = buildWorkspaceSections(['/repo/app'], repoSessions, {
     limit: SIDEBAR_VISIBLE_SESSION_LIMIT,
   });
-
   assert.deepEqual(
-    sections[0].sessions.map((item) => item.appSessionId),
+    capped[0].sessions.map((item) => item.appSessionId),
     ['repo-6', 'repo-5', 'repo-4', 'repo-3', 'repo-2'],
   );
 });
@@ -181,13 +176,11 @@ test('buildWorkspaceSections totals withheld earlier sessions across a repositor
 
   assert.deepEqual(sections[0].executionCwds, ['/repo/app', worktree]);
   assert.equal(sections[0].earlierSessionCount, 943);
-});
 
-test('buildWorkspaceSections reports nothing to reveal when the sidecar withheld nothing', () => {
-  const sections = buildWorkspaceSections(['/repo/app'], [session('main', '/repo/app', 1)]);
-
-  assert.deepEqual(sections[0].executionCwds, ['/repo/app']);
-  assert.equal(sections[0].earlierSessionCount, 0);
+  // Nothing withheld by the sidecar means nothing to reveal.
+  const plain = buildWorkspaceSections(['/repo/app'], [session('main', '/repo/app', 1)]);
+  assert.deepEqual(plain[0].executionCwds, ['/repo/app']);
+  assert.equal(plain[0].earlierSessionCount, 0);
 });
 
 test('buildWorkspaceSections matches Windows worktree paths without case sensitivity', () => {
@@ -237,19 +230,16 @@ test('buildWorkspaceScopes resolves linked paths to one main repository', () => 
   ]);
 });
 
-test('discoverWorkspaceScopes loads Git ownership for every selected workspace', async () => {
+test('discoverWorkspaceScopes loads Git ownership and reports an empty Git result as incomplete', async () => {
   const scopes = await discoverWorkspaceScopes(['/repo/app'], async () => [
     { path: '/repo/app', bare: false, isMain: true },
     { path: '/outside/app-worktree', bare: false, isMain: false },
   ]);
-
   assert.deepEqual(scopes, {
     complete: true,
     scopes: [{ cwd: '/repo/app', executionCwds: ['/repo/app', '/outside/app-worktree'] }],
   });
-});
 
-test('discoverWorkspaceScopes reports an empty Git result as incomplete', async () => {
   assert.deepEqual(await discoverWorkspaceScopes(['/repo/app'], async () => []), {
     complete: false,
     scopes: [{ cwd: '/repo/app', executionCwds: ['/repo/app'] }],

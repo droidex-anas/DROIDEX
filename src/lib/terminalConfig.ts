@@ -151,9 +151,3 @@ export function resolveDimension(
   if (!Number.isFinite(n) || n < 1) return fallback;
   return Math.min(n, maximum);
 }
-
-// Factory for ID generators; the default uses Web Crypto / Node crypto. Keeping
-// the generator injectable makes terminal IDs deterministic in tests.
-export function makeIdGenerator(randomUuid: () => string): () => string {
-  return () => randomUuid();
-}

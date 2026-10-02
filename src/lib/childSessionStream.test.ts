@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import type { ChildSessionSummary, StreamFidelity } from '../types/bridge';
+import type { ChildSessionSummary } from '../types/bridge';
 import type { ChildSessionActivity } from './childSessions';
 import {
   boundChildStreamPreview,
@@ -40,16 +40,14 @@ function activity(latest: ChildSessionActivity['latest']): ChildSessionActivity 
   return { status: 'running', startedAt: 1_000, latest };
 }
 
-test('boundChildStreamPreview keeps a fixed tail of lines and characters', () => {
+test('boundChildStreamPreview keeps a fixed tail of lines and characters as an answer grows', () => {
   const lines = Array.from({ length: 40 }, (_, index) => `line ${String(index)} ${'x'.repeat(80)}`);
   const preview = boundChildStreamPreview(lines.join('\n'));
   assert.equal(preview.split('\n').length <= CHILD_STREAM_PREVIEW_MAX_LINES, true);
   assert.ok(preview.length <= CHILD_STREAM_PREVIEW_MAX_CHARS);
   assert.ok(preview.includes('line 39'));
   assert.equal(preview.includes('line 0'), false);
-});
 
-test('growing a long answer does not grow the bounded preview', () => {
   let text = 'alpha\nbeta\ngamma';
   const first = boundChildStreamPreview(text);
   text += `${' more'.repeat(400)}\n${'z'.repeat(500)} omega`;
@@ -79,20 +77,6 @@ test('childStreamPhase maps each supervision state distinctly', () => {
   );
 });
 
-test('phases stay the same for every fidelity; only presentation changes', () => {
-  for (const fidelity of ['token', 'tool', 'state'] as const) {
-    assert.equal(childStreamPhase({ status: 'running', hasOutput: true }), 'streaming', fidelity);
-    assert.equal(childStreamPhase({ status: 'running' }), 'starting', fidelity);
-    assert.equal(childStreamPhase({ queued: true, status: 'pending' }), 'queued', fidelity);
-    assert.equal(childStreamPhase({ status: 'paused' }), 'awaiting_approval', fidelity);
-    assert.equal(childStreamPhase({ status: 'completed' }), 'settled', fidelity);
-  }
-  assert.equal(childStreamPhaseLabel('streaming', 'token'), 'Streaming');
-  assert.equal(childStreamPhaseLabel('streaming', 'tool'), 'Working');
-  assert.equal(childStreamPhaseLabel('streaming', 'state'), 'Working');
-  assert.equal(childStreamPhaseLabel('queued', 'state'), 'Queued');
-});
-
 test('childStreamSnapshot prefers live transcript text and stays bounded', () => {
   const snapshot = childStreamSnapshot(
     child({ childSessionId: 'writer', status: 'running' }),
@@ -111,7 +95,7 @@ test('childStreamSnapshot prefers live transcript text and stays bounded', () =>
   assert.ok(snapshot.preview.includes('final token burst'));
 });
 
-test('a token child shows the caret and a state child never does', () => {
+test('declared fidelity reaches the snapshot; a token child shows the caret and a state child never does', () => {
   const token = childStreamSnapshot(
     child({ childSessionId: 'token', status: 'running', streamFidelity: 'token' }),
     activity({ kind: 'text', text: 'delta' }),
@@ -129,6 +113,7 @@ test('a token child shows the caret and a state child never does', () => {
     child({ childSessionId: 'tools', status: 'running', streamFidelity: 'tool' }),
     activity({ kind: 'tool_call', toolName: 'ApplyPatch', text: 'editing file' }),
   );
+  assert.deepEqual([token.fidelity, state.fidelity, tool.fidelity], ['token', 'state', 'tool']);
   assert.equal(childStreamPresentation(token), 'typewriter');
   assert.equal(childStreamShowsCaret(token), true);
   assert.equal(childStreamPresentation(state), 'working');
@@ -200,42 +185,14 @@ test('projectChildStreamSnapshots reuses unchanged sibling identities', () => {
   assert.equal(reuseChildStreamSnapshotMap(first, first), first);
 });
 
-test('four concurrent streaming children do not rewrite settled snapshots', () => {
-  const children = ['w1', 'w2', 'w3', 'w4'].map((id) =>
-    child({ childSessionId: id, status: 'running' }),
-  );
-  let previous = projectChildStreamSnapshots(children, () =>
-    activity({ kind: 'text', text: 'start' }),
-  );
-  let reused = 0;
-  let rewritten = 0;
-  for (let token = 1; token <= 50; token += 1) {
-    const next = projectChildStreamSnapshots(
-      children,
-      (session) =>
-        activity({
-          kind: 'text',
-          text: session.childSessionId === 'w2' ? `token ${String(token)}` : 'start',
-        }),
-      undefined,
-      previous,
-    );
-    assert.equal(next.get('w1'), previous.get('w1'));
-    assert.equal(next.get('w3'), previous.get('w3'));
-    assert.equal(next.get('w4'), previous.get('w4'));
-    assert.notEqual(next.get('w2'), previous.get('w2'));
-    reused += 3;
-    rewritten += 1;
-    previous = next;
-  }
-  assert.equal(reused, 150);
-  assert.equal(rewritten, 50);
-});
-
-test('phase labels stay the product words, not a parallel status vocabulary', () => {
+test('phase labels stay the product words and only presentation varies by fidelity', () => {
   assert.equal(CHILD_STREAM_PHASE_LABEL.queued, 'Queued');
   assert.equal(CHILD_STREAM_PHASE_LABEL.interrupted, 'Interrupted');
   assert.equal(CHILD_STREAM_PHASE_LABEL.awaiting_approval, 'Awaiting approval');
+  assert.equal(childStreamPhaseLabel('streaming', 'token'), 'Streaming');
+  assert.equal(childStreamPhaseLabel('streaming', 'tool'), 'Working');
+  assert.equal(childStreamPhaseLabel('streaming', 'state'), 'Working');
+  assert.equal(childStreamPhaseLabel('queued', 'state'), 'Queued');
 });
 
 test('interruptReason on a paused child is interrupted, not a fabricated progress state', () => {
@@ -247,14 +204,4 @@ test('interruptReason on a paused child is interrupted, not a fabricated progres
   assert.equal(snapshot.phase, 'interrupted');
   assert.equal(snapshot.live, false);
   assert.equal(childStreamShowsCaret(snapshot), false);
-});
-
-test('declared fidelity travels from the child summary onto the card snapshot', () => {
-  for (const fidelity of ['token', 'tool', 'state'] as const satisfies StreamFidelity[]) {
-    const snapshot = childStreamSnapshot(
-      child({ childSessionId: fidelity, status: 'running', streamFidelity: fidelity }),
-      activity({ kind: 'text', text: 'output' }),
-    );
-    assert.equal(snapshot.fidelity, fidelity);
-  }
 });

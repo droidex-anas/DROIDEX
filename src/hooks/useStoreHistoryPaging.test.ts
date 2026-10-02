@@ -95,15 +95,15 @@ test('SESSION_HISTORY prepend dedups events already present at the boundary', ()
   assert.equal(next.transcriptMutations.m1.insertedCount, 1);
 });
 
-test('SESSION_HISTORY prepend with a fully-duplicate page only clears the loading flag', () => {
+test('a fully-duplicate prepend page only clears the in-flight loading flag', () => {
   const existing = [ev('a', 1), ev('b', 2)];
-  const seeded = {
-    ...initialState,
-    transcripts: { m1: existing },
-    historyLoadingOlder: { m1: true },
-  } as unknown as AppState;
+  const loading = reducer({ ...initialState, transcripts: { m1: existing } } as AppState, {
+    type: 'SESSION_HISTORY_LOADING_OLDER',
+    appSessionId: 'm1',
+  });
+  assert.equal(loading.historyLoadingOlder.m1, true);
 
-  const next = reducer(seeded, {
+  const next = reducer(loading, {
     type: 'SESSION_HISTORY',
     appSessionId: 'm1',
     progress: [],
@@ -114,14 +114,6 @@ test('SESSION_HISTORY prepend with a fully-duplicate page only clears the loadin
 
   assert.equal(next.transcripts.m1, existing);
   assert.equal(next.historyLoadingOlder.m1, false);
-});
-
-test('SESSION_HISTORY_LOADING_OLDER marks the in-flight prefetch', () => {
-  const next = reducer(initialState as unknown as AppState, {
-    type: 'SESSION_HISTORY_LOADING_OLDER',
-    appSessionId: 'm1',
-  });
-  assert.equal(next.historyLoadingOlder.m1, true);
 });
 
 test('child history failures preserve the retry cursor and settle only that child', () => {

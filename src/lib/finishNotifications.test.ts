@@ -48,16 +48,15 @@ const textEvent = (text: string, over: Partial<TranscriptEvent> = {}): Transcrip
     ...over,
   }) as TranscriptEvent;
 
-test('notificationSnippet trims and caps with an ellipsis', () => {
+test('the notification body is the newest primary assistant text, trimmed and capped with an ellipsis', () => {
   assert.equal(notificationSnippet('  hello   world  '), 'hello world');
   const long = 'word '.repeat(80);
   const snip = notificationSnippet(long, 40);
   assert.ok(snip.endsWith('…'));
   assert.ok(snip.length <= 40);
   assert.equal(notificationSnippet(''), '');
-});
 
-test('latestAssistantSnippet prefers the newest primary assistant text', () => {
+  // The body comes from the newest primary assistant text.
   const events = [
     textEvent('first answer'),
     { ...textEvent('thinking…'), kind: 'thinking' as const },
@@ -69,7 +68,7 @@ test('latestAssistantSnippet prefers the newest primary assistant text', () => {
   assert.equal(latestAssistantSnippet(undefined), '');
 });
 
-test('decideFinishNotification respects settings and foreground gates', () => {
+test('decideFinishNotification respects settings and foreground gates and titles a failed phase', () => {
   const base = {
     session: session(),
     isActiveSession: false,
@@ -126,20 +125,18 @@ test('decideFinishNotification respects settings and foreground gates', () => {
   });
   assert.equal(quiet.kind, 'notify');
   if (quiet.kind === 'notify') assert.equal(quiet.silent, true);
-});
 
-test('decideFinishNotification uses a failed title when the phase failed', () => {
-  const decision = decideFinishNotification({
+  const failed = decideFinishNotification({
     settings: DEFAULT_FINISH_NOTIFICATION_SETTINGS,
     session: session({ phase: 'failed', title: 'Broken turn' }),
     isActiveSession: false,
     assistantSnippet: '',
     appInForeground: false,
   });
-  assert.equal(decision.kind, 'notify');
-  if (decision.kind === 'notify') {
-    assert.match(decision.title, /Failed/);
-    assert.match(decision.body, /error/i);
+  assert.equal(failed.kind, 'notify');
+  if (failed.kind === 'notify') {
+    assert.match(failed.title, /Failed/);
+    assert.match(failed.body, /error/i);
   }
 });
 

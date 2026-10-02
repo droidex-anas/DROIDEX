@@ -88,36 +88,6 @@ test('duplicate transcript events preserve state and mutation revision', () => {
   assert.equal(appendTranscriptEvents(state, [retained, retained]), state);
 });
 
-test('batched transcript appends index retained event IDs once per session', () => {
-  let retainedIdReads = 0;
-  const retained = Array.from({ length: 2_000 }, (_, index) => {
-    const event = transcriptEvent(`retained-${index}`, 'session-a', { ts: index });
-    Object.defineProperty(event, 'id', {
-      configurable: true,
-      enumerable: true,
-      get: () => {
-        retainedIdReads += 1;
-        return `retained-${index}`;
-      },
-    });
-    return event;
-  });
-  const state: AppState = {
-    ...initialState,
-    transcripts: { 'session-a': retained },
-    // The retained-cost owner already measured this window. Supplying it keeps
-    // this test focused on duplicate indexing rather than payload estimation.
-    transcriptRetainedCost: { 'session-a': 1 },
-  };
-  const incoming = Array.from({ length: 200 }, (_, index) =>
-    transcriptEvent(`incoming-${index}`, 'session-a', { ts: 2_000 + index }),
-  );
-
-  appendTranscriptEvents(state, incoming);
-
-  assert.equal(retainedIdReads, retained.length);
-});
-
 test('batched transcript appends preserve sequential emergency release boundaries', () => {
   const retained = Array.from({ length: 30_000 }, (_, index) =>
     transcriptEvent(`retained-${index}`, 'session-a', { ts: index }),

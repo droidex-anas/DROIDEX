@@ -7,7 +7,7 @@ import {
   toggleDesignMode,
 } from './designModeState';
 
-test('design mode is scoped by session id', () => {
+test('design mode is scoped by session id and clears one session at a time', () => {
   let state = toggleDesignMode({}, 'session-a');
 
   assert.equal(isDesignModeOpen(state, 'session-a'), true);
@@ -17,14 +17,11 @@ test('design mode is scoped by session id', () => {
 
   assert.equal(isDesignModeOpen(state, 'session-a'), true);
   assert.equal(isDesignModeOpen(state, 'session-b'), true);
-});
 
-test('clears one session without changing other design mode state', () => {
-  const state = clearDesignMode(
+  const cleared = clearDesignMode(
     setDesignMode({ 'session-a': true }, 'session-b', true),
     'session-a',
   );
-
-  assert.equal(isDesignModeOpen(state, 'session-a'), false);
-  assert.equal(isDesignModeOpen(state, 'session-b'), true);
+  assert.equal(isDesignModeOpen(cleared, 'session-a'), false);
+  assert.equal(isDesignModeOpen(cleared, 'session-b'), true);
 });

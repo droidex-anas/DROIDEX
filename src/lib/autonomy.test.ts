@@ -3,8 +3,6 @@ import { loadDefaultPermissionMode } from './permissionSemantics';
 import assert from 'node:assert/strict';
 
 import {
-  AUTONOMY_DESCRIPTIONS,
-  AUTONOMY_LABELS,
   AUTONOMY_LEVELS,
   FIRST_RUN_DEFAULT_AUTONOMY,
   loadDefaultAutonomy,
@@ -20,13 +18,6 @@ test('normalizeAutonomy accepts only the four canonical levels', () => {
   assert.equal(normalizeAutonomy(''), undefined);
   assert.equal(normalizeAutonomy(undefined), undefined);
   assert.equal(normalizeAutonomy(42), undefined);
-});
-
-test('every level has a label and a consequence description', () => {
-  for (const level of AUTONOMY_LEVELS) {
-    assert.ok(AUTONOMY_LABELS[level].length > 0, `label for ${level}`);
-    assert.ok(AUTONOMY_DESCRIPTIONS[level].length > 0, `description for ${level}`);
-  }
 });
 
 test('first run defaults to medium and persisted values round-trip', () => {

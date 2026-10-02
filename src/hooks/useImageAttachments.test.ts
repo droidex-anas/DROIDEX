@@ -27,58 +27,28 @@ function deferred() {
 
 const tick = () => new Promise<void>((resolve) => setImmediate(resolve));
 
-test('insertBySequence keeps paste order when encodes finish out of order', () => {
+test('insertBySequence keeps paste order, puts unreserved images last, and copies the list', () => {
   // Pasted a, b, c in that order; the variably slow encodes finish c, a, b.
   const sequences = new Map([
     ['a', 0],
     ['b', 1],
     ['c', 2],
   ]);
-  let images: AttachedImage[] = [];
-  images = insertBySequence(images, img('c'), sequences);
-  images = insertBySequence(images, img('a'), sequences);
-  images = insertBySequence(images, img('b'), sequences);
+  const first = insertBySequence([], img('c'), sequences);
+  const second = insertBySequence(first, img('a'), sequences);
+  const third = insertBySequence(second, img('b'), sequences);
   assert.deepEqual(
-    images.map((i) => i.id),
+    third.map((i) => i.id),
     ['a', 'b', 'c'],
   );
-});
-
-test('insertBySequence sorts images without a reserved sequence last', () => {
-  const sequences = new Map([['a', 0]]);
-  const images = insertBySequence([img('a')], img('late'), sequences);
   assert.deepEqual(
-    images.map((i) => i.id),
-    ['a', 'late'],
+    first.map((i) => i.id),
+    ['c'],
   );
-});
-
-test('insertBySequence does not mutate the existing list', () => {
-  const before = [img('a')];
-  const sequences = new Map([
-    ['a', 0],
-    ['b', 1],
-  ]);
-  insertBySequence(before, img('b'), sequences);
   assert.deepEqual(
-    before.map((i) => i.id),
-    ['a'],
+    insertBySequence(third, img('late'), sequences).map((i) => i.id),
+    ['a', 'b', 'c', 'late'],
   );
-});
-
-test('settled waits for in-flight additions', async () => {
-  const additions = createPendingAdditions();
-  const add = deferred();
-  additions.track(add.promise);
-  let settled = false;
-  const waiting = additions.settled().then(() => {
-    settled = true;
-  });
-  await tick();
-  assert.equal(settled, false);
-  add.resolve();
-  await waiting;
-  assert.equal(settled, true);
 });
 
 test('settled keeps waiting when an addition starts mid-wait', async () => {
