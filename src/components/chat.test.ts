@@ -33,7 +33,7 @@ import {
   reopenDiffDisclosure,
   revealNextDiffCards,
 } from '../lib/diff';
-import { browserPageOf, browserStepInFlight } from '../lib/browserTools';
+import { browserPageOf, browserStepInFlight, isWholeUrl } from '../lib/browserTools';
 import { describeToolCall, hasTodoPayload, parseTruncatedTail } from '../lib/tools';
 import type { TranscriptEvent } from '../types/bridge';
 import { isRenderedTranscriptEvent } from './MissionControl';
@@ -527,6 +527,15 @@ test('a Browser card names the last page a result confirmed', () => {
     describeToolCall('other-droidex-browser___browser_open', { url: 'https://a.dev' }).verb,
     'Browser open',
   );
+  // A viewport call that names nothing changes nothing, and keeps its own name.
+  assert.equal(describeToolCall('droidex-browser___browser_viewport', {}).verb, 'Browser viewport');
+  assert.equal(
+    describeToolCall('droidex-browser___browser_fill_login', {}).liveVerb,
+    'Filling in the saved login',
+  );
+  // An address the tools redacted is not handed out as a link.
+  assert.equal(isWholeUrl('https://a.dev/x?token=%5Bredacted%5D'), false);
+  assert.equal(isWholeUrl('https://a.dev/x?q=1'), true);
 });
 
 test('a failed non-plan tool result attaches to its call so the failure folds in', () => {

@@ -1,7 +1,7 @@
 import { useRef, useState } from 'react';
 import { Ellipsis, ExternalLink, Link } from '@droidex/icons';
 import { useStoreDispatch, useStoreSelector } from '../../hooks/useStore';
-import { browserPageOf, browserStepInFlight } from '../../lib/browserTools';
+import { browserPageOf, browserStepInFlight, isWholeUrl } from '../../lib/browserTools';
 import { describeLink } from '../../lib/linkPresentation';
 import { openExternal } from '../../lib/onboarding';
 import { toast } from '../../lib/toast';
@@ -64,13 +64,13 @@ export function BrowserCard({
           Open
         </button>
       )}
-      {page && <PageMenu url={page.url} />}
+      {page && isWholeUrl(page.url) && <PageMenu url={page.url} />}
     </div>
   );
 }
 
 // What the card says: the page's name, its site, and what the agent is doing
-// on it right now. A page the transcript no longer names is just "Browser".
+// on it right now. A page the transcript no longer names reads as "Browser page".
 function cardText(events: TranscriptEvent[], working: boolean) {
   const page = browserPageOf(events);
   const link = page ? describeLink(page.url) : null;

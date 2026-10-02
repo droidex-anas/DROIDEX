@@ -28,6 +28,7 @@ const STEPS: Record<string, Verbs> = {
   browser_click: ['Clicked', 'Clicking'],
   browser_hover: ['Hovered', 'Hovering'],
   browser_fill: ['Filled in a field', 'Filling in a field'],
+  browser_fill_login: ['Filled in the saved login', 'Filling in the saved login'],
   browser_type: ['Typed', 'Typing'],
   browser_scroll: ['Scrolled', 'Scrolling'],
   browser_wait: ['Waited', 'Waiting'],
@@ -56,6 +57,8 @@ export function describeBrowserCall(tool: string, args: unknown): BrowserStep | 
       : step(['Opened', 'Opening'], text('url'));
   }
   if (tool === 'browser_viewport') {
+    // A call that names neither does nothing, and is not described as a change.
+    if (!text('size') && !text('scheme')) return null;
     if (!text('size')) return step(['Changed the color scheme', 'Changing the color scheme']);
     return text('scheme')
       ? step(['Changed the page size and color scheme', 'Changing the page size and color scheme'])
@@ -69,6 +72,11 @@ export function describeBrowserCall(tool: string, args: unknown): BrowserStep | 
 export interface BrowserPage {
   title?: string;
   url: string;
+}
+
+/** Whether the address is whole: one the tools redacted is not a link to hand out. */
+export function isWholeUrl(url: string): boolean {
+  return !url.includes('%5Bredacted%5D');
 }
 
 // A browser tool's answer ends with the page it left the browser on, on a line
