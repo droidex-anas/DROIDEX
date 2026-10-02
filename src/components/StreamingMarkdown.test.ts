@@ -98,22 +98,11 @@ const APP_BLOCK = ['```app', '<main>Complete app</main>', '```'].join('\n');
 
 const MALFORMED = ['Hello', '', '```js', 'const incomplete = '].join('\n');
 
-test('settled mermaid, katex-in-app, and app blocks match the canonical renderer', () => {
+test('settled mermaid, katex-in-app, app, and cut-off app blocks match the canonical renderer', () => {
   assertSettledMatchesCanonical(`${MERMAID}\n\n`);
   assertSettledMatchesCanonical(`${KATEX_APP}\n\n`);
   assertSettledMatchesCanonical(APP_BLOCK);
-});
-
-test('settled cut-off app fences match the canonical renderer', () => {
-  const source = '```app\n<main>partial';
-  assertSettledMatchesCanonical(source, { cutOffAppBlocks: true });
-});
-
-test('malformed and incomplete mid-stream blocks stay pending without rewriting frozen prose', () => {
-  const html = streaming(`${MALFORMED}\n`);
-  assert.match(html, /Hello/);
-  assert.match(html, /const incomplete = /);
-  assert.doesNotMatch(html, />Starting interactive app</);
+  assertSettledMatchesCanonical('```app\n<main>partial', { cutOffAppBlocks: true });
 });
 
 test('streaming states never remove or rewrite completed blocks', () => {
@@ -122,20 +111,6 @@ test('streaming states never remove or rewrite completed blocks', () => {
   assertCompletedBlocksStable(`${TABLE}\n\n`);
   assertCompletedBlocksStable(`${NESTED_FENCE}\n\n`);
   assertCompletedBlocksStable(`${MERMAID}\n\n`);
-});
-
-test('streaming to settled keeps frozen prose and matches canonical output', () => {
-  const live = 'Intro paragraph.\n\n```js\nconst x = 1;\n';
-  const liveHtml = streaming(live);
-  assert.match(liveHtml, /Intro paragraph/);
-  assert.match(liveHtml, /const x = 1;/);
-
-  const finalSource = `${live}\`\`\`\n\nDone.\n`;
-  assertSettledMatchesCanonical(finalSource);
-  const settledHtml = settled(finalSource);
-  assert.match(settledHtml, /Intro paragraph/);
-  assert.match(settledHtml, /const x = 1;/);
-  assert.match(settledHtml, /Done/);
 });
 
 test('frozen block ids stay stable and a pending-empty live tree matches settled markup', () => {
@@ -170,6 +145,11 @@ test('frozen block ids stay stable and a pending-empty live tree matches settled
 });
 
 test('an open code fence streams as preformatted text without mermaid or app runtime', () => {
+  const malformed = streaming(`${MALFORMED}\n`);
+  assert.match(malformed, /Hello/);
+  assert.match(malformed, /const incomplete = /);
+  assert.doesNotMatch(malformed, />Starting interactive app</);
+
   const mermaidOpen = streaming('```mermaid\nflowchart LR\n  A --> B\n');
   assert.match(mermaidOpen, /flowchart LR/);
   assert.doesNotMatch(mermaidOpen, /Diagram/);

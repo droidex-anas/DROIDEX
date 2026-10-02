@@ -12,35 +12,34 @@ import {
   __statusColorForTest as statusColor,
 } from './JsonRender';
 
-test('interleaves markdown and json-render blocks', () => {
+test('closed json-render blocks interleave with prose; an unclosed one and a bare mention do not', () => {
   assert.equal(hasJsonRender('x <json-render>{}</json-render>'), true);
   assert.equal(hasJsonRender('no tags here'), false);
 
   const segs = splitJsonRender('before <json-render>{"a":1}</json-render> after');
-  assert.equal(segs.length, 3);
-  assert.equal(segs[0].type, 'markdown');
-  assert.deepEqual(segs[1], { type: 'json-render', value: '{"a":1}' });
-  assert.equal(segs[2].type, 'markdown');
-});
-
-test('hides a still-streaming (unclosed) json-render block', () => {
-  const segs = splitJsonRender('done\n<json-render>{"partial": ');
-  assert.deepEqual(segs, [{ type: 'markdown', value: 'done\n' }]);
-});
-
-test('keeps prose that merely mentions the json-render tag, before or after a block', () => {
-  const text = 'Use <json-render> tags to render rich UI in the terminal.';
-  assert.deepEqual(splitJsonRender(text), [{ type: 'markdown', value: text }]);
-
-  const segs = splitJsonRender(
-    '<json-render>{"a":1}</json-render>\nEmit a <json-render> block to draw charts.',
+  assert.deepEqual(
+    segs.map((segment) => segment.type),
+    ['markdown', 'json-render', 'markdown'],
   );
-  assert.equal(segs.length, 2);
-  assert.deepEqual(segs[0], { type: 'json-render', value: '{"a":1}' });
-  assert.deepEqual(segs[1], {
-    type: 'markdown',
-    value: '\nEmit a <json-render> block to draw charts.',
-  });
+  assert.deepEqual(segs[1], { type: 'json-render', value: '{"a":1}' });
+
+  // A still-streaming block stays hidden.
+  assert.deepEqual(splitJsonRender('done\n<json-render>{"partial": '), [
+    { type: 'markdown', value: 'done\n' },
+  ]);
+
+  // Prose that merely mentions the tag, before or after a block, is kept.
+  const mention = 'Use <json-render> tags to render rich UI in the terminal.';
+  assert.deepEqual(splitJsonRender(mention), [{ type: 'markdown', value: mention }]);
+  assert.deepEqual(
+    splitJsonRender(
+      '<json-render>{"a":1}</json-render>\nEmit a <json-render> block to draw charts.',
+    ),
+    [
+      { type: 'json-render', value: '{"a":1}' },
+      { type: 'markdown', value: '\nEmit a <json-render> block to draw charts.' },
+    ],
+  );
 });
 
 test('resolveColor maps themed names, accepts safe literals, and rejects CSS function injection', () => {
