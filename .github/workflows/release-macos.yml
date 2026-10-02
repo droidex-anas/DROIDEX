@@ -82,6 +82,27 @@ jobs:
           DROIDEX_DISTRIBUTION_CHANNEL: release
         run: npm run dist:mac
 
+      # Sparkle builds binary deltas against the last few published ZIPs. Users on
+      # those versions download only the changed bytes; anyone further behind (or
+      # with a modified app bundle) falls back to the full ZIP.
+      - name: Fetch previous releases for Sparkle deltas
+        env:
+          GH_TOKEN: ${{ secrets.DROIDEX_RELEASE_TOKEN }}
+        run: |
+          PREVIOUS_DIR="$RUNNER_TEMP/sparkle-previous"
+          mkdir -p "$PREVIOUS_DIR"
+          # Assigned first so a failed listing stops the job instead of looping over nothing.
+          TAGS="$(gh release list --repo "$RELEASE_REPOSITORY" \
+            --exclude-drafts --exclude-pre-releases --limit 3 \
+            --json tagName --jq '.[].tagName')"
+          for tag in $TAGS; do
+            gh release download "$tag" --repo "$RELEASE_REPOSITORY" \
+              --pattern 'droidex-arm64.zip' --pattern 'droidex-x64.zip' \
+              --dir "$PREVIOUS_DIR/$tag" ||
+              echo "::warning::No Sparkle delta base from $tag; its users get the full ZIP."
+          done
+          echo "SPARKLE_PREVIOUS_RELEASES_DIR=$PREVIOUS_DIR" >> "$GITHUB_ENV"
+
       - name: Sign Sparkle feeds and verify artifacts
         env:
           SPARKLE_PRIVATE_KEY: ${{ secrets.SPARKLE_PRIVATE_KEY }}
@@ -107,12 +128,24 @@ jobs:
             release/droidex-x64.zip
             release/appcast-arm64.xml
             release/appcast-x64.xml
+            release/*.delta
             release/SHA256SUMS
 
       - name: Publish immutable public GitHub release
         env:
           GH_TOKEN: ${{ secrets.DROIDEX_RELEASE_TOKEN }}
         run: |
+          shopt -s nullglob
+          ASSETS=(
+            release/droidex-arm64.dmg
+            release/droidex-arm64.zip
+            release/droidex-x64.dmg
+            release/droidex-x64.zip
+            release/appcast-arm64.xml
+            release/appcast-x64.xml
+            release/*.delta
+            release/SHA256SUMS
+          )
           test "$(gh api \
             -H 'X-GitHub-Api-Version: 2026-03-10' \
             "repos/$RELEASE_REPOSITORY/immutable-releases" \
@@ -129,24 +162,9 @@ jobs:
             --title "DROIDEX $GITHUB_REF_NAME" \
             --notes-file "docs/releases/$GITHUB_REF_NAME.md"
           touch "$RUNNER_TEMP/droidex-draft-created"
-          gh release upload "$GITHUB_REF_NAME" \
-            release/droidex-arm64.dmg \
-            release/droidex-arm64.zip \
-            release/droidex-x64.dmg \
-            release/droidex-x64.zip \
-            release/appcast-arm64.xml \
-            release/appcast-x64.xml \
-            release/SHA256SUMS \
-            --repo "$RELEASE_REPOSITORY"
+          gh release upload "$GITHUB_REF_NAME" "${ASSETS[@]}" --repo "$RELEASE_REPOSITORY"
 
-          for asset in \
-            release/droidex-arm64.dmg \
-            release/droidex-arm64.zip \
-            release/droidex-x64.dmg \
-            release/droidex-x64.zip \
-            release/appcast-arm64.xml \
-            release/appcast-x64.xml \
-            release/SHA256SUMS; do
+          for asset in "${ASSETS[@]}"; do
             NAME="${asset##*/}"
             LOCAL_DIGEST="$(shasum -a 256 "$asset" | awk '{print $1}')"
             REMOTE_DIGEST="$(gh release view "$GITHUB_REF_NAME" \
@@ -167,14 +185,7 @@ jobs:
             fi
             sleep 5
           done
-          for asset in \
-            release/droidex-arm64.dmg \
-            release/droidex-arm64.zip \
-            release/droidex-x64.dmg \
-            release/droidex-x64.zip \
-            release/appcast-arm64.xml \
-            release/appcast-x64.xml \
-            release/SHA256SUMS; do
+          for asset in "${ASSETS[@]}"; do
             gh release verify-asset "$GITHUB_REF_NAME" "$asset" --repo "$RELEASE_REPOSITORY"
           done
 

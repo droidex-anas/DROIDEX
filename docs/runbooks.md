@@ -74,18 +74,21 @@ These runbooks cover local development and release triage for DROIDEX.
 2. Confirm the protected `macos-release` GitHub environment contains the public
    Sentry DSN and Sparkle private key documented in
    `docs/deployment-observability.md`.
-3. Build both architectures with `DROIDEX_UNSIGNED_RELEASE_BUILD=1`, generate
-   the two signed appcasts, and write `SHA256SUMS`.
+3. Build both architectures with `DROIDEX_UNSIGNED_RELEASE_BUILD=1`, download
+   the last three releases' ZIPs as delta bases, generate the two signed
+   appcasts and their Sparkle deltas, and write `SHA256SUMS`.
 4. Push the exact release branch, then run the executable unsigned
    release preflight and resolve every failure:
    ```bash
    npm run release:preflight:unsigned
    ```
 5. Create the public GitHub release as a draft. Upload only two DMGs, two ZIPs,
-   `appcast-arm64.xml`, `appcast-x64.xml`, and `SHA256SUMS`. Verify every remote
-   asset byte-for-byte before publishing the immutable release.
+   `appcast-arm64.xml`, `appcast-x64.xml`, the `*.delta` files, and
+   `SHA256SUMS`. Verify every remote asset byte-for-byte before publishing the
+   immutable release.
 6. On the public repository, confirm the published release contains exactly
-   those seven assets and that the website download buttons target the DMGs.
+   the assets listed in `SHA256SUMS` plus `SHA256SUMS` itself, and that the
+   website download buttons target the DMGs.
 7. Download each DMG from the public release on a clean Intel/Apple silicon Mac
    as applicable, install it, start a Droid session, submit a private `/bug`
    report, and record the result.
