@@ -6,7 +6,7 @@ import {
   resetComposerAfterSubmit,
 } from './composerReset';
 
-test('a fresh-chat seed replaces stale input while an ordinary seed appends to the draft', () => {
+test('a fresh-chat seed replaces stale input, an ordinary seed appends, and seeds get distinct ids', () => {
   assert.equal(
     composerTextAfterSeed('old draft', '/review Pull request #129', true),
     '/review Pull request #129',
@@ -16,6 +16,10 @@ test('a fresh-chat seed replaces stale input while an ordinary seed appends to t
     'keep this\n\nadd this note',
   );
   assert.equal(composerTextAfterSeed('   ', 'start here', false), 'start here');
+
+  const first = createComposerSeed('one');
+  const second = createComposerSeed('two');
+  assert.notEqual(first.id, second.id);
 });
 
 test('resetComposerAfterSubmit clears images but keeps draft edits made while images encoded', () => {
@@ -35,10 +39,4 @@ test('resetComposerAfterSubmit clears images but keeps draft edits made while im
     });
     assert.deepEqual(calls, cleared);
   }
-});
-
-test('composer seeds get distinct ids even when created in the same millisecond', () => {
-  const first = createComposerSeed('one');
-  const second = createComposerSeed('two');
-  assert.notEqual(first.id, second.id);
 });

@@ -18,7 +18,7 @@ test('tabMatchesQuery keeps tabs whose content keywords match', () => {
   assert.equal(tabMatchesQuery('MCP servers', 'mcp'), true);
 });
 
-test('searchSettings ranks controls under their shipped tabs', () => {
+test('settings search ranks controls under their shipped tabs and jumps to the right screen', () => {
   const hits = searchSettings('play sound');
   assert.ok(hits.length > 0);
   assert.equal(hits[0].tab, 'Notifications');
@@ -29,9 +29,7 @@ test('searchSettings ranks controls under their shipped tabs', () => {
   assert.equal(searchSettings('default autonomy')[0]?.tab, 'Configuration');
   assert.equal(searchSettings('crash reports')[0]?.tab, 'Privacy & diagnostics');
   assert.equal(searchSettings('remove worktree')[0]?.tab, 'Worktrees');
-});
 
-test('bestTabForQuery jumps to the right screen for every major area', () => {
   assert.equal(bestTabForQuery('play sound'), 'Notifications');
   assert.equal(bestTabForQuery('translucent'), 'Appearance');
   assert.equal(bestTabForQuery('autonomy'), 'Configuration');

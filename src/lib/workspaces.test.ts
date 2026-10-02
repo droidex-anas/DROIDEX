@@ -1,6 +1,5 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import type { SessionSummary } from '../types/bridge';
 import {
   addWorkspaceCwd,
   buildWorkspaceScopes,
@@ -12,27 +11,17 @@ import {
   uniqueRepositoryWorkspaceCwds,
   repositoryRootCwd,
 } from './workspaces';
+import { sessionSummary } from '../test/sessionSummary';
 
-const session = (appSessionId: string, cwd: string, updatedAt: number): SessionSummary => ({
-  appSessionId,
-  providerSessionId: `provider-${appSessionId}`,
-  provider: 'droid',
-  sessionPurpose: 'chat',
-  interactionMode: 'auto',
-  role: 'primary',
-  title: appSessionId,
-  goal: appSessionId,
-  cwd,
-  workspaceKind: cwd ? 'folder' : 'none',
-  autonomy: 'low',
-  phase: 'paused',
-  features: [],
-  tokensIn: 0,
-  tokensOut: 0,
-  contextTokens: 0,
-  createdAt: updatedAt,
-  updatedAt,
-});
+const session = (appSessionId: string, cwd: string, updatedAt: number) =>
+  sessionSummary(appSessionId, {
+    providerSessionId: `provider-${appSessionId}`,
+    goal: appSessionId,
+    cwd,
+    workspaceKind: cwd ? 'folder' : 'none',
+    createdAt: updatedAt,
+    updatedAt,
+  });
 
 test('addWorkspaceCwd keeps explicit workspaces unique and ordered newest first', () => {
   assert.deepEqual(addWorkspaceCwd(['/repo/old'], '/repo/new'), ['/repo/new', '/repo/old']);

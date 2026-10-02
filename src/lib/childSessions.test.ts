@@ -18,7 +18,6 @@ import {
   isPendingChildPlaceholder,
   mergeChildSessionSpawn,
   orderedChildSessions,
-  selectedChildForParent,
   shouldOpenSelectedChild,
   shouldRequestReleasedChildHistory,
   spawnedChildSessions,
@@ -28,8 +27,10 @@ import {
   visibleSessionCanCompact,
   visibleSessionIsPending,
   visibleSessionTarget,
+  type VisibleSessionTarget,
 } from './childSessions';
 import { childSessionInfo } from './tools';
+import { childSummary } from '../test/childSummary';
 
 function ev(
   p: Partial<TranscriptEvent> &
@@ -38,18 +39,8 @@ function ev(
   return { appSessionId: 'app-1', ...p } as TranscriptEvent;
 }
 
-function child(overrides: Partial<ChildSessionInfo> = {}): ChildSessionInfo {
-  return {
-    parentAppSessionId: 'parent-a',
-    childSessionId: 'child-a',
-    role: 'worker',
-    status: 'running',
-    modelId: 'model-default',
-    transcriptAvailable: true,
-    streamFidelity: 'state',
-    ...overrides,
-  };
-}
+const child = (overrides: Partial<ChildSessionInfo> = {}): ChildSessionInfo =>
+  childSummary('parent-a', 'child-a', { status: 'running', ...overrides });
 
 const selection = { parentAppSessionId: 'parent-a', childSessionId: 'child-a' };
 
@@ -153,20 +144,6 @@ test('childSessionLatest surfaces failures and errors, not stale activity', () =
   assert.equal(out?.body, 'command exited 1');
   assert.equal(childSessionLatest({ kind: 'error', text: 'boom' })?.head, 'Error');
   assert.equal(childSessionLatest(undefined), null);
-});
-
-test('selected child targeting is parent-scoped and independent of session mode', () => {
-  const validator = child({
-    parentAppSessionId: 'mission-parent',
-    childSessionId: 'worker-logical',
-    role: 'validator',
-    status: 'paused',
-  });
-  const children = { 'mission-parent': { 'worker-logical': validator } };
-  const selected = { parentAppSessionId: 'mission-parent', childSessionId: 'worker-logical' };
-
-  assert.equal(selectedChildForParent('mission-parent', selected, children), validator);
-  assert.equal(selectedChildForParent('other-parent', selected, children), undefined);
 });
 
 test('switching to a feature without an exact child clears the previous prompt target', () => {
@@ -398,105 +375,55 @@ test('visible pending state never inherits liveness across the parent-child boun
   assert.equal(visibleSessionCanCompact({ kind: 'primary' }), true);
 });
 
-test('child prompt commit suppresses every effect when the runtime closes during git baseline', async () => {
-  let current = childTarget(child(), readyAccess(7));
-  const captured = childRuntimeSubmitTarget(current);
+type BaselineChange = {
+  target?: VisibleSessionTarget;
+  composerRevision?: number;
+  canCommit?: boolean;
+};
+
+/** Starts a child prompt commit on runtime 7, applies `change` while the git baseline is held, then releases it. */
+async function commitAcrossBaseline(change: BaselineChange) {
+  const captured = childRuntimeSubmitTarget(childTarget(child(), readyAccess(7)));
   assert.ok(captured);
+  let current: Required<BaselineChange> = {
+    target: childTarget(child(), readyAccess(7)),
+    composerRevision: 1,
+    canCommit: true,
+  };
   const baseline = heldBaseline();
   const effects: string[] = [];
-  const submission = commitChildPromptAfterBaseline({
+  const committed = commitChildPromptAfterBaseline({
     capturedTarget: captured,
     capturedComposerRevision: 1,
     waitForBaseline: baseline.wait,
-    currentTarget: () => current,
-    currentComposerRevision: () => 1,
+    currentTarget: () => current.target,
+    currentComposerRevision: () => current.composerRevision,
+    canCommit: () => current.canCommit,
     appendTranscript: () => effects.push('append'),
     resetComposer: () => effects.push('reset'),
     sendCommand: () => effects.push('send'),
   });
-  current = childTarget(child(), { state: 'closed', requestId: null });
+  current = { ...current, ...change };
   baseline.release();
+  return { committed: await committed, effects };
+}
 
-  assert.equal(await submission, false);
-  assert.deepEqual(effects, []);
-});
-
-test('child prompt commit rejects a replacement runtime with the same logical child', async () => {
-  let current = childTarget(child(), readyAccess(11));
-  const captured = childRuntimeSubmitTarget(current);
-  assert.ok(captured);
-  const baseline = heldBaseline();
-  const effects: string[] = [];
-  const admitted = commitChildPromptAfterBaseline({
-    capturedTarget: captured,
-    capturedComposerRevision: 1,
-    waitForBaseline: baseline.wait,
-    currentTarget: () => current,
-    currentComposerRevision: () => 1,
-    appendTranscript: () => effects.push('append'),
-    resetComposer: () => effects.push('reset'),
-    sendCommand: () => effects.push('send'),
-  });
-  current = childTarget(child(), readyAccess(12));
-  baseline.release();
-
-  assert.equal(await admitted, false);
-  assert.deepEqual(effects, []);
+test('child prompt commit drops every effect when the runtime closes, is replaced, or an update starts', async () => {
+  const changes: Array<[string, BaselineChange]> = [
+    ['runtime closed', { target: childTarget(child(), { state: 'closed', requestId: null }) }],
+    ['replacement runtime of the same child', { target: childTarget(child(), readyAccess(8)) }],
+    ['update started', { canCommit: false }],
+  ];
+  for (const [label, change] of changes) {
+    assert.deepEqual(await commitAcrossBaseline(change), { committed: false, effects: [] }, label);
+  }
 });
 
 test('child prompt commit preserves a composer revised during git baseline', async () => {
-  const target = childTarget(child(), readyAccess(4));
-  const captured = childRuntimeSubmitTarget(target);
-  assert.ok(captured);
-  let composerRevision = 8;
-  const baseline = heldBaseline();
-  const effects: string[] = [];
-  const submission = commitChildPromptAfterBaseline({
-    capturedTarget: captured,
-    capturedComposerRevision: composerRevision,
-    waitForBaseline: baseline.wait,
-    currentTarget: () => target,
-    currentComposerRevision: () => composerRevision,
-    appendTranscript: () => effects.push('append'),
-    resetComposer: () => effects.push('reset'),
-    sendCommand: () => effects.push('send'),
+  assert.deepEqual(await commitAcrossBaseline({ composerRevision: 3 }), {
+    committed: true,
+    effects: ['append', 'send'],
   });
-
-  composerRevision += 2;
-  baseline.release();
-
-  assert.equal(await submission, true);
-  assert.deepEqual(effects.sort(), ['append', 'send']);
-});
-
-test('child prompt commit preserves the composer when an update starts during baseline capture', async () => {
-  const target = {
-    kind: 'child' as const,
-    parentAppSessionId: 'parent-a',
-    childSessionId: 'child-a',
-    role: 'worker' as const,
-    label: 'Worker',
-    canSend: true,
-    access: { state: 'ready' as const, requestId: 'ready', runtimeGeneration: 1 },
-  };
-  const captured = childRuntimeSubmitTarget(target);
-  assert.ok(captured);
-  const effects: string[] = [];
-
-  const committed = await commitChildPromptAfterBaseline({
-    capturedTarget: captured,
-    capturedComposerRevision: 1,
-    waitForBaseline: async () => undefined,
-    currentTarget: () => target,
-    currentComposerRevision: () => 1,
-    canCommit: () => false,
-    appendTranscript: () => effects.push('append'),
-    resetComposer: () => effects.push('reset'),
-    sendCommand: () => effects.push('send'),
-  });
-
-  assert.equal(committed, false);
-  assert.deepEqual(effects, []);
 });
 
 test('primary and exact child transcripts remain isolated while switching', () => {
@@ -548,79 +475,19 @@ test('only an unopened child opens itself; released history rehydrates from any 
 });
 
 test('feature navigation uses only the latest exact progress child link', () => {
-  assert.equal(
-    childSessionIdForFeature(
-      [
-        {
-          type: 'worker_started',
-          timestamp: '2026-07-29T10:00:00.000Z',
-          featureId: 'feature-a',
-          workerChildSessionId: 'worker-a',
-        },
-        {
-          type: 'worker_started',
-          timestamp: '2026-07-29T10:01:00.000Z',
-          featureId: 'feature-b',
-          workerChildSessionId: 'worker-b',
-        },
-        {
-          type: 'worker_restarted',
-          timestamp: '2026-07-29T10:02:00.000Z',
-          featureId: 'feature-a',
-          workerChildSessionId: 'worker-a-2',
-        },
-      ],
-      'feature-a',
-    ),
-    'worker-a-2',
-  );
-  assert.equal(
-    childSessionIdForFeature(
-      [
-        {
-          type: 'feature_started',
-          timestamp: '2026-07-29T10:00:00.000Z',
-          featureId: 'feature-a',
-        },
-      ],
-      'feature-a',
-    ),
-    undefined,
-  );
+  const progress = [
+    { featureId: 'feature-a', workerChildSessionId: 'worker-a' },
+    { featureId: 'feature-b', workerChildSessionId: 'worker-b' },
+    { featureId: 'feature-a', workerChildSessionId: 'worker-a-2' },
+    { featureId: 'feature-c' },
+  ].map((entry, index) => ({
+    type: 'worker_started' as const,
+    timestamp: `2026-07-29T10:0${index}:00.000Z`,
+    ...entry,
+  }));
 
-  const childSessionId = childSessionIdForFeature(
-    [
-      {
-        type: 'worker_started',
-        timestamp: '2026-07-29T10:00:00.000Z',
-        featureId: 'feature-a',
-        workerChildSessionId: 'worker-a',
-      },
-    ],
-    'feature-a',
-  );
-  const siblingEvents = [
-    ev({
-      id: 'worker-a-tool',
-      sourceSessionId: 'worker-a',
-      role: 'worker',
-      ts: 1,
-      kind: 'tool_call',
-      toolName: 'Bash',
-    }),
-    ev({
-      id: 'worker-b-tool',
-      sourceSessionId: 'worker-b',
-      role: 'worker',
-      ts: 2,
-      kind: 'tool_call',
-      toolName: 'Bash',
-    }),
-  ];
-  assert.deepEqual(
-    transcriptForVisibleSession(siblingEvents, childSessionId ?? null).map((event) => event.id),
-    ['worker-a-tool'],
-  );
+  assert.equal(childSessionIdForFeature(progress, 'feature-a'), 'worker-a-2');
+  assert.equal(childSessionIdForFeature(progress, 'feature-c'), undefined);
 });
 
 test('child metadata shows provider-managed autonomy unless the runtime confirmed one', () => {

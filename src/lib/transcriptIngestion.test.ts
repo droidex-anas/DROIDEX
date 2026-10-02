@@ -7,20 +7,10 @@ import {
   normalizeTranscriptUpdate,
 } from './transcriptIngestion';
 import { estimateTranscriptCost } from './transcriptWindow';
+import { textEvent } from '../test/textEvent';
 
-function transcriptEvent(id: string, overrides: Partial<TranscriptEvent> = {}): TranscriptEvent {
-  return {
-    id,
-    appSessionId: 'session-a',
-    sourceSessionId: 'primary',
-    role: 'primary',
-    kind: 'text',
-    author: 'assistant',
-    text: id,
-    ts: 1,
-    ...overrides,
-  };
-}
+const transcriptEvent = (id: string, overrides: Partial<TranscriptEvent> = {}) =>
+  textEvent(id, { appSessionId: 'session-a', author: 'assistant', ...overrides });
 
 /** A streamed tool-call snapshot: no author or text, merged by `toolUseId`. */
 function toolCall(

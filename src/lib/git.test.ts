@@ -9,7 +9,7 @@ import {
   worktreeName,
 } from './git';
 
-test('diffModeLabel shows the effective base ref for the branch mode', () => {
+test('diff mode and ahead/behind labels show only what is known', () => {
   assert.equal(diffModeLabel('worktree'), 'Worktree');
   assert.equal(diffModeLabel('uncommitted'), 'Uncommitted');
   // The caller passes the full base ref, so a stored develop base or a
@@ -19,9 +19,14 @@ test('diffModeLabel shows the effective base ref for the branch mode', () => {
   // No resolved base (a remote-less repo) means no comparison is running —
   // the label names the mode alone instead of inventing an origin/main base.
   assert.equal(diffModeLabel('branch', null), 'Branch');
+
+  assert.equal(aheadBehindLabel(2, 1), '↑2 ↓1');
+  assert.equal(aheadBehindLabel(3, 0), '↑3');
+  assert.equal(aheadBehindLabel(0, 4), '↓4');
+  assert.equal(aheadBehindLabel(0, 0), null);
 });
 
-test('stripRemotePrefix drops the matched remote, including slash-containing names', () => {
+test('stripRemotePrefix and baseDescriptor drop the longest matching remote, including slash-containing names', () => {
   assert.equal(stripRemotePrefix('origin/main', ['origin']), 'main');
   // a remote whose name itself contains a slash: strip the whole "foo/bar/"
   assert.equal(stripRemotePrefix('foo/bar/feature', ['foo/bar', 'origin']), 'feature');
@@ -31,9 +36,7 @@ test('stripRemotePrefix drops the matched remote, including slash-containing nam
   assert.equal(stripRemotePrefix('dev', ['origin']), 'dev');
   assert.equal(stripRemotePrefix('feature/x', ['origin']), 'feature/x');
   assert.equal(stripRemotePrefix('origin/main', []), 'origin/main');
-});
 
-test('baseDescriptor strips the remote prefix and reports the kind', () => {
   assert.deepEqual(
     baseDescriptor({ isRepo: true, base: 'origin/main', baseKind: 'remote', remotes: ['origin'] }),
     {
@@ -75,13 +78,6 @@ test('worktreeName prefers the branch then falls back to the path basename', () 
     }),
     'fix-empty-sidebar-fmwg0',
   );
-});
-
-test('aheadBehindLabel renders only the non-zero sides', () => {
-  assert.equal(aheadBehindLabel(2, 1), '↑2 ↓1');
-  assert.equal(aheadBehindLabel(3, 0), '↑3');
-  assert.equal(aheadBehindLabel(0, 4), '↓4');
-  assert.equal(aheadBehindLabel(0, 0), null);
 });
 
 test('isWorktreeInUse matches the root and subdirectories across path spellings, not sibling prefixes', () => {

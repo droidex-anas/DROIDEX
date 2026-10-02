@@ -79,6 +79,14 @@ function snapshotMessage(generation: string, lastSeq: number, reason: string, sn
   };
 }
 
+// The page ID is random per page; the rest of the URL is the contract.
+function withoutPageId(url: string): string {
+  const parsed = new URL(url);
+  assert.match(parsed.searchParams.get('pageId') ?? '', /^[0-9a-f-]{36}$/);
+  parsed.searchParams.delete('pageId');
+  return parsed.toString().replace('/?', '?');
+}
+
 let previousGlobals: { window: Window & typeof globalThis; WebSocket: typeof WebSocket };
 
 beforeEach(() => {
@@ -118,6 +126,189 @@ function resumeCursor(socket: FakeWebSocket) {
   const params = new URL(socket.url).searchParams;
   return { generation: params.get('resumeGeneration'), seq: params.get('resumeSeq') };
 }
+
+test('bridge refreshes sidecar identity before reconnecting', async () => {
+  const reconnects: Array<() => void> = [];
+  const bridgeInfos = [
+    { port: 43001, token: 'first-token' },
+    { port: 43002, token: 'second-token' },
+  ];
+  const bridge = new Bridge(
+    async () => {
+      const info = bridgeInfos.shift();
+      assert.ok(info);
+      return info;
+    },
+    (callback) => reconnects.push(callback),
+  );
+
+  await bridge.start();
+  const first = FakeWebSocket.instances.at(-1);
+  assert.ok(first);
+  assert.equal(withoutPageId(first.url), 'ws://127.0.0.1:43001?token=first-token&bridgeProtocol=8');
+  assert.equal(bridge.sendIfConnected({ type: 'runtime.status' }), false);
+  assert.deepEqual(first.sent, []);
+  first.close();
+  assert.equal(reconnects.length, 1);
+
+  reconnects.shift()?.();
+  await Promise.resolve();
+  await Promise.resolve();
+  const second = FakeWebSocket.instances.at(-1);
+  assert.ok(second);
+  assert.equal(
+    withoutPageId(second.url),
+    'ws://127.0.0.1:43002?token=second-token&bridgeProtocol=8',
+  );
+  second.open();
+  assert.equal(bridge.sendIfConnected({ type: 'runtime.status' }), true);
+  assert.deepEqual(
+    second.sent.map((command) => JSON.parse(command)),
+    [{ type: 'runtime.status' }],
+  );
+});
+
+test('[R1] Renderer command round trip', async () => {
+  const baselineAdoptions: unknown[][] = [];
+  Object.assign(globalThis, {
+    window: {
+      droidControl: {
+        bridgeInfo: async () => ({ port: 43123, token: 'r1-token' }),
+        gitAdoptTurnBaseline: async (...args: unknown[]) => {
+          baselineAdoptions.push(args);
+          return { ok: true };
+        },
+      },
+    },
+  });
+  const {
+    createSession,
+    interruptVisibleSession,
+    loadChildHistory,
+    openChild,
+    reanchorSessionsForWorktreeRemoval,
+    updateChildSettings,
+  } = await import('./commands.js');
+  const { bridge } = await import('./bridge.js');
+  const seen: ServerEvent[] = [];
+  const unsubscribe = bridge.subscribe((event) => seen.push(event));
+
+  createSession({
+    clientRef: 'r1-create',
+    title: 'R1',
+    goal: 'hello',
+    sessionPurpose: 'chat',
+    interactionMode: 'auto',
+    autonomy: 'low',
+  });
+  updateChildSettings({
+    parentAppSessionId: 'r1',
+    childSessionId: 'worker-r1',
+    modelId: 'model-r1',
+    reasoningEffort: 'high',
+  });
+  openChild('r1', 'validator-r1', 'open-validator-r1');
+  loadChildHistory('r1', 'validator-r1', 'cursor-r1', 240);
+  interruptVisibleSession('r1', 'worker-r1');
+  interruptVisibleSession('r1');
+  await bridge.start();
+  const socket = required(FakeWebSocket.instances.at(-1));
+  let seq = 0;
+  const deliver = (event: ServerEvent) => {
+    seq += 1;
+    socket.message(batch('test-generation', seq, seq, [event]));
+  };
+
+  assert.equal(withoutPageId(socket.url), 'ws://127.0.0.1:43123?token=r1-token&bridgeProtocol=8');
+  assert.deepEqual(socket.sent, []);
+  socket.open();
+  assert.equal(socket.sent.length, 6);
+  assert.deepEqual(JSON.parse(socket.sent[0]), {
+    type: 'session.create',
+    clientRef: 'r1-create',
+    title: 'R1',
+    goal: 'hello',
+    sessionPurpose: 'chat',
+    interactionMode: 'auto',
+    autonomy: 'low',
+  });
+  assert.deepEqual(JSON.parse(socket.sent[1]), {
+    type: 'child.updateSettings',
+    parentAppSessionId: 'r1',
+    childSessionId: 'worker-r1',
+    modelId: 'model-r1',
+    reasoningEffort: 'high',
+  });
+  assert.deepEqual(JSON.parse(socket.sent[2]), {
+    type: 'child.open',
+    parentAppSessionId: 'r1',
+    childSessionId: 'validator-r1',
+    requestId: 'open-validator-r1',
+  });
+  assert.deepEqual(JSON.parse(socket.sent[3]), {
+    type: 'child.loadHistory',
+    parentAppSessionId: 'r1',
+    childSessionId: 'validator-r1',
+    cursor: 'cursor-r1',
+    limit: 240,
+  });
+  assert.deepEqual(JSON.parse(socket.sent[4]), {
+    type: 'child.interrupt',
+    parentAppSessionId: 'r1',
+    childSessionId: 'worker-r1',
+  });
+  assert.deepEqual(JSON.parse(socket.sent[5]), {
+    type: 'session.interrupt',
+    appSessionId: 'r1',
+  });
+  const reanchoring = reanchorSessionsForWorktreeRemoval('/repo/.worktrees/feature', '/repo');
+  const reanchorCommand = JSON.parse(socket.sent[6] ?? '') as {
+    type: string;
+    requestId: string;
+    fromCwd: string;
+    toCwd: string;
+  };
+  assert.deepEqual(reanchorCommand, {
+    type: 'sessions.reanchorCwd',
+    requestId: reanchorCommand.requestId,
+    fromCwd: '/repo/.worktrees/feature',
+    toCwd: '/repo',
+  });
+  deliver({
+    type: 'sessions.cwdReanchored',
+    requestId: reanchorCommand.requestId,
+    ok: true,
+    count: 2,
+  });
+  assert.equal(await reanchoring, 2);
+  const session = {
+    appSessionId: 'r1',
+    providerSessionId: 'provider-r1',
+    provider: 'droid',
+    sessionPurpose: 'chat',
+    interactionMode: 'auto',
+    role: 'primary',
+    title: 'R1',
+    goal: 'hello',
+    cwd: '/repo',
+    autonomy: 'low',
+    phase: 'intake',
+    features: [],
+    tokensIn: 0,
+    tokensOut: 0,
+    contextTokens: 0,
+    createdAt: 0,
+    updatedAt: 0,
+  } as const;
+
+  deliver({ type: 'session.created', clientRef: 'r1-create', session });
+  assert.deepEqual(baselineAdoptions, [['/repo', 'r1-create', 'r1']]);
+  assert.equal(seen.length, 2);
+  unsubscribe();
+  deliver({ type: 'session.updated', session });
+  assert.equal(seen.length, 2);
+  assert.equal(FakeWebSocket.instances.length, 1);
+});
 
 test('bridge publishes one server batch while preserving per-event subscribers', async () => {
   const { bridge, socket, seenTypes } = await startBridge();

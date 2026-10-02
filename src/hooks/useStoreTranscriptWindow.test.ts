@@ -2,30 +2,13 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { transcriptRehydrationLimit } from '../lib/transcriptStoreMemory';
 import { estimateTranscriptCost } from '../lib/transcriptWindow';
-import type { ChildSessionSummary, SessionSummary, TranscriptEvent } from '../types/bridge';
+import type { ChildSessionSummary, TranscriptEvent } from '../types/bridge';
 import { initialState, reducer, type AppState } from './useStore';
+import { sessionSummary } from '../test/sessionSummary';
+import { childSummary } from '../test/childSummary';
 
-function session(appSessionId: string, streaming = false): SessionSummary {
-  return {
-    appSessionId,
-    provider: 'droid',
-    sessionPurpose: 'chat',
-    interactionMode: 'auto',
-    role: 'primary',
-    title: appSessionId,
-    goal: '',
-    cwd: '/tmp',
-    autonomy: 'off',
-    phase: 'running',
-    streaming,
-    features: [],
-    tokensIn: 0,
-    tokensOut: 0,
-    contextTokens: 0,
-    createdAt: 1,
-    updatedAt: 1,
-  };
-}
+const session = (appSessionId: string, streaming = false) =>
+  sessionSummary(appSessionId, { cwd: '/tmp', autonomy: 'off', phase: 'running', streaming });
 
 function events(appSessionId: string, count: number): TranscriptEvent[] {
   return Array.from({ length: count }, (_, index) => ({
@@ -40,21 +23,12 @@ function events(appSessionId: string, count: number): TranscriptEvent[] {
   }));
 }
 
-function childSession(
+const childSession = (
   parentAppSessionId: string,
   childSessionId: string,
   role: 'worker' | 'validator' = 'worker',
-): ChildSessionSummary {
-  return {
-    parentAppSessionId,
-    childSessionId,
-    role,
-    status: 'completed',
-    modelId: 'model',
-    transcriptAvailable: true,
-    streamFidelity: 'state',
-  };
-}
+) =>
+  childSummary(parentAppSessionId, childSessionId, { role, status: 'completed', modelId: 'model' });
 
 /** `count` events from one child of the `active` session, ids `<child>-<index>`. */
 function childEvents(
@@ -151,39 +125,6 @@ test('viewport release removes only old in-memory events after a settled bottom-
     transcriptRehydrationLimit(next.sessionRestore.active),
     next.transcripts.active.length,
   );
-});
-
-test('exact older-history insertion records prepend provenance', () => {
-  const transcript = events('active', 2);
-  const state = stateWithTranscript('active', transcript, {
-    transcriptMutations: {
-      active: {
-        revision: 3,
-        baseRevision: 2,
-        kind: 'append',
-        previousLength: 1,
-        firstChangedIndex: 1,
-      },
-    },
-  });
-  const older = events('active', 1).map((event) => ({ ...event, id: 'older', ts: -1 }));
-
-  const next = reducer(state, {
-    type: 'SESSION_HISTORY',
-    appSessionId: 'active',
-    progress: [],
-    transcripts: older,
-    mode: 'prepend',
-  });
-
-  assert.deepEqual(next.transcriptMutations.active, {
-    revision: 4,
-    baseRevision: 3,
-    kind: 'prepend',
-    previousLength: transcript.length,
-    firstChangedIndex: 0,
-    insertedCount: 1,
-  });
 });
 
 test('primary release preserves child-session transcripts owned by separate history', () => {

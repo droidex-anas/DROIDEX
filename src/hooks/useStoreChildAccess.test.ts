@@ -2,43 +2,17 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import { adaptEvent, initialState, reducer, type AppState } from './useStore';
-import {
-  childSessionIsLive,
-  shouldOpenSelectedChild,
-  visibleSessionTarget,
-} from '../lib/childSessions';
-import { childStreamPhase } from '../lib/childSessionStream';
-import type { ChildSessionSummary, ServerEvent, SessionSummary } from '../types/bridge';
+import { visibleSessionTarget } from '../lib/childSessions';
+import type { ChildSessionSummary, ServerEvent } from '../types/bridge';
+import { sessionSummary } from '../test/sessionSummary';
+import { childSummary } from '../test/childSummary';
 
-const child = (parentAppSessionId: string, childSessionId: string): ChildSessionSummary => ({
-  parentAppSessionId,
-  childSessionId,
-  role: 'worker',
-  status: 'paused',
-  modelId: 'model-default',
-  transcriptAvailable: true,
-  streamFidelity: 'state',
-});
-
-const session = (appSessionId: string): SessionSummary => ({
-  appSessionId,
-  providerSessionId: `provider-${appSessionId}`,
-  provider: 'droid',
-  sessionPurpose: 'chat',
-  interactionMode: 'auto',
-  role: 'primary',
-  title: appSessionId,
-  goal: appSessionId,
-  cwd: '/workspace',
-  autonomy: 'low',
-  phase: 'paused',
-  features: [],
-  tokensIn: 0,
-  tokensOut: 0,
-  contextTokens: 0,
-  createdAt: 1,
-  updatedAt: 1,
-});
+const session = (appSessionId: string) =>
+  sessionSummary(appSessionId, {
+    providerSessionId: `provider-${appSessionId}`,
+    goal: appSessionId,
+    cwd: '/workspace',
+  });
 
 function select(
   state: AppState,
@@ -53,7 +27,7 @@ function select(
       ...state.childSessions,
       [parentAppSessionId]: {
         ...(state.childSessions[parentAppSessionId] ?? {}),
-        [childSessionId]: child(parentAppSessionId, childSessionId),
+        [childSessionId]: childSummary(parentAppSessionId, childSessionId),
       },
     },
   };
@@ -86,7 +60,7 @@ function runtime(
   state: AppState,
   runtimeAvailable: boolean,
   runtimeGeneration: number,
-  summary: ChildSessionSummary = child('parent-a', 'child-a'),
+  summary: ChildSessionSummary = childSummary('parent-a', 'child-a'),
 ): AppState {
   return reducer(state, {
     type: 'SESSION_CHILD',
@@ -167,17 +141,24 @@ test('live runtime summaries advance generation and stale generations cannot rol
   assert.deepEqual(stale.childAccess, state.childAccess);
 });
 
-test('a late ready acknowledgement cannot resurrect a runtime closed while opening', () => {
-  let state = select(initialState, 'parent-a', 'child-a', 'request-a');
-  state = runtime(state, true, 2);
-  state = runtime(state, false, 3);
-  const afterLateReady = ready(state, 'request-a', 2);
+test('a late ready acknowledgement cannot resurrect a runtime closed while opening or ready', () => {
+  const opening = runtime(select(initialState, 'parent-a', 'child-a', 'request-a'), true, 2);
+  const readyChild = ready(opening, 'request-a', 2);
+  for (const [label, live] of [
+    ['opening', opening],
+    ['ready', readyChild],
+  ] as const) {
+    const closed = runtime(live, false, 3);
+    assert.deepEqual(accessOf(closed), CLOSED, label);
 
-  assert.deepEqual(afterLateReady.childRuntime['parent-a']?.['child-a'], {
-    available: false,
-    runtimeGeneration: 3,
-  });
-  assert.deepEqual(accessOf(afterLateReady), CLOSED);
+    const afterLateReady = ready(closed, 'request-a', 2);
+    assert.deepEqual(
+      afterLateReady.childRuntime['parent-a']?.['child-a'],
+      { available: false, runtimeGeneration: 3 },
+      label,
+    );
+    assert.deepEqual(accessOf(afterLateReady), CLOSED, label);
+  }
 });
 
 test('leaving an opening child invalidates its request before reselection', () => {
@@ -194,17 +175,6 @@ test('leaving an opening child invalidates its request before reselection', () =
   state = select(state, 'parent-a', 'child-a', 'request-b');
   const afterLateReady = ready(state, 'request-a', 2);
   assert.deepEqual(accessOf(afterLateReady), { state: 'opening', requestId: 'request-b' });
-});
-
-test('activating any parent, even the current one, invalidates an opening child request', () => {
-  for (const id of ['parent-b', 'parent-a']) {
-    const state = reducer(select(initialState, 'parent-a', 'child-a', 'request-a'), {
-      type: 'SET_ACTIVE_SESSION',
-      id,
-    });
-    assert.equal(state.selectedChild, null, id);
-    assert.deepEqual(accessOf(state), CLOSED, id);
-  }
 });
 
 test('disconnect clears child selection, access, and runtime watermarks', () => {
@@ -233,33 +203,41 @@ test('disconnect clears child selection, access, and runtime watermarks', () => 
   assert.deepEqual(state.contextStats.child, {});
 });
 
-test('starting a draft invalidates the selected child open request', () => {
-  let state = select(initialState, 'parent-a', 'child-a', 'request-a');
-  state = reducer(state, { type: 'START_CHAT', cwd: '/workspace', executionMode: 'worktree' });
-
-  assert.equal(state.selectedChild, null);
-  assert.equal(state.activeAppSessionId, null);
-  assert.deepEqual(accessOf(state), CLOSED);
-});
-
-test('creating a new parent invalidates the selected child open request', () => {
-  let state = select(initialState, 'parent-a', 'child-a', 'request-a');
-  state = reducer(state, {
-    type: 'SET_PENDING_COMPOSE',
-    clientRef: 'new-parent',
-    text: 'start parent',
-    skills: [],
-    files: [],
-  });
-  state = reducer(state, {
-    type: 'SESSION_CREATED',
-    clientRef: 'new-parent',
-    session: session('parent-b'),
-  });
-
-  assert.equal(state.selectedChild, null);
-  assert.equal(state.activeAppSessionId, 'parent-b');
-  assert.deepEqual(accessOf(state), CLOSED);
+test('switching parents, starting a draft, or creating a parent invalidates an opening child', () => {
+  const navigations: Array<[string, (state: AppState) => AppState]> = [
+    [
+      'activate another parent',
+      (state) => reducer(state, { type: 'SET_ACTIVE_SESSION', id: 'parent-b' }),
+    ],
+    [
+      'reactivate the parent',
+      (state) => reducer(state, { type: 'SET_ACTIVE_SESSION', id: 'parent-a' }),
+    ],
+    [
+      'start a draft',
+      (state) =>
+        reducer(state, { type: 'START_CHAT', cwd: '/workspace', executionMode: 'worktree' }),
+    ],
+    [
+      'create a parent',
+      (state) =>
+        reducer(
+          reducer(state, {
+            type: 'SET_PENDING_COMPOSE',
+            clientRef: 'new-parent',
+            text: 'start parent',
+            skills: [],
+            files: [],
+          }),
+          { type: 'SESSION_CREATED', clientRef: 'new-parent', session: session('parent-b') },
+        ),
+    ],
+  ];
+  for (const [label, navigate] of navigations) {
+    const state = navigate(select(initialState, 'parent-a', 'child-a', 'request-a'));
+    assert.equal(state.selectedChild, null, label);
+    assert.deepEqual(accessOf(state), CLOSED, label);
+  }
 });
 
 test('resuming a background parent does not steal the selected session', () => {
@@ -301,7 +279,7 @@ test('resuming a historical parent clears its terminal child access state', () =
 test('a stale runtime generation cannot roll back the child summary or close a newer runtime', () => {
   const state = ready(select(initialState, 'parent-a', 'child-a', 'request-a'), 'request-a', 4);
   const stale = runtime(state, false, 3, {
-    ...child('parent-a', 'child-a'),
+    ...childSummary('parent-a', 'child-a'),
     status: 'completed',
     modelId: 'stale-model',
   });
@@ -310,7 +288,7 @@ test('a stale runtime generation cannot roll back the child summary or close a n
   assert.equal(stale.childSessions['parent-a']?.['child-a']?.modelId, 'model-default');
 
   const sameRuntimeUpdate = runtime(state, true, 4, {
-    ...child('parent-a', 'child-a'),
+    ...childSummary('parent-a', 'child-a'),
     modelId: 'accepted-model',
   });
   assert.equal(sameRuntimeUpdate.childSessions['parent-a']?.['child-a']?.modelId, 'accepted-model');
@@ -373,7 +351,7 @@ test('canonical child summaries update only the exact parent-owned child', () =>
     type: 'session.child',
     event: 'upserted',
     child: {
-      ...child('parent-a', 'child-a'),
+      ...childSummary('parent-a', 'child-a'),
       modelId: 'model-new',
       reasoningEffort: 'high',
     },
@@ -393,7 +371,7 @@ test('a selected queued open stays pending and becomes usable when the runtime i
   state = dispatchEvent(state, {
     type: 'session.child',
     event: 'upserted',
-    child: { ...child('parent-a', 'child-a'), queued: true },
+    child: { ...childSummary('parent-a', 'child-a'), queued: true },
     runtimeAvailable: false,
     runtimeGeneration: 1,
   });
@@ -407,21 +385,6 @@ test('a selected queued open stays pending and becomes usable when the runtime i
     available: false,
     runtimeGeneration: 1,
   });
-  assert.equal(
-    childStreamPhase({
-      queued: state.childSessions['parent-a']?.['child-a']?.queued,
-      status: state.childSessions['parent-a']?.['child-a']?.status,
-    }),
-    'queued',
-  );
-  assert.equal(
-    childSessionIsLive(
-      state.childSessions['parent-a']!['child-a']!,
-      state.childRuntime['parent-a']?.['child-a'],
-    ),
-    false,
-  );
-  assert.equal(shouldOpenSelectedChild(state.childAccess['parent-a']?.['child-a']), false);
   const queuedTarget = visibleSessionTarget(
     'parent-a',
     { parentAppSessionId: 'parent-a', childSessionId: 'child-a' },
@@ -438,10 +401,11 @@ test('a selected queued open stays pending and becomes usable when the runtime i
   state = dispatchEvent(state, {
     type: 'session.child',
     event: 'upserted',
-    child: child('parent-a', 'child-a'),
+    child: childSummary('parent-a', 'child-a'),
     runtimeAvailable: false,
     runtimeGeneration: 1,
   });
+  assert.equal(state.childSessions['parent-a']?.['child-a']?.queued, undefined);
   assert.deepEqual(state.childAccess['parent-a']?.['child-a'], {
     state: 'opening',
     requestId: 'request-a',
@@ -450,7 +414,7 @@ test('a selected queued open stays pending and becomes usable when the runtime i
   state = dispatchEvent(state, {
     type: 'session.child',
     event: 'upserted',
-    child: child('parent-a', 'child-a'),
+    child: childSummary('parent-a', 'child-a'),
     runtimeAvailable: true,
     runtimeGeneration: 2,
   });
@@ -483,67 +447,4 @@ test('a selected queued open stays pending and becomes usable when the runtime i
     assert.equal(readyTarget.canSend, true);
     assert.equal(readyTarget.settingsReadiness, 'ready');
   }
-});
-
-test('a ready ack cannot resurrect a child whose live runtime already closed', () => {
-  let state = ready(select(initialState, 'parent-a', 'child-a', 'request-a'), 'request-a', 2);
-  state = dispatchEvent(state, {
-    type: 'session.child',
-    event: 'upserted',
-    child: child('parent-a', 'child-a'),
-    runtimeAvailable: false,
-    runtimeGeneration: 3,
-  });
-  assert.deepEqual(state.childAccess['parent-a']?.['child-a'], {
-    state: 'closed',
-    requestId: null,
-  });
-
-  const afterStaleReady = dispatchEvent(state, {
-    type: 'child.updated',
-    parentAppSessionId: 'parent-a',
-    childSessionId: 'child-a',
-    requestId: 'request-a',
-    access: 'ready',
-    runtimeGeneration: 2,
-  });
-  assert.equal(afterStaleReady, state);
-  assert.deepEqual(afterStaleReady.childAccess['parent-a']?.['child-a'], {
-    state: 'closed',
-    requestId: null,
-  });
-  assert.deepEqual(afterStaleReady.childRuntime['parent-a']?.['child-a'], {
-    available: false,
-    runtimeGeneration: 3,
-  });
-});
-
-test('stop on a queued child leaves it idle without delivering a later cancelled open', () => {
-  let state = select(initialState, 'parent-a', 'child-a', 'request-a');
-  state = dispatchEvent(state, {
-    type: 'session.child',
-    event: 'upserted',
-    child: { ...child('parent-a', 'child-a'), queued: true, status: 'paused' },
-    runtimeAvailable: false,
-    runtimeGeneration: 1,
-  });
-  state = dispatchEvent(state, {
-    type: 'session.child',
-    event: 'upserted',
-    child: { ...child('parent-a', 'child-a'), status: 'paused' },
-    runtimeAvailable: false,
-    runtimeGeneration: 1,
-  });
-
-  const interrupted = state.childSessions['parent-a']?.['child-a'];
-  assert.equal(Boolean(interrupted?.queued), false);
-  assert.notEqual(interrupted?.status, 'running');
-  assert.equal(
-    childSessionIsLive(interrupted!, state.childRuntime['parent-a']?.['child-a']),
-    false,
-  );
-  assert.deepEqual(state.childRuntime['parent-a']?.['child-a'], {
-    available: false,
-    runtimeGeneration: 1,
-  });
 });

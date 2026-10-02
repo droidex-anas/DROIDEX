@@ -1,31 +1,16 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { initialState, reducer } from './useStore';
-import type { SessionSummary } from '../types/bridge';
+import { sessionSummary } from '../test/sessionSummary';
 
-function session(appSessionId: string): SessionSummary {
-  return {
-    appSessionId,
+const session = (appSessionId: string) =>
+  sessionSummary(appSessionId, {
     providerSessionId: `provider-${appSessionId}`,
-    provider: 'droid',
-    sessionPurpose: 'chat',
-    interactionMode: 'auto',
-    role: 'primary',
-    title: appSessionId,
     goal: appSessionId,
     cwd: '/workspace',
-    autonomy: 'low',
-    phase: 'paused',
-    features: [],
-    tokensIn: 0,
-    tokensOut: 0,
-    contextTokens: 0,
-    createdAt: 1,
-    updatedAt: 1,
-  };
-}
+  });
 
-test('OPEN_PULL_REQUESTS binds the view and keeps an omitted number only in the same repository', () => {
+test('opening pull requests binds the view, keeps a number only in its repository, and closing keeps the bind', () => {
   const selected = reducer(initialState, {
     type: 'OPEN_PULL_REQUESTS',
     cwd: '/repo-a',
@@ -46,30 +31,22 @@ test('OPEN_PULL_REQUESTS binds the view and keeps an omitted number only in the 
   });
   assert.equal(differentRepository.prWorkspaceCwd, '/repo-b');
   assert.equal(differentRepository.prWorkspaceNumber, null);
-});
 
-test('CLOSE_PULL_REQUESTS leaves the bind in place', () => {
-  const open = reducer(initialState, {
-    type: 'OPEN_PULL_REQUESTS',
-    cwd: '/repo',
-    number: 12,
-  });
-  const closed = reducer(open, { type: 'CLOSE_PULL_REQUESTS' });
+  const closed = reducer(selected, { type: 'CLOSE_PULL_REQUESTS' });
   assert.equal(closed.mainView, 'session');
-  assert.equal(closed.prWorkspaceCwd, '/repo');
+  assert.equal(closed.prWorkspaceCwd, '/repo-a');
   assert.equal(closed.prWorkspaceNumber, 12);
 });
 
-test('backlog ids move and restore without duplicating', () => {
+test('backlog ids move and restore without duplicating and ignore ids that cannot persist', () => {
   const moved = reducer(initialState, { type: 'MOVE_PR_TO_BACKLOG', id: 'acme/app#12' });
   assert.deepEqual(moved.prBacklogIds, ['acme/app#12']);
   const again = reducer(moved, { type: 'MOVE_PR_TO_BACKLOG', id: 'acme/app#12' });
   assert.equal(again, moved);
   const restored = reducer(moved, { type: 'RESTORE_PR_FROM_BACKLOG', id: 'acme/app#12' });
   assert.deepEqual(restored.prBacklogIds, []);
-});
 
-test('backlog additions that cannot persist are ignored', () => {
+  // An id too long to persist is ignored instead of stored.
   const oversized = reducer(initialState, {
     type: 'MOVE_PR_TO_BACKLOG',
     id: `/${'a'.repeat(200)}#1`,
@@ -77,23 +54,7 @@ test('backlog additions that cannot persist are ignored', () => {
   assert.equal(oversized, initialState);
 });
 
-test('selecting a session or starting a chat leaves the workspace', () => {
-  const open = reducer(
-    { ...initialState, sessions: { a: session('a') }, sessionOrder: ['a'] },
-    { type: 'OPEN_PULL_REQUESTS', cwd: '/repo' },
-  );
-  const selected = reducer(open, { type: 'SET_ACTIVE_SESSION', id: 'a' });
-  assert.equal(selected.mainView, 'session');
-  assert.equal(selected.prWorkspaceCwd, '/repo');
-  const started = reducer(open, {
-    type: 'START_CHAT',
-    cwd: '/repo',
-    executionMode: 'local',
-  });
-  assert.equal(started.mainView, 'session');
-});
-
-test('a pull request chat draft targets its repository before composer text is seeded', () => {
+test('leaving the workspace for a session or a pull request chat draft keeps the repository target', () => {
   const open = reducer(
     {
       ...initialState,
@@ -103,6 +64,10 @@ test('a pull request chat draft targets its repository before composer text is s
     },
     { type: 'OPEN_PULL_REQUESTS', cwd: '/repo' },
   );
+  const selected = reducer(open, { type: 'SET_ACTIVE_SESSION', id: 'a' });
+  assert.equal(selected.mainView, 'session');
+  assert.equal(selected.prWorkspaceCwd, '/repo');
+
   const started = reducer(open, {
     type: 'START_CHAT',
     cwd: '/repo',

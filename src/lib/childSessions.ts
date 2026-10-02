@@ -116,7 +116,7 @@ export async function commitChildPromptAfterBaseline({
   return true;
 }
 
-export function selectedChildForParent(
+function selectedChildForParent(
   activeAppSessionId: string | undefined,
   selection: { parentAppSessionId: string; childSessionId: string } | null,
   childrenByParent: Partial<Record<string, Record<string, ChildSessionInfo>>>,

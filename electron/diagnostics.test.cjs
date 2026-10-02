@@ -15,13 +15,13 @@ const {
   scrubEvent,
 } = require('./diagnostics.cjs');
 
+function missingFile(name) {
+  return Object.assign(new Error(`missing ${name}`), { code: 'ENOENT' });
+}
+
 const identityFs = {
   readFile: async (filePath) => {
-    if (filePath.endsWith('diagnostics-preferences.json')) {
-      const error = new Error('missing');
-      error.code = 'ENOENT';
-      throw error;
-    }
+    if (filePath.endsWith('diagnostics-preferences.json')) throw missingFile('preference');
     return JSON.stringify({ version: 1, userId: 'USR-123456781234' });
   },
   mkdir: async () => undefined,
@@ -149,9 +149,7 @@ test('automatic diagnostics default on and disabling closes Sentry and resets lo
       filePath: '/tmp/missing-preference.json',
       fs: {
         readFile: async () => {
-          const error = new Error('missing');
-          error.code = 'ENOENT';
-          throw error;
+          throw missingFile('preference');
         },
       },
     }),
@@ -167,28 +165,6 @@ test('automatic diagnostics default on and disabling closes Sentry and resets lo
     2,
     're-enabling diagnostics must initialize a fresh in-process client',
   );
-});
-
-test('invalid diagnostics preferences fail closed instead of silently opting back in', async () => {
-  let didInitialize = false;
-  const failures = [];
-  const diagnostics = createDiagnostics(
-    diagnosticsOptions(
-      { init: () => (didInitialize = true) },
-      {
-        fs: {
-          ...identityFs,
-          readFile: async (filePath) =>
-            filePath.endsWith('diagnostics-preferences.json') ? '{broken' : identityFs.readFile(),
-        },
-        logError: (message, error) => failures.push({ message, error }),
-      },
-    ),
-  );
-
-  assert.equal(await diagnostics.initialize(), false);
-  assert.equal(didInitialize, false);
-  assert.equal(failures.length, 1);
 });
 
 test('manual feedback uses a report-scoped identity while automatic diagnostics are disabled', async () => {
@@ -218,37 +194,40 @@ test('manual feedback uses a report-scoped identity while automatic diagnostics 
   assert.deepEqual(writes, []);
 });
 
-test('diagnostics initialization failure does not block app startup or start an anonymous session', async () => {
-  const failures = [];
-  let didInitialize = false;
-  const diagnostics = createDiagnostics(
-    diagnosticsOptions(
-      { init: () => (didInitialize = true) },
-      {
-        fs: {
-          readFile: async (filePath) => {
-            if (filePath.endsWith('diagnostics-preferences.json')) {
-              const error = new Error('missing preference');
-              error.code = 'ENOENT';
-              throw error;
-            }
-            throw new Error('missing');
-          },
-          mkdir: async () => undefined,
-          writeFile: async () => {
-            throw new Error('disk unavailable');
-          },
-        },
-        logError: (message, error) => failures.push({ message, error }),
-      },
-    ),
-  );
-
-  assert.equal(await diagnostics.initialize(), false);
-  assert.equal(didInitialize, false);
-  assert.equal(failures.length, 1);
-  assert.match(failures[0].message, /initialization skipped/);
-  assert.match(failures[0].error.message, /disk unavailable/);
+test('a corrupt preference or an unwritable identity skips diagnostics without blocking startup', async () => {
+  const corruptPreference = {
+    ...identityFs,
+    readFile: async (filePath) =>
+      filePath.endsWith('diagnostics-preferences.json') ? '{broken' : identityFs.readFile(),
+  };
+  const unwritableIdentity = {
+    readFile: async (filePath) => {
+      throw missingFile(filePath.endsWith('diagnostics-preferences.json') ? 'preference' : 'id');
+    },
+    mkdir: async () => undefined,
+    writeFile: async () => {
+      throw new Error('disk unavailable');
+    },
+  };
+  for (const [fs, cause] of [
+    [corruptPreference, /JSON/],
+    [unwritableIdentity, /disk unavailable/],
+  ]) {
+    const failures = [];
+    let didInitialize = false;
+    const diagnostics = createDiagnostics(
+      diagnosticsOptions(
+        { init: () => (didInitialize = true) },
+        { fs, logError: (message, error) => failures.push({ message, error }) },
+      ),
+    );
+    // Failing closed: no silent opt-in and no anonymous session.
+    assert.equal(await diagnostics.initialize(), false);
+    assert.equal(didInitialize, false);
+    assert.equal(failures.length, 1);
+    assert.match(failures[0].message, /initialization skipped/);
+    assert.match(failures[0].error.message, cause);
+  }
 });
 
 test('manual feedback carries a report id and explicit technical diagnostics only', async () => {

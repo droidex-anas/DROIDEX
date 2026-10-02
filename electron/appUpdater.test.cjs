@@ -119,12 +119,10 @@ test('development builds never contact the production update feed', async () => 
   assert.deepEqual(calls, []);
 });
 
-test('version comparison is numeric', () => {
+test('versions compare numerically and Sparkle appcast versions are parsed explicitly', () => {
   assert.equal(compareSemverParts('1.10.0', '1.9.9') > 0, true);
   assert.equal(compareSemverParts('v2.0', '2.0.0'), 0);
-});
 
-test('Sparkle appcast versions are parsed explicitly', () => {
   assert.equal(
     parseSparkleVersion(
       '<item><sparkle:shortVersionString>\n  1.0.1\n</sparkle:shortVersionString></item>',

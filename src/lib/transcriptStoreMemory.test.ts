@@ -3,24 +3,13 @@ import assert from 'node:assert/strict';
 import { initialState, type AppState } from '../hooks/useStore';
 import type { TranscriptEvent } from '../types/bridge';
 import { appendTranscriptEvent, appendTranscriptEvents } from './transcriptStoreMemory';
+import { textEvent } from '../test/textEvent';
 
-function transcriptEvent(
+const transcriptEvent = (
   id: string,
   appSessionId: string,
   overrides: Partial<TranscriptEvent> = {},
-): TranscriptEvent {
-  return {
-    id,
-    appSessionId,
-    sourceSessionId: 'primary',
-    role: 'primary',
-    kind: 'text',
-    author: 'assistant',
-    text: id,
-    ts: 1,
-    ...overrides,
-  };
-}
+) => textEvent(id, { appSessionId, author: 'assistant', ...overrides });
 
 test('batched transcript appends preserve exact sequential behavior', () => {
   const firstText = transcriptEvent('text-1', 'session-a', { author: undefined, text: 'A' });

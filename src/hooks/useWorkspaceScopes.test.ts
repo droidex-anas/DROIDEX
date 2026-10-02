@@ -90,30 +90,6 @@ test('a rejected discovery pass re-arms the retry loop instead of ending it', as
   assert.equal(published[0].complete, true);
 });
 
-test('cancel during a rejected pass stops the loop', async () => {
-  let reject: ((reason: Error) => void) | undefined;
-  let loads = 0;
-  const cancel = startWorkspaceDiscovery({
-    workspaceCwds: ['/repo/app'],
-    key: JSON.stringify(['/repo/app']),
-    startDelayMs: null,
-    retryDelayMs: 1,
-    loadWorktrees: () => {
-      loads += 1;
-      return new Promise((_resolve, rejectLoad) => {
-        reject = rejectLoad;
-      });
-    },
-    publish: () => assert.fail('nothing publishes on rejection'),
-    onCanonicalCwds: () => {},
-  });
-  await waitFor(() => reject !== undefined);
-  cancel();
-  reject?.(new Error('git unavailable'));
-  await new Promise((resolve) => setTimeout(resolve, 25));
-  assert.equal(loads, 1);
-});
-
 test('a complete discovery publishes once and stops', async () => {
   const published: WorkspaceDiscoverySnapshot[] = [];
   const cancel = startWorkspaceDiscovery({
@@ -167,24 +143,33 @@ test('a canonical key change hands off instead of retrying under the stale key',
   assert.deepEqual(canonical, [['/repo/app', '/plain/folder']]);
 });
 
-test('cancel stops the loop and drops the in-flight result', async () => {
-  let release: (() => void) | undefined;
-  const published: WorkspaceDiscoverySnapshot[] = [];
-  const cancel = startWorkspaceDiscovery({
-    workspaceCwds: ['/repo/app'],
-    key: JSON.stringify(['/repo/app']),
-    startDelayMs: null,
-    retryDelayMs: 1,
-    loadWorktrees: () =>
-      new Promise((resolve) => {
-        release = () => resolve([worktree('/repo/app')]);
-      }),
-    publish: (snapshot) => published.push(snapshot),
-    onCanonicalCwds: () => {},
-  });
-  await waitFor(() => release !== undefined);
-  cancel();
-  release?.();
-  await new Promise((resolve) => setTimeout(resolve, 25));
-  assert.equal(published.length, 0);
+test('cancel stops the loop and drops an in-flight pass that later resolves or rejects', async () => {
+  for (const outcome of ['resolve', 'reject'] as const) {
+    let settle: (() => void) | undefined;
+    let loads = 0;
+    const published: WorkspaceDiscoverySnapshot[] = [];
+    const cancel = startWorkspaceDiscovery({
+      workspaceCwds: ['/repo/app'],
+      key: JSON.stringify(['/repo/app']),
+      startDelayMs: null,
+      retryDelayMs: 1,
+      loadWorktrees: () => {
+        loads += 1;
+        return new Promise((resolve, reject) => {
+          settle = () =>
+            outcome === 'resolve'
+              ? resolve([worktree('/repo/app')])
+              : reject(new Error('git unavailable'));
+        });
+      },
+      publish: (snapshot) => published.push(snapshot),
+      onCanonicalCwds: () => {},
+    });
+    await waitFor(() => settle !== undefined);
+    cancel();
+    settle?.();
+    await new Promise((resolve) => setTimeout(resolve, 25));
+    assert.equal(published.length, 0, outcome);
+    assert.equal(loads, 1, outcome);
+  }
 });

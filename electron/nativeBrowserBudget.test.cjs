@@ -22,25 +22,22 @@ function entry(id, overrides = {}) {
   };
 }
 
-test('visible session plus one warm hidden view stay live; older hidden views evict', () => {
+test('the attached view, or else the newest hidden one, stays warm and older hidden views evict', () => {
   const budget = createNativeBrowserBudget({ maxLive: 2, now: () => 1000 });
-  const ids = budget.idsToEvict([
+  const withAttached = budget.idsToEvict([
     entry('attached', { attached: true, lastUsedAt: 900 }),
     entry('warm', { lastUsedAt: 800 }),
     entry('cold-a', { lastUsedAt: 100 }),
     entry('cold-b', { lastUsedAt: 50 }),
   ]);
-  assert.deepEqual(ids.sort(), ['cold-a', 'cold-b']);
-});
+  assert.deepEqual(withAttached.sort(), ['cold-a', 'cold-b']);
 
-test('with no attached view only the most recently used hidden session stays warm', () => {
-  const budget = createNativeBrowserBudget({ maxLive: 2, now: () => 1000 });
-  const ids = budget.idsToEvict([
+  const hiddenOnly = budget.idsToEvict([
     entry('older', { lastUsedAt: 10 }),
     entry('newest', { lastUsedAt: 50 }),
     entry('middle', { lastUsedAt: 20 }),
   ]);
-  assert.deepEqual(ids.sort(), ['middle', 'older']);
+  assert.deepEqual(hiddenOnly.sort(), ['middle', 'older']);
   assert.equal(
     budget.warmHiddenId([entry('older', { lastUsedAt: 10 }), entry('newest', { lastUsedAt: 50 })]),
     'newest',

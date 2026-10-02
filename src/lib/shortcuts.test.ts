@@ -26,7 +26,7 @@ function event(partial: { key: string; code?: string } & Record<string, unknown>
   } as KeyboardEvent;
 }
 
-test('chords round-trip through parse and serialize', () => {
+test('chords, including the numpad plus key, round-trip through parse and serialize', () => {
   for (const { defaultChord } of SHORTCUT_DEFINITIONS) {
     const parsed = parseChord(defaultChord);
     assert.ok(parsed, `${defaultChord} must parse`);
@@ -36,6 +36,17 @@ test('chords round-trip through parse and serialize', () => {
   assert.equal(
     serializeChord({ meta: true, ctrl: false, alt: true, shift: true, key: 'B' }),
     'Meta+Alt+Shift+B',
+  );
+
+  const chord = chordFromEvent(event({ ctrlKey: true, key: '+', code: 'NumpadAdd' }));
+  assert.ok(chord);
+  assert.deepEqual(chord, { meta: true, ctrl: false, alt: false, shift: false, key: 'Plus' });
+  const serialized = serializeChord(chord);
+  assert.equal(serialized, 'Meta+Plus');
+  assert.deepEqual(parseChord(serialized), chord);
+  assert.equal(
+    matchesChord(event({ ctrlKey: true, key: '+', code: 'NumpadAdd' }), serialized),
+    true,
   );
 });
 
@@ -91,18 +102,5 @@ test('defaults are collision-free and conflicts are reported both ways', () => {
   assert.deepEqual(
     conflictingActions(clashing, 'toggleSidebar').map((definition) => definition.action),
     ['openSettings'],
-  );
-});
-
-test('the numpad plus key round-trips through a chord', () => {
-  const chord = chordFromEvent(event({ ctrlKey: true, key: '+', code: 'NumpadAdd' }));
-  assert.ok(chord);
-  assert.deepEqual(chord, { meta: true, ctrl: false, alt: false, shift: false, key: 'Plus' });
-  const serialized = serializeChord(chord);
-  assert.equal(serialized, 'Meta+Plus');
-  assert.deepEqual(parseChord(serialized), chord);
-  assert.equal(
-    matchesChord(event({ ctrlKey: true, key: '+', code: 'NumpadAdd' }), serialized),
-    true,
   );
 });

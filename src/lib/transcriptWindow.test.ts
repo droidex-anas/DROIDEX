@@ -11,19 +11,14 @@ import {
   VIEWPORT_TRANSCRIPT_POLICY,
   type TranscriptWindowPolicy,
 } from './transcriptWindow';
+import { textEvent } from '../test/textEvent';
 
-function event(id: string, overrides: Partial<TranscriptEvent> = {}): TranscriptEvent {
-  return {
-    id,
+const event = (id: string, overrides: Partial<TranscriptEvent> = {}) =>
+  textEvent(id, {
     appSessionId: 'session-1',
-    sourceSessionId: 'primary',
-    role: 'primary',
-    kind: 'text',
-    text: id,
     ts: Number(id.replace(/\D/g, '')) || 0,
     ...overrides,
-  };
-}
+  });
 
 const TEST_POLICY: TranscriptWindowPolicy = {
   highWaterCost: 2_000,

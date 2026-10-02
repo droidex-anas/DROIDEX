@@ -3,17 +3,15 @@ const assert = require('node:assert/strict');
 const { EventEmitter } = require('node:events');
 const { installRendererNavigationGuard, isTrustedRendererUrl } = require('./rendererSecurity.cjs');
 
-test('packaged renderer navigation remains on its exact app file', () => {
-  const entry = 'file:///Applications/DROIDEX.app/Contents/Resources/app.asar/dist/index.html';
-  assert.equal(isTrustedRendererUrl(`${entry}#/settings`, entry), true);
-  assert.equal(isTrustedRendererUrl('file:///etc/passwd', entry), false);
-  assert.equal(isTrustedRendererUrl('https://attacker.example/', entry), false);
-});
+test('renderer navigation stays on the exact packaged app file or the configured dev origin', () => {
+  const packaged = 'file:///Applications/DROIDEX.app/Contents/Resources/app.asar/dist/index.html';
+  assert.equal(isTrustedRendererUrl(`${packaged}#/settings`, packaged), true);
+  assert.equal(isTrustedRendererUrl('file:///etc/passwd', packaged), false);
+  assert.equal(isTrustedRendererUrl('https://attacker.example/', packaged), false);
 
-test('development renderer navigation remains on the configured origin', () => {
-  const entry = 'http://127.0.0.1:1420/';
-  assert.equal(isTrustedRendererUrl('http://127.0.0.1:1420/settings', entry), true);
-  assert.equal(isTrustedRendererUrl('http://localhost:1420/', entry), false);
+  const dev = 'http://127.0.0.1:1420/';
+  assert.equal(isTrustedRendererUrl('http://127.0.0.1:1420/settings', dev), true);
+  assert.equal(isTrustedRendererUrl('http://localhost:1420/', dev), false);
 });
 
 test('navigation guard blocks foreign navigation and opens web popups externally', () => {

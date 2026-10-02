@@ -29,16 +29,37 @@ afterEach(() => {
   delete g.window;
 });
 
-test('action wrappers report no_dir, not_desktop, and IPC rejections as failed results', async () => {
+test('action wrappers report no_dir, not_desktop, and IPC rejections as failed results, never rejecting', async () => {
   assert.deepEqual(await gitFetch(''), { ok: false, reason: 'no_dir' });
   assert.deepEqual(await checkoutGitBranch('/repo', { ref: 'main' }), {
     ok: false,
     reason: 'not_desktop',
   });
-  withBridge({ gitCheckout: () => Promise.reject(new Error('bridge down')) });
+  assert.deepEqual(await mergePullRequest('/repo', 12, 'squash'), {
+    ok: false,
+    reason: 'not_desktop',
+    message: 'Merging a pull request is available in the desktop app.',
+  });
+  const bridgeDown = () => Promise.reject(new Error('bridge down'));
+  withBridge({
+    gitCheckout: bridgeDown,
+    githubCreatePr: bridgeDown,
+    githubPostComment: bridgeDown,
+    githubMergePr: bridgeDown,
+  });
   assert.deepEqual(await checkoutGitBranch('/repo', { ref: 'main' }), {
     ok: false,
     reason: 'ipc_error',
+  });
+  assert.deepEqual(await createPullRequest('/repo', { title: 't' }), {
+    ok: false,
+    reason: 'error',
+  });
+  assert.deepEqual(await postPrComment('/repo', 12, 'hello'), { ok: false, reason: 'error' });
+  assert.deepEqual(await mergePullRequest('/repo', 12, 'squash'), {
+    ok: false,
+    reason: 'error',
+    message: 'Could not merge pull request',
   });
 });
 
@@ -120,7 +141,7 @@ test('main checkout selection waits when a linked checkout has no worktree snaps
   );
 });
 
-test('local chat preparation never invokes Git', async () => {
+test('local and folderless chat preparation keep their directory and never invoke Git', async () => {
   let gitCalls = 0;
   const unexpectedGitCall = () => {
     gitCalls += 1;
@@ -138,6 +159,10 @@ test('local chat preparation never invokes Git', async () => {
     }),
     { ok: true, path: '/repo' },
   );
+  assert.deepEqual(await prepareChatWorkingDirectory('', { executionMode: 'local', name: 'c-2' }), {
+    ok: true,
+    path: '',
+  });
   assert.equal(gitCalls, 0);
 });
 
@@ -169,15 +194,6 @@ test('linked checkout preparation waits for the main worktree discovery', async 
     message: 'The repository worktrees are still loading. Try again.',
   });
   assert.equal(createCalls, 0);
-});
-
-test('folderless chat preparation preserves the successful empty directory', async () => {
-  const result = await prepareChatWorkingDirectory('', {
-    executionMode: 'local',
-    name: 'chat-c-1',
-  });
-
-  assert.deepEqual(result, { ok: true, path: '' });
 });
 
 test('chat worktree preparation rejects a successful response without a path', async () => {
@@ -226,32 +242,6 @@ test('listPullRequests never reports an empty list it could not load', async () 
     reason: 'error',
     viewerLogin: null,
     prs: [],
-  });
-});
-
-test('createPullRequest and postPrComment convert IPC rejections into failed results', async () => {
-  withBridge({
-    githubCreatePr: () => Promise.reject(new Error('bridge down')),
-    githubPostComment: () => Promise.reject(new Error('bridge down')),
-  });
-  assert.deepEqual(await createPullRequest('/repo', { title: 't' }), {
-    ok: false,
-    reason: 'error',
-  });
-  assert.deepEqual(await postPrComment('/repo', 12, 'hello'), { ok: false, reason: 'error' });
-});
-
-test('mergePullRequest reports a bridge failure instead of rejecting', async () => {
-  assert.deepEqual(await mergePullRequest('/repo', 12, 'squash'), {
-    ok: false,
-    reason: 'not_desktop',
-    message: 'Merging a pull request is available in the desktop app.',
-  });
-  withBridge({ githubMergePr: () => Promise.reject(new Error('bridge down')) });
-  assert.deepEqual(await mergePullRequest('/repo', 12, 'squash'), {
-    ok: false,
-    reason: 'error',
-    message: 'Could not merge pull request',
   });
 });
 

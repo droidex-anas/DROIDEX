@@ -2,28 +2,16 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { reducer, initialState } from './useStore';
 import type { AppState } from './useStore';
-import type { SessionSummary } from '../types/bridge';
+import { sessionSummary } from '../test/sessionSummary';
 
-function summary(id: string, updatedAt = 1): SessionSummary {
-  return {
-    appSessionId: id,
-    provider: 'droid',
-    sessionPurpose: 'chat',
-    interactionMode: 'auto',
-    role: 'primary',
+const summary = (id: string, updatedAt = 1) =>
+  sessionSummary(id, {
     title: `Chat ${id}`,
     goal: `Chat ${id}`,
     cwd: '/repo',
-    autonomy: 'low',
-    phase: 'paused',
-    features: [],
-    tokensIn: 0,
-    tokensOut: 0,
-    contextTokens: 0,
     createdAt: updatedAt,
     updatedAt,
-  };
-}
+  });
 
 function hydratedState(): AppState {
   return {
@@ -44,7 +32,7 @@ test('the first SESSION_LIST prunes hydrated rows the sidecar does not confirm',
   assert.deepEqual(next.listConfirmedSessionIds, ['kept', 'fresh']);
 });
 
-test('locally created sessions survive the confirming SESSION_LIST', () => {
+test('rows no list has confirmed, such as local creations, survive a list that omits them', () => {
   const created = reducer(hydratedState(), {
     type: 'SESSION_CREATED',
     clientRef: 'ref-1',
@@ -53,6 +41,16 @@ test('locally created sessions survive the confirming SESSION_LIST', () => {
   const next = reducer(created, { type: 'SESSION_LIST', sessions: [summary('kept', 3)] });
   assert.deepEqual(Object.keys(next.sessions).sort(), ['kept', 'optimistic']);
   assert.deepEqual(next.listConfirmedSessionIds, ['kept']);
+
+  // Without a hydrated snapshot nothing is prunable yet.
+  const unhydrated: AppState = {
+    ...(initialState as unknown as AppState),
+    sessions: { local: summary('local', 1) },
+    sessionOrder: ['local'],
+    listConfirmedSessionIds: null,
+  };
+  const listed = reducer(unhydrated, { type: 'SESSION_LIST', sessions: [summary('server', 2)] });
+  assert.deepEqual(Object.keys(listed.sessions).sort(), ['local', 'server']);
 });
 
 test('a session updated before the first SESSION_LIST survives the prune and stays in order', () => {
@@ -93,15 +91,4 @@ test('a later SESSION_LIST drops rows the previous list confirmed but it omits',
   assert.deepEqual(Object.keys(next.sessions), ['kept']);
   assert.equal(next.sessions.kept?.updatedAt, 5);
   assert.deepEqual(next.listConfirmedSessionIds, ['kept']);
-});
-
-test('rows never confirmed by a list survive lists that omit them', () => {
-  const state: AppState = {
-    ...(initialState as unknown as AppState),
-    sessions: { local: summary('local', 1) },
-    sessionOrder: ['local'],
-    listConfirmedSessionIds: null,
-  };
-  const next = reducer(state, { type: 'SESSION_LIST', sessions: [summary('server', 2)] });
-  assert.deepEqual(Object.keys(next.sessions).sort(), ['local', 'server']);
 });

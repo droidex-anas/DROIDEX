@@ -8,6 +8,7 @@ import {
   worktreeDiscoveryRevision,
   workingDirectoryDuringDiscovery,
 } from './sessionWorkingDirectory';
+import { textEvent } from '../test/textEvent';
 
 const main = '/Users/test/droid-control';
 const linked = '/Users/test/droid-control-review';
@@ -34,18 +35,8 @@ const worktrees: GitWorktree[] = [
   },
 ];
 
-function tool(id: string, toolName: string, toolArgs: unknown): TranscriptEvent {
-  return {
-    id,
-    appSessionId: 'session-1',
-    sourceSessionId: 'primary',
-    role: 'primary',
-    ts: Number(id),
-    kind: 'tool_call',
-    toolName,
-    toolArgs,
-  };
-}
+const tool = (id: string, toolName: string, toolArgs: unknown) =>
+  textEvent(id, { ts: Number(id), kind: 'tool_call', text: undefined, toolName, toolArgs });
 
 const nested = `${main}/.worktrees/reload-issue`;
 const sibling = '/Users/test/droid-control-sibling';
@@ -53,15 +44,7 @@ const withNested = [worktrees[0], { ...worktrees[1], path: nested, branch: 'relo
 const withSibling = [...worktrees, { ...worktrees[1], path: sibling, branch: 'feat/sibling' }];
 const windowsPath = 'C:\\Users\\Test\\Droid-Control';
 const windowsWorktree: GitWorktree = { ...worktrees[0], path: windowsPath };
-const proseMention: TranscriptEvent = {
-  id: '1',
-  appSessionId: 'session-1',
-  sourceSessionId: 'primary',
-  role: 'primary',
-  ts: 1,
-  kind: 'text',
-  text: `I worked in ${linked}`,
-};
+const proseMention = textEvent('1', { text: `I worked in ${linked}` });
 const writeFile = (id: string, file_path: string) =>
   tool(id, 'write_file', { file_path, content: 'export {}' });
 
