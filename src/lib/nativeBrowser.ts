@@ -37,6 +37,13 @@ export interface NativeBrowserDesignPrompt {
   instruction: string;
 }
 
+/** Where an agent's pointer action lands, in the page's own CSS pixels. */
+export interface NativeBrowserAgentPoint {
+  browserSessionId: string;
+  x: number;
+  y: number;
+}
+
 /** Main is running agent work on the session's page, or has finished it. */
 export interface NativeBrowserWorking {
   browserSessionId: string;
@@ -125,6 +132,12 @@ export function onNativeBrowserLoadFailed(
 export function onNativeBrowserWorking(handler: (event: NativeBrowserWorking) => void): () => void {
   if (!isDesktop()) return () => undefined;
   return window.droidControl!.onNativeBrowserWorking(handler);
+}
+
+export function onNativeBrowserAgentPoint(
+  handler: (event: NativeBrowserAgentPoint) => void,
+): () => void {
+  return window.droidControl?.onNativeBrowserAgentPoint(handler) ?? (() => undefined);
 }
 
 export function onNativeBrowserClosed(

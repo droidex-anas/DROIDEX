@@ -17,6 +17,7 @@ function createNativeBrowserPage({
   credentials,
   devTools,
   runWithWebContentsDebugger,
+  sendToRenderer,
   findEntryForContents,
   nativeImage,
 }) {
@@ -37,6 +38,8 @@ function createNativeBrowserPage({
     credentials,
     unthrottled,
     redactUrl: redactBrowserDiagnosticUrl,
+    onPoint: ({ browserSessionId }, { x, y }) =>
+      sendToRenderer('native-browser-agent-point', { browserSessionId, x, y }),
   });
   const waits = createBrowserWait({ reading });
 

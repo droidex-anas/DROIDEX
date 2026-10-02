@@ -43,7 +43,6 @@ class FakeRuntime implements BrowserRuntime {
   canGoBack = false;
   canGoForward = false;
   omitHistory = false;
-  clickError?: Error;
   viewportError?: Error;
 
   constructor(viewport: BrowserViewport) {
@@ -130,7 +129,6 @@ class FakeRuntime implements BrowserRuntime {
 
   async click(target: BrowserTarget) {
     this.clicks.push(target);
-    if (this.clickError) throw this.clickError;
     return this.result();
   }
 
@@ -285,34 +283,6 @@ test('failed resize preserves the previous viewport and emits no optimistic upda
     height: 900,
     deviceScaleFactor: 2,
   });
-});
-
-test('agent click updates the visible agent cursor', async () => {
-  const manager = createManager();
-  await manager.open({ appSessionId: 'm1', url: 'http://127.0.0.1:1420/' });
-
-  const { state: state } = await manager.click({ appSessionId: 'm1', x: 50, y: 35 });
-
-  assert.deepEqual(state.agentCursor, { x: 50, y: 35 });
-});
-
-test('failed agent click still emits the attempted cursor position', async () => {
-  const updates: BrowserState[] = [];
-  const runtime = new FakeRuntime({ width: 1200, height: 800, deviceScaleFactor: 2 });
-  const manager = createManager({
-    runtimeFactory: () => runtime,
-    emit: (event) => {
-      if (event.type === 'browser.updated') updates.push(event.state);
-    },
-  });
-  await manager.open({ appSessionId: 'm1', url: 'http://127.0.0.1:1420/' });
-  const updateCount = updates.length;
-  runtime.clickError = new Error('click failed');
-
-  await assert.rejects(manager.click({ appSessionId: 'm1', x: 50, y: 35 }), /click failed/);
-
-  assert.equal(updates.length, updateCount + 1);
-  assert.deepEqual(updates.at(-1)?.agentCursor, { x: 50, y: 35 });
 });
 
 test('addReference captures an anchor crop and current browser context', async () => {

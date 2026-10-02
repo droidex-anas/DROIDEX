@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef } from 'react';
 import type { CSSProperties } from 'react';
 import { useStoreDispatch, useStoreSelector } from '../../hooks/useStore';
+import { BrowserAgentCursor } from './BrowserAgentCursor';
 import {
   closeBrowserPage,
   isBrowserPageAwake,
@@ -100,6 +101,7 @@ export function BrowserHost() {
             key={page.key}
             page={page}
             placement={placementOf(host, page.browserSessionId)}
+            working={page.browserSessionId in host.working}
             anchor={slot?.anchor}
             rounded={slot?.rounded ?? false}
             scale={slot?.scale}
@@ -114,6 +116,7 @@ export function BrowserHost() {
 function BrowserPageFrame({
   page,
   placement,
+  working,
   anchor,
   rounded,
   scale,
@@ -121,6 +124,8 @@ function BrowserPageFrame({
 }: {
   page: BrowserPage;
   placement: Placement;
+  /** An agent has work in flight on the page. */
+  working: boolean;
   anchor?: string;
   rounded: boolean;
   scale?: number;
@@ -142,6 +147,12 @@ function BrowserPageFrame({
         src={page.src}
         tabIndex={shown ? undefined : -1}
         style={shown && scale === undefined ? FILL : pageStyle(size, shown ? scale : undefined)}
+      />
+      <BrowserAgentCursor
+        browserSessionId={page.browserSessionId}
+        scale={scale ?? 1}
+        shown={shown}
+        working={working}
       />
     </div>
   );
