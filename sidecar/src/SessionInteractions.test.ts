@@ -9,11 +9,12 @@ import {
 } from '@factory/droid-sdk';
 
 import { claudeCanUseTool } from './providers/claude/claudePermissions.js';
-import type { ServerEvent, SessionSummary } from './protocol.js';
+import type { ServerEvent } from './protocol.js';
 import { droidInteractionHandlers } from './providers/droid/droidInteractions.js';
 import { SessionInteractions, type InteractionLiveSession } from './SessionInteractions.js';
 import { writeProviderConversation } from './testing/historyCharacterizationSupport.js';
 import { createSessionManagerTestContext } from './testing/sessionManagerTestContext.js';
+import { sessionSummary } from './testing/sessionSummaryFixture.js';
 
 interface HarnessOptions {
   rejectProviderUpdate?: boolean;
@@ -28,7 +29,12 @@ function createHarness(options: HarnessOptions = {}) {
 
   const addLiveSession = (appSessionId: string, providerSessionId = appSessionId) => {
     const liveSession: InteractionLiveSession = {
-      summary: summary(appSessionId, providerSessionId),
+      summary: sessionSummary({
+        appSessionId,
+        providerSessionId,
+        cwd: '/workspace',
+        workspaceKind: 'folder',
+      }),
     };
     liveSessions.set(appSessionId, liveSession);
     return liveSession;
@@ -71,29 +77,6 @@ function createHarness(options: HarnessOptions = {}) {
     liveSessions,
     permissionHandler: (ref: { id: string }) => handlers(ref).permissionHandler,
     trace,
-  };
-}
-
-function summary(appSessionId: string, providerSessionId: string): SessionSummary {
-  return {
-    appSessionId,
-    providerSessionId,
-    provider: 'droid',
-    sessionPurpose: 'chat',
-    interactionMode: 'auto',
-    role: 'primary',
-    title: appSessionId,
-    goal: appSessionId,
-    cwd: '/workspace',
-    workspaceKind: 'folder',
-    autonomy: 'low',
-    phase: 'paused',
-    features: [],
-    tokensIn: 0,
-    tokensOut: 0,
-    contextTokens: 0,
-    createdAt: 1,
-    updatedAt: 1,
   };
 }
 
@@ -543,7 +526,11 @@ test('a resumed historical session asks once under its stable app identity', asy
   const h = createSessionManagerTestContext();
   try {
     h.fixture.seedHistorySummaries([
-      { ...summary('app-p1', 'provider-p1'), cwd: '', workspaceKind: 'none' },
+      sessionSummary({
+        appSessionId: 'app-p1',
+        providerSessionId: 'provider-p1',
+        workspaceKind: 'none',
+      }),
     ]);
     writeProviderConversation(h.home, 'provider-p1', 'app-p1');
     await h.handle({ type: 'session.resume', appSessionId: 'app-p1' });

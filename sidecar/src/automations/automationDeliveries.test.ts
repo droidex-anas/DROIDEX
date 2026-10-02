@@ -417,37 +417,7 @@ test(
 );
 
 test(
-  'attachments are not recopied and retain historical references until deletion',
-  { timeout: 10_000 },
-  async () => {
-    const h = await harness();
-    try {
-      const source = join(h.directory, 'notes.txt');
-      await writeFile(source, 'saved content');
-      const automation = await h.manager.create(message('files', { files: [source] }));
-      const saved = automation.files[0];
-      assert.ok(saved);
-      assert.notEqual(saved, source);
-      await writeFile(source, 'changed content');
-      assert.equal(await readFile(saved, 'utf8'), 'saved content');
-      assert.deepEqual((await h.manager.update(automation.id, { title: 'Renamed' })).files, [
-        saved,
-      ]);
-      await h.manager.runNow(automation.id);
-      await h.until((value) => value.runs[0]?.status === 'completed');
-      await h.manager.update(automation.id, { files: [] });
-      assert.equal(await readFile(saved, 'utf8'), 'saved content');
-      await h.manager.remove(automation.id);
-      await assert.rejects(readFile(saved), { code: 'ENOENT' });
-      assert.equal(await readFile(source, 'utf8'), 'changed content');
-    } finally {
-      await h.close();
-    }
-  },
-);
-
-test(
-  'saved attachments survive source deletion and execute in order after restart',
+  'saved attachments are snapshots that outlive their sources and a restart, and go with their definition',
   { timeout: 10_000 },
   async () => {
     const h = await harness();
@@ -456,8 +426,16 @@ test(
       const sources = [join(h.directory, 'first.txt'), join(h.directory, 'second.txt')];
       await Promise.all(sources.map((path, index) => writeFile(path, `snapshot ${index}`)));
       const automation = await h.manager.create(message('files', { files: sources }));
-      await Promise.all(sources.map((path) => rm(path)));
+      const saved = automation.files;
+      assert.equal(saved.length, 2);
+      assert.ok(saved.every((path, index) => path !== sources[index]));
+      // Neither a changed nor a deleted source reaches the saved copy, and an
+      // unrelated edit keeps the same copies rather than taking new ones.
+      await writeFile(sources[0] ?? '', 'changed content');
+      await rm(sources[1] ?? '');
+      assert.deepEqual((await h.manager.update(automation.id, { title: 'Renamed' })).files, saved);
       await h.manager.shutdown();
+
       const completed = deferred<void>();
       restarted = new AutomationManager({
         dataDir: h.directory,
@@ -468,12 +446,12 @@ test(
           assert.equal(id, 'files');
           assert.equal(
             prompt,
-            `${automation.prompt}\n\n${automation.files.map((path) => `@${path}`).join('\n')}`,
+            `${automation.prompt}\n\n${saved.map((path) => `@${path}`).join('\n')}`,
           );
-          assert.deepEqual(
-            await Promise.all(automation.files.map((path) => readFile(path, 'utf8'))),
-            ['snapshot 0', 'snapshot 1'],
-          );
+          assert.deepEqual(await Promise.all(saved.map((path) => readFile(path, 'utf8'))), [
+            'snapshot 0',
+            'snapshot 1',
+          ]);
           return { status: 'accepted', settled: Promise.resolve() };
         },
         emit: (event) => {
@@ -487,6 +465,14 @@ test(
       });
       await restarted.runNow(automation.id);
       await completed.promise;
+
+      // Dropping them from the definition keeps the copies the run referenced;
+      // deleting the definition removes them, never the user's own file.
+      await restarted.update(automation.id, { files: [] });
+      assert.equal(await readFile(saved[0] ?? '', 'utf8'), 'snapshot 0');
+      await restarted.remove(automation.id);
+      await assert.rejects(readFile(saved[0] ?? ''), { code: 'ENOENT' });
+      assert.equal(await readFile(sources[0] ?? '', 'utf8'), 'changed content');
     } finally {
       await restarted?.shutdown();
       await h.close();
