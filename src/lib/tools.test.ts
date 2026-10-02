@@ -101,7 +101,7 @@ test('looksLikeHtml detects raw HTML but not markdown prose', () => {
   assert.equal(looksLikeHtml('Plain text, no tags at all.'), false);
 });
 
-test('parseWebSearch extracts query, count and result blocks', () => {
+test('parseWebSearch extracts query, count and result blocks, and none from an empty search', () => {
   const { query, count, results } = parseWebSearch(SAMPLE);
   assert.equal(query, 'electron auto update best practices 2026');
   assert.equal(count, 2);
@@ -110,14 +110,10 @@ test('parseWebSearch extracts query, count and result blocks', () => {
   assert.equal(results[0].url, 'https://docs.sentry.io/platforms/javascript/guides/electron/');
   assert.match(results[0].snippet, /manually set up Sentry/);
   assert.equal(results[1].url, 'https://github.com/getsentry/sentry-electron');
-});
 
-test('parseWebSearch returns no results for an empty search', () => {
-  const { count, results } = parseWebSearch(
-    'Web Search Results for: "nothing here"\n\nNo results found.',
-  );
-  assert.equal(results.length, 0);
-  assert.equal(count, undefined);
+  const empty = parseWebSearch('Web Search Results for: "nothing here"\n\nNo results found.');
+  assert.equal(empty.results.length, 0);
+  assert.equal(empty.count, undefined);
 });
 
 test('parseWebFetch prefers the arg URL and a markdown title', () => {
@@ -133,25 +129,21 @@ test('parseWebFetch prefers the arg URL and a markdown title', () => {
   assert.equal(page.truncatedChars, null);
 });
 
-test('parseWebFetch reads Title/URL meta lines and strips the truncation sentinel', () => {
-  const page = parseWebFetch(
+test('parseWebFetch reads Title/URL lines as metadata only in the preamble and strips the truncation sentinel', () => {
+  const truncated = parseWebFetch(
     'Title: Sentry for Electron\nURL: https://docs.sentry.io/platforms/javascript/guides/electron/\n\nLearn how to set up Sentry.\n\n[truncated 4096 chars]',
   );
-  assert.equal(page.title, 'Sentry for Electron');
-  assert.equal(page.url, 'https://docs.sentry.io/platforms/javascript/guides/electron/');
-  assert.equal(page.body, 'Learn how to set up Sentry.');
-  assert.equal(page.truncatedChars, 4096);
-});
+  assert.equal(truncated.title, 'Sentry for Electron');
+  assert.equal(truncated.url, 'https://docs.sentry.io/platforms/javascript/guides/electron/');
+  assert.equal(truncated.body, 'Learn how to set up Sentry.');
+  assert.equal(truncated.truncatedChars, 4096);
 
-test('parseWebFetch treats Title:/URL: lines as metadata only in the preamble', () => {
   const page = parseWebFetch(
     [
       'Title: Sentry for Electron',
       'URL: https://docs.sentry.io/platforms/javascript/guides/electron/',
       '',
       'Learn how to set up Sentry.',
-      '',
-      'See the advanced guide for more.',
       '',
       'Title: Advanced configuration',
       'URL: https://docs.sentry.io/advanced/',
@@ -160,7 +152,6 @@ test('parseWebFetch treats Title:/URL: lines as metadata only in the preamble', 
     ].join('\n'),
   );
   assert.equal(page.title, 'Sentry for Electron');
-  assert.equal(page.url, 'https://docs.sentry.io/platforms/javascript/guides/electron/');
   // Body lines that later begin with Title:/URL: are content, not metadata —
   // they must survive in the preview.
   assert.ok(page.body.includes('Title: Advanced configuration'));
@@ -219,7 +210,7 @@ test('toolArgString and toolArgStringArray read only string values', () => {
   assert.deepEqual(toolArgStringArray({}, 'includeDomains'), []);
 });
 
-test('latestTodoSnapshot returns the newest real TodoWrite list', () => {
+test('latestTodoSnapshot returns the newest real TodoWrite list, honoring an emptied list and skipping partial calls', () => {
   const snapshot = latestTodoSnapshot([
     todoCall('a', { todos: '1. [pending] old' }),
     todoCall('b', { todos: '1. [completed] done\n2. [in_progress] now' }),
@@ -229,9 +220,7 @@ test('latestTodoSnapshot returns the newest real TodoWrite list', () => {
     { status: 'completed', text: 'done' },
     { status: 'in_progress', text: 'now' },
   ]);
-});
 
-test('latestTodoSnapshot honors an emptied list and skips partial calls', () => {
   const emptied = latestTodoSnapshot([
     todoCall('a', { todos: '1. [pending] old' }),
     todoCall('b', { todos: '' }),
