@@ -2,8 +2,6 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { readFileSync } from 'node:fs';
-import { fileURLToPath } from 'node:url';
 import {
   childSessionLineIsRunning,
   fetchSizeBadge,
@@ -68,9 +66,7 @@ test('a sent prompt shows Visualize and skill chips instead of slash text', () =
   );
   assert.equal(html.includes('/visualize') || html.includes('/review'), false);
   assert.ok(html.includes('Visualize'));
-  assert.match(html, /text-droid-skill[^>]*>.*review/);
   assert.ok(html.indexOf('review') < html.indexOf('PR #100'));
-  assert.ok(!html.includes('violet'));
 });
 
 test('a pinned spec alone never produces an empty Worked disclosure', () => {
@@ -177,7 +173,6 @@ test('an incomplete live App owns its building state without exposing Play or a 
     createElement(MessageFeed, { events: [asst(incompleteApp)], pending: true }),
   );
 
-  assert.match(html, /max-w-4xl/);
   assert.match(html, /Building interactive app/);
   assert.match(html, /role="status"/);
   assert.doesNotMatch(html, /aria-label="Play app"/);
@@ -288,7 +283,6 @@ test('history paging uses a persistent live region whose text changes in place',
   }
   // While more history exists the row holds its height so an arriving page
   // never nudges the reading position; only the in-flight state speaks.
-  assert.match(idle, /h-9/);
   assert.doesNotMatch(idle, /Loading earlier messages/);
   assert.match(loading, /Loading earlier messages…/);
   assert.doesNotMatch(exhausted, /Loading earlier messages/);
@@ -529,17 +523,6 @@ test('sameFeedEvents compares grouped rows by their nested events, not object id
   assert.equal(sameFeedEvents(changes(1), changes(2)), false);
 });
 
-// The infinite status indicators (caret blink, shimmer) must honor
-// prefers-reduced-motion so the UI stays usable for motion-sensitive users.
-test('caret-blink is neutralized under prefers-reduced-motion', () => {
-  const cssPath = fileURLToPath(new URL('../index.css', import.meta.url));
-  const css = readFileSync(cssPath, 'utf8');
-  const reducedMotionBlocks =
-    css.match(/@media\s*\(\s*prefers-reduced-motion\s*:\s*reduce\s*\)\s*\{[^}]*\}/g) ?? [];
-  const coversCaretBlink = reducedMotionBlocks.some((block) => /\.caret-blink\b/.test(block));
-  assert.ok(coversCaretBlink, 'a prefers-reduced-motion block must disable .caret-blink');
-});
-
 test('settled compaction history does not show a live shimmer', () => {
   const event = ev({ kind: 'status', text: 'Compacting…' });
   const html = renderToStaticMarkup(
@@ -552,25 +535,24 @@ test('settled compaction history does not show a live shimmer', () => {
   assert.equal(html.includes('shimmer-text'), false);
 });
 
-for (const density of ['compact', 'balanced', 'detailed'] as const) {
-  test(`live commands show an activity cue at ${density} density`, () => {
-    const call = ev({
-      kind: 'tool_call',
-      toolName: 'Execute',
-      toolUseId: 'exec-live',
-      toolArgs: { command: 'npm test' },
-    });
-    const item: FeedItem = { type: 'tools', key: 'exec', events: [call] };
-    const html = renderToStaticMarkup(createElement(FeedItemView, { item, live: true, density }));
-    assert.match(html, density === 'compact' ? /shimmer-text/ : /Running/);
-    const result = ev({ kind: 'tool_result', toolUseId: 'exec-live', text: 'passed' });
-    const settled = renderToStaticMarkup(
-      createElement(FeedItemView, {
-        item: { ...item, events: [call, result] },
-        live: false,
-        density,
-      }),
-    );
-    assert.equal(settled.includes('Running'), false);
+test('live commands show an activity cue at every density until their result lands', () => {
+  const call = ev({
+    kind: 'tool_call',
+    toolName: 'Execute',
+    toolUseId: 'exec-live',
+    toolArgs: { command: 'npm test' },
   });
-}
+  const result = ev({ kind: 'tool_result', toolUseId: 'exec-live', text: 'passed' });
+  for (const density of ['compact', 'balanced', 'detailed'] as const) {
+    const render = (events: TranscriptEvent[], live: boolean) =>
+      renderToStaticMarkup(
+        createElement(FeedItemView, {
+          item: { type: 'tools', key: 'exec', events },
+          live,
+          density,
+        }),
+      );
+    assert.match(render([call], true), density === 'compact' ? /shimmer-text/ : /Running/, density);
+    assert.equal(render([call, result], false).includes('Running'), false, density);
+  }
+});

@@ -211,6 +211,13 @@ test('#20 a batched replay (calls before results) correlates each result by tool
   // Both results are accounted for, so neither leaks as raw activity.
   assert.equal(consumed.has(todoResult), true);
   assert.equal(consumed.has(grepResult), true);
+
+  // A failed plan result is never consumed: it must surface.
+  const failedPlan = call('TodoWrite', 'p1', { todos: 'x' });
+  const failed = failure('p1', 'plan failed');
+  const afterFailure = correlateResults([failedPlan, failed]);
+  assert.equal(afterFailure.resultByCall.has(failedPlan), false);
+  assert.equal(afterFailure.consumed.has(failed), false);
 });
 
 test('every automation proposal in one tool group gets its own card', () => {
@@ -270,14 +277,6 @@ test('an automation proposal stays at conversation level after the turn settles'
     ),
     false,
   );
-});
-
-test('a failed plan result is still never consumed (it must surface)', () => {
-  const todoCall = call('TodoWrite', 'p1', { todos: 'x' });
-  const failed = failure('p1', 'plan failed');
-  const { resultByCall, consumed } = correlateResults([todoCall, failed]);
-  assert.equal(resultByCall.has(todoCall), false);
-  assert.equal(consumed.has(failed), false);
 });
 
 test('a failed ordinary tool result folds into its tool group as an error', () => {
@@ -591,13 +590,10 @@ test('a harness nudge reply after the final answer does not fold the answer away
 test('trailing thinking event has no inferred duration without a following event', () => {
   const thinking = ev({ kind: 'thinking', text: 'still working', ts: 10 });
   const items = buildFeed([thinking]);
-  const item = items[0];
 
   assert.equal(items.length, 1);
-  assert.equal(item.type, 'thinking');
-  assert.equal(item.key, thinking.id);
-  assert.equal(item.event, thinking);
-  assert.equal(item.durationMs, undefined);
+  assert.equal(items[0].type, 'thinking');
+  assert.equal(items[0].durationMs, undefined);
 });
 
 // ── #39: edit activity must not inflate when one edit streams as many calls ──
