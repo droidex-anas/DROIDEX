@@ -5,52 +5,23 @@ import {
   parseCachedSessionSummary,
   serializeCachedSessionSummary,
 } from './sessionFileSummaryCache.js';
-import type { SessionSummary } from './protocol.js';
-
-function summary(): SessionSummary {
-  return {
-    appSessionId: 'app',
-    providerSessionId: 'provider',
-    provider: 'droid',
-    sessionPurpose: 'chat',
-    interactionMode: 'auto',
-    role: 'primary',
-    title: 'Valid cached session',
-    goal: 'Validate derived rows',
-    cwd: '/repo',
-    autonomy: 'low',
-    phase: 'paused',
-    features: [],
-    tokensIn: 1,
-    tokensOut: 2,
-    contextTokens: 3,
-    createdAt: 4,
-    updatedAt: 5,
-  };
-}
+import { sessionSummary } from './testing/sessionSummaryFixture.js';
 
 test('cached session summaries accept the complete canonical contract', () => {
-  const value = summary();
+  const value = sessionSummary({ cwd: '/repo', tokensIn: 1, tokensOut: 2, contextTokens: 3 });
   assert.deepEqual(parseCachedSessionSummary(serializeCachedSessionSummary(value)), value);
 });
 
 test('cached session summaries reject malformed required arrays, discriminants and inherited keys', () => {
-  const missingFeatures = { ...summary(), features: undefined };
-  const invalidPhase = { ...summary(), phase: 'sleeping' };
-  const invalidReasoning = { ...summary(), reasoningEffort: 'extreme' };
-  const invalidAccuracy = { ...summary(), contextAccuracy: 'guessed' };
-  const invalidWorkspace = { ...summary(), workspaceKind: 'repository' };
-  // An inherited Object.prototype key is not a reasoning effort.
-  const inheritedReasoning = { ...summary(), reasoningEffort: 'toString' };
-  assert.equal(
-    parseCachedSessionSummary(JSON.stringify({ cacheVersion: 2, summary: missingFeatures })),
-    undefined,
-  );
-  assert.equal(
-    parseCachedSessionSummary(JSON.stringify({ cacheVersion: 2, summary: invalidPhase })),
-    undefined,
-  );
-  for (const invalid of [invalidReasoning, invalidAccuracy, invalidWorkspace, inheritedReasoning]) {
+  for (const invalid of [
+    { ...sessionSummary(), features: undefined },
+    { ...sessionSummary(), phase: 'sleeping' },
+    { ...sessionSummary(), reasoningEffort: 'extreme' },
+    { ...sessionSummary(), contextAccuracy: 'guessed' },
+    { ...sessionSummary(), workspaceKind: 'repository' },
+    // An inherited Object.prototype key is not a reasoning effort.
+    { ...sessionSummary(), reasoningEffort: 'toString' },
+  ]) {
     assert.equal(
       parseCachedSessionSummary(JSON.stringify({ cacheVersion: 2, summary: invalid })),
       undefined,
