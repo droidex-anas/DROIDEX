@@ -221,7 +221,7 @@ test('a session still needed is given its runtime back however long it has been 
   }
 });
 
-test('the journal carries when each live session was last active', (t) => {
+test('the journal carries when each live session was last active, and drops an entry without it', (t) => {
   const { dir, journal } = scratchJournal(t);
   const live = { summary: { ...summary('app-journal', 'completed'), updatedAt: 12_345 } };
   const adoption = createAdoption(journal, {
@@ -238,16 +238,33 @@ test('the journal carries when each live session was last active', (t) => {
   assert.equal(journal.read().sessions[0]?.lastActiveAt, 12_345);
 
   // A journal entry without it cannot be judged against the budget, so it is
-  // not a journal entry. Only DROIDEX writes this file.
+  // not a journal entry, though the children journalled beside it are kept.
+  // Only DROIDEX writes this file.
   const withoutLastActive = {
     appSessionId: 'app-journal',
     providerSessionId: 'provider-app-journal',
     phase: 'completed',
     streaming: false,
   };
+  const child = {
+    parentAppSessionId: 'app-journal',
+    childSessionId: 'worker-1',
+    status: 'running',
+  };
   writeFileSync(
     liveRuntimeJournalPath(dir),
-    JSON.stringify({ sessions: [withoutLastActive], children: [] }),
+    JSON.stringify({ sessions: [withoutLastActive], children: [child] }),
   );
   assert.deepEqual(journal.read().sessions, []);
+  assert.deepEqual(
+    journal.read().children.map((entry) => entry.childSessionId),
+    ['worker-1'],
+  );
+
+  // A missing journal is an empty live set.
+  assert.deepEqual(new LiveRuntimeJournal(liveRuntimeJournalPath(join(dir, 'none'))).read(), {
+    sessions: [],
+    children: [],
+    processes: [],
+  });
 });
