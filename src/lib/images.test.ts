@@ -28,7 +28,7 @@ test('fitWithin scales down by the longer side and never upscales', () => {
   }
 });
 
-test('clampCropRect keeps a valid rect and clamps overflow, negatives, and tiny sides', () => {
+test('clampCropRect keeps a valid rect, clamps overflow, negatives, and tiny sides, and spots a no-op crop', () => {
   const image = { width: 1000, height: 500 };
   const valid = { x: 10, y: 10, width: 200, height: 100 };
   assert.deepEqual(clampCropRect(valid, image), valid);
@@ -47,6 +47,10 @@ test('clampCropRect keeps a valid rect and clamps overflow, negatives, and tiny 
   const tiny = clampCropRect({ x: 0, y: 0, width: 1, height: 1 }, image);
   assert.equal(tiny.width, MIN_CROP_SIDE);
   assert.equal(tiny.height, MIN_CROP_SIDE);
+
+  const square = { width: 100, height: 100 };
+  assert.equal(isFullImageRect({ x: 0, y: 0, width: 100, height: 100 }, square), true);
+  assert.equal(isFullImageRect({ x: 1, y: 0, width: 100, height: 100 }, square), false);
 });
 
 test('displayedToNaturalRect scales a preview rect to natural pixels and clamps it', () => {
@@ -65,19 +69,11 @@ test('displayedToNaturalRect scales a preview rect to natural pixels and clamps 
   assert.ok(out.y + out.height <= natural.height);
 });
 
-test('isFullImageRect detects a no-op crop', () => {
-  const image = { width: 100, height: 100 };
-  assert.equal(isFullImageRect({ x: 0, y: 0, width: 100, height: 100 }, image), true);
-  assert.equal(isFullImageRect({ x: 1, y: 0, width: 100, height: 100 }, image), false);
-});
-
-test('dataUrlMime reads the MIME type from a data URL', () => {
+test('data URL MIME types are read and only the desktop store allowlist persists', () => {
   assert.equal(dataUrlMime('data:image/png;base64,iVBOR'), 'image/png');
   assert.equal(dataUrlMime('data:image/svg+xml;base64,PHN2Zw'), 'image/svg+xml');
   assert.equal(dataUrlMime('not-a-data-url'), undefined);
-});
 
-test('isPersistableMime matches the desktop store allowlist', () => {
   assert.equal(isPersistableMime('image/png'), true);
   assert.equal(isPersistableMime('image/jpeg'), true);
   assert.equal(isPersistableMime('image/webp'), true);

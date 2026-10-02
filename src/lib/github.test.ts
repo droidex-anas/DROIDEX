@@ -14,14 +14,12 @@ const check = (bucket: string): PrCheck => ({
   completedAt: null,
 });
 
-test('prKind maps state and draft flag', () => {
+test('prKind and bucketToStatus normalize gh states, drafts, and buckets', () => {
   assert.equal(prKind({ state: 'MERGED', isDraft: false }), 'merged');
   assert.equal(prKind({ state: 'CLOSED', isDraft: false }), 'closed');
   assert.equal(prKind({ state: 'OPEN', isDraft: true }), 'draft');
   assert.equal(prKind({ state: 'open', isDraft: false }), 'open');
-});
 
-test('bucketToStatus normalizes gh buckets and check states', () => {
   assert.equal(bucketToStatus('pass'), 'success');
   assert.equal(bucketToStatus('SUCCESS'), 'success');
   assert.equal(bucketToStatus('fail'), 'failure');
@@ -30,7 +28,7 @@ test('bucketToStatus normalizes gh buckets and check states', () => {
   assert.equal(bucketToStatus('skipping'), 'neutral');
 });
 
-test('checksSummary is failure when any check fails, pending otherwise', () => {
+test('checksSummary fails on any failure, is pending otherwise, and keeps skipped, neutral, and unknown buckets', () => {
   assert.deepEqual(checksSummary([]), {
     total: 0,
     pass: 0,
@@ -53,9 +51,7 @@ test('checksSummary is failure when any check fails, pending otherwise', () => {
   });
   assert.equal(checksSummary([check('pass'), check('pending')]).status, 'pending');
   assert.equal(checksSummary([check('pass'), check('fail'), check('pending')]).status, 'failure');
-});
 
-test('checksSummary preserves skipped, neutral, and unknown buckets', () => {
   assert.deepEqual(checksSummary([check('skipping'), check('neutral'), check('mystery')]), {
     total: 3,
     pass: 0,
