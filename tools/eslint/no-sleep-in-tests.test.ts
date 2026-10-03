@@ -13,7 +13,9 @@ test('test lint rejects resolving delays while preserving rejection deadlines an
     { filePath: 'tools/eslint/delay.spec.ts' },
   );
   assert.deepEqual(
-    result.messages.filter((message) => message.ruleId === 'test-policy/no-sleep').map((message) => message.line),
+    result.messages
+      .filter((message) => message.ruleId === 'test-policy/no-sleep')
+      .map((message) => message.line),
     [4],
   );
 });

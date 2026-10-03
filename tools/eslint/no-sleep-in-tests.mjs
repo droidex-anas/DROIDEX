@@ -1,4 +1,8 @@
-const FUNCTION_TYPES = new Set(['ArrowFunctionExpression', 'FunctionExpression', 'FunctionDeclaration']);
+const FUNCTION_TYPES = new Set([
+  'ArrowFunctionExpression',
+  'FunctionExpression',
+  'FunctionDeclaration',
+]);
 
 function isDelayedTimer(node) {
   if (node?.type !== 'CallExpression' || node.arguments.length < 2) return false;
