@@ -145,7 +145,13 @@ Repository enforcement also needs the trusted
 `.github/workflows/regression-guard.yml` and `tools/check-regression-approval.mjs`
 on the default branch, plus `Held-out regression suite unchanged` required from
 GitHub Actions and branches required to be up to date before merging in the
-rules for every target branch. Base-only pushes do not trigger the guard.
+rules for every target branch. Approval records bind the evaluated head and
+base; commit statuses do not guarantee fresh evaluation between PR events.
+Base-only pushes do not trigger the guard, and strict checks do not force an
+update when the new base is already in the head. After a base change, rerun the
+guard and renew any held-out approval before merging.
+The guard also requires one open PR per head commit. Close a duplicate PR or
+move it to another commit, then rerun the guard and renew any held-out approval.
 Delivering these files to another branch does not activate it or configure
 branch protection.
 

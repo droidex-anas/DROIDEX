@@ -5,7 +5,7 @@ on:
     types: [opened, reopened, synchronize, edited, labeled, unlabeled]
 
 concurrency:
-  group: regression-guard-${{ github.event.pull_request.number }}
+  group: regression-guard-${{ github.event.pull_request.head.sha }}
   cancel-in-progress: false
 
 permissions:

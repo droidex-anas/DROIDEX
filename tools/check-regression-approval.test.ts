@@ -24,6 +24,9 @@ async function fixture(t: TestContext) {
   };
   const statuses = new Map<string, Status[]>();
   let permission = 'write';
+  const openPullRequests = [pr];
+  const files = [{ filename: 'sidecar/regression/contract.test.ts' }];
+  let shareHeadOnApproval = false;
   const server = createServer(async (request, response) => {
     const path = request.url?.split('?')[0];
     const statusSha = /^\/repos\/owner\/repo\/statuses\/([a-f0-9]{40})$/.exec(path ?? '')?.[1];
@@ -31,9 +34,10 @@ async function fixture(t: TestContext) {
       path ?? '',
     )?.[1];
     let result: unknown;
-    if (path === `/repos/owner/repo/pulls/${pr.number}`) result = pr;
+    if (path === '/repos/owner/repo/pulls') result = openPullRequests;
+    else if (path === `/repos/owner/repo/pulls/${pr.number}`) result = pr;
     else if (path === `/repos/owner/repo/pulls/${pr.number}/files`) {
-      result = [{ filename: 'sidecar/regression/contract.test.ts' }];
+      result = files;
     } else if (path === '/repos/owner/repo/collaborators/maintainer/permission') {
       result = { permission };
     } else if (request.method === 'POST' && statusSha) {
@@ -42,6 +46,9 @@ async function fixture(t: TestContext) {
       const status: Status = JSON.parse(Buffer.concat(chunks).toString());
       status.creator = { login: 'github-actions[bot]' };
       statuses.set(statusSha, [status, ...(statuses.get(statusSha) ?? [])]);
+      if (shareHeadOnApproval && status.context === 'regression-approval') {
+        openPullRequests.push({ ...pr, number: pr.number + 1 });
+      }
       result = status;
     } else if (commitSha) {
       result = statuses.get(commitSha) ?? [];
@@ -99,6 +106,11 @@ async function fixture(t: TestContext) {
   return {
     pr,
     run,
+    files,
+    openPullRequests,
+    shareHeadOnApproval: () => {
+      shareHeadOnApproval = true;
+    },
     setPermission: (value: string) => {
       permission = value;
     },
@@ -106,7 +118,7 @@ async function fixture(t: TestContext) {
 }
 
 test('regression approval stays bound to the reviewed PR head and base', async (t) => {
-  const { pr, run, setPermission } = await fixture(t);
+  const { pr, run, setPermission, files, openPullRequests, shareHeadOnApproval } = await fixture(t);
   assert.deepEqual(await run('opened'), { code: 1, status: 'failure' });
   assert.deepEqual(await run('labeled'), { code: 0, status: 'success' });
   assert.deepEqual(await run('synchronize'), { code: 0, status: 'success' });
@@ -136,4 +148,16 @@ test('regression approval stays bound to the reviewed PR head and base', async (
   assert.deepEqual(await run('labeled'), { code: 0, status: 'success' });
   pr.number = 8;
   assert.deepEqual(await run('opened'), { code: 1, status: 'failure' });
+
+  openPullRequests.push({ ...pr, number: 9 });
+  assert.deepEqual(await run('labeled'), { code: 1, status: 'failure' });
+  files.length = 0;
+  pr.changed_files = 0;
+  assert.deepEqual(await run('opened'), { code: 1, status: 'failure' });
+  openPullRequests.pop();
+  assert.deepEqual(await run('opened'), { code: 0, status: 'success' });
+  files.push({ filename: 'sidecar/regression/contract.test.ts' });
+  pr.changed_files = 1;
+  shareHeadOnApproval();
+  assert.deepEqual(await run('labeled'), { code: 1, status: 'failure' });
 });

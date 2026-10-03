@@ -84,13 +84,21 @@ async function main() {
     current.base.sha === pr.base.sha &&
     current.base.ref === pr.base.ref;
   if (current.head.sha !== pr.head.sha) {
-    await postStatus(
-      current.head.sha,
-      GATE_CONTEXT,
-      'pending',
-      'Checking the current PR head and base.',
-    );
+    throw new Error('The PR head changed. Run the guard for its current head.');
   }
+
+  // Required statuses belong to the commit, so they cannot distinguish PRs
+  // sharing a head. The repository PR list defaults to open and is paginated.
+  const assertUniqueHead = async () => {
+    const matching = (await list('pulls')).filter(
+      (candidate) => candidate.head.sha === current.head.sha,
+    );
+    if (matching.length === 1 && matching[0].number === current.number) return;
+    const message = 'Keep one open PR per head commit, then rerun this guard.';
+    await postStatus(current.head.sha, GATE_CONTEXT, 'failure', message);
+    throw new Error(message);
+  };
+  await assertUniqueHead();
 
   // GitHub caps this endpoint at 3000 files. Incomplete metadata cannot prove
   // the suite unchanged, so large or racing comparisons fail closed.
@@ -140,6 +148,7 @@ async function main() {
       approval.creator?.login === 'github-actions[bot]';
   }
 
+  await assertUniqueHead();
   assertSamePullRequest(await request(prPath), current);
   const allowed = !touched || approved;
   let description = 'Review this head and base, then remove and re-add regression-approved.';
