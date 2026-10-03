@@ -254,8 +254,8 @@ count, coverage targets, or a wish to look thorough.
   can. A passing build is not visual verification.
 - Add or update a durable test only when it protects meaningful behavior,
   closes a real gap, or would catch a plausible regression. A nontrivial bug
-  gets one focused regression test at the narrowest level that reproduces it,
-  not a test for every helper it touched.
+  without existing regression coverage gets one focused test at the narrowest
+  level that reproduces it, not a test for every helper it touched.
 - Prioritize deterministic coverage for data integrity, session targeting,
   ordering, cancellation, cleanup, security boundaries, and cross-process
   contracts. Exercise behavior through production entry points.
@@ -266,21 +266,25 @@ count, coverage targets, or a wish to look thorough.
 - Extend an existing suite when the behavior belongs there. Do not add a test
   framework, expose private helpers, or add production indirection to make
   something testable.
-- One suite per production module. Test a behavior once, at the narrowest
-  entry point that owns it; a facade suite (for example `SessionManager`) only
-  covers the wiring, targeting, and races that the module suites cannot reach.
-  Do not split one module's tests across `Module.<topic>.test.ts` files.
-- Limits: a test file stays under 800 lines, a single test under about 60
-  lines including setup, and a bug fix adds at most one test. Over a limit,
-  trim or move shared setup into the existing `testing/` helpers first, and
-  justify any exception in the pull request.
+- Keep one owner suite per contract, normally one suite per production module.
+  A facade suite covers only wiring, targeting, and races that its module
+  suites cannot reach. Do not create new `Module.<topic>.test.ts` splits.
+  The existing `SessionManager` background, children, compaction, and turns
+  suites are an exception for distinct facade integration contracts; preserve
+  their valuable race coverage and remove only demonstrated duplication.
+- Test files have an 800-line cap, excluding blank lines and comments. About
+  60 lines per test, including setup, is a readability guideline. Remove
+  duplication or move genuinely shared setup into existing `testing/` helpers
+  before growing a suite. Justify necessary exceptions in the pull request;
+  never compress a test or cut valuable coverage just to meet a count.
 - No wall-clock thresholds or sleeps in unit tests. Timing and
   throughput belong to the perf replay harness (`npm run quality:perf-gates`).
   No tests that only fail when the process lacks file permissions; inject the
   failure through a fake instead.
-- ESLint enforces the 800-line test file cap (blank lines and comments not
-  counted) and the no-sleep rule. Files that predate them are recorded in
-  `eslint-suppressions.json`; that list only shrinks.
+- ESLint checks the file cap and delayed resolving promises in `.test.*` and
+  `.spec.*` files, including tools tests, and rejects promise-timer imports.
+  Zero-delay event-loop yields and rejection deadlines are allowed. Existing
+  exceptions are recorded in `eslint-suppressions.json`; that list only shrinks.
 - Write as many throwaway tests, probes, and reproduction scripts as you need
   while working; they are tools, not deliverables. Before committing, keep only
   the tests whose ongoing protection is worth their maintenance and delete the
@@ -292,13 +296,24 @@ count, coverage targets, or a wish to look thorough.
   fix the code, not the test. Edit or delete an existing assertion only when the
   behavior change is intended, and name each such test in the pull request; CI
   flags these edits for the reviewer (`npm run quality:test-edits`).
-- `sidecar/regression/` is the held-out regression suite: end-to-end contracts
-  for history durability, child persistence, and session races. Agents may not
-  read or edit it (denied in `.claude/settings.json`) and `npm test` skips it;
+- `sidecar/regression/` is the held-out suite of regression contracts
+  for history durability, child persistence, and session races. Exclude it
+  from agent inventories, searches, and test audits. Agents may read specific
+  diffs only when a human explicitly delegates that review; review never
+  authorizes edits. `npm test` skips it;
   `test:ci` runs it on every pull request, and
   `npm --prefix sidecar run test:regression` runs it alone. When it fails, fix
   the code. Only a human changes these tests, deliberately: CI fails on any
-  change there until a maintainer adds the `regression-approved` label.
+  change there without a maintainer's `regression-approved` label and an
+  approval record for the current PR head and base. Remove and re-add the label
+  after either changes; reruns reuse the recorded approval.
+- `.claude/settings.json` denies built-in file reads and edits of that suite.
+  These are Claude Code tool guards, not complete isolation: indirect shell
+  reads, other agents' tools, and historical Git objects remain accessible.
+  Withholding test source requires a separately controlled checkout or runner;
+  shell command patterns cannot provide that boundary. See Claude Code's
+  [permission rules](https://code.claude.com/docs/en/permissions#read-and-edit)
+  and [sandboxing](https://code.claude.com/docs/en/sandboxing).
 
 Tests are maintained code too. Keep the ones whose protection justifies their
 cost.

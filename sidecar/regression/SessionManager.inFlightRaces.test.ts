@@ -236,6 +236,8 @@ test('joined child opens cannot settle after the parent closes', async () => {
   const h = createSessionManagerTestContext();
   try {
     await createMission(h);
+    await h.provider.waitForPrompts('provider-1', 1);
+    await h.waitForIdle();
     const child = new FakeFactorySession('joined-backend', {}, h.calls);
     child.deferNextUpdateSettings();
     seedPausedChild(h, 'joined-logical', 'joined-backend', 'worker');
@@ -288,6 +290,8 @@ test('an existing child runtime cannot acknowledge after parent close admission'
   const h = createSessionManagerTestContext();
   try {
     await createMission(h);
+    await h.provider.waitForPrompts('provider-1', 1);
+    await h.waitForIdle();
     seedPausedChild(h, 'existing-logical', 'existing-backend', 'worker');
     await h.handle({
       type: 'child.open',

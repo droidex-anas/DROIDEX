@@ -111,23 +111,43 @@ short version:
 On tests, this project deliberately does **not** want padded pull requests. Add
 a test when it protects real behaviour, such as data integrity, session
 targeting, ordering, cancellation, cleanup, or a cross-process contract, or when
-it pins a bug you just fixed. Keep the existing suites green and update the tests your
-change affects. "No new tests" is a normal and accepted outcome.
+it pins a nontrivial bug that existing coverage misses. Keep the existing suites
+green and update the tests your change affects. "No new tests" is a normal and
+accepted outcome.
 
 The concrete limits, from `AGENTS.md`:
 
-- One suite per production module, and each behaviour tested once, at the
-  narrowest entry point that owns it.
-- A test file stays under 800 lines and a single test under about 60 lines.
-- A bug fix adds at most one regression test.
+- One owner suite per contract, normally one suite per production module.
+  Existing `SessionManager` topic suites cover distinct facade integration
+  contracts; they are an exception, not a pattern for new splits.
+- Test files have an 800-line cap, excluding blank lines and comments. About
+  60 lines per test is a readability guideline. Justify necessary exceptions;
+  never trim valuable coverage just to reach a count.
+- An uncovered nontrivial bug gets one focused regression test at its owner.
 - No sleeps or wall-clock thresholds in unit tests; timing belongs
   to `npm run quality:perf-gates`.
 - Coverage floors in `test:ci` are a floor, not a target. Never add a test to
   raise a number.
 - When a change breaks an existing test, fix the change. Rewrite the test only
   for an intended behaviour change, and say so in the pull request.
-- `sidecar/regression/` holds end-to-end contracts that agents do not edit and
-  `npm test` skips. CI runs them on every pull request.
+- `sidecar/regression/` holds regression contracts excluded from agent searches
+  and audits. A human may explicitly delegate review of specific diffs, never
+  edits. `npm test` skips it; CI runs it on every pull request. Claude Code's
+  built-in file guards do not isolate shell subprocesses or Git history; a
+  separately controlled checkout or runner is needed to withhold source.
+
+For a deliberate held-out change, a maintainer with repository write access
+must review and add `regression-approved`. The label event records approval of
+that PR's current head and base; remove and re-add it after either changes.
+Removing it revokes approval. Workflow reruns reuse the record.
+
+Repository enforcement also needs the trusted
+`.github/workflows/regression-guard.yml` and `tools/check-regression-approval.mjs`
+on the default branch, plus `Held-out regression suite unchanged` required from
+GitHub Actions and branches required to be up to date before merging in the
+rules for every target branch. Base-only pushes do not trigger the guard.
+Delivering these files to another branch does not activate it or configure
+branch protection.
 
 ## Validating your change
 

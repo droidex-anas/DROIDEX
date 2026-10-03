@@ -14,6 +14,13 @@ Two modes, one value bar. **Authoring** gates every new or changed test.
 **Audit** prunes an existing surface (one module, or one area such as the
 sidecar session suites). Optimise for confidence, not deletion count.
 
+Exclude `sidecar/regression/` from source inventories, searches, ledgers, and
+baseline reviews. Agents may run it and use failure diagnostics, but may read
+specific diffs only when a human explicitly delegates that review. That review
+never authorizes editing or moving held-out tests. Claude Code's built-in file
+guards do not isolate subprocess reads or historical Git objects; see the
+boundary documented in `AGENTS.md`.
+
 ## Authoring gate
 
 Before adding a test, answer all four. A missing answer means do not add it.
@@ -32,8 +39,10 @@ Before adding a test, answer all four. A missing answer means do not add it.
 Then check it against the junk patterns below. A test that breaks under a
 behaviour-preserving refactor asserts implementation; rewrite it at the owner.
 
-A bug fix adds one regression test at the owner boundary. It must fail on the
-pre-fix code for the intended reason. Do not replay the scenario at every layer.
+An uncovered nontrivial bug gets one regression test at the owner boundary.
+It must fail on the pre-fix code for the intended reason. Existing coverage can
+be sufficient; do not replay the scenario at every layer or add a test just
+because a bug was fixed.
 
 ## Junk patterns
 
@@ -61,12 +70,12 @@ delete it.
 
 ## Audit procedure
 
-1. **Baseline.** Record test and support line counts, test counts, and
+1. **Baseline.** Record non-held-out test and support line counts, test counts, and
    `test:ci` coverage (`npm --prefix sidecar run test:ci`, `npm run test:ci`)
    at a pinned `origin/main` SHA. Keep baseline failures in their own list.
 2. **Lanes.** Split the surface along production owners, not file prefixes.
    One owner per file at a time when several agents work in parallel.
-3. **Ledger.** Read every test in full, with its production owner and
+3. **Ledger.** Read every test in the chosen non-held-out surface in full, with its production owner and
    callers. Mark each declaration:
    - `R` retain, naming the contract and the bug it catches;
    - `F` keep the contract, fix a vacuous assertion;
@@ -84,6 +93,9 @@ delete it.
 
 Never move a test into or out of `sidecar/regression/`, or edit one there;
 that held-out suite is changed only by a human.
+Maintainer approval records the reviewed PR head and base. After either changes,
+the maintainer must remove and re-add `regression-approved`; reruns reuse the
+record. See `CONTRIBUTING.md` for required workflow and branch-rule deployment.
 
 ## Validation
 

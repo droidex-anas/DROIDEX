@@ -5,24 +5,10 @@ import reactHooks from 'eslint-plugin-react-hooks';
 import reactRefresh from 'eslint-plugin-react-refresh';
 import prettierConfig from 'eslint-config-prettier';
 import globals from 'globals';
+import noSleepInTests from './tools/eslint/no-sleep-in-tests.mjs';
 
 const SLEEP_MESSAGE = 'No sleeps in tests. Use controlled promises or mocked timers.';
-
-// A promise that a real-delay timer resolves is a sleep, whatever shape the
-// executor takes. Deadlines that only reject a hung test are allowed.
-const SLEEP_TIMER = '[arguments.length=2]:not([arguments.1.value=0])';
-const noSleepInTests = [
-  "CallExpression[callee.name='setTimeout']",
-  "CallExpression[callee.object.name='globalThis'][callee.property.name='setTimeout']",
-].flatMap((timer) =>
-  [
-    `${timer}[arguments.0.type='Identifier']`,
-    `${timer}[arguments.0.type='ArrowFunctionExpression'][arguments.0.body.callee.name=/^(resolve|done)$/]`,
-  ].map((call) => ({
-    selector: `NewExpression[callee.name='Promise'] ${call}${SLEEP_TIMER}`,
-    message: SLEEP_MESSAGE,
-  })),
-);
+const TEST_FILES = ['**/*.{test,spec}.{js,jsx,cjs,mjs,ts,tsx,cts,mts}'];
 
 const electronRestrictedSyntax = [
   {
@@ -48,7 +34,9 @@ export default tseslint.config(
       'benchmark-runs/',
       'benchmarks/',
       'public/',
-      'tools/',
+      'tools/**/*',
+      '!tools/**/',
+      ...TEST_FILES.map((pattern) => `!tools/${pattern}`),
       '**/*.png',
       'package-lock.json',
       'sidecar/package-lock.json',
@@ -59,7 +47,7 @@ export default tseslint.config(
 
   {
     files: ['src/**/*.{ts,tsx}', 'sidecar/src/**/*.ts', 'packages/icons/src/**/*.{ts,tsx}'],
-    ignores: ['**/*.test.{ts,tsx}'],
+    ignores: TEST_FILES,
     extends: [...tseslint.configs.strictTypeChecked, ...tseslint.configs.stylisticTypeChecked],
     languageOptions: {
       parserOptions: {
@@ -116,7 +104,7 @@ export default tseslint.config(
   },
 
   {
-    files: ['**/*.test.{ts,tsx}', 'tests/integration/automations.spec.ts', 'vite.config.ts'],
+    files: ['**/*.{test,spec}.{ts,tsx,cts,mts}', 'vite.config.ts'],
     extends: [tseslint.configs.recommended],
     languageOptions: {
       globals: {
@@ -165,10 +153,12 @@ export default tseslint.config(
 
   {
     // Test budget; see "Verification and tests" in AGENTS.md.
-    files: ['**/*.test.{ts,tsx,cjs,mjs}'],
+    files: TEST_FILES,
+    plugins: { 'test-policy': { rules: { 'no-sleep': noSleepInTests } } },
+    languageOptions: { globals: { ...globals.browser, ...globals.node } },
     rules: {
       'max-lines': ['error', { max: 800, skipBlankLines: true, skipComments: true }],
-      'no-restricted-syntax': ['error', ...noSleepInTests],
+      'test-policy/no-sleep': 'error',
       'no-restricted-imports': [
         'error',
         {
@@ -178,13 +168,7 @@ export default tseslint.config(
           })),
         },
       ],
-    },
-  },
-
-  {
-    files: ['electron/**/*.test.cjs'],
-    rules: {
-      'no-restricted-syntax': ['error', ...electronRestrictedSyntax, ...noSleepInTests],
+      'no-restricted-modules': ['error', { paths: ['timers/promises', 'node:timers/promises'] }],
     },
   },
 
